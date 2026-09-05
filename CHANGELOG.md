@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.1] — 2026-09-05
+
+- Fix the workspace working-directory assurance check for canonical path aliases
+  such as macOS `/var` and `/private/var`. Existing-directory identity is required;
+  different directories, missing paths and regular files remain rejected.
+- Print failed assurance check details instead of an opaque boolean assertion.
+- Add cross-platform directory-alias regression cases and preserve the first
+  candidate's macOS CI failure in the [verification record](docs/VERIFICATION_2.78.1.md).
+- Keep Core, Desktop, lockfiles and the software bill of materials synchronized.
+
 ## [2.78.0] — 2026-09-05
 
 ### Runtime and evidence

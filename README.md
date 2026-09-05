@@ -44,12 +44,12 @@ stable during the first public migration release. See
 
 ## Current state
 
-Xaventra 2.78.0 is a versioned source release. Native Windows, Linux and macOS
+Xaventra 2.78.1 is a versioned source release. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.78.0.md) and
+See the [verification record](docs/VERIFICATION_2.78.1.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 Owner access requires a configured Telegram identity or an explicit grant from
