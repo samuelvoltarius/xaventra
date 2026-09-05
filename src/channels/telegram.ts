@@ -750,7 +750,7 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 const { getUserPermission } = await import('../users/multi-user-middleware.js')
                 const callbackUserId = String(query.from?.id || chatId)
-                if (getUserPermission(callbackUserId) !== 'owner') {
+                if (getUserPermission(callbackUserId, 'telegram') !== 'owner') {
                     await this.bot.answerCallbackQuery(query.id, { text: 'Nur der Owner darf PATCH_GATE freigeben.' })
                     return
                 }
@@ -941,7 +941,7 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 const { getUserPermission } = await import('../users/multi-user-middleware.js')
                 const callbackUserId = String(query.from?.id || chatId)
-                if (data === 'doctor_fix' && !['owner', 'admin'].includes(getUserPermission(callbackUserId))) {
+                if (data === 'doctor_fix' && !['owner', 'admin'].includes(getUserPermission(callbackUserId, 'telegram'))) {
                     await this.bot.answerCallbackQuery(query.id, { text: 'Nur Owner/Admin dürfen Doctor-Fixes vorschlagen.' })
                     return
                 }

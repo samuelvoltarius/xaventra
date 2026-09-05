@@ -1339,7 +1339,7 @@ Gebaut für Xaventra contributors 🌶️`
         case 'user': {
             const [action, ...restParts] = args.split(' ')
             const { handleUserCommand } = await import('../users/multi-user-middleware.js')
-            return handleUserCommand(action || 'list', restParts.join(' '), from)
+            return handleUserCommand(action || 'list', restParts.join(' '), from, principalContext?.channel || 'unknown')
         }
 
         // ============================================

@@ -84,7 +84,7 @@
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
-        "../tools/tool-policy.js",
+        "./tool-authorization.js",
         "node:fs",
         "node:path"
       ]
@@ -127,6 +127,12 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/tool-authorization.ts",
+      "imports": [
+        "../tools/tool-policy.js"
       ]
     },
     {

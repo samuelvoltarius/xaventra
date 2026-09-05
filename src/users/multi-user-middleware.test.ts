@@ -40,7 +40,7 @@ describe('configured owner reconciliation', () => {
             changed: true,
             user: { permission: 'owner' },
         })
-        const existingOwner = { ...user('99', 'CLI'), permission: 'owner' as const }
+        const existingOwner = { ...user('99', 'CLI'), permission: 'owner' as const, permissionSource: 'explicit' as const }
         expect(reconcileConfiguredOwner(existingOwner, [])).toEqual({ user: existingOwner, changed: false })
     })
 })

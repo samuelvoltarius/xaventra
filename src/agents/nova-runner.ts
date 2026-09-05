@@ -5,7 +5,7 @@
  */
 
 import { getToolRegistry } from '../tools/complete-registry.js'
-import { checkTool } from '../tools/tool-policy.js'
+import { authorizeToolExecution, ToolAuthorizationError } from './tool-authorization.js'
 import { getLoopDetector } from '../tools/loop-detection.js'
 import { getTraceRecorder } from '../learning/trace.js'
 import { getPluginManager } from '../plugins/plugin-sdk.js'
@@ -965,6 +965,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 ? new IdempotencyStore(join(kernel.contract.allowedChanges.allowedPaths[0] || process.cwd(), 'idempotency.json'))
                 : getIdempotencyStore()
             const executeToolOnce = async (name: string, args: Record<string, unknown>) => {
+                args = await authorizeToolExecution(name, args, {
+                    userId, authUserId, channel, requestText: content,
+                    governedReadOnly: (channel === 'benchmark' || isInternalRequest)
+                        && kernel.contract.allowedChanges.readOnly
+                        && kernel.contract.allowedChanges.externalSideEffects === false,
+                })
                 await assertMissionFenceForContent(content)
                 const idempotencyRunId = executionScopeForContent(content, kernel.contract.id)
                 const key = makeIdempotencyKey(idempotencyRunId, name, args)
@@ -1011,59 +1017,6 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             for (const call of response.toolCalls) {
                 console.log(`[Nova Agent] Tool call: ${call.name}`)
                 toolsUsed.push(call.name)
-
-                // === Tool Policy Check ===
-                const policyResult = checkTool(call.name, { channel, userId })
-                if (!policyResult.allowed) {
-                    console.log(`[Nova Agent] ❌ Tool denied by policy: ${call.name} — ${policyResult.reason}`)
-                    toolResults.push(`❌ ${call.name}: ${policyResult.reason || 'Von Policy blockiert'}`)
-                    continue
-                }
-                if (policyResult.needsConfirmation) {
-                    console.log(`[Nova Agent] ⚠️ Tool needs confirmation: ${call.name}`)
-                    toolResults.push(`⚠️ ${call.name}: ${policyResult.reason || 'Erfordert Bestätigung'} — übersprungen`)
-                    continue
-                }
-
-                // === Tool Restriction Check (Multi-User) ===
-                try {
-                    const authorizationUserId = authUserId
-                    const governedReadOnlyTools = new Set([
-                        'read_file', 'list_directory', 'codebase_search', 'find_files',
-                        'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
-                        'find_capability', 'resolve_capability', 'list_sessions', 'mission_config',
-                        'list_reminders', 'list_sub_agents', 'nova_trace_stats',
-                    ])
-                    const governedBenchmark = channel === 'benchmark'
-                        && kernel.contract.allowedChanges.readOnly
-                        && kernel.contract.allowedChanges.externalSideEffects === false
-                    const governedInternal = isInternalRequest
-                        && kernel.contract.allowedChanges.readOnly
-                        && kernel.contract.allowedChanges.externalSideEffects === false
-                    if ((governedBenchmark || governedInternal) && !governedReadOnlyTools.has(call.name)) {
-                        toolResults.push(`${governedBenchmark ? 'Benchmark' : 'Internal automation'} policy blocked non-read-only tool: ${call.name}`)
-                        continue
-                    }
-                    // Governed internal actors already passed the stricter
-                    // read-only contract above. Sending those same calls
-                    // through ordinary end-user RBAC blocked Doctor/Autonomy
-                    // introspection even though no mutation was possible.
-                    if (authorizationUserId && !governedBenchmark && !governedInternal) {
-                        const { isToolAllowed, getToolRestrictionMessage } = await import('../users/multi-user-middleware.js')
-                        if (!isToolAllowed(authorizationUserId, call.name)) {
-                            console.log(`[Nova Agent] 🔒 Tool blocked: ${call.name} for user ${userId}`)
-                            toolResults.push(getToolRestrictionMessage(authorizationUserId, call.name))
-                            continue
-                        }
-                    }
-                } catch (rbacErr) {
-                    // FAIL-CLOSED: Ein leeres catch liess das Werkzeug hier
-                    // ausfuehren, wenn die Rechtepruefung selbst scheiterte.
-                    console.error(`[Nova Agent] Rechtepruefung fehlgeschlagen - ${call.name} abgelehnt: ${rbacErr}`)
-                    toolResults.push(`Rechtepruefung fehlgeschlagen, ${call.name} nicht ausgefuehrt.`)
-                    hasToolErrors = true
-                    continue
-                }
 
                 // === Loop Detection v2 ===
                 const loopDetector = invocationLoopDetector
@@ -1334,6 +1287,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     } catch { /* learning module not available */ }
                 } catch (err) {
                     _traceRecorder.toolEnd(_traceId, false, 0, String(err).slice(0, 200))
+                    if (err instanceof ToolAuthorizationError) {
+                        // A denied call never ran: do not teach L17 or the
+                        // correction detector that the tool itself failed.
+                        toolResults.push(String(err))
+                        hasToolErrors = true
+                        continue
+                    }
                     console.error(`[Nova Agent] Tool error (${call.name}): ${err}`)
                     hasToolErrors = true
                     toolExecutions.push({

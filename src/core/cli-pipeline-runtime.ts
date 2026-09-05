@@ -147,6 +147,6 @@ export async function handleCliPipelineMessage(
         content,
         replyFn,
         state,
-        (cmd, args, from) => handleSlashCommand(cmd, args, from, state, availableLLMs),
+        (cmd, args, from, principalContext) => handleSlashCommand(cmd, args, from, state, availableLLMs, principalContext),
     )
 }

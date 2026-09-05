@@ -1098,7 +1098,7 @@ export const evolutionTools: NovaTool[] = [
         handler: async (params) => {
             const { getUserPermission } = await import('../users/multi-user-middleware.js')
             const authorizationUserId = String(params.authorizationUserId || '')
-            const permission = getUserPermission(authorizationUserId)
+            const permission = getUserPermission(authorizationUserId, String(params.channel || 'unknown'))
             if (permission !== 'owner' && permission !== 'admin') {
                 return { success: false, message: 'Nur Owner/Admin dürfen Codex auf einem Node installieren.' }
             }
@@ -2972,7 +2972,7 @@ const desktopControlTools: NovaTool[] = [
         handler: async params => {
             const { getUserPermission } = await import('../users/multi-user-middleware.js')
             const authorizationUserId = String(params.authorizationUserId || '')
-            const permission = getUserPermission(authorizationUserId)
+            const permission = getUserPermission(authorizationUserId, String(params.channel || 'unknown'))
             if (permission !== 'owner' && permission !== 'admin') return { success: false, blocked: true, error: 'Desktop control requires Owner/Admin' }
             const ownerId = authorizationUserId.startsWith('desktop:')
                 ? authorizationUserId.slice('desktop:'.length)
@@ -3613,7 +3613,6 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
 
 
 

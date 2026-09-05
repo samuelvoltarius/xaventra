@@ -1,58 +1,51 @@
-# Xaventra public release checklist
+# Xaventra release checklist
 
-This checklist is fail-closed. Do not make the repository public until every
-required item has evidence.
+This repository is a public source preview. Source publication, downloadable
+binaries and upgrades of existing deployments have different evidence gates.
+Do not present unchecked items as completed or as production guarantees.
 
-## Brand and ownership
+## Public source gates
 
-- [ ] Final name reviewed against GitHub, npm, PyPI, domains and relevant marks.
-- [ ] Repository and package namespaces reserved.
-- [x] Current public logo is isolated from removed legacy Nova/Brutus assets.
-- [ ] README, Desktop, website and documentation consistently use Xaventra.
-- [ ] Compatibility identifiers are documented rather than silently renamed.
+- [x] Use a fresh Git object database; copy no old private commits or refs.
+- [x] Scan the complete new history and exported source for secrets.
+- [x] Exclude credentials, OAuth state, wallets, runtime memory, logs, private
+      project memory, production inventories and operational backups.
+- [x] Review examples for inert addresses, identities and credential placeholders.
+- [x] Remove the message-triggered admin override and blanket OS-mode ownership;
+      test persisted permissions and channel-bound authorization.
+- [x] Include README, contribution guidance, responsible disclosure policy,
+      compatibility identifiers, third-party notices and Core SBOM.
+- [x] Install using public lockfiles with lifecycle scripts disabled; run
+      typecheck, isolated tests, build, catalogs and dependency audits.
+- [x] Verify the source in clean GitHub CI using only example configuration.
+- [x] Obtain explicit owner authorization to make this clean repository public.
 
-## History and secrets
+The old private repository and its cached hosting objects are not published by
+this process. Historical credential retirement remains an independent private
+operational requirement; those credentials must never be reused.
 
-- [ ] Rotate the private key formerly stored in `wallet.json`.
-- [ ] Rewrite Git history to remove `wallet.json`, `wallets.json` and any other
-      credential-bearing blobs from every ref.
-- [ ] Run a full-history secret scan after rewriting.
-- [x] Review all `.env.example` files and deployment samples for inert values.
-- [x] Confirm no OAuth state, node private key, Telegram token, API key, user
-      memory, production log or private host inventory is tracked.
+## Binary distribution and commercial readiness
 
-## Repository hygiene
+- [ ] Review name, domain and package availability and relevant marks.
+- [ ] Reserve desired package namespaces.
+- [ ] Complete review of applicable GPL/LGPL connector distribution obligations.
+- [ ] Run native dependency lifecycle scripts on disposable CI hosts.
+- [ ] Package and smoke-test Desktop on every advertised operating system.
+- [ ] Publish signed artifacts and SHA-256 hashes with reproducible build evidence.
+- [ ] Render and smoke-test the website at desktop and mobile widths before
+      separately enabling its publication.
 
-- [x] Remove generated archives, runtime databases, logs, screenshots and local
-      operational reports from tracked source.
-- [x] Confirm `.gitignore` covers all runtime and credential paths.
-- [x] Verify generated catalogs can be reproduced from source.
-- [x] Generate an SBOM and central third-party notices.
-- [ ] Complete commercial counsel review of GPL/LGPL dependencies.
+## Existing-deployment migration
 
-## Reproducibility
-
-- [ ] Clone the rewritten repository into an empty directory.
-- [x] Install from the public lockfile with lifecycle scripts disabled.
-- [ ] Create configuration only from checked-in examples.
-- [x] Run typecheck, full tests, build and catalog generation.
-- [ ] Run packaging lifecycle scripts, assurance and freshness gates in clean CI.
-- [ ] Package Desktop on each supported operating system.
-- [ ] Render and smoke-test `website/index.html` at desktop and mobile widths.
-
-## Runtime safety
-
-- [ ] Prove existing Nova-branded nodes upgrade without identity loss.
-- [ ] Prove Main, Telegram, dashboard and release fencing still allow one owner.
+- [ ] Prove old Nova identities survive the migration without duplication.
+- [ ] Prove Main, Telegram, dashboard and release fencing permit one owner.
 - [ ] Prove rollback to the last verified release.
-- [ ] Prove Memory, Outcome Ledger and mission checkpoints survive the migration.
+- [ ] Prove Memory, Outcome Ledger and mission checkpoints survive migration.
 - [ ] Confirm no credential or OAuth migration crosses a node boundary.
+- [ ] Reauthorize legacy privileged users whose grants have no provenance.
 
-## Publication
-
-- [ ] Create the public repository from a fresh Git object database after all
-      remaining legal, key-rotation and packaging gates pass.
-- [ ] Publish signed source and Desktop artifacts with SHA-256 hashes.
-- [ ] Add issue templates, responsible disclosure and contribution guidance.
-- [ ] Mark experimental features honestly; do not claim unverified production
-      results from historical private deployments as public guarantees.
+Never expose the development REST API without authentication. The legacy
+Next.js dashboard remains an experimental prototype, not an authenticated
+production control plane. See [PUBLIC_EXPORT_REPORT.md](../PUBLIC_EXPORT_REPORT.md)
+for evidence and [the authorization review](AUTHORIZATION_REVIEW_2.77.2.md)
+for the latest permission fix and its validation limits.

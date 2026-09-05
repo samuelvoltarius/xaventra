@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.77.2] — 2026-09-05
+
+### Security
+
+- Remove implicit owner privileges from OS mode, including lookups of unknown
+  identities. Keep authorization at the shared multi-user boundary.
+- Record explicit/configured privilege provenance. Revoke legacy owner/admin
+  records without a verifiable grant; affected operators must reauthorize
+  through their configured Telegram identity, local CLI or authenticated Desktop.
+- Bind role checks to the originating channel. A colliding raw user ID from
+  another channel cannot inherit an existing privileged identity.
+- Enforce tool policy and role checks at the shared execution boundary, including
+  recovery and follow-up rounds. Replace model-supplied identity/consent fields
+  with trusted context, and preserve that context in local CLI slash commands.
+- Add runtime regression tests for OS mode, persisted roles, cross-channel IDs
+  and legitimate owner/admin grants, alongside the chat-override regression.
+
+This is the public source preview from a fresh, scanned Git history. No private
+deployment data is included and no production node was updated. Desktop binary
+packaging and production migration retain their separate verification gates.
+
 ## [2.77.1] — 2026-09-05
 
 ### Fixed
@@ -44,10 +65,10 @@ This is a private source review candidate. Production nodes are unchanged.
 
 ### Security
 
-- Removed tracked wallet files containing private material from the public
-  source tree and excluded wallet files plus archive artifacts from future
-  commits. Public release remains blocked until Git history is rewritten,
-  secret-scanned and the exposed key is rotated.
+- Excluded wallet files and credential/archive artifacts from the public source.
+  The public repository uses a fresh object database, not the old private Git
+  history. Retirement of historical credentials and cleanup of old private
+  hosting objects remain private operational work, not part of this export.
 - Removed the tracked generated `dashboard/dashboard.tar` archive; public builds
   must create artifacts from source.
 

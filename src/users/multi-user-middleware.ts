@@ -26,6 +26,7 @@ export interface UserRecord {
     id: string
     name?: string
     permission: UserPermission
+    permissionSource?: 'configured' | 'explicit'
     firstSeen: number
     lastSeen: number
     messageCount: number
@@ -34,19 +35,27 @@ export interface UserRecord {
 }
 
 export function isConfiguredOwner(userId: string, channel: string, allowFrom: string[]): boolean {
-    const rawId = userId.includes(':') ? userId.slice(userId.indexOf(':') + 1) : userId
-    const candidates = new Set([userId, rawId, `${channel}:${rawId}`])
-    return allowFrom.some(value => candidates.has(String(value).trim()))
+    // These allow-lists come from Telegram configuration, not every transport.
+    if (channel.trim().toLowerCase() !== 'telegram') return false
+    const rawId = userId.replace(/^telegram:/i, '')
+    if (rawId.includes(':')) return false
+    return allowFrom.some(value => String(value).trim().replace(/^telegram:/i, '') === rawId)
 }
 
 export function reconcileConfiguredOwner(
     user: UserRecord,
     allowFrom: string[],
 ): { user: UserRecord; changed: boolean } {
-    if (!isConfiguredOwner(user.id, user.channel, allowFrom) || user.permission === 'owner') {
-        return { user, changed: false }
+    if (isConfiguredOwner(user.id, user.channel, allowFrom)) {
+        if (user.permission === 'owner' && user.permissionSource === 'configured') return { user, changed: false }
+        return { user: { ...user, permission: 'owner', permissionSource: 'configured' }, changed: true }
     }
-    return { user: { ...user, permission: 'owner' }, changed: true }
+    if (['owner', 'admin'].includes(user.permission) && user.permissionSource !== 'explicit') {
+        // Legacy OS-mode grants have no trustworthy origin. Require a fresh
+        // operator grant rather than silently preserving privileged old state.
+        return { user: { ...user, permission: allowFrom.length ? 'guest' : 'user', permissionSource: undefined }, changed: true }
+    }
+    return { user, changed: false }
 }
 
 type UserReference = { id: string; user: UserRecord; error?: undefined } | { id?: undefined; user?: undefined; error: string }
@@ -97,22 +106,20 @@ function saveUsers(): void {
 
 export function getOrCreateUser(userId: string, channel: string, name?: string): UserRecord {
     const configAllowFrom = getConfigAllowFrom()
+    if (users[userId] && users[userId].channel.toLowerCase() !== channel.toLowerCase()) {
+        throw new Error('User identity belongs to a different channel')
+    }
     if (!users[userId]) {
-        // First message from config's allowFrom → owner, else guest
-        //
-        // NovaOS: Hier sitzt genau EIN Mensch physisch vor der Maschine, und
-        // die Schnittstelle horcht ausschliesslich auf 127.0.0.1. Eine
-        // Gast-Rolle gibt es hier nicht — sie verhinderte, dass ueber das
-        // Terminal ueberhaupt etwas installiert werden konnte, waehrend
-        // derselbe Auftrag ueber die Desktop-App lief. Am 30.08.2026 gemessen.
-        const istNovaOS = process.env.NOVA_OS_MODE === 'true'
-        const isOwner = istNovaOS || isConfiguredOwner(userId, channel, configAllowFrom)
+        // OS/UI mode is never authentication. CLI/Desktop owners are granted
+        // explicitly by their trusted ingress after authorization.
+        const isOwner = isConfiguredOwner(userId, channel, configAllowFrom)
         const isKnown = configAllowFrom.length === 0 // No whitelist = open
 
         users[userId] = {
             id: userId,
             name,
             permission: isOwner ? 'owner' : (isKnown ? 'user' : 'guest'),
+            permissionSource: isOwner ? 'configured' : undefined,
             firstSeen: Date.now(),
             lastSeen: Date.now(),
             messageCount: 0,
@@ -139,14 +146,17 @@ export function getOrCreateUser(userId: string, channel: string, name?: string):
 export function setUserPermission(userId: string, permission: UserPermission): boolean {
     if (!users[userId]) return false
     users[userId].permission = permission
+    users[userId].permissionSource = permission === 'owner' || permission === 'admin' ? 'explicit' : undefined
     saveUsers()
     return true
 }
 
-export function getUserPermission(userId: string): UserPermission {
-    // Unbekannt heisst in NovaOS nicht 'Gast', sondern 'der Mensch davor'.
-    return users[userId]?.permission
-        || (process.env.NOVA_OS_MODE === 'true' ? 'owner' : 'guest')
+export function getUserPermission(userId: string, channel?: string): UserPermission {
+    const user = users[userId]
+    if (!user || (channel !== undefined && user.channel.toLowerCase() !== channel.toLowerCase())) return 'guest'
+    const reconciled = reconcileConfiguredOwner(user, getConfigAllowFrom())
+    if (reconciled.changed) { users[userId] = reconciled.user; saveUsers() }
+    return reconciled.user.permission
 }
 
 export function listUsers(): UserRecord[] {
@@ -181,6 +191,11 @@ export interface AuthCheckResult {
 }
 
 export function checkAuth(userId: string, channel: string, name?: string): AuthCheckResult {
+    const existing = users[userId]
+    if (existing && existing.channel.toLowerCase() !== channel.toLowerCase()) {
+        return { allowed: false, reason: 'User-ID ist bereits an einen anderen Kanal gebunden.', permission: 'blocked', isNewUser: false,
+            user: { ...existing, permission: 'blocked' } }
+    }
     const isNew = !users[userId]
     const user = getOrCreateUser(userId, channel, name)
 
@@ -221,8 +236,8 @@ const TOOL_PERMISSIONS: Record<UserPermission, { allowed: string[] | '*'; denied
     blocked: { allowed: [], denied: ['*'] },
 }
 
-export function isToolAllowed(userId: string, toolName: string): boolean {
-    const perm = getUserPermission(userId)
+export function isToolAllowed(userId: string, toolName: string, channel?: string): boolean {
+    const perm = getUserPermission(userId, channel)
     const rules = TOOL_PERMISSIONS[perm]
 
     if (!rules) return false
@@ -236,12 +251,12 @@ export function isToolAllowed(userId: string, toolName: string): boolean {
     return (rules.allowed as string[]).includes(toolName)
 }
 
-export function getToolsForUser(userId: string, allTools: string[]): string[] {
-    return allTools.filter(t => isToolAllowed(userId, t))
+export function getToolsForUser(userId: string, allTools: string[], channel?: string): string[] {
+    return allTools.filter(t => isToolAllowed(userId, t, channel))
 }
 
-export function getToolRestrictionMessage(userId: string, toolName: string): string {
-    const perm = getUserPermission(userId)
+export function getToolRestrictionMessage(userId: string, toolName: string, channel?: string): string {
+    const perm = getUserPermission(userId, channel)
     return `🔒 Tool "${toolName}" ist für deine Rolle (${perm}) nicht verfügbar. Frag einen Admin um Zugang.`
 }
 
@@ -559,8 +574,8 @@ export function getHeavyTaskAck(query: string): string {
 // Slash Commands for User Management
 // ============================================
 
-export function handleUserCommand(action: string, args: string, fromUser: string): string {
-    const perm = getUserPermission(fromUser)
+export function handleUserCommand(action: string, args: string, fromUser: string, channel?: string): string {
+    const perm = getUserPermission(fromUser, channel)
 
     switch (action) {
         case 'list':

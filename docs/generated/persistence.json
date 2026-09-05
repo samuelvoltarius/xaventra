@@ -606,6 +606,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/users/owner-authorization.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/voice/wake-word.ts",
       "path": ".nova-data"
     },

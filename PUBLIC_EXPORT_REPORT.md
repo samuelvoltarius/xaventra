@@ -1,6 +1,6 @@
 # Public export report
 
-Export date: 2026-09-01. Review updated: 2026-09-05 (2.77.1).
+Export date: 2026-09-01. Review updated: 2026-09-05 (2.77.2).
 
 This directory is a history-free public-source export of the Xaventra candidate.
 No Git objects, commits or refs from the private development repository were
@@ -33,13 +33,18 @@ remain at the multi-user middleware boundary. Personal persona text, Telegram
 aliases and IDs, SSH users, private Tailscale addresses and production service
 names were replaced with neutral examples.
 
+OS mode no longer grants owner privileges. Legacy owner/admin records without
+explicit/configured grant provenance are revoked, and channel-bound role checks
+prevent a colliding user ID from inheriting another channel's permissions.
+See [the authorization review](docs/AUTHORIZATION_REVIEW_2.77.2.md).
+
 ## Current validation evidence
 
 - TypeScript typecheck: passed
 - production TypeScript build and dashboard asset copy: passed
 - independent `npm ci --ignore-scripts` using only this export and its lockfile:
   passed; subsequent compatible dependency remediations are locked
-- unit/integration suite: 153 files, 1024 tests passed
+- unit/integration suite: 156 files, 1034 tests passed
 - Electron main-process bridge regression suite: 4 tests passed
 - separate legacy Next.js dashboard: production build passed
 - Core, Desktop and legacy-dashboard npm audits: zero reported vulnerabilities
@@ -47,7 +52,8 @@ names were replaced with neutral examples.
 - generated runtime catalogs: current
 - security assurance: passed; external agent comparison remains unavailable
 - targeted redaction, relay, witness, Codex runtime and provider tests: passed
-- Gitleaks 8.30.1 source-only working-tree scan: zero findings (940 files)
+- Gitleaks 8.30.1 source-only working-tree and complete new Git history scans:
+  zero findings
 - TruffleHog 3.97.1 repeat scan exited without a usable report; no successful
   independent second-scanner result is claimed for this review
 - local privacy/topology scan: zero personal runtime identities and zero known
@@ -77,11 +83,13 @@ secret or defect. Copyright/creator attribution and third-party notices remain.
 - The unused PWA plugin is removed. The legacy dashboard is clearly labeled,
   binds locally by default, and no longer fabricates a healthy Core status.
 
-## Before publication
+## Publication scope
 
 Only the newly initialized Git history of this source candidate may be uploaded;
 never reuse the old private development history or temporary export objects.
-The GitHub upload is private, not authorization for public visibility or Pages.
+The owner has explicitly authorized public visibility of this clean source
+repository. This does not authorize publishing the old private repository,
+private data, npm packages, GitHub Pages or production credentials.
 
 Before a public binary release, run native install scripts on a disposable CI
 host, package and test every supported Desktop target, and review GPL/LGPL

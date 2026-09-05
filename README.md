@@ -44,12 +44,19 @@ stable during the first public migration release. See
 
 ## Current state
 
-Xaventra is a working, advanced pre-public-release codebase, not a polished
-one-command consumer product yet. Core, Desktop, Mesh, governed Memory, provider
-discovery, Tool Evidence, Doctor and benchmark infrastructure exist. The public
-migration is still completing clean-history secret scanning, clean-clone
-reproducibility and cross-platform packaging. Experimental or production-only
-claims are not treated as public guarantees.
+Xaventra is a public source preview, not a polished one-command consumer product
+yet. Core, Desktop, Mesh, governed Memory, provider discovery, Tool Evidence,
+Doctor and benchmark infrastructure exist. This repository starts with a fresh,
+scanned history; private deployment data and development history are excluded.
+Cross-platform Desktop packaging and production migration remain separate
+release gates. Historical production claims are not public guarantees.
+
+Owner access requires a configured Telegram identity or an explicit grant from
+the local CLI or authenticated Desktop. OS mode and chat phrases do not grant
+administrator access. See the [2.77.2 authorization review](docs/AUTHORIZATION_REVIEW_2.77.2.md).
+Keep development APIs private: the REST API without `NOVA_API_TOKEN` is an
+unauthenticated development endpoint. Do not expose it to an untrusted network;
+configure authentication and a trusted ingress before enabling remote access.
 
 If you want to help immediately, start with
 [the development guide](docs/DEVELOPMENT.md) and choose one bounded issue from
@@ -316,7 +323,7 @@ isolation rules, debugging commands and the definition of done.
 
 ## Contributing
 
-Contributions are welcome after the public migration is complete. Start with a
+Contributions to this public source preview are welcome. Start with a
 small issue stating the expected outcome, affected authority and validation
 method. Pull requests should include tests and must not weaken Tool Evidence,
 principal isolation, fencing, PATCH_GATE or credential boundaries.
