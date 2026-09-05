@@ -1,0 +1,3462 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "add_exec_rule",
+      "category": "security",
+      "description": "Fï¿½gt eine Custom Exec-Approval Regel hinzu (allow/deny/confirm)",
+      "parameters": [
+        {
+          "name": "pattern",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "risk",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "add_route",
+      "category": "system",
+      "description": "Fï¿½gt eine neue Route hinzu (Channel + Pattern ? Agent/Model).",
+      "parameters": [
+        {
+          "name": "channel",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "pattern",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "agent",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "analyze_image",
+      "category": "media",
+      "description": "Analysiert ein Bild mit KI Vision (Nova-LLM/OpenAI/Anthropic). Auto-wÃ¤hlt verfÃ¼gbaren Provider â€” funktioniert ohne API Keys Ã¼ber Nova-LLM.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "analyze_video",
+      "category": "media",
+      "description": "Analysiert ein Video mit KI (Nova-LLM/OpenAI). Beschreibt Inhalt, Szenen, Text.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "auto_fix",
+      "category": "system",
+      "description": "Versucht automatisch Build-Fehler zu fixen (tsc errors parsen, LLM fix, verify)",
+      "parameters": []
+    },
+    {
+      "name": "auto_provision",
+      "category": "system",
+      "description": "Legacy: installiert fehlende Capability nur mit confirm=\"AUTO_PROVISION:<capability>\" oder YOLO-Modus. Sonst self_setup_plan nutzen.",
+      "parameters": [
+        {
+          "name": "capability",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "blue_asset_inventory",
+      "category": "security",
+      "description": "Erfasst defensiv den lokalen Host und verifizierte Mesh-Capabilities; führt keine Scans fremder Ziele aus.",
+      "parameters": []
+    },
+    {
+      "name": "blue_containment_plan",
+      "category": "security",
+      "description": "Erstellt einen defensiven Containment-Plan. Führt keine Änderung aus; Eingriffe benötigen Owner/PATCH_GATE, Sandbox und Nachprüfung.",
+      "parameters": [
+        {
+          "name": "incident_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "blue_dependency_audit",
+      "category": "security",
+      "description": "Prüft Nova-Abhängigkeiten defensiv per npm audit. Keine Pakete werden automatisch verändert.",
+      "parameters": [
+        {
+          "name": "repository",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "incident_id",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "blue_incident_start",
+      "category": "security",
+      "description": "Startet einen defensiven Blue-Team-Fall mit unveränderbarer Evidence-Kette. Keine Angriffsaktion.",
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "severity",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "blue_incident_timeline",
+      "category": "security",
+      "description": "Zeigt die kausale, hashverkettete Timeline eines Blue-Team-Incidents und validiert die Evidence-Kette.",
+      "parameters": [
+        {
+          "name": "incident_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "blue_ioc_check",
+      "category": "security",
+      "description": "Vergleicht bekannte defensive Indicators of Compromise mit Text oder einer erlaubten Logdatei.",
+      "parameters": [
+        {
+          "name": "indicators",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "incident_id",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "blue_log_triage",
+      "category": "security",
+      "description": "Analysiert eine erlaubte lokale Nova-/System-Logdatei auf defensive Sicherheits- und Stabilitätssignale.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "incident_id",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "brave_search",
+      "category": "browser",
+      "description": "Suche im Internet mit Brave Search API (benötigt API Key in Config)",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_click",
+      "category": "browser",
+      "description": "Klickt auf ein Element der aktuell geöffneten Seite. Selector kann CSS oder Text-Inhalt sein (z.B. \"button:has-text('Login')\" oder \"#submit\").",
+      "parameters": [
+        {
+          "name": "selector",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_close",
+      "category": "browser",
+      "description": "Schließt den Browser-Session. Nächstes browser_open startet neu.",
+      "parameters": []
+    },
+    {
+      "name": "browser_download",
+      "category": "browser",
+      "description": "Klickt ein Element und speichert den bestätigten Download im benutzerspezifischen Download-Verzeichnis.",
+      "parameters": [
+        {
+          "name": "selector",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_elements",
+      "category": "browser",
+      "description": "Liefert eine kompakte, deterministische Liste interaktiver Elemente als DOM/Accessibility-Fallback.",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_extract",
+      "category": "browser",
+      "description": "Extrahiert Text, Links und Bilder einer Webseite.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_extract",
+      "category": "browser",
+      "description": "Extrahiert sichtbaren Text und Links von der aktuellen Seite (oder einem CSS-Selektor-Bereich). Besser als fetch_url für JavaScript-gerenderte Seiten.",
+      "parameters": [
+        {
+          "name": "selector",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "include_links",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_get_links",
+      "category": "browser",
+      "description": "Gibt alle Links der aktuellen Seite zurück (Text + URL). Nützlich zum Navigieren.",
+      "parameters": [
+        {
+          "name": "filter",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_handoff",
+      "category": "browser",
+      "description": "Aktiviert oder beendet den Human-Handoff. Im Handoff bleibt die Session offen und Nova führt keine impliziten Folgeaktionen aus.",
+      "parameters": [
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_navigate",
+      "category": "browser",
+      "description": "Navigiert zu einer URL im laufenden Browser-Session (kein Neustart). Für Link-Navigation, Redirects etc.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_open",
+      "category": "browser",
+      "description": "Öffnet eine URL im Headless-Chromium (Playwright). Startet den Browser falls nicht aktiv. Gibt Titel, URL und sichtbaren Seitentext zurück. Ideal für Login-Flows, SPAs oder seiten-übergreifende Interaktionen.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "wait_for",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_replay",
+      "category": "browser",
+      "description": "Zeigt die redigierte Tool-Evidence der letzten Browseraktionen für den aktuellen Benutzer.",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_screenshot",
+      "category": "browser",
+      "description": "Macht einen Screenshot einer Webseite via Playwright/Puppeteer.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "full_page",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_screenshot",
+      "category": "browser",
+      "description": "Macht einen Screenshot der aktuellen Seite. Speichert in .nova-screenshots/. Gibt den Dateipfad zurück (kann via send_file an Telegram gesendet werden).",
+      "parameters": [
+        {
+          "name": "full_page",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_scroll",
+      "category": "browser",
+      "description": "Scrollt die aktuelle Seite nach oben oder unten.",
+      "parameters": [
+        {
+          "name": "direction",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "pixels",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_search",
+      "category": "browser",
+      "description": "Sucht im Web über DuckDuckGo mit echtem Browser (kein API-Key nötig). Gibt Titel, URL und Snippet der Top-Ergebnisse zurück. Besser als die DuckDuckGo JSON-API weil echte Ergebnisse.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_status",
+      "category": "browser",
+      "description": "Zeigt den Status der Browser-Session: läuft sie, aktuelle URL, Titel. Auch nützlich um zu prüfen ob der Browser noch offen ist.",
+      "parameters": []
+    },
+    {
+      "name": "browser_tab_close",
+      "category": "browser",
+      "description": "Schließt einen Browser-Tab der aktuellen User-Session.",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "number",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_tab_new",
+      "category": "browser",
+      "description": "Öffnet einen neuen isolierten Browser-Tab für den aktuellen Nova-Benutzer.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_tab_switch",
+      "category": "browser",
+      "description": "Wechselt deterministisch zu einem Browser-Tab.",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "number",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "browser_tabs",
+      "category": "browser",
+      "description": "Listet Tabs der aktuellen benutzerspezifischen Browser-Session.",
+      "parameters": []
+    },
+    {
+      "name": "browser_type",
+      "category": "browser",
+      "description": "Gibt Text in ein Eingabefeld der aktuellen Seite ein. Löscht vorherigen Inhalt und tippt den neuen Text.",
+      "parameters": [
+        {
+          "name": "selector",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "press_enter",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "browser_upload",
+      "category": "browser",
+      "description": "Lädt freigegebene lokale Dateien über ein Datei-Eingabefeld hoch.",
+      "parameters": [
+        {
+          "name": "selector",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "paths",
+          "type": "object",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "build_skill",
+      "category": "other",
+      "description": "Erstellt einen reviewbaren Nova-Studio-Forge-Vorschlag. Generierter Code wird nie direkt aktiviert; Sandbox, Benchmark, Canary und Owner-Freigabe sind Pflicht.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "why",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "parameters",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "dependencies",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "cad_generate",
+      "category": "media",
+      "description": "Generate a 3D CAD model from a text description. Creates parametric geometry using build123d and exports to STL format for 3D printing.",
+      "parameters": [
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "projectName",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "exportFormat",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "check_command",
+      "category": "security",
+      "description": "Prï¿½ft ob ein Command sicher ist: erkennt rm -rf, DROP DATABASE, Fork Bombs etc. Gibt Risk-Level zurï¿½ck.",
+      "parameters": [
+        {
+          "name": "command",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "check_updates",
+      "category": "system",
+      "description": "Prï¿½ft ob Nova-Updates verfï¿½gbar sind (git fetch + compare)",
+      "parameters": []
+    },
+    {
+      "name": "code_outline",
+      "category": "file",
+      "description": "Zeigt die Struktur einer Code-Datei: Klassen, Funktionen, Interfaces mit Signaturen und Zeilennummern. Unterstützt TS/JS, Python, Go, Rust.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "code_runtime_run",
+      "category": "system",
+      "description": "Führt JavaScript in einem kurzlebigen, netzwerkisolierten Mission-Container aus. Kein Host-eval und keine freie Shell.",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "timeout_ms",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "image",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "code_search",
+      "category": "file",
+      "description": "Durchsucht Code-Dateien nach einem Pattern (wie grep/ripgrep). Liefert strukturiertes JSON mit Datei, Zeilennummer und Inhalt. Max 50 Treffer.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "is_regex",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "case_insensitive",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "includes",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "files_only",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "codex_install",
+      "category": "system",
+      "description": "Installiert Codex persistent auf dem aktuellen Linux-Node. NUR verwenden, wenn Owner/Admin in der aktuellen Nachricht ausdrücklich verlangt, Codex zu installieren. Kein freier Shell-Befehl; Ziel muss der lokale Node/Main sein. Danach /codex login.",
+      "parameters": [
+        {
+          "name": "target_node",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "compact_context",
+      "category": "system",
+      "description": "Komprimiert den Kontext (entfernt alte Nachrichten, erstellt Summary).",
+      "parameters": [
+        {
+          "name": "max_messages",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "keep_last",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "continuable_subagent_followup",
+      "category": "other",
+      "description": "Setzt eine persistente Subagent-Konversation anhand ihres dauerhaften Checkpoints fort.",
+      "parameters": [
+        {
+          "name": "conversation_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "continuable_subagent_start",
+      "category": "other",
+      "description": "Startet eine persistente Subagent-Konversation, die nach Neustart oder Main-Wechsel fortgesetzt werden kann.",
+      "parameters": [
+        {
+          "name": "task",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "tools",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "mesh_node",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "create_hook",
+      "category": "system",
+      "description": "Erstellt einen Event-Hook (webhook, email, script) der bei Events ausgelï¿½st wird",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "create_poll",
+      "category": "other",
+      "description": "Erstellt eine Umfrage mit Frage und Optionen.",
+      "parameters": [
+        {
+          "name": "question",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "options",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "create_runtime_tool",
+      "category": "system",
+      "description": "Kompatibilitätsname für einen Nova-Studio-Forge-Vorschlag. Keine direkte Laufzeitregistrierung und keine automatische Dependency-Installation.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "test_input",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "create_skill",
+      "category": "learning",
+      "description": "Erzeugt einen Skill-Entwurf und legt ihn in Nova Studio Skill Forge ab. Keine direkte Installation oder Aktivierung.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "examples",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "create_tool",
+      "category": "other",
+      "description": "Legt einen reviewbaren Nova-Studio-Forge-Vorschlag an. Das Tool wird nicht direkt registriert oder ausgeführt.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "delete_file",
+      "category": "file",
+      "description": "LÃ¶scht eine Datei oder Ordner",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "delete_hook",
+      "category": "system",
+      "description": "Lï¿½scht einen Event-Hook",
+      "parameters": [
+        {
+          "name": "hook_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "delete_skill",
+      "category": "learning",
+      "description": "Entfernt ein bereits vorhandenes Legacy-Custom-Tool. Forge-Vorschläge werden über den Reifungsprozess abgelehnt.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "desktop_control",
+      "category": "other",
+      "description": "Steuert Nova Desktop mit typisierten, auditierbaren UI-Aktionen. Nur lokal ueber CLI oder einen authentifizierten Desktop-Owner verwenden; keine freie DOM-, Electron- oder Shell-Steuerung.",
+      "parameters": [
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "section",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "room_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "desktop_screenshot",
+      "category": "system",
+      "description": "Nimm einen Screenshot des gesamten Desktops (alle Monitore) auf. Das Bild wird automatisch an dich (KI) zur echten Bildanalyse weitergeleitet UND direkt an den Nutzer gesendet (sofern send != false). Nutze dies wenn der Nutzer einen Screenshot/Bildschirmfoto möchte oder du sehen willst was auf dem Bildschirm ist.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "send",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "desktop_status",
+      "category": "other",
+      "description": "Zeigt bestaetigte, fehlgeschlagene und noch offene Nova-Desktop-Steuerbefehle fuer den aktuellen Owner.",
+      "parameters": []
+    },
+    {
+      "name": "desktop_workspace",
+      "category": "file",
+      "description": "Liest oder durchsucht den vom Benutzer im verbundenen Nova Desktop explizit freigegebenen Projektordner. Nutze list fuer Struktur, read fuer eine konkrete Text-/Code-Datei und search fuer Quelltextsuche. Nur relative Pfade; keine Writes, Credentials, .git, node_modules oder geheimen Dateien.",
+      "parameters": [
+        {
+          "name": "operation",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "relative_path",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "query",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "detect_media",
+      "category": "media",
+      "description": "Erkennt Medientyp und MIME einer Datei",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "discover_plugins",
+      "category": "system",
+      "description": "Sucht nach Plugins in den angegebenen Verzeichnissen.",
+      "parameters": [
+        {
+          "name": "dirs",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "disk_usage",
+      "category": "system",
+      "description": "Zeigt Festplattenauslastung",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "docker_logs",
+      "category": "system",
+      "description": "Zeigt Logs eines Docker-Containers",
+      "parameters": [
+        {
+          "name": "container",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "lines",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "docker_ps",
+      "category": "system",
+      "description": "Listet laufende Docker-Container auf",
+      "parameters": [
+        {
+          "name": "all",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "evolution_history",
+      "category": "system",
+      "description": "Zeigt die letzten Self-Evolution-ï¿½nderungen an",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "evolution_stats",
+      "category": "system",
+      "description": "Zeigt Statistiken ï¿½ber bisherige Self-Evolutions",
+      "parameters": []
+    },
+    {
+      "name": "evolve_self",
+      "category": "system",
+      "description": "Modifiziert Novas eigenen TypeScript-Quellcode sicher: erstellt Git-Branch ? ï¿½ndert Code ? kompiliert ? merged bei Erfolg, rollt zurï¿½ck bei Fehler. Nur fï¿½r src/tools/ und src/layers/ erlaubt.",
+      "parameters": [
+        {
+          "name": "file",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "replace",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "exec_history",
+      "category": "security",
+      "description": "Zeigt Exec-Approval Verlauf und Statistiken",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "exec_rules",
+      "category": "security",
+      "description": "Listet alle Exec-Approval Regeln (builtin + custom)",
+      "parameters": []
+    },
+    {
+      "name": "execute_python",
+      "category": "system",
+      "description": "Fï¿½hrt Python-Code direkt aus. Nutze dies IMMER wenn du Python-Skripte schreibst ï¿½ statt sie nur in den Chat zu schreiben. Unterstï¿½tzt inline Code, .py Dateien, und optionale pip-Installationen.",
+      "parameters": [
+        {
+          "name": "code",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "install",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "face_detect",
+      "category": "media",
+      "description": "Detect faces in an image using MediaPipe. Returns face locations and landmarks.",
+      "parameters": [
+        {
+          "name": "imagePath",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "minConfidence",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "fetch_url",
+      "category": "browser",
+      "description": "LÃ¤dt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "raw",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "fetch_url",
+      "category": "media",
+      "description": "Holt und extrahiert Text-Inhalt von einer URL (HTML?Text, JSON, Links, Bilder)",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "file_to_base64",
+      "category": "media",
+      "description": "Liest eine Datei und gibt Base64-Inhalt + MIME zurï¿½ck",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "find_capability",
+      "category": "system",
+      "description": "Findet den besten Provider fuer eine Capability. Installiert nicht automatisch; fuer fehlende Dinge self_setup_plan nutzen.",
+      "parameters": [
+        {
+          "name": "capability",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "prefer_local",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "find_files",
+      "category": "file",
+      "description": "Sucht Dateien/Ordner nach Name-Pattern (wie find/fd). Unterstützt Glob-Patterns (*,?). Max 50 Treffer.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "pattern",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "extensions",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "max_depth",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "generate_image",
+      "category": "media",
+      "description": "Generiert ein Bild mit KI (DALL-E 3 / OpenAI Image). Gibt den Dateipfad des generierten Bildes zurÃ¼ck. UnterstÃ¼tzt verschiedene SeitenverhÃ¤ltnisse.",
+      "parameters": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "get_current_time",
+      "category": "system",
+      "description": "Gibt die exakte aktuelle Systemzeit zurï¿½ck. NUTZE DAS wenn du die Uhrzeit brauchst ï¿½ NIEMALS raten oder schï¿½tzen! Dieses Tool liefert die echte Systemuhr.",
+      "parameters": []
+    },
+    {
+      "name": "get_env",
+      "category": "system",
+      "description": "Liest eine Umgebungsvariable",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "google_search",
+      "category": "browser",
+      "description": "Sucht mit Google Ã¼ber Headless-Browser (Playwright). Gibt echte Suchergebnisse zurÃ¼ck.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "hand_gesture",
+      "category": "media",
+      "description": "Detect hand gestures using MediaPipe Hands. Returns gesture type and hand positions.",
+      "parameters": [
+        {
+          "name": "imagePath",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "hass_get",
+      "category": "other",
+      "description": "Gibt den aktuellen Zustand einer Home Assistant Entität zurück.",
+      "parameters": [
+        {
+          "name": "entity_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "hass_list",
+      "category": "other",
+      "description": "Listet alle Home Assistant Entitäten auf. Optional nach Domain filtern (light, switch, climate, sensor, etc.).",
+      "parameters": [
+        {
+          "name": "domain",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "hass_service",
+      "category": "other",
+      "description": "Ruft einen beliebigen Home Assistant Service auf (domain.service). Für erweiterte Aktionen wie Szenen aktivieren, Thermostat setzen, Medien steuern.",
+      "parameters": [
+        {
+          "name": "domain",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "service",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "entity_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "data",
+          "type": "object",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "hass_status",
+      "category": "other",
+      "description": "Prüft ob Home Assistant erreichbar ist und gibt die API-Version zurück.",
+      "parameters": []
+    },
+    {
+      "name": "hass_toggle",
+      "category": "other",
+      "description": "Schaltet eine Home Assistant Entität um (ein→aus oder aus→ein).",
+      "parameters": [
+        {
+          "name": "entity_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "hass_turn_off",
+      "category": "other",
+      "description": "Schaltet eine Home Assistant Entität aus.",
+      "parameters": [
+        {
+          "name": "entity_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "hass_turn_on",
+      "category": "other",
+      "description": "Schaltet eine Home Assistant Entität ein. Unterstützt brightness (0-255), color_temp, rgb_color für Lichter.",
+      "parameters": [
+        {
+          "name": "entity_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "brightness",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "color_temp",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "health_status",
+      "category": "system",
+      "description": "Systemgesundheit prüfen: Disk Space, RAM, Nodes. Nutze für: self check, system check, status check, wie geht es dir, alles ok, bin ich gesund.",
+      "parameters": []
+    },
+    {
+      "name": "hook_history",
+      "category": "system",
+      "description": "Zeigt Hook-Ausfï¿½hrungs-Verlauf",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "import_skill",
+      "category": "system",
+      "description": "Installiert ein externes Agent Skill Paket (z.B. firebase/agent-skills). Nutzt npx skills add.",
+      "parameters": [
+        {
+          "name": "package",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "kg_remember",
+      "category": "memory",
+      "description": "Speichert eine Tatsache direkt im Knowledge Graph. Z.B. \"Sample nutzt tmux\" â†’ kg_remember(\"Sample\", \"uses\", \"tmux\")",
+      "parameters": [
+        {
+          "name": "subject",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "relation",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "object",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "kg_search",
+      "category": "memory",
+      "description": "Durchsucht den Knowledge Graph per Keyword â€” kein LLM nÃ¶tig. Findet Fakten, Beziehungen und Eigenschaften von EntitÃ¤ten.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "kill_bot",
+      "category": "bot",
+      "description": "Stoppt einen Bot",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "knowledge_delete",
+      "category": "memory",
+      "description": "Löscht einen Wissens-Eintrag.",
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "knowledge_get",
+      "category": "memory",
+      "description": "Lädt einen bestimmten Wissens-Eintrag vollständig (Inhalt + Artifacts).",
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "knowledge_list",
+      "category": "memory",
+      "description": "Listet alle gespeicherten Wissens-Einträge auf (sortiert nach letztem Update).",
+      "parameters": []
+    },
+    {
+      "name": "knowledge_recall",
+      "category": "memory",
+      "description": "Sucht in gespeichertem Wissen nach einem Thema. Durchsucht Titel, Tags, Zusammenfassungen und Inhalte. Liefert relevante Wissens-Einträge.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "tags",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "full_content",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "knowledge_store",
+      "category": "memory",
+      "description": "Speichert Wissen zu einem Thema persistent (überlebt Neustarts und Conversations). Nutze das für wichtige Erkenntnisse, Architektur-Entscheidungen, gelöste Probleme, User-Präferenzen.",
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "tags",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "learn_correction",
+      "category": "learning",
+      "description": "Lernt aus einer Korrektur des Users",
+      "parameters": [
+        {
+          "name": "original",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "corrected",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "context",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "learn_workflow_skill",
+      "category": "learning",
+      "description": "Erstellt aus validierten Beispielen ein internes L7-Workflow-Muster. Erzeugt keinen ausführbaren Code.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "examples",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "solution",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "list_bots",
+      "category": "bot",
+      "description": "Listet alle Bots auf",
+      "parameters": []
+    },
+    {
+      "name": "list_custom_tools",
+      "category": "other",
+      "description": "Listet alle selbst erstellten Tools auf",
+      "parameters": []
+    },
+    {
+      "name": "list_custom_tools",
+      "category": "system",
+      "description": "Zeigt alle Tools die Nova selbst erstellt hat (aus .nova-tools/).",
+      "parameters": []
+    },
+    {
+      "name": "list_directory",
+      "category": "file",
+      "description": "Listet Dateien und Ordner in einem Verzeichnis auf",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "list_fallback_chains",
+      "category": "system",
+      "description": "Zeigt alle Model-Fallback-Chains.",
+      "parameters": []
+    },
+    {
+      "name": "list_hooks",
+      "category": "system",
+      "description": "Listet alle Event-Hooks",
+      "parameters": []
+    },
+    {
+      "name": "list_llm_providers",
+      "category": "system",
+      "description": "Zeigt alle registrierten LLM-Provider (lokal, Mesh, Cloud, externe APIs).",
+      "parameters": []
+    },
+    {
+      "name": "list_media_providers",
+      "category": "media",
+      "description": "Zeigt alle verfï¿½gbaren Media-Provider und ihre Capabilities.",
+      "parameters": []
+    },
+    {
+      "name": "list_plugins",
+      "category": "system",
+      "description": "Zeigt alle geladenen Plugins.",
+      "parameters": []
+    },
+    {
+      "name": "list_reminders",
+      "category": "system",
+      "description": "Zeige alle aktiven Erinnerungen",
+      "parameters": []
+    },
+    {
+      "name": "list_sessions",
+      "category": "system",
+      "description": "Zeigt alle aktiven Sessions mit Channel, User, Message-Count.",
+      "parameters": []
+    },
+    {
+      "name": "list_skills",
+      "category": "system",
+      "description": "Listet alle installierten Agent Skills auf",
+      "parameters": []
+    },
+    {
+      "name": "list_skills",
+      "category": "learning",
+      "description": "Zeigt aktive Legacy-Custom-Tools und inerte Nova-Studio-Forge-Vorschläge.",
+      "parameters": []
+    },
+    {
+      "name": "list_sub_agents",
+      "category": "system",
+      "description": "Zeigt alle registrierten Sub-Agents.",
+      "parameters": []
+    },
+    {
+      "name": "list_subagents",
+      "category": "system",
+      "description": "Zeigt alle aktiven und zuletzt gestarteten Subagenten.",
+      "parameters": []
+    },
+    {
+      "name": "list_tool_policies",
+      "category": "security",
+      "description": "Zeigt alle aktiven Tool-Policies.",
+      "parameters": []
+    },
+    {
+      "name": "list_voices",
+      "category": "media",
+      "description": "Listet verfï¿½gbare TTS-Stimmen fï¿½r einen Provider",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "load_plugin",
+      "category": "system",
+      "description": "Lï¿½dt ein Plugin aus einem Verzeichnis.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "load_skills",
+      "category": "system",
+      "description": "Lï¿½dt Skills aus einem Verzeichnis.",
+      "parameters": [
+        {
+          "name": "dir",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "lsp_query",
+      "category": "file",
+      "description": "Führt eine normalisierte Language-Service-Abfrage für Definitionen, Referenzen, Symbole oder Diagnosen innerhalb eines Workspace aus.",
+      "parameters": [
+        {
+          "name": "root",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "operation",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "line",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "column",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "query",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "markdown_to_whatsapp",
+      "category": "other",
+      "description": "Konvertiert Markdown zu WhatsApp-kompatiblem Format.",
+      "parameters": [
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mesh_capabilities",
+      "category": "system",
+      "description": "Zeigt alle Capabilities aller Nodes + Cloud (was kann wer, welche Modelle wo)",
+      "parameters": []
+    },
+    {
+      "name": "mesh_delegate",
+      "category": "system",
+      "description": "Delegiert eine Aufgabe an einen anderen Nova-Node im Mesh. Der Node bekommt die Aufgabe und arbeitet sie ab.",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "task",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mesh_deploy",
+      "category": "system",
+      "description": "Installiert Nova auf einem neuen Server via SSH. Klont das Repo, installiert Dependencies, konfiguriert und startet den Daemon.",
+      "parameters": [
+        {
+          "name": "host",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "port",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mesh_download_file",
+      "category": "system",
+      "description": "LÃ¤dt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen GerÃ¤ten zu holen bevor du sie mit send_file weiterschickst.",
+      "parameters": [
+        {
+          "name": "host",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "remote_path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "local_name",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mesh_nodes",
+      "category": "system",
+      "description": "Listet alle verfï¿½gbaren (online, nicht-busy) Nodes im Mesh auf ï¿½ schnelle ï¿½bersicht fï¿½r Task-Delegation.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_recommendations",
+      "category": "mesh",
+      "description": "Zeigt Installationsempfehlungen fÃ¼r alle Mesh-Nodes â€” was sollte wo installiert werden und warum.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_route",
+      "category": "mesh",
+      "description": "Zeigt welcher Node am besten fÃ¼r einen bestimmten Task geeignet ist.",
+      "parameters": [
+        {
+          "name": "task",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mesh_scan",
+      "category": "mesh",
+      "description": "Scannt alle Nodes im Mesh â€” entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfÃ¼gbar ist.",
+      "parameters": [
+        {
+          "name": "force",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mesh_services",
+      "category": "system",
+      "description": "Zeigt Relay, Witness, Mesh-Transporte und laufende AI-Runtimes getrennt vom Nova-Node-Status.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_status",
+      "category": "system",
+      "description": "Zeigt die aktuelle Betriebsansicht der Nova-Nodes. Historische und tombstoned Geräte werden bewusst ausgeblendet.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_transport_status",
+      "category": "system",
+      "description": "Zeigt den direkten Mesh-Datenpfad, Transport-Fallbacks, Queue, Peer-Schlüssel-Fingerprints und Verbindungsstatus.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_update",
+      "category": "system",
+      "description": "Startet den konfigurierten signierten Mesh-Release-Rollout mit Datei-Hashes, Canary, Heartbeat-Verifikation und Rollback.",
+      "parameters": []
+    },
+    {
+      "name": "minimax_image_gen",
+      "category": "media",
+      "description": "Generiert ein Bild mit MiniMax image-01. Gibt URL und lokalen Pfad zurück. Für Video-Generierung: die URL direkt als first_frame_image nutzen.",
+      "parameters": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "minimax_tts",
+      "category": "media",
+      "description": "Generiert Audio/Sprache aus Text mit MiniMax TTS (speech-2.8-hd, HD-Qualität). Deutsche Stimmen verfügbar. Gibt Pfad zur MP3-Datei zurück.",
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "voice",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "minimax_video_start",
+      "category": "media",
+      "description": "Startet eine Video-Generierung mit MiniMax (async). Gibt task_id zurück. Mit minimax_video_status den Status abfragen. Für Image-to-Video: image_url aus minimax_image_gen nutzen.",
+      "parameters": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "image_url",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "minimax_video_status",
+      "category": "media",
+      "description": "Prüft den Status einer MiniMax Video-Generierung. Bei status=success gibt es den Download-Pfad. Alle 30-60s abfragen.",
+      "parameters": [
+        {
+          "name": "task_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "minimax_vision",
+      "category": "media",
+      "description": "Analysiert ein Bild (URL) mit MiniMax M3 Vision. Erkennt Objekte, Texte, Szenen. Für Bilder von URLs — z.B. aus minimax_image_gen oder anderen Quellen.",
+      "parameters": [
+        {
+          "name": "image_url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "question",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mission_config",
+      "category": "system",
+      "description": "Zeigt oder ï¿½ndert die Mission-Konfiguration (max Continuations, Timeout, Steps, etc.)",
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "value",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mission_status",
+      "category": "system",
+      "description": "Zeigt den aktuellen Status der laufenden Mission. Nutze das BEVOR du sagst ob eine Mission lï¿½uft oder nicht.",
+      "parameters": []
+    },
+    {
+      "name": "mission_workspace_create",
+      "category": "system",
+      "description": "Erstellt für eine schreibende Mission einen isolierten temporären Bereich, Git-Worktree oder gehärteten Container. Änderungen bleiben bis zur Operator-Prüfung isoliert.",
+      "parameters": [
+        {
+          "name": "mission_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "repository",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "base_ref",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "container_image",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "sandbox_backend",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "mission_workspace_diff",
+      "category": "system",
+      "description": "Zeigt den prüfbaren Diff eines Missions-Worktrees, ohne ihn zu übernehmen.",
+      "parameters": [
+        {
+          "name": "workspace_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mission_workspace_list",
+      "category": "system",
+      "description": "Listet isolierte Missions-Workspaces samt Review-Status. Funktioniert ohne Slash-Befehl.",
+      "parameters": []
+    },
+    {
+      "name": "mission_workspace_run",
+      "category": "system",
+      "description": "Führt einen Befehl ohne Shell-Injektion mit getrennten Argumenten innerhalb eines isolierten Missions-Workspace aus.",
+      "parameters": [
+        {
+          "name": "workspace_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "args",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "timeout_ms",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "network_info",
+      "category": "system",
+      "description": "Zeigt Netzwerk-Informationen (IP, DNS, Gateway)",
+      "parameters": []
+    },
+    {
+      "name": "nova_capabilities",
+      "category": "system",
+      "description": "Nova fragt ihr eigenes Tool-Inventar ab. Zeigt alle Tools die fÃ¼r ein bestimmtes Thema verfÃ¼gbar sind â€” mit Name, Beschreibung und Kategorie. Nutze das wenn du nicht sicher bist welches Tool du fÃ¼r eine Aufgabe verwenden sollst.",
+      "parameters": [
+        {
+          "name": "topic",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "nova_introspect",
+      "category": "system",
+      "description": "Zeigt Novas eigenen internen Zustand: Ziele, gelernte Regeln, Skills, Performance-Metriken, Erinnerungen und System-Prompt. Nutze dies wenn du verstehen willst wer du bist, was du weiÃŸt, wie du performst oder was deine aktuellen Ziele sind.",
+      "parameters": [
+        {
+          "name": "type",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "nova_restart",
+      "category": "system",
+      "description": "Startet Nova komplett neu. Nutze das bei Updates oder wenn etwas hängt.",
+      "parameters": []
+    },
+    {
+      "name": "nova_status",
+      "category": "system",
+      "description": "Zeigt Novas aktuellen Status: Uptime, Memory, Platform.",
+      "parameters": []
+    },
+    {
+      "name": "nova_trace_stats",
+      "category": "system",
+      "description": "Zeigt Novas eigene Performance-Statistiken aus den letzten 7 Tagen: welche Tools am langsamsten/fehleranfÃ¤lligsten sind, welches Modell am besten performt, Latenz-Durchschnitte, Self-Healing Retries. Nutze dies zur Selbstoptimierung oder wenn du wissen willst wie du performst.",
+      "parameters": [
+        {
+          "name": "refresh",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "parse_markdown",
+      "category": "other",
+      "description": "Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blï¿½cke.",
+      "parameters": [
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "patch_proposals",
+      "category": "system",
+      "description": "Listet reviewbare PATCH_GATE-Vorschlaege aus self_evolve.",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "poll_results",
+      "category": "other",
+      "description": "Zeigt Umfrage-Ergebnisse.",
+      "parameters": [
+        {
+          "name": "poll_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "port_scan",
+      "category": "system",
+      "description": "Scannt offene Ports auf localhost",
+      "parameters": [
+        {
+          "name": "ports",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "printer_cancel",
+      "category": "other",
+      "description": "Bricht den aktuellen Druckjob ab.",
+      "parameters": []
+    },
+    {
+      "name": "printer_discover",
+      "category": "media",
+      "description": "Discover 3D printers on the local network using mDNS/ Zeroconf. Supports Klipper/Moonraker, OctoPrint, and PrusaLink.",
+      "parameters": [
+        {
+          "name": "timeout",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "printer_files",
+      "category": "other",
+      "description": "Listet alle verfügbaren G-Code Dateien auf dem 3D Drucker auf.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "printer_gcode",
+      "category": "other",
+      "description": "Sendet einen G-Code Befehl direkt an den Drucker (z.B. G28 für Home, M104 S200 für Extrudertemperatur).",
+      "parameters": [
+        {
+          "name": "gcode",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "printer_info",
+      "category": "other",
+      "description": "Gibt Informationen über Moonraker und Klipper Versionen zurück.",
+      "parameters": []
+    },
+    {
+      "name": "printer_pause",
+      "category": "other",
+      "description": "Pausiert den aktuellen Druckjob.",
+      "parameters": []
+    },
+    {
+      "name": "printer_print",
+      "category": "media",
+      "description": "Send a print job to a 3D printer via Moonraker/OctoPrint API.",
+      "parameters": [
+        {
+          "name": "printerUrl",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "gcodeFile",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "apiKey",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "printer_resume",
+      "category": "other",
+      "description": "Setzt einen pausierten Druckjob fort.",
+      "parameters": []
+    },
+    {
+      "name": "printer_slice",
+      "category": "media",
+      "description": "Slice a 3D STL/OBJ file using OrcaSlicer and prepare it for printing.",
+      "parameters": [
+        {
+          "name": "stlFile",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "printerProfile",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "profileName",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "printer_start",
+      "category": "other",
+      "description": "Startet einen Druckjob mit dem angegebenen G-Code Dateinamen.",
+      "parameters": [
+        {
+          "name": "filename",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "printer_status",
+      "category": "other",
+      "description": "Gibt den aktuellen Status des 3D Druckers zurück (Druckfortschritt, Temperaturen, Dateiname, verbleibende Zeit).",
+      "parameters": []
+    },
+    {
+      "name": "printer_status",
+      "category": "media",
+      "description": "Get the current status of a 3D printer (temperature, job progress, state).",
+      "parameters": [
+        {
+          "name": "printerUrl",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "apiKey",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "process_kill",
+      "category": "system",
+      "description": "Beendet einen Prozess (PID oder Name)",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "force",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "process_list",
+      "category": "system",
+      "description": "Listet laufende Prozesse (optional nach Name filtern)",
+      "parameters": [
+        {
+          "name": "filter",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "pull_update",
+      "category": "system",
+      "description": "Zieht Nova-Updates und rebuilt (git pull + npm install + tsc). Rollback bei Fehler.",
+      "parameters": []
+    },
+    {
+      "name": "quick_scan",
+      "category": "security",
+      "description": "Schneller Security-Check: nur kritische Findings",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "read_document",
+      "category": "file",
+      "description": "Liest PDF-, DOCX-, XLSX-, PPTX-, Bild- und Textdateien mit lokaler Extraktion und passenden Fallbacks.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "read_file",
+      "category": "file",
+      "description": "Liest den Inhalt einer Datei. UnterstÃ¼tzt optionale start_line/end_line fÃ¼r gezieltes Lesen groÃŸer Dateien.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "start_line",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "end_line",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "recall",
+      "category": "memory",
+      "description": "Ruft Erinnerungen aus dem Langzeit-Gedï¿½chtnis ab (LanceDB mit MMR, Temporal Decay, Hybrid Search)",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "register_llm_provider",
+      "category": "system",
+      "description": "Registriert einen neuen LLM-API-Provider (OpenAI-kompatibel): MiniMax, Kimi, DeepSeek, Mistral, Cohere, Groq, Together etc. Nova testet den API-Key und speichert den Provider dauerhaft.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "api_key",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "base_url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "models",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "roles",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "remember",
+      "category": "memory",
+      "description": "Speichert Information über die zentrale Memory-Governance; Herkunft, Konflikte und Gültigkeit werden vor LanceDB geprüft.",
+      "parameters": [
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "remove_llm_provider",
+      "category": "system",
+      "description": "Entfernt einen registrierten externen LLM-Provider.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "research_all_capabilities",
+      "category": "system",
+      "description": "Recherchiert fuer alle aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie via Websuche und schreibt den enrichierten Plan in setup-state.json.",
+      "parameters": [
+        {
+          "name": "force",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "research_capability_plan",
+      "category": "system",
+      "description": "Recherchiert via Websuche die aktuell beste Installationsstrategie fÃ¼r eine fehlende AI-Capability (stt/tts/llm/embedding/vision/ffmpeg) auf der passenden Hardware. BerÃ¼cksichtigt Apple Silicon, CUDA, ARM, Windows. Ergebnis wird in Setup-Aktionen umgewandelt.",
+      "parameters": [
+        {
+          "name": "capability",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "node",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "force",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "resolve_capability",
+      "category": "system",
+      "description": "Prüft ob eine benötigte Software/Tool verfügbar ist und installiert sie ggf. automatisch auf dem besten verfügbaren Node.\nNova ruft dies auf wenn sie merkt dass ein Tool fehlt — sie entscheidet selbst wo und wie sie es installiert.\nGibt zurück: ob lokal oder remote ausführbar, welcher Node, wie via SSH verbinden.\nBekannte Capabilities: whisper (STT), ffmpeg, ollama (LLM), yt-dlp, tesseract (OCR), imagemagick, pandoc.",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "task",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "run_command",
+      "category": "system",
+      "description": "FÃ¼hrt einen Shell-Befehl aus. Merkt sich das letzte Arbeitsverzeichnis. WICHTIG: Vor install-Befehlen (npm/pip/etc.) IMMER zuerst mit readfile oder listdir prÃ¼fen welche Dateien vorhanden sind! package.json â†’ npm, requirements.txt â†’ pip, Cargo.toml â†’ cargo. Nicht raten â€” lesen!",
+      "parameters": [
+        {
+          "name": "command",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "cwd",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "runtime_capabilities",
+      "category": "system",
+      "description": "Zeigt LSP-, Code-Runtime-, Sandbox- und fortsetzbare Subagent-Provider ohne Credentials.",
+      "parameters": []
+    },
+    {
+      "name": "save_api_key",
+      "category": "system",
+      "description": "Speichere einen API Key für Such-Dienste. Nutze dies wenn der User einen API Key gibt (Brave Search, Tavily, etc.)",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "save_config",
+      "category": "system",
+      "description": "Eigene Konfiguration ändern. Sektionen: telegram (token, allowFrom), channels (discord, whatsapp, signal), llm (model, provider), providers (openai/anthropic apiKey+enabled), memory (embedding), autonomy (enabled, intervalMinutes, selfThinkMaxPerHour, quietHours, triggers), proactive (enabled, morningBriefing), learning (enabled, autoLearnThreshold), voice (enabled, wakeWord, ttsVoice), server (port), heartbeat (intervalMinutes), apis (tavily_key), dashboard (port). Ändert nova.config.json sicher per Merge.",
+      "parameters": [
+        {
+          "name": "section",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "values",
+          "type": "object",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "screen_analyze",
+      "category": "media",
+      "description": "Analyze screen content using vision model to describe what is displayed.",
+      "parameters": [
+        {
+          "name": "imagePath",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "question",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "screen_capture",
+      "category": "media",
+      "description": "Capture the current screen or a specific region. Returns base64-encoded image for vision analysis.",
+      "parameters": [
+        {
+          "name": "region",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "outputPath",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "searxng_search",
+      "category": "browser",
+      "description": "Sucht im privaten SearXNG-Metasuchmaschinen-Server (aggregiert Google, Bing, DuckDuckGo, Wikipedia u.v.m.). Kein API-Key, kein Rate-Limit, strukturierte JSON-Ergebnisse. BEVORZUGT für Web-Recherche.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "category",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "searxng_search",
+      "category": "browser",
+      "description": "Durchsucht das Web mit SearXNG (selbst-gehostete, private Suchmaschine). Kein API-Key nötig, nur die URL der Instanz.",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "categories",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "time_range",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "security_audit",
+      "category": "security",
+      "description": "Fï¿½hrt vollstï¿½ndigen Security-Audit durch: Secrets, gefï¿½hrlicher Code, Config, Permissions. Score 0-100.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_doctor",
+      "category": "system",
+      "description": "Prueft Novas Health, Tool-Health, Trace-Insights, Mesh und Self-Update-Proposals und erzeugt eine reviewbare Verbesserungs-Queue.",
+      "parameters": []
+    },
+    {
+      "name": "self_doctor_findings",
+      "category": "system",
+      "description": "Listet offene Self-Doctor Findings aus der lokalen Verbesserungs-Queue.",
+      "parameters": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_doctor_update_finding",
+      "category": "system",
+      "description": "Setzt den Status eines Self-Doctor Findings, z.B. acknowledged, resolved oder dismissed.",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "self_evolve",
+      "category": "system",
+      "description": "ï¿½ndert Novas eigenen Code sicher: Git-Branch ? Code-ï¿½nderung ? Build ? Test ? Merge bei Erfolg / Rollback bei Fehler. NUR Dateien in src/ erlaubt.",
+      "parameters": [
+        {
+          "name": "file",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "replace",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "apply",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "approvalToken",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_setup_apply",
+      "category": "system",
+      "description": "Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus ist confirm=\"APPLY:<actionId>\" noetig; im YOLO-Modus nicht.",
+      "parameters": [
+        {
+          "name": "action_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_setup_plan",
+      "category": "system",
+      "description": "NUR wenn die aktuelle Nachricht ausdrücklich Setup, Installation, Hardware, Runtime oder fehlende Capabilities prüfen lässt. Nicht für allgemeine Verbesserungsziele. Scannt read-only, installiert nichts und ändert keine Config.",
+      "parameters": [
+        {
+          "name": "skip_network",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_setup_research",
+      "category": "system",
+      "description": "Recherchiert via Websuche fÃ¼r ALLE aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie und schreibt die Ergebnisse (mit Confidence, Quelle, Hardware-Match) zurÃ¼ck in setup-state.json. Research lÃ¤uft ohne Gate. Install/Apply bleibt weiter freigabepflichtig.",
+      "parameters": [
+        {
+          "name": "force",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "self_setup_status",
+      "category": "system",
+      "description": "NUR bei einer ausdrücklichen aktuellen Setup-/Capability-/Runtime-Frage verwenden. Zeigt Novas aktuellen Self-Setup-State; niemals aus allgemeinen Wünschen wie \"Nova besser/schlauer machen\" ableiten.",
+      "parameters": []
+    },
+    {
+      "name": "send_file",
+      "category": "media",
+      "description": "Sendet eine Datei an den User via Telegram. Erkennt automatisch ob Foto (jpg/png/gif/webp) oder Dokument (pdf/zip/etc). Nutze dies um generierte Bilder, Reports, oder andere Dateien zu senden.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "as_document",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "send_file",
+      "category": "media",
+      "description": "Sendet eine lokale Datei an den User via Telegram. Erkennt automatisch ob Foto oder Dokument. NUTZE DIESES TOOL wenn der User eine Datei, ein Bild oder ein Dokument geschickt haben will.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "as_document",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "send_telegram_message",
+      "category": "other",
+      "description": "Sendet eine Telegram-Nachricht an einen konfigurierten Benutzeralias oder eine direkte Chat-ID.",
+      "parameters": [
+        {
+          "name": "to",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "service_status",
+      "category": "system",
+      "description": "Prï¿½ft den Status eines systemd-Services (Linux) oder Windows-Dienstes",
+      "parameters": [
+        {
+          "name": "service",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "set_model_override",
+      "category": "system",
+      "description": "Setzt ein Model-Override fï¿½r eine Session.",
+      "parameters": [
+        {
+          "name": "session_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "set_quiet_hours",
+      "category": "system",
+      "description": "Setzt Novas Ruhezeiten (Quiet Hours). Nutze dieses Tool wenn der User sagt er mï¿½chte nicht gestï¿½rt werden, nur im Notfall kontaktiert werden, oder die Ruhezeiten ï¿½ndern mï¿½chte.",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "start",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "set_reminder",
+      "category": "system",
+      "description": "Setze eine Erinnerung. Unterstützt Uhrzeiten (\"10:00\", \"14:30\"), relative Zeiten (\"in 30 min\"), und natürliche Sprache (\"morgen um 10\"). Überlebt Restarts!",
+      "parameters": [
+        {
+          "name": "message",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "time",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "minutes",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "userId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "channel",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "set_tool_policy",
+      "category": "security",
+      "description": "Setzt eine Tool-Policy (allow/deny/confirm) fï¿½r ein Tool-Pattern.",
+      "parameters": [
+        {
+          "name": "pattern",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "spawn_bot",
+      "category": "bot",
+      "description": "Startet einen neuen Bot mit eigener Persona",
+      "parameters": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "persona",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "channel",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "spawn_subagent",
+      "category": "system",
+      "description": "Spawnt einen fokussierten Subagenten fÃ¼r eine Teilaufgabe. Ideal fÃ¼r parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und lÃ¤uft mit eigenem Timeout.",
+      "parameters": [
+        {
+          "name": "task",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "tools",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "timeout_seconds",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "mesh_node",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "spawn_subagents_parallel",
+      "category": "system",
+      "description": "Spawnt MEHRERE Subagenten gleichzeitig (echt parallel) und wartet auf alle Ergebnisse. Perfekt fÃ¼r parallele Recherchen, Multi-Node-Analysen oder unabhÃ¤ngige Teilaufgaben.",
+      "parameters": [
+        {
+          "name": "tasks",
+          "type": "object",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "speak",
+      "category": "media",
+      "description": "Konvertiert Text zu Sprache. Provider: openai (gpt-4o-mini-tts), edge (kostenlos), elevenlabs (premium)",
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "voice",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "output_path",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "ssh_command",
+      "category": "system",
+      "description": "Fï¿½hrt einen Befehl auf einem Remote-Gerï¿½t via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool fï¿½r ALLE Befehle die auf einem anderen Gerï¿½t laufen sollen ï¿½ NICHT run_command! Gespeicherte Hosts/Passwï¿½rter werden automatisch verwendet. Anfï¿½hrungszeichen im Befehl werden automatisch escaped.",
+      "parameters": [
+        {
+          "name": "host",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "port",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "start_mission",
+      "category": "system",
+      "description": "Startet eine autonome Mission. NUTZE DAS wenn du eine komplexe Aufgabe autonom erledigen willst, die mehrere Schritte braucht. Schreibe NICHT nur \"Mission gestartet\" ï¿½ rufe dieses Tool auf!",
+      "parameters": [
+        {
+          "name": "goal",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "system_info",
+      "category": "system",
+      "description": "Zeigt umfassende System-Info: OS, CPU, RAM, Node Version, etc.",
+      "parameters": []
+    },
+    {
+      "name": "tail_log",
+      "category": "system",
+      "description": "Zeigt die letzten N Zeilen einer Log-Datei",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "lines",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "filter",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "tavily_search",
+      "category": "browser",
+      "description": "AI-optimierte Suche mit Tavily - filtert SEO-Spam und liefert präzise Ergebnisse (benötigt API Key)",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "tool_confirm",
+      "category": "system",
+      "description": "Request user confirmation before executing a sensitive tool. Returns confirmation status.",
+      "parameters": [
+        {
+          "name": "toolName",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "userId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "toolArgs",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "confirmationId",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "transcribe_audio",
+      "category": "media",
+      "description": "Transkribiert eine Audio-Datei (Whisper/Nova-LLM/Deepgram). Auto-wÃ¤hlt verfÃ¼gbaren Provider.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "tts_cleanup",
+      "category": "media",
+      "description": "Rï¿½umt alte TTS-Temp-Dateien auf",
+      "parameters": []
+    },
+    {
+      "name": "update_history",
+      "category": "system",
+      "description": "Zeigt Update-Verlauf (checks & updates)",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "update_memory",
+      "category": "system",
+      "description": "Fï¿½gt einen Eintrag zum Langzeit-Gedï¿½chtnis (MEMORY.md) hinzu. Nutze das fï¿½r wichtige Entscheidungen, gelï¿½ste Probleme, gelernte Lektionen.",
+      "parameters": [
+        {
+          "name": "section",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "entry",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "update_user_profile",
+      "category": "system",
+      "description": "Aktualisiert das User-Profil (USER.md). Nutze das wenn du neue Fakten ï¿½ber den User lernst: Name, Gerï¿½te, IPs, Projekte, Prï¿½ferenzen. Der content ersetzt den GESAMTEN Inhalt von USER.md.",
+      "parameters": [
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "version_info",
+      "category": "system",
+      "description": "Zeigt Nova Version: Commit, Branch, Datum, letzter Commit-Message",
+      "parameters": []
+    },
+    {
+      "name": "view_code_item",
+      "category": "file",
+      "description": "Zeigt den vollständigen Code einer Funktion/Klasse/Methode anhand ihres Namens. Nutze z.B. \"ClassName.methodName\" für Methoden.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "context",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "voice_setup",
+      "category": "system",
+      "description": "Prueft Novas Voice-Abhaengigkeiten. Installiert nur mit install_missing=true oder YOLO-Modus.",
+      "parameters": [
+        {
+          "name": "install_missing",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "vote_poll",
+      "category": "other",
+      "description": "Stimmt in einer Umfrage ab.",
+      "parameters": [
+        {
+          "name": "poll_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "option",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "voter",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "web_search",
+      "category": "browser",
+      "description": "Sucht im Internet mit DuckDuckGo (kein API-Key nÃ¶tig)",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "count",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "webcam_capture",
+      "category": "media",
+      "description": "Capture image from webcam. Requires webcam to be available.",
+      "parameters": [
+        {
+          "name": "cameraIndex",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "outputPath",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "write_file",
+      "category": "file",
+      "description": "Schreibt Inhalt in eine Datei. ACHTUNG: GeschÃ¼tzte System-Dateien (daemon.ts, auth/, core/, L0-*) kÃ¶nnen nicht autonom Ã¼berschrieben werden.",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

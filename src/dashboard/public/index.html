@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xaventra Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">✨</span>
+                <span class="logo-text">Xaventra</span>
+                <span class="version">v2.0</span>
+            </div>
+            <nav class="nav">
+                <button class="nav-item active" data-tab="overview">
+                    <span class="nav-icon">📊</span>
+                    <span>Overview</span>
+                </button>
+                <button class="nav-item" data-tab="performance">
+                    <span class="nav-icon">↗</span>
+                    <span>Performance</span>
+                </button>
+                <button class="nav-item" data-tab="chat">
+                    <span class="nav-icon">💬</span>
+                    <span>Chat</span>
+                </button>
+                <button class="nav-item" data-tab="models">
+                    <span class="nav-icon">🤖</span>
+                    <span>Models</span>
+                </button>
+                <button class="nav-item" data-tab="nodes">
+                    <span class="nav-icon">🌐</span>
+                    <span>Nodes</span>
+                </button>
+                <button class="nav-item" data-tab="memory">
+                    <span class="nav-icon">🧠</span>
+                    <span>Memory</span>
+                </button>
+                <button class="nav-item" data-tab="updates">
+                    <span class="nav-icon">🔄</span>
+                    <span>Updates</span>
+                </button>
+                <button class="nav-item" data-tab="config">
+                    <span class="nav-icon">⚙️</span>
+                    <span>Config</span>
+                </button>
+                <button class="nav-item" data-tab="health">
+                    <span class="nav-icon">🩺</span>
+                    <span>Health</span>
+                </button>
+                <button class="nav-item" data-tab="logs">
+                    <span class="nav-icon">📜</span>
+                    <span>Logs</span>
+                </button>
+                <div class="nav-divider"></div>
+                <button class="nav-item" data-tab="scheduler">
+                    <span class="nav-icon">⏰</span>
+                    <span>Scheduler</span>
+                </button>
+                <button class="nav-item" data-tab="tasks">
+                    <span class="nav-icon">📋</span>
+                    <span>Tasks</span>
+                </button>
+                <button class="nav-item" data-tab="trust">
+                    <span class="nav-icon">&#9672;</span>
+                    <span>Trust</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="watchdog-status" id="watchdog-status">
+                    <span class="status-dot healthy"></span>
+                    <span>System Healthy</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="nova-status" id="nova-status">
+                    <span class="status-indicator idle"></span>
+                    <span class="status-text">Idle</span>
+                </div>
+                <div class="uptime" id="uptime">Uptime: --</div>
+            </header>
+
+            <!-- Tab Content -->
+            <div class="content">
+                <!-- Overview Tab -->
+                <section class="tab-content active" id="tab-overview">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">🔤</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="tokens-today">0</div>
+                                <div class="stat-label">Tokens Today</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💰</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="cost-today">$0.00</div>
+                                <div class="stat-label">Cost Today</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📨</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="requests-today">0</div>
+                                <div class="stat-label">Requests Today</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🔧</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="repairs-count">0</div>
+                                <div class="stat-label">L0 Repairs</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- LLM + Queue Status Row -->
+                    <div class="stats-grid" style="margin-top: -8px;">
+                        <div class="stat-card" id="llm-online-card">
+                            <div class="stat-icon">🟢</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="llm-online-count">--</div>
+                                <div class="stat-label">Models Online</div>
+                            </div>
+                        </div>
+                        <div class="stat-card" id="llm-disabled-card">
+                            <div class="stat-icon">🚫</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="llm-disabled-count">0</div>
+                                <div class="stat-label">Auto-Disabled</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📬</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="queue-pending-count">0</div>
+                                <div class="stat-label">Queue Pending</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">✅</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="queue-done-count">0</div>
+                                <div class="stat-label">Queue Done</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panels-grid">
+                        <div class="panel">
+                            <h3 class="panel-title">📝 Current Task</h3>
+                            <div class="current-task" id="current-task">No active task</div>
+                        </div>
+                        <div class="panel">
+                            <h3 class="panel-title">💭 Last Message</h3>
+                            <div class="last-message" id="last-message">--</div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">🤖 Active Agents</h3>
+                        <div class="agents-list" id="agents-list">
+                            <div class="empty-state">No active agents</div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">📂 Recent Sessions</h3>
+                        <div class="sessions-list" id="sessions-list">
+                            <div class="empty-state">Loading sessions...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Performance Tab -->
+                <section class="tab-content" id="tab-performance">
+                    <div class="performance-hero">
+                        <div>
+                            <div class="eyebrow">LIVE SYSTEM TELEMETRY</div>
+                            <h2>Performance Control</h2>
+                            <p>P95 latency, queue pressure and runtime health in one operational view.</p>
+                        </div>
+                        <button class="perf-refresh" onclick="loadPerformance()">Refresh</button>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="perf-p95">--</div><div class="stat-label">Pipeline P95</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="perf-active">--</div><div class="stat-label">Active / Queued</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="perf-loop">--</div><div class="stat-label">Event Loop Max</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="perf-memory">--</div><div class="stat-label">RSS Memory</div></div></div>
+                    </div>
+                    <div class="panels-grid performance-grid">
+                        <div class="panel"><h3 class="panel-title">Slowest Pipeline Stages</h3><div id="perf-stages" class="metric-list">No samples yet</div></div>
+                        <div class="panel"><h3 class="panel-title">Model Performance</h3><div id="perf-models" class="metric-list">No samples yet</div></div>
+                    </div>
+                </section>
+
+                <!-- Chat Tab -->
+                <section class="tab-content" id="tab-chat">
+                    <div class="chat-container">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 0 8px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Session:</label>
+                            <select id="session-selector"
+                                style="flex: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
+                                <option value="current">Aktuelle Session</option>
+                            </select>
+                        </div>
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="chat-welcome">
+                                <span class="welcome-icon">✨</span>
+                                <h2>Chat with Xaventra</h2>
+                                <p>Send a message to start a conversation</p>
+                            </div>
+                        </div>
+                        <div class="typing-indicator" id="typing-indicator" style="display: none;">
+                            <span></span><span></span><span></span>
+                            Xaventra is working...
+                        </div>
+                        <div class="chat-input-container">
+                            <textarea id="chat-input" placeholder="Type a message..."></textarea>
+                            <button id="chat-send" class="send-btn">
+                                <span>Send</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Models Tab -->
+                <section class="tab-content" id="tab-models">
+                    <div class="panel">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                            <h3 class="panel-title">🤖 LLM Endpoints</h3>
+                            <button onclick="loadModels(true)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);cursor:pointer;font-size:12px;font-weight:500;">🔄 Probe Now</button>
+                        </div>
+                        <div id="models-list"><div class="empty-state">Loading models...</div></div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">📊 Model Performance</h3>
+                        <div id="perf-list"><div class="empty-state">No performance data yet.</div></div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">🚫 Auto-Disabled Models</h3>
+                        <div id="disabled-models-list"><div class="empty-state">No disabled models ✅</div></div>
+                    </div>
+                </section>
+
+                <!-- Memory Tab (with sub-tabs) -->
+                <section class="tab-content" id="tab-memory">
+                    <!-- Sub-tab bar -->
+                    <div class="sub-tabs" id="memory-sub-tabs">
+                        <button class="sub-tab-btn active" data-subtab="memories">🧠 Memories</button>
+                        <button class="sub-tab-btn" data-subtab="core-facts">⭐ Core Facts</button>
+                        <button class="sub-tab-btn" data-subtab="cold-storage">🧊 Cold Storage</button>
+                        <button class="sub-tab-btn" data-subtab="summaries">📝 Summaries</button>
+                        <button class="sub-tab-btn" data-subtab="graph">🕸️ Graph</button>
+                        <button class="sub-tab-btn" data-subtab="journal">📔 Journal</button>
+                    </div>
+
+                    <!-- Memories sub-tab -->
+                    <div class="sub-tab-content active" id="subtab-memories">
+                        <div class="panel">
+                            <h3 class="panel-title">🧠 LanceDB Memory</h3>
+                            <div class="memory-search">
+                                <input type="text" id="memory-search" placeholder="Search memories...">
+                                <button id="memory-search-btn">Search</button>
+                            </div>
+                            <div class="memory-list" id="memory-list">
+                                <div class="empty-state">Loading memories...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Core Facts sub-tab -->
+                    <div class="sub-tab-content" id="subtab-core-facts">
+                        <div class="panel">
+                            <h3 class="panel-title">⭐ Core Facts (Tier 0)</h3>
+                            <p style="color:var(--text-secondary);margin-bottom:12px;font-size:13px;">Werden IMMER in den Prompt injiziert. Xaventra vergisst sie nie.</p>
+                            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                                <input id="new-fact-text" type="text" placeholder="Neuen Fakt eingeben..." style="flex:2;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);min-width:200px;" />
+                                <select id="new-fact-category" style="padding:8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);">
+                                    <option value="identity">👤 Identität</option>
+                                    <option value="device">🖥️ Geräte</option>
+                                    <option value="project">📁 Projekte</option>
+                                    <option value="preference">⚙️ Präferenzen</option>
+                                    <option value="network">🌐 Netzwerk</option>
+                                    <option value="pet">🐾 Haustiere</option>
+                                    <option value="other" selected>📌 Sonstiges</option>
+                                </select>
+                                <button onclick="addCoreFact()" style="padding:8px 16px;border-radius:6px;border:none;background:var(--accent-blue);color:white;cursor:pointer;font-weight:500;">➕ Hinzufügen</button>
+                            </div>
+                            <div class="facts-grid" id="facts-grid"><div class="empty-state">Loading core facts...</div></div>
+                        </div>
+                    </div>
+
+                    <!-- Cold Storage sub-tab -->
+                    <div class="sub-tab-content" id="subtab-cold-storage">
+                        <div class="panel">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <h3 class="panel-title">🧊 USER.md — Nutzerprofil</h3>
+                                <button onclick="saveColdStorage('user')" style="padding:4px 12px;border-radius:6px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);cursor:pointer;font-size:12px;">💾 Speichern</button>
+                            </div>
+                            <textarea id="user-md-content" style="width:100%;min-height:300px;max-height:400px;overflow:auto;font-size:12px;background:var(--bg-tertiary);padding:12px;border-radius:8px;border:1px solid var(--border-color);color:var(--text-primary);font-family:monospace;resize:vertical;">Loading...</textarea>
+                        </div>
+                        <div class="panel">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <h3 class="panel-title">🧊 MEMORY.md — Langzeitgedächtnis</h3>
+                                <button onclick="saveColdStorage('memory')" style="padding:4px 12px;border-radius:6px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);cursor:pointer;font-size:12px;">💾 Speichern</button>
+                            </div>
+                            <textarea id="memory-md-content" style="width:100%;min-height:300px;max-height:400px;overflow:auto;font-size:12px;background:var(--bg-tertiary);padding:12px;border-radius:8px;border:1px solid var(--border-color);color:var(--text-primary);font-family:monospace;resize:vertical;">Loading...</textarea>
+                        </div>
+                    </div>
+
+                    <!-- Summaries sub-tab -->
+                    <div class="sub-tab-content" id="subtab-summaries">
+                        <div class="panel">
+                            <h3 class="panel-title">📝 Session Summaries</h3>
+                            <div class="summaries-list" id="summaries-list"><div class="empty-state">Loading summaries...</div></div>
+                        </div>
+                    </div>
+
+                    <!-- Graph sub-tab -->
+                    <div class="sub-tab-content" id="subtab-graph">
+                        <div class="panel">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <h3 class="panel-title">🕸️ Knowledge Graph</h3>
+                                <button onclick="resetGraph()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--accent-red);background:transparent;color:var(--accent-red);cursor:pointer;font-size:12px;">🗑️ Zurücksetzen</button>
+                            </div>
+                            <div class="graph-stats" id="graph-stats" style="margin-bottom:12px;"></div>
+                            <div class="graph-container" id="graph-container"><div class="empty-state">Loading graph...</div></div>
+                        </div>
+                    </div>
+
+                    <!-- Journal sub-tab -->
+                    <div class="sub-tab-content" id="subtab-journal">
+                        <div class="panel">
+                            <h3 class="panel-title">📔 Journal (Episodisches Gedächtnis)</h3>
+                            <div class="journal-stats" id="journal-stats" style="margin-bottom:12px;"></div>
+                            <div class="journal-entries" id="journal-entries"><div class="empty-state">Loading journal...</div></div>
+                        </div>
+                    </div>
+                </section><!-- end tab-memory -->
+
+                <!-- Self-Updates Tab -->
+                <section class="tab-content" id="tab-updates">
+                    <div class="panel">
+                        <h3 class="panel-title">🔄 Self-Update Proposals</h3>
+                        <div class="proposals-list" id="proposals-list">
+                            <div class="empty-state">No pending proposals</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Config Tab -->
+                <section class="tab-content" id="tab-config">
+                    <div class="panel">
+                        <h3 class="panel-title">⚙️ LLM Configuration</h3>
+                        <div class="config-form">
+                            <div class="config-field">
+                                <label>Provider</label>
+                                <select id="cfg-provider">
+                                    <option value="google-antigravity">Google Antigravity (Cloud Code)</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="ollama">Ollama (Lokal)</option>
+                                </select>
+                            </div>
+                            <div class="config-field">
+                                <label>Model</label>
+                                <input type="text" id="cfg-model" placeholder="z.B. claude-opus-4-6-thinking">
+                            </div>
+                            <div class="config-field">
+                                <label>Internal Model (Self-Repair)</label>
+                                <input type="text" id="cfg-internal-model" placeholder="z.B. functiongemma:270m">
+                            </div>
+                            <button class="save-btn" onclick="saveConfig('llm')">💾 LLM Config Speichern</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">📱 Telegram</h3>
+                        <div class="config-form">
+                            <div class="config-field">
+                                <label>Bot Token</label>
+                                <input type="password" id="cfg-telegram-token" placeholder="Bot Token">
+                                <small>Von @BotFather</small>
+                            </div>
+                            <div class="config-field">
+                                <label>Deine Telegram User ID</label>
+                                <input type="text" id="cfg-telegram-userid" placeholder="z.B. 1000000001">
+                                <small>Finde deine ID via @userinfobot</small>
+                            </div>
+                            <div class="config-field">
+                                <label>Telegram aktiv</label>
+                                <select id="cfg-telegram-enabled">
+                                    <option value="true">Ja</option>
+                                    <option value="false">Nein</option>
+                                </select>
+                            </div>
+                            <button class="save-btn" onclick="saveConfig('telegram')">💾 Telegram Speichern</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">🎭 Personality</h3>
+                        <div class="config-form">
+                            <div class="config-field">
+                                <label>Xaventra Persönlichkeit</label>
+                                <textarea id="cfg-personality" rows="4"
+                                    placeholder="System prompt für Xaventra..."></textarea>
+                            </div>
+                            <button class="save-btn" onclick="saveConfig('personality')">💾 Personality
+                                Speichern</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">🔑 API Keys (Optional)</h3>
+                        <div class="config-form">
+                            <div class="config-field">
+                                <label>OpenAI API Key</label>
+                                <input type="password" id="cfg-openai-key" placeholder="sk-...">
+                            </div>
+                            <div class="config-field">
+                                <label>Anthropic API Key</label>
+                                <input type="password" id="cfg-anthropic-key" placeholder="sk-ant-...">
+                            </div>
+                            <small style="color: var(--text-secondary); display: block; margin-top: 8px;">
+                                ℹ️ Cloud Code API nutzt OAuth (automatisch). API Keys nur für Direkt-Zugang nötig.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h3 class="panel-title">📋 Raw Config</h3>
+                        <pre id="config-raw"
+                            style="max-height: 300px; overflow: auto; font-size: 12px; background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">Loading...</pre>
+                    </div>
+                </section>
+
+                <!-- Nodes Tab — Mesh topology + per-node LLM overview -->
+                <section class="tab-content" id="tab-nodes">
+                    <div class="panel">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                            <h3 class="panel-title">🗺️ LLM Topology</h3>
+                            <button onclick="loadTopology(true)" style="padding:6px 14px;border-radius:6px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);cursor:pointer;font-size:12px;font-weight:500;">🔄 Scan</button>
+                        </div>
+                        <div id="topology-stats" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;"></div>
+                        <div id="topology-grid"></div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">🧩 Infrastruktur & AI-Services</h3>
+                        <pre id="infrastructure-services" style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);padding:12px;background:var(--bg-tertiary);border-radius:8px;max-height:260px;overflow:auto;">Lade Services...</pre>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">⬇️ Modell-Empfehlungen</h3>
+                        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+                            <select id="recommend-node-select" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font-size:13px;">
+                                <option value="local">local (dieser Node)</option>
+                            </select>
+                            <button onclick="loadRecommendations()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--accent-green);background:transparent;color:var(--accent-green);cursor:pointer;font-size:12px;font-weight:500;">Empfehlen</button>
+                        </div>
+                        <div id="recommendations-output" style="font-size:13px;color:var(--text-secondary);">Node auswählen und "Empfehlen" klicken</div>
+                    </div>
+                </section>
+
+                <!-- Health Tab (Layers + Errors + Doctor merged) -->
+                <section class="tab-content" id="tab-health">
+                    <div class="panel">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                            <h3 class="panel-title">🩺 Self-Doctor</h3>
+                            <button onclick="runDoctor()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--accent-green);background:transparent;color:var(--accent-green);cursor:pointer;font-size:12px;font-weight:500;">▶ Run /doctor</button>
+                        </div>
+                        <pre id="doctor-output" style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);padding:12px;background:var(--bg-tertiary);border-radius:8px;max-height:300px;overflow:auto;">Click "Run /doctor" to check system health</pre>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">📚 Layer Status</h3>
+                        <div class="layers-grid" id="layers-grid">
+                            <div class="empty-state">Loading layers...</div>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">🔧 Tool Registry</h3>
+                        <div class="tools-list" id="tools-list">
+                            <div class="empty-state">Loading tools...</div>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">🚨 Error Log</h3>
+                        <div class="errors-list" id="errors-list">
+                            <div class="empty-state">No errors logged</div>
+                        </div>
+                    </div>
+                </section>
+
+
+                <!-- Scheduler Tab -->
+                <section class="tab-content" id="tab-scheduler">
+                    <div class="panel">
+                        <h3 class="panel-title">⏰ Cron Job erstellen</h3>
+                        <div
+                            style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
+                            <input id="cron-action" type="text" placeholder="Aktion (z.B. health_report, news, weather)"
+                                style="flex: 2; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); min-width: 180px;" />
+                        </div>
+                        <div
+                            style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
+                            <label style="color: var(--text-secondary); font-size: 13px; min-width: 40px;">🕐 Um</label>
+                            <select id="cron-hour"
+                                style="padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); min-width: 70px;">
+                                <option value="*">Jede</option>
+                                <option value="0">00</option>
+                                <option value="1">01</option>
+                                <option value="2">02</option>
+                                <option value="3">03</option>
+                                <option value="4">04</option>
+                                <option value="5">05</option>
+                                <option value="6">06</option>
+                                <option value="7">07</option>
+                                <option value="8">08</option>
+                                <option value="9" selected>09</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                                <option value="13">13</option>
+                                <option value="14">14</option>
+                                <option value="15">15</option>
+                                <option value="16">16</option>
+                                <option value="17">17</option>
+                                <option value="18">18</option>
+                                <option value="19">19</option>
+                                <option value="20">20</option>
+                                <option value="21">21</option>
+                                <option value="22">22</option>
+                                <option value="23">23</option>
+                            </select>
+                            <span style="color: var(--text-secondary);">:</span>
+                            <select id="cron-minute"
+                                style="padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); min-width: 70px;">
+                                <option value="0" selected>00</option>
+                                <option value="5">05</option>
+                                <option value="10">10</option>
+                                <option value="15">15</option>
+                                <option value="20">20</option>
+                                <option value="25">25</option>
+                                <option value="30">30</option>
+                                <option value="35">35</option>
+                                <option value="40">40</option>
+                                <option value="45">45</option>
+                                <option value="50">50</option>
+                                <option value="55">55</option>
+                            </select>
+                            <label style="color: var(--text-secondary); font-size: 13px;">Uhr</label>
+                        </div>
+                        <div
+                            style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+                            <label style="color: var(--text-secondary); font-size: 13px; min-width: 40px;">📅</label>
+                            <select id="cron-day"
+                                style="padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); min-width: 150px;">
+                                <option value="* * *" selected>Jeden Tag</option>
+                                <option value="* * 1">Jeden Montag</option>
+                                <option value="* * 2">Jeden Dienstag</option>
+                                <option value="* * 3">Jeden Mittwoch</option>
+                                <option value="* * 4">Jeden Donnerstag</option>
+                                <option value="* * 5">Jeden Freitag</option>
+                                <option value="* * 6">Jeden Samstag</option>
+                                <option value="* * 0">Jeden Sonntag</option>
+                                <option value="* * 1-5">Mo-Fr (Werktage)</option>
+                                <option value="* * 0,6">Wochenende</option>
+                                <option value="1 * *">1. des Monats</option>
+                                <option value="15 * *">15. des Monats</option>
+                            </select>
+                            <button onclick="createSchedulerJob()"
+                                style="padding: 8px 20px; border-radius: 6px; border: none; background: var(--accent-blue); color: white; cursor: pointer; font-weight: 600; font-size: 14px;">➕
+                                Erstellen</button>
+                        </div>
+                        <div id="cron-preview"
+                            style="color: var(--text-secondary); font-size: 11px; margin-bottom: 8px;"></div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">📋 Aktive Jobs</h3>
+                        <div id="scheduler-jobs" class="scheduler-list">
+                            <div class="empty-state">Loading scheduler...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tasks Tab -->
+                <section class="tab-content" id="tab-tasks">
+                    <div class="panel">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 class="panel-title" style="margin: 0;">📋 Aktive Aufgabe</h3>
+                            <button onclick="loadTaskTracker()"
+                                style="padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px;">🔄
+                                Refresh</button>
+                        </div>
+                        <div id="active-task-card"
+                            style="padding: 16px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border);">
+                            <div class="empty-state">💤 Keine aktive Aufgabe</div>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <h3 class="panel-title">📜 Task-History</h3>
+                        <div id="task-history-list">
+                            <div class="empty-state">Noch keine abgeschlossenen Aufgaben</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Trust Tab: extension of the existing Nova dashboard -->
+                <section class="tab-content" id="tab-trust">
+                    <div class="performance-hero">
+                        <div>
+                            <div class="eyebrow">VERIFIABLE EXECUTION</div>
+                            <h2>Xaventra Trust</h2>
+                            <p>Task contracts, real tool evidence, validation and approvals from the canonical Outcome Ledger.</p>
+                        </div>
+                        <button class="perf-refresh" onclick="loadTrustRuns()">Refresh</button>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="trust-total">0</div><div class="stat-label">Runs</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="trust-validated">0</div><div class="stat-label">Validated</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="trust-approval">0</div><div class="stat-label">Awaiting approval</div></div></div>
+                        <div class="stat-card"><div class="stat-info"><div class="stat-value" id="trust-failed">0</div><div class="stat-label">Failed</div></div></div>
+                    </div>
+                    <div class="panel" style="margin-top:24px">
+                        <h3 class="panel-title">Execution evidence</h3>
+                        <div id="trust-runs" class="trust-runs"><div class="empty-state">No outcome runs recorded yet</div></div>
+                    </div>
+                    <div class="panel" style="margin-top:24px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                            <h3 class="panel-title">Mesh capabilities & Benchmark Lab</h3>
+                            <button class="perf-refresh" onclick="runTrustBenchmark('smoke')">Run smoke benchmark</button>
+                        </div>
+                        <div id="trust-capabilities" class="trust-runs"><div class="empty-state">Loading capability graph…</div></div>
+                        <div id="trust-benchmarks" class="trust-runs"><div class="empty-state">No benchmark report yet</div></div>
+                    </div>
+                    <div class="panel" style="margin-top:24px">
+                        <h3 class="panel-title">Operator control plane</h3>
+                        <p>Mission workspaces, MCP, outcome-router training, governed memory, lifecycle policy and Blue-Team incidents.</p>
+                        <div id="trust-operator" class="trust-runs"><div class="empty-state">Loading operator state...</div></div>
+                    </div>
+                </section>
+
+                <!-- Logs Tab -->
+                <section class="tab-content" id="tab-logs">
+                    <div class="panel">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 class="panel-title" style="margin: 0;">📜 Live Logs</h3>
+                            <div style="display: flex; gap: 8px;">
+                                <select id="log-count" onchange="loadLogs()"
+                                    style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
+                                    <option value="50">50 Zeilen</option>
+                                    <option value="100" selected>100 Zeilen</option>
+                                    <option value="200">200 Zeilen</option>
+                                    <option value="500">500 Zeilen</option>
+                                </select>
+                                <label
+                                    style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); cursor: pointer;">
+                                    <input type="checkbox" id="log-auto-refresh" checked
+                                        onchange="toggleLogAutoRefresh()">
+                                    Auto-Refresh
+                                </label>
+                                <button onclick="loadLogs()"
+                                    style="padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px;">🔄</button>
+                            </div>
+                        </div>
+                        <pre id="log-output"
+                            style="max-height: 600px; overflow: auto; font-size: 11px; background: #1a1a2e; color: #e0e0e0; padding: 16px; border-radius: 8px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;">Loading logs...</pre>
+                    </div>
+                </section>
+
+                <!-- ROI Dashboard Tab -->
+                <section class="tab-content" id="tab-roi">
+                    <div class="panel">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h3 class="panel-title">📊 ROI Dashboard</h3>
+                            <button onclick="loadROI()"
+                                style="padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px;">🔄
+                                Refresh</button>
+                        </div>
+                        <div class="stats-grid" id="roi-stats">
+                            <div class="stat-card">
+                                <div class="stat-icon">💸</div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="roi-total-cost">$0.00</div>
+                                    <div class="stat-label">Total Cost</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">💎</div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="roi-total-value">$0.00</div>
+                                    <div class="stat-label">Estimated Value</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🚀</div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="roi-percentage">--</div>
+                                    <div class="stat-label">ROI</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">📋</div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="roi-total-tasks">0</div>
+                                    <div class="stat-label">Total Tasks</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel" style="margin-top: 16px;">
+                        <h3 class="panel-title">📅 Daily Breakdown</h3>
+                        <div id="roi-daily" style="font-family: monospace; font-size: 12px;">Loading...</div>
+                    </div>
+                    <div class="panel" style="margin-top: 16px;">
+                        <h3 class="panel-title">📋 Recent Tasks</h3>
+                        <div id="roi-tasks" style="max-height: 300px; overflow: auto;">Loading...</div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

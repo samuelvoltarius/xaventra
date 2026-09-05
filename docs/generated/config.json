@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "shape": {
+    "auth": {
+      "anthropicApiKey": "string",
+      "antigravityProjectId": "string",
+      "openaiApiKey": "string",
+      "tokenFile": "string"
+    },
+    "channels": {
+      "discord": {
+        "enabled": "boolean",
+        "token": "string"
+      },
+      "slack": {
+        "appToken": "string",
+        "botToken": "string",
+        "enabled": "boolean"
+      },
+      "telegram": {
+        "allowFrom": {
+          "type": "array",
+          "items": "unknown"
+        },
+        "enabled": "boolean",
+        "token": "string"
+      },
+      "whatsapp": {
+        "allowFrom": {
+          "type": "array",
+          "items": "unknown"
+        },
+        "authPath": "string",
+        "enabled": "boolean"
+      }
+    },
+    "codex": {
+      "enabled": "boolean",
+      "fallbackModel": "string",
+      "model": "string",
+      "preferWhenAuthenticated": "boolean"
+    },
+    "emoji": "string",
+    "fallbackModels": {
+      "type": "array",
+      "items": "string"
+    },
+    "learning": {
+      "autoLearnThreshold": "number",
+      "dataDir": "string",
+      "enabled": "boolean"
+    },
+    "mcp": {
+      "servers": {
+        "type": "array",
+        "items": {
+          "allowedTools": {
+            "type": "array",
+            "items": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": "string"
+          },
+          "command": "string",
+          "deniedTools": {
+            "type": "array",
+            "items": "unknown"
+          },
+          "enabled": "boolean",
+          "name": "string",
+          "reconnect": {
+            "initialDelayMs": "number",
+            "maxDelayMs": "number",
+            "maxRetries": "number"
+          },
+          "requireApproval": "boolean",
+          "transport": "string"
+        }
+      }
+    },
+    "memory": {
+      "autoCapture": "boolean",
+      "autoRecall": "boolean",
+      "dbPath": "string",
+      "enabled": "boolean"
+    },
+    "mesh": {
+      "coordination": {
+        "authorityService": "string",
+        "mode": "string",
+        "services": {
+          "type": "array",
+          "items": "string"
+        },
+        "timeoutMs": "number",
+        "witnesses": {
+          "type": "array",
+          "items": {
+            "id": "string",
+            "secretEnv": "string",
+            "url": "string"
+          }
+        }
+      },
+      "direct": {
+        "allowInsecureLan": "boolean",
+        "enabled": "boolean",
+        "listenHost": "string",
+        "peers": {
+          "type": "array",
+          "items": "unknown"
+        },
+        "port": "number"
+      },
+      "mode": "string",
+      "preferStrongestMain": "boolean",
+      "relay": {
+        "url": "string"
+      },
+      "security": {
+        "allowedTools": {
+          "type": "array",
+          "items": "string"
+        },
+        "allowTofu": "boolean"
+      },
+      "supabase": {
+        "table": "string"
+      },
+      "update": {
+        "autoDeployOnVersionChange": "boolean",
+        "canaryCount": "number",
+        "checkIntervalMinutes": "number",
+        "enabled": "boolean",
+        "nodes": {
+          "type": "array",
+          "items": {
+            "healthTimeoutSeconds": "number",
+            "host": "string",
+            "name": "string",
+            "nodeId": "string",
+            "path": "string",
+            "port": "number",
+            "runtime": "string",
+            "service": "string",
+            "user": "string",
+            "useSudo": "boolean"
+          }
+        },
+        "notifyOnly": "boolean"
+      }
+    },
+    "model": "string",
+    "name": "string",
+    "provider": "string",
+    "resilience": {
+      "enabled": "boolean",
+      "fallbackTimeout": "number",
+      "healthCheckInterval": "number",
+      "strictQuality": "boolean"
+    },
+    "runtime": {
+      "acpEnabled": "boolean",
+      "bundles": {
+        "type": "array",
+        "items": "unknown"
+      },
+      "hotReload": "boolean",
+      "profile": "string"
+    },
+    "telemetry": {
+      "enabled": "boolean",
+      "endpoint": "string",
+      "exportIntervalMs": "number",
+      "fallbackEndpoints": {
+        "type": "array",
+        "items": "unknown"
+      },
+      "serviceName": "string"
+    },
+    "version": "string"
+  }
+}

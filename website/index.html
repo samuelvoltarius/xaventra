@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Xaventra is a governed, self-hosted autonomous agent operating system with verifiable tools, durable memory and resilient multi-node execution.">
+  <meta name="theme-color" content="#0B1020">
+  <title>Xaventra — Autonomous intelligence you can verify</title>
+  <link rel="icon" href="../assets/xaventra-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav wrap">
+    <a class="brand" href="#top" aria-label="Xaventra home">
+      <img src="../assets/xaventra-icon.png" alt="" width="42" height="42">
+      <span>Xaventra</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#architecture">Architecture</a>
+      <a href="#trust">Trust</a>
+      <a href="#start">Get started</a>
+      <a class="button small" href="https://github.com/samuelvoltarius/xaventra">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">Self-hosted · multi-node · evidence-first</p>
+        <h1>Autonomous intelligence you can verify.</h1>
+        <p class="lede">Xaventra discovers your models and machines, routes work to the right node, executes governed tools, validates real outcomes and resumes after failure.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/samuelvoltarius/xaventra">View on GitHub</a>
+          <a class="button ghost" href="#architecture">How it works</a>
+        </div>
+        <div class="proof" aria-label="Product principles">
+          <span>Local-first</span><span>Fail-closed</span><span>MIT licensed</span>
+        </div>
+      </div>
+      <div class="mesh-card" aria-label="Xaventra execution flow">
+        <div class="status"><i></i> Main verified</div>
+        <div class="flow-node primary">Goal</div>
+        <div class="line"></div>
+        <div class="flow-row">
+          <div class="flow-node">Planner</div><div class="flow-node">Worker</div><div class="flow-node">Validator</div>
+        </div>
+        <div class="line"></div>
+        <div class="evidence">Tool Evidence <b>verified</b></div>
+        <div class="metrics"><span>3 nodes online</span><span>2 local models</span><span>fenced</span></div>
+      </div>
+    </section>
+
+    <section class="outcomes wrap" aria-label="Core outcomes">
+      <article><strong>One</strong><span>execution authority</span></article>
+      <article><strong>Zero</strong><span>credentials in the mesh</span></article>
+      <article><strong>Real</strong><span>tool evidence and validation</span></article>
+      <article><strong>Durable</strong><span>memory and checkpoints</span></article>
+    </section>
+
+    <section id="architecture" class="section wrap">
+      <p class="eyebrow">Architecture</p>
+      <h2>More than a chat wrapper.</h2>
+      <div class="grid">
+        <article><span>01</span><h3>Discover</h3><p>Inventory local and remote providers, models, hardware, tools, health and measured performance.</p></article>
+        <article><span>02</span><h3>Route</h3><p>Select a model, node and toolset from validated outcomes, latency, cost and current capacity.</p></article>
+        <article><span>03</span><h3>Execute</h3><p>Run typed tools through policy, identity, budget, idempotency and approval boundaries.</p></article>
+        <article><span>04</span><h3>Prove</h3><p>Keep complete Tool Evidence, independent validation, checkpoints and an immutable Outcome Ledger.</p></article>
+      </div>
+    </section>
+
+    <section id="trust" class="section split wrap">
+      <div>
+        <p class="eyebrow">Trust by construction</p>
+        <h2>The model cannot approve its own work.</h2>
+        <p>Xaventra separates planning, execution and validation. Risky changes pass through sandbox, regression, rollback and operator gates. A node can take over only with a valid lease and fencing token.</p>
+      </div>
+      <ul class="checklist">
+        <li>Verified tool results, not claims</li>
+        <li>User-scoped memory with tombstones</li>
+        <li>Node-local OAuth and credentials</li>
+        <li>Resumable missions and compensation</li>
+        <li>Defensive Blue-Team workflows</li>
+      </ul>
+    </section>
+
+    <section id="start" class="cta wrap">
+      <div><p class="eyebrow">Build with Xaventra</p><h2>Bring your own models. Keep control.</h2></div>
+      <pre><code>git clone https://github.com/samuelvoltarius/xaventra.git
+cd xaventra && npm install
+npm run cli -- setup
+npm run xaventra</code></pre>
+    </section>
+  </main>
+
+  <footer class="wrap"><span>© 2026 Xaventra contributors</span><a href="../SECURITY.md">Security</a><a href="../CONTRIBUTING.md">Contributing</a></footer>
+</body>
+</html>
+

@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "home",
+      "bundles": [
+        "core",
+        "memory",
+        "mesh",
+        "channels",
+        "observability"
+      ],
+      "mainEligible": true,
+      "channels": "fenced"
+    },
+    {
+      "name": "server",
+      "bundles": [
+        "core",
+        "memory",
+        "mesh",
+        "observability",
+        "worker-hardening"
+      ],
+      "mainEligible": false,
+      "channels": "disabled"
+    },
+    {
+      "name": "nas",
+      "bundles": [
+        "core",
+        "memory",
+        "mesh",
+        "channels",
+        "observability",
+        "worker-hardening"
+      ],
+      "mainEligible": true,
+      "channels": "fenced"
+    },
+    {
+      "name": "worker",
+      "bundles": [
+        "core",
+        "mesh",
+        "observability",
+        "worker-hardening"
+      ],
+      "mainEligible": false,
+      "channels": "disabled"
+    },
+    {
+      "name": "developer",
+      "bundles": [
+        "core",
+        "memory",
+        "mesh",
+        "channels",
+        "developer",
+        "observability"
+      ],
+      "mainEligible": false,
+      "channels": "development"
+    }
+  ],
+  "bundles": [
+    {
+      "name": "core",
+      "capabilities": [
+        "execution-kernel",
+        "tool-evidence",
+        "outcome-ledger"
+      ]
+    },
+    {
+      "name": "memory",
+      "capabilities": [
+        "governed-memory",
+        "continuity",
+        "compaction"
+      ]
+    },
+    {
+      "name": "mesh",
+      "capabilities": [
+        "direct-mesh",
+        "leases",
+        "fencing",
+        "checkpoints"
+      ]
+    },
+    {
+      "name": "channels",
+      "capabilities": [
+        "telegram",
+        "whatsapp",
+        "discord"
+      ],
+      "defaults": {
+        "channelAuthority": "lease-and-fencing"
+      }
+    },
+    {
+      "name": "developer",
+      "capabilities": [
+        "lsp",
+        "code-runtime",
+        "plugin-hmr",
+        "acp"
+      ]
+    },
+    {
+      "name": "observability",
+      "capabilities": [
+        "otel",
+        "trust",
+        "runtime-catalogs"
+      ]
+    },
+    {
+      "name": "worker-hardening",
+      "capabilities": [
+        "node-only",
+        "read-only-root",
+        "signed-work"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+services:
+  nova-nas:
+    image: nova-nas:${NOVA_VERSION:-2.72.3}
+    build:
+      context: ./build
+      dockerfile: Dockerfile
+      args:
+        NOVA_VERSION: ${NOVA_VERSION:-2.72.3}
+    container_name: nova-nas
+    hostname: nova-nas
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    user: "${NOVA_CONTAINER_UID:-1026}:${NOVA_CONTAINER_GID:-100}"
+    env_file:
+      - .nova.env
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=3072"
+      HOME: /app/.home
+      NOVA_NODE_ID: nova-nas
+      NOVA_ROLE: edge
+      NOVA_NODE_ONLY: "true"
+      NOVA_NO_TELEGRAM: "false"
+      NOVA_TELEGRAM_MODE: standby
+      NOVA_MAIN_ELIGIBLE: "true"
+      NOVA_MESH_FAILOVER_MAIN: "true"
+      NOVA_SKIP_MODEL_RESOLVER_INIT: "false"
+    volumes:
+      - ./nova.config.json:/app/nova.config.json:ro
+      - ./data:/app/.nova-data
+      - ./memory:/app/.nova-memory
+      - ./learning:/app/.nova-learning
+      - ./vector:/app/.nova-vector-memory
+      - ./logs:/app/.nova-logs
+      - ./costs:/app/.nova-costs
+      - ./agent:/app/.agent
+      - ./home:/app/.home
+      - ./gateway-token:/app/.nova-gateway-token
+      - ./nova.pid:/app/.nova.pid
+      - ./workers:/app/.nova-workers
+      - ./projects:/app/.nova-projects
+      - ./vision:/app/.nova-vision
+      - ./tools:/app/.nova-tools
+      - ./skills:/app/.nova-skills
+      - ./sandbox:/app/.nova-sandbox
+      - ./runtime-tmp:/app/.nova-tmp
+      - ./prefs:/app/.nova-prefs
+      - ./rag:/app/.nova-rag
+      - ./repo-map:/app/.nova-repo-map
+      - ./sessions:/app/.nova-sessions
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpuset: "${NOVA_CPU_SET:-0,1}"
+    cpu_shares: 512
+    mem_limit: "${NOVA_MEMORY_LIMIT:-4g}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const fs=require('fs');process.exit(fs.readFileSync('/proc/1/cmdline','utf8').includes('daemon.js')?0:1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s

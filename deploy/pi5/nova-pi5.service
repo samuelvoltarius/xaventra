@@ -1,0 +1,34 @@
+[Unit]
+Description=Nova Core Pi 5 Mesh Worker
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xaventra
+Group=xaventra
+WorkingDirectory=/home/xaventra/nova-runtime
+Environment=NODE_ENV=production
+Environment=NOVA_NODE_ID=nova-pi5
+Environment=NOVA_NODE_ONLY=true
+Environment=NOVA_TELEGRAM_MODE=standby
+Environment=NOVA_DATA_DIR=/home/xaventra/nova-runtime/.nova-data
+Environment=NOVA_SKIP_MODEL_RESOLVER_INIT=false
+EnvironmentFile=-/home/xaventra/nova-runtime/.nova.env
+ExecStart=/opt/nova-node-arm64 /home/xaventra/nova-runtime/dist/daemon.js
+Restart=on-failure
+RestartSec=5
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+TimeoutStartSec=180
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+BindReadOnlyPaths=/dev/null:/etc/ld.so.preload
+ReadWritePaths=/home/xaventra/nova-runtime
+
+[Install]
+WantedBy=multi-user.target

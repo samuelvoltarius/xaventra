@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Seed isolated development configuration
+        run: cp nova.config.example.json nova.config.json
+      - run: npm run typecheck
+      - run: npm test -- --maxWorkers=2
+        env:
+          NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
+      - run: npm run build
+      - run: npm run check:catalogs
+      - run: npm run check:assurance
+      - run: npm run test:desktop
+      - run: npm audit --prefix desktop --audit-level=high
+
+  legacy-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci --prefix dashboard --ignore-scripts
+      - run: npm audit --prefix dashboard --audit-level=high
+      - run: npm run --prefix dashboard build

@@ -1,0 +1,39 @@
+services:
+  nova-spark:
+    image: nova-spark:${NOVA_VERSION:-2.72.3}
+    build:
+      context: /home/xaventra/nova-core
+      dockerfile: deploy/spark/Dockerfile
+    container_name: nova-spark
+    network_mode: host
+    gpus: all
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "3"
+    user: "1000:1000"
+    env_file:
+      - /home/xaventra/nova-runtime/.env
+    environment:
+      NODE_ENV: production
+      NOVA_NODE_ONLY: "true"
+      NOVA_TELEGRAM_MODE: standby
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - /home/xaventra/nova-runtime/nova.config.json:/app/nova.config.json:ro
+      - /home/xaventra/nova-runtime/SOUL.md:/app/SOUL.md:ro
+      - /home/xaventra/nova-runtime/data:/app/.nova-data
+      - /home/xaventra/nova-runtime/learning:/app/.nova-learning
+      - /home/xaventra/nova-runtime/vector:/app/.nova-vector-memory
+      - /home/xaventra/nova:/app/models:ro
+      # The fenced Main updater uses only the preconfigured host keys and
+      # private key; workers never receive this mount.
+      - /home/xaventra/.ssh:/home/node/.ssh:ro
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

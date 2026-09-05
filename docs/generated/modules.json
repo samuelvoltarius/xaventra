@@ -1,0 +1,4552 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "module": "src/acp/acp-server.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "../runtime/mission-workspace.js",
+        "../tools/complete-registry.js",
+        "@agentclientprotocol/sdk",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:stream"
+      ]
+    },
+    {
+      "module": "src/agents/agent-backend.ts",
+      "imports": [
+        "../core/task-contract.js",
+        "../tools/complete-registry.js",
+        "@openai/agents"
+      ]
+    },
+    {
+      "module": "src/agents/agent-patterns.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/agent-roles.ts",
+      "imports": []
+    },
+    {
+      "module": "src/agents/agent-scope.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/agents/continuable-subagents.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./subagent-orchestrator.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/nova-model-provider.ts",
+      "imports": [
+        "../llm/nova-llm-sdk.js",
+        "@openai/agents",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/agents/nova-native-backend.ts",
+      "imports": [
+        "./agent-backend.js"
+      ]
+    },
+    {
+      "module": "src/agents/nova-runner.ts",
+      "imports": [
+        "../auth/codex-installer.js",
+        "../core/action-intent.js",
+        "../core/context-policy.js",
+        "../core/execution-control.js",
+        "../core/execution-kernel.js",
+        "../core/model-pricing.js",
+        "../core/outcome-ledger.js",
+        "../core/runtime-event-log.js",
+        "../core/system-message.js",
+        "../core/task-contract.js",
+        "../core/tool-task-context.js",
+        "../doctor/tool-contract.js",
+        "../infra/telemetry.js",
+        "../learning/trace.js",
+        "../plugins/plugin-sdk.js",
+        "../security/secret-redaction.js",
+        "../tools/complete-registry.js",
+        "../tools/loop-detection.js",
+        "../tools/tool-policy.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/openai-agents-backend.ts",
+      "imports": [
+        "../core/execution-control.js",
+        "../core/execution-kernel.js",
+        "../core/model-pricing.js",
+        "../core/outcome-ledger.js",
+        "../mesh/capability-graph.js",
+        "../routing/outcome-router.js",
+        "../security/secret-redaction.js",
+        "../tools/complete-registry.js",
+        "../tools/tool-policy.js",
+        "./agent-backend.js",
+        "./nova-model-provider.js",
+        "@openai/agents"
+      ]
+    },
+    {
+      "module": "src/agents/sub-agent.ts",
+      "imports": [
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/agents/subagent-orchestrator.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/team-coordinator.ts",
+      "imports": [
+        "./agent-roles.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/agents/tools/common.ts",
+      "imports": []
+    },
+    {
+      "module": "src/agents/tools/discord-actions.ts",
+      "imports": [
+        "../../config/config.js"
+      ]
+    },
+    {
+      "module": "src/agents/tools/telegram-actions.ts",
+      "imports": [
+        "../../config/config.js"
+      ]
+    },
+    {
+      "module": "src/analysis/ast-parser.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth-refresh.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/codex-app-server.ts",
+      "imports": [
+        "../infra/telemetry.js",
+        "../llm/codex-cli-adapter.js",
+        "../llm/nova-llm-sdk.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:readline"
+      ]
+    },
+    {
+      "module": "src/auth/codex-continuity.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./codex-runtime.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/codex-installer.ts",
+      "imports": [
+        "../core/side-effects.js",
+        "../llm/codex-cli-adapter.js",
+        "./codex-app-server.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/auth/codex-runtime.ts",
+      "imports": [
+        "../core/config.js",
+        "../core/data-root.js",
+        "../llm/local-llm.js",
+        "../llm/nova-llm-sdk.js",
+        "../mesh/capability-graph.js",
+        "../mesh/mesh-registry.js",
+        "./codex-app-server.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/legacy-codex-migration.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/nova-login.ts",
+      "imports": [
+        "./openai-oauth.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/oauth.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/openai-codex.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/auth/openai-oauth.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/benchmark-cli.ts",
+      "imports": [
+        "./nova-benchmark-runner.js",
+        "dotenv/config"
+      ]
+    },
+    {
+      "module": "src/benchmark/benchmark-lab.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/benchmark-probes.ts",
+      "imports": [
+        "../core/action-intent.js",
+        "../core/execution-control.js",
+        "../core/outcome-ledger.js",
+        "../core/proactive-policy.js",
+        "../core/proactive.js",
+        "../core/task-contract.js",
+        "../doctor/gpu-runtime.js",
+        "../doctor/tool-contract.js",
+        "../learning/personal-skill-compiler.js",
+        "../memory/memory-governance.js",
+        "../memory/workflow-episode-store.js",
+        "../mesh/capability-graph.js",
+        "../mesh/quorum-witness.js",
+        "../mesh/witness-quorum.js",
+        "../routing/outcome-router.js",
+        "./benchmark-lab.js",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/benchmark-regression-cli.ts",
+      "imports": [
+        "./regression-gate.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/comparison-runner.ts",
+      "imports": [
+        "./benchmark-lab.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/external-agent-adapters.ts",
+      "imports": [
+        "./benchmark-lab.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/external-comparison-cli.ts",
+      "imports": [
+        "./benchmark-lab.js",
+        "./external-agent-adapters.js",
+        "dotenv/config",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/nova-benchmark-runner.ts",
+      "imports": [
+        "../agents/agent-backend.js",
+        "../core/action-intent.js",
+        "../core/llm-factory.js",
+        "../core/outcome-ledger.js",
+        "../core/task-contract.js",
+        "../llm/model-perf-db.js",
+        "./benchmark-lab.js",
+        "./benchmark-probes.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/benchmark/regression-gate.ts",
+      "imports": [
+        "./benchmark-lab.js"
+      ]
+    },
+    {
+      "module": "src/channel-web.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/allowlist-match.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/allowlists/resolve-utils.ts",
+      "imports": [
+        "../../runtime.js"
+      ]
+    },
+    {
+      "module": "src/channels/channel-config.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/chat-type.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/command-gating.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/conversation-label.ts",
+      "imports": [
+        "../auto-reply/templating.js",
+        "./chat-type.js"
+      ]
+    },
+    {
+      "module": "src/channels/discord.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/dock.ts",
+      "imports": [
+        "../config/config.js",
+        "../discord/accounts.js",
+        "../imessage/accounts.js",
+        "../plugins/runtime.js",
+        "../signal/accounts.js",
+        "../slack/accounts.js",
+        "../telegram/accounts.js",
+        "../utils.js",
+        "../web/accounts.js",
+        "../whatsapp/normalize.js",
+        "./plugins/group-mentions.js",
+        "./plugins/types.js",
+        "./registry.js"
+      ]
+    },
+    {
+      "module": "src/channels/index.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js",
+        "./discord.js",
+        "./matrix.js",
+        "./signal.js",
+        "./slack.js",
+        "./telegram.js",
+        "./voip.js",
+        "./whatsapp.js"
+      ]
+    },
+    {
+      "module": "src/channels/location.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/matrix.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/mention-gating.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/message-queue.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/ha-state.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/actions/discord.ts",
+      "imports": [
+        "../../../agents/tools/common.js",
+        "../../../discord/accounts.js",
+        "../types.js",
+        "./discord/handle-action.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/actions/discord/handle-action.guild-admin.ts",
+      "imports": [
+        "../../../../agents/tools/common.js",
+        "../../../../agents/tools/discord-actions.js",
+        "../../types.js",
+        "@mariozechner/pi-agent-core"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/actions/discord/handle-action.ts",
+      "imports": [
+        "../../../../agents/tools/common.js",
+        "../../../../agents/tools/discord-actions.js",
+        "../../../../discord/targets.js",
+        "../../types.js",
+        "./handle-action.guild-admin.js",
+        "@mariozechner/pi-agent-core"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/actions/telegram.ts",
+      "imports": [
+        "../../../agents/tools/common.js",
+        "../../../agents/tools/telegram-actions.js",
+        "../../../telegram/accounts.js",
+        "../../../telegram/inline-buttons.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/agent-tools/whatsapp-login.ts",
+      "imports": [
+        "../types.js",
+        "@sinclair/typebox"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/allowlist-match.ts",
+      "imports": [
+        "../allowlist-match.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/bluebubbles-actions.ts",
+      "imports": [
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/catalog.ts",
+      "imports": [
+        "../../plugins/discovery.js",
+        "../../plugins/manifest.js",
+        "../../plugins/types.js",
+        "./types.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/channel-config.ts",
+      "imports": [
+        "../channel-config.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/config-helpers.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../routing/session-key.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/config-schema.ts",
+      "imports": [
+        "./types.plugin.js",
+        "zod"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/config-writes.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../routing/session-key.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/directory-config.ts",
+      "imports": [
+        "../../config/types.js",
+        "../../discord/accounts.js",
+        "../../slack/accounts.js",
+        "../../telegram/accounts.js",
+        "../../web/accounts.js",
+        "../../whatsapp/normalize.js",
+        "./normalize/slack.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/group-mentions.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../config/group-policy.js",
+        "../../config/types.js",
+        "../../slack/accounts.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/helpers.ts",
+      "imports": [
+        "../../cli/command-format.js",
+        "../../config/config.js",
+        "../../routing/session-key.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/index.ts",
+      "imports": [
+        "../../plugins/runtime.js",
+        "../registry.js",
+        "./allowlist-match.js",
+        "./channel-config.js",
+        "./directory-config.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/load.ts",
+      "imports": [
+        "../../plugins/registry.js",
+        "../../plugins/runtime.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/media-limits.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../routing/session-key.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/message-action-names.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/plugins/message-actions.ts",
+      "imports": [
+        "../../config/config.js",
+        "./index.js",
+        "./types.js",
+        "@mariozechner/pi-agent-core"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/normalize/discord.ts",
+      "imports": [
+        "../../../discord/targets.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/normalize/signal.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/plugins/normalize/slack.ts",
+      "imports": [
+        "../../../slack/targets.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/normalize/telegram.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/plugins/normalize/whatsapp.ts",
+      "imports": [
+        "../../../whatsapp/normalize.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding-types.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../config/types.js",
+        "../../runtime.js",
+        "../../wizard/prompts.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/channel-access.ts",
+      "imports": [
+        "../../../wizard/prompts.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/discord.ts",
+      "imports": [
+        "../../../config/config.js",
+        "../../../config/types.discord.js",
+        "../../../config/types.js",
+        "../../../discord/accounts.js",
+        "../../../discord/monitor/allow-list.js",
+        "../../../discord/resolve-channels.js",
+        "../../../discord/resolve-users.js",
+        "../../../routing/session-key.js",
+        "../../../terminal/links.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./channel-access.js",
+        "./helpers.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/helpers.ts",
+      "imports": [
+        "../../../routing/session-key.js",
+        "../onboarding-types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/imessage.ts",
+      "imports": [
+        "../../../commands/onboard-helpers.js",
+        "../../../config/config.js",
+        "../../../config/types.js",
+        "../../../imessage/accounts.js",
+        "../../../imessage/targets.js",
+        "../../../routing/session-key.js",
+        "../../../terminal/links.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./helpers.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/signal.ts",
+      "imports": [
+        "../../../cli/command-format.js",
+        "../../../commands/onboard-helpers.js",
+        "../../../commands/signal-install.js",
+        "../../../config/config.js",
+        "../../../config/types.js",
+        "../../../routing/session-key.js",
+        "../../../signal/accounts.js",
+        "../../../terminal/links.js",
+        "../../../utils.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./helpers.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/slack.ts",
+      "imports": [
+        "../../../config/config.js",
+        "../../../config/types.js",
+        "../../../routing/session-key.js",
+        "../../../slack/accounts.js",
+        "../../../slack/resolve-channels.js",
+        "../../../slack/resolve-users.js",
+        "../../../terminal/links.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./channel-access.js",
+        "./helpers.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/telegram.ts",
+      "imports": [
+        "../../../cli/command-format.js",
+        "../../../config/config.js",
+        "../../../config/types.js",
+        "../../../routing/session-key.js",
+        "../../../telegram/accounts.js",
+        "../../../terminal/links.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./helpers.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/onboarding/whatsapp.ts",
+      "imports": [
+        "../../../channel-web.js",
+        "../../../cli/command-format.js",
+        "../../../config/config.js",
+        "../../../config/merge-config.js",
+        "../../../config/types.js",
+        "../../../routing/session-key.js",
+        "../../../runtime.js",
+        "../../../terminal/links.js",
+        "../../../utils.js",
+        "../../../web/accounts.js",
+        "../../../wizard/prompts.js",
+        "../onboarding-types.js",
+        "./helpers.js",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/discord.ts",
+      "imports": [
+        "../../../discord/send.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/imessage.ts",
+      "imports": [
+        "../../../auto-reply/chunk.js",
+        "../../../imessage/send.js",
+        "../media-limits.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/load.ts",
+      "imports": [
+        "../../../plugins/registry.js",
+        "../../../plugins/runtime.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/signal.ts",
+      "imports": [
+        "../../../auto-reply/chunk.js",
+        "../../../signal/send.js",
+        "../media-limits.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/slack.ts",
+      "imports": [
+        "../../../slack/send.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/telegram.ts",
+      "imports": [
+        "../../../telegram/format.js",
+        "../../../telegram/send.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/outbound/whatsapp.ts",
+      "imports": [
+        "../../../auto-reply/chunk.js",
+        "../../../globals.js",
+        "../../../infra/outbound/target-errors.js",
+        "../../../web/outbound.js",
+        "../../../whatsapp/normalize.js",
+        "../types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/pairing-message.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/plugins/pairing.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../runtime.js",
+        "./index.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/setup-helpers.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../routing/session-key.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/slack.actions.ts",
+      "imports": [
+        "../../agents/tools/common.js",
+        "../../agents/tools/slack-actions.js",
+        "../../slack/accounts.js",
+        "../../slack/targets.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/status-issues/bluebubbles.ts",
+      "imports": [
+        "../types.js",
+        "./shared.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/status-issues/discord.ts",
+      "imports": [
+        "../types.js",
+        "./shared.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/status-issues/shared.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/plugins/status-issues/telegram.ts",
+      "imports": [
+        "../types.js",
+        "./shared.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/status-issues/whatsapp.ts",
+      "imports": [
+        "../../../cli/command-format.js",
+        "../types.js",
+        "./shared.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/status.ts",
+      "imports": [
+        "../../config/config.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/types.adapters.ts",
+      "imports": [
+        "../../config/config.js",
+        "../../infra/outbound/deliver.js",
+        "../../runtime.js",
+        "./types.core.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/types.core.ts",
+      "imports": [
+        "../../auto-reply/templating.js",
+        "../../config/config.js",
+        "../../polls.js",
+        "../../utils/message-channel.js",
+        "../chat-type.js",
+        "../registry.js",
+        "./message-action-names.js",
+        "@mariozechner/pi-agent-core",
+        "@sinclair/typebox"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/types.plugin.ts",
+      "imports": [
+        "./onboarding-types.js",
+        "./types.adapters.js",
+        "./types.core.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/types.ts",
+      "imports": [
+        "./message-action-names.js",
+        "./types.adapters.js",
+        "./types.core.js",
+        "./types.plugin.js"
+      ]
+    },
+    {
+      "module": "src/channels/plugins/whatsapp-heartbeat.ts",
+      "imports": [
+        "../../channels/registry.js",
+        "../../config/config.js",
+        "../../config/sessions.js",
+        "../../utils.js"
+      ]
+    },
+    {
+      "module": "src/channels/registry.ts",
+      "imports": [
+        "../plugins/runtime.js",
+        "./plugins/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/sender-identity.ts",
+      "imports": [
+        "../auto-reply/templating.js",
+        "./chat-type.js"
+      ]
+    },
+    {
+      "module": "src/channels/sender-label.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/signal.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/slack.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/targets.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/telegram-grammy.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/telegram-polling-guard.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/telegram-presentation.ts",
+      "imports": [
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/telegram-stream.ts",
+      "imports": []
+    },
+    {
+      "module": "src/channels/telegram.ts",
+      "imports": [
+        "../core/outbound-content-guard.js",
+        "../core/runtime.js",
+        "../core/types.js",
+        "./telegram-polling-guard.js",
+        "./telegram-presentation.js",
+        "./telegram-stream.js"
+      ]
+    },
+    {
+      "module": "src/channels/voip.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/channels/web/index.ts",
+      "imports": [
+        "../../channel-web.js"
+      ]
+    },
+    {
+      "module": "src/channels/whatsapp.ts",
+      "imports": [
+        "../core/runtime.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/cli.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:readline"
+      ]
+    },
+    {
+      "module": "src/cli/command-format.ts",
+      "imports": []
+    },
+    {
+      "module": "src/commands/brain-commands.ts",
+      "imports": [
+        "./builtin.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/commands/builtin.ts",
+      "imports": [
+        "../core/model-defaults.js",
+        "./brain-commands.js"
+      ]
+    },
+    {
+      "module": "src/commands/wizard.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:readline"
+      ]
+    },
+    {
+      "module": "src/config/config.ts",
+      "imports": []
+    },
+    {
+      "module": "src/config/types.agents.ts",
+      "imports": []
+    },
+    {
+      "module": "src/config/types.ts",
+      "imports": [
+        "./config.js"
+      ]
+    },
+    {
+      "module": "src/core/action-intent.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/action-lifecycle.ts",
+      "imports": [
+        "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/atomic-storage.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/auth.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/auto-updater.ts",
+      "imports": [
+        "../mesh/leader-election.js",
+        "../mesh/mesh-identity.js",
+        "../mesh/mesh-registry.js",
+        "./data-root.js",
+        "./release-verifier.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/core/autonomous-executor.ts",
+      "imports": [
+        "./action-intent.js",
+        "./atomic-storage.js",
+        "./goal-manager.js",
+        "./outcome-ledger.js",
+        "./task-contract.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/autonomy-authority.ts",
+      "imports": [
+        "../mesh/leader-election.js"
+      ]
+    },
+    {
+      "module": "src/core/autonomy-ladder.ts",
+      "imports": [
+        "../learning/personal-skill-compiler.js",
+        "./execution-preflight.js"
+      ]
+    },
+    {
+      "module": "src/core/autonomy-loop.ts",
+      "imports": [
+        "./autonomy-authority.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/batch-processor.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/belief-store.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/capability-researcher.ts",
+      "imports": [
+        "./self-setup-orchestrator.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/causal-memory.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/channel-gateway.ts",
+      "imports": [
+        "./daemon-channels.js"
+      ]
+    },
+    {
+      "module": "src/core/clarification-gate.ts",
+      "imports": [
+        "../memory/session-summarizer.js",
+        "../mesh/capability-graph.js",
+        "./action-intent.js",
+        "./belief-store.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/cli-pipeline-runtime.ts",
+      "imports": [
+        "./llm-factory.js",
+        "./message-pipeline.js",
+        "./nova-state.js",
+        "./slash-commands.js",
+        "dotenv/config",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/client-identity.ts",
+      "imports": [
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/core/complexity-router.ts",
+      "imports": [
+        "./context-policy.js"
+      ]
+    },
+    {
+      "module": "src/core/config-service.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/config-validator.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/config.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "zod/v3"
+      ]
+    },
+    {
+      "module": "src/core/context-policy.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/correction-detector.ts",
+      "imports": [
+        "../memory/memory-governance.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/croner-scheduler.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/daemon-channels.ts",
+      "imports": [
+        "../channels/telegram-presentation.js",
+        "./runtime-event-log.js"
+      ]
+    },
+    {
+      "module": "src/core/data-root.ts",
+      "imports": [
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/deliberative-planner.ts",
+      "imports": [
+        "./execution-preflight.js"
+      ]
+    },
+    {
+      "module": "src/core/deterministic-query.ts",
+      "imports": [
+        "../memory/memory-quality.js"
+      ]
+    },
+    {
+      "module": "src/core/document-rag.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/environment.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/execution-control.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/execution-kernel.ts",
+      "imports": [
+        "../infra/telemetry.js",
+        "./action-intent.js",
+        "./action-lifecycle.js",
+        "./autonomy-ladder.js",
+        "./context-policy.js",
+        "./deliberative-planner.js",
+        "./execution-preflight.js",
+        "./focused-worker.js",
+        "./intent-dispatcher.js",
+        "./result-validator.js",
+        "./task-contract.js"
+      ]
+    },
+    {
+      "module": "src/core/execution-preflight.ts",
+      "imports": [
+        "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/factory.ts",
+      "imports": [
+        "node:crypto",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/core/focused-worker.ts",
+      "imports": [
+        "../tools/complete-registry.js",
+        "./intent-dispatcher.js"
+      ]
+    },
+    {
+      "module": "src/core/full-system-audit.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/goal-manager.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/ha-state.ts",
+      "imports": [
+        "../memory/shared-memory.js",
+        "../mesh/leader-election.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/hardware-role.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/core/health-contract.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/heartbeat.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/index.ts",
+      "imports": [
+        "./message-bus.js",
+        "./state-machine.js"
+      ]
+    },
+    {
+      "module": "src/core/intent-dispatcher.ts",
+      "imports": [
+        "../tools/tool-router.js",
+        "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/lifecycle-policy.ts",
+      "imports": [
+        "node:async_hooks",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/llm-factory.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/memory.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "node:fs",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/message-bus.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/message-pipeline.ts",
+      "imports": [
+        "../memory/memory-quality.js",
+        "../users/principal-id.js",
+        "./action-intent.js",
+        "./context-policy.js",
+        "./request-tracer.js",
+        "./system-message.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/model-defaults.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/model-pricing.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/model-resolver.ts",
+      "imports": [
+        "./side-effects.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/nova-logger.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/nova-state.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/operational-event-bus.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/orchestration-authority.ts",
+      "imports": [
+        "../agents/subagent-orchestrator.js",
+        "../resilience/orchestrator.js"
+      ]
+    },
+    {
+      "module": "src/core/outbound-content-guard.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/outcome-ledger.ts",
+      "imports": [
+        "../infra/telemetry.js",
+        "../learning/regression-case-store.js",
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "./task-contract.js",
+        "node:async_hooks",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/paths.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/performance-budget.ts",
+      "imports": [
+        "node:perf_hooks"
+      ]
+    },
+    {
+      "module": "src/core/persona.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/pid-guard.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/predictive-context.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/preflight-checks.ts",
+      "imports": [
+        "child_process",
+        "fs",
+        "path"
+      ]
+    },
+    {
+      "module": "src/core/proactive-policy.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/proactive.ts",
+      "imports": [
+        "./proactive-policy.js"
+      ]
+    },
+    {
+      "module": "src/core/prompt-budget.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/release-verifier.ts",
+      "imports": [
+        "../mesh/mesh-identity.js",
+        "../mesh/transport-contracts.js",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/core/request-gate.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/request-tracer.ts",
+      "imports": [
+        "node:async_hooks",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/core/result-validator.ts",
+      "imports": [
+        "../tools/tool-result-quality.js",
+        "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/runtime-event-log.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/runtime-readiness.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/runtime.ts",
+      "imports": [
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/core/scheduler.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/self-architecture.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/self-doctor.ts",
+      "imports": [
+        "dotenv/config",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/self-setup-orchestrator.ts",
+      "imports": [
+        "../doctor/gpu-runtime.js",
+        "../mesh/capability-graph.js",
+        "../startup/environment-scanner.js",
+        "../voice/voice-setup.js",
+        "./config-validator.js",
+        "./side-effects.js",
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/self-update.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/side-effects.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/skills-loader.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/slash-commands.ts",
+      "imports": [
+        "../auth/codex-runtime.js",
+        "../users/principal-id.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/soul-v2.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/soul.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/startup-performance.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "node:path",
+        "node:perf_hooks"
+      ]
+    },
+    {
+      "module": "src/core/state-machine.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/strict-mode.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/system-message.ts",
+      "imports": [
+        "./task-contract.js"
+      ]
+    },
+    {
+      "module": "src/core/task-contract.ts",
+      "imports": [
+        "./action-intent.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/core/task-tracker.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/tasks.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/tool-evidence-response.ts",
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/core/tool-execution-pipeline.ts",
+      "imports": [
+        "./lifecycle-policy.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/core/tool-task-context.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/types.ts",
+      "imports": [
+        "zod/v3"
+      ]
+    },
+    {
+      "module": "src/core/vector-memory.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/world-model.ts",
+      "imports": [
+        "../memory/memory-governance.js",
+        "../memory/session-summarizer.js",
+        "../mesh/capability-graph.js",
+        "../mesh/mesh-registry.js",
+        "./autonomous-executor.js",
+        "./outcome-ledger.js"
+      ]
+    },
+    {
+      "module": "src/daemon.ts",
+      "imports": [
+        "./core/channel-gateway.js",
+        "./core/config.js",
+        "./core/llm-factory.js",
+        "./core/message-bus.js",
+        "./core/message-pipeline.js",
+        "./core/nova-logger.js",
+        "./core/nova-state.js",
+        "./core/pid-guard.js",
+        "./core/request-gate.js",
+        "./core/request-tracer.js",
+        "./core/startup-performance.js",
+        "./core/task-tracker.js",
+        "./infra/telemetry.js",
+        "./mesh/mesh-transport-runtime.js",
+        "dotenv/config",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dashboard/server.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
+        "express",
+        "node:fs",
+        "node:http",
+        "node:path",
+        "node:url",
+        "ws",
+        "zod"
+      ]
+    },
+    {
+      "module": "src/desktop/bot-profile-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/desktop-agent-context.ts",
+      "imports": [
+        "node:async_hooks"
+      ]
+    },
+    {
+      "module": "src/desktop/desktop-api.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../core/outcome-ledger.js",
+        "../memory/memory-asset-catalog.js",
+        "../memory/memory-governance.js",
+        "../mesh/leader-election.js",
+        "../mesh/mesh-registry.js",
+        "../security/blue-team.js",
+        "../security/red-team.js",
+        "../security/secret-redaction.js",
+        "../tools/skill-builder.js",
+        "../users/multi-user-middleware.js",
+        "./bot-profile-store.js",
+        "./desktop-agent-context.js",
+        "./desktop-control.js",
+        "./external-agent-registry.js",
+        "./model-control.js",
+        "./module-catalog.js",
+        "./node-enrollment.js",
+        "./topic-room-store.js",
+        "express",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/desktop-control.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/external-agent-registry.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/model-control.ts",
+      "imports": [
+        "../core/llm-factory.js",
+        "../llm/provider-manifest.js",
+        "../mesh/capability-graph.js",
+        "../routing/outcome-router.js"
+      ]
+    },
+    {
+      "module": "src/desktop/module-catalog.ts",
+      "imports": [
+        "../tools/complete-registry.js"
+      ]
+    },
+    {
+      "module": "src/desktop/node-enrollment.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../mesh/capability-graph.js",
+        "../mesh/mesh-node-lifecycle.js",
+        "../mesh/mesh-registry.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/topic-room-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/check-build-freshness.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/check-layers.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/dev/cleanup-benchmark-contamination.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../memory/memory-governance.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/cleanup-correction-misattribution.ts",
+      "imports": [
+        "../core/data-root.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/copy-dashboard-assets.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/dev/deploy-current-release.ts",
+      "imports": [
+        "../core/auto-updater.js",
+        "../mesh/leader-election.js",
+        "./release-targets.js",
+        "dotenv/config",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/generate-runtime-catalogs.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:url",
+        "typescript"
+      ]
+    },
+    {
+      "module": "src/dev/release-readiness.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/dev/release-targets.ts",
+      "imports": [
+        "../core/auto-updater.js"
+      ]
+    },
+    {
+      "module": "src/dev/self-learning-e2e.ts",
+      "imports": [
+        "../llm/local-llm.js",
+        "../tools/complete-registry.js",
+        "dotenv/config",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/dev/verify-production-trace.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../infra/trace-verifier.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/devops/devops-automation.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/discord/accounts.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/discord/targets.ts",
+      "imports": []
+    },
+    {
+      "module": "src/doctor/collect.ts",
+      "imports": [
+        "./gpu-runtime.js",
+        "./types.js",
+        "dotenv/config",
+        "node:fs",
+        "node:net",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/failure-research-coordinator.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/self-doctor.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/doctor/format.ts",
+      "imports": [
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/doctor/gpu-runtime.ts",
+      "imports": [
+        "../llm/llama-engine.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/index.ts",
+      "imports": [
+        "./collect.js",
+        "./format.js",
+        "./gpu-runtime.js",
+        "./safe-fixes.js",
+        "./tool-contract.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/doctor/safe-fixes.ts",
+      "imports": [
+        "../core/config.js",
+        "./types.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/tool-contract.ts",
+      "imports": []
+    },
+    {
+      "module": "src/doctor/types.ts",
+      "imports": []
+    },
+    {
+      "module": "src/gateway.ts",
+      "imports": [
+        "node:child_process",
+        "node:http",
+        "node:path",
+        "ws"
+      ]
+    },
+    {
+      "module": "src/globals.ts",
+      "imports": [
+        "./terminal/theme.js"
+      ]
+    },
+    {
+      "module": "src/hooks/event-hooks.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/index.ts",
+      "imports": [
+        "./commands/builtin.js",
+        "./core/model-defaults.js",
+        "./core/runtime.js",
+        "./core/types.js"
+      ]
+    },
+    {
+      "module": "src/infra/auto-update.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/gateway-auth.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/metrics.ts",
+      "imports": []
+    },
+    {
+      "module": "src/infra/plugins.ts",
+      "imports": []
+    },
+    {
+      "module": "src/infra/telemetry.ts",
+      "imports": [
+        "@opentelemetry/api",
+        "@opentelemetry/exporter-metrics-otlp-http",
+        "@opentelemetry/exporter-trace-otlp-http",
+        "@opentelemetry/resources",
+        "@opentelemetry/sdk-metrics",
+        "@opentelemetry/sdk-node",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/trace-verifier.ts",
+      "imports": []
+    },
+    {
+      "module": "src/installer/brain-installer.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/integration/nova-integration.ts",
+      "imports": [
+        "../tools/registry.js"
+      ]
+    },
+    {
+      "module": "src/intelligence/autonomy-engine.ts",
+      "imports": [
+        "../core/autonomy-authority.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/capability-router.ts",
+      "imports": [
+        "node:child_process",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/doctor-client.ts",
+      "imports": [
+        "../llm/llama-engine.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/emotion-tracker.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/entity-extractor.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/file-index.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/gem-curator.ts",
+      "imports": [
+        "./progressive-memory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/intent-router.ts",
+      "imports": [
+        "../core/model-defaults.js"
+      ]
+    },
+    {
+      "module": "src/intelligence/knowledge-graph.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/learning-hub.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/model-router.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/proactive-learning.ts",
+      "imports": [
+        "./learning-hub.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/proactive-suggestions.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/progressive-memory.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/replan-engine.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/result-analyzer.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/roi-dashboard.ts",
+      "imports": [
+        "../core/model-pricing.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/self-reflection.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/soul-evolution.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/task-planner.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/thinking.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/token-killer.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/tool-chainer.ts",
+      "imports": []
+    },
+    {
+      "module": "src/intelligence/user-patterns.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/wave-pipeline.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L0-health-monitor.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L0-self-repair.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L0-supervisor.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L0-tool-autorepair.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L03-core-runtime.ts",
+      "imports": [
+        "../core/state-machine.js",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/layers/L10-vision.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L11-project-manager.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L12-anti-hallucination.ts",
+      "imports": []
+    },
+    {
+      "module": "src/layers/L12-qa-agent.ts",
+      "imports": [
+        "../core/model-defaults.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L13-ast-analyzer.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L14-cost-tracker.ts",
+      "imports": [
+        "../core/model-defaults.js",
+        "../core/model-pricing.js",
+        "node:events",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L15-security-scanner.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L15-self-check.ts",
+      "imports": [
+        "node:events",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L16-business-sense.ts",
+      "imports": []
+    },
+    {
+      "module": "src/layers/L17-autonomous-learning.ts",
+      "imports": [
+        "../core/action-intent.js",
+        "../core/atomic-storage.js",
+        "../tools/tool-result-quality.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L18-llm-router.ts",
+      "imports": [
+        "../llm/model-perf-db.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L19-monitoring.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L20-self-improvement.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L21-node-health.ts",
+      "imports": [
+        "../core/health-contract.js",
+        "../mesh/node-intelligence.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L22-federated-memory.ts",
+      "imports": [
+        "../core/side-effects.js",
+        "../memory/memory-governance.js",
+        "../memory/shared-memory.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L23-instincts.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L24-prompt-optimizer.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L6-cold-storage.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L6-core-facts.ts",
+      "imports": [
+        "../memory/memory-governance.js",
+        "../users/principal-id.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L6-session-summary.ts",
+      "imports": [
+        "../memory/tool-result-pruner.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L7-learning.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L7-tool-learning.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L8-meta-learning.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/L8-prisma-guards.ts",
+      "imports": []
+    },
+    {
+      "module": "src/layers/L8-sub-agent.ts",
+      "imports": [
+        "node:events",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/layers/L9-idle-learning.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/layers/auto-bug-fix.ts",
+      "imports": [
+        "../core/data-root.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/dream-daily-digest.ts",
+      "imports": [
+        "../core/outbound-content-guard.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/memory-distiller.ts",
+      "imports": [
+        "../memory/memory-quality.js",
+        "../users/principal-id.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/multi-bot.ts",
+      "imports": [
+        "./L7-learning.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/multi-user-workers.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/predictive-provisioning.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/subconscious-reflector.ts",
+      "imports": [
+        "../core/outbound-content-guard.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/vibe-regler.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/layers/vram-manager.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/engine.ts",
+      "imports": [
+        "./feedback.js",
+        "./patterns.js",
+        "./skills.js",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/feedback.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/learning/learning-coordinator.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./engine.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/pattern-store.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/patterns.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/learning/personal-skill-compiler.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../memory/workflow-episode-store.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/regression-case-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/learning/skills.ts",
+      "imports": [
+        "./patterns.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/learning/teaching.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/trace-analyzer.ts",
+      "imports": [
+        "./trace.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/learning/trace.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/anthropic.ts",
+      "imports": []
+    },
+    {
+      "module": "src/llm/base.ts",
+      "imports": [
+        "../core/types.js",
+        "../tools/executor.js",
+        "../tools/registry.js"
+      ]
+    },
+    {
+      "module": "src/llm/capability-probe.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/codex-cli-adapter.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/custom.ts",
+      "imports": []
+    },
+    {
+      "module": "src/llm/download-models.ts",
+      "imports": [
+        "node:fs",
+        "node:http",
+        "node:https",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/fallback.ts",
+      "imports": [
+        "./base.js"
+      ]
+    },
+    {
+      "module": "src/llm/llama-engine.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/local-llm.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/model-discovery.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/model-fallback.ts",
+      "imports": []
+    },
+    {
+      "module": "src/llm/model-perf-db.ts",
+      "imports": [
+        "node:async_hooks",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/models.ts",
+      "imports": [
+        "../core/model-defaults.js"
+      ]
+    },
+    {
+      "module": "src/llm/nova-llm-sdk.ts",
+      "imports": [
+        "../core/client-identity.js",
+        "../infra/telemetry.js",
+        "./codex-cli-adapter.js",
+        "./model-fallback.js",
+        "./model-perf-db.js",
+        "./providers/minimax.js",
+        "node:events",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/openai.ts",
+      "imports": [
+        "./codex-cli-adapter.js"
+      ]
+    },
+    {
+      "module": "src/llm/provider-manifest.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/provider-registry.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/providers/minimax.ts",
+      "imports": [
+        "../model-perf-db.js"
+      ]
+    },
+    {
+      "module": "src/llm/qwen.ts",
+      "imports": [
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/llm/response-cache.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/logging/structured-logger.ts",
+      "imports": []
+    },
+    {
+      "module": "src/mcp/mcp-client.ts",
+      "imports": [
+        "../tools/complete-registry.js",
+        "@modelcontextprotocol/sdk/client/auth.js",
+        "@modelcontextprotocol/sdk/client/index.js",
+        "@modelcontextprotocol/sdk/client/stdio.js",
+        "@modelcontextprotocol/sdk/client/streamableHttp.js",
+        "@modelcontextprotocol/sdk/shared/transport.js",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/mcp/mcp-runtime.ts",
+      "imports": [
+        "../core/config.js",
+        "../tools/complete-registry.js",
+        "./mcp-client.js"
+      ]
+    },
+    {
+      "module": "src/media/media-providers.ts",
+      "imports": [
+        "../core/model-defaults.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/media/media-understanding.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/advanced-rag.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/auto-observer.ts",
+      "imports": [
+        "./memory-curator.js",
+        "./memory-governance.js",
+        "./memory-quality.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/capabilities-store.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/correction-memory.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./memory-governance.js"
+      ]
+    },
+    {
+      "module": "src/memory/embedding-providers.ts",
+      "imports": []
+    },
+    {
+      "module": "src/memory/hybrid-search.ts",
+      "imports": [
+        "./mmr.js",
+        "./temporal-decay.js"
+      ]
+    },
+    {
+      "module": "src/memory/journal.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/knowledge-graph.ts",
+      "imports": [
+        "./memory-governance.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/lancedb-memory.ts",
+      "imports": [
+        "./embedding-providers.js",
+        "./hybrid-search.js",
+        "./query-expansion.js",
+        "@lancedb/lancedb",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/lancedb.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/memory/local-memory.ts",
+      "imports": [
+        "./shared-memory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/memory-asset-catalog.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/memory-context.ts",
+      "imports": [
+        "./memory-governance.js",
+        "./session-summarizer.js"
+      ]
+    },
+    {
+      "module": "src/memory/memory-curator.ts",
+      "imports": [
+        "./memory-quality.js"
+      ]
+    },
+    {
+      "module": "src/memory/memory-governance.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./memory-quality.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/memory-quality.ts",
+      "imports": []
+    },
+    {
+      "module": "src/memory/mmr.ts",
+      "imports": []
+    },
+    {
+      "module": "src/memory/query-expansion.ts",
+      "imports": []
+    },
+    {
+      "module": "src/memory/retrieval-evaluator.ts",
+      "imports": [
+        "./memory-governance.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/session-summarizer.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/side-effects.js",
+        "../security/secret-redaction.js",
+        "./memory-quality.js",
+        "./shared-memory.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/shared-memory.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/temporal-decay.ts",
+      "imports": []
+    },
+    {
+      "module": "src/memory/tool-result-pruner.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/memory/user-preferences.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/vector-memory.ts",
+      "imports": [
+        "./shared-memory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/vector-store.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/workflow-episode-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/side-effects.js",
+        "../security/secret-redaction.js",
+        "./memory-quality.js",
+        "./shared-memory.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/ai-scanner.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/mesh/auto-provisioner.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/capability-graph-sync.ts",
+      "imports": [
+        "../memory/shared-memory.js",
+        "./capability-graph.js",
+        "./mesh-registry.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/mesh/capability-graph.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/outcome-ledger.js",
+        "../llm/model-perf-db.js",
+        "./ai-scanner.js",
+        "./mesh-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/capability-orchestrator.ts",
+      "imports": [
+        "./capability-graph.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/direct-mesh-transport.ts",
+      "imports": [
+        "./mesh-identity.js",
+        "./transport-contracts.js",
+        "node:net",
+        "ws"
+      ]
+    },
+    {
+      "module": "src/mesh/event-hub.ts",
+      "imports": [
+        "ws"
+      ]
+    },
+    {
+      "module": "src/mesh/failover-readiness.ts",
+      "imports": [
+        "../core/autonomous-executor.js",
+        "../core/ha-state.js",
+        "./leader-election.js",
+        "./mesh-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/leader-election.ts",
+      "imports": [
+        "../infra/telemetry.js",
+        "./mesh-registry.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/live-failover-test.ts",
+      "imports": [
+        "dotenv/config",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/local-mesh-transport.ts",
+      "imports": [
+        "./transport-contracts.js"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-brain.ts",
+      "imports": [
+        "./node-intelligence.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-identity-cli.ts",
+      "imports": [
+        "./mesh-identity.js",
+        "./mesh-registry.js",
+        "dotenv/config"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-identity.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./transport-contracts.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-llm-proxy.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-memory-sync.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-node-lifecycle.ts",
+      "imports": []
+    },
+    {
+      "module": "src/mesh/mesh-policy.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./mesh-identity.js",
+        "./transport-contracts.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-registry.ts",
+      "imports": [
+        "./mesh-node-lifecycle.js",
+        "child_process",
+        "crypto",
+        "fs",
+        "os",
+        "path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-remote-exec.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-router.ts",
+      "imports": [
+        "node:child_process"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-tool-share.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-transport-router.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../infra/telemetry.js",
+        "./mesh-identity.js",
+        "./mesh-policy.js",
+        "./transport-contracts.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-transport-runtime.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./capability-graph.js",
+        "./direct-mesh-transport.js",
+        "./local-mesh-transport.js",
+        "./mesh-identity.js",
+        "./mesh-policy.js",
+        "./mesh-registry.js",
+        "./mesh-transport-router.js",
+        "./relay-mesh-transport.js",
+        "./supabase-mesh-transport.js",
+        "./transport-contracts.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/model-recommender.ts",
+      "imports": []
+    },
+    {
+      "module": "src/mesh/node-intelligence.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/node-planner.ts",
+      "imports": [
+        "./ai-scanner.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/quorum-witness.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:os",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/mesh/relay-mesh-transport.ts",
+      "imports": [
+        "./transport-contracts.js"
+      ]
+    },
+    {
+      "module": "src/mesh/relay-server.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./mesh-identity.js",
+        "./transport-contracts.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/skill-distributor.ts",
+      "imports": [
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/supabase-mesh-transport.ts",
+      "imports": [
+        "./mesh-node-lifecycle.js",
+        "./transport-contracts.js"
+      ]
+    },
+    {
+      "module": "src/mesh/transport-contracts.ts",
+      "imports": []
+    },
+    {
+      "module": "src/mesh/visual-mesh-memory.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/witness-quorum.ts",
+      "imports": [
+        "./leader-election.js",
+        "./mesh-registry.js",
+        "./quorum-witness.js",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/nova-boot.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/plugins/discovery.ts",
+      "imports": [
+        "./manifest.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/plugins/manifest.ts",
+      "imports": []
+    },
+    {
+      "module": "src/plugins/plugin-loader.ts",
+      "imports": [
+        "./plugin-sdk.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/plugins/plugin-sdk.ts",
+      "imports": [
+        "../core/config.js",
+        "../core/lifecycle-policy.js",
+        "../llm/provider-manifest.js",
+        "../runtime/effect-scope.js",
+        "./plugin-security.js",
+        "node:events",
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/plugins/plugin-security.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/plugins/registry.ts",
+      "imports": [
+        "../channels/plugins/types.js"
+      ]
+    },
+    {
+      "module": "src/plugins/runtime.ts",
+      "imports": [
+        "./registry.js"
+      ]
+    },
+    {
+      "module": "src/plugins/types.ts",
+      "imports": []
+    },
+    {
+      "module": "src/process/child-process-bridge.ts",
+      "imports": [
+        "node:child_process",
+        "node:process"
+      ]
+    },
+    {
+      "module": "src/process/command-queue.ts",
+      "imports": [
+        "./lanes.js"
+      ]
+    },
+    {
+      "module": "src/process/exec.ts",
+      "imports": [
+        "node:child_process"
+      ]
+    },
+    {
+      "module": "src/process/lanes.ts",
+      "imports": []
+    },
+    {
+      "module": "src/process/nova-watchdog.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:http",
+        "node:os",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/providers/github-copilot-auth.ts",
+      "imports": [
+        "../agents/auth-profiles.js",
+        "../commands/models/shared.js",
+        "../commands/onboard-auth.js",
+        "../config/config.js",
+        "../runtime.js",
+        "../terminal/prompt-style.js",
+        "@clack/prompts"
+      ]
+    },
+    {
+      "module": "src/providers/github-copilot-models.ts",
+      "imports": [
+        "../config/types.js"
+      ]
+    },
+    {
+      "module": "src/providers/github-copilot-token.ts",
+      "imports": [
+        "../config/paths.js",
+        "../infra/json-file.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/providers/qwen-portal-oauth.ts",
+      "imports": [
+        "../cli/command-format.js",
+        "@mariozechner/pi-ai"
+      ]
+    },
+    {
+      "module": "src/resilience/backup.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/resilience/context-guard.ts",
+      "imports": []
+    },
+    {
+      "module": "src/resilience/fallback.ts",
+      "imports": [
+        "../commands/builtin.js",
+        "../core/types.js"
+      ]
+    },
+    {
+      "module": "src/resilience/honesty.ts",
+      "imports": []
+    },
+    {
+      "module": "src/resilience/index.ts",
+      "imports": [
+        "./fallback.js",
+        "./honesty.js",
+        "./manager.js",
+        "./quality-gate.js"
+      ]
+    },
+    {
+      "module": "src/resilience/manager.ts",
+      "imports": [
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/resilience/orchestrator.ts",
+      "imports": [
+        "node:crypto",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/resilience/quality-gate.ts",
+      "imports": []
+    },
+    {
+      "module": "src/resilience/security.ts",
+      "imports": [
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/resilience/ssrf-guard.ts",
+      "imports": [
+        "node:net"
+      ]
+    },
+    {
+      "module": "src/routing/bindings.ts",
+      "imports": [
+        "../agents/agent-scope.js",
+        "../channels/registry.js",
+        "../config/config.js",
+        "../config/types.agents.js",
+        "./session-key.js"
+      ]
+    },
+    {
+      "module": "src/routing/outcome-router.ts",
+      "imports": [
+        "../core/outcome-ledger.js",
+        "../llm/model-perf-db.js",
+        "../mesh/capability-graph.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/routing/resolve-route.ts",
+      "imports": [
+        "../agents/agent-scope.js",
+        "../config/config.js",
+        "./bindings.js",
+        "./session-key.js"
+      ]
+    },
+    {
+      "module": "src/routing/session-key.ts",
+      "imports": [
+        "../sessions/session-key-utils.js"
+      ]
+    },
+    {
+      "module": "src/routing/session-routing.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/runtime/code-runtime.ts",
+      "imports": [
+        "../memory/tool-result-pruner.js",
+        "./mission-workspace.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/runtime/effect-scope.ts",
+      "imports": []
+    },
+    {
+      "module": "src/runtime/lsp-runtime.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "typescript"
+      ]
+    },
+    {
+      "module": "src/runtime/mission-workspace.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/runtime/runtime-profiles.ts",
+      "imports": []
+    },
+    {
+      "module": "src/runtime/sandbox-provider.ts",
+      "imports": [
+        "@deepseek-ai/node-addon-landlock-run",
+        "node:child_process",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/runtime/service-runtime.ts",
+      "imports": []
+    },
+    {
+      "module": "src/scheduler/nova-scheduler.ts",
+      "imports": [
+        "../learning/pattern-store.js",
+        "node-cron",
+        "node:child_process",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/assurance-cli.ts",
+      "imports": [
+        "./assurance-gate.js"
+      ]
+    },
+    {
+      "module": "src/security/assurance-gate.ts",
+      "imports": [
+        "./chaos-assurance.js",
+        "node:child_process",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/security/ast-analyzer.ts",
+      "imports": [
+        "acorn",
+        "acorn-walk"
+      ]
+    },
+    {
+      "module": "src/security/blue-team.ts",
+      "imports": [
+        "../mesh/capability-graph.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/security/chaos-assurance.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "../plugins/plugin-security.js",
+        "../runtime/mission-workspace.js",
+        "./blue-team.js",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/code-guardian.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/encrypted-memory.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/exec-approvals.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/red-team.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/secret-redaction.ts",
+      "imports": []
+    },
+    {
+      "module": "src/security/security-audit.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/security/ssrf-guard.ts",
+      "imports": [
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/server/rest-api.ts",
+      "imports": [
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/sessions/session-key-utils.ts",
+      "imports": []
+    },
+    {
+      "module": "src/setup.ts",
+      "imports": [
+        "./core/model-defaults.js",
+        "node:fs",
+        "node:path",
+        "node:readline"
+      ]
+    },
+    {
+      "module": "src/slack/accounts.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/slack/targets.ts",
+      "imports": []
+    },
+    {
+      "module": "src/startup/environment-scanner.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/supervisor.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/supervisor/auto-tester.ts",
+      "imports": [
+        "./fix-generator.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/supervisor/circuit-breaker.ts",
+      "imports": [
+        "node:child_process",
+        "node:events",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/supervisor/fix-generator.ts",
+      "imports": [
+        "../logging/structured-logger.js",
+        "./pattern-matcher.js"
+      ]
+    },
+    {
+      "module": "src/supervisor/index.ts",
+      "imports": [
+        "../logging/structured-logger.js",
+        "./auto-tester.js",
+        "./circuit-breaker.js",
+        "./fix-generator.js",
+        "./log-collector.js",
+        "./pattern-matcher.js",
+        "./supervisor-manager.js"
+      ]
+    },
+    {
+      "module": "src/supervisor/log-collector.ts",
+      "imports": [
+        "../logging/structured-logger.js",
+        "node:events",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/supervisor/pattern-matcher.ts",
+      "imports": [
+        "../logging/structured-logger.js",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/supervisor/stop-loss.ts",
+      "imports": []
+    },
+    {
+      "module": "src/supervisor/supervisor-manager.ts",
+      "imports": [
+        "../logging/structured-logger.js",
+        "./auto-tester.js",
+        "./circuit-breaker.js",
+        "./fix-generator.js",
+        "./log-collector.js",
+        "./pattern-matcher.js",
+        "node:events"
+      ]
+    },
+    {
+      "module": "src/synthesis/generator.ts",
+      "imports": []
+    },
+    {
+      "module": "src/synthesis/index.ts",
+      "imports": [
+        "./generator.js",
+        "./pipeline.js",
+        "./sandbox.js"
+      ]
+    },
+    {
+      "module": "src/synthesis/patch-sandbox.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/synthesis/pipeline.ts",
+      "imports": [
+        "./generator.js",
+        "./sandbox.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/synthesis/sandbox.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "module": "src/synthesis/self-evolution.ts",
+      "imports": [
+        "./patch-sandbox.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/telegram/accounts.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/telegram/inline-buttons.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/terminal/terminal-manager.ts",
+      "imports": []
+    },
+    {
+      "module": "src/terminal/theme.ts",
+      "imports": []
+    },
+    {
+      "module": "src/test-utils/channel-plugins.ts",
+      "imports": [
+        "../plugins/registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/3dprinter.ts",
+      "imports": [
+        "./complete-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/api-key-tool.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/blue-team-tools.ts",
+      "imports": [
+        "../security/blue-team.js",
+        "./complete-registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/brave-search.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/browser-automation.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/browser-use.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "./browser.js",
+        "./operator-browser-manager.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/browser.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/cad-tool.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/canvas.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/capability-tool.ts",
+      "imports": [
+        "../intelligence/capability-router.js"
+      ]
+    },
+    {
+      "module": "src/tools/code-outline.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/code-search.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/complete-registry.ts",
+      "imports": [
+        "../learning/trace-analyzer.js",
+        "./3dprinter.js",
+        "./api-key-tool.js",
+        "./blue-team-tools.js",
+        "./brave-search.js",
+        "./browser-use.js",
+        "./cad-tool.js",
+        "./capability-tool.js",
+        "./code-outline.js",
+        "./code-search.js",
+        "./config-tool.js",
+        "./desktop-screenshot-tool.js",
+        "./developer-capability-tools.js",
+        "./homeassistant.js",
+        "./knowledge-system.js",
+        "./minimax-tools.js",
+        "./mission-workspace-tools.js",
+        "./printer-tool.js",
+        "./reminder-tool.js",
+        "./searxng-search.js",
+        "./self-introspect.js",
+        "./self-management.js",
+        "./skill-builder.js",
+        "./skill-synthesis.js",
+        "./ssh-tool.js",
+        "./tavily-search.js",
+        "./tool-confirmation.js",
+        "./tool-result-quality.js",
+        "./vision-tool.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/config-tool.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/desktop-screenshot-tool.ts",
+      "imports": [
+        "../desktop/desktop-agent-context.js",
+        "../desktop/desktop-control.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/desktop.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/developer-capability-tools.ts",
+      "imports": [
+        "./complete-registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/document-reader.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/execute-python-tool.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/executor.ts",
+      "imports": [
+        "./registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/google-search.ts",
+      "imports": [
+        "playwright"
+      ]
+    },
+    {
+      "module": "src/tools/homeassistant.ts",
+      "imports": [
+        "./complete-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/image-gen-tool.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/image.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/tools/knowledge-system.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/loop-detection.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/media.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/minimax-tools.ts",
+      "imports": [
+        "./complete-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/mission-workspace-tools.ts",
+      "imports": [
+        "../runtime/mission-workspace.js",
+        "./complete-registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/operator-browser-manager.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "./browser.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/patch.ts",
+      "imports": [
+        "../resilience/backup.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/tools/pdf.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/tools/printer-tool.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/registry.ts",
+      "imports": [
+        "../resilience/security.js"
+      ]
+    },
+    {
+      "module": "src/tools/reminder-tool.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/searxng-search.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/self-extension.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/self-introspect.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/self-management.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/send-file-tool.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/skill-builder.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../synthesis/sandbox.js",
+        "./complete-registry.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/tools/skill-synthesis.ts",
+      "imports": [
+        "../core/model-resolver.js",
+        "./self-extension.js",
+        "./skill-builder.js"
+      ]
+    },
+    {
+      "module": "src/tools/skills-import-cli.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/ssh-tool-hosts.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/ssh-tool.ts",
+      "imports": [
+        "../core/environment.js",
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/system-executor.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/tools/tavily-search.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/tool-confirmation.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/tool-policy.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/tool-result-quality.ts",
+      "imports": []
+    },
+    {
+      "module": "src/tools/tool-router.ts",
+      "imports": [
+        "./complete-registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/tool-scanner.ts",
+      "imports": [
+        "./complete-registry.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/vision-tool.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/training/feedback-learner.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/training/self-evaluator.ts",
+      "imports": []
+    },
+    {
+      "module": "src/training/training-simulator.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/tts/text-to-speech.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/types/ari-client.d.ts",
+      "imports": []
+    },
+    {
+      "module": "src/users/index.ts",
+      "imports": [
+        "./store.js",
+        "./types.js"
+      ]
+    },
+    {
+      "module": "src/users/multi-user-middleware.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/users/principal-id.ts",
+      "imports": []
+    },
+    {
+      "module": "src/users/store.ts",
+      "imports": [
+        "./types.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/users/types.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/link-understanding.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/markdown-processor.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/message-channel.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/message-chunking.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/nova-utils.ts",
+      "imports": []
+    },
+    {
+      "module": "src/utils/polls.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/validation/tool-validator.ts",
+      "imports": []
+    },
+    {
+      "module": "src/voice/voice-e2e-check.ts",
+      "imports": [
+        "./voice-input.js",
+        "./voice-output.js",
+        "./voice-setup.js",
+        "node:fs",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/voice/voice-input.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/voice-output.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/voice-setup.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/wake-word.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/watchdog.ts",
+      "imports": [
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/web/accounts.ts",
+      "imports": [
+        "../config/config.js"
+      ]
+    },
+    {
+      "module": "src/whatsapp/normalize.ts",
+      "imports": []
+    }
+  ]
+}

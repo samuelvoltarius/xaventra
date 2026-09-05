@@ -1,0 +1,285 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "links": [],
+    "panels": [
+        {
+            "title": "LLM Requests / min",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "rate(nova_llm_requests_total[1m])",
+                    "legendFormat": "{{model}} ({{provider}})"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "fillOpacity": 10
+                    }
+                }
+            }
+        },
+        {
+            "title": "LLM Latency (p50/p95)",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.5, rate(nova_llm_latency_bucket[5m]))",
+                    "legendFormat": "p50 {{model}}"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, rate(nova_llm_latency_bucket[5m]))",
+                    "legendFormat": "p95 {{model}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms",
+                    "custom": {
+                        "fillOpacity": 5
+                    }
+                }
+            }
+        },
+        {
+            "title": "Token Usage",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "targets": [
+                {
+                    "expr": "rate(nova_llm_tokens_sum{type=\"input\"}[5m])",
+                    "legendFormat": "Input {{model}}"
+                },
+                {
+                    "expr": "rate(nova_llm_tokens_sum{type=\"output\"}[5m])",
+                    "legendFormat": "Output {{model}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "tokens/s",
+                    "custom": {
+                        "fillOpacity": 15
+                    }
+                }
+            }
+        },
+        {
+            "title": "Tool Calls / min",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 8
+            },
+            "targets": [
+                {
+                    "expr": "rate(nova_tool_calls_total[1m])",
+                    "legendFormat": "{{tool}} ({{success}})"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "fillOpacity": 10
+                    }
+                }
+            }
+        },
+        {
+            "title": "Tool Latency",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.5, rate(nova_tool_latency_bucket[5m]))",
+                    "legendFormat": "p50 {{tool}}"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, rate(nova_tool_latency_bucket[5m]))",
+                    "legendFormat": "p95 {{tool}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ms"
+                }
+            }
+        },
+        {
+            "title": "Channel Messages",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "targets": [
+                {
+                    "expr": "rate(nova_channel_messages_total[5m])",
+                    "legendFormat": "{{channel}} {{direction}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "fillOpacity": 15
+                    }
+                }
+            }
+        },
+        {
+            "title": "Mesh Events",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 8,
+                "x": 0,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "nova_mesh_events_total",
+                    "legendFormat": "{{node_id}} — {{event}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Active Nodes",
+            "type": "stat",
+            "gridPos": {
+                "h": 4,
+                "w": 8,
+                "x": 8,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "count(count by (service_name) (nova_llm_requests_total))",
+                    "legendFormat": "Nodes"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 2
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "title": "Error Rate",
+            "type": "gauge",
+            "gridPos": {
+                "h": 4,
+                "w": 8,
+                "x": 16,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(nova_llm_requests_total{success=\"false\"}[5m])) / sum(rate(nova_llm_requests_total[5m])) * 100",
+                    "legendFormat": "Error %"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100,
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 5
+                            },
+                            {
+                                "color": "red",
+                                "value": 20
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    ],
+    "schemaVersion": 39,
+    "tags": [
+        "nova",
+        "otel"
+    ],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "title": "Nova — Observability",
+    "uid": "nova-otel-main",
+    "version": 1
+}

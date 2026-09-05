@@ -1,0 +1,150 @@
+{
+    "mesh": {
+        "mode": "standalone",
+        "preferStrongestMain": true,
+        "direct": {
+            "enabled": false,
+            "listenHost": "127.0.0.1",
+            "port": 9091,
+            "allowInsecureLan": false,
+            "peers": []
+        },
+        "security": {
+            "allowTofu": false,
+            "allowedTools": ["read_file", "list_directory", "find_files", "code_search", "code_outline", "health_status", "nova_status", "nova_introspect", "nova_capabilities", "mesh_status", "mesh_nodes", "find_capability", "resolve_capability"]
+        },
+        "supabase": {
+            "table": "nova_mesh_envelopes"
+        },
+        "relay": {
+            "url": ""
+        },
+        "update": {
+            "enabled": false,
+            "notifyOnly": true,
+            "autoDeployOnVersionChange": false,
+            "checkIntervalMinutes": 5,
+            "canaryCount": 1,
+            "nodes": [
+                {
+                    "nodeId": "nova-worker-1",
+                    "name": "worker-1",
+                    "host": "100.64.0.10",
+                    "user": "nova",
+                    "port": 22,
+                    "path": "/opt/nova-core",
+                    "runtime": "systemd",
+                    "service": "nova",
+                    "useSudo": false,
+                    "healthTimeoutSeconds": 180
+                }
+            ]
+        },
+        "coordination": {
+            "mode": "supabase",
+            "timeoutMs": 5000,
+            "authorityService": "nova-main",
+            "services": ["telegram", "whatsapp", "discord", "dashboard"],
+            "witnesses": [
+                { "id": "witness-a", "url": "https://witness-a:9191", "secretEnv": "NOVA_WITNESS_A_SECRET" },
+                { "id": "witness-b", "url": "https://witness-b:9191", "secretEnv": "NOVA_WITNESS_B_SECRET" },
+                { "id": "witness-c", "url": "https://witness-c:9191", "secretEnv": "NOVA_WITNESS_C_SECRET" }
+            ]
+        }
+    },
+    "mcp": {
+        "servers": [
+            {
+                "name": "local-tools",
+                "transport": "stdio",
+                "command": "node",
+                "args": ["/opt/nova-mcp/server.js"],
+                "enabled": false,
+                "allowedTools": ["status", "search"],
+                "deniedTools": [],
+                "requireApproval": false,
+                "reconnect": { "maxRetries": 5, "initialDelayMs": 1000, "maxDelayMs": 30000 }
+            },
+            {
+                "name": "remote-tools",
+                "transport": "http",
+                "url": "https://mcp.example.invalid/mcp",
+                "enabled": false,
+                "requireApproval": true
+            }
+        ]
+    },
+    "telemetry": {
+        "enabled": false,
+        "endpoint": "http://otel-collector:4318",
+        "fallbackEndpoints": [],
+        "serviceName": "nova",
+        "exportIntervalMs": 15000
+    },
+    "runtime": {
+        "profile": "home",
+        "bundles": [],
+        "hotReload": false,
+        "acpEnabled": false
+    },
+    "name": "Xaventra",
+    "emoji": "✨",
+    "version": "0.1.0",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "codex": {
+        "enabled": false,
+        "preferWhenAuthenticated": true,
+        "model": "gpt-5.4",
+        "fallbackModel": "auto"
+    },
+    "fallbackModels": [
+        "gpt-4o",
+        "claude-sonnet-4-5",
+        "gemini-3-flash"
+    ],
+    "auth": {
+        "openaiApiKey": "",
+        "anthropicApiKey": "",
+        "antigravityProjectId": "",
+        "tokenFile": ".nova-tokens.json"
+    },
+    "channels": {
+        "whatsapp": {
+            "enabled": false,
+            "authPath": ".nova-whatsapp-auth",
+            "allowFrom": []
+        },
+        "telegram": {
+            "enabled": false,
+            "token": "",
+            "allowFrom": []
+        },
+        "discord": {
+            "enabled": false,
+            "token": ""
+        },
+        "slack": {
+            "enabled": false,
+            "botToken": "",
+            "appToken": ""
+        }
+    },
+    "memory": {
+        "enabled": true,
+        "dbPath": ".nova-memory",
+        "autoRecall": true,
+        "autoCapture": true
+    },
+    "learning": {
+        "enabled": true,
+        "dataDir": ".nova-learning",
+        "autoLearnThreshold": 3
+    },
+    "resilience": {
+        "enabled": true,
+        "strictQuality": true,
+        "fallbackTimeout": 30000,
+        "healthCheckInterval": 30000
+    }
+}

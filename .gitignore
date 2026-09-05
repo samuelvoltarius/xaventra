@@ -1,0 +1,111 @@
+# Node
+node_modules/
+dist/
+.npm-cache/
+.tmp/
+*.tsbuildinfo
+
+# Auth & Secrets
+.env
+.nova-auth/
+nova.config.json
+/config.json
+auth.json
+*.pem
+*.key
+wallet.json
+wallets.json
+*.wallet.json
+USER.md
+PROJECT_MEMORY.md
+
+# WhatsApp Session
+.wwebjs_auth/
+.wwebjs_cache/
+auth_info_baileys/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.err
+*.pid
+debug-*.txt
+tmp-git-log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test Coverage
+coverage/
+.nyc_output/
+
+# Build artifacts
+*.tgz
+*.tar.gz
+*.tar
+desktop/release*/
+output/
+
+# Private operator material (never part of the public source release)
+/*_research_notes.txt
+/*_entwurf.md
+/Dossier_*.md
+/*_Briefvorlage.docx
+/*_mission.md
+/*_projekte_uebersicht.md
+desktop_live.png
+desktop_panorama.png
+desktop_screenshot.png
+desktop_test.png
+desktop_view.png
+monitor_2_focus.png
+monitor_2_precision.png
+test_voice.mp3
+voice_fix.mp3
+
+# Dashboard
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+# Memory
+.lancedb/
+.nova-memory/
+.nova-vector-memory/
+.nova-costs/
+.nova-bots/
+.nova-prefs/
+.nova-repo-map/
+.nova-sessions/
+.nova-gateway-token
+.nova-voice/
+.nova-vision/
+.nova-tmp/
+
+# Nova Doctor GGUF models (too large for git — copy from Spark or download separately)
+models/*.gguf
+*.lance
+.nova-data/
+.nova-learning/
+
+# Temp
+tmp/
+temp/
+.firmware-analysis/
+.nova-logs/
+.claude/
+.agent/skills/
+androguard.db
+project_files.txt
+.nova-test-tmp/
+.nova-tmp-memory-*/
+*.tmp

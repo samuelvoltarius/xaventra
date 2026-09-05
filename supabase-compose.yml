@@ -1,0 +1,69 @@
+services:
+
+  # PostgreSQL - Haupt-Datenbank für Nova
+  nova-db:
+    image: postgres:15-alpine
+    container_name: nova-supabase-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: nova
+      POSTGRES_USER: nova_admin
+    volumes:
+      - nova-db-data:/var/lib/postgresql/data
+      - ./supabase-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - nova-supabase
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nova_admin -d nova"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgREST - Auto-REST API
+  nova-rest:
+    image: postgrest/postgrest:latest
+    container_name: nova-supabase-rest
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      PGRST_DB_URI: "postgres://nova_admin:${POSTGRES_PASSWORD}@nova-db:5432/nova"
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: nova_anon
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET:?set PGRST_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    networks:
+      - nova-supabase
+    depends_on:
+      nova-db:
+        condition: service_healthy
+
+  # pgAdmin - Web UI für Datenbank-Management
+  nova-pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nova-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?set PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - nova-pgadmin-data:/var/lib/pgadmin
+    networks:
+      - nova-supabase
+    depends_on:
+      nova-db:
+        condition: service_healthy
+
+volumes:
+  nova-db-data:
+  nova-pgadmin-data:
+
+networks:
+  nova-supabase:
+    driver: bridge

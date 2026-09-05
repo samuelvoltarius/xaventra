@@ -1,0 +1,753 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "owner": "src/agents/continuable-subagents.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/agents/nova-runner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/agents/subagent-orchestrator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/agents/team-coordinator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/codex-app-server.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/codex-app-server.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/codex-continuity.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/codex-installer.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/legacy-codex-migration.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/legacy-codex-migration.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/nova-login.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/oauth.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/auth/openai-oauth.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/benchmark/benchmark-lab.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/benchmark/comparison-runner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/benchmark/external-agent-adapters.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/benchmark/external-comparison-cli.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/benchmark/nova-benchmark-runner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/channels/message-queue.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/channels/telegram.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/autonomous-executor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/autonomy-loop.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/batch-processor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/capability-researcher.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/config-service.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/correction-detector.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/data-root.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/environment.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/execution-control.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/full-system-audit.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/heartbeat.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/lifecycle-policy.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/llm-factory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/message-pipeline.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/model-pricing.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/model-resolver.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/outcome-ledger.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/paths.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/predictive-context.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/self-architecture.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/self-doctor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/self-setup-orchestrator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/self-update.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/slash-commands.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/soul-v2.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/soul.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/startup-performance.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/strict-mode.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/task-tracker.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/daemon.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/dashboard/server.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/bot-profile-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/desktop-control.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/external-agent-registry.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/node-enrollment.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/topic-room-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/dev/verify-production-trace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/safe-fixes.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/safe-fixes.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/hooks/event-hooks.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/infra/auto-update.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/autonomy-engine.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/doctor-client.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/file-index.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/gem-curator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/knowledge-graph.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/learning-hub.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/model-router.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/proactive-learning.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/progressive-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/replan-engine.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/roi-dashboard.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/soul-evolution.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/user-patterns.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/intelligence/wave-pipeline.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/dream-daily-digest.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L0-health-monitor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L0-supervisor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L15-self-check.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L19-monitoring.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L20-self-improvement.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L21-node-health.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L22-federated-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L23-instincts.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L24-prompt-optimizer.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L6-cold-storage.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L6-core-facts.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L6-session-summary.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L7-tool-learning.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/L8-sub-agent.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/memory-distiller.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/predictive-provisioning.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/subconscious-reflector.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/vibe-regler.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/vram-manager.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/learning/pattern-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/learning/trace-analyzer.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/learning/trace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/llm/capability-probe.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/llm/codex-cli-adapter.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/llm/model-discovery.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/llm/model-perf-db.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/llm/nova-llm-sdk.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/auto-observer.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/journal.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/knowledge-graph.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/lancedb-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/memory-asset-catalog.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/retrieval-evaluator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/shared-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/ai-scanner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/auto-provisioner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/capability-graph.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/capability-orchestrator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/live-failover-test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-brain.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-llm-proxy.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-memory-sync.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-registry.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-tool-share.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/node-intelligence.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/quorum-witness.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/skill-distributor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/visual-mesh-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/process/nova-watchdog.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/routing/outcome-router.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/runtime/mission-workspace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/assurance-gate.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/blue-team.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/blue-team.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/code-guardian.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/encrypted-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/exec-approvals.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/red-team.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/security/security-audit.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/synthesis/self-evolution.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/cad-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/code-search.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/complete-registry.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/execute-python-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/image-gen-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/knowledge-system.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/operator-browser-manager.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/printer-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/reminder-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/self-introspect.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/ssh-tool-hosts.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/ssh-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/tool-confirmation.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/vision-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/users/multi-user-middleware.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/voice/wake-word.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/ai-scanner.ts",
+      "path": ".nova-data/ai-services.json"
+    },
+    {
+      "owner": "src/llm/model-discovery.ts",
+      "path": ".nova-data/discovered-models.json"
+    },
+    {
+      "owner": "src/layers/L0-supervisor.ts",
+      "path": ".nova-data/HEARTBEAT.md"
+    },
+    {
+      "owner": "src/llm/model-discovery.ts",
+      "path": ".nova-data/hosts.json"
+    },
+    {
+      "owner": "src/layers/L8-sub-agent.ts",
+      "path": ".nova-data/learned-solutions.json"
+    },
+    {
+      "owner": "src/llm/model-perf-db.ts",
+      "path": ".nova-data/model-perf.json"
+    },
+    {
+      "owner": "src/auth/openai-oauth.ts",
+      "path": ".nova-data/openai-auth.json"
+    },
+    {
+      "owner": "src/layers/L0-supervisor.ts",
+      "path": ".nova-data/patterns.json"
+    },
+    {
+      "owner": "src/learning/pattern-store.ts",
+      "path": ".nova-data/patterns.json"
+    },
+    {
+      "owner": "src/layers/L0-supervisor.ts",
+      "path": ".nova-data/scheduled-tasks.json"
+    },
+    {
+      "owner": "src/core/soul.ts",
+      "path": ".nova-data/soul.md"
+    },
+    {
+      "owner": "src/cli.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/core/cli-pipeline-runtime.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/core/config.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/core/data-root.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/daemon.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/dev/cleanup-correction-misattribution.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/layers/L17-autonomous-learning.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/layers/L18-llm-router.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/layers/L7-learning.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/layers/subconscious-reflector.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/learning/engine.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/memory/capabilities-store.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/layers/L9-idle-learning.ts",
+      "path": ".nova-learning/idle-knowledge.json"
+    },
+    {
+      "owner": "src/layers/L18-llm-router.ts",
+      "path": ".nova-learning/model-usage.json"
+    },
+    {
+      "owner": "src/cli.ts",
+      "path": ".nova-memory"
+    },
+    {
+      "owner": "src/core/cli-pipeline-runtime.ts",
+      "path": ".nova-memory"
+    },
+    {
+      "owner": "src/core/config.ts",
+      "path": ".nova-memory"
+    },
+    {
+      "owner": "src/daemon.ts",
+      "path": ".nova-memory"
+    },
+    {
+      "owner": "src/memory/vector-store.ts",
+      "path": ".nova-memory"
+    },
+    {
+      "owner": "src/dashboard/server.ts",
+      "path": ".nova-sessions"
+    },
+    {
+      "owner": "src/core/cli-pipeline-runtime.ts",
+      "path": ".nova-vector-memory"
+    },
+    {
+      "owner": "src/daemon.ts",
+      "path": ".nova-vector-memory"
+    },
+    {
+      "owner": "src/dashboard/server.ts",
+      "path": ".nova-vector-memory"
+    },
+    {
+      "owner": "src/memory/vector-memory.ts",
+      "path": ".nova-vector-memory"
+    }
+  ]
+}

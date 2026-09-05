@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sysroot=/opt/nova-arm64-sysroot
+loader="$sysroot/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+library_path="$sysroot/usr/lib/aarch64-linux-gnu:$sysroot/lib/aarch64-linux-gnu"
+
+exec "$loader" --library-path "$library_path" /opt/node-v22.15.0-linux-arm64/bin/node "$@"

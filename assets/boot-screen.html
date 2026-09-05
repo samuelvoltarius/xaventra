@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Nova OS — Boot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #logo-text {
+            margin-top: 10px;
+            font-size: 32px;
+            font-weight: 200;
+            letter-spacing: 16px;
+            color: #fff;
+            text-transform: uppercase;
+            opacity: 0;
+            animation: fadeUp 1.2s ease-out 0.6s forwards;
+        }
+
+        #boot-bar-wrap {
+            margin-top: 22px;
+            width: 220px;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            opacity: 0;
+            animation: fadeUp 1s ease-out 1.2s forwards;
+        }
+
+        #boot-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #7b3fc4, #00cfff, #7b3fc4);
+            background-size: 300% 100%;
+            animation: loadBar 3.5s ease-out 1.4s forwards, shimmer 2s linear 1.4s infinite;
+        }
+
+        #boot-status {
+            margin-top: 10px;
+            font-size: 9px;
+            letter-spacing: 3px;
+            color: rgba(100, 210, 255, 0.6);
+            font-family: 'Courier New', monospace;
+            opacity: 0;
+            animation: fadeUp 1s ease-out 1.6s forwards;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes loadBar {
+            0% {
+                width: 0%;
+            }
+
+            70% {
+                width: 82%;
+            }
+
+            100% {
+                width: 100%;
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 300% 0;
+            }
+
+            100% {
+                background-position: -300% 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="c" width="480" height="480"></canvas>
+    <div id="logo-text">Nova OS</div>
+    <div id="boot-bar-wrap">
+        <div id="boot-bar"></div>
+    </div>
+    <div id="boot-status">INITIALIZING CORE SYSTEMS</div>
+
+    <script>
+        const canvas = document.getElementById('c')
+        const ctx = canvas.getContext('2d')
+        const W = canvas.width, H = canvas.height
+        const cx = W / 2, cy = H / 2
+        const R = 160
+
+        // ── 3D helpers ────────────────────────────────────────────────
+        const rotY = (p, a) => [p[0] * Math.cos(a) + p[2] * Math.sin(a), p[1], -p[0] * Math.sin(a) + p[2] * Math.cos(a)]
+        const rotX = (p, a) => [p[0], p[1] * Math.cos(a) - p[2] * Math.sin(a), p[1] * Math.sin(a) + p[2] * Math.cos(a)]
+        const norm3 = p => { const l = Math.hypot(...p); return p.map(x => x / l) }
+        const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+        const proj = p => { const f = 800; const z = p[2] + f; return [cx + p[0] * f / z, cy + p[1] * f / z] }
+        const centroid3 = pts => pts.reduce((a, b) => [a[0] + b[0] / pts.length, a[1] + b[1] / pts.length, a[2] + b[2] / pts.length], [0, 0, 0])
+        const faceNorm = pts => norm3(cross3([pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]], [pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]]))
+
+        // ── Build icosphere (subdivision 1 → 80 faces, like reference) ─
+        function buildIco(sub) {
+            const t = (1 + Math.sqrt(5)) / 2
+            let v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(p => norm3(p).map(x => x * R))
+            let f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
+            const mc = {}
+            const mid = (a, b) => { const k = Math.min(a, b) + '-' + Math.max(a, b); if (mc[k] !== undefined) return mc[k]; const va = v[a], vb = v[b]; v.push(norm3([(va[0] + vb[0]) / 2, (va[1] + vb[1]) / 2, (va[2] + vb[2]) / 2]).map(x => x * R)); return mc[k] = v.length - 1 }
+            for (let s = 0; s < sub; s++) { const nf = []; for (const [a, b, c] of f) { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); nf.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]) }; f = nf }
+            return { v, f }
+        }
+        const { v: baseV, f: faces } = buildIco(1)  // subdivision 1 = bigger facets like reference
+
+        // ── Light: upper-left, like reference image ────────────────────
+        const LIGHT = norm3([-0.4, -0.7, 0.6])
+
+        // ── Orbital wire rings (chaotic, many, like reference) ────────
+        // Each ring: tilt angles (rx, ry), speed, radius offset, alpha
+        const RINGS = []
+        for (let i = 0; i < 18; i++) {
+            RINGS.push({
+                rx: Math.random() * Math.PI,
+                ry: Math.random() * Math.PI,
+                rz: Math.random() * Math.PI,
+                speed: (Math.random() * 0.003 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
+                r: R + 4 + Math.random() * 28,
+                alpha: 0.15 + Math.random() * 0.35,
+                phase: Math.random() * Math.PI * 2,
+            })
+        }
+
+        // ── Color palette (from reference image) ──────────────────────
+        // Facets: deep purple (#3D1A6E) to violet (#7B3FC4) to cyan-blue (#00BFFF)
+        // Bright facets: near-white lavender (#C8B4FF)
+        // Dark facets: near-black indigo (#0D0520)
+        function facetColor(n, diffuse, specular) {
+            // Base: map normal to purple-cyan spectrum
+            // nx: left(-1)=cyan, right(+1)=purple
+            // ny: top(-1)=bright, bottom(+1)=dark
+            const nx = n[0]  // -1..1
+            const ny = n[1]  // -1..1
+
+            // Purple base: 80,30,160
+            // Cyan accent: 0,180,255
+            // Mix based on normal direction
+            const purpleMix = Math.max(0, Math.min(1, (nx + 1) / 2))  // 0=cyan, 1=purple
+            const brightness = Math.max(0, Math.min(1, (-ny + 1) / 2)) // 0=dark, 1=bright
+
+            // Base color: interpolate purple ↔ cyan
+            let r = 80 * (1 - purpleMix) + 120 * purpleMix
+            let g = 30 * (1 - purpleMix) + 20 * purpleMix
+            let b = 200 * (1 - purpleMix) + 160 * purpleMix
+
+            // Diffuse lighting
+            r += diffuse * 60
+            g += diffuse * 20
+            b += diffuse * 40
+
+            // Specular: adds cyan-white highlight
+            r += specular * 180
+            g += specular * 160
+            b += specular * 255
+
+            // Brightness modulation
+            r = r * (0.3 + brightness * 0.7)
+            g = g * (0.2 + brightness * 0.8)
+            b = b * (0.4 + brightness * 0.6)
+
+            return [Math.min(255, r), Math.min(255, g), Math.min(255, b)]
+        }
+
+        let angle = 0
+        let glowT = 0
+
+        function drawRing(ring, t) {
+            const segs = 180
+            const pts2d = []
+            for (let i = 0; i <= segs; i++) {
+                const a = (i / segs) * Math.PI * 2 + ring.phase + t * ring.speed * 1000
+                let p = [Math.cos(a) * ring.r, Math.sin(a) * ring.r, 0]
+                // Apply ring tilts
+                p = rotX(p, ring.rx)
+                p = rotY(p, ring.ry + angle)
+                p = rotX(p, 0.3)  // global tilt
+                pts2d.push(proj(p))
+            }
+            ctx.beginPath()
+            ctx.moveTo(pts2d[0][0], pts2d[0][1])
+            for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1])
+            ctx.strokeStyle = `rgba(160,200,255,${ring.alpha})`
+            ctx.lineWidth = 0.6
+            ctx.stroke()
+        }
+
+        function render(ts) {
+            ctx.clearRect(0, 0, W, H)
+            angle += 0.004
+            glowT += 0.018
+
+            const glow = 0.75 + 0.25 * Math.sin(glowT)
+
+            // Rotate verts
+            const rv = baseV.map(v => rotX(rotY(v, angle), 0.3))
+
+            // Build sorted face list
+            const fd = faces.map(([a, b, c]) => {
+                const pts = [rv[a], rv[b], rv[c]]
+                const n = faceNorm(pts)
+                const cen = centroid3(pts)
+                const d = Math.max(0, dot3(n, LIGHT))
+                const h = norm3([LIGHT[0], LIGHT[1], LIGHT[2] + 1.5])
+                const s = Math.pow(Math.max(0, dot3(n, h)), 16)
+                return { pts, n, depth: cen[2], d, s }
+            }).sort((a, b) => a.depth - b.depth)
+
+            // ── Background halo (blue glow behind sphere) ─────────────────
+            const bg = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 1.8)
+            bg.addColorStop(0, `rgba(20,60,160,${0.15 * glow})`)
+            bg.addColorStop(0.5, `rgba(10,20,80,${0.10 * glow})`)
+            bg.addColorStop(1, 'rgba(0,0,0,0)')
+            ctx.fillStyle = bg
+            ctx.fillRect(0, 0, W, H)
+
+            // ── Orbital rings ─────────────────────────────────────────────
+            RINGS.forEach(r => drawRing(r, ts * 0.001))
+
+            // ── Facets ────────────────────────────────────────────────────
+            for (const { pts, n, d, s } of fd) {
+                const p2 = pts.map(proj)
+                const [r, g, b] = facetColor(n, d, s)
+                const alpha = n[2] > 0 ? 0.88 : 0.45  // front faces opaque, back semi-transparent
+
+                // Glass-like gradient: lighter at highlight corner
+                const p0 = p2[0]
+                const fg = ctx.createLinearGradient(p0[0] - 15, p0[1] - 15, p2[2][0] + 10, p2[2][1] + 10)
+                fg.addColorStop(0, `rgba(${Math.min(255, r + 40)},${Math.min(255, g + 30)},${Math.min(255, b + 20)},${alpha})`)
+                fg.addColorStop(1, `rgba(${Math.max(0, r - 30)},${Math.max(0, g - 20)},${Math.max(0, b - 10)},${alpha * 0.8})`)
+
+                ctx.beginPath()
+                ctx.moveTo(p2[0][0], p2[0][1])
+                ctx.lineTo(p2[1][0], p2[1][1])
+                ctx.lineTo(p2[2][0], p2[2][1])
+                ctx.closePath()
+                ctx.fillStyle = fg
+                ctx.fill()
+
+                // Bright cyan-white edges (very visible in reference)
+                const edgeAlpha = n[2] > 0 ? 0.55 : 0.15
+                ctx.strokeStyle = `rgba(160,220,255,${edgeAlpha})`
+                ctx.lineWidth = 0.8
+                ctx.stroke()
+            }
+
+            // ── Inner cyan core glow ──────────────────────────────────────
+            const core = ctx.createRadialGradient(cx - 25, cy - 30, 5, cx, cy, R * 0.8)
+            core.addColorStop(0, `rgba(0,220,255,${0.30 * glow})`)
+            core.addColorStop(0.3, `rgba(0,140,255,${0.15 * glow})`)
+            core.addColorStop(1, 'rgba(0,0,0,0)')
+            ctx.fillStyle = core
+            ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill()
+
+            // ── Specular white highlight (top-left) ───────────────────────
+            const spec = ctx.createRadialGradient(cx - 50, cy - 55, 3, cx - 30, cy - 35, 60)
+            spec.addColorStop(0, `rgba(255,255,255,${0.22 * glow})`)
+            spec.addColorStop(0.5, `rgba(200,220,255,${0.08 * glow})`)
+            spec.addColorStop(1, 'rgba(0,0,0,0)')
+            ctx.fillStyle = spec
+            ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill()
+
+            // ── Outer edge glow ring ──────────────────────────────────────
+            const rim = ctx.createRadialGradient(cx, cy, R - 4, cx, cy, R + 20)
+            rim.addColorStop(0, `rgba(100,160,255,${0.20 * glow})`)
+            rim.addColorStop(1, 'rgba(0,0,0,0)')
+            ctx.fillStyle = rim
+            ctx.beginPath(); ctx.arc(cx, cy, R + 20, 0, Math.PI * 2); ctx.fill()
+
+            requestAnimationFrame(render)
+        }
+        requestAnimationFrame(render)
+
+        // Boot status
+        const msgs = ['INITIALIZING CORE SYSTEMS', 'LOADING NEURAL LAYERS L0–L20', 'CONNECTING TELEGRAM CHANNEL', 'STARTING MEMORY ENGINE', 'CALIBRATING HEARTBEAT', 'LOADING CUSTOM TOOLS', 'NOVA ONLINE ✓']
+        let mi = 0
+        const sel = document.getElementById('boot-status')
+        setInterval(() => { mi = (mi + 1) % msgs.length; sel.textContent = msgs[mi] }, 700)
+    </script>
+</body>
+
+</html>

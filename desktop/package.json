@@ -1,0 +1,62 @@
+{
+  "name": "@xaventra/desktop",
+  "version": "2.77.1",
+  "private": true,
+  "description": "Governed desktop control plane for Xaventra",
+  "author": "Xaventra contributors",
+  "license": "MIT",
+  "repository": "https://github.com/samuelvoltarius/xaventra",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder --dir",
+    "package": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "io.xaventra.desktop",
+    "productName": "Xaventra Desktop",
+    "asar": true,
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../assets/xaventra-icon.png",
+        "to": "xaventra-icon.png"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "icon": "../assets/xaventra-icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "../assets/xaventra-icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "mac": {
+      "icon": "../assets/xaventra-icon.png",
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+name: Website
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: vars.XAVENTRA_PUBLISH_WEBSITE == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble static site
+        run: |
+          mkdir -p public/assets
+          cp website/index.html public/index.html
+          cp website/styles.css public/styles.css
+          cp assets/xaventra-icon.png public/assets/xaventra-icon.png
+          sed -i 's#../assets/xaventra-icon.png#assets/xaventra-icon.png#g' public/index.html
+          sed -i 's#../SECURITY.md#https://github.com/${{ github.repository }}/blob/main/SECURITY.md#g' public/index.html
+          sed -i 's#../CONTRIBUTING.md#https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#g' public/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4
