@@ -82,13 +82,17 @@ async function commandStart(): Promise<void> {
     // Start daemon as a child process (inherits stdio for interactive use)
     try {
         const { spawn } = await import('node:child_process')
-        const child = spawn('node', [distPath], {
+        const child = spawn(process.execPath, [distPath], {
             cwd: process.cwd(),
             stdio: 'inherit',
             env: process.env,
         })
         child.on('exit', (code) => {
             process.exit(code ?? 0)
+        })
+        child.on('error', error => {
+            console.error(c.error(`Failed to start Xaventra: ${error.message}`))
+            process.exitCode = 1
         })
     } catch (err) {
         console.error(c.error(`❌ Failed to start Xaventra: ${err}`))
@@ -108,24 +112,10 @@ async function commandSetup(): Promise<void> {
 
 async function commandKill(): Promise<void> {
     printBanner()
-    console.log(c.warn('🛑 Stopping all Xaventra processes...'))
-    console.log()
-
-    try {
-        const { execSync } = await import('node:child_process')
-
-        if (process.platform === 'win32') {
-            // Windows: Kill node processes with nova in command line
-            execSync('taskkill /F /IM node.exe /FI "WINDOWTITLE eq *nova*" 2>nul', { stdio: 'ignore' })
-            console.log(c.ok('✅ Xaventra-Prozesse beendet'))
-        } else {
-            // Unix: Kill processes with nova in name
-            execSync('pkill -f "nova" 2>/dev/null || true', { stdio: 'ignore' })
-            console.log(c.ok('✅ Xaventra-Prozesse beendet'))
-        }
-    } catch {
-        console.log(c.dim('Keine laufenden Xaventra-Prozesse gefunden.'))
-    }
+    console.log(c.warn('🛑 Stopping Xaventra in this runtime directory...'))
+    const { stopLocalDaemon } = await import('./process/daemon-control.js')
+    const result = await stopLocalDaemon(process.cwd())
+    console.log(result === 'stopped' ? c.ok('✅ Shutdown verified') : c.dim('No local daemon is running.'))
     console.log()
 }
 
@@ -1464,8 +1454,8 @@ function commandHelp(): void {
     console.log(`  ${c.dim('$')} nova doctor "ECONNREFUSED :5432"      ${c.dim('# DB-Fehler analysieren')}`)
     console.log()
     console.log(c.bold('⚙️ Prozess-Steuerung:'))
-    console.log(`  ${c.info('kill'.padEnd(12))} Beendet alle Xaventra-Prozesse`)
-    console.log(`  ${c.info('restart'.padEnd(12))} Neustart (Kill + Start)`)
+    console.log(`  ${c.info('stop'.padEnd(12))} Beendet nur die Instanz in diesem Laufzeitordner (kill: Alias)`)
+    console.log(`  ${c.info('restart'.padEnd(12))} Neustart erst nach bestätigter Beendigung`)
     console.log(`  ${c.info('reconfig'.padEnd(12))} Konfiguration neu einrichten`)
     console.log()
     console.log(c.bold('📝 Beispiele:'))
@@ -1525,6 +1515,7 @@ async function main(): Promise<void> {
         case 'config':
             await commandConfig()
             break
+        case 'stop':
         case 'kill':
             await commandKill()
             break

@@ -3606,6 +3606,15 @@
       ]
     },
     {
+      "module": "src/process/daemon-control.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/process/exec.ts",
       "imports": [
         "node:child_process"

@@ -172,8 +172,10 @@ npm run typecheck         # tsc --noEmit
 ## Debugging
 
 - `npm run debug` — start daemon with `NOVA_DEBUG=1`
-- `npm run nova:kill` — kill processes on port 3000
-- `npm run nova:restart` — stop + restart daemon
+- `npm run xaventra:stop` — authenticated graceful stop for this runtime only
+- `npm run xaventra:restart` — restart only after verified process exit
+- Legacy `nova:kill`/`nova:stop`/`nova:restart` use those same scoped controls;
+  never kill by process-name pattern or by whichever process owns port 3000.
 - `npm run nova:dev` — live reload with tsx watch
 - Check logs in `.nova-logs/` (if configured)
 - `npm run daemon:logs` — pm2 logs (if running via pm2)

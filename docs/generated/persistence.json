@@ -502,6 +502,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/process/daemon-control.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/process/daemon-control.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/process/nova-watchdog.ts",
       "path": ".nova-data"
     },

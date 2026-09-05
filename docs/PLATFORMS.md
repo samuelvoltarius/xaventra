@@ -14,6 +14,8 @@ already be installed. No administrator permission is required for Core setup.
 | Allow native dependency installers | `./install.ps1 -Native` | `sh install.sh --native` |
 | Configure provider | `npm run cli -- setup` | `npm run cli -- setup` |
 | Start Core | `npm start` | `npm start` |
+| Stop this Core | `npm run xaventra:stop` | `npm run xaventra:stop` |
+| Restart this Core | `npm run xaventra:restart` | `npm run xaventra:restart` |
 
 The shell-independent alternative is `node scripts/setup.mjs` with the Unix-style
 flags. This also avoids changing PowerShell execution policy. Missing prerequisites
@@ -25,6 +27,24 @@ preserved. New configuration has no active peers, relay, messaging channels,
 external MCP servers or automatic update targets. The random API token stays
 local. Enabling Telegram requires configuring credentials/allowed users and
 removing the install-time disable flags deliberately.
+
+## Stopping the correct instance
+
+Run stop/restart from the same runtime directory used to start Core. Once ready,
+the daemon creates a loopback-only authenticated control channel with a fresh
+per-process identity. Its credential stays in `.nova-data/daemon-control.json`;
+do not copy that file to another node or include it in a support report.
+
+The CLI requests graceful shutdown from that exact instance, then waits for
+actual process exit. An acknowledgement alone is not success. Unknown, stale,
+mismatched or unresponsive identities cannot authorize a force-kill. A new
+instance appearing during shutdown prevents an automatic CLI restart.
+
+Older daemons without this control channel, or daemons still booting, must be
+stopped from their own terminal (Ctrl+C) or their configured service manager.
+If systemd, PM2, Docker or a watchdog owns the process, stop/restart that specific
+service instead; its supervisor may intentionally restart a stopped child.
+The legacy `kill` and `nova:*` aliases never kill by process name or port.
 
 ## What is platform-specific?
 
@@ -40,5 +60,5 @@ removing the install-time disable flags deliberately.
 
 The GitHub CI matrix runs isolated Core tests, build, catalogs, assurance and
 Desktop bridge tests on its named Windows/Linux/macOS runners. Consult its
-actual result and [release evidence](VERIFICATION_2.78.0.md), not a blanket
+actual result and [release evidence](VERIFICATION_2.78.2.md), not a blanket
 "runs everywhere" claim. Production node migration remains a separate gate.

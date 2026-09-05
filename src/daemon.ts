@@ -2844,7 +2844,10 @@ async function startDaemon() {
     // ============================================
     // Graceful Shutdown — persist state before exit
     // ============================================
+    let shuttingDown = false
     const shutdown = async (signal: string) => {
+        if (shuttingDown) return
+        shuttingDown = true
         console.log(`\n[Nova] ${signal} empfangen — Graceful Shutdown...`)
         state.running = false
 
@@ -2887,7 +2890,8 @@ async function startDaemon() {
         try {
             const { unlinkSync, writeFileSync, existsSync } = await import('node:fs')
             const { join } = await import('node:path')
-            unlinkSync(join(process.cwd(), '.nova.pid'))
+            const ownedPidFile = join(process.cwd(), '.nova.pid')
+            if (existsSync(ownedPidFile) && readFileSync(ownedPidFile, 'utf8').trim() === String(process.pid)) unlinkSync(ownedPidFile)
             const hbFile = join(process.cwd(), '.nova-data', 'last-heartbeat.json')
             writeFileSync(hbFile, JSON.stringify({ shutdownAt: new Date().toISOString(), pid: process.pid }))
         } catch { /* ok */ }
@@ -2898,6 +2902,8 @@ async function startDaemon() {
 
     process.once('SIGINT', () => shutdown('SIGINT'))
     process.once('SIGTERM', () => shutdown('SIGTERM'))
+    const { startDaemonControl } = await import('./process/daemon-control.js')
+    await startDaemonControl(process.cwd(), () => shutdown('local authenticated control'))
 }
 
 async function gracefulShutdown() {

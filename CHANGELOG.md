@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.2] — 2026-09-05
+
+- Replace CLI and npm name/port-based process killing with a per-instance,
+  authenticated, loopback-only graceful-stop channel. No terminating PID signal
+  is sent by the CLI. Actual process exit is required before restart; stale,
+  missing or mismatched authority and replacement processes fail closed.
+- Keep the control credential local in the ignored runtime data directory.
+  Shutdown cleanup cannot remove a replacement process's ownership marker.
+- Add `xaventra:stop` / `xaventra:restart`; legacy aliases use the same path.
+  Document older-daemon and supervised-service handling explicitly.
+- Add real two-process isolation and CLI restart-refusal regressions. Run the
+  compiled daemon's boot, authenticated REST status and normal CLI shutdown in
+  a disposable runtime in all three OS CI jobs.
+- Document the owner's hourly development-loop cadence, separate from the
+  immediate GitHub issue hook. [Evidence and limits](docs/VERIFICATION_2.78.2.md).
+
 ## [2.78.1] — 2026-09-05
 
 - Fix the workspace working-directory assurance check for canonical path aliases
