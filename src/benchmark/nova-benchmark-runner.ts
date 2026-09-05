@@ -27,11 +27,6 @@ function selectScenarios(mode: NovaBenchmarkMode): BenchmarkScenario[] {
     return scenarios.filter(item => !seen.has(item.category) && Boolean(seen.add(item.category)))
 }
 
-function evidenceText(run: ReturnType<ReturnType<typeof getOutcomeLedger>['getRun']>): string {
-    if (!run) return ''
-    return JSON.stringify({ tools: run.tools, tests: run.tests, changes: run.changes, validation: run.validation, events: run.events }).toLowerCase()
-}
-
 const SAFE_BENCHMARK_TOOLS = [
     'read_file', 'list_directory', 'codebase_search', 'find_files',
     'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
@@ -39,25 +34,13 @@ const SAFE_BENCHMARK_TOOLS = [
     'list_reminders', 'list_sub_agents', 'nova_trace_stats',
 ]
 
-function hasGroundedEvidence(run: NonNullable<ReturnType<ReturnType<typeof getOutcomeLedger>['getRun']>>, required: string, rawText: string): boolean {
-    const successfulTools = run.tools.filter(item => item.success === true)
-    const toolNames = successfulTools.map(item => String(item.toolName || ''))
-    const toolText = JSON.stringify(successfulTools).toLowerCase()
+export function hasGroundedEvidence(run: NonNullable<ReturnType<ReturnType<typeof getOutcomeLedger>['getRun']>>, required: string): boolean {
+    const successfulTools = run.tools.filter(item => item.success === true && item.verified === true && item.source === 'isolated-benchmark-probe')
     const evidenceTags = new Set(successfulTools.flatMap(item => Array.isArray(item.evidenceTags)
         ? item.evidenceTags.map(tag => String(tag).toLowerCase()) : []))
-    if (evidenceTags.has(required.toLowerCase())) return true
-    if (rawText.includes(required.toLowerCase())) return true
-    if (required === 'tool result') return successfulTools.length > 0
-    if (required === 'service probe') return toolNames.some(name => ['mesh_status', 'mesh_nodes', 'nova_capabilities', 'health_status'].includes(name))
-    if (required === 'model list') return /vllm|ollama|qwen|model/.test(toolText)
-    if (required === 'hardware probe') return toolNames.some(name => ['nova_introspect', 'nova_capabilities', 'health_status'].includes(name)) && /gpu|cpu|vram|hardware/.test(toolText)
-    if (required === 'shadow decision' || required === 'historical outcomes') {
-        return run.events.some(event => event.type === 'route.selected' && (event.payload.shadowRecommendation || event.payload.shadowConfidence !== undefined))
-    }
-    if (required === 'validation report') return Boolean(run.validation)
-    if (required === 'fresh evidence') return successfulTools.length > 0 && run.tools.some(item => Number(item.durationMs || 0) >= 0)
-    if (required === 'checkpoint') return run.events.some(event => event.type === 'checkpoint.saved')
-    return false
+    // Never match a requested tag merely because it appears in the plan,
+    // error text, response, or serialized validation criteria.
+    return evidenceTags.has(required.toLowerCase())
 }
 
 export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenario: BenchmarkScenario, workspace: string): Promise<BenchmarkObservation> {
@@ -83,10 +66,14 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
         approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
     })
     const controller = new AbortController()
+    const plannerContract = createTaskContract('Acknowledge isolated subsystem evaluation readiness', { requiresTool: false, kind: 'none' }, [], {
+        ...contract, id: `${contract.id}-planner`,
+        successCriteria: [{ id: 'planner-response', kind: 'response_present', description: 'Planner returned a non-empty acknowledgement', required: true }],
+    })
     const timeout = setTimeout(() => controller.abort(), scenario.timeoutMs)
     try {
         const result = await withModelPerformanceRecording(false, () => backend.run({
-            contract, userId: `benchmark:${scenario.id}`, authUserId: 'benchmark', channel: 'benchmark', content: prompt,
+            contract: plannerContract, userId: `benchmark:${scenario.id}`, authUserId: 'benchmark', channel: 'benchmark', content: prompt,
             // The model is an advisory planner in the benchmark. Real,
             // contract-specific execution happens in the isolated typed probe
             // below. Supplying an explicit empty set prevents speculative
@@ -137,8 +124,7 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
             })
         }
         const run = ledger.getRun(contract.id)
-        const text = evidenceText(run)
-        const matched = run ? scenario.requiredEvidence.filter(item => hasGroundedEvidence(run, item, text)).length : 0
+        const matched = run ? scenario.requiredEvidence.filter(item => hasGroundedEvidence(run, item)).length : 0
         const validated = run?.validation?.success === true
         const scenarioSuccess = result.status === 'completed'
             && run?.status === 'completed'
@@ -146,6 +132,7 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
             && matched === scenario.requiredEvidence.length
         return {
             scenarioId: scenario.id,
+            evaluationKind: 'subsystem-probes',
             success: scenarioSuccess,
             toolExecuted: Boolean(run?.tools.some(item => item.success === true)),
             resumed: scenario.category === 'resume' ? scenarioSuccess : undefined,
@@ -162,7 +149,7 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
             details: `evidence ${matched}/${scenario.requiredEvidence.length}; backend=${backend.name}; status=${result.status}`,
         }
     } catch (error) {
-        return { scenarioId: scenario.id, success: false, toolExecuted: false, durationMs: Date.now() - startedAt, details: String(error) }
+        return { scenarioId: scenario.id, evaluationKind: 'subsystem-probes', success: false, toolExecuted: false, durationMs: Date.now() - startedAt, details: String(error) }
     } finally {
         clearTimeout(timeout)
     }

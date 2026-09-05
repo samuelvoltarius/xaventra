@@ -11,6 +11,8 @@ import { join } from 'node:path'
 // optional OpenAI Agents backend uses the package's Zod 4 root export.
 import { z } from 'zod/v3'
 import { atomicWriteJson } from './atomic-storage.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config Schema (Complete)
@@ -18,7 +20,7 @@ import { atomicWriteJson } from './atomic-storage.js'
 
 export const NovaConfigSchema = z.object({
     // Identity
-    name: z.string().default('Nova'),
+    name: z.string().default('Xaventra'),
     emoji: z.string().default('✨'),
     version: z.string().default('0.1.0'),
 
@@ -171,7 +173,7 @@ export const NovaConfigSchema = z.object({
     server: z.object({
         enabled: z.boolean().default(false),
         port: z.number().default(18789),
-        host: z.string().default('0.0.0.0'),
+        host: z.string().default('127.0.0.1'),
     }).default({}),
 
     // ChatGPT-managed Codex OAuth. Credentials are owned by Codex in a
@@ -205,6 +207,7 @@ export type NovaConfig = z.infer<typeof NovaConfigSchema>
 // ============================================
 
 const CONFIG_FILENAMES = [
+    'xaventra.config.json',
     'nova.config.json',
     'nova.json',
     '.novarc',
@@ -306,7 +309,7 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
 // ============================================
 
 export async function saveConfig(config: NovaConfig, path?: string): Promise<void> {
-    const filePath = path ?? join(process.cwd(), 'nova.config.json')
+    const filePath = path ?? resolveConfigPath()
     await atomicWriteJson(filePath, config)
 
     console.log(`[Nova Config] Saved to: ${filePath}`)

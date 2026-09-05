@@ -8,6 +8,8 @@ import { trace, metrics, SpanStatusCode, type Tracer, type Meter, type Histogram
 import { existsSync, readFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export interface TelemetryConfig {
     enabled?: boolean
@@ -72,7 +74,7 @@ async function selectEndpoint(config: TelemetryConfig): Promise<string> {
 
 function loadConfig(): TelemetryConfig | undefined {
     try {
-        const path = join(process.cwd(), 'nova.config.json')
+        const path = resolveConfigPath()
         return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).telemetry : undefined
     } catch { return undefined }
 }

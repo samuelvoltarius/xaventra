@@ -10,6 +10,8 @@ import 'dotenv/config'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export type DoctorSeverity = 'info' | 'warning' | 'critical'
 export type DoctorStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
@@ -145,7 +147,7 @@ export function recordRuntimeDoctorFinding(input: {
 
 function loadSupabaseConfig(): { url: string; key: string } | null {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             const url = config.supabase?.learningUrl || config.supabase?.meshUrl || config.supabase?.url
@@ -462,7 +464,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
             let cloudPrimary = false
             let providerName = 'unknown'
             try {
-                const configPath = join(process.cwd(), 'nova.config.json')
+                const configPath = resolveConfigPath()
                 const persisted = existsSync(configPath)
                     ? JSON.parse(readFileSync(configPath, 'utf-8'))
                     : {}
@@ -566,7 +568,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
 
     // ---- Config completeness ----
     try {
-        const cfgPath = join(process.cwd(), 'nova.config.json')
+        const cfgPath = resolveConfigPath()
         if (existsSync(cfgPath)) {
             const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
             const issues: string[] = []
@@ -596,7 +598,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
                     category: 'config',
                     severity: 'warning',
                     source: 'self-doctor',
-                    recommendation: 'Update nova.config.json or set the missing environment variables.',
+                    recommendation: 'Update xaventra.config.json or set the missing environment variables.',
                     evidence: { issues },
                 }))
             } else {

@@ -23,7 +23,8 @@ export function detectActionIntent(input: string): ActionIntent {
         || /\b(?:welche|wie viele|zeige|zeig)\b.{0,25}\bnodes?\b.{0,30}\b(?:online|aktiv|erreichbar|laufen|status)\b/i.test(text)) {
         return { requiresTool: true, kind: 'system-state' }
     }
-    if (/\b(datei|ordner|verzeichnis)\b.{0,40}\b(auflisten|anzeigen|lesen|schreiben|erstellen|l[oö]schen|kopieren|verschieben|senden)\b/i.test(text)
+    if (/\b(?:lies|lese|read|öffne|open|vergleiche|compare)\b.{0,80}\b(?:datei(?:en)?|files?|ordner|verzeichnisse?)\b/i.test(text)
+        || /\b(datei(?:en)?|ordner|verzeichnis)\b.{0,40}\b(auflisten|anzeigen|lesen|schreiben|erstellen|l[oö]schen|kopieren|verschieben|senden)\b/i.test(text)
         || /\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b.{0,55}\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|durchsuch\w*)\b/i.test(text)
         || /\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|schau\w*|durchsuch\w*)\b.{0,55}\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b/i.test(text)) {
         return { requiresTool: true, kind: 'file' }

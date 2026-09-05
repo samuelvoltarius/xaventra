@@ -12,6 +12,8 @@ import { createInterface } from 'node:readline'
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDefaultModel } from './core/model-defaults.js'
+import { resolveConfigPath } from './config/config-path.js'
+
 
 // ============================================
 // Types
@@ -320,9 +322,9 @@ ${c.dim}Dieser Wizard führt dich durch die Konfiguration.${c.reset}
 `)
 
     // Check for existing config
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     if (existsSync(configPath)) {
-        const overwrite = await confirm(`${c.yellow}nova.config.json existiert bereits. Überschreiben?${c.reset}`, false)
+        const overwrite = await confirm(`${c.yellow}xaventra.config.json existiert bereits. Überschreiben?${c.reset}`, false)
         if (!overwrite) {
             console.log(`\n${c.dim}Setup abgebrochen.${c.reset}`)
             rl.close()
@@ -359,7 +361,7 @@ ${c.dim}Dieser Wizard führt dich durch die Konfiguration.${c.reset}
 
     if (await confirm('\nKonfiguration speichern?')) {
         writeFileSync(configPath, JSON.stringify(finalConfig, null, 2))
-        console.log(`\n${c.green}✓ nova.config.json gespeichert${c.reset}`)
+        console.log(`\n${c.green}✓ xaventra.config.json gespeichert${c.reset}`)
 
         console.log(`
 ${c.bright}${c.green}

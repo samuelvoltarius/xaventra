@@ -5,7 +5,7 @@
  * Instead of a hardcoded MODEL_REGISTRY, providers register themselves
  * and are discovered from:
  *   1. Built-in provider definitions (this file)
- *   2. nova.config.json providers{} section (enabled + apiKey)
+ *   2. xaventra.config.json providers{} section (enabled + apiKey)
  *   3. Live /v1/models API query (actual available models)
  *
  * Usage:
@@ -15,6 +15,8 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -132,13 +134,13 @@ export class ProviderRegistry {
 
     private loadConfig(): Record<string, any> {
         try {
-            const path = join(process.cwd(), 'nova.config.json')
+            const path = resolveConfigPath()
             if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'))
         } catch { /* ok */ }
         return {}
     }
 
-    /** Returns provider profiles that have an API key in nova.config.json */
+    /** Returns provider profiles that have an API key in xaventra.config.json */
     getEnabledProviders(): Array<{ provider: ProviderProfile; apiKey: string }> {
         const cfg = this.loadConfig()
         const providers = cfg.providers || {}

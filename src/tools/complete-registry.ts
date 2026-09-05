@@ -1204,7 +1204,7 @@ export const evolutionTools: NovaTool[] = [
             try {
                 const { readFileSync } = await import('node:fs')
                 const { join } = await import('node:path')
-                cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+                cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
             } catch { cfg = {} }
             const yolo = process.env.NOVA_SELF_SETUP_YOLO === '1' || process.env.NOVA_YOLO === '1' || cfg.selfSetup?.mode === 'yolo' || cfg.selfSetup?.yolo === true
             if (!yolo && params.confirm !== `AUTO_PROVISION:${capability}`) {
@@ -1717,7 +1717,7 @@ export const ttsTools: NovaTool[] = [
             try {
                 const { readFileSync } = await import('node:fs')
                 const { join } = await import('node:path')
-                cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+                cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
             } catch { cfg = {} }
             const yolo = process.env.NOVA_SELF_SETUP_YOLO === '1' || process.env.NOVA_YOLO === '1' || cfg.selfSetup?.mode === 'yolo' || cfg.selfSetup?.yolo === true
             return await ensureVoiceDeps({ installMissing: params.install_missing === true || yolo })
@@ -1740,7 +1740,7 @@ export const meshBrainTools: NovaTool[] = [
         handler: async (params) => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
-            const config = JSON.parse(require('fs').readFileSync(require('path').join(process.cwd(), 'nova.config.json'), 'utf-8'))
+            const config = JSON.parse(require('fs').readFileSync(resolveConfigPath(), 'utf-8'))
             const nodes = (config.nodes || []).filter((n: any) => n.enabled !== false)
             if (!params.force) {
                 const cached = brain.load()
@@ -2855,7 +2855,7 @@ const meshTools: NovaTool[] = [
         category: 'system',
         parameters: [],
         handler: async () => {
-            const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+            const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
             const updateConfig = config.mesh?.update
             if (!updateConfig?.enabled || !updateConfig.nodes?.length) return 'Kein sicheres Mesh-Update-Profil konfiguriert.'
             const { deployUpdateToAllNodes } = await import('../core/auto-updater.js')
@@ -3077,7 +3077,7 @@ export const ALL_TOOLS: NovaTool[] = [
                 try {
                     const { existsSync, readFileSync } = await import('node:fs')
                     const { join } = await import('node:path')
-                    const cfgPath = join(process.cwd(), 'nova.config.json')
+                    const cfgPath = resolveConfigPath()
                     if (existsSync(cfgPath)) {
                         const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
                         const configAliases = cfg.userAliases || {}
@@ -3316,6 +3316,8 @@ import { printerDiscoveryTool, printerStatusTool, printerSliceTool, printerPrint
 import { screenCaptureTool, webcamCaptureTool, faceDetectionTool, handGestureTool, screenAnalysisTool } from './vision-tool.js'
 import { toolConfirmationTool } from './tool-confirmation.js'
 import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // Append new tools to ALL_TOOLS via direct assignment (bypass type strictness)
 ALL_TOOLS.push(

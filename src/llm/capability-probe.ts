@@ -16,6 +16,8 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -334,9 +336,9 @@ export async function probeAllModels(forceRefresh = false): Promise<ModelCapabil
         }
     } catch { /* factory optional */ }
 
-    // Also probe nova.config.json external providers (MiniMax etc.)
+    // Also probe xaventra.config.json external providers (MiniMax etc.)
     try {
-        const cfgPath = join(process.cwd(), 'nova.config.json')
+        const cfgPath = resolveConfigPath()
         if (existsSync(cfgPath)) {
             const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
             if (cfg.providers?.minimax?.enabled && cfg.providers.minimax.apiKey) {

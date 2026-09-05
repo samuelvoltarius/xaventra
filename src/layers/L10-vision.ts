@@ -7,6 +7,8 @@
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -120,9 +122,9 @@ export class VisionAnalyzer {
         // Try environment variable first
         if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY
 
-        // Try nova.config.json
+        // Try xaventra.config.json
         try {
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
             if (existsSync(configPath)) {
                 const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                 return config.providers?.openai?.apiKey || config.apis?.openai_key || null

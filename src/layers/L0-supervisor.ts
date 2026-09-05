@@ -11,6 +11,8 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Persona Fix Patterns
@@ -66,7 +68,7 @@ export function getNovaEnforcedPersona(): string {
         modelInfo = getDefaultModel()
     } catch {
         try {
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
             if (existsSync(configPath)) {
                 const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                 modelInfo = config.model || 'unbekannt'

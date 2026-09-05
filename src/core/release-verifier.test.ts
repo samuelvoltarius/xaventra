@@ -41,7 +41,7 @@ describe('signed Nova release verification', () => {
     it('accepts a promoted Main from the dedicated release trust list', () => {
         const { identity } = fixture()
         const base = mkdtempSync(join(tmpdir(), 'nova-release-config-'))
-        const configPath = join(base, 'nova.config.json')
+        const configPath = join(base, 'xaventra.config.json')
         writeFileSync(configPath, JSON.stringify({
             mesh: { update: { trustedReleaseKeys: [{ nodeId: identity.nodeId, publicKey: identity.publicKey }] } },
         }))

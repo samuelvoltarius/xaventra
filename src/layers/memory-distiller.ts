@@ -20,6 +20,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 
 import { join } from 'node:path'
 import { isDurableMemoryCandidate } from '../memory/memory-quality.js'
 import { principalScope, resolvePrincipalId } from '../users/principal-id.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,7 +46,7 @@ interface BrainEpisode {
 
 const DATA_DIR   = join(process.cwd(), '.nova-data')
 const DIARY_DIR  = join(DATA_DIR, 'memories', 'diary')
-const CONFIG_PATH = join(process.cwd(), 'nova.config.json')
+const CONFIG_PATH = resolveConfigPath()
 
 function ownerMemoryScope(): string {
     try {

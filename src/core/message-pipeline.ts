@@ -14,6 +14,8 @@ import { detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction
 import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // State and handler types
 export interface DaemonState {
@@ -135,7 +137,7 @@ function loadSoul(): string {
     return NOVA_PERSONA_FALLBACK
 }
 
-// nova.config.json — cached with 60s TTL
+// xaventra.config.json — cached with 60s TTL
 let _configCache: { data: Record<string, unknown>; loadedAt: number } | null = null
 const CONFIG_CACHE_TTL = 60_000
 
@@ -203,7 +205,7 @@ export async function handleMessage(
     traceStep('input:accepted')
     let contextPolicy = selectContextPolicy(content, Boolean(image))
     let memoryDecision = decideMemoryTurn(content)
-    // Map channel-specific user IDs to canonical names (from nova.config.json)
+    // Map channel-specific user IDs to canonical names (from xaventra.config.json)
     const configAliases = (state as any).config?.userAliases || {}
     const canonicalUser = configAliases[from] || from
     const principalId = resolvePrincipalId((state as any).config, channel, from)
@@ -698,7 +700,7 @@ REGELN:
     // Self-Knowledge Injection — Nova knows what she has
     // ============================================
     if (contextPolicy.mesh) try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = _getNovaConfig(configPath)
             const channels = config.channels ? Object.entries(config.channels)
@@ -709,7 +711,7 @@ REGELN:
             const toolCount = state.tools ? state.tools.getAll().length : 0
 
             systemPrompt += `\n\n## DEIN SYSTEM-STATUS (LIVE)
-- **Config:** nova.config.json existiert ✅ (${configPath})
+- **Config:** xaventra.config.json existiert ✅ (${configPath})
 - **Provider:** ${config.provider || 'unbekannt'} / ${config.model || 'unbekannt'}
 - **Internes LLM:** ${config.internalModel === 'auto' ? 'Cloud (gleich wie Hauptmodell)' : config.internalModel || 'keins'}
 - **Aktive Channels:** ${channels.join(', ') || 'keine'}
@@ -726,9 +728,9 @@ REGELN:
 
 ## SELBST-ERWEITERUNG
 Du kannst deine eigene Config jederzeit erweitern! Nutze das Tool \`config_update\` um neue Felder zu setzen.
-Beispiel: Wenn ein User dir einen API Key gibt, speichere ihn mit config_update in nova.config.json.
+Beispiel: Wenn ein User dir einen API Key gibt, speichere ihn mit config_update in xaventra.config.json.
 Wenn du neue Fähigkeiten lernst, trage sie in die Config ein.
-ALLES was du in nova.config.json schreibst, siehst du beim nächsten Gespräch automatisch hier oben.
+ALLES was du in xaventra.config.json schreibst, siehst du beim nächsten Gespräch automatisch hier oben.
 
 WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht eingerichtet" — prüfe ZUERST die obigen Daten bevor du Aussagen über dein System machst!`
         }
@@ -1375,7 +1377,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             return
         }
 
-        // Intent Router disabled — user configures primary model in nova.config.json.
+        // Intent Router disabled — user configures primary model in xaventra.config.json.
         // No auto-switching based on task type. Primary model handles everything.
         // Fallback chain (model-fallback.ts) kicks in only if primary LLM call fails.
         const routedModel: string | undefined = undefined
@@ -1574,7 +1576,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Reset session if supervisor says so
             if (supervised.shouldResetSession) {
                 console.log(`[L0] 🔄 Session-Reset für ${from}`)
-                clearSession(from, channel)
+                clearSession(principalId, channel, { conversationId: desktopContext?.roomId, botId: desktopBot?.id })
             }
 
             // Retry the agent call

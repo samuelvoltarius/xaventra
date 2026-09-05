@@ -10,7 +10,7 @@
  * GitHub Release URL pattern:
  *   https://github.com/samuelvoltarius/xaventra/releases/download/v{version}/nova-doctor-{variant}.gguf
  *
- * Or custom mirror via nova.config.json:
+ * Or custom mirror via xaventra.config.json:
  *   { "doctorModelMirror": "https://your-server.com/models/" }
  */
 
@@ -19,6 +19,8 @@ import { join } from 'node:path'
 import { totalmem } from 'node:os'
 import { get as httpsGet } from 'node:https'
 import { get as httpGet, IncomingMessage } from 'node:http'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ─── Model Registry ───────────────────────────────────────────────────────────
 
@@ -84,7 +86,7 @@ const NOVA_VERSION = '2.58.0'
 function getMirrorBase(): string {
     try {
         const { readFileSync } = require('node:fs')
-        const cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         if (cfg.doctorModelMirror) return cfg.doctorModelMirror.replace(/\/$/, '')
     } catch { /* no config */ }
     return `${GITHUB_RELEASE_BASE}/v${NOVA_VERSION}`
@@ -92,13 +94,13 @@ function getMirrorBase(): string {
 
 /**
  * Read GitHub token for private-repo release asset downloads.
- * Priority: GITHUB_TOKEN env → nova.config.json githubToken
+ * Priority: GITHUB_TOKEN env → xaventra.config.json githubToken
  */
 function getGithubToken(): string | null {
     if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN
     try {
         const { readFileSync } = require('node:fs')
-        const cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         if (cfg.githubToken) return cfg.githubToken
     } catch { /* no config */ }
     return null
@@ -217,7 +219,7 @@ export async function downloadModel(
     if (res.statusCode === 401 || res.statusCode === 404) {
         const hint = token
             ? `HTTP ${res.statusCode} — token may be invalid or lacks 'repo' scope`
-            : `HTTP ${res.statusCode} — repo is private. Set GITHUB_TOKEN env var or add "githubToken" to nova.config.json`
+            : `HTTP ${res.statusCode} — repo is private. Set GITHUB_TOKEN env var or add "githubToken" to xaventra.config.json`
         throw new Error(hint)
     }
     if (res.statusCode !== 200 && res.statusCode !== 206) {

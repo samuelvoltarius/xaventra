@@ -5,7 +5,7 @@
  * and collects CPU, RAM, disk, temperature.
  * Alerts via Telegram when thresholds are breached.
  * 
- * Config in nova.config.json:
+ * Config in xaventra.config.json:
  * {
  *   "nodes": [
  *     { "name": "Pi5", "host": "xaventra@100.64.0.21", "role": "edge" },
@@ -19,6 +19,8 @@ import { join } from 'node:path'
 import { exec } from 'node:child_process'
 import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -295,7 +297,7 @@ class NodeHealthMonitor {
                 // (mesh nodes often don't know their own external IP)
                 let configNodes: NodeConfig[] = []
                 try {
-                    const configPath = join(process.cwd(), 'nova.config.json')
+                    const configPath = resolveConfigPath()
                     if (existsSync(configPath)) {
                         const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                         configNodes = config.nodes || []
@@ -373,7 +375,7 @@ class NodeHealthMonitor {
 
     private loadNodesFromConfig(): void {
         try {
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
             if (existsSync(configPath)) {
                 const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                 this.nodes = config.nodes || []

@@ -12,6 +12,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config Interface
@@ -135,7 +137,7 @@ const DEFAULTS: NovaConfig = {
 let _config: NovaConfig | null = null
 
 /**
- * Load config from environment variables + nova.config.json (if present).
+ * Load config from environment variables + xaventra.config.json (if present).
  * Config file values override defaults, env vars override config file.
  */
 export function loadConfig(forceReload = false): NovaConfig {
@@ -144,9 +146,9 @@ export function loadConfig(forceReload = false): NovaConfig {
     // Start with defaults
     const cfg: NovaConfig = JSON.parse(JSON.stringify(DEFAULTS))
 
-    // Layer 1: Load from nova.config.json
+    // Layer 1: Load from xaventra.config.json
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const file = JSON.parse(readFileSync(configPath, 'utf-8'))
 

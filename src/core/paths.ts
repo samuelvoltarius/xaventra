@@ -33,6 +33,8 @@
 
 import { join } from 'node:path'
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Base Directory
@@ -46,7 +48,7 @@ export const NOVA_DATA_DIR = join(process.cwd(), '.nova-data')
 // ============================================
 
 export const AUTH_FILE = join(NOVA_DATA_DIR, 'auth.json')
-export const CONFIG_FILE = join(process.cwd(), 'nova.config.json')
+export const CONFIG_FILE = resolveConfigPath()
 export const INSTANCE_ID_FILE = join(NOVA_DATA_DIR, 'instance-id.txt')
 
 // ============================================

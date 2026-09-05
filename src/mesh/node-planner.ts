@@ -2,6 +2,8 @@ import { hostname, platform, arch, totalmem, cpus, networkInterfaces } from 'nod
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AIScanResult, DiscoveredAIService, SleepingSoftware } from './ai-scanner.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 interface ConfigNode {
     name?: string
@@ -33,7 +35,7 @@ function localIps(): string[] {
 
 function loadConfigNodes(): ConfigNode[] {
     try {
-        const cfgPath = join(process.cwd(), 'nova.config.json')
+        const cfgPath = resolveConfigPath()
         if (!existsSync(cfgPath)) return []
         const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8')) as { nodes?: ConfigNode[] }
         return (cfg.nodes || []).filter(node => node.enabled !== false)

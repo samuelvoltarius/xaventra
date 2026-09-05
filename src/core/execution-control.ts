@@ -3,6 +3,8 @@ import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'n
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export type IdempotencyStatus = 'running' | 'completed' | 'failed' | 'compensated'
 export interface IdempotencyRecord {
@@ -52,7 +54,7 @@ export async function assertMissionFenceForContent(content: string): Promise<voi
  * tools deliberately return undefined and can never advertise fake rollback. */
 export function prepareToolCompensation(operation: string, input: Record<string, unknown>): CompensationHandler | undefined {
     const requestedPath = operation === 'config_update'
-        ? join(process.cwd(), 'nova.config.json')
+        ? resolveConfigPath()
         : typeof input.path === 'string' ? input.path : ''
     if (!['write_file', 'delete_file', 'config_update'].includes(operation) || !requestedPath) return undefined
     const path = resolve(requestedPath)

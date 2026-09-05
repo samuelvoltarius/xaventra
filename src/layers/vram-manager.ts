@@ -9,6 +9,8 @@
 
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'vram')
 
@@ -134,7 +136,7 @@ async function detectVRAM(host: string): Promise<number> {
     // Priority 1: config override
     try {
         const { readFileSync } = await import('node:fs')
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         if (config.vramOverrideGB) {
             console.log(`[VRAM] Using config override: ${config.vramOverrideGB}GB`)
             return config.vramOverrideGB * 1e9

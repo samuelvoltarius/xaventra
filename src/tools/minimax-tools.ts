@@ -4,7 +4,7 @@
  * Implements: TTS (speech-2.8-hd), Image Generation (image-01),
  *             Image Vision (M3), Video Generation (I2V-01/Hailuo-2.3)
  *
- * API Key: from nova.config.json providers.minimax.apiKey
+ * API Key: from xaventra.config.json providers.minimax.apiKey
  * Base URL: https://api.minimax.io
  *
  * Critical gotchas (from Samuel_agentbot's guide):
@@ -17,6 +17,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config
@@ -26,7 +28,7 @@ const BASE_URL = 'https://api.minimax.io'
 
 function getMiniMaxKey(): string {
     try {
-        const cfgPath = join(process.cwd(), 'nova.config.json')
+        const cfgPath = resolveConfigPath()
         if (existsSync(cfgPath)) {
             const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
             const key = cfg.providers?.minimax?.apiKey || cfg.apis?.minimax_key

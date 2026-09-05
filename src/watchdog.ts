@@ -14,6 +14,8 @@
 import { spawn, ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from './config/config-path.js'
+
 
 // ============================================
 // Configuration
@@ -205,7 +207,7 @@ async function sendAlert(message: string): Promise<void> {
 
     // Try to send Telegram alert
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             const token = config.telegram?.token

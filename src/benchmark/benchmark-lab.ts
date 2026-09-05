@@ -9,6 +9,11 @@ export interface BenchmarkScenario {
 export interface BenchmarkObservation {
     scenarioId: string; success: boolean; toolExecuted: boolean; resumed?: boolean; memoryCorrect?: boolean
     durationMs: number; costUsd?: number; unnecessaryQuestions?: number; falseCompletion?: boolean; details?: string
+    evaluationKind?: 'subsystem-probes' | 'agent-workflow' | 'external-artifact'
+}
+
+export function benchmarkExitCode(results: BenchmarkObservation[]): number {
+    return results.length > 0 && results.every(result => result.success && !result.falseCompletion) ? 0 : 1
 }
 
 const templates: Record<BenchmarkCategory, Array<[string, string, string[]]>> = {
@@ -190,7 +195,13 @@ export async function runBenchmark(executor: (scenario: BenchmarkScenario) => Pr
         results.push(observation)
         console.log(`[Benchmark] ${index + 1}/${scenarios.length} ${scenario.id} ${observation.success ? 'passed' : 'failed'} (${observation.durationMs}ms)`)
     }
-    const report = { createdAt: new Date().toISOString(), metrics: calculateBenchmarkMetrics(results), results }
+    const kinds = new Set(results.map(result => result.evaluationKind || 'unspecified'))
+    const report = {
+        createdAt: new Date().toISOString(),
+        evaluationKind: kinds.size === 1 ? [...kinds][0] : 'mixed',
+        autonomousTaskCompletionMeasured: results.length > 0 && results.every(result => result.evaluationKind === 'agent-workflow'),
+        metrics: calculateBenchmarkMetrics(results), results,
+    }
     const dir = join(process.cwd(), '.nova-data', 'benchmarks'); mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `${Date.now()}.json`), JSON.stringify(report, null, 2))
     return report

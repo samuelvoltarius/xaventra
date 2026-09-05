@@ -164,7 +164,7 @@ Meine Daten liegen in: \`${cwd}/.nova-data/\`
 | LanceDB Vektoren | \`.nova-data/lancedb/\` | \`remember\` / \`recall\` |
 | Custom Tools | \`.nova-tools/\` | \`create_tool\` |
 | Missions | \`.nova-data/missions.json\` | \`start_mission\` |
-| Config | \`nova.config.json\` | (manuell) |
+| Config | \`xaventra.config.json\` | (manuell) |
 
 **WICHTIG:** Wenn ich sage "ich finde MEMORY.md nicht" — sie liegt IMMER unter \`.nova-data/MEMORY.md\`!`)
 

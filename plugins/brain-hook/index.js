@@ -7,7 +7,7 @@
  *
  * Context is injected as a system message prepended to the conversation.
  *
- * Config (nova.config.json → plugins.brain-hook):
+ * Config (xaventra.config.json → plugins.brain-hook):
  *   qmdBin       — path to qmd binary (default: "qmd")
  *   qmdIndex     — path to qmd index directory
  *   brainUrl     — Graphiti Brain API base URL (default: http://brutus:8765)

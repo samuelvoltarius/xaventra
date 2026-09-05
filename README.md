@@ -44,19 +44,20 @@ stable during the first public migration release. See
 
 ## Current state
 
-Xaventra is a public source preview, not a polished one-command consumer product
-yet. Core, Desktop, Mesh, governed Memory, provider discovery, Tool Evidence,
-Doctor and benchmark infrastructure exist. This repository starts with a fresh,
-scanned history; private deployment data and development history are excluded.
-Cross-platform Desktop packaging and production migration remain separate
-release gates. Historical production claims are not public guarantees.
+Xaventra 2.78.0 is a versioned source release. Native Windows, Linux and macOS
+setup entry points share one installer, and CI exercises the Core on all three
+systems. A configured LLM is required; optional browser, GPU and Desktop
+dependencies have their own install steps. Signed Desktop binaries and live
+multi-node channel takeover remain separate release gates, not implied promises.
+See the [verification record](docs/VERIFICATION_2.78.0.md) and
+[platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 Owner access requires a configured Telegram identity or an explicit grant from
 the local CLI or authenticated Desktop. OS mode and chat phrases do not grant
 administrator access. See the [2.77.2 authorization review](docs/AUTHORIZATION_REVIEW_2.77.2.md).
-Keep development APIs private: the REST API without `NOVA_API_TOKEN` is an
-unauthenticated development endpoint. Do not expose it to an untrusted network;
-configure authentication and a trusted ingress before enabling remote access.
+Keep development APIs private: without `NOVA_API_TOKEN`, REST is allowed only on
+loopback. Remote binding requires a token; remote deployments also need a
+trusted TLS ingress. The installer creates a random local token without printing it.
 
 If you want to help immediately, start with
 [the development guide](docs/DEVELOPMENT.md) and choose one bounded issue from
@@ -95,7 +96,7 @@ fencing token; Xaventra never guesses through a network partition.
 - Node.js 22 or newer
 - npm
 - At least one local or cloud LLM route
-- A `nova.config.json` compatibility configuration for this migration release
+- A `xaventra.config.json` configuration (the installer creates it)
 
 Docker, Tailscale, Supabase, Neo4j and OpenTelemetry are optional and depend on
 the deployment profile.
@@ -105,11 +106,9 @@ the deployment profile.
 ```bash
 git clone https://github.com/samuelvoltarius/xaventra.git
 cd xaventra
-npm install
-npm run build
-cp nova.config.example.json nova.config.json
+sh install.sh
 npm run cli -- setup
-npm run xaventra
+npm start
 ```
 
 Windows PowerShell:
@@ -117,15 +116,24 @@ Windows PowerShell:
 ```powershell
 git clone https://github.com/samuelvoltarius/xaventra.git
 Set-Location xaventra
-npm install
-npm run build
-Copy-Item nova.config.example.json nova.config.json
+./install.ps1
 npm run cli -- setup
-npm run xaventra
+npm start
 ```
 
 The legacy `npm run nova` and `nova` CLI aliases remain available during the
 brand migration.
+
+Both installers require Node.js 22+ and npm, preserve existing configuration and
+leave messaging channels disabled. If PowerShell script execution is restricted,
+use `node scripts/setup.mjs`; no system-wide execution-policy change is needed.
+Optional features: `./install.ps1 -Desktop -Browser -Native` or
+`sh install.sh --desktop --browser --native`. These options download platform
+dependencies and may require system libraries. See [platforms](docs/PLATFORMS.md).
+
+New installs use `xaventra.config.json`. An existing `nova.config.json` is read
+in place only when the new filename is absent. Files are never merged or copied;
+when both exist, Xaventra's filename wins.
 
 After startup, use the CLI or open the configured REST/Desktop surface. You do
 not need Telegram, a Mesh or external infrastructure for a local development
@@ -155,6 +163,12 @@ npm run build
 npm run check:build
 npm run check:layers
 ```
+
+To test genuine model tool selection and conversation continuity, configure
+`XAVENTRA_EVAL_BASE_URL` and `XAVENTRA_EVAL_MODEL`, then run
+`npm run benchmark:acceptance`. It uses disposable files and fresh worker
+processes. `benchmark:full` is a **subsystem-probe suite**, not an autonomous task
+completion score. Neither suite alone proves Telegram takeover or all hardware.
 
 Start without rebuilding only after a successful build:
 
@@ -290,7 +304,7 @@ authorities; they must not create a second executor, memory store or truth path.
 
 ```bash
 npm install
-cp nova.config.example.json nova.config.json
+cp xaventra.config.example.json xaventra.config.json
 npm run typecheck
 npm test
 npm run build

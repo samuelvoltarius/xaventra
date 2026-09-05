@@ -1793,7 +1793,7 @@ export async function createNovaLLMClient(config: {
     // Cloud providers need an API key. The model-resolver returns the configured
     // primary (e.g. minimax/MiniMax-M3) WITHOUT a key, so callers like L6 summary
     // and orchestrator sub-agents that pass {} would otherwise 401. Fill the key
-    // (and base URL) from nova.config.json when missing.
+    // (and base URL) from xaventra.config.json when missing.
     if (!resolvedApiKey && (provider === 'minimax' || provider === 'openai' || provider === 'claude')) {
         try {
             // Use the disk-backed factory config. core/config's singleton is

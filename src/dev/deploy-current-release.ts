@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { deployUpdateToAllNodes, getUpdateStatus, type UpdateConfig } from '../core/auto-updater.js'
 import { MAIN_SERVICE, shouldStartExclusiveService, stopLeaseRenewal } from '../mesh/leader-election.js'
 import { selectReleaseTargets } from './release-targets.js'
+import { resolveConfigPath } from '../config/config-path.js'
 
-const configPath = process.env.NOVA_RELEASE_CONFIG_PATH || join(process.cwd(), 'nova.config.json')
+
+const configPath = process.env.NOVA_RELEASE_CONFIG_PATH || resolveConfigPath()
 const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
     mesh?: { update?: UpdateConfig }
 }

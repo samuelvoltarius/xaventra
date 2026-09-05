@@ -10,6 +10,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getMemoryGovernanceCoordinator } from '../memory/memory-governance.js'
 import { principalScope, resolvePrincipalId } from '../users/principal-id.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // Under test (Vitest), use an isolated temp path so tests never pollute
 // the real CORE_FACTS.json with flood-fact-*/Test-fact-* entries.
@@ -47,7 +49,7 @@ let store: CoreFactsStore = { facts: [], lastExtraction: '', version: 1 }
 
 function legacyOwnerScope(): string {
     try {
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         const owner = config.channels?.telegram?.allowFrom?.[0] || config.allowFrom?.[0]
         if (owner) return principalScope(resolvePrincipalId(config, 'telegram', String(owner)))
     } catch { /* retain global compatibility */ }

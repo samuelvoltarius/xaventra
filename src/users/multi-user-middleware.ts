@@ -13,6 +13,8 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'multi-user')
 
@@ -169,7 +171,7 @@ export function isBlocked(userId: string): boolean {
 
 function getConfigAllowFrom(): string[] {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             return config.channels?.telegram?.allowFrom || config.telegram?.allowFrom || config.allowFrom || []

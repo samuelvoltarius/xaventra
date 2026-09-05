@@ -8,6 +8,8 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -40,12 +42,12 @@ let notifyCallback: ((message: string) => Promise<void>) | null = null
 let wakeupCallback: ((userId: string, channel: string, message: string) => Promise<void>) | null = null
 
 // ============================================
-// Config from nova.config.json
+// Config from xaventra.config.json
 // ============================================
 
 function loadConfig(): HeartbeatConfig {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const data = JSON.parse(readFileSync(configPath, 'utf-8'))
             return {
@@ -59,7 +61,7 @@ function loadConfig(): HeartbeatConfig {
 
 function saveConfigValue(key: string, value: unknown): void {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const data = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (!data.heartbeat) data.heartbeat = {}

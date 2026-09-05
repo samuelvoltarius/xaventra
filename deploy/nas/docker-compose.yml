@@ -27,7 +27,7 @@ services:
       NOVA_MESH_FAILOVER_MAIN: "true"
       NOVA_SKIP_MODEL_RESOLVER_INIT: "false"
     volumes:
-      - ./nova.config.json:/app/nova.config.json:ro
+      - ./xaventra.config.json:/app/xaventra.config.json:ro
       - ./data:/app/.nova-data
       - ./memory:/app/.nova-memory
       - ./learning:/app/.nova-learning

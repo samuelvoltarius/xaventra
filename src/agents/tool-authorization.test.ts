@@ -36,7 +36,7 @@ function executor(context = authority) {
         'assertMissionFenceForContent', 'executionScopeForContent', 'makeIdempotencyKey', 'executionStore', 'prepareToolCompensation',
         'deriveToolCompensation', 'withSpan', 'registry', 'workspaceId', `${compiled}; return run`)
     const run = create(authorizeToolExecution, context.userId, context.authUserId, context.channel, context.requestText, context.governedReadOnly,
-        { contract: { id: 'run', allowedChanges: { readOnly: context.governedReadOnly, externalSideEffects: false } } },
+        { assertCanExecute() {}, contract: { id: 'run', allowedChanges: { readOnly: context.governedReadOnly, externalSideEffects: false } } },
         fence, () => 'run', () => 'key', { executeOnce: once }, () => undefined, () => undefined,
         async (_name: string, _attrs: unknown, callback: () => unknown) => callback(), { execute }, undefined)
     return { run, fence, once, execute }

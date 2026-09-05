@@ -221,7 +221,7 @@ export async function initAllnovaModules(): Promise<void> {
     await initMediaLayer()
     await initMultiAgentLayer()
     // Node-only workers already expose the authenticated REST API configured in
-    // nova.config.json. Starting this legacy, unauthenticated gateway would add
+    // xaventra.config.json. Starting this legacy, unauthenticated gateway would add
     // a second authority and can collide with existing host services.
     if (process.env.NOVA_NODE_ONLY === 'true') {
         console.log('[Integration] Gateway API skipped on node-only worker (authenticated REST API is authoritative)')

@@ -14,6 +14,8 @@
 import { execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -59,12 +61,12 @@ export async function runLocalPreFlight(): Promise<PreFlightResult> {
     })
 
     // 3. Check config
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     const configExists = existsSync(configPath)
     checks.push({
         name: 'Config File',
         status: configExists ? 'pass' : 'fail',
-        message: configExists ? 'nova.config.json found' : 'nova.config.json MISSING',
+        message: configExists ? 'xaventra.config.json found' : 'xaventra.config.json MISSING',
     })
 
     // 4. Check ports
@@ -168,16 +170,16 @@ export async function runRemotePreFlight(host: string, user: string = 'xaventra'
     })
 
     // 6. Config
-    const cfgCheck = ssh('test -f ~/nova-core/nova.config.json && echo YES || echo NO')
+    const cfgCheck = ssh('test -f ~/nova-core/xaventra.config.json && echo YES || echo NO')
     checks.push({
         name: 'Config File',
         status: cfgCheck === 'YES' ? 'pass' : 'fail',
-        message: cfgCheck === 'YES' ? 'nova.config.json found' : 'nova.config.json MISSING',
+        message: cfgCheck === 'YES' ? 'xaventra.config.json found' : 'xaventra.config.json MISSING',
     })
 
     // 7. Telegram conflict check
     if (cfgCheck === 'YES') {
-        const tgEnabled = ssh("node -e \"const c=JSON.parse(require('fs').readFileSync('/home/xaventra/nova-core/nova.config.json'));console.log(c.channels?.telegram?.enabled)\" 2>/dev/null || echo unknown")
+        const tgEnabled = ssh("node -e \"const c=JSON.parse(require('fs').readFileSync('/home/xaventra/nova-core/xaventra.config.json'));console.log(c.channels?.telegram?.enabled)\" 2>/dev/null || echo unknown")
         if (tgEnabled === 'true') {
             checks.push({
                 name: 'Telegram Config',

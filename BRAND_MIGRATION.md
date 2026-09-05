@@ -13,6 +13,12 @@ receipts and failover state.
 New public commands and package names use `xaventra`. Legacy `nova` CLI aliases remain
 available for one major release and emit no credential or data migration.
 
+As of 2.78.0, the canonical configuration and example are
+`xaventra.config.json` and `xaventra.config.example.json`. Runtime readers share
+one resolver: current filename first, legacy `nova.config.json` only if absent.
+Both live filenames are excluded from Git, Desktop workspace browsing and
+Mesh update bundles. Existing credentials are never copied or silently merged.
+
 ## Public naming
 
 - Product: Xaventra
@@ -29,4 +35,3 @@ available for one major release and emit no credential or data migration.
 3. Migrate service/container display names only through the fenced updater.
 4. Keep persisted node IDs and data paths stable unless an explicit versioned data
    migration supplies backup, rollback and split-brain validation.
-

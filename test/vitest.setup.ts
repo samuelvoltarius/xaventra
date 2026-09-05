@@ -16,9 +16,9 @@ mkdirSync(join(runtimeRoot, '.nova-test-tmp'), { recursive: true })
 
 // Tests must never depend on or copy production secrets. The checked-in example
 // is the canonical inert fixture and every write remains inside runtimeRoot.
-const configFixture = join(projectRoot, 'nova.config.example.json')
-if (!existsSync(configFixture)) throw new Error('nova.config.example.json test fixture is missing')
-copyFileSync(configFixture, join(runtimeRoot, 'nova.config.json'))
+const configFixture = join(projectRoot, 'xaventra.config.example.json')
+if (!existsSync(configFixture)) throw new Error('xaventra.config.example.json test fixture is missing')
+copyFileSync(configFixture, join(runtimeRoot, 'xaventra.config.json'))
 const fixtures = join(projectRoot, 'test', 'fixtures')
 if (existsSync(fixtures)) {
     mkdirSync(join(runtimeRoot, 'test'), { recursive: true })

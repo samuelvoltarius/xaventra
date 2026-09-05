@@ -100,7 +100,7 @@ export function trustedKeysFromConfig(configPath: string, sourceNode: string): s
 
 async function cli(): Promise<void> {
     const [manifestPath, root, configPath] = process.argv.slice(2)
-    if (!manifestPath || !root || !configPath) throw new Error('usage: release-verifier <manifest> <root> <nova.config.json>')
+    if (!manifestPath || !root || !configPath) throw new Error('usage: release-verifier <manifest> <root> <xaventra.config.json>')
     const envelope = JSON.parse(readFileSync(manifestPath, 'utf8')) as SignedReleaseManifest
     const result = verifyReleaseDirectory(envelope, root, trustedKeysFromConfig(configPath, envelope.sourceNode))
     if (!result.valid) throw new Error(result.reason)

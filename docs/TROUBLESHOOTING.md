@@ -32,8 +32,8 @@ lsof -i :18789
 kill -9 <PID>
 ```
 
-### "ENOENT: nova.config.json"
-Create `nova.config.json` from the template. See [Configuration](./CONFIGURATION.md).
+### "ENOENT: xaventra.config.json"
+Create `xaventra.config.json` from the template. See [Configuration](./CONFIGURATION.md).
 
 ---
 

@@ -14,13 +14,15 @@ import { handleMessage as pipelineHandleMessage, preloadPipelineModules } from '
 import { handleCommand as handleSlashCommand } from './slash-commands.js'
 import { createLLM, availableLLMs } from './llm-factory.js'
 import type { DaemonState } from './message-pipeline.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 let runtimeState: DaemonState | null = null
 
 function readConfig(): Record<string, any> {
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     if (!existsSync(configPath)) {
-        throw new Error('nova.config.json nicht gefunden')
+        throw new Error('xaventra.config.json nicht gefunden')
     }
     return JSON.parse(readFileSync(configPath, 'utf-8'))
 }

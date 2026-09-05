@@ -3,7 +3,7 @@
  *
  * Applies only fixes marked { safe: true }.
  * These are limited to:
- *   - Port changes in nova.config.json
+ *   - Port changes in xaventra.config.json
  *   - Creating .env if it doesn't exist
  *   - Running non-destructive shell commands (npm install, npm run build)
  *
@@ -19,6 +19,8 @@ import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import type { DoctorReport, DoctorIssue, ApplyFixResult } from './types.js'
 import { NovaConfigSchema } from '../core/config.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const NOVA_DIR = process.cwd()
 const PROPOSALS_FILE = join(NOVA_DIR, '.nova-data', 'patch-proposals.json')
@@ -28,7 +30,7 @@ export interface DoctorConfigProposal {
     kind: 'doctor-config'
     createdAt: number
     status: 'queued' | 'applied' | 'rejected'
-    file: 'nova.config.json'
+    file: 'xaventra.config.json'
     description: string
     reason: string
     issueCode: string
@@ -51,10 +53,10 @@ function setConfigValue(config: Record<string, any>, dotPath: string, value: unk
 
 /** Diagnose automatically, but queue every mutation behind PATCH_GATE. */
 export async function queueDoctorFixProposals(report: DoctorReport): Promise<{ queued: string[]; skipped: string[] }> {
-    const configFile = join(NOVA_DIR, 'nova.config.json')
+    const configFile = resolveConfigPath(NOVA_DIR)
     const queued: string[] = []
     const skipped: string[] = []
-    if (!existsSync(configFile)) return { queued, skipped: ['nova.config.json fehlt'] }
+    if (!existsSync(configFile)) return { queued, skipped: ['xaventra.config.json fehlt'] }
     const current = JSON.parse(readFileSync(configFile, 'utf-8')) as Record<string, any>
     let proposals: any[] = []
     if (existsSync(PROPOSALS_FILE)) {
@@ -80,7 +82,7 @@ export async function queueDoctorFixProposals(report: DoctorReport): Promise<{ q
         if (duplicate) { queued.push(duplicate.id); continue }
         const proposal: DoctorConfigProposal = {
             id: `doctor_patch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            kind: 'doctor-config', createdAt: Date.now(), status: 'queued', file: 'nova.config.json',
+            kind: 'doctor-config', createdAt: Date.now(), status: 'queued', file: 'xaventra.config.json',
             description: fix.hint || `Doctor config fix: ${issue.code}`,
             reason: issue.message, issueCode: issue.code, configPath: fix.configPath, configValue: fix.configValue,
             sandbox: { verified: true, buildPassed: true, testsPassed: true, output: 'Config parsed and schema-validated; live file unchanged.' },
@@ -99,7 +101,7 @@ export async function applyApprovedDoctorProposal(proposal: DoctorConfigProposal
     const expected = process.env.NOVA_PATCH_GATE_TOKEN
     if (!expected || approvalToken !== expected) return { applied: false, message: 'PATCH_GATE token invalid' }
     if (proposal.kind !== 'doctor-config' || proposal.status !== 'queued') return { applied: false, message: 'Doctor proposal is not queued' }
-    const configPath = join(NOVA_DIR, 'nova.config.json')
+    const configPath = resolveConfigPath(NOVA_DIR)
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, any>
     setConfigValue(config, proposal.configPath, proposal.configValue)
     if (!NovaConfigSchema.safeParse(config).success) return { applied: false, message: 'Live config validation failed' }
@@ -204,17 +206,17 @@ async function applyOneFix(
 }
 
 function applyConfigPatch(dotPath: string, value: unknown, issueCode: string): ApplyFixResult {
-    const configPath = join(NOVA_DIR, 'nova.config.json')
+    const configPath = resolveConfigPath(NOVA_DIR)
 
     if (!existsSync(configPath)) {
-        return { applied: false, message: 'nova.config.json nicht gefunden' }
+        return { applied: false, message: 'xaventra.config.json nicht gefunden' }
     }
 
     let config: Record<string, unknown>
     try {
         config = JSON.parse(readFileSync(configPath, 'utf-8'))
     } catch {
-        return { applied: false, message: 'nova.config.json konnte nicht geparst werden' }
+        return { applied: false, message: 'xaventra.config.json konnte nicht geparst werden' }
     }
 
     // Navigate to parent and set value

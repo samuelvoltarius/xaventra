@@ -13,7 +13,7 @@ vi.mock('./self-setup-orchestrator.js', () => ({ runSelfSetupScan: async () => (
 vi.mock('../users/multi-user-middleware.js', () => ({ initMultiUser: () => undefined, getOrCreateUser: () => ({}), setUserPermission: mocks.owner }))
 
 it('forwards the trusted CLI principal to slash-command authorization', async () => {
-    writeFileSync('nova.config.json', '{}')
+    writeFileSync('xaventra.config.json', '{}')
     const principal = { channel: 'cli', senderId: 'cli', permission: 'owner' }
     mocks.pipeline.mockImplementation(async (_channel, _from, _content, _reply, _state, handler) => handler('users', 'list', 'cli', principal))
     const { handleCliPipelineMessage } = await import('./cli-pipeline-runtime.js')

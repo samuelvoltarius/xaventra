@@ -23,6 +23,8 @@ import {
     resolveNodeLifecycle,
     type MeshNodeLifecycle,
 } from './mesh-node-lifecycle.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config
@@ -31,9 +33,9 @@ import {
 const DATA_DIR = join(process.cwd(), '.nova-data')
 const MESH_FILE = join(DATA_DIR, 'mesh.json')
 const NODE_ID_FILE = join(DATA_DIR, 'instance-id.txt')
-// Load Supabase config from nova.config.json (REQUIRED — no hardcoded fallbacks)
+// Load Supabase config from xaventra.config.json (REQUIRED — no hardcoded fallbacks)
 function loadSupabaseConfig(): { url: string, key: string } {
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     try {
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
@@ -46,7 +48,7 @@ function loadSupabaseConfig(): { url: string, key: string } {
     if (process.env.NOVA_MESH_SUPABASE_URL && process.env.NOVA_MESH_SUPABASE_KEY) {
         return { url: process.env.NOVA_MESH_SUPABASE_URL, key: process.env.NOVA_MESH_SUPABASE_KEY }
     }
-    console.warn('[Mesh] ⚠️ No Supabase config found in nova.config.json (supabase.meshUrl/meshKey) — mesh sync disabled')
+    console.warn('[Mesh] ⚠️ No Supabase config found in xaventra.config.json (supabase.meshUrl/meshKey) — mesh sync disabled')
     return { url: '', key: '' }
 }
 const { url: SUPABASE_URL, key: SUPABASE_KEY } = loadSupabaseConfig()
@@ -574,7 +576,7 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
     // signature, and replay validation in mesh-transport-runtime.
     try {
         const peerStates = JSON.parse(readFileSync(join(DATA_DIR, 'mesh-peer-state.json'), 'utf8')) as Record<string, any>
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8')) as any
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8')) as any
         const directPeers = new Map((config.mesh?.direct?.peers || []).map((peer: any) => [String(peer.nodeId), peer]))
         const updateNames = new Map((config.mesh?.update?.nodes || []).map((node: any) => [String(node.nodeId), String(node.name || node.nodeId)]))
         for (const [nodeId, peerState] of Object.entries(peerStates)) {
@@ -1746,7 +1748,7 @@ export async function formatMeshServices(): Promise<string> {
     } catch { /* runtime may not be initialized in CLI-only mode */ }
 
     try {
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
         const witnesses = config.mesh?.coordination?.witnesses || []
         lines.push(witnesses.length ? `🗳️ Witness: ${witnesses.length}/3 konfiguriert` : '⚪ Witness: nicht konfiguriert')
     } catch { /* config already validated by daemon */ }

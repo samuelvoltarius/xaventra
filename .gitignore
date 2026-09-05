@@ -8,6 +8,7 @@ dist/
 # Auth & Secrets
 .env
 .nova-auth/
+xaventra.config.json
 nova.config.json
 /config.json
 auth.json

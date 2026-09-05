@@ -11,6 +11,8 @@ import { join } from 'node:path'
 import { hostname } from 'node:os'
 import { getLocalNodeId, type MeshNode } from './mesh-registry.js'
 import { recordMainRole } from '../infra/telemetry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 type SupabaseConfig = { url: string; key: string }
 
@@ -122,7 +124,7 @@ async function isPreferredTakeoverCandidate(): Promise<boolean> {
 
 function loadSupabaseConfig(): SupabaseConfig {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (config.supabase?.meshUrl && config.supabase?.meshKey) {

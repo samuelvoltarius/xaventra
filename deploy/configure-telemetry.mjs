@@ -2,7 +2,7 @@ import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 const path = process.argv[2]
 const endpoint = process.argv[3] || process.env.NOVA_OTEL_ENDPOINT || 'http://100.64.0.12:4318'
-if (!path) throw new Error('usage: configure-telemetry.mjs <nova.config.json> [otlp-http-endpoint]')
+if (!path) throw new Error('usage: configure-telemetry.mjs <xaventra.config.json> [otlp-http-endpoint]')
 
 const config = JSON.parse(readFileSync(path, 'utf8'))
 config.telemetry = {

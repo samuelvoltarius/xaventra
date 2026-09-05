@@ -8,6 +8,8 @@
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Constants
@@ -24,7 +26,7 @@ async function resolveComfyEndpoint(): Promise<string | null> {
     if (await probe(tunnel)) return tunnel
 
     try {
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         const node = (config.nodes || []).find((entry: any) => entry?.services?.comfyui)
         const direct = String(node?.services?.comfyui || '').replace(/\/$/, '')
         if (direct && await probe(direct)) return direct

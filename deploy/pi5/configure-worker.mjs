@@ -1,7 +1,7 @@
 import { chmodSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 const path = process.argv[2]
-if (!path) throw new Error('usage: configure-worker.mjs <nova.config.json>')
+if (!path) throw new Error('usage: configure-worker.mjs <xaventra.config.json>')
 
 const config = JSON.parse(readFileSync(path, 'utf8'))
 config.server = { ...(config.server || {}), host: '127.0.0.1' }

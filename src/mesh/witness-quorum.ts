@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { getLocalNodeId } from './mesh-registry.js'
 import type { LeaseDecision } from './leader-election.js'
 import type { WitnessDecision } from './quorum-witness.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export interface WitnessEndpoint { id: string; url: string; secret: string }
 export interface WitnessQuorumConfig {
@@ -27,7 +29,7 @@ function equalSignature(actual: string, expected: string): boolean {
 
 export function loadWitnessQuorumConfig(): WitnessQuorumConfig | null {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (!existsSync(configPath)) return null
         const raw = JSON.parse(readFileSync(configPath, 'utf8')) as any
         const coordination = raw.mesh?.coordination
@@ -48,7 +50,7 @@ export function loadWitnessQuorumConfig(): WitnessQuorumConfig | null {
 
 export function witnessModeRequested(): boolean {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (!existsSync(configPath)) return false
         return JSON.parse(readFileSync(configPath, 'utf8'))?.mesh?.coordination?.mode === 'witness'
     } catch { return false }

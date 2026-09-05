@@ -12,14 +12,16 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Configuration
 // ============================================
 
-// Load Supabase config from nova.config.json (REQUIRED — no hardcoded fallbacks)
+// Load Supabase config from xaventra.config.json (REQUIRED — no hardcoded fallbacks)
 function loadLearningHubConfig(): { url: string, key: string } {
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     try {
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
@@ -32,7 +34,7 @@ function loadLearningHubConfig(): { url: string, key: string } {
     if (process.env.NOVA_LEARNING_SUPABASE_URL && process.env.NOVA_LEARNING_SUPABASE_KEY) {
         return { url: process.env.NOVA_LEARNING_SUPABASE_URL, key: process.env.NOVA_LEARNING_SUPABASE_KEY }
     }
-    console.warn('[LearningHub] ⚠️ No Supabase config found in nova.config.json (supabase.learningUrl/learningKey) — learning sync disabled')
+    console.warn('[LearningHub] ⚠️ No Supabase config found in xaventra.config.json (supabase.learningUrl/learningKey) — learning sync disabled')
     return { url: '', key: '' }
 }
 const { url: SUPABASE_URL, key: SUPABASE_ANON_KEY } = loadLearningHubConfig()

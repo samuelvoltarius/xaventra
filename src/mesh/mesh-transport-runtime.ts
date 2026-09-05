@@ -15,6 +15,8 @@ import type {
     MeshPrincipal, MissionRequestPayload, ResultPayload, ToolInventoryPayload, ToolRequestPayload,
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 type MessageHandler = (channel: string, userId: string, content: string, reply: (content: string) => Promise<void>) => Promise<void>
 
@@ -47,7 +49,7 @@ function persistPeerStates(): void {
 }
 
 function rawConfig(): any {
-    try { return JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8')) } catch { return {} }
+    try { return JSON.parse(readFileSync(resolveConfigPath(), 'utf8')) } catch { return {} }
 }
 
 function loadRuntimeConfig(): RuntimeConfig {

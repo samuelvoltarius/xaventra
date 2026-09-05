@@ -74,7 +74,7 @@ export interface DoctorIssue {
 
 export interface CheckResult {
     ok: boolean
-    label: string           // e.g. "nova.config.json"
+    label: string           // e.g. "xaventra.config.json"
     status: string          // e.g. "gültig" / "fehlt" / "ungültiges JSON"
     issues: DoctorIssue[]
 }

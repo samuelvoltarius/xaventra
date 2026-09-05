@@ -6,6 +6,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config Cache — avoid repeated disk reads
@@ -60,7 +62,7 @@ export function getNovaConfig(): NovaConfig {
         return _configCache
     }
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             _configCache = JSON.parse(readFileSync(configPath, 'utf-8')) as NovaConfig
             _configCacheTime = now
@@ -755,7 +757,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                     setBotInfo({ model: newModel, provider: newProvider || activeProvider })
                 } catch { /* non-critical */ }
 
-                // NEVER persist automatic model switches to nova.config.json.
+                // NEVER persist automatic model switches to xaventra.config.json.
                 // The user's configured model is sacred — only the user can change it.
                 // Runtime switches are temporary and must not overwrite the config.
                 console.log(`[NovaLLM] Runtime model active: ${newModel} (not persisted — user config preserved)`)
@@ -768,10 +770,10 @@ export async function createLLM(config: { provider?: string; model?: string; int
         },
 
         // Model selection — ALWAYS use the configured primary model.
-        // The user set a model in nova.config.json — that is the model to use.
+        // The user set a model in xaventra.config.json — that is the model to use.
         // L18 router is only consulted for FALLBACK when the primary fails.
         async selectModelForTask(_content: string, _hasImage: boolean = false) {
-            // Return the currently active model (= nova.config.json model)
+            // Return the currently active model (= xaventra.config.json model)
             // No auto-routing based on task type — user decides, not the router.
             return { model: activeModelId, provider: activeProvider, reason: 'configured primary model' }
         },

@@ -12,6 +12,10 @@ describe('smart tool router keyword matching', () => {
 })
 
 describe('context-aware tool selection', () => {
+    it('offers file tools for plural file requests even without exact pack keywords', () => {
+        expect(getRelevantTools('Lies beide Dateien /tmp/a.txt und /tmp/b.txt').some(tool => tool.name === 'read_file')).toBe(true)
+        expect(getRelevantTools('Read both files and add the totals').some(tool => tool.name === 'read_file')).toBe(true)
+    })
     it('keeps image generation available for a short subject follow-up', () => {
         const tools = getRelevantTools('kannst du ein bild generieren?\ndie stadt salzburg bitte')
         expect(tools.some(t => t.name === 'generate_image')).toBe(true)

@@ -8,6 +8,8 @@ import { scanEnvironment, type EnvironmentMap } from '../startup/environment-sca
 import { ensureVoiceDeps, type SetupResult } from '../voice/voice-setup.js'
 import { probeGpuRuntime, type GpuRuntimeBackend, type GpuRuntimeStatus } from '../doctor/gpu-runtime.js'
 import type { CapabilityGraphSnapshot } from '../mesh/capability-graph.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 type RiskLevel = 'low' | 'medium' | 'high'
 type ActionType = 'config_patch' | 'local_shell' | 'remote_shell'
@@ -124,7 +126,7 @@ export function isExplicitSelfSetupRequest(input: string): boolean {
 
 const DATA_DIR = join(process.cwd(), '.nova-data')
 const STATE_FILE = join(DATA_DIR, 'setup-state.json')
-const CONFIG_FILE = join(process.cwd(), 'nova.config.json')
+const CONFIG_FILE = resolveConfigPath()
 
 function isYoloEnabled(config: any): boolean {
     return process.env.NOVA_SELF_SETUP_YOLO === '1'

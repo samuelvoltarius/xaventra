@@ -24,7 +24,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
-      - /home/xaventra/nova-runtime/nova.config.json:/app/nova.config.json:ro
+      - /home/xaventra/nova-runtime/xaventra.config.json:/app/xaventra.config.json:ro
       - /home/xaventra/nova-runtime/SOUL.md:/app/SOUL.md:ro
       - /home/xaventra/nova-runtime/data:/app/.nova-data
       - /home/xaventra/nova-runtime/learning:/app/.nova-learning

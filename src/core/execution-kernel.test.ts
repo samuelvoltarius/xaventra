@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { ExecutionKernel } from './execution-kernel.js'
 
 describe('execution kernel', () => {
+    it('enforces the outer allow-list and call budget before an effect can start', () => {
+        const kernel = new ExecutionKernel('Lies beide Dateien a.txt und b.txt', { allowedChanges: { allowedTools: ['read_file'] }, budget: { maxToolCalls: 1 } })
+        expect(kernel.selectWorkerTools().map(tool => tool.name)).toEqual(['read_file'])
+        expect(() => kernel.assertCanExecute('write_file')).toThrow('outside task contract')
+        expect(() => kernel.assertCanExecute('read_file')).not.toThrow()
+        expect(() => kernel.assertCanExecute('read_file')).toThrow('budget exhausted')
+    })
+    it('fails closed after the deadline rather than validating a late effect afterwards', () => {
+        const kernel = new ExecutionKernel('Lies die Datei a.txt', { allowedChanges: { allowedTools: ['read_file'] }, budget: { timeoutMs: 0 } })
+        expect(() => kernel.assertCanExecute('read_file')).toThrow('deadline exceeded')
+    })
     it('owns routing, verification and lifecycle as one contract', () => {
         const kernel = new ExecutionKernel('erstelle mir ein bild von salzburg')
         expect(kernel.selectWorkerTools().some(tool => tool.name === 'generate_image')).toBe(true)

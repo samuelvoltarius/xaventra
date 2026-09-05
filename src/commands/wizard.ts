@@ -1,10 +1,12 @@
 import { createInterface } from 'node:readline'
 import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 /** Configure selected fields without erasing existing identity or mesh policy. */
 export async function runSetupWizard(): Promise<void> {
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     const config: Record<string, any> = existsSync(configPath)
         ? JSON.parse(readFileSync(configPath, 'utf8')) : {}
     if (!config || Array.isArray(config) || typeof config !== 'object') throw new Error('Configuration must be a JSON object')

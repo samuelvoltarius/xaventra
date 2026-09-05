@@ -6,6 +6,8 @@
 
 import { getDefaultModel } from '../core/model-defaults.js'
 import { BRAIN_COMMANDS, handlePossibleNodeSelection } from './brain-commands.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export interface NovaCommand {
     name: string
@@ -46,7 +48,7 @@ function getCurrentModelInfo(): { model: string; provider: string } {
         // Fallback: read from config file
         const { readFileSync } = require('node:fs')
         const { join } = require('node:path')
-        const cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         return { model: cfg.model || 'unknown', provider: cfg.provider || 'local' }
     } catch { /* fallback */ }
     return { model: botInfo.model, provider: botInfo.provider }

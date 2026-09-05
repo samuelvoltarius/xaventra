@@ -48,7 +48,7 @@ Auto-detect and store API keys (tvly- = Tavily, sk-or- = OpenRouter).
 ## Self-Management
 
 ### save_config
-Modify `nova.config.json` at runtime.
+Modify `xaventra.config.json` at runtime.
 ```
 save_config({ section: "telegram", values: { enabled: true } })
 ```

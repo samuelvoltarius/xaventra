@@ -4,11 +4,11 @@
  * Full integration with Moonraker API for Klipper-based 3D printers.
  * Supports: print status, temperatures, G-code, file management, control.
  *
- * Config (nova.config.json or env):
+ * Config (xaventra.config.json or env):
  *   PRINTER_URL = "http://192.168.1.100"   (Moonraker host, no port needed if default 80/7125)
  *   PRINTER_API_KEY = "..."                (optional, if HA auth is enabled)
  *
- * Or nova.config.json:
+ * Or xaventra.config.json:
  *   { "printer": { "url": "http://192.168.1.100", "apiKey": "..." } }
  *
  * Slash commands: /printer status, /printer temp, /printer files, /printer pause, etc.
@@ -17,6 +17,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config
@@ -36,7 +38,7 @@ function getPrinterConfig(): PrinterConfig | null {
     }
 
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             const p = cfg.printer || cfg['3dprinter'] || cfg.moonraker
@@ -53,7 +55,7 @@ function getPrinterConfig(): PrinterConfig | null {
 
 async function moonrakerGet<T = unknown>(path: string): Promise<T> {
     const cfg = getPrinterConfig()
-    if (!cfg) throw new Error('Drucker nicht konfiguriert. Setze PRINTER_URL in nova.config.json oder als Umgebungsvariable.')
+    if (!cfg) throw new Error('Drucker nicht konfiguriert. Setze PRINTER_URL in xaventra.config.json oder als Umgebungsvariable.')
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (cfg.apiKey) headers['X-Api-Key'] = cfg.apiKey
@@ -436,7 +438,7 @@ export async function handlePrinterCommand(args: string): Promise<string> {
 /printer home — G28 ausführen
 /printer info — Klipper/Moonraker Version
 
-*Config:* PRINTER_URL in nova.config.json setzen
+*Config:* PRINTER_URL in xaventra.config.json setzen
 *Beispiel:* { "printer": { "url": "http://192.168.1.100" } }`
         }
     } catch (err) {

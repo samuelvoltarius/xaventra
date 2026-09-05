@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Nova CLI ✨
+ * Xaventra CLI ✨
  * 
- * Command-line interface for Nova AI Assistant.
+ * Command-line interface for Xaventra AI Assistant.
  * 
  * Usage:
- *   nova start       - Start Nova
+ *   nova start       - Start Xaventra
  *   nova setup       - Interactive setup wizard
  *   nova wizard      - Run diagnostics
- *   nova chat        - Terminal chat with Nova
+ *   nova chat        - Terminal chat with Xaventra
  *   nova gateway     - Start gateway (process supervisor)
  *   nova status      - Show status
  *   nova channels    - List channels
@@ -20,6 +20,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { cpus } from 'node:os'
+import { resolveConfigPath } from './config/config-path.js'
+
 
 // ============================================
 // Colors (ANSI)
@@ -52,12 +54,12 @@ const c = {
 // ============================================
 
 function printBanner(): void {
+    let version = 'unknown'
+    try { version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version } catch { }
     console.log(`
 ${colors.magenta}${colors.bold}
-    ╔╗╔┌─┐┬  ┬┌─┐  ✨
-    ║║║│ │└┐┌┘├─┤
-    ╝╚╝└─┘ └┘ ┴ ┴
-${colors.reset}${colors.dim}   AI Assistant v1.0.0${colors.reset}
+    XAVENTRA  ✨
+${colors.reset}${colors.dim}   Core v${version}${colors.reset}
 `)
 }
 
@@ -67,13 +69,13 @@ ${colors.reset}${colors.dim}   AI Assistant v1.0.0${colors.reset}
 
 async function commandStart(): Promise<void> {
     printBanner()
-    console.log(c.info('Starting Nova Daemon...'))
+    console.log(c.info('Starting Xaventra Daemon...'))
     console.log()
 
     // Check if compiled
     const distPath = resolve(process.cwd(), 'dist', 'daemon.js')
     if (!existsSync(distPath)) {
-        console.log(c.error('❌ Nova not compiled. Run: npm run build'))
+        console.log(c.error('❌ Xaventra not compiled. Run: npm run build'))
         process.exit(1)
     }
 
@@ -89,7 +91,7 @@ async function commandStart(): Promise<void> {
             process.exit(code ?? 0)
         })
     } catch (err) {
-        console.error(c.error(`❌ Failed to start Nova: ${err}`))
+        console.error(c.error(`❌ Failed to start Xaventra: ${err}`))
         process.exit(1)
     }
 }
@@ -106,7 +108,7 @@ async function commandSetup(): Promise<void> {
 
 async function commandKill(): Promise<void> {
     printBanner()
-    console.log(c.warn('🛑 Stopping all Nova processes...'))
+    console.log(c.warn('🛑 Stopping all Xaventra processes...'))
     console.log()
 
     try {
@@ -115,34 +117,34 @@ async function commandKill(): Promise<void> {
         if (process.platform === 'win32') {
             // Windows: Kill node processes with nova in command line
             execSync('taskkill /F /IM node.exe /FI "WINDOWTITLE eq *nova*" 2>nul', { stdio: 'ignore' })
-            console.log(c.ok('✅ Nova-Prozesse beendet'))
+            console.log(c.ok('✅ Xaventra-Prozesse beendet'))
         } else {
             // Unix: Kill processes with nova in name
             execSync('pkill -f "nova" 2>/dev/null || true', { stdio: 'ignore' })
-            console.log(c.ok('✅ Nova-Prozesse beendet'))
+            console.log(c.ok('✅ Xaventra-Prozesse beendet'))
         }
     } catch {
-        console.log(c.dim('Keine laufenden Nova-Prozesse gefunden.'))
+        console.log(c.dim('Keine laufenden Xaventra-Prozesse gefunden.'))
     }
     console.log()
 }
 
 async function commandRestart(): Promise<void> {
     printBanner()
-    console.log(c.info('🔄 Restarting Nova...'))
+    console.log(c.info('🔄 Restarting Xaventra...'))
     console.log()
 
     // Kill first
     await commandKill()
 
     // Then start
-    console.log(c.info('▶️ Starte Nova neu...'))
+    console.log(c.info('▶️ Starte Xaventra neu...'))
     await commandStart()
 }
 
 async function commandGateway(): Promise<void> {
     printBanner()
-    console.log(c.info('Starting Nova Gateway...'))
+    console.log(c.info('Starting Xaventra Gateway...'))
 
     try {
         const { startGateway } = await import('./gateway.js')
@@ -156,7 +158,7 @@ async function commandGateway(): Promise<void> {
 
 async function commandPipelineChat(): Promise<void> {
     printBanner()
-    console.log(c.nova('✨ Nova Terminal Chat'))
+    console.log(c.nova('✨ Xaventra Terminal Chat'))
     console.log(c.dim('─'.repeat(50)))
     console.log(c.dim('Gleiche Pipeline wie Telegram/Web: Memory, Tools, Slash-Commands, Self-Setup.'))
     console.log(c.dim('Befehle: /exit, /clear, /status, /setup status, /browser status, /help'))
@@ -212,7 +214,7 @@ async function commandPipelineChat(): Promise<void> {
             try {
                 await handleCliPipelineMessage(trimmed, async (reply) => {
                     console.log()
-                    console.log(`${c.nova('Nova:')} ${reply}`)
+                    console.log(`${c.nova('Xaventra:')} ${reply}`)
                     console.log()
                 })
             } catch (err) {
@@ -255,7 +257,7 @@ async function commandPipelineAsk(message: string): Promise<void> {
 
 async function commandChat(): Promise<void> {
     printBanner()
-    console.log(c.nova('✨ Nova Terminal Chat'))
+    console.log(c.nova('✨ Xaventra Terminal Chat'))
     console.log(c.dim('─'.repeat(50)))
     console.log(c.dim('Tippe deine Nachricht und drücke Enter.'))
     console.log(c.dim('Befehle: /exit, /clear, /model <name>'))
@@ -266,7 +268,7 @@ async function commandChat(): Promise<void> {
 
     try {
         // Try to load config and create LLM
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
 
@@ -347,7 +349,7 @@ async function commandChat(): Promise<void> {
     let memoryManager: any = null
     try {
         const { MemoryManager } = await import('./memory/lancedb.js')
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf-8')) : {}
 
         if (config.memory?.enabled !== false && (config.auth?.openaiApiKey || process.env.OPENAI_API_KEY)) {
@@ -402,7 +404,7 @@ async function commandChat(): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let telegramAdapter: any = null
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (config.channels?.telegram?.enabled && config.channels?.telegram?.token) {
@@ -414,7 +416,7 @@ async function commandChat(): Promise<void> {
                 })
 
                 // Connect Telegram messages to LLM
-                const telegramPersona = 'Du bist Nova ✨ - ein hilfsbereiter KI-Assistent. Sei freundlich, präzise und hilfsbereit. Antworte auf Deutsch.'
+                const telegramPersona = 'Du bist Xaventra ✨ - ein hilfsbereiter KI-Assistent. Sei freundlich, präzise und hilfsbereit. Antworte auf Deutsch.'
                 telegramAdapter.onMessage(async (msg: { from: string; content: string; groupId?: string }) => {
                     if (llm) {
                         try {
@@ -449,9 +451,9 @@ async function commandChat(): Promise<void> {
     // ============================================
     // Load Custom Persona (Phase 4)
     // ============================================
-    let systemPrompt = 'Du bist Nova, ein hilfreicher KI-Assistent. Antworte präzise und freundlich.'
+    let systemPrompt = 'Du bist Xaventra, ein hilfreicher KI-Assistent. Antworte präzise und freundlich.'
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (config.persona?.systemPrompt) {
@@ -558,7 +560,7 @@ async function commandChat(): Promise<void> {
                 console.log(c.bold('        🛡️ Layer 0 - Resilience & Security'))
                 console.log(c.bold('═══════════════════════════════════════════'))
                 console.log('')
-                console.log(c.info('Layer 0 ist die Basis-Schutzschicht von Nova.'))
+                console.log(c.info('Layer 0 ist die Basis-Schutzschicht von Xaventra.'))
                 console.log('')
 
                 // Check backup status
@@ -600,7 +602,7 @@ async function commandChat(): Promise<void> {
                 return
             }
 
-            // /raw - Direct LLM communication without Nova persona
+            // /raw - Direct LLM communication without Xaventra persona
             if (trimmed === '/raw' || trimmed.startsWith('/raw ')) {
                 console.log(c.bold('\n═══════════════════════════════════════════'))
                 console.log(c.bold('        📡 Raw LLM - Direct Access'))
@@ -610,7 +612,7 @@ async function commandChat(): Promise<void> {
 
                 if (!message) {
                     console.log('')
-                    console.log(c.info('Direkter LLM-Zugang ohne Nova-Persona.'))
+                    console.log(c.info('Direkter LLM-Zugang ohne Xaventra-Persona.'))
                     console.log('')
                     console.log(c.bold('  Nutzung: /raw <nachricht>'))
                     console.log(c.dim('  Beispiel: /raw Was sind deine Capabilities?'))
@@ -643,10 +645,10 @@ async function commandChat(): Promise<void> {
 
             if (trimmed === '/status') {
                 console.log(c.bold('\n═══════════════════════════════════════════'))
-                console.log(c.bold('              ✨ Nova Status'))
+                console.log(c.bold('              ✨ Xaventra Status'))
                 console.log(c.bold('═══════════════════════════════════════════'))
                 try {
-                    const configPath = join(process.cwd(), 'nova.config.json')
+                    const configPath = resolveConfigPath()
                     const authPath = join(process.cwd(), '.nova-auth', 'pi-auth.json')
                     let email = 'nicht angemeldet'
                     let provider = 'unbekannt'
@@ -724,7 +726,7 @@ async function commandChat(): Promise<void> {
                 console.clear()
                 printBanner()
                 history.length = 0
-                history.push({ role: 'system', content: 'Du bist Nova, ein hilfreicher KI-Assistent. Antworte präzise und freundlich.' })
+                history.push({ role: 'system', content: 'Du bist Xaventra, ein hilfreicher KI-Assistent. Antworte präzise und freundlich.' })
                 console.log(c.ok('🔄 Konversation zurückgesetzt.'))
                 console.log()
                 prompt()
@@ -781,7 +783,7 @@ async function commandChat(): Promise<void> {
 
             if (trimmed === '/model' || trimmed.startsWith('/model ')) {
                 try {
-                    const configPath = join(process.cwd(), 'nova.config.json')
+                    const configPath = resolveConfigPath()
                     if (existsSync(configPath)) {
                         const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                         const provider = config.provider
@@ -934,7 +936,7 @@ async function commandChat(): Promise<void> {
                         history[0].content = history[0].content.replace(/\n\n\[Relevante Erinnerungen:.*?\]/s, '') + memoryContext
                     }
 
-                    process.stdout.write(c.nova('Nova: '))
+                    process.stdout.write(c.nova('Xaventra: '))
                     let response = await llm.complete(history)
                     // Streaming already printed the content, just add newlines
                     console.log()
@@ -978,7 +980,7 @@ async function commandChat(): Promise<void> {
                         // If tool was executed, get follow-up response
                         if (toolExecuted) {
                             console.log()
-                            process.stdout.write(c.nova('Nova: '))
+                            process.stdout.write(c.nova('Xaventra: '))
                             response = await llm.complete(history)
                             console.log()
                         }
@@ -1045,7 +1047,7 @@ async function commandChat(): Promise<void> {
                     }
                 }
             } else {
-                console.log(c.dim('Nova: ') + c.warn('Kein LLM verbunden. Nutze "nova setup" zur Konfiguration.'))
+                console.log(c.dim('Xaventra: ') + c.warn('Kein LLM verbunden. Nutze "nova setup" zur Konfiguration.'))
                 console.log()
             }
 
@@ -1058,14 +1060,14 @@ async function commandChat(): Promise<void> {
 
 async function commandWizard(): Promise<void> {
     printBanner()
-    console.log(c.bold('✨ Nova Wizard - System Diagnostics'))
+    console.log(c.bold('✨ Xaventra Wizard - System Diagnostics'))
     console.log(c.dim('─'.repeat(50)))
     console.log()
 
     const checks: Array<{ name: string; status: boolean; detail?: string }> = []
 
     // 1. Check config file
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     const hasConfig = existsSync(configPath)
     checks.push({
         name: 'Configuration file',
@@ -1155,21 +1157,21 @@ async function commandWizard(): Promise<void> {
     console.log(c.dim('─'.repeat(50)))
 
     if (failed === 0) {
-        console.log(c.ok('✓ Nova is ready to start!'))
+        console.log(c.ok('✓ Xaventra is ready to start!'))
         console.log()
         console.log(`  Run: ${c.bold('nova start')}`)
         console.log(`  Or:  ${c.bold('nova gateway')} (with auto-restart)`)
     } else {
         console.log(c.warn(`⚠ ${failed} required item(s) missing.`))
         console.log()
-        console.log(`  Run: ${c.bold('nova setup')} to configure Nova.`)
+        console.log(`  Run: ${c.bold('nova setup')} to configure Xaventra.`)
     }
     console.log()
 }
 
 async function commandDoctor(args: string[]): Promise<void> {
     printBanner()
-    console.log(c.bold('🏥 Nova Doctor — Autonomes Diagnose-System'))
+    console.log(c.bold('🏥 Xaventra Doctor — Autonomes Diagnose-System'))
     console.log(c.dim('─'.repeat(50)))
     console.log()
 
@@ -1223,7 +1225,7 @@ async function commandDoctor(args: string[]): Promise<void> {
     }
 
     if (!info.available) {
-        console.log(c.warn('\n  ⚠  Nova Doctor ist offline — kein passendes Modell verfügbar.'))
+        console.log(c.warn('\n  ⚠  Xaventra Doctor ist offline — kein passendes Modell verfügbar.'))
         return
     }
 
@@ -1262,7 +1264,7 @@ async function commandDoctor(args: string[]): Promise<void> {
 }
 
 async function commandStatus(): Promise<void> {
-    console.log(c.bold('✨ Nova Status'))
+    console.log(c.bold('✨ Xaventra Status'))
     console.log(c.dim('─'.repeat(40)))
     console.log()
 
@@ -1271,7 +1273,7 @@ async function commandStatus(): Promise<void> {
         const res = await fetch('http://localhost:18789/api/status')
         if (res.ok) {
             const data = await res.json() as { nova: string; pid?: number; uptime?: number; crashCount?: number }
-            console.log(`  ${c.dim('Nova:')}        ${data.nova === 'running' ? c.ok('Running') : c.warn(data.nova)}`)
+            console.log(`  ${c.dim('Xaventra:')}        ${data.nova === 'running' ? c.ok('Running') : c.warn(data.nova)}`)
             console.log(`  ${c.dim('PID:')}         ${data.pid || 'N/A'}`)
             console.log(`  ${c.dim('Uptime:')}      ${data.uptime || 0}s`)
             console.log(`  ${c.dim('Crashes:')}     ${data.crashCount || 0}`)
@@ -1279,10 +1281,10 @@ async function commandStatus(): Promise<void> {
             console.log(c.dim('Gateway running on port 18789'))
         }
     } catch {
-        console.log(`  ${c.dim('Nova:')}        ${c.warn('Not running')}`)
+        console.log(`  ${c.dim('Xaventra:')}        ${c.warn('Not running')}`)
         console.log(`  ${c.dim('Gateway:')}     ${c.warn('Not running')}`)
         console.log()
-        console.log(c.dim('Start Nova: nova start'))
+        console.log(c.dim('Start Xaventra: nova start'))
         console.log(c.dim('Start Gateway: nova gateway'))
     }
     console.log()
@@ -1398,14 +1400,14 @@ async function commandModels(): Promise<void> {
 }
 
 async function commandConfig(): Promise<void> {
-    console.log(c.bold('⚙️ Nova Configuration'))
+    console.log(c.bold('⚙️ Xaventra Configuration'))
     console.log(c.dim('─'.repeat(40)))
     console.log()
 
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
 
     if (!existsSync(configPath)) {
-        console.log(c.warn('No nova.config.json found.'))
+        console.log(c.warn('No xaventra.config.json found.'))
         console.log()
         console.log('Create one with:')
         console.log(c.bold('  nova setup'))
@@ -1416,7 +1418,7 @@ async function commandConfig(): Promise<void> {
     try {
         const config = JSON.parse(readFileSync(configPath, 'utf-8'))
 
-        console.log(`  ${c.dim('Name:')}         ${config.name || 'Nova'}`)
+        console.log(`  ${c.dim('Name:')}         ${config.name || 'Xaventra'}`)
         console.log(`  ${c.dim('Provider:')}     ${config.provider || 'not set'}`)
         console.log(`  ${c.dim('Model:')}        ${config.model || 'default'}`)
         console.log(`  ${c.dim('Dashboard:')}    Port ${config.dashboard?.port || 3000}`)
@@ -1438,10 +1440,10 @@ function commandHelp(): void {
     console.log(`  npm run cli -- ${c.info('<command>')} [options]`)
     console.log()
     console.log(c.bold('🚀 Haupt-Commands:'))
-    console.log(`  ${c.info('start'.padEnd(12))} Startet Nova AI Assistant`)
+    console.log(`  ${c.info('start'.padEnd(12))} Startet Xaventra AI Assistant`)
     console.log(`  ${c.info('setup'.padEnd(12))} Interaktiver Setup-Wizard mit OAuth`)
-    console.log(`  ${c.info('chat'.padEnd(12))} Terminal-Chat mit Nova`)
-    console.log(`  ${c.info('ask'.padEnd(12))} Eine Nachricht durch die volle Nova-Pipeline senden`)
+    console.log(`  ${c.info('chat'.padEnd(12))} Terminal-Chat mit Xaventra`)
+    console.log(`  ${c.info('ask'.padEnd(12))} Eine Nachricht durch die volle Xaventra-Pipeline senden`)
     console.log(`  ${c.info('gateway'.padEnd(12))} Startet Gateway (Prozess-Supervisor)`)
     console.log()
     console.log(c.bold('📊 Status & Info:'))
@@ -1452,17 +1454,17 @@ function commandHelp(): void {
     console.log(`  ${c.info('config'.padEnd(12))} Zeigt Konfiguration`)
     console.log()
     console.log(c.bold('🔧 Diagnose & KI:'))
-    console.log(`  ${c.info('doctor'.padEnd(12))} Nova Doctor — KI-Fehlerdiagnose (lokal, GGUF)`)
+    console.log(`  ${c.info('doctor'.padEnd(12))} Xaventra Doctor — KI-Fehlerdiagnose (lokal, GGUF)`)
     console.log(`  ${c.info('wizard'.padEnd(12))} System-Check (Config, Deps, API-Keys)`)
     console.log(`  ${c.info('help'.padEnd(12))} Diese Hilfe anzeigen`)
     console.log()
-    console.log(c.bold('🏥 Nova Doctor Beispiele:'))
+    console.log(c.bold('🏥 Xaventra Doctor Beispiele:'))
     console.log(`  ${c.dim('$')} nova doctor                          ${c.dim('# Status & Modell-Info')}`)
     console.log(`  ${c.dim('$')} nova doctor "Cannot find module xyz"  ${c.dim('# Fehler diagnostizieren')}`)
     console.log(`  ${c.dim('$')} nova doctor "ECONNREFUSED :5432"      ${c.dim('# DB-Fehler analysieren')}`)
     console.log()
     console.log(c.bold('⚙️ Prozess-Steuerung:'))
-    console.log(`  ${c.info('kill'.padEnd(12))} Beendet alle Nova-Prozesse`)
+    console.log(`  ${c.info('kill'.padEnd(12))} Beendet alle Xaventra-Prozesse`)
     console.log(`  ${c.info('restart'.padEnd(12))} Neustart (Kill + Start)`)
     console.log(`  ${c.info('reconfig'.padEnd(12))} Konfiguration neu einrichten`)
     console.log()
@@ -1470,7 +1472,7 @@ function commandHelp(): void {
     console.log(`  ${c.dim('$')} npm run cli -- setup     ${c.dim('# Erstkonfiguration mit OAuth')}`)
     console.log(`  ${c.dim('$')} npm run cli -- models    ${c.dim('# Alle Modelle anzeigen')}`)
     console.log(`  ${c.dim('$')} npm run cli -- chat      ${c.dim('# Chat im Terminal')}`)
-    console.log(`  ${c.dim('$')} npm run cli -- restart   ${c.dim('# Nova neustarten')}`)
+    console.log(`  ${c.dim('$')} npm run cli -- restart   ${c.dim('# Xaventra neustarten')}`)
     console.log()
 }
 
@@ -1483,6 +1485,10 @@ async function main(): Promise<void> {
     const command = args[0]?.toLowerCase()
 
     switch (command) {
+        case '--version':
+        case '-v':
+            console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
+            break
         case 'start':
             await commandStart()
             break

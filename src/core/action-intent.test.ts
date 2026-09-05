@@ -35,6 +35,8 @@ describe('action intent evidence gate', () => {
     })
 
     it('routes natural project and workspace questions through file tools', () => {
+        expect(detectActionIntent('Lies beide Dateien /tmp/a.txt und /tmp/b.txt')).toEqual({ requiresTool: true, kind: 'file' })
+        expect(detectActionIntent('Read both files and add the totals')).toEqual({ requiresTool: true, kind: 'file' })
         expect(detectActionIntent('Schau dir package.json in meinem Projekt an').kind).toBe('file')
         expect(detectActionIntent('Analysiere bitte den verbundenen Workspace').kind).toBe('file')
         expect(detectActionIntent('Suche im Repo nach dem Model Router')).toEqual({ requiresTool: true, kind: 'file' })

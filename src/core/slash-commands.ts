@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // Dynamic version from package.json
 const NOVA_VERSION = (() => {
@@ -204,7 +206,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
         case 'deploy': {
             const { execSync } = await import('node:child_process')
             const config = JSON.parse((await import('node:fs')).readFileSync(
-                (await import('node:path')).join(process.cwd(), 'nova.config.json'), 'utf-8'
+                resolveConfigPath(), 'utf-8'
             ))
             const nodes: { name: string, host: string }[] = config.nodes || []
 
@@ -224,7 +226,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                 try {
                     progress.push(`📤 ${node.name} — backup + deploy...`)
                     execSync(`ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${node.host} "cd ~/nova-core && rm -rf dist.bak && cp -r dist dist.bak 2>/dev/null || true"`, { timeout: 15000 })
-                    execSync(`scp -o StrictHostKeyChecking=no -r dist/ nova.config.json ${node.host}:~/nova-core/`, { cwd: process.cwd(), timeout: 120000 })
+                    execSync(`scp -o StrictHostKeyChecking=no -r dist/ xaventra.config.json ${node.host}:~/nova-core/`, { cwd: process.cwd(), timeout: 120000 })
                     progress.push(`✅ ${node.name} — files deployed`)
                 } catch {
                     progress.push(`⚠️ ${node.name} — deploy fehlgeschlagen`)
@@ -248,7 +250,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
         case 'rollback': {
             const { execSync } = await import('node:child_process')
             const config = JSON.parse((await import('node:fs')).readFileSync(
-                (await import('node:path')).join(process.cwd(), 'nova.config.json'), 'utf-8'
+                resolveConfigPath(), 'utf-8'
             ))
             const nodes: { name: string, host: string }[] = config.nodes || []
             const results: string[] = ['🔄 *Nova Rollback...*', '']
@@ -289,7 +291,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             // Force a fresh check
             const snapshots = await healthMon.checkAllNodes()
             if (snapshots.length === 0) {
-                return '📡 Keine Nodes konfiguriert. Füge `nodes` zu nova.config.json hinzu.'
+                return '📡 Keine Nodes konfiguriert. Füge `nodes` zu xaventra.config.json hinzu.'
             }
 
             // Try Telegram buttons
@@ -710,7 +712,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             let configModel = state.llm?.modelId || 'unknown'
             let configProvider = state.llm?.provider || 'unknown'
             try {
-                const cfgPath = join(process.cwd(), 'nova.config.json')
+                const cfgPath = resolveConfigPath()
                 if (existsSync(cfgPath)) {
                     const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
                     configModel = cfg.model || configModel
@@ -932,17 +934,16 @@ Dann: /llm local`
         case 'reset': {
             // Clear session completely
             const { clearSession } = await import('../agents/nova-runner.js')
-            const { clearSessionCredentials } = await import('./correction-detector.js')
 
-            // Get channel from context
-            const channel = 'Telegram'  // Default for now
-
-            const cleared = clearSession(from, channel)
-            clearSessionCredentials()
+            const { getDesktopAgentContext } = await import('../desktop/desktop-agent-context.js')
+            const desktop = getDesktopAgentContext()
+            const channel = principalContext?.channel || 'unknown'
+            const principal = principalContext?.principalId || resolvePrincipalId(state.config, channel, from)
+            const cleared = clearSession(principal, channel, { conversationId: desktop?.roomId, botId: desktop?.botId })
 
             console.log(`[Nova] Session cleared for ${from}`)
             return cleared
-                ? '✅ *Session gelöscht!*\n\nAlle Nachrichten und Credentials wurden zurückgesetzt.'
+                ? '✅ *Gesprächskontext zurückgesetzt.*\n\nDer aktive Gesprächsverlauf und seine Zusammenfassung sind geleert. Dauerhafte Fakten und Anmeldungen bleiben erhalten.'
                 : '✅ *Session war bereits leer.*'
         }
 
@@ -2441,7 +2442,7 @@ Voraussetzung: SSH-Zugang mit Key-Auth.`
                     case 'restart': {
                         const target = sub[1]
                         if (!target) return '❌ Syntax: /nodes restart <name oder node-id>'
-                        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+                        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
                         const node = (config.mesh?.update?.nodes || []).find((item: any) =>
                             item.nodeId === target || String(item.name || '').toLowerCase() === target.toLowerCase() || item.host === target,
                         )
@@ -2460,7 +2461,7 @@ Voraussetzung: SSH-Zugang mit Key-Auth.`
                     case 'deploy': {
                         const target = sub[1]
                         if (!target) return '❌ Syntax: /nodes sync <name oder node-id>'
-                        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+                        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
                         const updateConfig = config.mesh?.update
                         const configured = (updateConfig?.nodes || []).filter((node: any) =>
                             node.nodeId === target || String(node.name || '').toLowerCase() === target.toLowerCase() || node.host === target,
@@ -2540,13 +2541,13 @@ Führt vorher automatisch Pre-Flight Checks durch.`
                             // Step 4: Copy config (if not exists remotely)
                             try {
                                 const hasConfig = execSync(
-                                    `ssh -o ConnectTimeout=5 -p ${sshPort} ${sshUser}@${node.ip} "test -f ~/nova-core/nova.config.json && echo YES || echo NO"`,
+                                    `ssh -o ConnectTimeout=5 -p ${sshPort} ${sshUser}@${node.ip} "test -f ~/nova-core/xaventra.config.json && echo YES || echo NO"`,
                                     { timeout: 5000, encoding: 'utf-8' }
                                 ).trim()
                                 if (hasConfig === 'NO') {
                                     steps.push('📋 Kopiere config...')
                                     execSync(
-                                        `scp -P ${sshPort} nova.config.json ${sshUser}@${node.ip}:~/nova-core/`,
+                                        `scp -P ${sshPort} xaventra.config.json ${sshUser}@${node.ip}:~/nova-core/`,
                                         { timeout: 10000, encoding: 'utf-8', cwd: process.cwd() }
                                     )
                                     steps.push('✅ Config kopiert')
@@ -3414,7 +3415,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     if (requestPermission !== 'owner' && requestPermission !== 'admin') return '🔒 Nur Owner/Admin dürfen den signierten Rollout starten.'
                     try {
                         const { deployUpdateToAllNodes } = await import('../core/auto-updater.js')
-                        const configPath = join(process.cwd(), 'nova.config.json')
+                        const configPath = resolveConfigPath()
                         const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                         const updateConfig = config.mesh?.update
                         const nodes = updateConfig?.nodes || []

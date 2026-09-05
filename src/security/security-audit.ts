@@ -13,6 +13,8 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, extname } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -207,8 +209,8 @@ function scanFileForDangerousCode(filePath: string, findings: AuditFinding[]): v
 // ============================================
 
 function checkConfigSecurity(dir: string, findings: AuditFinding[]): void {
-    // Check nova.config.json
-    const configPath = join(dir, 'nova.config.json')
+    // Check xaventra.config.json
+    const configPath = resolveConfigPath(dir)
     if (existsSync(configPath)) {
         try {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
@@ -282,7 +284,7 @@ function checkEnvFiles(dir: string, findings: AuditFinding[]): void {
 }
 
 function checkFilePermissions(dir: string, findings: AuditFinding[]): void {
-    const sensitiveFiles = ['nova.config.json', '.env', '.env.local', '.env.production']
+    const sensitiveFiles = ['xaventra.config.json', 'nova.config.json', '.env', '.env.local', '.env.production']
 
     for (const file of sensitiveFiles) {
         const filePath = join(dir, file)
@@ -308,7 +310,7 @@ function checkFilePermissions(dir: string, findings: AuditFinding[]): void {
 
 function checkDebugMode(dir: string, findings: AuditFinding[]): void {
     // Check for debug mode in config
-    const configPath = join(dir, 'nova.config.json')
+    const configPath = resolveConfigPath(dir)
     if (existsSync(configPath)) {
         try {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))

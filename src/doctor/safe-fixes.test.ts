@@ -19,7 +19,7 @@ function report(): DoctorReport {
 
 describe('Doctor PATCH_GATE boundary', () => {
     it('queues a sandbox-validated proposal without mutating live config', async () => {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = join(process.cwd(), 'xaventra.config.json')
         const before = readFileSync(configPath, 'utf-8')
         const result = await applySafeFixes(report())
         const after = readFileSync(configPath, 'utf-8')

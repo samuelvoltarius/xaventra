@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 let mu: typeof import('./multi-user-middleware.js')
 const usersFile = join(process.cwd(), '.nova-data', 'multi-user', 'users.json')
-const configure = (allowFrom: string[]) => writeFileSync('nova.config.json', JSON.stringify({ channels: { telegram: { allowFrom } } }))
+const configure = (allowFrom: string[]) => writeFileSync('xaventra.config.json', JSON.stringify({ channels: { telegram: { allowFrom } } }))
 const legacy = (id: string, permission: 'owner' | 'admin') => ({ id, channel: 'Telegram', permission, firstSeen: 1, lastSeen: 1, messageCount: 0, onboarded: true })
 
 beforeEach(async () => {

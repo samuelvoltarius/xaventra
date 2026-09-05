@@ -19,6 +19,8 @@
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Concurrency cap
@@ -297,7 +299,7 @@ async function runMeshSubagent(
         // Find node in config
         const { readFileSync } = await import('node:fs')
         const { join } = await import('node:path')
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         const node = (config.nodes || []).find((n: any) =>
             n.name?.toLowerCase() === meshNode.toLowerCase() ||
             n.host?.includes(meshNode)

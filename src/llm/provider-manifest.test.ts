@@ -46,7 +46,7 @@ describe('provider manifest discovery', () => {
         fetch.mockRejectedValueOnce(new Error('offline'))
         await expect(catalog.refresh('groq')).rejects.toThrow('offline')
         expect(catalog.list().find(item => item.id === 'groq')?.status).not.toBe('verified')
-        writeFileSync('nova.config.json', JSON.stringify({ providers: { groq: { enabled: false } } }))
+        writeFileSync('xaventra.config.json', JSON.stringify({ providers: { groq: { enabled: false } } }))
         fetch.mockClear()
         expect(await catalog.refresh('groq')).toMatchObject({ status: 'installed', configured: false })
         expect(fetch).not.toHaveBeenCalled()

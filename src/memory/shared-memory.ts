@@ -7,6 +7,8 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export type SharedMemoryEntry = {
     id: string
@@ -24,7 +26,7 @@ const TABLE = 'nova_shared_memory'
 
 function loadSupabaseConfig(): { url: string; key: string } {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (config.supabase?.learningUrl && config.supabase?.learningKey) {

@@ -3,6 +3,8 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileS
 import { dirname, extname, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { runChaosAssurance } from './chaos-assurance.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const execFileAsync = promisify(execFile)
 
@@ -120,7 +122,7 @@ export async function runSecurityAssurance(outputFile = join(process.cwd(), '.no
     else if (audit.total > 0) findings.push({ id: 'dependency-advisories', severity: 'warning', message: `${audit.total} non-high runtime dependency advisories remain`, evidence: audit })
 
     try {
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
         const raw = config?.mcp?.servers
         const servers = Array.isArray(raw) ? raw : Object.entries(raw || {}).map(([name, value]) => ({ name, ...(value as object) }))
         const insecure = servers.filter((server: any) => typeof server.url === 'string' && /^http:\/\//i.test(server.url) && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(server.url))

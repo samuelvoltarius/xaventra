@@ -1,3 +1,5 @@
+
+import { resolveConfigPath } from '../config/config-path.js'
 /**
  * Model Router - DYNAMIC Model Selection
  * 
@@ -364,7 +366,7 @@ function readConfiguredModel(): string {
     try {
         const { readFileSync } = require('node:fs')
         const { join } = require('node:path')
-        const cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         return cfg.model || 'auto'
     } catch {
         return 'auto'

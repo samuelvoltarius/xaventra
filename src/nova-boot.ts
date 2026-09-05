@@ -13,6 +13,8 @@
 import { execSync, exec } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { platform } from 'node:os'
+import { resolveConfigPath } from './config/config-path.js'
+
 
 // ============================================
 // Types
@@ -368,11 +370,11 @@ class NovaBoot {
         console.log('🔍 Stage 2E: Verifying system integrity...')
 
         // Check config
-        if (!existsSync('nova.config.json')) {
-            throw new Error('nova.config.json not found!')
+        if (!existsSync(resolveConfigPath())) {
+            throw new Error('xaventra.config.json not found!')
         }
 
-        const config = JSON.parse(readFileSync('nova.config.json', 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
 
         // Check API key
         const hasApiKey = config.llm?.apiKey ||
@@ -380,8 +382,8 @@ class NovaBoot {
             false
         if (!hasApiKey) {
             console.log('  ⚠️ No API key configured!')
-            console.log('     Set OPENAI_API_KEY env var or add to nova.config.json')
-            console.log('     Set OPENAI_API_KEY env var or add to nova.config.json')
+            console.log('     Set OPENAI_API_KEY env var or add to xaventra.config.json')
+            console.log('     Set OPENAI_API_KEY env var or add to xaventra.config.json')
         } else {
             console.log('  ✅ API key configured')
         }

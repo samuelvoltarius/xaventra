@@ -1,5 +1,40 @@
 # Changelog
 
+## [2.78.0] — 2026-09-05
+
+### Runtime and evidence
+
+- Make native backend completion depend on the independent kernel validator.
+- Persist bounded, redacted conversation checkpoints by user, room and bot;
+  restore them after restart and reset the matching summary without logging out
+  unrelated users. No unscoped legacy transcript is automatically imported.
+- Fix plural file requests losing the file tool pack. Enforce task allow-lists,
+  deadlines and call budgets before execution, including recovery rounds.
+- Retain unpruned evidence in the Outcome Ledger and verify late follow-up tools.
+- Add real-model acceptance with fresh processes, file reads, authenticated REST,
+  corrected memory and user isolation. Label the older suite as subsystem probes;
+  prose is not evidence and failed/empty benchmark suites return a nonzero exit.
+- Honor test isolation for background learning. Improve explicit response-format
+  adherence without turning model statements into verified facts.
+
+### Installation and operations
+
+- Introduce native PowerShell and POSIX shell installers backed by one Node
+  implementation. Preserve configuration, generate a local API token, keep
+  channels disabled and offer opt-in browser/native/Desktop dependencies.
+- Use `xaventra.config.json` throughout new setup and docs; read existing
+  `nova.config.json` only as an in-place fallback.
+- Test Core and installer prerequisites on Windows, Linux and macOS in CI.
+- Handle malformed REST inputs without unhandled exceptions, bound request
+  bodies, default to loopback and require authentication for remote binding.
+- Exclude runtime configuration from Mesh bundles; remove a hard-coded legacy
+  deployment shortcut. Deployment remains governed by the normal tool path.
+- Add a bounded GitHub issue first-pass workflow with fixed code-path suggestions,
+  deduplicated bot comments and a write-free smoke mode. Issue text is data,
+  never executable instructions. No automatic patch, merge or deployment.
+
+Evidence scope and remaining distribution gates: [verification](docs/VERIFICATION_2.78.0.md).
+
 ## [2.77.2] — 2026-09-05
 
 ### Security
@@ -292,7 +327,7 @@ This is a private source review candidate. Production nodes are unchanged.
 - Dashboard/Desktop now follows the canonical `nova-main` lease and also
   requires its own fenced dashboard lease. Bootstrap reports the authoritative
   Main and both epochs so the client projects the Main's complete Mesh graph.
-- Vitest runtime isolation now always uses `nova.config.example.json` as an
+- Vitest runtime isolation now always uses `xaventra.config.example.json` as an
   inert fixture instead of copying or depending on a production config.
 - Generated runtime-catalog freshness checks now compare LF and CRLF content
   equivalently, so the same signed source passes on Windows and Linux without
@@ -1493,7 +1528,7 @@ All notable changes to Nova are documented in this file.
   - `GET /v1/health` (no auth), `GET /v1/status` (auth), `POST /v1/message` (auth)
   - Bearer token via `NOVA_API_TOKEN` env var; CORS headers included
 - Document RAG (`src/core/document-rag.ts`) fully implemented: LanceDB-backed vector chunking, `indexDocument()`, `queryDocuments()`, `getDocumentContext()`, `indexText()`
-- GitHub model download auth: `GITHUB_TOKEN` / `nova.config.json githubToken` for private repo downloads; cross-host redirect strips auth headers (GitHub → S3)
+- GitHub model download auth: `GITHUB_TOKEN` / `xaventra.config.json githubToken` for private repo downloads; cross-host redirect strips auth headers (GitHub → S3)
 
 **🟡 Medium gaps closed:**
 - Nova Doctor telemetry: usage logged to `.nova-data/doctor-telemetry/usage.jsonl` (type, fromModel, confidence, durationMs — no secrets)
@@ -1756,7 +1791,7 @@ All notable changes to Nova are documented in this file.
 - **Response Cache tuned** — `maxEntries: 500 → 2000`, `keyDepth: 3 → 7`, `ttlMs: 1h → 4h`.
 - **Memory async save** (`src/core/memory.ts`) — `saveToDisk()` replaced with debounced async `_flushToDisk()`. Only dirty conversations written. 3s debounce prevents blocking the message pipeline.
 - **SOUL.md cache** — In-memory cache with 30s TTL. No disk read per message.
-- **nova.config.json cache** — Cached with 60s TTL.
+- **xaventra.config.json cache** — Cached with 60s TTL.
 
 ## [2.47.0] — 2026-02-23
 

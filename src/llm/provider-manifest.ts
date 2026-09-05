@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export type ProviderDiscoveryMode = 'static' | 'refreshable' | 'runtime'
 export type ProviderProtocol = 'openai-chat' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai' | 'ollama'
@@ -75,7 +77,7 @@ export function validateProviderManifest(input: ProviderManifest): string[] {
 }
 
 function loadConfig(): Record<string, any> {
-    try { const file = join(process.cwd(), 'nova.config.json'); return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {} }
+    try { const file = resolveConfigPath(); return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {} }
     catch { return {} }
 }
 

@@ -1,7 +1,7 @@
 /**
  * Config Management Tool
  * 
- * Allows Nova to modify her own nova.config.json safely.
+ * Allows Nova to modify her own xaventra.config.json safely.
  * Supports updating any top-level config section (telegram, llm, memory, etc.)
  * 
  * Examples:
@@ -11,10 +11,12 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export const saveConfigTool = {
     name: 'save_config',
-    description: 'Eigene Konfiguration ändern. Sektionen: telegram (token, allowFrom), channels (discord, whatsapp, signal), llm (model, provider), providers (openai/anthropic apiKey+enabled), memory (embedding), autonomy (enabled, intervalMinutes, selfThinkMaxPerHour, quietHours, triggers), proactive (enabled, morningBriefing), learning (enabled, autoLearnThreshold), voice (enabled, wakeWord, ttsVoice), server (port), heartbeat (intervalMinutes), apis (tavily_key), dashboard (port). Ändert nova.config.json sicher per Merge.',
+    description: 'Eigene Konfiguration ändern. Sektionen: telegram (token, allowFrom), channels (discord, whatsapp, signal), llm (model, provider), providers (openai/anthropic apiKey+enabled), memory (embedding), autonomy (enabled, intervalMinutes, selfThinkMaxPerHour, quietHours, triggers), proactive (enabled, morningBriefing), learning (enabled, autoLearnThreshold), voice (enabled, wakeWord, ttsVoice), server (port), heartbeat (intervalMinutes), apis (tavily_key), dashboard (port). Ändert xaventra.config.json sicher per Merge.',
     category: 'system' as const,
     parameters: [
         {
@@ -73,7 +75,7 @@ export const saveConfigTool = {
 
         try {
             // Read current config
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
 
             let config: Record<string, any> = {}
             if (existsSync(configPath)) {

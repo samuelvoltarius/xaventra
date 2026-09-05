@@ -5,15 +5,13 @@ You need Node.js 22 or newer, npm, Git and a local or cloud model endpoint.
 ```bash
 git clone https://github.com/samuelvoltarius/xaventra.git
 cd xaventra
-npm ci --ignore-scripts
-npm run build
-cp nova.config.example.json nova.config.json
-cp .env.example .env
+sh install.sh
 npm run cli -- setup
 npm run start:fast
 ```
 
-In PowerShell, use `Copy-Item` instead of `cp`. Set the appropriate API key in
+On native Windows, run `./install.ps1` instead of `sh install.sh`; alternatively
+use `node scripts/setup.mjs` on any supported OS. Set the appropriate API key in
 your local `.env` for cloud inference. For local inference, select `local` or
 `ollama` and run a compatible model server. The example has no active Mesh peers
 or channels; no external coordinator is required for one instance.
@@ -21,10 +19,12 @@ or channels; no external coordinator is required for one instance.
 The setup wizard preserves existing configuration. Telegram is optional. If
 enabled, configure the bot token and allowed user IDs before using it.
 
-`--ignore-scripts` installs the reproducible JavaScript dependency graph without
-executing dependency installers. Browser automation, native Doctor inference
-and Electron may need their platform installers separately. The main README
-also supports `npm install` when those dependency scripts are desired.
+The default installer uses `npm ci --ignore-scripts`. Browser automation,
+native Doctor inference and Electron are optional: use `--browser`, `--native`
+and `--desktop` (`-Browser`, `-Native`, `-Desktop` in PowerShell) when needed.
+The installer preserves existing configuration and generates a private API token
+only for a new `.env`. Do not replace that file with an empty example afterwards.
+It does not provision Node itself, services, firewall rules or model weights.
 
 In another terminal, use `npm run cli -- chat`, or start the Desktop client:
 

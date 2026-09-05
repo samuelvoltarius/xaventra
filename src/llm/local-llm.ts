@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 /**
  * Local LLM Provider - Ollama / LMStudio / vLLM
@@ -110,7 +112,7 @@ function getConfiguredLocalEndpoints(): Array<{ name: string; baseUrl: string; s
         }
     }
 
-    const cfgPath = join(process.cwd(), 'nova.config.json')
+    const cfgPath = resolveConfigPath()
     if (!existsSync(cfgPath)) return endpoints
 
     try {

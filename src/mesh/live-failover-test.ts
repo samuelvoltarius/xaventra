@@ -2,8 +2,10 @@ import 'dotenv/config'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
 
-const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf8'))
+
+const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
 const url = process.env.NOVA_MESH_SUPABASE_URL || config.supabase?.meshUrl
 const key = process.env.NOVA_MESH_SUPABASE_KEY || config.supabase?.meshKey
 if (!url || !key) throw new Error('Mesh Supabase is not configured')

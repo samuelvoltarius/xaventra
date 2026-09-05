@@ -167,7 +167,7 @@ nova-core/
 │   └── models/                    # f16 + quantisierte GGUFs auf Spark
 │
 ├── SOUL.md                        # Nova's identity document (self-evolving)
-├── nova.config.json               # Main configuration
+├── xaventra.config.json               # Main configuration
 └── docs/
     ├── ARCHITECTURE.md            # This file
     ├── LAYERS.md                  # Complete layer reference
@@ -377,7 +377,7 @@ brain-installer.ts
     │         - Health check curl localhost:8765/health
     │         - Print BRAIN_INSTALL_RESULT={json}
     ├── 7. Parse BRAIN_INSTALL_RESULT → extract brainUrl
-    └── 8. saveBrainConfig() → nova.config.json:
+    └── 8. saveBrainConfig() → xaventra.config.json:
               config.brain = { enabled, node, brainUrl, sshHost, installedAt }
               config.plugins['brain-hook'] = { enabled, brainUrl, minScore, maxResults }
 ```

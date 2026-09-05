@@ -17,6 +17,8 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, statSy
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { z } from 'zod'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -377,7 +379,7 @@ function loadSelfUpdateProposals(): any[] {
 }
 
 function loadConfig(): Record<string, any> {
-    const configFile = join(process.cwd(), 'nova.config.json')
+    const configFile = resolveConfigPath()
     if (!existsSync(configFile)) return {}
 
     try {
@@ -389,7 +391,7 @@ function loadConfig(): Record<string, any> {
 
 function saveConfig(config: Record<string, any>): boolean {
     try {
-        const configFile = join(process.cwd(), 'nova.config.json')
+        const configFile = resolveConfigPath()
         writeFileSync(configFile, JSON.stringify(config, null, 2))
         return true
     } catch {
@@ -1283,7 +1285,7 @@ app.get('/api/mesh/services', async (_req, res) => {
 
 app.get('/api/mesh/tasks', async (req, res) => {
     try {
-        const config = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         const supabaseUrl = config.supabase?.meshUrl || process.env.NOVA_MESH_SUPABASE_URL || ''
         const supabaseKey = config.supabase?.meshKey || process.env.NOVA_MESH_SUPABASE_KEY || ''
         if (!supabaseUrl || !supabaseKey) return res.status(503).json({ tasks: [], error: 'Mesh Supabase is not configured' })
@@ -1352,7 +1354,8 @@ app.get('/api/mesh/bundle', async (req, res) => {
 
         // Build list of files that exist
         const files = ['dist', 'src/dashboard/public', 'package.json']
-        try { readFileSync(join(baseDir, 'nova.config.json')); files.push('nova.config.json') } catch { }
+        // Runtime configuration may contain credentials. It never belongs in a
+        // distributable bundle, under either the current or legacy filename.
 
         execSync(
             `tar czf "${tmpFile}" ${files.join(' ')}`,

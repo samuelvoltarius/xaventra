@@ -185,8 +185,8 @@ if [ "$ACTION" = "install" ]; then
     # --- Stage 1E: Config ---
     echo ""
     echo "⚙️ Stage 1E: Checking configuration..."
-    if [ ! -f nova.config.json ]; then
-        cat > nova.config.json << 'NOVACONF'
+    if [ ! -f xaventra.config.json ]; then
+        cat > xaventra.config.json << 'NOVACONF'
 {
     "name": "Nova",
     "emoji": "✨",
@@ -204,9 +204,9 @@ if [ "$ACTION" = "install" ]; then
     }
 }
 NOVACONF
-        echo "⚠️ nova.config.json created — run 'nova login' to authenticate"
+        echo "⚠️ xaventra.config.json created — run 'nova login' to authenticate"
     else
-        echo "✅ nova.config.json exists"
+        echo "✅ xaventra.config.json exists"
     fi
 
     DO_START=true

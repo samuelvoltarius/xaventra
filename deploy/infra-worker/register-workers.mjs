@@ -6,7 +6,7 @@ const selfIndex = args.indexOf('--self')
 const selfNodeId = selfIndex >= 0 ? args[selfIndex + 1] : undefined
 if (selfIndex >= 0) args.splice(selfIndex, 2)
 if (!configPath || args.length < 2) {
-    throw new Error('usage: register-workers.mjs <nova.config.json> <public-identity.json>... [--self <node-id>]')
+    throw new Error('usage: register-workers.mjs <xaventra.config.json> <public-identity.json>... [--self <node-id>]')
 }
 
 const config = JSON.parse(readFileSync(configPath, 'utf8'))

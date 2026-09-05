@@ -378,7 +378,7 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 **Wiring in daemon.ts:**
 - Monitor imported and `start()` called
-- Targets loaded from `nova.config.json` monitoring section
+- Targets loaded from `xaventra.config.json` monitoring section
 
 ---
 
@@ -487,7 +487,7 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 **Key exports:** `getMultiBotManager()`, `createBot()`
 
-**Wiring:** Manager imported; bot configurations loaded from `nova.config.json`.
+**Wiring:** Manager imported; bot configurations loaded from `xaventra.config.json`.
 
 ---
 

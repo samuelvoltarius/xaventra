@@ -5,9 +5,17 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentBackend } from '../agents/agent-backend.js'
 import { OutcomeLedger, withOutcomeLedger } from '../core/outcome-ledger.js'
 import { getBenchmarkScenarios } from './benchmark-lab.js'
-import { ensureBenchmarkRuntimeReady, executeNovaBenchmarkScenario } from './nova-benchmark-runner.js'
+import { ensureBenchmarkRuntimeReady, executeNovaBenchmarkScenario, hasGroundedEvidence } from './nova-benchmark-runner.js'
 
 describe('benchmark runtime bootstrap', () => {
+    it('never counts requested tags, model prose or unverified probe claims as evidence', () => {
+        const run: any = { tools: [], contract: { goal: 'memory-evidence' }, finalOutcome: { output: 'memory-evidence' } }
+        expect(hasGroundedEvidence(run, 'memory-evidence')).toBe(false)
+        run.tools = [{ success: true, verified: false, source: 'isolated-benchmark-probe', evidenceTags: ['memory-evidence'] }]
+        expect(hasGroundedEvidence(run, 'memory-evidence')).toBe(false)
+        run.tools[0].verified = true
+        expect(hasGroundedEvidence(run, 'memory-evidence')).toBe(true)
+    })
     it('discovers the LLM inventory for the standalone CLI', async () => {
         const discover = vi.fn(async () => undefined)
 
@@ -48,6 +56,7 @@ describe('benchmark runtime bootstrap', () => {
         const observation = await withOutcomeLedger(ledger,
             () => executeNovaBenchmarkScenario(backend, scenario, join(root, 'workspace')))
         expect(observation.success).toBe(true)
+        expect(observation.evaluationKind).toBe('subsystem-probes')
         expect(observation.toolExecuted).toBe(true)
         expect(observation.falseCompletion).toBe(false)
         expect(observation.unnecessaryQuestions).toBe(0)

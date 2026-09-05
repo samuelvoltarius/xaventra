@@ -49,7 +49,7 @@ test('explicit workspace paths cannot read files below hidden private directorie
   }
   writeFileSync(join(root, 'README.md'), 'safe source')
   assert.equal(evaluate("safeWorkspacePath(workspace, 'README.md').relativePath"), 'README.md')
-  for (const file of ['nova.config.json', 'PROJECT_MEMORY.md', '.nova-gateway-token', 'example.wallet.json']) {
+  for (const file of ['xaventra.config.json', 'nova.config.json', 'PROJECT_MEMORY.md', '.nova-gateway-token', 'example.wallet.json']) {
     writeFileSync(join(root, file), 'synthetic private configuration')
     context.target = file
     assert.throws(() => evaluate('safeWorkspacePath(workspace, target)'), /not available/)

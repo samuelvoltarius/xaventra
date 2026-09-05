@@ -11,6 +11,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getServiceFencingToken } from '../mesh/leader-election.js'
 import { probeSharedMemory, pullSharedMemory, pushSharedMemory } from '../memory/shared-memory.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const CHANNEL_SCOPE = 'ha-channel-state'
 const FORMAT = 'nova-ha-state-v1'
@@ -34,7 +36,7 @@ function loadStateSecret(): string {
     if (process.env.NOVA_MESH_SUPABASE_KEY) return process.env.NOVA_MESH_SUPABASE_KEY
     if (process.env.SUPABASE_SERVICE_KEY) return process.env.SUPABASE_SERVICE_KEY
     try {
-        const path = join(process.cwd(), 'nova.config.json')
+        const path = resolveConfigPath()
         if (!existsSync(path)) return ''
         const config = JSON.parse(readFileSync(path, 'utf8'))
         return String(config.mesh?.haStateKey || config.supabase?.meshKey || config.supabase?.learningKey || '')

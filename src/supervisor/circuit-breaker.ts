@@ -13,6 +13,8 @@ import { EventEmitter } from 'node:events'
 import { execSync } from 'node:child_process'
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -272,7 +274,7 @@ export class CircuitBreaker extends EventEmitter {
 
     private async notifyTelegram(reason: string): Promise<void> {
         // Try to get Telegram bot token and chat ID from config
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
 
         try {
             if (!existsSync(configPath)) return

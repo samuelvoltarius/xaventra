@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## Public release discipline
+
+- Every completed release change requires a synchronized Core/Desktop version
+  bump, changelog and relevant guides. Push only after the applicable gates pass.
+- Use `xaventra.config.json` for new installs; `nova.config.json` is a read-in-place
+  compatibility fallback. Never publish either runtime configuration.
+- Do not call subsystem-probe scores autonomous-agent completion scores. Real
+  model acceptance, OS install checks and distributed channel failover are
+  separate evidence gates. Preserve failed reports; do not relax tests to pass.
+
 ## Local Project Memory — Read First
 
 - If a local `PROJECT_MEMORY.md` exists, read it completely before planning,
@@ -33,9 +43,9 @@ npm run typecheck         # tsc --noEmit
 - `npm run start:fast` — skips rebuild entirely
 
 ### Config Required
-- `nova.config.json` **must exist** before daemon starts (src/daemon.ts:233-237)
+- `xaventra.config.json` **must exist** before daemon starts (src/daemon.ts:233-237)
 - Setup wizard: `npm run cli -- setup`
-- Example: `nova.config.example.json`
+- Example: `xaventra.config.example.json`
 - `.env` file loaded **first** in daemon.ts (before any other import)
 
 ### Node Mode
@@ -186,7 +196,7 @@ npm run typecheck         # tsc --noEmit
 - `.env` loaded **before** all other imports in daemon.ts
 
 ### 4. Config
-- `nova.config.json` must exist or daemon exits with code 1
+- `xaventra.config.json` must exist or daemon exits with code 1
 - `NOVA_API_TOKEN` env var enables Bearer auth on REST API (omit = open, dev only)
 
 ## Deployment
@@ -201,7 +211,7 @@ ssh pi5 "cd /opt/nova && pm2 restart nova"
 ### Docker
 ```bash
 docker build -t nova -f deploy/spark/Dockerfile .
-docker run -d -v $(pwd)/nova.config.json:/app/nova.config.json \
+docker run -d -v $(pwd)/xaventra.config.json:/app/xaventra.config.json \
   -v $(pwd)/.nova-data:/app/.nova-data -p 18789:18789 nova
 ```
 
@@ -226,5 +236,5 @@ docker run -d -v $(pwd)/nova.config.json:/app/nova.config.json \
 | `config.json` invalid | `npm run cli -- wizard` |
 | `dist/` stale | `npm run build` |
 | LLM timeout | Check API keys + network |
-| Mesh node offline | Check `nova.config.json` → supabase config |
+| Mesh node offline | Check `xaventra.config.json` → supabase config |
 | Subagent rejected | Max 6 parallel — wait or reduce tasks |

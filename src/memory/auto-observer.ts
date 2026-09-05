@@ -13,6 +13,8 @@ import { join } from 'node:path'
 import { isDurableMemoryCandidate, memoryRelevance } from './memory-quality.js'
 import { curateFacts } from './memory-curator.js'
 import { getMemoryGovernanceCoordinator, type MemoryEvidence } from './memory-governance.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -227,7 +229,7 @@ export class AutoObserver {
             const nameFacts = extracted.filter(f => f.type === 'name')
             if (nameFacts.length > 0 && /^\d+$/.test(userId)) {
                 try {
-                    const configPath = join(process.cwd(), 'nova.config.json')
+                    const configPath = resolveConfigPath()
                     if (existsSync(configPath)) {
                         const config = JSON.parse(readFileSync(configPath, 'utf-8'))
                         if (!config.userAliases) config.userAliases = {}

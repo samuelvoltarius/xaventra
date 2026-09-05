@@ -81,7 +81,7 @@ const TEMP_DIR = join(tmpdir(), 'nova-tts')
 
 async function openaiTTS(request: TtsRequest, config: TtsConfig['openai']): Promise<TtsResult> {
     if (!config?.apiKey) {
-        return { success: false, error: 'OpenAI API Key nicht konfiguriert. Setze OPENAI_API_KEY in nova.config.json' }
+        return { success: false, error: 'OpenAI API Key nicht konfiguriert. Setze OPENAI_API_KEY in xaventra.config.json' }
     }
 
     const model = request.model || config.model || 'tts-1'

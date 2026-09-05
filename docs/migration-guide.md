@@ -154,7 +154,7 @@ Alle Breaking Changes und wichtigen Updates zwischen Nova Versionen.
 - Message Coalescing (2.5s window)
 - User Onboarding
 
-**Aktion:**Wenn du multi-user support nutzt — `nova.config.json` aktualisieren mit `channels.telegram.allowFrom` arrays
+**Aktion:**Wenn du multi-user support nutzt — `xaventra.config.json` aktualisieren mit `channels.telegram.allowFrom` arrays
 
 ---
 

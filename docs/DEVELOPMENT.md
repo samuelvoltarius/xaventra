@@ -18,14 +18,14 @@ git clone https://github.com/samuelvoltarius/xaventra.git
 cd xaventra
 npm install
 npm run build
-cp nova.config.example.json nova.config.json
+cp xaventra.config.example.json xaventra.config.json
 npm run cli -- setup
 npm run typecheck
 npm test
 npm run build
 ```
 
-PowerShell uses `Copy-Item nova.config.example.json nova.config.json` instead of
+PowerShell uses `Copy-Item xaventra.config.example.json xaventra.config.json` instead of
 `cp`. Keep credentials in local environment variables or an approved secret
 store. Never add them to configuration examples, fixtures or test snapshots.
 

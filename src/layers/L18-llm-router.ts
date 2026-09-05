@@ -267,7 +267,7 @@ export interface RouterConfig {
     maxCostTier: 'free' | 'low' | 'medium' | 'high'
     preferSpeed: boolean
     availableModels: string[]
-    preferredModel?: string   // Explicit primary model from nova.config.json (e.g. "MiniMax-M3")
+    preferredModel?: string   // Explicit primary model from xaventra.config.json (e.g. "MiniMax-M3")
     preferredProvider?: string // Explicit primary provider (e.g. "minimax")
 }
 
@@ -499,7 +499,7 @@ export function selectModel(
             score += 15
             reasons.push('Cloud/Subscription bevorzugt')
         }
-        // Preferred model bonus — configured via nova.config.json (model + preferredProvider)
+        // Preferred model bonus — configured via xaventra.config.json (model + preferredProvider)
         // This ensures the user's chosen primary model wins regardless of other scoring
         const preferred = routerConfig.preferredModel?.toLowerCase()
         const preferredProv = routerConfig.preferredProvider?.toLowerCase()

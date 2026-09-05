@@ -14,8 +14,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaCommand } from './builtin.js'
+import { resolveConfigPath } from '../config/config-path.js'
 
-const CONFIG_PATH = join(process.cwd(), 'nova.config.json')
+
+const CONFIG_PATH = resolveConfigPath()
 
 // Pending install state: waiting for user to pick a node
 const pendingInstalls = new Map<string, { nodes: any[]; userId: string; channel: string }>()

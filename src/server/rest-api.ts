@@ -1,11 +1,11 @@
 /**
- * Nova REST API Server
+ * Xaventra REST API Server
  *
- * Starts when nova.config.json has: { "server": { "enabled": true } }
- * Default port: 18789 | Default host: 0.0.0.0
+ * Starts when xaventra.config.json has: { "server": { "enabled": true } }
+ * Default port: 18789 | Default host: 127.0.0.1
  *
  * Auth: Bearer token via NOVA_API_TOKEN env var
- * If NOVA_API_TOKEN is not set, the server starts but logs a warning.
+ * Without NOVA_API_TOKEN only loopback development binding is allowed.
  *
  * Endpoints:
  *   GET  /v1/health          — liveness probe, no auth needed
@@ -13,7 +13,7 @@
  *   GET  /v1/status          — runtime status (auth required)
  */
 
-import { createServer, IncomingMessage, ServerResponse } from 'node:http'
+import { createServer, IncomingMessage, ServerResponse, type Server } from 'node:http'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,12 @@ function checkAuth(req: IncomingMessage): boolean {
 function readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
         let body = ''
-        req.on('data', chunk => { body += chunk })
+        let bytes = 0
+        req.on('data', chunk => {
+            bytes += chunk.length
+            if (bytes > 1_000_000) { reject(new Error('Request body too large')); return }
+            body += chunk
+        })
         req.on('end', () => resolve(body))
         req.on('error', reject)
     })
@@ -64,9 +69,13 @@ export function startRestApi(
     config: RestApiConfig,
     handleMessage: MessageHandler,
     getStatus: () => Record<string, unknown>,
-): Promise<void> {
+): Promise<Server> {
     return new Promise((resolve, reject) => {
         const apiToken = process.env.NOVA_API_TOKEN
+        if (!apiToken && !['127.0.0.1', '::1', 'localhost'].includes(config.host)) {
+            reject(new Error('NOVA_API_TOKEN is required when the REST API listens beyond loopback'))
+            return
+        }
         if (!apiToken) {
             console.warn('[RestAPI] ⚠ NOVA_API_TOKEN not set — server is open (no auth)!')
         }
@@ -109,12 +118,16 @@ export function startRestApi(
                     return
                 }
 
-                const content = body.content?.trim()
+                const content = typeof body?.content === 'string' ? body.content.trim() : ''
                 if (!content) {
                     json(res, 400, { error: 'content is required' })
                     return
                 }
 
+                if ((body.from !== undefined && typeof body.from !== 'string') || (body.channel !== undefined && typeof body.channel !== 'string')) {
+                    json(res, 400, { error: 'from and channel must be strings' })
+                    return
+                }
                 const from    = body.from    || 'api-user'
                 const channel = body.channel || 'rest-api'
 
@@ -164,7 +177,7 @@ export function startRestApi(
             console.log(`[Nova]    GET  /v1/health   — Health check`)
             console.log(`[Nova]    GET  /v1/status   — Status (auth)`)
             if (!apiToken) console.warn('[RestAPI] ⚠ Kein NOVA_API_TOKEN — ohne Auth zugänglich!')
-            resolve()
+            resolve(server)
         })
     })
 }

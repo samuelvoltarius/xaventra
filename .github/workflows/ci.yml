@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
 
 permissions:
@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,8 +22,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Native Windows installer prerequisite check
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1 -Check
+      - name: Unix installer prerequisite check
+        if: runner.os != 'Windows'
+        run: sh install.sh --check
       - name: Seed isolated development configuration
-        run: cp nova.config.example.json nova.config.json
+        run: node scripts/setup.mjs --configure-only
       - run: npm run typecheck
       - run: npm test -- --maxWorkers=2
         env:

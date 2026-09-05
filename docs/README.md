@@ -37,7 +37,7 @@ authoritative source files and required evidence.
 
 - **Start Xaventra**: `npm run xaventra`
 - **Dashboard**: `http://localhost:18789`
-- **Config**: `nova.config.json`
+- **Config**: `xaventra.config.json`
 - **Persona**: `SOUL.md` (editierbar, [LOCKED] Sections geschützt)
 - **Logs**: `.nova-data/`
 - **Deploy to nodes**: See [Signed Mesh Releases](./MESH-RELEASE-UPDATES.md)

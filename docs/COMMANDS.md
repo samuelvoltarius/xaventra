@@ -154,7 +154,7 @@ Beispiel: `/setup research stt` → findet aktuelle Whisper-Variante für deine 
 Führt **eine spezifische Aktion** aus dem Plan aus.
 - Normale Mode: das Eintippen des Commands = Freigabe
 - YOLO-Mode: gleiches Verhalten
-- `config_patch`: schreibt `nova.config.json` via Deep-Merge
+- `config_patch`: schreibt `xaventra.config.json` via Deep-Merge
 - `local_shell`: führt Command aus, gibt Output zurück
 - `remote_shell`: SSH-Command auf Remote-Node
 

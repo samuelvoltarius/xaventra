@@ -12,13 +12,15 @@
  *   VRAM/RAM ≥ 1 GB  → nova-doctor-0.5b-q4km.gguf
  *   VRAM/RAM < 1 GB  → nova-doctor-0.5b-q2k.gguf     (kartoffel mode)
  *
- * Override via nova.config.json: { "doctorModel": "1.5b-q5km" | "0.5b-q4km" | ... | "off" }
+ * Override via xaventra.config.json: { "doctorModel": "1.5b-q5km" | "0.5b-q4km" | ... | "off" }
  */
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { cpus, totalmem } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export type DoctorGpuVendor = 'nvidia' | 'amd' | 'apple' | 'intel' | 'unknown' | 'none'
 export type DoctorBackend = 'cuda' | 'vulkan' | 'metal' | 'cpu'
@@ -111,11 +113,11 @@ export function getDetectedDoctorHardware(): DoctorHardwareProfile {
     return detectedHardware
 }
 
-// Read doctorModel override from nova.config.json if present
+// Read doctorModel override from xaventra.config.json if present
 function getConfiguredModel(): string | null {
     try {
         const { readFileSync } = require('node:fs')
-        const cfg = JSON.parse(readFileSync(join(process.cwd(), 'nova.config.json'), 'utf-8'))
+        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
         return cfg.doctorModel || null
     } catch {
         return null

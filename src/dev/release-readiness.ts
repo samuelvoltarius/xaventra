@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const cwd = process.cwd()
 const issues: string[] = []
@@ -23,7 +25,7 @@ try {
     issues.push(`security assurance unavailable: ${String(error)}`)
 }
 
-if (!existsSync(join(cwd, 'nova.config.json'))) issues.push('nova.config.json is missing')
+if (!existsSync(resolveConfigPath(cwd))) issues.push('xaventra.config.json is missing')
 const daemon = join(cwd, 'dist', 'daemon.js')
 if (!existsSync(daemon)) issues.push('dist/daemon.js is missing; run npm run build')
 else if (Date.now() - statSync(daemon).mtimeMs > 7 * 24 * 60 * 60 * 1000) warnings.push('dist/daemon.js is older than seven days')

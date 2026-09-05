@@ -6,7 +6,7 @@
  * and injected at the start of each LLM request.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { pruneToolMessages } from '../memory/tool-result-pruner.js'
@@ -23,6 +23,13 @@ const pendingSessions: Map<string, {
     history: Array<{ role: string; content: string }>
     messagesSinceLastSummary: number
 }> = new Map()
+const sessionGenerations = new Map<string, number>()
+
+export function clearSessionSummary(userId: string): void {
+    sessionGenerations.set(userId, (sessionGenerations.get(userId) || 0) + 1)
+    for (const [key, value] of pendingSessions) if (value.userId === userId) pendingSessions.delete(key)
+    rmSync(getSummaryPath(userId), { force: true })
+}
 
 const AUTO_SUMMARY_THRESHOLD = 10  // Summarize every 10 new messages
 
@@ -215,6 +222,7 @@ export async function processSessionForLLM(
     hotMessages: Array<{ role: string; content: string }>
     summarized: boolean
 }> {
+    const generation = sessionGenerations.get(userId) || 0
     // Load existing summary
     const existing = loadSummary(userId)
     const existingSummaryText = existing?.summary || null
@@ -294,6 +302,9 @@ export async function processSessionForLLM(
             }
 
             const newSummary = await summarizeMessages(unsummarized, existingSummaryText || undefined)
+            if ((sessionGenerations.get(userId) || 0) !== generation) {
+                return { summaryMessage: null, hotMessages: [], summarized: false }
+            }
 
             // Save the summary
             saveSummary({

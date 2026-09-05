@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.77.2",
+  "version": "2.78.0",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -30,6 +30,7 @@
     "release:deploy": "tsx src/dev/deploy-current-release.ts",
     "benchmark:smoke": "tsx src/benchmark/benchmark-cli.ts",
     "benchmark:full": "tsx src/benchmark/benchmark-cli.ts --full",
+    "benchmark:acceptance": "npm run build && node dist/benchmark/agent-acceptance-cli.js",
     "benchmark:regression": "tsx src/benchmark/benchmark-regression-cli.ts",
     "benchmark:external": "tsx src/benchmark/external-comparison-cli.ts",
     "trace:verify": "node dist/dev/verify-production-trace.js",
@@ -165,7 +166,7 @@
   "files": [
     "dist",
     "assets",
-    "nova.config.example.json",
+    "xaventra.config.example.json",
     "SOUL.md",
     "README.md",
     "LICENSE",

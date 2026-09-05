@@ -1,3 +1,5 @@
+
+import { resolveConfigPath } from '../config/config-path.js'
 /**
  * SearXNG Search — Self-Hosted Privacy-Friendly Search
  *
@@ -137,11 +139,11 @@ export function getSearXNGUrl(): string | null {
     // 1. Environment variable
     if (process.env.NOVA_SEARXNG_URL) return process.env.NOVA_SEARXNG_URL.trim()
 
-    // 2. nova.config.json
+    // 2. xaventra.config.json
     try {
         const { existsSync, readFileSync } = require('node:fs')
         const { join } = require('node:path')
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (config.apis?.searxng_url) return config.apis.searxng_url.trim()

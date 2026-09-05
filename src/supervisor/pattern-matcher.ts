@@ -80,7 +80,7 @@ const KNOWN_PATTERNS: ErrorPattern[] = [
         description: 'Required API key is not configured',
         severity: 'high',
         messageMatch: /API key.*missing|no.*key.*configured|unauthorized/i,
-        fixHint: 'Configure the missing API key in nova.config.json',
+        fixHint: 'Configure the missing API key in xaventra.config.json',
         autoFixable: false,
     },
     {

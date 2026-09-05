@@ -13,6 +13,7 @@
  */
 
 import { getToolRegistry } from './complete-registry.js'
+import { detectActionIntent } from '../core/action-intent.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to LLM
@@ -340,6 +341,7 @@ export function getRelevantTools(
     const allTools = registry.getAll()
     const messageLower = userMessage.toLowerCase()
     const primaryLower = primaryMessage.toLowerCase()
+    const primaryIntent = detectActionIntent(primaryMessage)
 
     // ── ALL-TOOLS MODE (default) ────────────────────────────────────────────────
     // Modern agentic models (MiniMax-M3, Claude, GPT) with large context windows
@@ -364,7 +366,7 @@ export function getRelevantTools(
     const rankedPacks = SKILL_PACKS
         .map(pack => ({
             pack,
-            primaryScore: pack.keywords.reduce((score, keyword) =>
+            primaryScore: (pack.name === 'files' && primaryIntent.kind === 'file' ? 10 : 0) + pack.keywords.reduce((score, keyword) =>
                 score + (matchesSkillKeyword(primaryLower, keyword) ? Math.max(1, keyword.length / 8) : 0), 0),
             contextScore: pack.keywords.reduce((score, keyword) =>
                 score + (matchesSkillKeyword(messageLower, keyword) ? Math.max(1, keyword.length / 8) : 0), 0),

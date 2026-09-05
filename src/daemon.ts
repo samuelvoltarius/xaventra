@@ -188,6 +188,8 @@ async function handleCommand(cmd: string, args: string, from: string, context?: 
 // Channel Starters (extracted to core/daemon-channels.ts)
 // ============================================
 import { getChannelGateway } from './core/channel-gateway.js'
+import { resolveConfigPath } from './config/config-path.js'
+
 
 // ============================================
 // Daemon Main
@@ -196,7 +198,7 @@ import { getChannelGateway } from './core/channel-gateway.js'
 async function startDaemon() {
     console.log('')
     console.log('╔═══════════════════════════════════════════════════════╗')
-    console.log('║             ✨ Nova Daemon Starting ✨                 ║')
+    console.log('║           ✨ Xaventra Core Starting ✨                 ║')
     console.log('╚═══════════════════════════════════════════════════════╝')
     console.log('')
 
@@ -338,7 +340,7 @@ async function startDaemon() {
     }
 
     // Load config
-    const configPath = join(process.cwd(), 'nova.config.json')
+    const configPath = resolveConfigPath()
     if (!existsSync(configPath)) {
         console.error('[Nova] ❌ Keine Konfiguration gefunden. Führe npm run setup aus.')
         process.exit(1)
@@ -744,7 +746,7 @@ async function startDaemon() {
                     id.toLowerCase().startsWith('claude')
                 )
 
-                // Use already-parsed config (don't re-read nova.config.json — it may be stale or mid-write)
+                // Use already-parsed config (don't re-read xaventra.config.json — it may be stale or mid-write)
                 // `config` is the authoritative in-memory config loaded at daemon startup
                 const preferredModel: string | undefined = (config as any).model && (config as any).model !== 'auto'
                     ? (config as any).model
@@ -1728,14 +1730,14 @@ async function startDaemon() {
     }
 
     // ============================================
-    // REST API Server (server.enabled in nova.config.json)
+    // REST API Server (server.enabled in xaventra.config.json)
     // ============================================
     const serverCfg = (config as any).server
     if (serverCfg?.enabled) {
         try {
             const { startRestApi } = await import('./server/rest-api.js')
             await startRestApi(
-                { enabled: true, port: serverCfg.port ?? 18789, host: serverCfg.host ?? '0.0.0.0' },
+                { enabled: true, port: serverCfg.port ?? 18789, host: serverCfg.host ?? '127.0.0.1' },
                 handleMessage,
                 () => ({
                     version: (globalThis as any).__novaVersion || '?',

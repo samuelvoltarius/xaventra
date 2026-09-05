@@ -10,7 +10,7 @@ hosts; it can only be enabled explicitly for loopback development with
 `reconnect` are enforced before MCP tools enter Nova's canonical registry.
 
 OAuth implementations are injected locally by node. Tokens and OAuth provider
-state must never be placed in `nova.config.json`, Memory, Supabase or Mesh.
+state must never be placed in `xaventra.config.json`, Memory, Supabase or Mesh.
 
 Outcome routing remains shadow-only unless `NOVA_OUTCOME_ROUTER_MODE=active`.
 Active mode still requires validated production samples. Optional
@@ -25,7 +25,7 @@ All configuration options for Nova.
 
 ---
 
-## `nova.config.json`
+## `xaventra.config.json`
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|

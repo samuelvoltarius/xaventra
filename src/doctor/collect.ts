@@ -16,6 +16,8 @@ import type {
     DoctorReport, DoctorIssue, CheckResult, DoctorFix,
 } from './types.js'
 import { probeGpuRuntime, type GpuRuntimeStatus } from './gpu-runtime.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const NOVA_DIR = process.cwd()
 
@@ -72,17 +74,17 @@ function maskedToken(token: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function checkConfig(): { result: CheckResult; config: Record<string, unknown> | null } {
-    const configPath = join(NOVA_DIR, 'nova.config.json')
+    const configPath = resolveConfigPath(NOVA_DIR)
 
     if (!existsSync(configPath)) {
         return {
             config: null,
-            result: fail('nova.config.json', 'fehlt', [
+            result: fail('xaventra.config.json', 'fehlt', [
                 issue('CONFIG_MISSING', 'error',
-                    'nova.config.json nicht gefunden',
+                    'xaventra.config.json nicht gefunden',
                     {
                         type: 'command',
-                        command: 'cp nova.config.example.json nova.config.json',
+                        command: 'cp xaventra.config.example.json xaventra.config.json',
                         hint: 'Beispiel-Config kopieren und anpassen',
                         safe: true,
                     }
@@ -95,7 +97,7 @@ function checkConfig(): { result: CheckResult; config: Record<string, unknown> |
     if (!raw) {
         return {
             config: null,
-            result: fail('nova.config.json', 'nicht lesbar', [
+            result: fail('xaventra.config.json', 'nicht lesbar', [
                 issue('CONFIG_INVALID_JSON', 'error', 'Config-Datei kann nicht gelesen werden'),
             ]),
         }
@@ -105,9 +107,9 @@ function checkConfig(): { result: CheckResult; config: Record<string, unknown> |
     if (!parsed || typeof parsed !== 'object') {
         return {
             config: null,
-            result: fail('nova.config.json', 'ungültiges JSON', [
-                issue('CONFIG_INVALID_JSON', 'error', 'nova.config.json enthält kein gültiges JSON',
-                    { type: 'info', hint: 'Datei mit JSON-Validator prüfen (z.B. jq . nova.config.json)', safe: false }
+            result: fail('xaventra.config.json', 'ungültiges JSON', [
+                issue('CONFIG_INVALID_JSON', 'error', 'xaventra.config.json enthält kein gültiges JSON',
+                    { type: 'info', hint: 'Datei mit JSON-Validator prüfen (z.B. jq . xaventra.config.json)', safe: false }
                 ),
             ]),
         }
@@ -129,8 +131,8 @@ function checkConfig(): { result: CheckResult; config: Record<string, unknown> |
     return {
         config: cfg,
         result: issues.length === 0
-            ? ok('nova.config.json', 'gültig')
-            : fail('nova.config.json', `gültig (${issues.length} Hinweis${issues.length > 1 ? 'e' : ''})`, issues),
+            ? ok('xaventra.config.json', 'gültig')
+            : fail('xaventra.config.json', `gültig (${issues.length} Hinweis${issues.length > 1 ? 'e' : ''})`, issues),
     }
 }
 
@@ -261,7 +263,7 @@ async function checkPorts(config: Record<string, unknown> | null): Promise<Check
                 type: 'config_patch',
                 configPath: 'server.port',
                 configValue: restPort + 1,
-                hint: `Port von ${restPort} auf ${restPort + 1} ändern in nova.config.json`,
+                hint: `Port von ${restPort} auf ${restPort + 1} ändern in xaventra.config.json`,
                 safe: true,
             }
         ))
@@ -297,7 +299,7 @@ async function checkProviders(config: Record<string, unknown> | null): Promise<C
     if (!provider || provider === 'local') {
         issues.push(issue('LLM_PROVIDER_NOT_SET', 'warning',
             'Kein LLM-Provider konfiguriert (provider nicht gesetzt oder "local")',
-            { type: 'info', hint: 'Provider in nova.config.json setzen: ollama, openai, anthropic, gemini, groq', safe: false }
+            { type: 'info', hint: 'Provider in xaventra.config.json setzen: ollama, openai, anthropic, gemini, groq', safe: false }
         ))
     }
 
@@ -518,7 +520,7 @@ function checkChannels(config: Record<string, unknown> | null): CheckResult {
     if (enabled.length === 0) {
         issues.push(issue('TELEGRAM_ENABLED_NO_TOKEN', 'info',
             'Keine Channels aktiviert — Nova nur über CLI/REST erreichbar',
-            { type: 'info', hint: 'Channel in nova.config.json aktivieren: channels.telegram.enabled = true', safe: false }
+            { type: 'info', hint: 'Channel in xaventra.config.json aktivieren: channels.telegram.enabled = true', safe: false }
         ))
     }
 

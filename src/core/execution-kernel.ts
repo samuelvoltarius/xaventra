@@ -30,6 +30,8 @@ export class ExecutionKernel {
     private readonly worker: FocusedWorker
     private readonly verifiedTools = new Set<string>()
     private readonly artifacts = new Set<string>()
+    private readonly startedAt = Date.now()
+    private toolAttempts = 0
 
     constructor(
         readonly taskContext: string,
@@ -56,7 +58,17 @@ export class ExecutionKernel {
     }
 
     selectWorkerTools() {
-        return this.worker.getTools()
+        const allowed = new Set(this.contract.allowedChanges.allowedTools)
+        return this.worker.getTools().filter(tool => allowed.has(tool.name))
+    }
+
+    /** Gate every execution path before effects, including recovery and retries.
+     * Post-validation alone cannot undo work performed beyond its budget. */
+    assertCanExecute(toolName: string): void {
+        if (!this.contract.allowedChanges.allowedTools.includes(toolName)) throw new Error(`Tool outside task contract: ${toolName}`)
+        if (Date.now() - this.startedAt >= this.contract.budget.timeoutMs) throw new Error('Task execution deadline exceeded')
+        if (this.toolAttempts >= this.contract.budget.maxToolCalls) throw new Error('Task tool-call budget exhausted')
+        this.toolAttempts++
     }
 
     verify(toolName: string, result: unknown): ValidationResult {

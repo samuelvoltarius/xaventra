@@ -121,8 +121,8 @@ describe('SelfSetupOrchestrator', () => {
         expect(state.actions.some(a => a.id === 'local:ffmpeg')).toBe(true)
     })
 
-    it('creates setup proposals without mutating nova.config.json', async () => {
-        const configPath = join(process.cwd(), 'nova.config.json')
+    it('creates setup proposals without mutating xaventra.config.json', async () => {
+        const configPath = join(process.cwd(), 'xaventra.config.json')
         const before = readFileSync(configPath, 'utf-8')
 
         const state = await runSelfSetupScan({

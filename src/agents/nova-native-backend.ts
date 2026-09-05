@@ -18,11 +18,14 @@ export class NovaNativeBackend implements AgentBackend {
         return {
             runId: input.contract.id,
             backend: this.name,
-            status: result.error ? 'failed' : 'completed',
+            status: input.abortSignal?.aborted ? 'cancelled'
+                : result.validation?.awaitingApproval ? 'interrupted'
+                    : !result.error && result.validation?.success === true ? 'completed' : 'failed',
             output: result.content,
             model: result.model,
             toolsUsed: result.toolsUsed || [],
-            error: result.error,
+            error: result.error || (!result.validation?.success && !result.validation?.awaitingApproval
+                ? 'Execution Kernel did not validate task completion' : undefined),
         }
     }
 }

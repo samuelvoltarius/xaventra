@@ -9,7 +9,7 @@
  *   3. Ask user which node to install Brain on
  *   4. SCP brain_api.py + install.sh to the node
  *   5. Run install.sh via SSH
- *   6. Save brainUrl to nova.config.json
+ *   6. Save brainUrl to xaventra.config.json
  *   7. Reload brain-hook plugin config
  */
 
@@ -17,6 +17,8 @@ import { exec, execFile } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const execAsync = promisify(exec)
 
@@ -56,7 +58,7 @@ export interface BrainInstallResult {
 
 const ROOT_DIR  = join(process.cwd())
 const INFRA_DIR = join(ROOT_DIR, 'infra', 'brain')
-const CONFIG_PATH = join(ROOT_DIR, 'nova.config.json')
+const CONFIG_PATH = resolveConfigPath(ROOT_DIR)
 
 // ── SSH helper ────────────────────────────────────────────────────────────────
 
@@ -229,7 +231,7 @@ async function installOnNode(
         } catch { /* use defaults */ }
     }
 
-    // 6. Update nova.config.json
+    // 6. Update xaventra.config.json
     log('💾 Saving Brain config...')
     saveBrainConfig(node.name, brainUrl, node.host)
 
@@ -263,7 +265,7 @@ function saveBrainConfig(nodeName: string, brainUrl: string, sshHost: string): v
         }
 
         writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
-        console.log(`[BrainInstaller] Saved brainUrl=${brainUrl} to nova.config.json`)
+        console.log(`[BrainInstaller] Saved brainUrl=${brainUrl} to xaventra.config.json`)
     } catch (e) {
         console.warn(`[BrainInstaller] Could not save config: ${e}`)
     }

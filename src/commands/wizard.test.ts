@@ -13,17 +13,17 @@ describe('setup wizard configuration preservation', () => {
     it('keeps identity, mesh policy and existing channels when answers are blank', async () => {
         const config = { provider: 'local', model: 'qwen', mesh: { mode: 'ha', nodeId: 'example-node' },
             channels: { telegram: { enabled: true, allowedUsers: ['example-owner'] } } }
-        writeFileSync('nova.config.json', JSON.stringify(config))
+        writeFileSync('xaventra.config.json', JSON.stringify(config))
         await runSetupWizard()
-        expect(JSON.parse(readFileSync('nova.config.json', 'utf8'))).toEqual(config)
+        expect(JSON.parse(readFileSync('xaventra.config.json', 'utf8'))).toEqual(config)
         expect(fake.close).toHaveBeenCalledOnce()
     })
     it('does not write configuration for an unsupported provider', async () => {
         const original = JSON.stringify({ provider: 'local', model: 'qwen' })
-        writeFileSync('nova.config.json', original)
+        writeFileSync('xaventra.config.json', original)
         fake.answers = ['unsupported-provider']
         await expect(runSetupWizard()).rejects.toThrow('Unsupported provider')
-        expect(readFileSync('nova.config.json', 'utf8')).toBe(original)
+        expect(readFileSync('xaventra.config.json', 'utf8')).toBe(original)
         expect(fake.close).toHaveBeenCalledOnce()
     })
 })

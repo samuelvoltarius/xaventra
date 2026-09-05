@@ -177,6 +177,7 @@ export function buildCognitivePrompt(policy: ContextPolicy): string {
             ? 'Löse Unsicherheit zuerst mit vorhandenem Kontext oder read-only Recherche; falls sie entscheidend bleibt, stelle genau eine gezielte Rückfrage.'
             : '',
         'Gib niemals interne Gedankengänge aus. Zeige stattdessen Ergebnis, Belege und relevante Unsicherheit.',
+        'Halte explizite Antwortformate ein (z.B. nur eine Kennung, kein Zusatztext). Bei Korrekturen gilt die neueste Angabe; wiederhole überholte Werte nicht ungefragt.',
     ].filter(Boolean)
     return `## Adaptive Cognitive Policy\n${instructions.join('\n')}`
 }

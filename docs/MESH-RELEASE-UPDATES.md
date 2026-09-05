@@ -37,7 +37,7 @@ of the same immutable artifact.
 
 ## Node profiles
 
-Profiles live under `mesh.update.nodes` in `nova.config.json`. Only explicit
+Profiles live under `mesh.update.nodes` in `xaventra.config.json`. Only explicit
 `systemd` and `docker-compose` profiles are accepted. Paths, hostnames, users,
 service names, ports, and image names are validated before any SSH operation.
 For an unprivileged SSH deployment user, a `systemd` profile may explicitly set

@@ -84,7 +84,7 @@ function publicConfig(value) {
   }
 }
 
-const BLOCKED_WORKSPACE_NAMES = /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|credentials|secrets?|(?:nova\.)?config\.json|auth\.json|wallets?\.json|.*\.wallet\.json|USER\.md|PROJECT_MEMORY\.md|\.nova-gateway-token|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i
+const BLOCKED_WORKSPACE_NAMES = /^(?:\.env(?:\..*)?|\.npmrc|\.pypirc|credentials|secrets?|(?:(?:nova|xaventra)\.)?config\.json|auth\.json|wallets?\.json|.*\.wallet\.json|USER\.md|PROJECT_MEMORY\.md|\.nova-gateway-token|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i
 const SKIPPED_WORKSPACE_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nova-data', '.nova-vector-memory', '.nova-auth', '.nova-sessions', '.nova-memory', '.nova-learning', '.ssh', 'coverage'])
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.css', '.scss', '.html', '.py', '.go', '.rs', '.java', '.kt', '.swift', '.yml', '.yaml', '.toml', '.xml', '.sql', '.sh', '.ps1'])
 

@@ -4,11 +4,11 @@
  * Connects Nova to a local Home Assistant instance via REST + WebSocket API.
  * Covers lights, switches, climate, media players, sensors — everything HA knows.
  *
- * Config (nova.config.json or env):
+ * Config (xaventra.config.json or env):
  *   HASS_URL   = "http://homeassistant.local:8123"
  *   HASS_TOKEN = "eyJ..."   (Long-Lived Access Token from HA Profile page)
  *
- * Or nova.config.json:
+ * Or xaventra.config.json:
  *   { "homeassistant": { "url": "...", "token": "..." } }
  *
  * Slash commands: /hass list, /hass status <entity>, /hass <domain>.<service> <entity>
@@ -17,6 +17,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Config
@@ -33,9 +35,9 @@ function getHassConfig(): HassConfig | null {
         return { url: process.env.HASS_URL.replace(/\/$/, ''), token: process.env.HASS_TOKEN }
     }
 
-    // 2. nova.config.json
+    // 2. xaventra.config.json
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             const ha = cfg.homeassistant || cfg.hass

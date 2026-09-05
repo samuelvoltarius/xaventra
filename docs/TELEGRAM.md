@@ -17,7 +17,7 @@ fenced Main failover.
 
 ## Configure
 
-Add to `nova.config.json`:
+Add to `xaventra.config.json`:
 
 ```json
 {

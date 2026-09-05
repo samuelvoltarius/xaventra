@@ -12,7 +12,9 @@ import { getPluginManager } from '../plugins/plugin-sdk.js'
 import { isConversationalClosure, toolProvidesActionEvidence } from '../core/action-intent.js'
 import { buildToolTaskContext } from '../core/tool-task-context.js'
 import { ExecutionKernel } from '../core/execution-kernel.js'
-import type { TaskContract } from '../core/task-contract.js'
+import type { TaskContract, TaskValidationReport } from '../core/task-contract.js'
+import { SessionCheckpoints, sessionIdentity, sessionKey, type SessionScope } from './session-checkpoints.js'
+import { clearSessionSummary } from '../layers/L6-session-summary.js'
 import { internalTaskContractOverrides, isNovaSystemAuthored } from '../core/system-message.js'
 import { estimateUsageCost } from '../core/model-pricing.js'
 import { redactSecrets } from '../security/secret-redaction.js'
@@ -25,6 +27,7 @@ import { diagnoseToolContract } from '../doctor/tool-contract.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
+import { sideEffectsDisabled } from '../core/side-effects.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -158,6 +161,8 @@ export interface AgentResponse {
     content: string
     /** Canonical Outcome Ledger run for this invocation. */
     runId?: string
+    /** The kernel, never model prose, is the completion authority. */
+    validation?: TaskValidationReport
     reasoning?: string
     toolsUsed?: string[]
     toolsExecuted?: string[]
@@ -193,6 +198,7 @@ export function restrictWorkerTools<T extends { name: string }>(
 
 // Session storage
 const sessions: Map<string, AgentContext> = new Map()
+const sessionCheckpoints = new SessionCheckpoints()
 
 /**
  * Run Nova agent with params object (daemon.ts compatible)
@@ -231,8 +237,10 @@ function menschenlesbar(ergebnisse: string[], auftrag: string): string {
 export async function runNovaAgent(params: AgentRunParams): Promise<AgentResponse> {
     const { userId, authUserId = userId, channel, content, image, systemPrompt, llm, tools, memory, onStepUpdate, abortSignal, contract, workspaceId, conversationId, modelOverride, preferredNodeIds = [], deniedTools = [], botId } = params
     const isBenchmarkRun = channel === 'benchmark'
+    const backgroundLearningEnabled = !isBenchmarkRun && !sideEffectsDisabled()
     const isInternalRequest = isNovaSystemAuthored({ from: authUserId, canonicalUser: userId, content })
-    const session = getSession(`${userId}:${conversationId || 'default'}:${botId || 'nova'}`, channel)
+    const scope = { conversationId, botId }
+    const session = getSession(userId, channel, scope)
     const routingContext = buildToolTaskContext(session.history, content)
     const kernel = new ExecutionKernel(
         content,
@@ -391,7 +399,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             routerMode: shadowRoute?.mode || 'shadow',
         } as any)
 
-        // === PRIMARY MODEL: Always use what's configured in nova.config.json ===
+        // === PRIMARY MODEL: Always use what's configured in xaventra.config.json ===
         // No auto-routing based on task type. User sets the model, Nova uses it.
         // L18 router / selectModelForTask = only used for FALLBACK if primary fails.
         let meshDelegation: { host: string; model: string } | null = null
@@ -448,6 +456,8 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                             success: true, node: meshDelegation.host, model: meshDelegation.model,
                         })
                         return {
+                            runId: kernel.contract.id,
+                            validation,
                             content: `🌐 *Antwort von ${meshDelegation.host}* (${meshDelegation.model}):\n\n${result.result}`,
                             model: meshDelegation.model,
                             sessionId,
@@ -488,7 +498,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         if (!isInternalRequest) try {
             const { processSessionForLLM } = await import('../layers/L6-session-summary.js')
             const { summaryMessage, hotMessages, summarized } = await processSessionForLLM(
-                userId, channel, session.history, 12000, false
+                sessionKey(sessionIdentity(userId, scope)), channel, session.history, 12000, false
             )
 
             // Inject summary (compressed older messages)
@@ -571,8 +581,6 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const showReasoning = globalState?.showReasoning
 
         console.log(`[Nova Agent] Passing ${toolDefinitions.length} tools to LLM`)
-
-        const lowerContentForAutoOps = content.toLowerCase()
         if (isExplicitCodexInstallRequest(content)) {
             const diagnosis = diagnoseToolContract(
                 'codex_install',
@@ -590,12 +598,6 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 detail: diagnosis.message,
             })
         }
-        const isCliApprovedPiDeploy =
-            channel === 'cli' &&
-            /pi5|100\.81\.13\.97/.test(lowerContentForAutoOps) &&
-            /aktualisier|update|deploy|kopier|copy/.test(lowerContentForAutoOps) &&
-            /freigabe|approval|du hast/.test(lowerContentForAutoOps) &&
-            toolDefinitions.some((t: any) => t.name === 'run_command')
 
         let forcedToolResponse: any = null
         if (isExplicitCodexInstallRequest(content) && toolDefinitions.some((tool: any) => tool.name === 'codex_install')) {
@@ -606,19 +608,6 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                     name: 'codex_install',
                     arguments: {
                         target_node: extractCodexInstallTarget(content),
-                    },
-                }],
-                finishReason: 'tool_calls',
-            }
-        }
-        if (!forcedToolResponse && isCliApprovedPiDeploy) {
-            console.log('[Nova Agent] Auto-ops shortcut: approved Pi5 self-update via run_command')
-            forcedToolResponse = {
-                content: '',
-                toolCalls: [{
-                    name: 'run_command',
-                    arguments: {
-                        command: 'bash scripts/deploy-edge.sh xaventra@100.64.0.21 && ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 xaventra@100.64.0.21 "cd ~/nova-core && node -p \\"\\\'VERSION=\\\' + require(\\\'./package.json\\\').version\\" && echo FLAGS_START && ps eww -C node | tr \\" \\" \\"\\\\n\\" | grep -E \\"NOVA_NODE_ONLY|NOVA_NO_TELEGRAM\\" && echo PROCESSES_START && ps -eo pid,cmd | grep -E \\"nova-core|src/daemon.ts\\" | grep -v grep | tail -5 && echo LOG_START && tail -20 /tmp/nova-node.log"',
                     },
                 }],
                 finishReason: 'tool_calls',
@@ -674,7 +663,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // === L17 AUTONOMOUS LEARNING: Check for known solutions ===
         let l17KnownSolution: string | null = null
         try {
-            if (isBenchmarkRun) throw new Error('benchmark learning recall isolated')
+            if (!backgroundLearningEnabled) throw new Error('isolated learning recall')
             const { recallSolution } = await import('../layers/L17-autonomous-learning.js')
             const known = recallSolution(content)
             if (known) {
@@ -971,6 +960,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         && kernel.contract.allowedChanges.readOnly
                         && kernel.contract.allowedChanges.externalSideEffects === false,
                 })
+                kernel.assertCanExecute(name)
                 await assertMissionFenceForContent(content)
                 const idempotencyRunId = executionScopeForContent(content, kernel.contract.id)
                 const key = makeIdempotencyKey(idempotencyRunId, name, args)
@@ -1001,7 +991,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
             // Import correction detector for failure tracking
             let correctionDetector: any = null
-            if (!isBenchmarkRun) {
+            if (backgroundLearningEnabled) {
                 try {
                     correctionDetector = await import('../core/correction-detector.js')
                 } catch { /* not available */ }
@@ -1009,7 +999,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
             // L17: Start learning session for this goal
             try {
-                if (isBenchmarkRun) throw new Error('benchmark learning session isolated')
+                if (!backgroundLearningEnabled) throw new Error('isolated learning session')
                 const { getLearner } = await import('../layers/L17-autonomous-learning.js')
                 getLearner().startSession(content.slice(0, 200))
             } catch { /* L17 not critical */ }
@@ -1067,7 +1057,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                     // === Task Tracker: advance step ===
                     try {
-                        if (isBenchmarkRun) throw new Error('benchmark task tracker isolated')
+                        if (!backgroundLearningEnabled) throw new Error('isolated task tracker')
                         const { advanceStep } = await import('../core/task-tracker.js')
                         advanceStep(call.name, true)
                     } catch { /* non-critical */ }
@@ -1084,12 +1074,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     }
 
                     // Record successful tool call for learning
-                    if (!isBenchmarkRun) correctionDetector?.recordToolCall?.(call.name, call.arguments || {}, result, content, userId)
+                    if (backgroundLearningEnabled) correctionDetector?.recordToolCall?.(call.name, call.arguments || {}, result, content, userId)
 
                     // Faehigkeits-Gedaechtnis: was hier geht und was nicht.
                     // Ohne das probiert Nova bei jeder Frage neu, ob z.B. ein
                     // Browser existiert, scheitert wieder und vergisst es wieder.
-                    if (!isBenchmarkRun) {
+                    if (backgroundLearningEnabled) {
                         try {
                             const store = await import('../memory/capabilities-store.js')
                             const r = result as any
@@ -1193,7 +1183,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     // Unified learning accepts only the structured result of an
                     // execution that actually reached the tool registry.
                     try {
-                        if (isBenchmarkRun) throw new Error('benchmark verified outcome isolated')
+                        if (!backgroundLearningEnabled) throw new Error('isolated verified outcome')
                         const { getLearningCoordinator } = await import('../learning/learning-coordinator.js')
                         // For action requests, discovery/planning is progress but
                         // not a reusable successful solution for the requested
@@ -1269,7 +1259,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     toolExecutions.push({
                         toolName: call.name,
                         params: call.arguments || {},
-                        result: finalResult,
+                        result: resultStr.trim(),
                         success: verifiedSuccess,
                         timestamp: Date.now(),
                     })
@@ -1277,7 +1267,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                     // Proactive Learning: Ask if user wants Nova to learn from this
                     try {
-                        if (isBenchmarkRun) throw new Error('benchmark proactive learning isolated')
+                        if (!backgroundLearningEnabled) throw new Error('isolated proactive learning')
                         const { generatePostToolLearningPrompt, queueLearningRequest } = await import('../intelligence/proactive-learning.js')
                         const learningPrompt = generatePostToolLearningPrompt(call.name, verifiedSuccess)
                         if (learningPrompt) {
@@ -1306,7 +1296,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     logRuntimeEvent({ event: 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: false, detail: String(err).slice(0, 500) })
 
                     // Record failed approach for future avoidance
-                    if (!isBenchmarkRun) {
+                    if (backgroundLearningEnabled) {
                         correctionDetector?.recordFailedApproach?.(
                             call.name,
                             call.arguments || {},
@@ -1316,7 +1306,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     }
 
                     // A thrown tool error is verified failure evidence.
-                    if (!isBenchmarkRun) {
+                    if (backgroundLearningEnabled) {
                         try {
                             const { getLearningCoordinator } = await import('../learning/learning-coordinator.js')
                             await getLearningCoordinator().recordVerifiedToolOutcome({
@@ -1704,8 +1694,14 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             for (const call of weitereAufrufe.slice(0, 4)) {
                                 try {
                                     const res = await executeToolOnce(call.name, { ...(call.arguments || {}), userId, channel })
+                                    const success = kernel.verify(call.name, res).success
+                                    const resultText = redactSecrets(typeof res === 'string' ? res : JSON.stringify(res))
+                                    toolsUsed.push(call.name)
+                                    toolsExecuted.push(call.name)
+                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: resultText, success, timestamp: Date.now() })
                                     nachErgebnisse.push(`${call.name}: ${typeof res === 'string' ? res : JSON.stringify(res)}`.slice(0, 1500))
                                 } catch (fehler: any) {
+                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: String(fehler), success: false, timestamp: Date.now() })
                                     nachErgebnisse.push(`${call.name}: fehlgeschlagen — ${fehler?.message || fehler}`)
                                 }
                             }
@@ -1808,7 +1804,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     })
                 } catch { /* episodic failure learning is non-critical */ }
             }
-            if (actionIntent.requiresTool) {
+            if (kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
                 finalContent = `Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: ${reasons.join('; ') || taskValidation.violations.join('; ') || 'Erfolgsnachweis fehlt.'}`
             }
         }
@@ -1821,12 +1817,17 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // Track for auto-save (Tier 2 will auto-summarize every 10 messages)
         try {
             const { trackSession } = await import('../layers/L6-session-summary.js')
-            trackSession(userId, channel, session.history)
+            trackSession(sessionKey(sessionIdentity(userId, scope)), channel, session.history)
         } catch { /* summary tracking non-critical */ }
 
         // Keep history capped (summary handles overflow via compression)
         if (session.history.length > 200) {
             session.history = session.history.slice(-200)
+        }
+
+        if (!isBenchmarkRun) {
+            try { sessionCheckpoints.save(sessionIdentity(userId, scope), session.history) }
+            catch (error) { console.warn(`[Nova Agent] Session checkpoint unavailable: ${String(error)}`) }
         }
 
         // NOTE: Persistent memory writes happen during nightly distillation, not here.
@@ -1878,6 +1879,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         return {
             content: finalContent,
             runId: kernel.contract.id,
+            validation: taskValidation,
             reasoning: reasoning || undefined,
             toolsUsed,
             toolsExecuted,
@@ -1957,47 +1959,15 @@ Du kannst Tools verwenden um Dateien zu lesen, Befehle auszuführen und im Inter
 }
 
 /**
- * Get or create session — restores from disk if available
- * KEY: userId only (NOT channel:userId) → unified cross-channel memory
+ * Restore the exact principal × room × bot session. Cross-channel identity
+ * must already be established by the canonical principal resolver.
  */
-export function getSession(userId: string, channel: string): AgentContext {
-    const key = userId  // Unified: same session for all channels
+export function getSession(userId: string, channel: string, scope: SessionScope = {}): AgentContext {
+    const identity = sessionIdentity(userId, scope)
+    const key = sessionKey(identity)
     if (!sessions.has(key)) {
         const ctx = createAgentContext(userId, channel)
-
-        // Try to restore session from disk (.nova-data/sessions/{user}.jsonl)
-        try {
-            const sessionDir = join(process.cwd(), '.nova-data', 'sessions')
-            // Try canonical user name first, then raw userId
-            const candidates = [userId, userId.replace(/[^a-zA-Z0-9_-]/g, '_')]
-            for (const name of candidates) {
-                const filePath = join(sessionDir, `${name}.jsonl`)
-                if (existsSync(filePath)) {
-                    const lines = readFileSync(filePath, 'utf-8').split('\n').filter(l => l.trim())
-                    const restored: AgentMessage[] = []
-                    for (const line of lines.slice(-60)) {
-                        try {
-                            const entry = JSON.parse(line)
-                            if (entry.role === 'user' || entry.role === 'assistant') {
-                                restored.push({
-                                    role: entry.role,
-                                    content: entry.content || entry.message || '',
-                                    timestamp: typeof entry.ts === 'number' ? entry.ts : Date.parse(entry.ts) || undefined,
-                                })
-                            }
-                        } catch { /* skip unparseable lines */ }
-                    }
-                    if (restored.length > 0) {
-                        ctx.history = restored.slice(-100)
-                        console.log(`[Nova Agent] Session restored: ${restored.length} messages from ${name}.jsonl (unified cross-channel)`)
-                    }
-                    break
-                }
-            }
-        } catch (err) {
-            console.log(`[Nova Agent] Session restore skipped: ${err}`)
-        }
-
+        ctx.history = sessionCheckpoints.load(identity)
         sessions.set(key, ctx)
     }
     // Update channel on existing session (user may switch channels)
@@ -2009,34 +1979,27 @@ export function getSession(userId: string, channel: string): AgentContext {
 /**
  * Clear a session
  */
-export function clearSession(userId: string, _channel?: string): boolean {
-    // Unified sessions: key is just userId
-    if (sessions.has(userId)) {
-        sessions.delete(userId)
-        console.log(`[Nova Agent] Session cleared for user: ${userId}`)
-        return true
-    }
-    // Legacy cleanup: remove any old channel:userId keys too
-    let cleared = false
-    for (const key of sessions.keys()) {
-        if (key.endsWith(`:${userId}`)) {
-            sessions.delete(key)
-            cleared = true
-        }
-    }
-    if (cleared) console.log(`[Nova Agent] Legacy sessions cleaned for user: ${userId}`)
-    return cleared
+export function clearSession(userId: string, _channel?: string, scope: SessionScope = {}): boolean {
+    const identity = sessionIdentity(userId, scope)
+    const key = sessionKey(identity)
+    const hadHistory = Boolean(sessions.get(key)?.history.length || sessionCheckpoints.load(identity).length)
+    // Persist an empty checkpoint so a process restart cannot resurrect it.
+    sessionCheckpoints.save(identity, [])
+    clearSessionSummary(key)
+    sessions.delete(key)
+    return hadHistory
 }
 
 /**
  * Add message to session history
  */
-export function addToHistory(userId: string, channel: string, message: AgentMessage): void {
-    const session = getSession(userId, channel)
+export function addToHistory(userId: string, channel: string, message: AgentMessage, scope: SessionScope = {}): void {
+    const session = getSession(userId, channel, scope)
     session.history.push(message)
     if (session.history.length > 100) {
         session.history = session.history.slice(-100)
     }
+    if (channel !== 'benchmark') sessionCheckpoints.save(sessionIdentity(userId, scope), session.history)
 }
 
 export default {

@@ -13,6 +13,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -101,7 +103,7 @@ async function discoverCloudModels(): Promise<DiscoveredModel[]> {
 
     try {
         // Load API keys from config
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (!existsSync(configPath)) {
             console.log('[ModelDiscovery] ☁️ No config — skipping cloud discovery')
             return models
@@ -220,7 +222,7 @@ async function discoverMeshModels(): Promise<DiscoveredModel[]> {
 
     // === PRIMARY: Supabase-based discovery (no SSH needed) ===
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             const supabaseUrl = config.supabase?.meshUrl || process.env.NOVA_MESH_SUPABASE_URL

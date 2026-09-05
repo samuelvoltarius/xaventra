@@ -421,11 +421,12 @@ async function stageRelease(node: UpdateNodeConfig, release: SignedReleaseManife
     await ssh(node, `set -eu; rm -rf '${stage}'; mkdir -p '${stage}'`)
     await scp(node, [archive], `${stage}/release.tar.gz`)
     await ssh(node, `set -eu; echo '${archiveSha256}  ${stage}/release.tar.gz' | sha256sum -c -; tar -xzf '${stage}/release.tar.gz' -C '${stage}'; rm '${stage}/release.tar.gz'`, 180_000)
-    const configPath = node.runtime === 'docker-compose' ? `${node.composePath}/nova.config.json` : `${node.path}/nova.config.json`
+    const configRoot = node.runtime === 'docker-compose' ? node.composePath : node.path
+    const selectConfig = `config='${configRoot}/xaventra.config.json'; if [ ! -f "$config" ]; then config='${configRoot}/nova.config.json'; fi; test -f "$config"`
     const verifyCommand = node.runtime === 'docker-compose'
-        ? `docker run --rm --network none -v '${stage}:/release:ro' -v '${configPath}:/nova.config.json:ro' node:22-bookworm-slim node /release/dist/core/release-verifier.js /release/dist/.nova-release.json /release/dist /nova.config.json`
-        : `node '${stage}/dist/core/release-verifier.js' '${stage}/dist/.nova-release.json' '${stage}/dist' '${configPath}'`
-    await ssh(node, verifyCommand, 180_000)
+        ? `docker run --rm --network none -v '${stage}:/release:ro' -v "$config:/xaventra.config.json:ro" node:22-bookworm-slim node /release/dist/core/release-verifier.js /release/dist/.nova-release.json /release/dist /xaventra.config.json`
+        : `node '${stage}/dist/core/release-verifier.js' '${stage}/dist/.nova-release.json' '${stage}/dist' "$config"`
+    await ssh(node, `set -eu; ${selectConfig}; ${verifyCommand}`, 180_000)
 }
 
 async function activateSystemd(node: UpdateNodeConfig, releaseId: string): Promise<void> {

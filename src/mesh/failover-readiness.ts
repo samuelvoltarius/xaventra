@@ -4,6 +4,8 @@ import { getActiveMission } from '../core/autonomous-executor.js'
 import { isHaStateAvailable } from '../core/ha-state.js'
 import { discoverNodes, getMeshMainAuthority, type MeshMainAuthority, type MeshNode } from './mesh-registry.js'
 import { getPreferredTakeoverNode } from './leader-election.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export interface ReadinessGate { id: string; ok: boolean; evidence: string }
 export interface FailoverReadiness {
@@ -56,7 +58,7 @@ export function evaluateFailoverReadiness(input: {
 
 function configuredMode(): 'standalone' | 'direct' | 'ha' {
     try {
-        const path = join(process.cwd(), 'nova.config.json')
+        const path = resolveConfigPath()
         if (!existsSync(path)) return 'standalone'
         const config = JSON.parse(readFileSync(path, 'utf8'))
         return ['standalone', 'direct', 'ha'].includes(config.mesh?.mode) ? config.mesh.mode : 'standalone'

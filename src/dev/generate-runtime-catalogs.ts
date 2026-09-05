@@ -66,7 +66,7 @@ export async function generateRuntimeCatalogs(options: { check?: boolean } = {})
         name: tool.name, category: tool.category, description: tool.description,
         parameters: tool.parameters.map(parameter => ({ name: parameter.name, type: parameter.type, required: parameter.required === true })),
     })).sort((a, b) => a.name.localeCompare(b.name))
-    const example = JSON.parse(readFileSync(join(ROOT, 'nova.config.example.json'), 'utf8'))
+    const example = JSON.parse(readFileSync(join(ROOT, 'xaventra.config.example.json'), 'utf8'))
     const outputs: Record<string, string> = {
         'tools.json': stable({ version: 1, tools: toolCatalog }),
         'config.json': stable({ version: 1, shape: configShape(example) }),

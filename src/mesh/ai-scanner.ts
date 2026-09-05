@@ -16,6 +16,8 @@ import { exec, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
@@ -517,11 +519,11 @@ async function scanMeshNodes(): Promise<DiscoveredAIService[]> {
             }
         }
 
-        // Source 2: nova.config.json nodes (always available, even if edge daemons aren't running)
+        // Source 2: xaventra.config.json nodes (always available, even if edge daemons aren't running)
         try {
             const { readFileSync } = await import('node:fs')
             const { join } = await import('node:path')
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             const configNodes = config.nodes || []
 
@@ -1031,11 +1033,11 @@ async function performAIScan(options?: {
         const sshScannedIPs = new Set<string>()
         const sshTargets: Array<{ ip: string; user: string; label: string }> = []
 
-        // Collect SSH targets ONLY from nova.config.json — explicitly configured nodes.
+        // Collect SSH targets ONLY from xaventra.config.json — explicitly configured nodes.
         // Mesh-registry discovery is skipped here: auto-discovered mDNS (.local) hosts
         // have unknown SSH users and cause noise. Only scan nodes with explicit user@host.
         try {
-            const configPath = join(process.cwd(), 'nova.config.json')
+            const configPath = resolveConfigPath()
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             for (const cn of (config.nodes || [])) {
                 const hostField = cn.host || ''
@@ -1245,7 +1247,7 @@ export function stopPeriodicScan(): void {
 
 function isAutoModelConfig(): boolean {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (!existsSync(configPath)) return true
         const config = JSON.parse(readFileSync(configPath, 'utf-8')) as { model?: string; autoModel?: boolean }
         return config.autoModel === true || !config.model || config.model === 'auto'

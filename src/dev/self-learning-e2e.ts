@@ -2,6 +2,8 @@ import 'dotenv/config'
 import { readFileSync } from 'node:fs'
 import { createLocalLLM } from '../llm/local-llm.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 async function main(): Promise<void> {
     const registry = getToolRegistry()
@@ -23,7 +25,7 @@ async function main(): Promise<void> {
 
     // Exercise the same local-only model class as Nova's isolated learning
     // runtime. A cloud quota must never disable autonomous learning.
-    const config = JSON.parse(readFileSync('nova.config.json', 'utf8'))
+    const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf8'))
     const vllmNode = (config.nodes || []).find((node: any) => node?.services?.vllm)
     const baseUrl = String(vllmNode?.services?.vllm || '').replace(/\/$/, '')
     if (!baseUrl) throw new Error('No local vLLM service configured for learning')

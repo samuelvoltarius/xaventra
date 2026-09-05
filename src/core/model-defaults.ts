@@ -9,6 +9,8 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // Fallback: local LLM via Ollama or LM Studio, or OpenAI if API key is set
 const ULTIMATE_FALLBACK = 'auto'
@@ -19,7 +21,7 @@ let _cachedSubAgentModel: string | null = null
 function readConfigModel(): string | null {
     if (_cachedConfigModel !== null) return _cachedConfigModel
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             _cachedConfigModel = config.llm?.model || config.model || null

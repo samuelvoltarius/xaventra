@@ -1,13 +1,15 @@
 /**
  * Config Validator
  * 
- * Validates nova.config.json on startup.
+ * Validates xaventra.config.json on startup.
  * Fails fast with clear error messages for critical issues,
  * warns for non-critical missing fields.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 export interface ValidationResult {
     valid: boolean
@@ -17,12 +19,12 @@ export interface ValidationResult {
 
 export function validateConfig(configPath?: string): ValidationResult {
     const result: ValidationResult = { valid: true, errors: [], warnings: [] }
-    const path = configPath || join(process.cwd(), 'nova.config.json')
+    const path = configPath || resolveConfigPath()
 
     // Check file exists
     if (!existsSync(path)) {
         result.valid = false
-        result.errors.push('nova.config.json nicht gefunden!')
+        result.errors.push('xaventra.config.json nicht gefunden!')
         return result
     }
 
@@ -32,7 +34,7 @@ export function validateConfig(configPath?: string): ValidationResult {
         config = JSON.parse(readFileSync(path, 'utf-8'))
     } catch (err: any) {
         result.valid = false
-        result.errors.push(`nova.config.json ist kein valides JSON: ${err.message}`)
+        result.errors.push(`xaventra.config.json ist kein valides JSON: ${err.message}`)
         return result
     }
 

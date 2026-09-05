@@ -17,7 +17,7 @@ test -s "$config"
 
 mkdir -p "$runtime" "$runtime/.nova-data" "$runtime/.nova-update"
 tar -xzf "$release" -C "$runtime"
-install -m 600 "$config" "$runtime/nova.config.json"
+install -m 600 "$config" "$runtime/xaventra.config.json"
 
 if [[ ! -x "$node_wrapper" ]] || [[ "$($node_wrapper -p process.arch 2>/dev/null || true)" != arm64 ]]; then
     temp_dir="$(mktemp -d)"
@@ -48,7 +48,7 @@ if [[ ! -x "$node_wrapper" ]] || [[ "$($node_wrapper -p process.arch 2>/dev/null
 fi
 
 test "$($node_wrapper -p process.arch)" = arm64
-"$node_wrapper" "$runtime/deploy/pi5/configure-worker.mjs" "$runtime/nova.config.json"
+"$node_wrapper" "$runtime/deploy/pi5/configure-worker.mjs" "$runtime/xaventra.config.json"
 if [[ ! -s "$runtime/.nova.env" ]]; then
     umask 077
     printf 'NOVA_API_TOKEN=%s\n' "$(openssl rand -hex 32)" > "$runtime/.nova.env"

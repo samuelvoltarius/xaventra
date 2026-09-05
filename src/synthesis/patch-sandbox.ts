@@ -40,7 +40,7 @@ export function validatePatchInSandbox(request: PatchSandboxRequest): PatchSandb
             const source = join(request.projectRoot, entry)
             if (existsSync(source)) cpSync(source, join(sandbox, entry), { recursive: true })
         }
-        for (const file of ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'nova.config.json']) {
+        for (const file of ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts', 'xaventra.config.json']) {
             const source = join(request.projectRoot, file)
             if (existsSync(source)) cpSync(source, join(sandbox, file))
         }

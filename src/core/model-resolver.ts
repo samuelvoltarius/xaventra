@@ -7,12 +7,12 @@
  * Scan-Ergebnis vom ai-scanner (mesh/ai-scanner.ts):
  *   - Alle lokalen AI Services (Ollama, LM Studio, llama.cpp, Whisper, Piper, etc.)
  *   - Alle Mesh-Nodes (via mesh-registry + Supabase)
- *   - Alle Geräte im Netzwerk (via nova.config.json → nodes)
+ *   - Alle Geräte im Netzwerk (via xaventra.config.json → nodes)
  *   - Installierte aber nicht laufende Software ("Schlafende Schätze")
  *
  * Resolution priority:
- *   1. nova.config.json → models.{role}
- *   2. nova.config.json → model (global)
+ *   1. xaventra.config.json → models.{role}
+ *   2. xaventra.config.json → model (global)
  *   3. ai-scanner results (best match per role)
  *   4. OpenAI cloud (via OAuth or API key)
  */
@@ -20,6 +20,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
+import { resolveConfigPath } from '../config/config-path.js'
+
 
 // ============================================
 // Types
@@ -110,7 +112,7 @@ interface NovaModelConfig {
 
 function readConfig(): NovaModelConfig {
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             return {
@@ -161,7 +163,7 @@ async function getOpenAIKey(): Promise<string | undefined> {
 
     // 3. Config file
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             const configKey = cfg.auth?.openaiApiKey || cfg.providers?.openai?.apiKey
@@ -725,9 +727,9 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
     }
     saveExternalProviders(providers)
 
-    // Also update nova.config.json providers section
+    // Also update xaventra.config.json providers section
     try {
-        const configPath = join(process.cwd(), 'nova.config.json')
+        const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             cfg.providers = cfg.providers || {}

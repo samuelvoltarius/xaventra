@@ -2658,7 +2658,7 @@
     {
       "name": "save_config",
       "category": "system",
-      "description": "Eigene Konfiguration ändern. Sektionen: telegram (token, allowFrom), channels (discord, whatsapp, signal), llm (model, provider), providers (openai/anthropic apiKey+enabled), memory (embedding), autonomy (enabled, intervalMinutes, selfThinkMaxPerHour, quietHours, triggers), proactive (enabled, morningBriefing), learning (enabled, autoLearnThreshold), voice (enabled, wakeWord, ttsVoice), server (port), heartbeat (intervalMinutes), apis (tavily_key), dashboard (port). Ändert nova.config.json sicher per Merge.",
+      "description": "Eigene Konfiguration ändern. Sektionen: telegram (token, allowFrom), channels (discord, whatsapp, signal), llm (model, provider), providers (openai/anthropic apiKey+enabled), memory (embedding), autonomy (enabled, intervalMinutes, selfThinkMaxPerHour, quietHours, triggers), proactive (enabled, morningBriefing), learning (enabled, autoLearnThreshold), voice (enabled, wakeWord, ttsVoice), server (port), heartbeat (intervalMinutes), apis (tavily_key), dashboard (port). Ändert xaventra.config.json sicher per Merge.",
       "parameters": [
         {
           "name": "section",
