@@ -4,6 +4,17 @@ This bounded source change is **not RC acceptance**, model retraining or a
 production rollout. Existing Doctor artifact delivery remains separate from
 diagnosis quality. No weights, operator configuration or raw output are included.
 
+Guarded runtime commit `1cccf74860996f092be7341ff0dcee8e76808409` passed all
+seven jobs in [candidate CI 34040574609](https://github.com/samuelvoltarius/xaventra/actions/runs/34040574609).
+Downloaded reports identify that exact clean SHA, version 2.78.8 and 9/9 compiled
+Doctor API plus 5/5 artifact cases on Windows, Linux and macOS. The same run
+passes all 1191 Core regressions, lifecycle/response and packaged Desktop jobs.
+Their hosted providers are scripted; this is not native Doctor model quality.
+The initial pre-credential-guard commit `bfc38b1ae96896269a1afaa073288430af7eddd0`
+also passed [its CI](https://github.com/samuelvoltarius/xaventra/actions/runs/34040338014),
+but it does not establish the later guard. Any documentation-only attestation
+must pass its own exact-SHA CI before main promotion.
+
 ## Reproduced failures and changes
 
 Three regression cases failed against the previous wrapper: `{}` was accepted
@@ -28,8 +39,8 @@ delivered. This bounded typed rejection is not a general prose/link safety filte
 
 ## Source and compiled API acceptance
 
-The new 19-case wrapper suite, two credential-parser cases and four independent-oracle tests are isolated
-from production files and native inference. The compiled API harness has nine
+The new 19-case wrapper suite, two credential-parser cases and four independent
+oracle tests are isolated from production files and native inference. The compiled API harness has nine
 cases using the actual built client/contract and a scripted engine. Hosted CI
 executes this harness on Windows, Linux and macOS and preserves its reports even
 on failure. This is source/API evidence, not a live-model score.
@@ -49,8 +60,8 @@ Local Windows verification before the credential guard passed **180 files / 1188
 bridge tests, build/typecheck, catalogs and the assurance gate. The built Doctor
 artifact fixture passed 5/5 and the separate scripted API harness passed 8/8.
 After the credential guard, the full suite passed **180 files / 1191 tests**,
-build/typecheck and all nine compiled API cases. These local results do not
-substitute for the pending exact-SHA hosted CI.
+build/typecheck and all nine compiled API cases. The hosted exact-SHA evidence
+above is separate from these local checks and from native model evaluation.
 
 ## Actual GGUF evaluation: negative evidence is retained
 

@@ -40,8 +40,13 @@ Desktop reports identify their `sourceRevision`, OS and package version.
 
 The empty-review/empty-fix, initialization and invented credential-request
 failures are reproduced and fixed with new source tests plus nine compiled API
-cases. Exact candidate CI evidence
-is pending; no main promotion until all relevant jobs pass. See the separate
+cases. Guarded runtime commit `1cccf74860996f092be7341ff0dcee8e76808409`
+passed all seven jobs in [candidate CI 34040574609](https://github.com/samuelvoltarius/xaventra/actions/runs/34040574609).
+Downloaded exact-revision reports confirm 9/9 scripted compiled API and 5/5
+artifact cases on Windows, Linux and macOS, separate from native model quality.
+All 1191 Core tests, lifecycle/response and packaged Desktop checks pass. This
+documentation attestation also needs exact-SHA green CI before main promotion.
+See the separate
 [source/API and native model-quality record](VERIFICATION_2.78.8.md).
 
 Doctor quality remains **open**: the real 0.5B Q5_K_M run passed all checks in only
