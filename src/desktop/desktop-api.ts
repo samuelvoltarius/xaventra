@@ -3,32 +3,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Stellt Nova den Verlauf des Themenraums voran.
- *
- *  Bisher bekam sie nur die aktuelle Nachricht — der Verlauf wurde zwar
- *  aus rooms.json geladen, aber nur an externe Bots gegeben. Ihr eigenes
- *  Gespraechsgedaechtnis lebt im Arbeitsspeicher und ist nach jedem
- *  Neustart des Dienstes weg, waehrend die Anzeige aus rooms.json
- *  weiterlebt. Fuer den Menschen sieht das so aus, als haette sie
- *  mitten im Gespraech vergessen, worum es ging.
- *
- *  Der Raum ist die dauerhafte Wahrheit, also kommt er von dort. */
-function mitRaumVerlauf(
-    aktuell: string,
-    verlauf: Array<{ authorType?: string; authorId?: string; content?: string }>,
-): string {
-    const frueher = (verlauf || [])
-        .filter(m => m && m.content && m.content !== aktuell)
-        .slice(-12)
-    if (frueher.length === 0) return aktuell
-    const zeilen = frueher.map(m => {
-        const wer = m.authorType === 'user' ? 'Mensch' : (m.authorId || 'Nova')
-        return `${wer}: ${String(m.content).replace(/\s+/g, ' ').slice(0, 400)}`
-    })
-    return `## Bisheriges Gespraech in diesem Raum\n${zeilen.join('\n')}\n\n`
-        + `## Aktuelle Nachricht\n${aktuell}`
-}
-
 /** NovaOS-Bedienmodus aus /etc/novaos/modus.
  *  Bei jedem Aufruf frisch gelesen, damit ein Wechsel per /modus sofort
  *  in allen Oberflaechen greift. Ausserhalb von NovaOS gibt es die Datei
@@ -63,6 +37,8 @@ import { getOrCreateUser, setUserPermission } from '../users/multi-user-middlewa
 import { getNovaDataDir } from '../core/data-root.js'
 import type { DesktopControlResult } from './desktop-control.js'
 import { getMemoryAssetCatalog } from '../memory/memory-asset-catalog.js'
+import { resolvePrincipalId } from '../users/principal-id.js'
+import { getNovaState } from '../core/nova-state.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -116,6 +92,14 @@ function requireDesktopAuth(req: Request, res: Response, next: NextFunction): vo
 
 function principal(req: Request): string {
     return String(req.headers['x-nova-principal'] || process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner').trim().slice(0, 200)
+}
+
+// Room/profile ownership uses the Desktop identifier. Execution and memory use
+// the channel-bound identity passed by daemon-channels to the real pipeline.
+// Resolve exactly the same configured mapping; never guess by stripping a
+// prefix or make other users' records visible to repair a missing Trust link.
+export function desktopExecutionPrincipal(ownerId: string): string {
+    return resolvePrincipalId(getNovaState().config, 'desktop', `desktop:${ownerId}`)
 }
 
 function desktopClientId(req: Request): string {
@@ -274,6 +258,10 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                             || modelCatalog.find(item => item.id === room.pinnedModel && (requestedNodes.length === 0 || requestedNodes.includes(item.nodeId)))
                         : undefined
                     if (room.modelMode === 'pinned' && !pinnedRoute) throw new Error('Pinned model route is no longer verified')
+                    // The native runner already restores principal/room/bot
+                    // session checkpoints. Flattening old turns into this
+                    // message duplicates context, breaks slash/intent routing,
+                    // and misrepresents historical requests as current consent.
                     const response = await withDesktopBotTimeout(runWithDesktopAgentContext({
                         principalId: ownerId, clientId: desktopClientId(req), authorizationUserId,
                         roomId: room.id, botId: bot.id, preferredNodeIds: requestedNodes,
@@ -286,7 +274,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                             { type: 'principal', id: ownerId }, { type: 'bot', id: bot.id }, { type: 'room', id: room.id },
                         ], room.memoryAssetIds).map(asset => asset.id),
                         onOutcome: value => { outcome = value },
-                    }, () => handler(mitRaumVerlauf(content, history), 'desktop')))
+                    }, () => handler(content, 'desktop')))
                     const state = (globalThis as any).__novaState
                     const stored = roomStore.addMessage(ownerId, room.id, {
                         authorType: 'bot', authorId: bot.id, content: response,
@@ -378,10 +366,10 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     })
 
     app.get('/api/desktop/trust/runs', (req, res) => {
-        const ownerId = principal(req)
+        const ownerId = desktopExecutionPrincipal(principal(req))
         const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50))
         const runs = getOutcomeLedger().listRuns(500)
-            .filter(run => !run.userId || run.userId === ownerId)
+            .filter(run => run.userId === ownerId)
             .slice(0, limit)
         res.json({
             runs,
@@ -397,12 +385,12 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     })
     app.get('/api/desktop/trust/runs/:id', (req, res) => {
         const run = getOutcomeLedger().getRun(req.params.id)
-        if (!run || (run.userId && run.userId !== principal(req))) return void res.status(404).json({ error: 'Outcome run not found' })
+        if (!run || run.userId !== desktopExecutionPrincipal(principal(req))) return void res.status(404).json({ error: 'Outcome run not found' })
         res.json({ ...run, checkpoint: getOutcomeLedger().loadCheckpoint(run.runId) })
     })
 
     app.get('/api/desktop/memory', (req, res) => {
-        const ownerScope = `user:${principal(req)}`
+        const ownerScope = `user:${desktopExecutionPrincipal(principal(req))}`
         const governance = getMemoryGovernanceCoordinator()
         const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100))
         const records = governance.list({ scope: ownerScope }).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)

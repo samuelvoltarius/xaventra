@@ -25,6 +25,10 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
+Latest reliability iteration: [2.78.4 Desktop-to-Core acceptance](docs/VERIFICATION_2.78.4.md).
+It verifies actual file tools and linked Outcome/Memory scopes in isolated
+packaged-client runs. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
+
 ## Why Xaventra
 
 - **One execution authority:** Planner -> Worker -> Tool Evidence -> Validator.

@@ -1916,6 +1916,7 @@
       "module": "src/desktop/desktop-api.ts",
       "imports": [
         "../core/data-root.js",
+        "../core/nova-state.js",
         "../core/outcome-ledger.js",
         "../memory/memory-asset-catalog.js",
         "../memory/memory-governance.js",
@@ -1926,6 +1927,7 @@
         "../security/secret-redaction.js",
         "../tools/skill-builder.js",
         "../users/multi-user-middleware.js",
+        "../users/principal-id.js",
         "./bot-profile-store.js",
         "./desktop-agent-context.js",
         "./desktop-control.js",

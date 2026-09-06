@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.4] — 2026-09-06
+
+- Resolve Desktop Trust and governed Memory through the same channel-bound
+  principal mapping as the actual message pipeline. A user can open their own
+  verified run; other users and unscoped runs remain inaccessible.
+- Keep the current Desktop message intact. Native room/bot session checkpoints
+  already restore history; flattening old turns into the new request broke
+  slash commands and treated past instructions as current task intent.
+- Add five native packaged Desktop-to-Core acceptance groups on Windows,
+  Linux and macOS: actual file execution, linked validator/Outcome details,
+  following commands, scoped Memory/Trust and policy-denied file reads.
+  The CI model is scripted, not a real-model benchmark or full-daemon proof.
+
 ## [2.78.3] — 2026-09-06
 
 - Keep connection setup usable while Core is unreachable or authentication

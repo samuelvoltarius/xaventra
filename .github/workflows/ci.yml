@@ -66,6 +66,7 @@ jobs:
             desktop/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm ci --prefix desktop
+      - run: npm run build
       - run: npm run desktop:build
       - name: Install the packaged Chromium sandbox helper in the disposable runner
         if: runner.os == 'Linux'
@@ -79,6 +80,12 @@ jobs:
       - name: Packaged Desktop contract acceptance on virtual display
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run check:desktop-ui
+      - name: Packaged Desktop to actual isolated Core
+        if: runner.os != 'Linux'
+        run: npm run check:desktop-core
+      - name: Packaged Desktop to actual isolated Core on virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run check:desktop-core
       - name: Preserve UI reports and synthetic screenshots, including failures
         if: always()
         uses: actions/upload-artifact@v4

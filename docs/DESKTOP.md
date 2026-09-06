@@ -144,7 +144,7 @@ that connection. Connection changes are deferred while a submission is pending.
 
 ## Nova Studio
 
-Nova Studio exposes governed capability modules inspired by three MIT-licensed
+Nova Studio exposes governed capability modules inspired by three
 reference projects without embedding their runtimes as a second authority:
 
 - [ADA Local](https://github.com/nazirlouis/ada_local): local voice, wake word,
@@ -186,3 +186,22 @@ the sandbox attempt. Nova does not run arbitrary Ada-SI Python, install proposed
   filters Outcome runs by principal.
 - Node credentials and provider OAuth remain `User x Node`; the desktop sees
   capability status, not credential values.
+
+## Execution and memory identity (2.78.4)
+
+Room/profile ownership uses the Desktop principal from the connection settings.
+Core execution receives `desktop:<principal>` as its channel-bound user ID,
+then applies explicit `userPrincipals` mappings. Trust and governed Memory use
+that same resolved identity. Display aliases do not grant access. Existing
+ledger history is not rewritten, and runs without an owner are not exposed.
+
+Native messages enter the pipeline unchanged, including slash commands. The
+native runner restores its principal/room/bot session checkpoint; the Desktop
+does not prepend a second copy of the room transcript to current instructions.
+
+After `npm run build` and `npm run desktop:build`, run
+`npm run check:desktop-core` (Linux: `xvfb-run -a npm run check:desktop-core`).
+This uses production API/pipeline/tools/validator/ledger code with temporary
+profiles, synthetic files and a scripted loopback model. It complements rather
+than replaces the simulated-API UI check or live model/channel/HA acceptance.
+See [2.78.4 evidence and limits](VERIFICATION_2.78.4.md).
