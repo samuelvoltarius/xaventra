@@ -646,6 +646,10 @@
       "path": ".nova-data/discovered-models.json"
     },
     {
+      "owner": "src/intelligence/doctor-grounding.test.ts",
+      "path": ".nova-data/doctor-l0-fixture"
+    },
+    {
       "owner": "src/intelligence/doctor-client.test.ts",
       "path": ".nova-data/doctor-telemetry/usage.jsonl"
     },

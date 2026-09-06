@@ -1842,18 +1842,8 @@ async function startDaemon() {
             console.log('[L15] ⚠️ Self-Check Issues detected:')
             result.issues.forEach(i => console.log(`  - ${i}`))
 
-            // Use internal LLM to diagnose and attempt fix
-            const doctor = {
-                complete: async (_messages?: unknown) => {
-                    const { diagnose } = await import('./intelligence/doctor-client.js')
-                    const finding = await diagnose({
-                        error: result.issues.join('\n'),
-                        context: { suggestions: result.suggestions.join(' | '), source: 'L15-self-check' },
-                    })
-                    return { content: `${finding.diagnosis}\n${finding.fix}` }
-                },
-            }
-            const llm = doctor
+            // Diagnosis is advisory. Only real executions/validated outcomes may
+            // clear failures or teach a successful repair; model prose may not.
             if (result.issues.some(i =>
                 i.toLowerCase().includes('critical') ||
                 i.toLowerCase().includes('error') ||
@@ -1862,42 +1852,11 @@ async function startDaemon() {
             )) {
                 console.log('[L15] 🔧 Critical issue detected — asking internal LLM for diagnosis...')
                 try {
-                    const diagnosis = await llm.complete([
-                        { role: 'system', content: 'Du bist Novas Self-Repair-Modul. Analysiere das Problem und gib eine KURZE Diagnose + konkreten Fix-Vorschlag. Max 3 Sätze.' },
-                        { role: 'user', content: `Folgende Issues wurden erkannt:\n${result.issues.join('\n')}\n\nVorschläge:\n${result.suggestions.join('\n')}\n\nWas ist die wahrscheinlichste Ursache und was sollte Nova tun?` },
-                    ])
-
-                    const fix = diagnosis.content?.trim()
-                    if (fix) {
-                        console.log(`[L15] 🧠 LLM Diagnosis: ${fix}`)
-
-                        // Log to journal for long-term learning
-                        try {
-                            const journal = (state as any).journal
-                            if (journal) {
-                                journal.recordEvent('self-repair', `Auto-Diagnose: ${fix.slice(0, 200)}`)
-                            }
-                        } catch { /* journal optional */ }
-
-                        // If the issue is about a broken tool, try to disable/reset it
-                        const toolIssue = result.issues.find(i => i.includes('Tool'))
-                        if (toolIssue && state.tools) {
-                            const toolMatch = toolIssue.match(/"([^"]+)"/)
-                            if (toolMatch) {
-                                console.log(`[L15] 🔄 Resetting tool failure counter for "${toolMatch[1]}"`)
-                                const { reportToolSuccess } = await import('./layers/L15-self-check.js')
-                                reportToolSuccess(toolMatch[1])
-                            }
-                        }
-
-                        // If stuck (consecutive silences), log recovery action
-                        if (result.issues.some(i => i.includes('leere Antworten'))) {
-                            console.log('[L15] 🔄 Resetting silence counter after diagnosis')
-                            selfCheck.responseGenerated(true) // Reset the counter
-                        }
-                    }
+                    const { diagnoseSelfCheck } = await import('./intelligence/doctor-client.js')
+                    const diagnosis = await diagnoseSelfCheck(result.issues, result.suggestions)
+                    console.log(`[L15] Unverified Doctor assessment (no repair executed): ${diagnosis.diagnosis}\n${diagnosis.fix}`)
                 } catch (err) {
-                    console.log(`[L15] Auto-fix LLM call failed: ${err}`)
+                    console.log('[L15] Doctor assessment unavailable; observed failures retained')
                 }
             } else {
                 console.log('[L15] 💡 Non-critical issues logged, monitoring...')

@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.10] — 2026-09-06
+
+- Stop injecting a fabricated runtime error into every Doctor request. Preserve
+  neutral observations and caller-owned L0/L15 findings in one typed report.
+- Bound generic diagnosis to informational proposals, reject legacy bypass and
+  contradictory healthy plans, and keep model confidence unverified/low.
+- Do not clear L15 tool/silence failures or write successful repair memory after
+  a model diagnosis. Only real execution evidence may establish recovery.
+- Add source/compiled regression controls and four extra native-model evaluation
+  cases; retain the original 14-case suite and negative results. Existing weights
+  are evaluated, not retrained. Core/Desktop versions are synchronized.
+- See [verification and remaining quality limits](docs/VERIFICATION_2.78.10.md).
+
 ## [2.78.9] — 2026-09-06
 
 - Refresh conversational capability lookup from the current canonical graph;

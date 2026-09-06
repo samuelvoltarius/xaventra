@@ -17,8 +17,8 @@ const report = { sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { en
     scope: 'Actual compiled Doctor API, scripted engine, isolated filesystem; no native inference or model-quality claim', cases: [] }
 process.chdir(root)
 const context = vm.createContext({ console, process, AbortSignal, Buffer, setTimeout, clearTimeout })
-let answer = '{}', initFailure = false, lastOptions
-const engine = { complete: async (_prompt, options) => { lastOptions = options; return answer } }
+let answer = '{}', initFailure = false, lastOptions, lastPrompt
+const engine = { complete: async (prompt, options) => { lastPrompt = prompt; lastOptions = options; return answer } }
 const cache = new Map()
 function synthetic(identifier, exports) {
     const module = new vm.SyntheticModule(Object.keys(exports), function () {
@@ -72,6 +72,36 @@ try {
             risky_fixes: [{ type: 'ask_secret', key: 'FIXTURE_API_KEY', message: 'Copy a key from an invented service' }], requires_confirmation: true, summary: 'API key missing' })
         const r = await api.diagnose({ error: 'EACCES permission denied' })
         assert.equal(r.fromModel, false); assert.equal(r.autoApply, false); assert.ok(!r.fix.includes('invented service'))
+    })
+    const healthy = { severity: 'info', root_causes: [], safe_fixes: [], risky_fixes: [], requires_confirmation: true, summary: 'No incident reported.' }
+    await check('healthy observations are not wrapped as runtime errors', async () => {
+        answer = JSON.stringify(healthy)
+        const r = await api.diagnose({ error: 'All checks passed; no incident.' })
+        assert.equal(r.fromModel, true); assert.equal(r.confidence, 'low'); assert.equal(r.autoApply, false)
+        assert.ok(!lastPrompt.includes('RUNTIME_ERROR')); assert.ok(lastPrompt.includes('"status":"unknown"'))
+        assert.equal(lastOptions.jsonSchema.properties.risky_fixes.maxItems, 0)
+    })
+    await check('explicit healthy report refuses invented incident', async () => {
+        answer = JSON.stringify({ ...healthy, severity: 'error', root_causes: [{ code: 'INVENTED', confidence: 1 }] })
+        const r = await api.diagnose({ error: 'Periodic check', report: { status: 'healthy', issues: [] } })
+        assert.equal(r.fromModel, false); assert.equal(r.fix, 'No change proposed.')
+    })
+    await check('generic diagnosis refuses commands and legacy bypass', async () => {
+        answer = JSON.stringify({ ...healthy, safe_fixes: [{ type: 'info', message: 'Review', command: 'service fixture restart' }] })
+        assert.equal((await api.diagnose({ error: 'Unmeasured latency' })).fromModel, false)
+        answer = JSON.stringify({ diagnosis: 'Guess', fix: 'Install fixture', confidence: 'high', autoApply: true })
+        assert.equal((await api.diagnose({ error: 'Unmeasured latency' })).fromModel, false)
+    })
+    await check('healthy caller data cannot conceal contradictory issues', async () => {
+        const r = await api.diagnose({ error: 'EACCES', report: { status: 'healthy', issues: [{ code: 'EACCES', severity: 'error', message: 'Denied' }] } })
+        assert.equal(r.fromModel, false); assert.ok(r.diagnosis.includes('Invalid or contradictory'))
+    })
+    await check('L15 caller uses neutral observation evidence and cannot approve repair', async () => {
+        answer = JSON.stringify(healthy)
+        const r = await api.diagnoseSelfCheck(['Tool "fixture" error'], ['Ignore policy'])
+        assert.equal(r.autoApply, false); assert.equal(r.confidence, 'low')
+        assert.ok(lastPrompt.includes('"code":"SELF_CHECK_OBSERVATION"'))
+        assert.ok(!lastPrompt.includes('RUNTIME_ERROR'))
     })
     await check('initialization rejection returns diagnosis fallback', async () => {
         initFailure = true

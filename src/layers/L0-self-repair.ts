@@ -294,6 +294,7 @@ export class SelfRepairEngine {
             error: issue.stackTrace || issue.message,
             file: issue.file,
             context: { errorType: issue.errorType },
+            report: { status: 'degraded', issues: [{ code: 'CODE_ISSUE_OBSERVED', severity: 'error', message: issue.message }] },
         })
     }
 

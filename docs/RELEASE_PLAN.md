@@ -36,6 +36,17 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
+### 2.78.10 Doctor grounding candidate
+
+Neutral typed input replaces fabricated runtime errors. Generic diagnosis accepts
+informational proposals only, and L15 no longer turns a diagnosis into successful
+repair memory or resets tool/silence failures without evidence. The original
+14-case Doctor quality baseline and all negative reports are retained, plus four
+new authored controls. Source/compiled API regression is separate from native
+GGUF quality, which remains open. Exact candidate-SHA CI is required before main
+promotion; see [2.78.10 verification and limits](VERIFICATION_2.78.10.md).
+No retraining, production rollout or RC label follows from this bounded fix.
+
 ### 2.78.9 environment-awareness and host-boundary checkpoint
 
 Current graph reads replace boot-only inventory in chat/capability tools. Setup

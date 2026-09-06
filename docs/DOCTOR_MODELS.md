@@ -76,9 +76,12 @@ Diagnosis generates a typed fix plan with `requires_confirmation: true`.
 always returns `autoApply: false`; sandbox, regression, rollback and PATCH_GATE
 remain independent. Invalid output falls back with `fromModel: false`, never a
 claimed model success. An unavailable code review reports warning, not clean.
-Generic error diagnosis also rejects configuration/wizard proposals without
-independent typed evidence that those keys/steps exist. This is not a general
-semantic correctness proof: suggestions and confidence still need validation.
+The generic diagnosis API now generates informational proposals only; executable
+commands, configuration/wizard steps and legacy free-text plans are rejected.
+The broader trained fix-plan parser remains a compatibility adapter for explicit
+typed callers, not a generic model capability grant. Model confidence remains low
+in the generic API. This is not a general semantic correctness proof: prose can
+still be wrong and must never be interpreted as executable instructions.
 Structured `ask_secret` proposals are rejected by generic error diagnosis: it
 has no trusted credential-request channel or verified setup requirement. Use a
 validated setup flow for credentials, never a model-provided link. This narrow
@@ -115,7 +118,8 @@ npm run benchmark:doctor -- --model-file /absolute/path/nova-doctor-0.5b-q5km.gg
 ```
 
 On Windows use an absolute Windows path instead. The runner verifies the source
-hash, copies it to a unique temporary root and generates 14 synthetic diagnoses
+hash, copies it to a unique temporary root and generates the unchanged 14 baseline
+diagnoses plus four additional authored grounding controls
 with no tool execution, training or download. A case passes only when the schema,
 runtime parser and independent bounded oracle all pass. Reports retain those
 three outcomes separately, model/hash, source revision/dirty status and budget;
@@ -123,7 +127,22 @@ an unverified fallback is not counted as a model success. Nonzero exit on a fail
 case is intentional. Never publish raw output/configuration without review.
 These authored pattern checks are not a full semantic judge, held-out training
 certification or autonomous repair benchmark. Current negative model results
-remain an open gate; see [2.78.8 evidence](VERIFICATION_2.78.8.md).
+remain an open gate; see [2.78.8 evidence](VERIFICATION_2.78.8.md) and the
+[2.78.10 grounding checkpoint](VERIFICATION_2.78.10.md).
+
+## Caller evidence and diagnosis versus recovery
+
+`DiagnoseInput.error` is a legacy field name for an observation; it does not prove
+an error. Optional `report` has `status: unknown|healthy|degraded` and typed
+`issues: [{code, severity, message}]`. A healthy report cannot contain issues.
+No report means unknown, not a fabricated `RUNTIME_ERROR`. The prompt serializes
+the supplied evidence once as data. Explicit healthy reports reject model-created
+incidents; this does not independently verify the caller's health claim.
+
+L0 sends its detected issue. L15 uses `diagnoseSelfCheck`, preserving observations
+without inventing severity or clearing failed-tool/silence counters. Diagnostic
+text is not written as a successful repair into the journal. Existing typed tool,
+validator and PATCH_GATE flows still own changes and their outcome evidence.
 
 Back up private configuration and known-good artifacts before upgrading. A bad
 new artifact must not displace an existing verified one. Source rollback uses the

@@ -2331,6 +2331,7 @@
       "imports": [
         "../llm/llama-engine.js",
         "./doctor-contract.js",
+        "./doctor-report.js",
         "node:fs",
         "node:path"
       ]
@@ -2338,7 +2339,14 @@
     {
       "module": "src/intelligence/doctor-contract.ts",
       "imports": [
+        "./doctor-report.js",
         "node-llama-cpp",
+        "zod"
+      ]
+    },
+    {
+      "module": "src/intelligence/doctor-report.ts",
+      "imports": [
         "zod"
       ]
     },
