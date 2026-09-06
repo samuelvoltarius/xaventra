@@ -9,6 +9,8 @@
 // Types
 // ============================================
 
+import { detectActionIntent } from '../core/action-intent.js'
+
 export interface ReflectionResult {
     needsImprovement: boolean
     issues: string[]
@@ -21,6 +23,8 @@ export interface ReflectionContext {
     assistantResponse: string
     toolsUsed: string[]
     toolResults: Array<{ tool: string; success: boolean; error?: string }>
+    /** Trusted runner metadata, never a model-supplied self-assessment. */
+    execution?: { requiresTool: boolean; validated: boolean }
 }
 
 // ============================================
@@ -31,7 +35,7 @@ const QUALITY_CHECKS = [
     {
         name: 'empty_response',
         check: (ctx: ReflectionContext) =>
-            !ctx.assistantResponse || ctx.assistantResponse.trim().length < 10,
+            !ctx.assistantResponse?.trim() || (!ctx.execution?.validated && ctx.assistantResponse.trim().length < 10),
         issue: 'Antwort ist zu kurz oder leer',
         suggestion: 'Gib eine ausführlichere Antwort',
     },
@@ -50,6 +54,7 @@ const QUALITY_CHECKS = [
     {
         name: 'question_not_answered',
         check: (ctx: ReflectionContext) => {
+            if (ctx.execution?.validated) return false
             const isQuestion = ctx.userMessage.includes('?') ||
                 /^(was|wer|wie|wo|wann|warum|welche)/i.test(ctx.userMessage)
             if (!isQuestion) return false
@@ -73,8 +78,7 @@ const QUALITY_CHECKS = [
     {
         name: 'no_tool_used_for_action',
         check: (ctx: ReflectionContext) => {
-            const actionKeywords = ['installier', 'erstell', 'schreib', 'such', 'zeig', 'lese']
-            const isActionRequest = actionKeywords.some(kw => ctx.userMessage.toLowerCase().includes(kw))
+            const isActionRequest = ctx.execution?.requiresTool ?? detectActionIntent(ctx.userMessage).requiresTool
             return isActionRequest && ctx.toolsUsed.length === 0
         },
         issue: 'Aktion angefragt aber kein Tool verwendet',

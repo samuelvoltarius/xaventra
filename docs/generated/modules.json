@@ -83,6 +83,7 @@
         "../core/execution-kernel.js",
         "../core/model-pricing.js",
         "../core/outcome-ledger.js",
+        "../core/response-contract.js",
         "../core/runtime-event-log.js",
         "../core/side-effects.js",
         "../core/system-message.js",
@@ -97,6 +98,7 @@
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
         "./history-evidence.js",
+        "./response-repair.js",
         "./session-checkpoints.js",
         "./tool-authorization.js",
         "./tool-result-messages.js",
@@ -119,6 +121,14 @@
         "./agent-backend.js",
         "./nova-model-provider.js",
         "@openai/agents"
+      ]
+    },
+    {
+      "module": "src/agents/response-repair.ts",
+      "imports": [
+        "../core/response-contract.js",
+        "../core/task-contract.js",
+        "../llm/nova-llm-sdk.js"
       ]
     },
     {
@@ -1688,6 +1698,12 @@
       ]
     },
     {
+      "module": "src/core/response-contract.ts",
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
       "module": "src/core/result-validator.ts",
       "imports": [
         "../tools/tool-result-quality.js",
@@ -1821,6 +1837,7 @@
       "module": "src/core/task-contract.ts",
       "imports": [
         "./action-intent.js",
+        "./response-contract.js",
         "node:crypto"
       ]
     },
@@ -2406,7 +2423,9 @@
     },
     {
       "module": "src/intelligence/self-reflection.ts",
-      "imports": []
+      "imports": [
+        "../core/action-intent.js"
+      ]
     },
     {
       "module": "src/intelligence/soul-evolution.ts",
@@ -2951,6 +2970,7 @@
         "./model-fallback.js",
         "./model-perf-db.js",
         "./providers/minimax.js",
+        "./token-usage.js",
         "node:events",
         "node:fs",
         "node:path"
@@ -2995,6 +3015,10 @@
       "imports": [
         "node:crypto"
       ]
+    },
+    {
+      "module": "src/llm/token-usage.ts",
+      "imports": []
     },
     {
       "module": "src/logging/structured-logger.ts",

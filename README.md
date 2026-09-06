@@ -25,7 +25,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Latest reliability iteration: [2.78.5 full-daemon Desktop acceptance](docs/VERIFICATION_2.78.5.md).
+Latest reliability iteration: [2.78.6 current-turn response contracts](docs/VERIFICATION_2.78.6.md).
 It tests the packaged app, complete daemon, real file tools, linked evidence and
 process restart. Scripted CI and real local-model checks are reported separately.
 Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
@@ -49,7 +49,7 @@ Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Current state
 
-Xaventra 2.78.3 is a versioned source release. Native Windows, Linux and macOS
+Xaventra 2.78.6 is a versioned source release. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live

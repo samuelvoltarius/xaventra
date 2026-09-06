@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/desktop",
-  "version": "2.78.5",
+  "version": "2.78.6",
   "private": true,
   "description": "Governed desktop control plane for Xaventra",
   "author": "Xaventra contributors",

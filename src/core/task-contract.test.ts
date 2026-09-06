@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { createTaskContract, validateTaskCompletion } from './task-contract.js'
 
 describe('TaskContract', () => {
+    it('rejects a correction reply repeating the superseded value despite a nonempty response', () => {
+        const contract = createTaskContract('Korrektur: Die Projektkennung lautet jetzt ORBIT-42. Die vorherige Kennung ist ungültig. Bestätige nur die neue Kennung.', { requiresTool: false, kind: 'none' })
+        expect(validateTaskCompletion(contract, { response: 'Bestätigt: **ORBIT-42**. (ORBIT-41 ist ungültig.)' }).success).toBe(false)
+        expect(validateTaskCompletion(contract, { response: 'ORBIT-42' }).success).toBe(true)
+    })
     it('does not approve a policy-blocked run even after one earlier successful tool', () => {
         const contract = createTaskContract('Lies beide Dateien', { requiresTool: true, kind: 'file' })
         const result = validateTaskCompletion(contract, { response: 'Gesperrt', verifiedTools: ['read_file'], policyBlocked: true })

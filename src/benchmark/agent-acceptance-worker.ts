@@ -29,13 +29,21 @@ getLifecyclePolicy().register({
         ? { decision: 'allow' } : { decision: 'deny', reason: 'Acceptance test permits only its exact fixture reads' },
 })
 getOrCreateUser(job.userId, 'acceptance')
+// This executable is a disposable acceptance worker, never a daemon ingress.
+// Explicit synthetic output-hook cases prove that postprocessors cannot publish
+// changed/denied text with an earlier successful validation.
+if (job.outputHook === 'append' || job.outputHook === 'deny') getLifecyclePolicy().register({
+    id: 'acceptance-output-hook', event: 'message.after', priority: -1000, failClosed: true,
+    handler: payload => job.outputHook === 'deny' ? { decision: 'deny', reason: 'Synthetic delivery denial' }
+        : { decision: 'allow', updatedOutput: { content: `${(payload.output as { content?: string })?.content} EXTRA` } },
+})
 const provider = await createNovaLLMClient({ provider: 'local', model: job.model, baseUrl: job.baseUrl, isolated: true })
 let modelCalls = 0
 const llm = {
     modelId: job.model, providerId: 'local',
     complete: (messages: any[], tools?: any[], options?: any) => {
         if (++modelCalls > 6) throw new Error('Acceptance model-call budget exhausted')
-        return provider.complete(messages, tools, { ...options, maxTokens: 512, timeoutMs: 15_000, maxAttempts: 1 })
+        return provider.complete(messages, tools, { ...options, maxTokens: Math.min(512, options?.maxTokens ?? 512), timeoutMs: Math.min(15_000, options?.timeoutMs ?? 15_000), maxAttempts: 1 })
     },
 }
 const intent = detectActionIntent(job.prompt)
@@ -76,6 +84,8 @@ if (job.useRest) {
 const run = ledger.getRun(contract.id)
 writeFileSync(job.resultPath, JSON.stringify({
     output: result.content, validation: result.validation, error: result.error,
+    validations: run?.events.filter(event => event.type === 'validation.finished').map(event => event.payload.validation) || [],
+    totalTokens: run?.totalTokens, costs: run?.costs,
     tools: run?.tools || [], status: run?.status, modelCalls,
     durationMs: Date.now() - startedAt,
     stages: [...(job.useRest ? ['rest.authenticated', 'rest.response'] : []), ...new Set(run?.events.map(event => event.type) || [])],

@@ -1562,7 +1562,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const { superviseResponse, trackPattern } = await import('../layers/L0-supervisor.js')
         const { clearSession } = await import('../agents/nova-runner.js')
 
-        let supervised = superviseResponse(result.content, { attempt: 1 })
+        let supervised = superviseResponse(result.content, {
+            attempt: 1,
+            preserveValidatedText: result.validation?.success === true
+                && result.validation.criteria.some(criterion => criterion.criterionId === 'response-constraints' && criterion.success),
+        })
         let attempt = 1
         const MAX_RETRIES = 3
 
@@ -1796,7 +1800,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             // Optional compact Trust footer: actual runtime/evidence only.
-            if (showVerbose) {
+            if (showVerbose && !result.responseConstraints?.length) {
                 const debugParts: string[] = []
 
                 if (result.toolsExecuted.length > 0) {
@@ -1811,22 +1815,21 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 finalContent += `\n\n_${debugParts.join(' | ')}_`
             }
 
-            // ============================================
-            // Response Interceptor: Detect /mission in Nova's text and auto-execute
-            // Nova sometimes writes "/mission GOAL" as text instead of calling start_mission tool
-            // ============================================
-            try {
-                const missionMatch = finalContent.match(/\/mission\s+(?!status|stop|pause|config)(.{10,200})/i)
-                if (missionMatch) {
-                    const goal = missionMatch[1].trim()
-                    const { startMission } = await import('./autonomous-executor.js')
-                    const mission = await startMission(goal, canonicalUser, channel)
-                    console.log(`[Pipeline] 🚀 Auto-intercepted /mission from response: "${goal.slice(0, 60)}..." → ${mission.steps.length} steps`)
-                    // Strip the /mission line from the response to avoid confusion
-                    finalContent = finalContent.replace(/\/mission\s+(?!status|stop|pause|config).{10,200}/i, `\n🚀 Mission registriert! ${mission.steps.length} Schritte geplant.`)
+            // Model prose is not an action authorization. Mission creation must
+            // enter through the user command or the governed typed tool, never
+            // through a /mission substring in an already validated answer.
+            if (result.responseConstraints?.length && result.validation?.success) {
+                const { satisfiesResponseConstraints } = await import('./response-contract.js')
+                if (!satisfiesResponseConstraints(finalContent, result.responseConstraints)) {
+                    const { getOutcomeLedger } = await import('./outcome-ledger.js')
+                    result.validation = { ...result.validation, success: false,
+                        violations: [...result.validation.violations, 'delivery transform violated response contract'] }
+                    if (result.runId) {
+                        getOutcomeLedger().recordValidation(result.runId, result.validation)
+                        getOutcomeLedger().invalidate(result.runId, { reason: 'delivery transform violated response contract' })
+                    }
+                    finalContent = 'Die Antwort konnte nach der Ausgabeprüfung nicht freigegeben werden.'
                 }
-            } catch (err) {
-                console.log(`[Pipeline] ⚠ Mission auto-intercept failed: ${err}`)
             }
 
             if (desktopContext) {
@@ -1961,10 +1964,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     const reflectionResult = intelligence.selfReflection.reflect({
                         userMessage: content,
                         assistantResponse: finalContent,
+                        execution: (result as any).actionState ? {
+                            requiresTool: Boolean((result as any).actionState.requiresTool),
+                            validated: result.validation?.success === true,
+                        } : undefined,
                         toolsUsed: (result.toolsExecuted || []).map((t: any) => t.name || t),
                         toolResults: ((result as any).toolExecutions || []).map((t: any) => ({
-                            tool: t.name || t.tool || 'unknown',
-                            success: !t.error,
+                            tool: t.toolName || t.name || t.tool || 'unknown',
+                            success: t.success === true,
                             error: t.error,
                         })),
                     })

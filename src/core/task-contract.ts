@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { ActionIntent } from './action-intent.js'
+import { inferResponseConstraints, satisfiesResponseConstraints, type ResponseConstraint } from './response-contract.js'
 
 export type TaskArtifactKind = 'file' | 'image' | 'message' | 'service' | 'report' | 'other'
-export type SuccessCriterionKind = 'response_present' | 'verified_tool' | 'artifact_present' | 'test_passed' | 'approval_granted'
+export type SuccessCriterionKind = 'response_present' | 'response_constraints' | 'verified_tool' | 'artifact_present' | 'test_passed' | 'approval_granted'
 
 export interface ArtifactRequirement {
     id: string
@@ -51,6 +52,7 @@ export interface TaskContract {
     goal: string
     expectedArtifacts: ArtifactRequirement[]
     successCriteria: SuccessCriterion[]
+    responseConstraints?: ResponseConstraint[]
     allowedChanges: ChangeScope
     budget: TaskBudget
     requiredTests: TestRequirement[]
@@ -62,6 +64,7 @@ export interface TaskContractOverrides {
     id?: string
     expectedArtifacts?: ArtifactRequirement[]
     successCriteria?: SuccessCriterion[]
+    responseConstraints?: ResponseConstraint[]
     allowedChanges?: Partial<ChangeScope>
     budget?: Partial<TaskBudget>
     requiredTests?: TestRequirement[]
@@ -145,12 +148,19 @@ export function createTaskContract(
         })
     }
 
+    const responseConstraints = [...inferResponseConstraints(goal), ...(overrides.responseConstraints || [])]
+    const criteria = [...(overrides.successCriteria || successCriteria)]
+    if (responseConstraints.length) criteria.push({
+        id: 'response-constraints', kind: 'response_constraints', required: true,
+        description: 'The final response satisfies the explicit current-turn output contract',
+    })
     return {
         id: overrides.id || randomUUID(),
         version: 1,
         goal: goal.trim(),
         expectedArtifacts: overrides.expectedArtifacts || expectedArtifacts,
-        successCriteria: overrides.successCriteria || successCriteria,
+        successCriteria: criteria,
+        ...(responseConstraints.length ? { responseConstraints } : {}),
         allowedChanges: {
             readOnly: !intent.requiresTool,
             allowedPaths: [],
@@ -175,6 +185,11 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
     const passedTests = new Set(evidence.passedTests || [])
     const criteria = contract.successCriteria.map<CriterionResult>(criterion => {
         switch (criterion.kind) {
+            case 'response_constraints': {
+                const success = Boolean(contract.responseConstraints?.length)
+                    && satisfiesResponseConstraints(evidence.response || '', contract.responseConstraints!)
+                return { criterionId: criterion.id, success, evidence: success ? ['current-turn-output-contract'] : [], reason: success ? undefined : 'explicit response constraint was not satisfied' }
+            }
             case 'response_present': {
                 const success = Boolean(evidence.response?.trim())
                 return { criterionId: criterion.id, success, evidence: success ? ['response'] : [], reason: success ? undefined : 'response is empty' }

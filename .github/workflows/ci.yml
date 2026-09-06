@@ -36,6 +36,24 @@ jobs:
         env:
           NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
       - run: npm run build
+      - name: Compiled response contract and authenticated REST acceptance
+        run: node scripts/check-response-contract.mjs
+        timeout-minutes: 6
+        env:
+          XAVENTRA_RESPONSE_QA_DIR: ${{ github.workspace }}/.nova-data/response-qa
+      - name: Actual Desktop API output contract acceptance
+        run: node scripts/check-response-pipeline.mjs
+        timeout-minutes: 3
+        env:
+          XAVENTRA_RESPONSE_QA_DIR: ${{ github.workspace }}/.nova-data/response-qa
+      - name: Preserve response contract reports including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: response-contract-qa-${{ matrix.os }}
+          path: .nova-data/response-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Isolated compiled daemon boot and graceful stop
         run: npm run check:daemon
         timeout-minutes: 4

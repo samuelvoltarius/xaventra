@@ -169,7 +169,7 @@ export interface SupervisionResult {
 
 export function superviseResponse(
     response: string,
-    options?: { attempt?: number }
+    options?: { attempt?: number; preserveValidatedText?: boolean }
 ): SupervisionResult {
     const fixes: string[] = []
     let content = response
@@ -185,6 +185,7 @@ export function superviseResponse(
         .replace(/(?:\[?e~\[?)+\s*$/gi, '')
         .trimEnd()
     if (content !== beforeSanitize) fixes.push('Terminal-Steuerzeichen entfernt')
+    if (options?.preserveValidatedText) return { content, fixes, wasFixed: fixes.length > 0, needsRetry: false, shouldResetSession: false }
 
     // 1. Check for empty response
     if (!content || content.trim().length < 3) {
@@ -221,14 +222,8 @@ export function superviseResponse(
         fixes.push('Warnung: Überwiegend Englisch trotz Deutsch-Anforderung')
     }
 
-    // 4. Detect missing tool usage when obviously needed
-    const toolKeywords = ['zeig', 'liste', 'öffne', 'lese', 'schreibe', 'führe aus', 'auf der nas', 'auf dem server']
-    const hasToolKeyword = toolKeywords.some(kw => content.toLowerCase().includes(kw))
-    const hasToolCall = content.includes('[TOOL:')
-
-    if (hasToolKeyword && !hasToolCall && content.length > 50) {
-        fixes.push('Tool hätte verwendet werden sollen')
-    }
+    // Tool necessity and execution evidence belong to the current-turn kernel.
+    // Response keywords and pseudo [TOOL:] text cannot establish either fact.
 
     return {
         content,

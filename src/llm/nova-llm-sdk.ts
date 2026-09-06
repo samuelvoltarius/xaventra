@@ -38,6 +38,8 @@ export interface LLMMessage {
     image?: { data: string; mimeType: string }  // Base64 image for vision
 }
 
+import { normalizeTokenUsage } from './token-usage.js'
+
 export interface ToolCall {
     id: string
     name: string
@@ -1547,6 +1549,7 @@ class LocalLLMProvider extends LLMProvider {
                 content: data.message?.content || '',
                 finishReason: ollamaToolCalls.length ? 'tool_calls' as const : 'stop' as const,
                 toolCalls: ollamaToolCalls.length ? ollamaToolCalls : undefined,
+                usage: normalizeTokenUsage(data.prompt_eval_count, data.eval_count),
             }
             recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!result.content)
             return result
@@ -1606,6 +1609,7 @@ class LocalLLMProvider extends LLMProvider {
                 content,
                 toolCalls: toolCalls.length ? toolCalls : undefined,
                 finishReason: toolCalls.length ? 'tool_calls' : (data.choices?.[0]?.finish_reason || 'stop'),
+                usage: normalizeTokenUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens, data.usage?.total_tokens),
             }
         }
     }

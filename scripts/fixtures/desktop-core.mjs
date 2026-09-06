@@ -31,6 +31,15 @@ const model = createServer(async (req, res) => {
   const messages = input.messages || []
   const lastUser = messages.findLastIndex(message => message.role === 'user')
   const prompt = String(messages[lastUser]?.content || '')
+  if (process.env.XAVENTRA_RESPONSE_CONTRACT_FIXTURE === '1') {
+    const outputs = new Map([
+      ['Antworte nur mit "OK"', 'OK'],
+      ['Return only "I\'m Pi"', "I'm Pi"],
+      ['Die Kennung lautet jetzt DUSK-62. Nenne nur die neue Kennung.', 'DUSK-62'],
+      ['Guten Abend', '/mission This is quoted model prose, never an authorized task'],
+    ])
+    return res.end(JSON.stringify({ id: `fixture-${modelCalls}`, choices: [{ message: { role: 'assistant', content: outputs.get(prompt) || 'Unexpected fixture request' }, finish_reason: 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } }))
+  }
   const observed = messages.filter(message => message.role === 'tool')
   const needsFile = /fixture-(?:evidence|denied)\.txt/.test(prompt)
   const hasReadResult = prompt.includes('VERIFIED_DESKTOP_CORE_731') || observed.some(message => String(message.content).includes('VERIFIED_DESKTOP_CORE_731'))
@@ -54,6 +63,7 @@ setNovaConfig(config)
 const { createNovaLLMClient } = await load('llm/nova-llm-sdk.js')
 const llm = await createNovaLLMClient({ provider: 'local', model: 'fixture-model', baseUrl, isolated: true })
 const state = initNovaState({ running: true, runtimeReady: true, config, llm, channels: {}, startTime: Date.now() })
+if (process.env.XAVENTRA_RESPONSE_CONTRACT_FIXTURE === '1') state.verboseMode = true
 const { availableLLMs } = await load('core/llm-factory.js')
 availableLLMs.push({ provider: 'local', model: 'fixture-model', endpoint: baseUrl, local: true })
 const { getLifecyclePolicy } = await load('core/lifecycle-policy.js')

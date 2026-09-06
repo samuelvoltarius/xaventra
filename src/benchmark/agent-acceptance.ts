@@ -56,6 +56,12 @@ export async function runAgentAcceptance(baseUrl: string, model: string) {
         writeFileSync(jobPath, JSON.stringify({ ...step, userId: step.userId || 'acceptance-user', root, files, baseUrl, model, resultPath }), { mode: 0o600 })
         const child = spawnSync(process.execPath, [...(worker.endsWith('.ts') ? ['--import', 'tsx'] : []), worker, jobPath], {
             cwd: projectRoot, timeout: 60_000, windowsHide: true, encoding: 'utf8', maxBuffer: 2_000_000,
+            env: {
+                ...Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP']
+                    .filter(key => process.env[key]).map(key => [key, process.env[key]])),
+                HOME: root, USERPROFILE: root, APPDATA: join(root, 'appdata'), LOCALAPPDATA: join(root, 'localappdata'),
+                CODEX_HOME: join(root, 'codex'),
+            },
         })
         const result = child.status === 0 && existsSync(resultPath) ? JSON.parse(readFileSync(resultPath, 'utf8')) : { error: 'Isolated worker failed or timed out' }
         const checks = judgeAcceptance(result, step)

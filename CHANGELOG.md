@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.6] — 2026-09-06
+
+- Enforce bounded explicit current-turn response constraints in the independent
+  validator. A correction repeating the superseded value is not success.
+- At most one text-only format repair: no tools, no approval bypass, deadline
+  and token limits, retained validation attempts and accounted repair usage.
+- Validate message-output hooks before persistence; protect exact replies from
+  legacy persona rewrites/verbose footers and check delivery transformations.
+- Remove mission execution triggered by model response text. Explicit user
+  commands and governed typed mission tools remain available.
+- Legacy reflection respects the current-turn kernel during historical recall.
+- Preserve non-streaming local OpenAI/Ollama token usage. Missing local pricing,
+  streaming and complete multi-round/fallback attribution remain separate work.
+- Nine compiled REST/Desktop-API response cases in three-OS CI; isolated worker
+  environments, retained failures. [Evidence and limits](docs/VERIFICATION_2.78.6.md).
+
 ## [2.78.5] — 2026-09-06
 
 - Daemon and CLI now mutate the canonical state object instead of a stale copy.

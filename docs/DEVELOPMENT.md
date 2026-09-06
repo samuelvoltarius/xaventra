@@ -1,5 +1,12 @@
 # Developing Xaventra
 
+For response-contract changes, run `npm run build` and then
+`npm run check:response-contract`. This uses the actual compiled native/REST
+and Desktop message pipeline with a scripted loopback provider, isolated state
+and no operator credentials. Preserve failing reports; do not confuse this
+fixture with a real-provider, packaged UI or distributed HA run. See
+[2.78.6 verification](VERIFICATION_2.78.6.md) for the bounded grammar and limits.
+
 This guide is the shortest path from a clean clone to a useful contribution.
 It explains where changes belong, why the boundaries exist and how to prove a
 change works without relying on model prose or private production state.

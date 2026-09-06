@@ -30,6 +30,9 @@ import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { toolResultMessages } from './tool-result-messages.js'
 import { historyEvidenceMessages } from './history-evidence.js'
+import { responseConstraintPrompt } from '../core/response-contract.js'
+import { repairConstrainedResponse } from './response-repair.js'
+import type { ResponseConstraint } from '../core/response-contract.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -166,6 +169,7 @@ export interface AgentResponse {
     runId?: string
     /** The kernel, never model prose, is the completion authority. */
     validation?: TaskValidationReport
+    responseConstraints?: ResponseConstraint[]
     reasoning?: string
     toolsUsed?: string[]
     toolsExecuted?: string[]
@@ -448,7 +452,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                     // A remote text result is sufficient for conversational
                     // work. Side effects still require locally correlated tool
                     // evidence, so action tasks continue through the local path.
-                    if (result?.result && !actionIntent.requiresTool) {
+                    if (result?.result && !actionIntent.requiresTool && !kernel.contract.responseConstraints?.length) {
                         outcomeLedger.recordRoute(kernel.contract.id, {
                             backend: 'nova-mesh', model: meshDelegation.model, node: meshDelegation.host,
                             reason: 'mesh delegation result received',
@@ -488,6 +492,8 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             messages.push({ role: 'system', content: systemPrompt })
         }
         messages.push({ role: 'system', content: buildCognitivePrompt(kernel.cognition) })
+        const outputContractPrompt = responseConstraintPrompt(kernel.contract.responseConstraints || [])
+        if (outputContractPrompt) messages.push({ role: 'system', content: outputContractPrompt })
 
         // === LAYER: Tool Router — tell Nova about available skill packs ===
 
@@ -1775,12 +1781,68 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 timestamp: execution.timestamp,
             })
         }
-        const taskValidation = kernel.validateCompletion(finalContent, {
+        let taskValidation = kernel.validateCompletion(finalContent, {
             durationMs: Date.now() - outcomeStartedAt,
             toolCalls: toolExecutions.length,
             tokens: response.usage?.totalTokens,
             awaitingApproval: awaitingPolicyApproval || undefined,
             policyBlocked,
+        })
+        outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
+        const repaired = await repairConstrainedResponse({
+            contract: kernel.contract, validation: taskValidation, response: finalContent,
+            requiresTool: actionIntent.requiresTool, startedAt: outcomeStartedAt,
+            tokensUsed: Number(response.usage?.totalTokens || 0), signal: abortSignal,
+            complete: async (repairMessages, repairTools, options) => {
+                const policy = await lifecyclePolicy.run('llm.before', {
+                    context: policyContext, input: { messages: repairMessages, tools: repairTools },
+                    metadata: { purpose: 'response-format-repair' },
+                })
+                if (policy.decision !== 'allow') throw new Error('Response repair blocked by LLM policy')
+                const repairedResponse = await llmClient.complete(repairMessages, repairTools, options)
+                const after = await lifecyclePolicy.run('llm.after', {
+                    context: policyContext, output: repairedResponse,
+                    metadata: { purpose: 'response-format-repair' },
+                })
+                if (after.decision !== 'allow') {
+                    policyBlocked = true
+                    awaitingPolicyApproval = after.decision === 'ask'
+                    throw new Error('Response repair output blocked by LLM policy')
+                }
+                return after.payload.output as typeof repairedResponse
+            },
+        })
+        if (repaired) {
+            finalContent = redactSecrets(repaired.content || '')
+            const used = response.usage || {}
+            response.usage = {
+                promptTokens: Number(used.promptTokens || used.inputTokens || 0) + Number(repaired.usage?.promptTokens || 0),
+                completionTokens: Number(used.completionTokens || used.outputTokens || 0) + Number(repaired.usage?.completionTokens || 0),
+                totalTokens: Number(used.totalTokens || 0) + Number(repaired.usage?.totalTokens || 0),
+            }
+            taskValidation = kernel.validateCompletion(finalContent, {
+                durationMs: Date.now() - outcomeStartedAt, toolCalls: toolExecutions.length,
+                tokens: response.usage.totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
+            })
+            outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
+        }
+        // Hooks may transform the answer, but cannot change an already committed
+        // response behind the validator or the persisted session's back.
+        const messageAfter = await lifecyclePolicy.run('message.after', {
+            context: policyContext,
+            output: { content: finalContent, validated: taskValidation.success, toolsUsed },
+        })
+        if (messageAfter.decision !== 'allow') {
+            policyBlocked = true
+            awaitingPolicyApproval = messageAfter.decision === 'ask'
+            finalContent = 'Die Antwort wurde durch die Richtlinie gesperrt.'
+        } else {
+            const updated = messageAfter.payload.output as { content?: string }
+            if (typeof updated?.content === 'string') finalContent = redactSecrets(updated.content)
+        }
+        taskValidation = kernel.validateCompletion(finalContent, {
+            durationMs: Date.now() - outcomeStartedAt, toolCalls: toolExecutions.length,
+            tokens: response.usage?.totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
         })
         outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
         const pricingInput = {
@@ -1907,18 +1969,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         } catch { /* non-critical */ }
 
         _traceRecorder.finish(_traceId, { success: taskValidation.success, responseContent: finalContent })
-        const messageAfter = await lifecyclePolicy.run('message.after', {
-            context: policyContext,
-            output: { content: finalContent, validated: taskValidation.success, toolsUsed },
-        })
-        if (Object.prototype.hasOwnProperty.call(messageAfter, 'updatedOutput')) {
-            const updated = messageAfter.updatedOutput as { content?: string }
-            if (typeof updated?.content === 'string') finalContent = updated.content
-        }
         return {
             content: finalContent,
             runId: kernel.contract.id,
             validation: taskValidation,
+            responseConstraints: kernel.contract.responseConstraints,
             reasoning: reasoning || undefined,
             toolsUsed,
             toolsExecuted,
@@ -1931,7 +1986,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 requiresTool: actionIntent.requiresTool,
                 kind: actionIntent.kind,
                 fulfilled: actionLifecycle.isFulfilled(),
-                awaitingApproval: actionLifecycle.isAwaitingApproval(),
+                awaitingApproval: awaitingPolicyApproval || actionLifecycle.isAwaitingApproval(),
                 phase: actionLifecycle.getSnapshot().phase,
             },
         }
