@@ -35,6 +35,17 @@ user command and typed, governed mission tool remain available.
 
 ## Evidence inventory
 
+Runtime source: `933edc45ffc9cff50e10017a54134d03439c79c6`.
+[Candidate CI 34029584042](https://github.com/samuelvoltarius/xaventra/actions/runs/34029584042)
+passed **all seven jobs**. Downloaded Linux/macOS response reports identify this
+exact SHA, 2.78.6 and 5/5 native/REST plus 4/4 Desktop API cases. The Windows
+jobs passed those same gates. The packaged client jobs additionally rerun the
+existing ten UI, five Core-component and six full-daemon groups with scripted
+providers; this is not a new interactive UX redesign or live-channel signoff.
+The separate exact-code-commit live local-provider run at 11:13 UTC passed 8/8.
+Full public-history secret scan before this documentation attestation: fourteen
+commits, zero findings. Scan and CI must repeat for the final attestation commit.
+
 - Windows local regression: 175 files / 1132 tests, seven Desktop bridge tests.
   Build, typecheck, catalogs and assurance are required release gates.
 - `npm run check:response-contract`: five compiled native-runner/authenticated

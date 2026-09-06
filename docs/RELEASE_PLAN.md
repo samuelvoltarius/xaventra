@@ -36,6 +36,18 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
+### 2.78.6 acceptance checkpoint — 2026-09-06
+
+Runtime/source commit `933edc45ffc9cff50e10017a54134d03439c79c6` passed all seven
+jobs in [candidate CI 34029584042](https://github.com/samuelvoltarius/xaventra/actions/runs/34029584042).
+This includes clean source installs, 1132 Core tests, compiled lifecycle, nine
+new response-contract/API cases and packaged Desktop checks on all three OSes.
+Hosted provider responses are scripted, not live-model claims. Separate Windows
+real-provider native/REST acceptance passed 8/8 on this commit at 11:13 UTC,
+with the original checks/exclusions intact. See [scope and reproduction](VERIFICATION_2.78.6.md).
+Any subsequent documentation-only attestation must also pass exact-commit CI
+before main promotion. No full RC label, binary publication or production deploy.
+
 | Gate | Status | Evidence / missing acceptance |
 |---|---|---|
 | Clean installs and upgrades | Partial | 2.78.2 clean CI source installs on three OSes; full native installer/update acceptance outstanding. |
@@ -46,6 +58,8 @@ Desktop reports identify their `sourceRevision`, OS and package version.
 | Packaged Desktop | Partial | [2.78.5 full daemon and restart](VERIFICATION_2.78.5.md), scripted cross-platform checks plus separate real local-provider Windows run. Exact-commit CI reports required; native dialogs/capture/installers remain open. |
 | Daemon and channels | Partial | [2.78.2 compiled lifecycle on all three OSes](VERIFICATION_2.78.2.md); separately credentialed live channel delivery outstanding. |
 | Distributed HA and memory convergence | Open | Requires controlled multi-node partitions, fencing, takeover and reconciliation; subsystem probes do not suffice. |
+| Critical/high release defect closure | Open | The response-contract defect is reproduced and fixed; the full advertised risk matrix, cumulative budget/fallback attribution and distributed failure paths are not yet accepted. No blanket absence-of-high-risk-defects claim. |
+| Recovery and upgrade documentation | Partial | Versioned source reproduction/rollback guidance exists; native installer recovery, actual upgrade/rollback and distributed recovery procedures need matching live evidence. |
 | Reference-agent comparison | Open if claimed | No parity/superiority claim without matched tasks, budgets and independently checked artifacts. |
 | Signed installers and recovery | Open / external prerequisites | Signing identities/notarization plus actual install/update/rollback acceptance and checksums outstanding. |
 
