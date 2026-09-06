@@ -46,6 +46,11 @@ new authored controls. Source/compiled API regression is separate from native
 GGUF quality, which remains open. Exact candidate-SHA CI is required before main
 promotion; see [2.78.10 verification and limits](VERIFICATION_2.78.10.md).
 No retraining, production rollout or RC label follows from this bounded fix.
+Native Windows Vulkan runs improved the unchanged baseline to 10/14 for both
+0.5B and 1.5B, with additional controls 2/4 and 3/4 respectively. These are
+pre-final-guard dirty-tree runs, not clean final-SHA model acceptance. Unsafe
+log-derived prose was reproduced and received a bounded rejection guard; uncertain
+and other semantic answers remain an open Doctor gate, with failed evidence kept.
 
 ### 2.78.9 environment-awareness and host-boundary checkpoint
 

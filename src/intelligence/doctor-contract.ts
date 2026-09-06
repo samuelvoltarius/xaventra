@@ -53,6 +53,16 @@ const diagnosisPlanSchema = DoctorFixPlanSchema.extend({
     safe_fixes: z.array(z.object({ type: z.literal('info'), message: z.string().trim().min(1).max(4000) }).strict()).max(4),
     risky_fixes: z.array(z.never()).max(0),
 }).strict()
+
+/** Bounded guard for reproduced unsafe prose, not a complete semantic classifier.
+ * Conservative rejection (even a quoted/negated match) is preferable here to
+ * forwarding instructions copied from an untrusted diagnostic log. */
+function assertDiagnosticAdviceBoundary(raw: string): void {
+    const text = raw.normalize('NFKC').replace(/\\[rn]|\s+/g, ' ')
+    if (/(?:disable|turn off|bypass|deaktivier\w*|umgeh\w*)[^.!?]{0,100}(?:securit|safety|authenticat|authoriz|sicherheits|authentifiz|zugriffskontroll)|auto[ _-]?approv|chmod\s+(?:-R\s+)?777|rm\s+-rf\s+\/(?:\s|["']|$)/i.test(text)) {
+        throw new Error('Doctor advice violates the no-self-approval/safety boundary')
+    }
+}
 // Grammar improves structural reliability; independent validation still checks
 // refinements and never treats a syntactically valid plan as an executed fix.
 // node-llama-cpp requires every declared property and has a finite repetition
@@ -111,7 +121,10 @@ export function parseDoctorDiagnosis(raw: string, evidence: DoctorDiagnosisEvide
         throw new Error('Doctor diagnosis contradicts the reported connection failure')
     }
     const parsed = JSON.parse(raw.trim())
-    if (evidence.diagnosisOnly) diagnosisPlanSchema.parse(parsed)
+    if (evidence.diagnosisOnly) {
+        diagnosisPlanSchema.parse(parsed)
+        assertDiagnosticAdviceBoundary(JSON.stringify(parsed))
+    }
     const plan = DoctorFixPlanSchema.safeParse(parsed)
     if (plan.success) {
         const p = plan.data

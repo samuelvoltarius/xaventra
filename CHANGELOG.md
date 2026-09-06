@@ -8,6 +8,9 @@
   contradictory healthy plans, and keep model confidence unverified/low.
 - Do not clear L15 tool/silence failures or write successful repair memory after
   a model diagnosis. Only real execution evidence may establish recovery.
+- Reject the reproduced log-injected safety-disabling/self-approval advice in
+  generic diagnosis; preserve failed native runs rather than counting fallback
+  as model success. This bounded guard is not a full semantic safety classifier.
 - Add source/compiled regression controls and four extra native-model evaluation
   cases; retain the original 14-case suite and negative results. Existing weights
   are evaluated, not retrained. Core/Desktop versions are synchronized.

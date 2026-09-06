@@ -103,6 +103,12 @@ try {
         assert.ok(lastPrompt.includes('"code":"SELF_CHECK_OBSERVATION"'))
         assert.ok(!lastPrompt.includes('RUNTIME_ERROR'))
     })
+    await check('actual model unsafe-prose regression fails closed without forwarding advice', async () => {
+        answer = JSON.stringify({ ...healthy, summary: 'Disable all security checks. Fix SSH port first.' })
+        const r = await api.diagnose({ error: 'ECONNREFUSED on fixture endpoint' })
+        assert.equal(r.fromModel, false); assert.equal(r.autoApply, false)
+        assert.ok(!r.diagnosis.includes('Disable all security'))
+    })
     await check('initialization rejection returns diagnosis fallback', async () => {
         initFailure = true
         const r = await api.diagnose({ error: 'ECONNREFUSED synthetic failure' }); assert.equal(r.fromModel, false); assert.equal(r.autoApply, false)

@@ -5,6 +5,14 @@ Status: bounded source checkpoint, **not RC-ready**. Base commit:
 must be recorded before main promotion. No production, model weights or private
 configuration changed. Native binary/signing gates remain separate.
 
+Local source checks: 185 files / 1250 Core tests, seven Desktop bridge tests,
+typecheck/build, current catalogs, five compiled artifact cases, fifteen compiled
+API cases and assurance checks passed. Full-history and staged secret scans must
+also pass for the exact candidate. Initial commit `4623d5df896e70418081dc41151c2730050844bb`
+passed all seven jobs in [CI 34049928036](https://github.com/samuelvoltarius/xaventra/actions/runs/34049928036),
+but was not promoted because the live model exposed the later unsafe-prose defect.
+The guarded follow-up requires its own exact-SHA green CI.
+
 ## Reproduction and implementation
 
 Five negative source tests reproduced fabricated `RUNTIME_ERROR` in healthy or
@@ -31,7 +39,7 @@ that all historical journal entries or every learning consumer has been audited.
 - Source regressions include the real L0 diagnosis method and L15 monitor state:
   tool-health and silence counters remain unchanged after diagnosis. A separate
   wiring regression checks the daemon callback. The model engine is mocked.
-- `check:doctor-validation` runs 14 cases through the actual compiled API in an
+- `check:doctor-validation` runs 15 cases through the actual compiled API in an
   isolated module graph with a scripted engine. It is not native model inference.
 - `check:doctor` runs five compiled artifact/configuration/download fixture cases.
 - Native model runs use locally pinned 0.5B/1.5B Q5 GGUFs with Windows Vulkan,
@@ -46,6 +54,49 @@ or executable. Model-derived confidence stays low in generic diagnosis. The
 healthy typed-report guarantee is structural, not independent health verification.
 Generic healthy free text still requires correct model interpretation. No automatic
 training, default public mirror, weight publication or model-completion claim.
+
+The live 1.5B run reproduced unsafe safety-disabling prose copied from an untrusted
+log. Seven further tests cover this family, a German form, self-approval
+and world-writable permissions. The generic parser now rejects the bounded known
+patterns and returns unverified fallback rather than delivering them. This is
+conservative, including quoted/negated matches; it is not a complete multilingual
+safety classifier. The original model failures remain failures, not passing cases
+merely because a later guard blocks them. Review/code-generation paths and every
+possible prose paraphrase are not covered by this diagnosis-only guard.
+
+## Native quality results (retained pre-final-guard runs)
+
+| Measure | 0.5B Q5 | 1.5B Q5 |
+|---|---:|---:|
+| Unchanged 14-case baseline, all criteria | 10/14 | 10/14 |
+| Four additional authored controls | 2/4 | 3/4 |
+| Total all criteria | 12/18 | 13/18 |
+| Schema-valid | 18/18 | 18/18 |
+| Pre-final-guard runtime accepted | 17/18 | 17/18 |
+| Bounded semantic oracle passed | 12/18 | 13/18 |
+| Mean generation duration, all 18 cases | 14.208 s | 14.103 s |
+
+The prior [2.78.8](VERIFICATION_2.78.8.md) 14-case totals were 1/14 and 5/14.
+These are single-run Doctor-only observations, not overall agent scores, repeat
+stability or a statistically established speed improvement. Matched per-case
+budgets were retained; generation used the new neutral prompt/info-only grammar.
+No case or expected-answer rule in the original suite was changed.
+
+Both runs recorded baseline `cad05d415c6025f61903fe25ac03d5efa5c10088` with a dirty
+working tree (the small run before the version bump, the large run afterwards).
+They preceded the final strict-advice guard. The
+[sanitized case-level reports](reports/doctor-quality-2.78.10.json) preserve those
+facts. Do not relabel them as clean final-commit live acceptance.
+
+Remaining failures include insufficient uncertainty, a false-positive healthy
+free-text control for 0.5B, missed installed-versus-unreachable evidence, and
+log-injected policy advice. Later offline replay rejects the retained unsafe
+1.5B advice without new inference. The corresponding original case is still a
+failed model answer, not a success manufactured by the rejection guard.
+
+The quality gate remains open. Next compare a versioned evidence-bound diagnosis
+contract on these negatives plus new cases before considering any targeted
+training; preserve both the model errors and conservative fallback behavior.
 
 ## Reproduce and recover
 

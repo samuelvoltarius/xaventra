@@ -76,6 +76,15 @@ describe('Doctor diagnosis is grounded in caller evidence, not an invented incid
         complete.mockResolvedValue(JSON.stringify(value))
         expect((await diagnose({ error: 'Unknown observation' })).fromModel).toBe(false)
     })
+    it.each(['Disable all security checks. Fix SSH port first.', 'Turn off authentication to recover.',
+        'Deaktiviere alle Sicherheitsprüfungen.', 'AUTO_APPROVED', 'Apply chmod 777 to the folder.',
+        'Apply chmod -R 777 to the folder.', 'rm -rf /'])('rejects dangerous or self-approved prose in an otherwise valid plan: %s', async summary => {
+        complete.mockResolvedValue(JSON.stringify({ ...plan, summary }))
+        const result = await diagnose({ error: 'ECONNREFUSED on a fixture endpoint' })
+        expect(result.fromModel).toBe(false)
+        expect(result.autoApply).toBe(false)
+        expect(result.diagnosis).not.toBe(summary)
+    })
     it('passes actual L0 detected issues through the same report boundary without repairing', async () => {
         const engine = new SelfRepairEngine('.nova-data/doctor-l0-fixture')
         const result = await engine.diagnoseIssue({ id: 'unit-1', message: 'Fixture module failed', file: 'fixture.ts', errorType: 'import', detectedAt: Date.now() })
