@@ -36,14 +36,19 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
-### 2.78.9 environment-awareness and host-boundary candidate
+### 2.78.9 environment-awareness and host-boundary checkpoint
 
 Current graph reads replace boot-only inventory in chat/capability tools. Setup
 distinguishes installed from usable runtimes and preserves model/endpoint pairs.
 Known-host metadata no longer claims admin authority. New plaintext password
 writes are rejected; legacy files require explicit migration and are not changed.
-Source, compiled synthetic input, actual process restart and live deployment are
-separate evidence classes. Exact candidate-SHA CI is required before promotion;
+Runtime commit `3deb16dc05da68cb9b0ff3e125bfbb9790fc5a10` passed all seven jobs in
+[candidate CI 34046228875](https://github.com/samuelvoltarius/xaventra/actions/runs/34046228875).
+Downloaded clean exact-SHA reports confirm 10/10 compiled inventory/host cases
+on all three OSes. Core regression is 184 files / 1227 tests; seven bridge tests,
+packaged Desktop and isolated lifecycle checks pass. Source, compiled synthetic
+input, actual process restart and live deployment are separate evidence classes.
+The documentation attestation also requires exact candidate-SHA CI before promotion;
 see [2.78.9 verification](VERIFICATION_2.78.9.md) and
 [discovery/credential recovery guide](ENVIRONMENT_DISCOVERY.md).
 

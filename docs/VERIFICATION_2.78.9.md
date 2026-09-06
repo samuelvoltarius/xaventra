@@ -1,8 +1,14 @@
 # 2.78.9 — current inventory and private host boundaries
 
-Status: candidate, not RC-ready. No production or private database changed.
-Base: `07c88dcd3487e0c33b5135395ff213e30a383d49`. Exact candidate commit and CI
-attestation will be recorded after all applicable checks pass.
+Status: bounded source checkpoint, not RC-ready. No production or private database
+changed. Base: `07c88dcd3487e0c33b5135395ff213e30a383d49`.
+Runtime commit `3deb16dc05da68cb9b0ff3e125bfbb9790fc5a10` passed all seven jobs in
+[candidate CI 34046228875](https://github.com/samuelvoltarius/xaventra/actions/runs/34046228875).
+Downloaded reports verify ten of ten compiled inventory/host cases on Windows,
+Linux and macOS, exact source SHA, clean checkout and zero network attempts.
+Three-platform source install/regression and packaged Desktop/lifecycle jobs also
+passed. This documentation attestation requires its own exact-SHA green CI before
+main promotion. No native signed installer or live remote-discovery claim follows.
 
 Local Windows results: 184 files / 1227 Core tests, seven Desktop bridge tests,
 ten compiled inventory/host-storage cases, typecheck/build, catalog checks and
