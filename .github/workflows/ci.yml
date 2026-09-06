@@ -90,6 +90,22 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: desktop-component-qa-${{ matrix.os }}
+          path: |
+            .nova-data/desktop-qa/**/report.json
+            .nova-data/desktop-qa/**/*.jpg
+          retention-days: 14
+          include-hidden-files: true
+      - name: Packaged Desktop to full daemon and restart
+        if: runner.os != 'Linux'
+        run: npm run check:desktop-daemon
+      - name: Packaged Desktop to full daemon and restart on virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run check:desktop-daemon
+      - name: Preserve full daemon reports and synthetic screenshots, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
           name: desktop-qa-${{ matrix.os }}
           path: |
             .nova-data/desktop-qa/**/report.json

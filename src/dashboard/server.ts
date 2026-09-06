@@ -18,6 +18,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { z } from 'zod'
 import { resolveConfigPath } from '../config/config-path.js'
+import { dashboardAddress, listenDashboard } from './listener.js'
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -2237,32 +2238,19 @@ export function logError(message: string, stack?: string): void {
 // ============================================
 
 let dashboardStarted = false
-let dashboardPort = 3001
+let dashboardPort = 3011
+let dashboardUrl = ''
 
-export function startDashboard(port: number = 3001): Promise<string> {
-    return new Promise((resolve, reject) => {
-        if (dashboardStarted) {
-            resolve(`http://localhost:${port}`)
-            return
-        }
+export function getDashboardAddress(): string | null { return dashboardAddress(server) }
 
-        // Load initial stats
-        state.stats = loadStats()
-
-        server.listen(port, () => {
-            dashboardStarted = true
-            dashboardPort = port
-            const url = `http://localhost:${port}`
-            console.log(`\n✨ Nova Dashboard v2.0: ${url}\n`)
-            resolve(url)
-        }).on('error', (err) => {
-            if ((err as any).code === 'EADDRINUSE') {
-                startDashboard(port + 1).then(resolve).catch(reject)
-            } else {
-                reject(err)
-            }
-        })
-    })
+export async function startDashboard(port: number = 3011, host: string = '127.0.0.1'): Promise<string> {
+    if (dashboardStarted) return dashboardUrl
+    state.stats = loadStats()
+    dashboardUrl = await listenDashboard(server, port, host)
+    dashboardStarted = true
+    dashboardPort = Number(new URL(dashboardUrl).port)
+    console.log(`\n✨ Xaventra Dashboard: ${dashboardUrl}\n`)
+    return dashboardUrl
 }
 
 export async function stopDashboard(): Promise<void> {

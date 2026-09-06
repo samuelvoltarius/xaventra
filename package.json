@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.78.4",
+  "version": "2.78.5",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -24,6 +24,7 @@
     "check:voice": "tsx src/voice/voice-e2e-check.ts",
     "check:desktop-ui": "node scripts/check-desktop-ui.mjs",
     "check:desktop-core": "node scripts/check-desktop-core.mjs",
+    "check:desktop-daemon": "node scripts/check-desktop-core.mjs --daemon",
     "check:release": "tsx src/dev/release-readiness.ts",
     "check:assurance": "tsx src/security/assurance-cli.ts",
     "catalogs:generate": "tsx src/dev/generate-runtime-catalogs.ts",

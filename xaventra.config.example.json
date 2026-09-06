@@ -88,6 +88,7 @@
         "acpEnabled": false
     },
     "name": "Xaventra",
+    "dashboard": { "enabled": true, "host": "127.0.0.1", "port": 3011 },
     "emoji": "✨",
     "version": "0.1.0",
     "provider": "openai",

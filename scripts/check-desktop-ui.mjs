@@ -82,9 +82,16 @@ try {
     const values = await page.locator('#model-picker option').evaluateAll(options => options.map(o => o.value))
     assert.equal(new Set(values).size, 3)
     await page.locator('#composer').fill('Draft before model change')
-    await page.locator('#model-picker').selectOption(values[2]); await wait(() => fixture.rooms[0].pinnedRouteId === values[2])
+    fixture.controls.roomPatchDelayMs = 500
+    await page.locator('#model-picker').selectOption(values[2])
+    assert.equal(await page.locator('#model-picker').isDisabled(), true, 'Overlapping model changes must not race')
+    await screenshot('model-saving')
+    await wait(() => fixture.rooms[0].pinnedRouteId === values[2])
     await wait(async () => await page.locator('#composer').inputValue() === 'Draft before model change')
     await page.locator('#model-picker').selectOption('auto'); await wait(() => fixture.rooms[0].modelMode === 'auto')
+    await wait(async () => await page.locator('#model-picker').isEnabled())
+    assert.equal(await page.locator('#model-picker').inputValue(), 'auto')
+    fixture.controls.roomPatchDelayMs = 0
     assert.equal(await page.locator('#composer').inputValue(), 'Draft before model change')
   })
   await check('scroll and draft survive specialist and navigation changes', async () => {

@@ -32,6 +32,12 @@ The fenced Main Core API must already be running. The default endpoint is
 `http://127.0.0.1:3011`; a workstation can map that loopback port to the current
 Main with an authenticated SSH/Tailscale tunnel. Remote endpoints require HTTPS
 and an explicit `NOVA_DESKTOP_API_TOKEN`.
+Core 2.78.5 uses the same default: `dashboard.host = "127.0.0.1"` and
+`dashboard.port = 3011`. An explicit existing port is retained. For access from
+another workstation, prefer a loopback tunnel or a TLS reverse proxy with the
+Desktop token; a public bind alone does not authenticate legacy Dashboard reads.
+`dashboard.enabled = false` prevents startup. A port conflict is an error, not
+permission to start a second gateway or silently choose another port.
 Tokens are encrypted with Electron `safeStorage` on the local workstation and
 are never written to rooms, Memory, Mesh state or the Capability Graph.
 Plain startup does not probe the OS keychain: settings show availability as
@@ -96,9 +102,11 @@ Core retains at most 30 captures and removes captures older than seven days.
 - Settings separate connection/identity, Main fencing, chat behavior, layout,
   credential rules and connection testing. Only non-secret UI preferences are
   stored beside the encrypted connection configuration.
-- Native replies expose the canonical Run ID, exact model/Node route, duration,
+- Native replies expose the canonical Run ID, known model/Node route, duration,
   tool outcomes and verified-evidence count. A tool-schema probe is displayed
   separately from production tool-success samples.
+  The execution host and the inference host are not necessarily the same device;
+  an unknown inference-node ID is not proof of local inference.
 
 Run `npm run desktop:build` then `npm run check:desktop-ui` for the isolated
 packaged-client check. It creates a disposable profile and simulated loopback
@@ -205,3 +213,35 @@ This uses production API/pipeline/tools/validator/ledger code with temporary
 profiles, synthetic files and a scripted loopback model. It complements rather
 than replaces the simulated-API UI check or live model/channel/HA acceptance.
 See [2.78.4 evidence and limits](VERIFICATION_2.78.4.md).
+
+## Full daemon acceptance (2.78.5)
+
+`npm run check:desktop-daemon` launches the real compiled daemon with its normal
+channel gateway and a native packaged client, isolated profile and runtime.
+It adds startup readiness and real process stop/restart to the component checks.
+Only an exact synthetic evidence file may be read; other tool actions are denied.
+The default provider is a strict scripted loopback fixture. CI runs this mode on
+Windows, Linux and macOS (`xvfb-run -a` on headless Linux).
+
+For a separate local live-model run, explicitly set `XAVENTRA_ACCEPTANCE_BASE_URL`
+and `XAVENTRA_ACCEPTANCE_MODEL` before the same command. No production config,
+OAuth, messaging credentials, user profile or Mesh peers are copied. Live-provider
+reports remain local; CI uploads only synthetic fixture reports and screenshots.
+This proves neither live Telegram delivery nor distributed mission takeover.
+
+The check requires one successful read, matching model attribution, a working
+Trust link, unchanged slash-command dispatch, scoped memory, persistent room and
+Outcome after restart, history-only recall without tool repetition, and a terminal
+failed validator for a denied file. Explicit recall-only requests narrow the
+execution authority; missing knowledge must be admitted, not silently fetched by
+repeating an action. Model selection is disabled while its save is pending so
+overlapping pin/Auto changes cannot race; drafts remain available.
+
+### Legacy integration API migration
+
+The old integration listener on port 3002 is disabled on Main as well as workers.
+It bypassed the governed message pipeline and must not be re-enabled. Configure
+`server.enabled`, `server.host`, `server.port` and `NOVA_API_TOKEN` for the canonical
+REST API, then use authenticated `POST /v1/message` for work or `GET /v1/status`
+for health. Desktop continues to use its separate `/api/desktop` authentication
+boundary; the REST credential is not reused as a Desktop token.

@@ -19,6 +19,7 @@ const state = {
   connectionAttempt: 0,
   roomSelection: 0,
   roomLoading: null,
+  modelSaving: new Set(),
 }
 
 const nav = [
@@ -270,7 +271,7 @@ function topbar(room) {
         ? 'Ich bin da. Frag mich einfach.'
         : 'Ein Arbeitsraum mit Xaventra, gezielten Spezialisten und verifizierten Tools.'))}</p></div>
     <div class="main-presence"><span class="status-dot online"></span><span>${esc(control.hostname || control.nodeId || 'Main')}</span><small>MAIN</small></div>
-    ${room ? `<select class="model-select" id="model-picker" aria-label="Modellwahl">
+    ${room ? `<select class="model-select" id="model-picker" aria-label="Modellwahl" aria-busy="${state.modelSaving.has(room.id)}" ${state.modelSaving.has(room.id) ? 'disabled title="Modellwahl wird gespeichert"' : ''}>
       <option value="auto" ${selected === 'auto' ? 'selected' : ''}>Auto · ${esc(active ? modelLabel(active, true) : 'Outcome Router')}</option>
       ${routes.map(model => `<option value="${attr(modelRouteId(model))}" ${selected === modelRouteId(model) ? 'selected' : ''}>${esc(modelLabel(model))}</option>`).join('')}
     </select>` : ''}
@@ -695,18 +696,28 @@ async function sendMessage(event) {
 
 async function updateRoomModel(event) {
   const value = event.target.value
+  const roomId = state.roomId
+  const bootstrap = state.bootstrap
+  if (state.modelSaving.has(roomId)) return
+  state.modelSaving.add(roomId)
+  event.target.disabled = true
+  event.target.setAttribute('aria-busy', 'true')
   try {
     const selected = modelByRoute(value)
     if (value !== 'auto' && !selected) throw new Error('Diese Modellroute ist nicht mehr verifiziert.')
-    const room = await api.patch(`/api/desktop/rooms/${encodeURIComponent(state.roomId)}`, value === 'auto'
+    const room = await api.patch(`/api/desktop/rooms/${encodeURIComponent(roomId)}`, value === 'auto'
       ? { modelMode: 'auto', pinnedModel: '', pinnedRouteId: '', preferredNodeIds: [] }
       : { modelMode: 'pinned', pinnedModel: selected.id, pinnedRouteId: modelRouteId(selected), preferredNodeIds: [selected.nodeId] })
-    const index = state.bootstrap.rooms.findIndex(item => item.id === room.id)
-    state.bootstrap.rooms[index] = room
-    state.selectedNodes = new Set(room.preferredNodeIds || [])
+    if (state.bootstrap !== bootstrap) return
+    const index = bootstrap.rooms.findIndex(item => item.id === room.id)
+    if (index >= 0) bootstrap.rooms[index] = room
+    if (state.roomId === roomId) state.selectedNodes = new Set(room.preferredNodeIds || [])
     toast(value === 'auto' ? 'Outcome Router ist aktiv.' : `Route fixiert: ${modelLabel(selected, true)}.`)
-    render()
-  } catch (error) { fail(error); render() }
+  } catch (error) { fail(error) }
+  finally {
+    state.modelSaving.delete(roomId)
+    if (state.section === 'chat' && state.bootstrap === bootstrap) render()
+  }
 }
 
 function showModal(title, body) {

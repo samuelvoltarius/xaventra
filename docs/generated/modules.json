@@ -88,6 +88,7 @@
         "../tools/loop-detection.js",
         "./session-checkpoints.js",
         "./tool-authorization.js",
+        "./tool-result-messages.js",
         "node:fs",
         "node:path"
       ]
@@ -145,7 +146,15 @@
     {
       "module": "src/agents/tool-authorization.ts",
       "imports": [
+        "../core/action-intent.js",
         "../tools/tool-policy.js"
+      ]
+    },
+    {
+      "module": "src/agents/tool-result-messages.ts",
+      "imports": [
+        "../llm/nova-llm-sdk.js",
+        "../memory/tool-result-pruner.js"
       ]
     },
     {
@@ -1883,11 +1892,18 @@
       ]
     },
     {
+      "module": "src/dashboard/listener.ts",
+      "imports": [
+        "node:http"
+      ]
+    },
+    {
       "module": "src/dashboard/server.ts",
       "imports": [
         "../config/config-path.js",
         "../core/atomic-storage.js",
         "../security/secret-redaction.js",
+        "./listener.js",
         "express",
         "node:fs",
         "node:http",
@@ -2263,9 +2279,7 @@
     },
     {
       "module": "src/integration/nova-integration.ts",
-      "imports": [
-        "../tools/registry.js"
-      ]
+      "imports": []
     },
     {
       "module": "src/intelligence/autonomy-engine.ts",

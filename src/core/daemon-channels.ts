@@ -24,7 +24,7 @@ export interface ChannelStarterConfig {
         discord?: { enabled: boolean; token?: string }
         cli?: { enabled: boolean }
     }
-    dashboard?: { enabled: boolean; port: number; password?: string }
+    dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
 }
 
 /**
@@ -563,6 +563,7 @@ export async function startDashboard(
     messageHandler: MessageHandler,
     _state: ChannelsState,
 ): Promise<void> {
+    if (config?.enabled === false) return
     const { shouldStartExclusiveService, watchForServiceLeadership, onLeadershipLost, MAIN_SERVICE } = await import('../mesh/leader-election.js')
     // The Desktop/Dashboard control plane follows the canonical Main just like
     // Telegram. An independent dashboard lease must never turn a worker into
@@ -579,7 +580,7 @@ export async function startDashboard(
     // Always try to start new Nova Dashboard
     try {
         const { startDashboard: startNovaDashboard, setNovaMessageHandler } = await import('../dashboard/server.js')
-        const url = await startNovaDashboard(config?.port || 3001)
+        const url = await startNovaDashboard(config?.port || 3011, config?.host || '127.0.0.1')
 
         // Wire up chat handler — routes through unified handleMessage
         setNovaMessageHandler(async (message: string, channel: string) => {
@@ -607,15 +608,7 @@ export async function startDashboard(
     } catch (err) {
         console.log(`[Nova] ⚠ Dashboard nicht verfügbar: ${err}`)
 
-        // Fallback to old gateway if new dashboard fails
-        if (config?.enabled) {
-            try {
-                const { startGateway } = await import('../gateway.js')
-                await startGateway(config.port || 3000, false)
-                console.log(`[Nova] ✓ Legacy Dashboard: http://localhost:${config.port || 3000}`)
-            } catch (gatewayErr) {
-                console.log(`[Nova] ⚠ Legacy Dashboard auch nicht verfügbar: ${gatewayErr}`)
-            }
-        }
+        // A bind failure is not permission to start a different/legacy ingress.
+        // The configured endpoint remains unavailable until its cause is fixed.
     }
 }

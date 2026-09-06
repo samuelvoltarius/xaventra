@@ -78,7 +78,7 @@ export async function initCliPipelineRuntime(): Promise<DaemonState> {
     if (runtimeState) return runtimeState
 
     const config = readConfig()
-    const state: DaemonState = {
+    const state = initNovaState({
         running: true,
         channels: { telegram: null, whatsapp: null, discord: null },
         llm: null,
@@ -89,7 +89,7 @@ export async function initCliPipelineRuntime(): Promise<DaemonState> {
         resilience: null,
         startTime: Date.now(),
         config,
-    }
+    })
 
     try {
         const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'))
@@ -131,9 +131,9 @@ export async function initCliPipelineRuntime(): Promise<DaemonState> {
         console.warn(`[CLI] Self-Setup Scan übersprungen: ${err}`)
     }
 
-    initNovaState(state as any)
     preloadPipelineModules().catch(() => {})
 
+    state.runtimeReady = true
     runtimeState = state
     return state
 }

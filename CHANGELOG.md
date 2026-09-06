@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.78.5] — 2026-09-06
+
+- Daemon and CLI now mutate the canonical state object instead of a stale copy.
+  Late readiness, channel and memory initialization become visible to consumers
+  such as Telegram's startup gate.
+- Preserve an explicitly configured local model/endpoint when opportunistic
+  discovery is empty; do not replace a working model with the invented ID
+  `unknown`. Keep local selection separate from same-name cloud discoveries.
+- Return correlated assistant/tool messages through the native runner and
+  daemon LLM adapter; retain tool-call IDs and per-call budgets. An exhausted
+  tool loop retains observed evidence instead of returning a blank response.
+- Explicit history-only answers cannot repeat external actions. Policy blocks
+  stop recovery rather than triggering capability/repair loops, and prevent
+  successful validation even after an earlier successful tool.
+- Main no longer starts the old ungoverned integration gateway on port 3002.
+  Use the authenticated daemon REST API. Dashboard defaults now match Desktop:
+  loopback port 3011, honoring `dashboard.host`/`enabled`. A bind conflict fails
+  closed without changing ports or silently starting another gateway.
+- Serialize Desktop model selection while a save is pending, retaining drafts
+  and preventing a late pinned response from overwriting the return to Auto.
+- Add six full-daemon packaged Desktop acceptance groups, including real file
+  evidence, scoped Trust/Memory, complete process restart and denied reads.
+  Scripted cross-platform CI and explicitly selected real-provider Windows
+  acceptance are separate gates. [Evidence and limits](docs/VERIFICATION_2.78.5.md).
+
 ## [2.78.4] — 2026-09-06
 
 - Resolve Desktop Trust and governed Memory through the same channel-bound

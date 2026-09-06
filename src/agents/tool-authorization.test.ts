@@ -31,11 +31,11 @@ function executor(context = authority) {
     const execute = vi.fn(async (_name: string, args: unknown) => args)
     const fence = vi.fn(async () => undefined)
     const once = vi.fn(async () => ({ result: 'cached' }))
-    const compiled = ts.transpile(`const run = ${executorSource}`, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS })
-    const create = new Function('authorizeToolExecution', 'userId', 'authUserId', 'channel', 'content', 'isInternalRequest', 'kernel',
+    const compiled = ts.transpile(`let policyBlocked = false; let awaitingPolicyApproval = false; const run = ${executorSource}`, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS })
+    const create = new Function('authorizeToolExecution', 'ToolAuthorizationError', 'userId', 'authUserId', 'channel', 'content', 'isInternalRequest', 'kernel',
         'assertMissionFenceForContent', 'executionScopeForContent', 'makeIdempotencyKey', 'executionStore', 'prepareToolCompensation',
         'deriveToolCompensation', 'withSpan', 'registry', 'workspaceId', `${compiled}; return run`)
-    const run = create(authorizeToolExecution, context.userId, context.authUserId, context.channel, context.requestText, context.governedReadOnly,
+    const run = create(authorizeToolExecution, ToolAuthorizationError, context.userId, context.authUserId, context.channel, context.requestText, context.governedReadOnly,
         { assertCanExecute() {}, contract: { id: 'run', allowedChanges: { readOnly: context.governedReadOnly, externalSideEffects: false } } },
         fence, () => 'run', () => 'key', { executeOnce: once }, () => undefined, () => undefined,
         async (_name: string, _attrs: unknown, callback: () => unknown) => callback(), { execute }, undefined)
@@ -43,6 +43,21 @@ function executor(context = authority) {
 }
 
 describe('runner common tool authorization', () => {
+    it('enforces a history-only request before cached or live tools, even for an allowed role', async () => {
+        mocks.allowed.mockReturnValue(true)
+        const target = executor({ ...authority, requestText: 'Antworte nur aus dem Verlauf.' })
+        await expect(target.run('read_file', { path: 'old-file.txt' })).rejects.toThrow('conversation recall only')
+        expect(target.once).not.toHaveBeenCalled()
+        expect(target.execute).not.toHaveBeenCalled()
+    })
+    it('stops after a structured policy denial, including before any alternative tool', async () => {
+        mocks.allowed.mockReturnValue(true)
+        const target = executor()
+        target.once.mockResolvedValueOnce({ result: { blocked: true, awaitingApproval: true, success: false, error: 'Approval required' } } as any)
+        await expect(target.run('read_file', { path: 'one.txt' })).rejects.toThrow('Approval required')
+        await expect(target.run('health_status', {})).rejects.toThrow('stopped at a policy gate')
+        expect(target.once).toHaveBeenCalledOnce()
+    })
     it('blocks repeated/recovery calls before fencing, cached evidence or execution', async () => {
         const target = executor()
         for (const phase of ['initial', 'follow-up', 'recovery', 'recovery-follow-up', 'final-follow-up']) {

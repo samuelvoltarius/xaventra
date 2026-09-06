@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createTaskContract, validateTaskCompletion } from './task-contract.js'
 
 describe('TaskContract', () => {
+    it('does not approve a policy-blocked run even after one earlier successful tool', () => {
+        const contract = createTaskContract('Lies beide Dateien', { requiresTool: true, kind: 'file' })
+        const result = validateTaskCompletion(contract, { response: 'Gesperrt', verifiedTools: ['read_file'], policyBlocked: true })
+        expect(result.success).toBe(false)
+        expect(result.violations).toContain('execution stopped by policy')
+    })
     it('accepts a conversational task only with a real response', () => {
         const contract = createTaskContract('Erkläre Nova', { requiresTool: false, kind: 'none' })
         expect(validateTaskCompletion(contract, { response: '' }).success).toBe(false)

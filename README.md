@@ -25,9 +25,10 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Latest reliability iteration: [2.78.4 Desktop-to-Core acceptance](docs/VERIFICATION_2.78.4.md).
-It verifies actual file tools and linked Outcome/Memory scopes in isolated
-packaged-client runs. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
+Latest reliability iteration: [2.78.5 full-daemon Desktop acceptance](docs/VERIFICATION_2.78.5.md).
+It tests the packaged app, complete daemon, real file tools, linked evidence and
+process restart. Scripted CI and real local-model checks are reported separately.
+Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Why Xaventra
 

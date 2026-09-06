@@ -8,7 +8,7 @@ export async function createDesktopFixture() {
     id: `${room.id}-${i}`, authorType: i % 2 ? 'bot' : 'user', authorId: i % 2 ? 'nova' : 'fixture-user',
     content: `${room.id} history ${i}: ${'Readable conversation history. '.repeat(4)}`, createdAt: '2026-01-01T12:00:00Z',
   }))]))
-  const controls = { bootstrapStatus: 200, postStatus: 200, delayMs: 0, omitAuthority: false, requests, rooms, messages }
+  const controls = { bootstrapStatus: 200, postStatus: 200, delayMs: 0, roomPatchDelayMs: 0, omitAuthority: false, requests, rooms, messages }
   const bootstrap = () => ({
     controlPlane: controls.omitAuthority ? undefined : { nodeId: 'fixture-main', hostname: 'Test Main', authoritative: true, mainEpoch: 1 },
     rooms, bots: ['nova', 'researcher'].map(id => ({ id, name: id === 'nova' ? 'Xaventra' : 'Researcher', source: 'nova', avatar: 'X', color: '#4F7CFF' })),
@@ -29,7 +29,11 @@ export async function createDesktopFixture() {
     const match = url.pathname.match(/^\/api\/desktop\/rooms\/(alpha|beta)(\/messages)?$/)
     if (match) {
       const id = match[1]
-      if (req.method === 'PATCH' && !match[2]) { Object.assign(rooms.find(room => room.id === id), body); return reply(200, rooms.find(room => room.id === id)) }
+      if (req.method === 'PATCH' && !match[2]) {
+        await new Promise(resolve => setTimeout(resolve, controls.roomPatchDelayMs))
+        Object.assign(rooms.find(room => room.id === id), body)
+        return reply(200, rooms.find(room => room.id === id))
+      }
       if (req.method === 'GET' && match[2]) return reply(200, { messages: messages[id] })
       if (req.method === 'POST' && match[2]) {
         const status = controls.postStatus

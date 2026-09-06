@@ -39,18 +39,18 @@ Desktop reports identify their `sourceRevision`, OS and package version.
 | Gate | Status | Evidence / missing acceptance |
 |---|---|---|
 | Clean installs and upgrades | Partial | 2.78.2 clean CI source installs on three OSes; full native installer/update acceptance outstanding. |
-| Real model and tools | Bounded pass | [Separate 8/8 real-model run](VERIFICATION_2.78.2.md), not a 100-task agent score. |
+| Real model and tools | Partial | [2.78.5 live Desktop/full-daemon 6/6](VERIFICATION_2.78.5.md); separate native/REST run is 7/8 because a correction reply violated its output constraint. Neither is a 100-task product score. |
 | Authenticated HTTP ingress | Bounded pass | 2.78.2 actual daemon authenticated status and unauthenticated rejection, plus ingress regressions. |
-| Memory/correction/reset/resume | Partial | [Scoped restart/correction checks](VERIFICATION_2.78.0.md); complete native/distributed mission resume outstanding. |
+| Memory/correction/reset/resume | Partial | Scoped restart recall and cross-user isolation pass; correction-only response enforcement and complete native/distributed mission resume remain outstanding. |
 | Policy, validation and evidence | Partial | Core release regressions and real file-tool evidence; full advertised workflow/risk matrix outstanding. |
-| Packaged Desktop | Partial | [2.78.3 UI contract groups](VERIFICATION_2.78.3.md) plus [2.78.4 actual Core-component acceptance](VERIFICATION_2.78.4.md), scripted model. Exact-commit per-OS CI reports required; full daemon/provider/native integration remains open. |
+| Packaged Desktop | Partial | [2.78.5 full daemon and restart](VERIFICATION_2.78.5.md), scripted cross-platform checks plus separate real local-provider Windows run. Exact-commit CI reports required; native dialogs/capture/installers remain open. |
 | Daemon and channels | Partial | [2.78.2 compiled lifecycle on all three OSes](VERIFICATION_2.78.2.md); separately credentialed live channel delivery outstanding. |
 | Distributed HA and memory convergence | Open | Requires controlled multi-node partitions, fencing, takeover and reconciliation; subsystem probes do not suffice. |
 | Reference-agent comparison | Open if claimed | No parity/superiority claim without matched tasks, budgets and independently checked artifacts. |
 | Signed installers and recovery | Open / external prerequisites | Signing identities/notarization plus actual install/update/rollback acceptance and checksums outstanding. |
 
-Next useful rounds: extend the packaged-client acceptance from actual Core
-components to the full isolated daemon and real providers, then native installer
-and distributed failure tests. Do not remove advertised features to make the table
+Next useful rounds: explicit correction-response validation; native dialogs/capture and installer acceptance; typed
+inference-host attribution across fallback; controlled distributed failure and
+mission-resume tests. Do not remove advertised features to make the table
 green. Unavailable credentials/signing may block individual gates, not all safe
 engineering work.

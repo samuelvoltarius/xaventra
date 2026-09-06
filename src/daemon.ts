@@ -76,7 +76,7 @@ interface NovaConfig {
         discord?: { enabled: boolean; token?: string }
         cli?: { enabled: boolean }
     }
-    dashboard?: { enabled: boolean; port: number; password?: string }
+    dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
     runtime?: { profile?: 'home' | 'server' | 'nas' | 'worker' | 'developer'; bundles?: string[]; hotReload?: boolean; acpEnabled?: boolean }
 }
 
@@ -84,7 +84,7 @@ interface NovaConfig {
 // Daemon State
 // ============================================
 
-const state = {
+const state = initNovaState({
     running: false,
     runtimeReady: false,
     channels: {
@@ -103,7 +103,7 @@ const state = {
     // Layer 0 - Resilience
     resilience: null as any,
     startTime: Date.now(),
-}
+})
 
 // ============================================
 // LLM Factory (imported from core/llm-factory.ts)
@@ -422,8 +422,9 @@ async function startDaemon() {
     const finishLlmStartup = startStartupPhase('llm-ready')
     try {
         state.llm = await createLLM(config)
-            // Initialize centralized state store (also sets globalThis.__novaState for legacy compat)
-            ; initNovaState(state as any)
+        // All initialization and channel writes target the canonical store.
+        // Copying a local object here left later readiness/memory/tools updates
+        // invisible to Telegram and other getNovaState()/legacy consumers.
         console.log(`[Nova] ✓ LLM verbunden: ${config.provider}/${state.llm.modelId}`)
         finishLlmStartup()
     } catch (err) {
@@ -2689,21 +2690,10 @@ async function startDaemon() {
                 hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Vienna'
             })
 
-            // Determine dashboard URL with local LAN IP for remote access
-            let dashboardUrl = `http://localhost:${(state as any).config?.dashboard?.port || 3001}`
-            try {
-                const { networkInterfaces } = await import('node:os')
-                const nets = networkInterfaces()
-                for (const iface of Object.values(nets)) {
-                    for (const net of (iface || [])) {
-                        if (net.family === 'IPv4' && !net.internal) {
-                            dashboardUrl = `http://${net.address}:${(state as any).config?.dashboard?.port || 3001}`
-                            break
-                        }
-                    }
-                    if (!dashboardUrl.includes('localhost')) break
-                }
-            } catch { /* use localhost fallback */ }
+            // Advertise the actual bind, not an invented LAN address when the
+            // service is loopback-only, disabled or failed to start.
+            const { getDashboardAddress } = await import('./dashboard/server.js')
+            const dashboardUrl = getDashboardAddress()
 
             const lines = [
                 '✨ *Nova Online!*',
@@ -2712,7 +2702,7 @@ async function startDaemon() {
                 `🤖 Aktives Modell: \`${currentModel}\``,
                 `🕐 Gestartet: ${now}`,
                 `📦 ${availableLLMs.length} Models verfügbar`,
-                `🌐 Dashboard: ${dashboardUrl}`,
+                `🌐 Dashboard: ${dashboardUrl || 'nicht gestartet'}${dashboardUrl && /\/\/(?:127\.|\[::1\])/.test(dashboardUrl) ? ' (nur auf diesem Node; Remote-Zugriff über Tunnel/Proxy)' : ''}`,
                 '',
             ]
 
@@ -2850,6 +2840,7 @@ async function startDaemon() {
         shuttingDown = true
         console.log(`\n[Nova] ${signal} empfangen — Graceful Shutdown...`)
         state.running = false
+        state.runtimeReady = false
 
         // Flush AutoObserver facts to disk
         try {
@@ -2966,5 +2957,3 @@ startDaemon().catch(err => {
     console.error('[Nova] ❌ Daemon Fehler:', err)
     process.exit(1)
 })
-
-

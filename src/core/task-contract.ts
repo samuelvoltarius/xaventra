@@ -96,6 +96,7 @@ export interface CompletionEvidence {
     costUsd?: number
     changedPaths?: string[]
     awaitingApproval?: boolean
+    policyBlocked?: boolean
 }
 
 const DEFAULT_BUDGET: TaskBudget = {
@@ -210,6 +211,7 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
     }
 
     const violations: string[] = []
+    if (evidence.policyBlocked) violations.push('execution stopped by policy')
     if (typeof evidence.durationMs === 'number' && evidence.durationMs > contract.budget.timeoutMs) violations.push('timeout budget exceeded')
     if (typeof evidence.toolCalls === 'number' && evidence.toolCalls > contract.budget.maxToolCalls) violations.push('tool-call budget exceeded')
     if (contract.budget.maxTokens !== undefined && (evidence.tokens || 0) > contract.budget.maxTokens) violations.push('token budget exceeded')

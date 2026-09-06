@@ -31,7 +31,7 @@ const model = createServer(async (req, res) => {
   const messages = input.messages || []
   const lastUser = messages.findLastIndex(message => message.role === 'user')
   const prompt = String(messages[lastUser]?.content || '')
-  const observed = messages.slice(lastUser + 1).filter(message => message.role === 'tool')
+  const observed = messages.filter(message => message.role === 'tool')
   const needsFile = /fixture-(?:evidence|denied)\.txt/.test(prompt)
   const hasReadResult = prompt.includes('VERIFIED_DESKTOP_CORE_731') || observed.some(message => String(message.content).includes('VERIFIED_DESKTOP_CORE_731'))
   const tool = (input.tools || []).find(tool => tool.function?.name.replaceAll('_', '') === 'readfile')

@@ -456,6 +456,10 @@ export async function createLLM(config: { provider?: string; model?: string; int
     }
 
     const sdkProvider = providerMap[config.provider || 'local'] || 'openai'
+    const configuredSection = config.providers?.[config.provider || 'local']
+        || (getNovaConfig() as any)?.providers?.[config.provider || 'local']
+    const explicitLocalEndpoint = sdkProvider === 'local' && configuredSection?.enabled !== false
+        ? configuredSection?.baseUrl : undefined
 
     // Dynamic model selection: use config model if explicitly set,
     // otherwise pick the first available discovered model
@@ -465,7 +469,13 @@ export async function createLLM(config: { provider?: string; model?: string; int
     // This is critical for OAuth subscription access where /v1/models doesn't work
     // but the models ARE available for chat/completions.
     if (model && !availableLLMs.some(l => l.model === model)) {
-        if (sdkProvider === 'local') {
+        if (sdkProvider === 'local' && explicitLocalEndpoint) {
+            // Discovery is opportunistic, not proof that an explicitly selected
+            // endpoint is offline. Keep the requested model; execution will
+            // verify availability instead of sending the invented ID "unknown".
+            availableLLMs.unshift({ provider: 'local', model, local: true, endpoint: explicitLocalEndpoint })
+            console.log(`[Nova] Configured local model "${model}" retained; endpoint availability is verified on use`)
+        } else if (sdkProvider === 'local') {
             const firstLocal = bestLocalLLM(availableLLMs)
             if (firstLocal) {
                 console.log(`[Nova] Local config model "${model}" not found - using discovered mesh model ${firstLocal.model} at ${firstLocal.endpoint ?? 'default local endpoint'}`)
@@ -507,7 +517,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
         }
     }
 
-    const selectedCloud = availableLLMs.find(l => l.model === model && !l.local)
+    const selectedCloud = explicitLocalEndpoint ? undefined : availableLLMs.find(l => l.model === model && !l.local)
     const effectiveSdkProvider = selectedCloud
         ? (selectedCloud.provider === 'openai-codex'
             ? 'openai'
@@ -535,8 +545,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
     let providerApiKey = selectedExternal?.apiKey
     let providerBaseUrl = selectedExternal?.endpoint || selectedLocal?.endpoint
     try {
-        const cfg = getNovaConfig() as any
-        const providerSection = cfg?.providers?.[configuredProvider]
+        const providerSection = configuredSection
         if (providerSection?.apiKey) {
             providerApiKey = providerSection.apiKey   // cloud config wins
         }
@@ -778,7 +787,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
             return { model: activeModelId, provider: activeProvider, reason: 'configured primary model' }
         },
 
-        complete: async (msgs: Array<{ role: string; content: string; image?: { data: string; mimeType: string } }> | string, tools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>) => {
+        complete: async (msgs: Array<{ role: string; content: string; image?: { data: string; mimeType: string }; toolCalls?: any[]; toolCallId?: string }> | string, tools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>, options?: import('../llm/nova-llm-sdk.js').LLMCallOptions) => {
             const normalizedMsgs = Array.isArray(msgs)
                 ? msgs
                 : [{ role: 'user', content: String(msgs) }]
@@ -1162,11 +1171,13 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
 
                     const response = await activeLLM.complete(
                         msgs.map(m => ({
-                            role: m.role as 'system' | 'user' | 'assistant',
+                            ...m,
+                            role: m.role as 'system' | 'user' | 'assistant' | 'tool',
                             content: m.content,
                             ...(m.image && { image: m.image }),
                         })),
-                        tools as any
+                        tools as any,
+                        options,
                     )
                     return { content: response.content, toolCalls: response.toolCalls, usage: response.usage }
                 },

@@ -40,6 +40,11 @@
       "model": "string",
       "preferWhenAuthenticated": "boolean"
     },
+    "dashboard": {
+      "enabled": "boolean",
+      "host": "string",
+      "port": "number"
+    },
     "emoji": "string",
     "fallbackModels": {
       "type": "array",

@@ -15,6 +15,7 @@ export interface NovaStateStore {
     llm: any
     internalLlm: any
     // Channels
+    channels: { telegram: any; whatsapp: any; discord: any; [key: string]: any }
     lastActiveChatId: string | null
     adminChatId: string | null
     // Session tracking
@@ -51,6 +52,7 @@ const _state: NovaStateStore = {
     version: '0.0.0',
     llm: null,
     internalLlm: null,
+    channels: { telegram: null, whatsapp: null, discord: null },
     lastActiveChatId: null,
     adminChatId: null,
     lastActiveUserId: null,

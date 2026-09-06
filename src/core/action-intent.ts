@@ -51,6 +51,16 @@ export function isConversationalClosure(input: string): boolean {
     return /^(?:danke(?: dir)?|vielen dank|super(?: gut gemacht)?|perfekt|sehr gut|gut gemacht|klasse|top|passt|okay|ok|alles klar|freut mich)$/.test(text)
 }
 
+/** Explicit current-turn instruction to answer from existing conversation,
+ * not to repeat an external action mentioned in that conversation. */
+export function isHistoryOnlyRequest(input: string): boolean {
+    const text = input.toLowerCase().replace(/\s+/g, ' ')
+    return /\b(?:antworte|antwort|sage|sag)\b.{0,35}\b(?:nur|ausschließlich)\b.{0,30}\b(?:verlauf|gedächtnis|erinnerung|kontext)\b/.test(text)
+        || (/\b(?:aus dem verlauf|aus der erinnerung|aus dem gedächtnis)\b/.test(text)
+            && /\bohne\b.{0,40}\b(?:erneut|noch einmal|tools?|werkzeuge?)\b/.test(text))
+        || /\b(?:answer|reply)\b.{0,25}\b(?:only|solely)\b.{0,25}\b(?:history|memory|conversation)\b/.test(text)
+}
+
 const NON_FULFILLING_TOOLS = new Set([
     'nova_capabilities', 'find_capability', 'resolve_capability',
     'health_status', 'nova_introspect', 'list_custom_tools',
