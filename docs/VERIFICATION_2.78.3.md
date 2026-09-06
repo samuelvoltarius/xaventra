@@ -37,7 +37,7 @@ responses; preferences and relaunch; primary controls at minimum window size.
 Desktop bridge tests additionally check the separate five-second bootstrap and
 configured chat deadlines. Linux uses an explicit stable executable name.
 
-Local verification on 2026-09-06: 164 Core files / 1,073 tests, five Desktop
+Local verification on 2026-09-06: 164 Core files / 1,073 tests, seven Desktop
 bridge tests, typecheck, build, catalog freshness and assurance passed. The
 separate real local-model acceptance passed 8/8 at 06:24 UTC. Its reports stay
 in the ignored benchmark directory; no production node was modified.
@@ -57,6 +57,15 @@ and mode, with browser launch diagnostics enabled. The renderer sandbox is not
 disabled. Packaging explicitly uses `--publish never`; building a candidate
 must not implicitly publish binaries. Launch failures now preserve a report
 even when the browser automation library terminates on an unhandled rejection.
+
+[Candidate c67cc51](https://github.com/samuelvoltarius/xaventra/actions/runs/34016849392)
+passed six jobs but timed out in macOS's initial app-metadata check. The Desktop
+main process synchronously checked OS encryption availability while reading
+ordinary preferences. [Electron documents that keychain calls may block for
+user input](https://www.electronjs.org/docs/latest/api/safe-storage). Token-free
+startup now leaves encryption availability unprobed; actual credential storage
+and use still check it. The Linux `basic_text` fallback is explicitly rejected.
+Regressions make any keychain access from a token-free config read/save fail.
 
 ## Remaining limits
 

@@ -14,7 +14,7 @@ function harness(t) {
     app: { getPath: () => root, on() {}, setAppUserModelId() {}, whenReady: () => ({ then: fn => { ready = fn } }) },
     BrowserWindow: class { webContents = { id: 1, setWindowOpenHandler() {}, on() {} }; loadFile() {}; once() {} },
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
-    safeStorage: { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() },
+    safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: s => Buffer.from(s), decryptString: b => b.toString() },
   }
   const context = { require: id => id === 'electron' ? electron : require(id), __dirname: join(__dirname, '..'), process: { platform: 'linux', env: {} }, Buffer, URL, console }
   vm.createContext(context)
@@ -58,6 +58,21 @@ test('explicit workspace paths cannot read files below hidden private directorie
 
 test('IPv6 loopback is a valid local Core endpoint', t => {
   assert.equal(harness(t).evaluate("normalizeEndpoint('http://[::1]:3011')"), 'http://[::1]:3011')
+})
+
+test('token-free startup and preference changes never access the OS keychain', t => {
+  const { handlers, context } = harness(t)
+  context.require('electron').safeStorage.isEncryptionAvailable = () => { throw new Error('Keychain interaction must be explicit') }
+  assert.equal(handlers.get('nova:config:get')().encryptionAvailable, null)
+  assert.equal(handlers.get('nova:config:set')(null, { compactMode: true }).compactMode, true)
+})
+
+test('Linux plaintext fallback cannot be used to store a credential', t => {
+  const { handlers, context, root } = harness(t)
+  handlers.get('nova:config:get')()
+  context.require('electron').safeStorage.getSelectedStorageBackend = () => 'basic_text'
+  assert.throws(() => handlers.get('nova:config:set')(null, { token: 'synthetic-do-not-persist' }), /token was not stored/)
+  assert.equal(JSON.parse(readFileSync(join(root, 'connection.json'), 'utf8')).encryptedToken, undefined)
 })
 
 test('bootstrap has a bounded retry budget while chat keeps its configured deadline', async t => {

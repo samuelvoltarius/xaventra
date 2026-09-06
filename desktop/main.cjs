@@ -4,6 +4,15 @@ const { basename, extname, isAbsolute, join, relative, resolve } = require('node
 const { createHash, randomUUID } = require('node:crypto')
 
 let mainWindow = null
+// Do not synchronously touch Keychain just to render connection settings.
+// Availability is unknown until a credential operation explicitly requests it.
+let credentialEncryptionAvailable = null
+
+function secureStorageAvailable() {
+  credentialEncryptionAvailable = safeStorage.isEncryptionAvailable() &&
+    (process.platform !== 'linux' || !['basic_text', 'unknown'].includes(safeStorage.getSelectedStorageBackend()))
+  return credentialEncryptionAvailable
+}
 
 const DEFAULT_PREFERENCES = Object.freeze({ requestTimeoutMs: 120_000, sendOnEnter: true, showInspector: true, compactMode: false })
 
@@ -61,7 +70,7 @@ function writeConfig(input) {
     activeWorkspaceId: typeof input.activeWorkspaceId === 'string' ? input.activeWorkspaceId.slice(0, 120) : current.activeWorkspaceId,
   }
   if (typeof input.token === 'string') {
-    if (input.token && !safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable; token was not stored')
+    if (input.token && !secureStorageAvailable()) throw new Error('OS credential encryption is unavailable; token was not stored')
     next.encryptedToken = input.token ? safeStorage.encryptString(input.token).toString('base64') : undefined
   }
   persistConfig(next)
@@ -76,7 +85,7 @@ function persistConfig(value) {
 function publicConfig(value) {
   return {
     endpoint: value.endpoint, principal: value.principal, clientId: value.clientId,
-    hasToken: Boolean(value.encryptedToken), encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    hasToken: Boolean(value.encryptedToken), encryptionAvailable: credentialEncryptionAvailable,
     requestTimeoutMs: value.requestTimeoutMs, sendOnEnter: value.sendOnEnter,
     showInspector: value.showInspector, compactMode: value.compactMode,
     workspaces: (value.workspaces || []).map(item => ({ id: item.id, name: item.name, path: item.path })),
@@ -178,7 +187,7 @@ function executeWorkspaceOperation(event, input) {
 
 function getToken(config) {
   if (!config.encryptedToken) return ''
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Stored token cannot be decrypted on this system')
+  if (!secureStorageAvailable()) throw new Error('Stored token cannot be decrypted on this system')
   return safeStorage.decryptString(Buffer.from(config.encryptedToken, 'base64'))
 }
 

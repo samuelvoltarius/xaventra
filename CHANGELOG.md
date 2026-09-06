@@ -6,6 +6,9 @@
   fails. Bound bootstrap retries separately from the long-running chat budget;
   stale retries cannot overwrite an opened settings form.
   Missing Main-authority metadata fails closed instead of opening a chat.
+- Defer OS keychain access until an actual credential operation; plain startup
+  and preference reads cannot block on a keychain prompt. Reject the Linux
+  `basic_text` backend for token storage/decryption instead of calling it secure.
 - Preserve per-room session drafts and reading positions across model changes,
   specialist selection and navigation. Restore a failed submission for review,
   with no automatic resend. Keep delayed/pending replies in their original room.

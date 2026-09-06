@@ -34,6 +34,10 @@ Main with an authenticated SSH/Tailscale tunnel. Remote endpoints require HTTPS
 and an explicit `NOVA_DESKTOP_API_TOKEN`.
 Tokens are encrypted with Electron `safeStorage` on the local workstation and
 are never written to rooms, Memory, Mesh state or the Capability Graph.
+Plain startup does not probe the OS keychain: settings show availability as
+unverified until a credential operation. Storing/using a token checks real OS
+encryption and may require an OS keychain prompt; Linux's `basic_text` fallback
+is refused. Signed macOS keychain interaction remains a separate release gate.
 Changing the Core endpoint clears the previous endpoint's stored token. Enter
 the new Core's token in connection settings before reconnecting.
 
