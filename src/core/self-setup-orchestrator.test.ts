@@ -14,6 +14,43 @@ const env = {
 const validation = { valid: true, errors: [], warnings: [] }
 
 describe('SelfSetupOrchestrator', () => {
+    it('preserves every runtime/model endpoint without guessing capabilities from model names', async () => {
+        const now = new Date().toISOString()
+        const state = await runSelfSetupScan({
+            skipNetwork: true, environment: env, validation,
+            voice: { ok: true, installed: [], failed: [], skipped: [], warnings: [] }, config: { nodes: [] },
+            capabilitySnapshot: { version: 1, updatedAt: now, nodes: [{
+                id: 'worker', hostname: 'worker', status: 'online', updatedAt: now, capabilities: ['llm', 'embedding'],
+                runtimes: ['custom-chat', 'another-finetune', 'embedding-only'].map((model, i) => ({
+                    id: `runtime-${i}`, name: 'vLLM', type: i === 2 ? 'embeddings' : 'llm',
+                    endpoint: `http://192.0.2.1:${8000 + i}`, status: 'running', models: [model],
+                    capabilities: i === 2 ? ['embedding'] : ['llm'], verifiedAt: now, verificationSource: 'probe',
+                })),
+            }] },
+        })
+        expect(state.llm.localCandidates).toEqual([
+            { node: 'worker', model: 'custom-chat', endpoint: 'http://192.0.2.1:8000' },
+            { node: 'worker', model: 'another-finetune', endpoint: 'http://192.0.2.1:8001' },
+        ])
+    })
+    it.each(['installed', 'expired', 'offline', 'tombstoned'])('does not treat %s canonical software or stale config as a usable LLM', async failure => {
+        const now = new Date().toISOString()
+        const state = await runSelfSetupScan({
+            skipNetwork: true, environment: env, validation,
+            voice: { ok: true, installed: [], failed: [], skipped: [], warnings: [] },
+            config: { nodes: [{ name: 'local', host: 'localhost', ollamaModels: ['old-chat'], services: { ollama: 'http://localhost:11434' } }] },
+            capabilitySnapshot: { version: 1, updatedAt: now, nodes: [{
+                id: 'local', hostname: 'local', host: 'localhost', updatedAt: now, capabilities: ['llm'],
+                status: failure === 'offline' ? 'offline' : 'online',
+                runtimes: [{ id: 'runtime', name: 'vLLM', type: 'llm', endpoint: 'http://localhost:8000',
+                    status: failure === 'installed' ? 'installed' : 'running', models: ['chat'], capabilities: ['llm'],
+                    verifiedAt: now, verificationSource: 'probe', expiresAt: failure === 'expired' ? now : undefined,
+                }],
+            }], tombstones: failure === 'tombstoned' ? [{ id: 'runtime', deletedAt: now }] : [] },
+        })
+        expect(state.mesh.missingCapabilities).toContain('llm')
+        expect(state.llm.localCandidates).toEqual([])
+    })
     it('does not turn a general improvement request into an installation scan', () => {
         expect(isExplicitSelfSetupRequest('dich noch besser udn schlauer machen')).toBe(false)
         expect(isExplicitSelfSetupRequest('Prüfe die Runtime und installiere fehlende Komponenten')).toBe(true)

@@ -36,6 +36,23 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
+### 2.78.9 environment-awareness and host-boundary candidate
+
+Current graph reads replace boot-only inventory in chat/capability tools. Setup
+distinguishes installed from usable runtimes and preserves model/endpoint pairs.
+Known-host metadata no longer claims admin authority. New plaintext password
+writes are rejected; legacy files require explicit migration and are not changed.
+Source, compiled synthetic input, actual process restart and live deployment are
+separate evidence classes. Exact candidate-SHA CI is required before promotion;
+see [2.78.9 verification](VERIFICATION_2.78.9.md) and
+[discovery/credential recovery guide](ENVIRONMENT_DISCOVERY.md).
+
+The broader environment/install acceptance and SSH execution risk matrix remain
+open. A bounded storage/prompt fix is not a full SSH security audit or an RC.
+The approved next improvement packages remain: grounded Doctor diagnosis before
+retraining, scoped/correctable memory, verified duplicate-safe tools/resume,
+measured low-latency decisions with cumulative budgets, and outcome-only learning.
+
 ### 2.78.8 bounded Doctor validation checkpoint
 
 The empty-review/empty-fix, initialization and invented credential-request

@@ -8,6 +8,7 @@ import { scanEnvironment, type EnvironmentMap } from '../startup/environment-sca
 import { ensureVoiceDeps, type SetupResult } from '../voice/voice-setup.js'
 import { probeGpuRuntime, type GpuRuntimeBackend, type GpuRuntimeStatus } from '../doctor/gpu-runtime.js'
 import type { CapabilityGraphSnapshot } from '../mesh/capability-graph.js'
+import { capabilityNodeOnline, capabilityRuntimeAvailable } from '../mesh/capability-graph.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -62,6 +63,8 @@ export interface MeshSetupNode {
     hardware?: Record<string, unknown>
     services: Record<string, string>
     ollamaModels: string[]
+    /** Canonical model-to-endpoint evidence; no model-name guessing. */
+    modelCandidates?: Array<{ model: string; endpoint: string }>
     capabilities: string[]
     canInstall: string[]
     recommendedFor: string[]
@@ -265,16 +268,26 @@ async function scanMesh(config: any, skipNetwork: boolean): Promise<MeshSetupNod
 
 function setupNodesFromCapabilityGraph(snapshot?: CapabilityGraphSnapshot): MeshSetupNode[] {
     if (!snapshot) return []
+    const now = Date.now()
+    const tombstones = new Set((snapshot.tombstones || []).map(item => item.id))
     return snapshot.nodes
-        .filter(node => node.status === 'online' || node.status === 'busy')
         .map(node => {
-            const running = (node.runtimes || []).filter(runtime => runtime.status === 'running')
-            const capabilities = new Set<string>(node.capabilities || [])
+            const running = (node.runtimes || []).filter(runtime => !tombstones.has(runtime.id) && capabilityRuntimeAvailable(node, runtime, now))
+            // Node-level capabilities include installed/stopped services and
+            // hardware. They are inventory hints, not usable endpoint evidence.
+            const capabilities = new Set<string>()
             const services: Record<string, string> = {}
             const models = new Set<string>()
+            const modelCandidates: Array<{ model: string; endpoint: string }> = []
             for (const runtime of running) {
-                if (runtime.endpoint) services[runtime.type || runtime.name.toLowerCase()] = runtime.endpoint
+                if (runtime.endpoint) {
+                    services[runtime.id] = runtime.endpoint
+                    services[runtime.type || runtime.name.toLowerCase()] ||= runtime.endpoint
+                }
                 for (const model of runtime.models || []) models.add(model)
+                if (runtime.type === 'llm' || runtime.capabilities.includes('llm')) {
+                    for (const model of runtime.models || []) modelCandidates.push({ model, endpoint: runtime.endpoint })
+                }
                 for (const capability of runtime.capabilities || []) capabilities.add(capability)
                 if (runtime.type === 'llm') capabilities.add('llm')
                 if (runtime.type === 'embeddings') capabilities.add('embedding')
@@ -287,10 +300,11 @@ function setupNodesFromCapabilityGraph(snapshot?: CapabilityGraphSnapshot): Mesh
                 host: node.host,
                 address: node.host || node.hostname,
                 role: 'capability-graph',
-                online: true,
+                online: capabilityNodeOnline(node, now),
                 hardware: (node.hardware || {}) as Record<string, unknown>,
                 services,
                 ollamaModels: [...models],
+                modelCandidates,
                 capabilities: [...new Set(normalized)].sort(),
                 canInstall: [],
                 recommendedFor: [],
@@ -308,6 +322,13 @@ function mergeSetupNodes(configured: MeshSetupNode[], canonical: MeshSetupNode[]
         const existing = merged.get(key)
         if (!existing) {
             merged.set(key, node)
+            continue
+        }
+        if (node.role === 'capability-graph') {
+            // A current canonical negative result outranks static config hints.
+            // Keep configured connection/role hints but never resurrect models,
+            // services or online=true from an old configuration.
+            merged.set(key, { ...existing, ...node })
             continue
         }
         merged.set(key, {
@@ -479,7 +500,9 @@ export async function runSelfSetupScan(options: SelfSetupOptions = {}): Promise<
     const missingCapabilities = [...requiredCapabilities].filter(cap => !availableCapabilities.has(cap))
     const localCandidates = meshNodes
         .filter(n => n.online && n.capabilities.includes('llm'))
-        .flatMap(n => n.ollamaModels
+        .flatMap(n => n.modelCandidates !== undefined
+            ? n.modelCandidates.map(candidate => ({ node: n.name, ...candidate }))
+            : n.ollamaModels
             .filter(model => /llama|mistral|gemma|qwen|phi|deepseek|gpt-oss/i.test(model))
             .map(model => ({ node: n.name, model, endpoint: n.services.ollama || n.services.vllm || Object.values(n.services)[0] })))
 

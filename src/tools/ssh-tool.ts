@@ -18,76 +18,18 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from '
 import { join } from 'node:path'
 import { tmpdir, platform, homedir } from 'node:os'
 import { detectEnvironment as detectGlobalEnv, autoInstall } from '../core/environment.js'
+import { loadHosts, saveHosts, resolveHostPassword } from './ssh-tool-hosts.js'
 
 // ============================================
 // Host Database
 // ============================================
-
-interface KnownHost {
-    name: string
-    alias: string[]
-    ip: string
-    user: string
-    password?: string  // Store password for auto-reconnect
-    description: string
-    lastSeen: string | null
-}
-
-interface HostDB {
-    hosts: KnownHost[]
-}
-
-const HOSTS_FILE = join(process.cwd(), '.nova-data', 'hosts.json')
-
-// Template for new installations
-const HOSTS_TEMPLATE: HostDB = {
-    hosts: [
-        {
-            name: 'example-server',
-            alias: ['server', 'example'],
-            ip: '192.168.1.100',
-            user: 'pi',
-            description: 'Example - edit this or add your own hosts',
-            lastSeen: null
-        }
-    ]
-}
-
-function loadHosts(): HostDB {
-    try {
-        if (existsSync(HOSTS_FILE)) {
-            return JSON.parse(readFileSync(HOSTS_FILE, 'utf-8'))
-        } else {
-            const dir = join(process.cwd(), '.nova-data')
-            if (!existsSync(dir)) {
-                mkdirSync(dir, { recursive: true })
-            }
-            writeFileSync(HOSTS_FILE, JSON.stringify(HOSTS_TEMPLATE, null, 2))
-            console.log('[SSH] Created hosts.json template - edit to add your hosts')
-            return HOSTS_TEMPLATE
-        }
-    } catch (e) {
-        console.log('[SSH] Could not load hosts.json')
-    }
-    return { hosts: [] }
-}
-
-function saveHosts(db: HostDB): void {
-    try {
-        const dir = join(process.cwd(), '.nova-data')
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        writeFileSync(HOSTS_FILE, JSON.stringify(db, null, 2))
-    } catch {
-        console.log('[SSH] Could not save hosts.json')
-    }
-}
 
 /**
  * Look up a host by name, alias, IP, or partial match in description/name.
  * Supports fuzzy matching so "jetson" finds a host named "jetson-orin" or
  * with description containing "jetson".
  */
-export function lookupHost(nameOrAlias: string): { ip: string; user: string; name: string; password?: string } | null {
+export function lookupHost(nameOrAlias: string, withPassword = true): { ip: string; user: string; name: string; password?: string } | null {
     const db = loadHosts()
     const needle = nameOrAlias.toLowerCase().trim()
 
@@ -97,7 +39,7 @@ export function lookupHost(nameOrAlias: string): { ip: string; user: string; nam
             host.alias.some(a => a.toLowerCase() === needle) ||
             host.ip === needle) {
             console.log(`[SSH] Host lookup (exact): "${nameOrAlias}" → ${host.user}@${host.ip} (${host.name})`)
-            return { ip: host.ip, user: host.user, name: host.name, password: host.password }
+            return { ip: host.ip, user: host.user, name: host.name, password: withPassword ? resolveHostPassword(host) : undefined }
         }
     }
 
@@ -108,7 +50,7 @@ export function lookupHost(nameOrAlias: string): { ip: string; user: string; nam
         const descMatch = host.description?.toLowerCase().includes(needle)
         if (nameMatch || aliasMatch || descMatch) {
             console.log(`[SSH] Host lookup (fuzzy): "${nameOrAlias}" → ${host.user}@${host.ip} (${host.name})`)
-            return { ip: host.ip, user: host.user, name: host.name, password: host.password }
+            return { ip: host.ip, user: host.user, name: host.name, password: withPassword ? resolveHostPassword(host) : undefined }
         }
     }
 
@@ -116,14 +58,14 @@ export function lookupHost(nameOrAlias: string): { ip: string; user: string; nam
 }
 
 /**
- * Save/update a host with password for future auto-connect
+ * Save metadata only. Explicit password authentication is connection-local;
+ * unattended reconnect uses a separately configured key or environment reference.
  */
-function saveHostCredentials(host: string, user: string, password: string, deviceName?: string): void {
+function saveHostCredentials(host: string, user: string, _password: string, deviceName?: string): void {
     const db = loadHosts()
     const existing = db.hosts.find(h => h.ip === host)
     if (existing) {
         existing.user = user
-        existing.password = password
         existing.lastSeen = new Date().toISOString()
         // Auto-learn aliases from device name
         if (deviceName && !existing.alias.includes(deviceName.toLowerCase())) {
@@ -137,13 +79,17 @@ function saveHostCredentials(host: string, user: string, password: string, devic
             alias: aliases,
             ip: host,
             user,
-            password,
             description: 'Auto-saved by Nova SSH',
             lastSeen: new Date().toISOString()
         })
     }
-    saveHosts(db)
-    console.log(`[SSH] ✅ Credentials saved for ${user}@${host}${deviceName ? ` (${deviceName})` : ''}`)
+    try {
+        saveHosts(db)
+        console.log('[SSH] Host metadata saved; connection password not persisted')
+    } catch {
+        // Command success and metadata persistence are separate outcomes.
+        console.log('[SSH] Host metadata not saved; existing credentials require explicit local migration')
+    }
 }
 
 // ============================================
@@ -443,7 +389,9 @@ export async function executeSSH(params: SSHParams): Promise<{ success?: boolean
 
     // Look up known host (may have saved password)
     let passwordFromSaved = false
-    const knownHost = lookupHost(host)
+    let knownHost: ReturnType<typeof lookupHost>
+    try { knownHost = lookupHost(host, !password) }
+    catch { return { success: false, command: cmd, error: 'Node-local SSH credentials unavailable; configure the reference locally or explicitly choose SSH-key authentication' } }
     if (knownHost) {
         host = knownHost.ip
         user = knownHost.user

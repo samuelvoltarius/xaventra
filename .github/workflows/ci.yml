@@ -36,6 +36,19 @@ jobs:
         env:
           NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
       - run: npm run build
+      - name: Compiled capability inventory, setup and restart acceptance
+        run: node scripts/check-capability-inventory.mjs
+        timeout-minutes: 3
+        env:
+          XAVENTRA_CAPABILITY_QA_DIR: ${{ github.workspace }}/.nova-data/capability-qa
+      - name: Preserve capability acceptance reports including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capability-inventory-qa-${{ matrix.os }}
+          path: .nova-data/capability-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled Doctor artifact download and ESM configuration acceptance
         run: node scripts/check-doctor-artifacts.mjs
         timeout-minutes: 3

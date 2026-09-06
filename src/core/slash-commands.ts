@@ -2988,6 +2988,7 @@ Lösung:
         }
         case 'hosts':
         case 'host': {
+            if (requestPermission !== 'owner' && requestPermission !== 'admin') return '🔒 Host-Verwaltung ist nur fuer Owner/Admin verfuegbar.'
             try {
                 const { loadHosts: loadHostsForCmd, saveHosts: saveHostsForCmd } = await import('../tools/ssh-tool-hosts.js')
                 const db = loadHostsForCmd()
@@ -3005,20 +3006,21 @@ Lösung:
                 switch (action) {
                     case 'new':
                     case 'add': {
-                        // /hosts new <name> <ip> <user> [password] [description]
+                        // Credentials stay node-local; chat accepts references only.
                         const [, name, ip, user, pw, ...descParts] = sub
                         if (!name || !ip || !user) {
-                            return `❌ Syntax: /hosts new <name> <ip> <user> [passwort] [beschreibung]
+                            return `❌ Syntax: /hosts new <name> <ip> <user> [env:XAVENTRA_SSH_NAME] [beschreibung]
 
-Beispiel: /hosts new Jetson 100.64.0.22 xaventra meinPW NVIDIA Jetson Orin`
+Beispiel: /hosts new worker 192.0.2.10 operator env:XAVENTRA_SSH_WORKER Compute worker`
                         }
+                        if (pw && !/^env:XAVENTRA_SSH_[A-Z0-9_]+$/.test(pw)) return '❌ Keine Klartext-Passwoerter im Chat speichern. SSH-Key verwenden oder eine lokal konfigurierte env:XAVENTRA_SSH_NAME-Referenz angeben.'
                         const desc = descParts.join(' ') || `Manuell hinzugefügt am ${new Date().toISOString().slice(0, 10)}`
                         const existing = db.hosts.find(h => h.name.toLowerCase() === name.toLowerCase() || h.ip === ip)
                         if (existing) {
                             existing.name = name
                             existing.ip = ip
                             existing.user = user
-                            if (pw) existing.password = pw
+                            if (pw) existing.passwordEnv = pw.slice(4)
                             existing.description = desc
                             if (!existing.alias.includes(name.toLowerCase())) {
                                 existing.alias.push(name.toLowerCase())
@@ -3032,12 +3034,12 @@ Beispiel: /hosts new Jetson 100.64.0.22 xaventra meinPW NVIDIA Jetson Orin`
                                 alias: [name.toLowerCase()],
                                 ip,
                                 user,
-                                password: pw || undefined,
+                                passwordEnv: pw?.slice(4),
                                 description: desc,
                                 lastSeen: new Date().toISOString(),
                             })
                             saveHostsForCmd(db)
-                            return `✅ Host *${name}* hinzugefügt: ${user}@${ip}${pw ? ' [Passwort gespeichert]' : ''}`
+                            return `✅ Host *${name}* hinzugefügt: ${user}@${ip}${pw ? ' [lokale Credential-Referenz gespeichert, nicht geprueft]' : ''}`
                         }
                     }
 
@@ -3065,13 +3067,13 @@ Beispiel: /hosts new Jetson 100.64.0.22 xaventra meinPW NVIDIA Jetson Orin`
                             return `📡 *Keine Hosts gespeichert*
 
 Nutze /hosts new um einen hinzuzufügen:
-/hosts new \<name\> \<ip\> \<user\> [passwort]`
+/hosts new \<name\> \<ip\> \<user\> [env:XAVENTRA_SSH_NAME]`
                         }
 
                         const hostLines = db.hosts.map(h => {
                             const isLocal = localIPs.includes(h.ip) || h.name.toLowerCase() === localName.toLowerCase()
                             const localTag = isLocal ? ' 🏠 (LOKAL)' : ''
-                            const pwTag = h.password ? '🔑' : '🔓'
+                            const pwTag = h.password ? '⚠️ Legacy-Klartext (Migration erforderlich)' : h.passwordEnv ? '🔑 Lokale Referenz (nicht geprueft)' : '🔑 SSH-Key (nicht geprueft)'
                             const aliases = h.alias?.length ? ` (${h.alias.join(', ')})` : ''
                             const lastSeen = h.lastSeen ? ` | Zuletzt: ${h.lastSeen.slice(0, 10)}` : ''
                             return `${pwTag} *${h.name}*${aliases}${localTag}
@@ -3085,7 +3087,7 @@ Nutze /hosts new um einen hinzuzufügen:
 
 ${hostLines}
 
-_/hosts new \<name\> \<ip\> \<user\> [pw] — Host hinzufügen_
+_/hosts new \<name\> \<ip\> \<user\> [env:XAVENTRA_SSH_NAME] — Host hinzufügen_
 _/hosts del \<name\> — Host entfernen_`
                     }
                 }

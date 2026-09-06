@@ -1350,6 +1350,7 @@
       "module": "src/core/correction-detector.ts",
       "imports": [
         "../memory/memory-governance.js",
+        "../tools/ssh-tool-hosts.js",
         "node:fs",
         "node:path"
       ]
@@ -1393,6 +1394,7 @@
     {
       "module": "src/core/environment.ts",
       "imports": [
+        "../tools/ssh-tool-hosts.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -4532,6 +4534,7 @@
     {
       "module": "src/tools/ssh-tool-hosts.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "node:fs",
         "node:path"
       ]
@@ -4540,6 +4543,7 @@
       "module": "src/tools/ssh-tool.ts",
       "imports": [
         "../core/environment.js",
+        "./ssh-tool-hosts.js",
         "node:child_process",
         "node:fs",
         "node:os",

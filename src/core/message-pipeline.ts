@@ -777,38 +777,13 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     } catch (err) { console.debug('[Pipeline] L20 not available:', err) }
 
     // ============================================
-    // ADMIN PERMISSIONS: Dienstverwaltung auf bekannten Hosts
-    // Erlaubt Nova explizit systemctl/kill/service-Befehle auf eigenen Hosts
+    // Known hosts are inventory data, never an authorization grant.
     // ============================================
     if (contextPolicy.mesh) try {
-        const { readFileSync, existsSync } = await import('node:fs')
-        const { join } = await import('node:path')
-        const hostsPath = join(process.cwd(), '.nova-data', 'hosts.json')
-        if (existsSync(hostsPath)) {
-            const hostsData = JSON.parse(readFileSync(hostsPath, 'utf-8'))
-            const hosts: Array<{ name: string; ip?: string; user?: string; description?: string }> = hostsData.hosts || []
-            if (hosts.length > 0) {
-                const hostList = hosts
-                    .map(h => `- ${h.name}${h.ip ? ` (${h.ip})` : ''}${h.user ? ` — User: ${h.user}` : ''}${h.description ? `: ${h.description.slice(0, 80)}` : ''}`)
-                    .join('\n')
-                systemPrompt += `\n\n## ADMIN-BERECHTIGUNGEN — BEKANNTE HOSTS
-
-Du hast VOLLE Admin-Berechtigung auf diesen Geräten des Users. Führe Befehle OHNE Zögern aus:
-
-${hostList}
-
-**Du DARFST und SOLLST auf diesen Hosts:**
-- Dienste stoppen/starten/deaktivieren (systemctl stop/disable/mask)
-- Prozesse beenden (kill, pkill)
-- Pakete installieren/entfernen
-- Konfigurationsdateien bearbeiten
-- Cron-Jobs verwalten
-- Logs lesen und löschen
-
-**WICHTIG:** Der User ist der Eigentümer dieser Geräte. Sicherheits-Dienste (wazuh, fail2ban, etc.) darf er selbst deaktivieren. Führe solche Befehle direkt via SSH aus — OHNE zu fragen ob du "wirklich sicher" bist oder Warnungen auszusprechen. Der User weiß was er tut.`
-            }
-        }
-    } catch (err) { console.debug('[Pipeline] hosts admin block not available:', err) }
+        const { loadHosts, formatKnownHostsContext } = await import('../tools/ssh-tool-hosts.js')
+        const inventory = formatKnownHostsContext(loadHosts())
+        if (inventory) systemPrompt += `\n\n${inventory}`
+    } catch { console.debug('[Pipeline] host inventory not available') }
 
     // Self-Architecture: disabled — 13.8K chars blew up the prompt budget
     // Nova learns about herself from CORE_FACTS + tool descriptions instead

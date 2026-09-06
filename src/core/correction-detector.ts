@@ -15,6 +15,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getMemoryGovernanceCoordinator } from '../memory/memory-governance.js'
+import { loadHosts, saveHosts } from '../tools/ssh-tool-hosts.js'
 
 // ============================================
 // Types
@@ -527,7 +528,7 @@ function autoUpdateFromCorrection(message: string, lastToolCall: LastToolCall): 
 
         // 1. Update hosts.json if SSH-related
         if (wasSSH || deviceName) {
-            updateHostsJson(newIp, deviceName, lastToolCall)
+            if (!updateHostsJson(newIp, deviceName, lastToolCall)) return
         }
 
         // 2. One governed correction; Core Facts and KG are projections.
@@ -547,14 +548,9 @@ function autoUpdateFromCorrection(message: string, lastToolCall: LastToolCall): 
 /**
  * Update hosts.json with corrected IP
  */
-function updateHostsJson(newIp: string, deviceName: string, lastToolCall: LastToolCall): void {
+function updateHostsJson(newIp: string, deviceName: string, lastToolCall: LastToolCall): boolean {
     try {
-        const hostsPath = join(DATA_DIR, 'hosts.json')
-        let db: any = { hosts: [] }
-
-        if (existsSync(hostsPath)) {
-            db = JSON.parse(readFileSync(hostsPath, 'utf-8'))
-        }
+        const db = loadHosts()
 
         // Find old IP from the failed tool call
         const oldIp = (lastToolCall.params as any)?.host || (lastToolCall.params as any)?.ip || ''
@@ -567,6 +563,9 @@ function updateHostsJson(newIp: string, deviceName: string, lastToolCall: LastTo
         )
 
         if (existingHost) {
+            if (existingHost.passwordEnv && existingHost.ip !== newIp) {
+                throw new Error('Credential-bound host address changes require explicit owner host management')
+            }
             // Update existing host
             console.log(`[CorrectionDetector] Updating host ${existingHost.name}: ${existingHost.ip} → ${newIp}`)
             existingHost.ip = newIp
@@ -584,9 +583,11 @@ function updateHostsJson(newIp: string, deviceName: string, lastToolCall: LastTo
             console.log(`[CorrectionDetector] Added new host: ${deviceName} @ ${newIp}`)
         }
 
-        writeFileSync(hostsPath, JSON.stringify(db, null, 2))
+        saveHosts(db)
+        return true
     } catch (err) {
         console.log(`[CorrectionDetector] hosts.json update error: ${err}`)
+        return false
     }
 }
 

@@ -52,6 +52,28 @@ export interface CapabilityGraphSnapshot {
 
 const DEFAULT_FILE = join(process.cwd(), '.nova-data', 'capability-graph.json')
 
+/** Read-time validity, independent of periodic pruning. These checks are
+ * discovery evidence, not user authorization or proof of task completion. */
+export function capabilityNodeOnline(node: CapabilityGraphNode, now = Date.now()): boolean {
+    if (node.status !== 'online' && node.status !== 'busy') return false
+    // A scanner-only local node has no heartbeat; use its observed update time.
+    const age = now - Date.parse(node.lastHeartbeat || node.updatedAt)
+    return Number.isFinite(age) && age >= -30_000 && age <= (node.lastHeartbeat ? 75_000 : 300_000)
+}
+
+export function capabilityRuntimeAvailable(
+    node: CapabilityGraphNode, runtime: CapabilityRuntime, now = Date.now(), maxAgeMs = 300_000,
+): boolean {
+    if (!capabilityNodeOnline(node, now) || runtime.status !== 'running') return false
+    const age = now - Date.parse(runtime.verifiedAt)
+    if (!Number.isFinite(age) || age < -30_000 || age > maxAgeMs) return false
+    if (runtime.expiresAt !== undefined) {
+        const expiresAt = Date.parse(runtime.expiresAt)
+        if (!Number.isFinite(expiresAt) || expiresAt <= now) return false
+    }
+    return true
+}
+
 function runtimeFromService(service: DiscoveredAIService): CapabilityRuntime {
     return {
         id: service.id,
@@ -428,12 +450,14 @@ export class CapabilityGraph {
         const now = Date.now()
         const maxAge = query.maxAgeMs ?? 5 * 60_000
         const candidates: CapabilityCandidate[] = []
+        const tombstones = new Set((this.snapshot.tombstones || []).map(item => item.id))
         for (const node of this.snapshot.nodes) for (const runtime of node.runtimes) {
-            if (node.status !== 'online' && node.status !== 'busy') continue
-            if (runtime.status !== 'running') continue
+            if (tombstones.has(runtime.id) || !capabilityRuntimeAvailable(node, runtime, now, maxAge)) continue
             if (query.type && runtime.type !== query.type) continue
             if (query.model && !runtime.models.some(model => model.toLowerCase().includes(query.model!.toLowerCase()))) continue
-            if (query.capability && ![...node.capabilities, ...runtime.capabilities].includes(query.capability)) continue
+            // A capability on another runtime or the node hardware must not
+            // qualify this endpoint (e.g. installed embeddings vs running chat).
+            if (query.capability && ![runtime.type, ...runtime.capabilities].includes(query.capability)) continue
             const age = now - Date.parse(runtime.verifiedAt)
             if (!Number.isFinite(age) || age > maxAge) continue
             const reasons = ['live probe or heartbeat', `${runtime.name} running`]

@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CapabilityGraphSnapshot, CapabilityRuntime, CapabilityGraphNode } from './capability-graph.js'
+import { getCapabilityGraph, capabilityNodeOnline, capabilityRuntimeAvailable } from './capability-graph.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'capabilities')
 
@@ -30,7 +31,9 @@ interface MeshNode {
         arch: string         // 'x64', 'arm64'
     }
     capabilities: NodeCapability[]
+    /** Deprecated compatibility alias: historically contains ALL runtime models. */
     ollamaModels: string[]
+    runtimes?: Array<Pick<CapabilityRuntime, 'id' | 'name' | 'status' | 'models' | 'verifiedAt' | 'verificationSource'> & { available: boolean }>
     lastProbed: string
     online: boolean
 }
@@ -98,20 +101,23 @@ function mapHardware(node: CapabilityGraphNode): MeshNode['hardware'] {
 /** Compatibility projection for older tools. The canonical graph remains the
  * single discovery authority; this function performs no network probing. */
 export function nodesFromCapabilityGraph(snapshot: CapabilityGraphSnapshot): MeshNode[] {
+    const now = Date.now()
+    const tombstones = new Set((snapshot.tombstones || []).map(item => item.id))
     return snapshot.nodes
         .filter(node => node.status === 'online' || node.status === 'busy')
         .map(node => {
+            const runtimes = node.runtimes.filter(runtime => !tombstones.has(runtime.id))
             const capabilities: NodeCapability[] = []
-            for (const runtime of node.runtimes) {
+            for (const runtime of runtimes) {
                 const quality = runtimeQuality(runtime)
-                for (const name of capabilityNames(runtime)) {
+                for (const name of capabilityNames(runtime)) for (const provider of runtime.models.length ? runtime.models : [runtime.name]) {
                     capabilities.push({
                         name,
-                        provider: runtime.models[0] || runtime.name,
+                        provider,
                         quality,
                         cost: 'free',
                         speed: quality >= 8 ? 'fast' : quality >= 6 ? 'medium' : 'slow',
-                        available: runtime.status === 'running',
+                        available: capabilityRuntimeAvailable(node, runtime, now),
                     })
                 }
             }
@@ -120,11 +126,27 @@ export function nodesFromCapabilityGraph(snapshot: CapabilityGraphSnapshot): Mes
                 address: node.host || node.hostname,
                 hardware: mapHardware(node),
                 capabilities,
-                ollamaModels: [...new Set(node.runtimes.flatMap(runtime => runtime.models))],
+                ollamaModels: [...new Set(runtimes.flatMap(runtime => runtime.models))],
+                // Only shareable display fields. Do not serialize endpoints or
+                // arbitrary runtime metadata into the conversation prompt.
+                runtimes: runtimes.map(runtime => ({
+                    id: runtime.id, name: runtime.name, status: runtime.status,
+                    models: [...runtime.models], verifiedAt: runtime.verifiedAt,
+                    verificationSource: runtime.verificationSource,
+                    available: capabilityRuntimeAvailable(node, runtime, now),
+                })),
                 lastProbed: node.lastHeartbeat || node.updatedAt,
-                online: true,
+                online: capabilityNodeOnline(node, now),
             }
         })
+}
+
+function refreshCapabilityProjection(): void {
+    // Scans/heartbeats continue after boot. Never keep a second authoritative
+    // inventory or probe the network on the synchronous chat/tool read path.
+    try { nodes = nodesFromCapabilityGraph(getCapabilityGraph().getSnapshot()) }
+    catch { nodes = [] } // Do not route from a stale cache after a read failure.
+    cloudProviders = discoverCloudCapabilities()
 }
 
 // ============================================
@@ -297,6 +319,7 @@ export function discoverCloudCapabilities(): CloudProvider[] {
 // ============================================
 
 export function findBestCapability(request: CapabilityRequest): CapabilityMatch | null {
+    refreshCapabilityProjection()
     const allOptions: CapabilityMatch[] = []
 
     // Collect from nodes
@@ -359,27 +382,30 @@ export function findBestCapability(request: CapabilityRequest): CapabilityMatch 
 
 // Get all available capabilities as a formatted string
 export function getCapabilityMap(): string {
-    const lines = ['## Mesh Capability Map']
+    refreshCapabilityProjection()
+    const lines = ['## Mesh Capability Map',
+        'Automatisch erkannter Bestand. running + aktuelle Probe/Heartbeat = Routing-Kandidat; kein Beleg fuer Benutzer-Anmeldung oder erfolgreiche Tool-Ausfuehrung.',
+        'installed/stopped/veraltet bedeutet NICHT nutzbar. Fehlend bedeutet nicht erkannt, nicht zwingend nicht installiert. Installation erfordert einen freigegebenen Setup-Plan.']
 
     for (const node of nodes) {
         const status = node.online ? '🟢' : '🔴'
         lines.push(`\n### ${status} ${node.name} (${node.address})`)
         lines.push(`Hardware: ${node.hardware.arch}, ${node.hardware.ramGB}GB RAM${node.hardware.gpu ? ', GPU: ' + node.hardware.gpuType : ''}`)
 
-        if (node.ollamaModels.length > 0) {
-            lines.push(`Ollama: ${node.ollamaModels.join(', ')}`)
+        for (const runtime of node.runtimes || []) {
+            lines.push(`${runtime.name}: ${runtime.models.join(', ') || 'keine Modelle gemeldet'} | ${runtime.status} | ${runtime.available ? 'aktuell erreichbar' : 'nicht als nutzbar bestaetigt'} | ${runtime.verificationSource} ${runtime.verifiedAt}`)
         }
 
         if (node.capabilities.length > 0) {
             for (const cap of node.capabilities) {
-                lines.push(`  - ${cap.name}: ${cap.provider} (quality ${cap.quality}/10, ${cap.cost})`)
+                lines.push(`  - ${cap.name}: ${cap.provider} (${cap.available ? 'Routing-Kandidat' : 'nicht verfuegbar'})`)
             }
         } else {
             lines.push('  Keine Capabilities erkannt')
         }
     }
 
-    lines.push('\n### ☁️ Cloud Providers')
+    lines.push('\n### ☁️ Cloud Providers (Konfiguration, keine Live-/Auth-Pruefung)')
     for (const cloud of cloudProviders) {
         const status = cloud.available ? '🟢' : '🔴'
         lines.push(`${status} ${cloud.name}: ${cloud.capabilities.map(c => c.name).join(', ')}`)
@@ -390,6 +416,7 @@ export function getCapabilityMap(): string {
 
 // What capabilities are MISSING across all nodes?
 export function getMissingCapabilities(): string[] {
+    refreshCapabilityProjection()
     const allNeeded = ['vision', 'tts', 'stt', 'llm', 'embedding']
     const allAvailable = new Set<string>()
 
@@ -409,39 +436,21 @@ export function getMissingCapabilities(): string[] {
 
 // Suggest where to install a missing capability
 export function suggestInstallation(capability: string): string | null {
-    const installGuides: Record<string, { bestNode: string; command: string; reason: string }> = {
-        stt: {
-            bestNode: 'jetson',
-            command: 'pip install faster-whisper && nova-stt-server start',
-            reason: 'GPU-beschleunigt auf Jetson am schnellsten',
-        },
-        tts: {
-            bestNode: 'jetson',
-            command: 'pip install piper-tts && nova-tts-server start',
-            reason: 'GPU-beschleunigt auf Jetson, auch Pi5 moeglich',
-        },
-        vision: {
-            bestNode: 'jetson',
-            command: 'ollama pull moondream',
-            reason: 'Braucht GPU fuer schnelle Inferenz',
-        },
-        embedding: {
-            bestNode: 'pi5',
-            command: 'ollama pull nomic-embed-text',
-            reason: 'Klein genug fuer CPU, spart Jetson GPU fuer groessere Modelle',
-        },
+    refreshCapabilityProjection()
+    if (!['stt', 'tts', 'vision', 'embedding', 'llm'].includes(capability)) return null
+    const available = findBestCapability({ capability, preferLocal: true, preferQuality: false })
+    if (available) return `${capability} bereits verfuegbar: ${available.nodeName}/${available.provider}. Vor Neuinstallation vorhandenen Kandidaten pruefen.`
+
+    const online = nodes.filter(node => node.online)
+    for (const node of online) {
+        const providers = new Set(node.capabilities.filter(cap => cap.name === capability).map(cap => cap.provider))
+        const installed = node.runtimes?.find(runtime =>
+            ['installed', 'stopped'].includes(runtime.status) && (providers.has(runtime.name) || runtime.models.some(model => providers.has(model))))
+        if (installed) return `${capability}: ${installed.name} auf ${node.name} bereits installiert/gemeldet (${installed.status}, ${installed.verifiedAt}). Zuerst Start/Konfiguration pruefen, nicht erneut installieren. Setup-Plan und Freigabe vor Aenderungen.`
     }
-
-    const guide = installGuides[capability]
-    if (!guide) return null
-
-    // Check if best node is online
-    const targetNode = nodes.find(n => n.name === guide.bestNode && n.online)
-    if (!targetNode) {
-        return `${capability} fehlt. Empfehlung: ${guide.bestNode} (${guide.reason}), aber Node ist offline.`
-    }
-
-    return `${capability} fehlt. Installiere auf ${guide.bestNode}: \`${guide.command}\` (${guide.reason})`
+    if (!online.length) return `${capability} nicht erkannt; kein aktuell erreichbarer Node belegt. Erst lokalen oder angemeldeten Node-Bestand pruefen.`
+    const candidates = online.map(node => `${node.name} (${node.hardware.arch}, ${node.hardware.ramGB || 'unbekannt'} GB RAM${node.hardware.gpuType ? `, ${node.hardware.gpuType}` : ''})`)
+    return `${capability} nicht als nutzbar erkannt. Bestand fuer Setup-Plan: ${candidates.join('; ')}. OS, Architektur, freie Ressourcen und kompatible Installationswege mit self_setup_plan/self_setup_research pruefen; noch keine Eignungszusage. Aenderungen erst nach Freigabe und mit Funktionspruefung.`
 }
 
 // Actually install a missing capability on the best node via SSH
@@ -577,8 +586,7 @@ function loadState(): void {
 export async function initCapabilityOrchestrator(): Promise<void> {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true })
     console.log('[Capabilities] Hydrating legacy view from canonical Capability Graph...')
-    const { getCapabilityGraph } = await import('./capability-graph.js')
-    nodes = nodesFromCapabilityGraph(getCapabilityGraph().pruneStale())
+    refreshCapabilityProjection()
 
     // Discover cloud capabilities
     cloudProviders = discoverCloudCapabilities()

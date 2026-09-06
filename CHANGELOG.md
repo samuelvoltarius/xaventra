@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.9] — 2026-09-06
+
+- Refresh conversational capability lookup from the current canonical graph;
+  enforce freshness/expiry/tombstones and distinguish installed from usable.
+- Preserve runtime names, every model and model-to-endpoint associations in
+  setup. Prefer reuse suggestions over invented node-specific installs.
+- Separate known-host inventory from permission in both prompt paths. Centralize
+  host writes, reject new plaintext passwords, support node-local environment
+  references, and protect legacy/malformed files from silent rewrites.
+- Add isolated source and compiled inventory/host-storage/restart acceptance to
+  three-OS CI. Synchronize Core/Desktop versions. No production or credential
+  migration; see [verification and limits](docs/VERIFICATION_2.78.9.md).
+
 ## [2.78.8] — 2026-09-06
 
 - Reject empty, incomplete, wrong-type and contradictory Doctor reviews instead

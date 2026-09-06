@@ -13,6 +13,7 @@ import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { platform, homedir, hostname, arch, cpus, totalmem, freemem } from 'node:os'
+import { loadHosts, formatKnownHostsContext } from '../tools/ssh-tool-hosts.js'
 
 // ============================================
 // Types
@@ -314,16 +315,8 @@ export function getCapabilities(): string {
 
         // Show known hosts so the LLM knows to use ssh_command for them
         try {
-            const hostsFile = join(process.cwd(), '.nova-data', 'hosts.json')
-            if (existsSync(hostsFile)) {
-                const db = JSON.parse(readFileSync(hostsFile, 'utf-8'))
-                if (db.hosts?.length > 0) {
-                    const hostList = db.hosts.map((h: any) =>
-                        `  - ${h.name}${h.alias?.length ? ` (${h.alias.join(', ')})` : ''}: ${h.user}@${h.ip} [Passwort gespeichert ✅]`
-                    ).join('\n')
-                    caps.push(`Bekannte Geräte im Netzwerk (IMMER ssh_command benutzen!):\n${hostList}`)
-                }
-            }
+            const inventory = formatKnownHostsContext(loadHosts())
+            if (inventory) caps.push(inventory)
         } catch { /* no hosts file */ }
     } else {
         caps.push('SSH: ❌ Nicht verfügbar')

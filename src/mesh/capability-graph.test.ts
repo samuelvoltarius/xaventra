@@ -2,9 +2,30 @@ import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { CapabilityGraph } from './capability-graph.js'
+import { CapabilityGraph, capabilityRuntimeAvailable } from './capability-graph.js'
+import type { CapabilityGraphNode } from './capability-graph.js'
 
 describe('CapabilityGraph', () => {
+    it('enforces heartbeat, expiry and runtime-local capabilities without a prune pass', () => {
+        const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
+        const now = new Date().toISOString()
+        const node: CapabilityGraphNode = {
+            id: 'fixture', hostname: 'fixture', status: 'online', updatedAt: now, lastHeartbeat: now,
+            capabilities: ['llm', 'embedding'], runtimes: [{
+                id: 'chat', name: 'vLLM', type: 'llm', endpoint: 'http://192.0.2.1:8000',
+                status: 'running', models: ['chat'], capabilities: ['llm'], verifiedAt: now, verificationSource: 'probe',
+            }],
+        }
+        graph.merge({ version: 1, updatedAt: now, nodes: [node] })
+        expect(graph.findCandidates({ capability: 'llm' })).toHaveLength(1)
+        expect(graph.findCandidates({ capability: 'embedding' })).toEqual([])
+        const runtime = node.runtimes[0]
+        expect(capabilityRuntimeAvailable(node, runtime, Date.parse(now) + 75_001)).toBe(false)
+        expect(capabilityRuntimeAvailable({ ...node, lastHeartbeat: 'invalid' }, runtime)).toBe(false)
+        expect(capabilityRuntimeAvailable(node, { ...runtime, expiresAt: now })).toBe(false)
+        expect(capabilityRuntimeAvailable(node, { ...runtime, expiresAt: 'invalid' })).toBe(false)
+        expect(capabilityRuntimeAvailable(node, runtime, Date.parse(now) - 31_000)).toBe(false)
+    })
     it('merges scanner evidence with node hardware and returns verified candidates', () => {
         const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
         const now = new Date().toISOString()

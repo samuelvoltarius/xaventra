@@ -130,6 +130,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/host-correction.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/lifecycle-policy.ts",
       "path": ".nova-data"
     },
@@ -175,6 +179,10 @@
     },
     {
       "owner": "src/core/self-update.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/slash-commands-rbac.test.ts",
       "path": ".nova-data"
     },
     {
@@ -598,11 +606,15 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/tools/ssh-tool-hosts.ts",
+      "owner": "src/tools/ssh-tool-execution.test.ts",
       "path": ".nova-data"
     },
     {
-      "owner": "src/tools/ssh-tool.ts",
+      "owner": "src/tools/ssh-tool-hosts.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/ssh-tool-hosts.ts",
       "path": ".nova-data"
     },
     {
