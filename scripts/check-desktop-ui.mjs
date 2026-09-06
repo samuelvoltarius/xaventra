@@ -26,6 +26,11 @@ const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATH
 Object.assign(env, { HOME: artifactRoot, USERPROFILE: artifactRoot, APPDATA: join(artifactRoot, 'appdata'), LOCALAPPDATA: join(artifactRoot, 'localappdata') })
 const report = { version, sourceRevision: process.env.GITHUB_SHA || 'local-working-tree', platform: process.platform, arch: process.arch, passed: false, checks: [],
   scope: 'Packaged Electron against simulated HTTP Core contract; not real model, channels, Mesh HA, installer, signature or screenshot-tool acceptance.' }
+// Preserve evidence even if a failed Electron launch causes an unhandled
+// rejection inside the automation library. Monitoring does not suppress exit.
+process.on('uncaughtExceptionMonitor', error => {
+  writeFileSync(join(artifactRoot, 'report.json'), JSON.stringify({ ...report, passed: false, error: error.stack || String(error) }, null, 2))
+})
 let app, page
 const check = async (name, fn) => { const start = Date.now(); await fn(); report.checks.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`) }
 const screenshot = name => page.screenshot({ path: join(artifactRoot, `${name}.jpg`), type: 'jpeg', quality: 85 })
@@ -101,6 +106,12 @@ try {
     assert.equal(await page.locator('#composer').inputValue(), 'Keep beta draft')
     assert.ok(!(await page.locator('.messages').innerText()).includes('Delayed alpha only'))
     await page.locator('[data-room=alpha]').click(); await page.getByText('Fixture reply: Delayed alpha only', { exact: true }).waitFor()
+    await page.locator('#composer').fill('Settings edit while replying'); await page.locator('#composer').press('Enter')
+    await page.locator('[data-section=settings]').click(); await page.locator('[name=principal]').fill('unsaved-fixture-principal')
+    await wait(() => fixture.messages.alpha.some(message => message.content === 'Fixture reply: Settings edit while replying'))
+    await page.waitForTimeout(150)
+    assert.equal(await page.locator('[name=principal]').inputValue(), 'unsaved-fixture-principal', 'Reply discarded an unsaved settings edit')
+    await page.locator('[data-section=chat]').click()
     fixture.controls.delayMs = 0
   })
   await check('preferences change input behavior and survive relaunch', async () => {

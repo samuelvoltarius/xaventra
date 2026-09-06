@@ -7,6 +7,9 @@ This is a bounded Desktop reliability iteration, not a full-product RC.
 On the actual Windows 2.78.2 package, selecting a different model erased an
 unsent draft. An HTTP 401 left only a wake-up message, with no settings control.
 Sending in alpha then opening beta displayed alpha's pending text in beta.
+Exploratory testing also found that finishing a background reply replaced an
+open settings form and discarded its unsaved input; the package check now
+reproduces and guards that case too.
 The new automated package check failed on the old binary at its five-second
 settings-availability assertion; that negative report was retained locally.
 
@@ -42,6 +45,15 @@ jobs build and run these checks on Windows, Linux and macOS. Use the report's
 `sourceRevision`, platform and version to identify the exact tested candidate;
 the workflow's presence alone is not a passing platform result. Reports and
 synthetic screenshots are uploaded even after failure. Profiles are excluded.
+
+The first candidate [3352f26 CI](https://github.com/samuelvoltarius/xaventra/actions/runs/34016489907)
+exposed a Linux Electron launch failure despite a successful package build;
+this failed result is retained rather than treated as a skip. The disposable
+Linux runner installs the packaged Chromium sandbox helper's required ownership
+and mode, with browser launch diagnostics enabled. The renderer sandbox is not
+disabled. Packaging explicitly uses `--publish never`; building a candidate
+must not implicitly publish binaries. Launch failures now preserve a report
+even when the browser automation library terminates on an unhandled rejection.
 
 ## Remaining limits
 

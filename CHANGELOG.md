@@ -8,6 +8,7 @@
 - Preserve per-room session drafts and reading positions across model changes,
   specialist selection and navigation. Restore a failed submission for review,
   with no automatic resend. Keep delayed/pending replies in their original room.
+  A completed background reply no longer discards unsaved settings edits.
 - Stop inferring tool execution from elapsed time or another request's global
   progress message. Show the actual configured Enter-key behavior.
 - Replace the development-only, nonisolated Desktop check with ten real

@@ -658,7 +658,7 @@ async function sendMessage(event) {
       if (state.busy && state.busyRoomId === roomId && state.roomId === roomId && latest.length !== state.messages.length) {
         state.messages = latest
         if (latest.some(message => message.authorType === 'user' && message.content === content)) state.pendingMessage = null
-        render()
+        if (state.section === 'chat') render()
       }
     } catch { /* The main request owns user-visible error handling. */ }
     finally { progressLoading = false }
@@ -683,7 +683,8 @@ async function sendMessage(event) {
     state.busyRoomId = null
     state.busySince = 0
     state.pendingMessage = null
-    render()
+    // A reply must not recreate settings/modals and discard in-progress edits.
+    if (state.section === 'chat') render()
   }
 }
 

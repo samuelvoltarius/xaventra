@@ -104,6 +104,9 @@ captures the full display. On Linux without a desktop session, use
 `xvfb-run -a npm run check:desktop-ui`. CI runs the same package checks on all
 three operating systems and retains synthetic screenshots/reports, not profiles.
 This is UI/API-contract evidence, not live-model or production-Mesh evidence.
+The disposable Linux CI runner configures the package's Chromium sandbox helper;
+the test does not use `--no-sandbox` or disable renderer isolation. Build/package
+commands use `--publish never`; uploading a binary is a separate release action.
 
 Connection settings stay accessible during startup and failed authentication.
 Bootstrap attempts use a five-second network deadline and at most five tries;

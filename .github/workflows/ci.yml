@@ -53,6 +53,7 @@ jobs:
     timeout-minutes: 15
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      DEBUG: pw:browser
       NOVA_DESKTOP_QA_DIR: ${{ github.workspace }}/.nova-data/desktop-qa
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +67,12 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm ci --prefix desktop
       - run: npm run desktop:build
+      - name: Install the packaged Chromium sandbox helper in the disposable runner
+        if: runner.os == 'Linux'
+        run: |
+          test -f desktop/release/linux-unpacked/chrome-sandbox
+          sudo chown root:root desktop/release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 desktop/release/linux-unpacked/chrome-sandbox
       - name: Packaged Desktop contract acceptance
         if: runner.os != 'Linux'
         run: npm run check:desktop-ui
