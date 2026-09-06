@@ -94,6 +94,8 @@ dashboard/out/
 
 # Nova Doctor GGUF models (too large for git — copy from Spark or download separately)
 models/*.gguf
+models/*.gguf.download
+models/*.gguf.lock
 *.lance
 .nova-data/
 .nova-learning/

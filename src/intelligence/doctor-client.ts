@@ -12,6 +12,7 @@
  */
 
 import { getLlamaEngine, hasLocalModel } from '../llm/llama-engine.js'
+import { DOCTOR_DIAGNOSIS_INSTRUCTIONS, DOCTOR_FIX_PLAN_GRAMMAR, parseDoctorDiagnosis } from './doctor-contract.js'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -84,7 +85,6 @@ export interface BugFixResult {
 
 function buildDiagnosePrompt(input: DiagnoseInput): string {
     const parts = [
-        `You are Nova Doctor, an expert autonomous AI debugging assistant.`,
         `Analyze the following error and provide a concise diagnosis and fix.`,
         ``,
         `ERROR:`,
@@ -100,13 +100,7 @@ function buildDiagnosePrompt(input: DiagnoseInput): string {
 
     parts.push(
         ``,
-        `Respond in JSON with this exact structure:`,
-        `{`,
-        `  "diagnosis": "<one sentence: root cause>",`,
-        `  "fix": "<step-by-step fix instructions>",`,
-        `  "autoApply": <true if this is a safe automated fix, false if needs human review>,`,
-        `  "confidence": "<high|medium|low>"`,
-        `}`,
+        `Doctor report: ${JSON.stringify({ issues: [{ code: 'RUNTIME_ERROR', severity: 'error', message: input.error }], context: input.context ?? {} })}`,
         `Only output the JSON object, no other text.`
     )
 
@@ -199,27 +193,19 @@ export async function diagnose(input: DiagnoseInput): Promise<DiagnoseResult> {
     try {
         const prompt = buildDiagnosePrompt(input)
         const raw = await engine.complete(prompt, {
-            maxTokens: 400,
+            systemPrompt: DOCTOR_DIAGNOSIS_INSTRUCTIONS,
+            jsonSchema: DOCTOR_FIX_PLAN_GRAMMAR,
+            signal: AbortSignal.timeout(60000),
+            maxTokens: 1200,
             temperature: 0.05,
             stopStrings: ['```', '\n\n\n'],
         })
 
-        // Parse JSON from model output
-        const jsonMatch = raw.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) throw new Error('No JSON in response')
-
-        const parsed = JSON.parse(jsonMatch[0])
-        const result: DiagnoseResult = {
-            diagnosis: parsed.diagnosis ?? 'Model returned incomplete diagnosis.',
-            fix: parsed.fix ?? 'See model output for details.',
-            autoApply: parsed.autoApply === true,
-            confidence: parsed.confidence in { high: 1, medium: 1, low: 1 } ? parsed.confidence : 'medium',
-            fromModel: true,
-        }
+        const result: DiagnoseResult = parseDoctorDiagnosis(raw, { reportedError: input.error })
         recordTelemetry({ type: 'diagnose', fromModel: true, confidence: result.confidence, durationMs: Date.now() - t0, errorPrefix: input.error.slice(0, 80) })
         return result
     } catch (err: any) {
-        console.warn(`[NovaDoctorClient] Diagnosis parse failed: ${err.message}`)
+        console.warn('[NovaDoctorClient] Diagnosis failed validation; using unverified rule-based fallback')
         recordTelemetry({ type: 'diagnose', fromModel: false, confidence: 'low', durationMs: Date.now() - t0, errorPrefix: input.error.slice(0, 80) })
         return { ...fallbackDiagnosis(input), fromModel: false }
     }
@@ -232,7 +218,7 @@ export async function reviewCode(code: string, file?: string): Promise<CodeRevie
     const t0 = Date.now()
     const engine = await getLlamaEngine()
 
-    const empty: CodeReviewResult = { issues: [], suggestions: [], security: [], severity: 'ok' }
+    const empty: CodeReviewResult = { issues: [], suggestions: ['Doctor review unavailable or unverified; independent review required.'], security: [], severity: 'warning' }
     if (!engine) return empty
 
     try {
@@ -281,7 +267,8 @@ export async function generateFix(code: string, error: string): Promise<BugFixRe
         const result: BugFixResult = {
             fixedCode: parsed.fixedCode ?? '',
             explanation: parsed.explanation ?? '',
-            safe: parsed.safe === true,
+            // A model response is never PATCH_GATE approval.
+            safe: false,
         }
         recordTelemetry({ type: 'fix', fromModel: true, confidence: result.safe ? 'high' : 'medium', durationMs: Date.now() - t0, errorPrefix: error.slice(0, 80) })
         return result

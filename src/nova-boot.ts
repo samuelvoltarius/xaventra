@@ -14,6 +14,7 @@ import { execSync, exec } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { platform } from 'node:os'
 import { resolveConfigPath } from './config/config-path.js'
+import { join } from 'node:path'
 
 
 // ============================================
@@ -333,12 +334,15 @@ class NovaBoot {
     // ============================================
 
     private async setupDoctorModel(): Promise<void> {
-        const { getInstalledModels, selectBestModel, downloadBestModel } = await import('./llm/download-models.js')
-
-        const installed = getInstalledModels()
-        if (installed.length > 0) {
-            console.log(`🏥 Nova Doctor: ${installed[0].filename} already installed`)
-            return
+        const { selectBestModel, downloadBestModel } = await import('./llm/download-models.js')
+        const { selectInstalledModel, getDoctorModelsDir, verifyDoctorArtifact } = await import('./llm/doctor-artifacts.js')
+        const installed = selectInstalledModel()
+        if (installed) {
+            try {
+                await verifyDoctorArtifact(join(getDoctorModelsDir(), installed.filename), installed)
+                console.log(`🏥 Doctor artifact verified: ${installed.filename} (not yet loaded)`)
+                return
+            } catch { console.warn('🏥 Doctor artifact failed integrity verification; not usable') }
         }
 
         const best = selectBestModel()

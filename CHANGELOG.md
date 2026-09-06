@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.7] — 2026-09-06
+
+- Doctor artifacts now use a shared, independently versioned registry with exact
+  sizes and pinned SHA-256. Remove the nonexistent hard-coded Core release URL.
+- Read configured mirrors and doctorModel/off using native ESM imports. Download
+  through HTTPS with validated resume ranges, restart on ignored Range, bounded
+  transfer, credential-origin checks and verified atomic replacement.
+- Verify GGUF integrity before native loading; retry after initial absence or
+  failed initialization. Automatic model selection respects its RAM budget.
+- Align diagnosis with the trained fix-plan contract, a real system-message role
+  and constrained JSON generation. Independent validation still rejects malformed
+  output; model suggestions never authorize PATCH_GATE or claim execution.
+- Compiled artifact acceptance in three-OS CI. See [Doctor setup and recovery](docs/DOCTOR_MODELS.md)
+  and [verification boundaries](docs/VERIFICATION_2.78.7.md). No retraining or
+  production rollout; broad Doctor quality is a separate gate.
+
 ## [2.78.6] — 2026-09-06
 
 - Enforce bounded explicit current-turn response constraints in the independent

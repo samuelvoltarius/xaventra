@@ -2328,8 +2328,16 @@
       "module": "src/intelligence/doctor-client.ts",
       "imports": [
         "../llm/llama-engine.js",
+        "./doctor-contract.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/intelligence/doctor-contract.ts",
+      "imports": [
+        "node-llama-cpp",
+        "zod"
       ]
     },
     {
@@ -2900,14 +2908,26 @@
       "imports": []
     },
     {
-      "module": "src/llm/download-models.ts",
+      "module": "src/llm/doctor-artifacts.ts",
       "imports": [
         "../config/config-path.js",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/download-models.ts",
+      "imports": [
+        "./doctor-artifacts.js",
         "node:fs",
         "node:http",
         "node:https",
-        "node:os",
-        "node:path"
+        "node:path",
+        "node:stream",
+        "node:stream/promises",
+        "node:url"
       ]
     },
     {
@@ -2919,7 +2939,8 @@
     {
       "module": "src/llm/llama-engine.ts",
       "imports": [
-        "../config/config-path.js",
+        "./doctor-artifacts.js",
+        "node-llama-cpp",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -3583,7 +3604,8 @@
         "./config/config-path.js",
         "node:child_process",
         "node:fs",
-        "node:os"
+        "node:os",
+        "node:path"
       ]
     },
     {

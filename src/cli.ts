@@ -1160,6 +1160,11 @@ async function commandWizard(): Promise<void> {
 }
 
 async function commandDoctor(args: string[]): Promise<void> {
+    if (args[0] === '--download') {
+        const { runDoctorDownloadCli } = await import('./llm/download-models.js')
+        process.exitCode = await runDoctorDownloadCli(args.slice(1))
+        return
+    }
     printBanner()
     console.log(c.bold('🏥 Xaventra Doctor — Autonomes Diagnose-System'))
     console.log(c.dim('─'.repeat(50)))
@@ -1171,7 +1176,8 @@ async function commandDoctor(args: string[]): Promise<void> {
     // Always show hardware summary
     console.log(`  🖥️  RAM:          ${info.ramGB} GB`)
     console.log(`  ⚙️   CPU Threads:  ${info.cpuThreads} (von ${cpus().length} Kernen)`)
-    console.log(`  🤖  Aktives Modell: ${info.modelName ?? c.warn('kein GGUF gefunden')}`)
+    console.log(`  🤖  Gewähltes Modell: ${info.modelName ?? c.warn('kein passendes GGUF gefunden')}`)
+    console.log(`  Prüfung: ${info.integrity}; geladen: ${info.loaded ? 'ja' : 'nein'}`)
 
     if (info.models.length > 0) {
         console.log()
@@ -1184,15 +1190,15 @@ async function commandDoctor(args: string[]): Promise<void> {
         console.log()
         console.log(c.warn('  ⚠  Keine GGUF-Modelle in models/ gefunden'))
         console.log()
-        console.log('  Kopiere die Modelle vom Spark-Server oder lade sie herunter:')
-        console.log(c.dim('    scp spark:~/nova-lora/models/nova-doctor-*.gguf ./models/'))
+        console.log('  Konfiguriere doctorModelMirror oder importiere ein geprüftes GGUF nach models/.')
+        console.log(c.dim('    xaventra doctor --download'))
         console.log()
         console.log('  Empfohlene Modelle nach Hardware:')
         console.log(c.dim('    GPU (≥ 6 GB VRAM):  nova-doctor-1.5b-q5km.gguf (1.1 GB)'))
         console.log(c.dim('    CPU (≥ 4 GB RAM):   nova-doctor-1.5b-q4km.gguf (941 MB)'))
         console.log(c.dim('    CPU (≥ 2 GB RAM):   nova-doctor-0.5b-q5km.gguf (401 MB)'))
         console.log(c.dim('    Kartoffel (≥ 1 GB): nova-doctor-0.5b-q4km.gguf (380 MB)'))
-        console.log(c.dim('    Minimal (< 1 GB):   nova-doctor-0.5b-q2k.gguf  (323 MB)'))
+        console.log(c.dim('    Automatische Auswahl: maximal 40% des Gesamt-RAM als Modellbudget.'))
         console.log()
         return
     }

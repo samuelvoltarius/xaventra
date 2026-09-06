@@ -68,3 +68,12 @@ inference-host attribution across fallback; controlled distributed failure and
 mission-resume tests. Do not remove advertised features to make the table
 green. Unavailable credentials/signing may block individual gates, not all safe
 engineering work.
+
+### 2.78.7 bounded Doctor candidate
+
+[Doctor delivery/runtime verification](VERIFICATION_2.78.7.md) separates artifact
+integrity/configuration fixtures from actual GGUF diagnosis quality. The retained
+0.5B invented-port/provider response is an open quality failure, not a passing
+benchmark. Delivery, integrity and fail-closed handling can be fixed without
+claiming the weights are fully qualified. Candidate exact-SHA three-OS CI must
+pass before main promotion. No production, weights or RC publication authorized.

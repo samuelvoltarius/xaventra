@@ -19,7 +19,8 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { cpus, totalmem } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { resolveConfigPath } from '../config/config-path.js'
+import { MODEL_REGISTRY, getDoctorModelsDir, getDoctorConfig, selectInstalledModel, verifyDoctorArtifact, isArtifactPresent, type ModelInfo } from './doctor-artifacts.js'
+import type { GbnfJsonSchema } from 'node-llama-cpp'
 
 
 export type DoctorGpuVendor = 'nvidia' | 'amd' | 'apple' | 'intel' | 'unknown' | 'none'
@@ -33,6 +34,9 @@ export interface DoctorHardwareProfile {
 }
 
 export interface LlamaCompletionOptions {
+    systemPrompt?: string
+    jsonSchema?: GbnfJsonSchema
+    signal?: AbortSignal
     maxTokens?: number
     temperature?: number
     topP?: number
@@ -50,22 +54,7 @@ export interface LlamaEngine {
 
 // ─── Model Catalogue ─────────────────────────────────────────────────────────
 
-interface ModelEntry {
-    filename: string
-    minRamGB: number    // minimum RAM/VRAM required
-    quality: number     // 1-5 (higher = better)
-}
-
-const MODEL_CATALOGUE: ModelEntry[] = [
-    { filename: 'nova-doctor-1.5b-q5km.gguf', minRamGB: 6,   quality: 5 },
-    { filename: 'nova-doctor-1.5b-q4km.gguf', minRamGB: 4,   quality: 4 },
-    { filename: 'nova-doctor-1.5b-q2k.gguf',  minRamGB: 3,   quality: 2 },
-    { filename: 'nova-doctor-0.5b-q5km.gguf', minRamGB: 2,   quality: 3 },
-    { filename: 'nova-doctor-0.5b-q4km.gguf', minRamGB: 1.5, quality: 2 },
-    { filename: 'nova-doctor-0.5b-q2k.gguf',  minRamGB: 0.5, quality: 1 },
-]
-
-const MODELS_DIR = join(process.cwd(), 'models')
+const MODEL_CATALOGUE = MODEL_REGISTRY
 
 // ─── Hardware Detection ───────────────────────────────────────────────────────
 
@@ -113,56 +102,11 @@ export function getDetectedDoctorHardware(): DoctorHardwareProfile {
     return detectedHardware
 }
 
-// Read doctorModel override from xaventra.config.json if present
-function getConfiguredModel(): string | null {
-    try {
-        const { readFileSync } = require('node:fs')
-        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
-        return cfg.doctorModel || null
-    } catch {
-        return null
-    }
-}
-
-/**
- * Pick the best model that:
- * 1. Exists on disk
- * 2. Fits in available RAM (use 40% of total RAM as model budget)
- */
 function resolveModelPath(): string | null {
-    const configOverride = getConfiguredModel()
-
-    // Explicit "off" disables Nova Doctor
-    if (configOverride === 'off') return null
-
-    // Explicit model name in config
-    if (configOverride && configOverride !== 'auto') {
-        const filename = configOverride.endsWith('.gguf')
-            ? configOverride
-            : `nova-doctor-${configOverride}.gguf`
-        const p = join(MODELS_DIR, filename)
-        if (existsSync(p)) return p
-        console.warn(`[LlamaEngine] Configured doctorModel "${configOverride}" not found — auto-selecting`)
-    }
-
-    // Auto: pick best model that fits RAM budget (40% of system RAM)
-    const ramBudgetGB = getSystemRamGB() * 0.4
-
-    // Best = highest quality that fits AND exists on disk
-    const candidates = MODEL_CATALOGUE
-        .filter(m => m.minRamGB <= ramBudgetGB && existsSync(join(MODELS_DIR, m.filename)))
-        .sort((a, b) => b.quality - a.quality)
-
-    if (candidates.length === 0) {
-        // Last resort: any model that exists, smallest first
-        const anyExisting = MODEL_CATALOGUE
-            .slice()
-            .reverse()
-            .find(m => existsSync(join(MODELS_DIR, m.filename)))
-        return anyExisting ? join(MODELS_DIR, anyExisting.filename) : null
-    }
-
-    return join(MODELS_DIR, candidates[0].filename)
+    try {
+        const model = selectInstalledModel()
+        return model ? join(getDoctorModelsDir(), model.filename) : null
+    } catch { return null } // Invalid/unpinned config never enables a model.
 }
 
 // ─── Engine State ─────────────────────────────────────────────────────────────
@@ -172,7 +116,7 @@ let initPromise: Promise<LlamaEngine | null> | null = null
 
 // ─── Engine Creation ──────────────────────────────────────────────────────────
 
-async function createEngine(modelPath: string): Promise<LlamaEngine> {
+async function createEngine(selectedModel: ModelInfo): Promise<LlamaEngine> {
     const { getLlama, getLlamaGpuTypes, LlamaChatSession, LlamaLogLevel } = await import('node-llama-cpp')
 
     const threads = getCpuThreads()
@@ -216,14 +160,14 @@ async function createEngine(modelPath: string): Promise<LlamaEngine> {
         })
     }
 
-    let effectiveModelPath = modelPath
-    const configured = getConfiguredModel()
-    const cpuFallback = join(MODELS_DIR, 'nova-doctor-0.5b-q5km.gguf')
-    if (detectedHardware?.backend === 'cpu' && (!configured || configured === 'auto') && existsSync(cpuFallback)) {
-        effectiveModelPath = cpuFallback
-        console.log('[LlamaEngine] CPU fallback: using fast nova-doctor-0.5b-q5km.gguf')
-    }
-    const model = await llama.loadModel({ modelPath: effectiveModelPath })
+    const effectiveArtifact = detectedHardware?.backend === 'cpu' ? selectInstalledModel(true) : selectedModel
+    if (!effectiveArtifact) { await llama.dispose(); throw new Error('Doctor disabled or model no longer available') }
+    const effectiveModelPath = join(getDoctorModelsDir(), effectiveArtifact.filename)
+    let model: Awaited<ReturnType<typeof llama.loadModel>>
+    try {
+        await verifyDoctorArtifact(effectiveModelPath, effectiveArtifact)
+        model = await llama.loadModel({ modelPath: effectiveModelPath })
+    } catch (error) { await llama.dispose(); throw error }
 
     // Smaller context on weak machines (RAM < 4 GB)
     const contextSize = ramGB < 4 ? 1024 : 2048
@@ -237,14 +181,17 @@ async function createEngine(modelPath: string): Promise<LlamaEngine> {
 
         async complete(prompt: string, opts: LlamaCompletionOptions = {}): Promise<string> {
             const ctx = await model.createContext({ contextSize })
-            const session = new LlamaChatSession({ contextSequence: ctx.getSequence() })
-            const response = await session.prompt(prompt, {
-                maxTokens: opts.maxTokens ?? 512,
-                temperature: opts.temperature ?? 0.1,
-                topP: opts.topP ?? 0.9,
-            })
-            await ctx.dispose()
-            return response
+            try {
+                const session = new LlamaChatSession({ contextSequence: ctx.getSequence(), systemPrompt: opts.systemPrompt })
+                const grammar = opts.jsonSchema ? await llama.createGrammarForJsonSchema<GbnfJsonSchema>(opts.jsonSchema) : undefined
+                return await session.prompt(prompt, {
+                    grammar,
+                    signal: opts.signal,
+                    maxTokens: opts.maxTokens ?? 512,
+                    temperature: opts.temperature ?? 0.1,
+                    topP: opts.topP ?? 0.9,
+                })
+            } finally { await ctx.dispose() }
         },
 
         async chat(
@@ -294,24 +241,25 @@ async function createEngine(modelPath: string): Promise<LlamaEngine> {
  * Returns null if no model found or doctorModel=off.
  */
 export async function getLlamaEngine(): Promise<LlamaEngine | null> {
+    if (getDoctorConfig().doctorModel === 'off') { await disposeLlamaEngine(); return null }
     if (engineInstance?.isReady) return engineInstance
     if (initPromise) return initPromise
 
     initPromise = (async () => {
-        const modelPath = resolveModelPath()
-        if (!modelPath) {
+        const selectedModel = selectInstalledModel()
+        if (!selectedModel) {
             console.warn('[LlamaEngine] No GGUF model in models/ — Nova Doctor offline')
             return null
         }
 
         const ramGB = Math.round(getSystemRamGB() * 10) / 10
         const threads = getCpuThreads()
-        const modelName = modelPath.split(/[\\/]/).pop()
+        const modelName = selectedModel.filename
 
         console.log(`[LlamaEngine] Loading ${modelName} (RAM: ${ramGB}GB, CPU threads: ${threads})...`)
 
         try {
-            const engine = await createEngine(modelPath)
+            const engine = await createEngine(selectedModel)
             engineInstance = engine
             console.log(`[LlamaEngine] ✅ Nova Doctor ready: ${engine.modelName}`)
             return engine
@@ -321,7 +269,8 @@ export async function getLlamaEngine(): Promise<LlamaEngine | null> {
         }
     })()
 
-    return initPromise
+    const pending = initPromise
+    try { return await pending } finally { if (initPromise === pending) initPromise = null }
 }
 
 /**
@@ -353,9 +302,11 @@ export function getDoctorInfo(): {
     cpuThreads: number
     models: string[]
     hardware: DoctorHardwareProfile
+    loaded: boolean
+    integrity: 'verified' | 'not_checked'
 } {
     const modelPath = resolveModelPath()
-    const available = MODEL_CATALOGUE.filter(m => existsSync(join(MODELS_DIR, m.filename)))
+    const available = MODEL_CATALOGUE.filter(isArtifactPresent)
     return {
         available: modelPath !== null,
         modelName: engineInstance?.modelName || (modelPath ? modelPath.split(/[\\/]/).pop() ?? null : null),
@@ -363,6 +314,8 @@ export function getDoctorInfo(): {
         cpuThreads: getCpuThreads(),
         models: available.map(m => m.filename),
         hardware: getDetectedDoctorHardware(),
+        loaded: Boolean(engineInstance?.isReady && modelPath),
+        integrity: engineInstance?.isReady && modelPath ? 'verified' : 'not_checked',
     }
 }
 
@@ -370,9 +323,11 @@ export function getDoctorInfo(): {
  * Dispose the global engine (call on graceful shutdown).
  */
 export async function disposeLlamaEngine(): Promise<void> {
-    if (engineInstance) {
-        await engineInstance.dispose()
-        engineInstance = null
-        initPromise = null
-    }
+    // Wait for an in-flight load before disposing; do not leave a late engine alive.
+    const pending = initPromise
+    if (pending) await pending.catch(() => null)
+    initPromise = null
+    const engine = engineInstance
+    engineInstance = null
+    if (engine) await engine.dispose()
 }
