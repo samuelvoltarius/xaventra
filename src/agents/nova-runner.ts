@@ -29,6 +29,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { toolResultMessages } from './tool-result-messages.js'
+import { historyEvidenceMessages } from './history-evidence.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -116,6 +117,7 @@ export interface AgentMessage {
     role: 'user' | 'assistant' | 'system'
     content: string
     timestamp?: number
+    runId?: string
 }
 
 export interface AgentContext {
@@ -252,7 +254,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
     const actionLifecycle = kernel.lifecycle
     const outcomeLedger = getOutcomeLedger()
     const outcomeStartedAt = Date.now()
-    outcomeLedger.start(kernel.contract, { channel, userId, backend: 'nova' })
+    outcomeLedger.start(kernel.contract, { ...sessionIdentity(userId, scope), channel, backend: 'nova' })
     outcomeLedger.recordPlan(kernel.contract.id, {
         goal: kernel.contract.goal,
         successCriteria: kernel.contract.successCriteria,
@@ -556,7 +558,13 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         // planning-only, never "fall back to every routed tool".
         const denied = new Set(deniedTools)
         const relevantTools = restrictWorkerTools(contractTools, tools).filter(tool => !denied.has(tool.name))
-        if (historyOnly) messages.push({ role: 'system', content: 'Der aktuelle Auftrag erlaubt nur eine Antwort aus dem bereits vorhandenen Verlauf. Keine Werkzeuge und keine erneute Aktion. Nutze die bereitgestellten früheren Antworten; fehlt die Information, sage das ehrlich.' })
+        if (historyOnly) {
+            const priorEvidence = historyEvidenceMessages(session.history, sessionIdentity(userId, scope), channel, id => outcomeLedger.getRun(id))
+            // Keep the current user request last; old tool evidence is neither a
+            // new instruction nor a successful execution in the current run.
+            messages.splice(messages.map(message => message.role).lastIndexOf('user'), 0, ...priorEvidence)
+            messages.push({ role: 'system', content: 'Der aktuelle Auftrag erlaubt nur eine Antwort aus dem bereits vorhandenen Verlauf. Keine Werkzeuge und keine erneute Aktion. Nutze die bereitgestellten historischen Belege und früheren Antworten; fehlt die Information, sage das ehrlich.' })
+        }
         if (relevantTools.length === 0 && isConversationalClosure(content)) {
             console.log('[Nova Agent] Conversational closure: previous task tools not inherited')
         }
@@ -960,12 +968,19 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 : getIdempotencyStore()
             const executeToolOnce = async (name: string, args: Record<string, unknown>) => {
                 if (policyBlocked) throw new ToolAuthorizationError('This run stopped at a policy gate; no alternative action is authorized')
-                args = await authorizeToolExecution(name, args, {
-                    userId, authUserId, channel, requestText: content,
-                    governedReadOnly: (channel === 'benchmark' || isInternalRequest)
-                        && kernel.contract.allowedChanges.readOnly
-                        && kernel.contract.allowedChanges.externalSideEffects === false,
-                })
+                try {
+                    args = await authorizeToolExecution(name, args, {
+                        userId, authUserId, channel, requestText: content,
+                        governedReadOnly: (channel === 'benchmark' || isInternalRequest)
+                            && kernel.contract.allowedChanges.readOnly
+                            && kernel.contract.allowedChanges.externalSideEffects === false,
+                    })
+                } catch (error) {
+                    // Every execution round shares this terminal boundary, not
+                    // just the initial loop's authorization-error handler.
+                    if (error instanceof ToolAuthorizationError) policyBlocked = true
+                    throw error
+                }
                 kernel.assertCanExecute(name)
                 await assertMissionFenceForContent(content)
                 const idempotencyRunId = executionScopeForContent(content, kernel.contract.id)
@@ -1836,7 +1851,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // Add to history
         const historyTimestamp = Date.now()
         session.history.push({ role: 'user', content, timestamp: historyTimestamp })
-        session.history.push({ role: 'assistant', content: finalContent, timestamp: historyTimestamp + 1 })
+        session.history.push({ role: 'assistant', content: finalContent, timestamp: historyTimestamp + 1, runId: kernel.contract.id })
 
         // Track for auto-save (Tier 2 will auto-summarize every 10 messages)
         try {

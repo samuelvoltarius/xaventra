@@ -21,6 +21,12 @@ signed installer publication is implied by this source release.
 - A memory question after daemon restart reread the file despite explicit
   history-only instructions. Current-turn recall-only authority now excludes
   external tool execution, including cached/recovery paths.
+- Repeating the real restart test exposed a second problem: the text history
+  survived, but the model denied its earlier actual read because historical
+  tool receipts were absent from context. Assistant checkpoints now retain a
+  run reference, and recall rehydrates bounded, validated ledger receipts only
+  for the exact user, channel, room and bot. Invalidated/failed/unscoped runs
+  are excluded; historical evidence never counts as a newly executed tool.
 - A policy-denied read entered repair/recovery until the response deadline, with
   a still-running Outcome. Policy denials now terminate that path, preserve a
   failed/approval-required result and cannot become successful completion.
@@ -38,7 +44,7 @@ Failed reports were retained locally rather than replaced or reclassified.
 
 | Check | Scope |
 |---|---|
-| Core regression suite | 170 files / 1090 tests, including canonical state, local configuration, bounded correlated tool turns, authorization and policy validation |
+| Core regression suite | 171 files / 1094 tests, including canonical state, local configuration, bounded correlated tool turns, scoped historical receipts, authorization and policy validation |
 | Desktop bridge | 7 tests; local identity/credential and workspace boundaries |
 | Packaged UI | 10 grouped checks against a simulated HTTP Core; includes delayed model save, drafts, failure recovery and minimum window |
 | Actual Core components | 5 packaged-client groups with scripted model; API, native pipeline, tools, validator and scoped records |

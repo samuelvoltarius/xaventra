@@ -50,6 +50,16 @@
       ]
     },
     {
+      "module": "src/agents/history-evidence.ts",
+      "imports": [
+        "../core/outcome-ledger.js",
+        "../llm/nova-llm-sdk.js",
+        "../memory/tool-result-pruner.js",
+        "./session-checkpoints.js",
+        "./tool-result-messages.js"
+      ]
+    },
+    {
       "module": "src/agents/nova-model-provider.ts",
       "imports": [
         "../llm/nova-llm-sdk.js",
@@ -86,6 +96,7 @@
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
+        "./history-evidence.js",
         "./session-checkpoints.js",
         "./tool-authorization.js",
         "./tool-result-messages.js",

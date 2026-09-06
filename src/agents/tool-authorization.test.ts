@@ -58,12 +58,22 @@ describe('runner common tool authorization', () => {
         await expect(target.run('health_status', {})).rejects.toThrow('stopped at a policy gate')
         expect(target.once).toHaveBeenCalledOnce()
     })
+    it('makes a later authorization refusal terminal after an earlier successful tool', async () => {
+        mocks.allowed.mockReturnValue(true)
+        const target = executor()
+        await expect(target.run('read_file', {})).resolves.toBe('cached')
+        mocks.allowed.mockReturnValue(false)
+        await expect(target.run('run_command', {})).rejects.toBeInstanceOf(ToolAuthorizationError)
+        mocks.allowed.mockReturnValue(true)
+        await expect(target.run('health_status', {})).rejects.toThrow('stopped at a policy gate')
+        expect(target.once).toHaveBeenCalledOnce()
+    })
     it('blocks repeated/recovery calls before fencing, cached evidence or execution', async () => {
         const target = executor()
         for (const phase of ['initial', 'follow-up', 'recovery', 'recovery-follow-up', 'final-follow-up']) {
             await expect(target.run('run_command', { phase, authorizationUserId: 'owner', channel: 'cli' })).rejects.toBeInstanceOf(ToolAuthorizationError)
         }
-        expect(mocks.allowed).toHaveBeenCalledTimes(5)
+        expect(mocks.allowed).toHaveBeenCalledTimes(1)
         expect(mocks.allowed).toHaveBeenLastCalledWith('guest', 'run_command', 'Telegram')
         expect(target.fence).not.toHaveBeenCalled()
         expect(target.once).not.toHaveBeenCalled()

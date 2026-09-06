@@ -14,6 +14,9 @@
 - Explicit history-only answers cannot repeat external actions. Policy blocks
   stop recovery rather than triggering capability/repair loops, and prevent
   successful validation even after an earlier successful tool.
+- Checkpoints retain run references so recall can recover actual historical
+  tool receipts from the ledger, scoped to user/channel/room/bot. Failed or
+  invalidated evidence is excluded; old receipts never count as a new action.
 - Main no longer starts the old ungoverned integration gateway on port 3002.
   Use the authenticated daemon REST API. Dashboard defaults now match Desktop:
   loopback port 3011, honoring `dashboard.host`/`enabled`. A bind conflict fails

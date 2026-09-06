@@ -5,7 +5,7 @@ import { redactSecrets } from '../security/secret-redaction.js'
 
 export interface SessionScope { conversationId?: string; botId?: string }
 export interface SessionIdentity { userId: string; conversationId: string; botId: string }
-export interface SessionTurn { role: 'user' | 'assistant' | 'system'; content: string; timestamp?: number }
+export interface SessionTurn { role: 'user' | 'assistant' | 'system'; content: string; timestamp?: number; runId?: string }
 
 export function sessionIdentity(userId: string, scope: SessionScope = {}): SessionIdentity {
     return { userId, conversationId: scope.conversationId || 'default', botId: scope.botId || 'nova' }
@@ -42,6 +42,7 @@ export class SessionCheckpoints {
 
     private sanitize(history: SessionTurn[]): SessionTurn[] {
         return history.filter(item => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
-            .slice(-100).map(item => ({ role: item.role, content: redactSecrets(item.content).slice(0, 6000), timestamp: item.timestamp }))
+            .slice(-100).map(item => ({ role: item.role, content: redactSecrets(item.content).slice(0, 6000), timestamp: item.timestamp,
+                ...(item.role === 'assistant' && typeof item.runId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(item.runId) ? { runId: item.runId } : {}) }))
     }
 }
