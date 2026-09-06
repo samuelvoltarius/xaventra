@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.8] — 2026-09-06
+
+- Reject empty, incomplete, wrong-type and contradictory Doctor reviews instead
+  of treating them as clean. Require nonempty code/explanation in fix proposals;
+  model output cannot authorize automatic application.
+- Catch model initialization failures in diagnosis, review and fix APIs. Keep
+  unavailable results explicitly unverified and raw error inputs out of telemetry.
+- Add compiled Doctor API validation to all three hosted OS jobs, using a clearly
+  scripted engine. Add a separate 14-case local GGUF quality runner with authored
+  synthetic inputs, independent bounded checks and retained negative reports.
+- Synchronize Core/Desktop versions. This is not model retraining, model
+  qualification, production deployment or RC acceptance. See the
+  [verification record](docs/VERIFICATION_2.78.8.md).
+
 ## [2.78.7] — 2026-09-06
 
 - Doctor artifacts now use a shared, independently versioned registry with exact

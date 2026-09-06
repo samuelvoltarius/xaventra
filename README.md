@@ -367,7 +367,7 @@ another contributor or agent to continue the work without private context.
 Doctor model setup, checksum verification, mirror configuration and recovery are
 documented in [Doctor models](docs/DOCTOR_MODELS.md). Local model availability is
 not a diagnosis-quality or autonomous-repair guarantee; see the
-[2.78.7 verification boundaries](docs/VERIFICATION_2.78.7.md).
+[2.78.8 validation and model-quality evidence](docs/VERIFICATION_2.78.8.md).
 
 The codebase is undergoing the Nova -> Xaventra public-brand migration. Public
 packaging is not complete until secret scanning, clean-clone installation, full

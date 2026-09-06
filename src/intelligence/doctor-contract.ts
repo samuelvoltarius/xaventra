@@ -3,6 +3,38 @@
 import { z } from 'zod'
 import type { GbnfJsonSchema } from 'node-llama-cpp'
 
+const reviewShape = z.object({
+    issues: z.array(z.string().trim().min(1).max(4000)).max(40),
+    suggestions: z.array(z.string().trim().min(1).max(4000)).max(40),
+    security: z.array(z.string().trim().min(1).max(4000)).max(40),
+    severity: z.enum(['ok', 'warning', 'critical']),
+}).strict()
+const fixShape = z.object({ fixedCode: z.string().min(1).max(64000),
+    explanation: z.string().trim().min(1).max(8000), safe: z.boolean() }).strict()
+function parseBoundedJson(raw: string): unknown {
+    if (raw.length > 128000) throw new Error('Doctor output too large')
+    return JSON.parse(raw.trim())
+}
+export function parseDoctorReview(raw: string) {
+    const review = reviewShape.parse(parseBoundedJson(raw))
+    if (review.severity === 'ok' && (review.issues.length || review.security.length)) throw new Error('Doctor review contradicts its own findings')
+    return { ...review, fromModel: true, verified: false as const }
+}
+export function parseDoctorFix(raw: string) {
+    const fix = fixShape.parse(parseBoundedJson(raw))
+    if (!fix.fixedCode.trim()) throw new Error('Empty Doctor code proposal')
+    return { ...fix, safe: false as const }
+}
+export const DOCTOR_REVIEW_GRAMMAR: GbnfJsonSchema = { type: 'object', properties: {
+    issues: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    suggestions: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    security: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    severity: { enum: ['ok', 'warning', 'critical'] },
+} }
+export const DOCTOR_FIX_GRAMMAR: GbnfJsonSchema = { type: 'object', properties: {
+    fixedCode: { type: 'string' }, explanation: { type: 'string' }, safe: { const: false },
+} }
+
 const suggestion = z.object({
     type: z.enum(['ask_secret', 'config_patch', 'command_suggestion', 'wizard_step', 'info']),
     message: z.string().max(4000).optional(), reason: z.string().max(4000).optional(),

@@ -49,6 +49,19 @@ jobs:
           path: .nova-data/doctor-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Compiled Doctor result validation with scripted engine
+        run: node --experimental-vm-modules scripts/check-doctor-validation.mjs
+        timeout-minutes: 3
+        env:
+          XAVENTRA_DOCTOR_QA_DIR: ${{ github.workspace }}/.nova-data/doctor-qa
+      - name: Preserve Doctor validation reports including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doctor-validation-qa-${{ matrix.os }}
+          path: .nova-data/doctor-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled response contract and authenticated REST acceptance
         run: node scripts/check-response-contract.mjs
         timeout-minutes: 6

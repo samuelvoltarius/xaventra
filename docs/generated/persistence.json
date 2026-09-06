@@ -634,6 +634,10 @@
       "path": ".nova-data/discovered-models.json"
     },
     {
+      "owner": "src/intelligence/doctor-client.test.ts",
+      "path": ".nova-data/doctor-telemetry/usage.jsonl"
+    },
+    {
       "owner": "src/layers/L0-supervisor.ts",
       "path": ".nova-data/HEARTBEAT.md"
     },

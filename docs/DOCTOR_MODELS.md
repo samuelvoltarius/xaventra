@@ -80,6 +80,14 @@ Generic error diagnosis also rejects configuration/wizard proposals without
 independent typed evidence that those keys/steps exist. This is not a general
 semantic correctness proof: suggestions and confidence still need validation.
 
+Review and code-fix responses also require complete, correctly typed JSON.
+An empty object, contradictory clean review or empty code proposal is rejected.
+Model initialization failure produces an unverified fallback/warning or no fix,
+not an uncaught success path. Accepted reviews still carry `verified: false`;
+proposed code always carries `safe: false`. Neither replaces independent tests.
+Telemetry records operation, timing and validation status, not raw error text.
+`schema_validated` means only the output contract passed, not semantic correctness.
+
 ## Verification and upgrades
 
 Run `npm run build`, `npm run check:doctor` and the Core suite. Hosted fixtures
@@ -90,6 +98,28 @@ downloads and verifies the real GGUF, and performs a synthetic diagnosis with
 no tool execution. It retains failed reports and raw synthetic output locally.
 Do not publish raw model output without review. This is a bounded smoke check,
 not a full safety/repair benchmark or proof that retraining is unnecessary.
+
+After building, `npm run check:doctor-validation` exercises the actual compiled
+Doctor API with a scripted engine in an isolated module graph. Its experimental
+VM flag belongs only to that test harness, not normal application startup. CI
+runs it on Windows, Linux and macOS without downloading models.
+
+For separate native model-quality evaluation, provide an existing pinned file:
+
+```sh
+npm run benchmark:doctor -- --model-file /absolute/path/nova-doctor-0.5b-q5km.gguf
+```
+
+On Windows use an absolute Windows path instead. The runner verifies the source
+hash, copies it to a unique temporary root and generates 14 synthetic diagnoses
+with no tool execution, training or download. A case passes only when the schema,
+runtime parser and independent bounded oracle all pass. Reports retain those
+three outcomes separately, model/hash, source revision/dirty status and budget;
+an unverified fallback is not counted as a model success. Nonzero exit on a failed
+case is intentional. Never publish raw output/configuration without review.
+These authored pattern checks are not a full semantic judge, held-out training
+certification or autonomous repair benchmark. Current negative model results
+remain an open gate; see [2.78.8 evidence](VERIFICATION_2.78.8.md).
 
 Back up private configuration and known-good artifacts before upgrading. A bad
 new artifact must not displace an existing verified one. Source rollback uses the
