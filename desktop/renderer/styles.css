@@ -206,6 +206,8 @@ h3 { font-size: 13px; }
 .loading { opacity: .55; pointer-events: none; }
 .connection-error { height: 100%; display: grid; place-items: center; padding: 30px; }
 .connection-error .card { max-width: 560px; }
+.connection-error h1 { margin: 10px 0 16px; font-size: 26px; }
+.connection-error p { color: var(--muted); line-height: 1.6; margin-bottom: 16px; overflow-wrap: anywhere; }
 @media (max-width: 1260px) { .shell { grid-template-columns: 74px 244px minmax(430px, 1fr); } .inspector { display: none; } }
 @media (max-width: 900px) { .shell { grid-template-columns: 68px minmax(0, 1fr); } .sidebar { display: none; } .model-select { min-width: 150px; max-width: 240px; } .main-presence { display:none; } }
 @media (max-width: 760px) { .workspace-context-bar { align-items: stretch; flex-direction: column; } .workspace-actions select { max-width: none; flex: 1; } }

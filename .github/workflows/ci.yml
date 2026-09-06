@@ -44,6 +44,45 @@ jobs:
       - run: npm run test:desktop
       - run: npm audit --prefix desktop --audit-level=high
 
+  desktop-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      NOVA_DESKTOP_QA_DIR: ${{ github.workspace }}/.nova-data/desktop-qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm ci --prefix desktop
+      - run: npm run desktop:build
+      - name: Packaged Desktop contract acceptance
+        if: runner.os != 'Linux'
+        run: npm run check:desktop-ui
+      - name: Packaged Desktop contract acceptance on virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run check:desktop-ui
+      - name: Preserve UI reports and synthetic screenshots, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-qa-${{ matrix.os }}
+          path: |
+            .nova-data/desktop-qa/**/report.json
+            .nova-data/desktop-qa/**/*.jpg
+          retention-days: 14
+          include-hidden-files: true
+
   legacy-dashboard:
     runs-on: ubuntu-latest
     steps:

@@ -96,9 +96,29 @@ Core retains at most 30 captures and removes captures older than seven days.
   tool outcomes and verified-evidence count. A tool-schema probe is displayed
   separately from production tool-success samples.
 
-Run `npm run check:desktop-ui` while an authoritative Main is reachable at the
-configured endpoint to verify the Electron shell, scrolling, settings layout,
-minimum window and typed capture bridge.
+Run `npm run desktop:build` then `npm run check:desktop-ui` for the isolated
+packaged-client check. It creates a disposable profile and simulated loopback
+Core, uses real keyboard/mouse input and preserves reports/screenshots in the
+printed temporary directory. It never reads your saved Desktop connection or
+captures the full display. On Linux without a desktop session, use
+`xvfb-run -a npm run check:desktop-ui`. CI runs the same package checks on all
+three operating systems and retains synthetic screenshots/reports, not profiles.
+This is UI/API-contract evidence, not live-model or production-Mesh evidence.
+
+Connection settings stay accessible during startup and failed authentication.
+Bootstrap attempts use a five-second network deadline and at most five tries;
+opening settings cancels automatic UI replacement. Chat keeps its separately
+configured longer timeout. A saved connection can recover without an app restart.
+
+Unsent drafts and reading positions stay in this app session, per room, across
+model selection, specialist toggles and navigation. They are **not** durable
+across app restart. A failed send restores the text for review; it is never
+automatically resubmitted, because an uncertain network failure is not proof
+that the server performed no action. Pending messages belong only to their
+originating room. Elapsed time alone never claims that tools were executed.
+Preferences, unlike drafts, are persisted in the local Desktop profile.
+Changing endpoint or principal discards session drafts/history before loading
+that connection. Connection changes are deferred while a submission is pending.
 
 ## Workspaces
 

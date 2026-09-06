@@ -199,7 +199,8 @@ async function apiRequest(_event, input) {
   const body = input?.body === undefined ? undefined : JSON.stringify(input.body)
   if (body && Buffer.byteLength(body) > 1_000_000) throw new Error('Desktop request body exceeds 1 MB')
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs)
+  // Bootstrap must not occupy the full multi-minute chat budget per retry.
+  const timeout = setTimeout(() => controller.abort(), path === '/api/desktop/bootstrap' ? Math.min(5000, config.requestTimeoutMs) : config.requestTimeoutMs)
   try {
     const response = await fetch(`${config.endpoint}${path}`, {
       method,

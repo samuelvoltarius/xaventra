@@ -14,6 +14,11 @@ const state = {
   connection: null,
   controlPolling: false,
   expertPanel: false,
+  chatViews: new Map(),
+  busyRoomId: null,
+  connectionAttempt: 0,
+  roomSelection: 0,
+  roomLoading: null,
 }
 
 const nav = [
@@ -128,8 +133,10 @@ function fail(error) {
   toast(error?.message || String(error), true)
 }
 
-async function loadBootstrap() {
-  state.bootstrap = await api.get('/api/desktop/bootstrap')
+async function loadBootstrap(isCurrent = () => true) {
+  const bootstrap = await api.get('/api/desktop/bootstrap')
+  if (!isCurrent()) return false
+  state.bootstrap = bootstrap
 
   // NovaOS-Bedienmodus auf das Wurzelelement legen. Das Aussehen steuert
   // dann CSS (html.novaos-standard blendet Technisches aus), statt jede
@@ -163,32 +170,30 @@ async function loadBootstrap() {
   }
   const room = currentRoom()
   selectRoomDefaults(room)
-  if (room) state.messages = (await api.get(`/api/desktop/rooms/${encodeURIComponent(room.id)}/messages`)).messages || []
-  else state.messages = []
+  const messages = room ? (await api.get(`/api/desktop/rooms/${encodeURIComponent(room.id)}/messages`)).messages || [] : []
+  if (!isCurrent()) return false
+  state.messages = messages
+  return true
 }
 
 async function init() {
-  state.connection = await window.novaDesktop.config.get()
-  // Beim Einschalten startet diese App gleichzeitig mit dem Nova-Dienst.
-  // Der braucht ein paar Sekunden. Frueher gab es genau einen Versuch und
-  // danach einen englischen Fehlerbildschirm — beim allerersten Start also
-  // fast immer. Jetzt: bis zu 40 Versuche im 2-Sekunden-Takt, mit einem
-  // Satz, der niemanden erschreckt.
-  const wurzel = document.querySelector('#app')
-  for (let versuch = 1; versuch <= 40; versuch++) {
+  const attempt = ++state.connectionAttempt
+  const isCurrent = () => attempt === state.connectionAttempt
+  renderConnectionError('Verbindung zum konfigurierten Main wird geprüft.', true)
+  try { state.connection = await window.novaDesktop.config.get() }
+  catch (error) { if (isCurrent()) renderConnectionError(error); return }
+  // Bounded retries for a Core that is starting alongside Desktop. Settings
+  // stay reachable throughout, and an older attempt cannot replace that form.
+  for (let retry = 0; retry < 5 && isCurrent(); retry++) {
     try {
-      await loadBootstrap()
+      if (!await loadBootstrap(isCurrent) || !isCurrent()) return
       render()
       startControlPolling()
       return
     } catch (error) {
-      if (versuch === 40) { renderConnectionError(error); return }
-      if (wurzel) {
-        wurzel.innerHTML = '<div class="empty" style="padding:80px 20px;text-align:center">' +
-          '<div class="empty-mark">N</div>' +
-          '<h2>Xaventra wacht gerade auf</h2>' +
-          '<p>Einen Moment noch, ich bin gleich da.</p></div>'
-      }
+      if (!isCurrent()) return
+      renderConnectionError(error, retry < 4)
+      if (retry === 4) return
       await new Promise(r => setTimeout(r, 2000))
     }
   }
@@ -216,7 +221,20 @@ function shell(main, inspector = '') {
   </div>`
 }
 
+function rememberChatView() {
+  const composer = document.querySelector('#composer')
+  const box = document.querySelector('.messages')
+  if (!composer || !box) return
+  const previous = state.chatViews.get(composer.dataset.roomId)
+  state.chatViews.set(composer.dataset.roomId, {
+    draft: composer.value,
+    scrollTop: box.dataset.loading === 'true' ? previous?.scrollTop || 0 : box.scrollTop,
+    atBottom: box.dataset.loading === 'true' ? previous?.atBottom !== false : box.scrollHeight - box.clientHeight - box.scrollTop < 40,
+  })
+}
+
 function render() {
+  rememberChatView()
   const app = document.querySelector('#app')
   if (!state.bootstrap) return
   if (state.section === 'chat') app.innerHTML = shell(chatView())
@@ -228,7 +246,17 @@ function render() {
   else if (state.section === 'memory') { app.innerHTML = shell(loadingView('Governed Memory wird geladen')); void loadMemory() }
   else app.innerHTML = shell(settingsView())
   bind()
-  if (state.section === 'chat') requestAnimationFrame(() => { const box = document.querySelector('.messages'); if (box) box.scrollTop = box.scrollHeight })
+  if (state.section === 'chat') {
+    const roomId = state.roomId
+    const view = state.chatViews.get(roomId)
+    const composer = document.querySelector('#composer')
+    if (composer) composer.value = view?.draft || ''
+    requestAnimationFrame(() => {
+      if (state.section !== 'chat' || state.roomId !== roomId) return
+      const box = document.querySelector('.messages')
+      if (box) box.scrollTop = view?.atBottom === false ? view.scrollTop : box.scrollHeight
+    })
+  }
 }
 
 function topbar(room) {
@@ -255,12 +283,13 @@ function chatView() {
   const bots = room.botIds.map(botById).filter(Boolean)
   const nodeIds = room.preferredNodeIds || []
   const workspace = workspaceById(room.workspaceId)
+  const pendingMessage = state.busyRoomId === room.id ? state.pendingMessage : null
   return `${topbar(room)}
     <div class="workspace-context-bar"><div><span class="context-icon">⌘</span><span class="context-label">Projekt</span><strong>${esc(workspace?.name || 'Kein lokaler Ordner verbunden')}</strong>${workspace?.path ? `<small>${esc(workspace.path)}</small>` : ''}</div><div class="workspace-actions">${(state.connection?.workspaces || []).length ? `<select id="workspace-picker" aria-label="Projektordner"><option value="">Ohne Workspace</option>${state.connection.workspaces.map(item => `<option value="${attr(item.id)}" ${room.workspaceId === item.id ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select>` : ''}<button class="secondary" id="select-workspace">${workspace ? 'Anderen Ordner' : 'Ordner verbinden'}</button></div></div>
-    <section class="messages" aria-live="polite">
-      ${state.messages.length || state.pendingMessage ? state.messages.map(messageView).join('') : `<div class="empty"><div class="empty-mark">${esc(bots[0]?.avatar || 'N')}</div><div class="eyebrow">Bereit auf ${esc(state.bootstrap.controlPlane?.hostname || 'Nova Main')}</div><h2>${esc(room.title)}</h2><p>${esc(room.topic || 'Sag Nova in normaler Sprache, was erreicht werden soll. Sie entscheidet selbst, ob Memory, Modell oder Tools nötig sind.')}</p><div class="prompt-grid"><button data-prompt="Ich will ins Internet">Ins Internet</button><button data-prompt="Zeig mir meine Fotos">Meine Fotos</button><button data-prompt="Was kannst du alles?">Was kannst du?</button></div></div>`}
-      ${state.pendingMessage ? messageView(state.pendingMessage) : ''}
-      ${state.busy ? pendingReplyView() : ''}
+    <section class="messages" data-loading="${state.roomLoading === room.id}" aria-live="polite">
+      ${state.messages.length || pendingMessage ? state.messages.map(messageView).join('') : `<div class="empty"><div class="empty-mark">${esc(bots[0]?.avatar || 'N')}</div><div class="eyebrow">Bereit auf ${esc(state.bootstrap.controlPlane?.hostname || 'Nova Main')}</div><h2>${esc(room.title)}</h2><p>${esc(room.topic || 'Sag Nova in normaler Sprache, was erreicht werden soll. Sie entscheidet selbst, ob Memory, Modell oder Tools nötig sind.')}</p><div class="prompt-grid"><button data-prompt="Ich will ins Internet">Ins Internet</button><button data-prompt="Zeig mir meine Fotos">Meine Fotos</button><button data-prompt="Was kannst du alles?">Was kannst du?</button></div></div>`}
+      ${pendingMessage ? messageView(pendingMessage) : ''}
+      ${state.busy && state.busyRoomId === room.id ? pendingReplyView() : ''}
     </section>
     <footer class="composer ${state.busy ? 'loading' : ''}">
       <div class="selection-row" aria-label="Aktive Spezialisten">
@@ -269,15 +298,19 @@ function chatView() {
         <span class="routing-note">${state.selectedNodes.size ? `${state.selectedNodes.size} Node${state.selectedNodes.size === 1 ? '' : 's'} festgelegt` : 'Node automatisch'}</span>
       </div>
       ${state.expertPanel ? `<div class="selection-row expert-picker"><span class="context-label">Spezialisten für diese Nachricht</span>${bots.map(bot => `<button class="chip ${state.selectedBots.has(bot.id) ? 'active' : ''}" data-toggle-bot="${attr(bot.id)}">${esc(bot.name)}${bot.source !== 'nova' ? ` · ${esc(bot.source)}` : ''}</button>`).join('')}<span class="context-label">Ausführender Nova-Node (optional)</span>${nodeIds.map(id => { const node = (state.bootstrap.inventory?.nodes || []).find(item => item.id === id || item.nodeId === id); return `<button class="chip ${state.selectedNodes.has(id) ? 'active' : ''}" data-toggle-node="${attr(id)}">${esc(node?.name || node?.displayName || id)}</button>` }).join('') || '<span class="routing-note">Auto-Routing über alle gesunden Nova-Nodes.</span>'}</div>` : ''}
-      <form class="compose-box" id="compose-form"><textarea id="composer" placeholder="${document.documentElement.classList.contains('novaos-standard') ? 'Schreib hier, was du brauchst …' : 'Beschreibe das Ziel – Xaventra plant, nutzt Tools und belegt das Ergebnis.'}" aria-label="Nachricht" ${state.busy ? 'disabled' : ''}></textarea><button class="send-button" type="submit" title="Senden" ${state.busy ? 'disabled' : ''}>${state.busy ? '···' : '↑'}</button></form>
-      <div class="compose-context"><span>Enter senden</span><span>${esc(workspace?.name || 'kein Projekt')}</span><span>${room.memoryAssetIds?.length || 0} Memory Assets</span><span>${esc(routeForRoom()?.nodeId || 'Auto-Routing')}</span></div>
+      <form class="compose-box" id="compose-form"><textarea id="composer" data-room-id="${attr(room.id)}" placeholder="${document.documentElement.classList.contains('novaos-standard') ? 'Schreib hier, was du brauchst …' : 'Beschreibe das Ziel – Xaventra plant, nutzt Tools und belegt das Ergebnis.'}" aria-label="Nachricht" ${state.busy || state.roomLoading ? 'disabled' : ''}></textarea><button class="send-button" type="submit" title="Senden" ${state.busy || state.roomLoading ? 'disabled' : ''}>${state.busy ? '···' : '↑'}</button></form>
+      <div class="compose-context"><span>${state.connection?.sendOnEnter === false ? 'Enter neue Zeile · Pfeil senden' : 'Enter senden · Shift+Enter neue Zeile'}</span><span>${esc(workspace?.name || 'kein Projekt')}</span><span>${room.memoryAssetIds?.length || 0} Memory Assets</span><span>${esc(routeForRoom()?.nodeId || 'Auto-Routing')}</span></div>
     </footer>`
 }
 
 function pendingReplyView() {
   const seconds = Math.max(0, Math.floor((Date.now() - state.busySince) / 1000))
-  const stage = seconds < 4 ? 'Xaventra versteht den Auftrag und plant.' : seconds < 15 ? 'Xaventra arbeitet daran.' : 'Xaventra wartet auf Tools und validiert echte Ergebnisse.'
+  const stage = pendingStage(seconds)
   return `<article class="message pending"><div class="avatar">X</div><div class="message-body"><div class="message-head"><span>Xaventra</span><span class="origin">in Arbeit</span><time data-busy-seconds>${seconds}s</time></div><div class="message-content" data-busy-stage>${esc(stage)}</div><div class="progress-line"><span></span></div></div></article>`
+}
+
+function pendingStage(seconds) {
+  return seconds < 4 ? 'Nachricht wird an den Main gesendet.' : seconds < 15 ? 'Antwort vom Main steht noch aus.' : 'Die Anfrage läuft noch. Es liegt noch kein Ergebnis vor.'
 }
 
 function updateBusyProgress() {
@@ -286,7 +319,7 @@ function updateBusyProgress() {
   const time = document.querySelector('[data-busy-seconds]')
   const stage = document.querySelector('[data-busy-stage]')
   if (time) time.textContent = `${seconds}s`
-  if (stage) stage.textContent = seconds < 4 ? 'Xaventra versteht den Auftrag und plant.' : seconds < 15 ? 'Xaventra arbeitet daran.' : 'Xaventra wartet auf Tools und validiert echte Ergebnisse.'
+  if (stage) stage.textContent = pendingStage(seconds)
 }
 
 function messageView(message) {
@@ -477,9 +510,10 @@ async function applyDesktopCommand(command) {
   } catch (ackError) { console.warn('Desktop control acknowledgement failed:', ackError?.message || ackError) }
 }
 
-function renderConnectionError(error) {
-  document.querySelector('#app').innerHTML = `<div class="connection-error"><div class="card"><div class="eyebrow">Verbindung nicht verfügbar</div><h1 style="margin-top:7px">Xaventra Desktop erreicht den Control Plane nicht</h1><p>${esc(error?.message || error)}</p><div class="toolbar"><button class="primary" id="open-settings">Verbindung einrichten</button><button class="secondary" id="retry">Erneut versuchen</button></div></div></div>`
+function renderConnectionError(error, connecting = false) {
+  document.querySelector('#app').innerHTML = `<div class="connection-error"><div class="card"><div class="eyebrow">${connecting ? 'Verbindung wird hergestellt' : 'Verbindung nicht verfügbar'}</div><h1>${connecting ? 'Mit Xaventra verbinden' : 'Xaventra Main ist nicht erreichbar'}</h1><p role="status">${esc(error?.message || error)}</p><p>Prüfe Endpoint und Anmeldung. Die Einstellungen sind auch ohne laufenden Main verfügbar.</p><div class="toolbar"><button class="primary" id="open-settings">Verbindung einrichten</button><button class="secondary" id="retry">Erneut versuchen</button></div></div></div>`
   document.querySelector('#open-settings').addEventListener('click', async () => {
+    ++state.connectionAttempt
     state.connection = await window.novaDesktop.config.get()
     state.bootstrap = { rooms: [], bots: [], models: { models: [] }, inventory: { nodes: [], enrollments: [] }, security: {} }
     state.section = 'settings'
@@ -491,11 +525,19 @@ function renderConnectionError(error) {
 function bind() {
   document.querySelectorAll('[data-section]').forEach(node => node.addEventListener('click', () => { state.section = node.dataset.section; render() }))
   document.querySelectorAll('[data-room]').forEach(node => node.addEventListener('click', async () => {
+    const selection = ++state.roomSelection
     state.roomId = node.dataset.room
     const room = currentRoom()
     selectRoomDefaults(room)
-    state.messages = (await api.get(`/api/desktop/rooms/${encodeURIComponent(room.id)}/messages`)).messages || []
+    state.roomLoading = room.id
+    state.messages = []
     state.section = 'chat'; render()
+    try {
+      const messages = (await api.get(`/api/desktop/rooms/${encodeURIComponent(room.id)}/messages`)).messages || []
+      if (selection !== state.roomSelection || state.roomId !== room.id) return
+      state.messages = messages
+    } catch (error) { if (selection === state.roomSelection) fail(error) }
+    finally { if (selection === state.roomSelection) { state.roomLoading = null; render() } }
   }))
   document.querySelectorAll('[data-action="new-room"]').forEach(node => node.addEventListener('click', showNewRoom))
   document.querySelector('[data-action="add-external"]')?.addEventListener('click', showExternalBot)
@@ -593,7 +635,13 @@ async function sendMessage(event) {
   const content = document.querySelector('#composer').value.trim()
   if (!content || state.busy) return
   if (!state.selectedBots.size) return toast('Wähle mindestens einen Spezialisten.', true)
+  const roomId = state.roomId
+  const request = { content, botIds: [...state.selectedBots], nodeIds: [...state.selectedNodes] }
+  document.querySelector('#composer').value = ''
+  const box = document.querySelector('.messages')
+  if (box) box.scrollTop = box.scrollHeight
   state.busy = true
+  state.busyRoomId = roomId
   state.busySince = Date.now()
   state.pendingMessage = { authorType: 'user', authorId: state.connection?.principal || 'desktop-owner', content, createdAt: new Date().toISOString() }
   clearInterval(state.busyTimer)
@@ -604,17 +652,10 @@ async function sendMessage(event) {
     if (progressLoading || !state.busy) return
     progressLoading = true
     try {
-      // Echten Arbeitsschritt holen — schlaegt das fehl, bleibt es beim
-      // zeitgeschaetzten Text, das ist nicht kritisch.
-      try {
-        const f = await api.get('/api/desktop/fortschritt')
-        state.echterSchritt = f && f.schritt ? f.schritt : null
-        const el = document.querySelector('[data-busy-stage]')
-        if (el && state.echterSchritt) el.textContent = state.echterSchritt
-      } catch { /* ohne echten Schritt weiterlaufen */ }
-
-      const latest = (await api.get(`/api/desktop/rooms/${encodeURIComponent(state.roomId)}/messages`)).messages || []
-      if (latest.length !== state.messages.length) {
+      // Only this room's messages are evidence; a global progress label could
+      // belong to another request and elapsed time does not prove tool usage.
+      const latest = (await api.get(`/api/desktop/rooms/${encodeURIComponent(roomId)}/messages`)).messages || []
+      if (state.busy && state.busyRoomId === roomId && state.roomId === roomId && latest.length !== state.messages.length) {
         state.messages = latest
         if (latest.some(message => message.authorType === 'user' && message.content === content)) state.pendingMessage = null
         render()
@@ -623,14 +664,23 @@ async function sendMessage(event) {
     finally { progressLoading = false }
   }, 2000)
   try {
-    await api.post(`/api/desktop/rooms/${encodeURIComponent(state.roomId)}/messages`, { content, botIds: [...state.selectedBots], nodeIds: [...state.selectedNodes] })
-    state.messages = (await api.get(`/api/desktop/rooms/${encodeURIComponent(state.roomId)}/messages`)).messages || []
-  } catch (error) { fail(error) }
+    await api.post(`/api/desktop/rooms/${encodeURIComponent(roomId)}/messages`, request)
+    const messages = (await api.get(`/api/desktop/rooms/${encodeURIComponent(roomId)}/messages`)).messages || []
+    if (state.roomId === roomId) state.messages = messages
+  } catch (error) {
+    rememberChatView()
+    const view = state.chatViews.get(roomId) || { atBottom: true }
+    state.chatViews.set(roomId, { ...view, draft: content })
+    const composer = document.querySelector('#composer')
+    if (composer?.dataset.roomId === roomId) composer.value = content
+    fail(error)
+  }
   finally {
     clearInterval(progressPoll)
     clearInterval(state.busyTimer)
     state.busyTimer = null
     state.busy = false
+    state.busyRoomId = null
     state.busySince = 0
     state.pendingMessage = null
     render()
@@ -735,6 +785,9 @@ async function launchModule(id) {
 
 async function saveSettings(event) {
   event.preventDefault(); const form = new FormData(event.target); const token = form.get('token')
+  if (state.busy) return toast('Bitte warte auf die laufende Nachricht, bevor du die Verbindung änderst.', true)
+  const previousScope = `${state.connection?.endpoint}\n${state.connection?.principal}`
+  const attempt = ++state.connectionAttempt
   try {
     state.connection = await window.novaDesktop.config.set({
       endpoint: form.get('endpoint'), principal: form.get('principal'), ...(token ? { token } : {}),
@@ -743,7 +796,17 @@ async function saveSettings(event) {
       showInspector: form.get('showInspector') === 'on',
       compactMode: form.get('compactMode') === 'on',
     })
-    await loadBootstrap(); state.section = 'chat'; render(); toast('Nova Desktop ist verbunden.')
+    if (`${state.connection.endpoint}\n${state.connection.principal}` !== previousScope) {
+      state.chatViews.clear()
+      state.roomId = null
+      state.messages = []
+      state.bootstrap = null
+      ++state.roomSelection
+      state.roomLoading = null
+      renderConnectionError('Die neue Verbindung wird geprüft.', true)
+    }
+    if (!await loadBootstrap(() => state.connectionAttempt === attempt)) return
+    state.section = 'chat'; render(); startControlPolling(); toast('Xaventra Desktop ist verbunden.')
   } catch (error) { fail(error) }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/desktop",
-  "version": "2.78.2",
+  "version": "2.78.3",
   "private": true,
   "description": "Governed desktop control plane for Xaventra",
   "author": "Xaventra contributors",
@@ -44,6 +44,7 @@
       ]
     },
     "linux": {
+      "executableName": "xaventra-desktop",
       "icon": "../assets/xaventra-icon.png",
       "target": [
         "AppImage",

@@ -59,3 +59,16 @@ test('explicit workspace paths cannot read files below hidden private directorie
 test('IPv6 loopback is a valid local Core endpoint', t => {
   assert.equal(harness(t).evaluate("normalizeEndpoint('http://[::1]:3011')"), 'http://[::1]:3011')
 })
+
+test('bootstrap has a bounded retry budget while chat keeps its configured deadline', async t => {
+  const { handlers, context } = harness(t)
+  const deadlines = []
+  context.AbortController = AbortController
+  context.setTimeout = (_callback, ms) => { deadlines.push(ms); return 1 }
+  context.clearTimeout = () => {}
+  context.fetch = async () => ({ ok: true, text: async () => '{}' })
+  handlers.get('nova:config:get')()
+  await handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' })
+  await handlers.get('nova:api')(null, { path: '/api/desktop/rooms/alpha/messages' })
+  assert.deepEqual(deadlines, [5000, 120000])
+})

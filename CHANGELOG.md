@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.78.3] — 2026-09-06
+
+- Keep connection setup usable while Core is unreachable or authentication
+  fails. Bound bootstrap retries separately from the long-running chat budget;
+  stale retries cannot overwrite an opened settings form.
+- Preserve per-room session drafts and reading positions across model changes,
+  specialist selection and navigation. Restore a failed submission for review,
+  with no automatic resend. Keep delayed/pending replies in their original room.
+- Stop inferring tool execution from elapsed time or another request's global
+  progress message. Show the actual configured Enter-key behavior.
+- Replace the development-only, nonisolated Desktop check with ten real
+  packaged-client interaction groups and HTTP contract fixtures. Exercise chat,
+  failure/recovery, model routes, room state, scrolling and persisted preferences.
+- Add Windows/Linux/macOS package-and-interaction CI with retained reports and
+  screenshots. Keep real-model, live channel, HA and signed installer gates
+  separate. [Verification scope](docs/VERIFICATION_2.78.3.md).
+
 ## [2.78.2] — 2026-09-05
 
 - Replace CLI and npm name/port-based process killing with a per-instance,

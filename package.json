@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.78.2",
+  "version": "2.78.3",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
