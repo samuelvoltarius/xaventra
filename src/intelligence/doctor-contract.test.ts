@@ -34,4 +34,8 @@ describe('Doctor trained/runtime diagnosis contract', () => {
         expect(() => parseDoctorDiagnosis(raw, { reportedError: 'ECONNREFUSED' })).toThrow('contradicts')
         expect(parseDoctorDiagnosis(raw, { reportedError: 'EADDRINUSE' }).autoApply).toBe(false)
     })
+    it.each(['safe_fixes', 'risky_fixes'])('rejects credential requests from generic diagnosis (%s)', category => {
+        const raw = JSON.stringify({ ...plan, [category]: [{ type: 'ask_secret', key: 'FIXTURE_API_KEY', message: 'Copy a key from an invented service' }] })
+        expect(() => parseDoctorDiagnosis(raw, { reportedError: 'EACCES permission denied' })).toThrow('credential')
+    })
 })

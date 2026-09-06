@@ -38,14 +38,17 @@ Desktop reports identify their `sourceRevision`, OS and package version.
 
 ### 2.78.8 bounded Doctor validation checkpoint
 
-The empty-review/empty-fix and initialization failures are reproduced and fixed
-with new source tests plus eight compiled API cases. Exact candidate CI evidence
+The empty-review/empty-fix, initialization and invented credential-request
+failures are reproduced and fixed with new source tests plus nine compiled API
+cases. Exact candidate CI evidence
 is pending; no main promotion until all relevant jobs pass. See the separate
 [source/API and native model-quality record](VERIFICATION_2.78.8.md).
 
 Doctor quality remains **open**: the real 0.5B Q5_K_M run passed all checks in only
 1/14 authored synthetic cases despite 14/14 schema-valid responses. Unsupported
 configuration proposals, uncertainty and healthy controls need more work. The
+1.5B comparison passed 5/14 overall and exposed the credential-request defect.
+Case-level sanitized reports retain the pre-guard results explicitly. The
 schema/parser/oracle measures are separate, not a general agent benchmark.
 Known negative reports remain retained. No retraining, weight publication,
 production rollout or RC label is part of this source change.

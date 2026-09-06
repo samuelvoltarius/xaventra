@@ -97,6 +97,10 @@ export function parseDoctorDiagnosis(raw: string, evidence: DoctorDiagnosisEvide
         // configuration key/wizard exists. Typed setup callers may supply that
         // evidence; model text or an error message cannot grant it to itself.
         for (const fix of [...p.safe_fixes, ...p.risky_fixes]) {
+            // This generic diagnosis API has no trusted credential-request UI,
+            // secret catalogue or user approval flow. Do not forward invented
+            // credential requests/links; validated setup handles that separately.
+            if (fix.type === 'ask_secret') throw new Error('Doctor diagnosis cannot request credentials; use validated setup')
             if (fix.type === 'config_patch' && (!fix.path || !evidence.configurationPaths?.includes(fix.path))) throw new Error('Uncorroborated Doctor configuration proposal')
             if (fix.type === 'wizard_step' && (!fix.step || !evidence.wizardSteps?.includes(fix.step))) throw new Error('Uncorroborated Doctor wizard proposal')
         }

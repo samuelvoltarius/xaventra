@@ -7,6 +7,9 @@
   model output cannot authorize automatic application.
 - Catch model initialization failures in diagnosis, review and fix APIs. Keep
   unavailable results explicitly unverified and raw error inputs out of telemetry.
+- Reject structured credential requests from generic error diagnosis after a real
+  GGUF answered a filesystem error with an invented API-key request. Credential
+  entry belongs to validated setup, never model-supplied links.
 - Add compiled Doctor API validation to all three hosted OS jobs, using a clearly
   scripted engine. Add a separate 14-case local GGUF quality runner with authored
   synthetic inputs, independent bounded checks and retained negative reports.

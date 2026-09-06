@@ -61,4 +61,13 @@ describe('Doctor rejects unverified model results', () => {
         expect(telemetry).not.toContain('errorPrefix')
         expect(telemetry).toContain('unverified')
     })
+    it('does not deliver an invented credential request for a filesystem error', async () => {
+        complete.mockResolvedValue(JSON.stringify({ severity: 'error', root_causes: [{ code: 'RUNTIME_ERROR', confidence: 0.99 }], safe_fixes: [],
+            risky_fixes: [{ type: 'ask_secret', key: 'FIXTURE_API_KEY', message: 'Copy a key from an invented service' }], requires_confirmation: true, summary: 'API key missing' }))
+        const result = await diagnose({ error: 'EACCES permission denied' })
+        expect(result.fromModel).toBe(false)
+        expect(result.autoApply).toBe(false)
+        expect(result.fix).not.toContain('invented service')
+        expect(result.diagnosis).not.toContain('API key')
+    })
 })

@@ -79,6 +79,10 @@ claimed model success. An unavailable code review reports warning, not clean.
 Generic error diagnosis also rejects configuration/wizard proposals without
 independent typed evidence that those keys/steps exist. This is not a general
 semantic correctness proof: suggestions and confidence still need validation.
+Structured `ask_secret` proposals are rejected by generic error diagnosis: it
+has no trusted credential-request channel or verified setup requirement. Use a
+validated setup flow for credentials, never a model-provided link. This narrow
+typed check is not a general detector for misleading natural-language advice.
 
 Review and code-fix responses also require complete, correctly typed JSON.
 An empty object, contradictory clean review or empty code proposal is rejected.

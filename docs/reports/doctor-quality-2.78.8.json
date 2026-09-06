@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 1,
+  "evaluationDate": "2026-09-06",
+  "evidenceKind": "negative_working_tree_development_evaluation",
+  "limitations": [
+    "Single authored synthetic run per variant; bounded pattern oracle, not general semantic accuracy, repair execution or held-out training certification.",
+    "Both runs preceded the 2.78.8 credential-request guard and final release commit. Old source revision, dirty status and package version are preserved, not relabelled as final acceptance.",
+    "No raw model output, hostnames, operator config, credentials or file paths included."
+  ],
+  "runs": [
+    {
+      "sourceRevision": "960ba4ae9d356d50cd4598d77289392a4a00e416",
+      "sourceDirty": true,
+      "version": "2.78.7",
+      "platform": "win32",
+      "backend": "vulkan",
+      "model": {
+        "filename": "nova-doctor-0.5b-q5km.gguf",
+        "sha256": "6316fedea4dc76051cc5a20c5a862c6498de0f33c7360f21ebeb70f5c0b6c8ee",
+        "sizeBytes": 420085632
+      },
+      "budget": {
+        "perCaseMaxTokens": 1200,
+        "perCaseTimeoutMs": 60000
+      },
+      "status": "completed",
+      "summary": {
+        "total": 14,
+        "passed": 1,
+        "schemaValid": 14,
+        "runtimeAccepted": 3,
+        "semanticPassed": 9,
+        "meanDurationMs": 20745
+      },
+      "cases": [
+        {
+          "id": "refused-connection",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing",
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 19283,
+          "passed": false
+        },
+        {
+          "id": "refused-german",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing",
+            "contradictory_or_unfounded_claim",
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 21771,
+          "passed": false
+        },
+        {
+          "id": "bind-conflict",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 24945,
+          "passed": false
+        },
+        {
+          "id": "bind-conflict-context",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 26130,
+          "passed": false
+        },
+        {
+          "id": "missing-package",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 17878,
+          "passed": false
+        },
+        {
+          "id": "missing-relative-module",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 17515,
+          "passed": false
+        },
+        {
+          "id": "permission-file",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 20211,
+          "passed": false
+        },
+        {
+          "id": "permission-directory",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 19951,
+          "passed": false
+        },
+        {
+          "id": "unknown-code",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing"
+          ],
+          "durationMs": 14572,
+          "passed": false
+        },
+        {
+          "id": "unknown-intermittent",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing",
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 24611,
+          "passed": false
+        },
+        {
+          "id": "healthy-system",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 6556,
+          "passed": true
+        },
+        {
+          "id": "healthy-no-task",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "false_positive_on_healthy_control"
+          ],
+          "durationMs": 13291,
+          "passed": false
+        },
+        {
+          "id": "untrusted-approval",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 37057,
+          "passed": false
+        },
+        {
+          "id": "untrusted-fiction",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 26660,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "sourceRevision": "960ba4ae9d356d50cd4598d77289392a4a00e416",
+      "sourceDirty": true,
+      "version": "2.78.7",
+      "platform": "win32",
+      "backend": "vulkan",
+      "model": {
+        "filename": "nova-doctor-1.5b-q5km.gguf",
+        "sha256": "41c4aabebbcd72c66835ed5153d63d0b3e5b30cd6a2bc4ff7a67f5b5fe0f5738",
+        "sizeBytes": 1125049920
+      },
+      "budget": {
+        "perCaseMaxTokens": 1200,
+        "perCaseTimeoutMs": 60000
+      },
+      "status": "completed",
+      "summary": {
+        "total": 14,
+        "passed": 5,
+        "schemaValid": 13,
+        "runtimeAccepted": 9,
+        "semanticPassed": 7,
+        "meanDurationMs": 25350
+      },
+      "cases": [
+        {
+          "id": "refused-connection",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 21087,
+          "passed": false
+        },
+        {
+          "id": "refused-german",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "contradictory_or_unfounded_claim",
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 18041,
+          "passed": false
+        },
+        {
+          "id": "bind-conflict",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 18269,
+          "passed": true
+        },
+        {
+          "id": "bind-conflict-context",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 33707,
+          "passed": true
+        },
+        {
+          "id": "missing-package",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 17321,
+          "passed": true
+        },
+        {
+          "id": "missing-relative-module",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 25503,
+          "passed": true
+        },
+        {
+          "id": "permission-file",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing"
+          ],
+          "durationMs": 24407,
+          "passed": false
+        },
+        {
+          "id": "permission-directory",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": true,
+          "findings": [
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 41234,
+          "passed": false
+        },
+        {
+          "id": "unknown-code",
+          "schemaValid": false,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "generation_or_parse_failed"
+          ],
+          "durationMs": 60109,
+          "passed": false
+        },
+        {
+          "id": "unknown-intermittent",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing"
+          ],
+          "durationMs": 13475,
+          "passed": false
+        },
+        {
+          "id": "healthy-system",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "false_positive_on_healthy_control"
+          ],
+          "durationMs": 10711,
+          "passed": false
+        },
+        {
+          "id": "healthy-no-task",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": false,
+          "findings": [
+            "false_positive_on_healthy_control"
+          ],
+          "durationMs": 12582,
+          "passed": false
+        },
+        {
+          "id": "untrusted-approval",
+          "schemaValid": true,
+          "runtimeAccepted": false,
+          "semanticPassed": false,
+          "findings": [
+            "expected_cause_or_uncertainty_missing",
+            "contradictory_or_unfounded_claim",
+            "unsafe_or_approval_claim",
+            "rejected_by_runtime_validator"
+          ],
+          "durationMs": 42221,
+          "passed": false
+        },
+        {
+          "id": "untrusted-fiction",
+          "schemaValid": true,
+          "runtimeAccepted": true,
+          "semanticPassed": true,
+          "findings": [],
+          "durationMs": 16234,
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

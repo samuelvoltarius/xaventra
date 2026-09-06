@@ -67,6 +67,12 @@ try {
         const r = await api.generateFix('return 1', 'fixture'); assert.equal(r.safe, false); assert.equal(r.fixedCode, 'return 2')
         assert.ok(lastOptions.signal); assert.ok(lastOptions.jsonSchema)
     })
+    await check('filesystem error cannot request invented credentials', async () => {
+        answer = JSON.stringify({ severity: 'error', root_causes: [{ code: 'RUNTIME_ERROR', confidence: 0.99 }], safe_fixes: [],
+            risky_fixes: [{ type: 'ask_secret', key: 'FIXTURE_API_KEY', message: 'Copy a key from an invented service' }], requires_confirmation: true, summary: 'API key missing' })
+        const r = await api.diagnose({ error: 'EACCES permission denied' })
+        assert.equal(r.fromModel, false); assert.equal(r.autoApply, false); assert.ok(!r.fix.includes('invented service'))
+    })
     await check('initialization rejection returns diagnosis fallback', async () => {
         initFailure = true
         const r = await api.diagnose({ error: 'ECONNREFUSED synthetic failure' }); assert.equal(r.fromModel, false); assert.equal(r.autoApply, false)

@@ -19,10 +19,17 @@ are caught. No model text can authorize repair or replace tests/PATCH_GATE.
 Telemetry no longer stores raw error prefixes, and labels schema validation
 separately from semantic correctness.
 
+The 1.5B live comparison additionally answered a filesystem permission failure
+with a request for an invented API key/service. Two new negative parser cases
+confirmed this passed through both suggestion categories. Generic diagnosis now
+rejects structured `ask_secret` requests; credential entry belongs to validated
+setup with a trusted channel. A wrapper regression confirms no such request is
+delivered. This bounded typed rejection is not a general prose/link safety filter.
+
 ## Source and compiled API acceptance
 
-The new 18-case wrapper suite and four independent-oracle tests are isolated
-from production files and native inference. The compiled API harness adds eight
+The new 19-case wrapper suite, two credential-parser cases and four independent-oracle tests are isolated
+from production files and native inference. The compiled API harness has nine
 cases using the actual built client/contract and a scripted engine. Hosted CI
 executes this harness on Windows, Linux and macOS and preserves its reports even
 on failure. This is source/API evidence, not a live-model score.
@@ -38,11 +45,12 @@ npm run test:desktop
 
 Candidate exact-SHA CI and report readback are required before main promotion.
 Any later documentation-only attestation also needs its own exact-SHA green CI.
-Full local regression counts and CI evidence are recorded after completion.
-Local Windows verification passed **180 files / 1188 Core tests**, seven Desktop
+Local Windows verification before the credential guard passed **180 files / 1188 Core tests**, seven Desktop
 bridge tests, build/typecheck, catalogs and the assurance gate. The built Doctor
 artifact fixture passed 5/5 and the separate scripted API harness passed 8/8.
-These local results do not substitute for the pending exact-SHA hosted CI.
+After the credential guard, the full suite passed **180 files / 1191 tests**,
+build/typecheck and all nine compiled API cases. These local results do not
+substitute for the pending exact-SHA hosted CI.
 
 ## Actual GGUF evaluation: negative evidence is retained
 
@@ -64,6 +72,17 @@ the production parser, 9/14 passed the limited oracle and **1/14 passed all thre
 Mean generation/validation time was 20.745 seconds. For example, it invented a
 configuration key to install a missing package and confused an unreachable
 listener with an unavailable port. Those suggestions are not executed.
+
+The 1.5B Q5_K_M run passed the schema in 13/14 cases, the pre-credential-guard
+runtime parser in 9/14 and the limited oracle in 7/14; **5/14 passed all three**.
+Mean time was 25.350 seconds, including a 60-second failed generation. It also
+invented an API-key requirement for a filesystem error and assigned a runtime
+root cause to healthy controls. Larger weights are not a repair-safety guarantee.
+
+The [sanitized case-level report](reports/doctor-quality-2.78.8.json) retains both
+negative runs, separate criteria and pinned model hashes, without raw outputs or
+operator data. These runs preceded the credential guard, so their parser counts
+must not be presented as measurements of that later guard.
 
 This working-tree evaluation was started from base commit
 `960ba4ae9d356d50cd4598d77289392a4a00e416`, before the version bump; reports
