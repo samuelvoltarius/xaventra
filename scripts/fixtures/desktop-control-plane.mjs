@@ -8,9 +8,9 @@ export async function createDesktopFixture() {
     id: `${room.id}-${i}`, authorType: i % 2 ? 'bot' : 'user', authorId: i % 2 ? 'nova' : 'fixture-user',
     content: `${room.id} history ${i}: ${'Readable conversation history. '.repeat(4)}`, createdAt: '2026-01-01T12:00:00Z',
   }))]))
-  const controls = { bootstrapStatus: 200, postStatus: 200, delayMs: 0, requests, rooms, messages }
+  const controls = { bootstrapStatus: 200, postStatus: 200, delayMs: 0, omitAuthority: false, requests, rooms, messages }
   const bootstrap = () => ({
-    controlPlane: { nodeId: 'fixture-main', hostname: 'Test Main', authoritative: true, mainEpoch: 1 },
+    controlPlane: controls.omitAuthority ? undefined : { nodeId: 'fixture-main', hostname: 'Test Main', authoritative: true, mainEpoch: 1 },
     rooms, bots: ['nova', 'researcher'].map(id => ({ id, name: id === 'nova' ? 'Xaventra' : 'Researcher', source: 'nova', avatar: 'X', color: '#4F7CFF' })),
     models: { activeModel: 'fixture-model', models: ['one', 'two'].map(id => ({ id: 'fixture-model', routeId: `fixture-${id}::vllm::fixture-model`, nodeId: `fixture-${id}`, runtime: 'vllm', status: 'running', supportsTools: true })) },
     inventory: { nodes: [{ id: 'fixture-main', name: 'Test Main', status: 'online' }], enrollments: [] },

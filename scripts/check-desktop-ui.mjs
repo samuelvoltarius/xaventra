@@ -14,6 +14,7 @@ const executable = process.platform === 'win32' ? join(release, 'win-unpacked/Xa
   : process.platform === 'darwin' ? join(release, process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Xaventra Desktop.app/Contents/MacOS/Xaventra Desktop')
     : join(release, process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked', 'xaventra-desktop')
 assert.ok(existsSync(executable), `Build this platform's Desktop package first: ${executable}`)
+assert.ok(process.platform !== 'linux' || process.geteuid?.() !== 0, 'Run Desktop QA as a normal user; root makes Playwright disable the Chromium sandbox')
 const parent = resolve(process.env.NOVA_DESKTOP_QA_DIR || join(tmpdir(), 'xaventra-desktop-qa'))
 mkdirSync(parent, { recursive: true })
 const artifactRoot = mkdtempSync(join(parent, 'run-'))
@@ -32,13 +33,28 @@ process.on('uncaughtExceptionMonitor', error => {
   writeFileSync(join(artifactRoot, 'report.json'), JSON.stringify({ ...report, passed: false, error: error.stack || String(error) }, null, 2))
 })
 let app, page
-const check = async (name, fn) => { const start = Date.now(); await fn(); report.checks.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`) }
+const persist = () => writeFileSync(join(artifactRoot, 'report.json'), JSON.stringify(report, null, 2))
+const check = async (name, fn) => { report.currentCheck = name; persist(); console.log(`START ${name}`); const start = Date.now(); await fn(); report.checks.push({ name, passed: true, durationMs: Date.now() - start }); persist(); console.log(`PASS ${name}`) }
 const screenshot = name => page.screenshot({ path: join(artifactRoot, `${name}.jpg`), type: 'jpeg', quality: 85 })
 const wait = async predicate => { const end = Date.now() + 10000; while (!await predicate()) { if (Date.now() > end) throw new Error('UI condition deadline exceeded'); await new Promise(r => setTimeout(r, 50)) } }
 const launch = async () => {
+  report.currentCheck = 'launch packaged Electron'; persist()
   app = await electron.launch({ executablePath: executable, args: [`--user-data-dir=${profile}`], cwd: artifactRoot, env, timeout: 30000 })
-  page = await app.firstWindow(); page.setDefaultTimeout(10000)
+  page = await app.firstWindow({ timeout: 10000 }); page.setDefaultTimeout(10000)
 }
+const closeApp = async () => {
+  const owned = app
+  if (!owned) return
+  let timer
+  try { await Promise.race([owned.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Packaged Electron failed to close within 10 seconds')), 10000) })]) }
+  catch (error) { owned.process().kill('SIGKILL'); throw error }
+  finally { clearTimeout(timer); app = null }
+}
+const watchdog = setTimeout(() => {
+  report.passed = false; report.error = `Whole UI run exceeded 120 seconds at ${report.currentCheck}`; persist()
+  app?.process().kill('SIGKILL')
+  process.exit(1)
+}, 120000)
 const posts = () => fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/messages'))
 try {
   await launch()
@@ -53,6 +69,11 @@ try {
   })
   await check('save connection recovers without restarting', async () => {
     fixture.controls.bootstrapStatus = 200
+    fixture.controls.omitAuthority = true
+    await page.locator('#settings-form button[type=submit]').click()
+    await page.locator('#toast.error').waitFor()
+    assert.ok(!await page.locator('#composer').isVisible(), 'Missing Main authority accepted')
+    fixture.controls.omitAuthority = false
     await page.locator('#settings-form button[type=submit]').click(); await page.locator('#composer').waitFor()
     assert.equal(await page.locator('.room-heading h1').innerText(), 'Test alpha')
   })
@@ -122,7 +143,7 @@ try {
     await page.locator('#composer').fill('Newline'); await page.locator('#composer').press('Enter')
     assert.equal(await page.locator('#composer').inputValue(), 'Newline\n'); assert.equal(posts().length, before)
     assert.ok(!await page.locator('.inspector').isVisible())
-    await app.close(); app = null; await launch(); await page.locator('#composer').waitFor()
+    await closeApp(); await launch(); await page.locator('#composer').waitFor()
     assert.ok(!await page.locator('.inspector').isVisible())
     await page.locator('[data-section=settings]').click(); assert.ok(!await page.locator('[name=sendOnEnter]').isChecked())
     await page.locator('[name=sendOnEnter]').check(); await page.locator('[name=showInspector]').check()
@@ -145,9 +166,10 @@ try {
   report.error = error.stack || String(error)
   if (page) await screenshot('failure').catch(() => {})
 } finally {
-  if (app) await app.close().catch(() => {})
+  if (app) await closeApp().catch(error => { report.passed = false; report.error = [report.error, error.message].filter(Boolean).join('\n') })
   await fixture.close()
-  writeFileSync(join(artifactRoot, 'report.json'), JSON.stringify(report, null, 2))
+  clearTimeout(watchdog)
+  persist()
 }
 console.log(JSON.stringify({ ...report, artifactRoot }, null, 2))
 if (!report.passed) process.exitCode = 1

@@ -5,6 +5,7 @@
 - Keep connection setup usable while Core is unreachable or authentication
   fails. Bound bootstrap retries separately from the long-running chat budget;
   stale retries cannot overwrite an opened settings form.
+  Missing Main-authority metadata fails closed instead of opening a chat.
 - Preserve per-room session drafts and reading positions across model changes,
   specialist selection and navigation. Restore a failed submission for review,
   with no automatic resend. Keep delayed/pending replies in their original room.

@@ -149,7 +149,7 @@ async function loadBootstrap(isCurrent = () => true) {
     wurzel.classList.add('novaos')
   }
 
-  if (state.bootstrap.controlPlane && state.bootstrap.controlPlane.authoritative !== true) {
+  if (state.bootstrap.controlPlane?.authoritative !== true) {
     throw new Error('Der konfigurierte Endpunkt ist kein aktuell gefenctes Xaventra-Main-Control-Plane.')
   }
   if (!state.roomId || !roomById(state.roomId)) state.roomId = state.bootstrap.rooms?.[0]?.id || null

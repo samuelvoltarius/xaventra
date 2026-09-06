@@ -10,6 +10,9 @@ Sending in alpha then opening beta displayed alpha's pending text in beta.
 Exploratory testing also found that finishing a background reply replaced an
 open settings form and discarded its unsaved input; the package check now
 reproduces and guards that case too.
+An additional negative bootstrap test found that a missing `controlPlane` was
+accepted. The client now requires affirmative Main authority instead of treating
+absent metadata as compatibility permission; that failure is also retained.
 The new automated package check failed on the old binary at its five-second
 settings-availability assertion; that negative report was retained locally.
 
