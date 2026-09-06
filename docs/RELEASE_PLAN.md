@@ -36,21 +36,27 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
-### 2.78.10 Doctor grounding candidate
+### 2.78.10 Doctor grounding checkpoint
 
 Neutral typed input replaces fabricated runtime errors. Generic diagnosis accepts
 informational proposals only, and L15 no longer turns a diagnosis into successful
 repair memory or resets tool/silence failures without evidence. The original
 14-case Doctor quality baseline and all negative reports are retained, plus four
 new authored controls. Source/compiled API regression is separate from native
-GGUF quality, which remains open. Exact candidate-SHA CI is required before main
-promotion; see [2.78.10 verification and limits](VERIFICATION_2.78.10.md).
+GGUF quality, which remains open. Runtime `8f5d70a959660183d80cc5b8efdb75210d1af1bc`
+passed all seven jobs in [CI 34050162854](https://github.com/samuelvoltarius/xaventra/actions/runs/34050162854).
+Downloaded clean exact-SHA reports confirm API 15/15 and artifacts 5/5 on each
+OS. Core: 185 files / 1250 tests; bridge: 7/7. A documentation attestation still
+needs exact-SHA CI before promotion; see [verification and limits](VERIFICATION_2.78.10.md).
 No retraining, production rollout or RC label follows from this bounded fix.
 Native Windows Vulkan runs improved the unchanged baseline to 10/14 for both
 0.5B and 1.5B, with additional controls 2/4 and 3/4 respectively. These are
 pre-final-guard dirty-tree runs, not clean final-SHA model acceptance. Unsafe
 log-derived prose was reproduced and received a bounded rejection guard; uncertain
 and other semantic answers remain an open Doctor gate, with failed evidence kept.
+Separate clean runtime API smoke: 1.5B 2/2, 0.5B 1/2 on two attempts. The small
+model still invents a configuration premise and firewall advice on refused
+connections. Do not confuse improved aggregate fixtures with full acceptance.
 
 ### 2.78.9 environment-awareness and host-boundary checkpoint
 

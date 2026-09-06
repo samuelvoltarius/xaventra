@@ -413,5 +413,59 @@
         }
       ]
     }
-  ]
+  ],
+  "finalRuntimeAPI": {
+    "sourceRevision": "8f5d70a959660183d80cc5b8efdb75210d1af1bc",
+    "sourceDirty": false,
+    "scope": "Actual compiled diagnose API using local pinned GGUF. Two authored smoke cases per run, not full quality acceptance.",
+    "runs": [
+      {
+        "model": "nova-doctor-1.5b-q5km.gguf",
+        "cases": [
+          {
+            "id": "connection-refused",
+            "passed": true,
+            "durationMs": 24596
+          },
+          {
+            "id": "structured-healthy",
+            "passed": true,
+            "durationMs": 5459
+          }
+        ]
+      },
+      {
+        "model": "nova-doctor-0.5b-q5km.gguf",
+        "cases": [
+          {
+            "id": "connection-refused",
+            "passed": false,
+            "durationMs": 16336
+          },
+          {
+            "id": "structured-healthy",
+            "passed": true,
+            "durationMs": 5879
+          }
+        ]
+      },
+      {
+        "model": "nova-doctor-0.5b-q5km.gguf",
+        "repeat": true,
+        "cases": [
+          {
+            "id": "connection-refused",
+            "passed": false,
+            "durationMs": 18039,
+            "finding": "Invented unsaved-configuration premise and ungrounded firewall-change advice; valid structure but semantic failure."
+          },
+          {
+            "id": "structured-healthy",
+            "passed": true,
+            "durationMs": 5368
+          }
+        ]
+      }
+    ]
+  }
 }

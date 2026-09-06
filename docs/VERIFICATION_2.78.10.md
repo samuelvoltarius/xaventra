@@ -1,17 +1,25 @@
 # 2.78.10 — grounded Doctor input and advisory-only recovery boundary
 
 Status: bounded source checkpoint, **not RC-ready**. Base commit:
-`cad05d415c6025f61903fe25ac03d5efa5c10088`. Candidate CI and exact source evidence
-must be recorded before main promotion. No production, model weights or private
+`cad05d415c6025f61903fe25ac03d5efa5c10088`. Guarded runtime commit
+`8f5d70a959660183d80cc5b8efdb75210d1af1bc` passed all seven jobs in
+[candidate CI 34050162854](https://github.com/samuelvoltarius/xaventra/actions/runs/34050162854).
+Downloaded Windows/Linux/macOS reports confirm the exact clean SHA, 15/15
+compiled API and 5/5 artifact cases per OS. Packaged Desktop, lifecycle and
+source-install/regression checks also passed there; hosted providers are scripted.
+This documentation attestation requires its own exact-SHA CI before promotion.
+No production, model weights or private
 configuration changed. Native binary/signing gates remain separate.
 
 Local source checks: 185 files / 1250 Core tests, seven Desktop bridge tests,
 typecheck/build, current catalogs, five compiled artifact cases, fifteen compiled
-API cases and assurance checks passed. Full-history and staged secret scans must
-also pass for the exact candidate. Initial commit `4623d5df896e70418081dc41151c2730050844bb`
+API cases and assurance checks passed. The guarded 24-commit public history and
+staged scans had zero Gitleaks findings. Package dry-run contained 1908 files and
+no forbidden runtime config, host database, private memory, key or GGUF files.
+Initial commit `4623d5df896e70418081dc41151c2730050844bb`
 passed all seven jobs in [CI 34049928036](https://github.com/samuelvoltarius/xaventra/actions/runs/34049928036),
 but was not promoted because the live model exposed the later unsafe-prose defect.
-The guarded follow-up requires its own exact-SHA green CI.
+The guarded follow-up received the separate exact-SHA green CI linked above.
 
 ## Reproduction and implementation
 
@@ -93,6 +101,15 @@ free-text control for 0.5B, missed installed-versus-unreachable evidence, and
 log-injected policy advice. Later offline replay rejects the retained unsafe
 1.5B advice without new inference. The corresponding original case is still a
 failed model answer, not a success manufactured by the rejection guard.
+
+On the clean guarded runtime `8f5d70a959660183d80cc5b8efdb75210d1af1bc`, separate
+actual `diagnose()` API smoke ran a refused-connection observation and a typed
+healthy report. 1.5B passed 2/2; 0.5B passed 1/2 on two attempts. The repeated
+small-model failure invented an unsaved-configuration premise and firewall-change
+advice despite the input not establishing either. Both reports remain failures;
+model prose is not executable approval. This confirms a remaining semantic gap,
+not merely a schema issue. These clean-SHA smoke results are stored separately
+from the earlier full 18-case generation and later offline output replay.
 
 The quality gate remains open. Next compare a versioned evidence-bound diagnosis
 contract on these negatives plus new cases before considering any targeted
