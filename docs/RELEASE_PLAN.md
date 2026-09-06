@@ -71,6 +71,14 @@ engineering work.
 
 ### 2.78.7 bounded Doctor candidate
 
+Runtime commit `6262799052ada50a78c924a403236b37915951c3` passed all seven jobs
+in [candidate CI 34035690597](https://github.com/samuelvoltarius/xaventra/actions/runs/34035690597).
+Downloaded three-platform Doctor reports confirm 5/5 compiled cases and the exact
+clean source revision. Native model quality stays open: both 0.5B and 1.5B showed
+unfounded diagnoses in the separate local smoke. The observed failures now fail
+closed; this is not broad semantic or self-repair acceptance. Any documentation
+attestation also requires exact-commit green CI before main promotion.
+
 [Doctor delivery/runtime verification](VERIFICATION_2.78.7.md) separates artifact
 integrity/configuration fixtures from actual GGUF diagnosis quality. The retained
 0.5B invented-port/provider response is an open quality failure, not a passing

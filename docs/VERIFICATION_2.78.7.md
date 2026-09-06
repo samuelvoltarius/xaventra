@@ -3,6 +3,14 @@
 This is a bounded source change, **not RC acceptance**. It does not deploy any
 production service, publish weights, retrain a model or prove autonomous repair.
 
+Runtime commit `6262799052ada50a78c924a403236b37915951c3` passed all seven jobs
+in [candidate CI 34035690597](https://github.com/samuelvoltarius/xaventra/actions/runs/34035690597).
+Downloaded Doctor reports for Windows, Linux and macOS each identify that exact
+clean source SHA, version 2.78.7 and five passing compiled fixture cases. Core
+regressions, lifecycle/response checks and packaged Desktop jobs also pass.
+These are hosted fixture tests, not live Doctor quality or a production rollout.
+This documentation attestation must pass its own exact-SHA CI before main moves.
+
 ## Reproductions and implemented boundaries
 
 - The previous downloader referenced a nonexistent Core release. A configured
