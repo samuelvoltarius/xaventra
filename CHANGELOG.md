@@ -12,6 +12,8 @@
   Linux and macOS: actual file execution, linked validator/Outcome details,
   following commands, scoped Memory/Trust and policy-denied file reads.
   The CI model is scripted, not a real-model benchmark or full-daemon proof.
+- Label failed required actions as unverified, never as needing no evidence.
+  Missing action metadata is unknown rather than an implied no-tool success.
 
 ## [2.78.3] — 2026-09-06
 

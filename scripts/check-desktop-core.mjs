@@ -99,6 +99,8 @@ try {
     assert.equal(run.status, 'failed'); assert.notEqual(run.validation?.success, true)
     assert.ok(!JSON.stringify(run).includes('DENIED_CONTENT_MUST_NOT_LEAK'))
     assert.ok(!run.tools.some(tool => tool.toolName === 'read_file' && tool.success === true))
+    const label = await page.locator('.message:not(.user):not(.pending)').last().locator('.evidence-state').innerText()
+    assert.equal(label, 'Ergebnis nicht verifiziert', 'Denied action is incorrectly labeled as needing no evidence')
     report.deniedOutcome = run
     await page.screenshot({ path: join(root, 'policy-denied.jpg'), type: 'jpeg', quality: 85 })
   })

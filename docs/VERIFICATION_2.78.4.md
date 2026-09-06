@@ -12,6 +12,10 @@ binary distribution. Exact-commit hosted CI is required before main updates.
 2. After the read, `/status` was flattened together with the entire room
    transcript into a new user message. Instead of command dispatch it entered
    the model/kernel again. Retained negative reports include both assertions.
+3. Visual inspection of the denied file case found a contradictory badge:
+   the tool failed, but its badge said no evidence was needed. A new assertion
+   reproduced this on the packaged binary. Required incomplete actions now
+   say unverified; absent action metadata remains explicitly unknown.
 
 The fix resolves execution identity with the same explicit channel mapping,
 without rewriting history, prefix guessing or opening other users' records.

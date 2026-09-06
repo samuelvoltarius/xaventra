@@ -328,7 +328,12 @@ function messageView(message) {
   const label = isUser ? 'Du' : bot?.name || (message.authorType === 'system' ? 'System' : message.authorId)
   const origin = bot?.source && bot.source !== 'nova' ? bot.source : message.node
   const evidence = message.evidence
-  const actionLabel = evidence?.action?.awaitingApproval ? 'Freigabe nötig' : evidence?.action?.fulfilled ? 'Ergebnis verifiziert' : message.verifiedEvidence > 0 ? 'Evidence geprüft' : ''
+  const actionLabel = evidence?.action?.awaitingApproval ? 'Freigabe nötig'
+    : evidence?.action?.requiresTool && !evidence.action.fulfilled ? 'Ergebnis nicht verifiziert'
+      : evidence?.action?.fulfilled ? 'Ergebnis verifiziert'
+        : message.verifiedEvidence > 0 ? 'Evidence geprüft'
+          : evidence?.tools?.some(tool => !tool.success) ? 'Tool fehlgeschlagen'
+            : evidence?.action?.requiresTool === false ? 'Keine Tool-Evidence nötig' : 'Evidenzstatus unbekannt'
   return `<article class="message ${isUser ? 'user' : ''}">
     <div class="avatar" style="${bot ? `border-color:${attr(bot.color)}` : ''}">${esc(isUser ? 'A' : bot?.avatar || '!')}</div>
     <div class="message-body"><div class="message-head"><span>${esc(label)}</span>${origin ? `<span class="origin">${esc(origin)}</span>` : ''}${message.model ? `<span class="origin">${esc(message.model)}</span>` : ''}<time>${fmtTime(message.createdAt)}</time></div><div class="message-content">${formatMessage(message.content)}</div>${!isUser && (message.runId || evidence) ? `<div class="evidence-strip"><span class="evidence-state ${message.verifiedEvidence > 0 ? 'verified' : ''}">${esc(actionLabel || 'Keine Tool-Evidence nötig')}</span>${evidence?.tools?.map(tool => `<span class="tool-pill ${tool.success ? 'ok' : 'failed'}">${tool.success ? '✓' : '×'} ${esc(tool.name)}</span>`).join('') || ''}${evidence?.durationMs ? `<span>${fmtNumber(evidence.durationMs / 1000, 1)}s</span>` : ''}${message.runId ? `<button class="run-link" data-run-id="${attr(message.runId)}">Run ansehen</button>` : ''}</div>` : ''}</div>
