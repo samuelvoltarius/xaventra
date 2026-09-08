@@ -2306,6 +2306,7 @@
     {
       "module": "src/doctor/repair-controller-server.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "./repair-activation.js",
         "node:crypto",
         "node:fs",

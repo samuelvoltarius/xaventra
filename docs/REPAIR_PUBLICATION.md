@@ -90,6 +90,10 @@ build/create/stop operations retain evidence and block implicit replay. Inspect
 the exact owned operation before reconciliation; never remove locks or restart
 all containers as a shortcut. The source index uses compare-and-swap, not
 distributed consensus or claimed power-loss durability on every storage backend.
+Successful source/writer/drain completion is durably acknowledged by receipt
+hash. Concurrent status queries share one completion; after controller restart a
+completed receipt cannot reopen old writers. Incomplete attempts use only their
+own saved writer inventory, never the most recent transaction's barrier.
 
 `node scripts/check-repair-publication.mjs` tests actual isolated compilation,
 image creation, background-writer shutdown, state cloning and independent HTTP

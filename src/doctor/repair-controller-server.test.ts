@@ -13,16 +13,22 @@ it('retains recovery receipt when admission release fails; status retries releas
         beginMaintenance: vi.fn(async () => undefined), activate: vi.fn(async () => { current = 'new' }), rollback: async () => { current = 'old' }, currentRelease: async () => current }
     const onVerifiedReceipt = vi.fn(async signed => { expect(verifyRepairValue<any>(signed, publicKey).status).toBe('resolved') })
         .mockRejectedValueOnce(Error('drain unreachable'))
-    const server = createRepairControllerServer({ stateRoot: join(process.cwd(), '.nova-data', randomUUID()), approvalPublicKey: publicKey, receiptPrivateKey: privateKey,
+    const options = { stateRoot: join(process.cwd(), '.nova-data', randomUUID()), approvalPublicKey: publicKey, receiptPrivateKey: privateKey,
         driver, onVerifiedReceipt, probe: async (probeId, targetId, challenge) => ({ probeId, targetId, challenge, observedAt: Date.now(), releaseId: current,
-            state: current === 'old' ? 'fault' : 'healthy', fingerprint: current }) })
+            state: (current === 'old' ? 'fault' : 'healthy') as 'fault' | 'healthy', fingerprint: current }) }
+    let server = createRepairControllerServer(options)
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
     const send = (body: unknown) => fetch(`http://127.0.0.1:${(server.address() as any).port}/repair`, { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(5000) })
     try {
         expect((await send({ operation: 'activate', ticket: signRepairValue(ticket, privateKey) })).status).toBe(409)
-        const status = await send({ operation: 'status', attemptId: ticket.attemptId })
-        expect(verifyRepairValue<any>(await status.json(), publicKey).status).toBe('resolved')
+        const statuses = await Promise.all(Array.from({ length: 5 }, () => send({ operation: 'status', attemptId: ticket.attemptId })))
+        for (const status of statuses) expect(verifyRepairValue<any>(await status.json(), publicKey).status).toBe('resolved')
         expect(driver.activate).toHaveBeenCalledOnce(); expect(driver.beginMaintenance).toHaveBeenCalledOnce()
         expect(onVerifiedReceipt).toHaveBeenCalledTimes(2)
+        await new Promise<void>(r => server.close(() => r()))
+        server = createRepairControllerServer(options)
+        await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
+        expect((await send({ operation: 'status', attemptId: ticket.attemptId })).status).toBe(200)
+        expect(onVerifiedReceipt).toHaveBeenCalledTimes(2) // Durable completion, no stale writer restart.
     } finally { await new Promise<void>(r => server.close(() => r())) }
 })

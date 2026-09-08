@@ -129,8 +129,12 @@ if(drain) driver.beginMaintenance=async ticket=>{
 const server=createRepairControllerServer({stateRoot:config.stateRoot,approvalPublicKey,receiptPrivateKey,driver,probe:createHttpRepairProbe(config.probes,driver),
   onVerifiedReceipt:drain||config.publisherConfigFile?async receipt=>{
     if(config.publisherConfigFile&&receipt.payload.status==='resolved')await publisher('commit-source',receipt)
-    if(config.writerHosts&&!writerBarrier)writerBarrier=loadWriterBarrier(receipt.payload.binding,JSON.parse(readProtected(join(config.stateRoot,`writer-inventory-${receipt.payload.binding.attemptId}.json`))))
-    if(writerBarrier)await writerBarrier.resumePeers(receipt.payload.binding,targetContainerIds,receipt.payload.status==='rolled-back')
+    // A status request may reconcile an older attempt while another barrier is
+    // current. Never borrow the current transaction's writer inventory.
+    if(config.writerHosts){
+      const completedBarrier=loadWriterBarrier(receipt.payload.binding,JSON.parse(readProtected(join(config.stateRoot,`writer-inventory-${receipt.payload.binding.attemptId}.json`))))
+      await completedBarrier.resumePeers(receipt.payload.binding,targetContainerIds,receipt.payload.status==='rolled-back')
+    }
     if(drain)await drain.request('release',{ticket:receipt.payload.binding,receipt})
   }:undefined})
 server.listen(config.port,'127.0.0.1',()=>console.log('Xaventra repair controller ready on configured loopback port'))

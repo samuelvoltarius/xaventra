@@ -11,6 +11,8 @@
 - Add an explicit multi-engine background-writer barrier. Missing hosts,
   unenrolled volume sharers, uncontrolled restart ownership and unproven external
   sink fences block activation. Peers cannot resume against rollback storage.
+- Persist completed receipt acknowledgements and serialize concurrent status
+  reconciliation. An older repair never borrows a newer writer transaction.
 - Await the actual daemon exit event in lifecycle acceptance, preserving the
   observed Windows failure. See `docs/REPAIR_PUBLICATION.md` for boundaries;
   no production activation or RC is claimed.

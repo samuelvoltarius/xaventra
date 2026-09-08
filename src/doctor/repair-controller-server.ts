@@ -1,8 +1,9 @@
 import { createServer } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { RepairActivationController, signRepairValue, type RepairDeploymentDriver, type RepairObservation, type IndependentRepairProbe, type RepairReceipt, type SignedRepairValue } from './repair-activation.js'
+import { RepairActivationController, repairHash, signRepairValue, type RepairDeploymentDriver, type RepairObservation, type IndependentRepairProbe, type RepairReceipt, type SignedRepairValue } from './repair-activation.js'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 
 export interface HttpRepairProbeProfile {
     id: string; targetId: string; url: string; expectedStatus: number; expectedBodySha256: string
@@ -41,6 +42,25 @@ export function createRepairControllerServer(options: { stateRoot: string; appro
     driver: RepairDeploymentDriver; probe: IndependentRepairProbe;
     onVerifiedReceipt?(receipt: SignedRepairValue<RepairReceipt>): Promise<void> }) {
     const controller = new RepairActivationController(options.stateRoot, options.approvalPublicKey, options.driver, options.probe)
+    const completions = new Map<string, Promise<void>>()
+    const complete = async (signed: SignedRepairValue<RepairReceipt>) => {
+        const id = signed.payload.binding.attemptId, digest = repairHash(signed.payload)
+        if (!/^repair-[a-f0-9-]{36}$/.test(id)) throw Error('Invalid receipt identity')
+        const marker = join(options.stateRoot, `${id}.completed.json`)
+        if (existsSync(marker)) {
+            if (JSON.parse(readFileSync(marker, 'utf8')).receiptHash !== digest) throw Error('Completed receipt changed')
+            return
+        }
+        let pending = completions.get(id)
+        if (!pending) {
+            pending = (async () => {
+                await options.onVerifiedReceipt!(signed)
+                atomicWriteJsonSync(marker, { receiptHash: digest })
+            })()
+            completions.set(id, pending)
+        }
+        try { await pending } finally { if (completions.get(id) === pending) completions.delete(id) }
+    }
     return createServer(async (request, response) => {
         if (request.method !== 'POST' || request.url !== '/repair') { response.writeHead(404).end(); return }
         let raw = ''
@@ -56,7 +76,7 @@ export function createRepairControllerServer(options: { stateRoot: string; appro
             const signed = signRepairValue<RepairReceipt>(receipt, options.receiptPrivateKey)
             // If reopening fails, keep the immutable recovery evidence and allow
             // status reconciliation. Never repeat activation to release admission.
-            if (['resolved', 'rolled-back'].includes(receipt.status)) await options.onVerifiedReceipt?.(signed)
+            if (options.onVerifiedReceipt && ['resolved', 'rolled-back'].includes(receipt.status)) await complete(signed)
             response.setHeader('content-type', 'application/json')
             response.end(JSON.stringify(signed))
         } catch { response.writeHead(409).end('Repair request rejected or pending; reconcile signed status') }
