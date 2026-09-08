@@ -263,9 +263,11 @@ diagnose -> gather evidence -> propose -> sandbox -> regression
 
 Doctor diagnosis and patch execution are deliberately separate.
 The diagram is the target workflow, not a claim that every transition is
-automated. The 2.78.13 candidate connects persistent findings to actual governed
-diagnostic investigations; generic sandbox repair, activation and recovery
-verification remain open. See [implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
+automated. Persistent findings feed governed diagnostic investigations. Version
+2.78.14 adds [isolated patch experiments](docs/REPAIR_SANDBOX.md) with real
+regression, rollback and restoration checks. Generic Doctor-to-source candidate
+generation, production activation and independent live recovery verification
+remain open. See [implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
 
 ## Security model
 

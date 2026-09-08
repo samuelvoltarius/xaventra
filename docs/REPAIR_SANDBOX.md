@@ -41,14 +41,18 @@ bounded bytes, not mounts. Runtime configurations, environment files, private
 memory, keys, node_modules, linked files and directories are excluded/rejected.
 This is not a substitute for keeping the source repository secret-free.
 Dependencies come from the immutable image. Input size is limited to 64 MiB and
-20,000 files. Only existing `src/` files may be patched; test oracles themselves
-cannot be changed in the experiment.
+20,000 files. Only existing `src/` files may be patched; the input patch cannot
+target test-oracle files. Running generated code can still influence in-process
+tests, so this does not make their semantics independently trustworthy.
 
 Each compiler or test invocation gets its own non-root container with no network,
 read-only root, no capabilities, no-new-privileges, private IPC, 128 PIDs, 4 GiB
 RAM/no swap, two CPUs and bounded temporary filesystems/output/time. Actual
 cgroup values are checked before execution. Containers are force-removed and
-absence checked after every command, including failure; uncertain cleanup stops
+absence checked after every command, including failure. Child deadlines use
+SIGKILL; the engine-side removal also terminates descendants. Operators may
+shorten `XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS` (1000–180000), never exceed
+the fixed three-minute maximum per command. Uncertain cleanup stops
 verification and requires operator reconciliation. Host process crashes still
 require checking leftover `xaventra-repair-*` containers; do not start a competing
 repair while ownership/cleanup is uncertain.

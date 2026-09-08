@@ -91,7 +91,7 @@ process.stdin.on('end', () => {
   if (process.getuid() !== 1000 || fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim() !== '4294967296'
    || fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim() !== '128'
    || fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim() !== '200000 100000') throw new Error('Limits unavailable');
-  const { files, command } = JSON.parse(input);
+  const { files, command, timeout } = JSON.parse(input);
   for (const [file, bytes] of Object.entries(files)) {
    const target = path.join('/workspace', file);
    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, Buffer.from(bytes, 'base64'));
@@ -104,7 +104,8 @@ process.stdin.on('end', () => {
    NOVA_TEST_MODE:'1', NOVA_NO_SIDE_EFFECTS:'1', NOVA_SKIP_MODEL_RESOLVER_INIT:'1',
    NOVA_RUNTIME_ROOT:'/tmp/runtime', NOVA_PROJECT_ROOT:'/workspace', CI:'1' };
   fs.mkdirSync(env.HOME, { recursive:true });
-  const r = cp.spawnSync('/usr/local/bin/node', command, {cwd:'/workspace', env, stdio:'inherit', timeout:180000});
+  const r = cp.spawnSync('/usr/local/bin/node', command, {cwd:'/workspace', env, stdio:'inherit', timeout, killSignal:'SIGKILL'});
+  if (r.error && r.error.code === 'ETIMEDOUT') console.error('Sandbox command deadline exceeded');
   process.exit(r.error || r.signal ? 2 : r.status === 0 ? 0 : r.status === 1 ? 10 : 2);
  } catch (error) { console.error('Sandbox driver:', error.message); process.exit(2); }
 });`
@@ -160,6 +161,8 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
             throw new Error('Sandbox image OS, volume or lockfile contract mismatch')
         }
         result.imageId = image
+        const commandTimeout = Number(process.env.XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS || 180_000)
+        if (!Number.isInteger(commandTimeout) || commandTimeout < 1000 || commandTimeout > 180_000) throw new Error('Invalid sandbox command timeout')
         const execute = async (source: Snapshot, command: string[]) => {
             if (Date.now() - started > 900_000) throw new Error('Sandbox total budget exhausted')
             const name = `xaventra-repair-${randomUUID()}`
@@ -172,7 +175,7 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
                     '--tmpfs=/workspace:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=0700',
                     '--tmpfs=/tmp:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=0700',
                     '--entrypoint=/usr/bin/env', '-i', image, '-i', 'PATH=/usr/local/bin:/usr/bin:/bin',
-                    '/usr/local/bin/node', '-e', DRIVER], JSON.stringify({ files: source, command }), 200_000)
+                    '/usr/local/bin/node', '-e', DRIVER], JSON.stringify({ files: source, command, timeout: commandTimeout }), commandTimeout + 20_000)
                 result.output = (result.output + '\n' + outcome.output).slice(-8000)
             } finally {
                 const removed = await docker(['rm', '-f', name])

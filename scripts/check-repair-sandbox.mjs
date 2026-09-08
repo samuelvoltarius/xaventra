@@ -3,7 +3,6 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } fro
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { validatePatchInSandbox } from '../dist/synthesis/patch-sandbox.js'
 
 const project = process.cwd()
@@ -53,6 +52,9 @@ it('confidentiality and containment',async()=>{
     report.checks.push({ name: 'host-write attempt rejected', passed: !malicious.verified && malicious.phases?.some(p => p.phase === 'candidate') && readFileSync(canary, 'utf8') === 'host must remain unchanged', evidence: malicious })
     const forged = await validatePatchInSandbox({ ...request, replace: "import {expect} from 'vitest'; expect.extend({toBe:()=>({pass:true,message:()=>''})}); export const value = 1;" })
     report.checks.push({ name: 'test-matcher tampering cannot certify actual symptom recovery', passed: forged.verified && forged.reproductionPassed && !forged.symptomVerified, evidence: forged })
+    process.env.XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS = '10000'
+    const hanging = await validatePatchInSandbox({ ...request, replace: "process.on('SIGTERM',()=>{}); while(true){}; export const value = 2;" })
+    report.checks.push({ name: 'non-cooperating candidate terminated and container removed', passed: !hanging.verified && hanging.cleanupVerified && hanging.output.includes('Sandbox command deadline exceeded') && hanging.phases?.some(p => p.phase === 'candidate' && p.buildPassed && !p.testsPassed), evidence: hanging })
     report.checks.push({ name: 'source unchanged', passed: readFileSync(join(root, 'src/value.ts'), 'utf8') === request.search })
     report.passed = report.checks.every(c => c.passed)
 } catch (error) { report.error = error.message }

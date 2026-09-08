@@ -17,6 +17,12 @@ Exact candidate CI, including the new real container job, is required before
 main promotion. Production activation/recovery, automatic candidate generation,
 native-host Docker availability and complete 40-module/RC acceptance remain open.
 
+Source `72fa75eea3f87da71bdd359cad4c58d5971eb821` passed all eight jobs in
+[CI 34238645175](https://github.com/samuelvoltarius/xaventra/actions/runs/34238645175),
+including actual isolated baseline/candidate/rollback/restoration, full Core
+regression in each phase and hostile-write/semantic-negative controls. Final
+hard-deadline changes require their own exact-SHA CI before main promotion.
+
 ### 2.78.13 goal and mission lifecycle candidate
 
 The next coherent layer follow-up corrects a shared autonomy prerequisite:

@@ -91,6 +91,11 @@ describe('repair sandbox boundary (scripted Docker, not live isolation proof)', 
         expect((await validatePatchInSandbox(request(root))).output).toContain('SANDBOX_UNAVAILABLE')
         expect(mocks.spawn).not.toHaveBeenCalled()
     })
+    it('never allows the operator timeout to exceed the hard upper bound', async () => {
+        vi.stubEnv('XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS', '999999')
+        expect((await validatePatchInSandbox(request(root))).verified).toBe(false)
+        expect(calls.some(call => call[0] === 'run')).toBe(false)
+    })
     it.each(['../src/value.ts', '/src/value.ts', 'C:/src/value.ts', 'src/../value.ts', 'src\\value.ts', 'src-other/value.ts', 'src//value.ts', 'src/value.ts:stream'])('rejects path alias %s before execution', async file => {
         expect((await validatePatchInSandbox({ ...request(root), file })).verified).toBe(false)
         expect(mocks.spawn).not.toHaveBeenCalled()
