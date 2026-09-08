@@ -2182,7 +2182,11 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/outcome-ledger.js",
+        "../core/result-validator.js",
         "../core/self-doctor.js",
+        "../core/task-contract.js",
+        "../security/secret-redaction.js",
         "node:crypto",
         "node:fs"
       ]
@@ -2211,6 +2215,15 @@
         "./safe-fixes.js",
         "./tool-contract.js",
         "./types.js"
+      ]
+    },
+    {
+      "module": "src/doctor/research-worker.ts",
+      "imports": [
+        "../agents/nova-runner.js",
+        "../core/lifecycle-policy.js",
+        "../core/outcome-ledger.js",
+        "./failure-research-coordinator.js"
       ]
     },
     {

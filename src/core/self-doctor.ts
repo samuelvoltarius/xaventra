@@ -630,6 +630,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     await Promise.all(generated.map(f => syncFinding(f)))
     try {
         const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
+        getFailureResearchCoordinator().synchronizeFindingStatus(findings)
         for (const finding of generated.filter(item => item.status === 'open' && item.severity !== 'info')) {
             getFailureResearchCoordinator().ingest(finding)
         }

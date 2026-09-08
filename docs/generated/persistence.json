@@ -86,6 +86,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/autonomous-executor-pause.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/autonomous-executor.ts",
       "path": ".nova-data"
     },
@@ -239,6 +243,14 @@
     },
     {
       "owner": "src/dev/verify-production-trace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/failure-research-worker.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/research-worker.integration.test.ts",
       "path": ".nova-data"
     },
     {

@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.78.13] — 2026-09-08
+
+- Connect persisted Doctor cases to a bounded diagnostic worker in the existing
+  autonomy cycle. The worker uses the native agent, Execution Kernel, tool
+  policy and Outcome Ledger; it no longer equates a long model answer with an
+  executed action. Retries are bounded, ambiguous interrupted runs stay held,
+  and resolved findings are not redispatched. No Telegram chat ID is required.
+- Gate every research tool on current authority, deadline and diagnostic scope;
+  no shell, installation, config writes, user-memory inspection or patch apply.
+  A verified investigation is not a verified repair. Generic sandbox proposal,
+  activation and original-symptom recovery remain open acceptance gates.
+- Preserve explicit goal blocks across dependency completion, prompt selection
+  and persistence reload. Only recorded dependency blocks may clear themselves;
+  legacy blocks without a reason remain stopped until explicitly resumed.
+- Do not select work below paused/terminal, missing or cyclic parents, or with
+  unresolved prerequisites. Late child results cannot rewrite a blocked or
+  terminal parent's status.
+- Restore paused native mission checkpoints on startup and project mission
+  pauses into the Goal Manager. Startup recovery keeps goals blocked until a
+  fresh mission fence is acquired and ignores a superseded/paused mission.
+- Add red/green lifecycle regressions and compiled isolated persistence checks.
+  Core/Desktop versions are synchronized. Full governed autonomy, distributed
+  failover and all-module functional acceptance remain open; see
+  [verification and recovery](docs/VERIFICATION_2.78.13.md).
+
 ## [2.78.12] — 2026-09-08
 
 - Replace error-driven L0 filesystem/package mutations and both registries'

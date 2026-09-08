@@ -1,4 +1,4 @@
-# Layer/service behavioral evidence — 2.78.12
+# Layer/service behavioral evidence — 2.78.13
 
 ## What the count means
 
@@ -89,6 +89,16 @@ Do not teach the model that an error, a cached suggestion or a repair count
 grants permission to install software or repeat external actions.
 
 ## Migration and release limits
+
+The 2.78.13 follow-up adds bounded shared Goal Manager/native mission lifecycle
+evidence, not a blanket upgrade of the 40 rows above. Explicit blocks survive
+reads/reload, terminal/blocked ancestors prevent selection, and paused native
+checkpoints are retained on startup. Source tests:
+`src/core/goal-manager-readiness.test.ts` and
+`src/core/autonomous-executor-pause.test.ts`; compiled persistence fixtures:
+`scripts/check-layer-contracts.mjs`. These do not prove complete event-driven
+autonomy, cancellation of an already-running tool or distributed takeover.
+See [the separate 2.78.13 verification record](VERIFICATION_2.78.13.md).
 
 The Nova-to-Xaventra migration is **not complete**. Deterministic identity and
 welcome commands were corrected in 2.78.11, but legacy supervisor persona,

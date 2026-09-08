@@ -14,6 +14,8 @@ export interface NovaGoal {
     priority: number
     deadline?: string
     status: GoalStatus
+    /** Only dependency blocks may be cleared by readiness evaluation. Missing legacy reasons stay blocked. */
+    blockedBy?: 'explicit' | 'dependency'
     nextAction?: string
     sourceMissionId?: string
     outcomeRunIds: string[]
@@ -34,7 +36,7 @@ export class GoalManager {
         } catch { this.goals = [] }
     }
 
-    create(input: Omit<NovaGoal, 'id' | 'status' | 'outcomeRunIds' | 'evidenceRefs' | 'progress' | 'createdAt' | 'updatedAt'> & { id?: string; status?: GoalStatus }): NovaGoal {
+    create(input: Omit<NovaGoal, 'id' | 'status' | 'blockedBy' | 'outcomeRunIds' | 'evidenceRefs' | 'progress' | 'createdAt' | 'updatedAt'> & { id?: string; status?: GoalStatus }): NovaGoal {
         const now = new Date().toISOString()
         const stable = input.sourceMissionId
             ? createHash('sha256').update(`${input.userId}\0${input.sourceMissionId}\0${input.title}`).digest('hex').slice(0, 24)
@@ -45,6 +47,7 @@ export class GoalManager {
             ...input,
             id: input.id || stable,
             status: input.status || (input.dependencies.length ? 'planned' : 'active'),
+            blockedBy: input.status === 'blocked' ? 'explicit' : undefined,
             priority: Math.max(0, Math.min(100, input.priority)),
             outcomeRunIds: [], evidenceRefs: [], progress: 0,
             createdAt: now, updatedAt: now,
@@ -69,6 +72,7 @@ export class GoalManager {
             }))
         }
         this.refreshReadiness(input.userId)
+        this.persist()
         return { root, steps: this.list(input.userId).filter(goal => goal.parentId === root.id) }
     }
 
@@ -76,6 +80,8 @@ export class GoalManager {
         const goal = this.goals.find(item => item.id === id)
         if (!goal) return null
         Object.assign(goal, patch)
+        if (patch.status === 'blocked') goal.blockedBy = 'explicit'
+        else if (patch.status !== undefined) delete goal.blockedBy
         if (patch.priority !== undefined) goal.priority = Math.max(0, Math.min(100, patch.priority))
         if (evidence?.runId) goal.outcomeRunIds = [...new Set([...goal.outcomeRunIds, evidence.runId])].slice(-50)
         if (evidence?.ref) goal.evidenceRefs = [...new Set([...goal.evidenceRefs, evidence.ref])].slice(-50)
@@ -88,9 +94,11 @@ export class GoalManager {
     }
 
     next(userId: string): NovaGoal | null {
-        this.refreshReadiness(userId)
+        if (this.refreshReadiness(userId)) this.persist()
+        const byId = new Map(this.goals.filter(goal => goal.userId === userId).map(goal => [goal.id, goal]))
         const parentIds = new Set(this.goals.map(goal => goal.parentId).filter(Boolean))
-        const candidates = this.goals.filter(goal => goal.userId === userId && goal.status === 'active' && !parentIds.has(goal.id))
+        const candidates = this.goals.filter(goal => goal.userId === userId && goal.status === 'active'
+            && !parentIds.has(goal.id) && this.isReadyBranch(goal, byId))
             .sort((a, b) => b.priority - a.priority || (a.deadline || '9999').localeCompare(b.deadline || '9999') || a.createdAt.localeCompare(b.createdAt))
         return candidates[0] ? structuredClone(candidates[0]) : null
     }
@@ -120,13 +128,36 @@ export class GoalManager {
         }
     }
 
-    private refreshReadiness(userId: string): void {
-        const byId = new Map(this.goals.map(goal => [goal.id, goal]))
-        for (const goal of this.goals.filter(item => item.userId === userId && (item.status === 'planned' || item.status === 'blocked'))) {
+    private refreshReadiness(userId: string): boolean {
+        let changed = false
+        const byId = new Map(this.goals.filter(goal => goal.userId === userId).map(goal => [goal.id, goal]))
+        for (const goal of byId.values()) {
+            if (goal.status !== 'planned' && !(goal.status === 'blocked' && goal.blockedBy === 'dependency')) continue
             const dependencies = goal.dependencies.map(id => byId.get(id))
-            if (dependencies.some(dep => dep?.status === 'failed' || dep?.status === 'cancelled')) goal.status = 'blocked'
-            else if (dependencies.every(dep => dep?.status === 'completed')) goal.status = 'active'
+            const status = dependencies.some(dep => dep?.status === 'failed' || dep?.status === 'cancelled')
+                ? 'blocked' : dependencies.every(dep => dep?.status === 'completed') ? 'active' : 'planned'
+            if (goal.status === status) continue
+            goal.status = status
+            if (status === 'blocked') goal.blockedBy = 'dependency'
+            else delete goal.blockedBy
+            goal.updatedAt = new Date().toISOString()
+            changed = true
         }
+        return changed
+    }
+
+    private isReadyBranch(goal: NovaGoal, byId: Map<string, NovaGoal>): boolean {
+        const seen = new Set<string>()
+        let current: NovaGoal | undefined = goal
+        while (current) {
+            if (seen.has(current.id) || current.status !== 'active'
+                || !current.dependencies.every(id => byId.get(id)?.status === 'completed')) return false
+            seen.add(current.id)
+            if (!current.parentId) return true
+            current = byId.get(current.parentId)
+        }
+        // Orphaned and cyclic branches are not executable work.
+        return false
     }
 
     private refreshParent(parentId: string): void {
@@ -135,8 +166,12 @@ export class GoalManager {
         const children = this.goals.filter(goal => goal.parentId === parentId)
         if (!children.length) return
         parent.progress = children.filter(goal => goal.status === 'completed').length / children.length
-        if (children.every(goal => goal.status === 'completed')) parent.status = 'completed'
-        else if (children.some(goal => goal.status === 'failed')) parent.status = 'failed'
+        // Aggregation is not an explicit resume/cancel decision. A late result must
+        // not clear a pause or rewrite an already terminal parent.
+        if (parent.status === 'active' || parent.status === 'planned') {
+            if (children.every(goal => goal.status === 'completed')) parent.status = 'completed'
+            else if (children.some(goal => goal.status === 'failed')) parent.status = 'failed'
+        }
         parent.updatedAt = new Date().toISOString()
     }
 

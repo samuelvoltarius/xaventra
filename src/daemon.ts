@@ -1970,6 +1970,19 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Self-Think Callback nicht verfügbar: ${err}`)
         }
 
+        // Persistent Doctor investigations share the existing governed runner.
+        try {
+            const { createResearchWorker } = await import('./doctor/research-worker.js')
+            const { setDoctorResearchWorker, getAutonomyStatus } = await import('./core/autonomy-loop.js')
+            const { hasGlobalAutonomyAuthority } = await import('./core/autonomy-authority.js')
+            setDoctorResearchWorker(createResearchWorker(
+                () => getAutonomyStatus().running && getAutonomyStatus().config.enabled && hasGlobalAutonomyAuthority(),
+                state.llm,
+            ))
+        } catch (err) {
+            console.log(`[Xaventra] Doctor investigation worker unavailable: ${err}`)
+        }
+
         // === Mission Engine (Autonomous Task Chaining) ===
         try {
             const { initMissionEngine } = await import('./core/autonomous-executor.js')

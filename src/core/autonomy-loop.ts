@@ -84,6 +84,7 @@ const IMPORTANT_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 // Self-Thinking: inject pipeline messages for proactive behavior
 let thinkFn: ((selfPrompt: string) => Promise<string>) | null = null
+let doctorResearchWorker: import('../doctor/failure-research-coordinator.js').ResearchWorker | null = null
 let selfThinkCount = 0
 let lastSelfThinkReset = Date.now()
 const MAX_SELF_THINKS_PER_HOUR = 4
@@ -884,6 +885,9 @@ async function runAutonomyLoop(): Promise<AutonomyReport> {
     // Phase 3: ACT
     const report = await act(evaluation, checks)
 
+    // Diagnosis must not be starved by self-goal idle/boot early returns.
+    await runDoctorPhase()
+
     // Phase 4: EXECUTE PENDING GOALS
     // Nova actually works on her own goals — not just reports them
     if (thinkFn) {
@@ -944,10 +948,15 @@ async function runAutonomyLoop(): Promise<AutonomyReport> {
         }
     }
 
-    // Phase 5: SELF-DOCTOR
+    console.log(`[Autonomy] ✅ Cycle complete: ${evaluation.summary}`)
+    return report
+}
+
+async function runDoctorPhase(): Promise<void> {
+    // SELF-DOCTOR
     // Every 6 cycles (~1h at 10min interval) Nova runs a diagnostic on herself.
     // Findings are stored and surfaced via /diagnose or self_doctor tool.
-    // Critical findings trigger immediate action via thinkFn.
+    // Investigations use a durable case and real Kernel evidence, not response length.
     try {
         const cycleCount = ((globalThis as any).__novaDoctorCycle || 0) + 1
         ;(globalThis as any).__novaDoctorCycle = cycleCount
@@ -957,30 +966,18 @@ async function runAutonomyLoop(): Promise<AutonomyReport> {
             const result = await runSelfDoctor()
             console.log(`[Autonomy] 🩺 Self-Doctor: ${result.healthy ? 'gesund' : `${result.open} offene Findings`}`)
 
-            // If there are critical findings and thinkFn is available, let Nova address them
-            const criticals = result.findings.filter(f => f.severity === 'critical' && f.status === 'open')
-            if (criticals.length > 0 && thinkFn) {
-                const doctorPrompt = [
-                    `[SELF-DOCTOR] Nova hat kritische Selbst-Diagnose-Findings:`,
-                    ``,
-                    ...criticals.map(f => `• [${f.category}] ${f.title}: ${f.detail}\n  Empfehlung: ${f.recommendation}`),
-                    ``,
-                    `Analysiere diese Findings und handle wenn möglich. Nutze verfügbare Tools.`,
-                    `Markiere am Ende: GOAL_DONE: <was du getan hast>`,
-                ].join('\n')
-                const output = await thinkFn(doctorPrompt)
-                if (output && output.trim().length > 10) {
-                    console.log(`[Autonomy] 🩺 Self-Doctor Aktion ausgeführt: ${output.slice(0, 100)}`)
-                }
-            }
+        }
+        // One pending case per existing cycle; this also continues persisted cases
+        // after restart. No Telegram chat ID, synthetic owner or second timer.
+        if (doctorResearchWorker && config.enabled && hasGlobalAutonomyAuthority()) {
+            const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
+            const research = await getFailureResearchCoordinator().investigateNext(doctorResearchWorker)
+            if (research) console.log(`[Autonomy] Doctor investigation ${research.id}: ${research.investigation?.status}; repair not applied`)
         }
     } catch (err) {
         console.debug(`[Autonomy] Self-Doctor non-critical error: ${err}`)
     }
 
-    console.log(`[Autonomy] ✅ Cycle complete: ${evaluation.summary}`)
-
-    return report
 }
 
 // ============================================
@@ -1113,6 +1110,10 @@ export async function triggerAutonomyCheck(): Promise<AutonomyReport> {
 export function setAutonomyThinkCallback(fn: (selfPrompt: string) => Promise<string>): void {
     thinkFn = fn
     console.log('[Autonomy] 🧠 Self-think callback registered')
+}
+
+export function setDoctorResearchWorker(worker: import('../doctor/failure-research-coordinator.js').ResearchWorker): void {
+    doctorResearchWorker = worker
 }
 
 export default {

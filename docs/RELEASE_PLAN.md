@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.13 goal and mission lifecycle candidate
+
+The next coherent layer follow-up corrects a shared autonomy prerequisite:
+explicit blocks no longer disappear during goal selection; paused/terminal
+parents suppress child selection; paused native mission checkpoints are
+restored rather than ignored. See [reproductions, tests and remaining
+limits](VERIFICATION_2.78.13.md). These are behavioral changes, not a relabeling
+of the 40-module matrix. Exact-commit CI is required before main promotion.
+No RC acceptance or production rollout is implied.
+
+Doctor findings now feed a durable bounded investigation through the existing
+native Kernel path. Long prose is no longer execution proof. The separate
+[repair acceptance boundary](AUTONOMOUS_REPAIR.md) explicitly keeps generic
+sandbox candidate generation, activation and original-symptom recovery open.
+The module matrix is not promoted to complete merely for adding this connection.
+
 ### 2.78.12 layer-contract candidate
 
 All 40 modules are statically connected, but several have only getter/import
@@ -41,10 +57,11 @@ The final documentation attestation requires its own green CI before promotion.
   prompts while the mission executor has its own step timers. Prove one owner,
   one execution key and one dispatch per action, including timeout/cancellation;
   a timed-out Promise must not leave an old write running alongside its retry.
-- Persist *why* a goal is blocked (missing input, dependency, policy, permission,
-  budget, unavailable resource). `GoalManager.refreshReadiness` currently can
-  reactivate a blocked goal whenever dependencies complete, including an empty
-  dependency list. A mere read/selection must not undo an explicit blocker.
+- 2.78.13 distinguishes explicit/legacy blocks from dependency-generated blocks,
+  fixing the reproduced implicit blocked-to-active transition. Rich structured
+  missing-input/policy/permission/budget/resource reasons and their governed
+  resolution workflows remain open; an explicit state update is not itself
+  proof of operator permission or a fresh lease.
 - Route safe observation/diagnosis through typed tools automatically within an
   explicit autonomy policy. For reversible writes require scope, budget and
   post-validation; higher-risk operations retain approval. Provider discovery

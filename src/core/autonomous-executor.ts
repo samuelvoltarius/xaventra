@@ -132,17 +132,24 @@ export function initMissionEngine(deps: {
         if (existsSync(MISSIONS_FILE)) {
             const data = JSON.parse(readFileSync(MISSIONS_FILE, 'utf-8'))
             missionHistory = data.history || []
+            if (data.active?.status === 'paused') {
+                activeMission = data.active
+                if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'blocked' })
+            }
             // Resume active mission if process restarted
             if (data.active && data.active.status === 'active') {
                 activeMission = data.active
+                const restoringMission = activeMission
+                if (restoringMission.rootGoalId) getGoalManager().update(restoringMission.rootGoalId, { status: 'blocked' })
                 console.log(`[Mission] 🔄 Resuming mission: "${activeMission!.goal.slice(0, 60)}..."`)
                 // Resume is fail-closed: no step may execute until this node
                 // owns a fresh distributed mission fence.
                 setTimeout(async () => {
-                    if (!activeMission) return
+                    if (activeMission !== restoringMission || restoringMission.status !== 'active') return
                     try {
                         const { acquireMissionOwnership } = await import('../mesh/mesh-registry.js')
-                        const ownership = await acquireMissionOwnership(activeMission.id)
+                        const ownership = await acquireMissionOwnership(restoringMission.id)
+                        if (activeMission !== restoringMission || restoringMission.status !== 'active') return
                         if (!ownership) {
                             activeMission.status = 'paused'
                             activeMission.progressUpdates.push('⏸️ Wiederaufnahme blockiert: keine gültige Mission-Lease')
@@ -150,8 +157,10 @@ export function initMissionEngine(deps: {
                             return
                         }
                         Object.assign(activeMission, ownership)
+                        if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'active' })
                         saveMissions()
                     } catch {
+                        if (activeMission !== restoringMission || restoringMission.status !== 'active') return
                         activeMission.status = 'paused'
                         activeMission.progressUpdates.push('⏸️ Wiederaufnahme blockiert: Koordination nicht erreichbar')
                         saveMissions()
@@ -383,6 +392,7 @@ export function cancelMission(): string {
 export function pauseMission(): string {
     if (!activeMission) return '❌ Keine aktive Mission.'
     activeMission.status = 'paused'
+    if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'blocked' })
     activeMission.progressUpdates.push('⏸️ Mission pausiert')
     saveMissions()
     return `⏸️ Mission pausiert: "${activeMission.goal.slice(0, 60)}"\nFortsetzen mit: /mission resume`
