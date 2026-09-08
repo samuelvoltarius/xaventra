@@ -9,13 +9,13 @@ and PATCH_GATE; do not claim the legacy approved production transaction safe.
 - TypeScript: `npm run typecheck`.
 - Boundary triggers and alternate representations:
   `npx vitest run src/synthesis/patch-sandbox.test.ts src/synthesis/self-evolution-sandbox.test.ts src/synthesis/synthesis.test.ts --maxWorkers=2`.
-  Final local Windows result: 48/48 tests. Docker is scripted here, explicitly
+  Final local Windows result: 49/49 tests. Docker is scripted here, explicitly
   not a live isolation proof. Cases cover canonical paths, links, excluded config,
   limits/argv, failing commands, cleanup, changed snapshots, original-symptom
   expectations, queue gating and concurrent dispatch.
 - Legitimate path: exact replacement, unchanged tests, original/candidate hash
   restoration and queue-without-application use those same production entry points.
-- Owning package locally passed: 200 Core files / 1341 tests, build, 7 Desktop
+- Owning package locally passed: 200 Core files / 1342 tests, build, 7 Desktop
   tests, generated catalogs and assurance. Redacted staged and 30-commit public
   history secret scans found no leaks. These do not replace exact-SHA CI.
 - Real backend: new Linux CI job runs `scripts/check-repair-sandbox.mjs` against
@@ -26,6 +26,15 @@ and PATCH_GATE; do not claim the legacy approved production transaction safe.
 Local Docker Desktop engine was unavailable at the start of this round (missing
 Linux engine named pipe); no production engine or service was changed. Record
 the real backend result from CI separately. Preserve negative reports.
+
+Initial candidate `c701387867b35af774ef905158ef33ea27be07df`, CI `34238112131`,
+retains a negative real-container report: Vite required a writable temporary
+cache directory beside dependencies, and bracketed repository routes were
+over-rejected by the snapshot path filter. Dependencies now remain read-only
+image links individually inside a disposable writable node_modules directory;
+canonical bracketed/Unicode filenames are accepted without accepting traversal.
+No confinement flags or regression assertions were relaxed. The same CI also
+retains a packaged Linux screenshot timeout, separate from the sandbox defect.
 
 ## Limits kept open
 

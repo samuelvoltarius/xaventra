@@ -37,8 +37,8 @@ type Snapshot = Record<string, string>
 const MAX_BYTES = 64 * 1024 * 1024
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 const snapshotHash = (files: Snapshot) => hash(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))))
-const safeRelative = (file: string) => typeof file === 'string' && /^[a-zA-Z0-9_.@/-]+$/.test(file)
-    && !file.startsWith('/') && file.split('/').every(p => p && p !== '.' && p !== '..')
+const safeRelative = (file: string) => typeof file === 'string' && /^[^\\:\x00-\x1f<>|"*?]+$/.test(file)
+    && !file.startsWith('/') && file.split('/').every(p => p && p !== '.' && p !== '..' && !/[. ]$/.test(p))
 const forbidden = (file: string) => file.split('/').some(p => /^\.env(?:\.|$)|^\.nova-|^\.xaventra-|^node_modules$|^\.git$|^\.ssh$|^\.npmrc$|^PROJECT_MEMORY\.md$|^(?:nova|xaventra)\.config\.json$|\.(?:pem|key|p12|pfx)$/i.test(p))
 
 /** Shared pre-read boundary including ancestors, junctions and hard links. */
@@ -96,14 +96,17 @@ process.stdin.on('end', () => {
    const target = path.join('/workspace', file);
    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, Buffer.from(bytes, 'base64'));
   }
-  fs.symlinkSync('/opt/sandbox/node_modules', '/workspace/node_modules', 'dir');
+  fs.mkdirSync('/workspace/node_modules');
+  for (const name of fs.readdirSync('/opt/sandbox/node_modules')) {
+   fs.symlinkSync('/opt/sandbox/node_modules/' + name, '/workspace/node_modules/' + name);
+  }
   const env = { PATH:'/usr/local/bin:/usr/bin:/bin', HOME:'/tmp/home', TMPDIR:'/tmp',
    NOVA_TEST_MODE:'1', NOVA_NO_SIDE_EFFECTS:'1', NOVA_SKIP_MODEL_RESOLVER_INIT:'1',
    NOVA_RUNTIME_ROOT:'/tmp/runtime', NOVA_PROJECT_ROOT:'/workspace', CI:'1' };
   fs.mkdirSync(env.HOME, { recursive:true });
   const r = cp.spawnSync('/usr/local/bin/node', command, {cwd:'/workspace', env, stdio:'inherit', timeout:180000});
   process.exit(r.error || r.signal ? 2 : r.status === 0 ? 0 : r.status === 1 ? 10 : 2);
- } catch { process.exit(2); }
+ } catch (error) { console.error('Sandbox driver:', error.message); process.exit(2); }
 });`
 
 function docker(args: string[], input?: string, timeout = 15_000): Promise<{ ok: boolean; output: string; code: number | null }> {

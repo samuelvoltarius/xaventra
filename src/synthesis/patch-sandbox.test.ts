@@ -102,6 +102,12 @@ describe('repair sandbox boundary (scripted Docker, not live isolation proof)', 
         linkSync(join(root, 'other', 'file.ts'), join(root, 'src', 'hard.ts'))
         expect(() => assertPatchSourcePath(root, 'src/hard.ts')).toThrow()
     })
+    it('preserves legitimate bracketed and Unicode source paths', async () => {
+        const file = 'src/[gerät].ts'
+        writeFileSync(join(root, file), 'export const value = 1')
+        mocks.execFileSync.mockReturnValue([...tracked, file].join('\0') + '\0')
+        expect((await validatePatchInSandbox({ ...request(root), file })).verified).toBe(true)
+    })
     it('rejects oracle changes and untracked reproduction tests', async () => {
         expect((await validatePatchInSandbox({ ...request(root), file: 'src/value.test.ts' })).verified).toBe(false)
         expect((await validatePatchInSandbox({ ...request(root), reproductionTest: 'src/missing.test.ts' })).verified).toBe(false)
