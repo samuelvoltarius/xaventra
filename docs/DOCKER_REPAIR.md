@@ -1,5 +1,9 @@
 # Docker self-repair: operation and evidence
 
+2.78.18 adds [automatic publication and background-writer coverage](REPAIR_PUBLICATION.md).
+The pre-enrolled release adapter below remains supported; automatic publication
+additionally requires its protected publisher, complete writer inventory and drain.
+
 Version 2.78.16 extends the existing Doctor and external activation controller.
 It does not give the candidate a Docker socket, shell deployment command,
 signing key or authority to approve its own work.

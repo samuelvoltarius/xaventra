@@ -33,10 +33,18 @@ export interface PatchSandboxResult {
     phases?: SandboxPhase[]
     output: string
 }
-type Snapshot = Record<string, string>
+export type PatchSnapshot = Record<string, string>
+type Snapshot = PatchSnapshot
 const MAX_BYTES = 64 * 1024 * 1024
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
-const snapshotHash = (files: Snapshot) => hash(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))))
+/** Ignore only application version fields, never a dependency or integrity. */
+export function repairDependencyHash(bytes: string | Buffer): string {
+    const lock = JSON.parse(bytes.toString()); delete lock.version
+    if (lock.packages?.['']) delete lock.packages[''].version
+    return hash(JSON.stringify(lock))
+}
+export const patchSnapshotHash = (files: Snapshot) => hash(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))))
+const snapshotHash = patchSnapshotHash
 const safeRelative = (file: string) => typeof file === 'string' && /^[^\\:\x00-\x1f<>|"*?]+$/.test(file)
     && !file.startsWith('/') && file.split('/').every(p => p && p !== '.' && p !== '..' && !/[. ]$/.test(p))
 const forbidden = (file: string) => file.split('/').some(p => /^\.env(?:\.|$)|^\.nova-|^\.xaventra-|^node_modules$|^\.git$|^\.ssh$|^\.npmrc$|^PROJECT_MEMORY\.md$|^(?:nova|xaventra)\.config\.json$|\.(?:pem|key|p12|pfx)$/i.test(p))
@@ -81,6 +89,44 @@ function snapshot(root: string): Snapshot {
 }
 
 export function getPatchSnapshotHash(root: string): string { return snapshotHash(snapshot(root)) }
+/** Reuse the sandbox's tracked-source and secret/path exclusions for publication. */
+export function readPatchSnapshot(root: string): PatchSnapshot { return snapshot(root) }
+export function validatePatchSnapshot(files: PatchSnapshot): void {
+    let size = 0
+    if (!files || typeof files !== 'object' || Array.isArray(files) || Object.keys(files).length > 20_000) throw Error('Invalid source snapshot')
+    if (new Set(Object.keys(files).map(f => f.toLowerCase())).size !== Object.keys(files).length) throw Error('Case-colliding source paths')
+    for (const [file, encoded] of Object.entries(files)) {
+        if (!safeRelative(file) || forbidden(file) || typeof encoded !== 'string'
+            || Buffer.from(encoded, 'base64').toString('base64') !== encoded) throw Error('Unsafe snapshot entry')
+        size += Buffer.from(encoded, 'base64').length
+        if (size > MAX_BYTES) throw Error('Source snapshot exceeds budget')
+    }
+}
+/** Deterministic publisher-owned release metadata. The model changes only its
+ * profiled source file; version changes are included in the sandbox/ticket hash. */
+export function createPatchCandidate(files: PatchSnapshot, patch: Pick<PatchSandboxRequest, 'file' | 'search' | 'replace'>): PatchSnapshot {
+    const original = Buffer.from(files[patch.file] || '', 'base64').toString('utf8')
+    if (!patch.search || patch.search === patch.replace || original.split(patch.search).length !== 2) throw Error('Unique exact patch required')
+    const candidate = { ...files, [patch.file]: Buffer.from(original.replace(patch.search, patch.replace)).toString('base64') }
+    const parse = (file: string) => JSON.parse(Buffer.from(files[file], 'base64').toString('utf8'))
+    const core = parse('package.json')
+    if (core.name === '@xaventra/core') {
+        if (!/^\d+\.\d+\.\d+$/.test(core.version)) throw Error('Explicit repair version policy required for prerelease versions')
+        const parts = core.version.split('.').map(Number), next = `${parts[0]}.${parts[1]}.${parts[2] + 1}`
+        for (const file of ['package.json', 'package-lock.json', 'desktop/package.json', 'desktop/package-lock.json']) {
+            if (!files[file]) throw Error('Core/Desktop version metadata missing')
+            const value = parse(file)
+            if (value.version !== core.version || (file.endsWith('lock.json') && value.packages?.['']?.version !== core.version)) throw Error('Baseline Core/Desktop versions differ')
+            value.version = next
+            if (file.endsWith('lock.json')) value.packages[''].version = next
+            candidate[file] = Buffer.from(JSON.stringify(value, null, 2) + '\n').toString('base64')
+        }
+        if (!files['CHANGELOG.md']) throw Error('Release changelog missing')
+        const log = Buffer.from(files['CHANGELOG.md'], 'base64').toString('utf8')
+        candidate['CHANGELOG.md'] = Buffer.from(`# Automated repair ${next}\n\nSandbox-verified source correction: ${patch.file}.\nExact patch and independent activation evidence are in the signed repair artifact.\n\n${log}`).toString('base64')
+    }
+    return candidate
+}
 
 // Host-supplied driver, not a model-supplied shell command. Rebuild environment
 // inside the container too: even the prepared image must not supply credentials.
@@ -147,7 +193,7 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
         if (!files[request.file]) throw new Error('Patch target must be tracked')
         const original = Buffer.from(files[request.file], 'base64').toString('utf8')
         if (!original.includes(request.search)) throw new Error('Search text missing')
-        const candidate = { ...files, [request.file]: Buffer.from(original.replace(request.search, request.replace)).toString('base64') }
+        const candidate = createPatchCandidate(files, request)
         result.baselineHash = snapshotHash(files); result.candidateHash = snapshotHash(candidate)
         const reproduction = request.reproductionTest
         if (reproduction && (!safeRelative(reproduction) || !/^src\/.*\.test\.ts$/.test(reproduction) || !files[reproduction])) {
@@ -159,7 +205,9 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
         if (!info.ok) throw new Error('SANDBOX_UNAVAILABLE: image not installed (automatic pull disabled)')
         const metadata = JSON.parse(info.output)[0]
         if (metadata.Os !== 'linux' || metadata.Id !== image || Object.keys(metadata.Config?.Volumes || {}).length
-            || metadata.Config?.Labels?.['org.xaventra.sandbox.lock-sha256'] !== hash(Buffer.from(files['package-lock.json'], 'base64'))) {
+            || (metadata.Config?.Labels?.['org.xaventra.sandbox.dependencies-sha256']
+                ? metadata.Config.Labels['org.xaventra.sandbox.dependencies-sha256'] !== repairDependencyHash(Buffer.from(files['package-lock.json'], 'base64'))
+                : metadata.Config?.Labels?.['org.xaventra.sandbox.lock-sha256'] !== hash(Buffer.from(files['package-lock.json'], 'base64')))) {
             throw new Error('Sandbox image OS, volume or lockfile contract mismatch')
         }
         result.imageId = image

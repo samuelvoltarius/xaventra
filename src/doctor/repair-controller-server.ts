@@ -49,7 +49,7 @@ export function createRepairControllerServer(options: { stateRoot: string; appro
             for await (const chunk of request) { raw += chunk.toString(); if (Buffer.byteLength(raw) > 16 * 1024) throw new Error('Request too large') }
             clearTimeout(timer)
             const input = JSON.parse(raw)
-            const receipt = input.operation === 'activate' ? await controller.activate(input.ticket)
+            const receipt = input.operation === 'activate' ? await controller.activate(input.ticket, { patch: input.patch, authorization: input.ticket })
                 : input.operation === 'status' && /^repair-[a-f0-9-]{36}$/.test(input.attemptId)
                     ? JSON.parse(readFileSync(join(options.stateRoot, `${input.attemptId}.json`), 'utf8')) : null
             if (!receipt) throw new Error('Invalid operation')

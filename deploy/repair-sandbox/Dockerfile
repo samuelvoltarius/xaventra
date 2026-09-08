@@ -6,4 +6,6 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund && npm cache clean --force
 ARG LOCK_SHA256
 LABEL org.xaventra.sandbox.lock-sha256=$LOCK_SHA256
+ARG DEPENDENCIES_SHA256
+LABEL org.xaventra.sandbox.dependencies-sha256=$DEPENDENCIES_SHA256
 USER 1000:1000

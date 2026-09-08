@@ -6,6 +6,21 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.18 automatic repair publication candidate
+
+[Publication and recovery contract](REPAIR_PUBLICATION.md). Implementation and
+local regression are in progress; exact-commit CI and actual Docker publication
+acceptance must be recorded before promotion. No production activation or RC.
+The main CI 34276726942 Windows lifecycle negative is retained: CLI stop and marker
+cleanup succeeded but the parent had not confirmed daemon exit. Acceptance now
+awaits the actual exit event and still requires exit code zero.
+
+- Source/test gate: pending final candidate SHA and complete regression.
+- Docker build/source/writer gate: pending actual isolated acceptance.
+- Full production writer coverage: open (sink adapters, inventory enrollment,
+  exclusive restart adoption and shared-state peer replacement).
+- Existing cross-platform/native/HA RC gates below remain unchanged.
+
 ### 2.78.17 tool-admission and maintenance checkpoint
 
 [Protocol, configuration and recovery](REPAIR_DRAIN.md) describe persisted

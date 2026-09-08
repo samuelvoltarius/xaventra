@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.78.18] — 2026-09-09
+
+- Add operator-owned automatic repair publication: clean hash-bound source
+  mirrors, isolated regression/rollback and compilation, immutable Docker images
+  and stopped candidates with fresh writable volumes. Advance the active source
+  only on an independently signed original-symptom recovery receipt.
+- Include synchronized Core/Desktop patch versions and repair changelog in the
+  tested candidate hash; retain full dependency-integrity verification.
+- Add an explicit multi-engine background-writer barrier. Missing hosts,
+  unenrolled volume sharers, uncontrolled restart ownership and unproven external
+  sink fences block activation. Peers cannot resume against rollback storage.
+- Await the actual daemon exit event in lifecycle acceptance, preserving the
+  observed Windows failure. See `docs/REPAIR_PUBLICATION.md` for boundaries;
+  no production activation or RC is claimed.
+
 ## [2.78.17] — 2026-09-08
 
 - Add an opt-in, independently owned signed tool-admission coordinator with

@@ -2178,10 +2178,31 @@
       ]
     },
     {
+      "module": "src/doctor/docker-repair-builder.ts",
+      "imports": [
+        "../synthesis/patch-sandbox.js",
+        "./repair-activation.js",
+        "./repair-publication.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/docker-repair-driver.ts",
       "imports": [
         "./repair-activation.js",
         "node:http"
+      ]
+    },
+    {
+      "module": "src/doctor/docker-repair-publication.ts",
+      "imports": [
+        "./docker-repair-driver.js",
+        "./repair-activation.js",
+        "./repair-publication.js",
+        "node:crypto"
       ]
     },
     {
@@ -2316,6 +2337,27 @@
         "../core/atomic-storage.js",
         "./repair-activation.js",
         "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-publication.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../synthesis/patch-sandbox.js",
+        "./repair-activation.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-writers.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./docker-repair-driver.js",
+        "./repair-activation.js",
         "node:fs",
         "node:path"
       ]
@@ -4295,6 +4337,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../doctor/repair-activation.js",
+        "../doctor/repair-publication.js",
         "./patch-sandbox.js",
         "node:child_process",
         "node:crypto",

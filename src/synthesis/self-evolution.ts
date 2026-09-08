@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { assertPatchSourcePath, validatePatchInSandbox, getPatchSnapshotHash, type PatchSandboxResult } from './patch-sandbox.js'
 import { repairHash, repairRpcEnvelope, signRepairValue, verifyRepairValue, type SignedRepairValue, type RepairTicket, type RepairReceipt } from '../doctor/repair-activation.js'
+import { normalizedRepairPatch } from '../doctor/repair-publication.js'
 
 export interface EvolutionRequest {
     file: string; description: string; search: string; replace: string; reason?: string
@@ -32,10 +33,15 @@ function readArray(path: string): any[] {
     return value
 }
 export function getRepairProfiles(): RepairProfile[] { return readArray(join(DATA, 'self-doctor', 'repair-profiles.json')) }
-export function getRepairSourceRoot(): string { return ROOT }
+export function getRepairSourceRoot(): string {
+    const store = process.env.XAVENTRA_REPAIR_SOURCE_STORE
+    if (!store) return ROOT
+    const index = JSON.parse(readFileSync(join(store, 'current.json'), 'utf8'))
+    if (index.version !== 1 || !/^[a-f0-9]{64}$/.test(index.sourceHash)) throw Error('Invalid protected source index')
+    return join(store, 'sources', index.sourceHash)
+}
 function patchFields(request: EvolutionRequest) {
-    return { file: request.file, description: request.description, search: request.search, replace: request.replace,
-        reason: request.reason || '', reproductionTest: request.reproductionTest, repairProfileId: request.repairProfileId }
+    return normalizedRepairPatch(request)
 }
 function logEvolution(request: EvolutionRequest, result: EvolutionResult) {
     const { approvalToken: _secret, ...safe } = patchFields(request) as EvolutionRequest
@@ -48,6 +54,7 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
     const started = Date.now()
     try {
         if (request.apply) return await approveEvolutionProposal(request.proposalId || '', request.approvalToken || '', request)
+        const ROOT = getRepairSourceRoot()
         assertPatchSourcePath(ROOT, request.file)
         const original = readFileSync(join(ROOT, request.file), 'utf8')
         if (!request.search || request.search === request.replace || original.split(request.search).length !== 2) throw new Error('Patch requires one unique exact replacement')
@@ -67,6 +74,7 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
 /** Shared slash/Telegram/tool approval boundary. Unbound apply requests are
  * refused, never interpreted as permission for a different patch. */
 export async function approveEvolutionProposal(id: string, approvalToken: string, expectedRequest?: EvolutionRequest): Promise<EvolutionResult> {
+    const ROOT = getRepairSourceRoot()
     const expected = process.env.NOVA_PATCH_GATE_TOKEN
     if (!expected || approvalToken !== expected) return { success: false, error: 'PATCH_GATE token invalid' }
     const proposals = readArray(PROPOSALS), proposal = proposals.find(p => p.id === id)
@@ -86,13 +94,13 @@ export async function approveEvolutionProposal(id: string, approvalToken: string
     const privateKey = process.env.XAVENTRA_REPAIR_APPROVAL_PRIVATE_KEY
     if (!url || !publicKey || !privateKey) return fail('External repair controller and separate signing identity are not configured; no activation')
     const ticket: RepairTicket = { proposalId: id, patchHash: proposal.patchHash, baselineHash: sandbox.baselineHash!, candidateHash: sandbox.candidateHash!,
-        probeId: profile.probeId, targetId: profile.targetId, attemptId: `repair-${randomUUID()}`, expiresAt: Date.now() + 5 * 60_000 }
+        probeId: profile.probeId, targetId: profile.targetId, attemptId: `repair-${randomUUID()}`, expiresAt: Date.now() + 10 * 60_000 }
     const signed = signRepairValue(ticket, privateKey)
     // Persist before dispatch: an ambiguous timeout cannot authorize a retry.
     proposal.status = 'activation-pending'; proposal.ticket = ticket
     atomicWriteJsonSync(PROPOSALS, proposals)
     try {
-        const receipt = await repairRpcEnvelope<RepairReceipt>(url, { operation: 'activate', ticket: signed }, publicKey, 120_000)
+        const receipt = await repairRpcEnvelope<RepairReceipt>(url, { operation: 'activate', ticket: signed, patch: patchFields(proposal) }, publicKey, 120_000)
         return recordActivationReceipt(id, receipt)
     } catch {
         return { success: false, activationPending: true, proposalId: id, attemptId: ticket.attemptId,

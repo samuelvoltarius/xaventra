@@ -38,7 +38,7 @@ export interface PreparedRepair {
 }
 export interface RepairDeploymentDriver {
     hasAuthority(ticket: RepairTicket): Promise<boolean>
-    prepare(ticket: RepairTicket): Promise<PreparedRepair>
+    prepare(ticket: RepairTicket, preparation?: unknown): Promise<PreparedRepair>
     /** Independent admission barrier, before any runtime or state mutation. */
     beginMaintenance?(ticket: RepairTicket): Promise<void>
     activate(prepared: PreparedRepair, ticket: RepairTicket): Promise<void>
@@ -54,7 +54,7 @@ export class RepairActivationController {
     constructor(private readonly root: string, private readonly approvalPublicKey: string,
         private readonly driver: RepairDeploymentDriver, private readonly probe: IndependentRepairProbe) {}
 
-    async activate(signed: SignedRepairValue<RepairTicket>): Promise<RepairReceipt> {
+    async activate(signed: SignedRepairValue<RepairTicket>, preparation?: unknown): Promise<RepairReceipt> {
         const ticket = verifyRepairValue(signed, this.approvalPublicKey)
         if (!/^repair-[a-f0-9-]{36}$/.test(ticket.attemptId) || !ticket.proposalId
             || ![ticket.patchHash, ticket.baselineHash, ticket.candidateHash].every(v => /^[a-f0-9]{64}$/.test(v))
@@ -92,7 +92,7 @@ export class RepairActivationController {
             }
             ownsReceipt = true; save()
             await authority()
-            prepared = await this.driver.prepare(ticket)
+            prepared = await this.driver.prepare(ticket, preparation)
             const { attemptId: _id, expiresAt: _expiry, ...binding } = ticket
             if (repairHash(prepared.binding) !== repairHash(binding) || !prepared.releaseId || !prepared.previousReleaseId
                 || prepared.releaseId === prepared.previousReleaseId) throw new Error('Prepared release does not match approved patch')

@@ -266,6 +266,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/doctor/repair-publication.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/repair-writers.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/doctor/research-worker.integration.test.ts",
       "path": ".nova-data"
     },

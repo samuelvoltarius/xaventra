@@ -31,6 +31,9 @@ jobs:
       - name: Real isolated state snapshot, original preservation and negative controls
         run: node scripts/check-docker-repair-state.mjs
         timeout-minutes: 5
+      - name: Automatic image/source publication and actual background writer barrier
+        run: node scripts/check-repair-publication.mjs
+        timeout-minutes: 6
       - name: Preserve end-to-end evidence including failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -39,6 +42,7 @@ jobs:
           path: |
             .nova-data/docker-repair-qa/**/report.json
             .nova-data/docker-repair-state-qa/**/report.json
+            .nova-data/repair-publication-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
   managed-repair:

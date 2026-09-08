@@ -51,6 +51,9 @@ const daemon = spawn(process.execPath, daemonArgs, { cwd: root, env, windowsHide
 daemon.stdout.pipe(log); daemon.stderr.pipe(log)
 let spawnError
 daemon.on('error', error => { spawnError = error })
+// CLI and daemon exit are independent child events. A successful CLI receipt
+// does not mean this parent's daemon Exit event has already been delivered.
+const daemonExit = new Promise(resolve => daemon.once('exit', (code, signal) => resolve({ code, signal })))
 const started = Date.now()
 const report = { version, platform: process.platform, passed: false, seededOwnPid: seedOwnPid,
   scope: 'Compiled daemon boot, authenticated REST status and instance-scoped CLI shutdown. Scripted loopback model; not live LLM, Telegram or distributed failover.', checks: {} }
@@ -82,6 +85,12 @@ try {
   })
   report.shutdownMs = Date.now() - stopStarted
   report.checks.cliSucceeded = code === 0
+  let exitTimer
+  try {
+    report.daemonExit = await Promise.race([daemonExit, new Promise((_, reject) => {
+      exitTimer = setTimeout(() => reject(new Error('Daemon exit acknowledgement deadline exceeded')), 5000)
+    })])
+  } finally { clearTimeout(exitTimer) }
   report.checks.daemonExitedNormally = daemon.exitCode === 0 && daemon.signalCode === null
   report.checks.ownerMarkerRemoved = !existsSync(join(root, '.nova-data', 'daemon-control.json'))
   report.checks.pidMarkerRemoved = !existsSync(join(root, '.nova.pid'))

@@ -30,6 +30,8 @@ export interface DockerRepairOptions {
     /** Operator-prepared containers, not model-supplied names. Exact IDs only. */
     releases: Record<string, { release: DockerRepairRelease; containerId: string; configHash: string }>
     catalog: Record<string, string>
+    /** Trusted external publisher creates a STOPPED immutable candidate only. */
+    prepareRelease?(ticket: RepairTicket, patch: unknown): Promise<{ release: DockerRepairRelease; containerId: string; configHash: string }>
     hasAuthority(ticket: RepairTicket): Promise<boolean>
     /** Independent deployment-specific state quiescence/snapshot attestation.
      * Must fail without current proof for ANY writable persistent mount. */
@@ -82,8 +84,15 @@ export class DockerRepairDriver implements RepairDeploymentDriver {
             || !['volume', 'bind', 'tmpfs'].includes(m.Type) || (m.Type === 'bind' && (m.RW || m.Source === '/')))) throw new Error('Unapproved Docker mount kind or socket')
         return info
     }
-    async prepare(ticket: RepairTicket): Promise<PreparedRepair> {
+    async prepare(ticket: RepairTicket, patch?: unknown): Promise<PreparedRepair> {
         if (ticket.targetId !== this.options.targetId || !await this.hasAuthority(ticket)) throw new Error('Docker target or authority mismatch')
+        if (!this.options.catalog[ticket.candidateHash] && this.options.prepareRelease) {
+            const result = await this.options.prepareRelease(ticket, patch)
+            if (!idPattern.test(result.containerId) || Object.values(this.options.releases).some(r => r.containerId === result.containerId)
+                || this.options.releases[result.release.id]) throw Error('Publisher returned a reused container/release identity')
+            this.options.releases[result.release.id] = structuredClone(result)
+            this.options.catalog[ticket.candidateHash] = result.release.id
+        }
         const releaseId = this.options.catalog[ticket.candidateHash]
         const candidate = this.options.releases[releaseId]?.release
         const previous = candidate && this.options.releases[candidate.previousReleaseId]?.release
