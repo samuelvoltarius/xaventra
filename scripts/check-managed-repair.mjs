@@ -25,6 +25,7 @@ for(const path of [stateRoot,runtimeRoot,releasesRoot])mkdirSync(path)
 chownSync(runtimeRoot,65534,65534)
 const marker=join(stateRoot,'host-canary');writeFileSync(marker,'unchanged')
 const report={sourceRevision:execFileSync('git',['-c',`safe.directory=${source}`,'rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim(),platform:process.platform,
+  sourceDirty:!!execFileSync('git',['-c',`safe.directory=${source}`,'status','--porcelain'],{cwd:source,encoding:'utf8'}).trim(),version:JSON.parse(readFileSync(join(source,'package.json'))).version,
   evidenceClass:'actual-Linux-root-controller-nonroot-managed-process-signed-release-independent-http-oracle',cases:[]}
 const key=()=>{const k=generateKeyPairSync('ed25519');return {privateKey:k.privateKey.export({type:'pkcs8',format:'pem'}).toString(),publicKey:k.publicKey.export({type:'spki',format:'pem'}).toString()}}
 const releaseKey=key(),approval=key()

@@ -17,10 +17,10 @@ Validation records:
 | Gate | Evidence class / status |
 |---|---|
 | Candidate scope, safe approval and controller state | Focused source regression; scripts never execute hostile metadata on the host. |
-| Core regression | Local preliminary 202 files / 1367 tests pass; added replay-preservation guard requires final full CI. |
+| Core regression | Local 202 files / 1370 tests pass, including routing and replay-preservation controls; exact candidate full CI remains mandatory. |
 | Build/typecheck | New standalone Doctor entrypoints explicitly included in compilation. Initial missing build output and unsupported RequestInit cache option were reproduced and corrected. |
 | Windows activation | Real signed HTTP/controller/child upgrade and rollback: 4/4 preliminary dirty-tree cases. Final clean exact-SHA CI required. |
-| Linux managed adapter | CI-only root controller / unprivileged runtime acceptance required; not replaced with scripted driver evidence. |
+| Linux managed adapter | Source `80169f5bc98ae3369b5619a22d5a8a23ca7feee7`: actual managed root/non-root 5/5 in the managed-repair job of [CI 34250403838](https://github.com/samuelvoltarius/xaventra/actions/runs/34250403838). Final attestation still needs its own complete CI. |
 | Original semantic recovery | Independent immutable HTTP predicate, before-fault / after-healthy / failed-candidate rollback. Limited to that predicate, not overall product correctness. |
 | Doctor model quality/full autonomous chain | Open: source parsing/Kernel integration and real sandbox/controller checks are separate from live-model-to-production acceptance. |
 | Production/fleet/40 modules/RC | Open; no production changed or full acceptance claimed. |
@@ -47,6 +47,21 @@ ancestor path before starting an application. Those CI failures remain retained.
 The fixture now provisions a root-owned `/srv` tree and a protected copy of Node,
 with traversable read-only source directories for the unprivileged runtime.
 Production permission checks are unchanged; the executable is checked too.
+The copied executable's retained UID 1001 was independently observed in the
+negative run; explicitly setting and asserting root ownership fixed provisioning.
+
+Clean live-model source `e837dce5ad4b95ac6e6852a49130249a710e575a` passed diagnostic
+evidence and exact candidate generation (2/2) on Windows with local Qwen. Run IDs:
+`doctor-research-69a79449-a060-4fa0-a3d4-89493eb31451` and
+`doctor-candidate-4a0b8458-b689-4956-ad9e-1ba2ad083056`. No source/config mutation
+or activation occurred in this model test. Private raw logs are not published.
+
+The managed Linux 5/5 receipt covers actual signed activation under a separate
+UID, denied controller-canary writes, stale-second-patch rejection, bad-candidate
+rollback, startup-failure restoration and tampered-artifact rejection. The
+controller HTTP protocol's separate 4/4 tests cover real disposable processes on
+Windows/Linux/macOS. The earlier isolated Docker job retains all six checks.
+None of these fixture boundaries is relabeled as full-production acceptance.
 
 Use [the operator and recovery guide](REPAIR_ACTIVATION.md). Missing deployment
 identity, authority service, prepared signed artifacts, profiles or source-mirror

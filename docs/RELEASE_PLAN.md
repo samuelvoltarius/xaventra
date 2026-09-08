@@ -22,6 +22,13 @@ prepared artifact pipeline, automatic repair source-mirror advancement,
 container-specific deployment adapters, original non-HTTP predicates and
 distributed recovery. These remain in scope; they are not renamed into passes.
 
+Concrete managed-adapter source `80169f5bc98ae3369b5619a22d5a8a23ca7feee7`
+passed five real root-controller/non-root-runtime checks in
+[CI 34250403838](https://github.com/samuelvoltarius/xaventra/actions/runs/34250403838).
+Clean local-model candidate acceptance is separately recorded in the verification
+document. Final HEAD promotion requires all nine jobs green for that HEAD, not
+the predecessor's partial/individual job result.
+
 ### 2.78.14 isolated repair sandbox candidate
 
 The preapproval host-execution boundary is replaced with constrained disposable
