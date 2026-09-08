@@ -18,7 +18,8 @@ const base=['/srv','/var/lib','/usr/local/share','/usr/local/lib'].find(protecte
 if(!base)throw new Error('Disposable CI host has no protected root-owned fixture base')
 const source=resolve(import.meta.dirname,'..'),root=mkdtempSync(join(base,'xaventra-repair-qa-'))
 chmodSync(root,0o755) // Public source paths must be traversable by the separate runtime UID.
-const nodeExecutable=join(root,'node');copyFileSync(process.execPath,nodeExecutable);chmodSync(nodeExecutable,0o755)
+const nodeExecutable=join(root,'node');copyFileSync(process.execPath,nodeExecutable);chownSync(nodeExecutable,0,0);chmodSync(nodeExecutable,0o755)
+assert.equal(lstatSync(nodeExecutable).uid,0,'Fixture Node binary must actually be root-owned after copying')
 const stateRoot=join(root,'state'),runtimeRoot=join(root,'runtime'),releasesRoot=join(root,'releases')
 for(const path of [stateRoot,runtimeRoot,releasesRoot])mkdirSync(path)
 chownSync(runtimeRoot,65534,65534)
