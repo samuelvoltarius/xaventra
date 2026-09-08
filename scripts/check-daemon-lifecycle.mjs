@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = mkdtempSync(join(tmpdir(), 'xaventra-daemon-lifecycle-'))
@@ -40,12 +40,19 @@ Object.assign(env, {
 })
 mkdirSync(env.APPDATA); mkdirSync(env.LOCALAPPDATA)
 const log = createWriteStream(join(root, 'daemon.log'))
-const daemon = spawn(process.execPath, [join(source, 'dist/daemon.js')], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+const seedOwnPid = process.argv.includes('--seed-own-pid')
+const daemonEntry = join(source, 'dist/daemon.js')
+// Reproduce the container invariant in a real process: the persisted marker
+// equals the PID of the newly starting compiled daemon, not a different daemon.
+const daemonArgs = seedOwnPid ? ['--input-type=module', '-e',
+  `import { writeFileSync } from 'node:fs'; writeFileSync('.nova.pid', String(process.pid)); await import(${JSON.stringify(pathToFileURL(daemonEntry).href)});`,
+] : [daemonEntry]
+const daemon = spawn(process.execPath, daemonArgs, { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
 daemon.stdout.pipe(log); daemon.stderr.pipe(log)
 let spawnError
 daemon.on('error', error => { spawnError = error })
 const started = Date.now()
-const report = { version, platform: process.platform, passed: false,
+const report = { version, platform: process.platform, passed: false, seededOwnPid: seedOwnPid,
   scope: 'Compiled daemon boot, authenticated REST status and instance-scoped CLI shutdown. Scripted loopback model; not live LLM, Telegram or distributed failover.', checks: {} }
 try {
   let ready = false

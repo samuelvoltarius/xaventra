@@ -6,6 +6,13 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.11 candidate in progress
+
+Startup PID reuse, Telegram starter concurrency and grounded identity/capability
+answers are being verified from base `221930cb3ed2faf345d80ed6be4631255eca79b0`.
+See [separate evidence and open gates](VERIFICATION_2.78.11.md). No RC label,
+automatic production rollout or closed distributed-failover gate is implied.
+
 1. Core source installs from a clean checkout on Windows, Linux and macOS.
 2. Local model chooses real tools and returns the observed result.
 3. HTTP ingress authenticates, handles malformed requests and reaches execution.

@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
+/** A persisted PID can be reused by this very process after container restart. */
+export function hasConflictingDaemonPid(
+    pid: number,
+    currentPid = process.pid,
+    inspect: (pid: number) => boolean = isNovaDaemonPid,
+): boolean {
+    return Number.isSafeInteger(pid) && pid > 0 && pid !== currentPid && inspect(pid)
+}
+
 export function isNovaDaemonCommandLine(commandLine: string): boolean {
     const normalized = commandLine.replaceAll('\\', '/').toLowerCase()
     return normalized.includes('dist/daemon.js') || normalized.includes('src/daemon.ts')

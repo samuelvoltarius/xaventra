@@ -1284,7 +1284,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const model = state.llm?.modelId || (globalThis as any).__novaState?.activeModel || 'unbekannt'
             const provider = state.llm?.provider || 'auto'
             const lines: string[] = []
-            if (asksNovaIdentity) lines.push('Ich bin Nova, dein selbstgehosteter AI-Assistent. Ich nutze dein Mesh, deine Modelle und freigegebene Tools – mit Evidenz, Validierung und getrenntem Benutzerkontext.')
+            if (asksNovaIdentity) lines.push((await import('./self-description.js')).XAVENTRA_IDENTITY)
             if (asksNovaVersion) lines.push(`Nova läuft hier auf v${version}.`)
             if (asksModel) {
                 let codexRoute = false

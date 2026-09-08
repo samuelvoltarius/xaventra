@@ -21,7 +21,7 @@ installGlobalLogger()
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import { isNovaDaemonPid } from './core/pid-guard.js'
+import { hasConflictingDaemonPid } from './core/pid-guard.js'
 
 // ============================================
 // Build-freshness guard — warn if dist is stale vs src
@@ -221,7 +221,7 @@ async function startDaemon() {
         if (existsSync(pidFile)) {
             const oldPid = parseInt(readFileSync(pidFile, 'utf-8').trim())
             if (oldPid) {
-                if (isNovaDaemonPid(oldPid)) {
+                if (hasConflictingDaemonPid(oldPid)) {
                     console.error(`[Nova] ❌ Daemon läuft bereits (PID ${oldPid})! Erst killen oder .nova.pid löschen.`)
                     process.exit(1)
                 } else {

@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { XAVENTRA_IDENTITY, describeRegisteredCapabilities } from './self-description.js'
 
 
 // Dynamic version from package.json
@@ -65,6 +66,12 @@ export async function handleCommand(
     const requestPermission = principalContext?.permission || 'guest'
 
     switch (cmd) {
+        case 'identity':
+            return XAVENTRA_IDENTITY
+        case 'whoami':
+            return `Deine Rolle in dieser Sitzung: ${requestPermission}. Persönliche Erinnerungen sind davon getrennt; aus einer fehlenden Erinnerung folgt keine andere Berechtigung.`
+        case 'capabilities':
+            return describeRegisteredCapabilities(state.tools?.getAll?.() || [], requestPermission)
         case 'world':
         case 'worldmodel':
         case 'lagebild': {

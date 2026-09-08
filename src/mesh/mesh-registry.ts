@@ -1694,7 +1694,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
 // ============================================
 
 export function formatMeshStatus(): string {
-    return `🌐 *Nova Mesh*\n\nNode ID: \`${NODE_ID}\`\nHostname: ${hostname()}\nPlatform: ${process.platform}\n\n_Nutze mesh_status für Details_`
+    return `🌐 *Xaventra Mesh*\n\nNode ID: \`${NODE_ID}\`\nHostname: ${hostname()}\nPlatform: ${process.platform}\n\n_Nutze mesh_status für Details_`
 }
 
 export async function formatMeshNodes(options: { includeHistorical?: boolean } = {}): Promise<string> {
@@ -1708,10 +1708,10 @@ export async function formatMeshNodes(options: { includeHistorical?: boolean } =
             : '🌐 Keine aktiven oder kürzlich erreichbaren Nodes. Historie: /nodes all'
     }
 
-    let msg = `🌐 *Nova Mesh — ${nodes.length} ${options.includeHistorical ? 'registrierte' : 'aktuelle'} Node(s)*\n`
+    let msg = `🌐 *Xaventra Mesh — ${nodes.length} ${options.includeHistorical ? 'registrierte' : 'aktuelle'} Node(s)*\n`
     if (authority) msg += `👑 Main: *${authority.hostname || authority.nodeId}* (\`${authority.nodeId}\`) — Lease-Epoche ${authority.epoch}\n`
     else msg += '👑 Main: nicht verifiziert (keine aktive Koordinations-Lease)\n'
-    if (preferred) msg += `âš¡ Compute/Failover: *${preferred.hostname || preferred.nodeId}* (\`${preferred.nodeId}\`)\n`
+    if (preferred) msg += `⚡ Compute/Failover: *${preferred.hostname || preferred.nodeId}* (\`${preferred.nodeId}\`)\n`
     msg += '\n'
 
     for (const n of nodes) {

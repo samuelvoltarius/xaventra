@@ -1363,7 +1363,8 @@
       "module": "src/core/daemon-channels.ts",
       "imports": [
         "../channels/telegram-presentation.js",
-        "./runtime-event-log.js"
+        "./runtime-event-log.js",
+        "./single-flight.js"
       ]
     },
     {
@@ -1742,6 +1743,10 @@
       ]
     },
     {
+      "module": "src/core/self-description.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/self-doctor.ts",
       "imports": [
         "../config/config-path.js",
@@ -1780,6 +1785,10 @@
       "imports": []
     },
     {
+      "module": "src/core/single-flight.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/skills-loader.ts",
       "imports": [
         "node:fs",
@@ -1792,6 +1801,7 @@
         "../auth/codex-runtime.js",
         "../config/config-path.js",
         "../users/principal-id.js",
+        "./self-description.js",
         "node:fs",
         "node:path"
       ]

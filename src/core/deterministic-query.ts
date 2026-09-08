@@ -31,6 +31,10 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
     const text = normalize(input)
     if (!text) return null
 
+    if (/^(?:wer|was) bist du$/.test(text)) return route('identity', '', 'identity')
+    if (/^(?:was kannst du(?: alles)?|welche fähigkeiten hast du|what can you do)$/.test(text)) return route('capabilities', '', 'registered-capabilities')
+    if (/^(?:welche rechte habe ich|welche rolle habe ich)$/.test(text)) return route('whoami', '', 'principal-role')
+
     const forgetTarget = parseNaturalMemoryForget(input)
     if (forgetTarget) return route('memory', `forget-natural ${forgetTarget}`, 'memory-forget', 'controlled-action')
 

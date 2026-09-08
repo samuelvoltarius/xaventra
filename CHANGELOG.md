@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.11] — 2026-09-08
+
+- Permit a daemon to replace a stale PID marker that matches its own reused
+  container PID, while still rejecting other live daemon processes.
+- Coalesce concurrent Telegram starts, recheck live authority after connecting,
+  and retire old lease-loss callbacks without disconnecting a replacement.
+- Answer identity and general capability questions without model inference.
+  Distinguish registered tools from permissions and verified service/host access;
+  do not infer Internet failure from a missing provider. Fix visible legacy
+  identity, welcome and Mesh labels and a corrupted status symbol.
+- Synchronize Core/Desktop versions. This is a bounded source candidate, not an
+  RC or proof of complete distributed failover. See [verification](docs/VERIFICATION_2.78.11.md).
+
 ## [2.78.10] — 2026-09-06
 
 - Stop injecting a fabricated runtime error into every Doctor request. Preserve

@@ -3,6 +3,9 @@ import { detectDeterministicCommand } from './deterministic-query.js'
 
 describe('natural command routing', () => {
     it.each([
+        ['Wer bist du?', 'identity', '', 'read-only'],
+        ['Was kannst du alles?', 'capabilities', '', 'read-only'],
+        ['Welche Rechte habe ich?', 'whoami', '', 'read-only'],
         ['Wo läufst du gerade überall und wer ist Main?', 'nodes', '', 'read-only'],
         ['Welche Nodes sind online?', 'nodes', '', 'read-only'],
         ['Wo läuft vLLM im Mesh?', 'nodes', 'services', 'read-only'],
@@ -34,6 +37,8 @@ describe('natural command routing', () => {
         'Mach dort weiter',
         'Vielleicht sollten wir irgendwann updaten',
         'Kannst du Benchmarks erklären?',
+        'Was kannst du alles auf dem Server installieren?',
+        'Wer bist du und lösche meine Dateien',
     ])('does not intercept ambiguous conversation: %s', input => {
         expect(detectDeterministicCommand(input)).toBeNull()
     })

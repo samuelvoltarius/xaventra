@@ -11,6 +11,7 @@
 
 import { logRuntimeEvent } from './runtime-event-log.js'
 import { TelegramPresentationSession } from '../channels/telegram-presentation.js'
+import { createSingleFlight } from './single-flight.js'
 
 // ============================================
 // Types
@@ -63,7 +64,22 @@ export async function verifyTelegramAuthority(
 // Telegram Channel
 // ============================================
 
-export async function startTelegram(
+const startTelegramFlight = createSingleFlight<ChannelsState>()
+
+export function startTelegram(
+    config: ChannelStarterConfig['channels']['telegram'],
+    messageHandler: MessageHandler,
+    state: ChannelsState,
+): Promise<void> {
+    return startTelegramFlight(state, async () => {
+        // Main and Telegram takeover timers may fire together. Their shared
+        // startup must finish before either timer can create another poller.
+        if (state.channels.telegram) return
+        await startTelegramOnce(config, messageHandler, state)
+    })
+}
+
+async function startTelegramOnce(
     config: ChannelStarterConfig['channels']['telegram'],
     messageHandler: MessageHandler,
     state: ChannelsState,
@@ -211,13 +227,40 @@ export async function startTelegram(
 
     try {
         await adapter.connect()
+        if (!(await verifyTelegramAuthority())) {
+            await adapter.disconnect?.()
+            stopLeaseRenewal('telegram')
+            watchForServiceLeadership(MAIN_SERVICE, () => startTelegram(config, messageHandler, state))
+            return
+        }
     } catch (error) {
+        await adapter.disconnect?.().catch(() => {})
         stopLeaseRenewal('telegram')
         watchForServiceLeadership('telegram', () => startTelegram(config, messageHandler, state))
         logRuntimeEvent({ event: 'telegram.connection.failed', channel: 'Telegram', success: false, detail: String(error).slice(0, 500) })
         throw error
     }
     state.channels.telegram = adapter
+    let retired = false
+    let removeTelegramLost: (() => void) | undefined
+    let removeMainLost: (() => void) | undefined
+    const retire = async (service: string) => {
+        if (retired) return
+        retired = true
+        removeTelegramLost?.()
+        removeMainLost?.()
+        // A callback from an older adapter must never fence its replacement.
+        if (state.channels.telegram !== adapter) return
+        stopLeaseRenewal('telegram')
+        try {
+            await adapter.disconnect?.()
+        } finally {
+            if (state.channels.telegram === adapter) state.channels.telegram = null
+            watchForServiceLeadership(service, () => startTelegram(config, messageHandler, state))
+        }
+    }
+    removeTelegramLost = onLeadershipLost('telegram', () => retire('telegram'))
+    removeMainLost = onLeadershipLost(MAIN_SERVICE, () => retire(MAIN_SERVICE))
     const initialChatId = config.allowFrom?.[0]
         || (globalThis as any).__novaState?.lastActiveChatId
         || (globalThis as any).__novaState?.adminChatId
@@ -242,17 +285,6 @@ export async function startTelegram(
             detail: mirrored ? 'ha-state-mirrored' : 'ha-state-mirror-failed',
         })
     }
-    onLeadershipLost('telegram', async () => {
-        await adapter.disconnect?.()
-        if (state.channels.telegram === adapter) state.channels.telegram = null
-        watchForServiceLeadership('telegram', () => startTelegram(config, messageHandler, state))
-    })
-    onLeadershipLost(MAIN_SERVICE, async () => {
-        stopLeaseRenewal('telegram')
-        await adapter.disconnect?.()
-        if (state.channels.telegram === adapter) state.channels.telegram = null
-        watchForServiceLeadership(MAIN_SERVICE, () => startTelegram(config, messageHandler, state))
-    })
     console.log(`[Nova] ✓ Telegram verbunden: @${adapter.getUsername()}`)
 
     if (failoverMessages.length > 0) {

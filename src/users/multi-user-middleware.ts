@@ -486,7 +486,7 @@ export function getOnboardingMessage(user: UserRecord): string | null {
             return null // No onboarding for owners/admins
 
         case 'user':
-            return `👋 Willkommen! Ich bin Nova, dein AI-Assistent.
+            return `👋 Willkommen! Ich bin Xaventra, dein AI-Assistent.
 
 Du hast **User**-Rechte. Das heißt:
 ✅ Chat, Suche, Übersetzung, Bilder
@@ -497,7 +497,7 @@ Schreib einfach los — ich helfe dir gerne!
 Tippe /help für alle Befehle.`
 
         case 'guest':
-            return `👋 Hallo! Ich bin Nova.
+            return `👋 Hallo! Ich bin Xaventra.
 
 Du bist als **Gast** verbunden. Du kannst:
 ✅ Mit mir chatten
