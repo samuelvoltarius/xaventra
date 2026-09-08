@@ -15,6 +15,8 @@
   reconciliation. An older repair never borrows a newer writer transaction.
 - Update sharp to the patched 0.35.4 floor and Hono to 4.13.5 after the dependency
   assurance gate identified newly published advisories; verify real image processing.
+- Pin the Desktop build chain's js-yaml v4 floor to patched 4.3.2; retain the
+  separate Desktop dependency audit as a blocking gate.
 - Await the actual daemon exit event in lifecycle acceptance, preserving the
   observed Windows failure. See `docs/REPAIR_PUBLICATION.md` for boundaries;
   no production activation or RC is claimed.

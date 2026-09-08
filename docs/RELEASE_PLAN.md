@@ -10,14 +10,17 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 [Publication and recovery contract](REPAIR_PUBLICATION.md) and
 [source-specific acceptance](VERIFICATION_2.78.18.md). Actual Linux arm64 automatic
-publication passes 6/6; state cloning 4/4; Windows regression 1,438 tests.
-Exact-commit complete CI remains a promotion gate. No production activation or RC.
+publication passes 6/6; state cloning 4/4; Windows regression 1,439 tests.
+Exact-commit complete CI remains a promotion gate; see the
+[candidate checks](https://github.com/samuelvoltarius/xaventra/actions/workflows/ci.yml?query=branch%3Acodex%2Frepair-publisher-2.78.18).
+No production activation or RC.
 The main CI 34276726942 Windows lifecycle negative is retained: CLI stop and marker
 cleanup succeeded but the parent had not confirmed daemon exit. Acceptance now
 awaits the actual exit event and still requires exit code zero.
 
-- Source/test gate: local pass; final exact-commit CI pending.
-- Docker build/source/writer gate: bounded pass on `c57ccc1b67016aa41c0e3894281dc2a8f6409cf5`.
+- Source/test gate: local pass; promotion requires all ten exact-commit CI jobs,
+  not the green subset of a failed predecessor run.
+- Docker build/source/writer gate: bounded pass on `b6f87a3de7868964e07855a355bb622922e675a3`.
 - Full production writer coverage: open (sink adapters, inventory enrollment,
   exclusive restart adoption and shared-state peer replacement).
 - Existing cross-platform/native/HA RC gates below remain unchanged.
