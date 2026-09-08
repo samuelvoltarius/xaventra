@@ -1053,6 +1053,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 content,
                 correction.lastToolCall.params,
                 false,
+                principalId,
             )
         }
 
@@ -1588,11 +1589,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             trackPattern(from, content, result.toolsExecuted[0])
         }
 
-        // Task Tracker: complete the task (steps already advanced in nova-runner)
-        try {
-            const { completeTask } = await import('./task-tracker.js')
-            completeTask()
-        } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
+        // Tracker completion happens only after final delivery/validation below.
 
         // ════════════════════════════════════════════════════════════════════
         // ANNOUNCE-WITHOUT-ACT GUARD
@@ -1874,7 +1871,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             try {
                 const { cacheResponse } = await import('../llm/response-cache.js')
                 const messages = [{ role: 'user', content }]
-                if (!detectActionIntent(content).requiresTool) {
+                if (!(result as any).error && result.validation?.success === true && !detectActionIntent(content).requiresTool) {
                     cacheResponse(systemPrompt, messages, finalContent, routedModel || 'default')
                 }
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
@@ -1883,7 +1880,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Task Tracker: mark task as complete
             try {
                 const { completeTask } = await import('./task-tracker.js')
-                completeTask()
+                completeTask(Boolean((result as any).error) || result.validation?.success !== true)
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             // Dashboard: update stats
             try {
@@ -1939,10 +1936,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     const reflectionResult = intelligence.selfReflection.reflect({
                         userMessage: content,
                         assistantResponse: finalContent,
-                        execution: (result as any).actionState ? {
-                            requiresTool: Boolean((result as any).actionState.requiresTool),
+                        execution: {
+                            requiresTool: (result as any).actionState?.requiresTool ?? detectActionIntent(content).requiresTool,
                             validated: result.validation?.success === true,
-                        } : undefined,
+                            failed: Boolean((result as any).error) || result.validation?.success === false,
+                        },
                         toolsUsed: (result.toolsExecuted || []).map((t: any) => t.name || t),
                         toolResults: ((result as any).toolExecutions || []).map((t: any) => ({
                             tool: t.toolName || t.name || t.tool || 'unknown',
@@ -1991,8 +1989,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 try {
                     const journal = (state as any).journal
                     if (journal) {
-                        for (const tool of result.toolsExecuted || []) {
-                            journal.recordToolUse(tool, true, canonicalUser)
+                        for (const execution of (result as any).toolExecutions || []) {
+                            journal.recordToolUse(execution.toolName || execution.name || execution.tool, execution.success === true, canonicalUser)
                         }
                     }
                 } catch (err) { console.debug('[Pipeline] non-critical error:', err) }

@@ -24,7 +24,7 @@ export interface ReflectionContext {
     toolsUsed: string[]
     toolResults: Array<{ tool: string; success: boolean; error?: string }>
     /** Trusted runner metadata, never a model-supplied self-assessment. */
-    execution?: { requiresTool: boolean; validated: boolean }
+    execution?: { requiresTool: boolean; validated: boolean; failed?: boolean }
 }
 
 // ============================================
@@ -32,6 +32,12 @@ export interface ReflectionContext {
 // ============================================
 
 const QUALITY_CHECKS = [
+    {
+        name: 'execution_failed',
+        check: (ctx: ReflectionContext) => ctx.execution?.failed === true,
+        issue: 'Ausführung fehlgeschlagen oder nicht validiert',
+        suggestion: 'Fehlerstatus beibehalten; keine erfolgreiche Aufgabe daraus lernen',
+    },
     {
         name: 'empty_response',
         check: (ctx: ReflectionContext) =>

@@ -32,6 +32,8 @@ function summarizeVerifiedResult(toolName: string, result: unknown): string | nu
 }
 
 export interface VerifiedToolOutcome {
+    userId?: string
+    runId?: string
     toolName: string
     request: string
     params: Record<string, unknown>
@@ -129,12 +131,13 @@ export class LearningCoordinator {
             outcome.params,
             outcome.result,
             outcome.success,
+            outcome.userId,
         )
 
         // A single non-throwing call is an observation, not a learned skill.
         // Promote a procedure only after the same tool/parameter shape has
         // produced verified task evidence twice. A failure resets confidence.
-        const signature = `${outcome.toolName}:${Object.keys(outcome.params).sort().join(',')}`
+        const signature = JSON.stringify([outcome.userId ?? null, outcome.toolName, Object.keys(outcome.params).sort()])
         const runs = outcome.success ? (this.verifiedProcedureRuns.get(signature) || 0) + 1 : 0
         this.verifiedProcedureRuns.set(signature, runs)
         this.persistVerifiedProcedures()

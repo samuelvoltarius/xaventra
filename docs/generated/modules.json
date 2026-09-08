@@ -2518,11 +2518,7 @@
     },
     {
       "module": "src/layers/L0-tool-autorepair.ts",
-      "imports": [
-        "node:child_process",
-        "node:fs",
-        "node:path"
-      ]
+      "imports": []
     },
     {
       "module": "src/layers/L03-core-runtime.ts",

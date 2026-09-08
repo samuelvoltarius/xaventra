@@ -166,27 +166,8 @@ export class ToolRegistry {
                     learner.recordUsage(call.name, 'auto-failure', call.arguments, false)
                 } catch { /* L7 not available */ }
 
-                // After 3 failures, trigger L8 Sub-Agent
-                if (failures >= 3) {
-                    console.log(`[Registry→L8] 🔍 3 failures reached, triggering sub-agent google search!`)
-                    try {
-                        const { getSubAgentManager } = await import('../layers/L8-sub-agent.js')
-                        const manager = getSubAgentManager()
-                        const error = (result as any).error || 'Unknown error'
-
-                        await manager.spawnSearchAgent(
-                            {
-                                problem: `${call.name} ${error}`,
-                                tool: call.name,
-                                params: call.arguments,
-                            },
-                            async (solution) => tool.handler(call.arguments),
-                            async (msg: string) => console.log(`[L8 Report] ${msg}`)
-                        )
-                    } catch (l8Err) {
-                        console.log(`[Registry] L8 not available: ${l8Err}`)
-                    }
-                }
+                // Failure never authorizes a background agent or direct retry.
+                // Recovery must be a separately governed tool action.
             } else {
                 // Success - reset failure counter
                 const key = call.name
@@ -240,25 +221,8 @@ export class ToolRegistry {
                 learner.recordUsage(call.name, 'auto-exception', call.arguments, false)
             } catch { /* L7 not available */ }
 
-            // After 3 failures, trigger L8
-            if (failures >= 3) {
-                console.log(`[Registry→L8] 🔍 3 failures reached, triggering sub-agent google search!`)
-                try {
-                    const { getSubAgentManager } = await import('../layers/L8-sub-agent.js')
-                    const manager = getSubAgentManager()
-                    await manager.spawnSearchAgent(
-                        {
-                            problem: `${call.name} ${error}`,
-                            tool: call.name,
-                            params: call.arguments,
-                        },
-                        async (solution) => tool.handler(call.arguments),
-                        async (msg: string) => console.log(`[L8 Report] ${msg}`)
-                    )
-                } catch (l8Err) {
-                    console.log(`[Registry] L8 not available: ${l8Err}`)
-                }
-            }
+            // Thrown errors have the same authority as returned failures:
+            // none to launch hidden work or repeat the handler.
 
             const toolResult: ToolResult = {
                 toolCallId: call.id,

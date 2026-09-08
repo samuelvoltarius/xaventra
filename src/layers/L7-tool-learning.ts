@@ -19,6 +19,7 @@ import { join, dirname } from 'node:path'
 // ============================================
 
 export interface ToolUsageExample {
+    userId?: string
     id: string
     toolName: string
     userRequest: string           // What the user asked
@@ -33,6 +34,7 @@ export interface ToolUsageExample {
 }
 
 export interface ToolPattern {
+    userId?: string
     id: string
     toolName: string
     pattern: string              // Regex or keyword pattern
@@ -113,7 +115,8 @@ class ToolUsageLearner {
         toolName: string,
         userRequest: string,
         extractedParams: Record<string, unknown>,
-        wasCorrect: boolean
+        wasCorrect: boolean,
+        userId?: string,
     ): ToolUsageExample {
         // SECURITY: Strip sensitive fields before persisting
         const sanitizedParams = { ...extractedParams }
@@ -125,6 +128,7 @@ class ToolUsageLearner {
         }
 
         const example: ToolUsageExample = {
+            userId,
             id: `ex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             toolName,
             userRequest,
@@ -147,9 +151,10 @@ class ToolUsageLearner {
     recordCorrection(
         exampleId: string,
         correctParams: Record<string, unknown>,
-        explanation: string
+        explanation: string,
+        userId?: string,
     ): void {
-        const example = this.examples.find(e => e.id === exampleId)
+        const example = this.examples.find(e => e.id === exampleId && e.userId === userId)
         if (!example) {
             console.log(`[ToolLearner] Example not found: ${exampleId}`)
             return
@@ -173,6 +178,7 @@ class ToolUsageLearner {
 
         // Look for similar past corrections for this tool
         const similarCorrections = this.examples.filter(e =>
+            e.userId === example.userId &&
             e.toolName === example.toolName &&
             e.correction &&
             e.id !== example.id
@@ -191,6 +197,7 @@ class ToolUsageLearner {
 
         // Create or update pattern
         const existingPattern = this.patterns.find(p =>
+            p.userId === example.userId &&
             p.toolName === example.toolName &&
             Object.keys(p.parameterMapping).some(k => paramDiffs[k])
         )
@@ -208,6 +215,7 @@ class ToolUsageLearner {
         } else if (Object.keys(paramDiffs).length > 0) {
             // Create new pattern based on correction
             const newPattern: ToolPattern = {
+                userId: example.userId,
                 id: `pat_${Date.now()}`,
                 toolName: example.toolName,
                 pattern: this.extractPattern(example.userRequest),
@@ -258,15 +266,15 @@ class ToolUsageLearner {
     /**
      * Get similar examples for few-shot learning
      */
-    getFewShotExamples(toolName: string, limit: number = 3): ToolUsageExample[] {
+    getFewShotExamples(toolName: string, limit: number = 3, userId?: string): ToolUsageExample[] {
         // Get corrected examples for this tool (most useful for learning)
         const corrected = this.examples
-            .filter(e => e.toolName === toolName && e.correction)
+            .filter(e => e.userId === userId && e.toolName === toolName && e.correction)
             .slice(-limit)
 
         // Also get successful examples
         const successful = this.examples
-            .filter(e => e.toolName === toolName && e.wasCorrect && !e.correction)
+            .filter(e => e.userId === userId && e.toolName === toolName && e.wasCorrect && !e.correction)
             .slice(-limit)
 
         return [...corrected, ...successful].slice(0, limit)
@@ -275,8 +283,8 @@ class ToolUsageLearner {
     /**
      * Build a learning prompt for the LLM
      */
-    buildLearningPrompt(toolName: string): string {
-        const examples = this.getFewShotExamples(toolName)
+    buildLearningPrompt(toolName: string, userId?: string): string {
+        const examples = this.getFewShotExamples(toolName, 3, userId)
         if (examples.length === 0) return ''
 
         let prompt = `\n## Gelernte Beispiele für ${toolName}:\n\n`
@@ -302,11 +310,12 @@ class ToolUsageLearner {
     suggestCorrections(
         toolName: string,
         userRequest: string,
-        extractedParams: Record<string, unknown>
+        extractedParams: Record<string, unknown>,
+        userId?: string,
     ): Record<string, unknown> | null {
         // Find matching patterns
         for (const pattern of this.patterns) {
-            if (pattern.toolName !== toolName) continue
+            if (pattern.userId !== userId || pattern.toolName !== toolName) continue
 
             // Check if any examples are similar
             for (const example of pattern.examples) {
@@ -317,7 +326,7 @@ class ToolUsageLearner {
 
                     // Get the correction from a similar example
                     const learnedExample = this.examples.find(e =>
-                        pattern.learnedFrom.includes(e.id) && e.correction
+                        e.userId === userId && pattern.learnedFrom.includes(e.id) && e.correction
                     )
 
                     if (learnedExample?.correction) {
@@ -401,6 +410,7 @@ export async function recordToolExecution(
     params: Record<string, unknown>,
     result: unknown,
     verifiedSuccess?: boolean,
+    userId?: string,
 ): Promise<void> {
     const learner = getToolUsageLearner()
 
@@ -409,7 +419,7 @@ export async function recordToolExecution(
         ? Boolean(result && typeof result === 'object' && 'error' in result)
         : !verifiedSuccess
 
-    learner.recordUsage(toolName, userRequest, params, !wasError)
+    learner.recordUsage(toolName, userRequest, params, !wasError, userId)
 }
 
 export default {

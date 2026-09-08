@@ -662,6 +662,10 @@
       "path": ".nova-data/hosts.json"
     },
     {
+      "owner": "src/layers/runtime-evidence.test.ts",
+      "path": ".nova-data/instance-id.txt"
+    },
+    {
       "owner": "src/layers/L8-sub-agent.ts",
       "path": ".nova-data/learned-solutions.json"
     },

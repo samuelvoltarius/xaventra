@@ -32,10 +32,25 @@ jobs:
       - name: Seed isolated development configuration
         run: node scripts/setup.mjs --configure-only
       - run: npm run typecheck
+      - name: Static layer reachability (not behavioral acceptance)
+        run: npm run check:layer-graph
       - run: npm test -- --maxWorkers=2
         env:
           NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
       - run: npm run build
+      - name: Compiled layer behavior contracts (isolated fixtures)
+        run: node scripts/check-layer-contracts.mjs
+        timeout-minutes: 2
+        env:
+          XAVENTRA_LAYER_QA_DIR: ${{ github.workspace }}/.nova-data/layer-qa
+      - name: Preserve layer contract evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layer-contract-qa-${{ matrix.os }}
+          path: .nova-data/layer-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled capability inventory, setup and restart acceptance
         run: node scripts/check-capability-inventory.mjs
         timeout-minutes: 3

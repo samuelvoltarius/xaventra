@@ -6,10 +6,28 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
-### 2.78.11 candidate in progress
+### 2.78.12 layer-contract candidate
+
+All 40 modules are statically connected, but several have only getter/import
+evidence for their main function. The [complete per-module matrix](LAYER_BEHAVIOR_MATRIX.md)
+separates actual bounded assertions from smoke coverage and lists remaining
+acceptance requirements. No service is declared production-ready solely from
+its import graph or a passing aggregate score.
+
+Reproduced L0/L8 hidden mutation/retry paths, L7/L17 learning attribution/user
+mixing, Docker inspection intent, failure reflection/tracking and federated node
+identity are addressed in this bounded candidate. See [versioned tests, review,
+upgrade and open gates](VERIFICATION_2.78.12.md). Automatic governed repair,
+full distributed convergence and the remaining Nova persona/UI migration are
+still **open**; not removed or renamed away to obtain an RC. Exact candidate CI
+must pass before updating main. No production deployment is part of this audit.
+
+### 2.78.11 predecessor
 
 Startup PID reuse, Telegram starter concurrency and grounded identity/capability
-answers are being verified from base `221930cb3ed2faf345d80ed6be4631255eca79b0`.
+answers were verified from base `221930cb3ed2faf345d80ed6be4631255eca79b0`.
+Candidate `5b1fe9a7f19929d95dbb3b0ec2cf250545bc088d` passed all seven jobs
+in [CI 34209431042](https://github.com/samuelvoltarius/xaventra/actions/runs/34209431042).
 See [separate evidence and open gates](VERIFICATION_2.78.11.md). No RC label,
 automatic production rollout or closed distributed-failover gate is implied.
 

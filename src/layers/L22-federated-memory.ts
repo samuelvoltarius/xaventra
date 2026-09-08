@@ -20,7 +20,9 @@ const DEFAULT_SYNC_INTERVAL_MS = 10 * 60 * 1000
 let syncTimer: ReturnType<typeof setInterval> | null = null
 let lastSnapshotHash = ''
 
-function readNodeId(): string {
+export function readNodeId(): string {
+    const canonical = process.env.NOVA_NODE_ID?.trim()
+    if (canonical) return canonical
     try {
         return readFileSync(join(process.cwd(), '.nova-data', 'instance-id.txt'), 'utf-8').trim()
     } catch {

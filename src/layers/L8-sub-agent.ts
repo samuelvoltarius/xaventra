@@ -3,9 +3,8 @@
  * 
  * When Nova is stuck (too many failures), she:
  * 1. Says "Ich kann das gerade nicht - ein Agent sucht schon nach einer Lösung!"
- * 2. Spawns a background sub-agent that googles the problem
- * 3. Sub-agent tries solutions automatically
- * 4. Reports back when found
+ * The legacy callback API is retained for compatibility, but fails closed.
+ * Research and repair require a separately governed Kernel task.
  */
 
 import { EventEmitter } from 'node:events'
@@ -673,7 +672,7 @@ Nutze alternative: scp statt pscp`
     }
 
     /**
-     * Spawn a sub-agent to google and try solutions
+     * Legacy entry point: reports a governed-plan requirement; no hidden work.
      * Supports both old (problem, params, tryFn, reportFn) and new (context, tryFn, reportFn) signatures
      */
     async spawnSearchAgent(
@@ -688,222 +687,20 @@ Nutze alternative: scp statt pscp`
         tryFnOrReportFn: ((solution: string) => Promise<unknown>) | ((message: string) => Promise<void>),
         maybeReportFn?: (message: string) => Promise<void>
     ): Promise<SubAgentTask> {
-        // Normalize to new format
-        let context: { problem: string; params?: Record<string, unknown>; tool?: string }
-        let tryFn: (solution: string) => Promise<unknown>
-        let reportFn: (message: string) => Promise<void>
-
-        if (typeof contextOrProblem === 'string') {
-            // Old signature: (problem, params, tryFn, reportFn)
-            context = { problem: contextOrProblem, params: paramsOrTryFn as Record<string, unknown> }
-            tryFn = tryFnOrReportFn as (solution: string) => Promise<unknown>
-            reportFn = maybeReportFn!
-        } else {
-            // New signature: (context, tryFn, reportFn)
-            context = contextOrProblem
-            tryFn = paramsOrTryFn as (solution: string) => Promise<unknown>
-            reportFn = tryFnOrReportFn as (message: string) => Promise<void>
-        }
-
-        const taskId = `task_${Date.now()}`
-
-        // === CHECK LEARNING CACHE FIRST ===
-        const knownSolution = this.getKnownSolution(context.problem)
-        if (knownSolution) {
-            console.log(`[L8 SubAgent] 💡 Using known solution instead of googling!`)
-            await reportFn(`💡 Ich kenne diesen Fehler schon! Versuche die gelernte Lösung...`)
-
-            try {
-                const result = await tryFn(knownSolution)
-                if (result && typeof result === 'object' && !('error' in result)) {
-                    await reportFn(`✅ Gelernte Lösung hat funktioniert!`)
-                    return {
-                        id: taskId,
-                        query: 'known_solution',
-                        status: 'success' as const,
-                        startedAt: Date.now(),
-                        results: [knownSolution],
-                        solution: knownSolution,
-                    }
-                }
-            } catch {
-                console.log(`[L8 SubAgent] Known solution failed, will google instead`)
-            }
-        }
-
-        // Build rich query from context
-        const richQuery = this.buildRichQuery(context)
-
-        // If not googleable (network errors, auth errors), report and return
-        if (!richQuery) {
-            console.log(`[L8 SubAgent] ⚠️ Skipping search - environment issue, not googleable`)
-
-            // Check if there are any local hints
-            const googleCheck = this.isGoogleableError(context.problem)
-
-            if (googleCheck.localFixes && googleCheck.localFixes.length > 0) {
-                const fixList = googleCheck.localFixes.map((f, i) => `${i + 1}. ${f}`).join('\n')
-                await reportFn(`⚠️ Umgebungs-Problem - hier sind mögliche Lösungen:\n${fixList}`)
-            } else {
-                await reportFn('⚠️ Das ist ein Umgebungs-Problem (Netzwerk/Datei/Berechtigung) - Google kann da nicht helfen. Bitte prüfe deine Einstellungen.')
-            }
-
-            return {
-                id: taskId,
-                query: 'skipped',
-                status: 'success' as const,
-                startedAt: Date.now(),
-                results: [],
-            }
-        }
-
-        const task: SubAgentTask = {
-            id: taskId,
-            query: richQuery,
-            status: 'searching',
+        // Compatibility API cannot express a Kernel contract or approval.
+        // Keep both signatures callable, but never execute their retry callback,
+        // read an unscoped solution cache, or launch unbudgeted background work.
+        const reportFn = typeof contextOrProblem === 'string'
+            ? maybeReportFn
+            : tryFnOrReportFn as (message: string) => Promise<void>
+        const message = 'Repair was not executed. Submit a scoped plan through the Execution Kernel, sandbox validation and approval.'
+        if (reportFn) await reportFn(message)
+        return {
+            id: `task_${Date.now()}`,
+            query: 'governed-repair-required',
+            status: 'failed',
             startedAt: Date.now(),
             results: [],
-        }
-
-        this.activeTasks.set(taskId, task)
-        console.log(`[L8 SubAgent] Spawned agent for: ${context.problem.slice(0, 100)}`)
-
-        // Run in background (don't await)
-        this.runSearchAgent(task, context.params || {}, tryFn, reportFn)
-            .catch(err => console.error(`[L8 SubAgent] Error: ${err}`))
-
-        return task
-    }
-
-    /**
-     * Background agent execution
-     */
-    private async runSearchAgent(
-        task: SubAgentTask,
-        originalParams: Record<string, unknown>,
-        tryFn: (solution: string) => Promise<unknown>,
-        reportFn: (message: string) => Promise<void>
-    ): Promise<void> {
-        try {
-            // Step 1: PARALLEL - Ask LLM AND Google AND run tool diagnostics at the same time!
-            console.log(`[L8 SubAgent] 🚀 Searching PARALLEL: LLM + Google + Tool Diagnostics`)
-            task.status = 'searching'
-
-            // Detect tool from the query context
-            const toolName = originalParams.tool as string || ''
-
-            // Run all searches + diagnostics in parallel
-            const [searchResults, llmSuggestions, diagnostics] = await Promise.all([
-                this.googleSearch(task.query),
-                this.askLLM(task.query),
-                toolName ? this.runToolDiagnostics(toolName, originalParams) : Promise.resolve([]),
-            ])
-
-            // Combine: diagnostics first (most specific), then LLM, then Google
-            const combinedResults = [...diagnostics, ...llmSuggestions, ...searchResults]
-            task.results = combinedResults
-
-            console.log(`[L8 SubAgent] 📊 Got ${diagnostics.length} diag + ${llmSuggestions.length} LLM + ${searchResults.length} Google`)
-
-            if (combinedResults.length === 0) {
-                task.status = 'failed'
-                await reportFn(`❌ Agent konnte keine Lösung finden für: ${task.query}`)
-                return
-            }
-
-            // Step 2: Try solutions RECURSIVELY - keep going until success or max depth
-            const MAX_RECURSION_DEPTH = 8  // More persistent! (was 5)
-            const SOLUTIONS_PER_ROUND = 5   // Try more solutions (was 3)
-            let currentError = task.query
-            let currentResults = combinedResults
-            let depth = 0
-
-            while (depth < MAX_RECURSION_DEPTH) {
-                depth++
-                task.status = 'trying'
-                console.log(`[L8 SubAgent] Round ${depth}/${MAX_RECURSION_DEPTH}: ${currentResults.length} potential solutions`)
-
-                let foundNewError = false
-
-                for (const solution of currentResults.slice(0, SOLUTIONS_PER_ROUND)) {
-                    console.log(`[L8 SubAgent] Checking: ${solution.slice(0, 80)}...`)
-
-                    // SAFETY CHECK - Block dangerous solutions
-                    const safetyCheck = this.isSolutionSafe(solution)
-                    if (!safetyCheck.safe) {
-                        console.log(`[L8 SubAgent] ⛔ BLOCKED: ${safetyCheck.reason}`)
-                        continue // Skip this solution, try next one
-                    }
-
-                    console.log(`[L8 SubAgent] Trying safe solution...`)
-
-                    try {
-                        const result = await tryFn(solution)
-
-                        // Check if it worked (no error)
-                        if (result && typeof result === 'object' && !('error' in result) && !('action' in result)) {
-                            task.status = 'success'
-                            task.solution = solution
-
-                            // === LEARN FROM SUCCESS ===
-                            this.learnSolution(task.query, solution)
-
-                            await reportFn(`✅ Agent hat eine Lösung gefunden nach ${depth} Runden!\\n\\n**Was funktioniert hat:**\\n${solution}\\n\\n**Ergebnis:**\\n${JSON.stringify(result).slice(0, 500)}`)
-
-                            this.emit('solution_found', task)
-                            return
-                        }
-
-                        // Check if there's a NEW error we can try to solve
-                        if (result && typeof result === 'object' && (result as any).error) {
-                            const newError = (result as any).error as string
-                            console.log(`[L8 SubAgent] New error from solution: ${newError.slice(0, 100)}`)
-
-                            // Search for solution to the new error
-                            currentError = newError
-                            foundNewError = true
-                            break
-                        }
-                    } catch (err: any) {
-                        console.log(`[L8 SubAgent] Solution threw: ${err.message || err}`)
-                        currentError = err.message || String(err)
-                        foundNewError = true
-                        break
-                    }
-                }
-
-                // If we found a new error, search for its solution
-                if (foundNewError) {
-                    console.log(`[L8 SubAgent] Searching for solution to new error: ${currentError.slice(0, 100)}`)
-                    currentResults = await this.googleSearch(currentError)
-
-                    if (currentResults.length === 0) {
-                        console.log(`[L8 SubAgent] No solutions found for new error, stopping`)
-                        break
-                    }
-                } else {
-                    // No new error but nothing worked either
-                    break
-                }
-            }
-
-            // Ran out of attempts
-            task.status = 'failed'
-            await reportFn(`🤔 Agent hat ${depth} Runden probiert aber keine endgültige Lösung gefunden.\\n\\nLetzter Fehler: ${currentError.slice(0, 200)}`)
-
-            // === PROACTIVE LEARNING: Add this error as a topic to learn about later ===
-            try {
-                const { addTopicFromError } = await import('../intelligence/proactive-learning.js')
-                addTopicFromError(currentError, task.query)
-                console.log('[L8 SubAgent] 📚 Added error to proactive learning queue')
-            } catch { /* Proactive learning not available */ }
-
-        } catch (err) {
-            task.status = 'failed'
-            console.error(`[L8 SubAgent] Critical error: ${err}`)
-            await reportFn(`❌ Agent ist auf einen Fehler gestoßen: ${err}`)
-        } finally {
-            this.activeTasks.delete(task.id)
         }
     }
 
@@ -1131,11 +928,9 @@ export async function triggerFallbackIfNeeded(
         return { triggered: false, message: '🔍 Ein Agent arbeitet bereits daran...' }
     }
 
-    await mgr.spawnSearchAgent({ problem, params: originalParams }, tryFn, reportFn)
-
     return {
-        triggered: true,
-        message: mgr.getFallbackMessage(),
+        triggered: false,
+        message: 'Automatic repair requires a separately governed Kernel task; nothing was executed.',
     }
 }
 

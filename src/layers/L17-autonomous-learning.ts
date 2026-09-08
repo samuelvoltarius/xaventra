@@ -43,6 +43,7 @@ export interface LearningSession {
 }
 
 export interface LearnedKnowledge {
+    userId?: string
     problem: string
     solution: string
     code?: string
@@ -110,6 +111,7 @@ export function rememberSolution(
     solution: string,
     code?: string,
     evidence?: VerifiedLearningEvidence,
+    userId?: string,
 ): boolean {
     if (!isLearnableProblem(problem)) {
         console.log(`[L17 Learning] Ignored generic/follow-up learning key: ${JSON.stringify(problem)}`)
@@ -126,13 +128,14 @@ export function rememberSolution(
     const knowledge = loadKnowledge()
 
     // Check if we already know this
-    const existing = knowledge.find(k => k.problem.toLowerCase() === problem.toLowerCase())
+    const existing = knowledge.find(k => k.userId === userId && k.problem.toLowerCase() === problem.toLowerCase())
     if (existing) {
         existing.successCount++
         existing.solution = solution
         if (code) existing.code = code
     } else {
         knowledge.push({
+            userId,
             problem,
             solution,
             code,
@@ -146,8 +149,9 @@ export function rememberSolution(
     return true
 }
 
-export function recallSolution(problem: string): LearnedKnowledge | null {
-    const knowledge = loadKnowledge()
+export function recallSolution(problem: string, userId?: string): LearnedKnowledge | null {
+    // Unscoped legacy records remain preserved, never inherited by a user.
+    const knowledge = loadKnowledge().filter(entry => entry.userId === userId)
 
     const normalizedProblem = problem.trim().toLowerCase()
     if (!normalizedProblem) return null
@@ -269,25 +273,27 @@ export class AutonomousLearner {
         result: unknown
         success: boolean
         verified: true
+        userId?: string
+        runId?: string
     }): LearningAttempt {
         if (!isLearnableProblem(outcome.request)) {
             return { iteration: 0, action: outcome.toolName, result: outcome.success ? 'success' : 'failure', timestamp: Date.now() }
         }
-        if (!this.currentSession) this.startSession(outcome.request || 'Verified tool task')
-        const attempt = this.recordAttempt(
-            outcome.toolName,
-            outcome.success,
-            outcome.success ? undefined : String(outcome.result),
-        )
-        if (outcome.success && this.currentSession) {
+        // Outcome identity belongs to the caller-owned task, not a singleton
+        // conversational session shared by concurrent users or sequential runs.
+        const attempt: LearningAttempt = {
+            iteration: 1, action: outcome.toolName,
+            result: outcome.success ? 'success' : 'failure', timestamp: Date.now(),
+        }
+        if (outcome.success) {
             const summary = typeof outcome.result === 'string'
                 ? outcome.result.slice(0, 500)
                 : JSON.stringify(outcome.result).slice(0, 500)
-            rememberSolution(this.currentSession.goal, `Tool ${outcome.toolName}: ${summary}`, undefined, {
+            rememberSolution(outcome.request, `Tool ${outcome.toolName}: ${summary}`, undefined, {
                 verified: true,
                 toolName: outcome.toolName,
                 result: outcome.result,
-            })
+            }, outcome.userId)
         }
         return attempt
     }

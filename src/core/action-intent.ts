@@ -10,6 +10,11 @@ export interface ActionIntent {
 export function detectActionIntent(input: string): ActionIntent {
     const text = input.toLowerCase().replace(/\s+/g, ' ').trim()
 
+    if (/\b(?:schau|prüfe|pruefe|zeige|zeig|liste|check|inspect)\b.{0,80}\b(?:docker|container|prozesse|services|dienste)\b/.test(text)
+        || /\b(?:welche|wie viele)\b.{0,35}\b(?:container|dienste|prozesse)\b.{0,35}\b(?:laufen|aktiv|gestartet|vorhanden)\b/.test(text)) {
+        return { requiresTool: true, kind: 'system-state' }
+    }
+
     if (/\b(screen\s*shot|scre+ns?\s*shot|screnn\s*shot|screenshot|bildschirmfoto|display.{0,20}(?:bild|foto)|monitor.{0,20}(?:bild|foto))\b/i.test(text)) {
         return { requiresTool: true, kind: 'screenshot' }
     }

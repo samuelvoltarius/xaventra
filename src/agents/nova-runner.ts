@@ -665,7 +665,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             const topTools = toolDefinitions.slice(0, 5).map((t: any) => t.name)
             const fewShotParts: string[] = []
             for (const toolName of topTools) {
-                const prompt = toolLearner.buildLearningPrompt(toolName)
+                const prompt = toolLearner.buildLearningPrompt(toolName, userId)
                 if (prompt) fewShotParts.push(prompt)
             }
             if (fewShotParts.length > 0) {
@@ -682,7 +682,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         try {
             if (!backgroundLearningEnabled) throw new Error('isolated learning recall')
             const { recallSolution } = await import('../layers/L17-autonomous-learning.js')
-            const known = recallSolution(content)
+            const known = recallSolution(content, userId)
             if (known) {
                 l17KnownSolution = known.solution
                 messages.push({
@@ -1223,6 +1223,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         // action. Do not poison L17 with capability inventories.
                         if (!actionIntent.requiresTool || actionLifecycle.canLearn(call.name, verifiedSuccess)) {
                             await getLearningCoordinator().recordVerifiedToolOutcome({
+                                userId, runId: kernel.contract.id,
                                 toolName: call.name,
                                 request: content,
                                 params: call.arguments || {},
@@ -1345,6 +1346,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         try {
                             const { getLearningCoordinator } = await import('../learning/learning-coordinator.js')
                             await getLearningCoordinator().recordVerifiedToolOutcome({
+                                userId, runId: kernel.contract.id,
                                 toolName: call.name,
                                 request: content,
                                 params: call.arguments || {},
@@ -1384,7 +1386,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         const learner = getToolUsageLearner()
                         const failedToolNames = [...new Set(response.toolCalls.map((c: any) => c.name))]
                         const examples = failedToolNames
-                            .map((name: string) => learner.buildLearningPrompt(name))
+                            .map((name: string) => learner.buildLearningPrompt(name, userId))
                             .filter(Boolean)
                             .join('\n')
                         if (examples) l7Examples = `\n\n## Gelernte Korrekturen für diese Tools:\n${examples}`

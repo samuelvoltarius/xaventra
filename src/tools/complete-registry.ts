@@ -3484,62 +3484,24 @@ export class NovaToolRegistry {
                 learner.recordUsage(name, 'auto-failure', params, false)
             } catch { /* L7 not available */ }
 
-            // Try L0 repair first
+            // L0 diagnoses only. A repair/retry is a new governed action, never
+            // a bare handler invocation hidden inside this failed call.
             try {
                 const { getToolAutoRepairEngine } = await import('../layers/L0-tool-autorepair.js')
                 const autoRepair = getToolAutoRepairEngine()
-                const { result: repairedResult, wasRepaired, repairDetails } = await autoRepair.repairAndRetry(
+                const { result: diagnosedResult } = await autoRepair.repairAndRetry(
                     name,
                     params,
                     result as any,
                     tool.handler
                 )
-                if (wasRepaired) {
-                    console.log(`[L0 AutoRepair] ? Tool "${name}" auto-repaired: ${repairDetails}`)
-                    this.failureCount.set(key, 0) // Reset on success
-
-                    // Feed L15 (clear health flag on repair success)
-                    try {
-                        const { reportToolSuccess } = await import('../layers/L15-self-check.js')
-                        reportToolSuccess(name)
-                    } catch { /* L15 not available */ }
-
-                    const postRepair = await executionPipeline.postprocess(name, params, repairedResult, isSuccessfulToolResult(repairedResult))
-                    return executionPipeline.finalize(name, params, postRepair, isSuccessfulToolResult(postRepair))
-                }
+                return executionPipeline.finalize(name, params, diagnosedResult, false)
             } catch (repairErr) {
                 console.log(`[L0 AutoRepair] ? Repair engine not available: ${repairErr}`)
             }
 
-            // After 3 failures, trigger L8 Sub-Agent
-            if (failures >= 3) {
-                console.log(`[Registry?L8] ?? 3 failures reached, triggering sub-agent google search!`)
-                try {
-                    const { getSubAgentManager } = await import('../layers/L8-sub-agent.js')
-                    const manager = getSubAgentManager()
-                    const error = (result as any).error || 'Unknown error'
-
-                    await manager.spawnSearchAgent(
-                        {
-                            problem: `${name} ${error}`,
-                            tool: name,
-                            params: params,
-                        },
-                        async (solution) => tool.handler(params),
-                        async (msg) => console.log(`[L8 Report] ${msg}`)
-                    )
-
-                    // Return with L8 message
-                    const escalated = {
-                        ...(result as object),
-                        l8_triggered: true,
-                        l8_message: manager.getFallbackMessage()
-                    }
-                    return executionPipeline.finalize(name, params, escalated, false)
-                } catch (l8Err) {
-                    console.log(`[Registry] L8 not available: ${l8Err}`)
-                }
-            }
+            // Even when diagnosis fails, do not start unapproved background
+            // agents or replay effects outside Kernel budgets and Tool-Gates.
         } else {
             // Success - reset failure counter
             const key = name
@@ -3615,7 +3577,6 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
 
 
 

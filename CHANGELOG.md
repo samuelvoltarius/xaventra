@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.78.12] — 2026-09-08
+
+- Replace error-driven L0 filesystem/package mutations and both registries'
+  hidden L8 retries with fail-closed diagnosis. Legacy L8 callback signatures
+  remain callable but cannot authorize background work or claim a repair.
+  Recovery now requires a separately governed plan; complete automated repair
+  remains an open acceptance gate, not a removed product requirement.
+- Bind L17 results to their actual request and scope L7/L17 learned examples,
+  corrections and recalls to their user. Preserve, but do not inject, older
+  unscoped examples into scoped conversations.
+- Require tool evidence for concrete Docker/container inspection requests.
+  Flag failed execution in reflection, retain actual journal tool outcomes,
+  avoid caching failed/action responses, and mark failed tracked tasks as such.
+- Prefer the configured canonical node ID for federated memory attribution.
+- Add a reproducible static graph check, behavioral regressions and an explicit
+  40-module evidence/limits matrix. Core/Desktop versions are synchronized.
+  See [verification](docs/VERIFICATION_2.78.12.md); this is not an RC or a claim
+  that all 40 modules are functionally or operationally accepted.
+
 ## [2.78.11] — 2026-09-08
 
 - Permit a daemon to replace a stale PID marker that matches its own reused
