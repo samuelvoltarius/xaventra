@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.78.16] — 2026-09-08
+
+- Add an external Docker repair adapter for signed, operator-prepared immutable
+  container identities. Enforce configuration hashes, confinement, exclusive
+  restart ownership, source continuity, real startup and scoped rollback.
+- Separate candidate state from rollback state. A trusted bounded helper checks
+  copied content and modes; missing external-writer quiescence, shared writable
+  storage, links and partially used destination volumes fail closed.
+- Provide separate node-local signing-identity provisioning and an explicit-grant
+  authority service that reads the current Main lease without acquiring one.
+  Production adoption, prepared artifacts and shared-state drain remain explicit
+  prerequisites, not implicit permission to start or replace services.
+- Ground Doctor patch generation in the unchanged reproduction and allow exact
+  source/test reads through the normal Kernel. Live model acceptance exposed the
+  missing source-evidence capability; arbitrary paths remain forbidden.
+- Add continuous native Doctor -> real sandbox -> PATCH_GATE -> signed Docker
+  activation -> original HTTP recovery acceptance, plus actual bad-candidate
+  rollback and isolated state-copy negatives. Scripted and live-model runs are
+  reported separately; this is not arbitrary production repair or full RC proof.
+
 ## [2.78.15] — 2026-09-08
 
 - Generate bounded Doctor source candidates through the existing Kernel and

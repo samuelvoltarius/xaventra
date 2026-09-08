@@ -5,8 +5,33 @@ import { FailureResearchCoordinator } from './failure-research-coordinator.js'
 import { createResearchWorker } from './research-worker.js'
 import { OutcomeLedger, withOutcomeLedger } from '../core/outcome-ledger.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
+import type { TaskContract } from '../core/task-contract.js'
 
 describe('Doctor investigation through the actual native execution pipeline', () => {
+    it('cannot read a file outside the exact candidate profile through the native tool executor', async () => {
+        const registry = getToolRegistry(), original = registry.get('read_file')!
+        const handler = vi.fn(async () => ({ success: true, output: 'must never be read' }))
+        registry.register({ ...original, handler })
+        const contract: TaskContract = {
+            id: 'doctor-candidate-outside-path', version: 1, goal: 'Read the approved candidate source', createdAt: new Date().toISOString(),
+            expectedArtifacts: [], requiredTests: [],
+            successCriteria: [{ id: 'evidence', kind: 'verified_tool', required: true, description: 'Approved source only' }],
+            allowedChanges: { readOnly: true, allowedPaths: [join(process.cwd(), 'src/approved.ts')], allowedTools: ['read_file'], externalSideEffects: false },
+            budget: { timeoutMs: 15_000, maxToolCalls: 1, maxTokens: 500 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
+        }
+        let turns = 0
+        const llm = { modelId: 'scripted-fixture', complete: async () => ++turns === 1
+            ? { content: '', toolCalls: [{ name: 'read_file', arguments: { path: join(process.cwd(), 'src/unapproved.ts') } }] }
+            : { content: '{"blocked":"read refused"}' } }
+        try {
+            await withOutcomeLedger(new OutcomeLedger(join(process.cwd(), '.nova-data', 'candidate-path-ledger')), async () => {
+                const worker = createResearchWorker(() => true, llm)
+                await worker.execute({ contract, content: contract.goal, caseId: 'path-check', signal: new AbortController().signal, purpose: 'candidate' })
+                expect(handler).not.toHaveBeenCalled()
+                expect(worker.getRun(contract.id)?.validation?.success).not.toBe(true)
+            })
+        } finally { registry.register(original) }
+    }, 30_000)
     it.each(['memory-scope', 'authority-loss'])(
         'rejects %s at the real pre-tool boundary', async scenario => {
             const coordinator = new FailureResearchCoordinator(join(process.cwd(), '.nova-data', `${scenario}.json`))

@@ -6,6 +6,26 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.16 Docker repair and continuous acceptance
+
+[Deployment, evidence and remaining gates](DOCKER_REPAIR.md) cover the external
+Docker driver, independent grant/lease authority, isolated state clone and
+the continuous Doctor-to-recovery test. A preliminary actual local-model run
+passed 6/6 on an isolated Linux host; it was a dirty source run and must not be
+relabeled final-source or production evidence. Real state-copy checks passed
+4/4 separately, with fixture quiescence rather than production Mesh fencing.
+
+Ten exact-candidate CI jobs are now required before main promotion. Keep all
+previous failed model, Docker provisioning and artifact-upload reports. The
+2.78.15 redundant main CI failed Windows artifact finalization with HTTP 403,
+not the runtime tests; its previously green candidate run remains recorded.
+
+Open production gates: administrative installation outside candidate mounts;
+prepared signed artifacts/source-mirror advancement; deployment-specific writer
+drain and current fencing; adoption of existing containers/volumes; actual
+production predicate and receipts. No generic state/schema/API rollback, old
+DSM cgroup compatibility, fleet rollout or RC completion is implied.
+
 ### 2.78.15 Doctor candidate / independent activation checkpoint
 
 The legacy approved host mutation transaction is removed. Profile-bound Doctor

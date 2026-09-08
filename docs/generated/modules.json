@@ -2178,6 +2178,21 @@
       ]
     },
     {
+      "module": "src/doctor/docker-repair-driver.ts",
+      "imports": [
+        "./repair-activation.js",
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/doctor/docker-repair-state.ts",
+      "imports": [
+        "./docker-repair-driver.js",
+        "./repair-activation.js",
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/doctor/failure-research-coordinator.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -2240,6 +2255,13 @@
       ]
     },
     {
+      "module": "src/doctor/repair-authority-server.ts",
+      "imports": [
+        "./repair-activation.js",
+        "node:http"
+      ]
+    },
+    {
       "module": "src/doctor/repair-candidate.ts",
       "imports": [
         "../core/task-contract.js",
@@ -2276,7 +2298,12 @@
         "../agents/nova-runner.js",
         "../core/lifecycle-policy.js",
         "../core/outcome-ledger.js",
-        "./failure-research-coordinator.js"
+        "../security/secret-redaction.js",
+        "../synthesis/patch-sandbox.js",
+        "../synthesis/self-evolution.js",
+        "./failure-research-coordinator.js",
+        "node:fs",
+        "node:path"
       ]
     },
     {

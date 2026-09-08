@@ -28,12 +28,17 @@ jobs:
       - name: Full Doctor to Docker recovery (scripted model, real tools and containers)
         run: node scripts/check-docker-repair.mjs
         timeout-minutes: 8
+      - name: Real isolated state snapshot, original preservation and negative controls
+        run: node scripts/check-docker-repair-state.mjs
+        timeout-minutes: 5
       - name: Preserve end-to-end evidence including failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: docker-repair-qa-linux
-          path: .nova-data/docker-repair-qa/report.json
+          path: |
+            .nova-data/docker-repair-qa/**/report.json
+            .nova-data/docker-repair-state-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
   managed-repair:

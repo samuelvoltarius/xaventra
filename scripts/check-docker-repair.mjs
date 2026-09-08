@@ -11,7 +11,7 @@ import { generateKeyPairSync, createHash, randomUUID, randomInt } from 'node:cry
 
 const source=resolve(import.meta.dirname,'..'), load=file=>import(pathToFileURL(join(source,'dist',file)).href)
 const root=mkdtempSync(join(tmpdir(),'xaventra-docker-repair-')), project=join(root,'source')
-const reportDir=resolve(process.env.XAVENTRA_DOCKER_REPAIR_QA_DIR||join(source,'.nova-data/docker-repair-qa'))
+const reportDir=resolve(process.env.XAVENTRA_DOCKER_REPAIR_QA_DIR||join(source,'.nova-data/docker-repair-qa',root.split(/[\\/]/).at(-1)))
 mkdirSync(reportDir,{recursive:true});mkdirSync(join(project,'src'),{recursive:true});mkdirSync(join(root,'.nova-data/self-doctor'),{recursive:true})
 const report={sourceRevision:execFileSync('git',['rev-parse','HEAD'],{cwd:source,encoding:'utf8'}).trim(),
   sourceDirty:Boolean(execFileSync('git',['status','--porcelain'],{cwd:source,encoding:'utf8'}).trim()),
@@ -46,11 +46,22 @@ const approval=keys(),receipt=keys(),publisher=keys()
 const socket=createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r))
 let controller
 const build=content=>{
+  // Dockerfile FROM cannot use a local image-config digest directly. A unique
+  // temporary local alias is checked before/after; layer ancestry is checked too.
+  const alias=`xaventra-qa-base:${randomUUID()}`
+  const info=id=>JSON.parse(execFileSync('docker',['image','inspect',id],{encoding:'utf8'}))[0]
+  const base=info(image);assert.equal(base.Id,image)
+  execFileSync('docker',['tag',image,alias]);assert.equal(info(alias).Id,image)
   const context=mkdtempSync(join(root,'image-'));writeFileSync(join(context,'value.mjs'),content)
   writeFileSync(join(context,'server.mjs'),"import http from 'node:http';import {value} from './value.mjs';http.createServer((req,res)=>res.end(req.url==='/ready'?'ready':String(value))).listen(8080,'0.0.0.0')")
-  writeFileSync(join(context,'Dockerfile'),`FROM ${image}\nWORKDIR /app\nCOPY value.mjs server.mjs ./\nUSER 1000:1000\nENTRYPOINT ["/usr/local/bin/node","/app/server.mjs"]\n`)
-  const idfile=join(context,'iid');execFileSync('docker',['build','--network=none','--iidfile',idfile,context],{timeout:120_000,stdio:'pipe'})
-  const id=readFileSync(idfile,'utf8').trim();images.push(id);return id
+  writeFileSync(join(context,'Dockerfile'),`FROM ${alias}\nWORKDIR /app\nCOPY value.mjs server.mjs ./\nUSER 1000:1000\nENTRYPOINT ["/usr/local/bin/node","/app/server.mjs"]\n`)
+  {
+    const idfile=join(context,'iid');execFileSync('docker',['build','--pull=false','--network=none','--iidfile',idfile,context],{timeout:120_000,stdio:'pipe'})
+    const id=readFileSync(idfile,'utf8').trim();assert.equal(info(alias).Id,image)
+    assert.deepEqual(info(id).RootFS.Layers.slice(0,base.RootFS.Layers.length),base.RootFS.Layers)
+    images.push(id);return id
+  } // Retain the alias with evidence: removing its last tag can delete the
+    // dependency image still needed by the subsequent sandbox phases.
 }
 const create=async(imageId)=>{
   const result=await engine.call('POST',`/containers/create?name=xaventra-repair-qa-${randomUUID()}`,{
@@ -60,7 +71,10 @@ const create=async(imageId)=>{
     HostConfig:{ReadonlyRootfs:true,CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],Memory:256*1024*1024,NanoCpus:1_000_000_000,PidsLimit:32,
       NetworkMode:'bridge',RestartPolicy:{Name:'no'},LogConfig:{Type:'json-file',Config:{'max-size':'1m','max-file':'1'}},
       PortBindings:{'8080/tcp':[{HostIp:'127.0.0.1',HostPort:String(port)}]}}})
-  created.push(result.Id);return engine.call('GET',`/containers/${result.Id}/json`)
+  created.push(result.Id)
+  const inspected=await engine.call('GET',`/containers/${result.Id}/json`)
+  writeFileSync(join(root,`${result.Id}-created.json`),JSON.stringify(inspected,null,2))
+  return inspected
 }
 try{
   const old=await create(build(original));await engine.call('POST',`/containers/${old.Id}/start`)
@@ -68,18 +82,19 @@ try{
   for(let i=0;i<100;i++){try{if(await(await fetch(endpoint)).text()==='1')break}catch{}await new Promise(r=>setTimeout(r,100))}
   assert.equal(await(await fetch(endpoint)).text(),'1')
   const {getToolRegistry}=await load('tools/complete-registry.js'),registry=getToolRegistry(),health=registry.get('health_status')
-  registry.register({...health,handler:async()=>({success:true,output:JSON.stringify({observed:Number(await(await fetch(endpoint)).text()),expected:desired,operation:'GET /answer',scope:'disposable acceptance fixture'})})})
+  registry.register({...health,description:'Read-only diagnostic of the isolated HTTP answer service: fetches its actual response and reports the required value from its immutable acceptance contract. Does not return RAM/disk metrics or mutate anything.',
+    handler:async()=>({success:true,output:JSON.stringify({observed:Number(await(await fetch(endpoint)).text()),expected:desired,operation:'GET /answer',contractSource:'immutable acceptance test',scope:'disposable acceptance fixture'})})})
   const {getLifecyclePolicy}=await load('core/lifecycle-policy.js')
-  getLifecyclePolicy().register({id:'repair-qa-diagnostics-only',event:'tool.before',priority:-2000,handler:p=>p.toolName==='health_status'?undefined:{decision:'deny',reason:'Fixture allows only observed HTTP diagnostic'}})
+  getLifecyclePolicy().register({id:'repair-qa-diagnostics-only',event:'tool.before',priority:-2000,handler:p=>['health_status','read_file'].includes(p.toolName)?undefined:{decision:'deny',reason:'Fixture allows only observed HTTP and profile-bound source diagnostics'}})
   let turns=0
-  const scripted={modelId:'scripted-fixture',complete:async()=>++turns%2?{content:'',toolCalls:[{name:'health_status',arguments:{}}]}:
+  const scripted={modelId:'scripted-fixture',complete:async()=>++turns%2?{content:'',toolCalls:[{name:'health_status',arguments:{}},...(turns===3?[{name:'read_file',arguments:{path:join(project,'src/value.ts')}},{name:'read_file',arguments:{path:join(project,'src/original.test.ts')}}]:[])]}:
     {content:turns===2?`GET /answer returns 1 but independently required value is ${desired}. Repair the source constant, then repeat the same request.`:
       JSON.stringify({description:'Correct the observed answer',search:original,replace:`export const value = ${desired};`,reason:'Match observed operation contract'})}}
   const llm=process.env.XAVENTRA_RESEARCH_QA_URL?await(await load('llm/nova-llm-sdk.js')).createNovaLLMClient({provider:'local',model:process.env.XAVENTRA_RESEARCH_QA_MODEL||'qwen',baseUrl:process.env.XAVENTRA_RESEARCH_QA_URL,isolated:true}):scripted
   const {FailureResearchCoordinator}=await load('doctor/failure-research-coordinator.js'),{createResearchWorker}=await load('doctor/research-worker.js')
   const coordinator=new FailureResearchCoordinator(join(root,'.nova-data/research.json'))
   coordinator.ingest({id:'answer-fault',title:'HTTP answer violates required value',detail:'Inspect health_status: actual HTTP result differs from expected operation contract. Find and test a source correction.',category:'health',severity:'critical',source:'disposable-fixture',recommendation:'Use current HTTP evidence',evidence:{},status:'open',createdAt:'',updatedAt:''})
-  const worker=createResearchWorker(()=>true,llm,['health_status'])
+  const worker=createResearchWorker(()=>true,llm,['health_status','read_file'])
   const finding=await coordinator.investigateNext(worker);assert.equal(finding?.investigation?.status,'verified')
   report.cases.push({id:'native-investigation-real-http',passed:true,runId:finding.investigation.runId})
   writeFileSync(join(root,'.nova-data/self-doctor/repair-profiles.json'),JSON.stringify([{id:'answer-source',findingId:'answer-fault',file:'src/value.ts',reproductionTest:'src/original.test.ts',probeId:'answer',targetId:'fixture'}]))
@@ -117,12 +132,27 @@ try{
   assert.equal((await approveEvolutionProposal(proposal.id,process.env.NOVA_PATCH_GATE_TOKEN)).success,false)
   assert.equal(readFileSync(join(project,'src/value.ts'),'utf8'),original)
   report.cases.push({id:'no-double-activation-source-unchanged',passed:true})
+  await new Promise(r=>controller.close(r));controller=undefined
+  const bad=await create(build('export const value = 0;'))
+  const badBinding={...binding,proposalId:'negative-control',patchHash:repairHash('negative-control'),baselineHash:binding.candidateHash,candidateHash:repairHash('intentionally-bad-candidate')}
+  const badRelease=entry('bad',bad,badBinding.candidateHash);badRelease.release.previousReleaseId='next';badRelease.release.binding=badBinding
+  const rollbackDriver=new DockerRepairDriver({targetId:'fixture',initialReleaseId:'next',releases:{next:deployment.releases.next,bad:badRelease},catalog:{[badBinding.candidateHash]:'bad'},
+    hasAuthority:async()=>true,loadState:()=>undefined,saveState:value=>writeFileSync(join(root,'negative-controller-state.json'),JSON.stringify(value))},engine)
+  const {RepairActivationController}=await load('doctor/repair-activation.js')
+  const negativeProbe=createHttpRepairProbe([{id:'answer',targetId:'fixture',url:endpoint,expectedStatus:200,expectedBodySha256:createHash('sha256').update(String(desired+1)).digest('hex')}],rollbackDriver)
+  const negative=new RepairActivationController(join(root,'negative-controller'),approval.public,rollbackDriver,negativeProbe)
+  const rolledBack=await negative.activate(signRepairValue({...badBinding,attemptId:`repair-${randomUUID()}`,expiresAt:Date.now()+60_000},approval.private))
+  assert.equal(rolledBack.status,'rolled-back',JSON.stringify(rolledBack))
+  assert.equal(rolledBack.before.fingerprint,rolledBack.restoration.fingerprint)
+  assert.equal(await(await fetch(endpoint)).text(),String(desired))
+  assert.equal((await engine.call('GET',`/containers/${bad.Id}/json`)).State.Running,false)
+  report.cases.push({id:'bad-candidate-actual-docker-rollback-original-operation-restored',passed:true})
 }catch(error){report.cases.push({id:'end-to-end-failure',passed:false,error:String(error)});process.exitCode=1}
 finally{
   if(controller)await new Promise(r=>controller.close(r))
   // Only IDs returned by this fixture are eligible for removal, never labels or
   // name patterns that could select an unrelated runtime. No volume removal.
-  for(const id of created)try{await engine.call('DELETE',`/containers/${id}?force=true`)}catch(error){report.cases.push({id:'fixture-cleanup',passed:false,error:String(error)});process.exitCode=1}
+  for(const id of created)try{writeFileSync(join(root,`${id}-final.json`),JSON.stringify(await engine.call('GET',`/containers/${id}/json`),null,2));await engine.call('DELETE',`/containers/${id}?force=true`)}catch(error){report.cases.push({id:'fixture-cleanup',passed:false,error:String(error)});process.exitCode=1}
   report.completedAt=new Date().toISOString();report.fixtureRoot=root
   writeFileSync(join(reportDir,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2))
 }

@@ -21,9 +21,9 @@ const releasePublicKey=readProtected(config.releasePublicKeyFile)
 const authorityPublicKey=readProtected(config.authorityPublicKeyFile)
 const hasAuthority=async ticket=>{
   const challenge=randomUUID()
-  const decision=await repairRpc(config.authorityUrl,{challenge,targetId:ticket.targetId,patchHash:ticket.patchHash},authorityPublicKey)
+  const decision=await repairRpc(config.authorityUrl,{challenge,ticket},authorityPublicKey)
   return decision.allowed===true&&decision.challenge===challenge&&decision.targetId===ticket.targetId&&decision.patchHash===ticket.patchHash
-    &&decision.expiresAt>Date.now()&&decision.expiresAt<Date.now()+60_000
+    &&decision.bindingHash===repairHash(ticket)&&decision.expiresAt>Date.now()&&decision.expiresAt<Date.now()+60_000
 }
 let driver
 if(config.driver==='docker'){

@@ -29,6 +29,9 @@ describe('Doctor patch generation / scripted Kernel receipts and sandbox boundar
         const f = await fixture(); await proposeDoctorRepair(f.coordinator, f.worker)
         expect(boundary.evolve).toHaveBeenCalledWith(expect.objectContaining({ file: 'src/value.ts', reproductionTest: 'src/value.test.ts', repairProfileId: 'value', search: '= 1', replace: '= 2' }))
         expect(boundary.evolve.mock.calls[0][0]).not.toHaveProperty('apply')
+        const candidateInput = vi.mocked(f.worker.execute).mock.calls.find(([input]) => input.purpose === 'candidate')![0]
+        expect(candidateInput.content).toContain('immutableReproduction')
+        expect(candidateInput.content).toContain('oracle unchanged')
         expect(f.coordinator.list()[0]).toMatchObject({ stage: 'awaiting-patch-gate', repair: { status: 'queued' }, findingOpen: true })
         await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).toHaveBeenCalledOnce()
     })
@@ -56,5 +59,16 @@ describe('Doctor patch generation / scripted Kernel receipts and sandbox boundar
     it('requires a registered operator profile', async () => {
         const f = await fixture(); boundary.profiles.mockReturnValue([])
         await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).not.toHaveBeenCalled()
+    })
+    it('refuses a reproduction changed while the model was generating', async () => {
+        const f = await fixture(), execute = f.worker.execute
+        f.worker.execute = async input => {
+            const result = await execute(input)
+            if (input.purpose === 'candidate') writeFileSync(join(process.cwd(), 'src/value.test.ts'), 'changed oracle')
+            return result
+        }
+        await proposeDoctorRepair(f.coordinator, f.worker)
+        expect(boundary.evolve).not.toHaveBeenCalled()
+        expect(f.coordinator.list()[0].repair?.reason).toContain('reproduction changed')
     })
 })

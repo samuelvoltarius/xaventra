@@ -9,7 +9,7 @@ export interface DockerRepairEngine { call(method: string, path: string, body?: 
 export function localDockerRepairEngine(socketPath = '/var/run/docker.sock'): DockerRepairEngine {
     if (!socketPath.startsWith('/') || socketPath.includes('\0')) throw new Error('Absolute operator Docker socket required')
     return { call: (method, path, body) => new Promise((resolve, reject) => {
-        const req = request({ socketPath, path: `/v1.41${path}`, method, headers: { 'content-type': 'application/json' } }, res => {
+        const req = request({ socketPath, path: `/v1.45${path}`, method, headers: { 'content-type': 'application/json' } }, res => {
             const chunks: Buffer[] = []; let size = 0
             res.on('data', chunk => { size += chunk.length; if (size > 2 * 1024 * 1024) req.destroy(new Error('Docker response exceeds budget')); else chunks.push(chunk) })
             res.on('end', () => {
@@ -41,7 +41,10 @@ const idPattern = /^[a-f0-9]{64}$/
 const imagePattern = /^sha256:[a-f0-9]{64}$/
 /** Hash only immutable inspect fields. State/health/IP change legitimately. */
 export function dockerRepairConfigHash(info: any): string {
-    return repairHash({ Id: info.Id, Image: info.Image, Config: info.Config, HostConfig: info.HostConfig,
+    // Engine 29 changes unsupported cgroup-v2 OomKillDisable false to null on
+    // first start. Both mean "not disabled"; true remains distinct and denied.
+    return repairHash({ Id: info.Id, Image: info.Image, Config: info.Config,
+        HostConfig: { ...info.HostConfig, OomKillDisable: info.HostConfig?.OomKillDisable === true },
         Mounts: info.Mounts, networks: Object.keys(info.NetworkSettings?.Networks || {}).sort() })
 }
 /** Activation adapter for operator-prepared immutable containers. Retains the
@@ -65,7 +68,7 @@ export class DockerRepairDriver implements RepairDeploymentDriver {
         const info = await this.engine.call('GET', `/containers/${registered.containerId}/json`)
         const host = info.HostConfig
         if (info.Id !== registered.containerId || info.Image !== registered.release.imageId || dockerRepairConfigHash(info) !== registered.configHash) throw new Error('Docker identity or immutable configuration changed')
-        if (!host || host.Privileged || host.ReadonlyRootfs !== true || host.AutoRemove || host.RestartPolicy?.Name !== 'no'
+        if (!host || host.Privileged || host.OomKillDisable === true || host.ReadonlyRootfs !== true || host.AutoRemove || host.RestartPolicy?.Name !== 'no'
             || !/^[1-9][0-9]*(?::[1-9][0-9]*)?$/.test(info.Config?.User || '')
             || !host.CapDrop?.includes('ALL') || host.CapAdd?.length || !host.SecurityOpt?.some((s: string) => /^no-new-privileges(?::true)?$/.test(s))
             || host.SecurityOpt.some((s: string) => !/^no-new-privileges(?::true)?$/.test(s))
@@ -119,6 +122,7 @@ export class DockerRepairDriver implements RepairDeploymentDriver {
         }
         // Re-read the full immutable configuration immediately before start.
         await this.inspect(next)
+        if (!await this.hasAuthority(ticket)) throw new Error('Docker authority lost before candidate start')
         await this.engine.call('POST', `/containers/${candidate.Id}/start`)
         const deadline = Date.now() + 30_000
         while (Date.now() < deadline) {

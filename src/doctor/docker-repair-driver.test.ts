@@ -5,7 +5,7 @@ import { repairHash, type RepairTicket } from './repair-activation.js'
 function fixture(mutate?: (info: any, next: any) => void) {
     const binding = { proposalId: 'patch-one', patchHash: 'a'.repeat(64), baselineHash: 'b'.repeat(64), candidateHash: 'c'.repeat(64), probeId: 'answer', targetId: 'qa' }
     const ticket: RepairTicket = { ...binding, attemptId: 'repair-00000000-0000-0000-0000-000000000000', expiresAt: Date.now() + 60_000 }
-    const inspect = (id: string, running: boolean) => ({ Id: id.repeat(64), Image: `sha256:${id.repeat(64)}`,
+    const inspect = (id: string, running: boolean): any => ({ Id: id.repeat(64), Image: `sha256:${id.repeat(64)}`,
         Config: { User: '1000:1000', Healthcheck: { Test: ['CMD', 'node', 'health.js'] } },
         HostConfig: { ReadonlyRootfs: true, RestartPolicy: { Name: 'no' }, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], Memory: 1_000_000, NanoCpus: 1_000_000_000, PidsLimit: 32,
             LogConfig: { Config: { 'max-size': '1m' } } }, Mounts: [], State: { Running: running, Health: { Status: 'healthy' } } })
@@ -80,5 +80,25 @@ describe('Docker repair exact identity, confinement and rollback boundary', () =
         const f = fixture((old, next) => { old.Mounts = next.Mounts = [{ Type: 'volume', Name: 'shared', Source: '/shared', RW: true }] })
         const driver = new DockerRepairDriver({ ...f.options, stateReady: async () => true }, f.engine)
         await expect(driver.prepare(f.ticket)).rejects.toThrow('share writable')
+    })
+    it('normalizes the observed Engine false/null cgroup field but never true', async () => {
+        const f = fixture((old, next) => { old.HostConfig.OomKillDisable = false; next.HostConfig.OomKillDisable = false })
+        f.old.HostConfig.OomKillDisable = null
+        const p = await f.driver.prepare(f.ticket)
+        f.next.HostConfig.OomKillDisable = true
+        await expect(f.driver.activate(p, f.ticket)).rejects.toThrow('configuration changed')
+        expect(f.calls.some(c => c.startsWith('POST'))).toBe(false)
+    })
+    it('rechecks authority after a state copy before starting the candidate', async () => {
+        const f = fixture((old, next) => {
+            old.Mounts = [{ Type: 'volume', Name: 'old-data', Source: '/old-data', RW: true }]
+            next.Mounts = [{ Type: 'volume', Name: 'new-data', Source: '/new-data', RW: true }]
+        })
+        const driver = new DockerRepairDriver({ ...f.options, stateReady: async () => { f.loseAuthority(); return true } }, f.engine)
+        const p = await driver.prepare(f.ticket)
+        await expect(driver.activate(p, f.ticket)).rejects.toThrow('authority lost before candidate start')
+        expect(f.calls.some(c => c.endsWith('/start'))).toBe(false)
+        expect(f.old.State.Running).toBe(false)
+        expect(f.next.State.Running).toBe(false)
     })
 })

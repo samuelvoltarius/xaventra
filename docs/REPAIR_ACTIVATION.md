@@ -1,5 +1,9 @@
 # Doctor candidates and controlled activation
 
+For the 2.78.16 Docker adapter, separate authority service, state snapshot gate
+and continuous acceptance, see [Docker repair](DOCKER_REPAIR.md). Existing
+container deployments are not implicitly migrated or enabled by installation.
+
 The 2.78.15 workflow is:
 
 verified Doctor observation -> bounded model candidate -> exact isolated sandbox
@@ -64,7 +68,8 @@ restart/rollback retain a blocked/pending state, not a success report.
    `authorityPublicKeyFile`, `authorityUrl` and `probes`. Never commit this config.
 
    `authorityUrl` is an operator-configured HTTPS or loopback service signing
-   `{challenge,targetId,patchHash,allowed,expiresAt}` with a short expiry. It must
+   `{challenge,targetId,patchHash,bindingHash,allowed,expiresAt}` with a short expiry.
+   `bindingHash` must match the complete ticket sent with the challenge. It must
    validate the deployment's current authority/fence; there is no default
    allow-all or inferred Main. The adapter does not implement distributed quorum.
 

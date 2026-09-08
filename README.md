@@ -269,7 +269,11 @@ regression, rollback and restoration checks. Version 2.78.15 connects scoped
 Doctor source candidates and [signed external activation with independent live
 predicates](docs/REPAIR_ACTIVATION.md). This needs operator profiles, a prepared
 signed release, matching source mirror and a separately provisioned controller;
-it is not generic autonomous production repair or fleet acceptance. See
+2.78.16 adds an [exact-ID Docker adapter, isolated state copy and separate
+lease/grant authority](docs/DOCKER_REPAIR.md), with a continuous disposable
+Doctor-to-Docker recovery test. Stateful production still requires real writer
+fencing and deployment adoption; a copied volume alone is not that proof.
+It is not generic autonomous production repair or fleet acceptance. See
 [implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
 
 ## Security model
