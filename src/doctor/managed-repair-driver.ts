@@ -45,7 +45,7 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         let cursor = absolute
         while (true) {
             const stat = lstatSync(cursor)
-            if (stat.uid !== 0 || (stat.mode & 0o022) !== 0) throw new Error('Controller/release paths must be root-owned and not writable by runtime')
+            if (stat.uid !== 0 || (stat.mode & 0o022) !== 0) throw new Error(`Controller/release paths must be root-owned and not writable by runtime: ${cursor} (uid=${stat.uid}, mode=${(stat.mode & 0o777).toString(8)})`)
             const parent = dirname(cursor); if (parent === cursor) break; cursor = parent
         }
     }

@@ -4,8 +4,8 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomUUID, createHash } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chownSync, chmodSync, copyFileSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chownSync, chmodSync, copyFileSync, lstatSync } from 'node:fs'
+import { resolve, join, dirname } from 'node:path'
 import { ManagedRepairDriver } from '../dist/doctor/managed-repair-driver.js'
 import { RepairActivationController, repairHash, signRepairValue } from '../dist/doctor/repair-activation.js'
 import { createHttpRepairProbe } from '../dist/doctor/repair-controller-server.js'
@@ -13,7 +13,10 @@ import { stopLocalDaemon } from '../dist/process/daemon-control.js'
 
 if(process.platform!=='linux'||process.getuid()!==0)throw new Error('Run only in disposable Linux CI as root')
 process.umask(0o022)
-const source=resolve(import.meta.dirname,'..'),root=mkdtempSync('/srv/xaventra-repair-qa-')
+function protectedBase(base){try{let path=base;while(true){const s=lstatSync(path);if(s.uid!==0||(s.mode&0o022)||(s.mode&0o001)!==1)return false;const parent=dirname(path);if(path===parent)return true;path=parent}}catch{return false}}
+const base=['/srv','/var/lib','/usr/local/share','/usr/local/lib'].find(protectedBase)
+if(!base)throw new Error('Disposable CI host has no protected root-owned fixture base')
+const source=resolve(import.meta.dirname,'..'),root=mkdtempSync(join(base,'xaventra-repair-qa-'))
 chmodSync(root,0o755) // Public source paths must be traversable by the separate runtime UID.
 const nodeExecutable=join(root,'node');copyFileSync(process.execPath,nodeExecutable);chmodSync(nodeExecutable,0o755)
 const stateRoot=join(root,'state'),runtimeRoot=join(root,'runtime'),releasesRoot=join(root,'releases')

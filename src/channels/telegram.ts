@@ -790,7 +790,9 @@ export class TelegramAdapter implements ChannelAdapter {
                                 if (idx >= 0 && proposal.kind === 'doctor-config' && result.success) { all[idx].status = 'applied'; all[idx].appliedAt = Date.now() }
                                 writeFileSync(pPath, JSON.stringify(all, null, 2))
                             } catch { /* non-critical */ }
-                            const msg = result.success
+                            const msg = 'activationPending' in result && result.activationPending
+                                ? '⏳ Aktivierung noch nicht abschließend verifiziert. Kein erneuter Deploy; /patch status zeigt den signierten Stand.'
+                                : result.success
                                 ? (proposal.kind === 'doctor-config' ? 'Config-Patch angewendet; Neustart und Live-Nachprüfung stehen aus.' : '✅ Patch aktiviert; ursprünglicher Fehler unabhängig live nachgeprüft.')
                                 : `❌ *Patch fehlgeschlagen*\n${result.error || 'Unbekannter Fehler'}${result.rollbackPerformed ? '\n↩️ Rollback durchgeführt.' : ''}`
                             await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' })
