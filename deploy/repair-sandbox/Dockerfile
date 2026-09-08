@@ -1,6 +1,10 @@
 # Build from reviewed manifests in a dedicated secret-free context.
 # Pin the base digest in the operator's image build/release process.
 FROM node:22-bookworm-slim
+# Publisher regressions create isolated Git source mirrors. Install the actual
+# client in the trusted dependency image; tests are not skipped in confinement.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/sandbox
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund && npm cache clean --force
