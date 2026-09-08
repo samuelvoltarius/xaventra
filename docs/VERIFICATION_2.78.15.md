@@ -42,6 +42,12 @@ no application or config mutation. Use `XAVENTRA_RESEARCH_QA_PATCH=1` alongside
 the existing opt-in research QA endpoint to reproduce this separate model check.
 Neither this model check nor scripted receipts is a full autonomous repair run.
 
+Initial Linux managed acceptance rejected the CI fixture's writable/non-root
+ancestor path before starting an application. Those CI failures remain retained.
+The fixture now provisions a root-owned `/srv` tree and a protected copy of Node,
+with traversable read-only source directories for the unprivileged runtime.
+Production permission checks are unchanged; the executable is checked too.
+
 Use [the operator and recovery guide](REPAIR_ACTIVATION.md). Missing deployment
 identity, authority service, prepared signed artifacts, profiles or source-mirror
 advancement are explicit prerequisites, not grounds to enable a permissive path.

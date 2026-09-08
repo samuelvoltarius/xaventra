@@ -16,6 +16,7 @@ export interface ManagedRepairOptions {
     targetId: string; releasesRoot: string; runtimeRoot: string; stateFile: string
     releasePublicKey: string; initialReleaseId: string
     runtimeUid: number; runtimeGid: number; runtimeEnv: Record<string, string>
+    nodeExecutable?: string
     hasAuthority(ticket: RepairTicket): Promise<boolean>
 }
 
@@ -34,6 +35,7 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         this.current = existsSync(options.stateFile) ? JSON.parse(readFileSync(options.stateFile, 'utf8')).releaseId : options.initialReleaseId
         this.protect(dirname(options.stateFile))
         this.protect(options.releasesRoot)
+        this.protect(options.nodeExecutable || process.execPath)
         if (Object.keys(options.runtimeEnv).some(k => /RECEIPT_PRIVATE_KEY|RELEASE_PRIVATE_KEY|AUTHORITY_PRIVATE_KEY|NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH/.test(k))) throw new Error('Controller signing credentials/loaders cannot enter candidate environment')
     }
     hasAuthority(ticket: RepairTicket): Promise<boolean> { return this.options.hasAuthority(ticket) }
@@ -114,7 +116,7 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         // old-runtime shutdown has a well-defined CAS rollback target.
         this.current = next
         atomicWriteJsonSync(this.options.stateFile, { releaseId: next, phase: 'starting', attemptId: ticket.attemptId })
-        const child = spawn(process.execPath, [join(this.options.releasesRoot, next, 'dist', 'daemon.js')], {
+        const child = spawn(this.options.nodeExecutable || process.execPath, [join(this.options.releasesRoot, next, 'dist', 'daemon.js')], {
             cwd: this.options.runtimeRoot, uid: this.options.runtimeUid, gid: this.options.runtimeGid,
             env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: this.options.runtimeRoot, ...this.options.runtimeEnv },
             stdio: ['ignore', 'ignore', 'ignore'], shell: false,

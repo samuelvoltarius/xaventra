@@ -57,6 +57,7 @@ restart/rollback retain a blocked/pending state, not a success report.
    Start explicitly with `node scripts/repair-controller.mjs /protected/controller.json`.
    Configuration contains `targetId`, `releasesRoot`, `runtimeRoot`, `stateFile`,
    `stateRoot`, `initialReleaseId`, `runtimeUid`, `runtimeGid`, `runtimeEnv`, `port`,
+   optional root-owned `nodeExecutable`,
    `approvalPublicKeyFile`, `receiptPrivateKeyFile`, `releasePublicKeyFile`,
    `authorityPublicKeyFile`, `authorityUrl` and `probes`. Never commit this config.
 

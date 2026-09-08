@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomUUID, createHash } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chownSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chownSync, chmodSync, copyFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { ManagedRepairDriver } from '../dist/doctor/managed-repair-driver.js'
 import { RepairActivationController, repairHash, signRepairValue } from '../dist/doctor/repair-activation.js'
@@ -12,7 +12,10 @@ import { createHttpRepairProbe } from '../dist/doctor/repair-controller-server.j
 import { stopLocalDaemon } from '../dist/process/daemon-control.js'
 
 if(process.platform!=='linux'||process.getuid()!==0)throw new Error('Run only in disposable Linux CI as root')
-const source=resolve(import.meta.dirname,'..'),root=mkdtempSync('/opt/xaventra-repair-qa-')
+process.umask(0o022)
+const source=resolve(import.meta.dirname,'..'),root=mkdtempSync('/srv/xaventra-repair-qa-')
+chmodSync(root,0o755) // Public source paths must be traversable by the separate runtime UID.
+const nodeExecutable=join(root,'node');copyFileSync(process.execPath,nodeExecutable);chmodSync(nodeExecutable,0o755)
 const stateRoot=join(root,'state'),runtimeRoot=join(root,'runtime'),releasesRoot=join(root,'releases')
 for(const path of [stateRoot,runtimeRoot,releasesRoot])mkdirSync(path)
 chownSync(runtimeRoot,65534,65534)
@@ -39,11 +42,11 @@ writeFileSync(join(releasesRoot,'catalog.json'),JSON.stringify({[binding.candida
 const listener=createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));const port=listener.address().port;await new Promise(resolve=>listener.close(resolve))
 const env={PORT:String(port),HOST_CANARY:marker,HOME:runtimeRoot}
 let initial
-async function startOld(){initial=spawn(process.execPath,[join(releasesRoot,'old/dist/daemon.js')],{cwd:runtimeRoot,env,uid:65534,gid:65534,stdio:'ignore'});await new Promise((resolve,reject)=>{initial.once('spawn',resolve);initial.once('error',reject)});for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${port}`)).ok)return}catch{};await new Promise(r=>setTimeout(r,50))}throw new Error('Fixture did not become healthy')}
-const driver=new ManagedRepairDriver({targetId:binding.targetId,releasesRoot,runtimeRoot,stateFile:join(stateRoot,'runtime.json'),releasePublicKey:releaseKey.publicKey,initialReleaseId:'old',runtimeUid:65534,runtimeGid:65534,runtimeEnv:env,hasAuthority:async()=>true})
-const controller=new RepairActivationController(join(stateRoot,'attempts'),approval.publicKey,driver,createHttpRepairProbe([{id:'answer',targetId:binding.targetId,url:`http://127.0.0.1:${port}`,expectedStatus:200,expectedBodySha256:hash('42')}],driver))
+async function startOld(){initial=spawn(nodeExecutable,[join(releasesRoot,'old/dist/daemon.js')],{cwd:runtimeRoot,env,uid:65534,gid:65534,stdio:'ignore'});await new Promise((resolve,reject)=>{initial.once('spawn',resolve);initial.once('error',reject)});for(let i=0;i<100;i++){try{if(JSON.parse(readFileSync(join(runtimeRoot,'.nova-data/daemon-control.json'))).pid===initial.pid&&(await fetch(`http://127.0.0.1:${port}`)).ok)return}catch{};await new Promise(r=>setTimeout(r,50))}throw new Error('Fixture did not become healthy')}
 const ticket=()=>({...binding,attemptId:`repair-${randomUUID()}`,expiresAt:Date.now()+120_000})
 try{
+  const driver=new ManagedRepairDriver({targetId:binding.targetId,releasesRoot,runtimeRoot,stateFile:join(stateRoot,'runtime.json'),releasePublicKey:releaseKey.publicKey,initialReleaseId:'old',runtimeUid:65534,runtimeGid:65534,runtimeEnv:env,nodeExecutable,hasAuthority:async()=>true})
+  const controller=new RepairActivationController(join(stateRoot,'attempts'),approval.publicKey,driver,createHttpRepairProbe([{id:'answer',targetId:binding.targetId,url:`http://127.0.0.1:${port}`,expectedStatus:200,expectedBodySha256:hash('42')}],driver))
   await startOld()
   const first=await controller.activate(signRepairValue(ticket(),approval.privateKey))
   assert.equal(first.status,'resolved',JSON.stringify(first));assert.equal(await (await fetch(`http://127.0.0.1:${port}`)).text(),'42')
