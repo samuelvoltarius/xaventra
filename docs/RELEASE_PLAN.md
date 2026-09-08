@@ -22,6 +22,41 @@ full distributed convergence and the remaining Nova persona/UI migration are
 still **open**; not removed or renamed away to obtain an RC. Exact candidate CI
 must pass before updating main. No production deployment is part of this audit.
 
+Runtime candidate `8eed1406835f0f65a3eae4ec77101e3056b0ba6b` passed all seven
+jobs in [CI 34216930914](https://github.com/samuelvoltarius/xaventra/actions/runs/34216930914).
+Exact-SHA clean compiled-layer artifacts: 8/8 on Windows, Linux and macOS.
+The final documentation attestation requires its own green CI before promotion.
+
+### Follow-up: real autonomy and GitHub self-update remain open
+
+- [GitHub self-update contract](GITHUB_SELF_UPDATE_PLAN.md): `/update` currently
+  sees the local installation, not a new trusted upstream release. Discovery,
+  publisher verification and isolated staging must feed the single fenced
+  updater; do not activate the separate in-place pull/rebuild route.
+- GoalManager selects and persists goals, but `next()` currently feeds its
+  prompt projection; the autonomous executor progresses an already-created
+  mission. There is no demonstrated complete ready-goal-to-governed-worker
+  dispatcher for arbitrary persisted goals.
+- The background autonomy loop still turns active mission state into synthetic
+  prompts while the mission executor has its own step timers. Prove one owner,
+  one execution key and one dispatch per action, including timeout/cancellation;
+  a timed-out Promise must not leave an old write running alongside its retry.
+- Persist *why* a goal is blocked (missing input, dependency, policy, permission,
+  budget, unavailable resource). `GoalManager.refreshReadiness` currently can
+  reactivate a blocked goal whenever dependencies complete, including an empty
+  dependency list. A mere read/selection must not undo an explicit blocker.
+- Route safe observation/diagnosis through typed tools automatically within an
+  explicit autonomy policy. For reversible writes require scope, budget and
+  post-validation; higher-risk operations retain approval. Provider discovery
+  should inform a proposal, never itself authorize software installation.
+- Acceptance must show event -> scoped goal -> one claimed action -> Kernel ->
+  independent evidence -> checkpoint -> next action, plus stop, restart,
+  duplicate-event and user-isolation negatives. Background greetings, module
+  imports and stored goal objects are not evidence of that closed loop.
+
+These are source-grounded follow-up findings/design requirements, not features
+implemented or production autonomy enabled by the 2.78.12 bounded layer fix.
+
 ### 2.78.11 predecessor
 
 Startup PID reuse, Telegram starter concurrency and grounded identity/capability

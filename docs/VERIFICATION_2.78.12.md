@@ -2,7 +2,11 @@
 
 Base: `5b1fe9a7f19929d95dbb3b0ec2cf250545bc088d` (2.78.11), whose seven
 jobs passed in [CI 34209431042](https://github.com/samuelvoltarius/xaventra/actions/runs/34209431042).
-The new candidate needs its own exact-commit CI before main promotion.
+Runtime candidate `8eed1406835f0f65a3eae4ec77101e3056b0ba6b` passed all seven
+jobs in [CI 34216930914](https://github.com/samuelvoltarius/xaventra/actions/runs/34216930914).
+Downloaded layer artifacts independently report 8/8 cases on Windows, Linux and
+macOS, each at that exact SHA with `sourceDirty: false`. Any subsequent
+documentation attestation also requires its own green CI before main promotion.
 
 ## Findings and bounded fixes
 
@@ -39,7 +43,7 @@ The new candidate needs its own exact-commit CI before main promotion.
 | Desktop bridge | Passed locally: `npm run test:desktop`, 7/7; not native UI acceptance |
 | Assurance/catalogs | Passed locally: `npm run check:assurance`, `npm run check:catalogs`; dependency audit 0 findings; external comparison still missing |
 | Compiled lifecycle | Passed locally: normal and own-PID-seeded `check-daemon-lifecycle.mjs`; authenticated status, rejection without auth, scoped CLI stop, clean exit and marker removal. Real local daemon process with scripted provider, not distributed failover |
-| Candidate three-OS CI | Pending: source/build/compiled layer reports and packaged Desktop on Windows/Linux/macOS at the exact candidate SHA |
+| Runtime candidate three-OS CI | Passed: all seven jobs at `8eed1406835f0f65a3eae4ec77101e3056b0ba6b`; 8/8 compiled layer cases per OS, Core regression and packaged Desktop. Final documentation revision still requires its own CI |
 | All 40 modules functionally accepted | **Open**, see every module's [evidence and remaining acceptance requirement](LAYER_BEHAVIOR_MATRIX.md) |
 | RC / full Nova rename / production rollout | **Open / not performed**; existing release gates remain |
 
@@ -48,6 +52,12 @@ base SHA, not an exact clean commit. CI writes clean source revision, platform,
 version and case results to `layer-contract-qa-<os>` artifacts, including failed
 runs. Source tests, compiled fixtures, actual process lifecycle and live external
 service behavior are different evidence classes.
+
+Additional local response acceptance passed after the runtime commit: five
+compiled authenticated API contract cases and four actual Desktop API/pipeline
+cases with a scripted loopback provider. Gitleaks found no secrets in the staged
+patch or the 26-commit public history scanned before the candidate push. These
+are bounded checks, not proof no secret or defect can exist anywhere.
 
 ## Security-fix review record
 
