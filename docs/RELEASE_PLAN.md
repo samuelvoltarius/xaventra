@@ -8,15 +8,16 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ### 2.78.18 automatic repair publication candidate
 
-[Publication and recovery contract](REPAIR_PUBLICATION.md). Implementation and
-local regression are in progress; exact-commit CI and actual Docker publication
-acceptance must be recorded before promotion. No production activation or RC.
+[Publication and recovery contract](REPAIR_PUBLICATION.md) and
+[source-specific acceptance](VERIFICATION_2.78.18.md). Actual Linux arm64 automatic
+publication passes 6/6; state cloning 4/4; Windows regression 1,438 tests.
+Exact-commit complete CI remains a promotion gate. No production activation or RC.
 The main CI 34276726942 Windows lifecycle negative is retained: CLI stop and marker
 cleanup succeeded but the parent had not confirmed daemon exit. Acceptance now
 awaits the actual exit event and still requires exit code zero.
 
-- Source/test gate: pending final candidate SHA and complete regression.
-- Docker build/source/writer gate: pending actual isolated acceptance.
+- Source/test gate: local pass; final exact-commit CI pending.
+- Docker build/source/writer gate: bounded pass on `c57ccc1b67016aa41c0e3894281dc2a8f6409cf5`.
 - Full production writer coverage: open (sink adapters, inventory enrollment,
   exclusive restart adoption and shared-state peer replacement).
 - Existing cross-platform/native/HA RC gates below remain unchanged.
