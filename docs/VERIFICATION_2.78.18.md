@@ -38,6 +38,19 @@ combined score.
 - Full source sandbox at `41090b0` failed seven publisher tests with `git ENOENT`.
   The trusted dependency image now includes real Git; tests are not skipped.
   Negative report is retained separately from subsequent runs.
+- Candidate CI [34290984686](https://github.com/samuelvoltarius/xaventra/actions/runs/34290984686)
+  passed Docker publication, complete sandbox and all packaged Desktop jobs, but
+  failed the dependency assurance gate on all three OSes. Newly indexed
+  [sharp/libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) and
+  [Hono](https://github.com/advisories/GHSA-g6gw-c38x-mqfc) advisories were not waived.
+  The candidate now requires sharp >=0.35.4 and Hono >=4.13.5, updates the lock/SBOM,
+  and adds actual native image decode/resize coverage. Local runtime audit is
+  0 findings; full development audit still has two moderate findings. Final full
+  regression is 212 files / 1,439 tests plus 7 Desktop unit tests.
+
+Receipt completion was additionally checked with parallel actual HTTP status
+queries and controller restart: failed completion retries, successful completion
+does not redeploy/reopen writers. Each unresolved attempt uses its own inventory.
 
 ## Promotion and remaining gates
 

@@ -13,6 +13,8 @@
   sink fences block activation. Peers cannot resume against rollback storage.
 - Persist completed receipt acknowledgements and serialize concurrent status
   reconciliation. An older repair never borrows a newer writer transaction.
+- Update sharp to the patched 0.35.4 floor and Hono to 4.13.5 after the dependency
+  assurance gate identified newly published advisories; verify real image processing.
 - Await the actual daemon exit event in lifecycle acceptance, preserving the
   observed Windows failure. See `docs/REPAIR_PUBLICATION.md` for boundaries;
   no production activation or RC is claimed.
