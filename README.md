@@ -265,9 +265,12 @@ Doctor diagnosis and patch execution are deliberately separate.
 The diagram is the target workflow, not a claim that every transition is
 automated. Persistent findings feed governed diagnostic investigations. Version
 2.78.14 adds [isolated patch experiments](docs/REPAIR_SANDBOX.md) with real
-regression, rollback and restoration checks. Generic Doctor-to-source candidate
-generation, production activation and independent live recovery verification
-remain open. See [implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
+regression, rollback and restoration checks. Version 2.78.15 connects scoped
+Doctor source candidates and [signed external activation with independent live
+predicates](docs/REPAIR_ACTIVATION.md). This needs operator profiles, a prepared
+signed release, matching source mirror and a separately provisioned controller;
+it is not generic autonomous production repair or fleet acceptance. See
+[implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
 
 ## Security model
 

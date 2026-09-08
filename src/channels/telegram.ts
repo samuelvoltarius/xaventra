@@ -764,7 +764,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     if (!token) {
                         await this.bot.sendMessage(chatId, '❌ `NOVA_PATCH_GATE_TOKEN` ist nicht gesetzt.', { parse_mode: 'Markdown' })
                     } else {
-                        const { getPatchProposals, evolve } = await import('../synthesis/self-evolution.js')
+                        const { getPatchProposals, approveEvolutionProposal } = await import('../synthesis/self-evolution.js')
                         const proposals = getPatchProposals(200)
                         const proposal = proposals.find((p: any) => p.id === proposalId)
                         if (!proposal) {
@@ -779,15 +779,7 @@ export class TelegramAdapter implements ChannelAdapter {
                                     return { success: applied.applied, error: applied.applied ? undefined : applied.message,
                                         branch: 'doctor-config', duration: 0, rollbackPerformed: false }
                                 })()
-                                : await evolve({
-                                    file: proposal.file,
-                                    description: proposal.description,
-                                    search: proposal.search,
-                                    replace: proposal.replace,
-                                    reason: proposal.reason,
-                                    apply: true,
-                                    approvalToken: token,
-                                })
+                                : await approveEvolutionProposal(proposalId, token)
                             // Mark status in file
                             try {
                                 const { readFileSync, writeFileSync } = await import('node:fs')
@@ -795,11 +787,11 @@ export class TelegramAdapter implements ChannelAdapter {
                                 const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
                                 const all = JSON.parse(readFileSync(pPath, 'utf-8'))
                                 const idx = all.findIndex((p: any) => p.id === proposalId)
-                                if (idx >= 0) { all[idx].status = result.success ? 'applied' : 'failed'; all[idx].appliedAt = Date.now() }
+                                if (idx >= 0 && proposal.kind === 'doctor-config' && result.success) { all[idx].status = 'applied'; all[idx].appliedAt = Date.now() }
                                 writeFileSync(pPath, JSON.stringify(all, null, 2))
                             } catch { /* non-critical */ }
                             const msg = result.success
-                                ? `✅ *Patch angewendet!*\n🌿 Branch: \`${result.branch}\`\n⏱️ ${result.duration}ms\n🔄 Nova startet neu…`
+                                ? (proposal.kind === 'doctor-config' ? 'Config-Patch angewendet; Neustart und Live-Nachprüfung stehen aus.' : '✅ Patch aktiviert; ursprünglicher Fehler unabhängig live nachgeprüft.')
                                 : `❌ *Patch fehlgeschlagen*\n${result.error || 'Unbekannter Fehler'}${result.rollbackPerformed ? '\n↩️ Rollback durchgeführt.' : ''}`
                             await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' })
                         }

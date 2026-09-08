@@ -3529,6 +3529,11 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const rest = args.trim().split(/\s+/).slice(1)
 
             switch (sub) {
+                case 'status': {
+                    const { reconcileRepairActivations } = await import('../synthesis/self-evolution.js')
+                    try { await reconcileRepairActivations() } catch { /* show durable pending state */ }
+                    return getPatchProposals(20).map(p => `${p.id}: ${p.status}${p.activation?.reason ? ` — ${p.activation.reason}` : ''}`).join('\n') || 'Keine Patch-Vorschläge vorhanden.'
+                }
                 case 'list':
                 case '': {
                     const proposals = getPatchProposals(20)
@@ -3610,17 +3615,8 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                             writeFileSync(pPath, JSON.stringify(all, null, 2))
                             return `Doctor-Config-Patch angewendet: ${doctorResult.message}. Neustart erforderlich.`
                         }
-                        const { evolve } = await import('../synthesis/self-evolution.js')
-                        const result = await evolve({
-                            file: proposal.file,
-                            description: proposal.description,
-                            search: proposal.search,
-                            replace: proposal.replace,
-                            reason: proposal.reason,
-                            reproductionTest: proposal.reproductionTest,
-                            apply: true,
-                            approvalToken: token,
-                        })
+                        const { approveEvolutionProposal } = await import('../synthesis/self-evolution.js')
+                        const result = await approveEvolutionProposal(proposalId, token)
 
                         if (result.success) {
                             // Mark as applied in proposals file
@@ -3634,10 +3630,10 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                             } catch { /* non-critical */ }
 
                             return `✅ **Patch erfolgreich angewendet!**\n\n` +
-                                `🌿 Branch: \`${result.branch}\`\n` +
-                                `⏱️ Dauer: ${result.duration}ms\n` +
-                                `🔄 Nova wird in ~3s neu gestartet...`
+                                `Nachweis: \`${result.attemptId}\`\n` +
+                                `Unabhängige Live-Prüfung bestätigt die Fehlerbehebung.`
                         } else {
+                            if (result.activationPending) return `⏳ Aktivierung ${result.attemptId}: Abschluss noch nicht verifiziert. Kein erneuter Deploy; /patch status.`
                             return `❌ **Patch fehlgeschlagen**\n\n${result.error || 'Unbekannter Fehler'}\n` +
                                 (result.rollbackPerformed ? '↩️ Rollback durchgeführt.' : '')
                         }

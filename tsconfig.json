@@ -33,6 +33,7 @@
         "src/memory/**/*",
         "src/training/**/*",
         "src/core/**/*",
+        "src/doctor/**/*",
         "src/supervisor/**/*",
         "src/devops/**/*",
         "src/dev/deploy-current-release.ts",

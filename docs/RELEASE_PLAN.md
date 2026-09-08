@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.15 Doctor candidate / independent activation checkpoint
+
+The legacy approved host mutation transaction is removed. Profile-bound Doctor
+candidates, signed external activation requests and independent original HTTP
+predicate receipts are connected; the optional managed Linux adapter verifies
+immutable artifacts, process exit, rollback and active-source continuity.
+[Verification classes and remaining prerequisites](VERIFICATION_2.78.15.md)
+separate source tests, real disposable controller processes, privileged Linux
+acceptance and live-model/production acceptance. All eight exact-candidate jobs
+must pass before main advances. No RC label or production/fleet acceptance.
+
+Open: arbitrary Doctor-to-production repairs, per-deployment authority/signing,
+prepared artifact pipeline, automatic repair source-mirror advancement,
+container-specific deployment adapters, original non-HTTP predicates and
+distributed recovery. These remain in scope; they are not renamed into passes.
+
 ### 2.78.14 isolated repair sandbox candidate
 
 The preapproval host-execution boundary is replaced with constrained disposable

@@ -2820,7 +2820,7 @@
     {
       "name": "self_evolve",
       "category": "system",
-      "description": "ï¿½ndert Novas eigenen Code sicher: Git-Branch ? Code-ï¿½nderung ? Build ? Test ? Merge bei Erfolg / Rollback bei Fehler. NUR Dateien in src/ erlaubt.",
+      "description": "Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert. Live-Aktivierung nur für die gebundene Proposal-ID über PATCH_GATE und einen externen Release-Controller; Heilung benötigt unabhängige Live-Evidence.",
       "parameters": [
         {
           "name": "file",
@@ -2849,6 +2849,16 @@
         },
         {
           "name": "approvalToken",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "proposalId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "repairProfileId",
           "type": "string",
           "required": false
         },

@@ -36,7 +36,7 @@ export interface DoctorConfigProposal {
     issueCode: string
     configPath: string
     configValue: unknown
-    sandbox: { verified: true; buildPassed: true; testsPassed: true; output: string }
+    sandbox: { verified: false; buildPassed: false; testsPassed: false; configValidated: true; output: string }
 }
 
 function setConfigValue(config: Record<string, any>, dotPath: string, value: unknown): void {
@@ -85,7 +85,7 @@ export async function queueDoctorFixProposals(report: DoctorReport): Promise<{ q
             kind: 'doctor-config', createdAt: Date.now(), status: 'queued', file: 'xaventra.config.json',
             description: fix.hint || `Doctor config fix: ${issue.code}`,
             reason: issue.message, issueCode: issue.code, configPath: fix.configPath, configValue: fix.configValue,
-            sandbox: { verified: true, buildPassed: true, testsPassed: true, output: 'Config parsed and schema-validated; live file unchanged.' },
+            sandbox: { verified: false, buildPassed: false, testsPassed: false, configValidated: true, output: 'Config schema validated only; no build, sandbox, live activation or recovery evidence.' },
         }
         proposals.push(proposal)
         queued.push(proposal.id)

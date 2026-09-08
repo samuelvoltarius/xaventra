@@ -65,6 +65,18 @@ closed or learned workflow activated merely because sandbox tests passed.
 
 ## Verification and operations
 
+### 2.78.15 continuation
+
+The earlier open source-candidate and activation stages now have a bounded
+implementation, detailed in [repair activation](REPAIR_ACTIVATION.md). Registered
+source/oracle profiles allow the existing Doctor Kernel worker to propose exact
+patches, then queue only isolated, regression/rollback-checked candidates.
+Approval dispatches to a separate signed controller, never the legacy host Git
+transaction. The independent original predicate and signed receipt, not an
+arbitrary `advance(..., 'resolved', 'evidence')`, may close the case. Generic
+model-to-production and fleet acceptance remain open. Source mirror and prepared
+artifact provisioning are explicit external release-pipeline requirements.
+
 - `src/doctor/failure-research-worker.test.ts`: durable dispatch, evidence versus
   prose, retry limits, standby, concurrency, interrupted claims, resolved
   findings and execution-marker input controls. Worker receipts are fixtures.

@@ -80,6 +80,8 @@ function snapshot(root: string): Snapshot {
     return files
 }
 
+export function getPatchSnapshotHash(root: string): string { return snapshotHash(snapshot(root)) }
+
 // Host-supplied driver, not a model-supplied shell command. Rebuild environment
 // inside the container too: even the prepared image must not supply credentials.
 const DRIVER = String.raw`

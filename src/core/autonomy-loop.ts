@@ -973,6 +973,11 @@ async function runDoctorPhase(): Promise<void> {
             const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
             const research = await getFailureResearchCoordinator().investigateNext(doctorResearchWorker)
             if (research) console.log(`[Autonomy] Doctor investigation ${research.id}: ${research.investigation?.status}; repair not applied`)
+            const { reconcileRepairActivations } = await import('../synthesis/self-evolution.js')
+            const { proposeDoctorRepair, reconcileDoctorRepairs } = await import('../doctor/repair-candidate.js')
+            await reconcileRepairActivations()
+            reconcileDoctorRepairs(getFailureResearchCoordinator())
+            await proposeDoctorRepair(getFailureResearchCoordinator(), doctorResearchWorker)
         }
     } catch (err) {
         console.debug(`[Autonomy] Self-Doctor non-critical error: ${err}`)

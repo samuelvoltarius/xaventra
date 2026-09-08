@@ -1,0 +1,60 @@
+import { describe, it, expect, vi } from 'vitest'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { FailureResearchCoordinator, type ResearchWorker } from './failure-research-coordinator.js'
+import { OutcomeLedger } from '../core/outcome-ledger.js'
+import { proposeDoctorRepair } from './repair-candidate.js'
+
+const boundary = vi.hoisted(() => ({ evolve: vi.fn(), profiles: vi.fn() }))
+vi.mock('../synthesis/self-evolution.js', () => ({ evolve: boundary.evolve, getRepairProfiles: boundary.profiles, getPatchProposals: () => [], getRepairSourceRoot: () => process.cwd() }))
+async function fixture(output = JSON.stringify({ description: 'fix value', search: '= 1', replace: '= 2', reason: 'observed wrong answer' })) {
+    const root = process.cwd(), id = randomUUID(), coordinator = new FailureResearchCoordinator(join(root, `${id}.json`)), ledger = new OutcomeLedger(join(root, `${id}.ledger`))
+    mkdirSync(join(root, 'src'), { recursive: true }); writeFileSync(join(root, 'src/value.ts'), 'export const value = 1'); writeFileSync(join(root, 'src/value.test.ts'), 'oracle unchanged')
+    boundary.profiles.mockReturnValue([{ id: 'value', findingId: id, file: 'src/value.ts', reproductionTest: 'src/value.test.ts', probeId: 'value', targetId: 'fixture' }])
+    boundary.evolve.mockReset().mockResolvedValue({ queued: true, success: false, proposalId: 'patch-fixture' })
+    const worker: ResearchWorker = { hasAuthority: () => true, getRun: id => ledger.getRun(id), execute: vi.fn(async input => {
+        ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+        ledger.recordTool(input.contract.id, { toolName: 'health_status', success: true, result: { success: true, output: 'value:1' } })
+        ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: '', success: true, awaitingApproval: false, criteria: [], violations: [] })
+        ledger.complete(input.contract.id, { success: true })
+        return { output: input.purpose === 'candidate' ? output : 'observed value:1, expected2' }
+    }) }
+    coordinator.ingest({ id, title: 'Wrong answer', detail: 'Expected 2', source: 'fixture', category: 'tools', severity: 'critical', recommendation: '', evidence: {}, status: 'open', createdAt: '', updatedAt: '' })
+    await coordinator.investigateNext(worker)
+    return { coordinator, worker }
+}
+describe('Doctor patch generation / scripted Kernel receipts and sandbox boundary', () => {
+    it('generates a scoped candidate, passes immutable oracle and never grants apply', async () => {
+        const f = await fixture(); await proposeDoctorRepair(f.coordinator, f.worker)
+        expect(boundary.evolve).toHaveBeenCalledWith(expect.objectContaining({ file: 'src/value.ts', reproductionTest: 'src/value.test.ts', repairProfileId: 'value', search: '= 1', replace: '= 2' }))
+        expect(boundary.evolve.mock.calls[0][0]).not.toHaveProperty('apply')
+        expect(f.coordinator.list()[0]).toMatchObject({ stage: 'awaiting-patch-gate', repair: { status: 'queued' }, findingOpen: true })
+        await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).toHaveBeenCalledOnce()
+    })
+    it('does not turn model-provided file, command or approval into authority', async () => {
+        for (const extra of [{ file: '.env' }, { apply: true }, { approvalToken: 'invented' }, { command: 'echo danger' }]) {
+            const f = await fixture(JSON.stringify({ description: 'fix', search: '= 1', replace: '= 2', reason: 'test', ...extra }))
+            await proposeDoctorRepair(f.coordinator, f.worker)
+            expect(boundary.evolve).not.toHaveBeenCalled(); expect(f.coordinator.list()[0].repair?.status).toBe('blocked')
+        }
+    })
+    it('rejects prose, no-op and ambiguous search', async () => {
+        for (const output of ['Fixed!', JSON.stringify({ description: 'fix', search: '', replace: '2', reason: 'test' }), JSON.stringify({ description: 'fix', search: '= 1', replace: '= 1', reason: 'test' })]) {
+            const f = await fixture(output); await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).not.toHaveBeenCalled()
+        }
+    })
+    it('cannot resolve from an arbitrary successful evidence string', async () => {
+        const f = await fixture(), item = f.coordinator.list()[0]
+        expect(f.coordinator.advance(item.id, 'resolved', 'model:everything-fixed', { patchGateApproved: true })).toBeNull()
+    })
+    it('keeps failure visible when isolated verification fails', async () => {
+        const f = await fixture(); boundary.evolve.mockResolvedValue({ success: false, error: 'rollback failed' })
+        await proposeDoctorRepair(f.coordinator, f.worker)
+        expect(f.coordinator.list()[0]).toMatchObject({ findingOpen: true, stage: 'researching', repair: { status: 'blocked' } })
+    })
+    it('requires a registered operator profile', async () => {
+        const f = await fixture(); boundary.profiles.mockReturnValue([])
+        await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).not.toHaveBeenCalled()
+    })
+})

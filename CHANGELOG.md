@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.78.15] — 2026-09-08
+
+- Generate bounded Doctor source candidates through the existing Kernel and
+  diagnostic evidence, restricted by operator source/oracle profiles. Exact
+  patches enter the isolated regression/rollback sandbox and PATCH_GATE queue.
+- Remove the approved host shell/Git/stash/forced-checkout/restart path. Slash,
+  Telegram and tool approvals bind the saved patch, source snapshot and oracle
+  to a signed external-controller ticket; uncertain dispatch is persisted and
+  reconciled instead of replayed or reported successful.
+- Add external activation, independent original HTTP predicate verification,
+  typed rollback and restored-behaviour evidence. Signed immutable release
+  artifacts and a separate non-root Linux runtime identity support the optional
+  managed-process adapter. Stale source baselines cannot discard a prior repair.
+- Add source regressions, real disposable HTTP/process acceptance on three OSes
+  and privileged/unprivileged Linux acceptance. Deployment adapters, credentials,
+  immutable artifacts and operator probe profiles must be provisioned explicitly.
+  This is not an autonomous full-product or production-fleet acceptance claim.
+  See [activation setup and recovery](docs/REPAIR_ACTIVATION.md).
+
 ## [2.78.14] — 2026-09-08
 
 - Replace preapproval host-process patch testing with fail-closed, asynchronous

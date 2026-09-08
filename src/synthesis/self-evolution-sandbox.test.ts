@@ -5,7 +5,7 @@ import { join } from 'node:path'
 const boundary = vi.hoisted(() => ({ validate: vi.fn(), git: vi.fn() }))
 vi.mock('./patch-sandbox.js', () => ({ validatePatchInSandbox: boundary.validate, assertPatchSourcePath: () => {} }))
 vi.mock('node:child_process', () => ({
-    execSync: boundary.git, spawn: () => { throw new Error('Host spawn forbidden in this test') },
+    execFileSync: boundary.git, execSync: () => { throw new Error('Host shell forbidden') }, spawn: () => { throw new Error('Host spawn forbidden in this test') },
 }))
 import { evolve, isEvolutionActive } from './self-evolution.js'
 
@@ -45,25 +45,26 @@ describe('actual evolve caller / scripted sandbox receipts', () => {
     })
     it('keeps ownership until the outer approved-attempt promise settles', async () => {
         vi.stubEnv('NOVA_PATCH_GATE_TOKEN', 'fixture-only-approval')
-        let competing: ReturnType<typeof evolve>
         boundary.validate.mockResolvedValue({ verified: true, output: '' })
-        boundary.git.mockImplementation((command: string) => {
-            if (command === 'git rev-parse --is-inside-work-tree') return 'true'
-            if (command === 'git branch --show-current') return 'main'
-            if (command === 'git status --porcelain') return ''
-            if (command.startsWith('git checkout -b')) throw new Error('fixture branch rejection')
-            if (command === 'git checkout "main" --force') {
-                queueMicrotask(() => queueMicrotask(() => { competing = evolve(request) }))
-                return ''
-            }
-            if (command.startsWith('git branch -D')) return ''
-            throw new Error(`Unexpected host action: ${command}`)
-        })
         try {
-            await evolve({ ...request, apply: true, approvalToken: 'fixture-only-approval' })
+            const first = evolve({ ...request, apply: true, approvalToken: 'fixture-only-approval' })
+            const competing = evolve(request)
             expect(await competing).toMatchObject({ success: false, error: expect.stringContaining('bereits aktiv') })
-            expect(boundary.validate).toHaveBeenCalledTimes(1)
+            expect(await first).toMatchObject({ success: false, error: expect.stringContaining('proposalId') })
+            expect(boundary.validate).not.toHaveBeenCalled()
+            expect(boundary.git).not.toHaveBeenCalled()
             expect(isEvolutionActive()).toBe(false)
+        } finally { vi.unstubAllEnvs() }
+    })
+    it('cannot execute metadata through the removed approved host shell path', async () => {
+        vi.stubEnv('NOVA_PATCH_GATE_TOKEN', 'fixture-only-approval')
+        try {
+            const original = readFileSync(join(process.cwd(), request.file), 'utf8')
+            for (const description of ['"; touch CANARY; #', '`whoami`', '$(whoami)', '" & echo CANARY & "']) {
+                expect(await evolve({ ...request, description, apply: true, approvalToken: 'fixture-only-approval' })).toMatchObject({ success: false })
+            }
+            expect(boundary.git).not.toHaveBeenCalled()
+            expect(readFileSync(join(process.cwd(), request.file), 'utf8')).toBe(original)
         } finally { vi.unstubAllEnvs() }
     })
 })

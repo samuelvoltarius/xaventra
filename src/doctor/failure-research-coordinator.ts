@@ -7,6 +7,7 @@ import type { OutcomeRunView } from '../core/outcome-ledger.js'
 import type { TaskContract } from '../core/task-contract.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { validateToolOutcome } from '../core/result-validator.js'
+import { verifyRepairValue, type RepairReceipt, type SignedRepairValue } from './repair-activation.js'
 
 export type ResearchStage = 'diagnosed' | 'researching' | 'repair-proposed' | 'sandbox-passed' | 'regression-passed' | 'rollback-passed' | 'awaiting-patch-gate' | 'approved' | 'resolved'
 export interface FailureResearchCase {
@@ -15,6 +16,7 @@ export interface FailureResearchCase {
     patchGateRequired: boolean; updatedAt: string
     findingOpen?: boolean
     observationHash?: string
+    repair?: { status: 'generating' | 'queued' | 'blocked'; runId: string; observationHash?: string; proposalId?: string; reason?: string }
     investigation?: {
         status: 'running' | 'verified' | 'failed' | 'blocked'
         runId: string; attempts: number; nextAttemptAt: number
@@ -23,7 +25,7 @@ export interface FailureResearchCase {
 }
 interface ResearchFile { version: 1; updatedAt: string; cases: FailureResearchCase[] }
 
-export interface ResearchWorkerInput { contract: TaskContract; content: string; caseId: string; signal: AbortSignal }
+export interface ResearchWorkerInput { contract: TaskContract; content: string; caseId: string; signal: AbortSignal; purpose?: 'candidate' }
 export interface ResearchWorker {
     /** Deployment/fixture may narrow diagnostic capabilities, never widen them. */
     allowedTools?: readonly string[]
@@ -67,6 +69,7 @@ export class FailureResearchCoordinator {
             if ((item.findingOpen === false || (item.observationHash && item.observationHash !== observationHash))
                 && finding.status === 'open' && item.investigation?.status !== 'running') {
                 delete item.investigation
+                delete item.repair
                 item.stage = 'diagnosed'
             }
             item.findingOpen = finding.status === 'open'
@@ -81,6 +84,7 @@ export class FailureResearchCoordinator {
     advance(id: string, target: ResearchStage, evidenceRef: string, options: { patchGateApproved?: boolean } = {}): FailureResearchCase | null {
         const item = this.cases.find(value => value.id === id)
         if (!item || !evidenceRef) return null
+        if (target === 'resolved') return null // A prose reference can never certify live healing.
         const order: ResearchStage[] = ['diagnosed', 'researching', 'repair-proposed', 'sandbox-passed', 'regression-passed', 'rollback-passed', 'awaiting-patch-gate', 'approved', 'resolved']
         const current = order.indexOf(item.stage), next = order.indexOf(target)
         if (next !== current + 1) return null
@@ -92,6 +96,31 @@ export class FailureResearchCoordinator {
     }
 
     list(): FailureResearchCase[] { return this.cases.map(item => structuredClone(item)) }
+
+    isCurrentObservation(id: string, hash: string): boolean {
+        return this.cases.some(c => c.id === id && c.observationHash === hash && c.findingOpen !== false)
+    }
+    claimRepair(id: string, runId: string, hash: string): boolean {
+        const item = this.cases.find(c => c.id === id)
+        if (!item || item.repair || item.investigation?.status !== 'verified' || !this.isCurrentObservation(id, hash)) return false
+        item.repair = { status: 'generating', runId, observationHash: hash }; this.persist(); return true
+    }
+    finishRepair(id: string, repair: NonNullable<FailureResearchCase['repair']>, hash: string): void {
+        const item = this.cases.find(c => c.id === id)
+        if (!item || item.repair?.runId !== repair.runId || !this.isCurrentObservation(id, hash)) return
+        item.repair = { ...repair, observationHash: hash }
+        if (repair.status === 'queued') item.stage = 'awaiting-patch-gate'
+        this.persist()
+    }
+    resolveRepair(id: string, proposalId: string, envelope: SignedRepairValue<RepairReceipt>): void {
+        const item = this.cases.find(c => c.id === id)
+        if (!item || item.repair?.proposalId !== proposalId || item.repair.observationHash !== item.observationHash) return
+        const receipt = verifyRepairValue(envelope, process.env.XAVENTRA_REPAIR_CONTROLLER_PUBLIC_KEY || '')
+        if (receipt.status !== 'resolved' || receipt.binding.proposalId !== proposalId || receipt.before?.state !== 'fault' || receipt.after?.state !== 'healthy') return
+        item.stage = 'resolved'; item.findingOpen = false
+        item.evidenceRefs = [...new Set([...item.evidenceRefs, `repair-controller:${receipt.binding.attemptId}`])].slice(-30)
+        this.persist()
+    }
 
     synchronizeFindingStatus(findings: DoctorFinding[]): void {
         const byId = new Map(findings.map(finding => [finding.id, finding]))

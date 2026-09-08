@@ -18,7 +18,7 @@ function report(): DoctorReport {
 }
 
 describe('Doctor PATCH_GATE boundary', () => {
-    it('queues a sandbox-validated proposal without mutating live config', async () => {
+    it('queues a schema-validated proposal without fabricating sandbox/build evidence or mutating live config', async () => {
         const configPath = join(process.cwd(), 'xaventra.config.json')
         const before = readFileSync(configPath, 'utf-8')
         const result = await applySafeFixes(report())
@@ -29,7 +29,8 @@ describe('Doctor PATCH_GATE boundary', () => {
 
         expect(after).toBe(before)
         expect(result.applied).toEqual([])
-        expect(proposals.some(item => item.kind === 'doctor-config' && item.status === 'queued' && item.sandbox.verified)).toBe(true)
+        const proposal = proposals.find(item => item.kind === 'doctor-config' && item.status === 'queued')!
+        expect(proposal.sandbox).toMatchObject({ verified: false, buildPassed: false, testsPassed: false, configValidated: true })
     })
 
     it('refuses application without the PATCH_GATE token', async () => {

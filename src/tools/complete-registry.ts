@@ -944,7 +944,7 @@ export const memoryTools: NovaTool[] = [
 export const evolutionTools: NovaTool[] = [
     {
         name: 'self_evolve',
-        description: 'ï¿½ndert Novas eigenen Code sicher: Git-Branch ? Code-ï¿½nderung ? Build ? Test ? Merge bei Erfolg / Rollback bei Fehler. NUR Dateien in src/ erlaubt.',
+        description: 'Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert. Live-Aktivierung nur für die gebundene Proposal-ID über PATCH_GATE und einen externen Release-Controller; Heilung benötigt unabhängige Live-Evidence.',
         category: 'system',
         parameters: [
             { name: 'file', type: 'string', description: 'Relativer Pfad zur Datei (z.B. src/core/runtime.ts)', required: true },
@@ -953,6 +953,8 @@ export const evolutionTools: NovaTool[] = [
             { name: 'replace', type: 'string', description: 'Neuer Text', required: true },
             { name: 'apply', type: 'boolean', description: 'Nur true setzen wenn der Patch wirklich angewendet werden soll', required: false },
             { name: 'approvalToken', type: 'string', description: 'Patch-Gate Token aus signiertem User-Befehl', required: false },
+            { name: 'proposalId', type: 'string', description: 'Exakte bereits geprüfte Proposal-ID; zwingend für apply. Keine direkten Live-Patches.', required: false },
+            { name: 'repairProfileId', type: 'string', description: 'Vom Operator registriertes Quell-/Probe-Profil, keine freien Ziele', required: false },
             { name: 'reproductionTest', type: 'string', description: 'Vorhandener unveränderter src/*.test.ts-Regressionsbeleg: muss vorher fehlschlagen und danach bestehen', required: false },
             { name: 'reason', type: 'string', description: 'Warum diese ï¿½nderung', required: false },
         ],
@@ -966,6 +968,8 @@ export const evolutionTools: NovaTool[] = [
                 reason: params.reason as string | undefined,
                 apply: params.apply === true,
                 approvalToken: params.approvalToken as string | undefined,
+                proposalId: params.proposalId as string | undefined,
+                repairProfileId: params.repairProfileId as string | undefined,
                 reproductionTest: params.reproductionTest as string | undefined,
             })
         },
@@ -3579,8 +3583,6 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
-
 
 
 

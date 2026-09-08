@@ -78,6 +78,13 @@ the original failure. Infrastructure failures are never accepted as baseline.
 
 ## Acceptance, limits and recovery
 
+For the subsequent approved activation path in 2.78.15, see
+[independent activation and recovery](REPAIR_ACTIVATION.md). The running daemon
+no longer performs the legacy Git/build/restart transaction. It checks the exact
+unchanged sandbox snapshot before issuing a bound external activation request.
+Sandbox `symptomVerified` remains false; only the independent controller's
+original live predicate can provide the distinct recovery evidence.
+
 Run `npm run build`, then `node scripts/check-repair-sandbox.mjs` with the image
 configured. This uses a disposable Git fixture and actual containers, verifies
 host/config/environment/network/dependency boundaries, repairs a failing test,

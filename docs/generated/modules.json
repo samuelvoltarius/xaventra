@@ -2187,6 +2187,7 @@
         "../core/self-doctor.js",
         "../core/task-contract.js",
         "../security/secret-redaction.js",
+        "./repair-activation.js",
         "node:crypto",
         "node:fs"
       ]
@@ -2215,6 +2216,51 @@
         "./safe-fixes.js",
         "./tool-contract.js",
         "./types.js"
+      ]
+    },
+    {
+      "module": "src/doctor/managed-repair-driver.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../process/daemon-control.js",
+        "./repair-activation.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-activation.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-candidate.ts",
+      "imports": [
+        "../core/task-contract.js",
+        "../security/secret-redaction.js",
+        "../synthesis/patch-sandbox.js",
+        "../synthesis/self-evolution.js",
+        "./failure-research-coordinator.js",
+        "./repair-activation.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-controller-server.ts",
+      "imports": [
+        "./repair-activation.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
       ]
     },
     {
@@ -4185,8 +4231,11 @@
     {
       "module": "src/synthesis/self-evolution.ts",
       "imports": [
+        "../core/atomic-storage.js",
+        "../doctor/repair-activation.js",
         "./patch-sandbox.js",
         "node:child_process",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

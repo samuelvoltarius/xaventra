@@ -250,6 +250,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/doctor/managed-repair-driver.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/doctor/research-worker.integration.test.ts",
       "path": ".nova-data"
     },

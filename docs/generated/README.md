@@ -4,8 +4,8 @@ Generated from authoritative source. Do not edit by hand.
 
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
-| tools.json | 227 | `1e228bccd7caa8cfc5a9a2eb14475a0f7278eb3533435d9d34a6194ba912dd86` |
+| tools.json | 227 | `5e1b913d5521a39819bd361d599682a433eada49620612b08364676f9db41739` |
 | config.json | 0 | `f13eb5523f0349e8d0480961307ee0aeb5aa3c1515340160df2df95ebda206d2` |
-| persistence.json | 201 | `1ec3980095bebcba92e824994aace646205165d0914314580869fdc521d6cbc2` |
-| modules.json | 608 | `71bdf679e65eaf5cfc843a33cef924229cbbb1df3355ebaca05b24c72be0e8a1` |
+| persistence.json | 202 | `91731a954b86509fd7a2f5bfe525a98e3965347d8f499fc4d70c569e4a315e9d` |
+| modules.json | 612 | `e32d3e5c94ddbe53bbd7d937b9747fe0143da82c5c0515ea1241feec735efc96` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
