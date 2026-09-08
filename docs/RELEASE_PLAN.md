@@ -14,6 +14,9 @@ the continuous Doctor-to-recovery test. A preliminary actual local-model run
 passed 6/6 on an isolated Linux host; it was a dirty source run and must not be
 relabeled final-source or production evidence. Real state-copy checks passed
 4/4 separately, with fixture quiescence rather than production Mesh fencing.
+The clean source `e9722f4493226e0780c7d0299f0f24db31ce9dca` subsequently passed
+the same live-model 6/6 and state 4/4 at 2026-09-08 17:31 UTC. See
+[the evidence record](VERIFICATION_2.78.16.md) for exact runs and limits.
 
 Ten exact-candidate CI jobs are now required before main promotion. Keep all
 previous failed model, Docker provisioning and artifact-upload reports. The

@@ -17,6 +17,7 @@ const report={sourceRevision:execFileSync('git',['rev-parse','HEAD'],{cwd:source
   sourceDirty:Boolean(execFileSync('git',['status','--porcelain'],{cwd:source,encoding:'utf8'}).trim()),
   version:JSON.parse(readFileSync(join(source,'package.json'))).version,platform:process.platform,
   modelMode:process.env.XAVENTRA_RESEARCH_QA_URL?'live-local-model':'scripted-model',
+  coordinationMode:'real-signed-HTTP-authority-with-fixture-lease-and-operator-grants',
   evidenceClass:'native-Doctor-Kernel-to-real-sandbox-to-signed-Docker-activation-independent-HTTP-recovery-disposable-fixture',cases:[]}
 const image=process.env.XAVENTRA_REPAIR_SANDBOX_IMAGE
 if(!/^sha256:[a-f0-9]{64}$/.test(image||''))throw Error('Prepare and explicitly select trusted sandbox image first')
@@ -42,9 +43,9 @@ const {repairHash,signRepairValue,verifyRepairValue}=await load('doctor/repair-a
 const {createRepairControllerServer,createHttpRepairProbe}=await load('doctor/repair-controller-server.js')
 const engine=localDockerRepairEngine(), created=[], images=[]
 const keys=()=>{const pair=generateKeyPairSync('ed25519');return {private:pair.privateKey.export({format:'pem',type:'pkcs8'}),public:pair.publicKey.export({format:'pem',type:'spki'})}}
-const approval=keys(),receipt=keys(),publisher=keys()
+const approval=keys(),receipt=keys(),publisher=keys(),authorityKey=keys()
 const socket=createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r))
-let controller
+let controller,authorityServer
 const build=content=>{
   // Dockerfile FROM cannot use a local image-config digest directly. A unique
   // temporary local alias is checked before/after; layer ancestry is checked too.
@@ -115,8 +116,22 @@ try{
   const entry=(id,info,sourceHash)=>({containerId:info.Id,configHash:dockerRepairConfigHash(info),release:{id,previousReleaseId:'old',sourceHash,imageId:info.Image,binding}})
   // Signing is performed by the trusted test publisher, never by the model.
   const deployment=verifyRepairValue(signRepairValue({targetId:'fixture',initialReleaseId:'old',releases:{old:entry('old',old,binding.baselineHash),next:entry('next',next,binding.candidateHash)},catalog:{[binding.candidateHash]:'next'}},publisher.private),publisher.public)
+  const {createRepairAuthorityServer}=await load('doctor/repair-authority-server.js')
+  const {repairRpc}=await load('doctor/repair-activation.js'),grants=new Map()
+  authorityServer=createRepairAuthorityServer({privateKey:authorityKey.private,readGrant:hash=>grants.get(hash),
+    readLease:async()=>({holderNodeId:'fixture-main',epoch:1,expiresAt:Date.now()+60_000})})
+  await new Promise(r=>authorityServer.listen(0,'127.0.0.1',r))
+  const hasAuthority=async ticket=>{
+    const challenge=randomUUID(),decision=await repairRpc(`http://127.0.0.1:${authorityServer.address().port}/authority`,{challenge,ticket},authorityKey.public)
+    return decision.allowed===true&&decision.challenge===challenge&&decision.bindingHash===repairHash(ticket)&&decision.expiresAt>Date.now()
+  }
+  const trialTicket={...binding,attemptId:`repair-${randomUUID()}`,expiresAt:Date.now()+60_000}
+  assert.equal(await hasAuthority(trialTicket),false)
+  grants.set(binding.patchHash,{binding,expiresAt:Date.now()+5*60_000,holderNodeId:'fixture-main',leaseEpoch:1})
+  assert.equal(await hasAuthority(trialTicket),true)
+  report.cases.push({id:'separate-signed-authority-requires-exact-operator-grant',passed:true})
   let state
-  const driver=new DockerRepairDriver({...deployment,hasAuthority:async ticket=>repairHash({...binding,attemptId:ticket.attemptId,expiresAt:ticket.expiresAt})===repairHash(ticket),loadState:()=>state,saveState:value=>{state=value;writeFileSync(join(root,'controller-state.json'),JSON.stringify(value))}},engine)
+  const driver=new DockerRepairDriver({...deployment,hasAuthority,loadState:()=>state,saveState:value=>{state=value;writeFileSync(join(root,'controller-state.json'),JSON.stringify(value))}},engine)
   const probe=createHttpRepairProbe([{id:'answer',targetId:'fixture',url:endpoint,expectedStatus:200,expectedBodySha256:createHash('sha256').update(String(desired)).digest('hex')}],driver)
   controller=createRepairControllerServer({stateRoot:join(root,'controller'),approvalPublicKey:approval.public,receiptPrivateKey:receipt.private,driver,probe})
   await new Promise(r=>controller.listen(0,'127.0.0.1',r))
@@ -135,9 +150,10 @@ try{
   await new Promise(r=>controller.close(r));controller=undefined
   const bad=await create(build('export const value = 0;'))
   const badBinding={...binding,proposalId:'negative-control',patchHash:repairHash('negative-control'),baselineHash:binding.candidateHash,candidateHash:repairHash('intentionally-bad-candidate')}
+  grants.set(badBinding.patchHash,{binding:badBinding,expiresAt:Date.now()+5*60_000,holderNodeId:'fixture-main',leaseEpoch:1})
   const badRelease=entry('bad',bad,badBinding.candidateHash);badRelease.release.previousReleaseId='next';badRelease.release.binding=badBinding
   const rollbackDriver=new DockerRepairDriver({targetId:'fixture',initialReleaseId:'next',releases:{next:deployment.releases.next,bad:badRelease},catalog:{[badBinding.candidateHash]:'bad'},
-    hasAuthority:async()=>true,loadState:()=>undefined,saveState:value=>writeFileSync(join(root,'negative-controller-state.json'),JSON.stringify(value))},engine)
+    hasAuthority,loadState:()=>undefined,saveState:value=>writeFileSync(join(root,'negative-controller-state.json'),JSON.stringify(value))},engine)
   const {RepairActivationController}=await load('doctor/repair-activation.js')
   const negativeProbe=createHttpRepairProbe([{id:'answer',targetId:'fixture',url:endpoint,expectedStatus:200,expectedBodySha256:createHash('sha256').update(String(desired+1)).digest('hex')}],rollbackDriver)
   const negative=new RepairActivationController(join(root,'negative-controller'),approval.public,rollbackDriver,negativeProbe)
@@ -150,6 +166,7 @@ try{
 }catch(error){report.cases.push({id:'end-to-end-failure',passed:false,error:String(error)});process.exitCode=1}
 finally{
   if(controller)await new Promise(r=>controller.close(r))
+  if(authorityServer)await new Promise(r=>authorityServer.close(r))
   // Only IDs returned by this fixture are eligible for removal, never labels or
   // name patterns that could select an unrelated runtime. No volume removal.
   for(const id of created)try{writeFileSync(join(root,`${id}-final.json`),JSON.stringify(await engine.call('GET',`/containers/${id}/json`),null,2));await engine.call('DELETE',`/containers/${id}?force=true`)}catch(error){report.cases.push({id:'fixture-cleanup',passed:false,error:String(error)});process.exitCode=1}

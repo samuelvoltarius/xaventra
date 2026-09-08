@@ -37,7 +37,8 @@ export function createRepairAuthorityServer(options: RepairAuthorityOptions) {
             response.setHeader('content-type', 'application/json')
             response.end(JSON.stringify(signRepairValue({ challenge, targetId: ticket.targetId, patchHash: ticket.patchHash,
                 bindingHash: repairHash(ticket), allowed: request.url === '/state' ? Boolean(quiesced) : allowed,
-                externalWritersQuiesced: Boolean(quiesced), expiresAt: Math.min(now + 10_000, lease?.expiresAt || now) }, options.privateKey)))
+                externalWritersQuiesced: Boolean(quiesced), expiresAt: Math.min(now + 10_000, lease?.expiresAt || now,
+                    grant?.expiresAt || now, ticket.expiresAt || now, request.url === '/state' ? q?.expiresAt || now : Infinity) }, options.privateKey)))
         } catch { response.writeHead(409).end('Repair authority unavailable or invalid') }
         finally { clearTimeout(timer) }
     })

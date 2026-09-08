@@ -73,6 +73,8 @@ approval process and expires within ten minutes. A matching node identity alone
 is not permission. The controller sends the complete ticket; the signed reply
 binds its hash and a fresh challenge. Legacy partial-tuple authority replies are
 no longer accepted. No default allow-all authority or automatically issued grant.
+The signed decision cannot outlive its grant, ticket, lease or applicable drain
+attestation, even during network delay.
 
 ## Persistent state and recovery
 
@@ -117,7 +119,9 @@ node scripts/check-docker-repair-state.mjs
 The first runs the native Doctor/Kernel, original assertion, four sandbox phases,
 proposal and owner gate, signed external controller, actual disposable containers,
 HTTP recovery, case reconciliation, duplicate refusal and a wrong-candidate
-rollback. Default model answers are **scripted**. To separately test real model
+rollback. The separate real signed HTTP authority is included; the coordinator
+lease and operator grants in this disposable test are explicitly **fixtures**.
+Default model answers are **scripted**. To separately test real model
 decisions, supply an explicitly authorized `XAVENTRA_RESEARCH_QA_URL` and model;
 the same checks run without hard-coded model patches. Test signing/authority
 identities are disposable and must never become production identities.
