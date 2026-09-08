@@ -17,6 +17,14 @@ restart, receipt reconciliation and authority revalidation after draining.
 Exact candidate source/test/CI evidence is recorded in the release verification
 document before promotion; no incomplete candidate is labeled RC.
 
+Runtime source `fc0e3a008f1515dda5048d2098945f3f49a7375d` has clean downloaded
+three-OS admission **5/5** and controller **4/4** reports from
+[CI 34275424996](https://github.com/samuelvoltarius/xaventra/actions/runs/34275424996).
+Separate clean Linux arm64 real-model Docker repair passed **7/7**, state copy
+**4/4** and admission **5/5**. See [exact evidence and scope](VERIFICATION_2.78.17.md).
+The final candidate, including documentation, still requires all ten CI jobs
+green before normal main promotion. Production activation is not included.
+
 **Open:** general external/background writer fencing; additional typed completion
 adapters; immutable Docker build/sign/source-mirror preparation; production
 adoption/exclusive restart ownership; original live symptom recovery. Those
