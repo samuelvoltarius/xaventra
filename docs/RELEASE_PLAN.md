@@ -6,6 +6,17 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.14 isolated repair sandbox candidate
+
+The preapproval host-execution boundary is replaced with constrained disposable
+Linux containers. [Acceptance record](VERIFICATION_2.78.14.md) separates scripted
+cross-platform boundary/caller tests from the real Docker fixture. Baseline,
+candidate, rollback and restoration must each carry snapshot-bound evidence.
+No configuration, secret or production source is changed by experimentation.
+Exact candidate CI, including the new real container job, is required before
+main promotion. Production activation/recovery, automatic candidate generation,
+native-host Docker availability and complete 40-module/RC acceptance remain open.
+
 ### 2.78.13 goal and mission lifecycle candidate
 
 The next coherent layer follow-up corrects a shared autonomy prerequisite:

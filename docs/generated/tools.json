@@ -2853,6 +2853,11 @@
           "required": false
         },
         {
+          "name": "reproductionTest",
+          "type": "string",
+          "required": false
+        },
+        {
           "name": "reason",
           "type": "string",
           "required": false

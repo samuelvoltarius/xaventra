@@ -574,6 +574,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/synthesis/self-evolution-sandbox.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/synthesis/self-evolution.ts",
       "path": ".nova-data"
     },

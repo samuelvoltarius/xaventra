@@ -54,12 +54,14 @@ AutoFix/self-evolution sandbox proposals remain separate, and their existence
 is not counted as an end-to-end repair. Do not advance stage labels using model
 prose or invent an approval/evidence reference to obtain a green status.
 
-In particular, the current `patch-sandbox.ts` is a project-copy test harness,
-not an isolation boundary for arbitrary generated code: it inherits process
-environment, can copy the runtime config and links existing dependencies.
-Do not connect automatic generated-code execution to it as though it were a
-credential-free, network-restricted repair sandbox. A separately constrained
-execution environment is required before that transition can be accepted.
+The former `patch-sandbox.ts` project-copy harness is replaced in 2.78.14 by
+the [isolated repair sandbox](REPAIR_SANDBOX.md), used directly by `self_evolve`
+before proposal queueing and again before PATCH_GATE activation. It performs
+baseline, candidate, rollback and restoration experiments and can check an
+unchanged reproduction test. This does not yet connect Doctor investigation
+to generic source-patch generation or certify the legacy approved production
+Git/build/restart transaction. Those remain separate open gates; no incident is
+closed or learned workflow activated merely because sandbox tests passed.
 
 ## Verification and operations
 

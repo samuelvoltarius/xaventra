@@ -3617,6 +3617,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
                             search: proposal.search,
                             replace: proposal.replace,
                             reason: proposal.reason,
+                            reproductionTest: proposal.reproductionTest,
                             apply: true,
                             approvalToken: token,
                         })

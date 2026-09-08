@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.78.14] — 2026-09-08
+
+- Replace preapproval host-process patch testing with fail-closed, asynchronous
+  Docker isolation. No production configuration, host environment, dependency
+  links, Docker socket or host mounts enter the experiment. Require a reviewed,
+  installed image ID matching the lockfile, constrained Linux cgroup v2 runtime,
+  no external network, non-root execution and verified container cleanup.
+- Run baseline, candidate, original-snapshot rollback and candidate restoration
+  as separate build/regression executions. An optional unchanged reproduction
+  test must fail before repair and after rollback, then pass on both candidate
+  executions. Infrastructure failure is not a reproduced symptom.
+- Reject path aliases and linked inputs; retain snapshot/image identities and
+  prevent concurrent self-evolution while asynchronous experiments run.
+  PATCH_GATE still applies. Sandbox restoration is not production recovery.
+- Add cross-platform boundary/caller regressions and a real Linux container
+  acceptance job. See the [operator guide](docs/REPAIR_SANDBOX.md) and
+  [verification limits](docs/VERIFICATION_2.78.14.md). No production rollout or RC.
+
 ## [2.78.13] — 2026-09-08
 
 - Connect persisted Doctor cases to a bounded diagnostic worker in the existing

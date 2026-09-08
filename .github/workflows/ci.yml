@@ -9,6 +9,33 @@ permissions:
   contents: read
 
 jobs:
+  repair-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Prepare trusted dependency-only image (no source or secrets)
+        shell: bash
+        run: |
+          node scripts/build-repair-sandbox.mjs | tee /tmp/sandbox-build.log
+          grep '^XAVENTRA_REPAIR_SANDBOX_IMAGE=' /tmp/sandbox-build.log >> "$GITHUB_ENV"
+      - name: Real isolated repair, regression, rollback and restoration
+        run: node scripts/check-repair-sandbox.mjs
+        timeout-minutes: 22
+      - name: Preserve real sandbox evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-sandbox-qa-linux
+          path: .nova-data/sandbox-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
   verify:
     strategy:
       fail-fast: false

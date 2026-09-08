@@ -17,8 +17,8 @@
 
 import { execSync, spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
-import { validatePatchInSandbox, type PatchSandboxResult } from './patch-sandbox.js'
+import { join } from 'node:path'
+import { assertPatchSourcePath, validatePatchInSandbox, type PatchSandboxResult } from './patch-sandbox.js'
 
 // ============================================
 // Types
@@ -32,6 +32,7 @@ export interface EvolutionRequest {
     reason?: string        // Why this change is needed
     apply?: boolean        // Must be true plus approvalToken to apply
     approvalToken?: string // Must match NOVA_PATCH_GATE_TOKEN
+    reproductionTest?: string // Existing immutable regression oracle
 }
 
 export interface EvolutionResult {
@@ -74,14 +75,7 @@ let activeEvolution: string | null = null
 // ============================================
 
 function isAllowedPath(filePath: string): boolean {
-    const resolved = resolve(NOVA_DIR, filePath)
-    const rel = relative(NOVA_DIR, resolved)
-
-    // Must be within project
-    if (rel.startsWith('..')) return false
-
-    // Must be in allowed directories
-    return ALLOWED_DIRS.some(dir => rel.startsWith(dir))
+    try { assertPatchSourcePath(NOVA_DIR, filePath); return true } catch { return false }
 }
 
 function isGitRepo(): boolean {
@@ -130,7 +124,8 @@ function logEvolution(entry: EvolutionLogEntry): void {
         } catch { /* fresh log */ }
     }
 
-    log.push(entry)
+    const { approvalToken: _secret, ...safeRequest } = entry.request
+    log.push({ ...entry, request: safeRequest })
 
     // Keep last 100 entries
     if (log.length > 100) {
@@ -157,6 +152,7 @@ function queuePatchProposal(request: EvolutionRequest, sandbox: PatchSandboxResu
         reason: request.reason || '',
         search: request.search,
         replace: request.replace,
+        reproductionTest: request.reproductionTest,
         sandbox,
     }
 
@@ -177,16 +173,14 @@ function queuePatchProposal(request: EvolutionRequest, sandbox: PatchSandboxResu
  * Execute a self-evolution: branch → modify → build → test → merge/rollback
  */
 export async function evolve(request: EvolutionRequest): Promise<EvolutionResult> {
+    if (activeEvolution) return { success: false, error: 'Evolution bereits aktiv; Sandbox oder Freigabe läuft.' }
+    activeEvolution = `sandbox-${Date.now()}`
+    try { return await evolveExclusively(request) } finally { activeEvolution = null }
+}
+
+async function evolveExclusively(request: EvolutionRequest): Promise<EvolutionResult> {
     const startTime = Date.now()
     const branchName = `nova/self-evolve-${Date.now()}`
-
-    // Guard: only one at a time
-    if (activeEvolution) {
-        return {
-            success: false,
-            error: `Evolution bereits aktiv: ${activeEvolution}. Warte bis sie fertig ist.`,
-        }
-    }
 
     // Guard: git check
     if (!isGitRepo()) {
@@ -224,12 +218,13 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
 
     // Diagnosis/proposal generation is allowed automatically. No proposal can
     // reach PATCH_GATE until the exact patch builds and passes tests in an
-    // isolated copy of the project.
-    const sandbox = validatePatchInSandbox({
+    // isolated container. This is not proof of production recovery.
+    const sandbox = await validatePatchInSandbox({
         projectRoot: NOVA_DIR,
         file: request.file,
         search: request.search,
         replace: request.replace,
+        reproductionTest: request.reproductionTest,
     })
     if (!sandbox.verified) {
         return {

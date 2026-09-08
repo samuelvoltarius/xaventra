@@ -4160,6 +4160,7 @@
       "module": "src/synthesis/patch-sandbox.ts",
       "imports": [
         "node:child_process",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

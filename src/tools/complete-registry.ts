@@ -953,6 +953,7 @@ export const evolutionTools: NovaTool[] = [
             { name: 'replace', type: 'string', description: 'Neuer Text', required: true },
             { name: 'apply', type: 'boolean', description: 'Nur true setzen wenn der Patch wirklich angewendet werden soll', required: false },
             { name: 'approvalToken', type: 'string', description: 'Patch-Gate Token aus signiertem User-Befehl', required: false },
+            { name: 'reproductionTest', type: 'string', description: 'Vorhandener unveränderter src/*.test.ts-Regressionsbeleg: muss vorher fehlschlagen und danach bestehen', required: false },
             { name: 'reason', type: 'string', description: 'Warum diese ï¿½nderung', required: false },
         ],
         handler: async (params) => {
@@ -965,6 +966,7 @@ export const evolutionTools: NovaTool[] = [
                 reason: params.reason as string | undefined,
                 apply: params.apply === true,
                 approvalToken: params.approvalToken as string | undefined,
+                reproductionTest: params.reproductionTest as string | undefined,
             })
         },
     },
@@ -3577,7 +3579,6 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
 
 
 
