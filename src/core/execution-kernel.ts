@@ -44,7 +44,6 @@ export class ExecutionKernel {
         this.preflight = assessExecutionPreflight(taskContext, plan.intent, plan.allowedTools)
         this.deliberation = deliberateExecution(this.preflight)
         this.autonomy = resolveAutonomyLevel({ preflight: this.preflight })
-        this.worker = new FocusedWorker(plan)
         this.contract = contractOrOverrides && 'version' in contractOrOverrides
             ? contractOrOverrides
             : createTaskContract(taskContext, plan.intent, plan.allowedTools, {
@@ -54,6 +53,14 @@ export class ExecutionKernel {
                     ...(contractOrOverrides?.budget || {}),
                 },
             })
+        // A complete contract is the outer orchestrator's binding tool plan.
+        // Reapplying keyword selection here can silently erase its required
+        // diagnostic tools during a JSON/code-only follow-up. This is not an
+        // authorization grant: registry roles, lifecycle gates and budgets still
+        // govern every call. Partial overrides continue to narrow the dispatcher.
+        this.worker = new FocusedWorker(contractOrOverrides && 'version' in contractOrOverrides
+            ? { ...plan, allowedTools: Object.freeze([...this.contract.allowedChanges.allowedTools]) }
+            : plan)
         recordExecutionStage({ stage: 'contract.created', success: true, intent: this.intent.kind })
     }
 

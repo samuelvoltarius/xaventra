@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { ExecutionKernel } from './execution-kernel.js'
 
 describe('execution kernel', () => {
+    it('retains a complete diagnostic contract during a JSON-only candidate follow-up', () => {
+        const contract = new ExecutionKernel('System health prüfen').contract
+        contract.allowedChanges = { readOnly: true, externalSideEffects: false, allowedPaths: [], allowedTools: ['health_status'] }
+        const kernel = new ExecutionKernel('Return ONLY JSON with description, search, replace, reason.', contract)
+        expect(kernel.selectWorkerTools().map(t => t.name)).toEqual(['health_status'])
+        expect(() => kernel.assertCanExecute('run_command')).toThrow('outside task contract')
+    })
+    it('keeps an explicitly empty complete contract planning-only', () => {
+        const contract = new ExecutionKernel('System health prüfen').contract
+        contract.allowedChanges.allowedTools = []
+        expect(new ExecutionKernel('System health prüfen', contract).selectWorkerTools()).toEqual([])
+    })
     it('enforces the outer allow-list and call budget before an effect can start', () => {
         const kernel = new ExecutionKernel('Lies beide Dateien a.txt und b.txt', { allowedChanges: { allowedTools: ['read_file'] }, budget: { maxToolCalls: 1 } })
         expect(kernel.selectWorkerTools().map(tool => tool.name)).toEqual(['read_file'])

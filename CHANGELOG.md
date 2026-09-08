@@ -18,6 +18,9 @@
   immutable artifacts and operator probe profiles must be provisioned explicitly.
   This is not an autonomous full-product or production-fleet acceptance claim.
   See [activation setup and recovery](docs/REPAIR_ACTIVATION.md).
+- Fix a live-reproduced candidate transition that discarded required diagnostic
+  tools during JSON-only follow-ups. Complete Kernel contracts retain their
+  explicit tool plan; role/lifecycle/budget gates and empty-tool plans remain.
 
 ## [2.78.14] — 2026-09-08
 

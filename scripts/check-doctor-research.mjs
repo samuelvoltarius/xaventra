@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { randomUUID } from 'node:crypto'
 
 const source = resolve(import.meta.dirname, '..')
 if (!process.env.XAVENTRA_RESEARCH_QA_URL) throw new Error('Set XAVENTRA_RESEARCH_QA_URL to an explicitly authorized OpenAI-compatible local model endpoint')
@@ -16,10 +17,11 @@ if (!process.env.XAVENTRA_RESEARCH_QA_CHILD) {
   const root = mkdtempSync(join(base, 'xaventra-research-'))
   const env = Object.fromEntries(['PATH','SystemRoot','WINDIR','COMSPEC','PATHEXT','TEMP','TMP'].filter(key=>process.env[key]).map(key=>[key,process.env[key]]))
   Object.assign(env, { XAVENTRA_RESEARCH_QA_CHILD: root, XAVENTRA_RESEARCH_QA_URL: process.env.XAVENTRA_RESEARCH_QA_URL,
+    XAVENTRA_RESEARCH_QA_PATCH: process.env.XAVENTRA_RESEARCH_QA_PATCH || '',
     XAVENTRA_RESEARCH_QA_MODEL: process.env.XAVENTRA_RESEARCH_QA_MODEL || 'qwen', HOME: root, USERPROFILE: root,
     NOVA_RUNTIME_ROOT: root, NOVA_TEST_MODE:'1', NOVA_NO_SIDE_EFFECTS:'1', NOVA_SKIP_MODEL_RESOLVER_INIT:'1',
     NOVA_NO_TELEGRAM:'true', NODE_ENV:'test', NOVA_OTEL_ENABLED:'false', OTEL_SDK_DISABLED:'true' })
-  const child = spawnSync(process.execPath, [import.meta.filename], { cwd: root, env, encoding:'utf8', timeout:150_000, windowsHide:true })
+  const child = spawnSync(process.execPath, [import.meta.filename], { cwd: root, env, encoding:'utf8', timeout:250_000, windowsHide:true })
   writeFileSync(join(root,'worker.log'), (child.stdout || '') + (child.stderr || ''))
   console.log(`Report directory: ${root}`)
   try { console.log(readFileSync(join(root,'report.json'),'utf8')) } catch { console.error(String(child.error || 'Worker did not produce a report')) }
@@ -66,7 +68,23 @@ try {
   assert.equal(JSON.parse(readFileSync(configPath,'utf8')).endpoint,'http://127.0.0.1:0','Investigation must not mutate configuration')
   assert.equal(result.stage,'researching','A diagnostic report is not proof of repair')
   report.cases.push({id:'live-investigation-current-observations',passed:true,runId:result.investigation.runId})
-} catch(error) { report.cases.push({id:'live-investigation-current-observations',passed:false,error:String(error)}); process.exitCode=1 }
+  if(process.env.XAVENTRA_RESEARCH_QA_PATCH==='1'){
+    const {getOutcomeLedger}=await load('core/outcome-ledger.js')
+    const originalContract=getOutcomeLedger().getRun(result.investigation.runId).contract
+    const content='Use health_status for current evidence, then return ONLY JSON with string fields description, search, replace, reason. Propose exactly one unique replacement for this disposable source: "export const probePort = 0". The probePort must match the actual observed listener port, not a guess. No apply or approval. Do not change configuration.'
+    const contract={...originalContract,id:`doctor-candidate-${randomUUID()}`,goal:content,createdAt:new Date().toISOString()}
+    const candidate=await createResearchWorker(()=>true,llm,['health_status']).execute({contract,content,caseId:result.id,signal:AbortSignal.timeout(90_000),purpose:'candidate'})
+    const run=getOutcomeLedger().getRun(contract.id)
+    assert.equal(run?.validation?.success,true);assert.ok(run.tools.some(t=>t.success&&t.toolName==='health_status'))
+    const patch=JSON.parse(candidate.output.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''))
+    assert.ok(['description','search','replace','reason'].every(k=>typeof patch[k]==='string'))
+    assert.ok(Object.keys(patch).every(k=>['description','search','replace','reason'].includes(k)))
+    assert.ok(patch.search&&'export const probePort = 0'.split(patch.search).length===2)
+    assert.equal('export const probePort = 0'.replace(patch.search,patch.replace).trim().replace(/;$/,''),`export const probePort = ${server.address().port}`)
+    assert.equal(JSON.parse(readFileSync(configPath,'utf8')).endpoint,'http://127.0.0.1:0')
+    report.cases.push({id:'live-model-exact-candidate-json-no-application',passed:true,runId:contract.id})
+  }
+} catch(error) { report.cases.push({id:report.cases.length?'live-model-exact-candidate-json-no-application':'live-investigation-current-observations',passed:false,error:String(error)}); process.exitCode=1 }
 finally {
   await new Promise(resolve=>server.close(resolve))
   writeFileSync(join(root,'report.json'),JSON.stringify(report,null,2))

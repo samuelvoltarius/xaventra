@@ -31,6 +31,17 @@ artifact sourceHash to the approved baseline; a specific two-patch negative is
 retained in Linux acceptance. Earlier rollback-on-spawn-failure, env-only
 reconciliation and writable controller-state configurations were corrected.
 
+An additional live local-model candidate run exposed an actual routing defect:
+the JSON-only candidate follow-up was advertised zero diagnostic tools despite
+its explicit Kernel contract. The retained negative run produced no validated
+candidate. Complete outer contracts now drive the immutable tool plan rather
+than being silently reduced by keyword routing; role/lifecycle/budget gates and
+explicit empty-tool contracts remain enforced. A subsequent dirty-tree local
+Qwen run passed both diagnostic evidence and exact candidate JSON (2/2), with
+no application or config mutation. Use `XAVENTRA_RESEARCH_QA_PATCH=1` alongside
+the existing opt-in research QA endpoint to reproduce this separate model check.
+Neither this model check nor scripted receipts is a full autonomous repair run.
+
 Use [the operator and recovery guide](REPAIR_ACTIVATION.md). Missing deployment
 identity, authority service, prepared signed artifacts, profiles or source-mirror
 advancement are explicit prerequisites, not grounds to enable a permissive path.
