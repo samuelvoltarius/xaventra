@@ -9,13 +9,13 @@ and PATCH_GATE; do not claim the legacy approved production transaction safe.
 - TypeScript: `npm run typecheck`.
 - Boundary triggers and alternate representations:
   `npx vitest run src/synthesis/patch-sandbox.test.ts src/synthesis/self-evolution-sandbox.test.ts src/synthesis/synthesis.test.ts --maxWorkers=2`.
-  Final local Windows result: 50/50 tests. Docker is scripted here, explicitly
+  Final local Windows result: 51/51 tests. Docker is scripted here, explicitly
   not a live isolation proof. Cases cover canonical paths, links, excluded config,
   limits/argv, failing commands, cleanup, changed snapshots, original-symptom
   expectations, queue gating and concurrent dispatch.
 - Legitimate path: exact replacement, unchanged tests, original/candidate hash
   restoration and queue-without-application use those same production entry points.
-- Owning package locally passed: 200 Core files / 1343 tests, build, 7 Desktop
+- Owning package locally passed: 200 Core files / 1344 tests, build, 7 Desktop
   tests, generated catalogs and assurance. Redacted staged and 30-commit public
   history secret scans found no leaks. These do not replace exact-SHA CI.
 - Real backend: new Linux CI job runs `scripts/check-repair-sandbox.mjs` against
@@ -46,6 +46,16 @@ cleanup was verified. Core and packaged Desktop jobs passed on all three OSes.
 The subsequent SIGKILL/deadline strengthening adds a sixth actual-container
 check for non-cooperating code and needs its own exact-revision green CI before
 promotion. The earlier green run is not substituted for that final check.
+
+The hardened runtime `9b5edd06ea972c36a4334cc8164f57f7c3e24685` also passed all
+eight jobs in [CI 34239802665](https://github.com/samuelvoltarius/xaventra/actions/runs/34239802665).
+Its downloaded clean-source report passes all six real checks, including forced
+termination and verified cleanup of a candidate ignoring SIGTERM. A subsequent
+caller-only correction removes the obsolete inner lock release: only the outer
+async owner may release the evolution lock. The new deterministic competing-call
+test fails with the early release (a second proposal starts), then passes with
+the fix. This final ownership/attestation change must likewise pass its own
+exact-commit CI. These records do not authorize deployment or full RC acceptance.
 
 ## Limits kept open
 

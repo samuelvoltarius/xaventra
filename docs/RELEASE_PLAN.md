@@ -23,6 +23,12 @@ including actual isolated baseline/candidate/rollback/restoration, full Core
 regression in each phase and hostile-write/semantic-negative controls. Final
 hard-deadline changes require their own exact-SHA CI before main promotion.
 
+Hard-deadline source `9b5edd06ea972c36a4334cc8164f57f7c3e24685` passed all eight
+jobs in [CI 34239802665](https://github.com/samuelvoltarius/xaventra/actions/runs/34239802665),
+including all six real sandbox checks and the hostile non-cooperating process.
+Final caller ownership is covered by a new red/green competing-call regression;
+promotion still requires the final HEAD's own green CI, not a predecessor's.
+
 ### 2.78.13 goal and mission lifecycle candidate
 
 The next coherent layer follow-up corrects a shared autonomy prerequisite:

@@ -399,8 +399,6 @@ async function evolveExclusively(request: EvolutionRequest): Promise<EvolutionRe
         logEvolution({ timestamp: Date.now(), request, result, branch: branchName })
         return result
 
-    } finally {
-        activeEvolution = null
     }
 }
 
