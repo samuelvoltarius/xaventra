@@ -9,6 +9,33 @@ permissions:
   contents: read
 
 jobs:
+  docker-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Prepare trusted disposable dependency image
+        shell: bash
+        run: |
+          node scripts/build-repair-sandbox.mjs | tee /tmp/docker-repair-image.log
+          grep '^XAVENTRA_REPAIR_SANDBOX_IMAGE=' /tmp/docker-repair-image.log >> "$GITHUB_ENV"
+      - name: Full Doctor to Docker recovery (scripted model, real tools and containers)
+        run: node scripts/check-docker-repair.mjs
+        timeout-minutes: 8
+      - name: Preserve end-to-end evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-repair-qa-linux
+          path: .nova-data/docker-repair-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
   managed-repair:
     runs-on: ubuntu-latest
     timeout-minutes: 10
