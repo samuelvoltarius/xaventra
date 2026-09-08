@@ -10,6 +10,7 @@ import { ManagedRepairDriver } from '../dist/doctor/managed-repair-driver.js'
 import { RepairActivationController, repairHash, signRepairValue } from '../dist/doctor/repair-activation.js'
 import { createHttpRepairProbe } from '../dist/doctor/repair-controller-server.js'
 import { stopLocalDaemon } from '../dist/process/daemon-control.js'
+import { readProtectedControllerFile } from '../dist/doctor/repair-controller-files.js'
 
 if(process.platform!=='linux'||process.getuid()!==0)throw new Error('Run only in disposable Linux CI as root')
 process.umask(0o022)
@@ -50,6 +51,10 @@ let initial
 async function startOld(){initial=spawn(nodeExecutable,[join(releasesRoot,'old/dist/daemon.js')],{cwd:runtimeRoot,env,uid:65534,gid:65534,stdio:'ignore'});await new Promise((resolve,reject)=>{initial.once('spawn',resolve);initial.once('error',reject)});for(let i=0;i<100;i++){try{if(JSON.parse(readFileSync(join(runtimeRoot,'.nova-data/daemon-control.json'))).pid===initial.pid&&(await fetch(`http://127.0.0.1:${port}`)).ok)return}catch{};await new Promise(r=>setTimeout(r,50))}throw new Error('Fixture did not become healthy')}
 const ticket=()=>({...binding,attemptId:`repair-${randomUUID()}`,expiresAt:Date.now()+120_000})
 try{
+  const secretFile=join(stateRoot,'fixture-key');writeFileSync(secretFile,'fixture-only-not-a-credential',{mode:0o644})
+  assert.throws(()=>readProtectedControllerFile(secretFile,true),/group\/world/)
+  chmodSync(secretFile,0o600);assert.equal(readProtectedControllerFile(secretFile,true),'fixture-only-not-a-credential')
+  report.cases.push({id:'readable-controller-secret-rejected-private-control-accepted',passed:true})
   const driver=new ManagedRepairDriver({targetId:binding.targetId,releasesRoot,runtimeRoot,stateFile:join(stateRoot,'runtime.json'),releasePublicKey:releaseKey.publicKey,initialReleaseId:'old',runtimeUid:65534,runtimeGid:65534,runtimeEnv:env,nodeExecutable,hasAuthority:async()=>true})
   const controller=new RepairActivationController(join(stateRoot,'attempts'),approval.publicKey,driver,createHttpRepairProbe([{id:'answer',targetId:binding.targetId,url:`http://127.0.0.1:${port}`,expectedStatus:200,expectedBodySha256:hash('42')}],driver))
   await startOld()

@@ -2254,6 +2254,13 @@
       ]
     },
     {
+      "module": "src/doctor/repair-controller-files.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/repair-controller-server.ts",
       "imports": [
         "./repair-activation.js",

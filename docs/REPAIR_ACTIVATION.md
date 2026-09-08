@@ -53,6 +53,8 @@ restart/rollback retain a blocked/pending state, not a success report.
    State, keys, releases and their ancestors are root-owned and not group/world
    writable. The application owns only its runtime data. Do not concurrently run
    PM2/systemd/Docker automatic restarters against that process.
+   The private controller configuration and receipt signing key additionally
+   require mode 0600/0400: merely root-owned but world-readable keys are refused.
 
    Start explicitly with `node scripts/repair-controller.mjs /protected/controller.json`.
    Configuration contains `targetId`, `releasesRoot`, `runtimeRoot`, `stateFile`,
