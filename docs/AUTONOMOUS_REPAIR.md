@@ -54,6 +54,13 @@ AutoFix/self-evolution sandbox proposals remain separate, and their existence
 is not counted as an end-to-end repair. Do not advance stage labels using model
 prose or invent an approval/evidence reference to obtain a green status.
 
+In particular, the current `patch-sandbox.ts` is a project-copy test harness,
+not an isolation boundary for arbitrary generated code: it inherits process
+environment, can copy the runtime config and links existing dependencies.
+Do not connect automatic generated-code execution to it as though it were a
+credential-free, network-restricted repair sandbox. A separately constrained
+execution environment is required before that transition can be accepted.
+
 ## Verification and operations
 
 - `src/doctor/failure-research-worker.test.ts`: durable dispatch, evidence versus

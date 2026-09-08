@@ -25,6 +25,8 @@ interface ResearchFile { version: 1; updatedAt: string; cases: FailureResearchCa
 
 export interface ResearchWorkerInput { contract: TaskContract; content: string; caseId: string; signal: AbortSignal }
 export interface ResearchWorker {
+    /** Deployment/fixture may narrow diagnostic capabilities, never widen them. */
+    allowedTools?: readonly string[]
     hasAuthority(): boolean
     execute(input: ResearchWorkerInput): Promise<{ output: string }>
     getRun(runId: string): OutcomeRunView | null
@@ -147,7 +149,8 @@ export class FailureResearchCoordinator {
                     { id: 'diagnostic-report', kind: 'response_present', required: true,
                         description: 'Report distinguishes observations from unverified hypotheses and next steps' },
                 ],
-                allowedChanges: { readOnly: true, allowedPaths: [], allowedTools: [...RESEARCH_TOOLS], externalSideEffects: false },
+                allowedChanges: { readOnly: true, allowedPaths: [],
+                    allowedTools: RESEARCH_TOOLS.filter(name => !worker.allowedTools || worker.allowedTools.includes(name)), externalSideEffects: false },
                 budget: { timeoutMs: 90_000, maxToolCalls: 6, maxTokens: 6_000 },
                 approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
             }

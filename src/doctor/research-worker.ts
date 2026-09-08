@@ -5,9 +5,10 @@ import type { ResearchWorker } from './failure-research-coordinator.js'
 
 /** Uses the normal model, Kernel, tool authorization, registry and Outcome
  * Ledger. No direct handler, shell or second execution loop lives here. */
-export function createResearchWorker(hasAuthority: () => boolean, llm?: unknown): ResearchWorker {
+export function createResearchWorker(hasAuthority: () => boolean, llm?: unknown, allowedTools?: readonly string[]): ResearchWorker {
     return {
         hasAuthority,
+        allowedTools,
         getRun: id => getOutcomeLedger().getRun(id),
         async execute({ contract, content, caseId, signal }) {
             const removeGate = getLifecyclePolicy().register({

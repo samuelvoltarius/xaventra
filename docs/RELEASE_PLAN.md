@@ -21,6 +21,12 @@ native Kernel path. Long prose is no longer execution proof. The separate
 [repair acceptance boundary](AUTONOMOUS_REPAIR.md) explicitly keeps generic
 sandbox candidate generation, activation and original-symptom recovery open.
 The module matrix is not promoted to complete merely for adding this connection.
+Initial connected-runtime commit `5b51bd926716a71dbc1afd5687fe587cf2cfdb84`
+passed all seven jobs in [CI 34232476824](https://github.com/samuelvoltarius/xaventra/actions/runs/34232476824).
+The subsequent diagnostic tool-scope narrowing and live-fixture shutdown fix
+require their own green exact-revision CI before main promotion. The retained
+live failures and bounded successful investigation are recorded in
+[2.78.13 verification](VERIFICATION_2.78.13.md).
 
 ### 2.78.12 layer-contract candidate
 

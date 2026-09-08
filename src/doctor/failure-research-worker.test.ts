@@ -82,6 +82,13 @@ describe('persistent Doctor investigation dispatch', () => {
         expect(f.execute).not.toHaveBeenCalled()
     })
 
+    it('narrows advertised tools to deployment scope without permitting expansion', async () => {
+        const f = fixture()
+        f.worker.allowedTools = ['health_status', 'run_command']
+        await f.coordinator.investigateNext(f.worker)
+        expect(f.execute.mock.calls[0][0].contract.allowedChanges.allowedTools).toEqual(['health_status'])
+    })
+
     it('does not investigate a resolved finding and can handle an observed recurrence', async () => {
         const f = fixture()
         f.coordinator.synchronizeFindingStatus([{ ...f.finding, status: 'resolved' }])

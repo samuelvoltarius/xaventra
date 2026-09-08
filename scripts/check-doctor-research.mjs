@@ -59,7 +59,7 @@ try {
   const {createResearchWorker}=await load('doctor/research-worker.js')
   const coordinator=new FailureResearchCoordinator(join(root,'.nova-data','research.json'))
   coordinator.ingest({id:'disposable-probe',title:'System health probe cannot reach configured listener',detail:'Use health_status to inspect the disposable probe configuration and the observed listener. Explain the discrepancy and propose a testable correction without applying it.',category:'health',severity:'critical',source:'acceptance-fixture',recommendation:'Investigate the current observations',evidence:{},status:'open',createdAt:'',updatedAt:''})
-  const result=await coordinator.investigateNext(createResearchWorker(()=>true,llm))
+  const result=await coordinator.investigateNext(createResearchWorker(()=>true,llm,['health_status']))
   writeFileSync(join(root,'investigation.json'),JSON.stringify(result,null,2))
   assert.equal(result?.investigation?.status,'verified')
   assert.ok(result.investigation.report.includes(String(server.address().port)), 'Model report did not identify the observed listener port')
@@ -67,4 +67,9 @@ try {
   assert.equal(result.stage,'researching','A diagnostic report is not proof of repair')
   report.cases.push({id:'live-investigation-current-observations',passed:true,runId:result.investigation.runId})
 } catch(error) { report.cases.push({id:'live-investigation-current-observations',passed:false,error:String(error)}); process.exitCode=1 }
-finally { await new Promise(resolve=>server.close(resolve)); writeFileSync(join(root,'report.json'),JSON.stringify(report,null,2)); process.exit(process.exitCode || 0) }
+finally {
+  await new Promise(resolve=>server.close(resolve))
+  writeFileSync(join(root,'report.json'),JSON.stringify(report,null,2))
+  // Let pending HTTP/native handles drain naturally. Forced process.exit can
+  // abort Windows libuv teardown even after the assertions have passed.
+}

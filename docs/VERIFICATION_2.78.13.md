@@ -91,6 +91,22 @@ An additional targeted autonomy-cycle regression passed after that full run:
 Doctor dispatch is no longer starved by the ordinary self-goal startup/idle
 early return. Exact candidate CI must include this final regression too.
 
+The clean-commit live repeat at `5b51bd926716a71dbc1afd5687fe587cf2cfdb84`
+**failed**: the fixture advertised multiple diagnostic tools but allowed only
+its disposable probe. The model selected introspection as well and was correctly
+stopped by policy. This is retained as a negative result, not silently retried
+until green. Worker capabilities can now explicitly narrow the advertised
+contract; the fixture offers only its permitted probe. A new source regression
+asserts that this narrowing cannot introduce shell tools. The authority and
+memory-scope denial controls remain unchanged.
+
+A later narrowed-tool live run passed its diagnostic assertions but its Windows
+child aborted during forced libuv teardown; the command therefore still failed.
+The fixture now closes its HTTP listener and lets pending handles drain instead
+of forcing `process.exit`. A subsequent dirty-tree live run passed both the
+same assertions and process exit (code 0). Both earlier failure records remain
+retained locally; none is counted as a successful whole-repair test.
+
 - Whole-module function acceptance remains open in the
   [40-module matrix](LAYER_BEHAVIOR_MATRIX.md).
 - The native executor remains the execution owner; this patch does not add a
