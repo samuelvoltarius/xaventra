@@ -21,7 +21,9 @@ export async function createPublishedRepairContainer(engine: DockerRepairEngine,
         mount.Source = volume; mount.VolumeOptions = { NoCopy: true }
         const helper = await engine.call('POST', `/containers/create?name=xaventra-volume-init-${randomUUID()}`, {
             Image: artifact.baseImageId, User: '0:0', Entrypoint: ['/usr/local/bin/node'],
-            Cmd: ['-e', `const fs=require('node:fs');if(fs.readdirSync('/state').length)throw Error('Not empty');fs.chownSync('/state',${Number(uid[1])},${Number(uid[2])});fs.chmodSync('/state',0o700);`],
+            // chmod while the narrowly privileged helper still owns the empty
+            // directory; after chown, CAP_CHOWN does not grant CAP_FOWNER.
+            Cmd: ['-e', `const fs=require('node:fs');if(fs.readdirSync('/state').length)throw Error('Not empty');fs.chmodSync('/state',0o700);fs.chownSync('/state',${Number(uid[1])},${Number(uid[2])});`],
             HostConfig: { NetworkMode: 'none', ReadonlyRootfs: true, CapDrop: ['ALL'], CapAdd: ['CHOWN'], SecurityOpt: ['no-new-privileges'],
                 Memory: 128 * 1024 * 1024, NanoCpus: 1_000_000_000, PidsLimit: 16, RestartPolicy: { Name: 'no' },
                 Mounts: [{ Type: 'volume', Source: volume, Target: '/state', VolumeOptions: { NoCopy: true } }] },
