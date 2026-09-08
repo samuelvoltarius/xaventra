@@ -3,7 +3,7 @@ import { it, expect } from 'vitest'
 import { createRepairAuthorityServer, type RepairOperatorGrant } from './repair-authority-server.js'
 import { repairHash, verifyRepairValue } from './repair-activation.js'
 
-it.each(['valid', 'no-grant', 'different-patch', 'expired-grant', 'different-main', 'different-epoch', 'lease-unavailable', 'state-without-drain', 'fresh-state-proof', 'stale-state-proof', 'short-grant', 'short-ticket', 'short-state-proof'])(
+it.each(['valid', 'no-grant', 'different-patch', 'expired-grant', 'different-main', 'different-epoch', 'lease-unavailable', 'state-without-drain', 'fresh-state-proof', 'stale-state-proof', 'short-grant', 'short-ticket', 'short-state-proof', 'missing-drain-state-proof', 'pending-drain-state-proof', 'foreign-drain-state-proof', 'revoked-during-drain-state-proof'])(
     'separate HTTP authority evaluates %s without acquiring a lease', async scenario => {
         const keys = generateKeyPairSync('ed25519'), now = Date.now()
         const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
@@ -17,6 +17,10 @@ it.each(['valid', 'no-grant', 'different-patch', 'expired-grant', 'different-mai
         if (scenario === 'short-state-proof') grant.quiescence!.expiresAt = now + 2000
         let reads = 0
         const server = createRepairAuthorityServer({ privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+            readToolDrain: scenario === 'missing-drain-state-proof' ? undefined : async ticket => {
+                if (scenario === 'revoked-during-drain-state-proof') grant.expiresAt = Date.now() - 1
+                return { bindingHash: scenario === 'foreign-drain-state-proof' ? 'wrong' : repairHash(ticket), toolActionsDrained: scenario !== 'pending-drain-state-proof' }
+            },
             readGrant: () => scenario === 'no-grant' ? undefined : grant,
             readLease: async () => { reads++; return scenario === 'lease-unavailable' ? undefined : {
                 holderNodeId: scenario === 'different-main' ? 'other' : 'main', epoch: scenario === 'different-epoch' ? 8 : 7, expiresAt: now + 60_000,

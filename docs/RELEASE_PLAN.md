@@ -6,6 +6,23 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.17 tool-admission and maintenance checkpoint
+
+[Protocol, configuration and recovery](REPAIR_DRAIN.md) describe persisted
+signed permits, timeout-safe completion, explicit node policy, pre-activation
+drain and signed-receipt reopening. Local compiled two-process HTTP acceptance
+passes 5/5 on Windows (working-tree evidence, not final-SHA or live Mesh proof).
+Unit/API negatives cover authorization, stale completion, unclassified actions,
+restart, receipt reconciliation and authority revalidation after draining.
+Exact candidate source/test/CI evidence is recorded in the release verification
+document before promotion; no incomplete candidate is labeled RC.
+
+**Open:** general external/background writer fencing; additional typed completion
+adapters; immutable Docker build/sign/source-mirror preparation; production
+adoption/exclusive restart ownership; original live symptom recovery. Those
+requirements remain in scope. The coordinator is opt-in and single-writer,
+not a new quorum system. A bounded protocol pass is not production activation.
+
 ### 2.78.16 Docker repair and continuous acceptance
 
 [Deployment, evidence and remaining gates](DOCKER_REPAIR.md) cover the external

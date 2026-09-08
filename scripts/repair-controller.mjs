@@ -10,6 +10,8 @@ import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createRepairControllerServer, createHttpRepairProbe } from '../dist/doctor/repair-controller-server.js'
 import { repairRpc } from '../dist/doctor/repair-activation.js'
+import { RepairDrainClient } from '../dist/doctor/repair-drain-client.js'
+import { setTimeout as delay } from 'node:timers/promises'
 import { readProtectedControllerFile as readProtected, protectControllerDirectory } from '../dist/doctor/repair-controller-files.js'
 
 const config=JSON.parse(readProtected(process.argv[2]||'',true))
@@ -42,6 +44,20 @@ if(config.driver==='docker'){
     saveState:state=>atomicWriteJsonSync(config.stateFile,state)},engine)
 }else if(!config.driver||config.driver==='managed')driver=new ManagedRepairDriver({...config,releasePublicKey,hasAuthority})
 else throw new Error('Unknown repair deployment adapter')
-const server=createRepairControllerServer({stateRoot:config.stateRoot,approvalPublicKey,receiptPrivateKey,driver,probe:createHttpRepairProbe(config.probes,driver)})
+const drain=config.drainUrl?new RepairDrainClient({url:config.drainUrl,actor:'operator',
+  privateKey:readProtected(config.drainOperatorPrivateKeyFile,true),authorityPublicKey:readProtected(config.drainAuthorityPublicKeyFile)}):undefined
+if(drain) driver.beginMaintenance=async ticket=>{
+  await drain.request('begin',ticket)
+  const deadline=Math.min(Date.now()+30_000,ticket.expiresAt)
+  do {
+    const status=await drain.request('status',ticket)
+    if(status.bindingHash===repairHash(ticket)&&status.toolActionsDrained===true) return
+    if(status.uncertain>0) throw new Error('Uncertain actions require independent operator reconciliation')
+    await delay(250)
+  } while(Date.now()<deadline)
+  throw new Error('Tool drain incomplete; maintenance remains closed')
+}
+const server=createRepairControllerServer({stateRoot:config.stateRoot,approvalPublicKey,receiptPrivateKey,driver,probe:createHttpRepairProbe(config.probes,driver),
+  onVerifiedReceipt:drain?async receipt=>{await drain.request('release',{ticket:receipt.payload.binding,receipt})}:undefined})
 server.listen(config.port,'127.0.0.1',()=>console.log('Xaventra repair controller ready on configured loopback port'))
 // Expose remotely only behind an operator-managed authenticated HTTPS gateway.

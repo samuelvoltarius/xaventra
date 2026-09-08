@@ -254,6 +254,18 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/doctor/repair-controller-server.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/repair-drain-server.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/repair-drain.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/doctor/research-worker.integration.test.ts",
       "path": ".nova-data"
     },
@@ -619,6 +631,10 @@
     },
     {
       "owner": "src/tools/reminder-tool.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/tools/repair-admission.test.ts",
       "path": ".nova-data"
     },
     {

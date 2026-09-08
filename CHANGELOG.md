@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.17] — 2026-09-08
+
+- Add an opt-in, independently owned signed tool-admission coordinator with
+  pinned node membership, persisted execution tokens and maintenance ownership.
+  A caller timeout, lost node or restart never counts as completed work.
+- Wrap registered handlers, including direct registry access. Unclassified or
+  detached work stays uncertain; the initial trusted bounded handler is the
+  original built-in `read_file`, not a plugin reusing its name.
+- Connect controller pre-activation to admission drain, recheck lease authority
+  afterwards, and reopen only with an independently signed recovery/rollback
+  receipt. Lost release replies reconcile without another deployment.
+- Require both actual tool drain and separately evidenced external-writer
+  quiescence for state-copy authority. Add two-process HTTP acceptance and
+  negative regressions; this does not prove full production Mesh fencing,
+  prepared-artifact/source advancement or an RC.
+
 ## [2.78.16] — 2026-09-08
 
 - Add an external Docker repair adapter for signed, operator-prepared immutable

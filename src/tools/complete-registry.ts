@@ -14,6 +14,7 @@
 
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
+import { withRepairAdmission } from '../doctor/repair-drain-client.js'
 import { sshTool } from './ssh-tool.js'
 import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
@@ -3347,6 +3348,7 @@ ALL_TOOLS.push(
 
 export class NovaToolRegistry {
     private tools: Map<string, NovaTool> = new Map()
+    private wrapped = new WeakSet<NovaTool['handler']>()
 
     constructor() {
         this.registerAll()
@@ -3355,13 +3357,13 @@ export class NovaToolRegistry {
 
     registerAll(): void {
         for (const tool of ALL_TOOLS) {
-            this.tools.set(tool.name, tool)
+            this.register(tool)
         }
 
         // Register the Skill Pack loader (from tool-router) â€” async because ESM
         import('./tool-router.js').then(({ loadSkillPackTool }) => {
             if (loadSkillPackTool) {
-                this.tools.set(loadSkillPackTool.name, loadSkillPackTool)
+                this.register(loadSkillPackTool)
                 console.log(`[Tools] âœ… load_skill_pack Tool registriert`)
             }
         }).catch(() => { /* tool-router not yet available */ })
@@ -3382,7 +3384,7 @@ export class NovaToolRegistry {
                 // Skip if already registered (built-in overrides custom)
                 if (this.tools.has(ct.name)) continue
 
-                this.tools.set(ct.name, {
+                this.register({
                     name: ct.name,
                     description: ct.description,
                     category: 'other',
@@ -3403,7 +3405,14 @@ export class NovaToolRegistry {
     }
 
     register(tool: NovaTool): void {
-        this.tools.set(tool.name, tool)
+        if (this.wrapped.has(tool.handler)) { this.tools.set(tool.name, tool); return }
+        // Only the original built-in read handler is currently classified as
+        // completion-bounded. Name reuse by a plugin never inherits that claim.
+        const bounded = fileTools.some(t => t.name === 'read_file' && t.handler === tool.handler)
+        const name = tool.name, execute = tool.handler
+        const handler: NovaTool['handler'] = params => withRepairAdmission(name, bounded, () => execute(params))
+        this.wrapped.add(handler)
+        this.tools.set(tool.name, { ...tool, handler })
     }
 
     unregister(name: string): boolean {
@@ -3583,6 +3592,4 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
-
 

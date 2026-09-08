@@ -2,6 +2,7 @@
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { createRepairAuthorityServer } from '../dist/doctor/repair-authority-server.js'
+import { RepairDrainClient } from '../dist/doctor/repair-drain-client.js'
 import { readProtectedControllerFile as read, protectControllerDirectory } from '../dist/doctor/repair-controller-files.js'
 
 const config=JSON.parse(read(process.argv[2]||'',true))
@@ -10,10 +11,12 @@ if(!Number.isInteger(config.port)||config.port<1024||config.port>65535)throw Err
 const base=new URL(config.coordinatorRestUrl)
 if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash)throw Error('Pinned operator HTTPS coordinator required')
 const apiKey=read(config.coordinatorKeyFile,true).trim()
+const drain=config.drainUrl?new RepairDrainClient({url:config.drainUrl,actor:config.drainObserverId,
+  privateKey:read(config.drainObserverPrivateKeyFile,true),authorityPublicKey:read(config.drainAuthorityPublicKeyFile)}):undefined
 const server=createRepairAuthorityServer({privateKey:read(config.authorityPrivateKeyFile,true),readGrant:hash=>{
   const path=join(config.grantsRoot,`${hash}.json`)
   return existsSync(path)?JSON.parse(read(path,true)):undefined
-},readLease:async()=>{
+},readToolDrain:drain?ticket=>drain.request('status',ticket):undefined,readLease:async()=>{
   const response=await fetch(`${base.href.replace(/\/$/,'')}/nova_mesh_leases?service=eq.nova-main&select=holder_node_id,epoch,expires_at&limit=2`,{
     headers:{apikey:apiKey,Authorization:`Bearer ${apiKey}`},redirect:'error',signal:AbortSignal.timeout(3000)})
   if(!response.ok)return undefined

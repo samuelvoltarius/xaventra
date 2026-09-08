@@ -127,6 +127,16 @@ jobs:
           XAVENTRA_LAYER_QA_DIR: ${{ github.workspace }}/.nova-data/layer-qa
       - name: Signed repair controller and independent live predicate (disposable processes)
         run: node scripts/check-repair-activation.mjs
+      - name: Signed repair admission with two actual node processes
+        run: node scripts/check-repair-drain.mjs
+      - name: Preserve tool-admission evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-drain-qa-${{ matrix.os }}
+          path: .nova-data/repair-drain-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Preserve repair controller evidence including failures
         if: always()
         uses: actions/upload-artifact@v4

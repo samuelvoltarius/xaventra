@@ -22,6 +22,17 @@ function setup() {
 }
 
 describe('external repair activation / scripted driver observations', () => {
+    it('blocks before runtime mutation when maintenance cannot drain', async () => {
+        const f = setup(); f.driver.beginMaintenance = vi.fn(async () => { throw Error('uncertain tool') })
+        expect((await f.controller.activate(f.signed())).status).toBe('blocked')
+        expect(f.driver.beginMaintenance).toHaveBeenCalledOnce()
+        expect(f.driver.activate).not.toHaveBeenCalled(); expect(f.driver.rollback).not.toHaveBeenCalled()
+    })
+    it('rechecks authority after draining instead of using the pre-drain lease', async () => {
+        const f = setup(); f.driver.beginMaintenance = vi.fn(async () => { f.setAuthority(false) })
+        expect((await f.controller.activate(f.signed())).status).toBe('blocked')
+        expect(f.driver.activate).not.toHaveBeenCalled()
+    })
     it('requires original fault then independently healthy new runtime', async () => {
         const f = setup(), result = await f.controller.activate(f.signed())
         expect(result).toMatchObject({ status: 'resolved', before: { state: 'fault', releaseId: 'old' }, after: { state: 'healthy', releaseId: 'new' } })

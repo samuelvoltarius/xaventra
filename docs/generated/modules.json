@@ -2293,6 +2293,34 @@
       ]
     },
     {
+      "module": "src/doctor/repair-drain-client.ts",
+      "imports": [
+        "./repair-activation.js",
+        "./repair-drain-server.js",
+        "./repair-drain.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-drain-server.ts",
+      "imports": [
+        "./repair-activation.js",
+        "./repair-drain.js",
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/doctor/repair-drain.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./repair-activation.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/research-worker.ts",
       "imports": [
         "../agents/nova-runner.js",
@@ -4386,6 +4414,7 @@
       "module": "src/tools/complete-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "../doctor/repair-drain-client.js",
         "../learning/trace-analyzer.js",
         "./3dprinter.js",
         "./api-key-tool.js",

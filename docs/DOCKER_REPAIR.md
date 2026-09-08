@@ -100,6 +100,11 @@ a generic global Mesh/database/API drain. Lease expiry during replacement
 blocks further writes, including unsafe rollback; preserve the controller lock
 and reconcile exact containers and authority. Never delete a stale lock blindly.
 
+Since 2.78.17 `/state` additionally requires the independently signed
+[tool-admission drain](REPAIR_DRAIN.md); a root grant alone is insufficient.
+Configure the authority's read-only drain observer and controller's separate
+operator client. This is a deliberate fail-closed tightening of stateful repair.
+
 To adopt an existing deployment, first verify backups/restore, exact image and
 configuration, stop other update/restart owners, provide real writer fencing,
 prepared artifacts and source continuity, and use the original failing operation

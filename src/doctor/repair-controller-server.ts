@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { RepairActivationController, signRepairValue, type RepairDeploymentDriver, type RepairObservation, type IndependentRepairProbe } from './repair-activation.js'
+import { RepairActivationController, signRepairValue, type RepairDeploymentDriver, type RepairObservation, type IndependentRepairProbe, type RepairReceipt, type SignedRepairValue } from './repair-activation.js'
 
 export interface HttpRepairProbeProfile {
     id: string; targetId: string; url: string; expectedStatus: number; expectedBodySha256: string
@@ -38,7 +38,8 @@ export function createHttpRepairProbe(profiles: readonly HttpRepairProbeProfile[
 /** Embed in a separately installed, operator-owned supervisor. Runtime has only
  * its public key, not the receipt-signing key or access to this state directory. */
 export function createRepairControllerServer(options: { stateRoot: string; approvalPublicKey: string; receiptPrivateKey: string;
-    driver: RepairDeploymentDriver; probe: IndependentRepairProbe }) {
+    driver: RepairDeploymentDriver; probe: IndependentRepairProbe;
+    onVerifiedReceipt?(receipt: SignedRepairValue<RepairReceipt>): Promise<void> }) {
     const controller = new RepairActivationController(options.stateRoot, options.approvalPublicKey, options.driver, options.probe)
     return createServer(async (request, response) => {
         if (request.method !== 'POST' || request.url !== '/repair') { response.writeHead(404).end(); return }
@@ -52,8 +53,12 @@ export function createRepairControllerServer(options: { stateRoot: string; appro
                 : input.operation === 'status' && /^repair-[a-f0-9-]{36}$/.test(input.attemptId)
                     ? JSON.parse(readFileSync(join(options.stateRoot, `${input.attemptId}.json`), 'utf8')) : null
             if (!receipt) throw new Error('Invalid operation')
+            const signed = signRepairValue<RepairReceipt>(receipt, options.receiptPrivateKey)
+            // If reopening fails, keep the immutable recovery evidence and allow
+            // status reconciliation. Never repeat activation to release admission.
+            if (['resolved', 'rolled-back'].includes(receipt.status)) await options.onVerifiedReceipt?.(signed)
             response.setHeader('content-type', 'application/json')
-            response.end(JSON.stringify(signRepairValue(receipt, options.receiptPrivateKey)))
+            response.end(JSON.stringify(signed))
         } catch { response.writeHead(409).end('Repair request rejected or pending; reconcile signed status') }
         finally { clearTimeout(timer) }
     })

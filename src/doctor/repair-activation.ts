@@ -39,6 +39,8 @@ export interface PreparedRepair {
 export interface RepairDeploymentDriver {
     hasAuthority(ticket: RepairTicket): Promise<boolean>
     prepare(ticket: RepairTicket): Promise<PreparedRepair>
+    /** Independent admission barrier, before any runtime or state mutation. */
+    beginMaintenance?(ticket: RepairTicket): Promise<void>
     activate(prepared: PreparedRepair, ticket: RepairTicket): Promise<void>
     rollback(prepared: PreparedRepair, ticket: RepairTicket): Promise<void>
     currentRelease(targetId: string): Promise<string>
@@ -98,6 +100,7 @@ export class RepairActivationController {
             if (await this.driver.currentRelease(ticket.targetId) !== prepared.previousReleaseId) throw new Error('Prior release changed')
             receipt.before = await observe(prepared.previousReleaseId)
             if (receipt.before.state !== 'fault') throw new Error('Original live fault was not independently reproduced')
+            await this.driver.beginMaintenance?.(ticket)
             await authority()
             receipt.status = 'activating'; save(); possiblyChanged = true
             await this.driver.activate(prepared, ticket)

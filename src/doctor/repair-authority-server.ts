@@ -11,6 +11,7 @@ export interface RepairAuthorityOptions {
     privateKey: string
     readGrant(patchHash: string): RepairOperatorGrant | undefined
     readLease(): Promise<{ holderNodeId: string; epoch: number; expiresAt: number } | undefined>
+    readToolDrain?(ticket: RepairTicket): Promise<{ bindingHash: string; toolActionsDrained: boolean }>
 }
 /** Separate operator-owned signing service. A model, runtime identity or merely
  * healthy process does not grant permission. No lease acquisition or takeover. */
@@ -26,7 +27,10 @@ export function createRepairAuthorityServer(options: RepairAuthorityOptions) {
             if (!/^[a-f0-9-]{36}$/.test(challenge) || !/^[a-f0-9]{64}$/.test(ticket?.patchHash || '')
                 || !/^repair-[a-f0-9-]{36}$/.test(ticket.attemptId)) throw new Error('Invalid authority request')
             const { attemptId: _id, expiresAt: _expiry, ...binding } = ticket
-            const grant = options.readGrant(ticket.patchHash), lease = await options.readLease(), now = Date.now()
+            // Drain RPC may take seconds. Read the lease/grant AFTER it and check
+            // freshness at signing time, never reuse pre-await authorization.
+            const drain = request.url === '/state' ? await options.readToolDrain?.(ticket) : undefined
+            const lease = await options.readLease(), grant = options.readGrant(ticket.patchHash), now = Date.now()
             const allowed = Boolean(grant && lease && repairHash(binding) === repairHash(grant.binding)
                 && grant.expiresAt > now && grant.expiresAt <= now + 10 * 60_000 && ticket.expiresAt > now
                 && lease.holderNodeId === grant.holderNodeId && Number.isSafeInteger(lease.epoch) && lease.epoch === grant.leaseEpoch
@@ -34,6 +38,7 @@ export function createRepairAuthorityServer(options: RepairAuthorityOptions) {
             const q = grant?.quiescence
             const quiesced = allowed && q?.externalWritersQuiesced === true && q.bindingHash === repairHash(ticket)
                 && q.verifiedAt >= now - 15_000 && q.verifiedAt <= now && q.expiresAt > now && q.expiresAt <= now + 30_000
+                && drain?.bindingHash === repairHash(ticket) && drain.toolActionsDrained === true
             response.setHeader('content-type', 'application/json')
             response.end(JSON.stringify(signRepairValue({ challenge, targetId: ticket.targetId, patchHash: ticket.patchHash,
                 bindingHash: repairHash(ticket), allowed: request.url === '/state' ? Boolean(quiesced) : allowed,
