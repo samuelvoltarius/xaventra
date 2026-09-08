@@ -3,6 +3,31 @@
 This is bounded feature acceptance, not production activation or RC approval.
 Core and Desktop versions are synchronized. Negative reports remain retained.
 
+## Continuous run including the separate signing authority
+
+Source `351b3b2ef0021d384d3ce66b37b17c74630d51b4`, `sourceDirty: false`,
+Linux arm64, real Qwen, completed 2026-09-08T17:35:35.478Z: **7/7 passed**.
+All six cases below plus exact operator-grant denial/acceptance passed through
+the real signed HTTP authority. Separate actual state-volume acceptance: **4/4**.
+The coordinator lease and operator grants were fixtures, not production HA.
+
+Investigation `doctor-research-4465181d-022e-4dac-8c25-e0c069dc445f`, candidate
+`doctor-candidate-bf6ee399-e744-42a3-8dfb-2915dfc2cbac`, proposal
+`patch_290d9cb8-316b-4961-a69e-a181a266fcba`, activation
+`repair-4728ba6d-b613-43d6-bd12-f44505a46b43`.
+The unchanged reproduction expected the newly randomized value 715. The model
+read both source and original assertion with actual tools; it generated the
+patch. A wrong candidate was subsequently rolled back and original HTTP output
+restored. No production process or user data participated.
+
+Windows local regression for this source: **205 files / 1406 Core tests**, build
+and typecheck passed; Desktop unit tests **7/7**. Its CI run is
+[34257830912](https://github.com/samuelvoltarius/xaventra/actions/runs/34257830912).
+The initial Linux Desktop job failed while capturing the authentication-screen
+screenshot (`page.screenshot` timeout 10000ms). This negative remains recorded;
+it must not be recast as a passed UI acceptance or silently removed. Tests and
+timeouts were not relaxed. Main promotion still requires complete final CI.
+
 ## Clean continuous local-model run
 
 Source: `e9722f4493226e0780c7d0299f0f24db31ce9dca`, `sourceDirty: false`,

@@ -17,6 +17,11 @@ relabeled final-source or production evidence. Real state-copy checks passed
 The clean source `e9722f4493226e0780c7d0299f0f24db31ce9dca` subsequently passed
 the same live-model 6/6 and state 4/4 at 2026-09-08 17:31 UTC. See
 [the evidence record](VERIFICATION_2.78.16.md) for exact runs and limits.
+Source `351b3b2ef0021d384d3ce66b37b17c74630d51b4` then passed live-model **7/7**
+including the separate signed HTTP authority, plus real state checks **4/4**;
+local Core **205 files / 1406 tests**, Desktop **7/7**. The production lease and
+writer drain remain unproven. Its initial Linux Desktop CI screenshot timed out;
+that failure is retained, and final exact-SHA all-job acceptance is still required.
 
 Ten exact-candidate CI jobs are now required before main promotion. Keep all
 previous failed model, Docker provisioning and artifact-upload reports. The
