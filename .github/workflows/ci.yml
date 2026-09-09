@@ -173,6 +173,19 @@ jobs:
         timeout-minutes: 3
         env:
           XAVENTRA_CAPABILITY_QA_DIR: ${{ github.workspace }}/.nova-data/capability-qa
+      - name: Compiled upstream signature, HTTP download and restart acceptance
+        run: node scripts/check-upstream-update.mjs
+        timeout-minutes: 3
+        env:
+          XAVENTRA_UPSTREAM_QA_DIR: ${{ github.workspace }}/.nova-data/upstream-qa
+      - name: Preserve upstream acceptance reports including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-update-qa-${{ matrix.os }}
+          path: .nova-data/upstream-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Preserve capability acceptance reports including failures
         if: always()
         uses: actions/upload-artifact@v4

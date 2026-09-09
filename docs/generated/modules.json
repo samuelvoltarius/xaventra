@@ -1196,6 +1196,7 @@
         "../mesh/mesh-identity.js",
         "../mesh/mesh-registry.js",
         "./data-root.js",
+        "./github-update.js",
         "./release-verifier.js",
         "node:child_process",
         "node:crypto",
@@ -1461,6 +1462,17 @@
       "module": "src/core/full-system-audit.ts",
       "imports": [
         "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/github-update.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:url"
       ]
     },
     {
@@ -1897,6 +1909,15 @@
       "module": "src/core/types.ts",
       "imports": [
         "zod/v3"
+      ]
+    },
+    {
+      "module": "src/core/upstream-update-command.ts",
+      "imports": [
+        "../config/config-path.js",
+        "./data-root.js",
+        "./github-update.js",
+        "node:fs"
       ]
     },
     {
@@ -2474,6 +2495,7 @@
     {
       "module": "src/infra/auto-update.ts",
       "imports": [
+        "../core/upstream-update-command.js",
         "node:child_process",
         "node:fs",
         "node:path"

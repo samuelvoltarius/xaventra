@@ -16,6 +16,7 @@ import { getNovaDataDir } from './data-root.js'
 import { getLocalNodeId, discoverNodes } from '../mesh/mesh-registry.js'
 import { getServiceFencingToken, MAIN_SERVICE } from '../mesh/leader-election.js'
 import { MeshIdentity } from '../mesh/mesh-identity.js'
+import { installedUpdateVersion, type GitHubUpdatePolicy } from './github-update.js'
 import {
     listReleaseFiles, releaseTreeHash,
     type NovaReleaseManifest, type SignedReleaseManifest,
@@ -47,6 +48,7 @@ export interface UpdateNodeConfig {
 }
 
 export interface UpdateConfig {
+    github?: GitHubUpdatePolicy
     enabled: boolean
     checkIntervalHours?: number
     checkIntervalMinutes?: number
@@ -146,7 +148,7 @@ let updateStatus: UpdateStatus = {
 }
 
 function packageVersion(): string {
-    try { return String(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).version || '0.0.0') }
+    try { return installedUpdateVersion() }
     catch { return '0.0.0' }
 }
 
@@ -161,7 +163,7 @@ function refreshStatusFromState(config = updaterConfig): PersistedUpdateState {
     const derived = derivePersistedUpdateStatus(
         currentVersion,
         state,
-        config?.nodes.map(node => node.nodeId) || [],
+        config?.nodes?.map(node => node.nodeId) || [],
     )
     updateStatus = {
         ...updateStatus,
@@ -699,10 +701,18 @@ export function startUpdateChecker(config: UpdateConfig, notifyFn?: (message: st
     updaterConfig = config
     updaterNotify = notifyFn
     if (updateInterval) clearInterval(updateInterval)
+    if (initialCheckTimer) clearTimeout(initialCheckTimer)
     const state = refreshStatusFromState(config)
     if (!state.observedVersion) saveState({ observedVersion: updateStatus.currentVersion })
     if (!config.enabled) return
     const check = (): void => {
+        if (config.github) {
+            void import('./upstream-update-command.js').then(async ({ configuredUpstreamSource }) => {
+                const result = await configuredUpstreamSource().check()
+                if (result.state === 'available') notifyOnce(`upstream:${result.releaseId}`, `📦 Xaventra ${result.version}: neue Publisher-verifizierte GitHub-Release. /update check zeigt Details; keine automatische Installation.`, notifyFn)
+            }).catch(() => log('GitHub release check unavailable'))
+            return // A downloaded release is never re-signed as a local Mesh build.
+        }
         updateStatus.lastCheck = new Date().toISOString()
         const persisted = refreshStatusFromState(config)
         const current = updateStatus.currentVersion

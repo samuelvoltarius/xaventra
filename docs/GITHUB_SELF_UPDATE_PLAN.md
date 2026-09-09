@@ -1,8 +1,87 @@
 # GitHub-backed self-update: current gap and implementation contract
 
-Status: **design / not implemented or enabled by 2.78.12**.
+Status: **discovery and verified staging implemented in 2.78.21; production
+activation and upstream artifact publication remain open**.
 
-## What exists
+## Implemented command contract (2.78.21)
+
+- `/update check` and `check_updates` read published releases from the pinned
+  `samuelvoltarius/xaventra` repository. No Git clone, shell or GitHub token is
+  required. Stable excludes prereleases; `mesh.update.github.channel: "rc"`
+  explicitly includes RCs. Drafts and commits without a release are not eligible.
+- `/update prepare <release-id>` requires Owner/Admin and rechecks the exact
+  displayed release before downloading. A changed candidate needs a new choice.
+- `/update deploy <release-id>` currently performs that verification and reports
+  activation **blocked**. It never claims a started or completed installation.
+  Adding SSH profiles does not connect this upstream package to an independent
+  controller. Do not grant the application the raw Docker socket to bypass this.
+- `/update status` distinguishes upstream discovery/staging from local Mesh
+  rollout status. `/update deploy-local` is the explicit compatibility operation
+  for distributing a **local build**, not an upstream release.
+  Already enabled local-build installations with SSH profiles and no `github`
+  block retain their existing `/update deploy` behavior for compatibility.
+- The old `pull_update`/`pullAndRebuild` path fails closed. It no longer stashes,
+  pulls, installs packages, resets or overwrites a live checkout.
+
+Operator configuration is under `mesh.update.github`:
+
+```json
+{
+  "channel": "stable",
+  "publisherKeys": {
+    "your-publisher-key-id": "OPERATOR_ENROLLED_ED25519_PUBLIC_KEY_PEM"
+  }
+}
+```
+
+No private key belongs here. Obtain and verify publisher fingerprints separately;
+never enroll a key from the release itself or substitute a node's Mesh identity.
+The existing enabled Main update checker polls GitHub when this block exists,
+with notification deduplication; automatic activation is not enabled by polling.
+Explicit checks also work without enabling the Mesh rollout.
+
+The release must contain `xaventra-update.json`, an envelope with `keyId`,
+`payload` and base64 Ed25519 `signature` over the exact UTF-8
+`JSON.stringify(payload)` bytes. Payload shape:
+
+```json
+{
+  "schema": 1,
+  "repository": "samuelvoltarius/xaventra",
+  "version": "2.79.0",
+  "commit": "EXACT_40_CHARACTER_LOWERCASE_GIT_COMMIT",
+  "minUpdater": "2.78.21",
+  "artifacts": [{
+    "name": "xaventra-linux-arm64.tar.gz",
+    "platform": "linux",
+    "arch": "arm64",
+    "size": 12345,
+    "sha256": "EXACT_64_CHARACTER_LOWERCASE_SHA256"
+  }]
+}
+```
+
+The version must match the release tag (`v2.79.0`). Each platform/architecture
+and asset name must be unique. Windows is `win32`; supported descriptors use
+`linux`, `darwin`, `win32` and `arm64`/`x64`. This descriptor acceptance is **not**
+native-install certification. A publisher signature authenticates the declaration;
+it does not independently prove that CI passed or that the package matches source.
+An approved CI publication workflow still has to establish those guarantees.
+
+Packages are streamed to `.nova-data/upstream-updates`, maximum 256 MiB each,
+with free-space checks, exclusive temporary files, hash/size checks and atomic
+promotion. They are not extracted or executed. Aborted partial downloads are
+removed; successful packages and manifests stay available for an eventual
+controller that must reverify them. Do not manually extract over a live runtime.
+Metadata is capped, requests time out, redirects are restricted to GitHub's
+release-asset host, successful checks cache for five minutes and failures back
+off for one minute. Trust/channel/platform/version changes invalidate the cache.
+A truncated 100-entry listing reports unknown rather than a false current result.
+
+Protocol source: [GitHub releases API](https://docs.github.com/en/rest/releases/releases)
+and [release assets API](https://docs.github.com/en/rest/releases/assets).
+
+## Previous implementation and retained local-build path
 
 `src/core/slash-commands.ts` routes `/update` to local status and `/update deploy`
 to `src/core/auto-updater.ts`. The latter builds/tests a local release, signs a
@@ -11,13 +90,13 @@ with health/rollback receipts. Its periodic check compares local package version
 it does **not** discover or download a new upstream GitHub release.
 
 `src/infra/auto-update.ts` separately fetches/pulls Git and rebuilds in place.
-It is reachable through the `check_updates` / `pull_update` tools in the complete
-registry. It is not a safe upstream integration:
+It was reachable through the `check_updates` / `pull_update` tools in the complete
+registry. The in-place mutation has now been removed because it was not a safe upstream integration:
 it stashes live changes, detects dependency changes from commit subjects and
 tolerates stash-restore conflicts. `src/core/self-update.ts` is another local
 patch-proposal mechanism, not the canonical upstream release channel.
 
-These paths must converge on one update authority. Do not wire automatic polling
+Activation paths must converge on one update authority. Do not wire automatic polling
 to the old in-place pull/rebuild implementation.
 
 ## Desired user experience

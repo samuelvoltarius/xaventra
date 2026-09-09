@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.21 upstream download candidate (not complete self-update)
+
+[GitHub discovery and staging contract](GITHUB_SELF_UPDATE_PLAN.md): signed
+publisher manifests, bounded downloads, exact candidate binding and persistent
+status. Legacy in-place Git mutation removed. The compiled HTTP-fixture suite
+is run on Windows/Linux/macOS CI; it does not replace a published-release test.
+Unit/fixture results and final source evidence are in
+[the verification record](VERIFICATION_2.78.21.md).
+
+- Discovery/download source gate: implemented; see exact test evidence.
+- Public release publisher/green-CI artifact provenance: **open**.
+- Independent upstream activation controller and node enrollment: **open**.
+- Actual `/update deploy` upgrade, restart and state rollback: **open**.
+- Existing production shutdown/startup failures: **open**, not masked here.
+- No production rollout, full self-update, self-repair completion or RC claimed.
+
 ### 2.78.20 Docker host-access candidate
 
 [Host access, authority and recovery](HOST_ACCESS.md) implements opt-in local

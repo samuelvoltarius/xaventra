@@ -3405,13 +3405,30 @@ Nutze:
         // ================================================
         case 'update': {
             const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'
+            // Preserve already enrolled local-build installations. Unconfigured
+            // and explicitly GitHub-backed installs use the upstream path.
+            let legacyLocalDeploy = false
+            if (sub === 'deploy') {
+                try {
+                    const update = JSON.parse(readFileSync(resolveConfigPath(), 'utf8')).mesh?.update
+                    legacyLocalDeploy = !update?.github && update?.enabled && update?.nodes?.length > 0
+                } catch { /* No enrollment; upstream explains the prerequisite. */ }
+            }
+            if (['check', 'prepare'].includes(sub) || (sub === 'deploy' && !legacyLocalDeploy)) {
+                try {
+                    const { upstreamUpdateCommand } = await import('./upstream-update-command.js')
+                    return await upstreamUpdateCommand(args, requestPermission)
+                } catch { return '❌ GitHub-Update-Prüfung fehlgeschlagen. Kein Rollout gestartet.' }
+            }
 
             switch (sub) {
                 case 'status': {
                     try {
                         const { getUpdateStatus } = await import('../core/auto-updater.js')
                         const status = getUpdateStatus()
-                        return `📦 **Nova Update Status**
+                        const { upstreamUpdateCommand } = await import('./upstream-update-command.js')
+                        const upstream = await upstreamUpdateCommand('status', requestPermission)
+                        return `${upstream}\n\n📦 **Lokaler Mesh-Build – Status**
 
 🔖 Version: v${status.currentVersion}
 📅 Letzter Check: ${status.lastCheck || 'nie'}
@@ -3424,7 +3441,8 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                         return `❌ Update-Status: ${err?.message || err}`
                     }
                 }
-                case 'deploy': {
+                case 'deploy':
+                case 'deploy-local': {
                     if (requestPermission !== 'owner' && requestPermission !== 'admin') return '🔒 Nur Owner/Admin dürfen den signierten Rollout starten.'
                     try {
                         const { deployUpdateToAllNodes } = await import('../core/auto-updater.js')
@@ -3434,20 +3452,23 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                         const nodes = updateConfig?.nodes || []
                         if (!updateConfig?.enabled || nodes.length === 0) return '❌ Keine sicheren Update-Profile unter mesh.update.nodes konfiguriert.'
 
-                        void deployUpdateToAllNodes(
+                        const completed = await deployUpdateToAllNodes(
                             updateConfig,
                             (msg) => console.log(`[AutoUpdate] ${msg}`)
                         )
-                        return `🔄 **Signierter Canary-Rollout gestartet** für ${nodes.length} Nodes.\n\nStatus: /update status`
+                        return completed ? `✅ Lokaler Mesh-Rollout verifiziert für ${nodes.length} Nodes.\nStatus: /update status` : '❌ Lokaler Mesh-Rollout nicht erfolgreich abgeschlossen. Status: /update status'
                     } catch (err: any) {
                         return `❌ Deploy-Fehler: ${err?.message || err}`
                     }
                 }
                 default:
-                    return `📦 **Nova Auto-Updater**
+                    return `📦 **Xaventra Updater**
 
 /update status — Aktuelle Version und Update-Info
-/update deploy — Tests + signierter Canary-Rollout + Healthcheck/Rollback`
+/update check — GitHub-Releases und Publisher-Signatur prüfen
+/update prepare <Release-ID> — Exaktes Paket herunterladen und prüfen
+/update deploy <Release-ID> — Vorbereitung und Aktivierungsbereitschaft prüfen
+/update deploy-local — Bestehenden lokalen Build per SSH-Mesh verteilen (kein GitHub-Download)`
             }
         }
 

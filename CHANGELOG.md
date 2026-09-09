@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.21] — 2026-09-09
+
+- Add bounded public GitHub release discovery and separately staged package
+  downloads with pinned repository, operator-enrolled Ed25519 publisher keys,
+  exact-release approval, platform/minimum-version checks and streamed SHA-256.
+- Share discovery between `/update check` and `check_updates`; persist scoped
+  status/cache and report offline or invalid signatures as unknown, not current.
+- Disable the destructive legacy in-place pull/build/reset path. Preserve local
+  Mesh-build distribution explicitly as `/update deploy-local`; it is not an
+  upstream downloader. Local version comes from the installed package, not cwd.
+- `/update prepare <release-id>` downloads and verifies only. GitHub deployment
+  still requires a publisher pipeline and independently enrolled activation
+  controller; this candidate does not claim to replace running containers.
+- Add compiled HTTP-fixture acceptance on all three CI platforms, distinct from
+  actual upstream release publication and production upgrade/rollback evidence.
+
 ## [2.78.20] — 2026-09-09
 
 - Add opt-in authenticated local Docker host agent: bounded inventory/status/logs,

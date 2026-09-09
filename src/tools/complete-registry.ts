@@ -1620,7 +1620,7 @@ export const execApprovalTools: NovaTool[] = [
 export const autoUpdateTools: NovaTool[] = [
     {
         name: 'check_updates',
-        description: 'Prï¿½ft ob Nova-Updates verfï¿½gbar sind (git fetch + compare)',
+        description: 'Prüft neue Xaventra GitHub-Releases und die eingeschriebene Publisher-Signatur; keine Installation.',
         category: 'system',
         parameters: [],
         handler: async () => {
@@ -1630,7 +1630,7 @@ export const autoUpdateTools: NovaTool[] = [
     },
     {
         name: 'pull_update',
-        description: 'Zieht Nova-Updates und rebuilt (git pull + npm install + tsc). Rollback bei Fehler.',
+        description: 'Kompatibilitätsname: In-place-Git-Updates sind gesperrt. Verwende check_updates und /update prepare mit exakter Release-ID.',
         category: 'system',
         parameters: [],
         handler: async () => {
