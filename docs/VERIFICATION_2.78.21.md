@@ -33,6 +33,14 @@ not only a successful subset. Source commit is provided by that immutable run.
 Runtime source commit: `f615d3bb192b53d45621b1d8f6028ae0dd37f12c`.
 Subsequent evidence-only documentation must pass its own CI before promotion.
 
+Retained negative: [first candidate CI 34355450258](https://github.com/samuelvoltarius/xaventra/actions/runs/34355450258)
+failed the existing Linux relay test: 1 delivered envelope observed after its
+fixed 100ms sleep, expected 2. The test now deliberately delays its asynchronous
+consumer by 150ms, awaits exact delivery and queue acknowledgement with a bounded
+deadline, and checks both exact envelope IDs. It does not lower the expected
+delivery count or claim a production relay defect was fixed. Failed-test cleanup
+also closes the owned transports. The corrected candidate needs fresh full CI.
+
 ## Still open — no production self-update claim
 
 1. Approved public publisher identity and immutable packages built from exact
