@@ -14,6 +14,8 @@ status. Legacy in-place Git mutation removed. The compiled HTTP-fixture suite
 is run on Windows/Linux/macOS CI; it does not replace a published-release test.
 Unit/fixture results and final source evidence are in
 [the verification record](VERIFICATION_2.78.21.md).
+Runtime source: `f615d3bb192b53d45621b1d8f6028ae0dd37f12c`;
+Windows regression 216 files / 1486 tests, compiled HTTP-fixture 7/7.
 
 - Discovery/download source gate: implemented; see exact test evidence.
 - Public release publisher/green-CI artifact provenance: **open**.

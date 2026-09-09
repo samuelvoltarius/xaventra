@@ -30,6 +30,9 @@ Candidate: `codex/github-update-2.78.21`. Exact-source results are available in
 Pending CI must not be read as passed. Promotion requires the entire relevant CI,
 not only a successful subset. Source commit is provided by that immutable run.
 
+Runtime source commit: `f615d3bb192b53d45621b1d8f6028ae0dd37f12c`.
+Subsequent evidence-only documentation must pass its own CI before promotion.
+
 ## Still open — no production self-update claim
 
 1. Approved public publisher identity and immutable packages built from exact
