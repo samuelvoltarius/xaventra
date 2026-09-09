@@ -40,6 +40,12 @@ Other non-inventory requests still need the broader budget/validation follow-up.
 
 ## Release and production gates
 
+Runtime source: `79ee6eae00319517d4cd2313c1d442c8245f60f6`.
+[Exact-source CI run and retained artifacts](https://github.com/samuelvoltarius/xaventra/actions/runs/34349430859)
+provide the Linux/Windows/macOS checks and the real Linux Docker fixture report.
+This link records the run, not a promise that a pending or failed job passed.
+Documentation-only attestation commits must pass their own CI before promotion.
+
 The exact final candidate must pass all ten CI jobs before main promotion.
 The existing Docker job now preserves the real host-access report too. Read
 the report's sourceRevision/dirty fields; never substitute earlier dirty proof

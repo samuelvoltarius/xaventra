@@ -17,6 +17,12 @@ Unit/fake-Engine tests, real disposable Docker lifecycle, actual CLI and product
 enrollment must be reported separately. Exact candidate CI remains required before
 main promotion. General cumulative-budget, memory-correction and persona failures
 from the live CLI assessment remain open, not hidden by the inventory fast path.
+Runtime source `79ee6eae00319517d4cd2313c1d442c8245f60f6` and its exact CI run
+are linked in [the verification record](VERIFICATION_2.78.20.md). Local regression:
+1470 tests; dirty Linux arm64 protocol acceptance 10/10 and isolated actual CLI
+5/5. Production enrollment is **open**, broader budget/memory fixes are **open**.
+CI status must be read from the linked run and from the final promotion commit;
+static reachability and fixture results are not full RC acceptance.
 
 ### 2.78.19 shared-state peer recovery candidate
 
