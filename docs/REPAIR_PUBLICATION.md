@@ -32,6 +32,14 @@ versions or integrities. Prerelease versions require explicit policy.
 This creates a **local signed repair artifact**, not a GitHub release or signed
 native Desktop installer. Those distribution gates remain separate.
 
+Doctor candidates must satisfy the exact four-key patch schema. A returned extra
+`reasoning` string does not get stripped or accepted: one new read-only governed
+generation may correct that specific format error. Both attempt IDs/output hashes
+are retained, source/oracle and authority are rechecked, and the combined model
+generation window stays 90 seconds (at most two three-tool candidate runs).
+Other forbidden fields and ambiguous/no-op patches remain blocked immediately.
+Sandbox, independent validation and PATCH_GATE still apply to the accepted draft.
+
 ## Protected operator entrypoints
 
 Install controller/publisher code and compiled imports outside runtime mounts,

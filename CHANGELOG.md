@@ -11,6 +11,9 @@
   recovery; rollback instead resumes the original peer and original state.
 - Persist resumption direction and start intents. Lost replies reconcile without
   double starts; exited/ambiguous starts require operator reconciliation.
+- Retain a live Doctor schema failure and permit one governed regeneration for
+  the observed extra `reasoning` field. Do not strip fields or weaken exact-patch
+  validation; keep rejected-attempt hashes, fresh evidence and the shared deadline.
 - Add real Docker migration/rollback acceptance to CI, keeping production binds,
   external sink fences and installation-specific enrollment as explicit open gates.
 

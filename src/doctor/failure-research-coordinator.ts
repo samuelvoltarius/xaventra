@@ -16,7 +16,8 @@ export interface FailureResearchCase {
     patchGateRequired: boolean; updatedAt: string
     findingOpen?: boolean
     observationHash?: string
-    repair?: { status: 'generating' | 'queued' | 'blocked'; runId: string; observationHash?: string; proposalId?: string; reason?: string }
+    repair?: { status: 'generating' | 'queued' | 'blocked'; runId: string; observationHash?: string; proposalId?: string; reason?: string;
+        attempts?: { runId: string; status: 'format-rejected' | 'accepted'; outputHash: string }[] }
     investigation?: {
         status: 'running' | 'verified' | 'failed' | 'blocked'
         runId: string; attempts: number; nextAttemptAt: number
