@@ -16,6 +16,7 @@ import { repairRpc } from '../dist/doctor/repair-activation.js'
 import { RepairDrainClient } from '../dist/doctor/repair-drain-client.js'
 import { setTimeout as delay } from 'node:timers/promises'
 import { RepairWriterBarrier } from '../dist/doctor/repair-writers.js'
+import { prepareRepairPeerReplacement } from '../dist/doctor/repair-peer-migration.js'
 import { readProtectedControllerFile as readProtected, protectControllerDirectory } from '../dist/doctor/repair-controller-files.js'
 
 const config=JSON.parse(readProtected(process.argv[2]||'',true))
@@ -103,12 +104,27 @@ if(drain) driver.beginMaintenance=async ticket=>{
         const candidate=publicationDeployment.releases[publicationDeployment.catalog[ticket.candidateHash]]
         const hosts=structuredClone(config.writerHosts)
         for(const host of hosts){
+          if(!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(host.id))throw Error('Invalid enrolled host identity')
           const engine=localDockerRepairEngine(host.socketPath)
           if(host.members.some(m=>targetContainerIds.includes(m.containerId))){
             host.members=host.members.map(m=>targetContainerIds.includes(m.containerId)?{containerId:active.containerId,configHash:active.configHash}:m)
             host.staged=[{containerId:candidate.containerId,configHash:candidate.configHash}]
             const old=await engine.call('GET',`/containers/${active.containerId}/json`)
             host.preserveSources=(old.Mounts||[]).filter(m=>m.RW&&m.Type!=='tmpfs').map(m=>m.Source)
+            const next=await engine.call('GET',`/containers/${candidate.containerId}/json`)
+            host.volumeMappings=(old.Mounts||[]).filter(m=>m.RW&&m.Type!=='tmpfs').map(m=>{
+              const to=(next.Mounts||[]).find(n=>n.RW&&n.Destination===m.Destination)
+              if(m.Type!=='volume'||to?.Type!=='volume')throw Error('Shared-peer migration requires independently cloned named volumes')
+              return {fromSource:m.Source,fromName:m.Name,toSource:to.Source,toName:to.Name}
+            })
+            host.replacements=[]
+            for(const member of host.members.filter(m=>m.containerId!==active.containerId)){
+              const peer=await engine.call('GET',`/containers/${member.containerId}/json`)
+              if(!(peer.Mounts||[]).some(m=>m.RW&&host.preserveSources.some(p=>m.Source===p||m.Source?.startsWith(p+'/')||p.startsWith(m.Source+'/'))))continue
+              if(host.migrateSharedPeers!==true)throw Error('Shared peer requires explicit migrateSharedPeers enrollment')
+              const r=await prepareRepairPeerReplacement({root:join(config.stateRoot,`${ticket.attemptId}-peer-preparation`,host.id),engine,member,mappings:host.volumeMappings})
+              host.replacements.push(r);host.staged.push({containerId:r.containerId,configHash:r.configHash})
+            }
           }
           for(const member of [...host.members,...(host.staged||[])]){
             const info=await engine.call('GET',`/containers/${member.containerId}/json`)

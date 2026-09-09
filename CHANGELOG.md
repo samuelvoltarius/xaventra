@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.19] — 2026-09-09
+
+- Re-inventory every enrolled host before peer resumption and before each start.
+  Changed later-peer configurations and newly appearing unregistered state writers
+  block the first restart; both previous defects have regression reproductions.
+- Add opt-in same-image shared-state peer replacement: exact named-volume mapping,
+  unchanged credentials/commands/confinement, stopped preparation and retained
+  creation intents. Start the replacement only after independently verified main
+  recovery; rollback instead resumes the original peer and original state.
+- Persist resumption direction and start intents. Lost replies reconcile without
+  double starts; exited/ambiguous starts require operator reconciliation.
+- Add real Docker migration/rollback acceptance to CI, keeping production binds,
+  external sink fences and installation-specific enrollment as explicit open gates.
+
 ## [2.78.18] — 2026-09-09
 
 - Add operator-owned automatic repair publication: clean hash-bound source

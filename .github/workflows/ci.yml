@@ -34,6 +34,9 @@ jobs:
       - name: Automatic image/source publication and actual background writer barrier
         run: node scripts/check-repair-publication.mjs
         timeout-minutes: 6
+      - name: Shared-state peer migration, frozen baseline and actual rollback
+        run: node scripts/check-repair-peers.mjs
+        timeout-minutes: 5
       - name: Preserve end-to-end evidence including failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,6 +46,7 @@ jobs:
             .nova-data/docker-repair-qa/**/report.json
             .nova-data/docker-repair-state-qa/**/report.json
             .nova-data/repair-publication-qa/**/report.json
+            .nova-data/repair-peer-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
   managed-repair:

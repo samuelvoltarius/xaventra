@@ -2343,6 +2343,17 @@
       ]
     },
     {
+      "module": "src/doctor/repair-peer-migration.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./docker-repair-driver.js",
+        "./repair-activation.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/repair-publication.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -2359,6 +2370,7 @@
         "../core/atomic-storage.js",
         "./docker-repair-driver.js",
         "./repair-activation.js",
+        "./repair-peer-migration.js",
         "node:fs",
         "node:path"
       ]

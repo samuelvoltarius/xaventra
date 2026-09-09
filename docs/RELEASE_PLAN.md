@@ -6,6 +6,18 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.19 shared-state peer recovery candidate
+
+[Contract and recovery](REPAIR_PUBLICATION.md) and
+[evidence boundaries](VERIFICATION_2.78.19.md). Two reproduced resume defects are
+covered: incomplete preflight and missed newly introduced state writers.
+Same-image peer replacements can move to the main's separately cloned named
+volumes after recovery, or stay stopped while original peers resume on rollback.
+Source/tests and actual Docker acceptance are required before promotion; pending
+checks are not passes. Production writable-bind adoption, exclusive restart
+ownership, remote sink enforcement and cross-release peer enrollment remain open.
+No production activation, complete self-repair or RC is claimed.
+
 ### 2.78.18 automatic repair publication candidate
 
 [Publication and recovery contract](REPAIR_PUBLICATION.md) and

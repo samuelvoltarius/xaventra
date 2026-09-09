@@ -1,13 +1,13 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:dd26bb17-ae37-40c8-af7e-500b39e80885",
+  "serialNumber": "urn:uuid:9ad3d66f-920f-4843-aabc-7bbe99ae2f5e",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "name": "@xaventra/core",
-      "version": "2.78.18",
+      "version": "2.78.19",
       "licenses": [
         {
           "license": {
@@ -19,7 +19,7 @@
     "properties": [
       {
         "name": "xaventra:package-lock-sha256",
-        "value": "dd26bb17ae3730c8df7e500b39e808857c79580c2f6383478596d78faf64ecc4"
+        "value": "9ad3d66f920f88438abc7bbe99ae2f5eee0c07827f29e6b534d42d26d5a8fbf1"
       }
     ]
   },

@@ -73,8 +73,29 @@ that callers intend to stop is not database fencing. Missing adapters fail close
 no generic PostgreSQL/API enforcement implementation is claimed.
 
 Old main state remains rollback evidence. Peers with independent storage can
-resume after the signed receipt. A peer sharing old rollback storage cannot:
-it needs an explicitly verified replacement/state-migration workflow, still open.
+resume after the signed receipt. Since 2.78.19 a host may explicitly opt in with
+`migrateSharedPeers: true`. The protected controller prepares stopped replacements
+for enrolled peers sharing the main's **local named volumes**. It maps exact old
+and candidate volume identities; the existing quiescent cloner still performs
+the copy. The replacement preserves image, command, credentials, confinement and
+network membership. It does not reinstall a worker or change its code.
+Only default bridge/none networking with generated Docker hostnames is supported;
+custom networks/hostnames, storage plugins and writable binds require separate
+operator preparation, not relaxed checks. Missing opt-in denies before shutdown.
+
+On an independent successful main-recovery receipt, only the replacement writes
+the clone. On rollback, only the original writes the original state. Originally
+stopped peers remain stopped. All hosts are inventoried again before resumption
+and each start; newly introduced writers and changed later peers block the first
+start. A persistent direction/start record distinguishes lost acknowledgements
+from a process that already started and exited. The latter is ambiguous and must
+not be started again automatically. Partial successful resumption is not silently
+changed into rollback. Keep admission closed and reconcile the exact generation.
+
+The replacement evidence proves storage routing and process startup, not arbitrary
+worker business logic. Production-specific worker health predicates remain part
+of acceptance. Re-enroll the exact new peer IDs/config hashes before a subsequent
+repair; **automatic cross-release peer inventory advancement is not implemented**.
 Root/Engine administrators, non-container host processes, extra storage plugins
 and unlisted remote sinks remain operator inventory/trust prerequisites. A mount
 scan cannot discover every possible external writer.
@@ -101,4 +122,7 @@ recovery/source advancement. Lease, admission and original fault are controlled
 fixtures, not production HA or a general model benchmark. Reports preserve SHA,
 dirty status and case-level failures in `.nova-data/repair-publication-qa/`.
 Production adoption, remote sink enforcement, all-node coverage and shared-state
-peer migration remain separate gates.
+production peer enrollment remain separate gates. `node scripts/check-repair-peers.mjs`
+adds actual same-image worker preparation, frozen-volume preservation, new-volume
+writes, controller-restart reconciliation and original-generation rollback tests.
+It uses synthetic data and fixture authority; it is not a production rollout.
