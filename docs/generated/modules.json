@@ -1386,6 +1386,14 @@
       ]
     },
     {
+      "module": "src/core/docker-command.ts",
+      "imports": [
+        "../users/principal-id.js",
+        "./execution-kernel.js",
+        "./outcome-ledger.js"
+      ]
+    },
+    {
       "module": "src/core/document-rag.ts",
       "imports": [
         "node:fs",
@@ -2428,6 +2436,30 @@
       "imports": [
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/host/agent-main.ts",
+      "imports": [
+        "./docker-agent.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/host/docker-agent.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/host/docker-client.ts",
+      "imports": [
+        "node:fs",
+        "node:http"
       ]
     },
     {
@@ -4471,6 +4503,7 @@
       "imports": [
         "../config/config-path.js",
         "../doctor/repair-drain-client.js",
+        "../host/docker-client.js",
         "../learning/trace-analyzer.js",
         "./3dprinter.js",
         "./api-key-tool.js",

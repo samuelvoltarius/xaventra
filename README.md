@@ -391,6 +391,15 @@ The codebase is undergoing the Nova -> Xaventra public-brand migration. Public
 packaging is not complete until secret scanning, clean-clone installation, full
 tests, Desktop packaging and release artifacts pass on supported platforms.
 
+## Docker host access
+
+Containerized Xaventra needs an explicitly enrolled host agent to inspect or
+control host Docker. It does not receive the raw Docker socket. See
+[authenticated host access](docs/HOST_ACCESS.md) for read-only inventory,
+independently approved lifecycle actions and installation/recovery boundaries.
+The [2.78.20 evidence record](docs/VERIFICATION_2.78.20.md) distinguishes source,
+live disposable Docker, CLI and production enrollment.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

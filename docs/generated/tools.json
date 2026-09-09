@@ -1024,6 +1024,23 @@
       ]
     },
     {
+      "name": "docker_control",
+      "category": "system",
+      "description": "Start/Stop/Neustart eines freigegebenen Containers. Benötigt separat signierte Operator-Freigabe; keine Löschung, Shell oder freien Docker-Parameter.",
+      "parameters": [
+        {
+          "name": "permit",
+          "type": "object",
+          "required": true
+        },
+        {
+          "name": "signature",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "docker_logs",
       "category": "system",
       "description": "Zeigt Logs eines Docker-Containers",
@@ -1049,6 +1066,18 @@
           "name": "all",
           "type": "boolean",
           "required": false
+        }
+      ]
+    },
+    {
+      "name": "docker_status",
+      "category": "system",
+      "description": "Liest verifizierten Host-Containerstatus anhand der vollständigen ID aus docker_ps.",
+      "parameters": [
+        {
+          "name": "containerId",
+          "type": "string",
+          "required": true
         }
       ]
     },

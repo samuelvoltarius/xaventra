@@ -6,6 +6,18 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.20 Docker host-access candidate
+
+[Host access, authority and recovery](HOST_ACCESS.md) implements opt-in local
+inventory/status/logs and separately approved, exact-ID lifecycle operations.
+Natural local inventory questions use the existing registry and Kernel without
+model inference. Application-container Docker absence remains an explicit error
+until operator enrollment; no raw Docker socket is added to the app.
+Unit/fake-Engine tests, real disposable Docker lifecycle, actual CLI and production
+enrollment must be reported separately. Exact candidate CI remains required before
+main promotion. General cumulative-budget, memory-correction and persona failures
+from the live CLI assessment remain open, not hidden by the inventory fast path.
+
 ### 2.78.19 shared-state peer recovery candidate
 
 [Contract and recovery](REPAIR_PUBLICATION.md) and

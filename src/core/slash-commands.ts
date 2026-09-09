@@ -66,6 +66,10 @@ export async function handleCommand(
     const requestPermission = principalContext?.permission || 'guest'
 
     switch (cmd) {
+        case 'docker': {
+            const { dockerInventoryCommand } = await import('./docker-command.js')
+            return dockerInventoryCommand(args, state.tools, principalContext)
+        }
         case 'identity':
             return XAVENTRA_IDENTITY
         case 'whoami':

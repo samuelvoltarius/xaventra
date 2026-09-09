@@ -106,7 +106,7 @@ const SKILL_PACKS: SkillPack[] = [
         name: 'docker',
         description: 'Docker Container und Logs verwalten',
         keywords: ['docker', 'container', 'logs', 'image'],
-        tools: ['docker_ps', 'docker_logs'],
+        tools: ['docker_ps', 'docker_logs', 'docker_status', 'docker_control'],
     },
     {
         name: 'browser-automation',

@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.20] — 2026-09-09
+
+- Add opt-in authenticated local Docker host agent: bounded inventory/status/logs,
+  explicit target allowlist and independently signed start/stop/restart permits.
+  The application receives no raw Docker socket, shell proxy or approval key.
+- Persist lifecycle intents and receipts; uncertain outcomes fail closed and
+  completed request replay never repeats a mutation after agent restart.
+- Route unambiguous local Docker inventory through existing Kernel/registry/
+  validator/Ledger/telemetry without inference. Preserve a concrete missing-host
+  error instead of masking it with an unrelated model token-budget rejection.
+- Add API negatives and real disposable Docker lifecycle acceptance, plus
+  operator installation/recovery documentation. Production enrollment is opt-in;
+  this does not claim unrestricted host access, full self-repair or RC readiness.
+
 ## [2.78.19] — 2026-09-09
 
 - Re-inventory every enrolled host before peer resumption and before each start.

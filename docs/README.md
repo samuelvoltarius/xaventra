@@ -18,6 +18,7 @@ authoritative source files and required evidence.
 | [Mesh Network](./MESH.md) | WebSocket events, skill sync, auto-provisioning |
 | [Configuration](./CONFIGURATION.md) | All config options explained |
 | [Tools Reference](./TOOLS.md) | Available tools and usage |
+| [Docker Host Access](./HOST_ACCESS.md) | Authenticated inventory, signed lifecycle permits, operator installation and recovery |
 | [Dashboard](./DASHBOARD.md) | Dashboard user guide |
 | [Xaventra Desktop](./DESKTOP.md) | Cross-platform app, Studio, specialists, rooms, models and node enrollment |
 | [Self-Update](./SELF_UPDATE.md) | Auto-patching + L24 prompt optimization |

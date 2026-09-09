@@ -34,6 +34,7 @@
         "src/training/**/*",
         "src/core/**/*",
         "src/doctor/**/*",
+        "src/host/**/*",
         "src/supervisor/**/*",
         "src/devops/**/*",
         "src/dev/deploy-current-release.ts",

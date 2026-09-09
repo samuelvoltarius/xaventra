@@ -15,6 +15,7 @@
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { withRepairAdmission } from '../doctor/repair-drain-client.js'
+import { callDockerHost } from '../host/docker-client.js'
 import { sshTool } from './ssh-tool.js'
 import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
@@ -1256,20 +1257,7 @@ export const systemHelperTools: NovaTool[] = [
             { name: 'all', type: 'boolean', description: 'Auch gestoppte Container zeigen', required: false },
         ],
         handler: async (params) => {
-            const { execSync } = await import('node:child_process')
-            try {
-                const flag = params.all ? '-a' : ''
-                const output = execSync(`docker ps ${flag} --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"`, {
-                    encoding: 'utf-8', timeout: 10_000,
-                })
-                const containers = output.trim().split('\n').filter(Boolean).map(line => {
-                    const [id, name, status, image, ports] = line.split('\t')
-                    return { id, name, status, image, ports }
-                })
-                return { success: true, count: containers.length, containers }
-            } catch (err: any) {
-                return { success: false, error: `Docker nicht verfï¿½gbar: ${err.message}` }
-            }
+            return callDockerHost('list', { all: params.all ?? false })
         },
     },
     {
@@ -1277,20 +1265,30 @@ export const systemHelperTools: NovaTool[] = [
         description: 'Zeigt Logs eines Docker-Containers',
         category: 'system',
         parameters: [
-            { name: 'container', type: 'string', description: 'Container-Name oder ID', required: true },
-            { name: 'lines', type: 'number', description: 'Anzahl der letzten Zeilen', required: false },
+            { name: 'container', type: 'string', description: 'Vollständige 64-stellige Container-ID aus docker_ps', required: true },
+            { name: 'lines', type: 'number', description: 'Anzahl der letzten Zeilen (1–200)', required: false },
         ],
         handler: async (params) => {
-            const { execSync } = await import('node:child_process')
-            try {
-                const lines = (params.lines as number) || 50
-                const output = execSync(`docker logs --tail ${lines} "${params.container}"`, {
-                    encoding: 'utf-8', timeout: 10_000,
-                })
-                return { success: true, container: params.container, logs: output }
-            } catch (err: any) {
-                return { success: false, error: err.message }
-            }
+            // Exact immutable ID, never a shell interpolation or prefix match.
+            return callDockerHost('logs', { containerId: params.container, lines: params.lines ?? 50 })
+        },
+    },
+    {
+        name: 'docker_status', description: 'Liest verifizierten Host-Containerstatus anhand der vollständigen ID aus docker_ps.', category: 'system',
+        parameters: [{ name: 'containerId', type: 'string', required: true, description: 'Vollständige 64-stellige Container-ID' }],
+        handler: async params => callDockerHost('status', { containerId: params.containerId }),
+    },
+    {
+        name: 'docker_control', description: 'Start/Stop/Neustart eines freigegebenen Containers. Benötigt separat signierte Operator-Freigabe; keine Löschung, Shell oder freien Docker-Parameter.', category: 'system',
+        parameters: [{ name: 'permit', type: 'object', required: true, description: 'Operator-signierte, kurzlebige Freigabe für exakte Node-, Client- und Container-ID sowie Aktion' },
+            { name: 'signature', type: 'string', required: true, description: 'Ed25519-Freigabesignatur; niemals selbst erzeugen' }],
+        handler: async params => {
+            const { getUserPermission } = await import('../users/multi-user-middleware.js')
+            const user = String(params.authorizationUserId || ''), channel = String(params.channel || '')
+            if (!user || !['owner', 'admin'].includes(getUserPermission(user, channel))) return { success: false, blocked: true, error: 'Docker-Aktionen erfordern Owner/Admin.' }
+            const permit = params.permit as any
+            if (permit?.approvedBy !== `${channel}:${user}`) return { success: false, blocked: true, error: 'Host-Freigabe gehört nicht zum aktuellen Benutzerkontext.' }
+            return callDockerHost('action', { permit, signature: params.signature })
         },
     },
     {
@@ -3592,4 +3590,3 @@ export default {
     getDynamicTools,
     ALL_TOOLS,
 }
-
