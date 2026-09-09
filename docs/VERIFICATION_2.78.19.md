@@ -38,7 +38,39 @@ There is no model-granted activation and no infinite retry loop.
   packaged Desktop checks remain unchanged and required.
 - Candidate promotion requires every applicable CI job green for the exact SHA.
 
-Exact run results are recorded after execution; an unexecuted gate is not a pass.
+## Executed acceptance
+
+Runtime source: `cd6ef3684dc580a01e73d3f7c0c629caef3fbbc5`.
+[CI 34325848507](https://github.com/samuelvoltarius/xaventra/actions/runs/34325848507)
+passed all **10/10** jobs. Downloaded reports confirm this SHA and clean source
+for Docker/sandbox/controller/admission; packaged Desktop reports identify the
+same source and pass on Windows, macOS and Linux.
+
+| Gate | Result | Evidence class |
+| --- | --- | --- |
+| Core regression | PASS: 213 files, 1,455 tests | Local Windows at the runtime SHA; three-OS CI also green |
+| Desktop regression | PASS: 7 tests | Local Node tests; packaged UI/Core/daemon separately in three-OS CI |
+| Signed controller / tool admission | PASS: 4/4 and 5/5 on each OS | Actual disposable processes/HTTP, fixture authorities |
+| Shared-state peer migration | PASS: 6/6 | Actual Linux Docker, CI and separate arm64 run at 07:56:55 UTC |
+| Automatic publication / state copy | PASS: 6/6 and 4/4 | Actual Linux Docker, CI and separate arm64 runs |
+| Full-source sandbox | PASS: 6/6 | Actual four-phase isolated containers in CI; no live symptom claim |
+| Doctor-to-Docker original operation | PASS: three runs, 7/7 each | Real local model, native tools, sandbox, signed fixture activation and HTTP/rollback |
+| Runtime / Desktop dependency audit | PASS: zero findings | Separate audits; full Core development tree still has two moderate advisories |
+| Production adoption / full external writer coverage | OPEN | No production runtime change; prerequisites below |
+
+All three corrected live-model runs are clean-source Linux arm64 at the runtime
+SHA. Exact completion times and activation identities:
+
+- 2026-09-09 07:52:11 UTC: `repair-d5d5387e-1f77-4db7-8933-2108811df333`.
+- 2026-09-09 07:53:49 UTC: `repair-3cb3798b-9e31-4f04-a0bb-3e34474b7787`.
+- 2026-09-09 07:55:30 UTC: `repair-e0932d42-fae8-4720-9f5e-9a42e79e4805`.
+
+These are three controlled fixture runs, not a general success-rate benchmark.
+They use prepared fixture images; the automatic publisher and shared-peer path
+are tested separately. They do not prove one combined production model-to-publisher
+rollout. The preceding failed model run remains in the record. Final documentation
+promotion still requires all ten checks on its exact final SHA; see the
+[candidate CI](https://github.com/samuelvoltarius/xaventra/actions/workflows/ci.yml?query=branch%3Acodex%2Frepair-adoption-2.78.19).
 
 ## Still open
 

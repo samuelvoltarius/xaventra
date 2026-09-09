@@ -13,8 +13,13 @@ Preserve negative results. No mocked proof is substituted for live execution.
 covered: incomplete preflight and missed newly introduced state writers.
 Same-image peer replacements can move to the main's separately cloned named
 volumes after recovery, or stay stopped while original peers resume on rollback.
-Source/tests and actual Docker acceptance are required before promotion; pending
-checks are not passes. Production writable-bind adoption, exclusive restart
+Runtime `cd6ef3684dc580a01e73d3f7c0c629caef3fbbc5` passes 1,455 local tests and
+[all 10 CI jobs](https://github.com/samuelvoltarius/xaventra/actions/runs/34325848507).
+Clean Linux arm64 peer migration passes 6/6; three corrected real-model fixture
+runs pass 7/7 each. The earlier schema failure remains documented. Publisher,
+peer migration and model runs are separate proofs, not a combined production run.
+Final documentation promotion requires green exact-SHA CI as well.
+Production writable-bind adoption, exclusive restart
 ownership, remote sink enforcement and cross-release peer enrollment remain open.
 No production activation, complete self-repair or RC is claimed.
 
