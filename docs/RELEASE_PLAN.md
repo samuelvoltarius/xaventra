@@ -15,8 +15,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
   and rollback implemented.
 - Disposable Linux arm64 Docker: **passed**, 4/4 pre-commit checks; HTTP/authority
   fixtures, not public GitHub/GHCR or production Mesh.
-- Local regression: **passed**, 219 files / 1,509 tests; final exact candidate CI
-  remains **open** until recorded.
+- Source regression/CI: **passed**, 219 files / 1,509 tests and all ten jobs on
+  `87fb0bd0857fc6358a4c29d4502d563e56d63bf2`,
+  [CI34504399346](https://github.com/samuelvoltarius/xaventra/actions/runs/34504399346).
+  Same clean arm64 source: actual update/rollback4/4 and packaged lifecycle7/7.
+  Documentation-only follow-ups still require their applicable CI before main.
 - Publisher identity/main-only environment: **enrolled**. Automatic workflow and
   anonymous registry/live-publication acceptance remain **open**.
 - Production enrollment and live upstream canary: **open**, no runtime changes.

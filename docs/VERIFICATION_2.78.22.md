@@ -1,7 +1,24 @@
 # 2.78.22 verification — container update controller
 
-Exact final source and CI evidence will be recorded before promotion. This is not
-full RC acceptance, native signing, or a production rollout report.
+This is not full RC acceptance, native signing, or a production rollout report.
+
+## Exact source acceptance
+
+Implementation source `87fb0bd0857fc6358a4c29d4502d563e56d63bf2` passes
+[all ten CI jobs](https://github.com/samuelvoltarius/xaventra/actions/runs/34504399346):
+Windows/Linux/macOS verify and Desktop, actual Docker recovery/state/publication/
+update/rollback, managed activation, full isolated repair regression/rollback and
+legacy dashboard. Earlier corrected source `1deb0fd9138dd52099af45bc6819249bf8bd5e8b`
+also passes [all ten jobs](https://github.com/samuelvoltarius/xaventra/actions/runs/34503658986).
+
+The clean Linux arm64 checkout of `87fb0bd` independently passes the four real
+container-update checks and seven packaged lifecycle checks. Exact image:
+`sha256:0baede1176a52490b737c36c89ca35e13b9bfe169a658e9336b9eed58c8b21b0`.
+That isolated packaged run starts in 1,265ms and stops normally in 88ms. No live
+Telegram, production lease, live model, or cross-node handover is claimed.
+Public-history scan at the initial runtime commit: 63 commits, zero findings;
+subsequent source changes also pass staged scanning. Documentation-only follow-up
+commits preserve these code identities; their CI must also pass before promotion.
 
 ## Implemented
 
