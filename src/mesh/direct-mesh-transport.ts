@@ -11,7 +11,7 @@ interface DirectConfig {
     ackTimeoutMs?: number
 }
 
-interface PendingAck { resolve: (ack: MeshAck) => void; timeout: ReturnType<typeof setTimeout> }
+interface PendingAck { peerId: string; resolve: (ack: MeshAck) => void; timeout: ReturnType<typeof setTimeout> }
 
 function hostFromUrl(url: string): string {
     try { return new URL(url).hostname.replace(/^\[|\]$/g, '') } catch { return '' }
@@ -35,21 +35,28 @@ export class DirectMeshTransport implements MeshTransport {
     readonly name = 'direct' as const
     private readonly peers: MeshPeer[]
     private readonly sockets = new Map<string, WebSocket>()
+    // Includes pre-hello, rejected and replaced connections, not just known peers.
+    private readonly allSockets = new Set<WebSocket>()
     private readonly peerBySocket = new WeakMap<WebSocket, string>()
     private readonly pending = new Map<string, PendingAck>()
     private readonly handlers = new Set<MeshHandler>()
     private server: WebSocketServer | null = null
     private lastSuccessAt?: number
     private lastError?: string
+    private stopped = false
+    private closing?: Promise<void>
 
     constructor(private readonly identity: MeshIdentity, private readonly principal: MeshPrincipal, private readonly config: DirectConfig = {}) {
         this.peers = (config.peers || []).filter(peer => peer.transport === 'direct' || Boolean(peer.url))
     }
 
     start(): void {
+        if (this.stopped) throw new Error('direct transport closed')
         if (this.server || this.config.port == null) return
         this.server = new WebSocketServer({ host: this.config.listenHost || '0.0.0.0', port: this.config.port })
         this.server.on('connection', (socket, request) => {
+            this.track(socket)
+            if (this.stopped) { socket.terminate(); return }
             const remote = request.socket.remoteAddress || ''
             const secure = Boolean((request.socket as any).encrypted) || /^(?:::ffff:)?100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(remote) || /127\.0\.0\.1|::1/.test(remote)
             if (!secure && !this.config.allowInsecureLan) {
@@ -72,14 +79,17 @@ export class DirectMeshTransport implements MeshTransport {
     }
 
     async connect(peer: MeshPeer): Promise<void> {
+        if (this.stopped) throw new Error('direct transport closed')
         if (this.sockets.get(peer.nodeId)?.readyState === WebSocket.OPEN) return
         if (!peer.url) throw new Error(`direct peer ${peer.nodeId} has no URL`)
         if (!this.config.allowInsecureLan && !isPrivateEncryptedPath(peer.url)) throw new Error(`unencrypted direct URL rejected: ${hostFromUrl(peer.url)}`)
         await new Promise<void>((resolve, reject) => {
             const socket = new WebSocket(peer.url!)
+            this.track(socket)
             const timeout = setTimeout(() => { socket.terminate(); reject(new Error(`direct connect timeout: ${peer.nodeId}`)) }, 5000)
             socket.once('open', async () => {
                 clearTimeout(timeout)
+                if (this.stopped) { socket.terminate(); reject(new Error('direct transport closed')); return }
                 this.sockets.set(peer.nodeId, socket)
                 this.peerBySocket.set(socket, peer.nodeId)
                 this.bind(socket)
@@ -115,7 +125,7 @@ export class DirectMeshTransport implements MeshTransport {
     subscribe(handler: MeshHandler): void { this.handlers.add(handler) }
     health(): MeshTransportHealth {
         return {
-            name: this.name, healthy: Boolean(this.server) || this.peers.length > 0 || [...this.sockets.values()].some(socket => socket.readyState === WebSocket.OPEN),
+            name: this.name, healthy: !this.stopped && (Boolean(this.server) || this.peers.length > 0 || [...this.sockets.values()].some(socket => socket.readyState === WebSocket.OPEN)),
             connectedPeers: [...this.sockets.values()].filter(socket => socket.readyState === WebSocket.OPEN).length,
             queued: this.pending.size, lastSuccessAt: this.lastSuccessAt, lastError: this.lastError,
             encrypted: true, authenticated: true,
@@ -128,10 +138,37 @@ export class DirectMeshTransport implements MeshTransport {
     }
 
     async close(): Promise<void> {
-        for (const socket of this.sockets.values()) socket.close()
-        this.sockets.clear()
-        await new Promise<void>(resolve => this.server ? this.server.close(() => resolve()) : resolve())
-        this.server = null
+        if (this.closing) return this.closing
+        this.stopped = true
+        const server = this.server; this.server = null
+        this.closing = (async () => {
+            for (const [id, pending] of this.pending) {
+                clearTimeout(pending.timeout)
+                pending.resolve(this.ack(id, pending.peerId, 'unreachable', 'direct transport closed; delivery unconfirmed'))
+            }
+            this.pending.clear(); this.sockets.clear()
+            const sockets = [...this.allSockets]
+            const closed = sockets.map(socket => new Promise<void>(resolve => {
+                if (socket.readyState === WebSocket.CLOSED) resolve()
+                else socket.once('close', () => resolve())
+            }))
+            const listenerClosed = new Promise<void>(resolve => server ? server.close(() => resolve()) : resolve())
+            // Bound only this transport's connection handshake. Never force-exit
+            // the daemon or pretend that application/state writers are drained.
+            const timer = setTimeout(() => { for (const socket of this.allSockets) socket.terminate() }, 1000)
+            for (const socket of sockets) {
+                if (socket.readyState === WebSocket.CONNECTING) socket.terminate()
+                else socket.close(1001, 'transport shutdown')
+            }
+            try { await Promise.all([...closed, listenerClosed]) }
+            finally { clearTimeout(timer) }
+        })()
+        return this.closing
+    }
+
+    private track(socket: WebSocket): void {
+        this.allSockets.add(socket)
+        socket.once('close', () => this.allSockets.delete(socket))
     }
 
     private bind(socket: WebSocket): void {
@@ -144,10 +181,12 @@ export class DirectMeshTransport implements MeshTransport {
     }
 
     private async receive(socket: WebSocket, raw: string): Promise<void> {
+        if (this.stopped) return
         let envelope: MeshEnvelope
         try { envelope = JSON.parse(raw) as MeshEnvelope } catch { socket.close(1007, 'invalid JSON'); return }
         try {
             for (const handler of this.handlers) await handler(envelope)
+            if (this.stopped) return
             if (envelope.kind === 'mesh.ack') {
                 const ack = envelope.payload as MeshAck
                 const pending = this.pending.get(ack.envelopeId)
@@ -167,12 +206,13 @@ export class DirectMeshTransport implements MeshTransport {
     }
 
     private sendOnSocket(peerId: string, socket: WebSocket, envelope: MeshEnvelope): Promise<MeshAck> {
+        if (this.stopped) return Promise.resolve(this.ack(envelope.id, peerId, 'unreachable', 'direct transport closed'))
         return new Promise(resolve => {
             const timeout = setTimeout(() => {
                 this.pending.delete(envelope.id)
                 resolve(this.ack(envelope.id, peerId, 'unreachable', 'ack timeout'))
             }, this.config.ackTimeoutMs || 5000)
-            this.pending.set(envelope.id, { resolve, timeout })
+            this.pending.set(envelope.id, { peerId, resolve, timeout })
             socket.send(JSON.stringify(envelope), error => {
                 if (!error) return
                 clearTimeout(timeout); this.pending.delete(envelope.id)
@@ -182,6 +222,7 @@ export class DirectMeshTransport implements MeshTransport {
     }
 
     private async sendAck(socket: WebSocket, received: MeshEnvelope, status: MeshAck['status'], reason?: string): Promise<void> {
+        if (this.stopped) return
         const ack = this.ack(received.id, this.identity.nodeId, status, reason)
         const envelope = this.identity.create({ kind: 'mesh.ack', targetNode: received.sourceNode, principal: this.principal, payload: ack })
         await new Promise<void>(resolve => socket.send(JSON.stringify(envelope), () => resolve()))

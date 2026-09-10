@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.23] — 2026-09-10
+
+- Fix a reproduced update/shutdown blocker: direct Mesh now tracks every owned
+  connection, including pre-hello, rejected, replaced and connecting sockets.
+  Close is idempotent and bounds an unresponsive WebSocket close handshake.
+- Settle pending acknowledgements as unconfirmed/unreachable during shutdown;
+  reject new connections after closure rather than reopening the transport.
+- Add three negative-first regressions and actual compiled-daemon CLI-stop
+  acceptance with an idle, non-reading Mesh peer. Apply that acceptance to the
+  built container images before publisher signing. No forced daemon exit, state
+  drain bypass or claim that the separate production stop failure is proven fixed.
+
 ## [2.78.22] — 2026-09-10
 
 - Add current-main-CI publication of native Linux amd64/arm64 container images,

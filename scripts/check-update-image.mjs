@@ -20,7 +20,7 @@ try {
         '--user', '1000:1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '3g', '--cpus', '2', '--pids-limit', '256',
         '--tmpfs', '/tmp:rw,nosuid,nodev,size=768m,uid=1000,gid=1000', '--tmpfs', '/runtime:rw,nosuid,nodev,size=64m,uid=1000,gid=1000',
         '--mount', `type=bind,source=${resolve('scripts/check-daemon-lifecycle.mjs')},target=/app/scripts/check-daemon-lifecycle.mjs,readonly`,
-        '--entrypoint', '/usr/local/bin/node', image, '/app/scripts/check-daemon-lifecycle.mjs'], { encoding: 'utf8', timeout: 30_000 }).trim()
+        '--entrypoint', '/usr/local/bin/node', image, '/app/scripts/check-daemon-lifecycle.mjs', '--mesh-idle-peer'], { encoding: 'utf8', timeout: 30_000 }).trim()
     if (!/^[a-f0-9]{64}$/.test(id)) { id = undefined; throw Error('Fixture identity unknown; no guessed cleanup') }
     const stdout = execFileSync('docker', ['start', '--attach', id], { encoding: 'utf8', timeout: 180_000, maxBuffer: 2 * 1024 * 1024 })
     report.lifecycle = JSON.parse(stdout)

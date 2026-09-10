@@ -6,6 +6,21 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.23 update-stop regression candidate
+
+- Reproduced: an accepted direct WebSocket without a signed hello is absent from
+  the known-peer map and can keep listener shutdown pending. A non-reading peer
+  also prevents graceful close. This is a real local reproduction, not proof of
+  a particular production incident's cause.
+- Implemented: complete owned-socket inventory, bounded handshake, terminal
+  transport close and unconfirmed pending-ack settlement.
+- Targeted regression: three new failures before the patch; 9/9 new/existing
+  Mesh tests after it. Compiled Windows daemon: 8/8 checks, normal CLI shutdown
+  with the idle non-reading peer still connected (1,152ms).
+- Full regression, exact candidate CI and built-image checks must pass before
+  this follow-up is promoted. Do not advance main while the previous publisher
+  is still executing. Live GitHub/GHCR and production adoption gates remain open.
+
 ### 2.78.22 signed container update candidate
 
 [Controller/publisher/enrollment](CONTAINER_UPDATES.md),

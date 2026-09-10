@@ -6,6 +6,8 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, wr
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { once } from 'node:events'
+import { WebSocket } from 'ws'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = mkdtempSync(join(tmpdir(), 'xaventra-daemon-lifecycle-'))
@@ -22,6 +24,16 @@ await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve))
 const port = probe.address().port
 await new Promise(resolve => probe.close(resolve))
 const config = JSON.parse(readFileSync(join(source, 'xaventra.config.example.json'), 'utf8'))
+const meshIdlePeer = process.argv.includes('--mesh-idle-peer')
+let meshPeer, meshPort
+if (meshIdlePeer) {
+  const listener = createServer()
+  await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve))
+  meshPort = listener.address().port
+  await new Promise(resolve => listener.close(resolve))
+  config.mesh.direct = { enabled: true, listenHost: '127.0.0.1', port: meshPort, peers: [] }
+  config.mesh.mode = 'standalone'
+}
 config.provider = 'openai'; config.model = 'fixture-model'; config.fallbackModels = []
 config.providers = { openai: { enabled: true, apiKey: 'synthetic-fixture-provider', baseUrl: `http://127.0.0.1:${provider.address().port}/v1` } }
 config.doctorModel = 'off'; config.internalModel = 'auto'; config.repairModel = 'off'; config.learningModel = 'off'
@@ -56,6 +68,7 @@ daemon.on('error', error => { spawnError = error })
 const daemonExit = new Promise(resolve => daemon.once('exit', (code, signal) => resolve({ code, signal })))
 const started = Date.now()
 const report = { version, platform: process.platform, passed: false, seededOwnPid: seedOwnPid,
+  meshIdlePeer,
   scope: 'Compiled daemon boot, authenticated REST status and instance-scoped CLI shutdown. Scripted loopback model; not live LLM, Telegram or distributed failover.', checks: {} }
 try {
   let ready = false
@@ -76,6 +89,12 @@ try {
   report.startupMs = Date.now() - started
   report.checks.authenticatedStatus = true
   report.checks.unauthenticatedRejected = (await fetch(`http://127.0.0.1:${port}/v1/status`, { signal: AbortSignal.timeout(1000) })).status === 401
+  if (meshIdlePeer) {
+    meshPeer = new WebSocket(`ws://127.0.0.1:${meshPort}`, { handshakeTimeout: 5000 })
+    await once(meshPeer, 'open')
+    meshPeer.pause() // No hello and no response to the server's close handshake.
+    report.checks.idleMeshPeerConnected = true
+  }
   const stopStarted = Date.now()
   const cli = spawn(process.execPath, [join(source, 'dist/cli.js'), 'stop'], { cwd: root, env, windowsHide: true, stdio: 'ignore' })
   const code = await new Promise((resolve, reject) => {
@@ -98,6 +117,7 @@ try {
 } catch (error) {
   report.error = error.message
 } finally {
+  if (meshPeer) { meshPeer.resume(); meshPeer.terminate() }
   // Only fixture-owned children may be cleaned up after failure. No process search.
   if (daemon.exitCode === null && daemon.signalCode === null && !spawnError) {
     await new Promise(resolve => {

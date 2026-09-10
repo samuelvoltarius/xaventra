@@ -248,6 +248,9 @@ jobs:
       - name: Compiled daemon restart with reused own PID marker
         run: node scripts/check-daemon-lifecycle.mjs --seed-own-pid
         timeout-minutes: 4
+      - name: Compiled daemon stops with an idle non-reading Mesh connection
+        run: node scripts/check-daemon-lifecycle.mjs --mesh-idle-peer
+        timeout-minutes: 4
       - run: npm run check:catalogs
       - run: npm run check:assurance
       - run: npm run test:desktop

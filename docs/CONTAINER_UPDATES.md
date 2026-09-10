@@ -138,6 +138,13 @@ helper clones named-volume contents/modes, verifies hashes and unchanged origina
 and rejects links/special files/nonempty destinations. Original container and data
 remain the rollback backup. Updates do not auto-delete backups.
 
+From 2.78.23, direct Mesh closes all of its owned connections, including peers
+that never sent a hello, with a bounded socket handshake. Pending messages remain
+unconfirmed; this is not an application-writer drain or permission to force-exit
+the daemon. Packaged acceptance now holds a non-reading loopback Mesh connection
+open until the daemon stops normally. A different live stop failure still needs
+its own diagnosis and acceptance evidence.
+
 Only candidate health, exact identity, independent acceptance and current authority
 allow installation. Configure the independent probe to cover version, persisted data
 and minimal chat/tool acceptance, not just a listening port. Failure stops the
