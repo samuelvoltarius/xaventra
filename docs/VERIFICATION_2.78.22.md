@@ -59,11 +59,20 @@ driver guard and existing acceptance assertions were not weakened.
 
 ## Remaining separate gates
 
-- Dedicated publisher key and main-only GitHub environment are enrolled; only the
-  public SPKI key is in source. Workflow activation/live publication and anonymous
-  registry availability still need verification after exact-source CI.
-  Anonymous canonical GHCR token access returned HTTP 403 before publication;
-  the local GitHub login lacks `read:packages`. Neither is treated as public access.
+- Public publisher/download gate **passed** on 2026-09-10 at 17:17 UTC:
+  main `6e55f325a61dec7bebc19f8937f407ac25d56817`,
+  [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/34506110426)
+  and [automatic publisher](https://github.com/samuelvoltarius/xaventra/actions/runs/34506915056)
+  both succeeded. The [preview release](https://github.com/samuelvoltarius/xaventra/releases/tag/v2.78.22)
+  was created automatically with complete signed assets after native packaged
+  lifecycle checks. Independent anonymous GitHub downloads verified the signature,
+  both archive hashes, decoded descriptors and anonymous GHCR manifest body hashes.
+  A changed source SHA in the signed payload was rejected. This is not activation.
+- Release ID: `2.78.22-7a21e5ef3870bbdd35ea33eee98547d5f8f789ae2fdda77b10ae0525ba20e0f5`.
+  x64 image: `sha256:606d8cb8f962f9e819c57afba0e305ba1baf792747ba1304bafaa0db3d1699fd`;
+  arm64 image: `sha256:b8e9ec9e5561a89837bbab08ec537ecac63d16c79d543950acfb078828f9859a`.
+  Initial anonymous access returned HTTP 403 before package creation; retained as
+  pre-publication evidence, superseded by the verified public digest reads.
 - Per-node confined baseline/template, controller, independent authority/drain,
   complete writer/sink inventory and acceptance oracle; no writable-bind adoption.
 - Public-release-to-production canary; unrelated native, chat/tool and Mesh RC gates.

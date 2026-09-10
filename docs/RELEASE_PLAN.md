@@ -20,6 +20,7 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Full regression, exact candidate CI and built-image checks must pass before
   this follow-up is promoted. Do not advance main while the previous publisher
   is still executing. Live GitHub/GHCR and production adoption gates remain open.
+  [Exact source and acceptance evidence](VERIFICATION_2.78.23.md).
 
 ### 2.78.22 signed container update candidate
 
@@ -35,8 +36,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
   [CI34504399346](https://github.com/samuelvoltarius/xaventra/actions/runs/34504399346).
   Same clean arm64 source: actual update/rollback4/4 and packaged lifecycle7/7.
   Documentation-only follow-ups still require their applicable CI before main.
-- Publisher identity/main-only environment: **enrolled**. Automatic workflow and
-  anonymous registry/live-publication acceptance remain **open**.
+- Publisher identity/main-only environment: **enrolled**. Automatic publication
+  and independent anonymous signed-package/registry verification: **passed**,
+  main `6e55f325a61dec7bebc19f8937f407ac25d56817`,
+  [publisher34506915056](https://github.com/samuelvoltarius/xaventra/actions/runs/34506915056).
+  Preview only; not a native/stable/RC release or production activation.
 - Production enrollment and live upstream canary: **open**, no runtime changes.
 - Native installers/signatures and remaining RC gates: unchanged and **open**.
 
