@@ -11,16 +11,16 @@ const keys = () => { const k = generateKeyPairSync('ed25519'); return {
 } }
 const ticket = () => ({ proposalId: 'p', patchHash: 'a'.repeat(64), baselineHash: 'b'.repeat(64), candidateHash: 'c'.repeat(64), probeId: 'original', targetId: 'fixture', attemptId: `repair-${randomUUID()}`, expiresAt: Date.now() + 60_000 })
 async function fixture(run: (f: any) => Promise<void>) {
-    const authority = keys(), operator = keys(), node = keys(), observer = keys(), receipt = keys()
+    const authority = keys(), operator = keys(), node = keys(), observer = keys(), receipt = keys(), updateReceipt = keys()
     const drain = new RepairDrain(join(process.cwd(), '.nova-data', randomUUID()), ['a', 'b'])
     const server = createRepairDrainServer({ drain, privateKey: authority.privateKey, operatorPublicKey: operator.publicKey,
-        receiptPublicKey: receipt.publicKey, nodes: { a: { publicKey: node.publicKey, settledTools: ['read_file'] }, b: { publicKey: keys().publicKey, settledTools: [] } },
+        receiptPublicKey: receipt.publicKey, updateReceiptPublicKey: updateReceipt.publicKey, nodes: { a: { publicKey: node.publicKey, settledTools: ['read_file'] }, b: { publicKey: keys().publicKey, settledTools: [] } },
         observers: { watcher: observer.publicKey } })
     await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
     const url = `http://127.0.0.1:${(server.address() as any).port}/drain`
     const client = (actor: string, privateKey: string) => new RepairDrainClient({ url, actor, privateKey, authorityPublicKey: authority.publicKey })
     try { await run({ drain, node: client('a', node.privateKey), operator: client('operator', operator.privateKey), observer: client('watcher', observer.privateKey),
-        bad: client('a', keys().privateKey), receiptKey: receipt.privateKey }) }
+        bad: client('a', keys().privateKey), receiptKey: receipt.privateKey, updateReceiptKey: updateReceipt.privateKey }) }
     finally { await new Promise<void>(r => server.close(() => r())) }
 }
 it('requires pinned signatures and operator-only maintenance, observers can only read', async () => fixture(async f => {
@@ -31,6 +31,19 @@ it('requires pinned signatures and operator-only maintenance, observers can only
     await expect(f.observer.request('admit', { id: randomUUID(), tool: 'read_file' })).rejects.toThrow()
     await f.operator.request('begin', t)
     expect(await f.observer.request('status', t)).toMatchObject({ toolActionsDrained: true, externalWritersQuiesced: false })
+}))
+it.each(['installed', 'rolled-back'])('reopens routine update only with separately pinned %s evidence', async status => fixture(async f => {
+    const t = { ...ticket(), proposalId: 'upstream-fixture' }; await f.operator.request('begin', t)
+    const receipt = { ticket: t, status, before: 'baseline', after: 'candidate', restoration: 'baseline', releaseId: 'new', previousReleaseId: 'old', updatedAt: Date.now() }
+    const release = (r: any, key = f.updateReceiptKey) => f.operator.request('release-update', { ticket: t, receipt: signRepairValue(r, key) })
+    await expect(release(receipt, f.receiptKey)).rejects.toThrow()
+    await expect(f.node.request('release-update', { ticket: t, receipt: signRepairValue(receipt, f.updateReceiptKey) })).rejects.toThrow()
+    await expect(release({ ...receipt, status: 'blocked' })).rejects.toThrow()
+    await expect(release({ ...receipt, ticket: { ...t, targetId: 'other' } })).rejects.toThrow()
+    await expect(release({ ...receipt, before: '' })).rejects.toThrow()
+    if (status === 'rolled-back') await expect(release({ ...receipt, restoration: 'different' })).rejects.toThrow()
+    await release(receipt)
+    expect(await f.node.execute('read_file', true, async () => 'resumed')).toBe('resumed')
 }))
 it('tracks actual promise completion after the caller stops waiting', async () => fixture(async f => {
     let finish!: () => void, entered!: () => void

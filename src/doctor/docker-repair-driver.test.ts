@@ -70,6 +70,14 @@ describe('Docker repair exact identity, confinement and rollback boundary', () =
         expect(f.calls.filter(c => c.endsWith('/start'))).toEqual([])
         expect(await f.driver.currentRelease('qa')).toBe('old')
     })
+    it('refuses to snapshot a SIGKILLed baseline and restores it without starting the candidate', async () => {
+        const f = fixture(), p = await f.driver.prepare(f.ticket)
+        f.old.State.ExitCode = 137
+        await expect(f.driver.activate(p, f.ticket)).rejects.toThrow('Unclean baseline stop')
+        expect(f.calls.some(c => c === `POST /containers/${f.next.Id}/start`)).toBe(false)
+        await f.driver.rollback(p, f.ticket)
+        expect(await f.driver.currentRelease('qa')).toBe('old')
+    })
     it('losing authority cannot start or roll back any container', async () => {
         const f = fixture(), p = await f.driver.prepare(f.ticket); f.loseAuthority()
         await expect(f.driver.activate(p, f.ticket)).rejects.toThrow('fenced')

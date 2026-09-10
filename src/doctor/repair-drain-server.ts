@@ -1,12 +1,14 @@
 import { createServer } from 'node:http'
 import { repairHash, signRepairValue, verifyRepairValue, type RepairReceipt, type RepairTicket, type SignedRepairValue } from './repair-activation.js'
 import { RepairDrain } from './repair-drain.js'
+import type { UpdateActivationReceipt } from '../core/update-activation.js'
 
-export interface DrainRequest { actor: string; requestId: string; issuedAt: number; action: 'admit' | 'settle' | 'begin' | 'status' | 'release'; body: any }
+export interface DrainRequest { actor: string; requestId: string; issuedAt: number; action: 'admit' | 'settle' | 'begin' | 'status' | 'release' | 'release-update'; body: any }
 export interface DrainServerOptions {
     drain: RepairDrain; privateKey: string; operatorPublicKey: string; receiptPublicKey: string
     nodes: Record<string, { publicKey: string; settledTools: readonly string[] }>
     observers?: Record<string, string>
+    updateReceiptPublicKey?: string
 }
 /** Authenticated single-writer coordinator. Pin all members out of band; model
  * output, advertised capabilities and tool names cannot enroll or approve. */
@@ -33,7 +35,15 @@ export function createRepairDrainServer(options: DrainServerOptions) {
                 value = { accepted: true }
             } else if (input.action === 'begin' && actor === 'operator') { options.drain.begin(input.body); value = options.drain.status(input.body) }
             else if (input.action === 'status') value = options.drain.status(input.body)
-            else if (input.action === 'release' && actor === 'operator') {
+            else if (input.action === 'release-update' && actor === 'operator' && options.updateReceiptPublicKey) {
+                const receipt = verifyRepairValue<UpdateActivationReceipt>(input.body.receipt, options.updateReceiptPublicKey)
+                const ticket: RepairTicket = input.body.ticket
+                if (repairHash(receipt.ticket) !== repairHash(ticket) || !ticket.proposalId.startsWith('upstream-')
+                    || !receipt.before || !receipt.releaseId || !receipt.previousReleaseId || receipt.releaseId === receipt.previousReleaseId
+                    || !['installed', 'rolled-back'].includes(receipt.status)
+                    || (receipt.status === 'installed' ? !receipt.after : receipt.restoration !== receipt.before)) throw Error('Independent update acceptance required')
+                options.drain.release(ticket); value = { released: true }
+            } else if (input.action === 'release' && actor === 'operator') {
                 const receipt = verifyRepairValue<RepairReceipt>(input.body.receipt, options.receiptPublicKey)
                 const ticket: RepairTicket = input.body.ticket
                 if (repairHash(receipt.binding) !== repairHash(ticket) || !['resolved', 'rolled-back'].includes(receipt.status)

@@ -240,6 +240,7 @@ channel fencing.
 
 - [Production operations](docs/PRODUCTION_OPERATIONS.md)
 - [Mesh release updates](docs/MESH-RELEASE-UPDATES.md)
+- [Signed GitHub container updates, enrollment and rollback](docs/CONTAINER_UPDATES.md)
 - [Telegram high availability](docs/TELEGRAM.md)
 - [Mesh architecture and transport](docs/MESH.md)
 

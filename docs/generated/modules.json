@@ -1912,11 +1912,59 @@
       ]
     },
     {
+      "module": "src/core/update-activation.ts",
+      "imports": [
+        "../doctor/repair-activation.js",
+        "./update-store.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/update-controller-client.ts",
+      "imports": [
+        "../doctor/repair-activation.js",
+        "./update-controller-server.js",
+        "node:crypto",
+        "node:fs",
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/core/update-controller-server.ts",
+      "imports": [
+        "../doctor/repair-activation.js",
+        "./update-activation.js",
+        "./update-store.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/update-package.ts",
+      "imports": [
+        "./github-update.js",
+        "node:crypto",
+        "node:zlib"
+      ]
+    },
+    {
+      "module": "src/core/update-store.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/upstream-update-command.ts",
       "imports": [
         "../config/config-path.js",
         "./data-root.js",
         "./github-update.js",
+        "./update-controller-client.js",
         "node:fs"
       ]
     },
@@ -2356,6 +2404,7 @@
     {
       "module": "src/doctor/repair-drain-server.ts",
       "imports": [
+        "../core/update-activation.js",
         "./repair-activation.js",
         "./repair-drain.js",
         "node:http"

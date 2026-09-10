@@ -3427,7 +3427,7 @@ Nutze:
                         const { getUpdateStatus } = await import('../core/auto-updater.js')
                         const status = getUpdateStatus()
                         const { upstreamUpdateCommand } = await import('./upstream-update-command.js')
-                        const upstream = await upstreamUpdateCommand('status', requestPermission)
+                        const upstream = await upstreamUpdateCommand(args.trim() || 'status', requestPermission)
                         return `${upstream}\n\n📦 **Lokaler Mesh-Build – Status**
 
 🔖 Version: v${status.currentVersion}
@@ -3467,7 +3467,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
 /update status — Aktuelle Version und Update-Info
 /update check — GitHub-Releases und Publisher-Signatur prüfen
 /update prepare <Release-ID> — Exaktes Paket herunterladen und prüfen
-/update deploy <Release-ID> — Vorbereitung und Aktivierungsbereitschaft prüfen
+/update deploy <Release-ID> — Signiertes Paket über den eingeschriebenen Controller aktivieren
 /update deploy-local — Bestehenden lokalen Build per SSH-Mesh verteilen (kein GitHub-Download)`
             }
         }

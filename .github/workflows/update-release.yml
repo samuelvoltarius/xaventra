@@ -1,0 +1,152 @@
+name: Signed container updates
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: signed-container-update
+  cancel-in-progress: false
+jobs:
+  eligible:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && vars.XAVENTRA_UPDATE_PUBLISHING == 'enabled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.gate.outputs.commit }}
+      version: ${{ steps.gate.outputs.version }}
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - uses: actions/github-script@v7
+        id: gate
+        with:
+          script: |
+            const run = (await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: context.payload.workflow_run.id })).data;
+            const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data;
+            if (run.path !== '.github/workflows/ci.yml' || run.event !== 'push' || run.head_branch !== 'main' || run.conclusion !== 'success' || run.head_sha !== main.commit.sha || run.head_repository.full_name !== context.payload.repository.full_name) throw Error('Exact current-main CI required');
+            const read = async path => JSON.parse(Buffer.from((await github.rest.repos.getContent({ ...context.repo, path, ref: run.head_sha })).data.content, 'base64'));
+            const corePkg = await read('package.json'), desktop = await read('desktop/package.json');
+            if (!/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/.test(corePkg.version) || corePkg.version !== desktop.version) throw Error('Synchronized version required');
+            try { await github.rest.repos.getReleaseByTag({ ...context.repo, tag: `v${corePkg.version}` }); core.setOutput('publish', 'false'); return; } catch (e) { if (e.status !== 404) throw e; }
+            // Do not attach packages to a tag that someone moved or created separately.
+            try { await github.rest.git.getRef({ ...context.repo, ref: `tags/v${corePkg.version}` }); throw Error('Tag exists without this publisher release'); } catch (e) { if (e.status !== 404) throw e; }
+            core.setOutput('commit', run.head_sha); core.setOutput('version', corePkg.version); core.setOutput('publish', 'true');
+  build:
+    needs: eligible
+    if: needs.eligible.outputs.publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.eligible.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts && npm run build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: image
+        with:
+          context: .
+          file: deploy/update/Dockerfile
+          push: true
+          tags: ghcr.io/samuelvoltarius/xaventra:build-${{ needs.eligible.outputs.commit }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/samuelvoltarius/xaventra
+            org.opencontainers.image.revision=${{ needs.eligible.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.eligible.outputs.version }}
+      - name: Record immutable image identity
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: node -e "const fs=require('fs');if(!/^sha256:[a-f0-9]{64}$/.test(process.env.IMAGE_DIGEST))throw Error('Digest');fs.writeFileSync('image-'+process.env.TARGET_ARCH+'.txt','ghcr.io/samuelvoltarius/xaventra@'+process.env.IMAGE_DIGEST)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-image-${{ matrix.arch }}
+          path: image-*.txt
+  publish:
+    needs: [eligible, build]
+    runs-on: ubuntu-latest
+    environment: update-publisher
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.eligible.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: update-image-*
+          merge-multiple: true
+          path: image-digests
+      - name: Sign update packages (no npm / application execution with signer)
+        env:
+          RELEASE_VERSION: ${{ needs.eligible.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.eligible.outputs.commit }}
+          XAVENTRA_UPDATE_PUBLISHER_KEY: ${{ secrets.XAVENTRA_UPDATE_PUBLISHER_KEY }}
+          XAVENTRA_UPDATE_PUBLISHER_ID: ${{ vars.XAVENTRA_UPDATE_PUBLISHER_ID }}
+        run: node scripts/publish-update.mjs "$RELEASE_VERSION" "$RELEASE_COMMIT" update-packages "$(<image-digests/image-x64.txt)" "$(<image-digests/image-arm64.txt)"
+      - name: Verify anonymous registry access before publishing a downloadable release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const tokenResponse = await fetch('https://ghcr.io/token?service=ghcr.io&scope=repository%3Asamuelvoltarius%2Fxaventra%3Apull', { redirect: 'error', signal: AbortSignal.timeout(10000) });
+            if (!tokenResponse.ok) throw Error('GHCR package must allow anonymous reads; no release published');
+            const { token } = await tokenResponse.json();
+            if (typeof token !== 'string' || token.length > 16384) throw Error('Invalid anonymous registry token');
+            for (const arch of ['x64', 'arm64']) {
+              const digest = fs.readFileSync(`image-digests/image-${arch}.txt`, 'utf8').trim().split('@')[1];
+              if (!/^sha256:[a-f0-9]{64}$/.test(digest || '')) throw Error('Invalid digest');
+              const r = await fetch(`https://ghcr.io/v2/samuelvoltarius/xaventra/manifests/${digest}`, { redirect: 'error', signal: AbortSignal.timeout(10000), headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' } });
+              if (!r.ok || r.headers.get('docker-content-digest') !== digest) throw Error('Public immutable image unavailable; no release published');
+              await r.body?.cancel();
+            }
+      - name: Create draft, upload complete inventory, then publish (never overwrite assets)
+        uses: actions/github-script@v7
+        env:
+          RELEASE_VERSION: ${{ needs.eligible.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.eligible.outputs.commit }}
+        with:
+          script: |
+            const fs = require('fs');
+            const version = process.env.RELEASE_VERSION, sha = process.env.RELEASE_COMMIT;
+            const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data;
+            if (main.commit.sha !== sha) throw Error('Main advanced; no stale automatic publication');
+            const release = (await github.rest.repos.createRelease({ ...context.repo, tag_name: `v${version}`, target_commitish: sha,
+              name: `Xaventra ${version} — signed container update`, draft: true, prerelease: version.includes('-rc.'),
+              body: `Signed Linux container update from ${sha}. Not a full RC certification. See docs/RELEASE_PLAN.md and docs/CONTAINER_UPDATES.md. Native desktop signing and other open gates remain separate.` })).data;
+            for (const name of fs.readdirSync('update-packages').sort()) {
+              const data = fs.readFileSync(`update-packages/${name}`);
+              const asset = (await github.rest.repos.uploadReleaseAsset({ ...context.repo, release_id: release.id, name, data })).data;
+              if (asset.state !== 'uploaded' || asset.size !== data.length) throw Error('Asset verification failed; draft retained');
+            }
+            await github.rest.repos.updateRelease({ ...context.repo, release_id: release.id, draft: false });

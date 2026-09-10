@@ -15,7 +15,8 @@ const observers=Object.fromEntries(Object.entries(config.observers||{}).map(([id
   return [id,read(path)]
 }))
 const server=createRepairDrainServer({drain,nodes,observers,privateKey:read(config.authorityPrivateKeyFile,true),
-  operatorPublicKey:read(config.operatorPublicKeyFile),receiptPublicKey:read(config.receiptPublicKeyFile)})
+  operatorPublicKey:read(config.operatorPublicKeyFile),receiptPublicKey:read(config.receiptPublicKeyFile),
+  updateReceiptPublicKey:config.updateReceiptPublicKeyFile?read(config.updateReceiptPublicKeyFile):undefined})
 server.on('error',()=>{drain.close();process.exitCode=1})
 server.listen(config.port,'127.0.0.1',()=>console.log('Repair tool-admission authority ready; external writer quiescence is a separate gate'))
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>server.close())

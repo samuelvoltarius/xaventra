@@ -43,6 +43,9 @@ jobs:
         env:
           XAVENTRA_HOST_TEST_IMAGE: ${{ env.XAVENTRA_REPAIR_SANDBOX_IMAGE }}
           XAVENTRA_HOST_QA_DIR: ${{ github.workspace }}/.nova-data/host-agent-qa
+      - name: Signed upstream command to actual container update, state backup and rollback
+        run: node scripts/check-container-update.mjs
+        timeout-minutes: 4
       - name: Preserve end-to-end evidence including failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,6 +57,7 @@ jobs:
             .nova-data/repair-publication-qa/**/report.json
             .nova-data/repair-peer-qa/**/report.json
             .nova-data/host-agent-qa/**/report.json
+            .nova-data/container-update-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
   managed-repair:

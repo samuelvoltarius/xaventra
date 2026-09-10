@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.22] — 2026-09-10
+
+- Add current-main-CI publication of native Linux amd64/arm64 container images,
+  signed digest-bound descriptors and draft-first complete GitHub releases.
+  Requires one-time publisher identity/environment/registry enrollment.
+- Connect exact-release `/update deploy` to an independently enrolled controller
+  with signed asynchronous status, fresh authority and confined Docker activation.
+- Clone stopped state to fresh volumes, retain originals, independently validate
+  the candidate and verify restoration after rollback. Refuse SIGKILL/OOM snapshot
+  points and ambiguous/replayed changes. Fsync update journals before swaps.
+- Separate normal-update admission reopening from Doctor repair receipts. Add real
+  disposable Docker update/rollback tests. Production enrollment/native/RC gates
+  remain separate from fixture acceptance.
+
 ## [2.78.21] — 2026-09-09
 
 - Add bounded public GitHub release discovery and separately staged package

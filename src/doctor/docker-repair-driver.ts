@@ -125,6 +125,7 @@ export class DockerRepairDriver implements RepairDeploymentDriver {
         if (old.State?.Running) await this.engine.call('POST', `/containers/${old.Id}/stop?t=20`)
         const stopped = await this.inspect(expected)
         if (stopped.State?.Running || stopped.State?.Paused || stopped.State?.Restarting) throw new Error('Old Docker runtime exit unconfirmed')
+        if (!rollback && (stopped.State?.OOMKilled || stopped.State?.ExitCode === 137)) throw new Error('Unclean baseline stop; do not clone potentially inconsistent state')
         if (!await this.hasAuthority(ticket)) throw new Error('Docker authority lost after stop')
         if (!rollback && [...(old.Mounts || []), ...(candidate.Mounts || [])].some((m: any) => m.RW && m.Type !== 'tmpfs')) {
             if (!await this.options.stateReady?.(old.Id, candidate.Id, ticket)) throw new Error('State snapshot or distributed quiescence not proven')

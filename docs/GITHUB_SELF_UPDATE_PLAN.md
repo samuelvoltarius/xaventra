@@ -1,7 +1,8 @@
 # GitHub-backed self-update: current gap and implementation contract
 
-Status: **discovery and verified staging implemented in 2.78.21; production
-activation and upstream artifact publication remain open**.
+Status: **discovery/staging in 2.78.21; publisher and independent container
+controller implemented in 2.78.22**. See [enrollment and recovery](CONTAINER_UPDATES.md).
+Live publisher enrollment and production canary are separate acceptance gates.
 
 ## Implemented command contract (2.78.21)
 
@@ -11,10 +12,10 @@ activation and upstream artifact publication remain open**.
   explicitly includes RCs. Drafts and commits without a release are not eligible.
 - `/update prepare <release-id>` requires Owner/Admin and rechecks the exact
   displayed release before downloading. A changed candidate needs a new choice.
-- `/update deploy <release-id>` currently performs that verification and reports
-  activation **blocked**. It never claims a started or completed installation.
-  Adding SSH profiles does not connect this upstream package to an independent
-  controller. Do not grant the application the raw Docker socket to bypass this.
+- `/update deploy <release-id>` verifies and submits to the independently enrolled
+  controller. Missing enrollment/grant fails closed. Accepted is not installed;
+  signed status persists outside the replaced application. Adding SSH profiles
+  does not replace controller enrollment; never expose the raw Docker socket.
 - `/update status` distinguishes upstream discovery/staging from local Mesh
   rollout status. `/update deploy-local` is the explicit compatibility operation
   for distributing a **local build**, not an upstream release.

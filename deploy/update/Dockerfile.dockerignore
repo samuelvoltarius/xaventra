@@ -1,0 +1,14 @@
+**
+!dist/
+!dist/**
+!assets/
+!assets/**
+!package.json
+!package-lock.json
+!SOUL.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!deploy/
+!deploy/update/
+!deploy/update/Dockerfile
+!deploy/update/Dockerfile.dockerignore

@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.22 signed container update candidate
+
+[Controller/publisher/enrollment](CONTAINER_UPDATES.md),
+[verification and retained failures](VERIFICATION_2.78.22.md).
+
+- Source: publisher, detached controller, exact grants, cloned state, acceptance
+  and rollback implemented.
+- Disposable Linux arm64 Docker: **passed**, 4/4 pre-commit checks; HTTP/authority
+  fixtures, not public GitHub/GHCR or production Mesh.
+- Local regression: **passed**, 219 files / 1,509 tests; final exact candidate CI
+  remains **open** until recorded.
+- Publisher identity/main-only environment: **enrolled**. Automatic workflow and
+  anonymous registry/live-publication acceptance remain **open**.
+- Production enrollment and live upstream canary: **open**, no runtime changes.
+- Native installers/signatures and remaining RC gates: unchanged and **open**.
+
 ### 2.78.21 upstream download candidate (not complete self-update)
 
 [GitHub discovery and staging contract](GITHUB_SELF_UPDATE_PLAN.md): signed
