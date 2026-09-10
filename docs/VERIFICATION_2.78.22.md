@@ -6,7 +6,8 @@ full RC acceptance, native signing, or a production rollout report.
 ## Implemented
 
 - Protected current-main CI publisher, native image architectures, signed bounded
-  descriptors and draft-first asset publication.
+  descriptors and draft-first preview asset publication. No stable/RC label is
+  inferred from a successful update-path test; stable clients ignore previews.
 - Detached authenticated jobs, exact grants, independent download, pinned image,
   confined Docker driver, state clone, retained backups, acceptance and rollback.
 - Durable journals and crash locks; separate normal-update drain reopening.

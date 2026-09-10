@@ -155,7 +155,7 @@ jobs:
             const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data;
             if (main.commit.sha !== sha) throw Error('Main advanced; no stale automatic publication');
             const release = (await github.rest.repos.createRelease({ ...context.repo, tag_name: `v${version}`, target_commitish: sha,
-              name: `Xaventra ${version} — signed container update`, draft: true, prerelease: version.includes('-rc.'),
+              name: `Xaventra ${version} — signed container update preview`, draft: true, prerelease: true,
               body: `Signed Linux container update from ${sha}. Not a full RC certification. See docs/RELEASE_PLAN.md and docs/CONTAINER_UPDATES.md. Native desktop signing and other open gates remain separate.` })).data;
             for (const name of fs.readdirSync('update-packages').sort()) {
               const data = fs.readFileSync(`update-packages/${name}`);

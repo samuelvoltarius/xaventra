@@ -49,6 +49,9 @@ extracting paths, verifies its own download and checks the pulled image identity
 The workflow creates a draft, uploads all assets, verifies sizes, then publishes.
 A failure retains the draft. This does not certify open RC gates or publish native
 desktop executables. Existing tags without a matching release need inspection.
+Until full release gates are closed, this publisher emits **prerelease/preview**
+packages. Clients/controllers must explicitly opt into `channel: "rc"` to test
+them. Default stable clients ignore previews; this is not a stable/RC promotion.
 
 The initial public publisher identity is `xaventra-update-20260910`, distributed in
 `deploy/update/publisher-20260910.pub`. SHA-256 of its SPKI DER encoding:
