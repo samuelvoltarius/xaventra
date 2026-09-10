@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY dist ./dist
 COPY assets ./assets
-COPY SOUL.md LICENSE THIRD_PARTY_NOTICES.md ./
+COPY SOUL.md LICENSE THIRD_PARTY_NOTICES.md xaventra.config.example.json ./
 RUN mkdir /runtime && chown node:node /runtime
 USER 1000:1000
 WORKDIR /runtime

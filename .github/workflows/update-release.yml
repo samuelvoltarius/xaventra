@@ -83,6 +83,19 @@ jobs:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           TARGET_ARCH: ${{ matrix.arch }}
         run: node -e "const fs=require('fs');if(!/^sha256:[a-f0-9]{64}$/.test(process.env.IMAGE_DIGEST))throw Error('Digest');fs.writeFileSync('image-'+process.env.TARGET_ARCH+'.txt','ghcr.io/samuelvoltarius/xaventra@'+process.env.IMAGE_DIGEST)"
+      - name: Test actual packaged daemon lifecycle before signing/public release
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          docker pull "ghcr.io/samuelvoltarius/xaventra@$IMAGE_DIGEST"
+          IMAGE_ID=$(docker image inspect "ghcr.io/samuelvoltarius/xaventra@$IMAGE_DIGEST" --format '{{.Id}}')
+          node scripts/check-update-image.mjs "$IMAGE_ID"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-package-acceptance-${{ matrix.arch }}
+          path: .nova-data/update-image-qa/**/report.json
+          include-hidden-files: true
       - uses: actions/upload-artifact@v4
         with:
           name: update-image-${{ matrix.arch }}

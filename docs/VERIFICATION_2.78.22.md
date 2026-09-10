@@ -28,6 +28,11 @@ driver guard and existing acceptance assertions were not weakened.
   preservation, bad-canary rollback and restored fact, duplicates on both paths.
   Dirty source, HTTP issuer/authority fixtures and local pinned image, not GHCR.
   Repeated over the actual Unix-socket client path: 4/4 passed.
+- Actual arm64 update image also passed packaged daemon start, authenticated REST,
+  unauthenticated rejection, CLI stop, normal exit and marker cleanup: 7/7.
+  Startup 1,312ms / shutdown 88ms in the isolated loopback-provider fixture.
+  This is not the production configured Mesh shutdown path. Package checks now
+  run in both native publisher builds before signing a visible release.
 - First fixture run correctly refused a SIGKILLed PID-1 baseline; added graceful
   fixture shutdown. Second run exposed its random port changing on rollback;
   enrolled a fixed port. Failed reports retained; neither is a production fix.

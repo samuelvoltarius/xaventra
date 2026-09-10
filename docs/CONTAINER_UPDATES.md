@@ -38,7 +38,9 @@ serializes publication and never overwrites existing tags/releases/assets.
   user OAuth credentials to the updater.
 
 Native amd64/arm64 jobs build the same source with locked dependencies and a pinned
-base. The signing job runs only the small publisher script, with no npm/application
+base. Both jobs test the actual image's daemon start, authenticated REST and CLI
+stop with isolated state and a loopback provider before the signing job runs.
+The signing job runs only the small publisher script, with no npm/application
 initialization. It publishes `xaventra-update.json`, two platform `.tar.gz` packages
 and `SHA256SUMS`. Each archive has one `container.json` descriptor binding a canonical
 GHCR **digest**, source SHA, version and architecture. The controller parses without
