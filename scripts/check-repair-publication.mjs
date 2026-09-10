@@ -30,7 +30,7 @@ const files={
  'tsconfig.json':JSON.stringify({compilerOptions:{target:'ES2022',module:'NodeNext',moduleResolution:'NodeNext',rootDir:'src',skipLibCheck:true},include:['src']}),
  'vitest.config.ts':"import {defineConfig} from 'vitest/config';export default defineConfig({test:{include:['src/**/*.test.ts']}})",
  'xaventra.config.example.json':'{}','src/value.ts':'export const value = 1;',
- 'src/server.ts':"import http from 'node:http';import {value} from './value.js';http.createServer((q,r)=>r.end(q.url==='/ready'?'ready':String(value))).listen(8080,'0.0.0.0');",
+ 'src/server.ts':"import http from 'node:http';import {value} from './value.js';const server=http.createServer((q,r)=>r.end(q.url==='/ready'?'ready':String(value))).listen(8080,'0.0.0.0');process.on('SIGTERM',()=>server.close(()=>process.exit(0)));",
  'src/original.test.ts':"import {it,expect} from 'vitest';import {value} from './value.js';it('original HTTP value contract',()=>expect(value).toBe(2));",
  'src/control.test.ts':"import {it,expect} from 'vitest';import {value} from './value.js';it('integer',()=>expect(Number.isInteger(value)).toBe(true));",
 }
@@ -51,9 +51,9 @@ const check=(name,fn)=>{fn();report.checks.push({name,passed:true})}
 let currentTicket,barrier,candidate,state
 try{
  const initial={version:1,binding,releaseId:'old',previousReleaseId:'none',imageId:image,baseImageId:image,sourceHash:binding.baselineHash,compiledHash:'a'.repeat(64),createdAt:Date.now()}
- const oldConfig=structuredClone(template);oldConfig.Cmd=['-e',"require('node:fs').writeFileSync('/state/seed','original');require('node:http').createServer((q,r)=>r.end(q.url==='/ready'?'ready':'1')).listen(8080,'0.0.0.0')"]
+ const oldConfig=structuredClone(template);oldConfig.Cmd=['-e',"require('node:fs').writeFileSync('/state/seed','original');const server=require('node:http').createServer((q,r)=>r.end(q.url==='/ready'?'ready':'1')).listen(8080,'0.0.0.0');process.on('SIGTERM',()=>server.close(()=>process.exit(0)))"]
  const old=await register(initial,oldConfig);await engine.call('POST',`/containers/${old.containerId}/start`)
- const peerConfig=structuredClone(template);delete peerConfig.ExposedPorts;delete peerConfig.Healthcheck;peerConfig.HostConfig.PortBindings={};peerConfig.HostConfig.NetworkMode='none';peerConfig.Cmd=['-e',"setInterval(()=>require('node:fs').appendFileSync('/state/events','tick\\n'),20)"]
+ const peerConfig=structuredClone(template);delete peerConfig.ExposedPorts;delete peerConfig.Healthcheck;peerConfig.HostConfig.PortBindings={};peerConfig.HostConfig.NetworkMode='none';peerConfig.Cmd=['-e',"const timer=setInterval(()=>require('node:fs').appendFileSync('/state/events','tick\\n'),20);process.on('SIGTERM',()=>{clearInterval(timer);process.exit(0)})"]
  const peer=await register({...initial,releaseId:'peer'},peerConfig);await engine.call('POST',`/containers/${peer.containerId}/start`)
  const oldInfo=await engine.call('GET',`/containers/${old.containerId}/json`),peerInfo=await engine.call('GET',`/containers/${peer.containerId}/json`)
  const oldSource=oldInfo.Mounts.find(m=>m.RW).Source

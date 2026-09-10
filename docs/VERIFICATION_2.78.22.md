@@ -13,6 +13,14 @@ full RC acceptance, native signing, or a production rollout report.
 
 ## Pre-commit development evidence
 
+Runtime implementation: `7250ececa94811015df6aadeb99efdfbb2110536`.
+Clean Linux arm64 checkout of this exact revision also passed the four real Docker
+checks over the Unix socket. First candidate CI
+[34503143517](https://github.com/samuelvoltarius/xaventra/actions/runs/34503143517)
+exposed a legacy Doctor fixture relying on SIGKILL; retained as failed evidence.
+Fixture servers now handle SIGTERM and finish their writes before exit. The new
+driver guard and existing acceptance assertions were not weakened.
+
 - Windows: full regression **219 files / 1,509 tests passed**. Build, catalog check,
   seven Desktop tests and seven compiled upstream HTTP checks passed. Dependency
   audit reports zero findings; external agent comparison is still not recorded.

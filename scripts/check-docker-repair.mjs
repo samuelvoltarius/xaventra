@@ -54,7 +54,7 @@ const build=content=>{
   const base=info(image);assert.equal(base.Id,image)
   execFileSync('docker',['tag',image,alias]);assert.equal(info(alias).Id,image)
   const context=mkdtempSync(join(root,'image-'));writeFileSync(join(context,'value.mjs'),content)
-  writeFileSync(join(context,'server.mjs'),"import http from 'node:http';import {value} from './value.mjs';http.createServer((req,res)=>res.end(req.url==='/ready'?'ready':String(value))).listen(8080,'0.0.0.0')")
+  writeFileSync(join(context,'server.mjs'),"import http from 'node:http';import {value} from './value.mjs';const server=http.createServer((req,res)=>res.end(req.url==='/ready'?'ready':String(value))).listen(8080,'0.0.0.0');process.on('SIGTERM',()=>server.close(()=>process.exit(0)))")
   writeFileSync(join(context,'Dockerfile'),`FROM ${alias}\nWORKDIR /app\nCOPY value.mjs server.mjs ./\nUSER 1000:1000\nENTRYPOINT ["/usr/local/bin/node","/app/server.mjs"]\n`)
   {
     const idfile=join(context,'iid');execFileSync('docker',['build','--pull=false','--network=none','--iidfile',idfile,context],{timeout:120_000,stdio:'pipe'})

@@ -26,7 +26,7 @@ const readVolume=name=>execFileSync('docker',['run','--rm','--network','none','-
  '--entrypoint','/usr/local/bin/node',image,'-e',"const fs=require('node:fs');process.stdout.write(JSON.stringify(Object.fromEntries(fs.readdirSync('/state').sort().map(n=>[n,fs.readFileSync('/state/'+n,'utf8')]))));"],{encoding:'utf8',timeout:30_000}).trim()
 const waitFor=async fn=>{for(let i=0;i<60;i++){if(await fn())return;await new Promise(r=>setTimeout(r,100))}throw Error('Expected real peer write not observed')}
 async function fixture(label){
- const base={Image:image,User:'1000:1000',Entrypoint:['/usr/local/bin/node'],Cmd:['-e','setInterval(()=>{},1000)'],
+ const base={Image:image,User:'1000:1000',Entrypoint:['/usr/local/bin/node'],Cmd:['-e',"setInterval(()=>{},1000);process.on('SIGTERM',()=>process.exit(0))"],
   HostConfig:{ReadonlyRootfs:true,CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],Memory:128*1024*1024,NanoCpus:1_000_000_000,PidsLimit:32,NetworkMode:'none',RestartPolicy:{Name:'no'},
     LogConfig:{Type:'json-file',Config:{'max-size':'1m','max-file':'1'}},Mounts:[{Type:'volume',Source:'fresh',Target:'/state',VolumeOptions:{NoCopy:true}}]}}
  const binding={proposalId:label,patchHash:'a'.repeat(64),baselineHash:'b'.repeat(64),candidateHash:'c'.repeat(64),targetId:label,probeId:'state'}
@@ -35,7 +35,7 @@ async function fixture(label){
  const next=await createPublishedRepairContainer(engine,{...artifact,releaseId:label+'-new'},base);containers.push(next.containerId)
  const oldInfo=await info(old.containerId),newInfo=await info(next.containerId),from=oldInfo.Mounts[0],to=newInfo.Mounts[0]
  const peerBody=structuredClone(base);peerBody.HostConfig.Mounts[0].Source=from.Name
- peerBody.Cmd=['-e',"const fs=require('node:fs'),os=require('node:os');fs.appendFileSync('/state/starts',os.hostname()+'\\n');setInterval(()=>fs.appendFileSync('/state/events',os.hostname()+'\\n'),100)"]
+ peerBody.Cmd=['-e',"const fs=require('node:fs'),os=require('node:os');fs.appendFileSync('/state/starts',os.hostname()+'\\n');const timer=setInterval(()=>fs.appendFileSync('/state/events',os.hostname()+'\\n'),100);process.on('SIGTERM',()=>{clearInterval(timer);process.exit(0)})"]
  const created=await engine.call('POST',`/containers/create?name=xaventra-peer-qa-${randomUUID()}`,peerBody);containers.push(created.Id)
  const peer={containerId:created.Id,configHash:dockerRepairConfigHash(await info(created.Id))}
  await start(old.containerId);await start(peer.containerId)
