@@ -12,8 +12,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
   complete-body deadline, bounded body and stricter XTTS evidence implemented.
 - Windows compiled HTTP fixtures: **passed**, 8/8 pre-commit checks; real sockets
   with synthetic services and a controlled retry clock, not production models.
-- Exact-commit cross-platform/full regression/CI: **open** until all applicable
-  jobs pass. [Reproduction and limitations](VERIFICATION_2.78.24.md).
+- Exact runtime source regression/CI: **passed**, all ten jobs on
+  `9286a72a4aa46e248bba26fe0c14938821bc23a5`,
+  [CI34700930685](https://github.com/samuelvoltarius/xaventra/actions/runs/34700930685).
+  Clean Windows/Linux/macOS reports each pass8/8. Final documentation promotion
+  requires its own green exact-commit CI. [Limits](VERIFICATION_2.78.24.md).
 - Production adoption/request-cadence verification: **open**, separate from unit
   and fixture scores. No unrelated node or foreign service changes authorized.
 - Remaining RC/native/HA gates below stay **open** and unchanged.

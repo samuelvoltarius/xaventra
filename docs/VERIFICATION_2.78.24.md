@@ -7,6 +7,11 @@ foreign application is stopped, reconfigured or treated as an AI capability.
 ## Evidence and reproduction
 
 - Source baseline: `f26c89c3aa5d496e0de4425ceb96e0031ee1c207`.
+- Runtime source: `9286a72a4aa46e248bba26fe0c14938821bc23a5`.
+  [CI34700930685](https://github.com/samuelvoltarius/xaventra/actions/runs/34700930685)
+  passed all ten jobs. Downloaded clean exact-source reports confirm **8/8**
+  compiled HTTP checks on Windows, Linux and macOS, with `sourceDirty=false`.
+  Documentation-only promotion still requires its own exact-commit green CI.
 - Baseline scanner repeats all localhost protocol probes every five minutes;
   it has no persistent negative cache or explicit endpoint exclusions.
 - Local unit regression: nine new checks pass. Full Windows regression:
