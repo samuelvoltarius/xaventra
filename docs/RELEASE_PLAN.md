@@ -6,6 +6,18 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.24 discovery-noise candidate
+
+- Source: exact node-local exclusions, durable bounded HTTP/protocol retry state,
+  complete-body deadline, bounded body and stricter XTTS evidence implemented.
+- Windows compiled HTTP fixtures: **passed**, 8/8 pre-commit checks; real sockets
+  with synthetic services and a controlled retry clock, not production models.
+- Exact-commit cross-platform/full regression/CI: **open** until all applicable
+  jobs pass. [Reproduction and limitations](VERIFICATION_2.78.24.md).
+- Production adoption/request-cadence verification: **open**, separate from unit
+  and fixture scores. No unrelated node or foreign service changes authorized.
+- Remaining RC/native/HA gates below stay **open** and unchanged.
+
 ### 2.78.23 update-stop regression candidate
 
 - Reproduced: an accepted direct WebSocket without a signed hello is absent from

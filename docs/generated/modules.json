@@ -3587,6 +3587,7 @@
       "module": "src/mesh/ai-scanner.ts",
       "imports": [
         "../config/config-path.js",
+        "./discovery-probe.js",
         "node:child_process",
         "node:fs",
         "node:path",
@@ -3636,6 +3637,14 @@
         "./transport-contracts.js",
         "node:net",
         "ws"
+      ]
+    },
+    {
+      "module": "src/mesh/discovery-probe.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {

@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.24] — 2026-09-12
+
+- Stop repeatedly probing known non-AI HTTP services: exact node-local origin
+  exclusions and durable bounded retry delays for failed discovery probes.
+  Loopback aliases share exclusions; full inventory never bypasses them.
+- Keep absent/unreachable services eligible for rediscovery; a 404 or mismatched
+  body is negative endpoint evidence, not permanent proof of a foreign service.
+  Successful responses clear retry state; service mismatches do not suppress
+  other protocols on the same endpoint. Store metadata, never response bodies.
+- Bound response bodies and the entire HTTP request, refuse redirects and avoid
+  treating HTML mentioning "ready" as XTTS evidence. Add real compiled loopback
+  discovery acceptance to Windows/Linux/macOS CI. No changes to foreign services.
+
+
 ## [2.78.23] — 2026-09-10
 
 - Fix a reproduced update/shutdown blocker: direct Mesh now tracks every owned

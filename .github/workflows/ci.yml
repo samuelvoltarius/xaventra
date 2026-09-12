@@ -177,6 +177,19 @@ jobs:
         timeout-minutes: 3
         env:
           XAVENTRA_CAPABILITY_QA_DIR: ${{ github.workspace }}/.nova-data/capability-qa
+      - name: Compiled AI discovery exclusions, backoff and bounded real HTTP
+        run: node scripts/check-discovery-probes.mjs
+        timeout-minutes: 2
+        env:
+          XAVENTRA_DISCOVERY_QA_DIR: ${{ github.workspace }}/.nova-data/discovery-qa
+      - name: Preserve discovery acceptance including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-qa-${{ matrix.os }}
+          path: .nova-data/discovery-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled upstream signature, HTTP download and restart acceptance
         run: node scripts/check-upstream-update.mjs
         timeout-minutes: 3

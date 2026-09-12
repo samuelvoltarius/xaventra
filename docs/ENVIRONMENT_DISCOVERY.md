@@ -89,3 +89,44 @@ provider auth acceptance, resource-qualified install recipes, independent instal
 and rollback checks, explicit legacy credential migration, and the broader SSH
 execution/auto-provisioning risk matrix. This checkpoint is not an RC or a claim
 to discover every possible installed AI application.
+# Non-AI service exclusions and retry policy (2.78.24)
+
+The built-in scanner tries known AI protocols on their usual ports. A web shop
+or another application can legitimately use one of these ports. A failed probe
+is not a bind conflict and does not authorize stopping or moving that service.
+
+For a known non-AI service, configure **only the scanning node's** environment:
+
+```dotenv
+XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS=http://127.0.0.1:8020,http://192.0.2.20:8080
+```
+
+Use comma-separated plain HTTP origins, without credentials, paths, queries or
+wildcards. `localhost`, `127.0.0.1` and `[::1]` are equivalent for exclusions.
+Other hosts are not excluded by port alone. Apply changed environment through
+the approved restart/update workflow; preserve it in the node's deployment
+definition. Neither periodic full scans nor `forceFresh` bypass exclusions.
+Removing an exclusion permits discovery again, subject to any existing backoff.
+This affects the built-in AI scanner, not explicitly configured model requests,
+provider plugins or Docker healthchecks.
+
+Unreachable endpoints and HTTP 429/5xx use exponential retries from one minute
+up to fifteen minutes. Other non-2xx responses and protocol mismatches start at
+thirty minutes, with a six-hour ceiling. Those are minimum retry times: the next
+scan runs on its normal schedule. Successful probes clear their failure state.
+An HTTP failure is scoped to the origin/path; a body mismatch is additionally
+scoped to the service so another protocol can still match the shared endpoint.
+
+The node-local `.nova-data/ai-probe-backoff.json` holds at most 512 retry records,
+with failure counts, reasons and deadlines, never HTTP bodies or credentials.
+It is advisory state, not canonical Memory or Mesh evidence. Restart preserves
+backoff. Missing/corrupt cache falls back to discovery; invalid exclusion syntax
+fails probes closed rather than silently ignoring the operator policy.
+For intentional retry reset, stop the node and back up this cache before removing
+only that file. A read-only cache still gives in-process backoff but cannot
+preserve it after restart. No automatic deletion of user data is performed.
+
+Probe bodies are limited to 256 KiB; the three-second default deadline includes
+reading the body. Redirects are not followed. Responses are untrusted protocol
+data, never instructions. The static probe catalog is not proof that all AI
+software is discovered or that models can execute tools.

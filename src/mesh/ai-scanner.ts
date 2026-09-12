@@ -17,6 +17,7 @@ import { promisify } from 'node:util'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { DiscoveryProbeClient } from './discovery-probe.js'
 
 
 const execAsync = promisify(exec)
@@ -232,7 +233,12 @@ export const AI_SERVICE_PROBES: AIServiceProbe[] = [
         type: 'tts',
         defaultPort: 8020,
         healthEndpoint: '/api/ready',
-        detectFn: (body) => body.includes('true') || body.includes('ready'),
+        detectFn: (body) => {
+            try {
+                const data = JSON.parse(body)
+                return data === true || data === 'ready' || data?.ready === true || data?.status === 'ready'
+            } catch { return false }
+        },
         binaries: ['xtts', 'tts-server'],
     },
     {
@@ -321,40 +327,29 @@ export function isFullInventoryDue(
 // Port Scanner
 // ============================================
 
+let discoveryProbeClient: DiscoveryProbeClient | undefined
+function getDiscoveryProbeClient(): DiscoveryProbeClient {
+    return discoveryProbeClient ??= new DiscoveryProbeClient(join(process.cwd(), '.nova-data', 'ai-probe-backoff.json'))
+}
+
 async function probeEndpoint(
     host: string,
     port: number,
     path: string,
     timeoutMs = 3000
 ): Promise<string | null> {
-    try {
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), timeoutMs)
-
-        const url = `http://${host}:${port}${path}`
-        const resp = await fetch(url, {
-            signal: controller.signal,
-            headers: { 'Accept': 'application/json' },
-        })
-        clearTimeout(timer)
-
-        if (resp.ok) {
-            return await resp.text()
-        }
-        return null
-    } catch {
-        return null
-    }
+    return getDiscoveryProbeClient().probe(`http://${host}:${port}${path}`, timeoutMs)
 }
 
 // ============================================
 // Service Scanner (per host)
 // ============================================
 
-async function scanHost(
+export async function scanHost(
     host: string,
     nodeLabel?: string,
-    timeoutMs = 3000
+    timeoutMs = 3000,
+    probes: readonly AIServiceProbe[] = AI_SERVICE_PROBES,
 ): Promise<DiscoveredAIService[]> {
     const found: DiscoveredAIService[] = []
     const endpointCache = new Map<string, Promise<string | null>>()
@@ -364,11 +359,15 @@ async function scanHost(
         return endpointCache.get(key)!
     }
 
-    const probePromises = AI_SERVICE_PROBES.map(async (probe) => {
+    const probePromises = probes.map(async (probe) => {
+        const probeUrl = `http://${host}:${probe.defaultPort}${probe.healthEndpoint}`
+        if (!getDiscoveryProbeClient().allowsService(probeUrl, probe.name)) return
         const body = await probeCached(probe.defaultPort, probe.healthEndpoint)
         if (body === null) return
 
-        if (!probe.detectFn(body)) return
+        const matches = probe.detectFn(body)
+        getDiscoveryProbeClient().recordService(probeUrl, probe.name, matches)
+        if (!matches) return
 
         // Service detected! Get model list
         let models: string[] = []
