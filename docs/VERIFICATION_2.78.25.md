@@ -77,7 +77,7 @@ This documentation-only attestation must pass its own complete CI before main
 promotion. No native signing, full RC acceptance or production activation follows
 from the bounded results above; previously listed open gates are retained.
 
-## Provider compatibility follow-up (requires fresh runtime CI)
+## Provider compatibility follow-up
 
 Two further negative-first tests exposed dropped metadata: the Claude parser
 omitted provider usage, including cache input; the legacy local-fallback branch
@@ -96,3 +96,24 @@ commit. Native reports now explicitly mark tracked working-tree modifications.
 
 See [budget semantics and recovery](TOOL_BUDGETS.md). Inference inside remote or
 provider-owned sub-runs is not independently counted by this native wrapper.
+
+## Final clean runtime acceptance
+
+Runtime `32d52318eb7c8032a7bf88eb5c673ee533b5b5f5` passes **all ten jobs** in
+[CI35452294901](https://github.com/samuelvoltarius/xaventra/actions/runs/35452294901).
+Downloaded reports explicitly identify this revision with `sourceDirty: false`:
+**Windows 6/6, Linux 6/6, macOS 6/6** native tool-budget cases. The Docker repair
+and sandbox jobs also pass. Scripted provider reports remain distinct from live
+model execution; no production failover is claimed.
+
+The same clean committed runtime passed live local Qwen **2/2** at
+2026-09-19T15:36:44Z: single read **6,240ms / 2,246 tokens / 2 calls**; two-file
+read **11,553ms / 2,537 tokens / 2 calls**. The latter selected both reads together;
+the scripted three-inference case separately proves chained continuation.
+The actual interactive Windows CLI also returned a fresh unknown canary exactly
+and exited normally. Config and data were isolated; this was not an OS sandbox,
+packaged Desktop test, Telegram delivery test or production activation.
+
+Final local regression remains **224 files / 1,535 tests**. Initial failures above
+are retained. This final documentation commit requires its own complete green CI
+before promotion. Production nodes were not modified, and open RC gates remain.

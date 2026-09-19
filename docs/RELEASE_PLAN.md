@@ -24,8 +24,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Provider follow-up: reproduced dropped Claude usage and local-fallback
   tool-correlation/options. Corrected with two additional regressions; local
   **224 files / 1,535 tests** and repeated native fixture6/6/live-Qwen2/2 pass.
-  These newer runtime changes require fresh exact-SHA CI; the predecessor's
-  green run above must not be reused as their acceptance.
+  Runtime `32d52318eb7c8032a7bf88eb5c673ee533b5b5f5` passes all ten jobs in
+  [CI35452294901](https://github.com/samuelvoltarius/xaventra/actions/runs/35452294901).
+  Downloaded clean exact-SHA Windows/Linux/macOS reports each pass 6/6.
+  Clean committed runtime also passes live Qwen 2/2 and an actual isolated
+  interactive CLI read with exact unknown-canary output and normal exit.
+  Final documentation promotion still requires its own exact-commit green CI.
 - General tool/action-target validation, missing-data recovery, complete memory
   correction and distributed resume remain **open**. Earlier gates are unchanged.
   [Evidence and failures](VERIFICATION_2.78.25.md), [operator guide](TOOL_BUDGETS.md).
