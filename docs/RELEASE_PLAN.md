@@ -21,7 +21,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
   exposed reasoning. These are LAN model checks, not production Telegram proof.
 - Targeted policy/provider tests **10/10**, typecheck, build, current catalogs
   and Desktop **7/7** pass locally. Full Core regression passes **225 files /
-  1,546 tests**. Exact clean-source CI, final
+  1,546 tests**. Runtime `f892f77579e3c1f0e75af74132ec556e11789c4e`
+  passes all ten jobs in
+  [CI 35463459896](https://github.com/samuelvoltarius/xaventra/actions/runs/35463459896),
+  including Windows/Linux/macOS verify and packaged Desktop smoke. The prior
+  Windows failure exposed and now guards a hanging Python launcher alias. Final
   documentation promotion and production adoption remain required. [Policy](REASONING_POLICY.md),
   [evidence](VERIFICATION_2.78.27.md).
 

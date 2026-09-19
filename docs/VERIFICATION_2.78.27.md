@@ -42,6 +42,13 @@ after 10,093ms and 240 completion tokens.
   high/critical vulnerability; npm reports two moderate development-only
   findings in Vitest 3.2.7 / `@vitest/mocker`. The offered fix is a breaking
   Vitest 5 upgrade and is not silently folded into this runtime patch.
+- Exact runtime candidate `f892f77579e3c1f0e75af74132ec556e11789c4e`
+  passed all ten jobs in
+  [CI 35463459896](https://github.com/samuelvoltarius/xaventra/actions/runs/35463459896),
+  including Windows/Linux/macOS verify and packaged Desktop smoke, isolated
+  repair, managed repair and Docker repair. The preceding candidate failed on
+  Windows because Python launcher discovery exceeded the test deadline; that
+  failure was retained and fixed rather than retried away.
 - Actual compiled Xaventra client against Spark:
   - `none`: **405ms**, **4** completion tokens, exact `SDK_FAST_OK`;
   - `low`: **1,085ms**, **20** completion tokens, exact `SDK_FAST_OK`;
@@ -54,7 +61,6 @@ The direct API pre-check also returned `SPARK_FAST_OK` in 530ms/5 tokens with
 
 ## Open gates
 
-- Exact-source three-platform CI.
 - Final documentation commit CI and normal `main` promotion.
 - Production Telegram/Desktop adoption and latency observation.
 - Typed semantic tool targets, durable evidence resume, complete memory
