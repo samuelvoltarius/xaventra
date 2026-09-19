@@ -1,3 +1,5 @@
+import { inferRequiredToolTargets } from './tool-evidence-binding.js'
+
 export interface ActionIntent {
     requiresTool: boolean
     kind: 'screenshot' | 'image-generation' | 'system-state' | 'file' | 'web' | 'device-action' | 'generic-action' | 'none'
@@ -9,6 +11,8 @@ export interface ActionIntent {
  */
 export function detectActionIntent(input: string): ActionIntent {
     const text = input.toLowerCase().replace(/\s+/g, ' ').trim()
+    const explicitFileTargets = inferRequiredToolTargets(text)
+        .filter(target => !/^https?:\/\//.test(target))
 
     if (/\b(?:schau|prüfe|pruefe|zeige|zeig|liste|check|inspect)\b.{0,80}\b(?:docker|container|prozesse|services|dienste)\b/.test(text)
         || /\b(?:welche|wie viele)\b.{0,35}\b(?:container|dienste|prozesse)\b.{0,35}\b(?:laufen|aktiv|gestartet|vorhanden)\b/.test(text)) {
@@ -29,6 +33,7 @@ export function detectActionIntent(input: string): ActionIntent {
         return { requiresTool: true, kind: 'system-state' }
     }
     if (/\b(?:lies|lese|read|öffne|open|vergleiche|compare)\b.{0,80}\b(?:datei(?:en)?|files?|ordner|verzeichnisse?)\b/i.test(text)
+        || (/\b(?:lies|lese|read|öffne|open|vergleiche|compare)\b/i.test(text) && explicitFileTargets.length > 0)
         || /\b(datei(?:en)?|ordner|verzeichnis)\b.{0,40}\b(auflisten|anzeigen|lesen|schreiben|erstellen|l[oö]schen|kopieren|verschieben|senden)\b/i.test(text)
         || /\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b.{0,55}\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|durchsuch\w*)\b/i.test(text)
         || /\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|schau\w*|durchsuch\w*)\b.{0,55}\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b/i.test(text)) {

@@ -17,7 +17,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Local Windows regression: **224 files / 1,539 tests**. Compiled native fixture
   **7/7**, including an intentional partial two-file execution rejected despite
   one successful read. Live local Qwen **2/2** with disposable files.
-- Exact clean-source CI and documentation promotion remain required before main.
+- The first exact candidate CI failed closed: all three hosted platforms exposed
+  missing Unix-path intent classification in the partial two-file case, and the
+  legacy dashboard audit hit npm's retired quick-tree endpoint. Both causes now
+  have bounded fixes; fresh exact-source CI and documentation promotion remain
+  required before main.
   No production node was changed. Missing-file recovery, durable evidence across
   distributed resume, complete memory correction and all previous RC gates remain
   open. [Contract and limits](TOOL_EVIDENCE.md), [evidence](VERIFICATION_2.78.26.md).

@@ -43,9 +43,32 @@ executor in the contract, operates on the exact fixture target and forwards call
 ID, arguments/result hashes and matched targets. The repeated full suite passes;
 the failed run is retained in the private test log.
 
+The first exact-source CI candidate, `90b37c7ca4caab2fa002458a4805934414cb3306`,
+is retained as a failed gate in
+[CI 35458289978](https://github.com/samuelvoltarius/xaventra/actions/runs/35458289978).
+Its Windows fixture had passed locally, but the three hosted operating systems
+showed that a command containing explicit absolute Unix paths without the nouns
+“file” or “Datei” was classified as a generic action. It therefore had no bound
+file targets and incorrectly accepted the first read. The follow-up recognizes
+an explicit machine-comparable path after a read/open/compare verb on every
+platform and adds both Unix and Windows regression forms.
+
+That CI also retained a separate legacy-dashboard audit failure. `npm ci`
+succeeded, but npm's retired quick-tree audit endpoint rejected the valid
+installed graph before returning advisory data. CI now audits the lock graph
+that `npm ci` just installed (`--package-lock-only`); it still fails on high
+severity advisories and does not turn registry unavailability into success.
+
+The first repeated local full-suite run after the follow-up retained one
+environmental failure: the deeply nested disposable repair-publication Git
+repository exceeded Windows' default path handling and `git status` could not
+read its loose objects. The same unchanged suite with process-local
+`core.longpaths=true` passed **224 files / 1,539 tests**. This setting changes
+only Git path handling for the test process; it does not skip or weaken a test.
+
 ## Open gates
 
-- Exact clean-source three-platform CI and final evidence commit.
+- Exact clean-source three-platform CI for the follow-up and final evidence commit.
 - Typed semantic targets beyond explicit files/URLs.
 - Evidence rehydration across every native/distributed interruption boundary.
 - Expected missing-file recovery without unnecessary retries.

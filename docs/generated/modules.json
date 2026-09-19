@@ -1165,7 +1165,9 @@
     },
     {
       "module": "src/core/action-intent.ts",
-      "imports": []
+      "imports": [
+        "./tool-evidence-binding.js"
+      ]
     },
     {
       "module": "src/core/action-lifecycle.ts",
