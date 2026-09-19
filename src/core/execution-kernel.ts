@@ -16,6 +16,7 @@ import { assessExecutionPreflight, type ExecutionPreflightAssessment } from './e
 import { deliberateExecution, type DeliberationResult } from './deliberative-planner.js'
 import { resolveAutonomyLevel, type AutonomyDecision } from './autonomy-ladder.js'
 import { selectContextPolicy, type ContextPolicy } from './context-policy.js'
+import { InferenceBudget } from './inference-budget.js'
 
 /** Single runtime contract between dispatcher, worker, validator and learning.
  * Legacy layers may observe it, but they no longer decide task completion. */
@@ -27,6 +28,7 @@ export class ExecutionKernel {
     readonly deliberation: DeliberationResult
     readonly autonomy: AutonomyDecision
     readonly cognition: ContextPolicy
+    readonly inference: InferenceBudget
     private readonly worker: FocusedWorker
     private readonly verifiedTools = new Set<string>()
     private readonly artifacts = new Set<string>()
@@ -53,6 +55,7 @@ export class ExecutionKernel {
                     ...(contractOrOverrides?.budget || {}),
                 },
             })
+        this.inference = new InferenceBudget(this.contract.budget)
         // A complete contract is the outer orchestrator's binding tool plan.
         // Reapplying keyword selection here can silently erase its required
         // diagnostic tools during a JSON/code-only follow-up. This is not an
@@ -72,6 +75,7 @@ export class ExecutionKernel {
     /** Gate every execution path before effects, including recovery and retries.
      * Post-validation alone cannot undo work performed beyond its budget. */
     assertCanExecute(toolName: string): void {
+        this.inference.assertCanExecute()
         if (!this.contract.allowedChanges.allowedTools.includes(toolName)) throw new Error(`Tool outside task contract: ${toolName}`)
         if (Date.now() - this.startedAt >= this.contract.budget.timeoutMs) throw new Error('Task execution deadline exceeded')
         if (this.toolAttempts >= this.contract.budget.maxToolCalls) throw new Error('Task tool-call budget exhausted')
@@ -93,6 +97,7 @@ export class ExecutionKernel {
     validateCompletion(response: string, evidence: Omit<CompletionEvidence, 'response' | 'verifiedTools' | 'artifacts'> = {}): TaskValidationReport {
         const report = validateTaskCompletion(this.contract, {
             ...evidence,
+            ...(this.inference.snapshot().calls ? this.inference.evidence() : {}),
             response,
             verifiedTools: [...this.verifiedTools],
             artifacts: [...this.artifacts],

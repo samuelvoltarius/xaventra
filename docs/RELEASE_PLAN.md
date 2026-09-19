@@ -6,6 +6,20 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.25 native tool-budget candidate
+
+- Reproduced and corrected: prompt/output budget confusion and missing native
+  follow-up/recovery usage. Distinct generation and total ceilings, per-run shared
+  accounting and pre-effect rejection of over-budget model replies implemented.
+- Working-tree live local-model acceptance: **passed, 2/2**, real disposable reads
+  with validated final output. Not production Telegram or full CLI/Desktop proof.
+- Windows regression: **passed, 224 files / 1,533 tests**; six-case compiled fixture,
+  REST response contract 5/5 and Desktop bridge 7/7: **passed**. Exact-commit
+  three-OS CI: **open**. No main promotion on partial/ancestor checks.
+- General tool/action-target validation, missing-data recovery, complete memory
+  correction and distributed resume remain **open**. Earlier gates are unchanged.
+  [Evidence and failures](VERIFICATION_2.78.25.md), [operator guide](TOOL_BUDGETS.md).
+
 ### 2.78.24 discovery-noise candidate
 
 - Source: exact node-local exclusions, durable bounded HTTP/protocol retry state,

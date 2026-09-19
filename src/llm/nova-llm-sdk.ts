@@ -355,7 +355,7 @@ class LegacyCloudProvider extends LLMProvider {
             contents,
             generationConfig: {
                 temperature: this.config.temperature ?? 0.7,
-                maxOutputTokens: this.config.maxTokens ?? 8192,
+                maxOutputTokens: Math.min(options?.maxTokens ?? Infinity, this.config.maxTokens ?? 8192),
             },
         }
 
@@ -644,7 +644,7 @@ class ClaudeProvider extends LLMProvider {
 
         const requestBody: any = {
             model: this.config.model,
-            max_tokens: this.config.maxTokens ?? 8192,
+            max_tokens: Math.min(options?.maxTokens ?? Infinity, this.config.maxTokens ?? 8192),
             messages: chatMessages,
         }
 
@@ -787,7 +787,7 @@ class MiniMaxProvider extends LLMProvider {
         }))
         const result = await llm.complete(chatMessages, {
             systemPrompt,
-            maxTokens: this.config.maxTokens ?? 8192,
+            maxTokens: Math.min(options?.maxTokens ?? Infinity, this.config.maxTokens ?? 8192),
             temperature: this.config.temperature,
             tools,
             toolChoice: options?.toolChoice,
@@ -847,7 +847,7 @@ class OpenAIProvider extends LLMProvider {
         }
     }
 
-    async complete(messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse> {
+    async complete(messages: LLMMessage[], tools?: ToolDefinition[], options?: LLMCallOptions): Promise<LLMResponse> {
         const { token } = await this.tokenManager.getToken('openai')
 
         // If no API key, use Codex CLI directly
@@ -864,7 +864,7 @@ class OpenAIProvider extends LLMProvider {
                 role: m.role,
                 content: m.content,
             })),
-            max_tokens: this.config.maxTokens ?? 8192,
+            max_tokens: Math.min(options?.maxTokens ?? Infinity, this.config.maxTokens ?? 8192),
             temperature: this.config.temperature ?? 0.7,
         }
 

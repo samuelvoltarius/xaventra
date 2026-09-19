@@ -49,7 +49,7 @@ const llm = {
 const intent = detectActionIntent(job.prompt)
 const contract = createTaskContract(job.prompt, { ...intent, requiresTool: job.requiresTool }, job.requiresTool ? ['read_file'] : [], {
     allowedChanges: { readOnly: true, externalSideEffects: false, allowedPaths: [join(job.root, 'fixtures')] },
-    budget: { timeoutMs: 50_000, maxToolCalls: 6 },
+    budget: { timeoutMs: 50_000, maxToolCalls: 6, ...(job.budget || {}) },
 })
 const ledger = new OutcomeLedger(join(job.root, 'ledger'), false)
 const startedAt = Date.now()

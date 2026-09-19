@@ -1433,6 +1433,7 @@
         "./deliberative-planner.js",
         "./execution-preflight.js",
         "./focused-worker.js",
+        "./inference-budget.js",
         "./intent-dispatcher.js",
         "./result-validator.js",
         "./task-contract.js"
@@ -1520,6 +1521,13 @@
       "imports": [
         "./message-bus.js",
         "./state-machine.js"
+      ]
+    },
+    {
+      "module": "src/core/inference-budget.ts",
+      "imports": [
+        "../llm/token-usage.js",
+        "./task-contract.js"
       ]
     },
     {

@@ -50,6 +50,6 @@ ${current}`
         expect(fast.cognition.cognitiveMode).toBe('fast')
         expect(fast.contract.budget.maxToolCalls).toBe(4)
         expect(deep.cognition.cognitiveMode).toBe('deep')
-        expect(deep.contract.budget.maxTokens).toBeGreaterThan(fast.contract.budget.maxTokens || 0)
+        expect(deep.contract.budget.maxOutputTokens).toBeGreaterThan(fast.contract.budget.maxOutputTokens || 0)
     })
 })

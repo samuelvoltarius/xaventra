@@ -730,6 +730,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         if (llmPolicy.decision !== 'allow') throw new Error(`LLM policy ${llmPolicy.decision}: ${llmPolicy.reason || 'blocked'}`)
         if (llmPolicy.additionalContext) messages.unshift({ role: 'system', content: llmPolicy.additionalContext })
 
+        // Every native planning, follow-up and repair round shares one budget.
+        // Do not mutate the global/shared client used by other users or runs.
+        llmClient = kernel.inference.wrap(llmClient)
         // Generate response WITH TOOLS!
         _traceRecorder.llmCallStart(_traceId)
         // Race the LLM call against the hard abort signal so a hung initial call doesn't
@@ -738,7 +741,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             ? Promise.race([
                 withTimeout(llmClient.complete(messages, toolDefinitions, {
                     toolChoice: actionIntent.requiresTool ? 'required' : 'auto',
-                    maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxTokens,
+                    maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
                 }), TIMEOUT_LLM, 'Primary LLM call'),
                 new Promise<never>((_, reject) => {
                     if (abortSignal.aborted) { reject(new Error('AbortError: hard cancel')) }
@@ -747,7 +750,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             ])
             : withTimeout(llmClient.complete(messages, toolDefinitions, {
                 toolChoice: actionIntent.requiresTool ? 'required' : 'auto',
-                maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxTokens,
+                maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
             }), TIMEOUT_LLM, 'Primary LLM call')
         ) as any
         _traceRecorder.llmCallEnd(_traceId)
@@ -902,7 +905,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 try {
                     const state = (globalThis as any).__novaState
                     const primaryLlm = state?.llm
-                    const useForRetry = primaryLlm || llmClient
+                    const useForRetry = kernel.inference.wrap(primaryLlm || llmClient)
 
                     console.log('[Nova Agent] 🔄 Retrying with primary model for proper function calling...')
                     const retryMessages = [
@@ -1786,7 +1789,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let taskValidation = kernel.validateCompletion(finalContent, {
             durationMs: Date.now() - outcomeStartedAt,
             toolCalls: toolExecutions.length,
-            tokens: response.usage?.totalTokens,
+            tokens: kernel.inference.snapshot().totalTokens,
             awaitingApproval: awaitingPolicyApproval || undefined,
             policyBlocked,
         })
@@ -1794,7 +1797,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         const repaired = await repairConstrainedResponse({
             contract: kernel.contract, validation: taskValidation, response: finalContent,
             requiresTool: actionIntent.requiresTool, startedAt: outcomeStartedAt,
-            tokensUsed: Number(response.usage?.totalTokens || 0), signal: abortSignal,
+            tokensUsed: kernel.inference.snapshot().totalTokens, signal: abortSignal,
             complete: async (repairMessages, repairTools, options) => {
                 const policy = await lifecyclePolicy.run('llm.before', {
                     context: policyContext, input: { messages: repairMessages, tools: repairTools },
@@ -1816,15 +1819,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         })
         if (repaired) {
             finalContent = redactSecrets(repaired.content || '')
-            const used = response.usage || {}
-            response.usage = {
-                promptTokens: Number(used.promptTokens || used.inputTokens || 0) + Number(repaired.usage?.promptTokens || 0),
-                completionTokens: Number(used.completionTokens || used.outputTokens || 0) + Number(repaired.usage?.completionTokens || 0),
-                totalTokens: Number(used.totalTokens || 0) + Number(repaired.usage?.totalTokens || 0),
-            }
             taskValidation = kernel.validateCompletion(finalContent, {
                 durationMs: Date.now() - outcomeStartedAt, toolCalls: toolExecutions.length,
-                tokens: response.usage.totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
+                tokens: kernel.inference.snapshot().totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
             })
             outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
         }
@@ -1844,12 +1841,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         }
         taskValidation = kernel.validateCompletion(finalContent, {
             durationMs: Date.now() - outcomeStartedAt, toolCalls: toolExecutions.length,
-            tokens: response.usage?.totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
+            tokens: kernel.inference.snapshot().totalTokens, awaitingApproval: awaitingPolicyApproval || undefined, policyBlocked,
         })
         outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
         const pricingInput = {
-            inputTokens: Number(response.usage?.promptTokens || response.usage?.inputTokens || 0),
-            outputTokens: Number(response.usage?.completionTokens || response.usage?.outputTokens || 0),
+            inputTokens: kernel.inference.snapshot().inputTokens,
+            outputTokens: kernel.inference.snapshot().outputTokens,
             // NovaLLM has a private provider object and a public providerId
             // string. Reading the object first broke pricing with value.trim().
             provider: (llmClient as any)?.providerId || undefined,
@@ -1862,8 +1859,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             usd: usageCost.totalUsd,
             energyUsd: usageCost.energyUsd,
             hardwareUsd: usageCost.hardwareUsd,
-            estimated: usageCost.estimated,
-            source: usageCost.source,
+            estimated: usageCost.estimated || kernel.inference.snapshot().estimated,
+            source: `${usageCost.source}; native inference calls=${kernel.inference.snapshot().calls}; usage=${kernel.inference.snapshot().estimated ? 'reserved estimate' : 'provider-reported'}`,
         })
         if (taskValidation.success) {
             outcomeLedger.complete(kernel.contract.id, {
@@ -1980,7 +1977,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             toolsUsed,
             toolsExecuted,
             model: (llmClient as any)?.modelId || undefined,
-            tokens: response.usage?.totalTokens,
+            tokens: kernel.inference.snapshot().totalTokens,
             sessionId,
             screenshotPath,
             toolExecutions,
@@ -1999,12 +1996,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             reason: redactSecrets(errStr),
             durationMs: Date.now() - outcomeStartedAt,
         })
-        const failedCost = estimateUsageCost({ provider: outcomeProvider, model: outcomeModel, durationMs: Date.now() - outcomeStartedAt })
+        const failedUsage = kernel.inference.snapshot()
+        const failedCost = estimateUsageCost({ provider: outcomeProvider, model: outcomeModel, inputTokens: failedUsage.inputTokens, outputTokens: failedUsage.outputTokens, durationMs: Date.now() - outcomeStartedAt })
         outcomeLedger.recordCost(kernel.contract.id, {
-            provider: outcomeProvider, model: outcomeModel, inputTokens: 0, outputTokens: 0,
+            provider: outcomeProvider, model: outcomeModel, inputTokens: failedUsage.inputTokens, outputTokens: failedUsage.outputTokens,
             durationMs: Date.now() - outcomeStartedAt, usd: failedCost.totalUsd,
             energyUsd: failedCost.energyUsd, hardwareUsd: failedCost.hardwareUsd,
-            estimated: failedCost.estimated, source: `${failedCost.source}; request failed before token usage was returned`,
+            estimated: failedCost.estimated || failedUsage.estimated, source: `${failedCost.source}; failed native run; calls=${failedUsage.calls}; usage=${failedUsage.estimated ? 'reserved estimate' : 'provider-reported'}`,
         })
 
         // Determine error type for trace
@@ -2016,7 +2014,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
         // Friendly user-facing error — never show raw stack/API errors
         let userMessage = 'Entschuldigung, da ist etwas schiefgelaufen. Bitte versuch es nochmal.'
-        if (errStr.includes('insufficientquota') || errStr.includes('quota')) {
+        if (/Inference.*budget|Provider exceeded the admitted inference budget/.test(errStr)) {
+            userMessage = 'Das Modellbudget dieser Aufgabe ist ausgeschöpft oder konnte nicht sicher eingehalten werden. Es wurden keine weiteren Tools gestartet; die Aufgabe ist nicht als erledigt bestätigt.'
+        } else if (errStr.includes('insufficientquota') || errStr.includes('quota')) {
             userMessage = 'Mein KI-Modell hat gerade ein Quota-Problem. Ich versuche es gleich nochmal.'
         } else if (errStr.includes('401') || errStr.includes('auth') || errStr.includes('Keine Auth')) {
             userMessage = 'Ich muss mich kurz neu einloggen. Bitte `/login` senden.'

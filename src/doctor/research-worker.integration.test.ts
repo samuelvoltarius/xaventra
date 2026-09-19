@@ -17,7 +17,7 @@ describe('Doctor investigation through the actual native execution pipeline', ()
             expectedArtifacts: [], requiredTests: [],
             successCriteria: [{ id: 'evidence', kind: 'verified_tool', required: true, description: 'Approved source only' }],
             allowedChanges: { readOnly: true, allowedPaths: [join(process.cwd(), 'src/approved.ts')], allowedTools: ['read_file'], externalSideEffects: false },
-            budget: { timeoutMs: 15_000, maxToolCalls: 1, maxTokens: 500 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
+            budget: { timeoutMs: 15_000, maxToolCalls: 1, maxOutputTokens: 500 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
         }
         let turns = 0
         const llm = { modelId: 'scripted-fixture', complete: async () => ++turns === 1
@@ -27,6 +27,7 @@ describe('Doctor investigation through the actual native execution pipeline', ()
             await withOutcomeLedger(new OutcomeLedger(join(process.cwd(), '.nova-data', 'candidate-path-ledger')), async () => {
                 const worker = createResearchWorker(() => true, llm)
                 await worker.execute({ contract, content: contract.goal, caseId: 'path-check', signal: new AbortController().signal, purpose: 'candidate' })
+                expect(turns).toBeGreaterThan(0) // Reach the policy gate, not an earlier budget rejection.
                 expect(handler).not.toHaveBeenCalled()
                 expect(worker.getRun(contract.id)?.validation?.success).not.toBe(true)
             })
@@ -53,6 +54,7 @@ describe('Doctor investigation through the actual native execution pipeline', ()
                 await withOutcomeLedger(new OutcomeLedger(join(process.cwd(), '.nova-data', `${scenario}-ledger`)), async () => {
                     const result = await coordinator.investigateNext(createResearchWorker(() => authority, llm))
                     expect(result?.investigation?.status).toBe('failed')
+                    expect(turns).toBeGreaterThan(0)
                     expect(handler).not.toHaveBeenCalled()
                 })
             } finally { registry.register(original) }
@@ -71,9 +73,12 @@ describe('Doctor investigation through the actual native execution pipeline', ()
         const handler = vi.fn(async () => ({ success: true, output: readFileSync(observationPath, 'utf8') }))
         registry.register({ ...original, handler })
         let turns = 0
-        const llm = { modelId: 'scripted-fixture', complete: vi.fn(async () => ++turns === 1
-            ? { content: '', toolCalls: [{ name: 'health_status', arguments: {} }] }
-            : { content: 'Die aktuelle Probe meldet degraded und ein fehlendes Antwortfeld. Keine Reparatur durchgeführt.' }) }
+        const llm = { modelId: 'scripted-fixture', complete: vi.fn(async () => ({
+            ...( ++turns === 1
+                ? { content: '', toolCalls: [{ name: 'health_status', arguments: {} }] }
+                : { content: 'Die aktuelle Probe meldet degraded und ein fehlendes Antwortfeld. Keine Reparatur durchgeführt.' }),
+            usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 }, // Explicit synthetic fixture usage.
+        })) }
         try {
             const ledger = new OutcomeLedger(`${path}.ledger`)
             await withOutcomeLedger(ledger, async () => {

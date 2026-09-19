@@ -38,6 +38,9 @@ export interface TaskBudget {
     timeoutMs: number
     maxToolCalls: number
     maxTokens?: number
+    /** Cumulative generated tokens across planning, tool follow-ups and repair.
+     * maxTokens above remains the optional input + output ceiling. */
+    maxOutputTokens?: number
     maxCostUsd?: number
 }
 
@@ -96,6 +99,8 @@ export interface CompletionEvidence {
     durationMs?: number
     toolCalls?: number
     tokens?: number
+    outputTokens?: number
+    inferenceStopped?: boolean
     costUsd?: number
     changedPaths?: string[]
     awaitingApproval?: boolean
@@ -230,6 +235,8 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
     if (typeof evidence.durationMs === 'number' && evidence.durationMs > contract.budget.timeoutMs) violations.push('timeout budget exceeded')
     if (typeof evidence.toolCalls === 'number' && evidence.toolCalls > contract.budget.maxToolCalls) violations.push('tool-call budget exceeded')
     if (contract.budget.maxTokens !== undefined && (evidence.tokens || 0) > contract.budget.maxTokens) violations.push('token budget exceeded')
+    if (contract.budget.maxOutputTokens !== undefined && (evidence.outputTokens || 0) > contract.budget.maxOutputTokens) violations.push('output-token budget exceeded')
+    if (evidence.inferenceStopped) violations.push('inference stopped before completion')
     if (contract.budget.maxCostUsd !== undefined && (evidence.costUsd || 0) > contract.budget.maxCostUsd) violations.push('cost budget exceeded')
 
     const changedPaths = evidence.changedPaths || []

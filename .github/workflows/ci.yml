@@ -237,6 +237,19 @@ jobs:
           path: .nova-data/doctor-qa/**/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Compiled native tool chain and cumulative budget acceptance
+        run: node scripts/check-tool-budget.mjs
+        timeout-minutes: 6
+        env:
+          XAVENTRA_TOOL_BUDGET_QA_DIR: ${{ github.workspace }}/.nova-data/tool-budget-qa
+      - name: Preserve tool budget reports including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-budget-qa-${{ matrix.os }}
+          path: .nova-data/tool-budget-qa/**/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled response contract and authenticated REST acceptance
         run: node scripts/check-response-contract.mjs
         timeout-minutes: 6

@@ -71,7 +71,7 @@ describe('next-level infrastructure', () => {
         expect(deep.mode).toBe('deep')
         expect(deep.longTermMemory).toBe(true)
         expect(deep.plannerPaths).toBe(3)
-        expect(deep.executionBudget.maxTokens).toBeGreaterThan(fast.executionBudget.maxTokens)
+        expect(deep.executionBudget.maxOutputTokens).toBeGreaterThan(fast.executionBudget.maxOutputTokens)
     })
 
     it('requires fresh evidence for current research without granting autonomy', () => {

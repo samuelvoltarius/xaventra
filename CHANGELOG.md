@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.78.25] — 2026-09-19
+
+- Separate the native runner's generated-token allowance from optional total
+  input/output limits. A real file read no longer fails just because its prompt
+  exceeds the answer allowance. Doctor generation budgets use the same contract.
+- Account for planning, tool follow-ups, retries and response repair together.
+  Reduce subsequent generation allowances, refuse calls before exhausting an
+  explicit total reservation and prevent tools after provider over-generation.
+  Missing/failed usage is a labelled conservative reservation, not measured zero.
+- Include cumulative native usage in validation, returned metrics and the Outcome
+  Ledger, including failed runs. Forward per-call limits to cloud HTTP adapters.
+- Add real filesystem/native-runner acceptance with scripted HTTP models to the
+  three-platform CI matrix, separately from live local-model acceptance. No fleet
+  rollout, complete tool/memory correctness or RC readiness is claimed.
+
 ## [2.78.24] — 2026-09-12
 
 - Stop repeatedly probing known non-AI HTTP services: exact node-local origin

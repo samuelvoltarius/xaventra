@@ -23,7 +23,7 @@ export interface ContextPolicy {
     executionBudget: {
         timeoutMs: number
         maxToolCalls: number
-        maxTokens: number
+        maxOutputTokens: number
     }
     reasons: string[]
 }
@@ -148,17 +148,19 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
         // im schnellen Modus bricht das mit "timeout budget exceeded" ab, obwohl
         // Nova alles richtig macht. Ausserhalb von NovaOS bleiben die Budgets wie
         // gehabt, damit Chat-Antworten dort schnell bleiben.
+        // These are generation allowances, shared across the native run. An
+        // optional caller maxTokens remains a separate input+output ceiling.
         executionBudget: process.env.NOVA_OS_MODE === 'true'
             ? (cognitiveMode === 'fast'
-                ? { timeoutMs: 600_000, maxToolCalls: 12, maxTokens: 4_096 }
+                ? { timeoutMs: 600_000, maxToolCalls: 12, maxOutputTokens: 4_096 }
                 : cognitiveMode === 'balanced'
-                    ? { timeoutMs: 1_200_000, maxToolCalls: 30, maxTokens: 8_192 }
-                    : { timeoutMs: 2_400_000, maxToolCalls: 60, maxTokens: 16_384 })
+                    ? { timeoutMs: 1_200_000, maxToolCalls: 30, maxOutputTokens: 8_192 }
+                    : { timeoutMs: 2_400_000, maxToolCalls: 60, maxOutputTokens: 16_384 })
             : cognitiveMode === 'fast'
-                ? { timeoutMs: 60_000, maxToolCalls: 4, maxTokens: 1_024 }
+                ? { timeoutMs: 60_000, maxToolCalls: 4, maxOutputTokens: 1_024 }
                 : cognitiveMode === 'balanced'
-                    ? { timeoutMs: 180_000, maxToolCalls: 12, maxTokens: 3_072 }
-                    : { timeoutMs: 300_000, maxToolCalls: 24, maxTokens: 6_144 },
+                    ? { timeoutMs: 180_000, maxToolCalls: 12, maxOutputTokens: 3_072 }
+                    : { timeoutMs: 300_000, maxToolCalls: 24, maxOutputTokens: 6_144 },
         reasons: reasons.length ? reasons : ['ordinary lookup'],
     }
 }

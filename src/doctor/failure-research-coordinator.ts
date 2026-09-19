@@ -181,7 +181,7 @@ export class FailureResearchCoordinator {
                 ],
                 allowedChanges: { readOnly: true, allowedPaths: [],
                     allowedTools: RESEARCH_TOOLS.filter(name => !worker.allowedTools || worker.allowedTools.includes(name)), externalSideEffects: false },
-                budget: { timeoutMs: 90_000, maxToolCalls: 6, maxTokens: 6_000 },
+                budget: { timeoutMs: 90_000, maxToolCalls: 6, maxOutputTokens: 6_000 },
                 approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
             }
             item.stage = 'researching'
