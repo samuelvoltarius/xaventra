@@ -88,9 +88,12 @@ try{
   const {getLifecyclePolicy}=await load('core/lifecycle-policy.js')
   getLifecyclePolicy().register({id:'repair-qa-diagnostics-only',event:'tool.before',priority:-2000,handler:p=>['health_status','read_file'].includes(p.toolName)?undefined:{decision:'deny',reason:'Fixture allows only observed HTTP and profile-bound source diagnostics'}})
   let turns=0
-  const scripted={modelId:'scripted-fixture',complete:async()=>++turns%2?{content:'',toolCalls:[{name:'health_status',arguments:{}},...(turns===3?[{name:'read_file',arguments:{path:join(project,'src/value.ts')}},{name:'read_file',arguments:{path:join(project,'src/original.test.ts')}}]:[])]}:
+  const scripted={modelId:'scripted-fixture',complete:async()=>({... (++turns%2?{content:'',toolCalls:[{name:'health_status',arguments:{}},...(turns===3?[{name:'read_file',arguments:{path:join(project,'src/value.ts')}},{name:'read_file',arguments:{path:join(project,'src/original.test.ts')}}]:[])]}:
     {content:turns===2?`GET /answer returns 1 but independently required value is ${desired}. Repair the source constant, then repeat the same request.`:
-      JSON.stringify({description:'Correct the observed answer',search:original,replace:`export const value = ${desired};`,reason:'Match observed operation contract'})}}
+      JSON.stringify({description:'Correct the observed answer',search:original,replace:`export const value = ${desired};`,reason:'Match observed operation contract'})}),
+    // Synthetic model fixture accounting, not a live-token measurement. Without
+    // usage the production budget correctly reserves the entire allowance.
+    usage:{promptTokens:100,completionTokens:20,totalTokens:120}})}
   const llm=process.env.XAVENTRA_RESEARCH_QA_URL?await(await load('llm/nova-llm-sdk.js')).createNovaLLMClient({provider:'local',model:process.env.XAVENTRA_RESEARCH_QA_MODEL||'qwen',baseUrl:process.env.XAVENTRA_RESEARCH_QA_URL,isolated:true}):scripted
   const {FailureResearchCoordinator}=await load('doctor/failure-research-coordinator.js'),{createResearchWorker}=await load('doctor/research-worker.js')
   const coordinator=new FailureResearchCoordinator(join(root,'.nova-data/research.json'))

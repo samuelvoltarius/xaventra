@@ -41,5 +41,22 @@ Both source regressions pass after separating the fields and cumulative accounti
   complete memory correction, action/target-specific validation, general missing-
   file recovery and all previous HA/RC gates remain open.
 
+## Exact runtime follow-up
+
+Runtime source `f752484977a5e1dac3f860335e956388e57a972d` passed the live native
+Qwen pair again (7,463ms / 2,276 tokens; 10,486ms / 2,521 tokens) and an actual
+interactive Windows `cli chat` read through the full message pipeline, with
+isolated config/memory, an unknown file canary and normal `/exit` (exit 0).
+The first private CLI parser included asynchronous diagnostic logs in the reply;
+that negative report is retained. The repeated test checks the CLI's actual reply
+framing and exact canary, not merely a token somewhere in the transcript.
+
+[Initial candidate CI 35451158383](https://github.com/samuelvoltarius/xaventra/actions/runs/35451158383)
+exposed a scripted Doctor fixture with missing usage. The new budget conservatively
+reserved its whole generation allowance, correctly refusing a continuation.
+The fixture now declares synthetic usage (as the unit fixture does); real-model
+responses and production handling are unchanged. All Docker assertions remain.
+The final candidate requires fresh complete CI; this failed predecessor is not a pass.
+
 See [budget semantics and recovery](TOOL_BUDGETS.md). Inference inside remote or
 provider-owned sub-runs is not independently counted by this native wrapper.
