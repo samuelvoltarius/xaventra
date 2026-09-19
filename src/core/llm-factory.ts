@@ -1145,15 +1145,18 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                         failedEndpoints.add(discovered.endpoint)
                                         continue
                                     }
-                                    const response = await localLLM.complete(
-                                        msgs.map(m => ({
-                                            role: m.role as 'system' | 'user' | 'assistant',
-                                            content: m.content,
-                                            ...(m.image && { image: m.image }),
-                                        })),
-                                        (tools || []) as any,
-                                    )
-                                    return { content: response.content, toolCalls: response.toolCalls, usage: undefined }
+                                    // Discovery verifies availability; use the same SDK
+                                    // execution contract as the primary route. The legacy
+                                    // adapter discarded tool-call IDs, usage and limits.
+                                    const fallbackClient = await createNovaLLMClient({
+                                        provider: 'local', model: localLLM.getModel(),
+                                        baseUrl: discovered.endpoint, isolated: true,
+                                    })
+                                    const response = await fallbackClient.complete(msgs as any, (tools || []) as any, {
+                                        ...options,
+                                        timeoutMs: options?.timeoutMs ?? (isSlowBig(discovered.model) ? 55_000 : 25_000),
+                                    })
+                                    return { content: response.content, toolCalls: response.toolCalls, usage: response.usage }
                                 } catch (err) {
                                     lastLocalError = err
                                     failedEndpoints.add(discovered.endpoint)
@@ -1165,7 +1168,6 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
 
                         // Cloud fallback — map provider name
                         const sdkProv = _provider
-                        const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
                         activeLLM = await createNovaLLMClient({ provider: sdkProv as any, model: fallbackModel })
                     }
 

@@ -14,6 +14,7 @@ const parent = process.env.XAVENTRA_TOOL_BUDGET_QA_DIR || tmpdir(); mkdirSync(pa
 const root = mkdtempSync(join(parent, 'xaventra-tool-budget-'))
 const report = { version: JSON.parse(readFileSync('package.json')).version,
   sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  sourceDirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim()),
   platform: process.platform, provider: live ? 'live-local-model' : 'scripted-http',
   scope: 'Compiled native runner, real read_file, policy and ledger; not production Telegram or complete CLI/RC acceptance', cases: [] }
 let active

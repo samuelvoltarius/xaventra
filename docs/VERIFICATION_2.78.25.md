@@ -77,5 +77,22 @@ This documentation-only attestation must pass its own complete CI before main
 promotion. No native signing, full RC acceptance or production activation follows
 from the bounded results above; previously listed open gates are retained.
 
+## Provider compatibility follow-up (requires fresh runtime CI)
+
+Two further negative-first tests exposed dropped metadata: the Claude parser
+omitted provider usage, including cache input; the legacy local-fallback branch
+discarded usage, generation options and correlated tool-message fields. Claude
+now normalizes observed usage, and local fallback executes through the same SDK
+as the primary path. Provider failover policy is retained. These tests are mocked
+provider/wrapper contracts, not live Claude or a live network-failover proof.
+The earlier 10/10 revision does not qualify these subsequent changes: fresh full
+regression and exact-SHA CI are required before main promotion.
+
+Follow-up local regression: **224 files / 1,535 tests**, build and catalogs pass;
+native fixture **6/6**, live Qwen **2/2** (7,620ms / 2,282 tokens and 10,399ms /
+2,524 tokens), working-tree runs before the follow-up commit. A temporary
+fallback import-shadow error was caught by the new test and corrected before
+commit. Native reports now explicitly mark tracked working-tree modifications.
+
 See [budget semantics and recovery](TOOL_BUDGETS.md). Inference inside remote or
 provider-owned sub-runs is not independently counted by this native wrapper.

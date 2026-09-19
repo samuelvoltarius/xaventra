@@ -11,6 +11,8 @@
   Missing/failed usage is a labelled conservative reservation, not measured zero.
 - Include cumulative native usage in validation, returned metrics and the Outcome
   Ledger, including failed runs. Forward per-call limits to cloud HTTP adapters.
+- Preserve actual Claude/cache usage and route local fallbacks through the same
+  SDK as primary inference, retaining tool-call IDs, limits and usage.
 - Add real filesystem/native-runner acceptance with scripted HTTP models to the
   three-platform CI matrix, separately from live local-model acceptance. No fleet
   rollout, complete tool/memory correctness or RC readiness is claimed.

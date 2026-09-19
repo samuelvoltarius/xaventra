@@ -752,10 +752,15 @@ class ClaudeProvider extends LLMProvider {
             }
         }
 
+        const inputParts = [data.usage?.input_tokens,
+            data.usage?.cache_creation_input_tokens ?? 0, data.usage?.cache_read_input_tokens ?? 0]
+        const inputTokens = inputParts.every(value => Number.isSafeInteger(value) && value >= 0)
+            ? inputParts.reduce((sum, value) => sum + value, 0) : undefined
         return {
             content,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             finishReason: data.stop_reason === 'tool_use' ? 'tool_calls' : 'stop',
+            usage: normalizeTokenUsage(inputTokens, data.usage?.output_tokens),
         }
     }
 }
