@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.27] — 2026-09-19
+
+- Apply the existing deterministic cognitive policy to local model requests:
+  fast chat and tool-bearing turns disable provider reasoning, while bounded
+  text-only analysis retains low/medium/high effort.
+- Preserve vLLM `reasoning`/legacy `reasoning_content` as protected diagnostics,
+  never as user-facing text. A reasoning-only response is no longer classified
+  as provider outage; reasoning-enabled turns may retry exactly once through the
+  normal cumulative budget with reasoning disabled.
+- Send `reasoning_effort` to OpenAI-compatible local endpoints and `think: false`
+  to Ollama when non-thinking mode is selected. Tool follow-ups, recovery planners
+  and response-format repair use the fast deterministic lane.
+- Add policy/parser regressions and real compiled-client Spark checks. This does
+  not claim production adoption, universal provider compatibility or complete
+  tool/memory/HA readiness.
+
 ## [2.78.26] — 2026-09-19
 
 - Bind successful native tool execution to a unique call receipt containing the

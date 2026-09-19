@@ -93,11 +93,12 @@ catalog validation, the focused suite (**32/32**) and the complete Core suite
 (**224 files / 1,540 tests**) with the process-local Git long-path setting noted
 above. Dashboard and Desktop lock-graph audits report zero vulnerabilities.
 
-The Spark vLLM endpoint was unavailable during the final-commit recheck: one
+The Spark Tailnet vLLM route was unavailable during the final-commit recheck: one
 15-second request timed out and a repeated 30-second request could not connect.
-The earlier first-candidate Qwen result is therefore retained as useful model
-evidence, but is not represented as final-SHA live-model evidence. No production
-service was restarted or changed to manufacture that proof.
+A later bounded diagnosis established that Tailscale on the Windows caller was
+stopped while Spark/vLLM remained healthy over LAN. That later evidence belongs
+to 2.78.27 and is not retroactively represented as 2.78.26 final-SHA live-model
+evidence. No production service was restarted or changed to manufacture proof.
 
 ## Open gates
 

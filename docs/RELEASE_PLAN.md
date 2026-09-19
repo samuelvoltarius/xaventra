@@ -6,6 +6,25 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.27 adaptive local-reasoning candidate
+
+- Fast chat and every tool-bearing model turn now request non-thinking mode;
+  complex text-only analysis retains the deterministic low/medium/high effort
+  selected by the existing cognitive policy. No second orchestrator was added.
+- vLLM reasoning metadata remains protected and a reasoning-only result is
+  distinguished from endpoint failure. A reasoning-enabled request may recover
+  once through the same cumulative inference budget with reasoning disabled.
+- Actual compiled-client Spark evidence: identical exact-answer prompt at
+  `max_tokens=128` completed in **405ms / 4 output tokens** with reasoning off,
+  versus **1,085ms / 20 output tokens** at low effort. A separate non-thinking
+  required-tool request produced a structured `health_status` call in **1,183ms** with no
+  exposed reasoning. These are LAN model checks, not production Telegram proof.
+- Targeted policy/provider tests **10/10**, typecheck, build, current catalogs
+  and Desktop **7/7** pass locally. Full Core regression passes **225 files /
+  1,546 tests**. Exact clean-source CI, final
+  documentation promotion and production adoption remain required. [Policy](REASONING_POLICY.md),
+  [evidence](VERIFICATION_2.78.27.md).
+
 ### 2.78.26 correlated tool-evidence candidate
 
 - Runtime now records unique call receipts with canonical argument/result hashes
@@ -17,8 +36,10 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Local Windows regression: **224 files / 1,540 tests**. Compiled native fixture
   **7/7**, including an intentional partial two-file execution rejected despite
   one successful read. The first candidate passed live local Qwen **2/2** with
-  disposable files; a final-commit recheck was blocked by the unavailable Spark
-  vLLM endpoint and is not counted as final-SHA evidence.
+  disposable files. The final-commit Tailnet recheck was blocked because Tailscale
+  on the Windows caller was stopped; a later LAN probe proved Spark/vLLM healthy.
+  That later probe is recorded under 2.78.27, not retroactively counted as the
+  2.78.26 final-SHA acceptance.
 - The first exact candidate CI failed closed: all three hosted platforms exposed
   missing Unix-path intent classification in the partial two-file case, and the
   legacy dashboard audit hit npm's retired quick-tree endpoint. A first follow-up

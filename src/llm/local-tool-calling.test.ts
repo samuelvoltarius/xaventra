@@ -58,6 +58,25 @@ describe('local OpenAI-compatible tool calling', () => {
         expect(body.max_tokens).toBe(256)
     })
 
+    it('forwards non-thinking mode and preserves protected vLLM reasoning metadata', async () => {
+        vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1')
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+            choices: [{ finish_reason: 'length', message: { content: null, reasoning: 'private tokens' } }],
+            usage: { prompt_tokens: 4, completion_tokens: 8, total_tokens: 12 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        const client = await createNovaLLMClient({ provider: 'local', model: 'qwen', baseUrl: 'http://127.0.0.1:8000/v1' })
+        const response = await client.complete([{ role: 'user', content: 'ping' }], [], {
+            maxTokens: 128,
+            reasoningEffort: 'none',
+        })
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+        expect(body).toMatchObject({ max_tokens: 128, reasoning_effort: 'none' })
+        expect(response).toMatchObject({ content: '', reasoning: 'private tokens', finishReason: 'length' })
+    })
+
     it('forwards tool schemas to vLLM and parses the verified tool call', async () => {
         vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1')
         const fetchMock = vi.fn(async (_url: string, init: RequestInit) => new Response(JSON.stringify({
@@ -67,12 +86,32 @@ describe('local OpenAI-compatible tool calling', () => {
         const client = await createNovaLLMClient({ provider: 'local', model: 'qwen-test', baseUrl: 'http://mesh.test:8000' })
         const response = await client.complete([{ role: 'user', content: 'check health' }], [{
             name: 'health_status', description: 'Get health', parameters: { type: 'object', properties: {} },
-        }])
+        }], { toolChoice: 'required', reasoningEffort: 'none' })
         const call = fetchMock.mock.calls.find(([url]) => String(url).includes('mesh.test'))
         const body = JSON.parse(String(call?.[1]?.body))
         expect(body.tools[0].function.name).toBe('health_status')
-        expect(body.tool_choice).toBe('auto')
+        expect(body.tool_choice).toBe('required')
+        expect(body.reasoning_effort).toBe('none')
         expect(response.toolCalls).toEqual([{ id: 'call-1', name: 'health_status', arguments: {} }])
         expect(response.finishReason).toBe('tool_calls')
+    })
+
+    it('retries a schema-rejected reasoning extension once without hiding the endpoint', async () => {
+        vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1')
+        const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+            const body = JSON.parse(String(init.body))
+            if (body.reasoning_effort) return new Response(JSON.stringify({ detail: 'unknown parameter reasoning_effort' }), { status: 400 })
+            return new Response(JSON.stringify({
+                choices: [{ finish_reason: 'stop', message: { content: 'compat-ok' } }],
+            }), { status: 200, headers: { 'content-type': 'application/json' } })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        const client = await createNovaLLMClient({ provider: 'local', model: 'custom', baseUrl: 'http://compat.test:1234/v1' })
+        const response = await client.complete([{ role: 'user', content: 'ping' }], [], { reasoningEffort: 'none', maxAttempts: 1 })
+
+        expect(response.content).toBe('compat-ok')
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).not.toHaveProperty('reasoning_effort')
     })
 })

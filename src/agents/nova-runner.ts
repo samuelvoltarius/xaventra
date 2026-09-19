@@ -33,6 +33,7 @@ import { historyEvidenceMessages } from './history-evidence.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
 import { repairConstrainedResponse } from './response-repair.js'
 import type { ResponseConstraint } from '../core/response-contract.js'
+import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -97,7 +98,7 @@ async function recoverIgnoredRequiredTool(
                 role: 'user' as const,
                 content: `Auftrag: ${task}\nBisheriger Recovery-Stand:\n${recoveryState}\nErlaubte Tools: ${JSON.stringify(catalog)}`,
             },
-        ], []),
+        ], [], { reasoningEffort: 'none' }),
         TIMEOUT_FOLLOWUP,
         `${label} validated planner`,
     )
@@ -738,22 +739,31 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         _traceRecorder.llmCallStart(_traceId)
         // Race the LLM call against the hard abort signal so a hung initial call doesn't
         // block the timeout handler from resolving.
+        const reasoningEffort = reasoningEffortForTurn(kernel.cognition, actionIntent.requiresTool)
+        const primaryOptions = {
+            toolChoice: actionIntent.requiresTool ? 'required' as const : 'auto' as const,
+            maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
+            reasoningEffort,
+        }
         let response = forcedToolResponse || await (abortSignal
             ? Promise.race([
-                withTimeout(llmClient.complete(messages, toolDefinitions, {
-                    toolChoice: actionIntent.requiresTool ? 'required' : 'auto',
-                    maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
-                }), TIMEOUT_LLM, 'Primary LLM call'),
+                withTimeout(llmClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call'),
                 new Promise<never>((_, reject) => {
                     if (abortSignal.aborted) { reject(new Error('AbortError: hard cancel')) }
                     else { abortSignal.addEventListener('abort', () => reject(new Error('AbortError: hard cancel')), { once: true }) }
                 }),
             ])
-            : withTimeout(llmClient.complete(messages, toolDefinitions, {
-                toolChoice: actionIntent.requiresTool ? 'required' : 'auto',
-                maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
-            }), TIMEOUT_LLM, 'Primary LLM call')
+            : withTimeout(llmClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call')
         ) as any
+        if (reasoningEffort !== 'none' && isReasoningOnlyResponse(response)) {
+            console.warn(`[Nova Agent] Reasoning-only response (${response.finishReason || 'unknown'}); retrying once without reasoning`)
+            response = (await recoverReasoningOnlyResponse(response, reasoningEffort, () =>
+                withTimeout(llmClient.complete(messages, toolDefinitions, {
+                    ...primaryOptions,
+                    reasoningEffort: 'none',
+                }), TIMEOUT_FOLLOWUP, 'Reasoning-only visible-answer recovery') as any
+            )).response
+        }
         _traceRecorder.llmCallEnd(_traceId)
         await lifecyclePolicy.run('llm.after', {
             context: policyContext,
@@ -781,7 +791,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         { role: 'user' as const, content },
                     ]
                     const compactResponse: any = await withTimeout(
-                        llmClient.complete(compactMessages, compactActionTools, { toolChoice: 'required' }),
+                        llmClient.complete(compactMessages, compactActionTools, { toolChoice: 'required', reasoningEffort: 'none' }),
                         TIMEOUT_FOLLOWUP,
                         'Compact required-tool retry'
                     )
@@ -805,7 +815,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     content: 'Wähle genau ein Tool aus dem Katalog. Antworte ausschließlich als JSON: {"tool":"name","arguments":{...}}. Keine Erklärung. Discovery nur wenn nötig; wenn kein ausführendes Tool passt, wähle build_skill.',
                                 },
                                 { role: 'user' as const, content: `Auftrag: ${content}\nTool-Katalog: ${JSON.stringify(catalog)}` },
-                            ], []),
+                            ], [], { reasoningEffort: 'none' }),
                             TIMEOUT_FOLLOWUP,
                             'Validated JSON tool planner'
                         )
@@ -917,7 +927,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         }
                     ]
                     const retryResp = await withTimeout(
-                        useForRetry.complete(retryMessages, toolDefinitions),
+                        useForRetry.complete(retryMessages, toolDefinitions, { reasoningEffort: 'none' }),
                         TIMEOUT_FOLLOWUP,
                         'Tool-call retry with primary model'
                     ) as any
@@ -1426,7 +1436,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     const failedNames = new Set(response.toolCalls.map((call: any) => call.name))
                     const safeRecoveryDefinitions = recoveryToolDefinitions.filter(tool => !failedNames.has(tool.name))
                     let retryResponse: any = await withTimeout(
-                        llmClient.complete(retryMessages, safeRecoveryDefinitions, { toolChoice: 'required' }),
+                        llmClient.complete(retryMessages, safeRecoveryDefinitions, { toolChoice: 'required', reasoningEffort: 'none' }),
                         TIMEOUT_FOLLOWUP,
                         'Self-healing retry'
                     )
@@ -1443,7 +1453,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     content: 'Der erste Ausführungsweg ist verifiziert fehlgeschlagen. Wähle genau ein ANDERES Recovery-Tool. Antworte ausschließlich als JSON {"tool":"name","arguments":{...}}. Nutze find_capability/resolve_capability; wenn kein ausführender Weg existiert, build_skill.',
                                 },
                                 { role: 'user' as const, content: `Auftrag: ${content}\nFehler: ${toolResults.join('\n')}\nErlaubte Recovery-Tools: ${JSON.stringify(recoveryCatalog)}` },
-                            ], []),
+                            ], [], { reasoningEffort: 'none' }),
                             TIMEOUT_FOLLOWUP,
                             'Validated recovery planner',
                         )
@@ -1494,7 +1504,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             recoveryFollowUp = await withTimeout(
                                 llmClient.complete([...recoveryMessages,
                                     { role: 'user', content: `Recovery-Ergebnisse:\n${recoveryResults.join('\n')}\n\nWenn die Aktion noch nicht ausführbar ist, rufe das nächste Recovery-Tool auf. Discovery → Resolve → Execute; wenn kein ausführender Weg existiert, build_skill. Nur bei verifiziertem Abschluss zusammenfassen.` },
-                                ], roundRecoveryDefinitions, { toolChoice: 'required' }),
+                                ], roundRecoveryDefinitions, { toolChoice: 'required', reasoningEffort: 'none' }),
                                 TIMEOUT_FOLLOWUP,
                                 `Recovery follow-up ${recoveryRound + 1}`,
                             ) as any
@@ -1601,7 +1611,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     try {
                         // KEY FIX: Pass toolDefinitions so Nova can chain more tools!
                         const followUp = await withTimeout(
-                            llmClient.complete(followUpMessages, toolDefinitions),
+                            llmClient.complete(followUpMessages, toolDefinitions, { reasoningEffort: 'none' }),
                             TIMEOUT_FOLLOWUP,
                             `Follow-up LLM (round ${loopRound})`
                         ) as any
@@ -1740,7 +1750,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     + 'Rueckfrage einen anderen. Erst danach antwortest du, und zwar mit dem '
                                     + 'ERGEBNIS, nicht mit einem Vorhaben.',
                             },
-                        ] as any, toolDefinitions, { toolChoice: 'required' } as any)
+                        ] as any, toolDefinitions, { toolChoice: 'required', reasoningEffort: 'none' } as any)
 
                         const weitereAufrufe = (nachfassen as any)?.toolCalls || []
                         if (weitereAufrufe.length > 0) {
@@ -1765,7 +1775,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                 ...currentMessages,
                                 { role: 'assistant', content: finalContent },
                                 { role: 'user', content: `Ergebnisse:\n${nachErgebnisse.join('\n\n')}\n\nSag jetzt in zwei bis drei Saetzen, was dabei herauskam. Keine Ankuendigung.` },
-                            ] as any, [], {} as any)
+                            ] as any, [], { reasoningEffort: 'none' } as any)
                             if ((abschluss as any)?.content) finalContent = (abschluss as any).content
                         } else if ((nachfassen as any)?.content) {
                             finalContent = (nachfassen as any).content
@@ -1815,7 +1825,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     metadata: { purpose: 'response-format-repair' },
                 })
                 if (policy.decision !== 'allow') throw new Error('Response repair blocked by LLM policy')
-                const repairedResponse = await llmClient.complete(repairMessages, repairTools, options)
+                const repairedResponse = await llmClient.complete(repairMessages, repairTools, { ...options, reasoningEffort: 'none' })
                 const after = await lifecyclePolicy.run('llm.after', {
                     context: policyContext, output: repairedResponse,
                     metadata: { purpose: 'response-format-repair' },

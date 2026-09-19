@@ -71,6 +71,9 @@ export interface LLMResponse {
 export interface LLMCallOptions {
     toolChoice?: 'auto' | 'required'
     maxTokens?: number
+    /** Provider-compatible reasoning control. Local Qwen/vLLM uses `none` for
+     * fast chat and deterministic tool calls; unsupported providers may ignore it. */
+    reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
     /** Per-attempt deadline for latency-sensitive background work. */
     timeoutMs?: number
     /** Maximum local candidates to try. Omit for the normal failover chain. */
@@ -1404,6 +1407,8 @@ class LocalLLMProvider extends LLMProvider {
                     tools,
                     undefined,
                     options?.maxTokens,
+                    options?.reasoningEffort,
+                    options?.toolChoice,
                 )
             } catch (err) {
                 lastError = err
@@ -1512,6 +1517,8 @@ class LocalLLMProvider extends LLMProvider {
         tools?: ToolDefinition[],
         taskType?: string,
         maxTokens?: number,
+        reasoningEffort?: LLMCallOptions['reasoningEffort'],
+        toolChoice?: LLMCallOptions['toolChoice'],
     ): Promise<LLMResponse> {
         const isOllama = baseUrl.includes('11434')
 
@@ -1526,6 +1533,7 @@ class LocalLLMProvider extends LLMProvider {
             // Ollama API — chatMessages already converted by _buildChatMessages()
             const requestBody: any = { model, messages: chatMessages, stream: false }
             if (maxTokens) requestBody.options = { num_predict: maxTokens }
+            if (reasoningEffort === 'none') requestBody.think = false
             if (tools?.length) {
                 requestBody.tools = tools.map(tool => ({
                     type: 'function',
@@ -1577,29 +1585,47 @@ class LocalLLMProvider extends LLMProvider {
                 max_tokens: maxTokens || (tools?.length ? 2048 : 4096),
                 temperature: 0.2,
             }
+            if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort
             if (tools?.length) {
                 requestBody.tools = tools.map(tool => ({
                     type: 'function',
                     function: { name: tool.name, description: tool.description, parameters: tool.parameters },
                 }))
-                requestBody.tool_choice = 'auto'
+                requestBody.tool_choice = toolChoice || 'auto'
             }
-            const response = await fetch(endpoint, {
+            const sendRequest = () => fetch(endpoint, {
                 method: 'POST',
                 headers: authHeaders,
                 body: JSON.stringify(requestBody),
                 signal,
             })
+            let response = await sendRequest()
 
             if (!response.ok) {
-                const error = await response.text()
-                recordModelCall(model, taskType || 'chat', Date.now() - callStart, false)
-                throw new Error(`LLM API error (${response.status}): ${error.slice(0, 200)}`)
+                let error = await response.text()
+                // OpenAI-compatible servers differ in accepted extension fields.
+                // A schema rejection spends no generation tokens, so retry the
+                // same candidate once without reasoning control rather than
+                // incorrectly declaring the endpoint offline.
+                const unsupportedReasoning = response.status === 400
+                    && reasoningEffort
+                    && /reasoning[_ .-]?effort|extra[_ .-]?(?:field|input)|unknown (?:field|parameter)|unrecognized/i.test(error)
+                if (unsupportedReasoning) {
+                    delete requestBody.reasoning_effort
+                    console.warn(`[LocalLLM] ${model} does not accept reasoning_effort; retrying without that extension`)
+                    response = await sendRequest()
+                    if (!response.ok) error = await response.text()
+                }
+                if (!response.ok) {
+                    recordModelCall(model, taskType || 'chat', Date.now() - callStart, false)
+                    throw new Error(`LLM API error (${response.status}): ${error.slice(0, 200)}`)
+                }
             }
 
             const data = await response.json() as any
             const message = data.choices?.[0]?.message || {}
             const content = this.stripProviderReasoning(message.content || '')
+            const reasoning = String(message.reasoning || message.reasoning_content || '').trim()
             const toolCalls = (message.tool_calls || []).map((call: any, index: number) => {
                 let args: Record<string, unknown> = {}
                 try {
@@ -1612,6 +1638,7 @@ class LocalLLMProvider extends LLMProvider {
             recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content)
             return {
                 content,
+                reasoning: reasoning || undefined,
                 toolCalls: toolCalls.length ? toolCalls : undefined,
                 finishReason: toolCalls.length ? 'tool_calls' : (data.choices?.[0]?.finish_reason || 'stop'),
                 usage: normalizeTokenUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens, data.usage?.total_tokens),
