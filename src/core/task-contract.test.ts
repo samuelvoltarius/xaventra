@@ -39,6 +39,13 @@ describe('TaskContract', () => {
         expect(web.requiredToolTargets).toEqual(['https://example.com/status'])
     })
 
+    it('separates multiple Unix paths and preserves a quoted path with spaces', () => {
+        const unix = createTaskContract('Lies /home/runner/a.txt und /home/runner/b.txt mit read_file', { requiresTool: true, kind: 'file' }, ['read_file'])
+        const quoted = createTaskContract('Lies "C:\\Work Area\\a.txt" mit read_file', { requiresTool: true, kind: 'file' }, ['read_file'])
+        expect(unix.requiredToolTargets).toEqual(['/home/runner/a.txt', '/home/runner/b.txt'])
+        expect(quoted.requiredToolTargets).toEqual(['c:/work area/a.txt'])
+    })
+
     it('enforces timeout and tool-call budgets', () => {
         const contract = createTaskContract('Prüfe System', { requiresTool: true, kind: 'system-state' }, [], {
             budget: { timeoutMs: 100, maxToolCalls: 1 },

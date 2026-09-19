@@ -53,6 +53,15 @@ file targets and incorrectly accepted the first read. The follow-up recognizes
 an explicit machine-comparable path after a read/open/compare verb on every
 platform and adds both Unix and Windows regression forms.
 
+The first follow-up, `6f1356686cb3ba581092af27176083c6b59e82e1`, also
+failed closed in
+[CI 35459169546](https://github.com/samuelvoltarius/xaventra/actions/runs/35459169546).
+Intent classification was then correct, but the unquoted file matcher allowed
+spaces and greedily joined `/a.txt und /b.txt` into an invented combined target.
+The corrected parser stops unquoted targets at whitespace, handles quoted paths
+with spaces separately, and removes suffix duplicates. Its regression asserts
+the exact two Unix targets and one quoted Windows target.
+
 That CI also retained a separate legacy-dashboard audit failure. `npm ci`
 succeeded, but npm's retired quick-tree audit endpoint rejected the valid
 installed graph before returning advisory data. CI now audits the lock graph
@@ -63,7 +72,7 @@ The first repeated local full-suite run after the follow-up retained one
 environmental failure: the deeply nested disposable repair-publication Git
 repository exceeded Windows' default path handling and `git status` could not
 read its loose objects. The same unchanged suite with process-local
-`core.longpaths=true` passed **224 files / 1,539 tests**. This setting changes
+`core.longpaths=true` passed **224 files / 1,540 tests**. This setting changes
 only Git path handling for the test process; it does not skip or weaken a test.
 
 ## Open gates

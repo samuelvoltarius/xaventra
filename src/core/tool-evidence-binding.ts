@@ -36,13 +36,20 @@ export function normalizeEvidenceTarget(value: string): string {
  * excluded: failing closed is preferable to pretending semantic equivalence. */
 export function inferRequiredToolTargets(goal: string): string[] {
     const urls = goal.match(/https?:\/\/[^\s"'`<>]+/gi) || []
-    const fileText = goal.replace(/https?:\/\/[^\s"'`<>]+/gi, ' ')
+    let fileText = goal.replace(/https?:\/\/[^\s"'`<>]+/gi, ' ')
+    const quotedFiles: string[] = []
+    fileText = fileText.replace(/(["'`])([^"'`\r\n]+?\.[a-z][a-z0-9]{0,11})\1/gi, (_match, _quote, path: string) => {
+        quotedFiles.push(path)
+        return ' '
+    })
     const candidates = [
-        ...(fileText.match(/(?:[a-z]:[\\/]|\.{0,2}[\\/])[^\s"'`<>|]+/gi) || []),
-        ...(fileText.match(/\b[a-z0-9_.-]+(?:[\\/][a-z0-9_. -]+)*\.[a-z][a-z0-9]{0,11}\b/gi) || []),
+        ...quotedFiles,
+        ...(fileText.match(/(?:[a-z]:[\\/]|(?:\.{1,2}|~)?[\\/])[^\s"'`<>|]+/gi) || []),
+        ...(fileText.match(/\b[a-z0-9_.-]+(?:[\\/][a-z0-9_.-]+)*\.[a-z][a-z0-9]{0,11}\b/gi) || []),
         ...urls,
     ]
-    return [...new Set(candidates.map(normalizeEvidenceTarget).filter(Boolean))]
+    const normalized = [...new Set(candidates.map(normalizeEvidenceTarget).filter(Boolean))]
+    return normalized.filter(target => !normalized.some(other => other !== target && other.endsWith(`/${target}`)))
 }
 
 function argumentStrings(value: unknown): string[] {
