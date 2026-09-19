@@ -9,6 +9,8 @@ import { createTaskContract, validateTaskCompletion } from '../core/task-contrac
 import { withModelPerformanceRecording } from '../llm/model-perf-db.js'
 import { getBenchmarkScenarios, runBenchmark, type BenchmarkObservation, type BenchmarkScenario } from './benchmark-lab.js'
 import { runBenchmarkProbe } from './benchmark-probes.js'
+import { benchmarkProbeToolName } from './benchmark-probes.js'
+import { evidenceHash, matchedToolTargets } from '../core/tool-evidence-binding.js'
 
 export type NovaBenchmarkMode = 'smoke' | 'full'
 
@@ -60,7 +62,7 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
         requiresTool: true,
         kind: intent.kind === 'none' ? 'generic-action' as const : intent.kind,
     }
-    const contract = createTaskContract(prompt, evidenceIntent, SAFE_BENCHMARK_TOOLS, {
+    const contract = createTaskContract(prompt, evidenceIntent, [...SAFE_BENCHMARK_TOOLS, benchmarkProbeToolName(scenario.category)], {
         budget: { timeoutMs: scenario.timeoutMs, maxToolCalls: 20, maxCostUsd: 1 },
         allowedChanges: { readOnly: true, allowedPaths: [workspace], externalSideEffects: false },
         approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
@@ -91,10 +93,18 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
             })
         }
         const probeStartedAt = Date.now()
-        const probe = await runBenchmarkProbe(scenario, workspace)
+        const probe = await runBenchmarkProbe(scenario, workspace, fixturePath)
         if (probe) {
+            const params = scenario.category === 'tools' ? { path: fixturePath } : { scenarioId: scenario.id }
+            const callId = `benchmark-probe:${contract.id}:${probe.toolName}`
             ledger.recordTool(contract.id, {
+                callId,
                 toolName: probe.toolName,
+                params,
+                result: probe.evidence,
+                argumentsHash: evidenceHash(params),
+                resultHash: evidenceHash(probe.evidence),
+                matchedTargets: matchedToolTargets(contract.requiredToolTargets || [], params),
                 success: probe.success,
                 verified: probe.success,
                 durationMs: Date.now() - probeStartedAt,
@@ -108,9 +118,17 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
             .filter(item => item.success === true && (item.verified === true || item.source === 'isolated-benchmark-probe'))
             .map(item => String(item.toolName || ''))
             .filter(Boolean) || []
+        const verifiedToolCalls = beforeValidation?.tools
+            .filter(item => item.success === true && item.verified === true && item.source === 'isolated-benchmark-probe')
+            .map(item => ({
+                callId: String(item.callId || ''), toolName: String(item.toolName || ''),
+                argumentsHash: String(item.argumentsHash || ''), resultHash: String(item.resultHash || ''),
+                matchedTargets: Array.isArray(item.matchedTargets) ? item.matchedTargets.map(String) : [],
+            })) || []
         const benchmarkValidation = validateTaskCompletion(contract, {
             response: result.output,
             verifiedTools,
+            verifiedToolCalls,
             durationMs: Date.now() - startedAt,
             toolCalls: beforeValidation?.tools.length || 0,
             costUsd: beforeValidation?.totalCostUsd || 0,

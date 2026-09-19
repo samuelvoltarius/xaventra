@@ -28,10 +28,30 @@ describe('execution kernel', () => {
     it('owns routing, verification and lifecycle as one contract', () => {
         const kernel = new ExecutionKernel('erstelle mir ein bild von salzburg')
         expect(kernel.selectWorkerTools().some(tool => tool.name === 'generate_image')).toBe(true)
-        expect(kernel.verify('generate_image', { success: true, message: 'working' }).success).toBe(false)
+        expect(kernel.verify('generate_image', { success: true, message: 'working' }, { callId: 'image-1', arguments: { prompt: 'salzburg' } }).success).toBe(false)
         expect(kernel.lifecycle.isFulfilled()).toBe(false)
-        expect(kernel.verify('generate_image', { success: true, path: 'C:\\tmp\\salzburg.png' }).success).toBe(true)
+        expect(kernel.verify('generate_image', { success: true, path: 'C:\\tmp\\salzburg.png' }, { callId: 'image-2', arguments: { prompt: 'salzburg' } }).success).toBe(true)
         expect(kernel.lifecycle.isFulfilled()).toBe(true)
+    })
+
+    it('requires uniquely correlated evidence for every explicit file target', () => {
+        const kernel = new ExecutionKernel('Lies beide Dateien a.txt und b.txt', {
+            allowedChanges: { allowedTools: ['read_file', 'health_status'] },
+        })
+        expect(kernel.contract.requiredToolTargets).toEqual(['a.txt', 'b.txt'])
+        expect(kernel.verify('health_status', { success: true, output: 'healthy' }, { callId: 'health-1', arguments: {} }).success).toBe(true)
+        expect(kernel.validateCompletion('healthy').success).toBe(false)
+        expect(kernel.verify('read_file', { success: true, content: 'A' }, { callId: 'read-a', arguments: { path: '/tmp/a.txt' } }).success).toBe(true)
+        expect(kernel.validateCompletion('A').success).toBe(false)
+        expect(kernel.verify('read_file', { success: true, content: 'B' }, { callId: 'read-a', arguments: { path: '/tmp/b.txt' } })).toMatchObject({ success: false, reason: 'duplicate tool call evidence id' })
+        expect(kernel.verify('read_file', { success: true, content: 'B' }, { callId: 'read-b', arguments: { path: '/tmp/b.txt' } }).success).toBe(true)
+        expect(kernel.validateCompletion('A B').success).toBe(true)
+    })
+
+    it('does not promote an uncorrelated successful result into completion evidence', () => {
+        const kernel = new ExecutionKernel('Lies die Datei probe.txt', { allowedChanges: { allowedTools: ['read_file'] } })
+        expect(kernel.verify('read_file', { success: true, content: 'value' })).toMatchObject({ success: false, reason: 'tool result lacks execution correlation' })
+        expect(kernel.validateCompletion('value').success).toBe(false)
     })
 
     it('keeps the current action authoritative over older routing context', () => {

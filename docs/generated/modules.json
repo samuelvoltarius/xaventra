@@ -413,6 +413,7 @@
         "../core/llm-factory.js",
         "../core/outcome-ledger.js",
         "../core/task-contract.js",
+        "../core/tool-evidence-binding.js",
         "../llm/model-perf-db.js",
         "./benchmark-lab.js",
         "./benchmark-probes.js",
@@ -1436,7 +1437,8 @@
         "./inference-budget.js",
         "./intent-dispatcher.js",
         "./result-validator.js",
-        "./task-contract.js"
+        "./task-contract.js",
+        "./tool-evidence-binding.js"
       ]
     },
     {
@@ -1878,6 +1880,7 @@
       "imports": [
         "./action-intent.js",
         "./response-contract.js",
+        "./tool-evidence-binding.js",
         "node:crypto"
       ]
     },
@@ -1894,6 +1897,12 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/core/tool-evidence-binding.ts",
+      "imports": [
+        "node:crypto"
       ]
     },
     {

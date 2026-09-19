@@ -14,7 +14,7 @@ export async function dockerInventoryCommand(args: string, tools: { execute(name
     try {
         kernel.assertCanExecute('docker_ps')
         const result = await tools.execute('docker_ps', { all })
-        const verified = kernel.verify('docker_ps', result)
+        const verified = kernel.verify('docker_ps', result, { callId: `native-docker:${runId}`, arguments: { all } })
         // Require the exact host observation contract, not an unrelated tool.
         const hostEvidence = result?.success === true && result.operation === 'docker.list' && typeof result.nodeId === 'string'
             && /^[a-f0-9]{64}$/.test(result.evidenceHash || '') && Array.isArray(result.containers) && result.count === result.containers.length

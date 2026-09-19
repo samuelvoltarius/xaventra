@@ -25,6 +25,20 @@ describe('TaskContract', () => {
         expect(validateTaskCompletion(contract, { response: 'Erledigt.', verifiedTools: ['write_file'] }).success).toBe(true)
     })
 
+    it('does not let legacy tool-name evidence bypass explicit target binding', () => {
+        const contract = createTaskContract('Lies die Datei required.txt', { requiresTool: true, kind: 'file' }, ['read_file'])
+        const report = validateTaskCompletion(contract, { response: 'Erledigt.', verifiedTools: ['read_file'] })
+        expect(report.success).toBe(false)
+        expect(report.criteria[0].reason).toContain('required.txt')
+    })
+
+    it('does not misclassify versions or untyped host names as file targets', () => {
+        const install = createTaskContract('Installiere Version 2.78.26 auf node.example.com', { requiresTool: true, kind: 'device-action' }, ['deploy'])
+        const web = createTaskContract('Recherchiere https://example.com/status', { requiresTool: true, kind: 'web' }, ['fetch_url'])
+        expect(install.requiredToolTargets).toBeUndefined()
+        expect(web.requiredToolTargets).toEqual(['https://example.com/status'])
+    })
+
     it('enforces timeout and tool-call budgets', () => {
         const contract = createTaskContract('Prüfe System', { requiresTool: true, kind: 'system-state' }, [], {
             budget: { timeoutMs: 100, maxToolCalls: 1 },

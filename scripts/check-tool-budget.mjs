@@ -40,11 +40,11 @@ const server = createServer(async (req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const baseUrl = live ? process.argv[3] : `http://127.0.0.1:${server.address().port}`
 try {
-  for (const id of live ? ['read-canary', 'two-file-chain'] : ['read-canary', 'two-file-chain', 'zero-total-budget', 'provider-exceeds-limit', 'exhausted-after-read', 'follow-up-exceeds-limit']) {
+  for (const id of live ? ['read-canary', 'two-file-chain'] : ['read-canary', 'two-file-chain', 'partial-two-file', 'zero-total-budget', 'provider-exceeds-limit', 'exhausted-after-read', 'follow-up-exceeds-limit']) {
     const caseRoot = mkdtempSync(join(root, `${id}-`)); mkdirSync(join(caseRoot, 'fixtures'))
     const tokens = [randomUUID(), randomUUID()].map(value => `CANARY-${value}`)
     for (const [i, file] of ['a.txt', 'b.txt'].entries()) writeFileSync(join(caseRoot, 'fixtures', file), tokens[i])
-    const files = id === 'two-file-chain' ? ['a.txt', 'b.txt'] : ['a.txt']
+    const files = id === 'two-file-chain' || id === 'partial-two-file' ? ['a.txt', 'b.txt'] : ['a.txt']
     const prompt = `Lies ${files.map(file => join(caseRoot, 'fixtures', file)).join(' und ')} mit read_file. Antworte ausschließlich mit den gefundenen CANARY-Kennungen, durch ein Leerzeichen getrennt.`
     const resultPath = join(caseRoot, 'result.json'), jobPath = join(caseRoot, 'job.json')
     writeFileSync(jobPath, JSON.stringify({ root: caseRoot, resultPath, prompt, baseUrl, model: live ? process.argv[4] : 'fixture-tool-model',
@@ -61,7 +61,15 @@ try {
       const code = await new Promise((resolve, reject) => { child.once('exit', resolve); child.once('error', reject) })
       assert.equal(timeout, false); assert.equal(code, 0, log.slice(-1200))
       const result = JSON.parse(readFileSync(resultPath, 'utf8'))
-      if (id === 'zero-total-budget' || id === 'provider-exceeds-limit') {
+      if (id === 'partial-two-file') {
+        assert.equal(result.status, 'failed', JSON.stringify(result))
+        assert.equal(result.tools.length, 1)
+        assert.equal(result.tools[0].params.path, join(caseRoot, 'fixtures', 'a.txt'))
+        const reasons = result.validation.criteria.map(item => item.reason || '').join(' ')
+        assert.match(reasons, /did not cover requested targets/)
+        assert.match(reasons, /b\.txt/)
+        assert.equal(active.requests.length, 2)
+      } else if (id === 'zero-total-budget' || id === 'provider-exceeds-limit') {
         assert.equal(result.status, 'failed'); assert.equal(result.tools.length, 0)
         assert.equal(active.requests.length, id === 'zero-total-budget' ? 0 : 1)
       } else if (id === 'exhausted-after-read' || id === 'follow-up-exceeds-limit') {

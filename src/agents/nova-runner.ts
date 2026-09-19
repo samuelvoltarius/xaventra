@@ -186,6 +186,7 @@ export interface AgentResponse {
         phase: string
     }
     toolExecutions?: Array<{
+        callId: string
         toolName: string
         params: Record<string, unknown>
         result: string
@@ -951,6 +952,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         const toolsUsed: string[] = []
         const toolsExecuted: string[] = []
         const toolExecutions: NonNullable<AgentResponse['toolExecutions']> = []
+        let toolEvidenceSequence = 0
+        const nextToolEvidenceId = (call: { id?: string; name: string }) =>
+            String(call.id || `${kernel.contract.id}:tool:${++toolEvidenceSequence}:${call.name}`)
         let finalContent = response.content || ''
         let policyBlocked = false
         let awaitingPolicyApproval = false
@@ -1041,6 +1045,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             } catch { /* L17 not critical */ }
 
             for (const call of response.toolCalls) {
+                const callId = nextToolEvidenceId(call)
                 console.log(`[Nova Agent] Tool call: ${call.name}`)
                 toolsUsed.push(call.name)
 
@@ -1209,7 +1214,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         hasToolErrors = true
                     }
 
-                    const verification = kernel.verify(call.name, result)
+                    const verification = kernel.verify(call.name, result, { callId, arguments: call.arguments || {} })
                     const verifiedSuccess = verification.success
                     if (!verifiedSuccess && verification.reason) {
                         resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
@@ -1294,6 +1299,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                     toolResults.push(finalResult)
                     toolExecutions.push({
+                        callId,
                         toolName: call.name,
                         params: call.arguments || {},
                         result: resultStr.trim(),
@@ -1319,13 +1325,14 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         // correction detector that the tool itself failed.
                         toolResults.push(String(err))
                         policyBlocked = true
-                        toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: String(err), success: false, timestamp: Date.now() })
+                        toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(err), success: false, timestamp: Date.now() })
                         hasToolErrors = true
                         break
                     }
                     console.error(`[Nova Agent] Tool error (${call.name}): ${err}`)
                     hasToolErrors = true
                     toolExecutions.push({
+                        callId,
                         toolName: call.name,
                         params: call.arguments || {},
                         result: String(err),
@@ -1458,6 +1465,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         const recoveryResults: string[] = []
                         const recoveryAttempted = new Set<string>()
                         for (const call of retryResponse.toolCalls) {
+                            const callId = nextToolEvidenceId(call)
                             recoveryAttempted.add(call.name)
                             try {
                                 const recovered = await withTimeout(
@@ -1465,11 +1473,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     timeoutForTool(call.name),
                                     `Recovery tool: ${call.name}`,
                                 )
-                                const success = kernel.verify(call.name, recovered).success
+                                const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
                                 const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
                                 toolsExecuted.push(call.name)
                                 toolsUsed.push(call.name)
-                                toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
+                                toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
                                 recoveryResults.push(`${call.name}: ${text}`)
                                 logRuntimeEvent({ event: success ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success })
                             } catch (err) {
@@ -1501,6 +1509,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             }
                             if (!recoveryFollowUp.toolCalls?.length) break
                             for (const call of recoveryFollowUp.toolCalls) {
+                                const callId = nextToolEvidenceId(call)
                                 recoveryAttempted.add(call.name)
                                 try {
                                     const recovered = await withTimeout(
@@ -1508,11 +1517,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                         timeoutForTool(call.name),
                                         `Recovery chain tool: ${call.name}`,
                                     )
-                                    const success = kernel.verify(call.name, recovered).success
+                                    const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
                                     const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
                                     toolsExecuted.push(call.name)
                                     toolsUsed.push(call.name)
-                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
+                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
                                     recoveryResults.push(`${call.name}: ${text}`)
                                     logRuntimeEvent({ event: success ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success })
                                 } catch (err) {
@@ -1601,6 +1610,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             // Nova wants to call MORE tools — execute them!
                             console.log(`[Nova Agent] 🔄 Tool chain round ${loopRound}: ${followUp.toolCalls.map((tc: any) => tc.name).join(', ')}`)
                             for (const call of followUp.toolCalls) {
+                                const callId = nextToolEvidenceId(call)
                                 toolsUsed.push(call.name)
 
                                 // === Loop Detection v2 in multi-turn chain ===
@@ -1624,12 +1634,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     toolsExecuted.push(call.name)
                                     const res = result as any
                                     let resultStr = res?.output || res?.content || res?.message || (res?.error ? `❌ ${res.error}` : JSON.stringify(result, null, 2))
-                                    const roundSuccess = kernel.verify(call.name, result).success
+                                    const roundSuccess = kernel.verify(call.name, result, { callId, arguments: call.arguments || {} }).success
                                     toolResults.push(String(resultStr).trim())
-                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: String(resultStr).trim(), success: roundSuccess, timestamp: Date.now() })
+                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(resultStr).trim(), success: roundSuccess, timestamp: Date.now() })
                                     console.log(`[Nova Agent] Tool result (${call.name}, round ${loopRound}): ${String(resultStr).slice(0, 200)}...`)
                                 } catch (err) {
-                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: String(err), success: false, timestamp: Date.now() })
+                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(err), success: false, timestamp: Date.now() })
                                     console.error(`[Nova Agent] Tool error (${call.name}, round ${loopRound}): ${err}`)
                                     toolResults.push(`❌ ${call.name}: ${err}`)
                                 }
@@ -1737,16 +1747,17 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             console.log(`[Nova Agent] ↩️ Nachfassen brachte ${weitereAufrufe.length} Werkzeugaufruf(e)`)
                             const nachErgebnisse: string[] = []
                             for (const call of weitereAufrufe.slice(0, 4)) {
+                                const callId = nextToolEvidenceId(call)
                                 try {
                                     const res = await executeToolOnce(call.name, { ...(call.arguments || {}), userId, channel })
-                                    const success = kernel.verify(call.name, res).success
+                                    const success = kernel.verify(call.name, res, { callId, arguments: call.arguments || {} }).success
                                     const resultText = redactSecrets(typeof res === 'string' ? res : JSON.stringify(res))
                                     toolsUsed.push(call.name)
                                     toolsExecuted.push(call.name)
-                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: resultText, success, timestamp: Date.now() })
+                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: resultText, success, timestamp: Date.now() })
                                     nachErgebnisse.push(`${call.name}: ${typeof res === 'string' ? res : JSON.stringify(res)}`.slice(0, 1500))
                                 } catch (fehler: any) {
-                                    toolExecutions.push({ toolName: call.name, params: call.arguments || {}, result: String(fehler), success: false, timestamp: Date.now() })
+                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(fehler), success: false, timestamp: Date.now() })
                                     nachErgebnisse.push(`${call.name}: fehlgeschlagen — ${fehler?.message || fehler}`)
                                 }
                             }

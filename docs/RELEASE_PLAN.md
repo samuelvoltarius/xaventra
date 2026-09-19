@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.26 correlated tool-evidence candidate
+
+- Runtime now records unique call receipts with canonical argument/result hashes
+  and matched explicit targets. Duplicate or uncorrelated success cannot satisfy
+  the Kernel's verified-tool criterion.
+- Explicit file targets and web URLs in the current request are conjunctive: every target
+  must occur in verified execution arguments. Machine-comparable targets only;
+  vague semantic destinations remain an open gate.
+- Local Windows regression: **224 files / 1,539 tests**. Compiled native fixture
+  **7/7**, including an intentional partial two-file execution rejected despite
+  one successful read. Live local Qwen **2/2** with disposable files.
+- Exact clean-source CI and documentation promotion remain required before main.
+  No production node was changed. Missing-file recovery, durable evidence across
+  distributed resume, complete memory correction and all previous RC gates remain
+  open. [Contract and limits](TOOL_EVIDENCE.md), [evidence](VERIFICATION_2.78.26.md).
+
 ### 2.78.25 native tool-budget candidate
 
 - Reproduced and corrected: prompt/output budget confusion and missing native

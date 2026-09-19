@@ -5,7 +5,7 @@ import { createTaskContract, validateTaskCompletion } from './task-contract.js'
 describe('live read_file budget regression', () => {
     it('does not compare the complete prompt with the default answer budget', () => {
         const kernel = new ExecutionKernel('Lies die Datei probe.txt')
-        kernel.verify('read_file', { success: true, content: 'unknown-canary' })
+        kernel.verify('read_file', { success: true, content: 'unknown-canary' }, { callId: 'read-probe', arguments: { path: 'probe.txt' } })
         const result = kernel.validateCompletion('unknown-canary', {
             tokens: 5380, outputTokens: 47,
         } as any)

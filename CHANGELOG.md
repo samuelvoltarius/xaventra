@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.78.26] — 2026-09-19
+
+- Bind successful native tool execution to a unique call receipt containing the
+  tool name, canonical argument hash, result hash and explicitly matched targets.
+  Uncorrelated or duplicate call receipts cannot complete a governed task.
+- Infer only machine-comparable targets for file actions and explicit web URLs. A
+  successful unrelated tool or one of two requested file reads no longer marks
+  the whole request complete; every explicit target must be covered by verified
+  execution arguments.
+- Preserve provider call IDs in follow-up tool messages and apply the same
+  pre-effect Kernel budget gate and correlated evidence contract to the optional
+  OpenAI Agents backend and native Docker inventory.
+- Extend compiled native acceptance with an intentional partial two-file run.
+  The tool succeeds, but independent validation correctly rejects completion.
+  This does not claim semantic target understanding for vague natural language,
+  production rollout, distributed resume or general correctness of every tool.
+
 ## [2.78.25] — 2026-09-19
 
 - Separate the native runner's generated-token allowance from optional total

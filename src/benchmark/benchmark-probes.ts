@@ -124,8 +124,8 @@ async function probeRouting(workspace: string): Promise<BenchmarkProbeResult> {
     }, { decision })
 }
 
-async function probeTools(workspace: string): Promise<BenchmarkProbeResult> {
-    const artifact = join(workspace, 'tool-artifact.txt')
+async function probeTools(workspace: string, targetPath?: string): Promise<BenchmarkProbeResult> {
+    const artifact = targetPath || join(workspace, 'tool-artifact.txt')
     writeFileSync(artifact, 'before')
     const store = new IdempotencyStore(join(workspace, 'idempotency.json'))
     const key = makeIdempotencyKey('benchmark-tools', 'write_file', { path: artifact, content: 'after' })
@@ -550,12 +550,12 @@ async function probeProactivity(): Promise<BenchmarkProbeResult> {
 
 /** Run only probes whose prerequisites cannot be created safely by a chat
  * prompt. Every probe uses its benchmark workspace and real Nova subsystems. */
-export async function runBenchmarkProbe(scenario: BenchmarkScenario, workspace: string): Promise<BenchmarkProbeResult | null> {
+export async function runBenchmarkProbe(scenario: BenchmarkScenario, workspace: string, targetPath?: string): Promise<BenchmarkProbeResult | null> {
     const isolated = join(workspace, scenario.id)
     mkdirSync(isolated, { recursive: true })
     if (scenario.category === 'discovery') return probeDiscovery(isolated)
     if (scenario.category === 'routing') return probeRouting(isolated)
-    if (scenario.category === 'tools') return probeTools(isolated)
+    if (scenario.category === 'tools') return probeTools(isolated, targetPath)
     if (scenario.category === 'resume') return probeResume(isolated)
     if (scenario.category === 'memory') return probeMemory(isolated)
     if (scenario.category === 'mesh') return probeMesh(isolated)
@@ -564,4 +564,14 @@ export async function runBenchmarkProbe(scenario: BenchmarkScenario, workspace: 
     if (scenario.category === 'governance') return probeGovernance(isolated)
     if (scenario.category === 'proactivity') return probeProactivity()
     return null
+}
+
+export function benchmarkProbeToolName(category: BenchmarkScenario['category']): string {
+    return ({
+        discovery: 'benchmark_capability_graph_probe', routing: 'benchmark_outcome_router_probe',
+        tools: 'benchmark_execution_control_probe', resume: 'benchmark_resume_probe',
+        memory: 'benchmark_memory_probe', mesh: 'benchmark_mesh_failover_probe',
+        doctor: 'benchmark_doctor_sandbox_probe', channels: 'benchmark_channel_delivery_probe',
+        governance: 'benchmark_outcome_ledger_probe', proactivity: 'benchmark_proactivity_policy_probe',
+    } as const)[category]
 }

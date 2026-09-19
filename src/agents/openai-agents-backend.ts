@@ -83,6 +83,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
                 if (!policy.allowed) throw new Error(policy.reason || `Tool ${novaTool.name} is denied by Nova policy`)
                 let result: unknown
                 try {
+                    kernel.assertCanExecute(novaTool.name)
                     const execution = await getIdempotencyStore().executeOnce({
                         key: idempotencyKey,
                         runId: input.contract.id,
@@ -94,7 +95,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
                             : novaTool.handler(params),
                     })
                     result = execution.result
-                    const validation = kernel.verify(novaTool.name, result)
+                    const validation = kernel.verify(novaTool.name, result, { callId: idempotencyKey, arguments: params })
                     ledger.recordTool(input.contract.id, {
                         toolName: novaTool.name,
                         params,

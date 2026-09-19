@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ActionIntent } from './action-intent.js'
 import { inferResponseConstraints, satisfiesResponseConstraints, type ResponseConstraint } from './response-contract.js'
+import { inferRequiredToolTargets, type VerifiedToolCallEvidence } from './tool-evidence-binding.js'
 
 export type TaskArtifactKind = 'file' | 'image' | 'message' | 'service' | 'report' | 'other'
 export type SuccessCriterionKind = 'response_present' | 'response_constraints' | 'verified_tool' | 'artifact_present' | 'test_passed' | 'approval_granted'
@@ -56,6 +57,8 @@ export interface TaskContract {
     expectedArtifacts: ArtifactRequirement[]
     successCriteria: SuccessCriterion[]
     responseConstraints?: ResponseConstraint[]
+    /** Explicit machine-comparable targets that verified tool arguments must cover. */
+    requiredToolTargets?: string[]
     allowedChanges: ChangeScope
     budget: TaskBudget
     requiredTests: TestRequirement[]
@@ -93,6 +96,7 @@ export interface TaskValidationReport {
 export interface CompletionEvidence {
     response?: string
     verifiedTools?: string[]
+    verifiedToolCalls?: VerifiedToolCallEvidence[]
     artifacts?: string[]
     passedTests?: string[]
     approvalGranted?: boolean
@@ -154,6 +158,10 @@ export function createTaskContract(
     }
 
     const responseConstraints = [...inferResponseConstraints(goal), ...(overrides.responseConstraints || [])]
+    const inferredTargets = intent.requiresTool ? inferRequiredToolTargets(goal) : []
+    const requiredToolTargets = intent.kind === 'file'
+        ? inferredTargets
+        : intent.kind === 'web' ? inferredTargets.filter(target => /^https?:\/\//.test(target)) : []
     const criteria = [...(overrides.successCriteria || successCriteria)]
     if (responseConstraints.length) criteria.push({
         id: 'response-constraints', kind: 'response_constraints', required: true,
@@ -166,6 +174,7 @@ export function createTaskContract(
         expectedArtifacts: overrides.expectedArtifacts || expectedArtifacts,
         successCriteria: criteria,
         ...(responseConstraints.length ? { responseConstraints } : {}),
+        ...(requiredToolTargets.length ? { requiredToolTargets } : {}),
         allowedChanges: {
             readOnly: !intent.requiresTool,
             allowedPaths: [],
@@ -186,6 +195,8 @@ export function createTaskContract(
 
 export function validateTaskCompletion(contract: TaskContract, evidence: CompletionEvidence): TaskValidationReport {
     const verifiedTools = evidence.verifiedTools || []
+    const verifiedToolCalls = evidence.verifiedToolCalls
+    const requiredTargets = contract.requiredToolTargets || []
     const artifacts = evidence.artifacts || []
     const passedTests = new Set(evidence.passedTests || [])
     const criteria = contract.successCriteria.map<CriterionResult>(criterion => {
@@ -200,8 +211,26 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
                 return { criterionId: criterion.id, success, evidence: success ? ['response'] : [], reason: success ? undefined : 'response is empty' }
             }
             case 'verified_tool': {
-                const success = verifiedTools.length > 0
-                return { criterionId: criterion.id, success, evidence: verifiedTools, reason: success ? undefined : 'no executing tool result was verified' }
+                const callsValid = verifiedToolCalls === undefined
+                    ? requiredTargets.length === 0 && verifiedTools.length > 0
+                    : verifiedToolCalls.length > 0
+                        && new Set(verifiedToolCalls.map(call => call.callId)).size === verifiedToolCalls.length
+                        && verifiedToolCalls.every(call => contract.allowedChanges.allowedTools.includes(call.toolName)
+                            && /^[a-f0-9]{64}$/.test(call.argumentsHash) && /^[a-f0-9]{64}$/.test(call.resultHash))
+                const coveredTargets = new Set((verifiedToolCalls || []).flatMap(call => call.matchedTargets))
+                const missingTargets = requiredTargets.filter(target => !coveredTargets.has(target))
+                const targetsCovered = requiredTargets.length === 0
+                    || (verifiedToolCalls !== undefined && missingTargets.length === 0)
+                const success = callsValid && targetsCovered
+                const refs = verifiedToolCalls === undefined
+                    ? verifiedTools
+                    : verifiedToolCalls.map(call => `tool-call:${call.callId}:${call.toolName}`)
+                return {
+                    criterionId: criterion.id, success, evidence: success ? refs : [],
+                    reason: success ? undefined : missingTargets.length
+                        ? `verified tool evidence did not cover requested targets: ${missingTargets.join(', ')}`
+                        : 'no uniquely correlated executing tool result was verified',
+                }
             }
             case 'artifact_present': {
                 const success = artifacts.length > 0

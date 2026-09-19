@@ -17,6 +17,7 @@ import { deliberateExecution, type DeliberationResult } from './deliberative-pla
 import { resolveAutonomyLevel, type AutonomyDecision } from './autonomy-ladder.js'
 import { selectContextPolicy, type ContextPolicy } from './context-policy.js'
 import { InferenceBudget } from './inference-budget.js'
+import { evidenceHash, matchedToolTargets, type VerifiedToolCallEvidence } from './tool-evidence-binding.js'
 
 /** Single runtime contract between dispatcher, worker, validator and learning.
  * Legacy layers may observe it, but they no longer decide task completion. */
@@ -31,6 +32,7 @@ export class ExecutionKernel {
     readonly inference: InferenceBudget
     private readonly worker: FocusedWorker
     private readonly verifiedTools = new Set<string>()
+    private readonly verifiedToolCalls = new Map<string, VerifiedToolCallEvidence>()
     private readonly artifacts = new Set<string>()
     private readonly startedAt = Date.now()
     private toolAttempts = 0
@@ -82,11 +84,21 @@ export class ExecutionKernel {
         this.toolAttempts++
     }
 
-    verify(toolName: string, result: unknown): ValidationResult {
+    verify(toolName: string, result: unknown, invocation?: { callId: string; arguments: Record<string, unknown> }): ValidationResult {
         const validation = validateToolOutcome(toolName, result, this.intent)
+        if (validation.success && (!invocation?.callId || this.verifiedToolCalls.has(invocation.callId))) {
+            return { success: false, evidence: [], reason: invocation?.callId ? 'duplicate tool call evidence id' : 'tool result lacks execution correlation' }
+        }
         this.lifecycle.record(toolName, validation.success)
         if (validation.success) {
             this.verifiedTools.add(toolName)
+            this.verifiedToolCalls.set(invocation!.callId, {
+                callId: invocation!.callId,
+                toolName,
+                argumentsHash: evidenceHash(invocation!.arguments),
+                resultHash: evidenceHash(result),
+                matchedTargets: matchedToolTargets(this.contract.requiredToolTargets || [], invocation!.arguments),
+            })
             for (const artifact of validation.evidence) this.artifacts.add(artifact)
         }
         recordExecutionStage({ stage: 'tool.validated', success: validation.success, intent: this.intent.kind })
@@ -94,12 +106,13 @@ export class ExecutionKernel {
         return validation
     }
 
-    validateCompletion(response: string, evidence: Omit<CompletionEvidence, 'response' | 'verifiedTools' | 'artifacts'> = {}): TaskValidationReport {
+    validateCompletion(response: string, evidence: Omit<CompletionEvidence, 'response' | 'verifiedTools' | 'verifiedToolCalls' | 'artifacts'> = {}): TaskValidationReport {
         const report = validateTaskCompletion(this.contract, {
             ...evidence,
             ...(this.inference.snapshot().calls ? this.inference.evidence() : {}),
             response,
             verifiedTools: [...this.verifiedTools],
+            verifiedToolCalls: [...this.verifiedToolCalls.values()],
             artifacts: [...this.artifacts],
             awaitingApproval: evidence.awaitingApproval ?? this.lifecycle.isAwaitingApproval(),
         })

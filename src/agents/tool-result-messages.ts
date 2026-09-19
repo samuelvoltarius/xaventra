@@ -3,10 +3,10 @@ import { pruneToolResult } from '../memory/tool-result-pruner.js'
 
 /** Correlate actual execution evidence using the provider's tool-message
  * contract. Results are data, never a new user request or permission. */
-export function toolResultMessages(executions: ReadonlyArray<{ toolName: string; params: Record<string, unknown>; result: string }>, round: number): LLMMessage[] {
+export function toolResultMessages(executions: ReadonlyArray<{ callId?: string; toolName: string; params: Record<string, unknown>; result: string }>, round: number): LLMMessage[] {
     if (!executions.length) return []
     const toolCalls = executions.map((execution, index) => ({
-        id: `nova-evidence-${round}-${index}`, name: execution.toolName, arguments: execution.params,
+        id: execution.callId || `nova-evidence-${round}-${index}`, name: execution.toolName, arguments: execution.params,
     }))
     return [
         { role: 'assistant', content: '', toolCalls },
