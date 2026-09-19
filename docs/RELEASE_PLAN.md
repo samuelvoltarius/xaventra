@@ -14,8 +14,13 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Working-tree live local-model acceptance: **passed, 2/2**, real disposable reads
   with validated final output. Not production Telegram or full CLI/Desktop proof.
 - Windows regression: **passed, 224 files / 1,533 tests**; six-case compiled fixture,
-  REST response contract 5/5 and Desktop bridge 7/7: **passed**. Exact-commit
-  three-OS CI: **open**. No main promotion on partial/ancestor checks.
+  REST response contract 5/5 and Desktop bridge 7/7: **passed**. Runtime candidate
+  `0114c6492fc6dc2cf7d2c854b0d53d017a72daea`: **all ten CI jobs passed** in
+  [CI35451427942](https://github.com/samuelvoltarius/xaventra/actions/runs/35451427942).
+  Downloaded exact-SHA reports confirm six native tool-budget checks on each of
+  Windows/Linux/macOS and Docker repair7/7. An actual isolated Windows CLI/Qwen
+  read also returned the unknown canary, with successful ledger validation.
+  Documentation promotion still requires its own exact-commit green CI.
 - General tool/action-target validation, missing-data recovery, complete memory
   correction and distributed resume remain **open**. Earlier gates are unchanged.
   [Evidence and failures](VERIFICATION_2.78.25.md), [operator guide](TOOL_BUDGETS.md).

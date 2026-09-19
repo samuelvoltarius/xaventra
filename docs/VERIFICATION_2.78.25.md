@@ -58,5 +58,24 @@ The fixture now declares synthetic usage (as the unit fixture does); real-model
 responses and production handling are unchanged. All Docker assertions remain.
 The final candidate requires fresh complete CI; this failed predecessor is not a pass.
 
+## Accepted runtime revision
+
+`0114c6492fc6dc2cf7d2c854b0d53d017a72daea` passes **all ten jobs** in
+[CI35451427942](https://github.com/samuelvoltarius/xaventra/actions/runs/35451427942).
+Downloaded clean report files confirm **6/6 native tool-budget checks on each of
+Windows, Linux and macOS**, all with that exact source revision, plus **Docker
+Doctor-to-recovery 7/7** (scripted model, real disposable containers/HTTP).
+The full isolated sandbox regression/rollback/restoration job also passes.
+
+The separate real interactive CLI read on runtime `f752484` recorded **8,417
+input / 173 output tokens**, two successful completion validations and a completed
+ledger run. Final reply was exactly the unknown canary; `/exit` returned zero.
+The high prompt count is no longer incorrectly compared to the 1,024 generation
+allowance. This live test is not a Telegram delivery or production rollout proof.
+
+This documentation-only attestation must pass its own complete CI before main
+promotion. No native signing, full RC acceptance or production activation follows
+from the bounded results above; previously listed open gates are retained.
+
 See [budget semantics and recovery](TOOL_BUDGETS.md). Inference inside remote or
 provider-owned sub-runs is not independently counted by this native wrapper.
