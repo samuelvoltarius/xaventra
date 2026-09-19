@@ -25,6 +25,8 @@ after 10,093ms and 240 completion tokens.
   response metadata.
 - Reasoning-only output can trigger one budget-accounted non-thinking retry.
 - Tool calls remain valid even with empty visible text.
+- Python interpreter discovery has one 3.5-second aggregate deadline and a
+  one-second per-launcher ceiling after Windows CI exposed a hanging alias.
 
 ## Current evidence
 

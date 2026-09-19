@@ -15,6 +15,8 @@
 - Add policy/parser regressions and real compiled-client Spark checks. This does
   not claim production adoption, universal provider compatibility or complete
   tool/memory/HA readiness.
+- Bound Python capability discovery across all launcher candidates. A stalled
+  Windows Store alias can no longer consume the entire request/test deadline.
 
 ## [2.78.26] — 2026-09-19
 

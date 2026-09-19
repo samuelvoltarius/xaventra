@@ -47,6 +47,11 @@ const OFFICE_EXTENSIONS = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.
 /** Resolve a real Python interpreter instead of trusting Windows Store aliases. */
 export function findPythonExecutable(): string | null {
     const home = homedir()
+    // Discovery is a startup capability probe, not permission for a launcher
+    // alias to hold the whole request. In particular, Windows Store aliases
+    // may accept a process start and then never answer. Bound the complete
+    // candidate scan as well as every individual child.
+    const discoveryDeadline = Date.now() + 3_500
     const candidates = [
         process.env.PYTHON_PATH,
         platform() === 'win32' ? join(home, 'AppData', 'Local', 'Python', 'bin', 'python.exe') : undefined,
@@ -62,9 +67,15 @@ export function findPythonExecutable(): string | null {
     ].filter((candidate): candidate is string => !!candidate)
 
     for (const candidate of candidates) {
+        const remainingMs = discoveryDeadline - Date.now()
+        if (remainingMs <= 0) break
         if ((candidate.includes('\\') || candidate.includes('/')) && !existsSync(candidate)) continue
         const args = candidate === 'py' ? ['-3', '--version'] : ['--version']
-        const probe = spawnSync(candidate, args, { encoding: 'utf8', timeout: 5_000, windowsHide: true })
+        const probe = spawnSync(candidate, args, {
+            encoding: 'utf8',
+            timeout: Math.min(1_000, remainingMs),
+            windowsHide: true,
+        })
         if (probe.status === 0 && !probe.error) return candidate
     }
     return null
