@@ -16,13 +16,19 @@ Preserve negative results. No mocked proof is substituted for live execution.
   vague semantic destinations remain an open gate.
 - Local Windows regression: **224 files / 1,540 tests**. Compiled native fixture
   **7/7**, including an intentional partial two-file execution rejected despite
-  one successful read. Live local Qwen **2/2** with disposable files.
+  one successful read. The first candidate passed live local Qwen **2/2** with
+  disposable files; a final-commit recheck was blocked by the unavailable Spark
+  vLLM endpoint and is not counted as final-SHA evidence.
 - The first exact candidate CI failed closed: all three hosted platforms exposed
   missing Unix-path intent classification in the partial two-file case, and the
   legacy dashboard audit hit npm's retired quick-tree endpoint. A first follow-up
   then exposed a greedy unquoted Unix-path matcher. All three causes now have
-  bounded regressions; fresh exact-source CI and documentation promotion remain
-  required before main.
+  bounded regressions. Runtime `2c272121f8c727587bf0fe91db5c67fe4e5b4ce7`
+  passes all ten jobs in
+  [CI 35459501394](https://github.com/samuelvoltarius/xaventra/actions/runs/35459501394).
+  Downloaded exact-SHA clean-source reports pass the native fixture **7/7** on
+  Windows, Linux and macOS. This documentation promotion still requires its own
+  exact-commit green CI before main.
   No production node was changed. Missing-file recovery, durable evidence across
   distributed resume, complete memory correction and all previous RC gates remain
   open. [Contract and limits](TOOL_EVIDENCE.md), [evidence](VERIFICATION_2.78.26.md).

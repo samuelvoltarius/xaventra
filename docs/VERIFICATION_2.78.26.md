@@ -26,7 +26,8 @@ execution correlation is also rejected.
 - Compiled native runner: **7/7**, real disposable filesystem, scripted HTTP
   provider, actual policy/Outcome Ledger/validator. The partial-two-file negative
   case passed only because final task validation failed for the missing `b.txt`.
-- Live local Qwen on Spark: **2/2**, disposable files only. Single read:
+- Live local Qwen on Spark for the first candidate: **2/2**, disposable files
+  only. Single read:
   **7,996ms / 2,299 tokens / 2 calls**. Two-file read:
   **11,057ms / 2,533 tokens / 2 calls**.
 
@@ -75,9 +76,33 @@ read its loose objects. The same unchanged suite with process-local
 `core.longpaths=true` passed **224 files / 1,540 tests**. This setting changes
 only Git path handling for the test process; it does not skip or weaken a test.
 
+## Exact final runtime evidence
+
+Runtime commit `2c272121f8c727587bf0fe91db5c67fe4e5b4ce7` passed all ten
+jobs in
+[CI 35459501394](https://github.com/samuelvoltarius/xaventra/actions/runs/35459501394):
+Windows, Ubuntu and macOS verification; Windows, Ubuntu and macOS Desktop smoke;
+legacy dashboard; managed repair; Docker repair; and the isolated repair
+sandbox. Downloaded clean-source reports bind `sourceRevision` to that commit,
+report `sourceDirty: false`, and pass the compiled native fixture **7/7** on each
+of Windows, Linux and macOS. A separate exact clean local Windows run also passes
+**7/7**.
+
+The exact final runtime source additionally passes TypeScript typecheck, build,
+catalog validation, the focused suite (**32/32**) and the complete Core suite
+(**224 files / 1,540 tests**) with the process-local Git long-path setting noted
+above. Dashboard and Desktop lock-graph audits report zero vulnerabilities.
+
+The Spark vLLM endpoint was unavailable during the final-commit recheck: one
+15-second request timed out and a repeated 30-second request could not connect.
+The earlier first-candidate Qwen result is therefore retained as useful model
+evidence, but is not represented as final-SHA live-model evidence. No production
+service was restarted or changed to manufacture that proof.
+
 ## Open gates
 
-- Exact clean-source three-platform CI for the follow-up and final evidence commit.
+- Final documentation/evidence commit must pass its own applicable CI before
+  promotion to `main`.
 - Typed semantic targets beyond explicit files/URLs.
 - Evidence rehydration across every native/distributed interruption boundary.
 - Expected missing-file recovery without unnecessary retries.
