@@ -3,7 +3,8 @@
 ## Scope
 
 This candidate closes the managed-repair identity-marker race observed in the
-hosted Linux acceptance. It does not claim production activation, general
+hosted Linux acceptance and the packaged Linux Desktop transport failure found
+by the first candidate run. It does not claim production activation, general
 self-repair completion or RC readiness.
 
 ## Reproduction
@@ -27,6 +28,9 @@ failure.
   Any third release ID remains fenced.
 - Make the disposable acceptance runtime delete only markers still owned by its
   exact instance and PID.
+- Use Node's bounded HTTP/HTTPS client in Electron's main process instead of
+  global `fetch`. Redirects are not followed, request abort deadlines remain
+  active and response bodies are capped at 2 MB.
 
 ## Evidence
 
@@ -36,10 +40,19 @@ failure.
 - Build and generated runtime-catalog check: passed on Windows.
 - Focused daemon-control and activation regression: 2 files, 30 tests passed on
   Windows.
-- Full Core regression: 228 files, 1,560 tests passed on Windows with four
-  workers.
+- The first full Core regression with four workers exposed one unrelated
+  five-second timeout in `src/core/autonomy-doctor-dispatch.test.ts`; the
+  failure is retained as negative evidence. The targeted file then passed in
+  three separate runs, and the CI-equivalent two-worker full regression passed
+  228 files and 1,560 tests.
 - Static runtime/layer loading: 9 core modules and 40 service modules passed.
-- Packaged Desktop Core regression: 7/7 passed on Windows.
+- Packaged Desktop Core regression: 9/9 passed on Windows, including real
+  loopback requests proving global `fetch` is not used, redirects are not
+  followed and oversized responses are rejected.
+- A locally packaged Windows Electron acceptance reached package creation but
+  timed out while launching the GUI in the restricted runner before any UI
+  assertion executed. It is not counted as product acceptance; the exact
+  hosted packaged checks remain authoritative.
 - Release-readiness correctly remains blocked in the isolated checkout because
   it has no deployment configuration, audit metadata could not be fetched and
   no external-agent comparison artifact exists. These RC gates were not
@@ -58,7 +71,15 @@ hosted result: pending.
 
 ### Hosted platforms and public history
 
-Candidate CI, complete-history secret scan and evidence-commit CI: pending.
+Initial candidate `805d6d7accaffbf9558f3a09682f3fe0716445ef` passed the
+managed-repair job on its first run, including the deterministic
+post-stop/pre-pointer rollback case. The overall
+[CI 35497948342](https://github.com/samuelvoltarius/xaventra/actions/runs/35497948342)
+failed because Electron 44's Linux main-process global `fetch` reached Undici
+without `performance.markResourceTiming`; setup remained reachable but the
+composer never recovered after saving the connection. That failure is retained,
+not rerun away. Exact hosted CI for the native-transport correction, complete
+history secret scan and evidence-commit CI are pending.
 
 ### Live/production
 

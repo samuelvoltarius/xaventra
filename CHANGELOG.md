@@ -12,6 +12,9 @@
   release still fails the fenced compare-and-swap.
 - Make the disposable Linux managed-repair runtime remove only identity markers
   it still owns, and assert correlated PID/control readiness in acceptance.
+- Replace Electron main-process `fetch` with a bounded native Node HTTP/HTTPS
+  request. This avoids Electron 44's Linux Undici `markResourceTiming` failure,
+  does not follow redirects, retains abort deadlines and caps responses at 2 MB.
 
 ## [2.78.31] — 2026-09-20
 

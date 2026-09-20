@@ -19,8 +19,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
   loss.
 - Source and Windows regressions are recorded in
   [the candidate record](VERIFICATION_2.78.32.md). Disposable Linux
-  root-controller/non-root-runtime acceptance and exact hosted CI are still
-  required before promotion. No production node changed.
+  root-controller/non-root-runtime acceptance passed on the first hosted run.
+  That run exposed a separate packaged Linux Desktop failure in Electron's
+  global Undici fetch path. The candidate now uses bounded native Node
+  HTTP/HTTPS instead; exact hosted Desktop acceptance is still required before
+  promotion. No production node changed.
 
 ### 2.78.31 live witness checkpoint candidate
 

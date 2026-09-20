@@ -2,6 +2,8 @@ const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, safeStorage, scree
 const { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, statSync } = require('node:fs')
 const { basename, extname, isAbsolute, join, relative, resolve } = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
+const { request: requestHttp } = require('node:http')
+const { request: requestHttps } = require('node:https')
 
 let mainWindow = null
 // Do not synchronously touch Keychain just to render connection settings.
@@ -199,6 +201,31 @@ function assertApiPath(path) {
   return value
 }
 
+function sendHttpRequest({ url, method, headers, body, signal }) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url)
+    const request = (target.protocol === 'https:' ? requestHttps : requestHttp)(target, {
+      method, headers, signal, agent: false,
+    }, response => {
+      const chunks = []
+      let size = 0
+      response.on('data', chunk => {
+        size += chunk.length
+        if (size > 2_000_000) {
+          request.destroy(new Error('Desktop response exceeds 2 MB'))
+          return
+        }
+        chunks.push(chunk)
+      })
+      response.once('error', reject)
+      response.once('end', () => resolve({ status: response.statusCode || 0, text: Buffer.concat(chunks).toString('utf8') }))
+    })
+    request.once('error', reject)
+    if (body) request.write(body)
+    request.end()
+  })
+}
+
 async function apiRequest(_event, input) {
   const method = String(input?.method || 'GET').toUpperCase()
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) throw new Error('HTTP method is not allowed')
@@ -211,7 +238,8 @@ async function apiRequest(_event, input) {
   // Bootstrap must not occupy the full multi-minute chat budget per retry.
   const timeout = setTimeout(() => controller.abort(), path === '/api/desktop/bootstrap' ? Math.min(5000, config.requestTimeoutMs) : config.requestTimeoutMs)
   try {
-    const response = await fetch(`${config.endpoint}${path}`, {
+    const response = await sendHttpRequest({
+      url: `${config.endpoint}${path}`,
       method,
       signal: controller.signal,
       headers: {
@@ -223,10 +251,10 @@ async function apiRequest(_event, input) {
       },
       body,
     })
-    const text = await response.text()
+    const text = response.text
     let data
     try { data = text ? JSON.parse(text) : null } catch { data = { error: text.slice(0, 500) } }
-    if (!response.ok) throw new Error(String(data?.error || `Xaventra returned HTTP ${response.status}`).slice(0, 500))
+    if (response.status < 200 || response.status >= 300) throw new Error(String(data?.error || `Xaventra returned HTTP ${response.status}`).slice(0, 500))
     return data
   } finally {
     clearTimeout(timeout)

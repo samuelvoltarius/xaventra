@@ -4,6 +4,7 @@ const { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } = require(
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 const vm = require('node:vm')
+const { createServer } = require('node:http')
 
 function harness(t) {
   const root = mkdtempSync(join(tmpdir(), 'xaventra-desktop-test-'))
@@ -16,7 +17,7 @@ function harness(t) {
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
     safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: s => Buffer.from(s), decryptString: b => b.toString() },
   }
-  const context = { require: id => id === 'electron' ? electron : require(id), __dirname: join(__dirname, '..'), process: { platform: 'linux', env: {} }, Buffer, URL, console }
+  const context = { require: id => id === 'electron' ? electron : require(id), __dirname: join(__dirname, '..'), process: { platform: 'linux', env: {} }, Buffer, URL, AbortController, setTimeout, clearTimeout, console }
   vm.createContext(context)
   vm.runInContext(readFileSync(join(__dirname, '..', 'main.cjs'), 'utf8'), context)
   ready()
@@ -76,14 +77,51 @@ test('Linux plaintext fallback cannot be used to store a credential', t => {
 })
 
 test('bootstrap has a bounded retry budget while chat keeps its configured deadline', async t => {
-  const { handlers, context } = harness(t)
+  const { handlers, context, evaluate } = harness(t)
   const deadlines = []
   context.AbortController = AbortController
   context.setTimeout = (_callback, ms) => { deadlines.push(ms); return 1 }
   context.clearTimeout = () => {}
-  context.fetch = async () => ({ ok: true, text: async () => '{}' })
+  context.response = { status: 200, text: '{}' }
+  context.endpointRequest = async () => context.response
+  evaluate('sendHttpRequest = endpointRequest')
   handlers.get('nova:config:get')()
   await handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' })
   await handlers.get('nova:api')(null, { path: '/api/desktop/rooms/alpha/messages' })
   assert.deepEqual(deadlines, [5000, 120000])
+})
+
+test('main-process API uses bounded native HTTP without global fetch', async t => {
+  const server = createServer((request, response) => {
+    assert.equal(request.url, '/api/desktop/bootstrap')
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ ok: true, transport: 'node-http' }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const { handlers, context } = harness(t)
+  context.fetch = () => { throw new Error('global fetch must not be used') }
+  const port = server.address().port
+  handlers.get('nova:config:set')(null, { endpoint: `http://127.0.0.1:${port}` })
+  const result = await handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' })
+  assert.equal(result.ok, true)
+  assert.equal(result.transport, 'node-http')
+})
+
+test('main-process API does not follow redirects or accept oversized responses', async t => {
+  const server = createServer((request, response) => {
+    if (request.url === '/api/desktop/bootstrap') {
+      response.writeHead(302, { location: '/api/desktop/redirect-target' })
+      response.end()
+      return
+    }
+    response.end('x'.repeat(2_000_001))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const { handlers } = harness(t)
+  const port = server.address().port
+  handlers.get('nova:config:set')(null, { endpoint: `http://127.0.0.1:${port}` })
+  await assert.rejects(handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' }), /HTTP 302/)
+  await assert.rejects(handlers.get('nova:api')(null, { path: '/api/desktop/redirect-target' }), /exceeds 2 MB/)
 })
