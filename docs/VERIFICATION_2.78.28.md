@@ -40,11 +40,17 @@ fragment and its containing relative path as separate mandatory targets.
   Core authority, a real file tool and linked Outcome, post-tool command routing,
   scoped memory/Trust access and a forbidden-file negative.
 
-Exact candidate CI is still required.
+Exact runtime `1630b0a2e83174afa553ebd2a67a9c870cc0a33f` passes all ten jobs in
+[CI 35479444924](https://github.com/samuelvoltarius/xaventra/actions/runs/35479444924):
+Windows/Linux/macOS verification, Windows/Linux/macOS packaged Desktop, legacy
+dashboard, repair sandbox, managed repair and Docker repair. The complete public
+history (84 commits) produced zero findings with the official, checksum-verified
+Gitleaks 8.30.1 binary. This evidence-documentation commit requires its own green
+exact-SHA CI before `main` promotion.
 
 ## Open gates
 
-- exact candidate commit and cross-platform CI;
+- final evidence-commit CI and normal `main` promotion;
 - durable hydration of verified native tool receipts after process/node restart;
 - wider typed recovery beyond missing read-only resources;
 - production Telegram/Desktop adoption and actual failover observation;

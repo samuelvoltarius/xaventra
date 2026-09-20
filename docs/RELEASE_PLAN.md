@@ -19,8 +19,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   complete clean-lockfile Core regression passes **226 files / 1,553 tests**
   with four workers. Build, generated catalogs, static layer graph and runtime
   loading pass; the packaged Windows Desktop passes **5/5** isolated Core checks.
-  A clean exact-commit CI run is still required before promotion and remains the
-  cross-platform authority.
+  Exact runtime `1630b0a2e83174afa553ebd2a67a9c870cc0a33f` passes all ten jobs
+  in [CI 35479444924](https://github.com/samuelvoltarius/xaventra/actions/runs/35479444924),
+  including Windows/Linux/macOS verification, packaged Desktop and all three
+  repair jobs. The full public history has 84 commits and zero Gitleaks 8.30.1
+  findings. This documentation attestation still needs its own exact-commit CI
+  before promotion.
 - This closes only deterministic missing-file recovery. Durable native receipt
   hydration/resume, general error research, memory correction completeness,
   controlled HA and remaining RC gates stay open. No production node changed.
