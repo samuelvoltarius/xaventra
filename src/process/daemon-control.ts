@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer, request } from 'node:http'
 import { join } from 'node:path'
 
@@ -22,12 +22,26 @@ function alive(pid: number): boolean {
     }
 }
 
+function readOptionalFile(path: string, maximumBytes: number): string | undefined {
+    try {
+        const value = readFileSync(path)
+        if (value.length > maximumBytes) throw new Error('Local daemon identity marker exceeds budget')
+        return value.toString('utf8')
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        throw error
+    }
+}
+
+function readPid(root: string): string | undefined {
+    return readOptionalFile(join(root, '.nova.pid'), 64)?.trim()
+}
+
 function readRecord(root: string): ControlRecord | undefined {
     const path = join(root, '.nova-data', FILE)
-    if (!existsSync(path)) return undefined
-    if (statSync(path).size > 4096) throw new Error('Invalid local daemon control record')
-    const text = readFileSync(path, 'utf8')
-    if (text.length > 4096) throw new Error('Invalid local daemon control record')
+    let text: string | undefined
+    try { text = readOptionalFile(path, 4096) } catch { throw new Error('Invalid local daemon control record') }
+    if (text === undefined) return undefined
     let value: ControlRecord
     try { value = JSON.parse(text) } catch { throw new Error('Invalid local daemon control record') }
     if (value?.version !== 1 || value.root !== root || !Number.isSafeInteger(value.pid) || value.pid <= 0
@@ -134,12 +148,12 @@ function requestStop(record: ControlRecord, timeoutMs: number): Promise<void> {
 export async function stopLocalDaemon(rootPath: string, options: { timeoutMs?: number; requestTimeoutMs?: number } = {}): Promise<'stopped' | 'not-running'> {
     const root = realpathSync.native(rootPath)
     const record = readRecord(root)
-    const pidPath = join(root, '.nova.pid')
+    const pid = readPid(root)
     if (!record) {
-        if (existsSync(pidPath)) throw new Error('No authenticated control channel. This daemon may still be starting or be an older version; stop it in its own terminal or service manager.')
+        if (pid !== undefined) throw new Error('No authenticated control channel. This daemon may still be starting or be an older version; stop it in its own terminal or service manager.')
         return 'not-running'
     }
-    if (existsSync(pidPath) && readFileSync(pidPath, 'utf8').trim() !== String(record.pid)) {
+    if (pid !== undefined && pid !== String(record.pid)) {
         throw new Error('Local daemon identity markers disagree; stop/restart refused')
     }
     if (!alive(record.pid)) {
@@ -151,7 +165,8 @@ export async function stopLocalDaemon(rootPath: string, options: { timeoutMs?: n
     do {
         const current = readRecord(root)
         if (current && current.instanceId !== record.instanceId) throw new Error('A replacement daemon appeared; restart refused')
-        if (existsSync(pidPath) && readFileSync(pidPath, 'utf8').trim() !== String(record.pid)) {
+        const currentPid = readPid(root)
+        if (currentPid !== undefined && currentPid !== String(record.pid)) {
             throw new Error('A replacement daemon PID appeared; restart refused')
         }
         if (!alive(record.pid)) return 'stopped'

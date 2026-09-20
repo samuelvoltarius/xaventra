@@ -106,6 +106,16 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         } else if (!child) await stopLocalDaemon(this.options.runtimeRoot)
         this.child = undefined
     }
+    private runtimeIdentity(): { pid: number; root: string } | undefined {
+        try {
+            const marker = JSON.parse(readFileSync(join(this.options.runtimeRoot, '.nova-data', 'daemon-control.json'), 'utf8'))
+            const pid = readFileSync(join(this.options.runtimeRoot, '.nova.pid'), 'utf8').trim()
+            if (marker.pid === Number(pid) && marker.root === realpathSync(this.options.runtimeRoot)) return marker
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+        }
+        return undefined
+    }
     private async switchRelease(expected: string, next: string, ticket: RepairTicket): Promise<void> {
         if (!await this.hasAuthority(ticket) || this.current !== expected) throw new Error('Fenced release compare-and-swap failed')
         const release = this.release(next)
@@ -129,8 +139,8 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         while (Date.now() < deadline) {
             if (child.exitCode !== null || child.signalCode !== null) throw new Error('Candidate exited during startup')
             try {
-                const marker = JSON.parse(readFileSync(join(this.options.runtimeRoot, '.nova-data', 'daemon-control.json'), 'utf8'))
-                if (marker.pid === child.pid && marker.root === realpathSync(this.options.runtimeRoot)) return
+                const marker = this.runtimeIdentity()
+                if (marker?.pid === child.pid) return
             } catch { /* no readiness acknowledgement yet */ }
             await new Promise(resolve => setTimeout(resolve, 100))
         }
@@ -144,7 +154,14 @@ export class ManagedRepairDriver implements RepairDeploymentDriver {
         await this.switchRelease(prepared.previousReleaseId, prepared.releaseId, ticket)
     }
     async rollback(prepared: PreparedRepair, ticket: RepairTicket): Promise<void> {
-        // Even a failed spawn after stopping the old process needs restoration.
-        await this.switchRelease(prepared.releaseId, prepared.previousReleaseId, ticket)
+        // Activation can fail while the old runtime is being stopped, before the
+        // durable release pointer advances. Re-start the approved prior release
+        // in that case instead of treating the unchanged pointer as a CAS loss.
+        // Any third release still fails closed.
+        if (this.current === prepared.previousReleaseId) {
+            await this.switchRelease(prepared.previousReleaseId, prepared.previousReleaseId, ticket)
+        } else {
+            await this.switchRelease(prepared.releaseId, prepared.previousReleaseId, ticket)
+        }
     }
 }

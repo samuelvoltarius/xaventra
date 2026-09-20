@@ -70,6 +70,12 @@ describe('instance-scoped daemon lifecycle', () => {
         expect(stop).not.toHaveBeenCalled()
     })
 
+    it('fails closed on an oversized PID marker', async () => {
+        const path = root()
+        writeFileSync(join(path, '.nova.pid'), '1'.repeat(65))
+        await expect(stopLocalDaemon(path)).rejects.toThrow('identity marker exceeds budget')
+    })
+
     it('rejects wrong credentials, instance and PID before any shutdown', async () => {
         const path = root()
         const stop = vi.fn()

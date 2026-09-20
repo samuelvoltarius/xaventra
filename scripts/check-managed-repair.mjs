@@ -37,7 +37,8 @@ const root=fs.realpathSync(process.cwd()),id=crypto.randomUUID(),token=crypto.ra
 try{fs.writeFileSync(process.env.HOST_CANARY,'damaged')}catch{}
 const health=http.createServer((q,s)=>s.end('${value}'));
 const control=http.createServer((q,s)=>{if(q.headers.authorization!=='Bearer '+token||q.url!=='/stop/'+id||q.headers['x-xaventra-pid']!==String(process.pid)){s.writeHead(403).end();return}s.setHeader('connection','close');s.end(JSON.stringify({instanceId:id,pid:process.pid,status:'stopping'}));s.once('finish',stop)});
-function stop(){health.close(()=>control.close(()=>{try{fs.unlinkSync('.nova-data/daemon-control.json');fs.unlinkSync('.nova.pid')}catch{};process.exit(0)}))}
+function owned(path,match){try{return match(fs.readFileSync(path,'utf8'))}catch{return false}}
+function stop(){health.close(()=>control.close(()=>{try{if(owned('.nova-data/daemon-control.json',v=>JSON.parse(v).instanceId===id))fs.unlinkSync('.nova-data/daemon-control.json')}catch{};try{if(owned('.nova.pid',v=>v.trim()===String(process.pid)))fs.unlinkSync('.nova.pid')}catch{};process.exit(0)}))}
 process.on('SIGTERM',stop);health.listen(Number(process.env.PORT),'127.0.0.1',()=>control.listen(0,'127.0.0.1',()=>{fs.mkdirSync('.nova-data',{recursive:true});fs.writeFileSync('.nova.pid',String(process.pid));fs.writeFileSync('.nova-data/daemon-control.json',JSON.stringify({version:1,root,pid:process.pid,instanceId:id,token,port:control.address().port}));}));`
 for(const [id,value] of [['old','41'],['new','42'],['bad','41']]){
   mkdirSync(join(releasesRoot,id,'dist'),{recursive:true});const content=code(value)
@@ -60,6 +61,7 @@ try{
   await startOld()
   const first=await controller.activate(signRepairValue(ticket(),approval.privateKey))
   assert.equal(first.status,'resolved',JSON.stringify(first));assert.equal(await (await fetch(`http://127.0.0.1:${port}`)).text(),'42')
+  assert.equal(readFileSync(join(runtimeRoot,'.nova.pid'),'utf8').trim(),String(JSON.parse(readFileSync(join(runtimeRoot,'.nova-data/daemon-control.json'),'utf8')).pid),'readiness requires correlated PID and control markers')
   assert.equal(readFileSync(marker,'utf8'),'unchanged')
   report.cases.push({id:'signed-managed-upgrade-separate-uid-host-canary-protected',passed:true})
   // A second candidate built against pre-upgrade source must not discard A.
@@ -84,6 +86,17 @@ try{
   const crashed=await controller.activate(signRepairValue(ticket(),approval.privateKey));assert.equal(crashed.status,'rolled-back',JSON.stringify(crashed))
   assert.equal(await (await fetch(`http://127.0.0.1:${port}`)).text(),'41')
   report.cases.push({id:'startup-failure-restores-stopped-original-runtime',passed:true})
+  // Reproduce an authenticated shutdown completing just before the driver's
+  // release pointer advances. Rollback must restart old from old, not require a
+  // fictitious new -> old CAS transition.
+  writeFileSync(join(releasesRoot,'catalog.json'),JSON.stringify({[binding.candidateHash]:'new'}))
+  const originalStop=driver.stop.bind(driver);let injectPostStopFailure=true
+  driver.stop=async()=>{await originalStop();if(injectPostStopFailure){injectPostStopFailure=false;throw new Error('fixture post-stop marker race')}}
+  const postStop=await controller.activate(signRepairValue(ticket(),approval.privateKey))
+  assert.equal(postStop.status,'rolled-back',JSON.stringify(postStop));assert.equal(await driver.currentRelease(binding.targetId),'old')
+  assert.equal(await (await fetch(`http://127.0.0.1:${port}`)).text(),'41')
+  driver.stop=originalStop
+  report.cases.push({id:'post-stop-pre-pointer-failure-restarts-prior-release',passed:true})
   writeFileSync(join(releasesRoot,'catalog.json'),JSON.stringify({[binding.candidateHash]:'bad'}))
   writeFileSync(join(releasesRoot,'bad/dist/daemon.js'),'throw new Error("tampered")')
   const third=await controller.activate(signRepairValue(ticket(),approval.privateKey));assert.equal(third.status,'blocked')

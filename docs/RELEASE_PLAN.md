@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.32 managed runtime handoff candidate
+
+- Daemon shutdown now reads optional identity markers without an
+  `exists`/`read` race. A marker that disappears during the authenticated stop
+  is normal; malformed, oversized, mismatched or replacement identities remain
+  hard failures.
+- Managed repair accepts candidate readiness only when `.nova.pid` and the
+  authenticated control record identify the same spawned process and runtime
+  root. Rollback restarts the approved prior release when shutdown started
+  before the durable release pointer advanced, instead of misreporting a CAS
+  loss.
+- Source and Windows regressions are recorded in
+  [the candidate record](VERIFICATION_2.78.32.md). Disposable Linux
+  root-controller/non-root-runtime acceptance and exact hosted CI are still
+  required before promotion. No production node changed.
+
 ### 2.78.31 live witness checkpoint candidate
 
 - Native mission checkpoints can now use three independently authenticated

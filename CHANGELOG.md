@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.32] — 2026-09-20
+
+- Make authenticated daemon identity reads tolerant of a marker disappearing
+  during confirmed shutdown, while malformed, oversized and replacement
+  identities still fail closed.
+- Require the managed-repair candidate's PID marker and authenticated control
+  record to agree before startup is accepted.
+- Make rollback restore the approved prior release even when activation failed
+  after shutdown began but before the release pointer advanced. An unrelated
+  release still fails the fenced compare-and-swap.
+- Make the disposable Linux managed-repair runtime remove only identity markers
+  it still owns, and assert correlated PID/control readiness in acceptance.
+
 ## [2.78.31] — 2026-09-20
 
 - Add a quorum-backed native checkpoint transport to witness coordination.
