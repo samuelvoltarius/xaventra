@@ -83,6 +83,7 @@
         "../core/execution-kernel.js",
         "../core/missing-resource-recovery.js",
         "../core/model-pricing.js",
+        "../core/native-tool-receipts.js",
         "../core/outcome-ledger.js",
         "../core/reasoning-policy.js",
         "../core/response-contract.js",
@@ -1617,6 +1618,19 @@
       "imports": [
         "../config/config-path.js",
         "./side-effects.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/native-tool-receipts.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "./execution-control.js",
+        "./execution-kernel.js",
+        "./task-contract.js",
+        "./tool-evidence-binding.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

@@ -150,7 +150,7 @@ export async function recoverMissingResource(input: {
     args: Record<string, unknown>
     failedResult: unknown
     kernel: RecoveryKernel
-    execute: (toolName: string, args: Record<string, unknown>) => Promise<unknown>
+    execute: (toolName: string, args: Record<string, unknown>, callId: string) => Promise<unknown>
     nextCallId: (toolName: string) => string
     workspaceRoot?: string
 }): Promise<MissingResourceRecoveryResult> {
@@ -161,7 +161,7 @@ export async function recoverMissingResource(input: {
 
     const executions: MissingResourceRecoveryExecution[] = []
     const discoveryCallId = input.nextCallId('find_files')
-    const discovery = await input.execute('find_files', plan.searchArgs)
+    const discovery = await input.execute('find_files', plan.searchArgs, discoveryCallId)
     const discoveryVerification = input.kernel.verify('find_files', discovery, {
         callId: discoveryCallId,
         arguments: plan.searchArgs,
@@ -179,7 +179,7 @@ export async function recoverMissingResource(input: {
 
     const retryArgs = { ...input.args, path: candidate.path }
     const retryCallId = input.nextCallId(input.toolName)
-    const retried = await input.execute(input.toolName, retryArgs)
+    const retried = await input.execute(input.toolName, retryArgs, retryCallId)
     const retryVerification = input.kernel.verify(input.toolName, retried, {
         callId: retryCallId,
         arguments: retryArgs,

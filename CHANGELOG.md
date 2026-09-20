@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.78.29] — 2026-09-20
+
+- Persist verified native tool receipts immediately after Kernel validation and
+  bind them to the stable mission scope, principal, channel, TaskContract,
+  idempotency key, execution-input hash and durable result hash.
+- Rehydrate only receipts that still match an independently completed
+  idempotency record and the reconstructed contract. Changed results, another
+  principal/channel, duplicate call IDs and incompatible contracts fail closed.
+- Persist completed native idempotency keys into Outcome Ledger checkpoints and
+  add a two-process acceptance proving one effect, one reconstruction and no
+  duplicate execution after restart.
+- Run that compiled acceptance on Windows, Linux and macOS CI. This release does
+  not claim cross-node receipt replication, production activation or completion
+  of the wider mission-takeover/RC gates.
+
 ## [2.78.28] — 2026-09-20
 
 - Add bounded missing-resource recovery to the authoritative Execution Kernel

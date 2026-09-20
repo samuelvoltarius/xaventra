@@ -139,6 +139,9 @@ jobs:
         env:
           NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
       - run: npm run build
+      - name: Native verified tool receipts survive an actual process restart without replay
+        run: npm run check:native-tool-resume
+        timeout-minutes: 2
       - name: Compiled layer behavior contracts (isolated fixtures)
         run: node scripts/check-layer-contracts.mjs
         timeout-minutes: 2

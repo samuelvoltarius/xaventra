@@ -158,6 +158,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/native-tool-receipts.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/outcome-ledger.ts",
       "path": ".nova-data"
     },

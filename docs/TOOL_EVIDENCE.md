@@ -45,12 +45,38 @@ belongs in recorded activities rather than inferred workflow state:
 https://docs.temporal.io/ and
 https://github.com/temporalio/documentation/blob/main/docs/ai/index.mdx
 
+## Durable native resume
+
+For a native mission with a stable execution scope, each accepted Kernel receipt
+is atomically written beside (not instead of) the idempotency record. The durable
+receipt binds:
+
+- mission execution scope;
+- canonical principal and channel;
+- fingerprint of the binding TaskContract;
+- idempotency key and canonical execution-input hash;
+- verified call ID, tool, argument/result hashes and matched targets.
+
+Raw tool arguments and raw results are not copied into the receipt store. On
+restart, Xaventra reloads the independently persisted completed idempotency result,
+checks all bindings and lets the Execution Kernel restore only still-valid
+evidence. `executeOnce` then returns the recorded result instead of invoking the
+effect again. Changed results, running/failed records, a different principal or
+channel, a changed contract, a disallowed tool or a duplicate call ID are rejected.
+
+`npm run check:native-tool-resume` launches two separate Node processes against
+one disposable state directory and asserts exactly one effect across execution
+and reconstruction. This is process-restart evidence. It is not cross-node proof:
+the receipt/idempotency state is not yet replicated to and admitted by a fenced
+successor node.
+
 ## Verification
 
 ```sh
 npm ci
 npm run build
 node scripts/check-tool-budget.mjs
+node scripts/check-native-tool-resume.mjs
 node scripts/check-tool-budget.mjs --live http://YOUR-LOCAL-MODEL:8000 MODEL_ID
 ```
 

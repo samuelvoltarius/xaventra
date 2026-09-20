@@ -9,6 +9,7 @@ import { resolveConfigPath } from '../config/config-path.js'
 export type IdempotencyStatus = 'running' | 'completed' | 'failed' | 'compensated'
 export interface IdempotencyRecord {
     key: string; runId: string; operation: string; status: IdempotencyStatus
+    inputHash?: string
     result?: unknown; error?: string; startedAt: string; updatedAt: string; compensatedAt?: string
     compensationPlan?: CompensationPlan
 }
@@ -152,6 +153,7 @@ export class IdempotencyStore {
 
     async executeOnce<T>(options: {
         key: string; runId: string; operation: string; execute: () => Promise<T>
+        inputHash?: string
         compensate?: CompensationHandler
         deriveCompensation?: (result: T) => CompensationHandler | undefined
     }): Promise<{ result: T; replayed: boolean }> {
@@ -159,7 +161,11 @@ export class IdempotencyStore {
         if (existing?.status === 'completed') return { result: existing.result as T, replayed: true }
         if (existing?.status === 'running') throw new Error(`Operation ${options.operation} is already running (${options.key})`)
         const now = new Date().toISOString()
-        this.records[options.key] = { key: options.key, runId: options.runId, operation: options.operation, status: 'running', startedAt: now, updatedAt: now, compensationPlan: options.compensate?.plan }
+        this.records[options.key] = {
+            key: options.key, runId: options.runId, operation: options.operation,
+            status: 'running', inputHash: options.inputHash,
+            startedAt: now, updatedAt: now, compensationPlan: options.compensate?.plan,
+        }
         if (options.compensate) this.compensations.set(options.key, options.compensate)
         this.save()
         try {

@@ -6,6 +6,27 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.29 durable native receipt candidate
+
+- The authoritative native runner now persists a verified tool receipt at the
+  moment the Execution Kernel accepts it. The receipt contains no raw arguments,
+  credentials or duplicated result; it binds hashes and identity to the durable
+  idempotency record and to an exact reconstructed TaskContract.
+- Reconstruction accepts only the same mission scope, principal, channel,
+  allowed contract and independently completed result. A changed durable result,
+  different user or duplicate receipt fails closed. The Outcome Ledger records
+  every completed idempotency key as a restart checkpoint.
+- Isolated Windows source evidence: typecheck/build pass, focused receipt and
+  authorization regressions pass **9/9**, full Core regression passes **227
+  files / 1,555 tests**, and a compiled two-process acceptance reports one real
+  effect, one rehydrated receipt and zero duplicate effects. Hosted Windows,
+  Linux and macOS CI on the exact candidate commit remains required before
+  promotion.
+- This closes process-restart rehydration for stable native mission scopes only.
+  Replication of idempotency records/receipts to a fenced successor, controlled
+  node takeover and live production proof remain open. No production node was
+  changed. [Contract](TOOL_EVIDENCE.md), [candidate record](VERIFICATION_2.78.29.md).
+
 ### 2.78.28 verified missing-resource recovery candidate
 
 - The native runner now treats a missing read-only resource as a typed recovery

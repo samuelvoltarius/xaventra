@@ -116,6 +116,27 @@ export class ExecutionKernel {
         return validation
     }
 
+    getVerifiedToolCallEvidence(callId: string): VerifiedToolCallEvidence | undefined {
+        const evidence = this.verifiedToolCalls.get(callId)
+        return evidence ? structuredClone(evidence) : undefined
+    }
+
+    /** Restore only an already correlated receipt whose durable result was
+     * independently checked by NativeToolReceiptStore. This never consumes a
+     * tool budget or executes an effect. */
+    restoreVerifiedToolCall(evidence: VerifiedToolCallEvidence, result: unknown): boolean {
+        if (!evidence?.callId || this.verifiedToolCalls.has(evidence.callId)) return false
+        if (!this.contract.allowedChanges.allowedTools.includes(evidence.toolName)) return false
+        if (evidence.resultHash !== evidenceHash(result)) return false
+        if (evidence.matchedTargets.some(target => !(this.contract.requiredToolTargets || []).includes(target))) return false
+        const validation = validateToolOutcome(evidence.toolName, result, this.intent)
+        if (!validation.success) return false
+        this.verifiedTools.add(evidence.toolName)
+        this.verifiedToolCalls.set(evidence.callId, structuredClone(evidence))
+        for (const artifact of validation.evidence) this.artifacts.add(artifact)
+        return true
+    }
+
     /** Register a target alias only when a previously verified find_files call
      * proves that the resolved path was actually returned. Callers cannot turn
      * an arbitrary alternative path into completion evidence. */
