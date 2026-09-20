@@ -17,7 +17,8 @@ Preserve negative results. No mocked proof is substituted for live execution.
   pass **13/13**, and a compiled three-process acceptance reports one effect,
   successful epoch-2 successor reconstruction, stale epoch rejection and no
   duplicate effect. The full Core regression passes **228 files / 1,558 tests**.
-  Exact hosted-CI evidence remains pending until the candidate commit is built.
+  The first exact hosted run exposed a missing clean-runner artifact directory;
+  that evidence bug is fixed and retained here. Corrected exact CI is pending.
 - The process acceptance uses a file-backed fixture authority. It is not a live
   Supabase/witness, network-partition or physical-node test. Production remains
   unchanged, and controlled live Mesh takeover is still open.

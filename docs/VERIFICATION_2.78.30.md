@@ -56,9 +56,11 @@ physical node takeover.
 
 ### Hosted platforms
 
-Pending exact-commit CI. The candidate workflow runs the same compiled
-three-process acceptance on Windows, Linux and macOS and preserves its report as
-an artifact even on failure.
+The first exact candidate CI exposed that a caller-supplied artifact directory
+was not created on a clean macOS runner. The acceptance now creates it before
+the first write and persists a failure report from the parent process. The
+corrected exact-commit CI remains pending. The workflow runs the same compiled
+three-process acceptance on Windows, Linux and macOS.
 
 ### Live/production
 

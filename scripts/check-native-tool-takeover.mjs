@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -68,7 +68,8 @@ async function runPhase() {
 if (phase) await runPhase()
 else {
     const dir = process.env.XAVENTRA_NATIVE_TAKEOVER_QA_DIR || mkdtempSync(join(tmpdir(), 'xaventra-native-takeover-'))
-    const report = { success: false, platform: process.platform, evidenceClass: 'three real node processes with a shared file-backed fixture authority; not production coordinator or network-partition proof', processStarts: 3, effects: 0, staleWriterRejected: false, duplicateEffect: true }
+    mkdirSync(dir, { recursive: true })
+    const report = { success: false, platform: process.platform, evidenceClass: 'three real node processes with a shared file-backed fixture authority; not production coordinator or network-partition proof', processStarts: 3, effects: 0, staleWriterRejected: false, duplicateEffect: true, error: undefined }
     try {
         const env = { ...process.env, XAVENTRA_NATIVE_TAKEOVER_QA_DIR: dir, NOVA_SKIP_MODEL_RESOLVER_INIT: '1' }
         writeJson(join(dir, 'authority.json'), { missionId: 'process-takeover', epoch: 1, token: 'node-a-token' })
@@ -82,6 +83,10 @@ else {
         writeJson(join(dir, 'report.json'), report)
         if (!report.success) throw new Error(`unexpected effects: ${JSON.stringify(effects)}`)
         console.log(JSON.stringify(report))
+    } catch (error) {
+        report.error = String(error)
+        writeJson(join(dir, 'report.json'), report)
+        throw error
     } finally {
         if (!process.env.XAVENTRA_NATIVE_TAKEOVER_QA_DIR) rmSync(dir, { recursive: true, force: true })
     }
