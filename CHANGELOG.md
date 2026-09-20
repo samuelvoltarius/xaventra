@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.36] — 2026-09-20
+
+- Bind Doctor-generated repair proposals to their case, governed run and
+  observed failure revision before persisting the verified sandbox result.
+- Reconcile an interrupted Doctor run after restart only when exactly one
+  queued proposal has intact patch, profile, correlation, regression,
+  reproduction, cleanup, rollback and recovery evidence.
+- Resume at `PATCH_GATE` without regenerating, approving or activating the
+  patch; ambiguous and tampered proposals remain fail-closed.
+
 ## [2.78.35] — 2026-09-20
 
 - Replace direct Outcome Ledger aggregation with a durable, integrity-checked

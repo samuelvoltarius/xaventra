@@ -96,7 +96,7 @@ try{
     usage:{promptTokens:100,completionTokens:20,totalTokens:120}})}
   const llm=process.env.XAVENTRA_RESEARCH_QA_URL?await(await load('llm/nova-llm-sdk.js')).createNovaLLMClient({provider:'local',model:process.env.XAVENTRA_RESEARCH_QA_MODEL||'qwen',baseUrl:process.env.XAVENTRA_RESEARCH_QA_URL,isolated:true}):scripted
   const {FailureResearchCoordinator}=await load('doctor/failure-research-coordinator.js'),{createResearchWorker}=await load('doctor/research-worker.js')
-  const coordinator=new FailureResearchCoordinator(join(root,'.nova-data/research.json'))
+  const researchPath=join(root,'.nova-data/research.json');let coordinator=new FailureResearchCoordinator(researchPath)
   coordinator.ingest({id:'answer-fault',title:'HTTP answer violates required value',detail:'Inspect health_status: actual HTTP result differs from expected operation contract. Find and test a source correction.',category:'health',severity:'critical',source:'disposable-fixture',recommendation:'Use current HTTP evidence',evidence:{},status:'open',createdAt:'',updatedAt:''})
   const worker=createResearchWorker(()=>true,llm,['health_status','read_file'])
   const finding=await coordinator.investigateNext(worker);assert.equal(finding?.investigation?.status,'verified')
@@ -111,6 +111,16 @@ try{
   assert.equal(proposal.sandbox.symptomVerified,false);assert.equal(readFileSync(join(project,'src/value.ts'),'utf8'),original)
   report.cases.push({id:'native-candidate-real-sandbox-immutable-oracle',passed:true,runId:item.repair.runId,proposalId:proposal.id,
     baselineHash:proposal.sandbox.baselineHash,candidateHash:proposal.sandbox.candidateHash})
+  // Recreate the exact crash window: the atomic proposal exists, but the
+  // coordinator update did not survive. A fresh coordinator must reattach the
+  // integrity-bound proposal and stop at PATCH_GATE without rerunning effects.
+  const interrupted=JSON.parse(readFileSync(researchPath,'utf8')),interruptedCase=interrupted.cases[0]
+  interruptedCase.stage='researching';interruptedCase.repair.status='generating';delete interruptedCase.repair.proposalId
+  writeFileSync(researchPath,JSON.stringify(interrupted,null,2));coordinator=new FailureResearchCoordinator(researchPath)
+  assert.equal(coordinator.list()[0].repair.status,'generating');reconcileDoctorRepairs(coordinator)
+  assert.equal(coordinator.list()[0].stage,'awaiting-patch-gate');assert.equal(coordinator.list()[0].repair.proposalId,proposal.id)
+  assert.equal(getPatchProposals().filter(p=>p.id===proposal.id).length,1);assert.equal(await(await fetch(endpoint)).text(),'1')
+  report.cases.push({id:'doctor-proposal-crash-reconciliation-stops-at-patch-gate',passed:true,proposalId:proposal.id})
   const denied=await approveEvolutionProposal(proposal.id,'not-the-approval');assert.equal(denied.success,false)
   assert.equal(await(await fetch(endpoint)).text(),'1');assert.equal(coordinator.list()[0].stage,'awaiting-patch-gate')
   report.cases.push({id:'no-activation-without-owner-gate',passed:true})

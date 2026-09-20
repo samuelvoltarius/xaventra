@@ -4,15 +4,16 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { FailureResearchCoordinator, type ResearchWorker } from './failure-research-coordinator.js'
 import { OutcomeLedger } from '../core/outcome-ledger.js'
-import { proposeDoctorRepair } from './repair-candidate.js'
+import { proposeDoctorRepair, reconcileDoctorRepairs } from './repair-candidate.js'
 
-const boundary = vi.hoisted(() => ({ evolve: vi.fn(), profiles: vi.fn() }))
-vi.mock('../synthesis/self-evolution.js', () => ({ evolve: boundary.evolve, getRepairProfiles: boundary.profiles, getPatchProposals: () => [], getRepairSourceRoot: () => process.cwd() }))
+const boundary = vi.hoisted(() => ({ evolve: vi.fn(), profiles: vi.fn(), proposals: vi.fn(() => [] as any[]) }))
+vi.mock('../synthesis/self-evolution.js', () => ({ evolve: boundary.evolve, getRepairProfiles: boundary.profiles, getPatchProposals: boundary.proposals, getRepairSourceRoot: () => process.cwd() }))
 async function fixture(output: string | string[] = JSON.stringify({ description: 'fix value', search: '= 1', replace: '= 2', reason: 'observed wrong answer' })) {
-    const root = process.cwd(), id = randomUUID(), coordinator = new FailureResearchCoordinator(join(root, `${id}.json`)), ledger = new OutcomeLedger(join(root, `${id}.ledger`))
+    const root = process.cwd(), id = randomUUID(), researchPath = join(root, `${id}.json`), coordinator = new FailureResearchCoordinator(researchPath), ledger = new OutcomeLedger(join(root, `${id}.ledger`))
     mkdirSync(join(root, 'src'), { recursive: true }); writeFileSync(join(root, 'src/value.ts'), 'export const value = 1'); writeFileSync(join(root, 'src/value.test.ts'), 'oracle unchanged')
     boundary.profiles.mockReturnValue([{ id: 'value', findingId: id, file: 'src/value.ts', reproductionTest: 'src/value.test.ts', probeId: 'value', targetId: 'fixture' }])
     boundary.evolve.mockReset().mockResolvedValue({ queued: true, success: false, proposalId: 'patch-fixture' })
+    boundary.proposals.mockReset().mockReturnValue([])
     let candidateIndex = 0
     const worker: ResearchWorker = { hasAuthority: () => true, getRun: id => ledger.getRun(id), execute: vi.fn(async input => {
         ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
@@ -23,18 +24,48 @@ async function fixture(output: string | string[] = JSON.stringify({ description:
     }) }
     coordinator.ingest({ id, title: 'Wrong answer', detail: 'Expected 2', source: 'fixture', category: 'tools', severity: 'critical', recommendation: '', evidence: {}, status: 'open', createdAt: '', updatedAt: '' })
     await coordinator.investigateNext(worker)
-    return { coordinator, worker }
+    return { coordinator, worker, researchPath }
 }
 describe('Doctor patch generation / scripted Kernel receipts and sandbox boundary', () => {
     it('generates a scoped candidate, passes immutable oracle and never grants apply', async () => {
         const f = await fixture(); await proposeDoctorRepair(f.coordinator, f.worker)
         expect(boundary.evolve).toHaveBeenCalledWith(expect.objectContaining({ file: 'src/value.ts', reproductionTest: 'src/value.test.ts', repairProfileId: 'value', search: '= 1', replace: '= 2' }))
+        expect(boundary.evolve).toHaveBeenCalledWith(expect.objectContaining({ doctorCorrelation: expect.objectContaining({ caseId: expect.any(String), runId: expect.stringMatching(/^doctor-candidate-/), observationHash: expect.any(String) }) }))
         expect(boundary.evolve.mock.calls[0][0]).not.toHaveProperty('apply')
         const candidateInput = vi.mocked(f.worker.execute).mock.calls.find(([input]) => input.purpose === 'candidate')![0]
         expect(candidateInput.content).toContain('immutableReproduction')
         expect(candidateInput.content).toContain('oracle unchanged')
         expect(f.coordinator.list()[0]).toMatchObject({ stage: 'awaiting-patch-gate', repair: { status: 'queued' }, findingOpen: true })
         await proposeDoctorRepair(f.coordinator, f.worker); expect(boundary.evolve).toHaveBeenCalledOnce()
+    })
+    it('reattaches one integrity-bound queued proposal after a process interruption without applying it', async () => {
+        const f = await fixture(), item = f.coordinator.list()[0]
+        const runId = 'doctor-candidate-00000000-0000-4000-8000-000000000000'
+        expect(f.coordinator.claimRepair(item.id, runId, item.observationHash!)).toBe(true)
+        const patch = { file: 'src/value.ts', description: 'fix value', search: '= 1', replace: '= 2', reason: 'observed wrong answer',
+            reproductionTest: 'src/value.test.ts', repairProfileId: 'value' }
+        const patchHash = (await import('../doctor/repair-activation.js')).repairHash(patch)
+        const correlation = { caseId: item.id, runId, observationHash: item.observationHash! }
+        const repairHash = (await import('../doctor/repair-activation.js')).repairHash
+        const profile = boundary.profiles()[0]
+        boundary.proposals.mockReturnValue([{ ...patch, id: 'patch-resumed', status: 'queued', patchHash, doctorCorrelation: correlation,
+            doctorCorrelationHash: repairHash({ correlation, patchHash, repairProfileId: 'value' }), profile,
+            sandbox: { verified: true, cleanupVerified: true, rollbackPassed: true, recoveryPassed: true, reproductionPassed: true, candidateHash: 'a'.repeat(64) } }])
+        reconcileDoctorRepairs(new FailureResearchCoordinator(f.researchPath))
+        const restarted = new FailureResearchCoordinator(f.researchPath).list()[0]
+        expect(restarted).toMatchObject({ stage: 'awaiting-patch-gate', repair: { status: 'queued', proposalId: 'patch-resumed' } })
+        expect(boundary.evolve).not.toHaveBeenCalled()
+    })
+    it('keeps ambiguous or tampered persisted proposals outside PATCH_GATE', async () => {
+        const f = await fixture(), item = f.coordinator.list()[0]
+        const runId = 'doctor-candidate-00000000-0000-4000-8000-000000000001'
+        expect(f.coordinator.claimRepair(item.id, runId, item.observationHash!)).toBe(true)
+        const correlation = { caseId: item.id, runId, observationHash: item.observationHash! }
+        boundary.proposals.mockReturnValue([{ id: 'tampered', status: 'queued', file: 'src/value.ts', description: 'fix', search: '= 1', replace: '= 9',
+            reason: 'unbound', reproductionTest: 'src/value.test.ts', repairProfileId: 'value', patchHash: '0'.repeat(64), doctorCorrelation: correlation,
+            doctorCorrelationHash: '0'.repeat(64) }])
+        reconcileDoctorRepairs(new FailureResearchCoordinator(f.researchPath))
+        expect(new FailureResearchCoordinator(f.researchPath).list()[0]).toMatchObject({ stage: 'researching', repair: { status: 'generating' } })
     })
     it('does not turn model-provided file, command or approval into authority', async () => {
         for (const extra of [{ file: '.env' }, { apply: true }, { approvalToken: 'invented' }, { command: 'echo danger' }]) {

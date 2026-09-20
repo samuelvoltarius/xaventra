@@ -85,7 +85,8 @@ export async function proposeDoctorRepair(coordinator: FailureResearchCoordinato
         }
         if (repairHash(readFileSync(file, 'utf8')) !== sourceHash) throw new Error('Source changed during Doctor generation')
         if (repairHash(readFileSync(oracleFile, 'utf8')) !== oracleHash) throw new Error('Immutable reproduction changed during Doctor generation')
-        const result = await evolve({ ...patch, file: profile.file, reproductionTest: profile.reproductionTest, repairProfileId: profile.id })
+        const result = await evolve({ ...patch, file: profile.file, reproductionTest: profile.reproductionTest, repairProfileId: profile.id,
+            doctorCorrelation: { caseId: item.id, runId, observationHash: item.observationHash! } })
         if (!result.queued || !result.proposalId) throw new Error(result.error || 'Isolated verification did not queue a patch')
         coordinator.finishRepair(item.id, { status: 'queued', runId, proposalId: result.proposalId, attempts }, item.observationHash!)
     } catch (error) {
@@ -96,8 +97,35 @@ export async function proposeDoctorRepair(coordinator: FailureResearchCoordinato
 /** Only the shared approval boundary stores signed-controller-verified receipts.
  * A completed investigation or an arbitrary stage evidence string cannot heal. */
 export function reconcileDoctorRepairs(coordinator: FailureResearchCoordinator): void {
+    const proposals = getPatchProposals(200)
+    const profiles = getRepairProfiles()
+    // A process can stop after the sandboxed proposal was atomically persisted
+    // but before the coordinator recorded its proposalId. Reattach only an
+    // exact, integrity-bound Doctor correlation. Never regenerate, approve or
+    // activate anything during reconciliation.
+    for (const item of coordinator.list().filter(c => c.repair?.status === 'generating' && !c.repair.proposalId)) {
+        const matches = proposals.filter(proposal => {
+            const correlation = proposal.doctorCorrelation
+            const profile = profiles.find(candidate => candidate.id === proposal.repairProfileId)
+            return proposal.status === 'queued'
+                && correlation?.caseId === item.id
+                && correlation.runId === item.repair!.runId
+                && correlation.observationHash === item.observationHash
+                && item.repair!.observationHash === item.observationHash
+                && repairHash({ correlation, patchHash: proposal.patchHash, repairProfileId: proposal.repairProfileId }) === proposal.doctorCorrelationHash
+                && repairHash({ file: proposal.file, description: proposal.description, search: proposal.search, replace: proposal.replace,
+                    reason: proposal.reason || '', reproductionTest: proposal.reproductionTest, repairProfileId: proposal.repairProfileId }) === proposal.patchHash
+                && profile && repairHash(profile) === repairHash(proposal.profile)
+                && proposal.sandbox?.verified === true && proposal.sandbox.cleanupVerified === true
+                && proposal.sandbox.rollbackPassed === true && proposal.sandbox.recoveryPassed === true
+                && proposal.sandbox.reproductionPassed === true && /^[a-f0-9]{64}$/.test(proposal.sandbox.candidateHash || '')
+        })
+        if (matches.length === 1) coordinator.finishRepair(item.id, {
+            ...item.repair!, status: 'queued', proposalId: matches[0].id,
+        }, item.observationHash!)
+    }
     for (const item of coordinator.list().filter(c => c.repair?.proposalId)) {
-        const proposal = getPatchProposals(200).find(p => p.id === item.repair!.proposalId)
+        const proposal = proposals.find(p => p.id === item.repair!.proposalId)
         if (proposal?.status === 'applied' && proposal.signedActivation) {
             try {
                 const receipt = verifyRepairValue<RepairReceipt>(proposal.signedActivation, process.env.XAVENTRA_REPAIR_CONTROLLER_PUBLIC_KEY || '')

@@ -13,6 +13,9 @@ export interface EvolutionRequest {
     file: string; description: string; search: string; replace: string; reason?: string
     apply?: boolean; approvalToken?: string; reproductionTest?: string
     proposalId?: string; repairProfileId?: string
+    /** Internal Doctor correlation. It is not exposed by the tool schema and
+     * grants no approval or activation authority. */
+    doctorCorrelation?: { caseId: string; runId: string; observationHash: string }
 }
 export interface EvolutionResult {
     success: boolean; queued?: boolean; proposalId?: string; branch?: string
@@ -63,8 +66,16 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
         const profile = request.repairProfileId ? getRepairProfiles().find(p => p.id === request.repairProfileId) : undefined
         if (request.repairProfileId && (!profile || profile.file !== request.file || profile.reproductionTest !== request.reproductionTest)) throw new Error('Repair profile does not match candidate')
         const fields = patchFields(request), id = `patch_${randomUUID()}`
+        const correlation = request.doctorCorrelation
+        if (correlation && (!/^doctor-candidate-[0-9a-f-]{36}$/i.test(correlation.runId)
+            || !/^[a-f0-9]{24}$/.test(correlation.caseId) || !/^[a-f0-9]{64}$/.test(correlation.observationHash))) {
+            throw new Error('Invalid internal Doctor correlation')
+        }
+        const patchHash = repairHash(fields)
         const proposal = { ...fields, id, createdAt: Date.now(), status: 'queued', sandbox,
-            patchHash: repairHash(fields), profile: profile ? structuredClone(profile) : undefined }
+            patchHash, profile: profile ? structuredClone(profile) : undefined,
+            doctorCorrelation: correlation ? structuredClone(correlation) : undefined,
+            doctorCorrelationHash: correlation ? repairHash({ correlation, patchHash, repairProfileId: profile?.id }) : undefined }
         atomicWriteJsonSync(PROPOSALS, [...readArray(PROPOSALS), proposal].slice(-200))
         return { success: false, queued: true, proposalId: id, error: `PATCH_GATE: ${id} queued; no production change.`, duration: Date.now() - started }
     } catch (error) { return { success: false, error: String(error), duration: Date.now() - started } }

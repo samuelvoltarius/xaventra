@@ -6,6 +6,20 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.36 interrupted Doctor proposal candidate
+
+- Doctor proposals now persist an integrity-bound correlation to the failure
+  case, candidate run and exact observed revision. A fresh process can reattach
+  the already sandboxed proposal after interruption, but only when one exact
+  match retains complete reproduction, regression, cleanup, rollback and
+  recovery evidence plus the unchanged operator profile.
+- Reconciliation performs no model rerun, patch application, approval or
+  production activation. It stops at `PATCH_GATE`; ambiguous, incomplete and
+  tampered state remains in the generating state for explicit investigation.
+- Source regressions and the disposable Docker acceptance are recorded in
+  [the candidate record](VERIFICATION_2.78.36.md). Candidate commit, CI and
+  history-scan evidence remain pending. No production node is changed.
+
 ### 2.78.35 principal-scoped Outcome Router candidate
 
 - The canonical Learning Coordinator now admits only Execution-Kernel-validated,
