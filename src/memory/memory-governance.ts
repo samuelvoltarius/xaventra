@@ -60,6 +60,9 @@ export interface GovernedMemory {
     id: string
     fingerprint: string
     memoryKey: string
+    /** Monotonic lifecycle generation for one scoped memory key. Older
+     * generations may never revive a later tombstone, even with clock skew. */
+    memoryKeyVersion?: number
     content: string
     kind: GovernedMemoryKind
     scope: string
@@ -112,6 +115,19 @@ export interface MemoryMaintenanceReport {
 
 const STATUS_RANK: Record<MemoryLifecycle, number> = {
     rejected: 0, expired: 0, superseded: 0, candidate: 1, verified: 2, canonical: 3,
+}
+
+const TERMINAL_MEMORY_STATES = new Set<MemoryLifecycle>(['rejected', 'expired', 'superseded'])
+
+function memoryKeyVersion(record: Pick<GovernedMemory, 'memoryKeyVersion'>): number {
+    const value = Number(record.memoryKeyVersion || 1)
+    return Number.isSafeInteger(value) && value > 0 ? value : 1
+}
+
+function compareMemoryGeneration(a: GovernedMemory, b: GovernedMemory): number {
+    return memoryKeyVersion(a) - memoryKeyVersion(b)
+        || a.updatedAt - b.updatedAt
+        || a.id.localeCompare(b.id)
 }
 
 const STOP_WORDS = new Set([
@@ -252,6 +268,7 @@ export class MemoryGovernanceCoordinator {
         for (const record of this.store.records) {
             if (record.expiresAt && record.expiresAt <= now && (record.status === 'verified' || record.status === 'canonical')) {
                 record.status = 'expired'
+                record.memoryKeyVersion = memoryKeyVersion(record) + 1
                 record.updatedAt = now
                 this.audit('expired', record)
                 changed = true
@@ -305,6 +322,7 @@ export class MemoryGovernanceCoordinator {
             id: `mem_${randomUUID()}`,
             fingerprint: hash,
             memoryKey: key,
+            memoryKeyVersion: 1,
             content,
             kind: proposal.kind,
             scope: proposal.scope,
@@ -335,11 +353,26 @@ export class MemoryGovernanceCoordinator {
                     || (similarTopic && hasNegation(existing.content) !== hasNegation(content)))
         })
 
+        const terminalBarrier = this.store.records
+            .filter(existing => existing.scope === record.scope
+                && existing.kind === record.kind
+                && existing.memoryKey === record.memoryKey
+                && TERMINAL_MEMORY_STATES.has(existing.status))
+            .sort((a, b) => compareMemoryGeneration(b, a))[0]
+        if (terminalBarrier && ['manual', 'correction', 'explicit_user_instruction'].includes(proposal.evidence)) {
+            record.memoryKeyVersion = memoryKeyVersion(terminalBarrier) + 1
+            record.supersedes = terminalBarrier.id
+            record.conflictIds.push(terminalBarrier.id)
+        }
+
         for (const conflict of conflicts) {
             record.conflictIds.push(conflict.id)
             conflict.conflictIds.push(record.id)
             if (STATUS_RANK[record.status] >= STATUS_RANK[conflict.status] && record.createdAt >= conflict.createdAt) {
+                const nextVersion = Math.max(memoryKeyVersion(record), memoryKeyVersion(conflict) + 1)
+                record.memoryKeyVersion = nextVersion
                 conflict.status = 'superseded'
+                conflict.memoryKeyVersion = nextVersion
                 conflict.supersededBy = record.id
                 conflict.updatedAt = now
                 record.supersedes = conflict.id
@@ -438,7 +471,9 @@ export class MemoryGovernanceCoordinator {
     approve(id: string, source = 'operator'): GovernedMemory | null {
         const record = this.store.records.find(item => item.id === id)
         if (!record || ['rejected', 'expired', 'superseded'].includes(record.status)) return null
+        if (record.status === 'canonical') return record
         record.status = 'canonical'
+        record.memoryKeyVersion = memoryKeyVersion(record) + 1
         record.updatedAt = Date.now()
         record.lastVerifiedAt = record.updatedAt
         record.provenance.push({ source, evidence: 'manual', timestamp: record.updatedAt, verified: true })
@@ -450,7 +485,9 @@ export class MemoryGovernanceCoordinator {
     reject(id: string, source = 'operator'): GovernedMemory | null {
         const record = this.store.records.find(item => item.id === id)
         if (!record) return null
+        if (record.status === 'rejected') return record
         record.status = 'rejected'
+        record.memoryKeyVersion = memoryKeyVersion(record) + 1
         record.updatedAt = Date.now()
         record.provenance.push({ source, evidence: 'manual', timestamp: record.updatedAt, verified: true })
         this.persist()
@@ -463,6 +500,7 @@ export class MemoryGovernanceCoordinator {
         if (!record || !scope.trim() || record.scope === scope) return record || null
         const previous = record.scope
         record.scope = scope.trim()
+        record.memoryKeyVersion = memoryKeyVersion(record) + 1
         record.memoryKey = deriveMemoryKey({
             content: record.content, kind: record.kind, scope: record.scope, source,
             evidence: 'manual', confidence: record.confidence,
@@ -524,14 +562,29 @@ export class MemoryGovernanceCoordinator {
         let merged = 0
         for (const remote of records) {
             if (!remote?.id || !remote.content || !remote.scope || remote.status === 'candidate') continue
+            const remoteVersion = memoryKeyVersion(remote)
             const local = this.store.records.find(record => record.id === remote.id)
-            if (local && local.updatedAt >= remote.updatedAt) continue
+            if (local) {
+                const localVersion = memoryKeyVersion(local)
+                if (TERMINAL_MEMORY_STATES.has(local.status) && !TERMINAL_MEMORY_STATES.has(remote.status)
+                    && remoteVersion <= localVersion) continue
+                if (localVersion > remoteVersion || (localVersion === remoteVersion && local.updatedAt >= remote.updatedAt)) continue
+            }
+            const terminalBarrier = this.store.records
+                .filter(record => record.id !== remote.id
+                    && record.memoryKey === remote.memoryKey
+                    && TERMINAL_MEMORY_STATES.has(record.status))
+                .sort((a, b) => compareMemoryGeneration(b, a))[0]
+            if (!TERMINAL_MEMORY_STATES.has(remote.status) && terminalBarrier
+                && !(remote.supersedes === terminalBarrier.id
+                    && remoteVersion > memoryKeyVersion(terminalBarrier))) continue
             const competing = this.store.records.find(record => record.id !== remote.id
                 && record.memoryKey === remote.memoryKey
-                && !['rejected', 'expired', 'superseded'].includes(record.status))
-            if (competing && competing.updatedAt >= remote.updatedAt) continue
+                && !TERMINAL_MEMORY_STATES.has(record.status))
+            if (competing && compareMemoryGeneration(competing, remote) >= 0) continue
             if (competing) {
                 competing.status = 'superseded'
+                competing.memoryKeyVersion = remoteVersion
                 competing.supersededBy = remote.id
                 competing.updatedAt = remote.updatedAt
                 if (projectBackends) await this.retractProjections(competing.id)
@@ -539,6 +592,7 @@ export class MemoryGovernanceCoordinator {
             }
             const next: GovernedMemory = {
                 ...JSON.parse(JSON.stringify(remote)),
+                memoryKeyVersion: remoteVersion,
                 backends: projectBackends ? (local?.backends || {}) : {},
                 provenance: [...(remote.provenance || []), {
                     source: `federated:${sourceNode}`, evidence: 'manual', timestamp: Date.now(), verified: true,
@@ -611,6 +665,7 @@ export class MemoryGovernanceCoordinator {
                 winner.confidence = Math.max(winner.confidence, duplicate.confidence)
                 winner.updatedAt = Math.max(winner.updatedAt, duplicate.updatedAt)
                 duplicate.status = 'superseded'
+                duplicate.memoryKeyVersion = Math.max(memoryKeyVersion(duplicate) + 1, memoryKeyVersion(winner))
                 duplicate.supersededBy = winner.id
                 duplicate.updatedAt = Date.now()
                 await this.retractProjections(duplicate.id)

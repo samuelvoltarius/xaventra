@@ -1,6 +1,26 @@
-# Memory System Guide (v2.76)
+# Memory System Guide (v2.78.33)
 
-Nova's multi-level memory architecture.
+Xaventra's multi-level memory architecture.
+
+## Truth-layer lifecycle and convergence
+
+Governed memories are scoped to a principal (for example `user:alice`) and a
+semantic memory key. Every key carries a monotonic lifecycle generation.
+Corrections supersede the prior active fact; rejection, expiry and reset create
+terminal barriers. A peer may not revive an older generation merely by
+presenting a later wall-clock timestamp.
+
+An intentional fact after a reset is allowed only when it comes from explicit,
+high-authority evidence (`manual`, `correction`, or
+`explicit_user_instruction`). It must name the terminal barrier it supersedes
+and advances the generation. This distinguishes deliberate re-entry from a
+disconnected node replaying stale state.
+
+The compiled `npm run check:memory-convergence` acceptance starts five isolated
+Node processes and separate leader, successor and partitioned stores. It checks
+correction, restart, user isolation, reset, clock skew, disconnected writes and
+explicit post-reset re-entry. This is process-level evidence; physical-node
+partitions and live production channels remain separate release gates.
 
 ## Memory Assets and Loadouts
 

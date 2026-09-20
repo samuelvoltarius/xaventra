@@ -155,6 +155,19 @@ jobs:
           path: .nova-data/native-takeover-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Governed memory correction, reset and successor convergence
+        run: npm run check:memory-convergence
+        timeout-minutes: 2
+        env:
+          XAVENTRA_MEMORY_QA_DIR: ${{ github.workspace }}/.nova-data/memory-convergence-qa
+      - name: Preserve memory convergence evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-convergence-qa-${{ matrix.os }}
+          path: .nova-data/memory-convergence-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled layer behavior contracts (isolated fixtures)
         run: node scripts/check-layer-contracts.mjs
         timeout-minutes: 2

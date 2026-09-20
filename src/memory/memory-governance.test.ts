@@ -168,4 +168,63 @@ describe('memory governance', () => {
         expect(publish).not.toHaveBeenCalled()
         expect(retract).not.toHaveBeenCalled()
     })
+
+    it('keeps a scoped tombstone authoritative across restart, clock skew and successor convergence', async () => {
+        const leaderRoot = join(process.cwd(), '.nova-test-tmp', `governance-leader-${randomUUID()}`)
+        const successor = coordinator()
+        const leader = new MemoryGovernanceCoordinator(leaderRoot)
+        const alice = leader.propose({
+            content: 'Alice verwendet für das Projekt den Codenamen Amber.', kind: 'project', scope: 'user:alice',
+            source: 'alice', evidence: 'explicit_user_instruction', confidence: 1, verified: true,
+            subject: 'project', predicate: 'codename', value: 'Amber', timestamp: 10,
+        })!
+        const bob = leader.propose({
+            content: 'Bob verwendet für sein Projekt den Codenamen Birch.', kind: 'project', scope: 'user:bob',
+            source: 'bob', evidence: 'explicit_user_instruction', confidence: 1, verified: true,
+            subject: 'project', predicate: 'codename', value: 'Birch', timestamp: 10,
+        })!
+        const corrected = leader.propose({
+            content: 'Korrektur: Alice verwendet für das Projekt den Codenamen Blue.', kind: 'project', scope: 'user:alice',
+            source: 'alice', evidence: 'correction', confidence: 1, verified: true,
+            subject: 'project', predicate: 'codename', value: 'Blue', replacesContent: alice.content, timestamp: 20,
+        })!
+        const staleSnapshot = leader.getReplicationSnapshot()
+        await leader.rejectAndRetract(corrected.id, 'user-reset:alice')
+        const resetSnapshot = leader.getReplicationSnapshot()
+
+        const restarted = new MemoryGovernanceCoordinator(leaderRoot)
+        expect(restarted.get(corrected.id)?.status).toBe('rejected')
+        expect(restarted.getContextForPrompt('user:alice', 'Codename')).toBe('')
+        expect(restarted.getContextForPrompt('user:bob', 'Codename')).toContain('Birch')
+
+        await successor.mergeReplicationSnapshot(resetSnapshot, 'leader', { projectBackends: false })
+        const skewed = staleSnapshot.map(record => ({ ...record, updatedAt: record.updatedAt + 10_000_000 }))
+        await successor.mergeReplicationSnapshot(skewed, 'stale-node', { projectBackends: false })
+
+        const partitioned = coordinator()
+        await partitioned.mergeReplicationSnapshot(staleSnapshot, 'leader-before-reset', { projectBackends: false })
+        const disconnectedCorrection = partitioned.propose({
+            content: 'Korrektur: Alice verwendet für das Projekt den Codenamen Green.', kind: 'project', scope: 'user:alice',
+            source: 'partitioned-alice', evidence: 'correction', confidence: 1, verified: true,
+            subject: 'project', predicate: 'codename', value: 'Green', replacesContent: corrected.content, timestamp: 30,
+        })!
+        await successor.mergeReplicationSnapshot(partitioned.getReplicationSnapshot(), 'partitioned-node', { projectBackends: false })
+        expect(successor.getContextForPrompt('user:alice', 'Codename')).toBe('')
+        expect(successor.getContextForPrompt('user:bob', 'Codename')).toContain('Birch')
+        expect(successor.get(corrected.id)?.status).toBe('rejected')
+        expect(successor.get(disconnectedCorrection.id)).toBeUndefined()
+        expect(successor.get(corrected.id)?.memoryKeyVersion).toBeGreaterThan(
+            staleSnapshot.find(record => record.id === corrected.id)?.memoryKeyVersion || 1,
+        )
+        expect(successor.get(bob.id)?.status).toBe('canonical')
+
+        const deliberateReentry = successor.propose({
+            content: 'Merke dir: Alice verwendet jetzt wieder den Codenamen Purple.', kind: 'project', scope: 'user:alice',
+            source: 'alice-after-reset', evidence: 'explicit_user_instruction', confidence: 1, verified: true,
+            subject: 'project', predicate: 'codename', value: 'Purple', timestamp: 40,
+        })!
+        expect(deliberateReentry.memoryKeyVersion).toBeGreaterThan(successor.get(corrected.id)?.memoryKeyVersion || 1)
+        expect(deliberateReentry.supersedes).toBe(corrected.id)
+        expect(successor.getContextForPrompt('user:alice', 'Codename')).toContain('Purple')
+    })
 })

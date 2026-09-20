@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.33] — 2026-09-20
+
+- Add a monotonic lifecycle generation to each scoped governed-memory key so a
+  rejected, expired or superseded fact cannot be revived by a stale peer whose
+  wall clock is ahead.
+- Preserve user isolation while corrections, reset tombstones and deliberate
+  post-reset re-entry converge across durable stores. Re-entry requires explicit
+  high-authority evidence and a generation newer than the terminal barrier.
+- Add a five-process compiled acceptance that proves correction and reset across
+  restart, skewed stale-writer rejection, partitioned-correction rejection,
+  successor convergence and deliberate re-entry without production state.
+
 ## [2.78.32] — 2026-09-20
 
 - Make authenticated daemon identity reads tolerant of a marker disappearing

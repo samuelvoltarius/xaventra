@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.78.32",
+  "version": "2.78.33",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -25,6 +25,7 @@
     "check:upstream-update": "node scripts/check-upstream-update.mjs",
     "check:native-tool-resume": "node scripts/check-native-tool-resume.mjs",
     "check:native-tool-takeover": "node scripts/check-native-tool-takeover.mjs",
+    "check:memory-convergence": "node scripts/check-memory-convergence.mjs",
     "check:doctor": "node scripts/check-doctor-artifacts.mjs",
     "check:doctor-validation": "node --experimental-vm-modules scripts/check-doctor-validation.mjs",
     "benchmark:doctor": "node scripts/check-doctor-quality.mjs",

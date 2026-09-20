@@ -6,6 +6,21 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.33 truth-layer memory convergence candidate
+
+- Governed memory now orders each scoped semantic key with a monotonic
+  lifecycle generation. Terminal states remain authoritative over same- or
+  older-generation active records even when a stale node reports a later wall
+  clock.
+- A reset remains isolated to its user. A disconnected correction cannot revive
+  that user's fact, while another user's fact remains available. Deliberate
+  post-reset re-entry requires explicit high-authority evidence, a direct
+  supersession link and a newer generation.
+- Source regressions and a compiled five-process acceptance are recorded in
+  [the candidate record](VERIFICATION_2.78.33.md). The acceptance uses isolated
+  local durable stores; it is not a physical-host partition, live Mesh/channel
+  or production proof. No production node changed.
+
 ### 2.78.32 managed runtime handoff candidate
 
 - Daemon shutdown now reads optional identity markers without an
