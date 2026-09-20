@@ -6,6 +6,21 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.35 principal-scoped Outcome Router candidate
+
+- The canonical Learning Coordinator now admits only Execution-Kernel-validated,
+  evidence-bearing outcomes into a durable principal-scoped routing projection.
+  Benchmark, fixture, synthetic, response-only, anonymous and cross-user data
+  cannot unlock routing; invalidation tombstones the derived sample.
+- Source regressions and a compiled two-process restart acceptance are recorded
+  in [the candidate record](VERIFICATION_2.78.35.md). Candidate
+  `4ffc87bd6d1f83426eafcfad1f282222690721fe` passed all ten jobs in
+  [CI 35522284891](https://github.com/samuelvoltarius/xaventra/actions/runs/35522284891),
+  including Windows, Linux and macOS compiled acceptance. The complete
+  100-commit public history (10.82 MB) has zero Gitleaks 8.30.1 findings. No
+  production node or active routing mode changed. Evidence-commit CI remains
+  required.
+
 ### 2.78.34 distributed capability convergence candidate
 
 - Capability snapshots now reconcile each runtime independently. Delayed node

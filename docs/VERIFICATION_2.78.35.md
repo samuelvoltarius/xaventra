@@ -27,15 +27,19 @@ another.
 
 | Class | Evidence | Limit |
 |---|---|---|
-| Source regression | Outcome Router admission, restart, scope, tamper and invalidation tests | In-process fixtures |
-| Compiled process acceptance | `npm run check:outcome-router` starts a writer and a fresh reader process over one disposable store | Local processes, not physical nodes |
-| Hosted OS verification | CI runs the compiled acceptance on Windows, Linux and macOS and retains `report.json` | Await exact candidate SHA |
+| Source regression | Passed locally: all 532 suites / 1,565 tests, including Outcome Router admission, restart, scope, tamper and invalidation | In-process fixtures |
+| Compiled process acceptance | Passed locally: `npm run check:outcome-router` starts a writer and a fresh reader process over one disposable store | Local processes, not physical nodes |
+| Hosted OS verification | Passed: candidate `4ffc87bd6d1f83426eafcfad1f282222690721fe` passed all ten jobs in [CI 35522284891](https://github.com/samuelvoltarius/xaventra/actions/runs/35522284891), including the compiled acceptance on Windows, Linux and macOS | Hosted disposable runners, not physical nodes |
 | Production | None | No node, channel, config or router mode changed |
 
 The compiled acceptance must show 20 accepted principal samples activating only
 that principal in explicit active test mode; 19 samples, another principal,
 anonymous context and aggregate status remain closed. It also inserts terminal
 validation-shaped ledger events directly and proves they are not training data.
+
+Staged scanning and the complete 100-commit public history (10.82 MB) produced
+zero findings with Gitleaks 8.30.1. This evidence attestation requires its own
+exact green CI before normal fast-forward promotion and signed publication.
 
 ## Open gates
 
