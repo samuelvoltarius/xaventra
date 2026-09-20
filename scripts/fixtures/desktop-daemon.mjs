@@ -15,6 +15,16 @@ const forbidden = join(root, 'fixture-denied.txt')
 writeFileSync(allowed, 'VERIFIED_DESKTOP_CORE_731\n')
 writeFileSync(forbidden, 'DENIED_CONTENT_MUST_NOT_LEAK\n')
 mkdirSync(join(root, '.nova-data'), { recursive: true })
+const repairProposal = {
+  id: 'patch_desktop_doctor_fixture', status: 'queued', file: 'src/fixture.ts', description: 'Synthetic Doctor repair awaiting PATCH_GATE',
+  createdAt: 1700000000000, repairProfileId: 'desktop-doctor-profile',
+  doctorCorrelation: { caseId: 'a'.repeat(24), runId: 'doctor-candidate-11111111-1111-1111-1111-111111111111', observationHash: 'b'.repeat(64) },
+  sandbox: { verified: true, reproductionPassed: true, cleanupVerified: true, rollbackPassed: true, recoveryPassed: true,
+    baselineHash: 'c'.repeat(64), candidateHash: 'd'.repeat(64), output: 'PRIVATE_FIXTURE_OUTPUT' },
+  search: 'PRIVATE_FIXTURE_OLD_SOURCE', replace: 'PRIVATE_FIXTURE_NEW_SOURCE', signedActivation: { privateFixture: true },
+}
+const proposalFile = join(root, '.nova-data', 'patch-proposals.json')
+if (!existsSync(proposalFile)) writeFileSync(proposalFile, JSON.stringify([repairProposal]))
 writeFileSync(join(root, 'SOUL.md'), '# Xaventra\nAntworte kurz auf Deutsch. Nutze echte Tools.\n')
 writeFileSync(join(root, 'package.json'), readFileSync(join(source, 'package.json')))
 

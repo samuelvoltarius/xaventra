@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.37] — 2026-09-20
+
+- Add an owner-only Doctor repair view to the packaged Desktop Trust surface,
+  with sanitized case correlation and explicit sandbox, reproduction,
+  regression, cleanup, rollback and recovery evidence.
+- Route Desktop approval through the existing canonical `PATCH_GATE`; require
+  current Main and dashboard fencing and keep the approval token transient.
+- Prove in the full-daemon packaged Electron acceptance that a queued repair is
+  neither leaked, duplicated nor advanced by a rejected approval or restart.
+
 ## [2.78.36] — 2026-09-20
 
 - Bind Doctor-generated repair proposals to their case, governed run and

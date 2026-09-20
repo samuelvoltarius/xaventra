@@ -409,9 +409,18 @@ function loadingView(label) { return `<div class="view"><div class="empty"><div 
 
 async function loadTrust() {
   try {
-    const data = await api.get('/api/desktop/trust/runs?limit=100')
+    const [data, repairs] = await Promise.all([
+      api.get('/api/desktop/trust/runs?limit=100'),
+      api.get('/api/desktop/trust/repairs?limit=100').catch(() => null),
+    ])
     if (state.section !== 'trust') return
-    document.querySelector('.workspace').innerHTML = `<div class="view"><div class="view-header"><div><div class="eyebrow">Outcome Ledger</div><h1>Trust und Tool-Evidence</h1><p>Keine Selbsteinschätzung: Status, Tools, Tests, Kosten und Validator-Ergebnis stammen aus der kanonischen Ergebnisakte.</p></div></div><div class="metric-grid" style="max-width:700px;margin-bottom:20px">${Object.entries(data.summary || {}).map(([key, value]) => `<div class="metric"><strong>${fmtNumber(value)}</strong><span>${esc(key)}</span></div>`).join('')}</div><div class="grid">${(data.runs || []).map(run => `<article class="run-card"><div class="card-title"><div><h2>${esc(run.contract?.goal || run.runId)}</h2><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(run.status)}</span></div></div><dl class="details"><dt>Run</dt><dd class="mono">${esc(run.runId)}</dd><dt>Model</dt><dd>${esc(run.model || '—')}</dd><dt>Node</dt><dd>${esc(run.node || '—')}</dd><dt>Tools</dt><dd>${run.tools?.length || 0}</dd><dt>Tests</dt><dd>${run.tests?.length || 0}</dd><dt>Validiert</dt><dd>${run.validation?.success ? 'ja' : 'nein'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl></article>`).join('') || '<div class="card"><h3>Noch keine Runs für diesen Benutzer</h3></div>'}</div></div>`
+    const repairCards = (repairs?.proposals || []).map(item => {
+      const evidence = item.evidence || {}
+      const complete = ['verified', 'reproductionPassed', 'regressionPassed', 'cleanupVerified', 'rollbackPassed', 'recoveryPassed'].every(key => evidence[key] === true)
+      return `<article class="run-card repair-card"><div class="card-title"><div><h2>${esc(item.description || item.file)}</h2><span class="badge ${item.status === 'applied' ? 'good' : item.status === 'rolled-back' || item.status === 'blocked' ? 'bad' : 'warn'}">${esc(item.status)}</span></div></div><dl class="details"><dt>Datei</dt><dd class="mono">${esc(item.file)}</dd><dt>Doctor-Fall</dt><dd class="mono">${esc(item.doctorCorrelation?.caseId || '—')}</dd><dt>Sandbox</dt><dd>${evidence.verified ? 'bestanden' : 'offen'}</dd><dt>Reproduktion</dt><dd>${evidence.reproductionPassed ? 'bestanden' : 'offen'}</dd><dt>Regression</dt><dd>${evidence.regressionPassed ? 'bestanden' : 'offen'}</dd><dt>Rollback</dt><dd>${evidence.rollbackPassed ? 'bestanden' : 'offen'}</dd><dt>Recovery</dt><dd>${evidence.recoveryPassed ? 'bestanden' : 'offen'}</dd><dt>Candidate</dt><dd class="mono">${esc(String(evidence.candidateHash || '—').slice(0, 16))}</dd></dl>${item.status === 'queued' ? `<button class="primary full-button" data-repair-approve="${attr(item.id)}" ${!repairs.authoritative || !complete ? 'disabled' : ''}>PATCH_GATE freigeben</button>` : ''}</article>`
+    }).join('')
+    document.querySelector('.workspace').innerHTML = `<div class="view"><div class="view-header"><div><div class="eyebrow">Outcome Ledger</div><h1>Trust und Tool-Evidence</h1><p>Keine Selbsteinschätzung: Status, Tools, Tests, Kosten und Validator-Ergebnis stammen aus der kanonischen Ergebnisakte.</p></div></div><div class="metric-grid" style="max-width:700px;margin-bottom:20px">${Object.entries(data.summary || {}).map(([key, value]) => `<div class="metric"><strong>${fmtNumber(value)}</strong><span>${esc(key)}</span></div>`).join('')}</div>${repairs ? `<div class="section-heading"><div><div class="eyebrow">Doctor Self-Repair</div><h2>Sandbox-geprüfte Reparaturen</h2></div><span class="badge ${repairs.authoritative ? 'good' : 'bad'}">${repairs.authoritative ? 'Main gefenct' : 'nicht autoritativ'}</span></div><div class="grid repair-grid">${repairCards || '<div class="card"><h3>Keine Doctor-Reparatur wartet</h3></div>'}</div>` : ''}<div class="section-heading"><div><div class="eyebrow">Execution Kernel</div><h2>Arbeitsläufe</h2></div></div><div class="grid">${(data.runs || []).map(run => `<article class="run-card" data-run-id="${attr(run.runId)}"><div class="card-title"><div><h2>${esc(run.contract?.goal || run.runId)}</h2><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(run.status)}</span></div></div><dl class="details"><dt>Run</dt><dd class="mono">${esc(run.runId)}</dd><dt>Model</dt><dd>${esc(run.model || '—')}</dd><dt>Node</dt><dd>${esc(run.node || '—')}</dd><dt>Tools</dt><dd>${run.tools?.length || 0}</dd><dt>Tests</dt><dd>${run.tests?.length || 0}</dd><dt>Validiert</dt><dd>${run.validation?.success ? 'ja' : 'nein'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl></article>`).join('') || '<div class="card"><h3>Noch keine Runs für diesen Benutzer</h3></div>'}</div></div>`
+    bind()
   } catch (error) { fail(error) }
 }
 
@@ -562,6 +571,7 @@ function bind() {
     composer.focus()
   }))
   document.querySelectorAll('[data-run-id]').forEach(node => node.addEventListener('click', () => openRunDetail(node.dataset.runId)))
+  document.querySelectorAll('[data-repair-approve]').forEach(node => node.addEventListener('click', () => showRepairApproval(node.dataset.repairApprove)))
   document.querySelector('#compose-form')?.addEventListener('submit', sendMessage)
   document.querySelector('#composer')?.addEventListener('keydown', event => { if (state.connection?.sendOnEnter !== false && event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); document.querySelector('#compose-form').requestSubmit() } })
   document.querySelector('#model-picker')?.addEventListener('change', updateRoomModel)
@@ -578,6 +588,19 @@ function bind() {
   })
   document.querySelectorAll('[data-enrollment-action]').forEach(node => node.addEventListener('click', () => enrollmentAction(node.dataset.id, node.dataset.enrollmentAction)))
   document.querySelectorAll('[data-memory-equip]').forEach(node => node.addEventListener('click', () => toggleRoomMemoryAsset(node.dataset.memoryEquip, node.dataset.equipped === 'true')))
+}
+
+function showRepairApproval(proposalId) {
+  showModal('Doctor-Reparatur freigeben', `<form class="form" id="repair-approval-form"><p>Die Diagnose ist automatisch. Diese Freigabe autorisiert ausschließlich den bereits gebundenen, sandbox-geprüften Patch. Der Token wird nur für diesen Request übertragen und nicht gespeichert.</p><label>PATCH_GATE Token<input name="approvalToken" type="password" autocomplete="off" required></label><div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Gebundenen Patch freigeben</button></div></form>`)
+  document.querySelector('#repair-approval-form [data-close-modal]').addEventListener('click', closeModal)
+  document.querySelector('#repair-approval-form').addEventListener('submit', async event => {
+    event.preventDefault()
+    const approvalToken = new FormData(event.target).get('approvalToken')
+    try {
+      await api.post(`/api/desktop/trust/repairs/${encodeURIComponent(proposalId)}/approve`, { approvalToken })
+      closeModal(); await loadTrust(); toast('Reparatur wurde vom PATCH_GATE angenommen.')
+    } catch (error) { fail(error) }
+  })
 }
 
 async function toggleRoomMemoryAsset(assetId, equipped) {

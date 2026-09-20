@@ -39,6 +39,7 @@ import type { DesktopControlResult } from './desktop-control.js'
 import { getMemoryAssetCatalog } from '../memory/memory-asset-catalog.js'
 import { resolvePrincipalId } from '../users/principal-id.js'
 import { getNovaState } from '../core/nova-state.js'
+import { approveEvolutionProposal, getPatchProposals } from '../synthesis/self-evolution.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -108,6 +109,32 @@ function desktopClientId(req: Request): string {
 
 function safeError(error: unknown): string { return redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 500) }
 function isDesktopOwner(req: Request): boolean { return principal(req) === (process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner') }
+function desktopControlPlaneAuthoritative(): boolean {
+    return Boolean(getServiceFencingToken(MAIN_SERVICE) && getServiceFencingToken('dashboard'))
+}
+
+/** Public Desktop representation of a repair proposal. Patch contents,
+ * activation signatures and controller receipts are deliberately excluded. */
+export function desktopRepairProposal(proposal: any): Record<string, unknown> {
+    const sandbox = proposal?.sandbox || {}
+    return {
+        id: String(proposal?.id || ''), status: String(proposal?.status || 'unknown'),
+        file: String(proposal?.file || ''), description: String(proposal?.description || ''),
+        createdAt: Number(proposal?.createdAt || 0), repairProfileId: proposal?.repairProfileId || null,
+        doctorCorrelation: proposal?.doctorCorrelation ? {
+            caseId: String(proposal.doctorCorrelation.caseId || ''),
+            runId: String(proposal.doctorCorrelation.runId || ''),
+            observationHash: String(proposal.doctorCorrelation.observationHash || ''),
+        } : null,
+        evidence: {
+            verified: sandbox.verified === true, reproductionPassed: sandbox.reproductionPassed === true,
+            regressionPassed: sandbox.verified === true, cleanupVerified: sandbox.cleanupVerified === true,
+            rollbackPassed: sandbox.rollbackPassed === true, recoveryPassed: sandbox.recoveryPassed === true,
+            baselineHash: /^[a-f0-9]{64}$/.test(String(sandbox.baselineHash || '')) ? sandbox.baselineHash : null,
+            candidateHash: /^[a-f0-9]{64}$/.test(String(sandbox.candidateHash || '')) ? sandbox.candidateHash : null,
+        },
+    }
+}
 
 export function pruneDesktopCaptures(captureDir: string): void {
     const cutoff = Date.now() - 7 * 24 * 60 * 60_000
@@ -185,7 +212,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                     role: 'main',
                     mainEpoch: getServiceFencingToken(MAIN_SERVICE)?.epoch || null,
                     dashboardEpoch: getServiceFencingToken('dashboard')?.epoch || null,
-                    authoritative: Boolean(getServiceFencingToken(MAIN_SERVICE) && getServiceFencingToken('dashboard')),
+                    authoritative: desktopControlPlaneAuthoritative(),
                     observedAt: new Date().toISOString(),
                 },
                 // NovaOS-Bedienmodus. Wird beim ersten Start gewaehlt und liegt
@@ -387,6 +414,25 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
         const run = getOutcomeLedger().getRun(req.params.id)
         if (!run || run.userId !== desktopExecutionPrincipal(principal(req))) return void res.status(404).json({ error: 'Outcome run not found' })
         res.json({ ...run, checkpoint: getOutcomeLedger().loadCheckpoint(run.runId) })
+    })
+    app.get('/api/desktop/trust/repairs', (req, res) => {
+        if (!isDesktopOwner(req)) return void res.status(403).json({ error: 'Owner authorization required' })
+        const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50))
+        const proposals = getPatchProposals(500)
+            .filter(item => item?.doctorCorrelation && item?.repairProfileId)
+            .slice(-limit).reverse().map(desktopRepairProposal)
+        res.json({ proposals, authoritative: desktopControlPlaneAuthoritative() })
+    })
+    app.post('/api/desktop/trust/repairs/:id/approve', async (req, res) => {
+        if (!isDesktopOwner(req)) return void res.status(403).json({ error: 'Owner authorization required' })
+        if (!desktopControlPlaneAuthoritative()) return void res.status(409).json({ error: 'Authoritative Main and dashboard fencing required' })
+        const proposal = getPatchProposals(500).find(item => item?.id === req.params.id && item?.doctorCorrelation && item?.repairProfileId)
+        if (!proposal) return void res.status(404).json({ error: 'Doctor repair proposal not found' })
+        const token = typeof req.body?.approvalToken === 'string' ? req.body.approvalToken : ''
+        if (!token || token.length > 1000) return void res.status(400).json({ error: 'PATCH_GATE token required' })
+        const result = await approveEvolutionProposal(proposal.id, token)
+        if (!result.success) return void res.status(409).json({ ...result, error: safeError(result.error || 'Repair approval failed') })
+        res.json(result)
     })
 
     app.get('/api/desktop/memory', (req, res) => {

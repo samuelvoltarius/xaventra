@@ -6,6 +6,19 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.37 packaged Desktop Doctor trust candidate
+
+- The packaged Trust view now exposes Doctor repair proposals only to the
+  configured Desktop owner and only as a sanitized evidence projection. Patch
+  contents, controller signatures and raw sandbox output never cross the API.
+- Approval requires current Main plus dashboard fencing and sends a transient
+  token into the existing canonical `PATCH_GATE`; Desktop has no alternate
+  patch executor or autonomous approval path.
+- Source regressions and the packaged Electron-to-full-daemon acceptance are
+  recorded in [the candidate record](VERIFICATION_2.78.37.md). Candidate CI,
+  full-history secret scan and evidence-commit CI remain required. The test is
+  isolated synthetic evidence, not a production repair or node rollout.
+
 ### 2.78.36 interrupted Doctor proposal candidate
 
 - Doctor proposals now persist an integrity-bound correlation to the failure
