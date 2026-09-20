@@ -18,8 +18,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Source regressions and a compiled multi-process acceptance are recorded in
   [the candidate record](VERIFICATION_2.78.34.md). This is isolated fixture
   evidence, not a physical-node partition, production provider-auth probe or
-  live Mesh transport claim. No production node changed. Candidate CI,
-  full-history secret scan and evidence-commit CI remain required.
+  live Mesh transport claim. Candidate `f53b2805d8bac6ee2fbc558717770de271493e13`
+  passed all ten jobs in
+  [CI 35516002178](https://github.com/samuelvoltarius/xaventra/actions/runs/35516002178),
+  including Windows, Linux and macOS compiled acceptance. The complete
+  98-commit public history (10.78 MB) has zero Gitleaks 8.30.1 findings. No
+  production node changed. Evidence-commit CI remains required.
 
 ### 2.78.33 truth-layer memory convergence candidate
 

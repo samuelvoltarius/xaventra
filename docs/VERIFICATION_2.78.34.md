@@ -14,7 +14,7 @@ boundary.
 |---|---|---|
 | Source regression | Passed locally | Capability Graph and orchestrator tests cover read-time freshness, tombstones, later verified revival, delayed snapshots and structural credential removal. |
 | Compiled process acceptance | Passed on Windows | `npm run check:capabilities` uses actual compiled graph/orchestrator APIs in isolated child processes before removal, after restart, during successor convergence and after another restart. |
-| Hosted CI | Pending | Exact candidate CI is required on Windows, Linux and macOS before promotion. |
+| Hosted CI | Passed | Candidate `f53b2805d8bac6ee2fbc558717770de271493e13` passed all ten jobs in [CI 35516002178](https://github.com/samuelvoltarius/xaventra/actions/runs/35516002178), including compiled capability acceptance on Windows, Linux and macOS. |
 | Physical-node / live transport | Not claimed | No physical Mesh partition, provider login, remote model probe or production node was used. |
 
 ## Local acceptance
@@ -28,8 +28,8 @@ boundary.
 - Runtime catalogs are current. Assurance passed after generating the isolated
   development configuration; its only remaining notice is the documented lack
   of an artifact-verified external-agent comparison.
-- Staged Gitleaks 8.30.1 scan: zero findings. Hosted CI and the full public
-  history scan remain required before candidate promotion.
+- Staged Gitleaks 8.30.1 scan: zero findings. The complete public history at
+  the candidate (98 commits / 10.78 MB) also has zero findings.
 
 ## Known limits
 
@@ -40,3 +40,5 @@ boundary.
   production Mesh delivery or hardware discovery.
 - Native signing/notarization remains dependent on configured external
   identities.
+- This evidence attestation requires its own exact green CI before normal
+  fast-forward promotion and signed release publication.
