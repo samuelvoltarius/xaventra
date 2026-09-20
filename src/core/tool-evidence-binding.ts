@@ -6,6 +6,11 @@ export interface VerifiedToolCallEvidence {
     argumentsHash: string
     resultHash: string
     matchedTargets: string[]
+    resolvedTargets?: Array<{
+        requested: string
+        resolved: string
+        discoveryCallId: string
+    }>
 }
 
 function stableValue(value: unknown): unknown {
@@ -49,7 +54,13 @@ export function inferRequiredToolTargets(goal: string): string[] {
         ...urls,
     ]
     const normalized = [...new Set(candidates.map(normalizeEvidenceTarget).filter(Boolean))]
-    return normalized.filter(target => !normalized.some(other => other !== target && other.endsWith(`/${target}`)))
+    return normalized.filter(target => !normalized.some(other => {
+        if (other === target) return false
+        const suffix = target.replace(/^\/+/, '')
+        const otherWithoutRoot = other.replace(/^\/+/, '')
+        if (otherWithoutRoot === suffix) return other.startsWith('/') && !target.startsWith('/')
+        return otherWithoutRoot.endsWith(`/${suffix}`)
+    }))
 }
 
 function argumentStrings(value: unknown): string[] {

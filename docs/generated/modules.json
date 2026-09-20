@@ -81,6 +81,7 @@
         "../core/context-policy.js",
         "../core/execution-control.js",
         "../core/execution-kernel.js",
+        "../core/missing-resource-recovery.js",
         "../core/model-pricing.js",
         "../core/outcome-ledger.js",
         "../core/reasoning-policy.js",
@@ -1439,6 +1440,7 @@
         "./focused-worker.js",
         "./inference-budget.js",
         "./intent-dispatcher.js",
+        "./missing-resource-recovery.js",
         "./result-validator.js",
         "./task-contract.js",
         "./tool-evidence-binding.js"
@@ -1584,6 +1586,13 @@
         "./system-message.js",
         "node:fs",
         "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/missing-resource-recovery.ts",
+      "imports": [
+        "node:fs",
         "node:path"
       ]
     },

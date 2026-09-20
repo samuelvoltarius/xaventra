@@ -18,6 +18,7 @@ import { resolveAutonomyLevel, type AutonomyDecision } from './autonomy-ladder.j
 import { selectContextPolicy, type ContextPolicy } from './context-policy.js'
 import { InferenceBudget } from './inference-budget.js'
 import { evidenceHash, matchedToolTargets, type VerifiedToolCallEvidence } from './tool-evidence-binding.js'
+import { discoveryContainsPath } from './missing-resource-recovery.js'
 
 /** Single runtime contract between dispatcher, worker, validator and learning.
  * Legacy layers may observe it, but they no longer decide task completion. */
@@ -33,6 +34,7 @@ export class ExecutionKernel {
     private readonly worker: FocusedWorker
     private readonly verifiedTools = new Set<string>()
     private readonly verifiedToolCalls = new Map<string, VerifiedToolCallEvidence>()
+    private readonly resolvedTargets = new Map<string, { requested: string; resolved: string; discoveryCallId: string }>()
     private readonly artifacts = new Set<string>()
     private readonly startedAt = Date.now()
     private toolAttempts = 0
@@ -91,19 +93,47 @@ export class ExecutionKernel {
         }
         this.lifecycle.record(toolName, validation.success)
         if (validation.success) {
+            const directTargets = matchedToolTargets(this.contract.requiredToolTargets || [], invocation!.arguments)
+            const argumentValues = ['path', 'file', 'filePath']
+                .map(key => invocation!.arguments[key])
+                .filter((value): value is string => typeof value === 'string')
+                .map(value => value.trim().replace(/\\/g, '/').toLowerCase())
+            const resolutions = [...this.resolvedTargets.values()].filter(item => argumentValues.some(value =>
+                value === item.resolved || value.endsWith(`/${item.resolved}`) || item.resolved.endsWith(`/${value}`)))
             this.verifiedTools.add(toolName)
             this.verifiedToolCalls.set(invocation!.callId, {
                 callId: invocation!.callId,
                 toolName,
                 argumentsHash: evidenceHash(invocation!.arguments),
                 resultHash: evidenceHash(result),
-                matchedTargets: matchedToolTargets(this.contract.requiredToolTargets || [], invocation!.arguments),
+                matchedTargets: [...new Set([...directTargets, ...resolutions.map(item => item.requested)])],
+                ...(resolutions.length ? { resolvedTargets: resolutions } : {}),
             })
             for (const artifact of validation.evidence) this.artifacts.add(artifact)
         }
         recordExecutionStage({ stage: 'tool.validated', success: validation.success, intent: this.intent.kind })
         recordToolEvidence({ tool: toolName, verified: validation.success, source: 'execution-kernel' })
         return validation
+    }
+
+    /** Register a target alias only when a previously verified find_files call
+     * proves that the resolved path was actually returned. Callers cannot turn
+     * an arbitrary alternative path into completion evidence. */
+    registerResolvedTarget(input: {
+        requested: string
+        resolved: string
+        discoveryCallId: string
+        discoveryResult: unknown
+    }): boolean {
+        const requested = input.requested.trim().replace(/\\/g, '/').toLowerCase()
+        const resolved = input.resolved.trim().replace(/\\/g, '/').toLowerCase()
+        const required = (this.contract.requiredToolTargets || []).includes(requested)
+        const evidence = this.verifiedToolCalls.get(input.discoveryCallId)
+        if (!required || !evidence || evidence.toolName !== 'find_files'
+            || evidence.resultHash !== evidenceHash(input.discoveryResult)
+            || !discoveryContainsPath(input.discoveryResult, input.resolved)) return false
+        this.resolvedTargets.set(resolved, { requested, resolved, discoveryCallId: input.discoveryCallId })
+        return true
     }
 
     validateCompletion(response: string, evidence: Omit<CompletionEvidence, 'response' | 'verifiedTools' | 'verifiedToolCalls' | 'artifacts'> = {}): TaskValidationReport {

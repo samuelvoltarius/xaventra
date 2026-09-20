@@ -34,6 +34,7 @@ import { responseConstraintPrompt } from '../core/response-contract.js'
 import { repairConstrainedResponse } from './response-repair.js'
 import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
+import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -1226,10 +1227,57 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                     const verification = kernel.verify(call.name, result, { callId, arguments: call.arguments || {} })
                     const verifiedSuccess = verification.success
-                    if (!verifiedSuccess && verification.reason) {
-                        resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
+                    let recoveredSuccess = false
+                    if (!verifiedSuccess && !policyBlocked && kernel.contract.allowedChanges.allowedTools.includes('find_files')) {
+                        try {
+                            const recovery = await recoverMissingResource({
+                                toolName: call.name,
+                                args: call.arguments || {},
+                                failedResult: result,
+                                kernel,
+                                nextCallId: name => nextToolEvidenceId({ name }),
+                                execute: (name, args) => withTimeout(
+                                    executeToolOnce(name, {
+                                        ...args,
+                                        userId,
+                                        channel,
+                                        authorizationUserId: authUserId,
+                                        requestText: content,
+                                    }), timeoutForTool(name), `Tool recovery: ${name}`,
+                                ),
+                            })
+                            for (const execution of recovery.executions) {
+                                toolsUsed.push(execution.toolName)
+                                toolsExecuted.push(execution.toolName)
+                                const value = execution.result as any
+                                const text = typeof execution.result === 'string'
+                                    ? execution.result
+                                    : String(value?.content ?? value?.output ?? value?.message ?? JSON.stringify(execution.result))
+                                toolExecutions.push({
+                                    callId: execution.callId,
+                                    toolName: execution.toolName,
+                                    params: execution.args,
+                                    result: redactSecrets(text),
+                                    success: execution.success,
+                                    timestamp: Date.now(),
+                                })
+                            }
+                            if (recovery.success) {
+                                recoveredSuccess = true
+                                const value = recovery.result as any
+                                resultStr = redactSecrets(typeof recovery.result === 'string'
+                                    ? recovery.result
+                                    : String(value?.content ?? value?.output ?? value?.message ?? JSON.stringify(recovery.result)))
+                                console.log(`[Xaventra Agent] Recovered missing resource ${recovery.requestedPath} -> ${recovery.resolvedPath} (${recovery.reason})`)
+                            }
+                        } catch (recoveryError) {
+                            console.warn(`[Xaventra Agent] Missing-resource recovery stopped safely: ${String(recoveryError)}`)
+                        }
                     }
-                    if (!verifiedSuccess) hasToolErrors = true
+                    if (!verifiedSuccess && verification.reason) {
+                        if (!recoveredSuccess) resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
+                    }
+                    if (!verifiedSuccess && !recoveredSuccess) hasToolErrors = true
 
                     // Unified learning accepts only the structured result of an
                     // execution that actually reached the tool registry.

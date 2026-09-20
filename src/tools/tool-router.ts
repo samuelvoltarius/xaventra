@@ -63,7 +63,7 @@ const SKILL_PACKS: SkillPack[] = [
     {
         name: 'files', description: 'Lokale Dateien verwalten',
         keywords: ['datei', 'file', 'ordner', 'verzeichnis', 'lesen', 'schreib', 'pfad'],
-        tools: ['desktop_workspace', 'read_file', 'write_file', 'list_directory', 'delete_file', 'send_file'],
+        tools: ['desktop_workspace', 'read_file', 'find_files', 'write_file', 'list_directory', 'delete_file', 'send_file'],
     },
     {
         name: 'system-shell', description: 'Befehle und Systemstatus ausführen',

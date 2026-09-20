@@ -54,6 +54,35 @@ describe('execution kernel', () => {
         expect(kernel.validateCompletion('value').success).toBe(false)
     })
 
+    it('accepts a recovered target only when verified discovery proves the resolved path', () => {
+        const kernel = new ExecutionKernel('Lies die Datei docs/RELESE_PLAN.md', {
+            allowedChanges: { allowedTools: ['read_file', 'find_files'] },
+        })
+        expect(kernel.contract.requiredToolTargets).toEqual(['docs/relese_plan.md'])
+        const discovery = { results: [{ path: '/workspace/docs/RELEASE_PLAN.md', type: 'file' }] }
+        expect(kernel.registerResolvedTarget({
+            requested: 'docs/RELESE_PLAN.md', resolved: '/workspace/docs/RELEASE_PLAN.md',
+            discoveryCallId: 'find-1', discoveryResult: discovery,
+        })).toBe(false)
+        expect(kernel.verify('find_files', discovery, { callId: 'find-1', arguments: { path: '/workspace', pattern: '*.md' } }).success).toBe(true)
+        expect(kernel.registerResolvedTarget({
+            requested: 'docs/RELESE_PLAN.md', resolved: '/workspace/docs/RELEASE_PLAN.md',
+            discoveryCallId: 'find-1', discoveryResult: { results: [{ path: '/workspace/docs/OTHER.md' }] },
+        })).toBe(false)
+        expect(kernel.registerResolvedTarget({
+            requested: 'docs/RELESE_PLAN.md', resolved: '/workspace/docs/RELEASE_PLAN.md',
+            discoveryCallId: 'find-1', discoveryResult: discovery,
+        })).toBe(true)
+        expect(kernel.verify('read_file', { content: 'unrelated' }, {
+            callId: 'read-unrelated', arguments: { path: '/workspace/docs/OTHER.md', note: '/workspace/docs/RELEASE_PLAN.md' },
+        }).success).toBe(true)
+        expect(kernel.validateCompletion('unrelated').success).toBe(false)
+        expect(kernel.verify('read_file', { content: 'release plan' }, {
+            callId: 'read-recovered', arguments: { path: '/workspace/docs/RELEASE_PLAN.md' },
+        }).success).toBe(true)
+        expect(kernel.validateCompletion('release plan').success).toBe(true)
+    })
+
     it('keeps the current action authoritative over older routing context', () => {
         const current = 'Installiere Codex auf dem aktuellen Main'
         const context = `Wenn der Node ausfällt, wechselt das Mesh automatisch.

@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.78.28] — 2026-09-20
+
+- Add bounded missing-resource recovery to the authoritative Execution Kernel
+  path. A failed read may perform one governed `find_files` discovery and one
+  retry only when a unique exact or high-confidence filename candidate exists.
+- Bind corrected paths to the originally requested target through a verified
+  discovery receipt. Arbitrary aliases, changed discovery results, duplicate
+  filenames and broad filesystem-root scans fail closed.
+- Add `find_files` to the file skill pack and retain policy, authorization,
+  timeout, tool-call budget and idempotency gates for discovery and retry.
+- Correct duplicate target inference for rooted and relative path fragments.
+  This release does not claim arbitrary error repair, distributed native-run
+  resume, production rollout or completion of the wider RC program.
+
 ## [2.78.27] — 2026-09-19
 
 - Apply the existing deterministic cognitive policy to local model requests:

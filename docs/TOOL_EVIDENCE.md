@@ -16,6 +16,15 @@ names, or a web request contains an explicit URL, every target must be covered. 
 health check, duplicate IDs and successful but uncorrelated results do not close
 the task.
 
+For a missing read-only file, the same Kernel may authorize a bounded recovery:
+one `find_files` discovery and one retry. The retry covers the original target
+only when the discovery itself has a unique verified receipt, its exact result
+hash still matches, and that result contains the selected path. Duplicate exact
+names or close fuzzy candidates are ambiguous and do not execute a retry. This
+target alias is recorded on the retry receipt with its discovery call ID; callers
+cannot submit an unproved alias. Recovery never grants a tool outside the binding
+contract and does not apply to writes or unrelated failures.
+
 Only explicit syntactic targets are inferred. Xaventra does not pretend that a
 vague phrase such as “the server” is equivalent to a particular host. Typed host,
 service, message-recipient and other domain target contracts remain future work.

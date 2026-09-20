@@ -6,6 +6,26 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.28 verified missing-resource recovery candidate
+
+- The native runner now treats a missing read-only resource as a typed recovery
+  case rather than asking a model to improvise. It performs at most one governed
+  discovery and one retry, and only selects a unique exact or high-confidence
+  filename candidate.
+- The Execution Kernel records the verified discovery call and binds the resolved
+  path to the originally requested target. A forged alias, changed discovery
+  payload, duplicate candidate or filesystem-root scan fails closed.
+- Focused recovery/Kernel/contract tests pass **24/24**, typecheck passes and the
+  complete clean-lockfile Core regression passes **226 files / 1,553 tests**
+  with four workers. Build, generated catalogs, static layer graph and runtime
+  loading pass; the packaged Windows Desktop passes **5/5** isolated Core checks.
+  A clean exact-commit CI run is still required before promotion and remains the
+  cross-platform authority.
+- This closes only deterministic missing-file recovery. Durable native receipt
+  hydration/resume, general error research, memory correction completeness,
+  controlled HA and remaining RC gates stay open. No production node changed.
+  [Evidence contract](TOOL_EVIDENCE.md), [candidate record](VERIFICATION_2.78.28.md).
+
 ### 2.78.27 adaptive local-reasoning candidate
 
 - Fast chat and every tool-bearing model turn now request non-thinking mode;
