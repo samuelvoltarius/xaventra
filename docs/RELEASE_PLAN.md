@@ -18,10 +18,14 @@ Preserve negative results. No mocked proof is substituted for live execution.
   original fault and healthy candidate, then restarts Core and verifies the
   same terminal receipt with an unchanged external activation count.
 - Source, package and full-daemon acceptance evidence is recorded in
-  [the candidate record](VERIFICATION_2.78.38.md). This disposable controller
-  is an isolated acceptance fixture, not a production repair or node rollout.
-  Candidate CI, history scan, evidence-commit CI and release publication remain
-  required before this gate can be marked passed.
+  [the candidate record](VERIFICATION_2.78.38.md). Runtime
+  `1332ee043db8c722e88a758392626fc0ccbf85f1` passed all ten jobs in
+  [CI 35540849173](https://github.com/samuelvoltarius/xaventra/actions/runs/35540849173),
+  including the packaged full-daemon acceptance on Windows, macOS and Linux.
+  Gitleaks 8.30.1 found no secret in the full 107-commit / 10.87 MB public
+  history. This disposable controller is an isolated acceptance fixture, not a
+  production repair or node rollout. Evidence-commit CI, main CI and signed
+  release publication remain required before promotion.
 
 ### 2.78.37 packaged Desktop Doctor trust candidate
 

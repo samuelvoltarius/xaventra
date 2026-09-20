@@ -26,12 +26,12 @@ modify a production node and is not evidence of a physical-host rollout.
 
 | Gate | State | Evidence |
 | --- | --- | --- |
-| TypeScript | pending | exact candidate command and result to be recorded |
-| Unit regressions | pending | exact candidate command and result to be recorded |
-| Full packaged Desktop daemon | pending | exact candidate artifact and report to be recorded |
-| Staged secret scan | pending | exact candidate scan to be recorded |
-| Candidate CI | pending | exact commit and workflow run to be recorded |
-| Full history scan | pending | exact commit count/bytes/findings to be recorded |
+| TypeScript | passed | local `npm run typecheck` and candidate CI |
+| Unit regressions | passed with retained local infrastructure negative | local Core run passed 1,570/1,571 tests; the sole nested-worktree failure was Windows Git path handling in `repair-publication.test.ts`, which passed unchanged 8/8 with Git's supported per-process `core.longpaths=true`; all platform CI verification jobs passed |
+| Full packaged Desktop daemon | passed | local packaged Windows run passed 7/7, including canonical signed activation, terminal receipt display and restart without replay; Windows, macOS and Linux packaged jobs repeated the full-daemon path |
+| Staged secret scan | passed | Gitleaks 8.30.1 scanned 18.33 KB, zero findings |
+| Candidate CI | passed | runtime `1332ee043db8c722e88a758392626fc0ccbf85f1`, all ten jobs in [CI 35540849173](https://github.com/samuelvoltarius/xaventra/actions/runs/35540849173) |
+| Full history scan | passed | Gitleaks 8.30.1 scanned 107 commits / 10.87 MB, zero findings |
 | Evidence CI | pending | exact evidence commit and workflow run to be recorded |
 | Main CI and signed release | pending | exact main commit, tag and workflow run to be recorded |
 
