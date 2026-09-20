@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.38] — 2026-09-21
+
+- Complete the packaged Desktop owner-approval path through the canonical
+  `PATCH_GATE` and a separately signed disposable repair controller.
+- Surface a bounded, sanitized terminal live receipt in Trust while excluding
+  signatures, challenges, fingerprints, patch contents and approval tokens.
+- Make terminal or pending repairs non-resubmittable and prove that a full Core
+  restart restores exactly one applied receipt without repeating the external
+  activation effect.
+
 ## [2.78.37] — 2026-09-20
 
 - Add an owner-only Doctor repair view to the packaged Desktop Trust surface,

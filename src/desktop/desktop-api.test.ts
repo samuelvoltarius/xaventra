@@ -1,6 +1,6 @@
 import express from 'express'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { registerDesktopApi, desktopExecutionPrincipal } from './desktop-api.js'
+import { registerDesktopApi, desktopExecutionPrincipal, desktopRepairProposal } from './desktop-api.js'
 import { getNovaState, updateNovaState } from '../core/nova-state.js'
 import { getDesktopAgentContext } from './desktop-agent-context.js'
 
@@ -64,6 +64,22 @@ describe('Desktop execution identity and current-message boundary', () => {
 })
 
 describe('Desktop Doctor repair approval boundary', () => {
+    it('projects independently verified terminal evidence without signatures or probe secrets', () => {
+        const proposal: any = {
+            ...repairMocks.proposals[0], status: 'applied', profile: { probeId: 'probe-1', targetId: 'target-1' },
+            activation: { status: 'resolved', previousReleaseId: 'release-old', releaseId: 'release-new', updatedAt: 99,
+                binding: { attemptId: `repair-${'1'.repeat(8)}-${'1'.repeat(4)}-${'1'.repeat(4)}-${'1'.repeat(4)}-${'1'.repeat(12)}` },
+                before: { state: 'fault', releaseId: 'release-old', probeId: 'probe-1', targetId: 'target-1', observedAt: 10, challenge: 'private-before', fingerprint: 'private-fault' },
+                after: { state: 'healthy', releaseId: 'release-new', probeId: 'probe-1', targetId: 'target-1', observedAt: 20, challenge: 'private-after', fingerprint: 'private-healthy' },
+            },
+        }
+        const projected = desktopRepairProposal(proposal) as any
+        expect(projected.activation).toMatchObject({ terminal: true, independentlyVerified: true, status: 'resolved', previousReleaseId: 'release-old', releaseId: 'release-new' })
+        expect(JSON.stringify(projected)).not.toContain('private-before')
+        expect(JSON.stringify(projected)).not.toContain('private-fault')
+        expect(JSON.stringify(projected)).not.toContain('signedActivation')
+    })
+
     it('shows sanitized persisted evidence only to the owner and forwards a transient token to the canonical gate', async () => {
         vi.stubEnv('NOVA_DESKTOP_API_TOKEN', '')
         vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
@@ -101,5 +117,24 @@ describe('Desktop Doctor repair approval boundary', () => {
             })
             expect(response.status).toBe(409); expect(repairMocks.approve).not.toHaveBeenCalled()
         } finally { repairMocks.authoritative = true; server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
+    })
+
+    it('never resubmits a pending or terminal repair to the activation controller', async () => {
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', ''); vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
+        repairMocks.authoritative = true; repairMocks.approve.mockClear()
+        const prior = repairMocks.proposals[0].status
+        repairMocks.proposals[0].status = 'applied'
+        const app = express(); app.use(express.json()); registerDesktopApi(app, () => null)
+        const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve))
+        try {
+            const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/desktop/trust/repairs/patch-doctor-1/approve`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nova-principal': 'owner' }, body: JSON.stringify({ approvalToken: 'must-not-forward' }),
+            })
+            expect(response.status).toBe(409); expect(repairMocks.approve).not.toHaveBeenCalled()
+            expect(JSON.stringify(await response.json())).not.toContain('must-not-forward')
+        } finally {
+            repairMocks.proposals[0].status = prior
+            server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()))
+        }
     })
 })

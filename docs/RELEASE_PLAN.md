@@ -6,6 +6,23 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.38 packaged Desktop repair activation candidate
+
+- The packaged Trust surface now completes owner approval through the existing
+  canonical `PATCH_GATE`, a separately signed loopback controller and an
+  independent before/after probe. The public projection contains only bounded
+  terminal metadata; controller signatures, challenges, fingerprints, patch
+  contents and approval tokens remain private.
+- Pending and terminal proposals cannot be resubmitted. The full-daemon
+  packaged Electron acceptance activates one disposable repair, observes the
+  original fault and healthy candidate, then restarts Core and verifies the
+  same terminal receipt with an unchanged external activation count.
+- Source, package and full-daemon acceptance evidence is recorded in
+  [the candidate record](VERIFICATION_2.78.38.md). This disposable controller
+  is an isolated acceptance fixture, not a production repair or node rollout.
+  Candidate CI, history scan, evidence-commit CI and release publication remain
+  required before this gate can be marked passed.
+
 ### 2.78.37 packaged Desktop Doctor trust candidate
 
 - The packaged Trust view now exposes Doctor repair proposals only to the

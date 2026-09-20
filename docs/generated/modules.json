@@ -2184,6 +2184,10 @@
       ]
     },
     {
+      "module": "src/desktop/repair-acceptance-fixture.ts",
+      "imports": []
+    },
+    {
       "module": "src/desktop/topic-room-store.ts",
       "imports": [
         "../core/atomic-storage.js",

@@ -113,8 +113,37 @@ function desktopControlPlaneAuthoritative(): boolean {
     return Boolean(getServiceFencingToken(MAIN_SERVICE) && getServiceFencingToken('dashboard'))
 }
 
+function desktopRepairReceipt(proposal: any): Record<string, unknown> | null {
+    const receipt = proposal?.activation
+    if (!receipt || typeof receipt !== 'object') return null
+    const before = receipt.before, after = receipt.after
+    const attemptId = String(receipt.binding?.attemptId || '')
+    const terminal = ['resolved', 'rolled-back', 'blocked'].includes(String(receipt.status || ''))
+    const independentlyVerified = proposal.status === 'applied' && receipt.status === 'resolved'
+        && before?.state === 'fault' && after?.state === 'healthy'
+        && before?.releaseId === receipt.previousReleaseId && after?.releaseId === receipt.releaseId
+        && before?.probeId === proposal.profile?.probeId && after?.probeId === proposal.profile?.probeId
+        && before?.targetId === proposal.profile?.targetId && after?.targetId === proposal.profile?.targetId
+        && Number(after?.observedAt || 0) >= Number(before?.observedAt || 0)
+        && Boolean(before?.challenge) && Boolean(after?.challenge) && before.challenge !== after.challenge
+    const observation = (value: any) => value ? {
+        state: ['fault', 'healthy', 'unknown'].includes(String(value.state || '')) ? value.state : 'unknown',
+        releaseId: String(value.releaseId || ''), observedAt: Number(value.observedAt || 0),
+        probeId: String(value.probeId || ''), targetId: String(value.targetId || ''),
+    } : null
+    return {
+        terminal, independentlyVerified,
+        status: String(receipt.status || 'unknown'),
+        attemptId: /^repair-[a-f0-9-]{36}$/.test(attemptId) ? attemptId : null,
+        previousReleaseId: String(receipt.previousReleaseId || ''), releaseId: String(receipt.releaseId || ''),
+        before: observation(before), after: observation(after), restoration: observation(receipt.restoration),
+        updatedAt: Number(receipt.updatedAt || 0),
+    }
+}
+
 /** Public Desktop representation of a repair proposal. Patch contents,
- * activation signatures and controller receipts are deliberately excluded. */
+ * signatures, challenges, fingerprints and private controller data are
+ * deliberately excluded; a bounded terminal receipt remains visible. */
 export function desktopRepairProposal(proposal: any): Record<string, unknown> {
     const sandbox = proposal?.sandbox || {}
     return {
@@ -133,6 +162,7 @@ export function desktopRepairProposal(proposal: any): Record<string, unknown> {
             baselineHash: /^[a-f0-9]{64}$/.test(String(sandbox.baselineHash || '')) ? sandbox.baselineHash : null,
             candidateHash: /^[a-f0-9]{64}$/.test(String(sandbox.candidateHash || '')) ? sandbox.candidateHash : null,
         },
+        activation: desktopRepairReceipt(proposal),
     }
 }
 
@@ -428,6 +458,10 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
         if (!desktopControlPlaneAuthoritative()) return void res.status(409).json({ error: 'Authoritative Main and dashboard fencing required' })
         const proposal = getPatchProposals(500).find(item => item?.id === req.params.id && item?.doctorCorrelation && item?.repairProfileId)
         if (!proposal) return void res.status(404).json({ error: 'Doctor repair proposal not found' })
+        if (proposal.status !== 'queued') return void res.status(409).json({
+            error: 'Repair is already pending or terminal; activation cannot be resubmitted.',
+            proposal: desktopRepairProposal(proposal),
+        })
         const token = typeof req.body?.approvalToken === 'string' ? req.body.approvalToken : ''
         if (!token || token.length > 1000) return void res.status(400).json({ error: 'PATCH_GATE token required' })
         const result = await approveEvolutionProposal(proposal.id, token)
