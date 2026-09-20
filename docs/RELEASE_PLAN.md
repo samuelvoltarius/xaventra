@@ -19,8 +19,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   and the stale predecessor's external write is rejected.
 - This is real loopback HTTP coordination with separate durable witness state,
   not production Supabase, a physical-host loss or a network-partition proof.
-  No production node changed. Exact regression, commit, CI and history-scan
-  evidence is recorded in [the candidate record](VERIFICATION_2.78.31.md).
+  Runtime `ac137f7f540a0b3a2bdc8dabbd5dda20f263342b` passes all ten jobs in
+  [CI 35493191935](https://github.com/samuelvoltarius/xaventra/actions/runs/35493191935).
+  The complete 91-commit public history has zero Gitleaks 8.30.1 findings. No
+  production node changed. Exact evidence is recorded in
+  [the candidate record](VERIFICATION_2.78.31.md); its attestation still needs
+  exact-commit CI before promotion.
 
 ### 2.78.30 fenced native successor candidate
 

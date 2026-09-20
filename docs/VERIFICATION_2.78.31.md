@@ -57,7 +57,15 @@ does not emulate a network partition or prove physical independence.
 
 ### Hosted platforms and public history
 
-Pending exact candidate CI and full-history secret scan.
+Runtime commit `ac137f7f540a0b3a2bdc8dabbd5dda20f263342b` passes all ten jobs in
+[CI 35493191935](https://github.com/samuelvoltarius/xaventra/actions/runs/35493191935).
+The compiled witness takeover acceptance passes on hosted Windows, Linux and
+macOS; packaged Desktop, managed activation, Docker repair and isolated repair
+also pass. These remain disposable CI environments, not production nodes.
+
+Gitleaks 8.30.1 scanned the complete public history at this candidate: 91
+commits, 10.73 MB and zero findings. This evidence attestation requires its own
+exact-commit CI before promotion.
 
 ### Live/production
 
