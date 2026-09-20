@@ -17,8 +17,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   production activation. It stops at `PATCH_GATE`; ambiguous, incomplete and
   tampered state remains in the generating state for explicit investigation.
 - Source regressions and the disposable Docker acceptance are recorded in
-  [the candidate record](VERIFICATION_2.78.36.md). Candidate commit, CI and
-  history-scan evidence remain pending. No production node is changed.
+  [the candidate record](VERIFICATION_2.78.36.md). Candidate
+  `feb7de5f52f85aaa10276cf76abc6c5f9e7245c1` passed all ten jobs in
+  [CI 35527631017](https://github.com/samuelvoltarius/xaventra/actions/runs/35527631017),
+  including real Docker sandbox, rollback and recovery. The complete 102-commit
+  public history (10.83 MB) has zero Gitleaks 8.30.1 findings. No production
+  node changed. Evidence-commit CI remains required.
 
 ### 2.78.35 principal-scoped Outcome Router candidate
 
