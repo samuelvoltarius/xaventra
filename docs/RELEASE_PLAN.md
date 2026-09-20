@@ -17,9 +17,14 @@ Preserve negative results. No mocked proof is substituted for live execution.
   post-reset re-entry requires explicit high-authority evidence, a direct
   supersession link and a newer generation.
 - Source regressions and a compiled five-process acceptance are recorded in
-  [the candidate record](VERIFICATION_2.78.33.md). The acceptance uses isolated
-  local durable stores; it is not a physical-host partition, live Mesh/channel
-  or production proof. No production node changed.
+  [the candidate record](VERIFICATION_2.78.33.md). Runtime
+  `482788be94d5025e53956ff98689cada3e6c9ccc` passed all ten jobs in
+  [CI 35510934212](https://github.com/samuelvoltarius/xaventra/actions/runs/35510934212),
+  including the convergence acceptance on Windows, Linux and macOS. The full
+  96-commit public history (10.76 MB) has zero Gitleaks 8.30.1 findings. The
+  acceptance uses isolated local durable stores; it is not a physical-host
+  partition, live Mesh/channel or production proof. No production node changed.
+  The evidence attestation still requires exact-commit CI before promotion.
 
 ### 2.78.32 managed runtime handoff candidate
 

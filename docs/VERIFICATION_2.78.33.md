@@ -13,7 +13,7 @@ leak into each other.
 |---|---|---|
 | Source regression | Passed | `memory-governance.test.ts` and integration tests cover correction, reset, restart, skew and scope isolation. |
 | Compiled process acceptance | Passed on Windows | `npm run check:memory-convergence` starts five isolated Node processes and separate leader/successor/partitioned stores. |
-| Hosted CI | Pending | Exact candidate commit must pass Windows, Linux and macOS, including the uploaded convergence report. |
+| Hosted CI | Passed | Runtime `482788be94d5025e53956ff98689cada3e6c9ccc` passed all ten jobs in [CI 35510934212](https://github.com/samuelvoltarius/xaventra/actions/runs/35510934212), including the uploaded convergence report on Windows, Linux and macOS. |
 | Physical-node / live channel | Not claimed | No physical Mesh partition, Telegram session or production node was used. |
 
 ## Local acceptance
@@ -36,5 +36,7 @@ leak into each other.
 - This change does not prove physical-node failover or live channel continuity.
 - Existing legacy records without an explicit lifecycle generation are read as
   generation 1 and are upgraded as they are changed or merged.
-- Full regression, staged secret scan, public-history scan, exact hosted CI and
-  signed release publication remain required before promotion.
+- Staged Gitleaks found zero secrets. The complete public history at the runtime
+  commit contains 96 commits / 10.76 MB and has zero Gitleaks 8.30.1 findings.
+- This evidence attestation requires its own exact green CI before normal
+  fast-forward promotion and signed release publication.
