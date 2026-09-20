@@ -18,7 +18,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   successful epoch-2 successor reconstruction, stale epoch rejection and no
   duplicate effect. The full Core regression passes **228 files / 1,558 tests**.
   The first exact hosted run exposed a missing clean-runner artifact directory;
-  that evidence bug is fixed and retained here. Corrected exact CI is pending.
+  that evidence bug is fixed and retained here. Corrected runtime
+  `97d77d992236adc6351dd294793e3b3c718fda7a` passes all ten jobs in
+  [CI 35488674079](https://github.com/samuelvoltarius/xaventra/actions/runs/35488674079),
+  including the takeover acceptance on Windows, Linux and macOS. The full
+  public history has 89 commits and zero Gitleaks 8.30.1 findings. This evidence
+  attestation still needs its own exact-commit CI before promotion.
 - The process acceptance uses a file-backed fixture authority. It is not a live
   Supabase/witness, network-partition or physical-node test. Production remains
   unchanged, and controlled live Mesh takeover is still open.

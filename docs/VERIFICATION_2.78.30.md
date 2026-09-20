@@ -58,9 +58,16 @@ physical node takeover.
 
 The first exact candidate CI exposed that a caller-supplied artifact directory
 was not created on a clean macOS runner. The acceptance now creates it before
-the first write and persists a failure report from the parent process. The
-corrected exact-commit CI remains pending. The workflow runs the same compiled
-three-process acceptance on Windows, Linux and macOS.
+the first write and persists a failure report from the parent process.
+
+Corrected runtime `97d77d992236adc6351dd294793e3b3c718fda7a` passes all ten jobs in
+[CI 35488674079](https://github.com/samuelvoltarius/xaventra/actions/runs/35488674079).
+The compiled three-process acceptance passes on hosted Windows, Linux and macOS;
+packaged Desktop, managed activation, Docker repair and isolated repair also
+pass. These remain disposable CI environments, not production nodes.
+
+Gitleaks 8.30.1 scanned the complete public history at this candidate: 89
+commits, 10.70 MB and zero findings.
 
 ### Live/production
 
