@@ -6,6 +6,23 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.30 fenced native successor candidate
+
+- Completed native idempotency records and their verified Kernel receipts are
+  now mirrored through encrypted HA state. Publication and import require a
+  freshly revalidated, exact mission fencing token; the successor binds the
+  same scope, user, channel and TaskContract and never overwrites conflicting
+  local truth.
+- Isolated Windows source evidence: typecheck/build pass, focused regressions
+  pass **13/13**, and a compiled three-process acceptance reports one effect,
+  successful epoch-2 successor reconstruction, stale epoch rejection and no
+  duplicate effect. The full Core regression passes **228 files / 1,558 tests**.
+  Exact hosted-CI evidence remains pending until the candidate commit is built.
+- The process acceptance uses a file-backed fixture authority. It is not a live
+  Supabase/witness, network-partition or physical-node test. Production remains
+  unchanged, and controlled live Mesh takeover is still open.
+  [Contract](TOOL_EVIDENCE.md), [candidate record](VERIFICATION_2.78.30.md).
+
 ### 2.78.29 durable native receipt candidate
 
 - The authoritative native runner now persists a verified tool receipt at the

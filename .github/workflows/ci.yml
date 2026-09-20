@@ -142,6 +142,19 @@ jobs:
       - name: Native verified tool receipts survive an actual process restart without replay
         run: npm run check:native-tool-resume
         timeout-minutes: 2
+      - name: Fenced native tool checkpoint takeover across node processes without replay
+        run: npm run check:native-tool-takeover
+        timeout-minutes: 2
+        env:
+          XAVENTRA_NATIVE_TAKEOVER_QA_DIR: ${{ github.workspace }}/.nova-data/native-takeover-qa
+      - name: Preserve native takeover evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-takeover-qa-${{ matrix.os }}
+          path: .nova-data/native-takeover-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled layer behavior contracts (isolated fixtures)
         run: node scripts/check-layer-contracts.mjs
         timeout-minutes: 2

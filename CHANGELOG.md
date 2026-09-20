@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.78.30] — 2026-09-20
+
+- Replicate completed native idempotency records together with their verified
+  Kernel receipts through the encrypted HA state store; raw tool arguments are
+  still excluded from the receipt binding.
+- Require a freshly revalidated mission lease and exact fencing token before a
+  node may publish or admit a replicated checkpoint. A successor accepts only
+  the same mission, scope, principal, channel and TaskContract, and never
+  overwrites conflicting local durable truth.
+- Parse the colon-delimited tokens emitted by the lease authority in native
+  mission markers; the former parser accepted only a narrower token alphabet
+  and therefore skipped the real marker.
+- Add a three-process takeover acceptance: predecessor executes once, successor
+  imports under the next epoch and replays the result, and the stale epoch is
+  rejected. This is a portable fixture-authority test, not proof of a live
+  coordinator, network partition or production failover.
+
 ## [2.78.29] — 2026-09-20
 
 - Persist verified native tool receipts immediately after Kernel validation and

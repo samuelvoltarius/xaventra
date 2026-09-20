@@ -84,6 +84,7 @@
         "../core/missing-resource-recovery.js",
         "../core/model-pricing.js",
         "../core/native-tool-receipts.js",
+        "../core/native-tool-takeover.js",
         "../core/outcome-ledger.js",
         "../core/reasoning-policy.js",
         "../core/response-contract.js",
@@ -1633,6 +1634,17 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/core/native-tool-takeover.ts",
+      "imports": [
+        "./execution-control.js",
+        "./execution-kernel.js",
+        "./ha-state.js",
+        "./native-tool-receipts.js",
+        "./tool-evidence-binding.js",
+        "node:crypto"
       ]
     },
     {

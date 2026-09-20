@@ -66,9 +66,18 @@ channel, a changed contract, a disallowed tool or a duplicate call ID are reject
 
 `npm run check:native-tool-resume` launches two separate Node processes against
 one disposable state directory and asserts exactly one effect across execution
-and reconstruction. This is process-restart evidence. It is not cross-node proof:
-the receipt/idempotency state is not yet replicated to and admitted by a fenced
-successor node.
+and reconstruction.
+
+For a fenced mission, Xaventra also mirrors completed idempotency records and
+their matching receipts through the encrypted HA store. Publication and import
+both revalidate the live mission lease and exact token. A successor admits only
+the same mission, scope, user, channel and contract, at an epoch not older than
+the checkpoint. A conflicting local record is never overwritten. The compiled
+`npm run check:native-tool-takeover` acceptance uses three distinct Node
+processes and a shared disposable fixture authority to prove one effect,
+successor replay and stale-epoch rejection on every hosted OS. This is real
+process evidence with simulated coordination; it is not a production Supabase
+lease, network-partition or physical node-loss test.
 
 ## Verification
 
@@ -77,6 +86,7 @@ npm ci
 npm run build
 node scripts/check-tool-budget.mjs
 node scripts/check-native-tool-resume.mjs
+node scripts/check-native-tool-takeover.mjs
 node scripts/check-tool-budget.mjs --live http://YOUR-LOCAL-MODEL:8000 MODEL_ID
 ```
 

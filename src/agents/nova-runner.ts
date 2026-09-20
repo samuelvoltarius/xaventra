@@ -20,7 +20,7 @@ import { estimateUsageCost } from '../core/model-pricing.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { logRuntimeEvent } from '../core/runtime-event-log.js'
 import { getOutcomeLedger } from '../core/outcome-ledger.js'
-import { assertMissionFenceForContent, deriveToolCompensation, executionScopeForContent, getIdempotencyStore, IdempotencyStore, makeIdempotencyKey, prepareToolCompensation } from '../core/execution-control.js'
+import { assertMissionFenceForContent, deriveToolCompensation, executionScopeForContent, getIdempotencyStore, IdempotencyStore, makeIdempotencyKey, missionFenceForContent, prepareToolCompensation } from '../core/execution-control.js'
 import { withSpan } from '../infra/telemetry.js'
 import { extractCodexInstallTarget, isExplicitCodexInstallRequest } from '../auth/codex-installer.js'
 import { diagnoseToolContract } from '../doctor/tool-contract.js'
@@ -36,6 +36,7 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
+import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -269,12 +270,16 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         : getIdempotencyStore()
     const nativeReceiptStore = new NativeToolReceiptStore(executionStore,
         isBenchmarkRun ? join(kernel.contract.allowedChanges.allowedPaths[0] || process.cwd(), 'native-tool-receipts.json') : undefined)
-    const nativeReceiptRehydration = nativeReceiptStore.rehydrate({
-        scopeId: nativeExecutionScope,
-        principalId: userId,
-        channel,
-        kernel,
-    })
+    const nativeMissionFence = missionFenceForContent(content)
+    const takeoverRehydration = nativeMissionFence && !isBenchmarkRun
+        ? await hydrateNativeToolCheckpoint({
+            fence: nativeMissionFence, scopeId: nativeExecutionScope, principalId: userId, channel,
+            kernel, idempotency: executionStore, receipts: nativeReceiptStore,
+        })
+        : null
+    const nativeReceiptRehydration = takeoverRehydration?.checkpointFound
+        ? takeoverRehydration
+        : nativeReceiptStore.rehydrate({ scopeId: nativeExecutionScope, principalId: userId, channel, kernel })
     if (nativeReceiptRehydration.restored > 0) {
         console.log(`[Xaventra Agent] Rehydrated ${nativeReceiptRehydration.restored} verified native tool receipt(s) for ${nativeExecutionScope}`)
     }
@@ -988,7 +993,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let awaitingPolicyApproval = false
         const nativeExecutionMetadata = new Map<string, { idempotencyKey: string; executionInputHash: string }>()
 
-        const persistNativeReceipt = (callId: string): void => {
+        const persistNativeReceipt = async (callId: string): Promise<void> => {
             const evidence = kernel.getVerifiedToolCallEvidence(callId)
             const metadata = nativeExecutionMetadata.get(callId)
             if (!evidence || !metadata) return
@@ -1014,6 +1019,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 completedIdempotencyKeys,
                 resumeInput: { principalId: userId, channel, contractId: kernel.contract.id, executionScope: nativeExecutionScope },
             })
+            if (nativeMissionFence && !isBenchmarkRun) {
+                const replicated = await publishNativeToolCheckpoint({
+                    fence: nativeMissionFence, scopeId: nativeExecutionScope, principalId: userId, channel,
+                    kernel, idempotency: executionStore, receipts: nativeReceiptStore,
+                })
+                if (!replicated) console.warn(`[Xaventra Agent] Native tool checkpoint replication unavailable for ${nativeExecutionScope}`)
+            }
         }
 
         // Native provider reasoning may be retained for protected diagnostics,
@@ -1273,7 +1285,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                     const verification = kernel.verify(call.name, result, { callId, arguments: call.arguments || {} })
                     const verifiedSuccess = verification.success
-                    if (verifiedSuccess) persistNativeReceipt(callId)
+                    if (verifiedSuccess) await persistNativeReceipt(callId)
                     let recoveredSuccess = false
                     if (!verifiedSuccess && !policyBlocked && kernel.contract.allowedChanges.allowedTools.includes('find_files')) {
                         try {
@@ -1294,7 +1306,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                 ),
                             })
                             for (const execution of recovery.executions) {
-                                if (execution.success) persistNativeReceipt(execution.callId)
+                                if (execution.success) await persistNativeReceipt(execution.callId)
                                 toolsUsed.push(execution.toolName)
                                 toolsExecuted.push(execution.toolName)
                                 const value = execution.result as any
@@ -1580,7 +1592,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     `Recovery tool: ${call.name}`,
                                 )
                                 const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
-                                if (success) persistNativeReceipt(callId)
+                                if (success) await persistNativeReceipt(callId)
                                 const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
                                 toolsExecuted.push(call.name)
                                 toolsUsed.push(call.name)
@@ -1625,7 +1637,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                         `Recovery chain tool: ${call.name}`,
                                     )
                                     const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
-                                    if (success) persistNativeReceipt(callId)
+                                    if (success) await persistNativeReceipt(callId)
                                     const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
                                     toolsExecuted.push(call.name)
                                     toolsUsed.push(call.name)
@@ -1743,7 +1755,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     const res = result as any
                                     let resultStr = res?.output || res?.content || res?.message || (res?.error ? `❌ ${res.error}` : JSON.stringify(result, null, 2))
                                     const roundSuccess = kernel.verify(call.name, result, { callId, arguments: call.arguments || {} }).success
-                                    if (roundSuccess) persistNativeReceipt(callId)
+                                    if (roundSuccess) await persistNativeReceipt(callId)
                                     toolResults.push(String(resultStr).trim())
                                     toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(resultStr).trim(), success: roundSuccess, timestamp: Date.now() })
                                     console.log(`[Nova Agent] Tool result (${call.name}, round ${loopRound}): ${String(resultStr).slice(0, 200)}...`)
@@ -1860,7 +1872,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                 try {
                                     const res = await executeToolOnce(call.name, { ...(call.arguments || {}), userId, channel }, callId)
                                     const success = kernel.verify(call.name, res, { callId, arguments: call.arguments || {} }).success
-                                    if (success) persistNativeReceipt(callId)
+                                    if (success) await persistNativeReceipt(callId)
                                     const resultText = redactSecrets(typeof res === 'string' ? res : JSON.stringify(res))
                                     toolsUsed.push(call.name)
                                     toolsExecuted.push(call.name)

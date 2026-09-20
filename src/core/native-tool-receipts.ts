@@ -70,6 +70,25 @@ export class NativeToolReceiptStore {
 
     private saveState(): void { atomicWriteJsonSync(this.file, this.state) }
 
+    exportScope(scopeId: string): NativeToolReceipt[] {
+        return Object.values(this.state.receipts)
+            .filter(receipt => receipt.scopeId === scopeId)
+            .map(receipt => structuredClone(receipt))
+    }
+
+    importReceipt(receipt: NativeToolReceipt): boolean {
+        if (!receipt || receipt.version !== 1 || !receipt.receiptId || !receipt.scopeId
+            || !receipt.principalId || !receipt.channel || !receipt.contractFingerprint
+            || !receipt.idempotencyKey || !receipt.executionInputHash || !receipt.savedAt
+            || !receipt.evidence?.callId || !receipt.evidence?.toolName || !receipt.evidence?.resultHash) return false
+        if (receipt.receiptId !== stableReceiptId(receipt.scopeId, receipt.principalId, receipt.channel, receipt.evidence.callId)) return false
+        const existing = this.state.receipts[receipt.receiptId]
+        if (existing && existing.savedAt >= receipt.savedAt) return true
+        this.state.receipts[receipt.receiptId] = structuredClone(receipt)
+        this.saveState()
+        return true
+    }
+
     save(input: {
         scopeId: string
         principalId: string

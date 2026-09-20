@@ -13,8 +13,8 @@ describe('IdempotencyStore', () => {
     })
 
     it('parses only a typed mission fence', () => {
-        expect(missionFenceForContent('[NOVA_MISSION_FENCE:m_123:7:token_abc] task')).toEqual({
-            missionId: 'm_123', epoch: 7, token: 'token_abc',
+        expect(missionFenceForContent('[NOVA_MISSION_FENCE:m_123:7:mission:m_123:7:node-a] task')).toEqual({
+            missionId: 'm_123', epoch: 7, token: 'mission:m_123:7:node-a',
         })
         expect(missionFenceForContent('[NOVA_MISSION_FENCE:m_123:0:token]')).toBeUndefined()
         expect(missionFenceForContent('[NOVA_MISSION_FENCE:m 123:7:token]')).toBeUndefined()

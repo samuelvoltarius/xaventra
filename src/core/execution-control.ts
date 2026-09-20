@@ -34,7 +34,7 @@ export function executionScopeForContent(content: string, fallbackRunId: string)
 export interface MissionExecutionFence { missionId: string; epoch: number; token: string }
 
 export function missionFenceForContent(content: string): MissionExecutionFence | undefined {
-    const match = content.match(/\[NOVA_MISSION_FENCE:([A-Za-z0-9._-]+):(\d+):([A-Za-z0-9._-]+)\]/)
+    const match = content.match(/\[NOVA_MISSION_FENCE:([A-Za-z0-9._-]+):(\d+):([A-Za-z0-9._:-]+)\]/)
     if (!match) return undefined
     const epoch = Number(match[2])
     if (!Number.isSafeInteger(epoch) || epoch < 1) return undefined
@@ -150,6 +150,32 @@ export class IdempotencyStore {
     private load(): void { try { if (existsSync(this.file)) this.records = JSON.parse(readFileSync(this.file, 'utf8')) } catch { this.records = {} } }
     private save(): void { atomicWriteJsonSync(this.file, this.records) }
     get(key: string): IdempotencyRecord | undefined { return this.records[key] }
+
+    exportCompleted(keys?: Iterable<string>): IdempotencyRecord[] {
+        const selected = keys ? new Set(keys) : null
+        return Object.values(this.records)
+            .filter(record => record.status === 'completed' && (!selected || selected.has(record.key)))
+            .map(record => structuredClone(record))
+    }
+
+    /** Import only an immutable completed result. A conflicting local record is
+     * never overwritten: that would let a delayed peer replace local truth. */
+    importCompleted(record: IdempotencyRecord): boolean {
+        if (!record || record.status !== 'completed' || !record.key || !record.runId || !record.operation
+            || !record.inputHash || record.result === undefined || !record.startedAt || !record.updatedAt) return false
+        const existing = this.records[record.key]
+        if (existing) {
+            return existing.status === 'completed'
+                && existing.runId === record.runId
+                && existing.operation === record.operation
+                && existing.inputHash === record.inputHash
+                && createHash('sha256').update(JSON.stringify(existing.result)).digest('hex')
+                    === createHash('sha256').update(JSON.stringify(record.result)).digest('hex')
+        }
+        this.records[record.key] = structuredClone(record)
+        this.save()
+        return true
+    }
 
     async executeOnce<T>(options: {
         key: string; runId: string; operation: string; execute: () => Promise<T>
