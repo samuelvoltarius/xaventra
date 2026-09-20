@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.31] — 2026-09-20
+
+- Add a quorum-backed native checkpoint transport to witness coordination.
+  Each write and read is authenticated independently against exactly three
+  witness endpoints and requires two matching responses.
+- Make every witness reject checkpoint access unless the requesting node owns
+  the live mission lease at the exact fencing epoch. Payload epochs are bound
+  to that lease and stale predecessor writes fail closed after takeover.
+- Select the witness checkpoint transport automatically in witness mode;
+  encrypted shared memory remains the existing fallback for other coordination
+  modes.
+- Replace the file-authority takeover acceptance with three authenticated HTTP
+  witness services and isolated predecessor/successor Node processes. This is
+  disposable live-coordinator evidence, not a physical-node, network-partition
+  or production deployment claim.
+
 ## [2.78.30] — 2026-09-20
 
 - Replicate completed native idempotency records together with their verified

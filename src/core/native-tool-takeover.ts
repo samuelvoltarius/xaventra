@@ -25,8 +25,8 @@ export interface NativeTakeoverAuthority {
 }
 
 export interface NativeCheckpointTransport {
-    write(id: string, payload: NativeToolCheckpoint): Promise<boolean>
-    read(): Promise<Array<{ id: string; timestamp: number; payload: NativeToolCheckpoint }>>
+    write(id: string, payload: NativeToolCheckpoint, fence: MissionExecutionFence): Promise<boolean>
+    read(fence: MissionExecutionFence): Promise<Array<{ id: string; timestamp: number; payload: NativeToolCheckpoint }>>
 }
 
 function checkpointId(missionId: string, scopeId: string): string {
@@ -40,6 +40,15 @@ function defaultTransport(): NativeCheckpointTransport {
         }),
         read: () => readHaRecords<NativeToolCheckpoint>(SCOPE, 1_000),
     }
+}
+
+async function checkpointTransport(provided?: NativeCheckpointTransport): Promise<NativeCheckpointTransport> {
+    if (provided) return provided
+    const [{ loadWitnessQuorumConfig }, { createWitnessCheckpointTransport }, { getLocalNodeId }] = await Promise.all([
+        import('../mesh/witness-quorum.js'), import('../mesh/witness-checkpoint-transport.js'), import('../mesh/mesh-registry.js'),
+    ])
+    const witness = loadWitnessQuorumConfig()
+    return witness ? createWitnessCheckpointTransport(witness, getLocalNodeId()) : defaultTransport()
 }
 
 function defaultAuthority(): NativeTakeoverAuthority {
@@ -97,7 +106,7 @@ export async function publishNativeToolCheckpoint(input: {
         contractFingerprint: taskContractFingerprint(input.kernel.contract),
         sourceEpoch: input.fence.epoch, records, receipts, savedAt: new Date().toISOString(),
     }
-    return (input.transport || defaultTransport()).write(checkpointId(input.fence.missionId, input.scopeId), payload)
+    return (await checkpointTransport(input.transport)).write(checkpointId(input.fence.missionId, input.scopeId), payload, input.fence)
 }
 
 export async function hydrateNativeToolCheckpoint(input: {
@@ -113,7 +122,7 @@ export async function hydrateNativeToolCheckpoint(input: {
 }): Promise<NativeReceiptRehydration & { imported: number; checkpointFound: boolean }> {
     await (input.authority || defaultAuthority()).assertCurrent(input.fence)
     const expectedFingerprint = taskContractFingerprint(input.kernel.contract)
-    const candidates = (await (input.transport || defaultTransport()).read())
+    const candidates = (await (await checkpointTransport(input.transport)).read(input.fence))
         .map(item => item.payload)
         .filter(checkpoint => checkpoint?.version === 1
             && typeof checkpoint.savedAt === 'string'

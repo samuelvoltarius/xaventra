@@ -29,8 +29,8 @@ describe('native tool checkpoint takeover', () => {
     it('admits a verified predecessor checkpoint under a fresh fence and does not repeat the effect', async () => {
         const entries: Array<{ id: string; timestamp: number; payload: NativeToolCheckpoint }> = []
         const transport: NativeCheckpointTransport = {
-            async write(id, payload) { entries.splice(0, entries.length, { id, timestamp: Date.now(), payload: structuredClone(payload) }); return true },
-            async read() { return structuredClone(entries) },
+            async write(id, payload, fence) { expect(fence).toEqual(oldFence); entries.splice(0, entries.length, { id, timestamp: Date.now(), payload: structuredClone(payload) }); return true },
+            async read(fence) { expect(fence).toEqual(newFence); return structuredClone(entries) },
         }
         const a = fixture('a'); a.receipts = new NativeToolReceiptStore(a.idempotency, join(a.dir, 'receipts.json'))
         const b = fixture('b'); b.receipts = new NativeToolReceiptStore(b.idempotency, join(b.dir, 'receipts.json'))

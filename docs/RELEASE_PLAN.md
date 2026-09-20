@@ -6,6 +6,22 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.31 live witness checkpoint candidate
+
+- Native mission checkpoints can now use three independently authenticated
+  witness endpoints as both lease and checkpoint authority. Two witnesses must
+  accept the exact node and epoch before a checkpoint is stored; reads require
+  two matching payload hashes under the successor's current epoch.
+- The compiled acceptance starts three disposable HTTP witness services and
+  isolated predecessor, successor and stale-writer Node processes. The
+  predecessor publishes one verified tool receipt and idempotency result,
+  exits, the successor acquires epoch 2 and resumes without a duplicate effect,
+  and the stale predecessor's external write is rejected.
+- This is real loopback HTTP coordination with separate durable witness state,
+  not production Supabase, a physical-host loss or a network-partition proof.
+  No production node changed. Exact regression, commit, CI and history-scan
+  evidence is recorded in [the candidate record](VERIFICATION_2.78.31.md).
+
 ### 2.78.30 fenced native successor candidate
 
 - Completed native idempotency records and their verified Kernel receipts are

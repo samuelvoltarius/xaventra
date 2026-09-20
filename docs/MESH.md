@@ -1,4 +1,21 @@
-# Nova Mesh Network (v2.72)
+# Xaventra Mesh Network
+
+## Witness-governed mission checkpoints
+
+In `mesh.coordination.mode = "witness"`, native mission checkpoints use the
+same three authenticated witness endpoints as mission leases. A checkpoint
+write succeeds only while at least two witnesses independently confirm the
+requesting node and exact lease epoch. A promoted successor reads only payloads
+whose exact ID and SHA-256 hash agree on two witnesses. Stale holders cannot
+write or read after the epoch advances.
+
+This makes checkpoint storage part of the fencing boundary instead of relying
+only on a pre-write authority check. Witness credentials remain node-local
+configuration and are never written into checkpoints, receipts or memory.
+
+Other coordination modes retain the encrypted shared-memory transport. A
+production HA claim still requires independent witness hosts, controlled
+network loss and physical-node takeover evidence.
 
 ## Architecture
 

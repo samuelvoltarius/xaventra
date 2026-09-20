@@ -3952,6 +3952,16 @@
       ]
     },
     {
+      "module": "src/mesh/witness-checkpoint-transport.ts",
+      "imports": [
+        "../core/execution-control.js",
+        "../core/native-tool-takeover.js",
+        "./quorum-witness.js",
+        "./witness-quorum.js",
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/mesh/witness-quorum.ts",
       "imports": [
         "../config/config-path.js",
