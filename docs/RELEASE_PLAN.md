@@ -19,9 +19,13 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Isolated Windows source evidence: typecheck/build pass, focused receipt and
   authorization regressions pass **9/9**, full Core regression passes **227
   files / 1,555 tests**, and a compiled two-process acceptance reports one real
-  effect, one rehydrated receipt and zero duplicate effects. Hosted Windows,
-  Linux and macOS CI on the exact candidate commit remains required before
-  promotion.
+  effect, one rehydrated receipt and zero duplicate effects. Exact runtime
+  `70f1992513e5b4109553dc568608ede81504a02a` passes all ten jobs in
+  [CI 35484065866](https://github.com/samuelvoltarius/xaventra/actions/runs/35484065866).
+  The compiled two-process acceptance passes separately on hosted Windows,
+  Linux and macOS. The full public history has 86 commits and zero Gitleaks
+  8.30.1 findings. This evidence attestation still needs its own exact-commit CI
+  before promotion.
 - This closes process-restart rehydration for stable native mission scopes only.
   Replication of idempotency records/receipts to a fenced successor, controlled
   node takeover and live production proof remain open. No production node was

@@ -48,8 +48,15 @@ idempotency key. Result: `processStarts=2`, `effects=1`, `rehydrated=true`,
 
 ### Hosted platforms
 
-Pending exact-candidate CI. The CI matrix is configured to run the same compiled
-two-process acceptance on Windows, Linux and macOS.
+Exact runtime `70f1992513e5b4109553dc568608ede81504a02a` passes all ten jobs in
+[CI 35484065866](https://github.com/samuelvoltarius/xaventra/actions/runs/35484065866).
+The same compiled two-process acceptance passes on hosted Windows, Linux and
+macOS. Packaged Desktop smoke passes on all three platforms, and the managed,
+Docker and isolated repair jobs pass. These are disposable CI environments, not
+production nodes.
+
+Gitleaks 8.30.1 scanned the full public history at this candidate: 86 commits,
+10.67 MB and zero findings.
 
 ### Live/production
 
