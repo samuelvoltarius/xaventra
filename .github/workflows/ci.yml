@@ -168,6 +168,19 @@ jobs:
           path: .nova-data/memory-convergence-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Outcome Router validated samples survive restart without cross-user leakage
+        run: npm run check:outcome-router
+        timeout-minutes: 2
+        env:
+          XAVENTRA_OUTCOME_ROUTER_QA_DIR: ${{ github.workspace }}/.nova-data/outcome-router-qa
+      - name: Preserve Outcome Router restart evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outcome-router-qa-${{ matrix.os }}
+          path: .nova-data/outcome-router-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Compiled layer behavior contracts (isolated fixtures)
         run: node scripts/check-layer-contracts.mjs
         timeout-minutes: 2

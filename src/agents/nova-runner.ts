@@ -405,7 +405,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 const eligibleNodes = preferred.length ? preferred : graphNodes
                 const candidates = eligibleNodes.flatMap(node => node.runtimes.flatMap(runtime =>
                     runtime.models.map(model => ({ model, node: node.id }))))
-                shadowRoute = getOutcomeRouter().decide(actionIntent.kind || 'agent', { model: activeModel, node: 'local' }, candidates)
+                shadowRoute = getOutcomeRouter().decide(actionIntent.kind || 'agent', { model: activeModel, node: 'local' }, candidates, { userId, channel })
             } catch { /* outcome router is telemetry-only in shadow mode */ }
         }
         // Active routing is opt-in and remains sample-gated inside OutcomeRouter.
@@ -2013,6 +2013,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         node: (llmClient as any)?.nodeId || (llmClient as any)?.node,
                         success: true, validated: true, durationMs: Date.now() - outcomeStartedAt,
                         costUsd: usageCost.totalUsd,
+                        channel, validation: taskValidation,
                     })
                 } catch { /* episodic learning is non-critical */ }
             }
@@ -2034,6 +2035,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         node: (llmClient as any)?.nodeId || (llmClient as any)?.node,
                         success: false, validated: true, durationMs: Date.now() - outcomeStartedAt,
                         costUsd: usageCost.totalUsd,
+                        channel, validation: taskValidation,
                     })
                 } catch { /* episodic failure learning is non-critical */ }
             }

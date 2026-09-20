@@ -140,7 +140,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
         const baseline = { model: input.model || 'auto', node: 'local' }
         const graphCandidates = getCapabilityGraph().getSnapshot().nodes.flatMap(node => node.runtimes.flatMap(runtime =>
             runtime.models.map(model => ({ model, node: node.id }))))
-        const shadow = getOutcomeRouter().decide(kernel.intent.kind || 'agent', baseline, graphCandidates)
+        const shadow = getOutcomeRouter().decide(kernel.intent.kind || 'agent', baseline, graphCandidates, { userId: input.userId, channel: input.channel })
         ledger.recordRoute(input.contract.id, {
             backend: this.name, model: baseline.model, node: baseline.node,
             taskType: kernel.intent.kind || 'agent',
@@ -262,6 +262,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
                             })).filter(tool => tool.toolName),
                             model: input.model || 'auto', node: 'local', success: false, validated: true,
                             durationMs: Date.now() - startedAt, costUsd: run?.totalCostUsd || 0,
+                            channel: input.channel, validation,
                         })
                     } catch { /* episodic failure learning is non-critical */ }
                 }
@@ -291,6 +292,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
                         })).filter(tool => tool.toolName),
                         model: resolvedModel, node: resolvedNode, success: true, validated: true,
                         durationMs: Date.now() - startedAt, costUsd: usageCost.totalUsd,
+                        channel: input.channel, validation,
                     })
                 } catch { /* episodic learning is non-critical */ }
             }

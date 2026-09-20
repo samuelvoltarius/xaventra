@@ -86,6 +86,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/auto-updater.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/autonomous-executor-pause.test.ts",
       "path": ".nova-data"
     },
@@ -243,6 +247,18 @@
     },
     {
       "owner": "src/desktop/topic-room-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/dev/cleanup-benchmark-contamination.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/dev/cleanup-correction-misattribution.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/dev/generate-runtime-catalogs.ts",
       "path": ".nova-data"
     },
     {
@@ -526,6 +542,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/mesh-policy.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/mesh-registry.ts",
       "path": ".nova-data"
     },
@@ -534,11 +554,23 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/mesh-transport-router.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/mesh-transport-runtime.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/node-intelligence.ts",
       "path": ".nova-data"
     },
     {
       "owner": "src/mesh/quorum-witness.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/relay-server.ts",
       "path": ".nova-data"
     },
     {
@@ -559,10 +591,6 @@
     },
     {
       "owner": "src/process/nova-watchdog.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/routing/outcome-router.ts",
       "path": ".nova-data"
     },
     {
@@ -690,6 +718,30 @@
       "path": ".nova-data/ai-services.json"
     },
     {
+      "owner": "src/layers/auto-bug-fix.ts",
+      "path": ".nova-data/auto-fix"
+    },
+    {
+      "owner": "src/core/belief-store.ts",
+      "path": ".nova-data/beliefs.json"
+    },
+    {
+      "owner": "src/core/causal-memory.ts",
+      "path": ".nova-data/causal-memory.json"
+    },
+    {
+      "owner": "src/auth/codex-runtime.ts",
+      "path": ".nova-data/codex-auth-index"
+    },
+    {
+      "owner": "src/auth/codex-runtime.test.ts",
+      "path": ".nova-data/codex-auth-index/nova_ns1.json"
+    },
+    {
+      "owner": "src/desktop/desktop-api.ts",
+      "path": ".nova-data/desktop/captures"
+    },
+    {
       "owner": "src/llm/model-discovery.ts",
       "path": ".nova-data/discovered-models.json"
     },
@@ -700,6 +752,10 @@
     {
       "owner": "src/intelligence/doctor-client.test.ts",
       "path": ".nova-data/doctor-telemetry/usage.jsonl"
+    },
+    {
+      "owner": "src/core/goal-manager.ts",
+      "path": ".nova-data/goals.json"
     },
     {
       "owner": "src/layers/L0-supervisor.ts",
@@ -718,12 +774,44 @@
       "path": ".nova-data/learned-solutions.json"
     },
     {
+      "owner": "src/memory/memory-governance.ts",
+      "path": ".nova-data/memory/governance"
+    },
+    {
+      "owner": "src/memory/session-summarizer.ts",
+      "path": ".nova-data/memory/session-continuity.json"
+    },
+    {
+      "owner": "src/memory/workflow-episode-store.ts",
+      "path": ".nova-data/memory/workflow-episodes.json"
+    },
+    {
+      "owner": "src/mesh/mesh-identity.ts",
+      "path": ".nova-data/mesh-identity"
+    },
+    {
       "owner": "src/llm/model-perf-db.ts",
       "path": ".nova-data/model-perf.json"
     },
     {
       "owner": "src/auth/openai-oauth.ts",
       "path": ".nova-data/openai-auth.json"
+    },
+    {
+      "owner": "src/core/operational-event-bus.ts",
+      "path": ".nova-data/operational-events.json"
+    },
+    {
+      "owner": "src/dev/generate-runtime-catalogs.test.ts",
+      "path": ".nova-data/outcome-router-samples.json"
+    },
+    {
+      "owner": "src/routing/outcome-router.ts",
+      "path": ".nova-data/outcome-router-samples.json"
+    },
+    {
+      "owner": "src/routing/outcome-router.ts",
+      "path": ".nova-data/outcome-router-shadow.jsonl"
     },
     {
       "owner": "src/layers/L0-supervisor.ts",
@@ -738,8 +826,24 @@
       "path": ".nova-data/scheduled-tasks.json"
     },
     {
+      "owner": "src/dev/generate-runtime-catalogs.test.ts",
+      "path": ".nova-data/self-doctor/failure-research.json"
+    },
+    {
+      "owner": "src/doctor/failure-research-coordinator.ts",
+      "path": ".nova-data/self-doctor/failure-research.json"
+    },
+    {
+      "owner": "src/memory/session-summarizer.ts",
+      "path": ".nova-data/sessions"
+    },
+    {
       "owner": "src/core/soul.ts",
       "path": ".nova-data/soul.md"
+    },
+    {
+      "owner": "src/core/upstream-update-command.ts",
+      "path": ".nova-data/upstream-updates"
     },
     {
       "owner": "src/cli.ts",
@@ -766,6 +870,10 @@
       "path": ".nova-learning"
     },
     {
+      "owner": "src/dev/generate-runtime-catalogs.ts",
+      "path": ".nova-learning"
+    },
+    {
       "owner": "src/layers/L17-autonomous-learning.ts",
       "path": ".nova-learning"
     },
@@ -786,6 +894,14 @@
       "path": ".nova-learning"
     },
     {
+      "owner": "src/learning/learning-coordinator.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/learning/personal-skill-compiler.ts",
+      "path": ".nova-learning"
+    },
+    {
       "owner": "src/memory/capabilities-store.ts",
       "path": ".nova-learning"
     },
@@ -796,6 +912,18 @@
     {
       "owner": "src/layers/L18-llm-router.ts",
       "path": ".nova-learning/model-usage.json"
+    },
+    {
+      "owner": "src/dev/generate-runtime-catalogs.test.ts",
+      "path": ".nova-learning/regression-cases.json"
+    },
+    {
+      "owner": "src/learning/regression-case-store.ts",
+      "path": ".nova-learning/regression-cases.json"
+    },
+    {
+      "owner": "src/tools/skill-builder.ts",
+      "path": ".nova-learning/skill-forge.json"
     },
     {
       "owner": "src/cli.ts",

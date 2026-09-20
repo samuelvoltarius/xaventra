@@ -1,6 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { getAllModelStats, getModelScoreAdjustment } from '../llm/model-perf-db.js'
+import { createHash } from 'node:crypto'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { getNovaDataDir } from '../core/data-root.js'
 import { getOutcomeLedger, type OutcomeLedger } from '../core/outcome-ledger.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 
@@ -37,6 +39,61 @@ export interface OutcomeTrainingStatus {
     canaryPercent: number
     cells: OutcomeTrainingCell[]
     evaluatedAt: string
+    scope: 'principal' | 'aggregate-observability'
+}
+
+export interface ValidatedRoutingSampleInput {
+    runId: string
+    userId: string
+    channel?: string
+    taskType: string
+    model?: string
+    node?: string
+    success: boolean
+    durationMs: number
+    costUsd: number
+    validatedAt: string
+    validationSource: 'nova-execution-kernel'
+    evidenceRefs: string[]
+}
+
+interface PersistedRoutingSample {
+    version: 1
+    runId: string
+    principalHash: string
+    taskType: string
+    model: string
+    node?: string
+    success: boolean
+    durationMs: number
+    costUsd: number
+    validatedAt: string
+    evidenceRefs: string[]
+    evidenceHash: string
+    invalidatedAt?: string
+}
+
+interface PersistedRoutingSamples {
+    version: 1
+    updatedAt: string
+    samples: PersistedRoutingSample[]
+}
+
+function sha256(value: string): string {
+    return createHash('sha256').update(value).digest('hex')
+}
+
+function principalHash(userId: string): string {
+    return sha256(`xaventra-outcome-router\u0000${userId.trim()}`)
+}
+
+function sampleHash(sample: Omit<PersistedRoutingSample, 'evidenceHash'>): string {
+    return sha256(JSON.stringify({ ...sample, evidenceRefs: [...sample.evidenceRefs].sort() }))
+}
+
+function excludedTrainingIdentity(userId: string, channel = ''): boolean {
+    const identity = `${userId}\u0000${channel}`.toLowerCase()
+    return /(^|\u0000|:)(benchmark|fixture|synthetic|sandbox|test)(:|\u0000|$)/.test(identity)
 }
 
 function stablePercentage(value: string): number {
@@ -48,95 +105,157 @@ function stablePercentage(value: string): number {
 export class OutcomeRouter {
     constructor(
         private readonly ledger: OutcomeLedger = getOutcomeLedger(),
-        private readonly decisionFile = join(process.cwd(), '.nova-data', 'outcome-router-shadow.jsonl'),
+        private readonly decisionFile = getNovaDataDir('outcome-router-shadow.jsonl'),
         private readonly mode: 'shadow' | 'active' = process.env.NOVA_OUTCOME_ROUTER_MODE === 'active' ? 'active' : 'shadow',
+        private readonly sampleFile = getNovaDataDir('outcome-router-samples.json'),
     ) {}
 
-    getTrainingStatus(): OutcomeTrainingStatus {
+    private loadSamples(): PersistedRoutingSample[] {
+        try {
+            if (!existsSync(this.sampleFile)) return []
+            const parsed = JSON.parse(readFileSync(this.sampleFile, 'utf8')) as PersistedRoutingSamples
+            if (parsed?.version !== 1 || !Array.isArray(parsed.samples)) return []
+            const seen = new Set<string>()
+            return parsed.samples.filter(sample => {
+                if (sample?.version !== 1 || !sample.runId || !sample.principalHash || !sample.taskType || !sample.model) return false
+                if (!/^[a-f0-9]{64}$/.test(sample.principalHash) || !/^[a-f0-9]{64}$/.test(sample.evidenceHash)) return false
+                if (!Array.isArray(sample.evidenceRefs) || sample.evidenceRefs.some(ref => typeof ref !== 'string')) return false
+                if (!Number.isFinite(Date.parse(sample.validatedAt)) || !Number.isFinite(sample.durationMs) || !Number.isFinite(sample.costUsd)) return false
+                const { evidenceHash, ...hashInput } = sample
+                if (evidenceHash !== sampleHash(hashInput)) return false
+                const key = `${sample.principalHash}\u0000${sample.runId}`
+                if (seen.has(key)) return false
+                seen.add(key)
+                return true
+            }).slice(-10_000)
+        } catch {
+            // Corrupt or partially written training state is never routing evidence.
+            return []
+        }
+    }
+
+    private persistSamples(samples: PersistedRoutingSample[]): void {
+        atomicWriteJsonSync(this.sampleFile, {
+            version: 1,
+            updatedAt: new Date().toISOString(),
+            samples: samples.slice(-10_000),
+        } satisfies PersistedRoutingSamples)
+    }
+
+    /** Persist a derived routing sample only after the canonical Execution
+     * Kernel validator produced independently checkable evidence. The store is
+     * principal-scoped and contains no request text, tool arguments or output. */
+    recordValidatedSample(input: ValidatedRoutingSampleInput): boolean {
+        if (input.validationSource !== 'nova-execution-kernel') return false
+        if (!input.runId || !input.userId.trim() || !input.taskType || !input.model) return false
+        if (excludedTrainingIdentity(input.userId, input.channel)) return false
+        if (!Number.isFinite(Date.parse(input.validatedAt))) return false
+        const evidenceRefs = [...new Set(input.evidenceRefs.filter(ref => typeof ref === 'string' && ref.trim()))]
+        // A non-empty model response is not independent outcome evidence.
+        if (evidenceRefs.length === 0 || evidenceRefs.every(ref => ref === 'response' || ref === 'current-turn-output-contract')) return false
+        const base: Omit<PersistedRoutingSample, 'evidenceHash'> = {
+            version: 1,
+            runId: input.runId,
+            principalHash: principalHash(input.userId),
+            taskType: input.taskType,
+            model: input.model,
+            ...(input.node ? { node: input.node } : {}),
+            success: input.success,
+            durationMs: Math.max(0, Number(input.durationMs || 0)),
+            costUsd: Math.max(0, Number(input.costUsd || 0)),
+            validatedAt: input.validatedAt,
+            evidenceRefs,
+        }
+        const samples = this.loadSamples()
+        const key = `${base.principalHash}\u0000${base.runId}`
+        if (samples.some(sample => `${sample.principalHash}\u0000${sample.runId}` === key)) return false
+        samples.push({ ...base, evidenceHash: sampleHash(base) })
+        this.persistSamples(samples)
+        return true
+    }
+
+    invalidateValidatedSample(runId: string, userId: string, reason = 'outcome invalidated'): boolean {
+        if (!runId || !userId.trim()) return false
+        const scope = principalHash(userId)
+        const samples = this.loadSamples()
+        const sample = samples.find(item => item.runId === runId && item.principalHash === scope && !item.invalidatedAt)
+        if (!sample) return false
+        sample.invalidatedAt = new Date().toISOString()
+        sample.evidenceRefs = [...sample.evidenceRefs, `invalidation:${sha256(reason).slice(0, 16)}`]
+        const { evidenceHash: _previousHash, ...hashInput } = sample
+        sample.evidenceHash = sampleHash(hashInput)
+        this.persistSamples(samples)
+        return true
+    }
+
+    getTrainingStatus(userId?: string): OutcomeTrainingStatus {
         const minimumSamples = Math.max(10, Number(process.env.NOVA_OUTCOME_ROUTER_MIN_SAMPLES || 20))
         const minimumSuccesses = Math.max(5, Number(process.env.NOVA_OUTCOME_ROUTER_MIN_SUCCESSES || 15))
         const minimumSuccessRate = Math.max(0.5, Math.min(1, Number(process.env.NOVA_OUTCOME_ROUTER_MIN_SUCCESS_RATE || 0.75)))
         const activeTaskTypes = (process.env.NOVA_OUTCOME_ROUTER_ACTIVE_TASKS || '').split(',').map(item => item.trim()).filter(Boolean)
         const canaryPercent = Math.max(0, Math.min(100, Number(process.env.NOVA_OUTCOME_ROUTER_CANARY_PERCENT || 100)))
-        const groups = new Map<string, { taskType: string; model: string; node?: string; runs: ReturnType<OutcomeLedger['listRuns']> }>()
-        for (const run of this.ledger.listRuns(5_000)) {
-            if ((run.status !== 'completed' && run.status !== 'failed') || typeof run.validation?.success !== 'boolean') continue
-            if (run.channel === 'benchmark' || String(run.userId || '').startsWith('benchmark:')) continue
-            const route = [...run.events].reverse().find(event => event.type === 'route.selected')
-            const taskType = String(route?.payload?.taskType || '')
-            if (!taskType || !run.model) continue
-            const key = `${taskType}\u0000${run.model}\u0000${run.node || ''}`
-            const group = groups.get(key) || { taskType, model: run.model, node: run.node, runs: [] }
-            group.runs.push(run)
+        const scope = userId?.trim() ? principalHash(userId) : undefined
+        const samples = this.loadSamples().filter(sample => !sample.invalidatedAt && (!scope || sample.principalHash === scope))
+        const groups = new Map<string, { taskType: string; model: string; node?: string; samples: PersistedRoutingSample[] }>()
+        for (const sample of samples) {
+            const key = `${sample.taskType}\u0000${sample.model}\u0000${sample.node || ''}`
+            const group = groups.get(key) || { taskType: sample.taskType, model: sample.model, node: sample.node, samples: [] }
+            group.samples.push(sample)
             groups.set(key, group)
         }
         const cells = [...groups.values()].map(group => {
-            const successes = group.runs.filter(run => run.status === 'completed' && run.validation?.success === true).length
-            const samples = group.runs.length
-            const successRate = samples ? successes / samples : 0
+            const successes = group.samples.filter(sample => sample.success).length
+            const sampleCount = group.samples.length
+            const successRate = sampleCount ? successes / sampleCount : 0
             return {
-                taskType: group.taskType, model: group.model, node: group.node, samples, successes, successRate,
-                averageDurationMs: samples ? group.runs.reduce((sum, run) => sum + Number(run.finalOutcome?.durationMs || 0), 0) / samples : 0,
-                averageCostUsd: samples ? group.runs.reduce((sum, run) => sum + run.totalCostUsd, 0) / samples : 0,
-                activationEligible: samples >= minimumSamples && successes >= minimumSuccesses && successRate >= minimumSuccessRate,
+                taskType: group.taskType, model: group.model, node: group.node, samples: sampleCount, successes, successRate,
+                averageDurationMs: sampleCount ? group.samples.reduce((sum, sample) => sum + sample.durationMs, 0) / sampleCount : 0,
+                averageCostUsd: sampleCount ? group.samples.reduce((sum, sample) => sum + sample.costUsd, 0) / sampleCount : 0,
+                activationEligible: Boolean(scope) && sampleCount >= minimumSamples && successes >= minimumSuccesses && successRate >= minimumSuccessRate,
             }
         }).sort((a, b) => b.samples - a.samples || b.successRate - a.successRate)
-        return { mode: this.mode, minimumSamples, minimumSuccesses, minimumSuccessRate, activeTaskTypes, canaryPercent, cells, evaluatedAt: new Date().toISOString() }
+        return { mode: this.mode, minimumSamples, minimumSuccesses, minimumSuccessRate, activeTaskTypes, canaryPercent, cells, evaluatedAt: new Date().toISOString(), scope: scope ? 'principal' : 'aggregate-observability' }
     }
 
-    decide(taskType: string, baseline: RouteCandidate, candidates: RouteCandidate[]): ShadowRouteDecision {
+    decide(taskType: string, baseline: RouteCandidate, candidates: RouteCandidate[], context: { userId?: string; channel?: string } = {}): ShadowRouteDecision {
         const all = candidates.some(item => item.model === baseline.model && item.node === baseline.node) ? candidates : [baseline, ...candidates]
-        const stats = new Map(getAllModelStats().map(item => [item.model, item]))
         const graph = getCapabilityGraph().getSnapshot()
-        const terminal = this.ledger.listRuns(500).filter(run =>
-            (run.status === 'completed' || run.status === 'failed')
-            // Synthetic benchmark fixtures prove capabilities but must never
-            // teach the production model router which route to activate.
-            && run.channel !== 'benchmark'
-            && !String(run.userId || '').startsWith('benchmark:'))
+        const scope = context.userId?.trim() && !excludedTrainingIdentity(context.userId, context.channel)
+            ? principalHash(context.userId)
+            : undefined
+        const terminal = scope ? this.loadSamples().filter(sample => sample.principalHash === scope && !sample.invalidatedAt) : []
         const scored = all.map(candidate => {
-            const perf = stats.get(candidate.model)
-            const ledgerMatches = terminal.filter(run =>
-                run.model === candidate.model
-                && (!candidate.node || run.node === candidate.node)
-                && run.events.some(event => event.type === 'route.selected' && event.payload.taskType === taskType))
-            // Only externally validated outcomes may train or activate routing.
-            // A model response or a terminal status alone is not evidence.
-            const validatedMatches = ledgerMatches.filter(run => typeof run.validation?.success === 'boolean')
-            const successes = validatedMatches.filter(run => run.status === 'completed' && run.validation?.success === true).length
+            const validatedMatches = terminal.filter(sample =>
+                sample.model === candidate.model
+                && (!candidate.node || sample.node === candidate.node)
+                && sample.taskType === taskType)
+            const successes = validatedMatches.filter(sample => sample.success).length
             const rawSuccessRate = validatedMatches.length ? successes / validatedMatches.length : 0
             const successRate = (successes + 1) / (validatedMatches.length + 2) // Bayesian score avoids early overfitting
-            const ratings = validatedMatches.flatMap(run => run.feedback.map(item => Number(item.rating)).filter(Number.isFinite))
-            const feedbackScore = ratings.length ? ((ratings.reduce((sum, value) => sum + value, 0) / ratings.length) - 3) * 5 : 0
-            const averageCost = validatedMatches.length ? validatedMatches.reduce((sum, run) => sum + run.totalCostUsd, 0) / validatedMatches.length : Number(candidate.estimatedCostUsd || 0)
+            const feedbackScore = 0
+            const averageCost = validatedMatches.length ? validatedMatches.reduce((sum, sample) => sum + sample.costUsd, 0) / validatedMatches.length : Number(candidate.estimatedCostUsd || 0)
             const averageDuration = validatedMatches.length
-                ? validatedMatches.reduce((sum, run) => sum + Number(run.finalOutcome?.durationMs || 0), 0) / validatedMatches.length
-                : Number(perf?.avgLatencyMs || 0)
+                ? validatedMatches.reduce((sum, sample) => sum + sample.durationMs, 0) / validatedMatches.length
+                : 0
             const runtimeSamples = graph.nodes
                 .filter(node => !candidate.node || node.id === candidate.node || node.hostname === candidate.node)
                 .flatMap(node => node.runtimes)
                 .filter(runtime => runtime.models.includes(candidate.model))
                 .flatMap(runtime => Object.values((runtime.metadata?.performance || {}) as Record<string, { tokensPerSecond?: number }>))
             const tokensPerSecond = Math.max(0, ...runtimeSamples.map(sample => Number(sample.tokensPerSecond || 0)))
-            const outcomeSamples = graph.nodes
-                .filter(node => !candidate.node || node.id === candidate.node || node.hostname === candidate.node)
-                .flatMap(node => node.runtimes)
-                .filter(runtime => runtime.models.includes(candidate.model))
-                .map(runtime => ((runtime.metadata?.outcomes || {}) as Record<string, { toolSamples?: number; toolSuccessRate?: number }>)[candidate.model])
-                .filter(Boolean)
-            const toolSamples = outcomeSamples.reduce((sum, sample) => sum + Number(sample.toolSamples || 0), 0)
-            const weightedToolSuccess = toolSamples
-                ? outcomeSamples.reduce((sum, sample) => sum + Number(sample.toolSuccessRate || 0) * Number(sample.toolSamples || 0), 0) / toolSamples
-                : 0
+            // Outcome success is principal-scoped. Capability Graph outcome
+            // aggregates and model-perf.json may include other users or merely
+            // transport-level success, so neither may train active selection.
+            const toolSamples = validatedMatches.length
+            const weightedToolSuccess = rawSuccessRate
             const outcomeBonus = (successRate - 0.5) * 40 + feedbackScore
-            const quality = getModelScoreAdjustment(candidate.model, taskType)
             const latencyPenalty = Math.min(20, averageDuration / 2000)
             const costPenalty = Math.min(20, averageCost * 100)
             const throughputBonus = Math.min(10, tokensPerSecond / 10)
             const toolReliabilityBonus = toolSamples >= 3 ? (weightedToolSuccess - 0.5) * 20 : 0
             return {
                 candidate,
-                score: Number(candidate.baseScore || 0) + quality + outcomeBonus + throughputBonus + toolReliabilityBonus - latencyPenalty - costPenalty,
+                score: Number(candidate.baseScore || 0) + outcomeBonus + throughputBonus + toolReliabilityBonus - latencyPenalty - costPenalty,
                 samples: validatedMatches.length,
                 successes,
                 rawSuccessRate,

@@ -13,7 +13,9 @@ OAuth implementations are injected locally by node. Tokens and OAuth provider
 state must never be placed in `xaventra.config.json`, Memory, Supabase or Mesh.
 
 Outcome routing remains shadow-only unless `NOVA_OUTCOME_ROUTER_MODE=active`.
-Active mode still requires validated production samples. Optional
+Active mode still requires enough independently validated production samples
+for the requesting principal. Benchmark, fixture, synthetic, model-response-only
+and other users' outcomes never make a route eligible. Optional
 `NOVA_OUTCOME_ROUTER_ACTIVE_TASKS` limits activation to comma-separated task
 types and `NOVA_OUTCOME_ROUTER_CANARY_PERCENT` sets a deterministic canary.
 

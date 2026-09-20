@@ -15,8 +15,10 @@ container. The operator reviews evidence and explicitly promotes a worktree.
 The MCP runtime and signed Plugin SDK publish capabilities into the same Tool
 Registry; they do not create parallel executors. Operator Browser state is
 user-scoped and replayable. Outcome Router learns only from independently
-validated production runs, while Memory governance owns provenance,
-corrections, freshness and scope isolation.
+validated, evidence-bearing production runs admitted by the Learning
+Coordinator. Its durable sample projection is principal-scoped; benchmark,
+synthetic, response-only and cross-user outcomes cannot activate a route.
+Memory governance owns provenance, corrections, freshness and scope isolation.
 
 Before a model call, the canonical context policy deterministically selects a
 `fast`, `balanced`, `deep` or `research` cognitive mode. That one decision owns

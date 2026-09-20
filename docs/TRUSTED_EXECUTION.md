@@ -44,10 +44,19 @@ write test runs to the default production location.
 
 The AI scanner remains the discovery authority. Its verified probes and mesh
 heartbeats are normalized into `.nova-data/capability-graph.json`. The outcome
-router consumes this graph, `model-perf.json` and validated ledger runs. It is
-shadow-only by default and records recommendations without changing the user's
-configured route. Set `NOVA_OUTCOME_ROUTER_MODE=active` only after benchmark
-evidence is sufficient.
+router consumes hardware/runtime capability evidence from this graph and the derived
+`.nova-data/outcome-router-samples.json` projection. The canonical Learning
+Coordinator admits a sample only after Execution Kernel validation plus
+independently checkable tool/test evidence. Samples are principal-scoped,
+integrity-checked and durable across restart; benchmark, fixture, synthetic and
+response-only outcomes are rejected. It is shadow-only by default and records
+recommendations without changing the user's configured route. Active mode also
+requires explicit sample/success/rate thresholds, task allowlisting and canary
+selection. Benchmark results never unlock production routing.
+
+The projection is written by the fenced Main's single Learning Coordinator.
+It is restart-durable on that runtime root; replication or takeover convergence
+of this derived file is not claimed by this checkpoint.
 
 ## Idempotency, resume and compensation
 

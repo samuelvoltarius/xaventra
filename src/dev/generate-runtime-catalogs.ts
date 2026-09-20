@@ -45,12 +45,19 @@ function moduleGraph(files: string[]): unknown[] {
     })
 }
 
-function persistenceCatalog(files: string[]): unknown[] {
+export function persistenceCatalog(files: string[]): unknown[] {
     const entries: Array<{ owner: string; path: string }> = []
-    const pattern = /['"](\.nova-(?:data|memory|learning|sessions|vector-memory)(?:\/[A-Za-z0-9._/-]+)?)['"]/g
+    const literalPattern = /['"](\.nova-(?:data|memory|learning|sessions|vector-memory)(?:\/[A-Za-z0-9._/-]+)?)['"]/g
+    const helperPattern = /\b(getNovaDataDir|getNovaLearningDir)\s*\(([^)]*)\)/g
     for (const file of files.filter(file => file.endsWith('.ts'))) {
         const text = readFileSync(file, 'utf8').replace(/\\/g, '/')
-        for (const match of text.matchAll(pattern)) entries.push({ owner: relative(ROOT, file).replace(/\\/g, '/'), path: match[1] })
+        const owner = relative(ROOT, file).replace(/\\/g, '/')
+        for (const match of text.matchAll(literalPattern)) entries.push({ owner, path: match[1] })
+        for (const match of text.matchAll(helperPattern)) {
+            const parts = [...match[2].matchAll(/['"]([A-Za-z0-9._/-]+)['"]/g)].map(part => part[1])
+            const root = match[1] === 'getNovaLearningDir' ? '.nova-learning' : '.nova-data'
+            entries.push({ owner, path: parts.length ? `${root}/${parts.join('/')}` : root })
+        }
     }
     return [...new Map(entries.map(entry => [`${entry.owner}:${entry.path}`, entry])).values()].sort((a, b) => a.path.localeCompare(b.path) || a.owner.localeCompare(b.owner))
 }
@@ -74,7 +81,7 @@ export async function generateRuntimeCatalogs(options: { check?: boolean } = {})
         'modules.json': stable({ version: 1, modules: moduleGraph(files) }),
         'profiles.json': stable({ version: 1, profiles: listRuntimeProfiles(), bundles: listRuntimeBundles() }),
     }
-    outputs['README.md'] = `# Nova generated runtime catalogs\n\nGenerated from authoritative source. Do not edit by hand.\n\n| Catalog | Entries | SHA-256 |\n|---|---:|---|\n${Object.entries(outputs).filter(([name]) => name.endsWith('.json')).map(([name, content]) => `| ${name} | ${(JSON.parse(content).tools || JSON.parse(content).entries || JSON.parse(content).modules || JSON.parse(content).profiles || []).length} | \`${hash(content)}\` |`).join('\n')}\n`
+    outputs['README.md'] = `# Xaventra generated runtime catalogs\n\nGenerated from authoritative source. Do not edit by hand.\n\n| Catalog | Entries | SHA-256 |\n|---|---:|---|\n${Object.entries(outputs).filter(([name]) => name.endsWith('.json')).map(([name, content]) => `| ${name} | ${(JSON.parse(content).tools || JSON.parse(content).entries || JSON.parse(content).modules || JSON.parse(content).profiles || []).length} | \`${hash(content)}\` |`).join('\n')}\n`
 
     const changed: string[] = []
     const mismatches: string[] = []

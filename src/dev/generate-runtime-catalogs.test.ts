@@ -1,13 +1,31 @@
-import { describe, expect, it } from 'vitest'
-import { catalogContentMatches } from './generate-runtime-catalogs.js'
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { persistenceCatalog } from './generate-runtime-catalogs.js'
 
-describe('catalogContentMatches', () => {
-    it('accepts equivalent LF and CRLF generated catalogs', () => {
-        expect(catalogContentMatches('{\r\n  "version": 1\r\n}\r\n', '{\n  "version": 1\n}\n')).toBe(true)
+describe('runtime persistence catalog', () => {
+    const roots: string[] = []
+    afterEach(() => {
+        while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
     })
 
-    it('still rejects semantic catalog changes', () => {
-        expect(catalogContentMatches('{\r\n  "version": 1\r\n}\r\n', '{\n  "version": 2\n}\n')).toBe(false)
-        expect(catalogContentMatches(undefined, '{}\n')).toBe(false)
+    it('catalogs literal data-root helper paths instead of silently omitting them', () => {
+        const root = mkdtempSync(join(tmpdir(), 'xaventra-catalog-'))
+        roots.push(root)
+        const file = join(root, 'sample.ts')
+        const dataCall = 'getNova' + 'DataDir'
+        const learningCall = 'getNova' + 'LearningDir'
+        writeFileSync(file, [
+            `${dataCall}('outcome-router-samples.json')`,
+            `${dataCall}('self-doctor', 'failure-research.json')`,
+            `${learningCall}('regression-cases.json')`,
+        ].join('\n'))
+
+        expect(persistenceCatalog([file])).toEqual(expect.arrayContaining([
+            expect.objectContaining({ path: '.nova-data/outcome-router-samples.json' }),
+            expect.objectContaining({ path: '.nova-data/self-doctor/failure-research.json' }),
+            expect.objectContaining({ path: '.nova-learning/regression-cases.json' }),
+        ]))
     })
 })

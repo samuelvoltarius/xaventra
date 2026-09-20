@@ -95,6 +95,8 @@ async function probeDiscovery(workspace: string): Promise<BenchmarkProbeResult> 
 
 async function probeRouting(workspace: string): Promise<BenchmarkProbeResult> {
     const ledger = new OutcomeLedger(join(workspace, 'routing-ledger'), false)
+    const router = new OutcomeRouter(ledger, join(workspace, 'routing-decisions.jsonl'), 'shadow', join(workspace, 'routing-samples.json'))
+    let benchmarkRejected = true
     for (let index = 0; index < 20; index++) {
         const runId = `routing-${index}`
         ledger.append(runId, 'route.selected', { model: 'qwen-code', node: 'spark', taskType: 'coding' })
@@ -104,24 +106,29 @@ async function probeRouting(workspace: string): Promise<BenchmarkProbeResult> {
             success: true, awaitingApproval: false, criteria: [], violations: [],
         })
         ledger.complete(runId, { durationMs: 250 })
+        benchmarkRejected = router.recordValidatedSample({
+            runId, userId: `benchmark:routing-${index}`, channel: 'benchmark', taskType: 'coding',
+            model: 'qwen-code', node: 'spark', success: true, durationMs: 250, costUsd: 0.0002,
+            validatedAt: new Date().toISOString(), validationSource: 'nova-execution-kernel',
+            evidenceRefs: [`tool-call:routing-${index}:fixture`],
+        }) === false && benchmarkRejected
     }
-    const router = new OutcomeRouter(ledger, join(workspace, 'routing-decisions.jsonl'), 'shadow')
     const decision = router.decide('coding',
         { model: 'baseline', node: 'main', estimatedCostUsd: 0.02 },
         [
             { model: 'qwen-code', node: 'spark', toolset: ['code'], baseScore: 100, estimatedCostUsd: 0.0002 },
             { model: 'vision', node: 'vision-node', toolset: ['vision'], baseScore: 10, estimatedCostUsd: 0.01 },
-        ])
+        ], { userId: 'benchmark:routing', channel: 'benchmark' })
     const reasons = decision.reasons.join(' ')
     return result('benchmark_outcome_router_probe', {
         'shadow decision': decision.mode === 'shadow' && decision.selected.model === 'baseline',
-        'historical outcomes': reasons.includes('validated samples=20/'),
+        'historical outcomes': benchmarkRejected && reasons.includes('validated samples=0/'),
         'route evidence': decision.recommended.model === 'qwen-code',
         'cost comparison': reasons.includes('average cost=$0.0002'),
         'health evidence': decision.evaluatedAt.length > 0,
         'capability match': decision.recommended.toolset?.includes('code') === true,
-        'latency samples': reasons.includes('validated samples=20/'),
-    }, { decision })
+        'latency samples': benchmarkRejected && reasons.includes('validated samples=0/'),
+    }, { decision, benchmarkRejected, note: 'isolated benchmark outcomes were deliberately rejected as production routing samples' })
 }
 
 async function probeTools(workspace: string, targetPath?: string): Promise<BenchmarkProbeResult> {

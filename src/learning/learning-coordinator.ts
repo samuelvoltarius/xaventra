@@ -4,6 +4,7 @@ import { createLearningEngine, type LearningEngine } from './engine.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { TaskValidationReport } from '../core/task-contract.js'
 
 const MEMORY_ELIGIBLE_TOOLS = new Set([
     'health_status', 'service_status', 'mesh_scan', 'quick_scan', 'nova_introspect',
@@ -55,6 +56,8 @@ export interface ValidatedRunOutcome {
     validated: true
     durationMs: number
     costUsd: number
+    channel?: string
+    validation: TaskValidationReport
 }
 
 export interface InvalidatedRunOutcome {
@@ -176,6 +179,26 @@ export class LearningCoordinator {
      * memory. Parameter values and tool outputs are never copied. */
     async recordValidatedRun(outcome: ValidatedRunOutcome): Promise<void> {
         if (outcome.validated !== true || outcome.tools.length === 0) return
+        const evidenceRefs = outcome.validation.criteria.flatMap(criterion => criterion.success
+            ? criterion.evidence
+            : [`validator-rejection:${criterion.criterionId}`])
+        try {
+            const { getOutcomeRouter } = await import('../routing/outcome-router.js')
+            getOutcomeRouter().recordValidatedSample({
+                runId: outcome.runId,
+                userId: outcome.userId,
+                channel: outcome.channel,
+                taskType: outcome.taskType,
+                model: outcome.model,
+                node: outcome.node,
+                success: outcome.success,
+                durationMs: outcome.durationMs,
+                costUsd: outcome.costUsd,
+                validatedAt: outcome.validation.validatedAt,
+                validationSource: outcome.validation.validator,
+                evidenceRefs,
+            })
+        } catch { /* routing samples are derived, non-critical projections */ }
         const { getWorkflowEpisodeStore } = await import('../memory/workflow-episode-store.js')
         const episode = getWorkflowEpisodeStore().record({
             runId: outcome.runId, userId: outcome.userId, requestSummary: outcome.request,
@@ -244,6 +267,10 @@ export class LearningCoordinator {
         getBeliefStore().retractSource(`outcome:${outcome.runId}`)
         getCausalMemory().retractRun(outcome.runId)
         getSessionContinuityStore().retractVerifiedOutcome(outcome.userId, outcome.runId, outcome.request)
+        try {
+            const { getOutcomeRouter } = await import('../routing/outcome-router.js')
+            getOutcomeRouter().invalidateValidatedSample(outcome.runId, outcome.userId, outcome.reason)
+        } catch { /* derived routing projection is reconciled on the next run */ }
     }
 
     getStats() {

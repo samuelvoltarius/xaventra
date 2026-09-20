@@ -1,68 +1,103 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { OutcomeLedger } from '../core/outcome-ledger.js'
 import { OutcomeRouter } from './outcome-router.js'
 
+function fixture(mode: 'shadow' | 'active' = 'shadow') {
+    const dir = mkdtempSync(join(tmpdir(), 'xaventra-router-'))
+    const ledger = new OutcomeLedger(join(dir, 'ledger'))
+    return { dir, ledger, router: new OutcomeRouter(ledger, join(dir, 'decisions.jsonl'), mode, join(dir, 'samples.json')) }
+}
+
+function record(router: OutcomeRouter, index: number, overrides: Partial<Parameters<OutcomeRouter['recordValidatedSample']>[0]> = {}) {
+    return router.recordValidatedSample({
+        runId: `run-${index}`, userId: 'alice', channel: 'telegram', taskType: 'coding', model: 'candidate', node: 'spark',
+        success: true, durationMs: 100, costUsd: 0.001, validatedAt: new Date().toISOString(),
+        validationSource: 'nova-execution-kernel', evidenceRefs: [`tool-call:call-${index}:read_file`], ...overrides,
+    })
+}
+
 describe('OutcomeRouter', () => {
-    it('reports validated training coverage without benchmark contamination', () => {
-        const dir = mkdtempSync(join(tmpdir(), 'nova-router-'))
-        const ledger = new OutcomeLedger(join(dir, 'ledger'))
-        const router = new OutcomeRouter(ledger, join(dir, 'decisions.jsonl'), 'shadow')
-        const status = router.getTrainingStatus()
+    it('reports empty validated training coverage initially', () => {
+        const { router } = fixture()
+        const status = router.getTrainingStatus('alice')
         expect(status.mode).toBe('shadow')
+        expect(status.scope).toBe('principal')
         expect(status.minimumSamples).toBeGreaterThanOrEqual(10)
         expect(status.cells).toEqual([])
     })
+
     it('evaluates alternatives without changing the selected route in shadow mode', () => {
-        const dir = mkdtempSync(join(tmpdir(), 'nova-router-'))
-        const router = new OutcomeRouter(new OutcomeLedger(join(dir, 'ledger')), join(dir, 'decisions.jsonl'), 'shadow')
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }])
+        const { router } = fixture('shadow')
+        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
         expect(decision.mode).toBe('shadow')
         expect(decision.selected.model).toBe('configured')
         expect(decision.recommended.model).toBe('candidate')
         expect(decision.activationEligible).toBe(false)
     })
 
-    it('keeps active routing closed until enough validated successes exist', () => {
-        const dir = mkdtempSync(join(tmpdir(), 'nova-router-'))
-        const ledger = new OutcomeLedger(join(dir, 'ledger'))
-        const router = new OutcomeRouter(ledger, join(dir, 'decisions.jsonl'), 'active')
+    it('keeps active routing closed without a principal-scoped sample set', () => {
+        const { router } = fixture('active')
+        for (let index = 0; index < 20; index++) record(router, index)
         const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }])
         expect(decision.selected.model).toBe('configured')
         expect(decision.activationEligible).toBe(false)
         expect(decision.reasons.join(' ')).toContain('activation gate closed')
     })
 
-    it('activates only from task-specific validated outcomes', () => {
-        const dir = mkdtempSync(join(tmpdir(), 'nova-router-'))
-        const ledger = new OutcomeLedger(join(dir, 'ledger'))
-        for (let index = 0; index < 20; index++) {
-            const runId = `run-${index}`
-            ledger.append(runId, 'route.selected', { model: 'candidate', node: 'spark', taskType: 'coding' })
-            ledger.append(runId, 'validation.finished', { validation: { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] } })
-            ledger.complete(runId, { durationMs: 100 })
-        }
-        const router = new OutcomeRouter(ledger, join(dir, 'decisions.jsonl'), 'active')
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }])
-        expect(decision.activationEligible).toBe(true)
-        expect(decision.selected.model).toBe('candidate')
+    it('persists and activates only principal-scoped independently evidenced samples', () => {
+        const { dir, ledger, router } = fixture('active')
+        for (let index = 0; index < 20; index++) expect(record(router, index)).toBe(true)
+        const restarted = new OutcomeRouter(ledger, join(dir, 'decisions-2.jsonl'), 'active', join(dir, 'samples.json'))
+        const alice = restarted.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
+        const bob = restarted.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'bob', channel: 'telegram' })
+        expect(alice.activationEligible).toBe(true)
+        expect(alice.selected.model).toBe('candidate')
+        expect(bob.activationEligible).toBe(false)
+        expect(bob.selected.model).toBe('configured')
     })
 
-    it('never trains active routing from benchmark fixtures', () => {
-        const dir = mkdtempSync(join(tmpdir(), 'nova-router-'))
-        const ledger = new OutcomeLedger(join(dir, 'ledger'))
+    it('rejects benchmark, synthetic and model-response-only samples', () => {
+        const { router } = fixture('active')
+        expect(record(router, 1, { channel: 'benchmark' })).toBe(false)
+        expect(record(router, 2, { userId: 'synthetic:fixture' })).toBe(false)
+        expect(record(router, 3, { evidenceRefs: ['response', 'current-turn-output-contract'] })).toBe(false)
+        expect(router.getTrainingStatus('alice').cells).toEqual([])
+    })
+
+    it('does not train from self-asserted ledger terminal events', () => {
+        const { ledger, router } = fixture('active')
         for (let index = 0; index < 20; index++) {
-            const runId = `benchmark-run-${index}`
-            ledger.append(runId, 'run.started', { channel: 'benchmark', userId: `benchmark:coding-${index}` })
+            const runId = `self-asserted-${index}`
+            ledger.append(runId, 'run.started', { channel: 'telegram', userId: 'alice' })
             ledger.append(runId, 'route.selected', { model: 'candidate', node: 'spark', taskType: 'coding' })
             ledger.append(runId, 'validation.finished', { validation: { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] } })
-            ledger.complete(runId, { durationMs: 100 })
+            ledger.complete(runId, { success: true, durationMs: 1 })
         }
-        const router = new OutcomeRouter(ledger, join(dir, 'decisions.jsonl'), 'active')
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }])
+        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
         expect(decision.activationEligible).toBe(false)
         expect(decision.selected.model).toBe('configured')
+    })
+
+    it('tombstones a rejected sample without affecting another principal', () => {
+        const { router } = fixture('active')
+        expect(record(router, 1)).toBe(true)
+        expect(record(router, 2, { userId: 'bob' })).toBe(true)
+        expect(router.invalidateValidatedSample('run-1', 'alice', 'user correction')).toBe(true)
+        expect(router.getTrainingStatus('alice').cells).toEqual([])
+        expect(router.getTrainingStatus('bob').cells[0]?.samples).toBe(1)
+    })
+
+    it('fails closed when persisted sample evidence is modified', () => {
+        const { dir, ledger, router } = fixture('active')
+        expect(record(router, 1)).toBe(true)
+        const file = join(dir, 'samples.json')
+        const parsed = JSON.parse(readFileSync(file, 'utf8'))
+        parsed.samples[0].success = false
+        writeFileSync(file, JSON.stringify(parsed))
+        const restarted = new OutcomeRouter(ledger, join(dir, 'decisions-2.jsonl'), 'active', file)
+        expect(restarted.getTrainingStatus('alice').cells).toEqual([])
     })
 })

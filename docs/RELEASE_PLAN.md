@@ -577,6 +577,24 @@ and [main CI](https://github.com/samuelvoltarius/xaventra/actions/runs/339936497
 For the current revision, exact-commit CI reports are mandatory before main moves;
 Desktop reports identify their `sourceRevision`, OS and package version.
 
+### 2.78.35 Outcome Router shadow-learning candidate
+
+Outcome Router training no longer scans terminal ledger records and treats any
+validation-shaped payload as production evidence. The Learning Coordinator is
+the sole admission path into a durable, integrity-checked derived sample store.
+Samples require independently checkable Execution Kernel evidence, are keyed by
+a one-way principal scope and are tombstoned when that user's outcome is later
+invalidated. Benchmark, fixture, synthetic, response-only, anonymous and other
+users' outcomes cannot open an activation gate.
+
+Source tests and a compiled two-process acceptance cover persistence over
+restart, exact 20-sample activation, 19-sample fail-closed behavior,
+self-asserted ledger rejection, aggregate-view non-activation and cross-user
+isolation. This is isolated source/process evidence, not production traffic,
+active routing rollout or model-quality proof. Exact candidate/evidence/main CI,
+history scan and signed publication remain required before this checkpoint can
+be promoted. The overall RC remains open.
+
 ### 2.78.10 Doctor grounding checkpoint
 
 Neutral typed input replaces fabricated runtime errors. Generic diagnosis accepts

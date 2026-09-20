@@ -3161,6 +3161,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/task-contract.js",
         "../security/secret-redaction.js",
         "./engine.js",
         "node:fs",
@@ -4190,9 +4191,11 @@
     {
       "module": "src/routing/outcome-router.ts",
       "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
         "../core/outcome-ledger.js",
-        "../llm/model-perf-db.js",
         "../mesh/capability-graph.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

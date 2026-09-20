@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.35] — 2026-09-20
+
+- Replace direct Outcome Ledger aggregation with a durable, integrity-checked
+  routing-sample projection admitted only by the canonical Learning Coordinator
+  after Execution Kernel validation and independently checkable evidence.
+- Scope routing samples to a one-way principal hash. Another user, an anonymous
+  request or an aggregate Trust view can observe no activation eligibility from
+  someone else's outcomes.
+- Reject benchmark, fixture, synthetic and response-only samples. Explicit user
+  invalidation tombstones the matching principal's derived routing sample.
+- Add compiled two-process restart acceptance for sample durability, threshold
+  enforcement, self-asserted-ledger rejection and cross-user isolation.
+
 ## [2.78.34] — 2026-09-20
 
 - Make distributed Capability Graph merges reconcile runtime evidence per
