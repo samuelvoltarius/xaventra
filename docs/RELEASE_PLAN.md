@@ -16,8 +16,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   patch executor or autonomous approval path.
 - Source regressions and the packaged Electron-to-full-daemon acceptance are
   recorded in [the candidate record](VERIFICATION_2.78.37.md). Candidate CI,
-  full-history secret scan and evidence-commit CI remain required. The test is
-  isolated synthetic evidence, not a production repair or node rollout.
+  including packaged Desktop runs on Windows, Linux and macOS, passed all ten
+  jobs at candidate `6a497cb23c58a61bfd308934e5d1cf2f14f6e538` in
+  [CI 35533601234](https://github.com/samuelvoltarius/xaventra/actions/runs/35533601234).
+  Gitleaks 8.30.1 found no secret in all 105 public commits (10.86 MB).
+  Evidence-commit CI remains required. The test is isolated synthetic evidence,
+  not a production repair or node rollout.
 
 ### 2.78.36 interrupted Doctor proposal candidate
 

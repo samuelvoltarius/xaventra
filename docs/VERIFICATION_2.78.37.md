@@ -37,7 +37,9 @@ production node.
 
 ## Candidate evidence
 
-- Candidate commit: pending.
-- Candidate CI: pending.
-- Full-history secret scan: pending.
-- Evidence-commit CI: pending.
+- Candidate commit: `6a497cb23c58a61bfd308934e5d1cf2f14f6e538`.
+- [CI 35533601234](https://github.com/samuelvoltarius/xaventra/actions/runs/35533601234):
+  all ten jobs passed, including packaged Desktop-to-full-daemon restart
+  acceptance on Windows, Linux and macOS.
+- Gitleaks 8.30.1 scanned all 105 public commits (10.86 MB) with zero findings.
+- This evidence commit still requires its own green CI before `main` can move.
