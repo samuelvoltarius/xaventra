@@ -2120,6 +2120,7 @@
         "../security/blue-team.js",
         "../security/red-team.js",
         "../security/secret-redaction.js",
+        "../synthesis/self-evolution.js",
         "../tools/skill-builder.js",
         "../users/multi-user-middleware.js",
         "../users/principal-id.js",
