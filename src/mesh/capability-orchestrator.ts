@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CapabilityGraphSnapshot, CapabilityRuntime, CapabilityGraphNode } from './capability-graph.js'
-import { getCapabilityGraph, capabilityNodeOnline, capabilityRuntimeAvailable } from './capability-graph.js'
+import { getCapabilityGraph, capabilityNodeOnline, capabilityRuntimeAvailable, capabilityRuntimeTombstoned } from './capability-graph.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'capabilities')
 
@@ -102,11 +102,11 @@ function mapHardware(node: CapabilityGraphNode): MeshNode['hardware'] {
  * single discovery authority; this function performs no network probing. */
 export function nodesFromCapabilityGraph(snapshot: CapabilityGraphSnapshot): MeshNode[] {
     const now = Date.now()
-    const tombstones = new Set((snapshot.tombstones || []).map(item => item.id))
+    const tombstones = new Map((snapshot.tombstones || []).map(item => [item.id, item]))
     return snapshot.nodes
         .filter(node => node.status === 'online' || node.status === 'busy')
         .map(node => {
-            const runtimes = node.runtimes.filter(runtime => !tombstones.has(runtime.id))
+            const runtimes = node.runtimes.filter(runtime => !capabilityRuntimeTombstoned(runtime, tombstones.get(runtime.id)))
             const capabilities: NodeCapability[] = []
             for (const runtime of runtimes) {
                 const quality = runtimeQuality(runtime)

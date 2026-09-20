@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.34] — 2026-09-20
+
+- Make distributed Capability Graph merges reconcile runtime evidence per
+  runtime instead of replacing an entire node from one wall-clock timestamp.
+- Keep removal tombstones authoritative over stale observations while allowing
+  a later independently verified restart or reinstall of the same runtime ID.
+- Strip credential fields, URL user information and secret query parameters at
+  the graph persistence/replication boundary. Nodes share only public auth
+  availability signals.
+- Extend compiled multi-process capability acceptance across removal, restart,
+  successor convergence, delayed predecessor input and credential exclusion.
+
 ## [2.78.33] — 2026-09-20
 
 - Add a monotonic lifecycle generation to each scoped governed-memory key so a

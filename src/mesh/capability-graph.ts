@@ -50,7 +50,49 @@ export interface CapabilityGraphSnapshot {
     tombstones?: Array<{ id: string; deletedAt: string; sourceNode?: string }>
 }
 
+export type CapabilityTombstone = NonNullable<CapabilityGraphSnapshot['tombstones']>[number]
+
 const DEFAULT_FILE = join(process.cwd(), '.nova-data', 'capability-graph.json')
+const SECRET_FIELD = /(^|[_-])(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passphrase|private[_-]?key|credential|authorization|cookie)s?($|[_-])/i
+
+function sanitizeEndpoint(value: string): string {
+    try {
+        const endpoint = new URL(value)
+        endpoint.username = ''
+        endpoint.password = ''
+        for (const key of [...endpoint.searchParams.keys()]) {
+            if (SECRET_FIELD.test(key)) endpoint.searchParams.delete(key)
+        }
+        return endpoint.toString().replace(/\/$/, value.endsWith('/') ? '/' : '')
+    } catch { return value }
+}
+
+function sanitizeSharedValue(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(sanitizeSharedValue)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !SECRET_FIELD.test(key))
+        .map(([key, item]) => [key, sanitizeSharedValue(item)]))
+}
+
+function sanitizeRuntime(runtime: CapabilityRuntime): CapabilityRuntime {
+    return {
+        ...runtime,
+        endpoint: sanitizeEndpoint(String(runtime.endpoint || '')),
+        metadata: runtime.metadata ? sanitizeSharedValue(runtime.metadata) as Record<string, unknown> : undefined,
+    }
+}
+
+/** Public replication boundary: authentication state may be advertised, but
+ * credential material must never enter persistence, shared memory or Mesh. */
+export function sanitizeCapabilitySnapshot(snapshot: CapabilityGraphSnapshot): CapabilityGraphSnapshot {
+    const sanitized = sanitizeSharedValue(snapshot) as CapabilityGraphSnapshot
+    sanitized.nodes = (sanitized.nodes || []).map(node => ({
+        ...node,
+        runtimes: (node.runtimes || []).map(sanitizeRuntime),
+    }))
+    return sanitized
+}
 
 /** Read-time validity, independent of periodic pruning. These checks are
  * discovery evidence, not user authorization or proof of task completion. */
@@ -72,6 +114,22 @@ export function capabilityRuntimeAvailable(
         if (!Number.isFinite(expiresAt) || expiresAt <= now) return false
     }
     return true
+}
+
+/** A removal only suppresses observations it actually supersedes. Keeping the
+ * tombstone in the replicated set still prevents an older peer snapshot from
+ * resurrecting the runtime, while a later verified probe may deliberately
+ * advertise a restarted/reinstalled runtime with the same stable ID. */
+export function capabilityRuntimeTombstoned(
+    runtime: CapabilityRuntime,
+    tombstone: CapabilityTombstone | undefined,
+): boolean {
+    if (!tombstone) return false
+    const deletedAt = Date.parse(tombstone.deletedAt)
+    const verifiedAt = Date.parse(runtime.verifiedAt)
+    if (!Number.isFinite(deletedAt)) return true
+    if (!Number.isFinite(verifiedAt)) return true
+    return deletedAt >= verifiedAt
 }
 
 function runtimeFromService(service: DiscoveredAIService): CapabilityRuntime {
@@ -100,6 +158,41 @@ function sameRuntime(left: CapabilityRuntime, right: CapabilityRuntime): boolean
         && left.type === right.type
         && endpointPort(left.endpoint) !== ''
         && endpointPort(left.endpoint) === endpointPort(right.endpoint)
+}
+
+
+function newerRuntime(left: CapabilityRuntime, right: CapabilityRuntime): CapabilityRuntime {
+    const leftAt = Date.parse(left.verifiedAt)
+    const rightAt = Date.parse(right.verifiedAt)
+    if (!Number.isFinite(leftAt)) return right
+    if (!Number.isFinite(rightAt)) return left
+    return rightAt > leftAt ? right : left
+}
+
+function mergeNodeEvidence(existing: CapabilityGraphNode, incoming: CapabilityGraphNode): CapabilityGraphNode {
+    const existingAt = Date.parse(existing.updatedAt)
+    const incomingAt = Date.parse(incoming.updatedAt)
+    const incomingWins = Number.isFinite(incomingAt) && (!Number.isFinite(existingAt) || incomingAt > existingAt)
+    const primary = incomingWins ? incoming : existing
+    const secondary = incomingWins ? existing : incoming
+    const runtimes = [...(secondary.runtimes || [])]
+    for (const runtime of primary.runtimes || []) {
+        const index = runtimes.findIndex(item => sameRuntime(item, runtime))
+        if (index < 0) runtimes.push(runtime)
+        else runtimes[index] = newerRuntime(runtimes[index], runtime)
+    }
+    return {
+        ...secondary,
+        ...primary,
+        hardware: primary.hardware || secondary.hardware,
+        software: primary.software || secondary.software,
+        capabilities: [...new Set([
+            ...(existing.capabilities || []),
+            ...(incoming.capabilities || []),
+            ...runtimes.flatMap(runtime => runtime.capabilities || []),
+        ])],
+        runtimes,
+    }
 }
 
 function nodePreference(node: CapabilityGraphNode): number {
@@ -159,7 +252,7 @@ export class CapabilityGraph {
     private snapshot: CapabilityGraphSnapshot
 
     constructor(private readonly file = DEFAULT_FILE) {
-        this.snapshot = this.load()
+        this.snapshot = sanitizeCapabilitySnapshot(this.load())
         if (file === DEFAULT_FILE && this.snapshot.nodes.length === 0) this.hydrateFromExistingEvidence()
     }
 
@@ -184,6 +277,7 @@ export class CapabilityGraph {
     }
 
     private save(): void {
+        this.snapshot = sanitizeCapabilitySnapshot(this.snapshot)
         atomicWriteJsonSync(this.file, this.snapshot as unknown as Record<string, unknown>)
     }
 
@@ -269,6 +363,7 @@ export class CapabilityGraph {
      * is replicated to other mesh nodes and optional remote persistence.
      */
     upsertLocalRuntime(nodeId: string, hostname: string, runtime: CapabilityRuntime): CapabilityGraphSnapshot {
+        runtime = sanitizeRuntime(runtime)
         const now = new Date().toISOString()
         const nodes = new Map(this.snapshot.nodes.map(node => [node.id, node]))
         const current = nodes.get(nodeId) || {
@@ -382,6 +477,7 @@ export class CapabilityGraph {
 
     merge(remote: CapabilityGraphSnapshot, sourceNode?: string): CapabilityGraphSnapshot {
         if (remote?.version !== 1 || !Array.isArray(remote.nodes)) return this.getSnapshot()
+        remote = sanitizeCapabilitySnapshot(remote)
         const tombstones = new Map((this.snapshot.tombstones || []).map(item => [item.id, item]))
         for (const item of remote.tombstones || []) {
             const current = tombstones.get(item.id)
@@ -391,16 +487,17 @@ export class CapabilityGraph {
         for (const incoming of remote.nodes) {
             if (!incoming?.id || !Array.isArray(incoming.runtimes)) continue
             const existing = nodes.get(incoming.id)
-            if (!existing || Date.parse(incoming.updatedAt) > Date.parse(existing.updatedAt)) {
-                nodes.set(incoming.id, {
-                    ...incoming,
-                    runtimes: incoming.runtimes.filter(runtime => !tombstones.has(runtime.id)),
-                })
-            }
+            const merged = existing ? mergeNodeEvidence(existing, incoming) : incoming
+            nodes.set(incoming.id, {
+                ...merged,
+                runtimes: merged.runtimes.filter(runtime =>
+                    !capabilityRuntimeTombstoned(runtime, tombstones.get(runtime.id))),
+            })
         }
         const mergedNodes = canonicalizeNodes([...nodes.values()]).map(node => ({
             ...node,
-            runtimes: node.runtimes.filter(runtime => !tombstones.has(runtime.id)),
+            runtimes: node.runtimes.filter(runtime =>
+                !capabilityRuntimeTombstoned(runtime, tombstones.get(runtime.id))),
         }))
         this.snapshot = {
             version: 1,
@@ -450,9 +547,9 @@ export class CapabilityGraph {
         const now = Date.now()
         const maxAge = query.maxAgeMs ?? 5 * 60_000
         const candidates: CapabilityCandidate[] = []
-        const tombstones = new Set((this.snapshot.tombstones || []).map(item => item.id))
+        const tombstones = new Map((this.snapshot.tombstones || []).map(item => [item.id, item]))
         for (const node of this.snapshot.nodes) for (const runtime of node.runtimes) {
-            if (tombstones.has(runtime.id) || !capabilityRuntimeAvailable(node, runtime, now, maxAge)) continue
+            if (capabilityRuntimeTombstoned(runtime, tombstones.get(runtime.id)) || !capabilityRuntimeAvailable(node, runtime, now, maxAge)) continue
             if (query.type && runtime.type !== query.type) continue
             if (query.model && !runtime.models.some(model => model.toLowerCase().includes(query.model!.toLowerCase()))) continue
             // A capability on another runtime or the node hardware must not

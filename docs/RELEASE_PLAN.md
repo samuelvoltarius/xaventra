@@ -6,6 +6,21 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.34 distributed capability convergence candidate
+
+- Capability snapshots now reconcile each runtime independently. Delayed node
+  snapshots therefore cannot replace newer runtime evidence or discard a
+  concurrently observed runtime merely because their node timestamp differs.
+- Tombstones suppress observations at or before removal, survive restart and
+  still permit a genuinely later verified restart/reinstall. Replication strips
+  credential-bearing fields and URL components while retaining booleans such
+  as `available` and `authenticated`.
+- Source regressions and a compiled multi-process acceptance are recorded in
+  [the candidate record](VERIFICATION_2.78.34.md). This is isolated fixture
+  evidence, not a physical-node partition, production provider-auth probe or
+  live Mesh transport claim. No production node changed. Candidate CI,
+  full-history secret scan and evidence-commit CI remain required.
+
 ### 2.78.33 truth-layer memory convergence candidate
 
 - Governed memory now orders each scoped semantic key with a monotonic

@@ -17,6 +17,21 @@ Other coordination modes retain the encrypted shared-memory transport. A
 production HA claim still requires independent witness hosts, controlled
 network loss and physical-node takeover evidence.
 
+## Capability Graph convergence
+
+The Capability Graph is the canonical shareable inventory of node hardware,
+runtimes, models, tools and measured availability. Nodes reconcile runtime
+observations individually rather than replacing an entire node record. A
+removal tombstone suppresses observations verified at or before the removal;
+a later successful probe may advertise a restarted runtime with the same ID.
+This ordering survives process restart and rejects delayed predecessor state.
+
+The graph is not a credential store. Its persistence and replication boundary
+removes password, token, API-key, private-key, authorization, cookie and
+credential fields as well as URL user information and secret query parameters.
+Only public status such as `available` or `authenticated` may be shared. Local
+credentials remain scoped to the user and node that owns them.
+
 ## Architecture
 
 Nova's mesh distributes intelligence across multiple edge devices via Tailscale VPN:

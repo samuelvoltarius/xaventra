@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
@@ -51,6 +51,74 @@ describe('CapabilityGraph', () => {
         }] })
         graph.merge({ version: 1, updatedAt: now, nodes: [], tombstones: [{ id: 'remote:vllm', deletedAt: new Date(Date.now() + 1000).toISOString(), sourceNode: 'remote' }] })
         expect(graph.getSnapshot().nodes[0].runtimes).toHaveLength(0)
+    })
+
+    it('converges after removal, restart and a later verified runtime observation', () => {
+        const file = join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json')
+        const initial = new Date(Date.now() - 10_000).toISOString()
+        const removed = new Date(Date.now() - 5_000).toISOString()
+        const revived = new Date().toISOString()
+        const runtime = {
+            id: 'worker:vllm', name: 'vLLM', type: 'llm', endpoint: 'http://worker:8000',
+            status: 'running' as const, models: ['Qwen'], capabilities: ['llm'],
+            verifiedAt: initial, verificationSource: 'mesh-heartbeat' as const,
+        }
+        const node = (verifiedAt: string, runtimes = [{ ...runtime, verifiedAt }]): CapabilityGraphNode => ({
+            id: 'worker', hostname: 'worker', status: 'online', lastHeartbeat: revived,
+            capabilities: ['llm'], runtimes, updatedAt: verifiedAt,
+        })
+
+        const predecessor = new CapabilityGraph(file)
+        predecessor.merge({ version: 1, updatedAt: initial, nodes: [node(initial)], tombstones: [] })
+        predecessor.merge({
+            version: 1, updatedAt: removed, nodes: [],
+            tombstones: [{ id: runtime.id, deletedAt: removed, sourceNode: 'successor' }],
+        })
+        expect(predecessor.findCandidates({ type: 'llm' })).toEqual([])
+
+        const successor = new CapabilityGraph(file)
+        successor.merge({ version: 1, updatedAt: revived, nodes: [node(revived)], tombstones: [] })
+        expect(successor.findCandidates({ type: 'llm' })[0]?.runtimeId).toBe(runtime.id)
+
+        // A delayed pre-removal snapshot cannot replace the later observation,
+        // even when it also carries a capability from another runtime.
+        successor.merge({
+            version: 1, updatedAt: initial, nodes: [node(initial, [
+                runtime,
+                { ...runtime, id: 'worker:embed', name: 'Embed', type: 'embeddings',
+                    endpoint: 'http://worker:8001', capabilities: ['embedding'] },
+            ])], tombstones: [],
+        })
+        const snapshot = successor.getSnapshot()
+        expect(snapshot.nodes[0].runtimes.map(item => item.id).sort()).toEqual(['worker:embed', 'worker:vllm'])
+        expect(snapshot.nodes[0].runtimes.find(item => item.id === runtime.id)?.verifiedAt).toBe(revived)
+    })
+
+    it('persists auth availability but strips credentials at the replication boundary', () => {
+        const file = join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json')
+        const graph = new CapabilityGraph(file)
+        const now = new Date().toISOString()
+        graph.merge({ version: 1, updatedAt: now, nodes: [{
+            id: 'worker', hostname: 'worker', status: 'online', lastHeartbeat: now,
+            capabilities: ['codex'], updatedAt: now,
+            runtimes: [{
+                id: 'worker:codex', name: 'Codex', type: 'codex',
+                endpoint: 'https://user:password@example.invalid/v1?api_key=replicated-secret&mode=chat',
+                status: 'running', models: ['gpt'], capabilities: ['codex', 'authenticated'],
+                verifiedAt: now, verificationSource: 'mesh-heartbeat',
+                metadata: {
+                    available: true, authenticated: true, access_token: 'replicated-secret',
+                    nested: { password: 'replicated-secret', tokensPerSecond: 42 },
+                },
+            }],
+        }], tombstones: [] }, 'worker')
+        const persisted = readFileSync(file, 'utf8')
+        const runtime = graph.getSnapshot().nodes[0].runtimes[0]
+        expect(persisted).not.toContain('replicated-secret')
+        expect(runtime.endpoint).toBe('https://example.invalid/v1?mode=chat')
+        expect(runtime.metadata).toEqual({
+            available: true, authenticated: true, nested: { tokensPerSecond: 42 },
+        })
     })
 
     it('attaches localhost probes to the canonical local node and collapses endpoint aliases', () => {

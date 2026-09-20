@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const resume = process.argv[2] === '--resume'
+const childMode = process.argv[2]?.startsWith('--') ? process.argv[2] : ''
+const resume = Boolean(childMode)
 const source = resume ? resolve(process.argv[3]) : process.cwd()
 const load = relative => import(pathToFileURL(join(source, 'dist', relative)).href)
 process.env.NOVA_TEST_MODE = '1'
@@ -19,11 +20,42 @@ let networkAttempts = 0
 globalThis.fetch = async () => { networkAttempts++; throw new Error('No networking allowed in fixture inventory acceptance') }
 
 if (resume) {
+    const graphApi = await load('mesh/capability-graph.js')
     const api = await load('mesh/capability-orchestrator.js')
-    assert.equal(api.findBestCapability({ capability: 'llm', preferLocal: true, preferQuality: false }), null)
-    assert.ok(!api.getCapabilityMap().includes('custom-chat'))
+    const request = { capability: 'llm', preferLocal: true, preferQuality: false }
+    if (childMode === '--converge') {
+        const graph = graphApi.getCapabilityGraph()
+        const snapshot = graph.getSnapshot()
+        const removedAt = Date.parse(snapshot.tombstones.find(item => item.id === 'runtime-chat').deletedAt)
+        const revivedAt = new Date(removedAt + 1_000).toISOString()
+        const staleAt = new Date(removedAt - 1_000).toISOString()
+        const runtime = { id: 'runtime-chat', name: 'vLLM', type: 'llm', endpoint: 'http://192.0.2.10:8000',
+            status: 'running', models: ['custom-chat', 'second-finetune'], capabilities: ['llm'],
+            verifiedAt: revivedAt, verificationSource: 'mesh-heartbeat' }
+        graph.merge({ version: 1, updatedAt: revivedAt, nodes: [{
+            id: 'fixture-worker', hostname: 'fixture-worker', status: 'online', lastHeartbeat: revivedAt,
+            capabilities: ['llm'], runtimes: [runtime], updatedAt: revivedAt,
+        }], tombstones: [] }, 'successor')
+        graph.merge({ version: 1, updatedAt: staleAt, nodes: [{
+            id: 'fixture-worker', hostname: 'fixture-worker', status: 'online', lastHeartbeat: revivedAt,
+            capabilities: ['embedding'], runtimes: [{ ...runtime, id: 'runtime-embed', name: 'Embed',
+                type: 'embeddings', endpoint: 'http://192.0.2.10:8001', models: ['embed-fixture'],
+                capabilities: ['embedding'], verifiedAt: staleAt }], updatedAt: staleAt,
+        }], tombstones: [] }, 'delayed-predecessor')
+        assert.equal(api.findBestCapability(request)?.nodeName, 'fixture-worker')
+        assert.deepEqual(graph.getSnapshot().nodes[0].runtimes.map(item => item.id).sort(), ['runtime-chat', 'runtime-embed'])
+        console.log('PASS successor accepts later verified runtime and retains concurrent capability')
+    } else if (childMode === '--revived') {
+        assert.equal(api.findBestCapability(request)?.nodeName, 'fixture-worker')
+        assert.ok(api.getCapabilityMap().includes('custom-chat'))
+        assert.ok(api.getCapabilityMap().includes('embed-fixture'))
+        console.log('PASS fresh successor process preserves converged capabilities')
+    } else {
+        assert.equal(api.findBestCapability(request), null)
+        assert.ok(!api.getCapabilityMap().includes('custom-chat'))
+        console.log('PASS fresh process preserves runtime removal')
+    }
     assert.equal(networkAttempts, 0)
-    console.log('PASS fresh process preserves runtime removal')
 } else {
     const base = process.env.XAVENTRA_CAPABILITY_QA_DIR || tmpdir()
     mkdirSync(base, { recursive: true })
@@ -101,6 +133,33 @@ if (resume) {
             execFileSync(process.execPath, [fileURLToPath(import.meta.url), '--resume', source], {
                 cwd: root, env: process.env, timeout: 30_000, stdio: 'pipe', windowsHide: true,
             })
+        })
+        await check('successor converges after restart without stale resurrection', () => {
+            execFileSync(process.execPath, [fileURLToPath(import.meta.url), '--converge', source], {
+                cwd: root, env: process.env, timeout: 30_000, stdio: 'pipe', windowsHide: true,
+            })
+            execFileSync(process.execPath, [fileURLToPath(import.meta.url), '--revived', source], {
+                cwd: root, env: process.env, timeout: 30_000, stdio: 'pipe', windowsHide: true,
+            })
+        })
+        await check('replicated auth availability excludes credential material', () => {
+            const observed = new Date().toISOString()
+            graph.merge({ version: 1, updatedAt: observed, nodes: [{
+                id: 'credential-worker', hostname: 'credential-worker', status: 'online', lastHeartbeat: observed,
+                capabilities: ['codex'], updatedAt: observed, runtimes: [{
+                    id: 'credential-worker:codex', name: 'Codex', type: 'codex', status: 'running',
+                    endpoint: 'https://user:password@example.invalid/v1?api_key=fixture-secret&mode=chat',
+                    models: ['gpt'], capabilities: ['codex', 'authenticated'], verifiedAt: observed,
+                    verificationSource: 'mesh-heartbeat', metadata: {
+                        available: true, authenticated: true, refresh_token: 'fixture-secret',
+                    },
+                }],
+            }], tombstones: [] }, 'credential-worker')
+            const persisted = readFileSync(join(root, '.nova-data', 'capability-graph.json'), 'utf8')
+            const advertised = graph.getSnapshot().nodes.find(node => node.id === 'credential-worker').runtimes[0]
+            assert.ok(!persisted.includes('fixture-secret'))
+            assert.equal(advertised.endpoint, 'https://example.invalid/v1?mode=chat')
+            assert.deepEqual(advertised.metadata, { available: true, authenticated: true })
         })
         const hosts = await load('tools/ssh-tool-hosts.js')
         const host = { name: 'fixture', alias: [], ip: '192.0.2.10', user: 'operator', description: 'fixture', lastSeen: null }
