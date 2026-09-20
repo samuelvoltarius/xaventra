@@ -21,8 +21,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   [the candidate record](VERIFICATION_2.78.32.md). Disposable Linux
   root-controller/non-root-runtime acceptance passed on the first hosted run.
   That run exposed a separate packaged Linux Desktop failure in Electron's
-  global Undici fetch path. The candidate now uses bounded native Node
-  HTTP/HTTPS instead; exact hosted Desktop acceptance is still required before
+  global Undici fetch path. Corrected runtime `e915421f8353015a106ca05d1b04de190a673c25`
+  uses bounded native Node HTTP/HTTPS and passed all ten jobs in
+  [CI 35503318716](https://github.com/samuelvoltarius/xaventra/actions/runs/35503318716),
+  including packaged Linux setup-to-chat, isolated-Core and full-daemon restart
+  acceptance under Xvfb. Public-history Gitleaks: 94 commits, 10.74 MB, zero
+  findings. The evidence commit and its exact CI remain required before normal
   promotion. No production node changed.
 
 ### 2.78.31 live witness checkpoint candidate
