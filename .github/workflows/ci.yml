@@ -139,6 +139,19 @@ jobs:
         env:
           NOVA_SKIP_MODEL_RESOLVER_INIT: "1"
       - run: npm run build
+      - name: Typed read-only transient recovery is verified and bounded
+        run: npm run check:typed-recovery
+        timeout-minutes: 2
+        env:
+          XAVENTRA_TYPED_RECOVERY_QA_DIR: ${{ github.workspace }}/.nova-data/typed-recovery-qa
+      - name: Preserve typed recovery evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-recovery-qa-${{ matrix.os }}
+          path: .nova-data/typed-recovery-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Native verified tool receipts survive an actual process restart without replay
         run: npm run check:native-tool-resume
         timeout-minutes: 2

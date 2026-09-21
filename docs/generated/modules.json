@@ -93,6 +93,7 @@
         "../core/system-message.js",
         "../core/task-contract.js",
         "../core/tool-task-context.js",
+        "../core/typed-tool-recovery.js",
         "../doctor/tool-contract.js",
         "../infra/telemetry.js",
         "../layers/L6-session-summary.js",
@@ -1968,6 +1969,12 @@
     {
       "module": "src/core/tool-task-context.ts",
       "imports": []
+    },
+    {
+      "module": "src/core/typed-tool-recovery.ts",
+      "imports": [
+        "./execution-kernel.js"
+      ]
     },
     {
       "module": "src/core/types.ts",

@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.78.45] — 2026-09-21
+
+- Classify tool failures deterministically without interpreting error text as
+  commands, capabilities or authorization.
+- Retry exactly once only for transient transport failures from an explicit
+  read-only tool allowlist; authorization, policy, fencing, budgets,
+  idempotency and timeouts are re-evaluated before the retry.
+- Give the bounded retry its own deterministic idempotency attempt scope so a
+  completed transient-failure record cannot suppress the permitted retry,
+  while preserving the canonical run identity and both attempt receipts.
+- Require independent Execution Kernel validation before recovered output can
+  count as success, and never retry mutation, authorization, unknown,
+  missing-resource or missing-dependency failures through this path.
+- Add cross-platform compiled acceptance using an actual loopback HTTP service
+  to prove recovery, one-retry exhaustion and zero unsafe retries.
+
 ## [2.78.44] — 2026-09-21
 
 - Persist independently bound Agents SDK tool receipts and completed

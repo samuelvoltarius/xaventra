@@ -35,6 +35,7 @@ import { repairConstrainedResponse } from './response-repair.js'
 import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
+import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 
@@ -1046,7 +1047,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             // Reset loop detector for this new message turn
             invocationLoopDetector.resetTurn()
             const registry = getToolRegistry()
-            const executeToolOnce = async (name: string, args: Record<string, unknown>, callId?: string) => {
+            const executeToolOnce = async (
+                name: string,
+                args: Record<string, unknown>,
+                callId?: string,
+                attemptScope?: 'typed-transient-retry',
+            ) => {
                 if (policyBlocked) throw new ToolAuthorizationError('This run stopped at a policy gate; no alternative action is authorized')
                 try {
                     args = await authorizeToolExecution(name, args, {
@@ -1064,7 +1070,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 kernel.assertCanExecute(name)
                 await assertMissionFenceForContent(content)
                 const idempotencyRunId = executionScopeForContent(content, kernel.contract.id)
-                const key = makeIdempotencyKey(idempotencyRunId, name, args)
+                // A returned transient failure is already a completed idempotency
+                // record. A separately governed, read-only retry therefore needs
+                // its own deterministic attempt scope; otherwise executeOnce
+                // would replay the failed record instead of making the one
+                // permitted retry. The persisted run identity remains canonical.
+                const keyScope = attemptScope ? `${idempotencyRunId}:${attemptScope}` : idempotencyRunId
+                const key = makeIdempotencyKey(keyScope, name, args)
                 const executionInputHash = makeIdempotencyKey('native-input', name, args)
                 const execution = await executionStore.executeOnce({
                     key, runId: idempotencyRunId, operation: name,
@@ -1288,7 +1300,56 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     const verifiedSuccess = verification.success
                     if (verifiedSuccess) await persistNativeReceipt(callId)
                     let recoveredSuccess = false
-                    if (!verifiedSuccess && !policyBlocked && kernel.contract.allowedChanges.allowedTools.includes('find_files')) {
+                    if (!verifiedSuccess && !policyBlocked) {
+                        try {
+                            const recovery = await recoverTransientReadOnlyTool({
+                                toolName: call.name,
+                                args: call.arguments || {},
+                                failure: result,
+                                kernel,
+                                nextCallId: name => nextToolEvidenceId({ name }),
+                                execute: (name, args, recoveryCallId) => withTimeout(
+                                    executeToolOnce(name, {
+                                        ...args,
+                                        userId,
+                                        channel,
+                                        authorizationUserId: authUserId,
+                                        requestText: content,
+                                    }, recoveryCallId, 'typed-transient-retry'),
+                                    timeoutForTool(name),
+                                    `Typed tool recovery: ${name}`,
+                                ),
+                            })
+                            for (const execution of recovery.executions) {
+                                if (execution.success) await persistNativeReceipt(execution.callId)
+                                toolsUsed.push(execution.toolName)
+                                toolsExecuted.push(execution.toolName)
+                                const value = execution.result as any
+                                const text = typeof execution.result === 'string'
+                                    ? execution.result
+                                    : String(value?.content ?? value?.output ?? value?.message ?? value?.error ?? JSON.stringify(execution.result))
+                                toolExecutions.push({
+                                    callId: execution.callId,
+                                    toolName: execution.toolName,
+                                    params: execution.args,
+                                    result: redactSecrets(text),
+                                    success: execution.success,
+                                    timestamp: Date.now(),
+                                })
+                            }
+                            if (recovery.success) {
+                                recoveredSuccess = true
+                                const value = recovery.result as any
+                                resultStr = redactSecrets(typeof recovery.result === 'string'
+                                    ? recovery.result
+                                    : String(value?.content ?? value?.output ?? value?.message ?? JSON.stringify(recovery.result)))
+                                console.log(`[Xaventra Agent] Verified typed recovery for ${call.name} after ${recovery.classification}`)
+                            }
+                        } catch (recoveryError) {
+                            console.warn(`[Xaventra Agent] Typed tool recovery stopped safely: ${String(recoveryError)}`)
+                        }
+                    }
+                    if (!verifiedSuccess && !recoveredSuccess && !policyBlocked && kernel.contract.allowedChanges.allowedTools.includes('find_files')) {
                         try {
                             const recovery = await recoverMissingResource({
                                 toolName: call.name,
@@ -1339,6 +1400,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         if (!recoveredSuccess) resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
                     }
                     if (!verifiedSuccess && !recoveredSuccess) hasToolErrors = true
+                    const effectiveSuccess = verifiedSuccess || recoveredSuccess
 
                     // Unified learning accepts only the structured result of an
                     // execution that actually reached the tool registry.
@@ -1348,18 +1410,18 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         // For action requests, discovery/planning is progress but
                         // not a reusable successful solution for the requested
                         // action. Do not poison L17 with capability inventories.
-                        if (!actionIntent.requiresTool || actionLifecycle.canLearn(call.name, verifiedSuccess)) {
+                        if (!actionIntent.requiresTool || actionLifecycle.canLearn(call.name, effectiveSuccess)) {
                             await getLearningCoordinator().recordVerifiedToolOutcome({
                                 userId, runId: kernel.contract.id,
                                 toolName: call.name,
                                 request: content,
                                 params: call.arguments || {},
                                 result: resultStr,
-                                success: verifiedSuccess,
+                                success: effectiveSuccess,
                                 verified: true,
                                 timestamp: Date.now(),
                             })
-                            if (actionIntent.requiresTool && verifiedSuccess) actionLifecycle.markLearned()
+                            if (actionIntent.requiresTool && effectiveSuccess) actionLifecycle.markLearned()
                         }
                     } catch { /* learning is non-critical */ }
 
@@ -1422,19 +1484,21 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         toolName: call.name,
                         params: call.arguments || {},
                         result: resultStr.trim(),
+                        // Preserve the first attempt as failed evidence when a
+                        // later, separately correlated retry succeeds.
                         success: verifiedSuccess,
                         timestamp: Date.now(),
                     })
-                    logRuntimeEvent({ event: verifiedSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: verifiedSuccess })
+                    logRuntimeEvent({ event: effectiveSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: effectiveSuccess })
 
                     // Proactive Learning: Ask if user wants Nova to learn from this
                     try {
                         if (!backgroundLearningEnabled) throw new Error('isolated proactive learning')
                         const { generatePostToolLearningPrompt, queueLearningRequest } = await import('../intelligence/proactive-learning.js')
-                        const learningPrompt = generatePostToolLearningPrompt(call.name, verifiedSuccess)
+                        const learningPrompt = generatePostToolLearningPrompt(call.name, effectiveSuccess)
                         if (learningPrompt) {
                             toolResults.push(learningPrompt)
-                            queueLearningRequest(call.name, verifiedSuccess ? 'success' : 'failure', userId, channel, resultStr.slice(0, 500))
+                            queueLearningRequest(call.name, effectiveSuccess ? 'success' : 'failure', userId, channel, resultStr.slice(0, 500))
                         }
                     } catch { /* learning module not available */ }
                 } catch (err) {
@@ -1447,6 +1511,69 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: String(err), success: false, timestamp: Date.now() })
                         hasToolErrors = true
                         break
+                    }
+                    // A narrow automatic recovery boundary: only explicitly
+                    // allowlisted observational tools may retry, only for a
+                    // deterministic transient-transport classification, and
+                    // only once. The callback re-enters every execution gate.
+                    try {
+                        const recovery = await recoverTransientReadOnlyTool({
+                            toolName: call.name,
+                            args: call.arguments || {},
+                            failure: err,
+                            kernel,
+                            nextCallId: name => nextToolEvidenceId({ name }),
+                            execute: (name, args, recoveryCallId) => withTimeout(
+                                executeToolOnce(name, {
+                                    ...args,
+                                    userId,
+                                    channel,
+                                    authorizationUserId: authUserId,
+                                    requestText: content,
+                                }, recoveryCallId, 'typed-transient-retry'),
+                                timeoutForTool(name),
+                                `Typed tool recovery: ${name}`,
+                            ),
+                        })
+                        for (const execution of recovery.executions) {
+                            if (execution.success) await persistNativeReceipt(execution.callId)
+                            toolsUsed.push(execution.toolName)
+                            toolsExecuted.push(execution.toolName)
+                            const value = execution.result as any
+                            const text = execution.result instanceof Error
+                                ? String(execution.result)
+                                : typeof execution.result === 'string'
+                                    ? execution.result
+                                    : String(value?.content ?? value?.output ?? value?.message ?? value?.error ?? JSON.stringify(execution.result))
+                            toolExecutions.push({
+                                callId: execution.callId,
+                                toolName: execution.toolName,
+                                params: execution.args,
+                                result: redactSecrets(text),
+                                success: execution.success,
+                                timestamp: Date.now(),
+                            })
+                        }
+                        if (recovery.success) {
+                            const value = recovery.result as any
+                            const recoveredText = redactSecrets(typeof recovery.result === 'string'
+                                ? recovery.result
+                                : String(value?.content ?? value?.output ?? value?.message ?? JSON.stringify(recovery.result)))
+                            toolExecutions.push({
+                                callId,
+                                toolName: call.name,
+                                params: call.arguments || {},
+                                result: redactSecrets(String(err)),
+                                success: false,
+                                timestamp: Date.now(),
+                            })
+                            toolResults.push(recoveredText)
+                            console.log(`[Xaventra Agent] Verified typed recovery for thrown ${call.name} failure after ${recovery.classification}`)
+                            logRuntimeEvent({ event: 'tool.completed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: true, detail: `typed recovery after ${recovery.classification}` })
+                            continue
+                        }
+                    } catch (recoveryError) {
+                        console.warn(`[Xaventra Agent] Typed tool recovery stopped safely: ${String(recoveryError)}`)
                     }
                     console.error(`[Nova Agent] Tool error (${call.name}): ${err}`)
                     hasToolErrors = true

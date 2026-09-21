@@ -8,6 +8,42 @@ import { getToolRegistry } from '../tools/complete-registry.js'
 import type { TaskContract } from '../core/task-contract.js'
 
 describe('Doctor investigation through the actual native execution pipeline', () => {
+    it('retries one transient read-only failure through the native runner and validates the correlated retry', async () => {
+        const registry = getToolRegistry()
+        const original = registry.get('health_status')!
+        const handler = vi.fn(async () => handler.mock.calls.length === 1
+            ? { success: false, error: 'HTTP 503 service unavailable' }
+            : { success: true, output: 'healthy after retry' })
+        registry.register({ ...original, handler })
+        const contract: TaskContract = {
+            id: 'doctor-typed-transient-recovery', version: 1, goal: 'Collect current health evidence', createdAt: new Date().toISOString(),
+            expectedArtifacts: [], requiredTests: [],
+            successCriteria: [{ id: 'evidence', kind: 'verified_tool', required: true, description: 'Verified health evidence' }],
+            allowedChanges: { readOnly: true, allowedPaths: [], allowedTools: ['health_status'], externalSideEffects: false },
+            budget: { timeoutMs: 15_000, maxToolCalls: 2, maxOutputTokens: 500 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
+        }
+        let turns = 0
+        const llm = { modelId: 'scripted-fixture', complete: async () => ({
+            ...(++turns === 1
+                ? { content: '', toolCalls: [{ name: 'health_status', arguments: {} }] }
+                : { content: 'The independently verified health retry succeeded.' }),
+            usage: { promptTokens: 40, completionTokens: 10, totalTokens: 50 },
+        }) }
+        try {
+            const ledger = new OutcomeLedger(join(process.cwd(), '.nova-data', 'typed-recovery-native-ledger'))
+            await withOutcomeLedger(ledger, async () => {
+                const worker = createResearchWorker(() => true, llm)
+                const result = await worker.execute({ contract, content: contract.goal, caseId: 'typed-recovery', signal: new AbortController().signal, purpose: 'research' })
+                const run = ledger.getRun(contract.id)!
+                expect(handler).toHaveBeenCalledTimes(2)
+                expect(result.output).toContain('verified health retry succeeded')
+                expect(run.status).toBe('completed')
+                expect(run.validation?.success).toBe(true)
+                expect(run.tools.some(tool => tool.success && JSON.stringify(tool.result).includes('healthy after retry'))).toBe(true)
+            })
+        } finally { registry.register(original) }
+    }, 30_000)
+
     it('cannot read a file outside the exact candidate profile through the native tool executor', async () => {
         const registry = getToolRegistry(), original = registry.get('read_file')!
         const handler = vi.fn(async () => ({ success: true, output: 'must never be read' }))

@@ -6,6 +6,34 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.45 typed low-risk recovery candidate
+
+- Native tool failures are classified into transient transport, rate limit,
+  authorization, invalid input, missing dependency, missing resource and
+  unknown categories. Failure text remains untrusted evidence and cannot select
+  a command, tool or permission.
+- Only seven explicitly reviewed observational tools may receive exactly one
+  automatic retry, and only after a transient transport result. The retry
+  re-enters authorization, task policy, fencing, budget, idempotency, lifecycle
+  policy and timeout gates. Mutating and unclassified failures remain closed.
+- Local source evidence includes 15/15 focused unit/native-runner regressions,
+  typecheck/build, all 232 Core suites / 1,602 tests, Desktop 12/12, current generated catalogs,
+  9 core plus 40 service modules loaded, terminal/state authority acceptances
+  and the assurance gate with zero high/critical runtime dependency findings.
+  A compiled Windows acceptance against an actual loopback HTTP service
+  observed two requests for a recoverable 503, two total requests for a
+  persistent 503, zero mutation retries, zero unknown retries and an
+  independently verified Execution Kernel receipt. The first full regression
+  retained three local-environment failures caused by an absent locked module
+  tree and Windows long-path handling; after installing the unchanged lock and
+  setting process-local long-path config, the complete unchanged-source rerun
+  passed. After adding the native-runner and concrete Node transport
+  classifications, the final suite passed 1,602/1,602.
+- This is bounded process/network evidence, not a production-host recovery or
+  physical network-partition claim. Full regression, hosted three-platform
+  evidence, history scan, main promotion and signed publication remain pending.
+  No production node or channel is changed.
+
 ### 2.78.44 Agents SDK durable tool takeover candidate
 
 - Agents SDK tool execution now persists the completed idempotency record and a

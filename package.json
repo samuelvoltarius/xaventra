@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.78.44",
+  "version": "2.78.45",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -26,6 +26,7 @@
     "check:native-tool-resume": "node scripts/check-native-tool-resume.mjs",
     "check:native-tool-takeover": "node scripts/check-native-tool-takeover.mjs",
     "check:agents-sdk-takeover": "node scripts/check-agents-sdk-tool-takeover.mjs",
+    "check:typed-recovery": "node scripts/check-typed-tool-recovery.mjs",
     "check:memory-convergence": "node scripts/check-memory-convergence.mjs",
     "check:telegram-handoff": "node scripts/check-telegram-handoff.mjs",
     "check:mesh-agent-cancel": "node scripts/check-mesh-agent-cancel.mjs",
