@@ -26,8 +26,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   two setup negatives: a missing worktree dependency tree and a stale Sharp
   0.35.3 junction. Exact `npm ci` installed locked Sharp 0.35.4; the unchanged
   full suite then passed with the supported per-process Git long-path setting.
-  Candidate CI, evidence CI, main promotion and signed publication remain
-  required. No production node or Telegram bot was touched.
+  Exact candidate commit `be54bce6a9e340cc7087fe1ee5bf74e8550896c8`
+  passed all 10 jobs in CI run `35552924144`; its Ubuntu, Windows and macOS
+  artifacts each passed all five handoff checks against that revision. Gitleaks
+  8.30.1 found no secrets across 109 public commits / about 10.90 MB. Evidence
+  CI, main promotion and signed publication remain required. No production node
+  or Telegram bot was touched.
 
 ### 2.78.38 packaged Desktop repair activation candidate
 
