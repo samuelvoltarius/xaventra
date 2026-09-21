@@ -115,6 +115,7 @@ import type { LLMEntry } from './core/llm-factory.js'
 // Message Pipeline (imported from core/message-pipeline.ts)
 // ============================================
 import { NOVA_PERSONA, logSession, handleMessage as _handleMessage, preloadPipelineModules } from './core/message-pipeline.js'
+import type { MessageExecutionOptions } from './core/message-pipeline.js'
 import { initMeshTransportRuntime, startMeshDataPlane, stopMeshTransportRuntime } from './mesh/mesh-transport-runtime.js'
 import { initNovaState, getNovaState } from './core/nova-state.js'
 import { startTrace, endTrace, runWithTrace, traceLog } from './core/request-tracer.js'
@@ -129,7 +130,8 @@ export async function handleMessage(
     from: string,
     content: string,
     replyFn: (msg: string) => Promise<void>,
-    image?: { data: string; mimeType: string }
+    image?: { data: string; mimeType: string },
+    execution?: MessageExecutionOptions,
 ) {
     const traceId = startTrace(channel, from, content)
     recordChannelMessage({ channel, direction: 'inbound' })
@@ -156,7 +158,7 @@ export async function handleMessage(
                         throw error
                     }
                 }
-                const result = await _handleMessage(channel, from, content, observedReply, state as any, handleCommand, image)
+                const result = await _handleMessage(channel, from, content, observedReply, state as any, handleCommand, image, execution)
                 traceLog(traceId, 'pipeline:complete')
                 recordExecutionStage({ stage: 'pipeline.completed', success: true })
                 getMessageBus().emitSync('llm:response', { channel, userId: from, completed: true }, { source: 'pipeline', correlationId: traceId })

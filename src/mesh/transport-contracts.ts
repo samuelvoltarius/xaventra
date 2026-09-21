@@ -6,7 +6,7 @@ export type MeshEnvelopeKind =
     | 'tool.request' | 'agent.request' | 'mission.request'
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
-    | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result'
+    | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
 
 export type MeshRole = 'system' | 'owner' | 'admin' | 'worker' | 'observer'
 
@@ -117,11 +117,18 @@ export interface ToolRequestPayload {
 
 export interface AgentRequestPayload {
     prompt: string
+    userId?: string
     taskType?: string
     allowedTools?: string[]
     successCriteria?: string[]
     budget?: { timeoutMs?: number; maxToolCalls?: number }
     idempotencyKey: string
+}
+
+export interface RunCancelPayload {
+    requestId: string
+    idempotencyKey: string
+    reason?: 'timeout' | 'cancelled' | 'shutdown'
 }
 
 export interface CodexStatusRequestPayload {
@@ -167,6 +174,6 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
     return typeof value === 'string' && new Set<MeshEnvelopeKind>([
         'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools',
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
-        'run.checkpoint', 'run.result',
+        'run.checkpoint', 'run.result', 'run.cancel',
     ]).has(value as MeshEnvelopeKind)
 }

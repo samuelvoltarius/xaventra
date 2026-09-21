@@ -12,13 +12,26 @@ import { RelayMeshTransport } from './relay-mesh-transport.js'
 import { SupabaseMeshTransport } from './supabase-mesh-transport.js'
 import type {
     AgentRequestPayload, CapabilityPayload, CodexCompletionRequestPayload, CodexStatusRequestPayload, MeshAck, MeshEnvelope, MeshMode, MeshPeer,
-    MeshPrincipal, MissionRequestPayload, ResultPayload, ToolInventoryPayload, ToolRequestPayload,
+    MeshPrincipal, MissionRequestPayload, ResultPayload, RunCancelPayload, ToolInventoryPayload, ToolRequestPayload,
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
-type MessageHandler = (channel: string, userId: string, content: string, reply: (content: string) => Promise<void>) => Promise<void>
+export interface MeshAgentExecutionOptions {
+    abortSignal: AbortSignal
+    allowedTools: string[]
+    requestId: string
+}
+
+type MessageHandler = (
+    channel: string,
+    userId: string,
+    content: string,
+    reply: (content: string) => Promise<void>,
+    image?: { data: string; mimeType: string },
+    execution?: MeshAgentExecutionOptions,
+) => Promise<void>
 
 interface RuntimeConfig {
     mode: MeshMode
@@ -34,6 +47,9 @@ let runtimeMessageHandler: MessageHandler | undefined
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 const results = new Map<string, ResultPayload>()
 const processed = new Map<string, ResultPayload>()
+const activeAgentRuns = new Map<string, AbortController>()
+const cancelledAgentRuns = new Map<string, number>()
+const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
 interface PeerState {
     nodeId: string; lastSeen: number; status?: string; uptimeMs?: number
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
@@ -104,12 +120,23 @@ export async function sendAgentRequest(targetNode: string, prompt: string, optio
     const transport = router || initMeshTransportRuntime()
     const runId = randomUUID()
     const payload: AgentRequestPayload = {
-        prompt, taskType: options.taskType, allowedTools: options.allowedTools,
+        prompt, userId: options.userId, taskType: options.taskType, allowedTools: options.allowedTools,
         successCriteria: options.successCriteria, budget: options.budget,
         idempotencyKey: options.idempotencyKey || runId,
     }
     const envelope = transport.create('agent.request', targetNode, payload, { runId, ttlMs: Math.max(60_000, payload.budget?.timeoutMs || 0) })
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
+}
+
+export async function cancelMeshRun(
+    targetNode: string,
+    requestId: string,
+    reason: RunCancelPayload['reason'] = 'cancelled',
+): Promise<MeshAck> {
+    const transport = router || initMeshTransportRuntime()
+    const payload: RunCancelPayload = { requestId, reason, idempotencyKey: `cancel:${requestId}` }
+    const envelope = transport.create('run.cancel', targetNode, payload, { runId: requestId, ttlMs: 60_000 })
+    return transport.send(targetNode, envelope)
 }
 
 export async function sendToolRequest(targetNode: string, payload: ToolRequestPayload): Promise<{ requestId: string; ack: MeshAck }> {
@@ -142,9 +169,10 @@ export async function sendCodexCompletionRequest(
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
 }
 
-export async function waitForMeshRunResult(requestId: string, timeoutMs = 10_000): Promise<ResultPayload | undefined> {
+export async function waitForMeshRunResult(requestId: string, timeoutMs = 10_000, signal?: AbortSignal): Promise<ResultPayload | undefined> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
+        if (signal?.aborted) return undefined
         const result = results.get(requestId)
         if (result) {
             results.delete(requestId)
@@ -211,6 +239,8 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
 export async function stopMeshTransportRuntime(): Promise<void> {
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     heartbeatTimer = null
+    for (const controller of activeAgentRuns.values()) controller.abort()
+    activeAgentRuns.clear()
     await router?.close()
     router = null
     runtimeMessageHandler = undefined
@@ -306,23 +336,55 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const payload = envelope.payload as AgentRequestPayload
         if (!payload?.prompt || containsFreeShellPayload(payload)) throw new Error('invalid agent request')
         const cached = processed.get(payload.idempotencyKey)
-        if (cached) return sendResult(envelope, cached)
+        if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         if (!messageHandler) throw new Error('agent handler unavailable')
+        const now = Date.now()
+        for (const [requestId, expiresAt] of cancelledAgentRuns) if (expiresAt <= now) cancelledAgentRuns.delete(requestId)
+        if (cancelledAgentRuns.has(envelope.id)) {
+            const result = makeResult(envelope.id, false, undefined, 'mesh agent request cancelled before execution')
+            processed.set(payload.idempotencyKey, result)
+            await sendResult(envelope, result)
+            return
+        }
+        const controller = new AbortController()
+        activeAgentRuns.set(envelope.id, controller)
         let output = ''
         try {
-            await messageHandler('mesh-direct', envelope.principal.id, payload.prompt, async content => { output += content })
+            await messageHandler(
+                'mesh-direct',
+                payload.userId || envelope.principal.id,
+                payload.prompt,
+                async content => { if (!controller.signal.aborted) output += content },
+                undefined,
+                { abortSignal: controller.signal, allowedTools: payload.allowedTools || [], requestId: envelope.id },
+            )
+            if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)
             processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
             processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+        } finally {
+            activeAgentRuns.delete(envelope.id)
         }
+        return
+    }
+    if (envelope.kind === 'run.cancel') {
+        const payload = envelope.payload as RunCancelPayload
+        const cached = processed.get(payload.idempotencyKey)
+        if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
+        cancelledAgentRuns.set(payload.requestId, Date.now() + 24 * 60 * 60_000)
+        const controller = activeAgentRuns.get(payload.requestId)
+        controller?.abort()
+        const result = makeResult(envelope.id, true, { requestId: payload.requestId, cancelled: Boolean(controller) })
+        processed.set(payload.idempotencyKey, result)
+        await sendResult(envelope, result)
         return
     }
     if (envelope.kind === 'codex.status.request') {
         const payload = envelope.payload as CodexStatusRequestPayload
         const cached = processed.get(payload.idempotencyKey)
-        if (cached) return sendResult(envelope, cached)
+        if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         try {
             const { getCodexRuntimeStatus } = await import('../auth/codex-runtime.js')
             const status = await getCodexRuntimeStatus(envelope.principal.id)
@@ -337,7 +399,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     if (envelope.kind === 'codex.complete.request') {
         const payload = envelope.payload as CodexCompletionRequestPayload
         const cached = processed.get(payload.idempotencyKey)
-        if (cached) return sendResult(envelope, cached)
+        if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         const startedAt = Date.now()
         try {
             const [{ CodexAppServerLLM }, { getCodexRuntimeStatus }] = await Promise.all([
@@ -365,7 +427,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const payload = envelope.payload as ToolRequestPayload
         if (containsFreeShellPayload(payload.arguments)) throw new Error('free shell payload rejected')
         const cached = processed.get(payload.idempotencyKey)
-        if (cached) return sendResult(envelope, cached)
+        if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         const started = Date.now()
         try {
             const { getToolRegistry } = await import('../tools/complete-registry.js')

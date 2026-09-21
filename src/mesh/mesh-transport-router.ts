@@ -51,6 +51,11 @@ class MeshOutbox {
 }
 
 const STATE_UPDATE_KINDS = new Set(['node.heartbeat', 'node.capabilities', 'node.tools'])
+// Request admission and request completion are separate protocol events. In
+// particular, an agent request must be acknowledged before its handler
+// finishes so the caller can deliver a correlated run.cancel while the work is
+// still active. Completion is reported independently through run.result.
+const ASYNC_DISPATCH_KINDS = new Set<MeshEnvelopeKind>(['agent.request'])
 
 export class MeshTransportRouter implements MeshTransport {
     readonly name = 'outbox' as const
@@ -153,7 +158,17 @@ export class MeshTransportRouter implements MeshTransport {
             throw new Error(decision.reason || 'mesh policy rejected envelope')
         }
         recordMeshEvent({ event: 'envelope', nodeId: envelope.sourceNode, kind: envelope.kind, direction: 'inbound', status: 'accepted' })
-        for (const handler of this.handlers) await handler(envelope)
+        const dispatch = async () => {
+            for (const handler of this.handlers) await handler(envelope)
+        }
+        if (ASYNC_DISPATCH_KINDS.has(envelope.kind)) {
+            void dispatch().catch(error => {
+                this.lastError = `async ${envelope.kind} handler failed: ${String(error).slice(0, 180)}`
+                recordMeshEvent({ event: 'envelope', nodeId: envelope.sourceNode, kind: envelope.kind, direction: 'inbound', status: 'rejected' })
+            })
+            return
+        }
+        await dispatch()
     }
 
     private async orderFor(peerId: string): Promise<MeshTransport[]> {

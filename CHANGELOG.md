@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.40] — 2026-09-21
+
+- Replace the dead mesh subagent `/api/agent` HTTP path with the authenticated,
+  signed and policy-checked `MeshTransport` agent request contract.
+- Preserve principal and explicit tool scope on the worker, reject slash-command
+  bypasses and prevent a possibly delivered remote request from being replayed
+  locally after timeout or transport uncertainty.
+- Separate request admission from completion, add typed cancellation and abort
+  propagation, and correlate cached idempotent results to each new request ID.
+- Add focused regressions and a two-process direct-WebSocket acceptance proving
+  remote cancellation prevents a late effect.
+
 ## [2.78.39] — 2026-09-21
 
 - Fence Telegram at the Bot API effect boundary so legacy direct SDK calls,

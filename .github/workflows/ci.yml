@@ -181,6 +181,19 @@ jobs:
           path: .nova-data/telegram-handoff-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Signed mesh subagent cancellation prevents remote late effects
+        run: npm run check:mesh-agent-cancel
+        timeout-minutes: 2
+        env:
+          XAVENTRA_MESH_AGENT_QA_DIR: ${{ github.workspace }}/.nova-data/mesh-agent-cancel-qa
+      - name: Preserve mesh subagent cancellation evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesh-agent-cancel-qa-${{ matrix.os }}
+          path: .nova-data/mesh-agent-cancel-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Outcome Router validated samples survive restart without cross-user leakage
         run: npm run check:outcome-router
         timeout-minutes: 2

@@ -6,6 +6,27 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.40 cancellable mesh-agent execution candidate
+
+- Mesh subagents now use the existing signed, authenticated and policy-checked
+  transport instead of a nonexistent legacy HTTP endpoint. Worker execution is
+  constrained to the transmitted principal and explicit tool allowlist; remote
+  slash commands cannot bypass the tool contract.
+- Agent admission is acknowledged before long-running work completes so a
+  typed `run.cancel` can overtake it. Timeout or uncertain delivery never falls
+  back to local execution, avoiding duplicate side effects. Idempotent replay
+  returns a cached outcome correlated to the new request ID.
+- Local Windows evidence before the candidate commit: focused mesh/subagent
+  regressions 10/10, two-process authenticated direct-WebSocket acceptance 7/7,
+  typecheck/build, full Core regression 230 suites / 1,579 tests, Desktop unit
+  tests 9/9, current runtime catalogs, and 9 core plus 40 service modules loaded.
+  The first acceptance run is retained as negative evidence: request ACK waited
+  for handler completion, so cancellation arrived after a late effect. The
+  admission/completion split fixed the reproduced race. A packaged Desktop was
+  not locally available; cross-platform package and candidate CI remain
+  required. This is loopback process evidence, not a physical-host failover or
+  production rollout.
+
 ### 2.78.39 Telegram effect fencing candidate
 
 - The Telegram adapter now revalidates both current Main and Telegram

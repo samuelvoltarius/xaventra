@@ -41,6 +41,12 @@ describe('secure mesh envelopes', () => {
         expect(policy.verify(codexProbe).accepted).toBe(true)
         const codexCompletion = a.create({ kind: 'codex.complete.request', targetNode: 'b', principal: { id: 'user-123', role: 'system' }, payload: { idempotencyKey: 'codex-complete-123', messages: [{ role: 'user', content: 'hello' }], tools: [] } })
         expect(policy.verify(codexCompletion).accepted).toBe(true)
+        const cancel = a.create({ kind: 'run.cancel', targetNode: 'b', principal: principal('a'), payload: { requestId: 'request-123', idempotencyKey: 'cancel:request-123', reason: 'timeout' } })
+        expect(policy.verify(cancel).accepted).toBe(true)
+        const observerCancel = a.create({ kind: 'run.cancel', targetNode: 'b', principal: { id: 'node:a', role: 'observer' }, payload: { requestId: 'request-456', idempotencyKey: 'cancel:request-456' } })
+        expect(policy.verify(observerCancel)).toMatchObject({ accepted: false, reason: 'role_not_allowed' })
+        const invalidUser = a.create({ kind: 'agent.request', targetNode: 'b', principal: principal('a'), payload: { prompt: 'test', userId: '', idempotencyKey: 'agent-user-invalid' } })
+        expect(policy.verify(invalidUser)).toMatchObject({ accepted: false, reason: 'invalid_agent_user' })
         const nestedShell = a.create({ kind: 'tool.request', targetNode: 'b', principal: principal('a'), payload: { tool: 'read_file', arguments: { options: { command: 'whoami' } }, idempotencyKey: 'nested-shell' } })
         expect(policy.verify(nestedShell)).toMatchObject({ accepted: false, reason: 'free_shell_payload' })
         const unsafe = a.create({ kind: 'tool.request', targetNode: 'b', principal: principal('a'), payload: { tool: 'run_command', arguments: { command: 'whoami' }, idempotencyKey: 'unsafe-two' } })
@@ -97,6 +103,46 @@ describe('DirectMeshTransport', () => {
         const ack = await ra.send('tamper-b', tampered)
         expect(ack).toMatchObject({ status: 'rejected', transport: 'direct' })
         expect(ack.reason).toContain('invalid_signature')
+    })
+
+    it('acknowledges agent admission before completion so cancellation can overtake the work', async () => {
+        const a = identity('cancel-a')
+        const b = identity('cancel-b')
+        const ta = new DirectMeshTransport(a, principal('cancel-a'), { port: 0, peers: [], ackTimeoutMs: 1000 })
+        const tb = new DirectMeshTransport(b, principal('cancel-b'), { port: 0, peers: [], ackTimeoutMs: 1000 })
+        ta.start(); tb.start(); await new Promise(resolve => setTimeout(resolve, 20))
+        const peerA: MeshPeer = { nodeId: 'cancel-a', url: `ws://127.0.0.1:${ta.listeningPort()}`, transport: 'direct', status: 'unknown', publicKey: a.publicKey, roles: ['system'] }
+        const peerB: MeshPeer = { nodeId: 'cancel-b', url: `ws://127.0.0.1:${tb.listeningPort()}`, transport: 'direct', status: 'unknown', publicKey: b.publicKey, roles: ['system'] }
+        ta.addPeer(peerB); tb.addPeer(peerA)
+        const ra = new MeshTransportRouter(a, principal('cancel-a'), { mode: 'direct', peers: [peerB] }, [ta])
+        const rb = new MeshTransportRouter(b, principal('cancel-b'), { mode: 'direct', peers: [peerA] }, [tb])
+        cleanup.push(() => ra.close(), () => rb.close())
+
+        let release!: () => void
+        const gate = new Promise<void>(resolve => { release = resolve })
+        let workCompleted = false
+        let cancelSeen = false
+        rb.subscribe(async envelope => {
+            if (envelope.kind === 'agent.request') {
+                await gate
+                workCompleted = true
+            }
+            if (envelope.kind === 'run.cancel') {
+                cancelSeen = true
+                release()
+            }
+        })
+
+        const request = ra.create('agent.request', 'cancel-b', { prompt: 'wait', userId: 'owner', idempotencyKey: 'cancel-admission' })
+        const requestAck = await ra.send('cancel-b', request)
+        expect(requestAck.status).toBe('delivered')
+        expect(workCompleted).toBe(false)
+
+        const cancel = ra.create('run.cancel', 'cancel-b', { requestId: request.id, idempotencyKey: `cancel:${request.id}`, reason: 'timeout' })
+        const cancelAck = await ra.send('cancel-b', cancel)
+        expect(cancelAck.status).toBe('delivered')
+        expect(cancelSeen).toBe(true)
+        await gate
     })
 })
 

@@ -19,7 +19,6 @@
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveConfigPath } from '../config/config-path.js'
 
 
 // ============================================
@@ -291,79 +290,58 @@ async function runLocalSubagent(
 async function runMeshSubagent(
     id: string,
     task: SubagentTask,
-    meshNode: string
+    meshNode: string,
+    abortSignal?: AbortSignal,
 ): Promise<SubagentResult> {
     const start = Date.now()
+    let requestId: string | undefined
+    let abortHandler: (() => void) | undefined
 
     try {
-        // Find node in config
-        const { readFileSync } = await import('node:fs')
-        const { join } = await import('node:path')
-        const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
-        const node = (config.nodes || []).find((n: any) =>
-            n.name?.toLowerCase() === meshNode.toLowerCase() ||
-            n.host?.includes(meshNode)
-        )
-
-        if (!node) {
-            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', error: `Node "${meshNode}" not found in config` }
+        const { cancelMeshRun, sendAgentRequest, waitForMeshRunResult } = await import('../mesh/mesh-transport-runtime.js')
+        if (abortSignal?.aborted) {
+            return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode }
         }
-
-        // Check if the node has a Nova API server
-        const novaUrl = node.services?.nova
-        if (!novaUrl) {
-            // No Nova server on that node — fall back to local execution
-            console.log(`[SubagentOrch] Node ${meshNode} has no Nova API — falling back to local`)
-            const abortSignal = { cancelled: false }
-            return runLocalSubagent(id, task, abortSignal)
-        }
-
-        // Delegate via HTTP to remote Nova server
-        console.log(`[SubagentOrch] 🌐 Delegating to ${meshNode} @ ${novaUrl}`)
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), task.timeoutMs || 60_000)
-
-        try {
-            const resp = await fetch(`${novaUrl}/api/agent`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: task.userId || 'subagent',
-                    content: task.task,
-                    tools: filterTools(task.tools),
-                    systemPrompt: task.systemPrompt,
-                }),
-                signal: controller.signal,
-            })
-            clearTimeout(timer)
-
-            if (!resp.ok) {
-                console.warn(`[SubagentOrch] ⚠️ Mesh ${meshNode} returned ${resp.status} — falling back to local`)
-                const abortSignal = { cancelled: false }
-                return runLocalSubagent(id, task, abortSignal)
-            }
-            const data = await resp.json() as any
-
+        console.log(`[SubagentOrch] 🌐 Delegating to ${meshNode} through signed MeshTransport`)
+        const sent = await sendAgentRequest(meshNode, task.task, {
+            userId: task.userId || 'subagent',
+            allowedTools: filterTools(task.tools),
+            budget: { timeoutMs: task.timeoutMs || 60_000 },
+            idempotencyKey: `subagent:${id}`,
+        })
+        requestId = sent.requestId
+        if (sent.ack.status === 'rejected' || sent.ack.status === 'unreachable') {
             return {
-                id,
-                status: 'completed',
-                output: data.content || data.output || '',
-                toolsUsed: data.toolsUsed || [],
-                durationMs: Date.now() - start,
-                mode: 'mesh',
-                meshNode,
+                id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start,
+                mode: 'mesh', meshNode, error: `Mesh request ${sent.ack.status}: ${sent.ack.reason || 'no route'}`,
             }
-        } finally {
-            clearTimeout(timer)
+        }
+        abortHandler = () => { void cancelMeshRun(meshNode, requestId!, 'cancelled').catch(() => undefined) }
+        abortSignal?.addEventListener('abort', abortHandler, { once: true })
+        const remote = await waitForMeshRunResult(requestId, task.timeoutMs || 60_000, abortSignal)
+        if (abortSignal?.aborted) {
+            await cancelMeshRun(meshNode, requestId, 'cancelled').catch(() => undefined)
+            return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'mesh', meshNode }
+        }
+        if (!remote) {
+            await cancelMeshRun(meshNode, requestId, 'timeout').catch(() => undefined)
+            return {
+                id, status: 'timeout', output: '', toolsUsed: [], durationMs: Date.now() - start,
+                mode: 'mesh', meshNode, error: `Mesh result timeout after ${task.timeoutMs || 60_000}ms`,
+            }
+        }
+        return {
+            id,
+            status: remote.success ? 'completed' : 'failed',
+            output: remote.success ? String(remote.result ?? '') : '',
+            toolsUsed: (remote.evidence || []).map(item => item.tool).filter((tool): tool is string => Boolean(tool)),
+            durationMs: Date.now() - start,
+            mode: 'mesh',
+            meshNode,
+            error: remote.error,
         }
     } catch (err) {
-        // Network error, timeout, DNS failure — fall back to local execution
-        const isNetwork = String(err).includes('fetch') || String(err).includes('abort') || String(err).includes('ECONNREFUSED')
-        console.warn(`[SubagentOrch] ⚠️ Mesh ${meshNode} unreachable (${err})${isNetwork ? ' — falling back to local' : ''}`)
-        if (isNetwork) {
-            const abortSignal = { cancelled: false }
-            return runLocalSubagent(id, task, abortSignal)
-        }
+        console.warn(`[SubagentOrch] ⚠️ Mesh ${meshNode} failed without local replay (${err})`)
         return {
             id,
             status: 'failed',
@@ -374,6 +352,8 @@ async function runMeshSubagent(
             meshNode,
             error: String(err),
         }
+    } finally {
+        if (abortHandler) abortSignal?.removeEventListener('abort', abortHandler)
     }
 }
 
@@ -407,14 +387,15 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
     console.log(`[SubagentOrch] 🚀 Spawning subagent ${id} [${runningCount}/${MAX_CONCURRENT_SUBAGENTS}]: "${task.task.slice(0, 80)}..."`)
 
     const runFn = task.meshNode
-        ? () => runMeshSubagent(id, task, task.meshNode!)
+        ? () => runMeshSubagent(id, task, task.meshNode!, hardAbort.signal)
         : () => runLocalSubagent(id, task, abortSignal, hardAbort)
 
     // Wrap with timeout
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const promise = Promise.race([
         runFn(),
         new Promise<SubagentResult>((resolve) =>
-            setTimeout(() => {
+            timeoutHandle = setTimeout(() => {
                 abortSignal.cancelled = true
                 hardAbort.abort()   // ← hard-cancels the underlying LLM fetch
                 resolve({
@@ -428,7 +409,8 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
                 })
             }, timeoutMs)
         ),
-    ])
+    ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
+    timeoutHandle?.unref?.()
 
     const active: ActiveSubagent = {
         id,

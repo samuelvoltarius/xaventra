@@ -193,6 +193,12 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
     } catch { /* logging is non-critical */ }
 }
 
+export interface MessageExecutionOptions {
+    abortSignal?: AbortSignal
+    allowedTools?: string[]
+    requestId?: string
+}
+
 export async function handleMessage(
     channel: string,
     from: string,
@@ -200,8 +206,10 @@ export async function handleMessage(
     replyFn: (msg: string) => Promise<void>,
     state: DaemonState,
     handleCommandFn: (cmd: string, args: string, from: string, context?: PrincipalContext) => Promise<string | null>,
-    image?: { data: string; mimeType: string }
+    image?: { data: string; mimeType: string },
+    execution?: MessageExecutionOptions,
 ) {
+    execution?.abortSignal?.throwIfAborted()
     traceStep('input:accepted')
     let contextPolicy = selectContextPolicy(content, Boolean(image))
     let memoryDecision = decideMemoryTurn(content)
@@ -404,6 +412,7 @@ export async function handleMessage(
     // Slash Commands (Layer 2) — EARLY EXIT, no prompt assembly needed
     // ============================================
     if (content.startsWith('/')) {
+        if (execution) throw new Error('Mesh agent requests cannot invoke slash commands')
         const [cmd, ...args] = content.slice(1).split(' ')
         const cmdResponse = await handleCommandFn(cmd.toLowerCase(), args.join(' '), from, principalContext)
         if (cmdResponse) {
@@ -432,28 +441,30 @@ export async function handleMessage(
     // Read-only natural-language fast path. It reuses the same command
     // handlers and RBAC context as slash commands, but avoids prompt assembly,
     // model latency and fragile tool selection for common live-status queries.
-    try {
-        const { detectDeterministicCommand } = await import('./deterministic-query.js')
-        const deterministic = detectDeterministicCommand(content)
-        if (deterministic) {
-            const response = await handleCommandFn(
-                deterministic.command,
-                deterministic.args,
-                from,
-                principalContext,
-            )
-            if (response) {
-                if (response !== '__HANDLED__') {
-                    await replyFn(response)
-                    logSession(canonicalUser, channel, 'assistant', response)
+    if (!execution) {
+        try {
+            const { detectDeterministicCommand } = await import('./deterministic-query.js')
+            const deterministic = detectDeterministicCommand(content)
+            if (deterministic) {
+                const response = await handleCommandFn(
+                    deterministic.command,
+                    deterministic.args,
+                    from,
+                    principalContext,
+                )
+                if (response) {
+                    if (response !== '__HANDLED__') {
+                        await replyFn(response)
+                        logSession(canonicalUser, channel, 'assistant', response)
+                    }
+                    traceStep(`fast-path:${deterministic.reason}`)
+                    console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
+                    return
                 }
-                traceStep(`fast-path:${deterministic.reason}`)
-                console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
-                return
             }
+        } catch (error) {
+            console.debug(`[Pipeline] deterministic fast-path unavailable: ${error}`)
         }
-    } catch (error) {
-        console.debug(`[Pipeline] deterministic fast-path unavailable: ${error}`)
     }
 
     // Resolve ambiguity before prompt assembly. The gate uses only the
@@ -1415,10 +1426,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         console.log(`[Pipeline] systemPrompt size: ${systemPrompt.length} chars`)
 
         let result: any
+        const executionTools = execution?.allowedTools && state.tools
+            ? state.tools.getAll().filter((tool: any) => execution.allowedTools!.includes(tool.name))
+            : undefined
         let lastProgress = 'LLM/Tools laufen'
         const progressStartedAt = Date.now()
         const progressChannel = channel.toLowerCase()
         const shouldSendProgress =
+            !execution &&
             !isSystemMessage &&
             !['internal', 'voice'].includes(progressChannel) &&
             canonicalUser !== 'nova-self' &&
@@ -1441,6 +1456,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         try {
             traceStep('agent:start')
+            execution?.abortSignal?.throwIfAborted()
             result = await Promise.race([
                 runNovaAgent({
                     userId: principalId,
@@ -1450,6 +1466,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     image,
                     systemPrompt,
                     llm: llmForCall,
+                    tools: executionTools,
+                    abortSignal: execution?.abortSignal,
                     memory: state.memory ? {
                         recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                         store: (e: any) => state.memory.store(e),
@@ -1568,6 +1586,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 image,
                 systemPrompt: loadSoul(),
                 llm: state.llm,
+                tools: executionTools,
+                abortSignal: execution?.abortSignal,
                 memory: state.memory ? {
                     recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                     store: (e: any) => state.memory.store(e),
@@ -1625,6 +1645,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         image,
                         systemPrompt: systemPrompt + '\n\n🚨 PFLICHT: Beantworte die Anfrage indem du JETZT die passenden Tools über den Function-Call-Mechanismus aufrufst. Gib KEINE Ankündigung wie "ich check das" — RUF DIE TOOLS AUF und liefere das Ergebnis. Für Uhrzeit: get_current_time. Für offene Programme/Fenster: run_command oder ein Desktop-Tool.',
                         llm: state.llm,
+                        tools: executionTools,
+                        abortSignal: execution?.abortSignal,
                         memory: state.memory ? {
                             recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                             store: (e: any) => state.memory.store(e),

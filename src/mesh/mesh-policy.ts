@@ -1,4 +1,4 @@
-import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MissionRequestPayload, type ToolRequestPayload } from './transport-contracts.js'
+import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -49,6 +49,7 @@ export class MeshPolicy {
         }
         if (envelope.kind === 'tool.request') return this.verifyTool(envelope, peer)
         if (envelope.kind === 'agent.request') return this.verifyAgent(envelope, peer)
+        if (envelope.kind === 'run.cancel') return this.verifyRunCancel(envelope)
         if (envelope.kind === 'codex.status.request') return this.verifyCodexStatus(envelope)
         if (envelope.kind === 'codex.complete.request') return this.verifyCodexCompletion(envelope)
         if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
@@ -72,12 +73,28 @@ export class MeshPolicy {
         return { accepted: true }
     }
 
+    private verifyRunCancel(envelope: MeshEnvelope): { accepted: boolean; reason?: string } {
+        const payload = envelope.payload as Partial<RunCancelPayload>
+        if (!payload || typeof payload.requestId !== 'string' || payload.requestId.length < 8 || payload.requestId.length > 200 ||
+            !validIdempotencyKey(payload.idempotencyKey) ||
+            (payload.reason !== undefined && !['timeout', 'cancelled', 'shutdown'].includes(payload.reason))) {
+            return { accepted: false, reason: 'invalid_run_cancel' }
+        }
+        if (!['system', 'owner', 'admin'].includes(envelope.principal.role)) {
+            return { accepted: false, reason: 'run_cancel_role_not_allowed' }
+        }
+        return { accepted: true }
+    }
+
     private verifyAgent(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: boolean; reason?: string } {
         const payload = envelope.payload as Partial<AgentRequestPayload>
         if (!payload || typeof payload.prompt !== 'string' || !payload.prompt.trim() || payload.prompt.length > 100_000) {
             return { accepted: false, reason: 'invalid_agent_request' }
         }
         if (!validIdempotencyKey(payload.idempotencyKey)) return { accepted: false, reason: 'invalid_idempotency_key' }
+        if (payload.userId !== undefined && (typeof payload.userId !== 'string' || !payload.userId.trim() || payload.userId.length > 256)) {
+            return { accepted: false, reason: 'invalid_agent_user' }
+        }
         if (payload.allowedTools !== undefined && (!Array.isArray(payload.allowedTools) || payload.allowedTools.some(tool => typeof tool !== 'string'))) {
             return { accepted: false, reason: 'invalid_agent_tool_list' }
         }
