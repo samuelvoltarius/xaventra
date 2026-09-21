@@ -30,7 +30,7 @@ The change does not claim general self-repair or production repair activation.
 | Desktop regressions | 12/12 passed locally | Local process |
 | Packaged Desktop UI/Core smoke | 10/10 UI and 5/5 actual-Core checks passed locally | Packaged process |
 | Layer/catalog/state/completion/assurance gates | Passed locally | Static + compiled process |
-| Ubuntu, Windows and macOS CI artifacts | Pending | Hosted process/restart |
+| Ubuntu, Windows and macOS CI artifacts | 3/3 passed on exact candidate SHA | Hosted process/restart |
 | Production Doctor or repair activation | Not claimed | Live production |
 
 The compiled acceptance runs the native agent with a scripted provider and an
@@ -52,3 +52,16 @@ so every run proves one fresh failed effect rather than reusing prior QA state.
 This is bounded scripted-provider and local-process evidence. It does not prove
 native model diagnostic quality, production repair activation, a physical-node
 failover or a released RC.
+
+## Hosted candidate evidence
+
+Candidate commit `0c809c6b94e290af40c0f425105a7a099547c02a`
+passed all ten jobs in
+[CI 35623661385](https://github.com/samuelvoltarius/xaventra/actions/runs/35623661385).
+Downloaded Ubuntu, Windows and macOS `tool-failure-escalation-qa` artifacts each
+report the exact clean candidate revision and all eight checks passing: one
+model turn, one failed effect, no `build_skill` effect, deterministic response,
+persisted escalation and Doctor case, canonical failed outcome and
+cross-process deduplication. Gitleaks 8.30.1 found no secret across 124 public
+commits / about 11.08 MB. This evidence attestation still requires its own green
+CI before main promotion.

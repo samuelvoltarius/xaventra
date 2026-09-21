@@ -34,8 +34,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   complete suite passed after the semantic assertion update and process-local
   Git long-path setting. A cached-QA replay was also reproduced and fixed by
   moving each acceptance child into its disposable runtime before imports.
-  Hosted three-platform evidence, secret scans, evidence/main CI and signed
-  publication remain pending. No production node or channel is changed.
+  Exact candidate `0c809c6b94e290af40c0f425105a7a099547c02a` passed all ten
+  jobs in [CI 35623661385](https://github.com/samuelvoltarius/xaventra/actions/runs/35623661385).
+  Downloaded Ubuntu, Windows and macOS artifacts each bind all eight acceptance
+  checks to that clean revision. Gitleaks 8.30.1 found no secret across 124
+  public commits / about 11.08 MB. Evidence/main CI and signed publication
+  remain pending. No production node or channel is changed.
 
 ### 2.78.45 typed low-risk recovery candidate
 
