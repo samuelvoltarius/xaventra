@@ -29,10 +29,17 @@ Preserve negative results. No mocked proof is substituted for live execution.
   setting process-local long-path config, the complete unchanged-source rerun
   passed. After adding the native-runner and concrete Node transport
   classifications, the final suite passed 1,602/1,602.
+- Exact candidate commit `0c475ff3641dc2af8be966b2fa93b38b499e1f12`
+  passed all ten jobs in
+  [candidate CI 35609719672](https://github.com/samuelvoltarius/xaventra/actions/runs/35609719672).
+  Downloaded Ubuntu, Windows and macOS reports independently reproduced the
+  compiled loopback contract: two requests and a verified receipt for the
+  recoverable case, one bounded retry for a persistent failure, and zero retry
+  for mutation or unknown failures. Gitleaks 8.30.1 found no secret across 122
+  public commits / about 11.04 MB.
 - This is bounded process/network evidence, not a production-host recovery or
-  physical network-partition claim. Full regression, hosted three-platform
-  evidence, history scan, main promotion and signed publication remain pending.
-  No production node or channel is changed.
+  physical network-partition claim. Evidence CI, main promotion and signed
+  publication remain pending. No production node or channel is changed.
 
 ### 2.78.44 Agents SDK durable tool takeover candidate
 
