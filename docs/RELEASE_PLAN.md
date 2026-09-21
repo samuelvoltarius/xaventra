@@ -24,8 +24,16 @@ Preserve negative results. No mocked proof is substituted for live execution.
   interruption, restored the predecessor receipt, completed through the
   canonical validator and rejected the stale predecessor. This is controlled
   process/witness evidence, not a physical-host or production-network claim.
-- Exact candidate/evidence/main CI, history scan and signed
-  publication remain pending. No production node or channel is changed.
+- Exact runtime commit `61947dae789272572c3ad611a5ac28423efb658a`
+  passed all ten jobs in
+  [candidate CI 35596064791](https://github.com/samuelvoltarius/xaventra/actions/runs/35596064791).
+  Downloaded Ubuntu, Windows and macOS reports each used three process starts
+  and three authenticated durable witnesses, observed exactly two intended
+  effects, restored the predecessor receipt and approval checkpoint, reached
+  canonical completion without replay and rejected the stale writer.
+  Gitleaks 8.30.1 found no secret across 120 public commits / about 11.01 MB.
+  Evidence/main CI and signed publication remain pending. No production node
+  or channel is changed.
 
 ### 2.78.43 single terminal-success authority candidate
 

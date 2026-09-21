@@ -47,9 +47,22 @@ and retained a `MaxTurnsExceededError` during development; correcting the test
 fixture, without changing runtime expectations, produced the intended approval
 interruption. This was fixture evidence, not a product failure.
 
+## Hosted candidate evidence
+
+Runtime commit `61947dae789272572c3ad611a5ac28423efb658a` passed all ten
+jobs in [candidate CI 35596064791](https://github.com/samuelvoltarius/xaventra/actions/runs/35596064791).
+Downloaded exact-revision reports passed on Ubuntu, Windows and macOS. Each
+report used three process starts and three authenticated durable witnesses,
+observed exactly two intended effects, restored the predecessor receipt and
+approval checkpoint, reached canonical completion without replay and rejected
+the stale writer. These are controlled cross-platform process/witness results,
+not a physical-host or production-network claim.
+
+Gitleaks 8.30.1 scanned the complete public history at this candidate: 120
+commits / about 11.01 MB, with no finding.
+
 ## Pending release evidence
 
-The exact candidate commit still requires candidate CI on Ubuntu/Windows/macOS,
-evidence-commit CI, complete-history secret scan, normal
+The documentation evidence commit still requires its own exact-SHA CI, normal
 fast-forward to `main`, green main CI and the signed release workflow. Until
 those gates pass, 2.78.44 remains a candidate and production is unchanged.
