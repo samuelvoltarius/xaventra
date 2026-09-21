@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.78.41] — 2026-09-21
+
+- Give every packaged Desktop evidence screenshot an explicit 30-second
+  deadline instead of inheriting the UI locator deadline.
+- Disable animations for evidence capture and retry one transient compositor
+  or font-rendering stall while preserving a repeated failure as terminal.
+- Record screenshot attempt count and timeout in the packaged acceptance
+  report so hosted evidence distinguishes a clean capture from recovery.
+
 ## [2.78.40] — 2026-09-21
 
 - Replace the dead mesh subagent `/api/agent` HTTP path with the authenticated,

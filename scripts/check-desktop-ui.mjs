@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron } from 'playwright'
 import { createDesktopFixture } from './fixtures/desktop-control-plane.mjs'
+import { captureEvidenceScreenshot } from './lib/bounded-screenshot.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const version = JSON.parse(readFileSync(join(root, 'desktop/package.json'), 'utf8')).version
@@ -25,7 +26,7 @@ fixture.controls.bootstrapStatus = 401
 writeFileSync(join(profile, 'connection.json'), JSON.stringify({ endpoint: fixture.endpoint, principal: 'fixture-user', clientId: 'fixture-desktop', requestTimeoutMs: 30000, sendOnEnter: true, showInspector: true }))
 const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP', 'DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR'].filter(k => process.env[k]).map(k => [k, process.env[k]]))
 Object.assign(env, { HOME: artifactRoot, USERPROFILE: artifactRoot, APPDATA: join(artifactRoot, 'appdata'), LOCALAPPDATA: join(artifactRoot, 'localappdata') })
-const report = { version, sourceRevision: process.env.GITHUB_SHA || 'local-working-tree', platform: process.platform, arch: process.arch, passed: false, checks: [],
+const report = { version, sourceRevision: process.env.GITHUB_SHA || 'local-working-tree', platform: process.platform, arch: process.arch, passed: false, checks: [], screenshots: [],
   scope: 'Packaged Electron against simulated HTTP Core contract; not real model, channels, Mesh HA, installer, signature or screenshot-tool acceptance.' }
 // Preserve evidence even if a failed Electron launch causes an unhandled
 // rejection inside the automation library. Monitoring does not suppress exit.
@@ -35,7 +36,11 @@ process.on('uncaughtExceptionMonitor', error => {
 let app, page
 const persist = () => writeFileSync(join(artifactRoot, 'report.json'), JSON.stringify(report, null, 2))
 const check = async (name, fn) => { report.currentCheck = name; persist(); console.log(`START ${name}`); const start = Date.now(); await fn(); report.checks.push({ name, passed: true, durationMs: Date.now() - start }); persist(); console.log(`PASS ${name}`) }
-const screenshot = name => page.screenshot({ path: join(artifactRoot, `${name}.jpg`), type: 'jpeg', quality: 85 })
+const screenshot = async name => {
+  const evidence = await captureEvidenceScreenshot(page, { path: join(artifactRoot, `${name}.jpg`) })
+  report.screenshots.push({ name, ...evidence })
+  persist()
+}
 const wait = async predicate => { const end = Date.now() + 10000; while (!await predicate()) { if (Date.now() > end) throw new Error('UI condition deadline exceeded'); await new Promise(r => setTimeout(r, 50)) } }
 const launch = async () => {
   report.currentCheck = 'launch packaged Electron'; persist()

@@ -6,6 +6,27 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.41 packaged Desktop screenshot reliability candidate
+
+- The packaged Desktop acceptance now gives screenshot capture an independent
+  30-second deadline, disables animations and permits exactly one retry for a
+  transient compositor or font-rendering stall. A second failure remains
+  terminal and cannot turn a failed UI run green.
+- Every evidence image records its attempt count and timeout in `report.json`.
+  The previous 2.78.40 evidence run is retained as negative evidence: Ubuntu's
+  first attempt timed out after ten seconds during screenshot capture, while an
+  exact unchanged failed-job retry passed.
+- Local Windows evidence before the candidate commit: Desktop screenshot unit
+  regressions 3/3, all Desktop unit regressions 12/12, typecheck/build, current
+  catalogs, 9 core plus 40 service modules loaded, and a disposable packaged
+  Electron acceptance with all ten interaction checks plus five screenshots
+  captured on their first attempt. The default Electron-builder copy step did
+  not complete in the restricted local sandbox, so that acceptance used the
+  exact Desktop sources in an ASAR with the locked Electron runtime; hosted CI
+  must still build and test the official packages on all three platforms.
+  Candidate CI, complete history scan, evidence commit, main promotion and
+  signed release remain required. This does not change production nodes.
+
 ### 2.78.40 cancellable mesh-agent execution candidate
 
 - Mesh subagents now use the existing signed, authenticated and policy-checked
