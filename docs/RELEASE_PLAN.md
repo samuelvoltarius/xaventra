@@ -24,6 +24,10 @@ Preserve negative results. No mocked proof is substituted for live execution.
   failure in repair publication; its focused rerun passed 8/8 and the unchanged
   full rerun passed 1,585/1,585. Assurance passed with no high or critical
   dependency finding. Secret scans and hosted cross-platform CI remain required.
+- The first hosted candidate run failed closed on Ubuntu because the existing
+  Outcome Router process acceptance itself still used the removed raw ledger
+  completion API. That negative is retained; the fixture now exercises the
+  public validated completion contract and must pass in a new exact-revision CI.
 - This is source/process evidence. It does not prove a physical-node failover,
   production deployment, native signing identity or platform notarization;
   those RC gates remain open.

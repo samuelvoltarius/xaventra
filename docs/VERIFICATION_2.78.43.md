@@ -44,6 +44,10 @@ isolated Outcome Ledger. All 9 checks passed:
 ## Hosted evidence still required
 
 Candidate CI must run the identical acceptance on Ubuntu, Windows and macOS.
+The first candidate run is retained as negative evidence: the pre-existing
+Outcome Router process acceptance still called the intentionally removed raw
+ledger APIs and failed on Ubuntu. The fixture now uses the public contract
+methods and `completeValidated`; a new exact-revision run is required.
 The candidate revision, downloaded reports, complete history scan, evidence
 revision, main CI and signed release publisher must be recorded before this
 candidate can be called published. No production node was modified.

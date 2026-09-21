@@ -12,11 +12,12 @@ const sampleFile = join(qaDir, 'samples.json')
 const ledgerDir = join(qaDir, 'ledger')
 
 async function modules() {
-  const [{ OutcomeRouter }, { OutcomeLedger }] = await Promise.all([
+  const [{ OutcomeRouter }, { OutcomeLedger }, { createTaskContract }] = await Promise.all([
     import('../dist/routing/outcome-router.js'),
     import('../dist/core/outcome-ledger.js'),
+    import('../dist/core/task-contract.js'),
   ])
-  return { OutcomeRouter, OutcomeLedger }
+  return { OutcomeRouter, OutcomeLedger, createTaskContract }
 }
 
 function sample(index, overrides = {}) {
@@ -38,7 +39,7 @@ function sample(index, overrides = {}) {
 }
 
 if (phase === 'write') {
-  const { OutcomeRouter, OutcomeLedger } = await modules()
+  const { OutcomeRouter, OutcomeLedger, createTaskContract } = await modules()
   const ledger = new OutcomeLedger(ledgerDir)
   const router = new OutcomeRouter(ledger, join(qaDir, 'writer-decisions.jsonl'), 'shadow', sampleFile)
   const accepted = Array.from({ length: 20 }, (_, index) => router.recordValidatedSample(sample(index))).filter(Boolean).length
@@ -49,11 +50,12 @@ if (phase === 'write') {
     router.recordValidatedSample(sample(502, { evidenceRefs: ['response', 'current-turn-output-contract'] })),
   ]
   for (let index = 0; index < 20; index++) {
-    const runId = `self-asserted-${index}`
-    ledger.append(runId, 'run.started', { channel: 'telegram', userId: 'bob' })
-    ledger.append(runId, 'route.selected', { model: 'candidate', node: 'spark', taskType: 'coding' })
-    ledger.append(runId, 'validation.finished', { validation: { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] } })
-    ledger.complete(runId, { success: true, durationMs: 1 })
+    const contract = createTaskContract(`self asserted ${index}`, { requiresTool: false, kind: 'none' })
+    const runId = contract.id
+    ledger.start(contract, { channel: 'telegram', userId: 'bob' })
+    ledger.recordRoute(runId, { model: 'candidate', node: 'spark', taskType: 'coding' })
+    ledger.recordValidation(runId, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] })
+    ledger.completeValidated(runId, { success: true, durationMs: 1 })
   }
   writeFileSync(join(qaDir, 'write.json'), JSON.stringify({ accepted, belowThreshold, rejected, pid: process.pid }, null, 2))
   process.exit(accepted === 20 && belowThreshold === 19 && rejected.every(value => value === false) ? 0 : 1)
