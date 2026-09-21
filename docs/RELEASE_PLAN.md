@@ -24,8 +24,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   for handler completion, so cancellation arrived after a late effect. The
   admission/completion split fixed the reproduced race. A packaged Desktop was
   not locally available; cross-platform package and candidate CI remain
-  required. This is loopback process evidence, not a physical-host failover or
-  production rollout.
+  required. Exact candidate `52551cc15e13f9de8bc4c35843ca1bc071ed3d78`
+  passed all ten jobs in CI run `35558977932`; Ubuntu, Windows and macOS
+  artifacts each passed all seven cancellation checks. Gitleaks 8.30.1 found
+  no secret across 111 public commits / about 10.93 MB. Evidence CI, main
+  promotion and signed publication remain required. This is loopback process
+  evidence, not a physical-host failover or production rollout.
 
 ### 2.78.39 Telegram effect fencing candidate
 

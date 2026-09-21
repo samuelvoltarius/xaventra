@@ -43,8 +43,9 @@ the deliberately delayed effect before cancellation was processed.
 | Desktop unit regression | 9/9 passed | Desktop main-process client/security contracts; not packaged UI evidence |
 | Runtime catalogs | Current after regeneration | Source inventory |
 | Runtime module load | 9 core and 40 service modules loaded | Import/wiring evidence, not full functional proof |
-| Candidate CI | Pending | Exact candidate commit not yet pushed |
-| Public-history secret scan | Pending | Required before promotion |
+| Candidate CI | 10/10 jobs passed | Commit `52551cc15e13f9de8bc4c35843ca1bc071ed3d78`, run `35558977932` |
+| Cross-platform cancellation artifacts | 21/21 checks passed | Ubuntu, Windows and macOS each recorded all seven checks |
+| Public-history secret scan | Passed | Gitleaks 8.30.1 scanned 111 commits / about 10.93 MB with no findings |
 
 The two-process acceptance verifies unsafe tool rejection, typed request
 delivery, typed cancel delivery, worker abort, preservation of principal/tool
@@ -63,7 +64,7 @@ scope, correlated idempotent replay and prevention of the late effect.
 
 ## Remaining gates
 
-- Exact candidate/evidence/main CI, full-history secret scan and signed release.
+- Exact evidence/main CI and signed release publication.
 - Physical-node partition with lease/fencing, mission takeover and memory
   convergence.
 - Signed updater enrollment and broader install/update recovery evidence.
