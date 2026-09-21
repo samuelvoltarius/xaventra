@@ -152,6 +152,7 @@ async function startTelegramOnce(
         token: config.token,
         allowFrom: config.allowFrom || [],
         groupPolicy: 'mention-only',
+        verifyAuthority: verifyTelegramAuthority,
     })
 
     adapter.onMessage(async (msg: any) => {

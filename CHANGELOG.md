@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.39] — 2026-09-21
+
+- Fence Telegram at the Bot API effect boundary so legacy direct SDK calls,
+  chunks, edits, files, reactions, progress and proactive sends all revalidate
+  live Main plus Telegram authority immediately before the external effect.
+- Drop stale inbound updates before reactions or pipeline dispatch and keep
+  shutdown cleanup available after lease loss.
+- Clear and unref typing timers so a completed request or retired channel does
+  not keep a process alive for another 30 seconds.
+- Add a two-process handoff acceptance proving the predecessor cannot send or
+  consume after epoch transfer while the successor alone can proceed.
+
 ## [2.78.38] — 2026-09-21
 
 - Complete the packaged Desktop owner-approval path through the canonical

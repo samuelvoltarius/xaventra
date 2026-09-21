@@ -20,6 +20,8 @@ export interface TelegramConfig {
     allowFrom?: string[]
     groupPolicy?: 'allow' | 'mention-only' | 'deny'
     username?: string
+    /** Runtime-owned Main + Telegram lease verifier. Never inferred from the bot token. */
+    verifyAuthority?: () => Promise<boolean>
 }
 
 // ============================================
@@ -34,6 +36,7 @@ export class TelegramAdapter implements ChannelAdapter {
     private botUsername?: string
     private lastActiveChat?: string  // Track last chat for proactive messages
     private typingIntervals = new Map<string, ReturnType<typeof setInterval>>()
+    private typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
     private conflictRetryTimer?: ReturnType<typeof setTimeout>
     private disconnecting = false
     // Per-chat message queue to prevent concurrent LLM API calls (prevents 403 rate-limiting)
@@ -45,6 +48,51 @@ export class TelegramAdapter implements ChannelAdapter {
             groupPolicy: 'mention-only',
             ...config,
         }
+    }
+
+    private async hasLiveAuthority(): Promise<boolean> {
+        try {
+            if (this.config.verifyAuthority) return await this.config.verifyAuthority()
+            const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('../mesh/leader-election.js')
+            return await verifyLiveServiceLeadership(MAIN_SERVICE)
+                && await verifyLiveServiceLeadership('telegram')
+        } catch {
+            return false
+        }
+    }
+
+    private async requireLiveAuthority(action: string): Promise<void> {
+        if (this.disconnecting || !(await this.hasLiveAuthority())) {
+            throw new Error(`Telegram ${action} fenced: live Main/Telegram authority is absent`)
+        }
+    }
+
+    private async acceptInbound(): Promise<boolean> {
+        if (!this.disconnecting && await this.hasLiveAuthority()) return true
+        console.warn('[Nova Telegram] Eingang verworfen: live Main-/Telegram-Autorität fehlt')
+        return false
+    }
+
+    /**
+     * Guard the Bot API effect boundary itself. Several legacy command handlers
+     * still call the SDK directly, so guarding only public adapter methods would
+     * leave a stale node able to emit a late reply after lease loss.
+     */
+    private guardBotEffects(bot: any): any {
+        const effectMethods = [
+            'answerCallbackQuery', 'deleteMessage', 'deleteMyCommands', 'deleteWebHook',
+            'editMessageReplyMarkup', 'editMessageText', 'sendChatAction', 'sendDocument',
+            'sendMessage', 'sendPhoto', 'setMessageReaction', 'setMyCommands', 'startPolling',
+        ]
+        for (const method of effectMethods) {
+            if (typeof bot?.[method] !== 'function') continue
+            const effect = bot[method].bind(bot)
+            bot[method] = async (...args: any[]) => {
+                await this.requireLiveAuthority(`Bot API ${method}`)
+                return effect(...args)
+            }
+        }
+        return bot
     }
 
     // Serialize message processing per chat to avoid concurrent API calls
@@ -66,12 +114,13 @@ export class TelegramAdapter implements ChannelAdapter {
     async connect(): Promise<void> {
         console.log('[Nova Telegram] Connecting...')
         this.disconnecting = false
+        await this.requireLiveAuthority('connect')
 
         // Dynamic import
         const TelegramBot = (await import('node-telegram-bot-api')).default
 
         // Step 1: Start WITHOUT polling to clear webhook first
-        this.bot = new TelegramBot(this.config.token, { polling: false })
+        this.bot = this.guardBotEffects(new TelegramBot(this.config.token, { polling: false }))
 
         // Step 2: Delete any existing webhook — KEEP pending updates (drop_pending_updates: false)
         // This is critical: an active webhook silently blocks all polling-based updates,
@@ -225,6 +274,7 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     private async handleVoiceMessage(msg: any): Promise<void> {
+        if (!(await this.acceptInbound())) return
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
 
@@ -342,6 +392,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
 
     private async handleDocumentMessage(msg: any): Promise<void> {
+        if (!(await this.acceptInbound())) return
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
         const doc = msg.document
@@ -414,6 +465,7 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     private async handleFeedback(query: any): Promise<void> {
+        if (!(await this.acceptInbound())) return
         const data = query.data
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
@@ -1013,6 +1065,7 @@ export class TelegramAdapter implements ChannelAdapter {
      */
     async sendModelSelector(chatId: string, editMessageId?: number, principalId?: string): Promise<void> {
         if (!this.bot) return
+        await this.requireLiveAuthority('model selector')
 
         const { availableLLMs } = await import('../core/llm-factory.js')
         const visibleLLMs = [...availableLLMs]
@@ -1088,6 +1141,7 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     private async handleMessage(msg: any): Promise<void> {
+        if (!(await this.acceptInbound())) return
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
         const username = msg.from?.username ?? ''
@@ -1187,6 +1241,9 @@ export class TelegramAdapter implements ChannelAdapter {
     async disconnect(): Promise<void> {
         console.log('[Nova Telegram] Disconnecting...')
         this.disconnecting = true
+        for (const chatId of new Set([...this.typingIntervals.keys(), ...this.typingTimeouts.keys()])) {
+            this.stopTyping(chatId)
+        }
         if (this.conflictRetryTimer) {
             clearTimeout(this.conflictRetryTimer)
             this.conflictRetryTimer = undefined
@@ -1315,21 +1372,23 @@ export class TelegramAdapter implements ChannelAdapter {
         // Don't stack intervals for same chat
         this.stopTyping(chatId)
 
-        const sendAction = () => {
+        const sendAction = async () => {
             try {
-                this.bot?.sendChatAction(chatId, 'typing')
+                await this.bot?.sendChatAction(chatId, 'typing')
             } catch {
-                // Silently ignore typing failures
+                this.stopTyping(chatId)
             }
         }
 
         // Send immediately, then every 4 seconds
-        sendAction()
-        const interval = setInterval(sendAction, 4000)
+        void sendAction()
+        const interval = setInterval(() => void sendAction(), 4000)
         this.typingIntervals.set(chatId, interval)
 
         // Safety timeout: auto-stop after 30s to prevent infinite typing
-        setTimeout(() => this.stopTyping(chatId), 30000)
+        const timeout = setTimeout(() => this.stopTyping(chatId), 30000)
+        timeout.unref?.()
+        this.typingTimeouts.set(chatId, timeout)
     }
 
     /**
@@ -1341,6 +1400,11 @@ export class TelegramAdapter implements ChannelAdapter {
             clearInterval(interval)
             this.typingIntervals.delete(chatId)
         }
+        const timeout = this.typingTimeouts.get(chatId)
+        if (timeout) {
+            clearTimeout(timeout)
+            this.typingTimeouts.delete(chatId)
+        }
     }
 
     /**
@@ -1351,6 +1415,7 @@ export class TelegramAdapter implements ChannelAdapter {
         if (!this.bot) return null
 
         try {
+            await this.requireLiveAuthority('stream start')
             const stream = createDraftStream()
             await stream.start(
                 chatId,
@@ -1491,6 +1556,7 @@ export class TelegramAdapter implements ChannelAdapter {
      */
     private async handleReaction(reaction: any): Promise<void> {
         try {
+            if (!(await this.acceptInbound())) return
             const chatId = reaction.chat?.id?.toString()
             const userId = reaction.user?.id?.toString()
             const messageId = reaction.message_id
@@ -1606,6 +1672,7 @@ export class TelegramAdapter implements ChannelAdapter {
         }
 
         try {
+            await this.requireLiveAuthority('proactive send')
             // Telegram limit: 4096 chars per message — split if longer
             const MAX_LEN = 4000
             if (message.length <= MAX_LEN) {

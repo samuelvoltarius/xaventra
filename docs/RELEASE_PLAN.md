@@ -6,6 +6,29 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.39 Telegram effect fencing candidate
+
+- The Telegram adapter now revalidates both current Main and Telegram
+  authority at the Bot API effect boundary. This covers legacy direct SDK
+  calls as well as messages, chunks, edits, files, reactions, progress,
+  streaming and proactive output; stale inbound updates are rejected before
+  reactions or pipeline dispatch.
+- The compiled acceptance launches two distinct Node processes against a
+  disposable epoch authority. It proves the predecessor can send before
+  takeover, cannot use either the adapter or the legacy direct Bot API after
+  takeover, cannot dispatch a stale update, and that only the successor emits
+  and consumes after epoch 2. The transport is a fake Telegram sink: this is
+  process-boundary fencing evidence, not a physical-host partition or live
+  Telegram delivery claim.
+- Local Windows evidence before the candidate commit: focused Telegram tests
+  11/11, two-process handoff 5/5 in 1.15 seconds, typecheck/build and complete
+  Core regression 535 suites / 1,575 tests. The first local full run retained
+  two setup negatives: a missing worktree dependency tree and a stale Sharp
+  0.35.3 junction. Exact `npm ci` installed locked Sharp 0.35.4; the unchanged
+  full suite then passed with the supported per-process Git long-path setting.
+  Candidate CI, evidence CI, main promotion and signed publication remain
+  required. No production node or Telegram bot was touched.
+
 ### 2.78.38 packaged Desktop repair activation candidate
 
 - The packaged Trust surface now completes owner approval through the existing

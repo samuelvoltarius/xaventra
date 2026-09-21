@@ -45,6 +45,9 @@ describe('actual Telegram starter concurrency', () => {
         expect(state.channels.telegram).not.toBeNull()
         expect(mocks.verify).toHaveBeenCalledWith('nova-main')
         expect(mocks.verify).toHaveBeenCalledWith('telegram')
+        const runtimeAuthority = mocks.create.mock.calls[0][0].verifyAuthority
+        await expect(runtimeAuthority()).resolves.toBe(true)
+        expect(mocks.verify).toHaveBeenLastCalledWith('telegram')
     })
 
     it('disconnects a startup fenced while connecting', async () => {

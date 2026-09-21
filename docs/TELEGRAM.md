@@ -129,6 +129,14 @@ An HA standby uses `NOVA_TELEGRAM_MODE=standby`; that does not authorize
 polling by itself. Credentials are local to each node and are never copied by
 Mesh, Memory, Supabase or release artifacts.
 
+Every inbound update and outbound Bot API effect revalidates both leases at the
+last possible boundary. This includes direct legacy SDK calls, message chunks,
+edits, files, reactions, typing/progress indicators and proactive sends. Losing
+authority retires the poller, clears timers and fences late callbacks; stopping
+the old poller remains allowed so cleanup cannot deadlock behind the lost lease.
+This closes an in-process race but does not replace a controlled physical-node
+partition and live Telegram handover test.
+
 ---
 
 ## Troubleshooting

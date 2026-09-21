@@ -168,6 +168,19 @@ jobs:
           path: .nova-data/memory-convergence-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Telegram channel effects are fenced across two node processes
+        run: npm run check:telegram-handoff
+        timeout-minutes: 2
+        env:
+          XAVENTRA_TELEGRAM_HANDOFF_QA_DIR: ${{ github.workspace }}/.nova-data/telegram-handoff-qa
+      - name: Preserve Telegram handoff evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-handoff-qa-${{ matrix.os }}
+          path: .nova-data/telegram-handoff-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Outcome Router validated samples survive restart without cross-user leakage
         run: npm run check:outcome-router
         timeout-minutes: 2
