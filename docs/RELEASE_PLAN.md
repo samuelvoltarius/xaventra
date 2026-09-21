@@ -19,7 +19,11 @@ Preserve negative results. No mocked proof is substituted for live execution.
 - Local Windows evidence before candidate publication: focused state/L03
   regressions 171/171, typecheck/build, compiled state-authority acceptance
   19/19, and static/runtime module loading with 9 core plus 40 service modules.
-  Hosted exact-revision evidence on Ubuntu, Windows and macOS remains required.
+  Exact candidate `82216d4d852cf27180394ce41cb67e4bab3402f4` passed all ten
+  jobs in CI `35574205134`. Downloaded official Ubuntu, Windows and macOS
+  reports each passed all 19 authority checks against that exact revision.
+  Gitleaks 8.30.1 found no secret across 115 public commits / about 10.96 MB.
+  Evidence CI, main promotion and signed release remain required.
 - This is a source-only concurrency fix. It does not prove a physical-host
   partition, live-channel handoff, distributed mission reconstruction or
   production rollout; those RC gates remain open.

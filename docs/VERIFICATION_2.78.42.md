@@ -36,6 +36,9 @@ canonical state machine.
 | Full Core regression | 231 suites / 1,583 tests passed | Windows with Git long-path override |
 | Desktop unit regression | 12/12 passed | Main-process and evidence contracts |
 | Release assurance | Passed | Zero runtime dependency advisories; external comparison remains a warning/open gate |
+| Candidate CI | 10/10 jobs passed | Commit `82216d4d852cf27180394ce41cb67e4bab3402f4`, run `35574205134` |
+| Official compiled authority evidence | 57/57 passed | 19 checks each on Ubuntu, Windows and macOS; exact candidate revision |
+| Public-history secret scan | Passed | Gitleaks 8.30.1 scanned 115 commits / about 10.96 MB with no findings |
 
 The first full Core run retained one environment-only negative: the nested
 repair-publication fixture exceeded Windows' default Git loose-object path
