@@ -24,8 +24,13 @@ Preserve negative results. No mocked proof is substituted for live execution.
   not complete in the restricted local sandbox, so that acceptance used the
   exact Desktop sources in an ASAR with the locked Electron runtime; hosted CI
   must still build and test the official packages on all three platforms.
-  Candidate CI, complete history scan, evidence commit, main promotion and
-  signed release remain required. This does not change production nodes.
+  Exact candidate `4538e7c2245a49734034f49af0a6ae94c529d4b9`
+  passed all ten jobs in CI run `35566322916`. Official Ubuntu, Windows and
+  macOS package reports each passed all ten interactions and captured all five
+  screenshots on attempt one with the explicit 30-second deadline. Gitleaks
+  8.30.1 found no secret across 113 public commits / about 10.94 MB. Evidence
+  CI, main promotion and signed release remain required. This does not change
+  production nodes.
 
 ### 2.78.40 cancellable mesh-agent execution candidate
 

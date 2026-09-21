@@ -34,6 +34,10 @@ retry makes the release proof less deterministic.
 | Runtime module load | 9 core and 40 service modules loaded | Import/wiring evidence only |
 | Disposable packaged interaction | 10/10 checks passed | Exact Desktop source in ASAR with locked Electron runtime; simulated local Core |
 | Screenshot evidence | 5/5 captured on attempt 1 | Windows local compositor, 30-second per-image deadline |
+| Candidate CI | 10/10 jobs passed | Commit `4538e7c2245a49734034f49af0a6ae94c529d4b9`, run `35566322916` |
+| Official packaged Desktop | 30/30 interaction checks passed | Ubuntu, Windows and macOS, ten checks each |
+| Hosted screenshot evidence | 15/15 captured on attempt 1 | Five images per platform, explicit 30-second deadline |
+| Public-history secret scan | Passed | Gitleaks 8.30.1 scanned 113 commits / about 10.94 MB with no findings |
 
 The local `electron-builder --dir` copy step did not finish in the restricted
 sandbox. The disposable acceptance therefore assembled the exact Desktop files
@@ -43,10 +47,7 @@ electron-builder output. Hosted CI remains the authoritative package build.
 
 ## Required publication evidence
 
-- Exact candidate CI green on Ubuntu, Windows and macOS.
-- Uploaded reports show all interaction checks and screenshot metadata.
-- Full Core regression green on the exact candidate.
-- Full-history secret scan, evidence-commit CI, main CI and signed release.
+- Evidence-commit CI, main CI and signed release.
 
 ## Remaining gates
 
