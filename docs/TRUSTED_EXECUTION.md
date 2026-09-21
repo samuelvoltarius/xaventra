@@ -1,6 +1,6 @@
 # Trusted execution
 
-Nova owns orchestration, routing, tools, memory, validation and approvals. The
+Xaventra owns orchestration, routing, tools, memory, validation and approvals. The
 OpenAI Agents SDK is an optional agent-loop backend, not the system authority.
 
 ## Runtime authority
@@ -14,8 +14,10 @@ The execution order is:
 3. Nova's tool policy decides which tools are visible and which calls require
    approval. Tool handlers continue to run through Nova's registry.
 4. The `ExecutionKernel` validates actual tool results and artifacts.
-5. The append-only `OutcomeLedger` stores route, tool evidence, validation,
-   checkpoint and final outcome events.
+5. The append-only `OutcomeLedger` accepts terminal success only through
+   `completeValidated`, after the same run has persisted a successful,
+   non-pending Execution Kernel validation. A signed mesh delivery is evidence,
+   not completion authority.
 6. The existing dashboard exposes those runs in its **Trust** tab.
 
 ## Enabling the SDK backend

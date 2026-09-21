@@ -111,7 +111,7 @@ export class OutcomeLedger {
         return join(this.dataDir, 'checkpoints')
     }
 
-    append(runId: string, type: OutcomeEventType, payload: Record<string, unknown> = {}): OutcomeEvent {
+    private append(runId: string, type: OutcomeEventType, payload: Record<string, unknown> = {}): OutcomeEvent {
         if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true })
         const event: OutcomeEvent = {
             version: 1,
@@ -177,7 +177,7 @@ export class OutcomeLedger {
         this.append(runId, 'plan.recorded', plan)
     }
 
-    recordRoute(runId: string, route: { backend?: string; model?: string; node?: string; reason?: string }): void {
+    recordRoute(runId: string, route: { backend?: string; model?: string; node?: string; reason?: string; taskType?: string; toolset?: string[] }): void {
         this.append(runId, 'route.selected', route)
     }
 
@@ -201,8 +201,19 @@ export class OutcomeLedger {
         this.append(runId, 'approval.recorded', approval)
     }
 
-    complete(runId: string, outcome: Record<string, unknown>): void {
+    /**
+     * Commit terminal success only after the canonical validation contract has
+     * been persisted for this run. Transport delivery, model output and tool
+     * success are evidence inputs, never independent completion authorities.
+     */
+    completeValidated(runId: string, outcome: Record<string, unknown>): boolean {
+        const current = this.getRun(runId)
+        if (!current || current.status === 'completed' || current.status === 'failed'
+            || current.invalidated || current.validation?.success !== true
+            || current.validation.validator !== 'nova-execution-kernel'
+            || current.validation.awaitingApproval === true) return false
         this.append(runId, 'run.completed', outcome)
+        return true
     }
 
     fail(runId: string, outcome: Record<string, unknown>): void {
@@ -311,7 +322,14 @@ export class OutcomeLedger {
                 view.validation = event.payload.validation as TaskValidationReport
                 if (view.validation?.awaitingApproval) view.status = 'awaiting_approval'
             } else if (event.type === 'run.completed') {
-                view.status = 'completed'
+                // Imported or legacy events cannot manufacture terminal
+                // success without the same persisted validator contract.
+                view.status = view.validation?.success === true
+                    && view.validation.validator === 'nova-execution-kernel'
+                    && view.validation.awaitingApproval !== true
+                    ? 'completed'
+                    : 'failed'
+                if (view.status === 'failed') view.invalidated = true
                 view.finalOutcome = event.payload
             } else if (event.type === 'run.failed') {
                 view.status = 'failed'

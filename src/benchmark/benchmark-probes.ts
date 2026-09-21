@@ -99,13 +99,13 @@ async function probeRouting(workspace: string): Promise<BenchmarkProbeResult> {
     let benchmarkRejected = true
     for (let index = 0; index < 20; index++) {
         const runId = `routing-${index}`
-        ledger.append(runId, 'route.selected', { model: 'qwen-code', node: 'spark', taskType: 'coding' })
+        ledger.recordRoute(runId, { model: 'qwen-code', node: 'spark', taskType: 'coding' })
         ledger.recordCost(runId, { usd: 0.0002, durationMs: 250, provider: 'vllm', model: 'qwen-code', estimated: true })
         ledger.recordValidation(runId, {
             validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
             success: true, awaitingApproval: false, criteria: [], violations: [],
         })
-        ledger.complete(runId, { durationMs: 250 })
+        ledger.completeValidated(runId, { durationMs: 250 })
         benchmarkRejected = router.recordValidatedSample({
             runId, userId: `benchmark:routing-${index}`, channel: 'benchmark', taskType: 'coding',
             model: 'qwen-code', node: 'spark', success: true, durationMs: 250, costUsd: 0.0002,
@@ -493,7 +493,7 @@ async function probeGovernance(workspace: string): Promise<BenchmarkProbeResult>
     ledger.recordFeedback(contract.id, { rating: 5, accepted: true, userId: 'benchmark-owner' })
     const validation = validateTaskCompletion(contract, { response: 'gelesen', verifiedTools: ['read_file'], toolCalls: 1 })
     ledger.recordValidation(contract.id, validation)
-    ledger.complete(contract.id, { success: validation.success, durationMs: 1 })
+    ledger.completeValidated(contract.id, { success: validation.success, durationMs: 1 })
     const run = ledger.getRun(contract.id)
     const ordered = run?.events.every((event, index, events) =>
         index === 0 || event.timestamp >= events[index - 1].timestamp) === true

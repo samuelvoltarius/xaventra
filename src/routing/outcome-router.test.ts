@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { OutcomeLedger } from '../core/outcome-ledger.js'
+import { createTaskContract } from '../core/task-contract.js'
 import { OutcomeRouter } from './outcome-router.js'
 
 function fixture(mode: 'shadow' | 'active' = 'shadow') {
@@ -70,11 +71,12 @@ describe('OutcomeRouter', () => {
     it('does not train from self-asserted ledger terminal events', () => {
         const { ledger, router } = fixture('active')
         for (let index = 0; index < 20; index++) {
-            const runId = `self-asserted-${index}`
-            ledger.append(runId, 'run.started', { channel: 'telegram', userId: 'alice' })
-            ledger.append(runId, 'route.selected', { model: 'candidate', node: 'spark', taskType: 'coding' })
-            ledger.append(runId, 'validation.finished', { validation: { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] } })
-            ledger.complete(runId, { success: true, durationMs: 1 })
+            const contract = createTaskContract(`self asserted ${index}`, { requiresTool: false, kind: 'none' })
+            const runId = contract.id
+            ledger.start(contract, { channel: 'telegram', userId: 'alice' })
+            ledger.recordRoute(runId, { model: 'candidate', node: 'spark', taskType: 'coding' })
+            ledger.recordValidation(runId, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] })
+            ledger.completeValidated(runId, { success: true, durationMs: 1 })
         }
         const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
         expect(decision.activationEligible).toBe(false)

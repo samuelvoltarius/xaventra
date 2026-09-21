@@ -17,7 +17,7 @@ function fixture() {
         ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
         ledger.recordTool(input.contract.id, { toolName: 'health_status', success: true, result: { success: true, output: 'Observed fixture' } })
         ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: '', success: true, awaitingApproval: false, criteria: [], violations: [] })
-        ledger.complete(input.contract.id, { success: true })
+        ledger.completeValidated(input.contract.id, { success: true })
         return { output: 'Hypothesis based on fixture evidence; no repair applied.' }
     })
     const worker: ResearchWorker = { hasAuthority: () => true, getRun: id => ledger.getRun(id), execute }
@@ -58,7 +58,7 @@ describe('persistent Doctor investigation dispatch', () => {
         f.execute.mockImplementation(async input => {
             f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
             f.ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: '', success: true, awaitingApproval: false, criteria: [], violations: [] })
-            f.ledger.complete(input.contract.id, { success: true })
+            f.ledger.completeValidated(input.contract.id, { success: true })
             return { output: 'All fixed' }
         })
         expect((await f.coordinator.investigateNext(f.worker))?.investigation?.status).toBe('failed')

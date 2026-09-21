@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.43] — 2026-09-21
+
+- Make the Outcome Ledger reject terminal success unless the same run already
+  contains a successful, non-pending Execution Kernel validation.
+- Remove the mesh transport's competing success writer: authenticated delivery
+  is retained as evidence, while the requesting kernel remains the only task
+  completion authority.
+- Fence imported terminal events without canonical validation and migrate the
+  native runner, Agents SDK, autonomous missions, Docker inventory and
+  benchmark probes to the validated completion commit.
+- Add regressions for missing, failed, spoofed and imported validation paths.
+
 ## [2.78.42] — 2026-09-21
 
 - Remove the unused parallel L03 state-machine implementation so CoreRuntime,

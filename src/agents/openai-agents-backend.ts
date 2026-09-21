@@ -277,7 +277,9 @@ export class OpenAIAgentsBackend implements AgentBackend {
                 }
             }
 
-            ledger.complete(input.contract.id, { success: true, durationMs: Date.now() - startedAt, output })
+            if (!ledger.completeValidated(input.contract.id, { success: true, durationMs: Date.now() - startedAt, output })) {
+                throw new Error('validated completion commit was rejected')
+            }
             if (input.channel !== 'benchmark' && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
                 try {
                     const run = ledger.getRun(input.contract.id)

@@ -265,9 +265,12 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 const { getOutcomeLedger } = await import('../core/outcome-ledger.js')
                 for (const evidence of result.evidence || []) getOutcomeLedger().recordTool(envelope.runId || result.requestId, { ...evidence, sourceNode: envelope.sourceNode, transportVerified: true })
                 const isIntermediateCodexInference = (result.evidence || []).some(item => item.tool === 'codex_inference')
-                if (!isIntermediateCodexInference) {
-                    if (result.success) getOutcomeLedger().complete(envelope.runId || result.requestId, { meshResult: result.result, sourceNode: envelope.sourceNode })
-                    else getOutcomeLedger().fail(envelope.runId || result.requestId, { error: result.error, sourceNode: envelope.sourceNode })
+                // A signed transport envelope proves origin and delivery, not
+                // task completion. The requesting ExecutionKernel consumes the
+                // result/evidence and is the sole success authority. Remote
+                // failures may still terminate the caller's durable run.
+                if (!isIntermediateCodexInference && !result.success) {
+                    getOutcomeLedger().fail(envelope.runId || result.requestId, { error: result.error, sourceNode: envelope.sourceNode })
                 }
             } catch { /* ledger optional */ }
         }

@@ -6,6 +6,28 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.43 single terminal-success authority candidate
+
+- `OutcomeLedger.completeValidated` is now the only public terminal-success
+  writer. It fails closed unless the same run has a successful, non-pending
+  `nova-execution-kernel` validation; the raw append primitive is private.
+- Signed mesh `run.result` delivery no longer marks a task successful. It
+  contributes transport-bound evidence, while the requesting Execution Kernel
+  validates and commits the final outcome. Remote failure remains terminal.
+- Imported or legacy `run.completed` events without the canonical validation
+  event project as failed and invalidated instead of manufacturing success.
+- Local evidence before candidate publication: typecheck/build, 48 focused
+  regressions, full Core regression (231 suites / 1,585 tests), Desktop unit
+  regression 12/12, current catalogs, 9 core plus 40 service modules loaded,
+  Windows unpacked Desktop package build and compiled disposable terminal
+  authority acceptance 9/9. The first full run retained one 5-second timing
+  failure in repair publication; its focused rerun passed 8/8 and the unchanged
+  full rerun passed 1,585/1,585. Assurance passed with no high or critical
+  dependency finding. Secret scans and hosted cross-platform CI remain required.
+- This is source/process evidence. It does not prove a physical-node failover,
+  production deployment, native signing identity or platform notarization;
+  those RC gates remain open.
+
 ### 2.78.42 canonical process-state authority candidate
 
 - The dead parallel `NovaStateMachine` implementation has been removed from

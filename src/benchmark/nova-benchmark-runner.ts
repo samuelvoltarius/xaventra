@@ -135,7 +135,7 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
         })
         ledger.recordValidation(contract.id, benchmarkValidation)
         if (benchmarkValidation.success && result.status === 'completed') {
-            ledger.complete(contract.id, {
+            ledger.completeValidated(contract.id, {
                 success: true,
                 durationMs: Date.now() - startedAt,
                 benchmarkProbe: probe?.toolName,

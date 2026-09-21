@@ -484,15 +484,16 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                         })
                         const validation = kernel.validateCompletion(String(result.result), { durationMs: Date.now() - outcomeStartedAt })
                         outcomeLedger.recordValidation(kernel.contract.id, validation)
-                        if (validation.success) outcomeLedger.complete(kernel.contract.id, {
+                        if (validation.success && outcomeLedger.completeValidated(kernel.contract.id, {
                             success: true, node: meshDelegation.host, model: meshDelegation.model,
-                        })
-                        return {
-                            runId: kernel.contract.id,
-                            validation,
-                            content: `🌐 *Antwort von ${meshDelegation.host}* (${meshDelegation.model}):\n\n${result.result}`,
-                            model: meshDelegation.model,
-                            sessionId,
+                        })) {
+                            return {
+                                runId: kernel.contract.id,
+                                validation,
+                                content: `🌐 *Antwort von ${meshDelegation.host}* (${meshDelegation.model}):\n\n${result.result}`,
+                                model: meshDelegation.model,
+                                sessionId,
+                            }
                         }
                     }
                 }
@@ -1996,12 +1997,19 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             source: `${usageCost.source}; native inference calls=${kernel.inference.snapshot().calls}; usage=${kernel.inference.snapshot().estimated ? 'reserved estimate' : 'provider-reported'}`,
         })
         if (taskValidation.success) {
-            outcomeLedger.complete(kernel.contract.id, {
+            if (!outcomeLedger.completeValidated(kernel.contract.id, {
                 success: true,
                 durationMs: Date.now() - outcomeStartedAt,
                 model: (llmClient as any)?.modelId || undefined,
-            })
-            if (!isBenchmarkRun && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
+            })) {
+                taskValidation = {
+                    ...taskValidation,
+                    success: false,
+                    violations: [...taskValidation.violations, 'validated completion commit rejected'],
+                }
+                outcomeLedger.fail(kernel.contract.id, { reason: 'validated-completion-commit-rejected' })
+                finalContent = 'Ich konnte die validierte Aufgabe nicht atomar als abgeschlossen speichern.'
+            } else if (!isBenchmarkRun && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
                 try {
                     const { getLearningCoordinator } = await import('../learning/learning-coordinator.js')
                     await getLearningCoordinator().recordValidatedRun({

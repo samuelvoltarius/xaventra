@@ -19,7 +19,7 @@ async function fixture(output: string | string[] = JSON.stringify({ description:
         ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
         ledger.recordTool(input.contract.id, { toolName: 'health_status', success: true, result: { success: true, output: 'value:1' } })
         ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: '', success: true, awaitingApproval: false, criteria: [], violations: [] })
-        ledger.complete(input.contract.id, { success: true })
+        ledger.completeValidated(input.contract.id, { success: true })
         return { output: input.purpose === 'candidate' ? (Array.isArray(output) ? output[Math.min(candidateIndex++, output.length - 1)] : output) : 'observed value:1, expected2' }
     }) }
     coordinator.ingest({ id, title: 'Wrong answer', detail: 'Expected 2', source: 'fixture', category: 'tools', severity: 'critical', recommendation: '', evidence: {}, status: 'open', createdAt: '', updatedAt: '' })

@@ -622,8 +622,14 @@ async function completeMission(): Promise<void> {
             validation.violations.push(`mission incomplete: ${doneCount}/${totalSteps} steps independently validated`)
         }
         missionLedger.recordValidation(activeMission.id, validation)
-        if (validation.success) missionLedger.complete(activeMission.id, { success: true, durationMs: activeMission.totalDuration, completedSteps: doneCount })
-        else missionLedger.fail(activeMission.id, { success: false, durationMs: activeMission.totalDuration, completedSteps: doneCount, failedSteps: failedCount })
+        if (validation.success) {
+            if (!missionLedger.completeValidated(activeMission.id, { success: true, durationMs: activeMission.totalDuration, completedSteps: doneCount })) {
+                missionLedger.fail(activeMission.id, { success: false, reason: 'validated-completion-commit-rejected' })
+                validation.success = false
+            }
+        } else {
+            missionLedger.fail(activeMission.id, { success: false, durationMs: activeMission.totalDuration, completedSteps: doneCount, failedSteps: failedCount })
+        }
         activeMission.status = validation.success ? 'done' : 'failed'
     }
     if (activeMission.rootGoalId) {

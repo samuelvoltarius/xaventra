@@ -20,6 +20,29 @@ afterEach(() => {
 })
 
 describe('OutcomeLedger', () => {
+    it('refuses terminal success until a successful non-pending validation is persisted', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-authority-'))
+        tempDirs.push(dir)
+        const ledger = new OutcomeLedger(dir, false)
+        const contract = createTaskContract('Answer safely', { requiresTool: false, kind: 'none' })
+        ledger.start(contract, { channel: 'test', userId: 'owner' })
+
+        expect(ledger.completeValidated(contract.id, { success: true })).toBe(false)
+        expect(ledger.getRun(contract.id)?.status).toBe('running')
+        ledger.recordValidation(contract.id, {
+            validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
+            success: false, awaitingApproval: false, criteria: [], violations: ['fixture rejection'],
+        })
+        expect(ledger.completeValidated(contract.id, { success: true })).toBe(false)
+        expect(ledger.getRun(contract.id)?.status).toBe('running')
+        ledger.recordValidation(contract.id, {
+            validator: 'model-self-check', validatedAt: new Date().toISOString(),
+            success: true, awaitingApproval: false, criteria: [], violations: [],
+        } as any)
+        expect(ledger.completeValidated(contract.id, { success: true })).toBe(false)
+        expect(ledger.getRun(contract.id)?.status).toBe('running')
+    })
+
     it('rebuilds a run from immutable events without production data', () => {
         const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-ledger-'))
         tempDirs.push(dir)
@@ -29,7 +52,7 @@ describe('OutcomeLedger', () => {
         ledger.recordRoute(contract.id, { backend: 'nova', model: 'test-model', node: 'test-node' })
         const validation = validateTaskCompletion(contract, { response: 'Antwort' })
         ledger.recordValidation(contract.id, validation)
-        ledger.complete(contract.id, { success: true })
+        ledger.completeValidated(contract.id, { success: true })
 
         const run = ledger.getRun(contract.id)
         expect(run?.status).toBe('completed')
@@ -45,7 +68,8 @@ describe('OutcomeLedger', () => {
         ledger.start(contract, { channel: 'desktop', userId: 'owner' })
         ledger.recordRoute(contract.id, { backend: 'local-vllm', model: 'qwen', node: 'nova-spark' })
         ledger.recordRoute(contract.id, { backend: 'nova', reason: 'shadow router observation' })
-        ledger.complete(contract.id, { success: true })
+        ledger.recordValidation(contract.id, validateTaskCompletion(contract, { response: 'completed', verifiedTools: ['run_command'] }))
+        ledger.completeValidated(contract.id, { success: true })
 
         expect(ledger.getRun(contract.id)).toMatchObject({
             model: 'qwen', node: 'nova-spark', backend: 'nova',
@@ -59,9 +83,11 @@ describe('OutcomeLedger', () => {
         const sample = createTaskContract('Sample task', { requiresTool: false, kind: 'none' })
         const sampleTwo = createTaskContract('Sample Two task', { requiresTool: false, kind: 'none' })
         ledger.start(sample, { channel: 'telegram', userId: 'sample' })
-        ledger.complete(sample.id, { success: true })
+        ledger.recordValidation(sample.id, validateTaskCompletion(sample, { response: 'done' }))
+        ledger.completeValidated(sample.id, { success: true })
         ledger.start(sampleTwo, { channel: 'telegram', userId: 'sample-two' })
-        ledger.complete(sampleTwo.id, { success: true })
+        ledger.recordValidation(sampleTwo.id, validateTaskCompletion(sampleTwo, { response: 'done' }))
+        ledger.completeValidated(sampleTwo.id, { success: true })
 
         expect(recordFeedbackForLatestUserRun({
             userId: 'sample',
@@ -81,7 +107,8 @@ describe('OutcomeLedger', () => {
         setRegressionCaseStore(new RegressionCaseStore(join(dir, 'regressions.json')))
         const contract = createTaskContract('Prüfe Spark', { requiresTool: false, kind: 'none' })
         ledger.start(contract, { channel: 'telegram', userId: 'sample', backend: 'nova' })
-        ledger.complete(contract.id, { success: true })
+        ledger.recordValidation(contract.id, validateTaskCompletion(contract, { response: 'checked' }))
+        ledger.completeValidated(contract.id, { success: true })
 
         expect(recordFeedbackForLatestUserRun({
             userId: 'sample', channel: 'telegram', accepted: false,
@@ -125,11 +152,15 @@ describe('OutcomeLedger', () => {
         const dir = mkdtempSync(join(tmpdir(), 'nova-imported-outcomes-'))
         tempDirs.push(dir)
         const ledger = new OutcomeLedger(dir)
-        const event: OutcomeEvent = {
-            version: 1, eventId: 'event-1', runId: 'run-imported', type: 'run.completed',
-            timestamp: new Date().toISOString(), payload: { success: true },
-        }
-        expect(ledger.importEvents([event, event])).toBe(1)
+        const timestamp = new Date().toISOString()
+        const events: OutcomeEvent[] = [{
+            version: 1, eventId: 'event-1', runId: 'run-imported', type: 'validation.finished',
+            timestamp, payload: { validation: { validator: 'nova-execution-kernel', validatedAt: timestamp, success: true, awaitingApproval: false, criteria: [], violations: [] } },
+        }, {
+            version: 1, eventId: 'event-2', runId: 'run-imported', type: 'run.completed',
+            timestamp, payload: { success: true },
+        }]
+        expect(ledger.importEvents([...events, events[1]])).toBe(2)
         expect(ledger.getRun('run-imported')?.status).toBe('completed')
 
         const checkpoint: OutcomeCheckpoint = {
@@ -139,6 +170,17 @@ describe('OutcomeLedger', () => {
         expect(ledger.importCheckpoint(checkpoint)).toBe(true)
         expect(ledger.importCheckpoint(checkpoint)).toBe(false)
         expect(ledger.loadCheckpoint('run-imported')?.pendingActions).toEqual(['next'])
+    })
+
+    it('fails closed when an imported terminal success has no validator event', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-imported-unvalidated-'))
+        tempDirs.push(dir)
+        const ledger = new OutcomeLedger(dir, false)
+        ledger.importEvent({
+            version: 1, eventId: 'terminal-only', runId: 'unvalidated', type: 'run.completed',
+            timestamp: new Date().toISOString(), payload: { success: true },
+        })
+        expect(ledger.getRun('unvalidated')).toMatchObject({ status: 'failed', invalidated: true })
     })
 
     it('keeps asynchronous benchmark ledgers isolated from concurrent scopes', async () => {

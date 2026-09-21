@@ -217,6 +217,19 @@ jobs:
         timeout-minutes: 2
         env:
           XAVENTRA_STATE_QA_DIR: ${{ github.workspace }}/.nova-data/state-authority-qa
+      - name: Terminal success requires canonical Execution Kernel validation
+        run: npm run check:completion-authority
+        timeout-minutes: 2
+        env:
+          XAVENTRA_COMPLETION_QA_DIR: ${{ github.workspace }}/.nova-data/completion-authority-qa
+      - name: Preserve terminal-success authority evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: completion-authority-qa-${{ matrix.os }}
+          path: .nova-data/completion-authority-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Preserve canonical state authority evidence including failures
         if: always()
         uses: actions/upload-artifact@v4

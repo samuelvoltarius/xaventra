@@ -26,7 +26,10 @@ export async function dockerInventoryCommand(args: string, tools: { execute(name
         const report = kernel.validateCompletion('Docker-Inventar gelesen', { tokens: 0, toolCalls: 1, durationMs: Date.now() - started })
         ledger.recordValidation(runId, report)
         if (!report.success) { ledger.fail(runId, { violations: report.violations }); return 'Docker-Inventar konnte nicht innerhalb des freigegebenen Auftrags validiert werden.' }
-        ledger.complete(runId, { success: true, nodeId: result.nodeId, evidenceHash: result.evidenceHash })
+        if (!ledger.completeValidated(runId, { success: true, nodeId: result.nodeId, evidenceHash: result.evidenceHash })) {
+            ledger.fail(runId, { reason: 'validated-completion-commit-rejected' })
+            return 'Docker-Inventar wurde validiert, konnte aber nicht atomar als abgeschlossen gespeichert werden.'
+        }
         // JSON string escaping prevents container names/images from injecting
         // additional instructions/formatting into the deterministic reply.
         const lines = result.containers.slice(0, 100).map((c: any) => `${JSON.stringify(c.names)} — ${JSON.stringify(c.state)} — ${JSON.stringify(c.image)}`)
