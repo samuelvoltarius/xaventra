@@ -119,17 +119,12 @@ describe('L0 Self-Repair', async () => {
 // ============================================
 
 describe('L03 Core Runtime', async () => {
-    const { NovaStateMachine, MessageBus, RequestQueue, CoreRuntime, getCoreRuntime } = await import('./L03-core-runtime.js')
+    const { MessageBus, RequestQueue, CoreRuntime, getCoreRuntime } = await import('./L03-core-runtime.js')
+    const { getStateMachine } = await import('../core/state-machine.js')
 
-    it('NovaStateMachine: creates and returns initial state', () => {
-        const sm = new NovaStateMachine()
-        expect(sm).toBeDefined()
-        expect(typeof sm.getState()).toBe('string')
-    })
-
-    it('NovaStateMachine: transitions to processing', () => {
-        const sm = new NovaStateMachine()
-        expect(() => sm.transition('process')).not.toThrow()
+    it('uses the canonical process state machine authority', () => {
+        const runtime = getCoreRuntime()
+        expect(runtime.state).toBe(getStateMachine())
     })
 
     it('MessageBus: creates instance', () => {

@@ -137,9 +137,13 @@ export async function handleMessage(
     recordChannelMessage({ channel, direction: 'inbound' })
     const { getStateMachine } = await import('./core/state-machine.js')
     const runtimeState = getStateMachine()
-    if (runtimeState.isIdle()) runtimeState.startThinking(`message:${channel}`)
-    getMessageBus().emitSync('user:message', { channel, userId: from, content, hasImage: Boolean(image) }, { source: 'daemon', correlationId: traceId })
+    if (!runtimeState.beginOperation(traceId, `message:${channel}`)) {
+        endTrace(traceId)
+        throw new Error('Runtime state authority rejected duplicate or invalid message operation')
+    }
+    let runtimeError: string | undefined
     try {
+        getMessageBus().emitSync('user:message', { channel, userId: from, content, hasImage: Boolean(image) }, { source: 'daemon', correlationId: traceId })
         const priority = channel === 'internal' || from === 'Nova-Autonomy' ? -10 : 10
         return await withSpan('nova.channel.message', {
             'nova.trace.id': traceId,
@@ -165,13 +169,12 @@ export async function handleMessage(
                 return result
             }), priority))
     } catch (error) {
+        runtimeError = String(error).slice(0, 200)
         recordExecutionStage({ stage: 'pipeline.failed', success: false })
-        runtimeState.fail(String(error).slice(0, 200))
         getMessageBus().emitSync('system:error', { channel, userId: from, error: String(error) }, { source: 'pipeline', correlationId: traceId })
         throw error
     } finally {
-        if (runtimeState.isError()) runtimeState.recover('message completed with error')
-        else if (!runtimeState.isIdle()) runtimeState.finish('message completed')
+        runtimeState.completeOperation(traceId, runtimeError)
         endTrace(traceId)
     }
 }

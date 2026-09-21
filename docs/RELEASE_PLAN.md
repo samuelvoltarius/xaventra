@@ -6,6 +6,24 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.42 canonical process-state authority candidate
+
+- The dead parallel `NovaStateMachine` implementation has been removed from
+  L03. `CoreRuntime`, daemon channel ingress and observers now use the same
+  canonical `StateMachine` object.
+- Each top-level message owns a correlated operation lease. Completing one of
+  two overlapping requests cannot return the process to idle, duplicate
+  admission/completion is rejected, and a legacy direct idle transition is
+  fenced while any request remains active. Failures reconcile only after the
+  active set drains.
+- Local Windows evidence before candidate publication: focused state/L03
+  regressions 171/171, typecheck/build, compiled state-authority acceptance
+  19/19, and static/runtime module loading with 9 core plus 40 service modules.
+  Hosted exact-revision evidence on Ubuntu, Windows and macOS remains required.
+- This is a source-only concurrency fix. It does not prove a physical-host
+  partition, live-channel handoff, distributed mission reconstruction or
+  production rollout; those RC gates remain open.
+
 ### 2.78.41 packaged Desktop screenshot reliability candidate
 
 - The packaged Desktop acceptance now gives screenshot capture an independent
@@ -29,8 +47,10 @@ Preserve negative results. No mocked proof is substituted for live execution.
   macOS package reports each passed all ten interactions and captured all five
   screenshots on attempt one with the explicit 30-second deadline. Gitleaks
   8.30.1 found no secret across 113 public commits / about 10.94 MB. Evidence
-  CI, main promotion and signed release remain required. This does not change
-  production nodes.
+  CI run `35566843123`, main CI `35567308522` and signed publisher run
+  `35567856185` passed for evidence commit
+  `3c98dd008078f342c647e59b6454c5870564dcbd`. Prerelease `v2.78.41`
+  targets that exact commit. No production node changed.
 
 ### 2.78.40 cancellable mesh-agent execution candidate
 

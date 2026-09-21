@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.42] — 2026-09-21
+
+- Remove the unused parallel L03 state-machine implementation so CoreRuntime,
+  channels and observers share the canonical process state authority.
+- Admit top-level messages with correlated operation leases and prevent an
+  earlier overlapping request from returning the runtime to idle while a
+  sibling request is still active.
+- Reconcile failures only after active operations drain, reject duplicate
+  admission/completion, and preserve the singleton identity during test reset.
+- Add compiled cross-platform acceptance and retained JSON evidence for the
+  overlapping-request authority contract.
+
 ## [2.78.41] — 2026-09-21
 
 - Give every packaged Desktop evidence screenshot an explicit 30-second

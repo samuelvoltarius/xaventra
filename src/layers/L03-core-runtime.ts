@@ -48,68 +48,6 @@ export interface QueuedRequest {
 }
 
 // ============================================
-// State Machine
-// ============================================
-
-export class NovaStateMachine extends EventEmitter {
-    private currentState: NovaState = 'idle'
-    private history: StateTransition[] = []
-    private stateStartTime: number = Date.now()
-
-    getState(): NovaState {
-        return this.currentState
-    }
-
-    getStateDuration(): number {
-        return Date.now() - this.stateStartTime
-    }
-
-    transition(to: NovaState, reason?: string): boolean {
-        const validTransitions: Record<NovaState, NovaState[]> = {
-            idle: ['working', 'maintenance', 'error'],
-            working: ['idle', 'waiting', 'error'],
-            waiting: ['working', 'idle', 'error'],
-            error: ['idle', 'maintenance'],
-            maintenance: ['idle'],
-        }
-
-        if (!validTransitions[this.currentState].includes(to)) {
-            console.warn(`[L03 State] Invalid: ${this.currentState} → ${to}`)
-            return false
-        }
-
-        const transition: StateTransition = {
-            from: this.currentState,
-            to,
-            timestamp: Date.now(),
-            reason,
-        }
-
-        this.history.push(transition)
-        if (this.history.length > 100) this.history.shift()
-
-        console.log(`[L03 State] ${this.currentState} → ${to}${reason ? ` (${reason})` : ''}`)
-        this.currentState = to
-        this.stateStartTime = Date.now()
-
-        this.emit('transition', transition)
-        return true
-    }
-
-    isIdle(): boolean {
-        return this.currentState === 'idle'
-    }
-
-    isWorking(): boolean {
-        return this.currentState === 'working'
-    }
-
-    getHistory(limit = 10): StateTransition[] {
-        return this.history.slice(-limit)
-    }
-}
-
-// ============================================
 // Message Bus (Pub/Sub)
 // ============================================
 
@@ -381,7 +319,6 @@ export function getCoreRuntime(): CoreRuntime {
 
 export default {
     CoreRuntime,
-    NovaStateMachine,
     MessageBus,
     RequestQueue,
     Watchdog,

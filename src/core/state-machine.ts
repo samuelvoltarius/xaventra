@@ -51,6 +51,10 @@ export class StateMachine {
     }
 
     private timeoutHandle: NodeJS.Timeout | null = null
+    /** Active top-level requests. A process-wide state may return to idle only
+     * after every admitted request has reached its terminal boundary. */
+    private readonly activeOperations = new Map<string, { reason?: string; startedAt: number }>()
+    private readonly operationFailures: string[] = []
 
     // ============================================
     // State Access
@@ -60,12 +64,13 @@ export class StateMachine {
         return this.currentState
     }
 
-    getStateInfo(): { state: NovaState; since: number; duration: number } {
+    getStateInfo(): { state: NovaState; since: number; duration: number; activeOperations: number } {
         const since = this.stateTimestamps[this.currentState]
         return {
             state: this.currentState,
             since,
             duration: Date.now() - since,
+            activeOperations: this.activeOperations.size,
         }
     }
 
@@ -79,6 +84,13 @@ export class StateMachine {
 
     transition(to: NovaState, reason?: string): boolean {
         const from = this.currentState
+
+        // No observer, watchdog or legacy caller may declare the process idle
+        // while a separately admitted request is still running.
+        if (to === 'idle' && this.activeOperations.size > 0) {
+            console.warn(`[StateMachine] Refusing idle with ${this.activeOperations.size} active operation(s)`)
+            return false
+        }
 
         // Validate transition
         if (!this.isValidTransition(from, to)) {
@@ -165,6 +177,62 @@ export class StateMachine {
     }
 
     // ============================================
+    // Top-level operation authority
+    // ============================================
+
+    beginOperation(operationId: string, reason?: string): boolean {
+        const id = operationId.trim()
+        if (!id || this.activeOperations.has(id) || this.isError()) return false
+        this.activeOperations.set(id, { reason, startedAt: Date.now() })
+        if (this.isIdle() && !this.startThinking(reason || `operation:${id}`)) {
+            this.activeOperations.delete(id)
+            return false
+        }
+        return true
+    }
+
+    completeOperation(operationId: string, error?: string): boolean {
+        const id = operationId.trim()
+        if (!this.activeOperations.delete(id)) return false
+        if (error) this.operationFailures.push(error.slice(0, 200))
+
+        // An earlier request must not return the shared runtime to idle while a
+        // later request still owns an operation lease.
+        if (this.activeOperations.size > 0) return true
+
+        const failure = this.operationFailures.shift()
+        this.operationFailures.length = 0
+        if (failure) {
+            if (!this.isError()) this.fail(failure)
+            if (this.isError()) this.recover('all active operations completed after error')
+            return true
+        }
+        if (!this.isIdle()) this.finish('all active operations completed')
+        return true
+    }
+
+    hasOperation(operationId: string): boolean {
+        return this.activeOperations.has(operationId)
+    }
+
+    getActiveOperationCount(): number {
+        return this.activeOperations.size
+    }
+
+    /** Test/process reinitialization without replacing the singleton object.
+     * CoreRuntime and observers therefore keep the same authority reference. */
+    reset(): void {
+        if (this.timeoutHandle) clearTimeout(this.timeoutHandle)
+        this.timeoutHandle = null
+        this.currentState = 'idle'
+        this.history = []
+        this.activeOperations.clear()
+        this.operationFailures.length = 0
+        const now = Date.now()
+        this.stateTimestamps = { idle: now, thinking: 0, executing: 0, waiting: 0, error: 0 }
+    }
+
+    // ============================================
     // Convenience Methods
     // ============================================
 
@@ -218,5 +286,5 @@ export function getStateMachine(): StateMachine {
 }
 
 export function resetStateMachine(): void {
-    globalStateMachine = null
+    globalStateMachine?.reset()
 }

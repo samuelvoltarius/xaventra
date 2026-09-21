@@ -45,9 +45,13 @@ and locked Electron distribution into an ASAR. This proves the changed capture
 path against a packaged Electron process, but not the official installer or
 electron-builder output. Hosted CI remains the authoritative package build.
 
-## Required publication evidence
+## Publication evidence
 
-- Evidence-commit CI, main CI and signed release.
+- Evidence commit `3c98dd008078f342c647e59b6454c5870564dcbd`
+  passed all ten jobs in CI `35566843123`.
+- The same exact commit passed all ten main jobs in CI `35567308522`.
+- Signed publisher `35567856185` published prerelease `v2.78.41` with
+  checksums, signed update manifest and Linux x64/arm64 update packages.
 
 ## Remaining gates
 
