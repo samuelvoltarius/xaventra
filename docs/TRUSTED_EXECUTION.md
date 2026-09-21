@@ -65,8 +65,15 @@ of this derived file is not claimed by this checkpoint.
 Native and SDK tool calls use deterministic idempotency keys. Completed calls
 are replayed from `.nova-data/idempotency.json`, not executed twice. Rollback is
 available only when a tool registered a concrete compensation handler. SDK
-checkpoints contain the serializable run input, so Trust approval and resume can
-reconstruct a run after restart.
+checkpoints contain the serializable run input plus the IDs of independently
+bound verified tool receipts. A process resume fails closed when a claimed key,
+result hash, principal, channel or contract binding cannot be reconstructed.
+For a fenced mission, the SDK publishes the same completed idempotency records
+and receipts through the authenticated witness/HA checkpoint transport used by
+the native runner. A successor with a fresh epoch imports them before approving
+the serialized SDK state; a stale predecessor cannot publish or execute another
+effect. This is durable replay protection, not permission to bypass PATCH_GATE
+or tool policy.
 
 ## Mesh fencing
 

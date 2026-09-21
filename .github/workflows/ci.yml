@@ -155,6 +155,19 @@ jobs:
           path: .nova-data/native-takeover-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Agents SDK approval checkpoint takeover across node processes without replay
+        run: npm run check:agents-sdk-takeover
+        timeout-minutes: 3
+        env:
+          XAVENTRA_AGENTS_TAKEOVER_QA_DIR: ${{ github.workspace }}/.nova-data/agents-sdk-takeover-qa
+      - name: Preserve Agents SDK takeover evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agents-sdk-takeover-qa-${{ matrix.os }}
+          path: .nova-data/agents-sdk-takeover-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Governed memory correction, reset and successor convergence
         run: npm run check:memory-convergence
         timeout-minutes: 2

@@ -4,7 +4,25 @@ import { getToolRegistry } from '../tools/complete-registry.js'
 import { checkTool } from '../tools/tool-policy.js'
 import { ExecutionKernel } from '../core/execution-kernel.js'
 import { getOutcomeLedger, type OutcomeLedger } from '../core/outcome-ledger.js'
-import { deriveToolCompensation, getIdempotencyStore, getPendingExecutionRegistry, makeIdempotencyKey, prepareToolCompensation } from '../core/execution-control.js'
+import {
+    assertMissionFenceForContent,
+    deriveToolCompensation,
+    executionScopeForContent,
+    getIdempotencyStore,
+    getPendingExecutionRegistry,
+    makeIdempotencyKey,
+    missionFenceForContent,
+    prepareToolCompensation,
+    type IdempotencyStore,
+} from '../core/execution-control.js'
+import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
+import {
+    hydrateNativeToolCheckpoint,
+    publishNativeToolCheckpoint,
+    type NativeCheckpointTransport,
+    type NativeTakeoverAuthority,
+} from '../core/native-tool-takeover.js'
+import { evidenceHash } from '../core/tool-evidence-binding.js'
 import { getOutcomeRouter } from '../routing/outcome-router.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { redactSecrets } from '../security/secret-redaction.js'
@@ -18,6 +36,10 @@ export interface OpenAIAgentsBackendOptions {
     modelProvider?: ModelProvider
     maxTurns?: number
     ledger?: OutcomeLedger
+    idempotencyStore?: IdempotencyStore
+    receiptStore?: NativeToolReceiptStore
+    checkpointAuthority?: NativeTakeoverAuthority
+    checkpointTransport?: NativeCheckpointTransport
 }
 
 function toolSchema(novaTool: NovaTool): Record<string, unknown> {
@@ -35,11 +57,19 @@ export class OpenAIAgentsBackend implements AgentBackend {
     private readonly modelProvider: ModelProvider
     private readonly maxTurns: number
     private readonly ledger: OutcomeLedger
+    private readonly idempotency: IdempotencyStore
+    private readonly receipts: NativeToolReceiptStore
+    private readonly checkpointAuthority?: NativeTakeoverAuthority
+    private readonly checkpointTransport?: NativeCheckpointTransport
 
     constructor(options: OpenAIAgentsBackendOptions = {}) {
         this.modelProvider = options.modelProvider || new NovaModelProvider()
         this.maxTurns = options.maxTurns || 12
         this.ledger = options.ledger || getOutcomeLedger()
+        this.idempotency = options.idempotencyStore || getIdempotencyStore()
+        this.receipts = options.receiptStore || new NativeToolReceiptStore(this.idempotency)
+        this.checkpointAuthority = options.checkpointAuthority
+        this.checkpointTransport = options.checkpointTransport
     }
 
     async run(input: AgentBackendInput): Promise<AgentBackendResult> {
@@ -54,7 +84,13 @@ export class OpenAIAgentsBackend implements AgentBackend {
         return this.execute(input, checkpoint, decision, reason)
     }
 
-    private buildTools(input: AgentBackendInput, kernel: ExecutionKernel): FunctionTool[] {
+    private buildTools(input: AgentBackendInput, kernel: ExecutionKernel, execution: {
+        scopeId: string
+        principalId: string
+        publishCheckpoint: () => Promise<boolean>
+        persistProgress: (idempotencyKey: string) => void
+        assertFence: () => Promise<void>
+    }): FunctionTool[] {
         const registry = getToolRegistry()
         const selected = input.tools || registry.getAll().filter(candidate =>
             input.contract.allowedChanges.allowedTools.length === 0
@@ -78,24 +114,43 @@ export class OpenAIAgentsBackend implements AgentBackend {
             timeoutBehavior: 'error_as_result',
             execute: async (params: Record<string, unknown>) => {
                 const startedAt = Date.now()
-                const idempotencyKey = makeIdempotencyKey(input.contract.id, novaTool.name, params)
+                const idempotencyKey = makeIdempotencyKey(execution.scopeId, novaTool.name, params)
+                const executionInputHash = evidenceHash(params)
                 const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.authUserId || input.userId })
                 if (!policy.allowed) throw new Error(policy.reason || `Tool ${novaTool.name} is denied by Nova policy`)
                 let result: unknown
                 try {
                     kernel.assertCanExecute(novaTool.name)
-                    const execution = await getIdempotencyStore().executeOnce({
+                    await execution.assertFence()
+                    const toolExecution = await this.idempotency.executeOnce({
                         key: idempotencyKey,
-                        runId: input.contract.id,
+                        runId: execution.scopeId,
                         operation: novaTool.name,
+                        inputHash: executionInputHash,
                         compensate: prepareToolCompensation(novaTool.name, params),
                         deriveCompensation: result => deriveToolCompensation(novaTool.name, params, result),
                         execute: async () => registry.get(novaTool.name)
                             ? registry.execute(novaTool.name, params)
                             : novaTool.handler(params),
                     })
-                    result = execution.result
+                    result = toolExecution.result
                     const validation = kernel.verify(novaTool.name, result, { callId: idempotencyKey, arguments: params })
+                    let checkpointPublished = true
+                    if (validation.success) {
+                        const evidence = kernel.getVerifiedToolCallEvidence(idempotencyKey)
+                        if (!evidence) throw new Error(`Verified tool ${novaTool.name} has no correlated kernel evidence`)
+                        this.receipts.save({
+                            scopeId: execution.scopeId,
+                            principalId: execution.principalId,
+                            channel: input.channel,
+                            contract: kernel.contract,
+                            idempotencyKey,
+                            executionInputHash,
+                            evidence,
+                        })
+                        execution.persistProgress(idempotencyKey)
+                        checkpointPublished = await execution.publishCheckpoint()
+                    }
                     ledger.recordTool(input.contract.id, {
                         toolName: novaTool.name,
                         params,
@@ -103,9 +158,11 @@ export class OpenAIAgentsBackend implements AgentBackend {
                         validation,
                         success: validation.success,
                         idempotencyKey,
-                        replayed: execution.replayed,
+                        replayed: toolExecution.replayed,
+                        checkpointPublished,
                         durationMs: Date.now() - startedAt,
                     })
+                    if (!checkpointPublished) throw new Error(`Verified tool ${novaTool.name} could not publish its fenced checkpoint`)
                     return result
                 } catch (error) {
                     ledger.recordTool(input.contract.id, {
@@ -126,6 +183,42 @@ export class OpenAIAgentsBackend implements AgentBackend {
         const ledger = this.ledger
         const kernel = new ExecutionKernel(input.content, input.contract)
         const startedAt = Date.now()
+        const scopeId = executionScopeForContent(input.content, input.contract.id)
+        const principalId = input.userId
+        const missionFence = missionFenceForContent(input.content)
+        try {
+            const takeover = missionFence
+                ? await hydrateNativeToolCheckpoint({
+                    fence: missionFence, scopeId, principalId, channel: input.channel,
+                    kernel, idempotency: this.idempotency, receipts: this.receipts,
+                    authority: this.checkpointAuthority, transport: this.checkpointTransport,
+                })
+                : null
+            const rehydration = takeover?.checkpointFound
+                ? takeover
+                : this.receipts.rehydrate({ scopeId, principalId, channel: input.channel, kernel })
+            if (rehydration.rejected.length) {
+                throw new Error(`Durable tool receipt rehydration rejected: ${rehydration.rejected.map(item => item.reason).join(', ')}`)
+            }
+            const durableCheckpoint = ledger.loadCheckpoint(input.contract.id)
+            if (serializedState && (!durableCheckpoint || durableCheckpoint.backend !== this.name
+                || !durableCheckpoint.backendState || durableCheckpoint.phase === 'completed')) {
+                throw new Error('SDK resume requires one unfinished durable backend checkpoint')
+            }
+            if (serializedState && durableCheckpoint!.completedIdempotencyKeys.length) {
+                const restoredKeys = new Set(this.receipts.exportScope(scopeId).map(receipt => receipt.idempotencyKey))
+                const missing = durableCheckpoint!.completedIdempotencyKeys.filter(key => !restoredKeys.has(key)
+                    || this.idempotency.get(key)?.status !== 'completed')
+                if (missing.length) throw new Error(`Resume checkpoint is missing ${missing.length} verified tool receipt(s)`)
+            }
+        } catch (error) {
+            const message = redactSecrets(String(error))
+            if (ledger.getRun(input.contract.id)) ledger.fail(input.contract.id, { reason: message, phase: 'receipt-rehydration' })
+            return {
+                runId: input.contract.id, backend: this.name, status: 'failed', output: '',
+                model: input.model || 'auto', toolsUsed: [], error: message,
+            }
+        }
         if (!serializedState) {
             ledger.start(input.contract, { channel: input.channel, userId: input.userId, backend: this.name })
             ledger.recordPlan(input.contract.id, {
@@ -148,11 +241,41 @@ export class OpenAIAgentsBackend implements AgentBackend {
             shadowConfidence: shadow.confidence, routerMode: shadow.mode,
         } as any)
 
+        const persistProgress = (idempotencyKey: string) => {
+            const previous = ledger.loadCheckpoint(input.contract.id)
+            ledger.saveCheckpoint({
+                runId: input.contract.id,
+                backend: this.name,
+                backendState: previous?.backendState,
+                phase: previous?.phase === 'awaiting_approval' ? previous.phase : 'tool-verified',
+                pendingActions: previous?.pendingActions || [],
+                completedIdempotencyKeys: [...new Set([...(previous?.completedIdempotencyKeys || []), idempotencyKey])],
+                ownerNode: previous?.ownerNode,
+                leaseEpoch: missionFence?.epoch || previous?.leaseEpoch,
+                resumeInput: previous?.resumeInput || {
+                    userId: input.userId, authUserId: input.authUserId, channel: input.channel,
+                    content: input.content, systemPrompt: input.systemPrompt, model: input.model,
+                    contract: input.contract,
+                },
+            })
+        }
+        const publishCheckpoint = async () => missionFence
+            ? publishNativeToolCheckpoint({
+                fence: missionFence, scopeId, principalId, channel: input.channel,
+                kernel, idempotency: this.idempotency, receipts: this.receipts,
+                authority: this.checkpointAuthority, transport: this.checkpointTransport,
+            })
+            : true
+        const assertFence = async () => {
+            if (missionFence && this.checkpointAuthority) await this.checkpointAuthority.assertCurrent(missionFence)
+            else await assertMissionFenceForContent(input.content)
+        }
+
         const agent = new Agent({
             name: 'Nova',
             instructions: input.systemPrompt || 'Du bist Nova. Führe den verbindlichen TaskContract aus. Behaupte niemals eine Tool-Ausführung ohne verifiziertes Tool-Ergebnis.',
             model: input.model || 'auto',
-            tools: this.buildTools(input, kernel),
+            tools: this.buildTools(input, kernel, { scopeId, principalId, publishCheckpoint, persistProgress, assertFence }),
         })
         const runner = new Runner({
             modelProvider: this.modelProvider,
@@ -181,7 +304,8 @@ export class OpenAIAgentsBackend implements AgentBackend {
                     backendState: checkpoint,
                     phase: 'awaiting_approval',
                     pendingActions: interruptions.map((item: any) => item.rawItem?.name || item.tool?.name || 'tool-approval'),
-                    completedIdempotencyKeys: [],
+                    completedIdempotencyKeys: this.receipts.exportScope(scopeId).map(receipt => receipt.idempotencyKey),
+                    leaseEpoch: missionFence?.epoch,
                     resumeInput: {
                         userId: input.userId, authUserId: input.authUserId, channel: input.channel,
                         content: input.content, systemPrompt: input.systemPrompt, model: input.model,
@@ -280,6 +404,15 @@ export class OpenAIAgentsBackend implements AgentBackend {
             if (!ledger.completeValidated(input.contract.id, { success: true, durationMs: Date.now() - startedAt, output })) {
                 throw new Error('validated completion commit was rejected')
             }
+            ledger.saveCheckpoint({
+                runId: input.contract.id,
+                backend: this.name,
+                phase: 'completed',
+                pendingActions: [],
+                completedIdempotencyKeys: this.receipts.exportScope(scopeId).map(receipt => receipt.idempotencyKey),
+                leaseEpoch: missionFence?.epoch,
+                resumeInput: { userId: input.userId, channel: input.channel, contract: input.contract },
+            })
             if (input.channel !== 'benchmark' && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
                 try {
                     const run = ledger.getRun(input.contract.id)

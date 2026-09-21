@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.44] — 2026-09-21
+
+- Persist independently bound Agents SDK tool receipts and completed
+  idempotency keys alongside approval checkpoints, then restore their verified
+  Execution Kernel evidence after process restart.
+- Reuse the fenced witness checkpoint transport for Agents SDK successor-node
+  takeover, rejecting missing, modified, cross-principal and stale-epoch state
+  instead of repeating a possibly completed effect.
+- Mark approval checkpoints completed after canonical validation so a later
+  restart cannot resubmit terminal work.
+- Add a cross-platform two-process, three-witness acceptance with a real SDK
+  approval interruption, successor resume and stale-writer rejection.
+
 ## [2.78.43] — 2026-09-21
 
 - Make the Outcome Ledger reject terminal success unless the same run already

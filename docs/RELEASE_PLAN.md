@@ -6,6 +6,27 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.44 Agents SDK durable tool takeover candidate
+
+- Agents SDK tool execution now persists the completed idempotency record and a
+  principal/channel/contract-bound verified receipt. Approval checkpoints list
+  the exact completed keys; resume fails closed when any claimed receipt is
+  missing or no longer matches its durable result.
+- Fenced SDK missions publish and hydrate those records through the same
+  authenticated witness checkpoint boundary as native tools. The successor
+  restores Execution Kernel evidence before approval and terminal validation;
+  stale epochs cannot write a later checkpoint.
+- Local focused regressions pass 8/8; the unchanged full Core suite passed 231
+  files / 1,587 tests with the process-local Windows Git long-path setting, and
+  Desktop passed 12/12. A compiled Windows acceptance used two
+  isolated Xaventra node processes and three authenticated durable witness
+  services, executed exactly two intended effects around a real SDK approval
+  interruption, restored the predecessor receipt, completed through the
+  canonical validator and rejected the stale predecessor. This is controlled
+  process/witness evidence, not a physical-host or production-network claim.
+- Exact candidate/evidence/main CI, history scan and signed
+  publication remain pending. No production node or channel is changed.
+
 ### 2.78.43 single terminal-success authority candidate
 
 - `OutcomeLedger.completeValidated` is now the only public terminal-success
