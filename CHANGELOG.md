@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.78.46] — 2026-09-21
+
+- Remove the model-selected multi-round recovery chain after a verified tool
+  failure. Failure prose can no longer choose `build_skill`, another tool,
+  commands or permissions.
+- Persist a typed, principal-scoped escalation bound to the canonical run and
+  tool receipt. Invalid input, unresolved resource and external authorization
+  failures ask at most one durable targeted question; other failures enter the
+  existing read-only Doctor research queue.
+- Preserve the typed failure response while the Outcome Ledger correctly marks
+  the original task failed, rather than replacing it with a false completion or
+  asking the model to improvise a repair.
+- Add two-process compiled acceptance proving one failed effect, one model turn,
+  zero `build_skill` effects, durable Doctor evidence and restart deduplication.
+
 ## [2.78.45] — 2026-09-21
 
 - Classify tool failures deterministically without interpreting error text as

@@ -1,11 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { FailureResearchCoordinator } from './failure-research-coordinator.js'
+import { FailureResearchCoordinator, getFailureResearchCoordinator, setFailureResearchCoordinator } from './failure-research-coordinator.js'
 import { createResearchWorker } from './research-worker.js'
 import { OutcomeLedger, withOutcomeLedger } from '../core/outcome-ledger.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
 import type { TaskContract } from '../core/task-contract.js'
+import { getToolFailureEscalationStore, setToolFailureEscalationStore, ToolFailureEscalationStore } from '../core/tool-failure-escalation.js'
+import { getSessionContinuityStore, setSessionContinuityStore, SessionContinuityStore } from '../memory/session-summarizer.js'
 
 describe('Doctor investigation through the actual native execution pipeline', () => {
     it('retries one transient read-only failure through the native runner and validates the correlated retry', async () => {
@@ -42,6 +44,57 @@ describe('Doctor investigation through the actual native execution pipeline', ()
                 expect(run.tools.some(tool => tool.success && JSON.stringify(tool.result).includes('healthy after retry'))).toBe(true)
             })
         } finally { registry.register(original) }
+    }, 30_000)
+
+    it('persists unknown failure escalation without asking the model to select build_skill', async () => {
+        const registry = getToolRegistry()
+        const originalHealth = registry.get('health_status')!
+        const originalBuildSkill = registry.get('build_skill')!
+        const healthHandler = vi.fn(async () => ({ success: false, error: 'opaque fixture failure' }))
+        const buildSkillHandler = vi.fn(async () => ({ success: true, output: 'must never execute' }))
+        registry.register({ ...originalHealth, handler: healthHandler })
+        registry.register({ ...originalBuildSkill, handler: buildSkillHandler })
+        const root = join(process.cwd(), '.nova-data', 'typed-failure-escalation-native')
+        const previousDoctor = getFailureResearchCoordinator()
+        const previousStore = getToolFailureEscalationStore()
+        const previousContinuity = getSessionContinuityStore()
+        const doctor = new FailureResearchCoordinator(join(root, 'doctor.json'))
+        const store = new ToolFailureEscalationStore(join(root, 'escalations.json'))
+        const continuity = new SessionContinuityStore(join(root, 'continuity.json'))
+        setFailureResearchCoordinator(doctor)
+        setToolFailureEscalationStore(store)
+        setSessionContinuityStore(continuity)
+        const contract: TaskContract = {
+            id: 'doctor-typed-unknown-escalation', version: 1, goal: 'Collect current health evidence', createdAt: new Date().toISOString(),
+            expectedArtifacts: [], requiredTests: [],
+            successCriteria: [{ id: 'evidence', kind: 'verified_tool', required: true, description: 'Verified health evidence' }],
+            allowedChanges: { readOnly: true, allowedPaths: [], allowedTools: ['health_status'], externalSideEffects: false },
+            budget: { timeoutMs: 15_000, maxToolCalls: 1, maxOutputTokens: 500 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
+        }
+        const complete = vi.fn(async () => ({
+            content: '', toolCalls: [{ name: 'health_status', arguments: {} }],
+            usage: { promptTokens: 20, completionTokens: 5, totalTokens: 25 },
+        }))
+        try {
+            await withOutcomeLedger(new OutcomeLedger(join(root, 'ledger')), async () => {
+                const result = await createResearchWorker(() => true, { modelId: 'scripted-fixture', complete })
+                    .execute({ contract, content: contract.goal, caseId: 'unknown-escalation', signal: new AbortController().signal, purpose: 'research' })
+                expect(result.output).toContain('Doctor-Diagnose')
+                expect(complete).toHaveBeenCalledTimes(1)
+                expect(healthHandler).toHaveBeenCalledTimes(1)
+                expect(buildSkillHandler).not.toHaveBeenCalled()
+                expect(store.list()).toHaveLength(1)
+                expect(store.list()[0]).toMatchObject({ classification: 'unknown', state: 'doctor-queued' })
+                expect(doctor.list()).toHaveLength(1)
+                expect(new ToolFailureEscalationStore(join(root, 'escalations.json')).list()).toHaveLength(1)
+            })
+        } finally {
+            registry.register(originalHealth)
+            registry.register(originalBuildSkill)
+            setFailureResearchCoordinator(previousDoctor)
+            setToolFailureEscalationStore(previousStore)
+            setSessionContinuityStore(previousContinuity)
+        }
     }, 30_000)
 
     it('cannot read a file outside the exact candidate profile through the native tool executor', async () => {

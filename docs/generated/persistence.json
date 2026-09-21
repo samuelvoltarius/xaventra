@@ -822,6 +822,10 @@
       "path": ".nova-data/patterns.json"
     },
     {
+      "owner": "src/core/tool-failure-escalation.ts",
+      "path": ".nova-data/recovery/tool-failure-escalations.json"
+    },
+    {
       "owner": "src/layers/L0-supervisor.ts",
       "path": ".nova-data/scheduled-tasks.json"
     },

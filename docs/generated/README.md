@@ -6,6 +6,6 @@ Generated from authoritative source. Do not edit by hand.
 |---|---:|---|
 | tools.json | 229 | `e16fe8e8139643013bde0d3fec23d65542dfb4b97517299b870075756fdf9daa` |
 | config.json | 0 | `f13eb5523f0349e8d0480961307ee0aeb5aa3c1515340160df2df95ebda206d2` |
-| persistence.json | 241 | `e7222316669a6de4040dfa0882d90371529c5ef8e60c1c9e821b65a9ef0e5cc2` |
-| modules.json | 645 | `d675bae5f543bfab2e3c7ab25dead27d9897951cea35f131a690917664e23f0e` |
+| persistence.json | 242 | `51b5c1f284da9b9f3b7f2931dff81669b9ec3ea1ffa3934e635169dee0a52c5d` |
+| modules.json | 646 | `37a59d52d59a1091ea4b2f577eef0b0a0327cba6b105c03c1f131e9eb6d7ab45` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |

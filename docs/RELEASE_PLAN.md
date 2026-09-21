@@ -6,6 +6,37 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.46 typed non-recoverable failure escalation candidate
+
+- A verified non-recoverable tool failure no longer becomes an LLM prompt that
+  can select discovery tools, `build_skill`, commands or authority. The native
+  runner records one deterministic typed escalation from correlated Execution
+  Kernel evidence.
+- Invalid input, unresolved resource and external authorization failures may
+  create one durable principal-scoped clarification. If another clarification
+  is already pending, it is preserved and the failure is queued for read-only
+  Doctor research instead. Rate limit, exhausted transient, missing dependency
+  and unknown failures enter that same bounded Doctor queue directly.
+- The escalation store retains run/tool references, classification, argument
+  names, a redacted failure summary and digest. A fresh process deduplicates the
+  same escalation and Doctor case; the original task remains canonically failed
+  because no successful tool evidence exists.
+- Local evidence includes 17/17 focused unit/authorization/native-runner tests,
+  all 233 Core suites / 1,607 tests, Desktop 12/12, packaged Desktop UI 10/10
+  and packaged Desktop-to-actual-Core 5/5, typecheck/build, current
+  catalogs, 9 core plus 40 service modules, state/completion authority and a
+  passing assurance gate with zero dependency findings. A compiled two-process
+  acceptance proves one model turn,
+  one failed effect, zero `build_skill` effects, a deterministic user response,
+  persisted escalation/Doctor records, canonical failure and restart
+  deduplication. The retained first regression failures were an obsolete
+  call-site count and Windows long-path environment failure; the unchanged
+  complete suite passed after the semantic assertion update and process-local
+  Git long-path setting. A cached-QA replay was also reproduced and fixed by
+  moving each acceptance child into its disposable runtime before imports.
+  Hosted three-platform evidence, secret scans, evidence/main CI and signed
+  publication remain pending. No production node or channel is changed.
+
 ### 2.78.45 typed low-risk recovery candidate
 
 - Native tool failures are classified into transient transport, rate limit,

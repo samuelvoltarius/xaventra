@@ -92,6 +92,7 @@
         "../core/side-effects.js",
         "../core/system-message.js",
         "../core/task-contract.js",
+        "../core/tool-failure-escalation.js",
         "../core/tool-task-context.js",
         "../core/typed-tool-recovery.js",
         "../doctor/tool-contract.js",
@@ -1964,6 +1965,19 @@
       "imports": [
         "./lifecycle-policy.js",
         "node:crypto"
+      ]
+    },
+    {
+      "module": "src/core/tool-failure-escalation.ts",
+      "imports": [
+        "../doctor/failure-research-coordinator.js",
+        "../memory/session-summarizer.js",
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "./typed-tool-recovery.js",
+        "node:crypto",
+        "node:fs"
       ]
     },
     {

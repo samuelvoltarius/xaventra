@@ -79,7 +79,13 @@ describe('runner common tool authorization', () => {
         expect(target.once).not.toHaveBeenCalled()
         expect(target.execute).not.toHaveBeenCalled()
         expect(runnerSource.match(/registry\.execute\(/g)).toHaveLength(1)
-        expect(runnerSource.match(/executeToolOnce\(call\.name,/g)).toHaveLength(5)
+        // Every remaining native execution path goes through the one governed
+        // closure above. The former two model-driven failure-recovery loops
+        // were deliberately removed; reintroducing their markers is a
+        // regression even if the raw call-site count happens to change again.
+        expect(runnerSource.match(/executeToolOnce\(call\.name,/g)).toHaveLength(3)
+        expect(runnerSource).not.toContain('SELF-HEALING: Re-prompt LLM on tool failures')
+        expect(runnerSource).not.toContain('Find a way to fix this problem and execute the solution')
     })
 
     it('permits an authorized call and overwrites model-supplied identity and consent', async () => {

@@ -36,6 +36,7 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
+import { escalateVerifiedToolFailures, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 
@@ -78,47 +79,6 @@ function timeoutForTool(name: string): number {
     if (IMAGE_TOOLS.has(name)) return TIMEOUT_TOOL_SCREENSHOT
     if (SLOW_TOOLS.has(name)) return TIMEOUT_TOOL_SLOW
     return TIMEOUT_TOOL
-}
-
-async function recoverIgnoredRequiredTool(
-    llmClient: any,
-    toolDefinitions: any[],
-    task: string,
-    recoveryState: string,
-    label: string,
-): Promise<any> {
-    const catalog = toolDefinitions.map(tool => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-    }))
-    const planned: any = await withTimeout(
-        llmClient.complete([
-            {
-                role: 'system' as const,
-                content: 'Wähle genau ein erlaubtes Tool für den nächsten Recovery-Schritt. Antworte ausschließlich als JSON {"tool":"name","arguments":{}}. Discovery → Resolve → Execute. Wenn kein ausführender Weg existiert, wähle build_skill.',
-            },
-            {
-                role: 'user' as const,
-                content: `Auftrag: ${task}\nBisheriger Recovery-Stand:\n${recoveryState}\nErlaubte Tools: ${JSON.stringify(catalog)}`,
-            },
-        ], [], { reasoningEffort: 'none' }),
-        TIMEOUT_FOLLOWUP,
-        `${label} validated planner`,
-    )
-    const raw = String(planned?.content || '').trim()
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-    try {
-        const plan = JSON.parse(raw)
-        const allowed = toolDefinitions.find(tool => tool.name === plan?.tool)
-        if (allowed && plan.arguments && typeof plan.arguments === 'object' && !Array.isArray(plan.arguments)) {
-            console.log(`[Nova Agent] ✅ ${label} planner selected: ${allowed.name}`)
-            return { content: '', toolCalls: [{ name: allowed.name, arguments: plan.arguments }] }
-        }
-    } catch { /* invalid planner output is handled by the caller */ }
-    console.log(`[Nova Agent] ⚠ ${label} planner returned no valid allowed tool`)
-    return planned
 }
 
 export interface AgentMessage {
@@ -993,6 +953,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let finalContent = response.content || ''
         let policyBlocked = false
         let awaitingPolicyApproval = false
+        let failureEscalationContent: string | undefined
         const nativeExecutionMetadata = new Map<string, { idempotencyKey: string; executionInputHash: string }>()
 
         const persistNativeReceipt = async (callId: string): Promise<void> => {
@@ -1108,6 +1069,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 return execution.result
             }
             const toolResults: string[] = []
+            const failureObservations: VerifiedToolFailureObservation[] = []
             let hasToolErrors = false
             let capturedImage: { base64: string; mimeType: string } | null = null  // For vision pipeline
 
@@ -1401,6 +1363,14 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     }
                     if (!verifiedSuccess && !recoveredSuccess) hasToolErrors = true
                     const effectiveSuccess = verifiedSuccess || recoveredSuccess
+                    if (!effectiveSuccess && !policyBlocked) {
+                        failureObservations.push({
+                            callId,
+                            toolName: call.name,
+                            args: call.arguments || {},
+                            failure: result,
+                        })
+                    }
 
                     // Unified learning accepts only the structured result of an
                     // execution that actually reached the tool registry.
@@ -1585,6 +1555,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         success: false,
                         timestamp: Date.now(),
                     })
+                    failureObservations.push({
+                        callId,
+                        toolName: call.name,
+                        args: call.arguments || {},
+                        failure: err,
+                    })
                     logRuntimeEvent({ event: 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: false, detail: String(err).slice(0, 500) })
 
                     // Record failed approach for future avoidance
@@ -1625,173 +1601,25 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             }
 
             // ============================================
-            // SELF-HEALING: Re-prompt LLM on tool failures
+            // TYPED FAILURE DIAGNOSIS / ESCALATION
             // ============================================
             if (policyBlocked) {
                 finalContent = awaitingPolicyApproval ? 'Diese Aktion wartet auf Freigabe. Es wurde keine Ersatzaktion gestartet.' : 'Diese Aktion wurde durch die Richtlinie gesperrt. Es wurde keine Ersatzaktion gestartet.'
-            } else if (hasToolErrors && toolResults.length > 0) {
-                _traceRecorder.recordRetry(_traceId)
-                console.log(`[Nova Agent] 🔄 Self-healing: re-prompting LLM with failure context`)
-                try {
-                    const failureContext = correctionDetector?.buildFailureContext?.() || ''
-
-                    // L7: Inject few-shot correction examples for failed tools
-                    let l7Examples = ''
-                    try {
-                        const { getToolUsageLearner } = await import('../layers/L7-tool-learning.js')
-                        const learner = getToolUsageLearner()
-                        const failedToolNames = [...new Set(response.toolCalls.map((c: any) => c.name))]
-                        const examples = failedToolNames
-                            .map((name: string) => learner.buildLearningPrompt(name, userId))
-                            .filter(Boolean)
-                            .join('\n')
-                        if (examples) l7Examples = `\n\n## Gelernte Korrekturen für diese Tools:\n${examples}`
-                    } catch { /* L7 not critical */ }
-
-                    const retryMessages = [
-                        ...messages,
-                        { role: 'assistant', content: `Ich habe versucht Tools zu benutzen, aber es gab Fehler:\n${toolResults.join('\n')}` },
-                        { role: 'user', content: `Die vorherigen Tool-Aufrufe sind verifiziert fehlgeschlagen. ${failureContext}${l7Examples}\n\nRECOVERY: 1) vorhandene Fähigkeiten/Dienste mit find_capability oder nova_capabilities entdecken, 2) mit resolve_capability auflösen und real testen, 3) nur wenn nichts Passendes existiert build_skill als Freigabevorschlag aufrufen. Nie denselben fehlgeschlagenen Ansatz wiederholen. Keinen Erfolg ohne erfolgreiches Tool-Ergebnis behaupten.` },
-                    ]
-
-                    const recoveryNames = new Set(['find_capability', 'resolve_capability', 'nova_capabilities', 'build_skill'])
-                    const recoveryToolDefinitions = [...toolDefinitions]
-                    for (const tool of registry.getAll().filter(t => recoveryNames.has(t.name))) {
-                        if (recoveryToolDefinitions.some(existing => existing.name === tool.name)) continue
-                        recoveryToolDefinitions.push({
-                            name: tool.name,
-                            description: tool.description,
-                            parameters: {
-                                type: 'object',
-                                properties: Object.fromEntries((tool.parameters || []).map((p: any) => [p.name, { type: p.type || 'string', description: p.description || '' }])),
-                                required: (tool.parameters || []).filter((p: any) => p.required).map((p: any) => p.name),
-                            },
-                        })
-                    }
-
-                    const failedNames = new Set(response.toolCalls.map((call: any) => call.name))
-                    const safeRecoveryDefinitions = recoveryToolDefinitions.filter(tool => !failedNames.has(tool.name))
-                    let retryResponse: any = await withTimeout(
-                        llmClient.complete(retryMessages, safeRecoveryDefinitions, { toolChoice: 'required', reasoningEffort: 'none' }),
-                        TIMEOUT_FOLLOWUP,
-                        'Self-healing retry'
-                    )
-
-                    if (!retryResponse.toolCalls?.length) {
-                        console.log('[Nova Agent] ⚠ Recovery tool_choice ignored — using validated recovery planner')
-                        const recoveryCatalog = safeRecoveryDefinitions.map(tool => ({
-                            name: tool.name, description: tool.description, parameters: tool.parameters,
-                        }))
-                        const planned: any = await withTimeout(
-                            llmClient.complete([
-                                {
-                                    role: 'system' as const,
-                                    content: 'Der erste Ausführungsweg ist verifiziert fehlgeschlagen. Wähle genau ein ANDERES Recovery-Tool. Antworte ausschließlich als JSON {"tool":"name","arguments":{...}}. Nutze find_capability/resolve_capability; wenn kein ausführender Weg existiert, build_skill.',
-                                },
-                                { role: 'user' as const, content: `Auftrag: ${content}\nFehler: ${toolResults.join('\n')}\nErlaubte Recovery-Tools: ${JSON.stringify(recoveryCatalog)}` },
-                            ], [], { reasoningEffort: 'none' }),
-                            TIMEOUT_FOLLOWUP,
-                            'Validated recovery planner',
-                        )
-                        const raw = String(planned?.content || '').trim()
-                            .replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-                        try {
-                            const plan = JSON.parse(raw)
-                            const allowed = safeRecoveryDefinitions.find(tool => tool.name === plan?.tool)
-                            if (allowed && plan.arguments && typeof plan.arguments === 'object' && !Array.isArray(plan.arguments)) {
-                                retryResponse = { content: '', toolCalls: [{ name: allowed.name, arguments: plan.arguments }] }
-                                console.log(`[Nova Agent] ✅ Validated recovery planner selected: ${allowed.name}`)
-                            }
-                        } catch {
-                            console.log('[Nova Agent] ⚠ Validated recovery planner returned invalid JSON')
-                        }
-                    }
-
-                    if (retryResponse.toolCalls?.length > 0) {
-                        const recoveryResults: string[] = []
-                        const recoveryAttempted = new Set<string>()
-                        for (const call of retryResponse.toolCalls) {
-                            const callId = nextToolEvidenceId(call)
-                            recoveryAttempted.add(call.name)
-                            try {
-                                const recovered = await withTimeout(
-                                    executeToolOnce(call.name, { ...(call.arguments || {}), userId, channel }, callId),
-                                    timeoutForTool(call.name),
-                                    `Recovery tool: ${call.name}`,
-                                )
-                                const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
-                                if (success) await persistNativeReceipt(callId)
-                                const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
-                                toolsExecuted.push(call.name)
-                                toolsUsed.push(call.name)
-                                toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
-                                recoveryResults.push(`${call.name}: ${text}`)
-                                logRuntimeEvent({ event: success ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success })
-                            } catch (err) {
-                                recoveryResults.push(`${call.name}: FEHLER ${String(err)}`)
-                            }
-                        }
-                        let recoveryMessages: any[] = [...retryMessages,
-                            { role: 'assistant', content: retryResponse.content || 'Recovery-Tools ausgewählt.' },
-                        ]
-                        let recoveryFollowUp: any = null
-                        for (let recoveryRound = 0; recoveryRound < 3; recoveryRound++) {
-                            const roundRecoveryDefinitions = safeRecoveryDefinitions.filter(tool => !recoveryAttempted.has(tool.name))
-                            if (roundRecoveryDefinitions.length === 0) break
-                            recoveryFollowUp = await withTimeout(
-                                llmClient.complete([...recoveryMessages,
-                                    { role: 'user', content: `Recovery-Ergebnisse:\n${recoveryResults.join('\n')}\n\nWenn die Aktion noch nicht ausführbar ist, rufe das nächste Recovery-Tool auf. Discovery → Resolve → Execute; wenn kein ausführender Weg existiert, build_skill. Nur bei verifiziertem Abschluss zusammenfassen.` },
-                                ], roundRecoveryDefinitions, { toolChoice: 'required', reasoningEffort: 'none' }),
-                                TIMEOUT_FOLLOWUP,
-                                `Recovery follow-up ${recoveryRound + 1}`,
-                            ) as any
-                            if (!recoveryFollowUp.toolCalls?.length) {
-                                recoveryFollowUp = await recoverIgnoredRequiredTool(
-                                    llmClient,
-                                    roundRecoveryDefinitions,
-                                    content,
-                                    recoveryResults.join('\n'),
-                                    `Recovery follow-up ${recoveryRound + 1}`,
-                                )
-                            }
-                            if (!recoveryFollowUp.toolCalls?.length) break
-                            for (const call of recoveryFollowUp.toolCalls) {
-                                const callId = nextToolEvidenceId(call)
-                                recoveryAttempted.add(call.name)
-                                try {
-                                    const recovered = await withTimeout(
-                                        executeToolOnce(call.name, { ...(call.arguments || {}), userId, channel }, callId),
-                                        timeoutForTool(call.name),
-                                        `Recovery chain tool: ${call.name}`,
-                                    )
-                                    const success = kernel.verify(call.name, recovered, { callId, arguments: call.arguments || {} }).success
-                                    if (success) await persistNativeReceipt(callId)
-                                    const text = typeof recovered === 'string' ? recovered : JSON.stringify(recovered)
-                                    toolsExecuted.push(call.name)
-                                    toolsUsed.push(call.name)
-                                    toolExecutions.push({ callId, toolName: call.name, params: call.arguments || {}, result: text, success, timestamp: Date.now() })
-                                    recoveryResults.push(`${call.name}: ${text}`)
-                                    logRuntimeEvent({ event: success ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success })
-                                } catch (err) {
-                                    recoveryResults.push(`${call.name}: FEHLER ${String(err)}`)
-                                }
-                            }
-                            recoveryMessages = [...recoveryMessages, { role: 'assistant', content: recoveryFollowUp.content || 'Recovery fortgesetzt.' }]
-                        }
-                        finalContent = recoveryFollowUp?.content || recoveryResults.join('\n')
-                    } else if (retryResponse.content && retryResponse.content.trim().length > 10) {
-                        finalContent = retryResponse.content
-                        console.log(`[Nova Agent] ✅ Self-healing: got alternative response (${finalContent.length} chars)`)
-                    } else {
-                        // Fallback: show the error results
-                        finalContent = menschenlesbar(toolResults, content)
-                    }
-                } catch (retryErr) {
-                    console.log(`[Nova Agent] Self-healing retry failed: ${retryErr}`)
-                    finalContent = menschenlesbar(toolResults, content)
-                }
+            } else if (hasToolErrors && failureObservations.length > 0) {
+                // A failed tool result is evidence, never a prompt that may
+                // choose commands, permissions or build_skill. Persist one
+                // deterministic decision: one targeted user question or the
+                // existing bounded read-only Doctor research queue.
+                const escalation = escalateVerifiedToolFailures({
+                    principalId: userId,
+                    runId: kernel.contract.id,
+                    request: content,
+                    observations: failureObservations,
+                })
+                failureEscalationContent = escalation?.content
+                finalContent = failureEscalationContent || menschenlesbar(toolResults, content)
+                console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
             }
-
             // ============================================
             // MULTI-TURN TOOL LOOP — Like OpenAI!
             // Feed results back WITH tool definitions so Nova
@@ -2174,7 +2002,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     })
                 } catch { /* episodic failure learning is non-critical */ }
             }
-            if (!policyBlocked && kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
+            if (!policyBlocked && !failureEscalationContent
+                && kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
                 finalContent = `Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: ${reasons.join('; ') || taskValidation.violations.join('; ') || 'Erfolgsnachweis fehlt.'}`
             }
         }

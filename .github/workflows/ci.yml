@@ -152,6 +152,19 @@ jobs:
           path: .nova-data/typed-recovery-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Non-recoverable tool failures persist a typed diagnosis without model-selected repair
+        run: npm run check:failure-escalation
+        timeout-minutes: 2
+        env:
+          XAVENTRA_FAILURE_ESCALATION_QA_DIR: ${{ github.workspace }}/.nova-data/tool-failure-escalation-qa
+      - name: Preserve typed failure escalation evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-failure-escalation-qa-${{ matrix.os }}
+          path: .nova-data/tool-failure-escalation-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Native verified tool receipts survive an actual process restart without replay
         run: npm run check:native-tool-resume
         timeout-minutes: 2
