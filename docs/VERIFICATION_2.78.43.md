@@ -41,13 +41,18 @@ isolated Outcome Ledger. All 9 checks passed:
 - duplicate completion rejected;
 - imported unvalidated success projected as failed and invalidated.
 
-## Hosted evidence still required
+## Hosted candidate evidence
 
-Candidate CI must run the identical acceptance on Ubuntu, Windows and macOS.
 The first candidate run is retained as negative evidence: the pre-existing
 Outcome Router process acceptance still called the intentionally removed raw
 ledger APIs and failed on Ubuntu. The fixture now uses the public contract
-methods and `completeValidated`; a new exact-revision run is required.
-The candidate revision, downloaded reports, complete history scan, evidence
-revision, main CI and signed release publisher must be recorded before this
-candidate can be called published. No production node was modified.
+methods and `completeValidated`.
+
+Corrected candidate `97d6453dcbbee125bd37c8b3b27688caf8f15d4a`
+passed all ten jobs in CI `35585156186`. Downloaded official reports passed all
+9 checks on each platform (Ubuntu x64, Windows x64 and macOS arm64), 27/27 in
+total. The complete 118-commit public history (about 10.97 MB) had zero Gitleaks
+8.30.1 findings before this evidence update.
+
+Evidence-revision CI, main CI and the signed release publisher must still pass
+before this candidate can be called published. No production node was modified.
