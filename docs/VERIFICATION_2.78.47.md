@@ -31,7 +31,8 @@ model did not reliably load the owning pack and returned no tool evidence.
 | Typecheck | Passed locally | Source/build |
 | Build | Passed locally | Source/build |
 | Desktop unit regression | 12/12 passed locally | Packaged-client source/process |
-| Exact candidate CI | Pending | Hosted cross-platform |
+| Exact candidate CI | 10/10 jobs passed for `c60ccaae5ed706bae0e7a4e9a4454633b2bb257e` in [run 35734345371](https://github.com/samuelvoltarius/xaventra/actions/runs/35734345371) | Hosted Ubuntu, Windows and macOS |
+| Complete public-history secret scan | Gitleaks 8.30.1: 126 commits / about 11.08 MB, zero findings | Repository history |
 | Signed release and post-update live tool receipt | Pending | Release/live production |
 
 The pre-fix production response correctly refused to claim a verified health
