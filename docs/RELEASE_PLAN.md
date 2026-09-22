@@ -13,8 +13,14 @@ completion and restart acceptance passes 16/16. Local full regression passed
 233 files / 1,626 tests before one additional ledger-read failure test; that
 test is included in the final focused pass. Desktop passes 12/12 after using
 the permitted temporary root (the initial sandbox Temp-access failure is retained).
-Typecheck and build pass. Exact candidate/evidence/main CI, history scan and
-signed publication remain required. This is controlled
+Typecheck and build pass. Runtime commit
+`0ff5e864f233e12a85eaef6f1bbea7554d470a62` passed all ten jobs in
+[candidate CI 35790896388](https://github.com/samuelvoltarius/xaventra/actions/runs/35790896388).
+Downloaded Ubuntu, Windows and macOS reports each identify that clean revision
+and pass all 16 checks, including delayed terminal reconciliation and restart
+deduplication. Gitleaks 8.30.1 scanned all 134 public commits (11.12 MB) with
+zero findings. The evidence commit, exact main CI and signed publication are
+still required before release. This is controlled
 process evidence with injected runner replies, not physical-host takeover or
 live-model repair quality. No production changes or RC qualification are implied.
 
