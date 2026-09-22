@@ -13,7 +13,14 @@ Local focused regression passes 23/23. The compiled acceptance covers 14 checks,
 including real child processes and durable files with injected runner replies
 for absent, nonterminal and failed Outcomes. These fixtures prove retry and
 persistence behavior, not live-model diagnosis or physical-node repair quality.
-Exact-commit CI, full regression, history scan and signed release remain gates.
+Runtime `e3cbb7c33147d1517092d99248bf8dca46b93537` passed all ten jobs in
+[candidate CI 35780475064](https://github.com/samuelvoltarius/xaventra/actions/runs/35780475064),
+including full Core regression and packaged Desktop checks. Downloaded Ubuntu,
+Windows and macOS failure-escalation reports each identify that clean revision
+and pass 14/14 checks. Local Desktop tests pass 12/12; typecheck and build pass.
+Gitleaks 8.30.1 found zero secrets in the staged change and all 132 public
+commits (11.11 MB). The separate evidence commit still requires its own green
+CI before main promotion and the signed release pipeline.
 The RC remains open.
 
 ## 2.78.49 Doctor receipt reconciliation candidate
