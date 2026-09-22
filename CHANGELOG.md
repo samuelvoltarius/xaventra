@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.50] — 2026-09-22
+
+- Hold Doctor investigations with missing, nonterminal or mismatched Outcomes
+  after a lost runner reply. Restart and elapsed backoff cannot dispatch another
+  attempt while the prior execution is uncertain.
+- Preserve correlated failed diagnostic Outcome references and stop after three
+  confirmed terminal attempts with an explicit retry-budget reason.
+- Extend the process-restart acceptance with injected missing, nonterminal and
+  failed reply cases; production repair and live model quality remain separate.
+
 ## [2.78.49] — 2026-09-22
 
 - Reconcile an independently validated Doctor diagnostic receipt when the

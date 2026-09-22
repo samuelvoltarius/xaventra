@@ -1,5 +1,21 @@
 # Reliability release loop
 
+## 2.78.50 Doctor uncertain-execution boundary candidate
+
+Missing or nonterminal diagnostic Outcomes previously became retryable after a
+lost reply. Three new regression cases reproduced that gap and the missing
+failed-Outcome audit reference. A dispatched run now needs a matching terminal
+receipt before any bounded retry; uncertain or foreign receipts hold the case
+across restart, including retryable records written by 2.78.49. Confirmed terminal failures retain their evidence references,
+backoff and three-attempt limit, followed by an explicit operator-visible reason.
+
+Local focused regression passes 23/23. The compiled acceptance covers 14 checks,
+including real child processes and durable files with injected runner replies
+for absent, nonterminal and failed Outcomes. These fixtures prove retry and
+persistence behavior, not live-model diagnosis or physical-node repair quality.
+Exact-commit CI, full regression, history scan and signed release remain gates.
+The RC remains open.
+
 ## 2.78.49 Doctor receipt reconciliation candidate
 
 When the diagnostic runner commits a validated Outcome but loses its reply,

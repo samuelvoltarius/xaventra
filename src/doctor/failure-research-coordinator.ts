@@ -147,16 +147,13 @@ export class FailureResearchCoordinator {
                 && !['verified', 'blocked'].includes(value.investigation?.status || '')
                 && (value.investigation?.nextAttemptAt || 0) <= now)
             if (!item) return null
-            if (item.investigation?.status === 'running') {
+            if (item.investigation) {
+                const priorStatus = item.investigation.status
                 const run = worker.getRun(item.investigation.runId)
-                if (run?.status === 'completed' || run?.status === 'failed') {
-                    this.finishInvestigation(item, run, '', now)
-                } else {
-                    item.investigation.status = 'blocked'
-                    item.investigation.reason = 'Prior execution has no terminal receipt; reconcile before retrying'
-                    this.persist()
-                }
-                return structuredClone(item)
+                this.finishInvestigation(item, run, '', now)
+                // Recheck legacy retryable records too: elapsed backoff alone
+                // cannot prove that the previous execution is terminal.
+                if (priorStatus === 'running' || item.investigation.status !== 'failed') return structuredClone(item)
             }
             const attempts = (item.investigation?.attempts || 0) + 1
             const observedRevision = item.observationHash
@@ -201,8 +198,7 @@ export class FailureResearchCoordinator {
                 // lose the acknowledgement before returning to us. Reconcile
                 // that durable result before permitting another investigation.
                 const run = worker.getRun(runId)
-                if (observedRevision === item.observationHash
-                    && (run?.status === 'completed' || run?.status === 'failed')) {
+                if (observedRevision === item.observationHash) {
                     this.finishInvestigation(item, run, '', now)
                 } else {
                     item.investigation.status = attempts >= 3 ? 'blocked' : 'failed'
@@ -216,19 +212,30 @@ export class FailureResearchCoordinator {
 
     private finishInvestigation(item: FailureResearchCase, run: OutcomeRunView | null, output: string, now: number): void {
         const state = item.investigation!
-        const verified = run?.runId === state.runId && run.userId === 'Nova-Autonomy'
-            && run.channel === 'internal' && run.status === 'completed' && !run.invalidated
-            && run.validation?.success === true
+        const terminal = run?.runId === state.runId && run.userId === 'Nova-Autonomy'
+            && run.channel === 'internal' && ['completed', 'failed'].includes(run.status) && !run.invalidated
             && run.contract?.allowedChanges.readOnly === true
             && run.contract?.allowedChanges.externalSideEffects === false
+        if (!terminal) {
+            state.status = 'blocked'
+            state.reason = 'No matching terminal receipt; execution may still be active. Reconcile this run before retrying.'
+            item.updatedAt = new Date(now).toISOString()
+            this.persist()
+            return
+        }
+        const verified = run.status === 'completed' && run.validation?.success === true
             && run.tools.some(tool => tool.success === true
                 && RESEARCH_TOOLS.includes(String(tool.toolName) as any)
                 && validateToolOutcome(String(tool.toolName), tool.result).success)
         state.status = verified ? 'verified' : state.attempts >= 3 ? 'blocked' : 'failed'
-        state.reason = verified ? undefined : 'No matching independently validated diagnostic outcome'
+        state.reason = verified ? undefined : state.attempts >= 3
+            ? 'Diagnostic retry budget exhausted; review the recorded terminal outcomes.'
+            : run.status === 'failed'
+                ? 'Diagnostic execution failed; a bounded retry is scheduled after backoff.'
+                : 'No independently validated diagnostic outcome; a bounded retry is scheduled after backoff.'
+        item.evidenceRefs = [...new Set([...item.evidenceRefs, `outcome:${state.runId}`])].slice(-30)
         if (verified) {
             state.report = redactSecrets(output || String(run.finalOutcome?.response || '')).slice(0, 4_000)
-            item.evidenceRefs = [...new Set([...item.evidenceRefs, `outcome:${state.runId}`])].slice(-30)
         }
         item.updatedAt = new Date(now).toISOString()
         this.persist()

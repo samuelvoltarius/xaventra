@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -138,13 +138,59 @@ if (child === '--phase-three') {
   process.exit(0)
 }
 
+// Actual child processes and durable files, with injected runner replies. This
+// is uncertainty/retry acceptance, not a live model or production repair test.
+if (child === '--negative-write' || child === '--negative-read') {
+  const mode = process.argv[4]
+  process.env.NOVA_RUNTIME_ROOT = runtime
+  process.env.NOVA_TEST_MODE = '1'
+  process.env.NOVA_NO_SIDE_EFFECTS = '1'
+  mkdirSync(runtime, { recursive: true })
+  process.chdir(runtime)
+  const [{ FailureResearchCoordinator }, { OutcomeLedger }] = await Promise.all([
+    import('../dist/doctor/failure-research-coordinator.js'),
+    import('../dist/core/outcome-ledger.js'),
+  ])
+  const doctorPath = join(runtime, 'doctor.json')
+  const doctor = new FailureResearchCoordinator(doctorPath)
+  const ledger = new OutcomeLedger(join(runtime, 'ledger'))
+  const effectsPath = join(runtime, 'diagnostic-effects.jsonl')
+  const worker = { hasAuthority: () => true, getRun: id => ledger.getRun(id), execute: async input => {
+    appendFileSync(effectsPath, `${JSON.stringify({ runId: input.contract.id })}\n`)
+    if (!['missing', 'legacy-missing'].includes(mode)) ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+    if (mode === 'failed') ledger.fail(input.contract.id, { success: false, error: 'isolated diagnostic failure' })
+    throw new Error('injected lost runner reply')
+  } }
+  if (child === '--negative-write') {
+    doctor.ingest({ id: `boundary-${mode}`, title: 'Diagnostic reply lost', detail: 'Isolated receipt boundary probe',
+      category: 'tools', severity: 'warning', source: 'acceptance', recommendation: 'Investigate',
+      evidence: {}, status: 'open', createdAt: '', updatedAt: '' })
+    const first = await doctor.investigateNext(worker, 1)
+    if (mode === 'legacy-missing') {
+      // Preserve the on-disk shape emitted by 2.78.49 after a lost reply.
+      first.investigation.status = 'failed'
+      writeJson(doctorPath, { version: 1, cases: [first] })
+    }
+    writeJson(join(runtime, 'first.json'), first)
+  } else {
+    const early = await doctor.investigateNext(worker, 2)
+    await doctor.investigateNext(worker, 1_000_000)
+    await new FailureResearchCoordinator(doctorPath).investigateNext(worker, 2_000_000)
+    const last = new FailureResearchCoordinator(doctorPath)
+    const extra = await last.investigateNext(worker, 3_000_000)
+    writeJson(join(runtime, 'last.json'), { early, extra, cases: last.list(),
+      effects: readFileSync(effectsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line)) })
+  }
+  process.exit(0)
+}
+
 const qaDir = resolve(process.env.XAVENTRA_FAILURE_ESCALATION_QA_DIR || join(root, '.nova-data', 'tool-failure-escalation-qa'))
 const reportPath = join(qaDir, 'report.json')
 mkdirSync(qaDir, { recursive: true })
 const isolated = mkdtempSync(join(qaDir, 'runtime-'))
 let report
 try {
-  const run = phase => spawnSync(process.execPath, [fileURLToPath(import.meta.url), phase, isolated], {
+  const run = (phase, target = isolated, mode = '') => spawnSync(process.execPath, [fileURLToPath(import.meta.url), phase, target, mode], {
     cwd: root, encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, NOVA_RUNTIME_ROOT: isolated, NOVA_TEST_MODE: '1', NOVA_NO_SIDE_EFFECTS: '1' },
   })
@@ -157,9 +203,30 @@ try {
   const thirdRun = run('--phase-three')
   if (thirdRun.status !== 0) throw new Error(`phase three failed: ${thirdRun.stderr || thirdRun.stdout}`)
   const third = JSON.parse(readFileSync(join(isolated, 'phase-three.json'), 'utf8'))
+  const boundaryChecks = {}
+  for (const mode of ['missing', 'nonterminal', 'failed', 'legacy-missing']) {
+    const target = join(isolated, `negative-${mode}`)
+    for (const phase of ['--negative-write', '--negative-read']) {
+      const result = run(phase, target, mode)
+      if (result.status !== 0) throw new Error(`${mode} ${phase} failed: ${result.stderr || result.stdout}`)
+    }
+    const firstState = JSON.parse(readFileSync(join(target, 'first.json'), 'utf8'))
+    const last = JSON.parse(readFileSync(join(target, 'last.json'), 'utf8'))
+    const investigation = last.cases[0]?.investigation
+    boundaryChecks[`${mode}ReceiptBoundary`] = last.early === null && last.extra === null
+      && investigation?.status === 'blocked'
+      && last.effects.length === (mode === 'failed' ? 3 : 1)
+      && new Set(last.effects.map(effect => effect.runId)).size === last.effects.length
+      && (mode === 'failed'
+        ? firstState.investigation?.status === 'failed' && investigation.reason.includes('retry budget exhausted')
+          && last.cases[0].evidenceRefs.filter(ref => ref.startsWith('outcome:')).length === 3
+        : firstState.investigation?.status === (mode === 'legacy-missing' ? 'failed' : 'blocked')
+          && investigation.reason.includes('terminal receipt'))
+  }
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
   const sourceDirty = Boolean(spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.trim())
   const checks = {
+    ...boundaryChecks,
     oneModelTurn: first.llmCalls === 1,
     oneFailedEffect: first.healthCalls === 1,
     noBuildSkillEffect: first.buildSkillCalls === 0,
@@ -174,11 +241,12 @@ try {
       && third.cases[0].status === 'verified' && third.cases[0].evidenceRefs.some(ref => ref.startsWith('outcome:')),
   }
   report = {
-    version: 2, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt',
+    version: 3, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt',
+    negativeBoundaryEvidenceClass: 'actual-process-restarts-with-injected-runner-replies',
     sourceRevision: revision, sourceDirty, checks, passed: Object.values(checks).every(Boolean), finishedAt: new Date().toISOString(),
   }
 } catch (error) {
-  report = { version: 2, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt', passed: false, error: String(error), finishedAt: new Date().toISOString() }
+  report = { version: 3, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt', passed: false, error: String(error), finishedAt: new Date().toISOString() }
 } finally {
   writeJson(reportPath, report)
   rmSync(isolated, { recursive: true, force: true })

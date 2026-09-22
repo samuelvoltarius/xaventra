@@ -40,7 +40,7 @@ describe('persistent Doctor investigation dispatch', () => {
     it('does not treat a long answer as executed investigation', async () => {
         const f = fixture()
         f.execute.mockImplementation(async () => ({ output: 'Done, everything is repaired. '.repeat(20) }))
-        expect((await f.coordinator.investigateNext(f.worker))?.investigation?.status).toBe('failed')
+        expect((await f.coordinator.investigateNext(f.worker))?.investigation?.status).toBe('blocked')
     })
 
     it('reconciles a committed diagnostic receipt after the runner loses its reply', async () => {
@@ -58,6 +58,55 @@ describe('persistent Doctor investigation dispatch', () => {
         expect(result?.investigation?.status).toBe('verified')
         expect(result?.investigation?.report).toContain('Verified diagnostic receipt')
         expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, Date.now() + 1_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['missing', 'nonterminal'] as const)('holds %s evidence after a lost reply across restart', async mode => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            if (mode === 'nonterminal') f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            throw new Error('reply lost after dispatch')
+        })
+        const result = await f.coordinator.investigateNext(f.worker, 1)
+        expect(result?.investigation?.status).toBe('blocked')
+        expect(result?.investigation?.reason).toContain('terminal receipt')
+        const restored = new FailureResearchCoordinator(f.path)
+        restored.ingest({ ...f.finding, updatedAt: 'later' })
+        expect(await restored.investigateNext(f.worker, 1_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('retains a failed terminal receipt and exhausts only the bounded diagnostic retries', async () => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            f.ledger.fail(input.contract.id, { success: false, error: 'diagnostic provider unavailable' })
+            throw new Error('reply lost after failed outcome commit')
+        })
+        const first = await f.coordinator.investigateNext(f.worker, 1)
+        expect(first?.investigation?.status).toBe('failed')
+        expect(first?.evidenceRefs).toContain(`outcome:${first?.investigation?.runId}`)
+        const restored = new FailureResearchCoordinator(f.path)
+        expect(await restored.investigateNext(f.worker, 2)).toBeNull()
+        await restored.investigateNext(f.worker, 1_000_000)
+        const terminal = await restored.investigateNext(f.worker, 2_000_000)
+        expect(terminal?.investigation?.status).toBe('blocked')
+        expect(terminal?.investigation?.reason).toContain('retry budget exhausted')
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 3_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not use another principal terminal outcome to authorize another attempt', async () => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'other-user', channel: 'internal' })
+            f.ledger.fail(input.contract.id, { success: false })
+            throw new Error('reply lost')
+        })
+        const result = await f.coordinator.investigateNext(f.worker, 1)
+        expect(result?.investigation?.status).toBe('blocked')
+        expect(result?.evidenceRefs).not.toContain(`outcome:${result?.investigation?.runId}`)
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 1_000_000)).toBeNull()
         expect(f.execute).toHaveBeenCalledTimes(1)
     })
 
@@ -84,7 +133,11 @@ describe('persistent Doctor investigation dispatch', () => {
 
     it('caps attempts and observes backoff', async () => {
         const f = fixture()
-        f.execute.mockRejectedValue(new Error('model unavailable'))
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            f.ledger.fail(input.contract.id, { success: false, error: 'model unavailable' })
+            throw new Error('model unavailable')
+        })
         expect((await f.coordinator.investigateNext(f.worker, 1))?.investigation?.status).toBe('failed')
         expect(await f.coordinator.investigateNext(f.worker, 2)).toBeNull()
         await f.coordinator.investigateNext(f.worker, 1_000_000)
@@ -127,11 +180,11 @@ describe('persistent Doctor investigation dispatch', () => {
         expect(f.execute).toHaveBeenCalledTimes(1)
     })
 
-    it('holds a nonterminal claim after restart without double dispatch', async () => {
+    it.each(['running', 'failed'] as const)('holds a persisted %s claim without terminal evidence after restart', async status => {
         const f = fixture()
         const item = f.coordinator.list()[0]
         item.stage = 'researching'
-        item.investigation = { status: 'running', runId: 'crashed-run', attempts: 1, nextAttemptAt: 0 }
+        item.investigation = { status, runId: 'crashed-run', attempts: 1, nextAttemptAt: 0 }
         atomicWriteJsonSync(f.path, { version: 1, cases: [item] })
         const result = await new FailureResearchCoordinator(f.path).investigateNext(f.worker)
         expect(result?.investigation?.status).toBe('blocked')

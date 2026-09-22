@@ -24,10 +24,15 @@ external messages or credential tools are permitted in this stage.
 Each attempt has 90 seconds, six tool calls and a 6000-token contract budget.
 The runner's cumulative token/cost accounting remains a separate release gap;
 the token value is not advertised as a proven provider-side hard cap. Failed
-attempts have a 15-minute backoff and stop after three attempts. Only one case
+attempts with a matching terminal Outcome have a 15-minute backoff and stop
+after three attempts. Each terminal failure retains an `outcome:<runId>`
+reference; budget exhaustion is recorded in `investigation.reason`. Only one case
 runs at a time in the coordinator. Its claim is saved before execution. A
-nonterminal claim found after process restart is held for reconciliation, not
-blindly replayed. A matching terminal outcome can be reconciled without a
+missing, nonterminal or mismatched receipt after dispatch is held for
+reconciliation, including when the runner throws before returning its reply.
+The hold survives restart and elapsed backoff. Review the recorded run ID and
+Outcome before resolving uncertain execution; deleting the claim loses the
+duplicate-execution protection. A matching terminal outcome can be reconciled without a
 second dispatch. Resolved/dismissed findings are not selected; a subsequently
 observed recurrence can start a new investigation.
 
