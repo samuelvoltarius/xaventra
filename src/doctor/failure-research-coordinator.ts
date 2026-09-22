@@ -22,6 +22,9 @@ export interface FailureResearchCase {
         status: 'running' | 'verified' | 'failed' | 'blocked'
         runId: string; attempts: number; nextAttemptAt: number
         report?: string; reason?: string
+        observationHash?: string
+        holdReason?: 'receipt-pending' | 'receipt-mismatch' | 'observation-changed' | 'retry-exhausted' | 'reconciliation-exhausted'
+        reconciliationChecks?: number
     }
 }
 interface ResearchFile { version: 1; updatedAt: string; cases: FailureResearchCase[] }
@@ -68,7 +71,8 @@ export class FailureResearchCoordinator {
             this.cases.push(item)
         } else {
             if ((item.findingOpen === false || (item.observationHash && item.observationHash !== observationHash))
-                && finding.status === 'open' && item.investigation?.status !== 'running') {
+                && finding.status === 'open' && item.investigation?.status !== 'running'
+                && item.investigation?.holdReason !== 'receipt-pending') {
                 delete item.investigation
                 delete item.repair
                 item.stage = 'diagnosed'
@@ -144,16 +148,26 @@ export class FailureResearchCoordinator {
         this.processing = true
         try {
             const item = this.cases.find(value => value.findingOpen !== false && ['diagnosed', 'researching'].includes(value.stage)
-                && !['verified', 'blocked'].includes(value.investigation?.status || '')
+                && value.investigation?.status !== 'verified'
+                && (value.investigation?.status !== 'blocked' || value.investigation.holdReason === 'receipt-pending')
                 && (value.investigation?.nextAttemptAt || 0) <= now)
             if (!item) return null
             if (item.investigation) {
                 const priorStatus = item.investigation.status
+                // Persist the bounded read claim before touching the ledger.
+                // A crash cannot reset the polling budget or redispatch work.
+                if (priorStatus === 'blocked') {
+                    if ((item.investigation.reconciliationChecks || 0) >= 3) return null
+                    item.investigation.reconciliationChecks = (item.investigation.reconciliationChecks || 0) + 1
+                    item.investigation.nextAttemptAt = now + 15 * 60_000
+                    if (item.investigation.reconciliationChecks >= 3) item.investigation.holdReason = 'reconciliation-exhausted'
+                    this.persist()
+                }
                 const run = worker.getRun(item.investigation.runId)
                 this.finishInvestigation(item, run, '', now)
                 // Recheck legacy retryable records too: elapsed backoff alone
                 // cannot prove that the previous execution is terminal.
-                if (priorStatus === 'running' || item.investigation.status !== 'failed') return structuredClone(item)
+                if (priorStatus !== 'failed' || item.investigation.status !== 'failed') return structuredClone(item)
             }
             const attempts = (item.investigation?.attempts || 0) + 1
             const observedRevision = item.observationHash
@@ -182,7 +196,7 @@ export class FailureResearchCoordinator {
                 approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
             }
             item.stage = 'researching'
-            item.investigation = { status: 'running', runId, attempts, nextAttemptAt: now + 15 * 60_000 }
+            item.investigation = { status: 'running', runId, attempts, observationHash: observedRevision, nextAttemptAt: now + 15 * 60_000 }
             item.updatedAt = new Date(now).toISOString()
             this.persist()
             const controller = new AbortController()
@@ -201,7 +215,8 @@ export class FailureResearchCoordinator {
                 if (observedRevision === item.observationHash) {
                     this.finishInvestigation(item, run, '', now)
                 } else {
-                    item.investigation.status = attempts >= 3 ? 'blocked' : 'failed'
+                    item.investigation.status = 'blocked'
+                    item.investigation.holdReason = 'observation-changed'
                     item.investigation.reason = redactSecrets(String(error)).slice(0, 500)
                     this.persist()
                 }
@@ -212,13 +227,25 @@ export class FailureResearchCoordinator {
 
     private finishInvestigation(item: FailureResearchCase, run: OutcomeRunView | null, output: string, now: number): void {
         const state = item.investigation!
-        const terminal = run?.runId === state.runId && run.userId === 'Nova-Autonomy'
-            && run.channel === 'internal' && ['completed', 'failed'].includes(run.status) && !run.invalidated
+        const matching = run?.runId === state.runId && run.userId === 'Nova-Autonomy'
+            && run.channel === 'internal' && !run.invalidated
             && run.contract?.allowedChanges.readOnly === true
             && run.contract?.allowedChanges.externalSideEffects === false
+        const terminal = matching && ['completed', 'failed'].includes(run.status)
+        if (state.observationHash && state.observationHash !== item.observationHash) {
+            state.status = 'blocked'
+            state.holdReason = 'observation-changed'
+            state.reason = 'Finding changed; this receipt cannot validate the current observation.'
+            this.persist()
+            return
+        }
         if (!terminal) {
             state.status = 'blocked'
+            state.holdReason = run && !matching ? 'receipt-mismatch'
+                : (state.reconciliationChecks || 0) >= 3 ? 'reconciliation-exhausted'
+                : state.observationHash ? 'receipt-pending' : 'receipt-mismatch'
             state.reason = 'No matching terminal receipt; execution may still be active. Reconcile this run before retrying.'
+            state.nextAttemptAt = now + 15 * 60_000
             item.updatedAt = new Date(now).toISOString()
             this.persist()
             return
@@ -228,6 +255,7 @@ export class FailureResearchCoordinator {
                 && RESEARCH_TOOLS.includes(String(tool.toolName) as any)
                 && validateToolOutcome(String(tool.toolName), tool.result).success)
         state.status = verified ? 'verified' : state.attempts >= 3 ? 'blocked' : 'failed'
+        state.holdReason = !verified && state.attempts >= 3 ? 'retry-exhausted' : undefined
         state.reason = verified ? undefined : state.attempts >= 3
             ? 'Diagnostic retry budget exhausted; review the recorded terminal outcomes.'
             : run.status === 'failed'

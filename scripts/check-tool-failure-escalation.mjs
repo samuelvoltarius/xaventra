@@ -140,7 +140,7 @@ if (child === '--phase-three') {
 
 // Actual child processes and durable files, with injected runner replies. This
 // is uncertainty/retry acceptance, not a live model or production repair test.
-if (child === '--negative-write' || child === '--negative-read') {
+if (['--negative-write', '--negative-read', '--late-complete', '--late-read'].includes(child)) {
   const mode = process.argv[4]
   process.env.NOVA_RUNTIME_ROOT = runtime
   process.env.NOVA_TEST_MODE = '1'
@@ -161,7 +161,18 @@ if (child === '--negative-write' || child === '--negative-read') {
     if (mode === 'failed') ledger.fail(input.contract.id, { success: false, error: 'isolated diagnostic failure' })
     throw new Error('injected lost runner reply')
   } }
-  if (child === '--negative-write') {
+  if (child === '--late-complete') {
+    const id = doctor.list()[0].investigation.runId
+    ledger.recordTool(id, { toolName: 'health_status', success: true, result: { success: true } })
+    ledger.recordValidation(id, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
+      success: true, awaitingApproval: false, criteria: [], violations: [] })
+    ledger.completeValidated(id, { success: true, response: 'Delayed terminal diagnostic receipt' })
+  } else if (child === '--late-read') {
+    const before = doctor.list()[0]
+    const result = await doctor.investigateNext(worker, 1_000_000)
+    writeJson(join(runtime, result ? 'late-first.json' : 'late-restored.json'), { before, result, cases: doctor.list(),
+      effects: readFileSync(effectsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line)) })
+  } else if (child === '--negative-write') {
     doctor.ingest({ id: `boundary-${mode}`, title: 'Diagnostic reply lost', detail: 'Isolated receipt boundary probe',
       category: 'tools', severity: 'warning', source: 'acceptance', recommendation: 'Investigate',
       evidence: {}, status: 'open', createdAt: '', updatedAt: '' })
@@ -169,6 +180,8 @@ if (child === '--negative-write' || child === '--negative-read') {
     if (mode === 'legacy-missing') {
       // Preserve the on-disk shape emitted by 2.78.49 after a lost reply.
       first.investigation.status = 'failed'
+      delete first.investigation.observationHash
+      delete first.investigation.holdReason
       writeJson(doctorPath, { version: 1, cases: [first] })
     }
     writeJson(join(runtime, 'first.json'), first)
@@ -177,7 +190,8 @@ if (child === '--negative-write' || child === '--negative-read') {
     await doctor.investigateNext(worker, 1_000_000)
     await new FailureResearchCoordinator(doctorPath).investigateNext(worker, 2_000_000)
     const last = new FailureResearchCoordinator(doctorPath)
-    const extra = await last.investigateNext(worker, 3_000_000)
+    await last.investigateNext(worker, 3_000_000)
+    const extra = await new FailureResearchCoordinator(doctorPath).investigateNext(worker, 4_000_000)
     writeJson(join(runtime, 'last.json'), { early, extra, cases: last.list(),
       effects: readFileSync(effectsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line)) })
   }
@@ -204,6 +218,19 @@ try {
   if (thirdRun.status !== 0) throw new Error(`phase three failed: ${thirdRun.stderr || thirdRun.stdout}`)
   const third = JSON.parse(readFileSync(join(isolated, 'phase-three.json'), 'utf8'))
   const boundaryChecks = {}
+  const lateRoot = join(isolated, 'late-terminal')
+  for (const phase of ['--negative-write', '--late-complete', '--late-read', '--late-read']) {
+    const result = run(phase, lateRoot, 'late')
+    if (result.status !== 0) throw new Error(`late receipt ${phase} failed: ${result.stderr || result.stdout}`)
+  }
+  const late = JSON.parse(readFileSync(join(lateRoot, 'late-first.json'), 'utf8'))
+  const lateRestored = JSON.parse(readFileSync(join(lateRoot, 'late-restored.json'), 'utf8'))
+  boundaryChecks.lateTerminalReconciliation = late.before.investigation.holdReason === 'receipt-pending'
+    && late.result?.investigation.status === 'verified' && late.effects.length === 1
+    && late.result.investigation.report === 'Delayed terminal diagnostic receipt'
+  boundaryChecks.lateTerminalRestartDedup = lateRestored.result === null && lateRestored.effects.length === 1
+    && lateRestored.cases[0].investigation.status === 'verified'
+    && lateRestored.cases[0].evidenceRefs.filter(ref => ref.startsWith('outcome:')).length === 1
   for (const mode of ['missing', 'nonterminal', 'failed', 'legacy-missing']) {
     const target = join(isolated, `negative-${mode}`)
     for (const phase of ['--negative-write', '--negative-read']) {
@@ -221,7 +248,9 @@ try {
         ? firstState.investigation?.status === 'failed' && investigation.reason.includes('retry budget exhausted')
           && last.cases[0].evidenceRefs.filter(ref => ref.startsWith('outcome:')).length === 3
         : firstState.investigation?.status === (mode === 'legacy-missing' ? 'failed' : 'blocked')
-          && investigation.reason.includes('terminal receipt'))
+          && investigation.reason.includes('terminal receipt')
+          && (mode === 'legacy-missing' ? investigation.holdReason === 'receipt-mismatch'
+            : investigation.reconciliationChecks === 3 && investigation.holdReason === 'reconciliation-exhausted'))
   }
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
   const sourceDirty = Boolean(spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.trim())

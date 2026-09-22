@@ -25,6 +25,92 @@ function fixture() {
 }
 
 describe('persistent Doctor investigation dispatch', () => {
+    it('reconciles a delayed terminal receipt across restart without redispatch', async () => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            throw new Error('reply lost before outcome')
+        })
+        const first = await f.coordinator.investigateNext(f.worker, 1)
+        const id = first!.investigation!.runId
+        f.ledger.recordTool(id, { toolName: 'health_status', success: true, result: { success: true } })
+        f.ledger.recordValidation(id, { validator: 'nova-execution-kernel', validatedAt: '', success: true,
+            awaitingApproval: false, criteria: [], violations: [] })
+        f.ledger.completeValidated(id, { success: true, response: 'Delayed verified diagnostic' })
+        const next = await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 1_000_000)
+        expect(next?.investigation?.status).toBe('verified')
+        expect(next?.investigation?.report).toBe('Delayed verified diagnostic')
+        expect(next?.evidenceRefs.filter(ref => ref === `outcome:${id}`)).toHaveLength(1)
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 2_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('bounds receipt-only polling across restart and never dispatches again', async () => {
+        const f = fixture()
+        f.execute.mockRejectedValue(new Error('unknown outcome'))
+        await f.coordinator.investigateNext(f.worker, 1)
+        const getRun = vi.spyOn(f.worker, 'getRun')
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 2)).toBeNull()
+        for (let i = 1; i <= 3; i++) {
+            await new FailureResearchCoordinator(f.path).investigateNext(f.worker, i * 1_000_000)
+        }
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 4_000_000)).toBeNull()
+        expect(getRun).toHaveBeenCalledTimes(3)
+        expect(new FailureResearchCoordinator(f.path).list()[0].investigation?.holdReason).toBe('reconciliation-exhausted')
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('records late terminal failure without dispatching in the reconciliation cycle', async () => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            throw new Error('reply lost')
+        })
+        const first = await f.coordinator.investigateNext(f.worker, 1)
+        f.ledger.fail(first!.investigation!.runId, { success: false })
+        const next = await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 1_000_000)
+        expect(next?.investigation?.status).toBe('failed')
+        expect(next?.evidenceRefs).toContain(`outcome:${first!.investigation!.runId}`)
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 1_000_001)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('persists reconciliation exhaustion even when the ledger read throws', async () => {
+        const f = fixture()
+        f.execute.mockRejectedValue(new Error('reply lost'))
+        await f.coordinator.investigateNext(f.worker, 1)
+        f.worker.getRun = vi.fn(() => { throw new Error('ledger read unavailable') })
+        for (let i = 1; i <= 3; i++) {
+            await expect(new FailureResearchCoordinator(f.path).investigateNext(f.worker, i * 1_000_000)).rejects.toThrow('ledger read unavailable')
+        }
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 4_000_000)).toBeNull()
+        expect(f.worker.getRun).toHaveBeenCalledTimes(3)
+        expect(new FailureResearchCoordinator(f.path).list()[0].investigation?.holdReason).toBe('reconciliation-exhausted')
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['foreign', 'invalidated', 'changed', 'legacy'] as const)('keeps %s receipt holds closed', async mode => {
+        const f = fixture()
+        f.execute.mockRejectedValue(new Error('reply lost'))
+        const first = await f.coordinator.investigateNext(f.worker, 1)
+        if (mode === 'changed') f.coordinator.ingest({ ...f.finding, detail: 'different observation' })
+        if (mode === 'legacy') {
+            delete first!.investigation!.holdReason
+            atomicWriteJsonSync(f.path, { version: 1, cases: [first] })
+        }
+        const original = first!.investigation!.runId
+        f.worker.getRun = vi.fn(() => ({ runId: original, userId: mode === 'foreign' ? 'other' : 'Nova-Autonomy',
+            channel: 'internal', status: 'completed', invalidated: mode === 'invalidated',
+            contract: { allowedChanges: { readOnly: true, externalSideEffects: false } },
+            validation: { success: true }, tools: [{ toolName: 'health_status', success: true, result: { success: true } }] } as any))
+        const restored = new FailureResearchCoordinator(f.path)
+        await restored.investigateNext(f.worker, 1_000_000)
+        expect(restored.list()[0].investigation?.status).toBe('blocked')
+        expect(restored.list()[0].evidenceRefs).not.toContain(`outcome:${original}`)
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, 2_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
     it('dispatches once, records current evidence and does not claim a repair', async () => {
         const f = fixture()
         const result = await f.coordinator.investigateNext(f.worker)
@@ -72,7 +158,8 @@ describe('persistent Doctor investigation dispatch', () => {
         expect(result?.investigation?.reason).toContain('terminal receipt')
         const restored = new FailureResearchCoordinator(f.path)
         restored.ingest({ ...f.finding, updatedAt: 'later' })
-        expect(await restored.investigateNext(f.worker, 1_000_000)).toBeNull()
+        expect((await restored.investigateNext(f.worker, 1_000_000))?.investigation?.status).toBe('blocked')
+        expect(restored.list()[0].investigation?.reconciliationChecks).toBe(1)
         expect(f.execute).toHaveBeenCalledTimes(1)
     })
 

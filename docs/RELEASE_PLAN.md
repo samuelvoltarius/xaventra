@@ -1,5 +1,23 @@
 # Reliability release loop
 
+## 2.78.51 Doctor delayed-receipt reconciliation candidate
+
+Two failing source regressions reproduced that delayed terminal Outcomes could
+never release an uncertain Doctor hold. New observation-bound holds now use a
+durable three-check, 15-minute receipt-only budget. Reconciliation cannot dispatch
+a diagnostic worker. Foreign, invalidated, changed-observation, legacy-unbound
+and exhausted records remain closed. Terminal failure keeps bounded backoff.
+
+Focused source/native-runner regression passes 31/31. Separate-process delayed
+completion and restart acceptance passes 16/16. Local full regression passed
+233 files / 1,626 tests before one additional ledger-read failure test; that
+test is included in the final focused pass. Desktop passes 12/12 after using
+the permitted temporary root (the initial sandbox Temp-access failure is retained).
+Typecheck and build pass. Exact candidate/evidence/main CI, history scan and
+signed publication remain required. This is controlled
+process evidence with injected runner replies, not physical-host takeover or
+live-model repair quality. No production changes or RC qualification are implied.
+
 ## 2.78.50 Doctor uncertain-execution boundary candidate
 
 Missing or nonterminal diagnostic Outcomes previously became retryable after a

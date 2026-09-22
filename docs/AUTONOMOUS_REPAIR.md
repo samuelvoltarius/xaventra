@@ -36,6 +36,16 @@ duplicate-execution protection. A matching terminal outcome can be reconciled wi
 second dispatch. Resolved/dismissed findings are not selected; a subsequently
 observed recurrence can start a new investigation.
 
+From 2.78.51, new observation-bound `receipt-pending` holds receive at most three
+receipt-only checks, 15 minutes apart. The polling claim and budget persist
+before each ledger read. A late matching validated terminal result can finish
+the investigation without another worker dispatch, including after restart.
+A late terminal failure schedules only a later bounded retry, not a dispatch in
+the reconciliation cycle. `receipt-mismatch`, `observation-changed`,
+`retry-exhausted` and `reconciliation-exhausted` holds require review; they do
+not become runnable merely because time passes. Legacy blocked claims without
+a typed hold or observation binding remain held rather than guessing ownership.
+
 `investigation.status = verified` means **diagnostic execution evidence was
 validated**, not that the hypothesis is correct or anything was repaired. The
 case stays at `researching`. The old critical-finding path that treated more

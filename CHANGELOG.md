@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.51] — 2026-09-23
+
+- Reconcile delayed Doctor terminal Outcomes with at most three persisted,
+  receipt-only checks at 15-minute intervals, never redispatching the worker
+  during reconciliation. Exhausted, foreign and legacy unbound holds stay closed.
+- Bind new investigations to their observation revision, preventing a late
+  result from validating a changed finding. Preserve terminal failure backoff.
+- Exercise delayed completion and exactly-once restoration in separate real
+  processes; scripted Outcomes are not a production repair-quality claim.
+
 ## [2.78.50] — 2026-09-22
 
 - Hold Doctor investigations with missing, nonterminal or mismatched Outcomes
