@@ -360,6 +360,17 @@ export function getRelevantTools(
     // ── FILTERED MODE (weak models) ─────────────────────────────────────────────
     const includedToolNames = new Set<string>(CORE_TOOLS)
 
+    // An explicit registered tool identifier is stronger than a fuzzy pack
+    // keyword. Names such as `health_status` contain underscores, so matching
+    // only the pack keyword `health` intentionally treats it as part of one
+    // identifier and previously omitted the requested tool. Keep this bounded
+    // to exact registry names; authorization, policy and the Execution Kernel
+    // still gate every invocation.
+    const explicitToolNames = allTools
+        .filter(tool => matchesSkillKeyword(primaryMessage, tool.name))
+        .map(tool => tool.name)
+    for (const name of explicitToolNames) includedToolNames.add(name)
+
     // The dispatcher selects a small number of packs for this task. A pack
     // loaded in an older turn is only a capability hint, never permission to
     // leak its whole toolset into every future request.
@@ -405,6 +416,7 @@ export function getRelevantTools(
 
     const prioritizedNames = [
         ...CORE_TOOLS,
+        ...explicitToolNames,
         ...externalMatches,
         ...rankedPacks.flatMap(candidate => candidate.pack.tools),
     ]

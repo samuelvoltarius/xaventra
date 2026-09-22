@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.78.47] — 2026-09-22
+
+- Preserve an explicitly named registered tool such as `health_status` in the
+  bounded worker contract even when underscores prevent a partial skill-pack
+  keyword from matching.
+- Keep the fix fail-closed and bounded: exact registry identifiers only;
+  authorization, policy, fencing, budgets and Execution Kernel validation are
+  unchanged, and the full registry is not exposed to the model.
+- Add positive and substring-negative routing regressions for explicit tool
+  identifiers, retaining the 24-tool worker cap.
+
 ## [2.78.46] — 2026-09-21
 
 - Remove the model-selected multi-round recovery chain after a verified tool
