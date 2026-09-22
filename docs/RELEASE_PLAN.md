@@ -1,5 +1,17 @@
 # Reliability release loop
 
+## 2.78.49 Doctor receipt reconciliation candidate
+
+When the diagnostic runner commits a validated Outcome but loses its reply,
+the Doctor now reads that terminal receipt before scheduling another attempt.
+The focused regression uses a fresh coordinator instance and proves one
+diagnostic effect. The compiled three-process acceptance passes 10/10 checks:
+the persisted Doctor queue is rehydrated, a terminal independently validated
+Outcome survives a lost reply, and a third process does not repeat the effect.
+Exact-commit CI, signed release and production activation remain separate gates
+until their receipts are recorded.
+The RC remains open; this bounded change does not qualify autonomous repair.
+
 Every iteration: reproduce -> isolate -> fix -> regression -> real acceptance ->
 document -> synchronized version bump -> scan -> push candidate -> CI -> main.
 Preserve negative results. No mocked proof is substituted for live execution.

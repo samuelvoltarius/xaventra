@@ -43,6 +43,24 @@ describe('persistent Doctor investigation dispatch', () => {
         expect((await f.coordinator.investigateNext(f.worker))?.investigation?.status).toBe('failed')
     })
 
+    it('reconciles a committed diagnostic receipt after the runner loses its reply', async () => {
+        const f = fixture()
+        f.execute.mockImplementation(async input => {
+            f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            f.ledger.recordTool(input.contract.id, { toolName: 'health_status', success: true,
+                result: { success: true, output: 'Observed fixture' } })
+            f.ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: '',
+                success: true, awaitingApproval: false, criteria: [], violations: [] })
+            f.ledger.completeValidated(input.contract.id, { success: true, response: 'Verified diagnostic receipt' })
+            throw new Error('reply transport lost after commit')
+        })
+        const result = await f.coordinator.investigateNext(f.worker)
+        expect(result?.investigation?.status).toBe('verified')
+        expect(result?.investigation?.report).toContain('Verified diagnostic receipt')
+        expect(await new FailureResearchCoordinator(f.path).investigateNext(f.worker, Date.now() + 1_000_000)).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
     it('reinvestigates materially changed observations but not timestamp-only updates', async () => {
         const f = fixture()
         await f.coordinator.investigateNext(f.worker)

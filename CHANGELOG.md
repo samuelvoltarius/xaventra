@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.49] — 2026-09-22
+
+- Reconcile an independently validated Doctor diagnostic receipt when the
+  native runner commits its Outcome and then loses its return acknowledgement.
+  The pending investigation becomes verified without starting the same work
+  again; a missing or unvalidated receipt remains subject to the existing
+  bounded retry or blocked state.
+- Add a regression for the lost-reply boundary and a fresh coordinator load.
+  This is a local durability correction, not production self-repair approval.
+
 ## [2.78.48] — 2026-09-22
 
 - Stop reclassifying a successful multi-line tool report as failed merely

@@ -72,10 +72,11 @@ if (child === '--phase-two') {
   process.env.NOVA_TEST_MODE = '1'
   process.env.NOVA_NO_SIDE_EFFECTS = '1'
   process.chdir(runtime)
-  const [escalationModule, doctorModule, continuityModule] = await Promise.all([
+  const [escalationModule, doctorModule, continuityModule, ledgerModule] = await Promise.all([
     import('../dist/core/tool-failure-escalation.js'),
     import('../dist/doctor/failure-research-coordinator.js'),
     import('../dist/memory/session-summarizer.js'),
+    import('../dist/core/outcome-ledger.js'),
   ])
   const storePath = join(runtime, '.nova-data', 'recovery', 'tool-failure-escalations.json')
   const store = new escalationModule.ToolFailureEscalationStore(storePath)
@@ -90,13 +91,50 @@ if (child === '--phase-two') {
     doctor,
     continuity: new continuityModule.SessionContinuityStore(join(runtime, '.nova-data', 'memory', 'continuity.json')),
   })
+  const ledger = new ledgerModule.OutcomeLedger(join(runtime, '.nova-data', 'doctor-ledger'))
+  let diagnosticEffects = 0
+  const investigation = await doctor.investigateNext({
+    hasAuthority: () => true,
+    getRun: id => ledger.getRun(id),
+    execute: async input => {
+      diagnosticEffects++
+      ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+      ledger.recordTool(input.contract.id, { toolName: 'health_status', success: true,
+        result: { success: true, output: 'Observed isolated health state' } })
+      ledger.recordValidation(input.contract.id, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
+        success: true, awaitingApproval: false, criteria: [], violations: [] })
+      ledger.completeValidated(input.contract.id, { success: true, response: 'Verified diagnostic receipt; no mutation' })
+      throw new Error('reply transport lost after durable Outcome commit')
+    },
+  })
   writeJson(join(runtime, 'phase-two.json'), {
     recordsBefore: before.length,
     recordsAfter: new escalationModule.ToolFailureEscalationStore(storePath).list().length,
     doctorCases: doctor.list().length,
     deduplicated: decision?.deduplicated,
     content: decision?.content,
+    diagnosticEffects, investigation: investigation?.investigation,
   })
+  process.exit(0)
+}
+
+if (child === '--phase-three') {
+  process.env.NOVA_RUNTIME_ROOT = runtime
+  process.env.NOVA_TEST_MODE = '1'
+  process.env.NOVA_NO_SIDE_EFFECTS = '1'
+  process.chdir(runtime)
+  const [{ FailureResearchCoordinator }, { OutcomeLedger }] = await Promise.all([
+    import('../dist/doctor/failure-research-coordinator.js'),
+    import('../dist/core/outcome-ledger.js'),
+  ])
+  const doctor = new FailureResearchCoordinator(join(runtime, '.nova-data', 'self-doctor', 'failure-research.json'))
+  const ledger = new OutcomeLedger(join(runtime, '.nova-data', 'doctor-ledger'))
+  let duplicateEffects = 0
+  const next = await doctor.investigateNext({ hasAuthority: () => true, getRun: id => ledger.getRun(id),
+    execute: async () => { duplicateEffects++; return { output: 'unexpected duplicate' } } })
+  writeJson(join(runtime, 'phase-three.json'), { duplicateEffects, next,
+    cases: doctor.list().map(item => ({ id: item.id, status: item.investigation?.status,
+      report: item.investigation?.report, evidenceRefs: item.evidenceRefs })) })
   process.exit(0)
 }
 
@@ -116,6 +154,9 @@ try {
   const secondRun = run('--phase-two')
   if (secondRun.status !== 0) throw new Error(`phase two failed: ${secondRun.stderr || secondRun.stdout}`)
   const second = JSON.parse(readFileSync(join(isolated, 'phase-two.json'), 'utf8'))
+  const thirdRun = run('--phase-three')
+  if (thirdRun.status !== 0) throw new Error(`phase three failed: ${thirdRun.stderr || thirdRun.stdout}`)
+  const third = JSON.parse(readFileSync(join(isolated, 'phase-three.json'), 'utf8'))
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim()
   const sourceDirty = Boolean(spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.trim())
   const checks = {
@@ -127,13 +168,17 @@ try {
     persistedDoctorCase: first.doctorCases.length === 1,
     canonicalFailure: first.run?.status === 'failed' && first.run?.validation?.success !== true,
     processRestartDedup: second.recordsBefore === 1 && second.recordsAfter === 1 && second.doctorCases === 1 && second.deduplicated === true,
+    lostReplyReceipt: second.diagnosticEffects === 1 && second.investigation?.status === 'verified'
+      && String(second.investigation?.report).includes('Verified diagnostic receipt'),
+    doctorRestartDedup: third.duplicateEffects === 0 && third.next === null && third.cases.length === 1
+      && third.cases[0].status === 'verified' && third.cases[0].evidenceRefs.some(ref => ref.startsWith('outcome:')),
   }
   report = {
-    version: 1, evidenceClass: 'actual-two-process-native-runner-plus-persisted-typed-escalation',
+    version: 2, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt',
     sourceRevision: revision, sourceDirty, checks, passed: Object.values(checks).every(Boolean), finishedAt: new Date().toISOString(),
   }
 } catch (error) {
-  report = { version: 1, evidenceClass: 'actual-two-process-native-runner-plus-persisted-typed-escalation', passed: false, error: String(error), finishedAt: new Date().toISOString() }
+  report = { version: 2, evidenceClass: 'actual-three-process-native-runner-plus-persisted-doctor-receipt', passed: false, error: String(error), finishedAt: new Date().toISOString() }
 } finally {
   writeJson(reportPath, report)
   rmSync(isolated, { recursive: true, force: true })

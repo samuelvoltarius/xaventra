@@ -197,9 +197,18 @@ export class FailureResearchCoordinator {
                 if (observedRevision !== item.observationHash) throw new Error('Finding changed during investigation; old outcome cannot validate the new observation')
                 this.finishInvestigation(item, worker.getRun(runId), result.output, now)
             } catch (error) {
-                item.investigation.status = attempts >= 3 ? 'blocked' : 'failed'
-                item.investigation.reason = redactSecrets(String(error)).slice(0, 500)
-                this.persist()
+                // The runner may commit its validated Outcome receipt and then
+                // lose the acknowledgement before returning to us. Reconcile
+                // that durable result before permitting another investigation.
+                const run = worker.getRun(runId)
+                if (observedRevision === item.observationHash
+                    && (run?.status === 'completed' || run?.status === 'failed')) {
+                    this.finishInvestigation(item, run, '', now)
+                } else {
+                    item.investigation.status = attempts >= 3 ? 'blocked' : 'failed'
+                    item.investigation.reason = redactSecrets(String(error)).slice(0, 500)
+                    this.persist()
+                }
             } finally { clearTimeout(timer) }
             return structuredClone(item)
         } finally { this.processing = false }
