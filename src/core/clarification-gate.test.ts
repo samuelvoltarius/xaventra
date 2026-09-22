@@ -25,4 +25,14 @@ describe('ClarificationGate', () => {
     it('does not question an explicit target', () => {
         expect(evaluateClarification('user:a', 'Installiere Codex auf dem aktuellen Main').action).toBe('continue')
     })
+
+    it.each([
+        'Wie spät ist es?',
+        'Wie viel Uhr ist es?',
+        'What time is it?',
+    ])('does not treat an impersonal time question as an ambiguous reference: %s', request => {
+        const result = evaluateClarification('user:a', request)
+        expect(result.action).toBe('continue')
+        expect(result.content).toBe(request)
+    })
 })

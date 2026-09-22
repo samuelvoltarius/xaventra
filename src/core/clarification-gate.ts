@@ -18,6 +18,7 @@ export interface ClarificationDecision {
 const CANCEL = /^(?:abbrechen|stopp?|vergiss es|cancel|never mind)$/i
 const SOCIAL = /^(?:hallo|hi|hey|guten (?:morgen|abend|tag)|danke|ok(?:ay)?|super|perfekt)[!. ]*$/i
 const AMBIGUOUS_REFERENCE = /\b(?:das|dies|dort|da|ihn|sie|es|that|this|there|it)\b/i
+const IMPERSONAL_REFERENCE = /^(?:(?:wie\s+spät|wie\s+viel\s+uhr)\s+ist\s+es|what\s+time\s+is\s+it)[?!. ]*$/i
 const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send\w*|schick\w*|service\s+(?:start|stop|restart))\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
 
@@ -83,7 +84,9 @@ export function evaluateClarification(principalId: string, content: string): Cla
     const evidence = continuationEvidence(principalId, text)
     const hasReferenceContext = evidence.includes('recent previous user intent')
     const hasTargetContext = evidence.includes('previous target context')
-    const ambiguous = AMBIGUOUS_REFERENCE.test(text) && !EXPLICIT_TARGET.test(text)
+    const ambiguous = AMBIGUOUS_REFERENCE.test(text)
+        && !IMPERSONAL_REFERENCE.test(text)
+        && !EXPLICIT_TARGET.test(text)
     const missingTarget = HIGH_IMPACT.test(text) && !EXPLICIT_TARGET.test(text)
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
         const terms = `${belief.subject} ${belief.predicate} ${belief.value}`.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter(term => term.length >= 4)

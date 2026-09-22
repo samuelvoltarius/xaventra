@@ -6,6 +6,25 @@ Preserve negative results. No mocked proof is substituted for live execution.
 
 ## Current bounded gates
 
+### 2.78.48 natural-request tool-result correctness candidate
+
+- A live Telegram `nova_capabilities` call produced a valid multi-line
+  inventory but the generic string-result heuristic scanned every capability
+  description and treated a later `nicht gefunden` phrase as the outcome of
+  the call. String failures are now classified from the summary line, while
+  structured `success` and `error` fields remain authoritative.
+- The Clarification Gate no longer interprets the grammatical `es`/`it` in an
+  impersonal time question as an unresolved object reference. `get_current_time`
+  remains in the bounded Core tool contract and still requires a correlated
+  result and independent validation before its answer counts as verified.
+- Local evidence: the real 1,560-character `nova_capabilities` handler output
+  classifies as successful; 31/31 focused routing, intent, clarification and
+  result-quality tests pass; Core typecheck/build pass; and the unchanged full
+  Core suite passes 233 files / 1,613 tests with process-local Windows Git
+  long-path support. Hosted cross-platform evidence, full-history secret scan,
+  exact-main CI and signed publication remain pending. No production node,
+  channel, lease, credential or configuration is changed.
+
 ### 2.78.46 typed non-recoverable failure escalation candidate
 
 - A verified non-recoverable tool failure no longer becomes an LLM prompt that

@@ -10,4 +10,15 @@ describe('tool result quality', () => {
         expect(isSuccessfulToolResult('✅ Bild generiert: C:/tmp/a.png')).toBe(true)
         expect(isSuccessfulToolResult({ success: true, path: 'a.png' })).toBe(true)
     })
+
+    it('does not reinterpret failure words inside a successful multi-line report', () => {
+        const inventory = [
+            '# Xaventra Self-Introspection — tools',
+            '',
+            '- health_status: prüft den Zustand; meldet "nicht gefunden" bei fehlender Ressource',
+            '- nova_capabilities: listet verfügbare Tools',
+        ].join('\n')
+
+        expect(isSuccessfulToolResult(inventory)).toBe(true)
+    })
 })

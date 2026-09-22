@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.78.48] — 2026-09-22
+
+- Stop reclassifying a successful multi-line tool report as failed merely
+  because a later capability description contains words such as `nicht
+  gefunden`, `forbidden` or `fehlgeschlagen`; unstructured failure detection
+  now uses the result summary line while structured results retain explicit
+  `success`/`error` authority.
+- Preserve genuine string-encoded failures, including explicit error markers
+  and API error summaries, and add the production `nova_capabilities`
+  inventory shape as a regression.
+- Treat German and English impersonal time questions such as `Wie spät ist
+  es?` and `What time is it?` as complete requests instead of asking what
+  `es`/`it` refers to. The request then continues through the existing
+  `get_current_time` tool and normal evidence validation.
+
 ## [2.78.47] — 2026-09-22
 
 - Preserve an explicitly named registered tool such as `health_status` in the
