@@ -8,8 +8,18 @@ The focused regression uses a fresh coordinator instance and proves one
 diagnostic effect. The compiled three-process acceptance passes 10/10 checks:
 the persisted Doctor queue is rehydrated, a terminal independently validated
 Outcome survives a lost reply, and a third process does not repeat the effect.
-Exact-commit CI, signed release and production activation remain separate gates
-until their receipts are recorded.
+Runtime commit `26d07e0458e2377a89b002a44054bb93ac865475` passes
+the compiled three-process acceptance 10/10 on a clean tree, Core 233 files /
+1,614 tests (two-worker rerun), Desktop 12/12, typecheck, build, layer
+reachability and terminal-success authority. The first parallel Core run had
+one transient witness-quorum timing failure; the isolated rerun and complete
+two-worker rerun passed, so this is recorded rather than hidden. Candidate CI
+run `35769104400` passed all ten jobs on this exact runtime commit. Official
+Gitleaks 8.30.1 scanned all 130 reachable public commits (11.10 MB) with zero
+findings; the staged diff pattern scan was also clear. This is source and
+disposable-process evidence, not a physical-node/live-channel proof. Evidence
+commit CI, signed release and production activation remain separate gates until
+their receipts are recorded.
 The RC remains open; this bounded change does not qualify autonomous repair.
 
 Every iteration: reproduce -> isolate -> fix -> regression -> real acceptance ->
