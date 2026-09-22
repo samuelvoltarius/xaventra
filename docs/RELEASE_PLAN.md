@@ -21,7 +21,12 @@ Preserve negative results. No mocked proof is substituted for live execution.
   classifies as successful; 31/31 focused routing, intent, clarification and
   result-quality tests pass; Core typecheck/build pass; and the unchanged full
   Core suite passes 233 files / 1,613 tests with process-local Windows Git
-  long-path support. Hosted cross-platform evidence, full-history secret scan,
+  long-path support. Exact runtime commit
+  `83119c20ffe51286306102e16ffd980c9a784872` passed all ten jobs in
+  [candidate CI 35756705874](https://github.com/samuelvoltarius/xaventra/actions/runs/35756705874),
+  including Ubuntu, Windows and macOS verification, packaged Desktop,
+  container recovery and the isolated repair sandbox. Gitleaks 8.30.1 scanned
+  all 128 public commits / about 11.09 MB with zero findings. Evidence CI,
   exact-main CI and signed publication remain pending. No production node,
   channel, lease, credential or configuration is changed.
 
