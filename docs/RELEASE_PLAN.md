@@ -19,6 +19,15 @@ access; rerun with the permitted temporary root passed without changing checks.
 An initial `desktop test` command had no script; the canonical root
 `test:desktop` command is the applicable check. Exact CI remains required.
 
+Runtime `b51fe0bc3459f79255e6fd12c7fb698f3e9cc4e2` passed all ten jobs in
+[candidate CI 35829045216](https://github.com/samuelvoltarius/xaventra/actions/runs/35829045216),
+including verification and packaged Desktop checks on Ubuntu, Windows and macOS.
+Local Desktop regression passed 12/12. The real-Git fixture proves clean-source
+admission and rejection of tracked, staged and untracked drift; it does not
+replace the actual x64/arm64 container lifecycle checks in the publisher.
+Those checks and clean-source reports remain pending, as do this evidence
+commit's own CI, main promotion and signed publication. No production rollout.
+
 ## 2.78.52 local model lockout recovery candidate
 
 Three failing regressions reproduced textless tool calls poisoning inference
