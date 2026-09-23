@@ -18,6 +18,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { createHash } from 'node:crypto'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 
 // ============================================
 // Types
@@ -45,6 +47,7 @@ interface PerfDB {
     entries: Record<string, ModelPerfEntry>
     schemaVersion: number
     lastSaved: string
+    recoveryProbes?: Record<string, number>
 }
 
 // ============================================
@@ -117,6 +120,19 @@ const AUTO_DISABLE_CONSEC_FAILS = 5        // disable after this many consecutiv
 const AUTO_DISABLE_LOW_RATE_CALLS = 20     // need at least this many calls...
 const AUTO_DISABLE_LOW_RATE_THRESHOLD = 0.2 // ...with <20% success to auto-disable
 const AUTO_DISABLE_COOLDOWN_MS = 60 * 60 * 1000  // re-enable after 1 hour
+
+/** One bounded real request when all candidates are held. Persist before I/O;
+ * this is admission, not a successful probe or permission to execute a tool. */
+export function claimModelRecoveryProbe(route: string, now = Date.now()): boolean {
+    const db = loadDB()
+    const key = createHash('sha256').update(route).digest('hex')
+    const claims = db.recoveryProbes ||= {}
+    if (claims[key] && now - claims[key] < 60_000) return false
+    claims[key] = now
+    for (const [id, time] of Object.entries(claims)) if (now - time > 3_600_000) delete claims[id]
+    try { atomicWriteJsonSync(getDbPath(), db) } catch { return false }
+    return true
+}
 
 /**
  * Check if a model is currently auto-disabled due to persistent failures.
@@ -242,6 +258,7 @@ export function recordModelCall(
     if (success) {
         e.totalSuccesses++
         e.consecutiveFails = 0
+        e.disabledUntil = null
     } else {
         e.consecutiveFails++
     }
@@ -255,7 +272,9 @@ export function recordModelCall(
     if (success) e.taskStats[task].successes++
 
     e.lastUpdated = new Date().toISOString()
-    maybeAutoDisable(e)
+    // Historical low success rate remains a routing penalty, not a reason to
+    // immediately quarantine a freshly successful inference again.
+    if (!success) maybeAutoDisable(e)
     scheduleSave()
 }
 

@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { FailoverError, classifyFailoverReason, resolveFailoverStatus } from './model-fallback.js'
-import { recordModelCall, isModelDisabled } from './model-perf-db.js'
+import { recordModelCall, isModelDisabled, claimModelRecoveryProbe } from './model-perf-db.js'
 import { CLIENT_METADATA_JSON, USER_AGENT, API_CLIENT } from '../core/client-identity.js'
 import { CodexCLIAdapter, isCodexAvailable, isCodexAuthenticated } from './codex-cli-adapter.js'
 import { MiniMaxLLM, createMiniMaxLLM } from './providers/minimax.js'
@@ -1242,20 +1242,21 @@ const KNOWN_PERMANENT_FAILURES: Record<string, string> = {
 }
 
 // modelKey → { failures, lastReason }
-const sessionFailureMap = new Map<string, { failures: number; lastReason: string }>()
+const sessionFailureMap = new Map<string, { failures: number; lastReason: string; lastFailureAt: number }>()
 const SESSION_BLACKLIST_THRESHOLD = 2
 
 function recordFailure(model: string, reason: string): void {
-    const entry = sessionFailureMap.get(model) || { failures: 0, lastReason: '' }
+    const entry = sessionFailureMap.get(model) || { failures: 0, lastReason: '', lastFailureAt: 0 }
     entry.failures++
     entry.lastReason = reason
+    entry.lastFailureAt = Date.now()
     sessionFailureMap.set(model, entry)
     if (entry.failures >= SESSION_BLACKLIST_THRESHOLD) {
         console.log(`[LocalLLM] ⛔ Blacklisting ${model} for session (${entry.failures} failures: ${reason})`)
     }
 }
 
-function isBlacklisted(model: string): boolean {
+function isBlacklisted(model: string, baseUrl: string): boolean {
     if (KNOWN_PERMANENT_FAILURES[model]) {
         console.log(`[LocalLLM] ⛔ Skip ${model}: ${KNOWN_PERMANENT_FAILURES[model]}`)
         return true
@@ -1267,7 +1268,12 @@ function isBlacklisted(model: string): boolean {
             return true
         }
     } catch { /* perf-db optional */ }
-    const entry = sessionFailureMap.get(model)
+    const key = `${baseUrl}|${model}`
+    const entry = sessionFailureMap.get(key)
+    if (entry && Date.now() - entry.lastFailureAt >= 60_000) {
+        sessionFailureMap.delete(key)
+        return false
+    }
     return !!entry && entry.failures >= SESSION_BLACKLIST_THRESHOLD
 }
 
@@ -1382,15 +1388,23 @@ class LocalLLMProvider extends LLMProvider {
     ): Promise<LLMResponse> {
         const chatMessages = this._buildChatMessages(messages)
 
-        const candidates = await this.getFailoverCandidates()
+        const discovered = await this.getFailoverCandidates()
+        let candidates = discovered.filter(candidate => !isBlacklisted(candidate.model, candidate.baseUrl))
+        let recovering = false
+        if (!candidates.length) {
+            // Never override a known permanent exclusion. Prefer ordinary
+            // healthy routes; only all-held routes may use one 15s half-open call.
+            const start = discovered.length ? Math.floor(Date.now() / 60_000) % discovered.length : 0
+            const probe = [...discovered.slice(start), ...discovered.slice(0, start)]
+                .find(candidate => !KNOWN_PERMANENT_FAILURES[candidate.model]
+                    && claimModelRecoveryProbe(candidate.model))
+            if (probe) { candidates = [probe]; recovering = true }
+        }
         let lastError: unknown
 
         const maxAttempts = Math.max(1, Math.min(candidates.length, options?.maxAttempts ?? candidates.length))
         for (let i = 0; i < maxAttempts; i++) {
             const candidate = candidates[i]
-
-            // Skip session-blacklisted and known-permanently-failing models
-            if (isBlacklisted(candidate.model)) continue
 
             try {
                 // vLLM/large models (122B) need longer timeout for heavy system prompts
@@ -1398,11 +1412,11 @@ class LocalLLMProvider extends LLMProvider {
                 const timeout = options?.timeoutMs
                     ? Math.max(250, options.timeoutMs)
                     : i === 0 ? (isLargeModel ? 55_000 : 45_000) : 15_000
-                return await this.completeAt(
+                const result = await this.completeAt(
                     candidate.baseUrl,
                     candidate.model,
                     chatMessages,
-                    timeout,
+                    recovering ? Math.min(timeout, 15_000) : timeout,
                     candidate.apiKey,
                     tools,
                     undefined,
@@ -1410,6 +1424,8 @@ class LocalLLMProvider extends LLMProvider {
                     options?.reasoningEffort,
                     options?.toolChoice,
                 )
+                if (result.content || result.toolCalls?.length) sessionFailureMap.delete(`${candidate.baseUrl}|${candidate.model}`)
+                return result
             } catch (err) {
                 lastError = err
                 const errMsg = err instanceof Error ? err.message.slice(0, 200) : String(err)
@@ -1419,10 +1435,10 @@ class LocalLLMProvider extends LLMProvider {
                 const failureClass = classifyLocalModelFailure(errMsg)
                 if (failureClass === 'hard-failure') {
                     // Hard failures — blacklist immediately (don't waste 2 attempts)
-                    recordFailure(candidate.model, errMsg)
-                    recordFailure(candidate.model, errMsg) // double to hit threshold
+                    recordFailure(`${candidate.baseUrl}|${candidate.model}`, errMsg)
+                    recordFailure(`${candidate.baseUrl}|${candidate.model}`, errMsg) // double to hit threshold
                 } else if (failureClass === 'soft-failure') {
-                    recordFailure(candidate.model, errMsg)
+                    recordFailure(`${candidate.baseUrl}|${candidate.model}`, errMsg)
                 }
             }
         }
@@ -1564,7 +1580,7 @@ class LocalLLMProvider extends LLMProvider {
                 toolCalls: ollamaToolCalls.length ? ollamaToolCalls : undefined,
                 usage: normalizeTokenUsage(data.prompt_eval_count, data.eval_count),
             }
-            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!result.content)
+            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!result.content || ollamaToolCalls.length > 0)
             return result
         } else {
             // OpenAI-compatible API (LMStudio, vLLM, external cloud providers)
@@ -1635,7 +1651,7 @@ class LocalLLMProvider extends LLMProvider {
                 } catch { /* tool policy and schema validation handle empty args */ }
                 return { id: call.id || `local-tool-${index}`, name: call.function?.name || call.name || '', arguments: args }
             })
-            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content)
+            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content || toolCalls.length > 0)
             return {
                 content,
                 reasoning: reasoning || undefined,

@@ -165,6 +165,17 @@ jobs:
           path: .nova-data/tool-failure-escalation-qa/report.json
           retention-days: 14
           include-hidden-files: true
+      - name: Local model recovery uses bounded HTTP and persists admission across restart
+        run: node scripts/check-local-model-recovery.mjs
+        timeout-minutes: 2
+      - name: Preserve local-model recovery evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-model-recovery-qa-${{ matrix.os }}
+          path: .nova-data/local-model-recovery-qa/report.json
+          retention-days: 14
+          include-hidden-files: true
       - name: Native verified tool receipts survive an actual process restart without replay
         run: npm run check:native-tool-resume
         timeout-minutes: 2

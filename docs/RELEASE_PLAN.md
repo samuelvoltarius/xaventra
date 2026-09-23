@@ -1,5 +1,25 @@
 # Reliability release loop
 
+## 2.78.52 local model lockout recovery candidate
+
+Three failing regressions reproduced textless tool calls poisoning inference
+history and a reachable model never being attempted while all routes were held.
+The fix distinguishes inference availability from validated tool execution,
+clears the automatic hold on a usable response, and admits a bounded real
+request when no healthy candidate remains. One persisted admission per model
+per minute survives process restart; requests have a 15-second cap. Endpoint
+session holds expire, and known permanent exclusions are not probed.
+
+Focused regression: 51/51 plus a passing session-expiry regression. Full Core:
+234 files / 1,633 tests before that additional test; Desktop: 12/12; build passes.
+Actual HTTP with a scripted provider and three child
+processes: 3/3 checks (failed probe, restart throttle, recovered inference).
+Separately, the compiled candidate reached a real vLLM endpoint from an isolated
+client with seeded failure history, received `OK`, and cleared the hold. This
+pre-commit live inference probe is not a full Telegram acceptance or production
+rollout. See [recovery and rollback boundary](LOCAL_MODEL_RECOVERY.md). Exact candidate,
+evidence, main CI and signed release remain required; overall RC is still open.
+
 ## 2.78.51 Doctor delayed-receipt reconciliation candidate
 
 Two failing source regressions reproduced that delayed terminal Outcomes could

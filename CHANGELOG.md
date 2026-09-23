@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.52] — 2026-09-23
+
+- Count textless local tool-call responses as usable inference, not model
+  failures. Successful inference clears the automatic performance hold without
+  deleting historical routing statistics or certifying tool execution.
+- Prefer healthy candidates; when all are held, allow one persisted recovery
+  admission per model per minute with a 15-second request bound. Known permanent
+  exclusions remain closed. Rotate recovery routes and expire endpoint-scoped
+  session failure holds instead of blacklisting until daemon restart.
+- Add concurrent/duplicate-route controls and actual HTTP/process-restart
+  acceptance. Production enrollment and deployment remain separate gates.
+
 ## [2.78.51] — 2026-09-23
 
 - Reconcile delayed Doctor terminal Outcomes with at most three persisted,
