@@ -26,6 +26,17 @@ reflected in generated module metadata. Reproduced locally, then regenerated
 using the canonical generator; `check:catalogs` now passes. No assertion was
 removed. The failed run remains retained; the corrected commit needs fresh CI.
 
+Corrected runtime `3a5c29eb6cc621bd342b854609ba46cd4a4045cd` passed
+all ten jobs in [candidate CI 35807067534](https://github.com/samuelvoltarius/xaventra/actions/runs/35807067534).
+Downloaded official Ubuntu, Windows and macOS recovery reports each identify
+that exact clean revision and pass 3/3 checks: one bounded HTTP request,
+restart-preserved admission throttling, and successful recovery clearing the hold.
+These are real HTTP/child-process tests with a scripted provider, not live
+Telegram or production acceptance. Gitleaks 8.30.1 scanned all 137 public
+commits (11.14 MB) with zero findings. This evidence commit requires its own
+green CI, then normal main promotion, exact main CI and signed publication.
+Production remains unchanged and the overall RC gates remain open.
+
 ## 2.78.51 Doctor delayed-receipt reconciliation candidate
 
 Two failing source regressions reproduced that delayed terminal Outcomes could
