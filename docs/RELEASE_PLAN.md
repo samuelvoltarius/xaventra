@@ -20,6 +20,12 @@ pre-commit live inference probe is not a full Telegram acceptance or production
 rollout. See [recovery and rollback boundary](LOCAL_MODEL_RECOVERY.md). Exact candidate,
 evidence, main CI and signed release remain required; overall RC is still open.
 
+The first candidate CI35802563655 failed the unchanged catalog-consistency gate
+on all three operating systems: the new atomic-storage/crypto imports were not
+reflected in generated module metadata. Reproduced locally, then regenerated
+using the canonical generator; `check:catalogs` now passes. No assertion was
+removed. The failed run remains retained; the corrected commit needs fresh CI.
+
 ## 2.78.51 Doctor delayed-receipt reconciliation candidate
 
 Two failing source regressions reproduced that delayed terminal Outcomes could

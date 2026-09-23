@@ -3357,7 +3357,9 @@
     {
       "module": "src/llm/model-perf-db.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "node:async_hooks",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]
