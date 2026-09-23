@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { assertReleaseSource } from './release-source-provenance.mjs'
 const image = process.argv[2]
 if (!/^sha256:[a-f0-9]{64}$/.test(image || '')) throw Error('Exact locally inspected image ID required')
 const root = resolve('.nova-data/update-image-qa', randomUUID()); mkdirSync(root, { recursive: true })
@@ -12,6 +13,7 @@ const report = { sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { en
     evidenceClass: 'actual-packaged-daemon-start-authenticated-REST-CLI-stop-isolated-loopback-provider', passed: false }
 let id
 try {
+    assertReleaseSource()
     const metadata = JSON.parse(execFileSync('docker', ['image', 'inspect', image], { encoding: 'utf8' }))[0]
     const version = JSON.parse(readFileSync('package.json', 'utf8')).version
     if (metadata.Id !== image || metadata.Config?.Labels?.['org.opencontainers.image.version'] !== version

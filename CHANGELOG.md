@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.78.53] — 2026-09-23
+
+- Reject tracked, staged and untracked source drift before release builds and
+  packaged-container acceptance. Record image digest handoff files only after
+  clean-source acceptance, retaining earlier dirty-source reports.
+
 ## [2.78.52] — 2026-09-23
 
 - Count textless local tool-call responses as usable inference, not model

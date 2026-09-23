@@ -1,5 +1,24 @@
 # Reliability release loop
 
+## 2.78.53 release-source provenance candidate
+
+The 2.78.52 publisher succeeded, but both packaged lifecycle reports recorded
+`sourceDirty: true`. The workflow writes an untracked image digest file before
+acceptance; a real Git fixture reproduces that condition. The old acceptance
+recorded dirt without refusing it. The new guard rejects tracked, staged and
+untracked changes, including that digest fixture, before Docker execution.
+Digest handoff now occurs after acceptance; source checks also bracket build.
+Four real-Git regression checks pass locally; typecheck passes. Historical
+failed/dirty reports remain intact. Local Docker is unavailable (missing engine
+pipe), so actual packaged-container acceptance remains pending in the publisher.
+No production change or overall RC qualification is implied.
+
+Local full Core regression: 235 files / 1,638 tests passed. Build and catalog
+consistency pass. Initial catalog invocation failed sandbox temporary-directory
+access; rerun with the permitted temporary root passed without changing checks.
+An initial `desktop test` command had no script; the canonical root
+`test:desktop` command is the applicable check. Exact CI remains required.
+
 ## 2.78.52 local model lockout recovery candidate
 
 Three failing regressions reproduced textless tool calls poisoning inference

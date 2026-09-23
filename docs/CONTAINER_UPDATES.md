@@ -7,6 +7,12 @@ full RC certification remain separate.
 
 ## User flow
 
+Publisher source checks reject tracked, staged and untracked changes before
+and after compilation, and again before the container acceptance starts. Image
+digest handoff files are written only after acceptance. Build outputs ignored
+by Git are not source attestations; the packaged lifecycle test remains required.
+Earlier reports with `sourceDirty: true` are retained, not retroactively certified.
+
 1. `/update check` discovers a newer eligible release and verifies its publisher.
 2. `/update prepare <exact-release-id>` downloads and verifies, without activation.
 3. The independent operator approves that release, baseline, target and Main epoch.
