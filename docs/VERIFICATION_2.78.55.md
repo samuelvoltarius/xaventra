@@ -18,6 +18,16 @@ generated instruction. A real loopback HTTP fixture observed one matching GET
 and rejected wrong evidence targets. Doctor restart/authority tests use controlled
 receipts; they do not prove production repair or live hardware recovery.
 
-Exact-commit candidate, evidence, main and signed publisher results must be
-recorded before promotion/activation. Production installation and Telegram
-acceptance are separate from all source tests. No RC-ready claim is made.
+Runtime candidate `4a07d43ef026590f127bdadab7bad32d34f8470b` passed all ten
+jobs in [CI 36073603718](https://github.com/samuelvoltarius/xaventra/actions/runs/36073603718),
+including real isolated repair/rollback and managed activation. Downloaded
+exact-revision reports confirm Doctor API 15/15 and artifact checks 5/5 on
+Windows, Linux and macOS. Packaged Desktop reports on each OS pass 10/10
+interaction and 5/5 Core integration checks. These are controlled tests, not
+production repair proof. The full 144-commit history and staged patch passed
+Gitleaks with zero findings.
+
+This evidence-only commit requires its own green CI before normal main
+fast-forward. Exact main CI and signed publisher verification remain mandatory
+before activation. Production installation and Telegram acceptance are separate
+from all source tests. No RC-ready claim is made.
