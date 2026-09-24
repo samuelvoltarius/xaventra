@@ -45,6 +45,24 @@ acceptance assertions are unchanged. A local retry on an uncommitted checkout
 also correctly refused repair activation at the clean-source gate; it is not
 counted as passing acceptance. Both negative results remain retained.
 
+### 2.78.54 exact-candidate attestation
+
+Corrected candidate `d85fe0c70d47fb746485a04794dc93a7c54fce3b` passed all ten
+jobs in [CI 36047828068](https://github.com/samuelvoltarius/xaventra/actions/runs/36047828068).
+Downloaded Windows, Linux and macOS reports match that exact revision and
+version: each passes 10 packaged UI, 5 isolated Core and 7 full-daemon checks.
+These use a scripted provider and are separate from the actual local-model/search
+acceptance described above. Local full Core regression passes 242 files / 1,696
+tests; the clean Windows packaged full-daemon run passes all seven checks.
+The complete 142-commit candidate history scan found no secrets.
+
+This evidence commit requires its own exact green CI before normal main
+promotion, followed by exact main CI and independently verified signed packages.
+Production activation and real Telegram acceptance are not yet established.
+Existing runtime first-adoption needs independent state volumes, complete writer
+fencing and a verified rollback; a local or CI pass does not authorize bypassing
+those controls. No full RC or stable-release certification is claimed.
+
 ## 2.78.53 release-source provenance candidate
 
 The 2.78.52 publisher succeeded, but both packaged lifecycle reports recorded
