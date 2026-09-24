@@ -1737,6 +1737,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             const reasons = taskValidation.criteria.filter(item => !item.success).map(item => item.reason).filter(Boolean)
             outcomeLedger.fail(kernel.contract.id, {
                 reason: 'validator-rejected',
+                diagnosticEligible: !isBenchmarkRun && !policyBlocked && !failureEscalationContent
+                    && channel !== 'internal' && userId !== 'Nova-Autonomy',
                 reasons,
                 violations: taskValidation.violations,
                 durationMs: Date.now() - outcomeStartedAt,

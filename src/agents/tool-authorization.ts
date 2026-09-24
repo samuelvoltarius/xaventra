@@ -1,5 +1,5 @@
 import { checkTool } from '../tools/tool-policy.js'
-import { isHistoryOnlyRequest } from '../core/action-intent.js'
+import { isConversationOnly, isHistoryOnlyRequest } from '../core/action-intent.js'
 
 const governedReadOnlyTools = new Set([
     'read_file', 'list_directory', 'codebase_search', 'find_files',
@@ -34,6 +34,7 @@ export async function authorizeToolExecution(
 async function authorize(name: string, args: Record<string, unknown>, authority: ToolAuthority): Promise<Record<string, unknown>> {
     const { userId, authUserId, channel, requestText, governedReadOnly } = authority
     if (isHistoryOnlyRequest(requestText)) throw new Error('Current request permits conversation recall only, not tool execution')
+    if (isConversationOnly(requestText)) throw new Error('Current statement or explanation does not authorize tool execution')
     const policy = checkTool(name, { userId, channel: channel.toLowerCase() })
     if (!policy.allowed || policy.needsConfirmation) {
         throw new Error(policy.reason || `Tool ${name} requires authorization or confirmation`)

@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
 import { selectContextPolicy } from './context-policy.js'
-import { detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
+import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
@@ -521,6 +521,7 @@ export async function handleMessage(
     if (soulExists()) {
         systemPrompt = buildSystemPromptFromSoul() + '\n\n' + NOVA_PERSONA
     }
+    if (!isSystemAuthored) systemPrompt += conversationResponseGuidance(content)
 
     // Gemessener Systembefund statt Annahmen. Der Environment-Scanner laeuft
     // beim Start; sein Ergebnis floss bisher nur in den Self-Setup-Orchestrator,
@@ -1621,6 +1622,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const toolsUsed = (result.toolsExecuted || []).length
             const text = (supervised.content || '').trim()
             const looksLikeAnnouncement =
+                detectActionIntent(content).requiresTool &&
                 toolsUsed === 0 &&
                 text.length < 120 &&
                 (

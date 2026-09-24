@@ -1,3 +1,5 @@
+import { actionRequestText, isConversationOnly } from './action-intent.js'
+
 export type CognitiveMode = 'fast' | 'balanced' | 'deep' | 'research'
 
 export interface ContextPolicy {
@@ -57,7 +59,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     const lower = text.toLowerCase()
     const wordCount = lower ? lower.split(/\s+/).length : 0
     const isSocial = SOCIAL.test(text)
-    const isAction = ACTION.test(lower)
+    const isAction = ACTION.test(actionRequestText(lower))
     const isAnalysis = ANALYSIS.test(lower)
     const isResearch = RESEARCH.test(lower)
     const isRecovery = RECOVERY.test(lower)
@@ -128,7 +130,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
             : researchRequired ? 'research'
             : isAnalysis ? 'analysis'
             : isAction ? 'action'
-            : isSocial ? 'conversation' : 'lookup',
+            : isSocial || isConversationOnly(text) ? 'conversation' : 'lookup',
         uncertainty,
         novelty,
         researchRequired,

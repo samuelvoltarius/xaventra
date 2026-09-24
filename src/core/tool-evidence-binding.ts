@@ -40,7 +40,8 @@ export function normalizeEvidenceTarget(value: string): string {
 /** Only bind explicit, machine-comparable targets. Vague nouns are deliberately
  * excluded: failing closed is preferable to pretending semantic equivalence. */
 export function inferRequiredToolTargets(goal: string): string[] {
-    const urls = goal.match(/https?:\/\/[^\s"'`<>]+/gi) || []
+    goal = evidenceRequestText(goal)
+    const urls = [...new Set(goal.match(/https?:\/\/[^\s"'`<>\[\]]+/gi) || [])]
     // A pasted GET example may supply query fields separately from its URL.
     // Parse only literal name=value data, never shell syntax or @file content.
     // Multiple URLs remain ambiguous and are not silently associated.
@@ -74,6 +75,22 @@ export function inferRequiredToolTargets(goal: string): string[] {
         if (otherWithoutRoot === suffix) return other.startsWith('/') && !target.startsWith('/')
         return otherWithoutRoot.endsWith(`/${suffix}`)
     }))
+}
+
+/** Presentation markup and quoted history are not additional requested targets.
+ * This only scopes evidence; it neither executes pasted commands nor grants tools.
+ * Replay narrowing is deliberately limited to an explicit repeat request with
+ * exactly one dated GET example. Ambiguous/multiple examples retain all targets.
+ */
+function evidenceRequestText(input: string): string {
+    const text = input.replace(/\[[^\]\r\n]*\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)(?:\s+"[^"\r\n]*")?\)/gi, '$1')
+    const stamps = [...text.matchAll(/\[\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}\]\s+[^:\r\n]+:/g)]
+    if (!stamps.length) return text
+    const instruction = text.slice(0, stamps[0].index).trim()
+    if (!/^(?:test(?:e)?|prüfe?|pruefe?|check)(?:\s+(?:es|das))?\s+(?:noch\s*mal|noch einmal|erneut)\s*[:.!]?$/i.test(instruction)) return text
+    const examples = stamps.map((stamp, index) => text.slice(stamp.index! + stamp[0].length, stamps[index + 1]?.index ?? text.length))
+        .filter(block => /(?:^|\s)--get(?:\s|$)/.test(block) && /https?:\/\//i.test(block))
+    return examples.length === 1 ? examples[0] : text
 }
 
 function argumentStrings(value: unknown): string[] {

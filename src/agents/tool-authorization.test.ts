@@ -41,6 +41,14 @@ function executor(context = authority) {
 }
 
 describe('runner common tool authorization', () => {
+    it('does not let a model turn an announcement into a cached or live effect', async () => {
+        mocks.allowed.mockReturnValue(true)
+        const target = executor({ ...authority, requestText: 'Du wirst nun ent docker und native installiert dann hast du die Full power' })
+        await expect(target.run('run_command', { command: 'install' })).rejects.toThrow('does not authorize tool execution')
+        expect(target.once).not.toHaveBeenCalled()
+        expect(target.execute).not.toHaveBeenCalled()
+        expect(target.fence).not.toHaveBeenCalled()
+    })
     it('enforces a history-only request before cached or live tools, even for an allowed role', async () => {
         mocks.allowed.mockReturnValue(true)
         const target = executor({ ...authority, requestText: 'Antworte nur aus dem Verlauf.' })

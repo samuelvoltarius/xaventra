@@ -3,9 +3,38 @@ import { describe, expect, it } from 'vitest'
 it.each(['Recherchiere Informationen über einen Fotografen', 'Suche weiter im Internet nach mir', 'Google bitte nach dem Unternehmen'])('recognizes research request: %s', text => {
     expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'web' })
 })
-import { detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
+import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 
 describe('action intent evidence gate', () => {
+    it('adds conversational guidance only for a clear non-execution turn', () => {
+        expect(conversationResponseGuidance('Ich installiere dich morgen nativ.')).toContain('kein Ausführungsauftrag')
+        expect(conversationResponseGuidance('Installiere Docker')).toBe('')
+        expect(conversationResponseGuidance('Wie spät ist es?')).toBe('')
+        expect(conversationResponseGuidance('Ich installiere dich morgen; prüfe jetzt die URL https://example.org')).toBe('')
+    })
+    it.each([
+        'Du wirst nun ent docker und native installiert dann hast du die Full power',
+        'Ich installiere dich morgen nativ.',
+        'Wir starten den Dienst später neu.',
+        'Der Dienst wird morgen neu gestartet.',
+        'Ich habe Docker installiert.',
+        'Wie installiere ich Docker?',
+        'Erkläre mir, wie ich Docker installiere.',
+        'Was bedeutet „Installiere Docker“?',
+    ])('does not turn a statement or explanation into an action: %s', text => {
+        expect(detectActionIntent(text)).toEqual({ requiresTool: false, kind: 'none' })
+    })
+    it.each([
+        'Installiere Docker',
+        'Kannst du Docker installieren?',
+        'Ich möchte, dass du Docker installierst.',
+        'Du sollst Docker installieren.',
+        'Ich installiere dich später, aber starte jetzt den Dienst.',
+        'Du wirst nativ installiert und prüfe jetzt den Systemstatus.',
+        'Wie installiere ich Docker? Installiere es bitte.',
+    ])('retains actual requests, including mixed messages: %s', text => {
+        expect(detectActionIntent(text).requiresTool).toBe(true)
+    })
     it.each(['check mal url -sS --get https://search.example/search', 'Prüfe diese URL https://example.org', 'fetch https://example.org'])('requires real web evidence for URL checks: %s', text => {
         expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'web' })
     })

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 const investigate = vi.hoisted(() => vi.fn(async () => null))
+const reconcile = vi.hoisted(() => vi.fn(() => 0))
+vi.mock('./validator-failure-escalation.js', () => ({ reconcileValidatorFailures: reconcile }))
 vi.mock('./autonomy-authority.js', () => ({ hasGlobalAutonomyAuthority: () => true }))
 vi.mock('../doctor/failure-research-coordinator.js', () => ({ getFailureResearchCoordinator: () => ({ investigateNext: investigate }) }))
 import { setAutonomyThinkCallback, setDoctorResearchWorker, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
@@ -13,5 +15,6 @@ describe('Doctor is reachable in the actual autonomy cycle', () => {
         setDoctorResearchWorker(worker)
         await triggerAutonomyCheck()
         expect(investigate).toHaveBeenCalledExactlyOnceWith(worker)
+        expect(reconcile).toHaveBeenCalledOnce()
     })
 })

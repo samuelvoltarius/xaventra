@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.78.55] — 2026-09-25
+
+- Self-Doctor: reconcile eligible persisted Kernel validator failures into the
+  existing bounded diagnostic worker; principal-bound deduplication, restart
+  recovery within the recent-outcome window and no replay of user actions.
+
+- Parse Markdown URL destinations before target binding and deduplicate repeated
+  links. An explicit retry of one dated GET example binds that request, not old
+  backend metadata; ambiguous/multiple examples retain their target requirements.
+
+- Distinguish clear operational announcements and explanations from execution
+  requests before clarification, tool routing and evidence requirements. Preserve
+  actionable clauses in mixed messages and reject effects for conversation-only turns.
+- Retire stale announcement-based clarification state; retain genuine pending
+  actions. Add natural-response guidance and isolated live-model acceptance.
+  This source change is not installed in existing deployments.
+
 ## [2.78.54] — 2026-09-24
 
 - Use the Agents SDK for channel and subagent tool continuation, retaining the

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { detectActionIntent } from './action-intent.js'
+import { actionRequestText, detectActionIntent, isConversationOnly } from './action-intent.js'
 import { getSessionContinuityStore, type PendingClarification } from '../memory/session-summarizer.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { getBeliefStore } from './belief-store.js'
@@ -40,12 +40,23 @@ function continuationEvidence(principalId: string, content: string): string[] {
 export function evaluateClarification(principalId: string, content: string): ClarificationDecision {
     const text = String(content || '').trim()
     const store = getSessionContinuityStore()
-    const pending = store.getSummary(principalId)?.pendingClarification
+    let pending = store.getSummary(principalId)?.pendingClarification
+    // Old versions persisted target questions for announcements. Do not turn
+    // the next ordinary reply into a resumed installation from that bad state.
+    if (pending && isConversationOnly(pending.originalRequest)) {
+        store.clearPendingClarification(principalId)
+        pending = undefined
+    }
 
     if (pending) {
         if (CANCEL.test(text)) {
             store.clearPendingClarification(principalId)
             return { action: 'cancel', content: '', reason: 'user cancelled pending clarification', missingFields: [], confidence: 1, evidence: ['pending clarification'] }
+        }
+        // A new announcement/explanation is not an answer authorizing the old
+        // action. Leave that clarification pending and answer this turn normally.
+        if (isConversationOnly(text)) {
+            return { action: 'continue', content: text, missingFields: [], confidence: 1, evidence: ['conversation does not resume pending action'] }
         }
         const restored = store.consumePendingClarification(principalId)!
         return {
@@ -86,9 +97,10 @@ export function evaluateClarification(principalId: string, content: string): Cla
     const hasTargetContext = evidence.includes('previous target context')
     // Remove only the impersonal clause for reference analysis, not the whole
     // request. Other references and high-impact target checks must still apply.
-    const ambiguous = AMBIGUOUS_REFERENCE.test(text.replace(IMPERSONAL_REFERENCE, ''))
-        && !EXPLICIT_TARGET.test(text)
-    const missingTarget = HIGH_IMPACT.test(text) && !EXPLICIT_TARGET.test(text)
+    const requestText = actionRequestText(text)
+    const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
+        && !EXPLICIT_TARGET.test(requestText)
+    const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText)
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
         const terms = `${belief.subject} ${belief.predicate} ${belief.value}`.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter(term => term.length >= 4)
         return terms.some(term => text.toLowerCase().includes(term))

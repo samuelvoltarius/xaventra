@@ -1388,7 +1388,9 @@
     },
     {
       "module": "src/core/context-policy.ts",
-      "imports": []
+      "imports": [
+        "./action-intent.js"
+      ]
     },
     {
       "module": "src/core/correction-detector.ts",
@@ -2083,6 +2085,14 @@
         "./github-update.js",
         "./update-controller-client.js",
         "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/validator-failure-escalation.ts",
+      "imports": [
+        "../doctor/failure-research-coordinator.js",
+        "./outcome-ledger.js",
+        "node:crypto"
       ]
     },
     {

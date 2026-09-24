@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { ExecutionKernel } from './execution-kernel.js'
 
 describe('execution kernel', () => {
+    it('answers an announcement without inheriting installation tools or requiring a tool receipt', () => {
+        const text = 'Du wirst nun ent docker und native installiert dann hast du die Full power'
+        const kernel = new ExecutionKernel(text, undefined, `Installiere Codex auf Spark.\n${text}`)
+        expect(kernel.intent.requiresTool).toBe(false)
+        expect(kernel.selectWorkerTools()).toEqual([])
+        expect(() => kernel.assertCanExecute('run_command')).toThrow('outside task contract')
+        expect(kernel.validateCompletion('Oh cool! Du stellst mich auf nativen Betrieb um?').success).toBe(true)
+    })
     it('retains a complete diagnostic contract during a JSON-only candidate follow-up', () => {
         const contract = new ExecutionKernel('System health prüfen').contract
         contract.allowedChanges = { readOnly: true, externalSideEffects: false, allowedPaths: [], allowedTools: ['health_status'] }

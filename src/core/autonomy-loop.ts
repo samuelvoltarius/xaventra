@@ -971,6 +971,8 @@ async function runDoctorPhase(): Promise<void> {
         // after restart. No Telegram chat ID, synthetic owner or second timer.
         if (doctorResearchWorker && config.enabled && hasGlobalAutonomyAuthority()) {
             const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
+            const { reconcileValidatorFailures } = await import('./validator-failure-escalation.js')
+            reconcileValidatorFailures()
             const research = await getFailureResearchCoordinator().investigateNext(doctorResearchWorker)
             if (research) console.log(`[Autonomy] Doctor investigation ${research.id}: ${research.investigation?.status}; repair not applied`)
             const { reconcileRepairActivations } = await import('../synthesis/self-evolution.js')
