@@ -42,7 +42,8 @@ export function detectActionIntent(input: string): ActionIntent {
     if (/\b(?:tool|werkzeug)[-\s]?(?:aufruf|call|ausf[uü]hrung)(?:e|en|s)?\b|\b(?:tool|werkzeug)\b.{0,30}\b(?:aufrufen|ausf[uü]hren|verwenden|nutzen|wiederholen)\b/i.test(text)) {
         return { requiresTool: true, kind: 'generic-action' }
     }
-    if (/\b(such|recherchier|google|online nachsehen|im web|im internet)\b/i.test(text)) {
+    if (/\b(suche?|recherchier(?:e|en)?|google|online nachsehen|im web|im internet)\b/i.test(text)
+        || /\b(?:check|prüfe|pruefe|teste|fetch|abrufen)\b.{0,100}(?:\burl\b|https?:\/\/)/i.test(text)) {
         return { requiresTool: true, kind: 'web' }
     }
     if (/\b(klick|tippe|maus|cursor|[oö]ffne|starte|beende|schlie(?:ß|ss)e|installier\w*|deinstallier\w*|f[uü]hre .{0,20}aus|restart|neustart|sende|schicke)\b/i.test(text)) {

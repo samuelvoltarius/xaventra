@@ -1,4 +1,4 @@
-import { Agent, RunState, Runner, tool, type FunctionTool, type ModelProvider } from '@openai/agents'
+import { Agent, RunState, tool, type FunctionTool, type ModelProvider } from '@openai/agents'
 import type { NovaTool } from '../tools/complete-registry.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
 import { checkTool } from '../tools/tool-policy.js'
@@ -27,6 +27,8 @@ import { getOutcomeRouter } from '../routing/outcome-router.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { NovaModelProvider } from './nova-model-provider.js'
+import { selectContractTools } from './tool-contract-selection.js'
+import { createSdkRunner } from './sdk-runtime.js'
 import { estimateUsageCost } from '../core/model-pricing.js'
 import type { AgentBackend, AgentBackendInput, AgentBackendResult } from './agent-backend.js'
 
@@ -54,7 +56,7 @@ function toolSchema(novaTool: NovaTool): Record<string, unknown> {
 
 export class OpenAIAgentsBackend implements AgentBackend {
     readonly name = 'openai-agents'
-    private readonly modelProvider: ModelProvider
+    private readonly modelProvider?: ModelProvider
     private readonly maxTurns: number
     private readonly ledger: OutcomeLedger
     private readonly idempotency: IdempotencyStore
@@ -63,7 +65,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
     private readonly checkpointTransport?: NativeCheckpointTransport
 
     constructor(options: OpenAIAgentsBackendOptions = {}) {
-        this.modelProvider = options.modelProvider || new NovaModelProvider()
+        this.modelProvider = options.modelProvider
         this.maxTurns = options.maxTurns || 12
         this.ledger = options.ledger || getOutcomeLedger()
         this.idempotency = options.idempotencyStore || getIdempotencyStore()
@@ -92,10 +94,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
         assertFence: () => Promise<void>
     }): FunctionTool[] {
         const registry = getToolRegistry()
-        const selected = input.tools || registry.getAll().filter(candidate =>
-            input.contract.allowedChanges.allowedTools.length === 0
-            || input.contract.allowedChanges.allowedTools.includes(candidate.name)
-        )
+        const selected = selectContractTools(input.contract.allowedChanges.allowedTools, input.tools ?? registry.getAll())
         const ledger = this.ledger
 
         return selected.map(novaTool => tool({
@@ -277,12 +276,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
             model: input.model || 'auto',
             tools: this.buildTools(input, kernel, { scopeId, principalId, publishCheckpoint, persistProgress, assertFence }),
         })
-        const runner = new Runner({
-            modelProvider: this.modelProvider,
-            tracingDisabled: true,
-            traceIncludeSensitiveData: false,
-            workflowName: 'Nova governed agent run',
-        })
+        const runner = createSdkRunner(this.modelProvider || new NovaModelProvider())
 
         try {
             const state = serializedState

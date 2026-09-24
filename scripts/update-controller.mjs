@@ -11,7 +11,7 @@ import { UpdateActivationController } from '../dist/core/update-activation.js'
 import { createUpdateControllerServer } from '../dist/core/update-controller-server.js'
 import { DockerRepairDriver, localDockerRepairEngine } from '../dist/doctor/docker-repair-driver.js'
 import { createPublishedRepairContainer } from '../dist/doctor/docker-repair-publication.js'
-import { createDockerRepairStateCloner } from '../dist/doctor/docker-repair-state.js'
+import { createDockerRepairStateCloner, createRepairStateCopyScript } from '../dist/doctor/docker-repair-state.js'
 import { createHttpRepairProbe } from '../dist/doctor/repair-controller-server.js'
 import { repairHash, repairRpc, signRepairValue, verifyRepairValue } from '../dist/doctor/repair-activation.js'
 import { RepairDrainClient } from '../dist/doctor/repair-drain-client.js'
@@ -20,6 +20,7 @@ import { writeUpdateState as atomicWriteJsonSync } from '../dist/core/update-sto
 import { readProtectedControllerFile as protectedFile, protectControllerDirectory } from '../dist/doctor/repair-controller-files.js'
 
 const c = JSON.parse(protectedFile(process.argv[2] || '', true))
+createRepairStateCopyScript(c.stateCopyLimits) // Validate enrollment before side effects.
 process.umask(0o077)
 protectControllerDirectory(c.stateRoot); protectControllerDirectory(c.grantsRoot)
 if ((!c.socketPath && (!Number.isInteger(c.port) || c.port < 1024 || c.port > 65535)) || !c.targetId || !['x64', 'arm64'].includes(process.arch)) throw Error('Invalid controller enrollment')
@@ -82,7 +83,7 @@ const server = createUpdateControllerServer({ root: join(c.stateRoot, 'jobs'), t
         const targetIds = Object.values(deployment.releases).map(r => r.containerId)
         const driver = new DockerRepairDriver({ ...deployment, catalog: {}, hasAuthority: t => decision(c.authorityUrl, t),
             loadState: () => runtime, saveState: state => atomicWriteJsonSync(stateFile, state),
-            stateReady: createDockerRepairStateCloner({ engine, helperImageId: c.stateHelperImageId,
+            stateReady: createDockerRepairStateCloner({ engine, helperImageId: c.stateHelperImageId, limits: c.stateCopyLimits,
                 quiescent: async t => {
                     const d = await drain.request('status', t)
                     return d.bindingHash === repairHash(t) && d.toolActionsDrained === true

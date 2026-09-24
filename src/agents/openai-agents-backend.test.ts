@@ -60,6 +60,26 @@ class FinalModel implements Model {
 }
 
 describe('OpenAIAgentsBackend', () => {
+    it.each([{ allowed: [] }, { allowed: ['echo_tool'] }])('never advertises supplied tools beyond contract $allowed', async ({ allowed }) => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-sdk-catalog-'))
+        tempDirs.push(dir)
+        const seen: string[][] = []
+        const model = new FinalModel()
+        const original = model.getResponse.bind(model)
+        model.getResponse = async request => {
+            seen.push(request.tools.filter(tool => tool.type === 'function').map(tool => tool.name))
+            return original(request)
+        }
+        const contract = createTaskContract('Say hello', { requiresTool: false, kind: 'conversation' } as any, allowed)
+        const backend = new OpenAIAgentsBackend({ modelProvider: { getModel: () => model }, ledger: new OutcomeLedger(dir) })
+        const inputTools = ['echo_tool', 'run_command'].map(name => ({
+            name, description: name, category: 'other' as const, parameters: [],
+            handler: async () => { throw new Error('No execution expected') },
+        }))
+        await backend.run({ contract, userId: 'test-user', channel: 'test', content: contract.goal, tools: inputTools })
+        expect(seen).toEqual([allowed])
+    })
+
     it('runs the SDK loop through Nova tool governance and local outcome evidence', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'nova-agents-backend-'))
         tempDirs.push(dir)

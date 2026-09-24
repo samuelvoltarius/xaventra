@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
+import { createGovernedToolExecutor } from './governed-tool-executor.js'
 import { authorizeToolExecution, ToolAuthorizationError, type ToolAuthority } from './tool-authorization.js'
 
-const mocks = vi.hoisted(() => ({ allowed: vi.fn(), policy: vi.fn() }))
+const mocks = vi.hoisted(() => ({ allowed: vi.fn(), policy: vi.fn(), fence: vi.fn() }))
+vi.mock('../core/execution-control.js', async importOriginal => ({
+    ...await importOriginal<typeof import('../core/execution-control.js')>(),
+    assertMissionFenceForContent: mocks.fence,
+}))
 vi.mock('../users/multi-user-middleware.js', () => ({
     isToolAllowed: mocks.allowed,
     getToolRestrictionMessage: () => 'Role denied',
@@ -14,31 +18,25 @@ const authority: ToolAuthority = { userId: 'canonical-guest', authUserId: 'guest
 beforeEach(() => {
     mocks.allowed.mockReset().mockReturnValue(false)
     mocks.policy.mockReset().mockReturnValue({ allowed: true, needsConfirmation: false })
+    mocks.fence.mockReset().mockResolvedValue(undefined)
 })
 
-// Exercise the actual common runner closure with inert downstream dependencies.
+// Exercise the actual extracted production executor with inert downstream dependencies.
 // No model, command, compensation, filesystem mutation or idempotency cache runs.
 const runnerSource = readFileSync(fileURLToPath(new URL('./nova-runner.ts', import.meta.url)), 'utf8')
-const runnerAst = ts.createSourceFile('runner.ts', runnerSource, ts.ScriptTarget.Latest, true)
-let executorSource = ''
-function visit(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node) && node.name.getText(runnerAst) === 'executeToolOnce') executorSource = node.initializer!.getText(runnerAst)
-    ts.forEachChild(node, visit)
-}
-visit(runnerAst)
 
 function executor(context = authority) {
     const execute = vi.fn(async (_name: string, args: unknown) => args)
-    const fence = vi.fn(async () => undefined)
+    const fence = mocks.fence
     const once = vi.fn(async () => ({ result: 'cached' }))
-    const compiled = ts.transpile(`let policyBlocked = false; let awaitingPolicyApproval = false; const run = ${executorSource}`, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS })
-    const create = new Function('authorizeToolExecution', 'ToolAuthorizationError', 'userId', 'authUserId', 'channel', 'content', 'isInternalRequest', 'kernel',
-        'assertMissionFenceForContent', 'executionScopeForContent', 'makeIdempotencyKey', 'executionStore', 'prepareToolCompensation',
-        'deriveToolCompensation', 'withSpan', 'registry', 'workspaceId', `${compiled}; return run`)
-    const run = create(authorizeToolExecution, ToolAuthorizationError, context.userId, context.authUserId, context.channel, context.requestText, context.governedReadOnly,
-        { assertCanExecute() {}, contract: { id: 'run', allowedChanges: { readOnly: context.governedReadOnly, externalSideEffects: false } } },
-        fence, () => 'run', () => 'key', { executeOnce: once }, () => undefined, () => undefined,
-        async (_name: string, _attrs: unknown, callback: () => unknown) => callback(), { execute }, undefined)
+    let blocked = false
+    const run = createGovernedToolExecutor({
+        userId: context.userId, authUserId: context.authUserId, channel: context.channel,
+        content: context.requestText, internal: context.governedReadOnly,
+        kernel: { assertCanExecute() {}, contract: { id: 'run', allowedChanges: { readOnly: context.governedReadOnly, externalSideEffects: false } } } as any,
+        store: { executeOnce: once } as any,
+        isBlocked: () => blocked, block: () => { blocked = true }, execute, record: vi.fn(),
+    })
     return { run, fence, once, execute }
 }
 
@@ -83,7 +81,9 @@ describe('runner common tool authorization', () => {
         // closure above. The former two model-driven failure-recovery loops
         // were deliberately removed; reintroducing their markers is a
         // regression even if the raw call-site count happens to change again.
-        expect(runnerSource.match(/executeToolOnce\(call\.name,/g)).toHaveLength(3)
+        expect(runnerSource.match(/executeToolOnce\(call\.name,/g)).toHaveLength(1)
+        expect(runnerSource).toContain('runGovernedSdkLoop({')
+        expect(runnerSource).not.toContain('while (loopRound')
         expect(runnerSource).not.toContain('SELF-HEALING: Re-prompt LLM on tool failures')
         expect(runnerSource).not.toContain('Find a way to fix this problem and execute the solution')
     })

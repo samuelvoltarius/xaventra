@@ -144,6 +144,23 @@ helper clones named-volume contents/modes, verifies hashes and unchanged origina
 and rejects links/special files/nonempty destinations. Original container and data
 remain the rollback backup. Updates do not auto-delete backups.
 
+The state helper streams file contents in 1 MiB blocks. Each of its three hash
+passes has its own budget; verification does not count the same snapshot three
+times. Default limits remain 8 GiB per volume, 128 MiB per file, 100,000 entries
+and 120 seconds. For an inventoried larger audit/database, the protected operator
+controller config may explicitly set `stateCopyLimits` (`maxBytes`,
+`maxFileBytes`, `maxEntries`, `timeoutMs`). Hard ceilings are 32 GiB, 32 GiB,
+100,000 entries and 540 seconds respectively. Application requests and signed
+release packages cannot supply these limits. Size/entry overruns still abort;
+partial candidate volumes remain retained and must not be silently reused.
+Longer copying does not extend the grant or bypass fresh authority checks.
+This does not implement legacy bind-mount adoption or external-writer fencing.
+
+`scripts/check-repair-state-copy.mjs` exercises the exact compiled helper against
+disposable filesystem state (default 129 MiB; `XAVENTRA_STATE_COPY_TEST_BYTES`
+selects up to 16 GiB). It proves file-copy/hash behavior, not Docker confinement,
+production migration, Telegram operation, or application consistency.
+
 From 2.78.23, direct Mesh closes all of its owned connections, including peers
 that never sent a hello, with a bounded socket handshake. Pending messages remain
 unconfirmed; this is not an application-writer drain or permission to force-exit

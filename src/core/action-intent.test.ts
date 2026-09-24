@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
+
+it.each(['Recherchiere Informationen über einen Fotografen', 'Suche weiter im Internet nach mir', 'Google bitte nach dem Unternehmen'])('recognizes research request: %s', text => {
+    expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'web' })
+})
 import { detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 
 describe('action intent evidence gate', () => {
+    it.each(['check mal url -sS --get https://search.example/search', 'Prüfe diese URL https://example.org', 'fetch https://example.org'])('requires real web evidence for URL checks: %s', text => {
+        expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'web' })
+    })
     it('requires tools for screenshots and live system state', () => {
         expect(detectActionIntent('Kannst du mir einen Screenshot vom Display senden?')).toEqual({ requiresTool: true, kind: 'screenshot' })
         expect(detectActionIntent('kannst du einen screnn shot machen').kind).toBe('screenshot')

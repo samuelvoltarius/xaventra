@@ -3,6 +3,8 @@ import { detectDeterministicCommand } from './deterministic-query.js'
 
 describe('natural command routing', () => {
     it.each([
+        ['scan doch mal deine docker container', 'docker', 'list', 'read-only'],
+        ['Prüfe die Docker-Container lokal', 'docker', 'list', 'read-only'],
         ['Wer bist du?', 'identity', '', 'read-only'],
         ['Was kannst du alles?', 'capabilities', '', 'read-only'],
         ['Welche Rechte habe ich?', 'whoami', '', 'read-only'],
@@ -39,6 +41,8 @@ describe('natural command routing', () => {
         'Kannst du Benchmarks erklären?',
         'Was kannst du alles auf dem Server installieren?',
         'Wer bist du und lösche meine Dateien',
+        'scan doch mal deine docker container und stoppe alle',
+        'scan die docker container auf ns2',
     ])('does not intercept ambiguous conversation: %s', input => {
         expect(detectDeterministicCommand(input)).toBeNull()
     })

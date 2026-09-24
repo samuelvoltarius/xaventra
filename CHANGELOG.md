@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.78.54] — 2026-09-24
+
+- Use the Agents SDK for channel and subagent tool continuation, retaining the
+  Execution Kernel, role checks, policy stops, durable receipts and typed recovery.
+- Correct one unexecuted out-of-catalog model proposal without granting tools;
+  preserve correlated tool text/images and stop queued calls after a denial.
+- Preserve concrete research results and identity/time intent handling; route
+  Docker inventory through the bounded host adapter, not model-invented commands.
+- Stream explicitly enrolled large snapshot files with bounded memory and retain
+  conservative defaults, source verification and rollback evidence.
+- Add isolated real-model search/follow-up acceptance. Local success does not
+  imply Telegram acceptance or a production rollout; see the consolidation guide.
+
 ## [2.78.53] — 2026-09-23
 
 - Reject tracked, staged and untracked source drift before release builds and

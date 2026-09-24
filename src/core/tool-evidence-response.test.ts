@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse } from './tool-evidence-response.js'
+import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse } from './tool-evidence-response.js'
 
 describe('grounded tool responses', () => {
+    it('does not present acknowledgements and empty search as completed research', () => {
+        const text = incompleteToolResponse(['✅ Erfolgreich!', '{"success":true,"results":[]}'])
+        expect(text).toContain('nicht abgeschlossen')
+        expect(text).not.toContain('✅')
+    })
+    it('preserves long findings and source URLs as incomplete observations', () => {
+        const text = incompleteToolResponse([JSON.stringify({success:true,results:[{title:'Finding',url:'https://example.org/source',content:'A'.repeat(500)}]})])
+        expect(text).toContain('https://example.org/source')
+        expect(text).toContain('A'.repeat(500))
+        expect(text).toContain('keine abschließende Antwort')
+    })
     it('uses the exact self-setup result instead of invented missing capabilities', () => {
         const result = authoritativeDiagnosticResponse([{
             toolName: 'self_setup_plan', success: true,

@@ -94,6 +94,8 @@ export interface TaskValidationReport {
 }
 
 export interface CompletionEvidence {
+    /** Set by the executor, never inferred from user/model prose. */
+    completionStatus?: 'complete' | 'incomplete'
     response?: string
     verifiedTools?: string[]
     verifiedToolCalls?: VerifiedToolCallEvidence[]
@@ -260,6 +262,7 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
     }
 
     const violations: string[] = []
+    if (evidence.completionStatus === 'incomplete') violations.push('task synthesis incomplete')
     if (evidence.policyBlocked) violations.push('execution stopped by policy')
     if (typeof evidence.durationMs === 'number' && evidence.durationMs > contract.budget.timeoutMs) violations.push('timeout budget exceeded')
     if (typeof evidence.toolCalls === 'number' && evidence.toolCalls > contract.budget.maxToolCalls) violations.push('tool-call budget exceeded')

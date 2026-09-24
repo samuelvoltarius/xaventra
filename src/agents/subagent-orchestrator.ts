@@ -205,41 +205,7 @@ async function runLocalSubagent(
             return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'local' }
         }
 
-        // Opt-in migration path: Nova remains the orchestrator and policy
-        // authority; only the inner agent loop is delegated to the SDK.
-        if (process.env.NOVA_AGENT_BACKEND === 'openai-agents') {
-            const { ExecutionKernel } = await import('../core/execution-kernel.js')
-            const { createAgentBackend } = await import('./agent-backend.js')
-            const contract = new ExecutionKernel(task.task).contract
-            const backend = await createAgentBackend({ backend: 'openai-agents' })
-            const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-            const sdkResult = await withExecutionPolicyContext({
-                runId: contract.id, userId: task.userId || 'subagent', channel: 'subagent', workspaceId: workspace?.id,
-            }, () => backend.run({
-                contract,
-                userId: task.userId || 'subagent',
-                channel: 'subagent',
-                content: task.task,
-                systemPrompt,
-                model: task.model || 'auto',
-                tools: toolSubset,
-                abortSignal: hardAbort?.signal,
-            }))
-            return {
-                id,
-                status: sdkResult.status === 'completed' ? 'completed'
-                    : sdkResult.status === 'cancelled' ? 'cancelled'
-                        : sdkResult.status === 'interrupted' ? 'pending'
-                            : 'failed',
-                output: sdkResult.output,
-                toolsUsed: sdkResult.toolsUsed,
-                durationMs: Date.now() - start,
-                mode: 'local',
-                error: sdkResult.error,
-                workspace,
-            }
-        }
-
+        // Channels and subagents share the governed SDK continuation runtime.
         const result = await runNovaAgent({
             userId: task.userId || 'subagent',
             channel: 'subagent',

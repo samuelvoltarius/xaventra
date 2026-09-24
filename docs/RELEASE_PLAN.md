@@ -1,5 +1,41 @@
 # Reliability release loop
 
+## 2.78.54 governed SDK continuation candidate
+
+Channel and subagent continuation now share the Agents SDK Runner; the existing
+native tool executor was first extracted and tested, then reused for each SDK
+call. Kernel authorization, correlated validation, persisted receipts, bounded
+typed recovery and terminal completion authority remain application-owned.
+An invalid unexecuted tool batch gets at most one correction against the same
+catalog. Policy and actual execution failures never grant an alternative action.
+
+Local Core regression initially passed 240 files / 1,687 tests, including six new SDK-loop
+tests and existing checkpoint/restart/approval tests. An actual local-model and
+HTTP search acceptance returned a concrete source after an old failure in history;
+the follow-up retained that source without another HTTP effect. This is isolated
+runner evidence, not Telegram or installed-production evidence. Failed fixture
+and structured-output checks were retained and corrected without weakening tests.
+The normal 15-tool catalog live run additionally exposed missing URL-check intent
+and separate GET-query target binding. Three intent and three target-binding
+regressions now cover those paths, including wrong/missing-query rejection.
+The corrected live run passes the required verified-action criterion with one
+HTTP effect and a zero-effect follow-up. Search upstream CAPTCHA/rate limits
+remain external limitations and are not represented as successful engines.
+Prior local research/Docker/snapshot fixes are retained in this candidate.
+See [runtime consolidation](AGENT_RUNTIME_CONSOLIDATION.md).
+
+Candidate/evidence/main CI, complete history secret scan, signed publication,
+Spark activation with rollback and actual Telegram acceptance remain required.
+Other nodes are not in scope; no overall RC qualification is claimed.
+
+Final local regression passes 241 files / 1,693 tests with two workers. A default
+high-concurrency run timed out one existing repair-publication test at its
+unchanged five-second limit; the complete bounded-worker rerun passed. Desktop
+12/12, typecheck/build, catalogs, layer/state/completion authority, native receipt
+restart, SDK takeover, failure-escalation and assurance gates pass. Staged secret
+scan and the 140-commit base history scan found no secrets. Exact committed CI
+and a full scan including this candidate remain required.
+
 ## 2.78.53 release-source provenance candidate
 
 The 2.78.52 publisher succeeded, but both packaged lifecycle reports recorded

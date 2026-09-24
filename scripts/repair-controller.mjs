@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { ManagedRepairDriver } from '../dist/doctor/managed-repair-driver.js'
 import { DockerRepairDriver, localDockerRepairEngine } from '../dist/doctor/docker-repair-driver.js'
-import { createDockerRepairStateCloner } from '../dist/doctor/docker-repair-state.js'
+import { createDockerRepairStateCloner, createRepairStateCopyScript } from '../dist/doctor/docker-repair-state.js'
 import { verifyRepairValue, repairHash } from '../dist/doctor/repair-activation.js'
 import { atomicWriteJsonSync } from '../dist/core/atomic-storage.js'
 import { existsSync, chmodSync } from 'node:fs'
@@ -20,6 +20,7 @@ import { prepareRepairPeerReplacement } from '../dist/doctor/repair-peer-migrati
 import { readProtectedControllerFile as readProtected, protectControllerDirectory } from '../dist/doctor/repair-controller-files.js'
 
 const config=JSON.parse(readProtected(process.argv[2]||'',true))
+createRepairStateCopyScript(config.stateCopyLimits) // Validate enrollment before side effects.
 if(config.writerHosts&&!config.drainUrl)throw Error('Writer barrier requires independent tool drain')
 if(config.publisherConfigFile&&(config.driver!=='docker'||!config.writerHosts||!config.drainUrl||!config.stateHelperImageId))
   throw Error('Automatic publication requires Docker, complete writer barrier, drain and state cloner')
@@ -79,7 +80,7 @@ if(config.driver==='docker'){
     deployment.releases[r.release.id]=r;deployment.catalog[r.release.sourceHash]=r.release.id
     targetContainerIds.push(r.containerId);return r
   }:undefined
-  const stateReady=(config.stateAuthorityUrl||config.writerHosts)&&config.stateHelperImageId?createDockerRepairStateCloner({engine,helperImageId:config.stateHelperImageId,quiescent:async ticket=>{
+  const stateReady=(config.stateAuthorityUrl||config.writerHosts)&&config.stateHelperImageId?createDockerRepairStateCloner({engine,helperImageId:config.stateHelperImageId,limits:config.stateCopyLimits,quiescent:async ticket=>{
     const challenge=randomUUID()
     if(writerQuiescence)return writerQuiescence(ticket)
     const decision=await repairRpc(config.stateAuthorityUrl,{challenge,ticket},authorityPublicKey)

@@ -30,9 +30,22 @@ describe('ClarificationGate', () => {
         'Wie spät ist es?',
         'Wie viel Uhr ist es?',
         'What time is it?',
+        'wer bit du wer bin ich und wie spät ist es?',
+        'Wer bist du, wer bin ich und wie viel Uhr ist es?',
+        'Who are you and what time is it?',
     ])('does not treat an impersonal time question as an ambiguous reference: %s', request => {
         const result = evaluateClarification('user:a', request)
         expect(result.action).toBe('continue')
         expect(result.content).toBe(request)
+    })
+
+    it('still asks for a destructive target alongside a time question', () => {
+        const result = evaluateClarification('user:a', 'Wie spät ist es und lösche es')
+        expect(result.action).toBe('ask')
+        expect(result.missingFields).toContain('target')
+    })
+
+    it('does not hide another ambiguous reference alongside a time question', () => {
+        expect(evaluateClarification('user:a', 'Wie spät ist es und prüfe das').action).toBe('ask')
     })
 })

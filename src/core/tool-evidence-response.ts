@@ -12,6 +12,33 @@ const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([
     'research_capability_plan', 'research_all_capabilities',
 ])
 
+/** A fallback after exhausted synthesis is partial evidence, never task success.
+ * Retain source-bearing observations; acknowledgements are not findings. */
+export function incompleteToolResponse(results: string[]): string {
+    const observations: string[] = []
+    const collect = (value: unknown, depth = 0): void => {
+        if (depth > 4 || observations.length >= 12) return
+        if (typeof value === 'string') {
+            const text = redactSecrets(value).trim()
+            if (text && !/^(?:✅\s*)?(?:erfolgreich!?|success!?|ok|done)$/i.test(text)) observations.push(text.slice(0, 1800))
+        } else if (Array.isArray(value)) {
+            value.slice(0, 8).forEach(item => collect(item, depth + 1))
+        } else if (value && typeof value === 'object') {
+            const item = value as Record<string, unknown>
+            for (const key of ['title', 'url', 'snippet', 'text', 'content', 'summary', 'output', 'results', 'error']) {
+                if (item[key] !== undefined) collect(item[key], depth + 1)
+            }
+        }
+    }
+    for (const result of results) {
+        try { collect(JSON.parse(result)) } catch { collect(result) }
+    }
+    const details = [...new Set(observations)].join('\n\n').slice(0, 6000)
+    return details
+        ? `Die Aufgabe ist noch nicht vollständig ausgewertet. Bisherige Tool-Beobachtungen (keine abschließende Antwort):\n\n${details}`
+        : 'Die Aufgabe ist nicht abgeschlossen: Es liegen keine verwertbaren inhaltlichen Ergebnisse vor. Eine technische Erfolgsbestätigung allein reicht dafür nicht.'
+}
+
 function safeResult(value: unknown, limit = 4_000): string {
     let rendered = ''
     if (typeof value === 'string') rendered = value

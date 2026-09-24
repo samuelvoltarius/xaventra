@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createTaskContract, validateTaskCompletion } from './task-contract.js'
 
 describe('TaskContract', () => {
+    it('rejects explicitly incomplete synthesis despite verified tool calls', () => {
+        const contract = createTaskContract('Recherchiere einen Fotografen', { requiresTool: true, kind: 'web' })
+        const report = validateTaskCompletion(contract, { response: 'Teilbeobachtungen', verifiedTools: ['web_search'], completionStatus: 'incomplete' } as any)
+        expect(report.success).toBe(false)
+        expect(report.violations).toContain('task synthesis incomplete')
+    })
     it('rejects a correction reply repeating the superseded value despite a nonempty response', () => {
         const contract = createTaskContract('Korrektur: Die Projektkennung lautet jetzt ORBIT-42. Die vorherige Kennung ist ungültig. Bestätige nur die neue Kennung.', { requiresTool: false, kind: 'none' })
         expect(validateTaskCompletion(contract, { response: 'Bestätigt: **ORBIT-42**. (ORBIT-41 ist ungültig.)' }).success).toBe(false)

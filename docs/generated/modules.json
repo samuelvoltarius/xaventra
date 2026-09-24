@@ -50,6 +50,25 @@
       ]
     },
     {
+      "module": "src/agents/governed-sdk-loop.ts",
+      "imports": [
+        "../llm/nova-llm-sdk.js",
+        "./nova-model-provider.js",
+        "./sdk-runtime.js",
+        "@openai/agents",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/agents/governed-tool-executor.ts",
+      "imports": [
+        "../core/execution-control.js",
+        "../core/execution-kernel.js",
+        "../infra/telemetry.js",
+        "./tool-authorization.js"
+      ]
+    },
+    {
       "module": "src/agents/history-evidence.ts",
       "imports": [
         "../core/outcome-ledger.js",
@@ -92,11 +111,11 @@
         "../core/side-effects.js",
         "../core/system-message.js",
         "../core/task-contract.js",
+        "../core/tool-evidence-response.js",
         "../core/tool-failure-escalation.js",
         "../core/tool-task-context.js",
         "../core/typed-tool-recovery.js",
         "../doctor/tool-contract.js",
-        "../infra/telemetry.js",
         "../layers/L6-session-summary.js",
         "../learning/trace.js",
         "../plugins/plugin-sdk.js",
@@ -107,7 +126,7 @@
         "./response-repair.js",
         "./session-checkpoints.js",
         "./tool-authorization.js",
-        "./tool-result-messages.js",
+        "./tool-contract-selection.js",
         "node:fs",
         "node:path"
       ]
@@ -129,6 +148,8 @@
         "../tools/tool-policy.js",
         "./agent-backend.js",
         "./nova-model-provider.js",
+        "./sdk-runtime.js",
+        "./tool-contract-selection.js",
         "@openai/agents"
       ]
     },
@@ -138,6 +159,13 @@
         "../core/response-contract.js",
         "../core/task-contract.js",
         "../llm/nova-llm-sdk.js"
+      ]
+    },
+    {
+      "module": "src/agents/sdk-runtime.ts",
+      "imports": [
+        "../llm/nova-llm-sdk.js",
+        "@openai/agents"
       ]
     },
     {
@@ -178,6 +206,10 @@
         "../core/action-intent.js",
         "../tools/tool-policy.js"
       ]
+    },
+    {
+      "module": "src/agents/tool-contract-selection.ts",
+      "imports": []
     },
     {
       "module": "src/agents/tool-result-messages.ts",

@@ -41,6 +41,19 @@ export function normalizeEvidenceTarget(value: string): string {
  * excluded: failing closed is preferable to pretending semantic equivalence. */
 export function inferRequiredToolTargets(goal: string): string[] {
     const urls = goal.match(/https?:\/\/[^\s"'`<>]+/gi) || []
+    // A pasted GET example may supply query fields separately from its URL.
+    // Parse only literal name=value data, never shell syntax or @file content.
+    // Multiple URLs remain ambiguous and are not silently associated.
+    if (urls.length === 1 && /(?:^|\s)--get(?:\s|$)/.test(goal)) {
+        const fields = [...goal.matchAll(/--data-urlencode\s+(["'])([A-Za-z0-9_.~-]+)=([^"'\r\n]*)\1/g)]
+        if (fields.length) {
+            try {
+                const target = new URL(urls[0])
+                for (const field of fields) target.searchParams.append(field[2], field[3])
+                urls[0] = target.href
+            } catch { /* malformed input retains the literal fail-closed target */ }
+        }
+    }
     let fileText = goal.replace(/https?:\/\/[^\s"'`<>]+/gi, ' ')
     const quotedFiles: string[] = []
     fileText = fileText.replace(/(["'`])([^"'`\r\n]+?\.[a-z][a-z0-9]{0,11})\1/gi, (_match, _quote, path: string) => {

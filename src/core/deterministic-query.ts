@@ -31,6 +31,10 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
     const text = normalize(input)
     if (!text) return null
 
+    if (/^(?:scan|scanne|prüfe|pruefe)(?: doch)?(?: mal)? (?:deine |die |alle )?docker[ -]container(?: (?:hier|lokal|local))?$/.test(text)) {
+        return route('docker', 'list', 'local-docker-inventory')
+    }
+
     // Only complete local inventory queries: mixed write instructions and remote
     // targets do not inherit this read-only shortcut.
     if (/^(?:(?:sag|zeig) mir |zeige mir |liste |list |show )?(?:welche |die |alle )?(?:docker[ -])?container(?: laufen| sind aktiv)?(?: (?:local|lokal|hier)(?: laufen| sind aktiv)?)?$/.test(text)
