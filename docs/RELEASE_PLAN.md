@@ -36,6 +36,15 @@ restart, SDK takeover, failure-escalation and assurance gates pass. Staged secre
 scan and the 140-commit base history scan found no secrets. Exact committed CI
 and a full scan including this candidate remain required.
 
+Candidate `4aa10a83ee88fc0f7860bf5051c6534733491c79` exposed a scripted-provider
+protocol mismatch in CI 36046574242: the Desktop fixture searched for results
+before the current user turn. The SDK correctly returns correlated tool results
+after that turn. The fixture now accepts only current-turn correlated results;
+three regressions reject historical results and uncorrelated prose. Desktop
+acceptance assertions are unchanged. A local retry on an uncommitted checkout
+also correctly refused repair activation at the clean-source gate; it is not
+counted as passing acceptance. Both negative results remain retained.
+
 ## 2.78.53 release-source provenance candidate
 
 The 2.78.52 publisher succeeded, but both packaged lifecycle reports recorded

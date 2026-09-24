@@ -97,10 +97,10 @@ const provider = createServer(async (req, res) => {
   if (++modelCalls > 60) { res.statusCode = 429; return res.end('{}') }
   const messages = input.messages || []
   const prompt = String(messages.findLast(message => message.role === 'user')?.content || '')
-  const lastUser = messages.findLastIndex(message => message.role === 'user')
-  const results = messages.slice(0, lastUser).filter(message => message.role === 'tool').map(message => String(message.content)).join('\n')
+  const { currentToolResults } = await import('./current-tool-results.mjs')
+  const results = currentToolResults(messages)
   const tool = input.tools?.find(tool => tool.function?.name.replaceAll('_', '') === 'readfile')
-  const observed = !/fixture-denied\.txt/.test(prompt) && (prompt.includes('VERIFIED_DESKTOP_CORE_731') || results.includes('VERIFIED_DESKTOP_CORE_731'))
+  const observed = !/fixture-denied\.txt/.test(prompt) && results.includes('VERIFIED_DESKTOP_CORE_731')
   const denied = /fixture-denied\.txt/.test(prompt)
   const needsFile = /fixture-(?:evidence|denied)\.txt/.test(prompt) && !prompt.startsWith('Tool-Ergebnisse')
   const recalling = /Welchen Inhalt hatte/.test(prompt)
