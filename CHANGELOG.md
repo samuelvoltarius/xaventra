@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.78.56] — 2026-09-26
+
+- Resolve single-target read-only URL references using the same conservative
+  GET-transcript scoping as tool evidence; retain ambiguous and destructive gates.
+- Keep node-local memory projection cleanup from advancing replicated memory
+  timestamps. Terminal snapshots converge without endless full-record audit
+  amplification; historical audit records are preserved, not pruned.
+- Route thrown tool failures only through durable principal-bound diagnosis,
+  without duplicating raw failures into idle web learning.
+
+
 ## [2.78.55] — 2026-09-25
 
 - Self-Doctor: reconcile eligible persisted Kernel validator failures into the

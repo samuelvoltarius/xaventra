@@ -9,6 +9,29 @@ function coordinator(): MemoryGovernanceCoordinator {
 }
 
 describe('memory governance', () => {
+    it('converges terminal replication without timestamp or audit amplification across restart', async () => {
+        const roots = [0, 1].map(() => join(process.cwd(), '.nova-test-tmp', `governance-loop-${randomUUID()}`))
+        let nodes = roots.map(root => new MemoryGovernanceCoordinator(root))
+        const record = nodes[0].propose({ content: 'A durable preference for local processing.', kind: 'preference',
+            scope: 'user:loop', source: 'operator', evidence: 'manual', confidence: 1 })!
+        nodes[0].reject(record.id, 'operator')
+        const timestamp = nodes[0].get(record.id)!.updatedAt
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(timestamp + 1000)
+        try {
+            expect(await nodes[1].mergeReplicationSnapshot(nodes[0].getReplicationSnapshot(), 'node-a')).toBe(1)
+            expect(nodes[1].get(record.id)!.updatedAt).toBe(timestamp)
+            const before = roots.map(root => readFileSync(join(root, 'audit.jsonl'), 'utf8'))
+            for (let round = 0; round < 5; round++) {
+                clock.mockReturnValue(timestamp + 2000 + round * 1000)
+                nodes = roots.map(root => new MemoryGovernanceCoordinator(root))
+                expect(await nodes[0].mergeReplicationSnapshot(nodes[1].getReplicationSnapshot(), 'node-b')).toBe(0)
+                expect(await nodes[1].mergeReplicationSnapshot(nodes[0].getReplicationSnapshot(), 'node-a')).toBe(0)
+            }
+            expect(roots.map(root => readFileSync(join(root, 'audit.jsonl'), 'utf8'))).toEqual(before)
+            expect(nodes[1].get(record.id)!.status).toBe('rejected')
+        } finally { clock.mockRestore() }
+    })
+
     it('keeps model inferences as candidates and out of prompt context', () => {
         const governance = coordinator()
         const record = governance.propose({

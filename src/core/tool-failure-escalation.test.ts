@@ -16,6 +16,31 @@ function fixture() {
 }
 
 describe('typed tool failure escalation', () => {
+    it('keeps runner failures out of the parallel idle web-learning path', () => {
+        const runner = readFileSync(new URL('../agents/nova-runner.ts', import.meta.url), 'utf8')
+        expect(runner).not.toContain('addTopicFromError')
+        expect(runner).toContain('escalateVerifiedToolFailures({')
+    })
+
+    it('rehydrates one diagnosis for repeated delivery of the same failed call', () => {
+        const paths = fixture()
+        const input = {
+            principalId: 'owner-retry', runId: 'run-retry', request: 'Check service',
+            observations: [{ callId: 'call-retry', toolName: 'health_status', args: {}, failure: 'service unavailable' }],
+        }
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const decision = escalateVerifiedToolFailures(input, {
+                store: new ToolFailureEscalationStore(paths.storePath),
+                continuity: new SessionContinuityStore(paths.continuityPath),
+                doctor: new FailureResearchCoordinator(paths.doctorPath),
+            })!
+            expect(decision.record.state).toBe('doctor-queued')
+            expect(decision.deduplicated).toBe(attempt > 0)
+        }
+        expect(new FailureResearchCoordinator(paths.doctorPath).list()).toHaveLength(1)
+        expect(new ToolFailureEscalationStore(paths.storePath).list()).toHaveLength(1)
+    })
+
     it('asks one durable targeted question for an ambiguous missing resource', () => {
         const paths = fixture()
         const store = new ToolFailureEscalationStore(paths.storePath)

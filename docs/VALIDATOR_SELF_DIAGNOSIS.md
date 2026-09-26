@@ -31,6 +31,14 @@ shell, Docker exec, installation or deployment privileges.
 
 ## Verification scope
 
+Thrown runner tool failures use the existing principal-bound typed escalation
+only. They no longer also enqueue raw error text and request context for idle
+web learning. This removes duplicate background research; it does not increase
+tool budgets, grant new permissions or assert that an external outage is fixed.
+The process acceptance includes both returned failures and thrown exceptions,
+requiring one failed effect, one durable diagnosis and zero idle-learning topics.
+The existing restart checks still require no duplicate diagnostic effects.
+
 `validator-failure-escalation.test.ts` checks durable reconciliation, principal
 separation, bounded intake, exclusion of policy/approval/internal cases, privacy,
 authority denial and a controlled diagnostic receipt followed by restart without

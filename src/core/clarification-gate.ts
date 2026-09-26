@@ -4,6 +4,7 @@ import { actionRequestText, detectActionIntent, isConversationOnly } from './act
 import { getSessionContinuityStore, type PendingClarification } from '../memory/session-summarizer.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { getBeliefStore } from './belief-store.js'
+import { inferRequiredToolTargets } from './tool-evidence-binding.js'
 
 export interface ClarificationDecision {
     action: 'continue' | 'ask' | 'cancel'
@@ -98,8 +99,15 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // Remove only the impersonal clause for reference analysis, not the whole
     // request. Other references and high-impact target checks must still apply.
     const requestText = actionRequestText(text)
+    // Reuse evidence's conservative single-GET transcript scoping. A literal
+    // URL resolves a read-only reference, not a missing deployment/deletion
+    // destination. Multiple targets and unrelated actions still require context.
+    const targets = inferRequiredToolTargets(text)
+    const explicitReadTarget = /^(?:test(?:e)?|prüfe?|pruefe?|check)\b/i.test(text)
+        && !HIGH_IMPACT.test(requestText)
+        && targets.length === 1 && /^https?:\/\//i.test(targets[0])
     const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
-        && !EXPLICIT_TARGET.test(requestText)
+        && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget
     const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText)
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
         const terms = `${belief.subject} ${belief.predicate} ${belief.value}`.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter(term => term.length >= 4)

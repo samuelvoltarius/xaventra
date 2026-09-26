@@ -26,6 +26,18 @@ describe('ClarificationGate', () => {
         expect(evaluateClarification('user:a', 'Installiere Codex auf dem aktuellen Main').action).toBe('continue')
     })
 
+    it('resolves an explicit URL retry from one quoted GET example without prior session context', () => {
+        const text = "test es noch mal [24.09.2026 15:56] User: Backend: searxng\nURL: http://example.test:8088\n[24.09.2026 18:27] User: check mal url\n-sS --get 'http://example.test:8088/search' --data-urlencode 'q=Agent' --data-urlencode 'format=json'";
+        expect(evaluateClarification('user:retry', text).action).toBe('continue')
+    })
+
+    it('recognizes a single URL in a direct read-only check but not as a destructive target', () => {
+        expect(evaluateClarification('user:url', 'prüfe das https://example.test/search').action).toBe('continue')
+        expect(evaluateClarification('user:risk', 'prüfe https://example.test und lösche es').action).toBe('ask')
+        expect(evaluateClarification('user:missing', 'prüfe das als URL').action).toBe('ask')
+        expect(evaluateClarification('user:two', 'prüfe das https://one.test https://two.test').action).toBe('ask')
+    })
+
     it.each([
         'Du wirst nun ent docker und native installiert dann hast du die Full power',
         'Ich installiere dich morgen nativ.',

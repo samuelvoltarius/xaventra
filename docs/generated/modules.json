@@ -1329,6 +1329,7 @@
         "../mesh/capability-graph.js",
         "./action-intent.js",
         "./belief-store.js",
+        "./tool-evidence-binding.js",
         "node:crypto",
         "node:fs"
       ]

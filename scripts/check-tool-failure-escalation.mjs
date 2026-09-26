@@ -35,7 +35,11 @@ if (child === '--phase-one') {
   const originalHealth = registry.get('health_status')
   const originalBuild = registry.get('build_skill')
   let healthCalls = 0, buildSkillCalls = 0, llmCalls = 0
-  registry.register({ ...originalHealth, handler: async () => { healthCalls++; return { success: false, error: 'opaque acceptance failure' } } })
+  registry.register({ ...originalHealth, handler: async () => {
+    healthCalls++
+    if (process.argv[4] === 'throw') throw new Error('opaque acceptance failure')
+    return { success: false, error: 'opaque acceptance failure' }
+  } })
   registry.register({ ...originalBuild, handler: async () => { buildSkillCalls++; return { success: true, output: 'must never execute' } } })
   const storePath = join(runtime, '.nova-data', 'recovery', 'tool-failure-escalations.json')
   const doctorPath = join(runtime, '.nova-data', 'self-doctor', 'failure-research.json')
@@ -59,7 +63,9 @@ if (child === '--phase-one') {
     content: contract.goal, contract, llm, tools: [{ name: 'health_status' }], systemPrompt: 'Acceptance fixture.',
   }))
   const store = new escalationModule.ToolFailureEscalationStore(storePath)
+  const { getLearningStats } = await import('../dist/intelligence/proactive-learning.js')
   writeJson(join(runtime, 'phase-one.json'), {
+    idleLearningTopics: getLearningStats().totalTopics,
     output: result.content, llmCalls, healthCalls, buildSkillCalls,
     records: store.list(), doctorCases: new doctorModule.FailureResearchCoordinator(doctorPath).list(),
     run: ledger.getRun(contract.id),
@@ -218,6 +224,14 @@ try {
   if (thirdRun.status !== 0) throw new Error(`phase three failed: ${thirdRun.stderr || thirdRun.stdout}`)
   const third = JSON.parse(readFileSync(join(isolated, 'phase-three.json'), 'utf8'))
   const boundaryChecks = {}
+  const thrownRoot = join(isolated, 'thrown-tool')
+  const thrownRun = run('--phase-one', thrownRoot, 'throw')
+  if (thrownRun.status !== 0) throw new Error(`thrown tool failed: ${thrownRun.stderr || thrownRun.stdout}`)
+  const thrown = JSON.parse(readFileSync(join(thrownRoot, 'phase-one.json'), 'utf8'))
+  boundaryChecks.thrownFailureSingleDiagnosis = thrown.healthCalls === 1 && thrown.llmCalls === 1
+    && thrown.records.length === 1 && thrown.doctorCases.length === 1
+    && thrown.records[0].state === 'doctor-queued' && thrown.run?.status === 'failed'
+  boundaryChecks.noParallelIdleLearning = first.idleLearningTopics === 0 && thrown.idleLearningTopics === 0
   const lateRoot = join(isolated, 'late-terminal')
   for (const phase of ['--negative-write', '--late-complete', '--late-read', '--late-read']) {
     const result = run(phase, lateRoot, 'late')

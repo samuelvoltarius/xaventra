@@ -535,7 +535,9 @@ export class MemoryGovernanceCoordinator {
             } catch { /* optional projection */ }
         }
         record.backends = {}
-        record.updatedAt = Date.now()
+        // Projection cleanup is node-local bookkeeping, not a new memory
+        // generation. Advancing updatedAt here makes terminal snapshots bounce
+        // between peers forever, appending provenance and full audit records.
         this.persist()
         this.audit('projections-retracted', record)
         return true

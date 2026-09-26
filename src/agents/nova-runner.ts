@@ -1524,11 +1524,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                         toolResults.push(`❌ **${call.name}** Fehler: ${err}`)
 
-                        // Queue for idle learning: Nova will research this error type
-                        try {
-                            const { addTopicFromError } = await import('../intelligence/proactive-learning.js')
-                            addTopicFromError(`${call.name}: ${String(err).slice(0, 100)}`, content.slice(0, 200))
-                        } catch { /* learning module not available */ }
+                        // failureObservations is escalated once below through the
+                        // durable, principal-bound Doctor path. Do not also send
+                        // runtime errors or request context to idle web learning.
                     }
                 }
 

@@ -28,6 +28,28 @@ async function runPhase() {
     const partitionedDir = join(dir, 'partitioned')
     mkdirSync(leaderDir, { recursive: true })
 
+    if (phase === 'terminal-seed' || phase === 'terminal-replay') {
+        const dirs = [join(dir, 'terminal-a'), join(dir, 'terminal-b')]
+        const nodes = dirs.map(path => new MemoryGovernanceCoordinator(path))
+        if (phase === 'terminal-seed') {
+            const record = nodes[0].propose({ content: 'A scoped preference for offline processing.',
+                kind: 'preference', scope: 'user:terminal', source: 'operator', evidence: 'manual', confidence: 1 })
+            nodes[0].reject(record.id, 'operator')
+            const timestamp = nodes[0].get(record.id).updatedAt
+            await new Promise(resolve => setTimeout(resolve, 20))
+            assert.equal(await nodes[1].mergeReplicationSnapshot(nodes[0].getReplicationSnapshot(), 'a'), 1)
+            assert.equal(nodes[1].get(record.id).updatedAt, timestamp)
+            writeJson(join(dir, 'terminal-audits.json'), dirs.map(path => readFileSync(join(path, 'audit.jsonl'), 'utf8')))
+        } else {
+            for (let round = 0; round < 5; round++) {
+                assert.equal(await nodes[0].mergeReplicationSnapshot(nodes[1].getReplicationSnapshot(), 'b'), 0)
+                assert.equal(await nodes[1].mergeReplicationSnapshot(nodes[0].getReplicationSnapshot(), 'a'), 0)
+            }
+            assert.deepEqual(dirs.map(path => readFileSync(join(path, 'audit.jsonl'), 'utf8')), readJson(join(dir, 'terminal-audits.json')))
+        }
+        return
+    }
+
     if (phase === 'seed') {
         const leader = new MemoryGovernanceCoordinator(leaderDir)
         const alice = leader.propose({
@@ -124,17 +146,18 @@ else {
     const dir = process.env.XAVENTRA_MEMORY_QA_DIR || mkdtempSync(join(tmpdir(), 'xaventra-memory-convergence-'))
     mkdirSync(dir, { recursive: true })
     const report = {
-        success: false, platform: process.platform, processStarts: 5,
-        evidenceClass: 'five isolated Node process starts and two independent governed-memory stores; no production state, physical host or live channel',
+        success: false, platform: process.platform, processStarts: 7,
+        evidenceClass: 'seven isolated Node process starts with independent governed-memory stores; no production state, physical host or live channel',
+        terminalReplayAuditStable: false,
         correctionSurvivedRestart: false, resetSurvivedRestart: false, userIsolation: false,
         staleWriterRejected: false, disconnectedCorrectionRejected: false, deliberateReentrySurvivedRestart: false,
         error: undefined,
     }
     try {
         const env = { ...process.env, XAVENTRA_MEMORY_QA_DIR: dir, NOVA_NO_SIDE_EFFECTS: '1', NOVA_TEST_MODE: '1' }
-        for (const name of ['seed', 'correct', 'reset', 'takeover', 'verify']) await runChild(name, env)
+        for (const name of ['seed', 'correct', 'reset', 'takeover', 'verify', 'terminal-seed', 'terminal-replay']) await runChild(name, env)
         Object.assign(report, {
-            success: true, correctionSurvivedRestart: true, resetSurvivedRestart: true, userIsolation: true,
+            success: true, terminalReplayAuditStable: true, correctionSurvivedRestart: true, resetSurvivedRestart: true, userIsolation: true,
             staleWriterRejected: true, disconnectedCorrectionRejected: true, deliberateReentrySurvivedRestart: true,
         })
         writeJson(join(dir, 'report.json'), report)
