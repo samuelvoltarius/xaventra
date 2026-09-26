@@ -23,6 +23,13 @@ const IMPERSONAL_REFERENCE = /\b(?:(?:wie\s+spät|wie\s+viel\s+uhr)\s+ist\s+es|w
 const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send\w*|schick\w*|service\s+(?:start|stop|restart))\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
 
+function hasExplicitReadUrlReference(text: string): boolean {
+    const targets = inferRequiredToolTargets(text)
+    return /^(?:test(?:e)?|prüfe?|pruefe?|check)\b/i.test(text)
+        && !HIGH_IMPACT.test(actionRequestText(text))
+        && targets.length === 1 && /^https?:\/\//i.test(targets[0])
+}
+
 function continuationEvidence(principalId: string, content: string): string[] {
     const summary = getSessionContinuityStore().getSummary(principalId)
     const evidence: string[] = []
@@ -44,7 +51,9 @@ export function evaluateClarification(principalId: string, content: string): Cla
     let pending = store.getSummary(principalId)?.pendingClarification
     // Old versions persisted target questions for announcements. Do not turn
     // the next ordinary reply into a resumed installation from that bad state.
-    if (pending && isConversationOnly(pending.originalRequest)) {
+    if (pending && (isConversationOnly(pending.originalRequest)
+        || (pending.missingFields.length === 1 && pending.missingFields[0] === 'reference'
+            && hasExplicitReadUrlReference(pending.originalRequest)))) {
         store.clearPendingClarification(principalId)
         pending = undefined
     }
@@ -102,10 +111,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // Reuse evidence's conservative single-GET transcript scoping. A literal
     // URL resolves a read-only reference, not a missing deployment/deletion
     // destination. Multiple targets and unrelated actions still require context.
-    const targets = inferRequiredToolTargets(text)
-    const explicitReadTarget = /^(?:test(?:e)?|prüfe?|pruefe?|check)\b/i.test(text)
-        && !HIGH_IMPACT.test(requestText)
-        && targets.length === 1 && /^https?:\/\//i.test(targets[0])
+    const explicitReadTarget = hasExplicitReadUrlReference(text)
     const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
         && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget
     const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText)

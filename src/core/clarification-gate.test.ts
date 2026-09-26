@@ -38,6 +38,16 @@ describe('ClarificationGate', () => {
         expect(evaluateClarification('user:two', 'prüfe das https://one.test https://two.test').action).toBe('ask')
     })
 
+    it('does not prepend a stale URL-reference question to the next current request', () => {
+        getSessionContinuityStore().setPendingClarification('user:stale-url', {
+            id: 'old-url-question', originalRequest: 'prüfe das https://example.test/search',
+            question: 'Worauf genau bezieht sich das?', missingFields: ['reference'], createdAt: Date.now(),
+        })
+        const current = 'prüfe das https://example.test/other'
+        expect(evaluateClarification('user:stale-url', current).content).toBe(current)
+        expect(getSessionContinuityStore().getSummary('user:stale-url')?.pendingClarification).toBeFalsy()
+    })
+
     it.each([
         'Du wirst nun ent docker und native installiert dann hast du die Full power',
         'Ich installiere dich morgen nativ.',
