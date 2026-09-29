@@ -10,7 +10,7 @@
  */
 
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, extname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 // ============================================
@@ -75,6 +75,27 @@ const EDGE_DEFAULT_LANG = 'de-DE'
 
 const TEMP_DIR = join(tmpdir(), 'nova-tts')
 
+/**
+ * MI-5: voice and output path are model-controlled. Local engines are started
+ * with execFile (argument arrays, text via argv/stdin), never a shell string.
+ */
+const SAFE_VOICE = /^[A-Za-z0-9][A-Za-z0-9_.:\/\\ ()-]{0,199}$/
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.opus', '.ogg', '.aac', '.flac', '.pcm', '.aiff', '.m4a'])
+
+export function validateTtsVoice(voice: unknown): string | null {
+    return typeof voice === 'string' && SAFE_VOICE.test(voice) && !voice.includes('..') ? voice : null
+}
+
+/** Output files must be plain audio files; anything else (config, code, dotfiles) is refused. */
+export function validateTtsOutputPath(outputPath: unknown): string | null {
+    if (typeof outputPath !== 'string' || !outputPath.trim() || outputPath.includes('\0')) return null
+    const absolute = resolve(outputPath)
+    const name = basename(absolute)
+    if (!name || name.startsWith('-') || name.startsWith('.')) return null
+    if (!AUDIO_EXTENSIONS.has(extname(name).toLowerCase())) return null
+    return absolute
+}
+
 // ============================================
 // Provider: OpenAI TTS
 // ============================================
@@ -138,18 +159,20 @@ async function openaiTTS(request: TtsRequest, config: TtsConfig['openai']): Prom
 // ============================================
 
 async function edgeTTS(request: TtsRequest, config: TtsConfig['edge']): Promise<TtsResult> {
-    const voice = request.voice || config?.voice || EDGE_DEFAULT_VOICE
+    const voice = validateTtsVoice(request.voice || config?.voice || EDGE_DEFAULT_VOICE)
     const format = request.format || 'mp3'
     const outputPath = request.outputPath || getTempPath(format)
+    if (!voice) return { success: false, error: 'Edge TTS: ungültige Stimme' }
 
     try {
         // Edge TTS via npm package edge-tts or node-edge-tts
-        const { execSync } = await import('node:child_process')
+        const { execFileSync } = await import('node:child_process')
 
-        // Try using edge-tts CLI
+        // Try using edge-tts CLI (argument array; --text=… so leading dashes stay text)
         ensureTempDir()
-        execSync(
-            `npx -y edge-tts --voice "${voice}" --text "${request.text.replace(/"/g, '\\"')}" --write-media "${outputPath}"`,
+        execFileSync(
+            process.platform === 'win32' ? 'npx.cmd' : 'npx',
+            ['-y', 'edge-tts', '--voice', voice, `--text=${request.text}`, '--write-media', outputPath],
             { encoding: 'utf-8', timeout: 30_000 },
         )
 
@@ -234,6 +257,21 @@ async function elevenLabsTTS(request: TtsRequest, config: TtsConfig['elevenlabs'
  */
 export async function speak(request: TtsRequest): Promise<TtsResult> {
     const startTime = Date.now()
+    if (typeof request.text !== 'string' || request.text.includes('\0')) {
+        return { success: false, error: 'TTS: ungültiger Text', duration: Date.now() - startTime }
+    }
+    if (request.voice !== undefined && request.voice !== '' && !validateTtsVoice(request.voice)) {
+        return { success: false, error: 'TTS: ungültige Stimme (nur Buchstaben, Ziffern, _ . : / - ( ) und Leerzeichen)', duration: Date.now() - startTime }
+    }
+    if (request.outputPath !== undefined && request.outputPath !== '') {
+        const outputPath = validateTtsOutputPath(request.outputPath)
+        if (!outputPath) {
+            return { success: false, error: 'TTS: ungültiger Ausgabepfad (nur Audiodateien wie .mp3/.wav, kein Punkt- oder Optionsname)', duration: Date.now() - startTime }
+        }
+        request = { ...request, outputPath }
+    } else if (request.outputPath === '') {
+        request = { ...request, outputPath: undefined }
+    }
     const config = loadTtsConfig()
 
     let provider = request.provider
@@ -322,17 +360,17 @@ function getTempPath(format: string): string {
 async function piperTTS(request: TtsRequest): Promise<TtsResult> {
     const format = request.format || 'wav'
     const outputPath = request.outputPath || getTempPath(format)
-    const voice = request.voice || 'de_DE-thorsten-high'
+    const voice = validateTtsVoice(request.voice || 'de_DE-thorsten-high')
+    if (!voice) return { success: false, error: 'Piper TTS: ungültige Stimme' }
 
     try {
-        const { execSync } = await import('node:child_process')
+        const { execFileSync } = await import('node:child_process')
         ensureTempDir()
 
         // Piper expects text on stdin
-        execSync(
-            `echo "${request.text.replace(/"/g, '\\"')}" | piper --model ${voice} --output_file "${outputPath}"`,
-            { encoding: 'utf-8', timeout: 30_000 }
-        )
+        execFileSync('piper', ['--model', voice, '--output_file', outputPath], {
+            encoding: 'utf-8', timeout: 30_000, input: request.text,
+        })
 
         return { success: true, outputPath, provider: 'piper' }
     } catch (err: any) {
@@ -347,25 +385,23 @@ async function piperTTS(request: TtsRequest): Promise<TtsResult> {
 async function macosSayTTS(request: TtsRequest): Promise<TtsResult> {
     const format = request.format || 'wav'
     const outputPath = request.outputPath || getTempPath(format)
-    const voice = request.voice || 'Anna'
+    const voice = validateTtsVoice(request.voice || 'Anna')
+    if (!voice) return { success: false, error: 'macOS Say: ungültige Stimme' }
+    const text = request.text.slice(0, 500)
 
     try {
-        const { execSync } = await import('node:child_process')
+        const { execFileSync } = await import('node:child_process')
         ensureTempDir()
 
         if (request.outputPath) {
-            // Save to file
-            execSync(
-                `say -v "${voice}" -o "${outputPath}" --data-format=LEI16@22050 "${request.text.replace(/"/g, '\\"').slice(0, 500)}"`,
-                { encoding: 'utf-8', timeout: 30_000 }
-            )
+            // Save to file; text via stdin (-f -)
+            execFileSync('say', ['-v', voice, '-o', outputPath, '--data-format=LEI16@22050', '-f', '-'], {
+                encoding: 'utf-8', timeout: 30_000, input: text,
+            })
             return { success: true, outputPath, provider: 'macos-say' }
         } else {
             // Speak directly (no file needed)
-            execSync(
-                `say -v "${voice}" "${request.text.replace(/"/g, '\\"').slice(0, 500)}"`,
-                { encoding: 'utf-8', timeout: 30_000 }
-            )
+            execFileSync('say', ['-v', voice, '-f', '-'], { encoding: 'utf-8', timeout: 30_000, input: text })
             return { success: true, provider: 'macos-say' }
         }
     } catch (err: any) {
