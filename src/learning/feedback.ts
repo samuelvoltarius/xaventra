@@ -81,6 +81,8 @@ const PREFERENCE_TRIGGERS = [
 
 /** Minimum normalized length of a message that may be matched to a learned correction. */
 const MIN_CORRECTION_PATTERN_LENGTH = 12
+/** Bounded store: it is persisted every minute and holds full user/bot text. */
+const MAX_FEEDBACK_ENTRIES = 500
 
 // ============================================
 // Feedback Collector Class
@@ -127,6 +129,11 @@ export class FeedbackCollector {
         }
 
         this.feedbackStore.set(feedback.id, feedback)
+        while (this.feedbackStore.size > MAX_FEEDBACK_ENTRIES) {
+            const oldest = this.feedbackStore.keys().next().value
+            if (oldest === undefined) break
+            this.feedbackStore.delete(oldest)
+        }
         console.log(`[Nova Learning] Collected ${feedback.type} feedback: ${feedback.id}`)
 
         // Auto-process corrections
@@ -246,7 +253,7 @@ export class FeedbackCollector {
             const data = JSON.parse(json)
 
             if (data.feedback) {
-                this.feedbackStore = new Map(data.feedback)
+                this.feedbackStore = new Map((data.feedback as Array<[string, Feedback]>).slice(-MAX_FEEDBACK_ENTRIES))
             }
             if (data.corrections) {
                 this.learnedCorrections = new Map(
