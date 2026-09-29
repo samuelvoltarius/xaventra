@@ -1,4 +1,5 @@
 
+import { readFileSync as readFileSyncStatic } from 'node:fs'
 import { resolveConfigPath } from '../config/config-path.js'
 /**
  * Model Router - DYNAMIC Model Selection
@@ -364,9 +365,8 @@ export function selectBestModel(
 // Read initial model from config (not hardcoded!)
 function readConfiguredModel(): string {
     try {
-        const { readFileSync } = require('node:fs')
-        const { join } = require('node:path')
-        const cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
+        // ESM: require() is undefined here and always fell through to 'auto'.
+        const cfg = JSON.parse(readFileSyncStatic(resolveConfigPath(), 'utf-8'))
         return cfg.model || 'auto'
     } catch {
         return 'auto'

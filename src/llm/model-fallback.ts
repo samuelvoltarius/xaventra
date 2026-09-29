@@ -5,6 +5,9 @@
  * Full implementation - not simplified!
  */
 
+import { getDefaultModel } from '../core/model-defaults.js'
+import { buildFallbackChain } from './model-discovery.js'
+
 // ============================================
 // Failover Reason Types
 // ============================================
@@ -244,7 +247,6 @@ export interface FallbackAttempt {
 // Dynamic seed fallbacks — built from central model resolver at runtime
 function buildSeedFallbacks(): ModelCandidate[] {
     try {
-        const { getDefaultModel } = require('../core/model-defaults.js')
         return [
             { provider: 'local', model: getDefaultModel() },
             { provider: 'local', model: 'auto' },
@@ -260,14 +262,24 @@ function buildSeedFallbacks(): ModelCandidate[] {
  */
 export function getDefaultFallbacks(): ModelCandidate[] {
     try {
-        const { buildFallbackChain } = require('./model-discovery.js')
+        // Local first: discovered cloud models (OpenAI/Anthropic) are never
+        // automatic fallbacks — cloud needs an explicit configuration. Mesh
+        // runtimes map to the local path; the list stays short so a Spark
+        // outage surfaces as an error instead of a long retry cascade.
         const chain = buildFallbackChain()
-        if (chain && chain.length > 0) {
+            .filter(entry => LOCAL_FALLBACK_PROVIDERS.has(String(entry.provider).toLowerCase()))
+            .map(entry => ({ provider: String(entry.provider).toLowerCase() === 'custom' ? 'local' : entry.provider, model: entry.model }))
+            .filter((entry, index, all) => all.findIndex(other => other.model === entry.model) === index)
+            .slice(0, MAX_DYNAMIC_FALLBACKS)
+        if (chain.length > 0) {
             return chain
         }
-    } catch { /* discovery module not loaded yet */ }
+    } catch { /* discovery cache unavailable */ }
     return buildSeedFallbacks()
 }
+
+const LOCAL_FALLBACK_PROVIDERS = new Set(['local', 'ollama', 'lm-studio', 'llama-cpp', 'custom'])
+const MAX_DYNAMIC_FALLBACKS = 3
 
 // Legacy export for backward compatibility
 // Legacy export — now dynamic

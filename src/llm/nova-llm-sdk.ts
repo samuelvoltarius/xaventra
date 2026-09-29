@@ -1472,6 +1472,13 @@ class LocalLLMProvider extends LLMProvider {
             return true
         }
 
+        // ESM: load discovery once (require() is undefined here and made every
+        // discovered localhost endpoint look unavailable).
+        let discoveredLLMs: Array<{ endpoint?: string }> = []
+        try {
+            discoveredLLMs = (await import('../core/llm-factory.js')).availableLLMs
+        } catch { /* discovery is optional */ }
+
         // Only use localhost if it was confirmed available at startup
         const isLocalhostAvailable = (baseUrl: string): boolean => {
             // An endpoint explicitly supplied to this provider is authoritative.
@@ -1480,10 +1487,7 @@ class LocalLLMProvider extends LLMProvider {
             if (baseUrl === this.baseUrl) return true
             if (!baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1')) return true
             // Check if it's a known-available endpoint
-            try {
-                const { availableLLMs } = require('../core/llm-factory.js')
-                return availableLLMs.some((e: any) => e.endpoint && (e.endpoint.includes('localhost') || e.endpoint.includes('127.0.0.1')))
-            } catch { return false }
+            return discoveredLLMs.some(e => e.endpoint && (e.endpoint.includes('localhost') || e.endpoint.includes('127.0.0.1')))
         }
 
         if (isChatModel(this.model) && isLocalhostAvailable(this.baseUrl)) {

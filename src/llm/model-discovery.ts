@@ -10,10 +10,11 @@
  * NO hardcoded model lists — everything is discovered at runtime.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getDefaultModel as centralDefault } from '../core/model-defaults.js'
 
 
 // ============================================
@@ -546,7 +547,6 @@ export function getDefaultModel(): string {
     if (best?.id) return best.id
     // Ultimate safety net — use the central fallback
     try {
-        const { getDefaultModel: centralDefault } = require('../core/model-defaults.js')
         return centralDefault()
     } catch {
         return 'auto' // absolute last resort if nothing is loaded
@@ -560,7 +560,6 @@ export function invalidateCache(): void {
     memoryCache = null
     memoryCacheTime = 0
     try {
-        const { unlinkSync } = require('node:fs')
         const path = getCachePath()
         if (existsSync(path)) unlinkSync(path)
     } catch { /* ok */ }

@@ -13,6 +13,7 @@
 
 import { execSync, execFileSync } from 'node:child_process'
 import { isIP } from 'node:net'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
 // ============================================
@@ -73,7 +74,7 @@ function checkLocal(check: CapabilityCheck): boolean {
                 execSync(`${process.platform === 'win32' ? 'where' : 'which'} ${check.value}`, { stdio: 'ignore', timeout: 5000 })
                 return true
             case 'node_module':
-                require.resolve(check.value)
+                createRequire(import.meta.url).resolve(check.value)
                 return true
             case 'command':
                 execSync(check.value, { stdio: 'ignore', timeout: 5000 })
