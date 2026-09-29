@@ -1690,6 +1690,13 @@
       ]
     },
     {
+      "module": "src/core/native-optional-prune.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/native-package-builder.ts",
       "imports": [
         "./native-archive.js",
