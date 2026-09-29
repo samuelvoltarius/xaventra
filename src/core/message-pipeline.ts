@@ -462,6 +462,14 @@ export async function handleMessage(
                 ; (globalThis as any).__novaLastMsg[from] = now
         }
 
+        // An earlier request whose text was merged into a later message of the
+        // same burst ends here, silently: the later request answers it (INT-8).
+        // This must not depend on the slash-command path.
+        if (mu.isCoalescedMarker?.(content)) {
+            console.log(`[MultiUser] ↪ ${from}: Nachricht in spätere Nachricht zusammengeführt — beendet`)
+            return
+        }
+
         // 6. User Onboarding — welcome new users
         if (authResult.isNewUser) {
             const welcome = mu.getOnboardingMessage(authResult.user)

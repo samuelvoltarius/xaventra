@@ -14,6 +14,7 @@ const mu = vi.hoisted(() => ({
     getUserContextString: vi.fn(() => ''),
     getGroupContext: vi.fn(() => ''),
     addUserTopic: vi.fn(),
+    isCoalescedMarker: vi.fn((content: string) => content === '/__coalesced__'),
 }))
 
 vi.mock('../users/multi-user-middleware.js', () => mu)
@@ -134,5 +135,28 @@ describe('group/coalescing chat id comes from the message context', () => {
         await call.done
         expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-user-1', 'tg-user-1')
         expect(mu.shouldCoalesce.mock.calls.flat()).not.toContain('tg-group-9')
+    })
+})
+
+// INT-8: a request merged into a later message of the same burst ends
+// silently in the middleware step, without running the slash-command path.
+describe('coalesced earlier requests end silently', () => {
+    it('returns without command, reply or LLM call when coalescing yields the marker', async () => {
+        mu.shouldCoalesce.mockImplementation(() => true)
+        mu.coalesceMessage.mockImplementation(async () => '/__coalesced__')
+        const call = run('erste Nachricht im Burst')
+        await call.done
+        expect(call.handleCommand).not.toHaveBeenCalled()
+        expect(call.state.llm.complete).not.toHaveBeenCalled()
+        expect(call.replies).toEqual([])
+    })
+
+    it('still processes the merged (last) request of the burst', async () => {
+        mu.shouldCoalesce.mockImplementation(() => true)
+        mu.coalesceMessage.mockImplementation(async () => '/status erste + zweite Nachricht')
+        const call = run('/status zweite Nachricht')
+        await call.done
+        expect(call.handleCommand).toHaveBeenCalledTimes(1)
+        expect(call.replies).toEqual(['command-ran'])
     })
 })
