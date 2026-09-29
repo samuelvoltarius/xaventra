@@ -4,7 +4,7 @@ import { getActiveMission } from '../core/autonomous-executor.js'
 import { isHaStateAvailable } from '../core/ha-state.js'
 import { discoverNodes, getMeshMainAuthority, type MeshMainAuthority, type MeshNode } from './mesh-registry.js'
 import { getLeaseProtocol, getPreferredTakeoverNode, readCoordinatorFencingStatus, type CoordinatorFencingStatus } from './leader-election.js'
-import { getFencingMode, type FencingMode } from './fence.js'
+import { getFenceStatus, getFencingMode, type FencingMode } from './fence.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -102,5 +102,14 @@ export function formatFailoverReadiness(report: FailoverReadiness): string {
         `${report.ready ? '✅' : '⚠️'} Failover ${report.ready ? 'bereit' : 'nicht vollständig bereit'} (${report.mode})`,
         `Main: ${report.main || 'nicht verifiziert'} | Standby: ${report.standby || 'keiner'} | RTO-Ziel: ${Math.round(report.estimatedRtoMs / 1000)}s`,
         ...report.gates.map(gate => `${gate.ok ? '✅' : '❌'} ${gate.id}: ${gate.evidence}`),
+        fencingSummary(),
     ].join('\n')
+}
+
+/** CL-07 observe-period counters of this process (violations = would block). */
+function fencingSummary(): string {
+    const status = getFenceStatus()
+    const held = status.held.map(item => `${item.service}@${item.epoch}${item.suspect ? '?' : ''}`).join(', ') || 'keine'
+    return `🔒 Fencing ${status.mode}: Verstöße ${status.violations}, blockiert ${status.blocked}, abgebrochen ${status.aborted} | gehalten: ${held}`
+        + (status.lastViolation ? ` | zuletzt: ${status.lastViolation.slice(0, 160)}` : '')
 }

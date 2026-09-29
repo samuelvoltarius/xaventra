@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateFailoverReadiness } from './failover-readiness.js'
+import { evaluateFailoverReadiness, formatFailoverReadiness } from './failover-readiness.js'
 
 const now = Date.now()
 // CL-07: HA readiness now also requires enforced fencing on a locked v5 coordinator.
@@ -49,5 +49,7 @@ describe('failover readiness', () => {
         expect(gate(noStatus, 'lease-table-locked')).toBe(false)
         // Standalone installations are not affected.
         expect(evaluateFailoverReadiness({ ...base, mode: 'standalone' }).ready).toBe(true)
+        // /mesh failover shows the observe-period counters for the rollout decision.
+        expect(formatFailoverReadiness(observe)).toMatch(/Fencing (observe|enforce): Verstöße \d+, blockiert \d+/)
     })
 })
