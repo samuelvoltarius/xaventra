@@ -5,10 +5,24 @@
  * CDP connection, screenshot, navigation, content extraction, form interaction.
  */
 
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
+import { checkUrl } from '../resilience/ssrf-guard.js'
+
+const localRequire = createRequire(import.meta.url)
+
+/** R2 T27: http(s) only, literal SSRF check, normalized serialization. */
+function safeBrowserUrl(raw: unknown): string {
+    let parsed: URL
+    try { parsed = new URL(String(raw ?? '')) } catch { throw new Error('Ungültige URL') }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error(`Blockiertes Schema: ${parsed.protocol}`)
+    const check = checkUrl(parsed.href)
+    if (!check.allowed) throw new Error(`Browser-Ziel blockiert: ${check.reason || 'nicht erlaubt'}`)
+    return parsed.href
+}
 
 // ============================================
 // Types
@@ -99,22 +113,28 @@ export function captureScreenshot(
     url: string,
     options: ScreenshotOptions = {},
 ): string {
+    // R2 T27: the URL is validated and never reaches a shell or JS source
+    // as raw text: argument vectors only, JSON literals inside scripts.
+    const target = safeBrowserUrl(url)
     const outputDir = join(tmpdir(), 'nova-screenshots')
     if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true })
 
-    const filename = `screenshot-${Date.now()}.${options.format || 'png'}`
+    const format = options.format === 'jpeg' || options.format === 'webp' ? options.format : 'png'
+    const filename = `screenshot-${Date.now()}.${format}`
     const outputPath = options.outputPath || join(outputDir, filename)
 
     try {
-        // Try Playwright
+        // Try Playwright (its CLI via node, no npx/shell)
+        const cli = join(dirname(localRequire.resolve('playwright/package.json')), 'cli.js')
         const args = [
-            `--browser=chromium`,
-            `--save-screenshot=${outputPath}`,
-            options.fullPage ? '--full-page' : '',
-            `"${url}"`,
-        ].filter(Boolean).join(' ')
-
-        execSync(`npx playwright screenshot ${args}`, {
+            cli,
+            'screenshot',
+            '--browser=chromium',
+            ...(options.fullPage ? ['--full-page'] : []),
+            target,
+            outputPath,
+        ]
+        execFileSync(process.execPath, args, {
             timeout: 30_000,
             stdio: 'pipe',
         })
@@ -127,12 +147,12 @@ export function captureScreenshot(
                 (async () => {
                     const browser = await puppeteer.launch({ headless: 'new' });
                     const page = await browser.newPage();
-                    await page.goto('${url}', { waitUntil: 'networkidle2', timeout: 20000 });
-                    await page.screenshot({ path: '${outputPath.replace(/\\/g, '\\\\')}', fullPage: ${options.fullPage || false} });
+                    await page.goto(${JSON.stringify(target)}, { waitUntil: 'networkidle2', timeout: 20000 });
+                    await page.screenshot({ path: ${JSON.stringify(outputPath)}, fullPage: ${options.fullPage ? 'true' : 'false'} });
                     await browser.close();
                 })();
             `
-            execSync(`node -e "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+            execFileSync(process.execPath, ['-e', script], {
                 timeout: 30_000,
                 stdio: 'pipe',
             })
@@ -149,12 +169,13 @@ export function captureScreenshot(
 
 export function extractContent(url: string): ContentExtractionResult {
     try {
+        const target = safeBrowserUrl(url)
         const script = `
 const puppeteer = require('puppeteer');
 (async () => {
     const browser = await puppeteer.launch({ headless: 'new' });
     const page = await browser.newPage();
-    await page.goto('${url}', { waitUntil: 'networkidle2', timeout: 20000 });
+    await page.goto(${JSON.stringify(target)}, { waitUntil: 'networkidle2', timeout: 20000 });
     const result = await page.evaluate(() => ({
         text: document.body?.innerText || '',
         html: document.body?.innerHTML || '',
@@ -172,7 +193,7 @@ const puppeteer = require('puppeteer');
     await browser.close();
 })();`
 
-        const output = execSync(`node -e "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+        const output = execFileSync(process.execPath, ['-e', script], {
             timeout: 30_000,
             encoding: 'utf-8',
         })
