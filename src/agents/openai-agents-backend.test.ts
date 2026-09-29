@@ -1,13 +1,20 @@
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Usage, type Model, type ModelProvider, type ModelRequest, type ModelResponse, type StreamEvent } from '@openai/agents'
 import { OutcomeLedger } from '../core/outcome-ledger.js'
 import { createTaskContract } from '../core/task-contract.js'
 import { IdempotencyStore } from '../core/execution-control.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { OpenAIAgentsBackend } from './openai-agents-backend.js'
+
+// Role fixture: the SDK backend now goes through the common role check (R2 MA-13).
+// The principals these tests use act as owner; everyone else is a guest.
+vi.mock('../users/multi-user-middleware.js', () => ({
+    isToolAllowed: (userId: string) => userId === 'test-user' || userId === 'owner',
+    getToolRestrictionMessage: (userId: string, tool: string) => `Role denied: ${userId} ${tool}`,
+}))
 
 const tempDirs: string[] = []
 
@@ -191,5 +198,29 @@ describe('OpenAIAgentsBackend', () => {
         expect(resumed.status).toBe('failed')
         expect(resumed.error).toContain('missing 1 verified tool receipt')
         expect(ledger.getRun(contract.id)?.status).toBe('failed')
+    })
+})
+
+describe('OpenAIAgentsBackend role check (R2 MA-13)', () => {
+    it('does not execute a tool for a guest and overwrites model-supplied identity', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-agents-rbac-'))
+        tempDirs.push(dir)
+        const seen: Array<Record<string, unknown>> = []
+        const contract = createTaskContract('Run echo tool', { requiresTool: true, kind: 'generic-action' }, ['echo_tool'])
+        const tools = [{
+            name: 'echo_tool', description: 'Returns verified echo evidence', category: 'other' as const,
+            parameters: [{ name: 'value', type: 'string', description: 'Value', required: true }],
+            handler: async (params: Record<string, unknown>) => { seen.push(params); return { success: true, output: params.value } },
+        }]
+        const guest = new OpenAIAgentsBackend({ modelProvider: { getModel: () => new ToolCallingModel() }, ledger: new OutcomeLedger(join(dir, 'a')), maxTurns: 4 })
+        await guest.run({ contract, userId: 'guest-user', channel: 'test', content: 'Run echo tool', tools })
+        expect(seen).toEqual([])
+
+        const ownerContract = createTaskContract('Run echo tool', { requiresTool: true, kind: 'generic-action' }, ['echo_tool'])
+        const owner = new OpenAIAgentsBackend({ modelProvider: { getModel: () => new ToolCallingModel() }, ledger: new OutcomeLedger(join(dir, 'b')), maxTurns: 4 })
+        await owner.run({ contract: ownerContract, userId: 'test-user', channel: 'test', content: 'Run echo tool', tools })
+        expect(seen).toHaveLength(1)
+        expect(seen[0].userId).toBe('test-user')
+        expect(seen[0].channel).toBe('test')
     })
 })
