@@ -16,7 +16,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -90,15 +90,38 @@ const HEALTH_FILE = join(DATA_DIR, 'node-health.json')
 // SSH Helper
 // ============================================
 
-function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
+// user@host from config or mesh registry. Registry rows are writable by every
+// node, so anything that is not a plain user@host (no leading dash, no shell
+// or ssh option syntax) is refused before it reaches ssh.
+const SSH_TARGET = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}$/
+const NODE_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/
+
+export function isSafeSshTarget(host: string): boolean {
+    return typeof host === 'string' && SSH_TARGET.test(host)
+}
+
+export function isSafeNodeName(name: string): boolean {
+    return typeof name === 'string' && NODE_NAME.test(name) && !name.includes('..')
+}
+
+export function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
     return new Promise((resolve, reject) => {
-        const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${host} "${command}"`
-        const child = exec(sshCmd, { timeout: timeoutMs }, (error, stdout, stderr) => {
+        if (!isSafeSshTarget(host)) {
+            reject(new Error(`SSH target rejected (expected user@host): ${JSON.stringify(String(host).slice(0, 80))}`))
+            return
+        }
+        const args = [
+            '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', 'ConnectTimeout=5',
+            '-o', 'BatchMode=yes',
+            '--', host, command,
+        ]
+        execFile('ssh', args, { timeout: timeoutMs }, (error, stdout) => {
             if (error) {
                 reject(new Error(`SSH to ${host} failed: ${error.message}`))
                 return
             }
-            resolve(stdout.trim())
+            resolve(String(stdout).trim())
         })
     })
 }
@@ -107,7 +130,7 @@ function sshExec(host: string, command: string, timeoutMs = 10000): Promise<stri
 // Health Data Collection
 // ============================================
 
-async function collectNodeHealth(node: NodeConfig): Promise<NodeHealthSnapshot> {
+export async function collectNodeHealth(node: NodeConfig): Promise<NodeHealthSnapshot> {
     const snapshot: NodeHealthSnapshot = {
         name: node.name,
         host: node.host,
@@ -119,6 +142,11 @@ async function collectNodeHealth(node: NodeConfig): Promise<NodeHealthSnapshot> 
     }
 
     try {
+        // NodeIntelligence runs its own ssh probes and stores the playbook
+        // under the node name: refuse unsafe targets/names before discovery.
+        if (!isSafeSshTarget(node.host) || !isSafeNodeName(node.name)) {
+            throw new Error(`unsafe node target/name refused: ${JSON.stringify(String(node.host).slice(0, 80))}`)
+        }
         // Nova entdeckt das OS und die Befehle selbst — kein hardcoding
         const playbook = await NodeIntelligence.getOrDiscover(node.host, node.name)
 
@@ -476,6 +504,10 @@ class NodeHealthMonitor {
             if ((n as any).enabled === false) return false       // explicitly disabled
             if (!n.host || !n.host.includes('@')) return false   // needs user@host
             if (n.host === 'localhost' || n.host === '127.0.0.1') return false
+            if (!isSafeSshTarget(n.host) || !isSafeNodeName(n.name)) {
+                console.log(`[L21] Skipping node with unsafe ssh target/name: ${JSON.stringify(String(n.name).slice(0, 40))}`)
+                return false
+            }
             const ip = n.host.split('@')[1] || n.host
             return !coveredHosts.has(ip)
         })
@@ -509,7 +541,7 @@ class NodeHealthMonitor {
         const snapshot = await collectNodeHealth(node)
 
         // Node just came online (was offline or unknown) → force fresh discovery
-        if (snapshot.online && wasOnline === false) {
+        if (snapshot.online && wasOnline === false && isSafeSshTarget(node.host) && isSafeNodeName(node.name)) {
             console.log(`[L21] 🔄 ${node.name} ist wieder online — starte Neu-Entdeckung...`)
             NodeIntelligence.discover(node.host, node.name).catch((e: unknown) => {
                 console.log(`[L21] Re-discovery ${node.name} failed: ${e}`)
