@@ -182,7 +182,13 @@ export class StateMachine {
 
     beginOperation(operationId: string, reason?: string): boolean {
         const id = operationId.trim()
-        if (!id || this.activeOperations.has(id) || this.isError()) return false
+        if (!id || this.activeOperations.has(id)) return false
+        // A watchdog timeout (e.g. one request thinking > 120 s) moves the shared
+        // state to error while work is still running. New requests must not be
+        // rejected for that (R2 NZ-2): they join the running set, and the last
+        // completion recovers to idle. Without active work, the error belongs to
+        // finished requests and is recovered before admitting the new one.
+        if (this.isError() && this.activeOperations.size === 0 && !this.recover(`new operation:${id}`)) return false
         this.activeOperations.set(id, { reason, startedAt: Date.now() })
         if (this.isIdle() && !this.startThinking(reason || `operation:${id}`)) {
             this.activeOperations.delete(id)
