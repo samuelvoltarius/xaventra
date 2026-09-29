@@ -41,4 +41,11 @@ describe('channel starters match the hardened adapters', () => {
         await startDiscord({ enabled: true, token: 't', allowFrom: ['123'], guildId: '456' }, vi.fn(async () => { }) as any, state())
         expect(captured.discordConfig).toMatchObject({ token: 't', allowFrom: ['123'], guildId: '456' })
     })
+
+    it('answers a WhatsApp group message in the group, not privately (R2 UEB-2)', async () => {
+        const handler = vi.fn(async (_channel: string, _from: string, _content: string, reply: (text: string) => Promise<void>) => { await reply('Antwort') })
+        await startWhatsApp({ enabled: true }, handler as any, state())
+        await captured.whatsappHandler!({ from: '4366012345@s.whatsapp.net', groupId: '1203630@g.us', content: '@nova hallo', isGroup: true })
+        expect(captured.whatsappSend).toHaveBeenCalledWith(expect.objectContaining({ to: '1203630@g.us' }))
+    })
 })

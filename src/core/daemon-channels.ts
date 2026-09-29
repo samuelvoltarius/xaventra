@@ -584,7 +584,8 @@ export async function startWhatsApp(
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 await (adapter as any).send({
                     channel: 'whatsapp',
-                    to: msg.from,
+                    // In groups `from` is the participant; the answer belongs in the group.
+                    to: msg.groupId || msg.from,
                     content: reply,
                 })
             })
