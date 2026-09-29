@@ -11,7 +11,8 @@
  * - Keyword + vector hybrid search
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { join } from 'node:path'
 import { pushSharedMemory } from './shared-memory.js'
 
@@ -402,7 +403,10 @@ export class VectorMemoryStore {
                 this.entriesByUser.set(userId, entries as MemoryEntry[])
             }
         } catch (err) {
-            console.error('[VectorMemory] Fehler beim Laden:', err)
+            // Do not let the next save overwrite the unreadable index.
+            const aside = `${indexPath}.corrupt-${Date.now()}`
+            try { renameSync(indexPath, aside) } catch { /* best effort */ }
+            console.error(`[VectorMemory] Fehler beim Laden (behalten als ${aside}):`, err)
         }
     }
 
@@ -415,7 +419,7 @@ export class VectorMemoryStore {
         }
 
         try {
-            writeFileSync(indexPath, JSON.stringify(data, null, 2))
+            atomicWriteJsonSync(indexPath, data)
         } catch (err) {
             console.error('[VectorMemory] Fehler beim Speichern:', err)
         }

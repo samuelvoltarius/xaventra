@@ -5,7 +5,8 @@
  * Uses simple keyword matching for search (no embeddings required).
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, mkdirSync, renameSync } from 'node:fs'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { join } from 'node:path'
 import { pullSharedMemory, pushSharedMemory } from './shared-memory.js'
 
@@ -92,7 +93,11 @@ export class LocalMemoryManager {
                 }
                 console.log(`[Memory] Loaded ${this.entries.size} users from disk`)
             } catch {
-                console.log('[Memory] Failed to load, starting fresh')
+                // Keep the unreadable file instead of overwriting it with the
+                // next store(): move it aside, then start fresh.
+                const aside = `${path}.corrupt-${Date.now()}`
+                try { renameSync(path, aside) } catch { /* best effort */ }
+                console.log(`[Memory] Failed to load, starting fresh (kept ${aside})`)
             }
         }
     }
@@ -108,7 +113,7 @@ export class LocalMemoryManager {
             data[userId] = entries
         }
 
-        writeFileSync(this.getStorePath(), JSON.stringify(data, null, 2))
+        atomicWriteJsonSync(this.getStorePath(), data)
     }
 
     // ============================================
@@ -145,14 +150,26 @@ export class LocalMemoryManager {
     }
 
     private async importSharedMemory(): Promise<void> {
-        const remote = await pullSharedMemory({ limit: this.config.maxEntriesPerUser * 5 })
+        // Only this store's own shared rows: other scopes (session continuity,
+        // workflows, governance snapshots) are owned by their stores.
+        const remote = await pullSharedMemory({ scope: 'local-memory', limit: this.config.maxEntriesPerUser * 5 })
         if (remote.length === 0) return
 
         let imported = 0
         for (const entry of remote) {
             if (!entry.userId || !entry.content) continue
+            if (entry.scope && entry.scope !== 'local-memory') continue
             const list = this.entries.get(entry.userId) ?? []
-            if (list.some(existing => existing.id === entry.id)) continue
+            const known = list.findIndex(existing => existing.id === entry.id)
+            if (known >= 0) {
+                // A newer shared version (e.g. cleaned after "vergiss") replaces the old copy.
+                if (entry.timestamp > list[known].timestamp || entry.content !== list[known].content && entry.timestamp >= list[known].timestamp) {
+                    list[known] = { ...list[known], content: entry.content, timestamp: entry.timestamp, keywords: entry.keywords ?? extractKeywords(entry.content) }
+                    this.entries.set(entry.userId, list)
+                    imported++
+                }
+                continue
+            }
             list.push({
                 id: entry.id,
                 userId: entry.userId,
