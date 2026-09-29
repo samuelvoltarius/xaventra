@@ -54,7 +54,9 @@ export function validateConfig(configPath?: string): ValidationResult {
             result.valid = false
         }
         if (!tg.allowFrom || tg.allowFrom.length === 0) {
-            result.warnings.push('telegram.allowFrom ist leer — Bot akzeptiert keine Nachrichten')
+            // Runtime is open without an allow-list (every new sender becomes
+            // a "user"); the warning must not suggest the opposite.
+            result.warnings.push('telegram.allowFrom ist leer — JEDER kann dem Bot schreiben (neue Absender bekommen die Rolle user). Owner-ID eintragen, um den Zugang zu beschraenken.')
         }
     }
 
