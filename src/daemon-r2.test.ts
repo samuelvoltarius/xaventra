@@ -47,4 +47,22 @@ describe('daemon wiring (R2 core-n-z)', () => {
         expect(heartbeat.indexOf("'heartbeat-tick'")).toBeLessThan(heartbeat.indexOf('Task fällig'))
         expect(heartbeat).not.toMatch(/runHealthCheck/)
     })
+
+    it('NZ-24: the active shutdown flushes session summaries and user patterns', () => {
+        const active = block('const shutdown = async (signal: string) => {', 5000)
+        const end = active.indexOf("process.once('SIGINT'")
+        const body = end > 0 ? active.slice(0, end) : active
+        expect(body).toMatch(/flushAllSessions\(\)/)
+        expect(body).toMatch(/user-patterns\.js/)
+    })
+
+    it('NZ-28: offline duration falls back to the last heartbeat after a crash', () => {
+        expect(source).toMatch(/const offlineSince = hb\.shutdownAt \|\| hb\.lastHeartbeat \|\| hb\.startedAt/)
+    })
+
+    it('NZ-29: repeated uncaught exceptions end the process for a clean restart', () => {
+        const handler = block("process.on('uncaughtException'", 800)
+        expect(handler).toMatch(/uncaughtAt\.length >= 3/)
+        expect(handler).toMatch(/process\.exit\(1\)/)
+    })
 })

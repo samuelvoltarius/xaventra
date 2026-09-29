@@ -223,8 +223,11 @@ async function startDaemon() {
         if (!existsSync(join(process.cwd(), '.nova-data'))) mkdirSync(join(process.cwd(), '.nova-data'), { recursive: true })
         if (existsSync(offlineTrackFile)) {
             const hb = JSON.parse(readFileSync(offlineTrackFile, 'utf-8'))
-            if (hb.shutdownAt) {
-                _offlineDurationMs = Date.now() - new Date(hb.shutdownAt).getTime()
+            // After a crash there is no shutdownAt: the last 5-minute heartbeat
+            // is the best known "went offline" time (R2 NZ-28).
+            const offlineSince = hb.shutdownAt || hb.lastHeartbeat || hb.startedAt
+            if (offlineSince && Number.isFinite(new Date(offlineSince).getTime())) {
+                _offlineDurationMs = Date.now() - new Date(offlineSince).getTime()
                 const offlineH = Math.round(_offlineDurationMs / 1000 / 60 / 60 * 10) / 10
                 console.log(`[Nova] ⏱ Offline-Dauer seit letztem Shutdown: ${offlineH}h`)
             }
@@ -861,9 +864,20 @@ async function startDaemon() {
         const _repairEngine = getSelfRepairEngine() // Triggered for initialization
 
         // Global error handler for self-repair
+        // A single uncaught exception is diagnosed and tolerated; repeated
+        // ones mean an undefined process state. Exit non-zero so the
+        // supervisor/systemd restarts a clean daemon (R2 NZ-29).
+        const uncaughtAt: number[] = []
         process.on('uncaughtException', (error) => {
             console.error('[L0] Uncaught Exception:', error.message)
             handleUncaughtError(error)
+            const now = Date.now()
+            uncaughtAt.push(now)
+            while (uncaughtAt.length && now - uncaughtAt[0] > 10 * 60_000) uncaughtAt.shift()
+            if (uncaughtAt.length >= 3) {
+                console.error('[L0] 3 uncaught exceptions within 10 min — exiting for a clean restart')
+                setTimeout(() => process.exit(1), 1_000).unref?.()
+            }
         })
 
         process.on('unhandledRejection', (reason) => {
@@ -2797,6 +2811,24 @@ async function startDaemon() {
 
         // Stop LearningEngine
         ;(state as any).learningCoordinator?.stop?.()
+
+        // Flush session summaries and user patterns (R2 NZ-24; previously only
+        // in the unused gracefulShutdown). Bounded so a slow summary cannot
+        // block the shutdown.
+        const boundedStep = (step: Promise<unknown>, ms: number) =>
+            Promise.race([step, new Promise(resolve => setTimeout(resolve, ms).unref?.())])
+        try {
+            const { flushAllSessions } = await import('./layers/L6-session-summary.js')
+            await boundedStep(flushAllSessions(), 10_000)
+            console.log('[Nova] ✓ Session-Summaries gespeichert')
+        } catch (err) {
+            console.log(`[Nova] Session flush error: ${err}`)
+        }
+        try {
+            const { flush } = await import('./intelligence/user-patterns.js')
+            flush()
+            console.log('[Nova] ✓ User-Patterns gespeichert')
+        } catch { /* non-critical */ }
 
         // Stop signed mesh listeners, pollers and outbox retries before exit.
         try {
