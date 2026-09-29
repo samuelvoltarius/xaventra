@@ -1704,9 +1704,14 @@
       ]
     },
     {
+      "module": "src/core/native-release-assets.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/native-release-evidence.ts",
       "imports": [
         "./github-update.js",
+        "./native-release-assets.js",
         "./update-package.js",
         "node:crypto"
       ]
@@ -2534,6 +2539,18 @@
       ]
     },
     {
+      "module": "src/doctor/native-package-stage.ts",
+      "imports": [
+        "../core/github-update.js",
+        "../core/native-archive.js",
+        "../core/native-release-evidence.js",
+        "./native-program-verifier.js",
+        "./repair-controller-files.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/native-process-identity.ts",
       "imports": [
         "node:crypto",
@@ -2558,6 +2575,7 @@
       "imports": [
         "./native-program-verifier.js",
         "./native-release-selection.js",
+        "./native-runtime-access.js",
         "./native-update-driver.js",
         "./native-update-operations.js",
         "./repair-activation.js",
@@ -2591,6 +2609,26 @@
       ]
     },
     {
+      "module": "src/doctor/native-runtime-access.ts",
+      "imports": [
+        "node:child_process",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-runtime-publication.ts",
+      "imports": [
+        "../core/update-store.js",
+        "./native-package-stage.js",
+        "./native-program-verifier.js",
+        "./native-runtime-access.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/native-snapshot-adapter.ts",
       "imports": [
         "./native-process-identity.js",
@@ -2611,6 +2649,19 @@
         "./native-update-driver.js",
         "./repair-activation.js",
         "./repair-controller-files.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-stage-journal.ts",
+      "imports": [
+        "../core/native-release-evidence.js",
+        "../core/update-store.js",
+        "./native-package-stage.js",
+        "./native-program-verifier.js",
+        "./repair-controller-files.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

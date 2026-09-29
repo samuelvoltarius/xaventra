@@ -4,6 +4,16 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Native signing is a SEPARATE, human-started run: an operator reviews the
+  # native plan from a completed build run, then supplies its exact SHA256.
+  workflow_dispatch:
+    inputs:
+      native_build_run_id:
+        description: Completed run of this workflow whose native-plan artifact was reviewed
+        required: true
+      native_plan_sha256:
+        description: Independently reviewed SHA256 of that run's native-plan.json
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -102,6 +112,198 @@ jobs:
         with:
           name: update-image-${{ matrix.arch }}
           path: image-*.txt
+  # ---- Native Linux packages (CL-20260929-01). No publisher credential here. ----
+  native-build:
+    needs: eligible
+    if: needs.eligible.outputs.publish == 'true' && vars.XAVENTRA_NATIVE_PUBLISHING == 'enabled'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.eligible.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.eligible.outputs.commit }}
+      TARGET_ARCH: ${{ matrix.arch }}
+    steps:
+      # Reviewed tooling and the fresh build source are separate checkouts of the
+      # same commit; the builder refuses a source tree with dist/ or node_modules/.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.eligible.outputs.commit }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.eligible.outputs.commit }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bundle reviewed native builder
+        working-directory: tooling
+        run: |
+          node scripts/release-source-provenance.mjs --check
+          npm ci --ignore-scripts
+          npx esbuild scripts/stage-native-build.mjs --bundle --platform=node --format=esm --target=node22 \
+            "--banner:js=import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
+            --outfile="$RUNNER_TEMP/native-stage.mjs"
+      - name: Build, inventory and qualify the native archive
+        run: |
+          node "$RUNNER_TEMP/native-stage.mjs" "$GITHUB_WORKSPACE/source" "$RELEASE_COMMIT" "$RELEASE_VERSION" "$TARGET_ARCH" | tee "$RUNNER_TEMP/stage.out"
+          REPORT=$(tail -n 1 "$RUNNER_TEMP/stage.out" | node -e "const r=JSON.parse(require('fs').readFileSync(0,'utf8'));if(!r.passed)throw Error('Native stage failed');process.stdout.write(r.report)")
+          ROOT=$(dirname "$REPORT")
+          mkdir -p "native-out/$TARGET_ARCH"
+          cp "$ROOT/payload.tar.gz" "$ROOT/plan-entry.json" "$ROOT/report.json" "$ROOT/inventory.json" "native-out/$TARGET_ARCH/"
+      - name: Start/stop the actual extracted daemon unprivileged before any signing
+        working-directory: tooling
+        run: |
+          EXTRACT="$RUNNER_TEMP/native-payload-$TARGET_ARCH"
+          mkdir "$EXTRACT"
+          tar -xzf "$GITHUB_WORKSPACE/native-out/$TARGET_ARCH/payload.tar.gz" -C "$EXTRACT" --no-same-owner
+          node scripts/check-daemon-lifecycle.mjs --source-root "$EXTRACT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-build-${{ matrix.arch }}
+          path: native-out/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+  native-plan:
+    needs: [eligible, native-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.eligible.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.eligible.outputs.commit }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-build-*
+          path: native-build
+      - name: Bind the plan to exactly these two archives and this revision
+        run: |
+          node - <<'EOF'
+          const fs = require('fs'), crypto = require('crypto')
+          const version = process.env.RELEASE_VERSION, commit = process.env.RELEASE_COMMIT
+          const builds = ['x64', 'arm64'].map(arch => {
+            const dir = `native-build/native-build-${arch}`, entry = JSON.parse(fs.readFileSync(`${dir}/plan-entry.json`, 'utf8'))
+            const report = JSON.parse(fs.readFileSync(`${dir}/report.json`, 'utf8')), archive = `${dir}/payload.tar.gz`
+            if (Object.keys(entry).sort().join(',') !== 'arch,archive,sha256,size,treeHash' || entry.arch !== arch || entry.archive !== 'payload.tar.gz') throw Error('Plan entry identity')
+            if (!report.passed || report.commit !== commit || report.version !== version || report.arch !== arch) throw Error('Build report identity')
+            const bytes = fs.readFileSync(archive)
+            if (bytes.length !== entry.size || crypto.createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw Error('Archive bytes differ from plan entry')
+            return { ...entry, archive: `native-plan/${arch}.tar.gz` }
+          })
+          fs.mkdirSync('native-plan')
+          for (const b of builds) fs.copyFileSync(`native-build/native-build-${b.arch}/payload.tar.gz`, b.archive)
+          const text = JSON.stringify({ schema: 1, version, commit, builds })
+          fs.writeFileSync('native-plan/native-plan.json', text)
+          const sha = crypto.createHash('sha256').update(text).digest('hex')
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Native plan for ${version} at ${commit}: \`${sha}\`\nReview, then dispatch this workflow with native_build_run_id=${process.env.GITHUB_RUN_ID} and this SHA256.\n`)
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-plan
+          path: native-plan
+          if-no-files-found: error
+          retention-days: 14
+  native-publish:
+    if: github.event_name == 'workflow_dispatch' && vars.XAVENTRA_NATIVE_PUBLISHING == 'enabled'
+    runs-on: ubuntu-latest
+    environment: update-publisher
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Resolve the reviewed build run, exact main revision and existing release
+        id: gate
+        uses: actions/github-script@v7
+        env:
+          BUILD_RUN: ${{ inputs.native_build_run_id }}
+          PLAN_SHA: ${{ inputs.native_plan_sha256 }}
+        with:
+          script: |
+            const runId = process.env.BUILD_RUN, planSha = process.env.PLAN_SHA;
+            if (!/^[0-9]{1,20}$/.test(runId || '') || !/^[a-f0-9]{64}$/.test(planSha || '')) throw Error('Exact build run id and plan SHA256 required');
+            const run = (await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: Number(runId) })).data;
+            const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data;
+            if (run.path !== '.github/workflows/update-release.yml' || run.event !== 'workflow_run' || run.conclusion !== 'success'
+              || run.head_sha !== main.commit.sha || context.sha !== main.commit.sha || run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`) throw Error('Build run is not the successful native build of current main');
+            const pkg = JSON.parse(Buffer.from((await github.rest.repos.getContent({ ...context.repo, path: 'package.json', ref: run.head_sha })).data.content, 'base64'));
+            const release = (await github.rest.repos.getReleaseByTag({ ...context.repo, tag: `v${pkg.version}` })).data;
+            if (release.draft || release.target_commitish !== run.head_sha) throw Error('Release must be the published container release of this exact commit');
+            if (release.assets.some(a => a.name === 'SHA256SUMS.native' || a.name.startsWith('xaventra-native'))) throw Error('Native assets already present; never overwrite');
+            core.setOutput('commit', run.head_sha); core.setOutput('version', pkg.version); core.setOutput('release', String(release.id));
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.gate.outputs.commit }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Documented order: bundle the reviewed signer BEFORE credentials exist in
+      # any step; the credential step runs only the bundle, no npm or payload code.
+      - name: Bundle reviewed native signer (no credentials in this step)
+        working-directory: tooling
+        run: |
+          node scripts/release-source-provenance.mjs --check
+          npm ci --ignore-scripts
+          npx esbuild scripts/publish-native-update.mjs --bundle --platform=node --format=esm --target=node22 \
+            "--banner:js=import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" \
+            --outfile="$RUNNER_TEMP/native-publisher.mjs"
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-plan
+          path: native-plan
+          run-id: ${{ inputs.native_build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Sign native packages (bundled signer only)
+        env:
+          RELEASE_VERSION: ${{ steps.gate.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.gate.outputs.commit }}
+          PLAN_SHA: ${{ inputs.native_plan_sha256 }}
+          XAVENTRA_UPDATE_PUBLISHER_KEY: ${{ secrets.XAVENTRA_UPDATE_PUBLISHER_KEY }}
+          XAVENTRA_UPDATE_PUBLISHER_ID: ${{ vars.XAVENTRA_UPDATE_PUBLISHER_ID }}
+        run: node "$RUNNER_TEMP/native-publisher.mjs" "$RELEASE_VERSION" "$RELEASE_COMMIT" native-plan/native-plan.json "$PLAN_SHA" native-packages | tee native-publisher.out
+      - name: Upload files first and the manifest last, then verify the uploaded inventory
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ steps.gate.outputs.release }}
+          RELEASE_COMMIT: ${{ steps.gate.outputs.commit }}
+        with:
+          script: |
+            const fs = require('fs');
+            const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data;
+            if (main.commit.sha !== process.env.RELEASE_COMMIT) throw Error('Main advanced; no stale native publication');
+            // The publisher prints the contract inventory with the manifest last.
+            const { assets } = JSON.parse(fs.readFileSync('native-publisher.out', 'utf8').trim().split('\n').at(-1));
+            const local = fs.readdirSync('native-packages').sort();
+            if (!Array.isArray(assets) || assets.length !== local.length || assets.at(-1) !== 'xaventra-native-update.json'
+              || [...assets].sort().join('\n') !== local.join('\n')) throw Error('Signer inventory differs from output directory');
+            const releaseId = Number(process.env.RELEASE_ID);
+            for (const name of assets) {
+              const data = fs.readFileSync(`native-packages/${name}`);
+              const asset = (await github.rest.repos.uploadReleaseAsset({ ...context.repo, release_id: releaseId, name, data })).data;
+              if (asset.name !== name || asset.state !== 'uploaded' || asset.size !== data.length) throw Error(`Asset verification failed at ${name}; manifest not uploaded if earlier`);
+            }
+            const uploaded = await github.paginate(github.rest.repos.listReleaseAssets, { ...context.repo, release_id: releaseId, per_page: 100 });
+            for (const name of assets) {
+              const matches = uploaded.filter(a => a.name === name);
+              if (matches.length !== 1 || matches[0].state !== 'uploaded' || matches[0].size !== fs.statSync(`native-packages/${name}`).size) throw Error(`Missing or duplicate native asset ${name}`);
+            }
   publish:
     needs: [eligible, build]
     runs-on: ubuntu-latest

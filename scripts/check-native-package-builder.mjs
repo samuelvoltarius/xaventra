@@ -27,7 +27,12 @@ if(process.argv[2]==='verify'){
     const record={archive,descriptor:bytes.toString('base64'),publicKey:keys.publicKey.export({type:'spki',format:'pem'}).toString(),signed:{keyId:'fixture',payload,signature:sign(null,Buffer.from(JSON.stringify(payload)),keys.privateKey).toString('base64')},expected:{version:descriptor.version,updater:'2.78.56',arch:'arm64',commit:descriptor.commit,treeHash:result.treeHash,descriptorHash:hash(bytes)}}
     let actualPublisher=false
     if(process.argv[2]==='--publisher'){
-        const plan={schema:1,version:descriptor.version,commit:descriptor.commit,builds:['x64','arm64'].map(arch=>({arch,archive,...result}))}
+        // The publisher rejects one archive for both architectures; build a distinct x64 payload.
+        const x64Root=join(dir,'build-x64');mkdirSync(join(x64Root,'dist'),{recursive:true})
+        const x64Files=[['dist/daemon.js','export const fixture="x64"\n'],['package.json','{"name":"fixture"}']].map(([path,text])=>{
+            writeFileSync(join(x64Root,path),text);return {path,size:Buffer.byteLength(text),sha256:hash(text)}})
+        const x64Archive=join(dir,'native-x64.tar.gz'),x64=await buildNativeArchive(x64Root,x64Archive,x64Files)
+        const plan={schema:1,version:descriptor.version,commit:descriptor.commit,builds:[{arch:'x64',archive:x64Archive,...x64},{arch:'arm64',archive,...result}]}
         const text=JSON.stringify(plan),planPath=join(dir,'approved-plan.json'),out=join(dir,'signed')
         writeFileSync(planPath,text)
         const publisher=spawnSync(process.execPath,[process.argv[3],descriptor.version,descriptor.commit,planPath,hash(text),out],{encoding:'utf8',timeout:30000,env:{...process.env,XAVENTRA_UPDATE_PUBLISHER_ID:'fixture',XAVENTRA_UPDATE_PUBLISHER_KEY:keys.privateKey.export({type:'pkcs8',format:'pem'}).toString()}})

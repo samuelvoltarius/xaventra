@@ -13,10 +13,14 @@ import { verifyNativeReleaseEvidence } from './native-release-evidence.js'
 const dir=mkdtempSync(join(tmpdir(),'native-publisher-')),script=join(dir,'publisher.mjs'),hash=(b:any)=>createHash('sha256').update(b).digest('hex')
 beforeAll(async()=>{await build({entryPoints:[fileURLToPath(new URL('../../scripts/publish-native-update.mjs',import.meta.url))],outfile:script,bundle:true,platform:'node',format:'esm'})})
 function fixture(){
-    const root=mkdtempSync(join(dir,'case-')),body=Buffer.from('fixture'),archive=join(root,'payload.tar.gz')
-    const bytes=gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',body.length),body,Buffer.alloc(512-body.length+1024)]));writeFileSync(archive,bytes)
-    const treeHash=releaseTreeHash([{path:'dist/daemon.js',size:body.length,sha256:hash(body)}]),version='2.79.0',commit='a'.repeat(40)
-    const plan={schema:1,version,commit,builds:['x64','arm64'].map(arch=>({arch,archive,treeHash,size:bytes.length,sha256:hash(bytes)}))}
+    const root=mkdtempSync(join(dir,'case-')),version='2.79.0',commit='a'.repeat(40)
+    // One distinct archive per architecture; the publisher rejects a shared program.
+    const builds=['x64','arm64'].map(arch=>{
+        const body=Buffer.from('fixture-'+arch),archive=join(root,`payload-${arch}.tar.gz`)
+        const bytes=gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',body.length),body,Buffer.alloc(512-body.length+1024)]));writeFileSync(archive,bytes)
+        return {arch,archive,treeHash:releaseTreeHash([{path:'dist/daemon.js',size:body.length,sha256:hash(body)}]),size:bytes.length,sha256:hash(bytes)}
+    }),archive=builds[1].archive
+    const plan={schema:1,version,commit,builds}
     const key=generateKeyPairSync('ed25519'),out=join(root,'out'),planPath=join(root,'plan.json')
     const run=(change:(p:any)=>void=()=>{},wrongHash=false)=>{
         change(plan);const text=JSON.stringify(plan);writeFileSync(planPath,text)
@@ -29,9 +33,11 @@ it('runs the actual signing entrypoint and independently verifies both native de
     const signed=JSON.parse(readFileSync(join(f.out,'xaventra-native-update.json'),'utf8'))
     for(const a of signed.payload.artifacts){const b=f.plan.builds.find(b=>b.arch===a.arch)!;expect(verifyNativeReleaseEvidence(signed,{publisherKeys:{fixture:f.key.publicKey.export({type:'spki',format:'pem'}).toString()}},{version:f.plan.version,commit:f.plan.commit,updater:'2.78.56',arch:a.arch,treeHash:b.treeHash,descriptorHash:a.sha256},readFileSync(join(f.out,a.name))).descriptor.kind).toBe('native')}
     expect(existsSync(join(f.out,'xaventra-update.json'))).toBe(false)
+    // The actual program archives are published under the contract name, byte-identical.
+    for(const b of f.plan.builds)expect(hash(readFileSync(join(f.out,`xaventra-native-program-2.79.0-linux-${b.arch}.tar.gz`)))).toBe(b.sha256)
     expect(f.run().status).not.toBe(0)
 })
-it.each(['approval','version','commit','duplicate','tree','archive'])('rejects %s before emitting publication',mode=>{
+it.each(['approval','version','commit','duplicate','tree','archive','shared','extra-field'])('rejects %s before emitting publication',mode=>{
     const f=fixture()
     if(mode==='archive')writeFileSync(f.archive,'corrupt')
     const r=f.run(p=>{
@@ -39,6 +45,8 @@ it.each(['approval','version','commit','duplicate','tree','archive'])('rejects %
         if(mode==='commit')p.commit='b'.repeat(40)
         if(mode==='duplicate')p.builds[1].arch='x64'
         if(mode==='tree')p.builds[0].treeHash='f'.repeat(64)
+        if(mode==='shared')p.builds[1]={...p.builds[0],arch:'arm64'}
+        if(mode==='extra-field')p.builds[0].url='https://example.invalid/payload.tar.gz'
     },mode==='approval')
     expect(r.status).not.toBe(0);expect(existsSync(f.out)).toBe(false)
 })

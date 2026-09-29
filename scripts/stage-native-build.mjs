@@ -52,6 +52,11 @@ try{
     report.phase='qualified-package'
     report.archive=await buildQualifiedNativeArchive(payload,join(root,'payload.tar.gz'),files,{commit,version,arch})
     if(assertReleaseSource(source)!==commit)throw Error('Native source changed before receipt')
+    // Exact publisher plan entry for THIS archive; the plan job only rewrites the
+    // archive path to its download location and must not alter any other field.
+    const a=report.archive
+    if(a.commit!==commit||a.version!==version||a.arch!==arch)throw Error('Native archive identity drift')
+    writeFileSync(join(root,'plan-entry.json'),JSON.stringify({arch,archive:'payload.tar.gz',sha256:a.sha256,size:a.size,treeHash:a.treeHash}),{flag:'wx'})
     report.passed=true;report.phase='packaged-not-daemon-accepted'
 }catch(error){report.error=String(error.message);throw error}
 finally{writeFileSync(join(root,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({report:join(root,'report.json'),passed:report.passed,phase:report.phase}))}
