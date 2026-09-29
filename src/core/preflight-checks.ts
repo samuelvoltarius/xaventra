@@ -11,7 +11,7 @@
  *   /preflight            — Show last check results
  */
 
-import { execSync } from 'child_process'
+import { execFileSync, execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -99,13 +99,39 @@ export async function runLocalPreFlight(): Promise<PreFlightResult> {
 // Remote Pre-Flight Checks (via SSH)
 // ============================================
 
+// Host, user and port reach ssh as argv (never through a local shell). They are
+// still validated so that nothing can be read as an ssh option ("-oProxyCommand=…")
+// or smuggle shell syntax into the remote login (R2 P-1).
+const SSH_HOST_PATTERN = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*|\d{1,3}(?:\.\d{1,3}){3}|\[?[0-9A-Fa-f:]+\]?)$/
+const SSH_USER_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/
+
+export function validateSshTarget(host: string, user: string, port: number): string | null {
+    if (typeof host !== 'string' || host.length === 0 || host.length > 253 || !SSH_HOST_PATTERN.test(host)) return `ungültiger Host: ${JSON.stringify(String(host).slice(0, 60))}`
+    if (typeof user !== 'string' || !SSH_USER_PATTERN.test(user)) return `ungültiger SSH-Benutzer: ${JSON.stringify(String(user).slice(0, 40))}`
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return `ungültiger SSH-Port: ${String(port).slice(0, 20)}`
+    return null
+}
+
 export async function runRemotePreFlight(host: string, user: string = 'xaventra', port: number = 22): Promise<PreFlightResult> {
     const checks: CheckResult[] = []
+    const invalid = validateSshTarget(host, user, Number(port))
+    if (invalid) {
+        checks.push({
+            name: 'SSH Connection',
+            status: 'fail',
+            message: `Pre-Flight abgelehnt: ${invalid}`,
+        })
+        return buildResult(String(host).slice(0, 60), checks)
+    }
+    const sshHost = host.replace(/^\[|\]$/g, '')
     const ssh = (cmd: string): string => {
         try {
-            return execSync(
-                `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p ${port} ${user}@${host} "${cmd}"`,
-                { timeout: 10000, encoding: 'utf-8' }
+            // Unknown host keys are rejected (no accept-new): preflight must not
+            // silently trust a new key. BatchMode prevents a hanging password prompt.
+            return execFileSync(
+                'ssh',
+                ['-o', 'ConnectTimeout=5', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-p', String(port), '-l', user, '--', sshHost, cmd],
+                { timeout: 10000, encoding: 'utf-8', windowsHide: true }
             ).trim()
         } catch (err: any) {
             return `ERROR: ${err.message?.slice(0, 100) || 'command failed'}`
