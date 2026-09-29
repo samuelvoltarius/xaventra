@@ -14,6 +14,12 @@ vi.mock('../core/llm-factory.js', () => ({
     getNovaConfig: () => ({}),
 }))
 vi.mock('../core/model-resolver.js', () => ({ resolveModel: async () => resolver.next }))
+// Never touch the real Codex CLI or its auth file on this machine.
+vi.mock('./codex-cli-adapter.js', () => ({
+    CodexCLIAdapter: class {},
+    isCodexAvailable: () => false,
+    isCodexAuthenticated: () => false,
+}))
 
 import { createNovaLLMClient, getNovaLLM } from './nova-llm-sdk.js'
 import { probeAllModels, probeModel } from './capability-probe.js'
