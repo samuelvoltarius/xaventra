@@ -53,3 +53,25 @@ it('rejects lockfile paths that try to leave node_modules', () => {
     const root = payload({ 'node_modules/a/x.js': 'x' })
     expect(() => pruneForeignOptionalPackages(root, { packages: { 'node_modules/../../etc': { optional: true } } }, 'x64')).toThrow('Invalid lockfile package path')
 })
+import { pruneGpuBackendVariants } from './native-optional-prune.js'
+it('drops only optional node-llama-cpp GPU backend variants and keeps the CPU backend', () => {
+    const root = payload({
+        'node_modules/@node-llama-cpp/linux-x64/bins/a.node': elf(62),
+        'node_modules/@node-llama-cpp/linux-x64-cuda/bins/a.node': elf(62),
+        'node_modules/@node-llama-cpp/linux-x64-cuda-ext/bins/a.node': elf(62),
+        'node_modules/@node-llama-cpp/linux-x64-vulkan/bins/a.node': elf(62),
+        'node_modules/cuda-helper/index.js': 'x',
+    })
+    const gpuLock = { packages: {
+        'node_modules/@node-llama-cpp/linux-x64': { optional: true },
+        'node_modules/@node-llama-cpp/linux-x64-cuda': { optional: true },
+        'node_modules/@node-llama-cpp/linux-x64-cuda-ext': { optional: true },
+        'node_modules/@node-llama-cpp/linux-x64-vulkan': {},
+        'node_modules/cuda-helper': { optional: true },
+    } }
+    // vulkan is NOT optional in this lockfile, so it must stay.
+    expect(pruneGpuBackendVariants(root, gpuLock)).toEqual(['@node-llama-cpp/linux-x64-cuda', '@node-llama-cpp/linux-x64-cuda-ext'])
+    expect(existsSync(join(root, 'node_modules/@node-llama-cpp/linux-x64/bins/a.node'))).toBe(true)
+    expect(existsSync(join(root, 'node_modules/@node-llama-cpp/linux-x64-vulkan'))).toBe(true)
+    expect(existsSync(join(root, 'node_modules/cuda-helper'))).toBe(true)
+})

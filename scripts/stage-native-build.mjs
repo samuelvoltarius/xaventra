@@ -3,7 +3,7 @@
 import { assertReleaseSource } from './release-source-provenance.mjs'
 import { materializeNativeBin } from '../src/core/native-bin-staging.ts'
 import { buildQualifiedNativeArchive } from '../src/core/native-build-qualification.ts'
-import { pruneForeignOptionalPackages } from '../src/core/native-optional-prune.ts'
+import { pruneForeignOptionalPackages,pruneGpuBackendVariants } from '../src/core/native-optional-prune.ts'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync,mkdirSync,readFileSync,writeFileSync,cpSync,lstatSync,opendirSync,openSync,readSync,closeSync,existsSync,chmodSync } from 'node:fs'
 import { join,resolve } from 'node:path'
@@ -32,7 +32,9 @@ try{
     // Optional platform packages that over-declare `cpu` (node-llama-cpp installs
     // arm/arm64 binaries on x64) are removed from this payload copy only.
     report.phase='optional-platform-prune'
-    report.prunedOptionalPackages=pruneForeignOptionalPackages(payload,JSON.parse(readFileSync(join(payload,'package-lock.json'),'utf8')),arch)
+    const lock=JSON.parse(readFileSync(join(payload,'package-lock.json'),'utf8'))
+    report.prunedOptionalPackages=pruneForeignOptionalPackages(payload,lock,arch)
+    report.prunedGpuBackendVariants=pruneGpuBackendVariants(payload,lock)
     const files=[],bins=[],deadline=Date.now()+120000;let count=0,total=0
     const walk=(dir,prefix='',depth=0)=>{
         if(depth>64||Date.now()>deadline)throw Error('Native staging traversal budget')

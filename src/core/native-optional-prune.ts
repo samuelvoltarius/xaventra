@@ -60,3 +60,22 @@ export function pruneForeignOptionalPackages(payloadRoot: string, lock: { packag
     }
     return pruned.sort((a, b) => a.package < b.package ? -1 : a.package > b.package ? 1 : 0)
 }
+
+/** Native update packages carry the CPU llama backend only. The optional GPU
+ * variants (`@node-llama-cpp/<os>-<arch>-cuda|cuda-ext|vulkan`, ~600 MB on x64)
+ * cannot be packed within the archive producer's fixed 60 s budget. Every
+ * getLlama() call uses `build: 'never'` with a CPU fallback, so a missing variant
+ * never triggers a network build. Decision recorded for review (CL-20260929-03). */
+const GPU_VARIANT = /^@node-llama-cpp\/[a-z]+-[a-z0-9]+-(?:cuda(?:-ext)?|vulkan)$/
+export function pruneGpuBackendVariants(payloadRoot: string, lock: { packages?: Record<string, { optional?: boolean }> }): string[] {
+    const root = realpathSync(resolve(payloadRoot)), modules = join(root, 'node_modules') + sep, removed: string[] = []
+    for (const [path, meta] of Object.entries(lock.packages || {})) {
+        if (!path.startsWith('node_modules/') || meta?.optional !== true) continue
+        const name = path.slice('node_modules/'.length)
+        if (!GPU_VARIANT.test(name)) continue
+        const dir = join(root, ...path.split('/'))
+        if (!dir.startsWith(modules) || !existsSync(dir) || lstatSync(dir).isSymbolicLink()) continue
+        rmSync(dir, { recursive: true, force: false }); removed.push(name)
+    }
+    return removed.sort()
+}
