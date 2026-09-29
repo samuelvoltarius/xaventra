@@ -4,7 +4,8 @@
  * Prevents Indirect Prompt Injection → RCE attacks through:
  * 1. AST Analysis: Parse code for dangerous patterns (not just regex)
  * 2. Anomaly Detection: Kill-switch when patterns are unusual
- * 3. Shadow Runtime: Test code in sandbox before deployment
+ * 3. Shadow Runtime: sandboxTest() for isolated snippet probing (red team);
+ *    NOT used by the write gate, which never executes module code
  * 4. Signed Patches: Confidence-level tracking for code changes
  * 
  * Philosophy: Defense in depth — multiple layers, each catches what others miss.
@@ -430,7 +431,9 @@ export function getPatchLog(count = 20): PatchSignature[] {
 }
 
 /**
- * Full security check pipeline: AST → Sandbox → Sign
+ * Full security check pipeline: static AST check (TypeScript via compiler API) → Sign.
+ * The vm sandbox (sandboxTest) is no longer part of the write gate: module code
+ * is never executed to decide whether it is safe.
  */
 export async function fullSecurityCheck(
     code: string,
@@ -456,47 +459,96 @@ export async function fullSecurityCheck(
         }
     }
 
-    // Step 1: AST Analysis (REAL acorn parser)
-    const astResult = await analyzeCodeSecurity(code, path)
+    // Step 1: static analysis only. Module code is never executed here: a
+    // vm sandbox cannot run real modules (imports, host APIs) and is not a
+    // security boundary, so executing untrusted code to "test" it would only
+    // add risk. Unparseable code is not verifiable and therefore rejected.
+    const astResult = isGuardedCodePath(path)
+        ? await staticSecurityCheck(code, path)
+        : await analyzeCodeSecurity(code, path)
+    const sandboxResult: SandboxResult | null = null
 
-    // Step 2: Sandbox (only for JS/TS code)
-    let sandboxResult: SandboxResult | null = null
-    if (path.endsWith('.js') || path.endsWith('.ts') || path.endsWith('.mjs')) {
-        // Strip TypeScript types for sandbox (basic strip)
-        const jsCode = code
-            .replace(/:\s*(string|number|boolean|any|unknown|void|never)\b/g, '')
-            .replace(/\binterface\s+\w+\s*\{[^}]*\}/g, '')
-            .replace(/\btype\s+\w+\s*=\s*[^;]+;/g, '')
-            .replace(/\bexport\s+/g, '')
-            .replace(/\bimport\s+.*?from\s+['"][^'"]+['"];?/g, '')
-
-        // Never execute code the static analysis already rejected.
-        if (astResult.safe) {
-            try {
-                sandboxResult = await sandboxTest(jsCode, 3000)
-            } catch (error) {
-                // Fail-closed: an unavailable sandbox is not a pass.
-                sandboxResult = { safe: false, error: `Sandbox nicht verfügbar: ${String(error).slice(0, 120)}`, duration: 0 }
-            }
-        }
-    }
-
-    // Step 3: Sign
+    // Step 2: Sign
     const signature = signPatch(code, path, source, astResult, sandboxResult)
 
     // Decision
-    // Code files need a successful sandbox run; missing/failed runs are unsafe.
-    const needsSandbox = path.endsWith('.js') || path.endsWith('.ts') || path.endsWith('.mjs')
-    const allowed = astResult.safe && (needsSandbox ? sandboxResult?.safe === true : true) && !killSwitchActive
+    const allowed = astResult.safe && !killSwitchActive
 
     if (!allowed) {
-        const reasons: string[] = []
-        if (!astResult.safe) reasons.push(`AST: ${astResult.findings.filter(f => f.severity === 'critical').map(f => f.description).join(', ')}`)
-        if (sandboxResult && !sandboxResult.safe) reasons.push(`Sandbox: ${sandboxResult.error}`)
-        return { allowed, signature, astResult, sandboxResult, reason: reasons.join(' | ') }
+        const critical = astResult.findings.filter(f => f.severity === 'critical').map(f => f.description)
+        const reason = killSwitchActive ? `🚨 Kill-Switch aktiv: ${killSwitchReason}` : `AST: ${critical.join(', ') || 'nicht prüfbar'}`
+        return { allowed, signature, astResult, sandboxResult, reason }
     }
 
     return { allowed, signature, astResult, sandboxResult }
+}
+
+const GUARDED_CODE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
+const TYPESCRIPT_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts']
+
+/** Executable JS/TS source that must pass the static check before it is written. */
+export function isGuardedCodePath(path: string): boolean {
+    const lower = String(path || '').toLowerCase()
+    return GUARDED_CODE_EXTENSIONS.some(ext => lower.endsWith(ext))
+}
+
+/**
+ * Fail-closed static check. TypeScript is lowered with the real compiler API
+ * (no regex stripping); any syntax diagnostic or a JavaScript parse error
+ * means the code cannot be verified and is rejected. Imports and unknown
+ * identifiers are NOT findings; dangerous capabilities (child_process, vm,
+ * eval/Function, dynamic require/import, process.binding, constructor-chain
+ * escapes, prototype pollution) are.
+ */
+export async function staticSecurityCheck(code: string, path: string): Promise<ASTResult & { parseError?: string }> {
+    const unverifiable = (description: string) => ({
+        safe: false,
+        confidence: 0,
+        parseError: description,
+        findings: [{ severity: 'critical', category: 'unparseable', description }],
+    })
+    let javascript = code
+    const lower = String(path || '').toLowerCase()
+    if (TYPESCRIPT_EXTENSIONS.some(ext => lower.endsWith(ext))) {
+        const tsModule: any = await import('typescript')
+        const ts = tsModule.default ?? tsModule
+        // Declaration files emit nothing; analyse their text as a module so
+        // any runtime statements in it are still seen.
+        const fileName = String(path || 'module.ts').replace(/\.d\.([mc]?ts)$/i, '.$1')
+        let output: any
+        try {
+            output = ts.transpileModule(code, {
+                fileName,
+                reportDiagnostics: true,
+                compilerOptions: {
+                    target: ts.ScriptTarget.ESNext,
+                    module: ts.ModuleKind.ESNext,
+                    // Keep every value import in the output so the analyzer sees it
+                    // even when it is unused.
+                    verbatimModuleSyntax: true,
+                    ...(lower.endsWith('.tsx') ? { jsx: ts.JsxEmit.Preserve } : {}),
+                },
+            })
+        } catch (error) {
+            return unverifiable(`TypeScript nicht parsebar: ${String(error).slice(0, 160)}`)
+        }
+        const errors = (output.diagnostics || []).filter((d: any) => d.category === ts.DiagnosticCategory.Error)
+        if (errors.length > 0) {
+            const message = ts.flattenDiagnosticMessageText(errors[0].messageText, ' ')
+            return unverifiable(`TypeScript nicht parsebar: ${String(message).slice(0, 160)}`)
+        }
+        javascript = output.outputText
+    }
+    const { analyzeAST } = await import('./ast-analyzer.js')
+    const result = analyzeAST(javascript, path, { stripTypes: false })
+    if (result.parseError) return unverifiable(`Code nicht parsebar: ${result.parseError}`)
+    return {
+        safe: result.safe,
+        confidence: result.confidence,
+        findings: result.findings.map(f => ({
+            severity: f.severity, pattern: f.category, category: f.category, description: f.description, line: f.line,
+        })),
+    }
 }
 
 // ============================================

@@ -291,7 +291,7 @@ export const fileTools: NovaTool[] = [
                 recordMetric('code_gen', content.length)
 
                 // Full check for code files
-                if (rel.endsWith('.ts') || rel.endsWith('.js') || rel.endsWith('.mjs')) {
+                if (/\.(?:[cm]?[jt]s|[jt]sx)$/i.test(rel)) {
                     const check = await fullSecurityCheck(content, rel, 'nova-self')
                     if (!check.allowed) {
                         console.log(`[CodeGuardian] ðŸš¨ BLOCKED: ${check.reason}`)
@@ -307,7 +307,7 @@ export const fileTools: NovaTool[] = [
                 // FAIL-CLOSED: Frueher liess ein Fehler IN der Pruefung den
                 // Schreibvorgang durch ("allow write"). Bei Codedateien wird
                 // jetzt abgelehnt statt ungeprueft geschrieben.
-                if (rel.endsWith('.ts') || rel.endsWith('.js') || rel.endsWith('.mjs')) {
+                if (/\.(?:[cm]?[jt]s|[jt]sx)$/i.test(rel)) {
                     console.error('[CodeGuardian] Pruefung fehlgeschlagen - Schreibvorgang abgelehnt: ' + guardErr);
                     return {
                         error: 'Code Guardian konnte nicht pruefen (' + String(guardErr).slice(0, 200) + '). '

@@ -35,6 +35,36 @@ describe('write_file protected paths', () => {
         expect(existsSync(join(base, 'outside.txt'))).toBe(false)
     })
 
+    // INT-2: the fail-closed CodeGuardian used to block most real modules
+    // (imports, unknown identifiers) because it tried to execute them.
+    it('writes a typical TypeScript module with imports through the CodeGuardian', async () => {
+        vi.stubEnv('XAVENTRA_WORKSPACE_ROOT', workspace)
+        const content = [
+            "import { join } from 'node:path'",
+            "import { loadThing, type Thing } from '../core/thing.js'",
+            'export interface Options { root: string; limit?: number }',
+            'export class Finder<T extends Thing> {',
+            '    constructor(private readonly options: Options) {}',
+            "    find(name: string): T | undefined { return loadThing(join(this.options.root, name)) as T | undefined }",
+            '}',
+        ].join('\n')
+        const handler = fileTools.find(t => t.name === 'write_file')!.handler
+        const result = await handler({ path: 'mods/finder.ts', content }) as any
+        expect(result.error).toBeUndefined()
+        expect(result.success).toBe(true)
+        expect(readFileSync(join(workspace, 'mods', 'finder.ts'), 'utf8')).toBe(content)
+    })
+
+    it('blocks a module with an indirect eval, also for .cjs files', async () => {
+        vi.stubEnv('XAVENTRA_WORKSPACE_ROOT', workspace)
+        const handler = fileTools.find(t => t.name === 'write_file')!.handler
+        for (const path of ['mods/bad.ts', 'mods/bad.cjs']) {
+            const result = await handler({ path, content: 'const run = (0, globalThis.eval)\nmodule.exports = (s) => run(s)\n' }) as any
+            expect(result.blocked, path).toBe(true)
+            expect(existsSync(join(workspace, path))).toBe(false)
+        }
+    })
+
     it('still writes ordinary files inside the workspace', async () => {
         vi.stubEnv('XAVENTRA_WORKSPACE_ROOT', workspace)
         const result = await write('notes/out.txt')

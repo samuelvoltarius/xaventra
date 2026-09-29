@@ -34,9 +34,17 @@ describe('CodeGuardian sandbox is fail-closed', () => {
         expect((globalThis as any).__codeGuardianEscape).toBeUndefined()
     })
 
-    it('fullSecurityCheck rejects code whose sandbox run fails', async () => {
-        const result = await fullSecurityCheck('throw new Error("boom")', 'guardian-fixture.js', 'nova-self')
-        expect(result.allowed).toBe(false)
+    // INT-2: this used to assert that fullSecurityCheck rejects code whose
+    // sandbox RUN fails. The write gate no longer executes module code at all
+    // (a vm run of real modules fails on every import and is no security
+    // boundary). The fail-closed property now lives in the static check:
+    // unparseable code is rejected and nothing is ever executed.
+    it('fullSecurityCheck never executes the checked code and rejects unparseable code', async () => {
+        const ran = await fullSecurityCheck('globalThis.__codeGuardianEscape = true\nthrow new Error("boom")', 'guardian-fixture.js', 'nova-self')
+        expect((globalThis as any).__codeGuardianEscape).toBeUndefined()
+        expect(ran.sandboxResult).toBeNull()
+        const broken = await fullSecurityCheck('const = ;', 'guardian-fixture.js', 'nova-self')
+        expect(broken.allowed).toBe(false)
     })
 
     it('fullSecurityCheck does not execute code the AST analysis already rejected', async () => {

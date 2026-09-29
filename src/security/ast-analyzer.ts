@@ -43,22 +43,40 @@ export interface ASTSecurityResult {
  * Parse and analyze code using a real AST.
  * Catches obfuscation that regex misses.
  */
-export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
+export interface AnalyzeASTOptions {
+    /**
+     * Apply the rough regex TypeScript stripper before parsing (default true,
+     * kept for legacy callers). Pass false when the input is already plain
+     * JavaScript, e.g. the output of the TypeScript compiler API.
+     */
+    stripTypes?: boolean
+}
+
+export function analyzeAST(code: string, filename?: string, options: AnalyzeASTOptions = {}): ASTSecurityResult {
     const findings: ASTSecurityFinding[] = []
 
     // Strip TypeScript-specific syntax for acorn (JS parser)
-    const jsCode = stripTypeScript(code)
+    const jsCode = options.stripTypes === false ? code : stripTypeScript(code)
 
+    const parseAs = (sourceType: 'module' | 'script') => acorn.parse(jsCode, {
+        ecmaVersion: 'latest',
+        sourceType,
+        allowImportExportEverywhere: true,
+        allowAwaitOutsideFunction: true,
+        allowReturnOutsideFunction: sourceType === 'script',
+        allowHashBang: true,
+        locations: true,
+        // Don't fail on minor issues
+        onComment: () => { },
+    })
     let ast: acorn.Node
     try {
-        ast = acorn.parse(jsCode, {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            allowImportExportEverywhere: true,
-            allowAwaitOutsideFunction: true,
-            // Don't fail on minor issues
-            onComment: () => { },
-        })
+        try {
+            ast = parseAs('module')
+        } catch {
+            // CommonJS files may use sloppy-mode constructs; retry as script.
+            ast = parseAs('script')
+        }
     } catch (err: any) {
         // If we can't parse, fall back to basic checks
         return {
@@ -143,7 +161,7 @@ export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
                     // statically: require(varName), require(obj.prop), require(fn()).
                     // The module name is hidden at parse time → can't verify it's
                     // safe, so treat it as dangerous (e.g. const m='child_process';require(m)).
-                    if (resolved === null && arg.type !== 'Literal' && arg.type !== 'BinaryExpression' && arg.type !== 'TemplateLiteral') {
+                    if (resolved === null && arg.type !== 'Literal' && arg.type !== 'BinaryExpression') {
                         findings.push({
                             severity: 'critical',
                             category: 'obfuscation',
@@ -203,8 +221,28 @@ export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
                     })
                 }
 
-                // child_process.exec/spawn
-                if (prop?.type === 'Identifier' && (prop.name === 'exec' || prop.name === 'spawn' || prop.name === 'execSync')) {
+                // process.binding / dlopen — native escape hatches
+                if (obj?.type === 'Identifier' && obj.name === 'process' && prop?.type === 'Identifier' &&
+                    ['binding', '_linkedBinding', 'dlopen'].includes(prop.name)) {
+                    findings.push({
+                        severity: 'critical',
+                        category: 'sandbox-escape',
+                        description: `process.${prop.name}() — Zugriff auf native Bindings`,
+                        line: node.loc?.start?.line || 0,
+                        column: node.loc?.start?.column || 0,
+                        nodeType: 'CallExpression',
+                        code: `process.${prop.name}(...)`,
+                    })
+                }
+
+                // child_process.exec/spawn. `.exec` alone is also RegExp#exec,
+                // so it only counts on a child-process-like receiver; the other
+                // names are child_process specific.
+                const childProcessOnly = ['spawn', 'execSync', 'execFile', 'execFileSync', 'spawnSync', 'fork']
+                const receiverName = obj?.type === 'Identifier' ? obj.name
+                    : obj?.type === 'MemberExpression' && obj.property?.type === 'Identifier' ? obj.property.name : ''
+                const childProcessReceiver = /^(?:cp|child_?process|childProcess|proc|shell)$/i.test(receiverName)
+                if (prop?.type === 'Identifier' && (childProcessOnly.includes(prop.name) || (prop.name === 'exec' && childProcessReceiver))) {
                     findings.push({
                         severity: 'critical',
                         category: 'shell-execution',
@@ -236,6 +274,20 @@ export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
         // 3. Dynamic property access on global/globalThis: global[variable]
         MemberExpression(node: any) {
             const obj = node.object
+            // globalThis.eval / global.Function — same as the bare identifiers
+            if (!node.computed && obj?.type === 'Identifier' &&
+                ['global', 'globalThis', 'window', 'self'].includes(obj.name) &&
+                node.property?.type === 'Identifier' && ['eval', 'Function'].includes(node.property.name)) {
+                findings.push({
+                    severity: 'critical',
+                    category: 'dynamic-execution',
+                    description: `${obj.name}.${node.property.name} — Code-Generierung über das globale Objekt`,
+                    line: node.loc?.start?.line || 0,
+                    column: node.loc?.start?.column || 0,
+                    nodeType: 'MemberExpression',
+                    code: `${obj.name}.${node.property.name}`,
+                })
+            }
             if (node.computed && obj?.type === 'Identifier' &&
                 (obj.name === 'global' || obj.name === 'globalThis' || obj.name === 'window' || obj.name === 'self')) {
                 findings.push({
@@ -290,6 +342,17 @@ export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
                         nodeType: 'ImportExpression',
                     })
                 }
+                // Module name not statically known: import(variable), import(`x${y}`)
+                if (resolved === null && source.type !== 'BinaryExpression') {
+                    findings.push({
+                        severity: 'critical',
+                        category: 'obfuscation',
+                        description: 'import() mit dynamischem Argument — Modulname nicht statisch prüfbar!',
+                        line: node.loc?.start?.line || 0,
+                        column: node.loc?.start?.column || 0,
+                        nodeType: 'ImportExpression',
+                    })
+                }
                 // Concatenated dynamic import
                 if (source.type === 'BinaryExpression' && source.operator === '+') {
                     findings.push({
@@ -325,6 +388,47 @@ export function analyzeAST(code: string, filename?: string): ASTSecurityResult {
             }
         },
     })
+
+    // 6a. Re-exports pull a module in just like an import:
+    //     export * from 'child_process', export { exec } from 'node:child_process'
+    walk.simple(ast, {
+        ExportNamedDeclaration(node: any) { reportReExport(node) },
+        ExportAllDeclaration(node: any) { reportReExport(node) },
+    } as any)
+    function reportReExport(node: any) {
+        const source = node.source?.value
+        if (typeof source === 'string' && isDangerousModule(source)) {
+            findings.push({
+                severity: 'critical',
+                category: 'dangerous-import',
+                description: `export ... from '${source}' — gefährliches Modul`,
+                line: node.loc?.start?.line || 0,
+                column: node.loc?.start?.column || 0,
+                nodeType: node.type,
+                code: `export ... from '${source}'`,
+            })
+        }
+    }
+
+    // 6b. eval / Function used as a value: (0, eval)(x), const F = Function,
+    //     Reflect.apply(eval, ...). Direct calls are reported above.
+    walk.ancestor(ast, {
+        Identifier(node: any, _state: unknown, ancestors: any[]) {
+            if (node.name !== 'eval' && node.name !== 'Function') return
+            const parent = ancestors[ancestors.length - 2]
+            if ((parent?.type === 'CallExpression' || parent?.type === 'NewExpression') && parent.callee === node) return
+            if (parent?.type === 'BinaryExpression' && parent.operator === 'instanceof' && parent.right === node) return
+            findings.push({
+                severity: 'critical',
+                category: 'dynamic-execution',
+                description: `${node.name} als Wert referenziert — indirekte Code-Generierung`,
+                line: node.loc?.start?.line || 0,
+                column: node.loc?.start?.column || 0,
+                nodeType: 'Identifier',
+                code: node.name,
+            })
+        },
+    } as any)
 
     // === Post-walk: Pattern-based detection for bypass techniques ===
     // These are harder to catch via pure AST visitors
@@ -470,9 +574,18 @@ function resolveStringExpression(node: any): string | null {
         }
     }
 
-    // Template literal without expressions: `string`
-    if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
-        return node.quasis.map((q: any) => q.value.raw).join('')
+    // Template literal: `string` or `a${'b'}` with statically known parts
+    if (node.type === 'TemplateLiteral') {
+        let out = ''
+        for (let i = 0; i < node.quasis.length; i++) {
+            out += node.quasis[i].value.cooked ?? node.quasis[i].value.raw
+            if (i < node.expressions.length) {
+                const part = resolveStringExpression(node.expressions[i])
+                if (part === null) return null
+                out += part
+            }
+        }
+        return out
     }
 
     return null
@@ -486,12 +599,14 @@ function resolveStringExpression(node: any): string | null {
 const CRITICAL_MODULES = ['child_process', 'cluster', 'worker_threads', 'vm', 'repl', 'dgram', 'net', 'tls']
 const WARNING_MODULES = ['fs', 'os', 'path', 'http', 'https', 'http2']
 
+const bareModule = (name: string) => String(name).replace(/^node:/, '').split('/')[0]
+
 function isDangerousModule(name: string): boolean {
-    return CRITICAL_MODULES.includes(name)
+    return CRITICAL_MODULES.includes(bareModule(name))
 }
 
 function isWarningModule(name: string): boolean {
-    return WARNING_MODULES.includes(name)
+    return WARNING_MODULES.includes(bareModule(name))
 }
 
 /**
