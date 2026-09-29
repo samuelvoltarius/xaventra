@@ -15,4 +15,8 @@ describe('pipeline passes the principal role to role-gated context', () => {
     it('getCapabilitiesPrompt() receives the permission (R2 UEB-19)', () => {
         expect(pipelineSource).toMatch(/\(getCapabilitiesPrompt as [^\n]*\)\(\{ permission: principalContext\.permission \}\)/)
     })
+
+    it('getJournalContextForPrompt() receives the permission (R2 UEB-20)', () => {
+        expect(pipelineSource).toContain('journal.getJournalContextForPrompt(content, { permission: principalContext.permission })')
+    })
 })

@@ -1003,7 +1003,8 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     if (contextPolicy.longTermMemory) try {
         const journal = (state as any).journal
         if (journal) {
-            const journalContext = journal.getJournalContextForPrompt(content)
+            // The journal spans all users: owner-only, decided by the journal.
+            const journalContext = journal.getJournalContextForPrompt(content, { permission: principalContext.permission })
             if (journalContext) systemPrompt += journalContext
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
