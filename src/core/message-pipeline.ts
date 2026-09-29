@@ -244,6 +244,9 @@ export interface MessageExecutionOptions {
     abortSignal?: AbortSignal
     allowedTools?: string[]
     requestId?: string
+    /** Set only by in-process producers (reminder/heartbeat wakeups, autonomy):
+     * keeps internal prefixes like [REMINDER]; external callers never set it. */
+    systemAuthored?: boolean
 }
 
 /** The agent exceeded its wall-clock budget; its signal has been aborted. */

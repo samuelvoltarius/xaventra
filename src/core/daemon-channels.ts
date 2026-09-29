@@ -463,7 +463,7 @@ async function startTelegramOnce(
                             await (adapter.send as any)({ to: replyTo, content: reply })
                         }
                     } catch { /* non-critical */ }
-                })
+                }, undefined, { systemAuthored: true })
             } catch (err) {
                 console.error(`[Reminder] Wakeup pipeline failed: ${err}`)
             }
@@ -532,7 +532,7 @@ async function startTelegramOnce(
                             })
                         }
                     } catch { /* non-critical */ }
-                })
+                }, undefined, { systemAuthored: true })
             } catch (err) {
                 console.error(`[Heartbeat] Wakeup failed: ${err}`)
             }
