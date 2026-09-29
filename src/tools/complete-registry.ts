@@ -2676,6 +2676,7 @@ const selfModificationTools: NovaTool[] = [
             { name: 'code', type: 'string', description: 'Python-Code als String (inline)', required: false },
             { name: 'file', type: 'string', description: 'Pfad zu einer .py Datei', required: false },
             { name: 'install', type: 'string', description: 'Komma-getrennte pip-Pakete die vorher installiert werden sollen (z.B. "python-docx,requests")', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt (Pflicht, außer die Pipeline hat die Freigabe bereits erteilt). Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             const { executeExecutePython } = await import('./execute-python-tool.js')

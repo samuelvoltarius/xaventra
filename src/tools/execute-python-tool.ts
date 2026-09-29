@@ -10,6 +10,7 @@ import { writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
+import { ownerApprovalRefusal } from './owner-approval.js'
 
 const SCRIPTS_DIR = join(process.cwd(), '.nova-data', 'scripts')
 const TIMEOUT_MS = 60_000  // 60 seconds max
@@ -47,9 +48,11 @@ async function runPython(pythonPath: string, args: string[]): Promise<{ stdout: 
             resolve({ stdout, stderr: stderr + '\n[TIMEOUT after 60s]', exitCode: -1 })
         }, TIMEOUT_MS)
 
-        proc.on('close', (code) => {
+        proc.on('close', (code, signal) => {
             clearTimeout(timer)
-            resolve({ stdout, stderr, exitCode: code ?? 0 })
+            // R2 T35: killed by a signal (OOM, kill) is a failure, not exit 0
+            if (code === null) resolve({ stdout, stderr: `${stderr}\n[beendet durch Signal ${signal || 'unbekannt'}]`, exitCode: -1 })
+            else resolve({ stdout, stderr, exitCode: code })
         })
 
         proc.on('error', (err) => {
@@ -63,6 +66,11 @@ export async function executeExecutePython(params: Record<string, unknown>): Pro
     const code = params.code as string | undefined
     const filePath = params.file as string | undefined
     const installPackages = params.install as string | undefined
+
+    // R2 T8: arbitrary code and pip installs without sandbox bypass every
+    // run_command guard: owner only, with an explicit owner approval.
+    const refusal = await ownerApprovalRefusal(params, 'execute_python')
+    if (refusal) return refusal
 
     const python = findPython()
 
