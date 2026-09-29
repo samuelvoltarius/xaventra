@@ -1,0 +1,44 @@
+import { describe, expect, it, vi } from 'vitest'
+
+const captured = vi.hoisted(() => ({
+    discordConfig: null as any,
+    whatsappHandler: null as null | ((msg: any) => Promise<void>),
+    whatsappSend: vi.fn(async (_msg: any) => { }),
+    dashboardHandler: null as null | ((message: string, channel: string) => Promise<string>),
+}))
+
+vi.mock('../mesh/leader-election.js', () => ({
+    MAIN_SERVICE: 'nova-main',
+    shouldStartExclusiveService: async () => true,
+    watchForServiceLeadership: () => { },
+    onLeadershipLost: () => { },
+}))
+vi.mock('../channels/discord.js', () => ({
+    DiscordAdapter: class {
+        constructor(config: any) { captured.discordConfig = config }
+        onMessage() { }
+        async connect() { }
+    },
+}))
+vi.mock('../channels/whatsapp.js', () => ({
+    WhatsAppAdapter: class {
+        onMessage(handler: any) { captured.whatsappHandler = handler }
+        async connect() { }
+        send = captured.whatsappSend
+    },
+}))
+vi.mock('../dashboard/server.js', () => ({
+    startDashboard: async () => 'http://127.0.0.1:3011',
+    setNovaMessageHandler: (handler: any) => { captured.dashboardHandler = handler },
+    stopDashboard: async () => { },
+}))
+import { startDashboard, startDiscord, startWhatsApp } from './daemon-channels.js'
+
+const state = () => ({ channels: { telegram: null, whatsapp: null, discord: null } }) as any
+
+describe('channel starters match the hardened adapters', () => {
+    it('passes allowFrom and guildId to the fail-closed Discord adapter (R2 UEB-1)', async () => {
+        await startDiscord({ enabled: true, token: 't', allowFrom: ['123'], guildId: '456' }, vi.fn(async () => { }) as any, state())
+        expect(captured.discordConfig).toMatchObject({ token: 't', allowFrom: ['123'], guildId: '456' })
+    })
+})

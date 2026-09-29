@@ -22,7 +22,7 @@ export interface ChannelStarterConfig {
     channels: {
         telegram?: { enabled: boolean; token: string; allowFrom?: string[] }
         whatsapp?: { enabled: boolean; authPath?: string }
-        discord?: { enabled: boolean; token?: string }
+        discord?: { enabled: boolean; token?: string; allowFrom?: string[]; guildId?: string }
         cli?: { enabled: boolean }
     }
     dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
@@ -626,8 +626,11 @@ export async function startDiscord(
     try {
         const { DiscordAdapter } = await import('../channels/discord.js')
 
+        // The adapter is fail-closed: without allowFrom it ignores everyone.
         const adapter = new DiscordAdapter({
             token: config.token,
+            allowFrom: config.allowFrom,
+            guildId: config.guildId,
         })
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
