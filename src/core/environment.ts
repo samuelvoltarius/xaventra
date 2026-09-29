@@ -10,10 +10,9 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { platform, homedir, hostname, arch, cpus, totalmem, freemem } from 'node:os'
-import { loadHosts, formatKnownHostsContext } from '../tools/ssh-tool-hosts.js'
 
 // ============================================
 // Types
@@ -264,7 +263,7 @@ export async function autoInstall(toolName: string): Promise<InstallResult> {
 
             // Invalidate cache so next detection picks up the new tool
             cachedEnv = null
-            try { if (existsSync(ENV_FILE)) require('fs').unlinkSync(ENV_FILE) } catch { /* ok */ }
+            try { if (existsSync(ENV_FILE)) unlinkSync(ENV_FILE) } catch { /* ok */ }
 
             return { success: true, tool: toolName, method: mgr, message: `${toolName} installiert via ${mgr}` }
         } catch (err: any) {
@@ -312,12 +311,9 @@ export function getCapabilities(): string {
         caps.push(`SSH: ✅ Verfügbar${env.hasSSHKey ? ' + Key vorhanden' : ' (kein Key, brauche Passwort)'}`)
         if (env.hasPlink) caps.push('Plink: ✅ (Passwort-Auth möglich)')
         if (env.hasSshpass) caps.push('sshpass: ✅ (Passwort-Auth möglich)')
-
-        // Show known hosts so the LLM knows to use ssh_command for them
-        try {
-            const inventory = formatKnownHostsContext(loadHosts())
-            if (inventory) caps.push(inventory)
-        } catch { /* no hosts file */ }
+        // The SSH host inventory (names, IPs, users) is deliberately not part
+        // of this role-agnostic system prompt block; the pipeline adds it
+        // per request where the principal is known.
     } else {
         caps.push('SSH: ❌ Nicht verfügbar')
     }
