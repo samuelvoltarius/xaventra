@@ -5274,7 +5274,9 @@
     },
     {
       "module": "src/tools/tool-policy.ts",
-      "imports": []
+      "imports": [
+        "../desktop/desktop-agent-context.js"
+      ]
     },
     {
       "module": "src/tools/tool-result-quality.ts",
