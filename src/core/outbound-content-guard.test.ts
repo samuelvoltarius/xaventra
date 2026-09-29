@@ -30,3 +30,13 @@ describe('outbound content guard', () => {
             .toContain('Freigabe')
     })
 })
+
+describe('visible text before a think block (R2 NZ-32)', () => {
+    it('keeps the answer that precedes a think block', () => {
+        expect(sanitizeInternalOutboundArtifacts('Antwort X <think>intern</think> Rest')).toBe('Antwort X  Rest')
+    })
+
+    it('still strips an orphan leading reasoning part', () => {
+        expect(sanitizeInternalOutboundArtifacts('intern überlegt</think>Antwort')).toBe('Antwort')
+    })
+})
