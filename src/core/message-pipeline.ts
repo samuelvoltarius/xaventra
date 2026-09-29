@@ -377,7 +377,13 @@ export async function runAuthorizedScreenshotFallback(
     return { path: imgPath, size: screenshotResult.size }
 }
 
-export async function handleMessage(
+export async function handleMessage(...args: Parameters<typeof handleMessageInScope>): ReturnType<typeof handleMessageInScope> {
+    // One LLM-principal scope per message (Codex only for the owner).
+    const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
+    return runWithLlmPrincipal(() => handleMessageInScope(...args))
+}
+
+async function handleMessageInScope(
     channel: string,
     from: string,
     content: string,
@@ -487,6 +493,7 @@ export async function handleMessage(
         // 2. Tool Restrictions — the decided role is bound to this request
         // before any optional middleware step can fail.
         principalContext.permission = authResult.permission
+        ;(await import('../llm/llm-principal.js')).setLlmPrincipalPermission(authResult.permission)
         ; (state as any).__userPermission = authResult.permission
             ; (state as any).__userId = from
         if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from

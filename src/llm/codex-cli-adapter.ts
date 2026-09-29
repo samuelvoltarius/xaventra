@@ -10,6 +10,7 @@
  */
 
 import { spawn, execSync } from 'node:child_process'
+import { mayUseCodex } from './llm-principal.js'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -234,6 +235,8 @@ export function codexProxySandboxArgs(): string[] {
     return ['--sandbox', 'read-only', '-C', codexProxyWorkdir()]
 }
 
+const CODEX_OWNER_ONLY = 'Codex steht nur dem Owner zur Verfügung'
+
 export class CodexCLIAdapter {
     private binaryPath: string
     private model: string
@@ -262,6 +265,7 @@ export class CodexCLIAdapter {
         prompt: string,
         options: { systemPrompt?: string; model?: string; timeoutMs?: number } = {}
     ): Promise<CodexCompletionResult> {
+        if (!mayUseCodex()) throw new Error(CODEX_OWNER_ONLY)
         const model = options.model || this.model
         const timeout = options.timeoutMs || 120000
 
@@ -384,6 +388,7 @@ export class CodexCLIAdapter {
         prompt: string,
         options: { systemPrompt?: string; model?: string; timeoutMs?: number } = {}
     ): AsyncGenerator<string, void, unknown> {
+        if (!mayUseCodex()) throw new Error(CODEX_OWNER_ONLY)
         const model = options.model || this.model
         const timeout = options.timeoutMs || 120000
 
