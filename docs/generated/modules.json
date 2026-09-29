@@ -1663,6 +1663,55 @@
       ]
     },
     {
+      "module": "src/core/native-archive.ts",
+      "imports": [
+        "./release-tree.js",
+        "node:crypto",
+        "node:stream",
+        "node:stream/promises",
+        "node:zlib"
+      ]
+    },
+    {
+      "module": "src/core/native-bin-staging.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/native-build-qualification.ts",
+      "imports": [
+        "./native-archive.js",
+        "./native-package-builder.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/native-package-builder.ts",
+      "imports": [
+        "./native-archive.js",
+        "./release-tree.js",
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:stream",
+        "node:stream/promises",
+        "node:zlib"
+      ]
+    },
+    {
+      "module": "src/core/native-release-evidence.ts",
+      "imports": [
+        "./github-update.js",
+        "./update-package.js",
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/core/native-tool-receipts.ts",
       "imports": [
         "./atomic-storage.js",
@@ -1793,10 +1842,17 @@
       ]
     },
     {
+      "module": "src/core/release-tree.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/core/release-verifier.ts",
       "imports": [
         "../mesh/mesh-identity.js",
         "../mesh/transport-contracts.js",
+        "./release-tree.js",
         "node:crypto",
         "node:fs",
         "node:path",
@@ -2420,7 +2476,8 @@
       "imports": [
         "./docker-repair-driver.js",
         "./repair-activation.js",
-        "node:crypto"
+        "node:crypto",
+        "node:path"
       ]
     },
     {
@@ -2471,6 +2528,138 @@
         "../process/daemon-control.js",
         "./repair-activation.js",
         "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-process-identity.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs/promises"
+      ]
+    },
+    {
+      "module": "src/doctor/native-program-verifier.ts",
+      "imports": [
+        "../core/github-update.js",
+        "../core/native-archive.js",
+        "../core/native-release-evidence.js",
+        "../core/release-tree.js",
+        "./repair-controller-files.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-release-enrollment.ts",
+      "imports": [
+        "./native-program-verifier.js",
+        "./native-release-selection.js",
+        "./native-update-driver.js",
+        "./native-update-operations.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-release-selection.ts",
+      "imports": [
+        "../core/update-store.js",
+        "./native-process-identity.js",
+        "./native-systemd-service.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-rollback-state.ts",
+      "imports": [
+        "./docker-repair-state.js",
+        "./native-snapshot-adapter.js",
+        "./native-snapshot-store.js",
+        "./native-state-helper.js",
+        "./native-update-driver.js",
+        "./repair-activation.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-snapshot-adapter.ts",
+      "imports": [
+        "./native-process-identity.js",
+        "./native-snapshot-store.js",
+        "./native-state-helper.js",
+        "./native-systemd-service.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/doctor/native-snapshot-store.ts",
+      "imports": [
+        "../core/update-store.js",
+        "./docker-repair-state.js",
+        "./native-state-mount.js",
+        "./native-update-driver.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-state-helper.ts",
+      "imports": [
+        "./docker-repair-state.js",
+        "./native-process-identity.js",
+        "./repair-controller-files.js",
+        "node:child_process",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-state-mount.ts",
+      "imports": [
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/native-systemd-service.ts",
+      "imports": [
+        "./native-process-identity.js",
+        "./repair-controller-files.js",
+        "node:child_process",
+        "node:crypto",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/doctor/native-update-driver.ts",
+      "imports": [
+        "./repair-activation.js"
+      ]
+    },
+    {
+      "module": "src/doctor/native-update-operations.ts",
+      "imports": [
+        "../core/update-store.js",
+        "./native-release-selection.js",
+        "./native-rollback-state.js",
+        "./native-snapshot-adapter.js",
+        "./native-systemd-service.js",
+        "./native-update-driver.js",
+        "./repair-activation.js",
+        "./repair-controller-files.js",
         "node:crypto",
         "node:fs",
         "node:path"

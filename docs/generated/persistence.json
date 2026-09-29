@@ -774,6 +774,10 @@
       "path": ".nova-data/learned-solutions.json"
     },
     {
+      "owner": "src/core/native-package-builder.test.ts",
+      "path": ".nova-data/memory.json"
+    },
+    {
       "owner": "src/memory/memory-governance.ts",
       "path": ".nova-data/memory/governance"
     },
