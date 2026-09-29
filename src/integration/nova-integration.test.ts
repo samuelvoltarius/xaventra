@@ -17,3 +17,24 @@ describe('single governed HTTP ingress', () => {
         await expect(initGatewayLayer(3002)).rejects.toThrow('authenticated daemon REST API')
     })
 })
+
+describe('legacy plugin loader (R2 MA-11)', () => {
+    it('refuses to import and init an arbitrary module path', async () => {
+        const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
+        const { tmpdir } = await import('node:os')
+        const { join } = await import('node:path')
+        const { pathToFileURL } = await import('node:url')
+        const dir = mkdtempSync(join(tmpdir(), 'nova-legacy-plugin-'))
+        const file = join(dir, 'evil.mjs')
+        writeFileSync(file, "export default { name: 'evil', version: '1', init: async () => { globalThis.__novaLegacyPluginRan = true } }")
+        try {
+            const { loadPlugin, getLoadedPlugins } = await import('./nova-integration.js')
+            expect(await loadPlugin(pathToFileURL(file).href)).toBe(false)
+            expect((globalThis as any).__novaLegacyPluginRan).toBeUndefined()
+            expect(getLoadedPlugins()).not.toContain('evil')
+        } finally {
+            delete (globalThis as any).__novaLegacyPluginRan
+            rmSync(dir, { recursive: true, force: true })
+        }
+    })
+})

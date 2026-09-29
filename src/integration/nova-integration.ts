@@ -90,9 +90,18 @@ interface Plugin {
 }
 
 const loadedPlugins: Map<string, Plugin> = new Map()
+const ALLOW_LEGACY_PLUGIN_IMPORT = false
 
 export async function loadPlugin(pluginPath: string): Promise<boolean> {
     console.log(`[Plugins] Loading: ${pluginPath}`)
+
+    // Fail-closed: this legacy loader imported any path without the trust
+    // checks of plugins/plugin-security.ts. Plugins load only through
+    // PluginManager (integrity, signature, permissions).
+    if (!ALLOW_LEGACY_PLUGIN_IMPORT) {
+        console.error(`[Plugins] ❌ Refused ${pluginPath}: legacy loader has no trust check, use PluginManager`)
+        return false
+    }
 
     try {
         const module = await import(`${pluginPath}?t=${Date.now()}`)
