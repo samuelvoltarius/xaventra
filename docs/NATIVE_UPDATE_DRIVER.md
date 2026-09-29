@@ -20,15 +20,27 @@ not an enrolled production updater. Keep the following evidence levels separate:
 | Evidence | Proven scope | Not proven |
 |---|---|---|
 | Component regressions and disposable Linux fixtures | Signed controller receipts, process/unit selection, archive checks and isolated state-copy/rollback behavior | Production authority, writer fencing or fleet rollout |
-| Actual Linux arm64 payload | Dependency-only correction of published 2.78.56; qualified archive and independent content/hash verification | Full current candidate, x64 parity, signing or installation |
+| Actual 2.78.57 Linux arm64 candidate payload | Clean source build, qualified archive and independent content/hash verification | Native x64 parity, signing or installation |
 | Isolated daemon lifecycle on that payload | Boot, authenticated REST status, anonymous-access rejection and CLI stop; seven checks passed | Live-model chat, screenshot capture, Telegram delivery or production update/rollback |
 
-The actual payload contains 30,765 files and 16 qualified ELF binaries; its
-verified archive is 217,421,294 bytes. These counts describe that one retained
-build, not every supported platform or the final 2.78.57 candidate. Its source
-excludes the newer screenshot corrections. Protected native publishing, safe installation, complete-candidate
-acceptance and operator enrollment remain required before activation. A healthy
-native daemon is not evidence that the Docker update controller supports it.
+The clean 2.78.57 candidate build at source
+`56e43c06b45891aa81849b754aad6b3c6f148da2` contains 16 qualified ELF binaries.
+Its 217,478,550-byte archive independently passes parsing and hash verification:
+SHA256 `086bc1b7d36e96b1ec34acfc9a27ccfd7c7b44955fb0fe481eb91baf7208e583`.
+The same actual payload passes all seven isolated daemon lifecycle checks above.
+Runtime source, scripts and package manifests are unchanged at follow-up
+`24b835b`; intervening changes affect generated documentation, test-fixture
+path canonicalization and Desktop build dependencies, not that Core runtime. These results cover the complete
+candidate build, but do not exercise screenshot capture or Telegram delivery.
+
+Earlier dependency-only qualification of the published 2.78.56 baseline is
+retained separately: 30,765 files, 16 ELF binaries, a 217,421,294-byte verified
+archive and seven daemon lifecycle checks. That earlier payload excluded the
+newer screenshot corrections; it is not substituted for the candidate result.
+Neither run proves native x64 compatibility, signed native publication, safe
+installation, production enrollment or full update/rollback. Those gates remain
+required before activation. A healthy native daemon is not evidence that the
+Docker update controller supports it.
 
 ## Build qualification and retained failures
 
@@ -44,9 +56,11 @@ an overly broad private-path prefix check that rejected public dependency
 allows only `.github`, `.gitkeep`, `.gitattributes`, `.gitignore` and `.gitmodules`
 segments inside `node_modules`; other `.git*` entries, including `.git`,
 `.git-credentials` and `.gitconfig`, remain rejected. Private environment,
-runtime and key-file rejection is preserved. Requalification of the retained payload produced the archive
-described above; earlier failed reports remain negative evidence, not rewritten
-successes. A path allowlist does not replace secret scanning.
+runtime and key-file rejection is preserved. Requalification of the retained
+baseline payload produced the earlier archive described above; the clean
+2.78.57 candidate build subsequently passed too. Earlier failed reports remain
+negative evidence, not rewritten successes. A path allowlist does not replace
+secret scanning.
 
 `scripts/stage-native-build.mjs` composes the build-stage tools on an architecture-
 matching Linux host: exact clean revision/package version, fresh checkout without
@@ -98,9 +112,9 @@ and metadata check, not libc/ABI compatibility, dependency completeness, clean
 source provenance or actual workload acceptance. A real arm64 addon header was
 accepted for arm64 and rejected for x64 by the read-only fixture
 `scripts/check-native-build-qualification.mjs`. It does not demonstrate that the
-addon can load. The staging recipe and one actual arm64 payload check are
-described above; complete-candidate and other-architecture acceptance remain
-required. No package is released solely on header qualification.
+addon can load. The staging recipe and actual arm64 candidate payload/lifecycle
+checks are described above; other-architecture and full update/rollback
+acceptance remain required. No package is released solely on header qualification.
 
 `scripts/publish-native-update.mjs` is the separate native signing entrypoint.
 Bundle it from the reviewed signer revision before introducing credentials; never
@@ -157,7 +171,8 @@ valid evidence passes, while modified code/archive, extra files, links and writa
 code reject both selection and start before any systemd mutation. No fixture unit
 is installed. This proves preactivation rejection, not publisher deployment,
 archive extraction or successful actual-Xaventra activation. The protected native
-publisher and real package/workload acceptance remain the next gates.
+publisher and actual installation/update/rollback acceptance remain open beyond
+the separate candidate package and daemon lifecycle checks above.
 
 `verifyNativeInstalledRelease` now verifies descriptor commitments against actual
 archive bytes, streamed archive contents and two complete application file inventories. It reuses the existing

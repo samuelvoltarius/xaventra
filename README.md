@@ -26,9 +26,10 @@ stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
 Current candidate: **2.78.57 preview**, based on the published 2.78.56 preview.
-For the prior baseline, see the
-[bounded verification record](docs/VERIFICATION_2.78.56.md) and
-[recovery guide](docs/RECOVERY_2.78.56.md). Candidate implementation, isolated
+See the candidate's [bounded verification record](docs/VERIFICATION_2.78.57.md)
+and [recovery guide](docs/RECOVERY_2.78.57.md); the
+[2.78.56 record](docs/VERIFICATION_2.78.56.md) remains the prior baseline.
+Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
@@ -56,7 +57,7 @@ setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.78.56.md) and
+See the [verification record](docs/VERIFICATION_2.78.57.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 The current candidate includes authenticated desktop-capture and Telegram-delivery
@@ -66,11 +67,12 @@ desktop session and correlated capture/delivery evidence. A connected bot or
 passing source tests is not that proof. See [screenshot delivery](docs/SCREENSHOT_DELIVERY.md).
 
 The [native update driver](docs/NATIVE_UPDATE_DRIVER.md) has component and isolated
-Linux acceptance evidence, including one actual arm64 package and daemon
-lifecycle check. That payload is a dependency-only correction of the published
-baseline, not the complete current candidate. Protected native publication,
-production enrollment, real writer fencing and full update/rollback acceptance
-remain open; the Docker controller does not automatically update native services.
+Linux acceptance evidence, including a clean 2.78.57 arm64 candidate package,
+independent archive verification and seven daemon lifecycle checks on that same
+payload. This is not native x64 acceptance, signed native publication, safe
+installation, production enrollment or Telegram proof. Real writer fencing and
+full update/rollback acceptance remain open; the Docker controller does not
+automatically update native services.
 
 Owner access requires a configured Telegram identity or an explicit grant from
 the local CLI or authenticated Desktop. OS mode and chat phrases do not grant
