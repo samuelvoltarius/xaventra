@@ -5,7 +5,7 @@
  * and the main handleMessage function.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, openSync, readSync, fstatSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
@@ -193,10 +193,60 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
     } catch { /* logging is non-critical */ }
 }
 
+/**
+ * Last turns of this user's session log on this channel (read from the file
+ * tail only). Used for the response-cache key, so "und das zweite?" in a
+ * different conversation never returns an old answer.
+ */
+export function recentSessionTurns(user: string, channel: string, limit = 12): Array<{ role: string; content: string }> {
+    try {
+        const safeName = user.replace(/[^a-zA-Z0-9_-]/g, '_')
+        const logFile = join(process.cwd(), '.nova-data', 'sessions', `${safeName}.jsonl`)
+        if (!existsSync(logFile)) return []
+        const fd = openSync(logFile, 'r')
+        let text = ''
+        try {
+            const size = fstatSync(fd).size
+            const length = Math.min(size, 64 * 1024)
+            const buffer = Buffer.alloc(length)
+            readSync(fd, buffer, 0, length, size - length)
+            text = buffer.toString('utf8')
+            // The first line of a partial tail read may be cut off.
+            if (length < size) text = text.slice(text.indexOf('\n') + 1)
+        } finally {
+            closeSync(fd)
+        }
+        const turns: Array<{ role: string; content: string }> = []
+        for (const line of text.split('\n')) {
+            if (!line.trim()) continue
+            try {
+                const entry = JSON.parse(line)
+                if (entry.channel === channel && (entry.role === 'user' || entry.role === 'assistant')) {
+                    turns.push({ role: entry.role, content: String(entry.content ?? '') })
+                }
+            } catch { /* skip damaged line */ }
+        }
+        return turns.slice(-limit)
+    } catch {
+        return []
+    }
+}
+
+/** Cache-key messages: prior turns plus the current message exactly once. */
+export function responseCacheMessages(user: string, channel: string, content: string): Array<{ role: string; content: string }> {
+    const turns = recentSessionTurns(user, channel)
+    const last = turns[turns.length - 1]
+    const prior = last && last.role === 'user' && last.content === content.slice(0, 2000) ? turns.slice(0, -1) : turns
+    return [...prior, { role: 'user', content }]
+}
+
 export interface MessageExecutionOptions {
     abortSignal?: AbortSignal
     allowedTools?: string[]
     requestId?: string
+    /** Set only by in-process producers (reminder/heartbeat wakeups, autonomy):
+     * keeps internal prefixes like [REMINDER]; external callers never set it. */
+    systemAuthored?: boolean
 }
 
 /** The agent exceeded its wall-clock budget; its signal has been aborted. */
@@ -765,7 +815,9 @@ export async function handleMessage(
     // Maschine geht und was nicht.
     try {
         const { getCapabilitiesPrompt } = await import('../memory/capabilities-store.js')
-        const gelernt = getCapabilitiesPrompt()
+        // Command details are owner-only; typed so it compiles before and after
+        // the options parameter exists.
+        const gelernt = (getCapabilitiesPrompt as (options?: { permission?: string }) => string)({ permission: principalContext.permission })
         if (gelernt.trim()) systemPrompt += '\n\n' + gelernt
     } catch { /* nicht kritisch */ }
 
@@ -944,8 +996,9 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
 
     // ============================================
     // Known hosts are inventory data, never an authorization grant.
+    // Names, IPs and logins are only shown to the owner (R2 A9).
     // ============================================
-    if (contextPolicy.mesh) try {
+    if (contextPolicy.mesh && principalContext.permission === 'owner') try {
         const { loadHosts, formatKnownHostsContext } = await import('../tools/ssh-tool-hosts.js')
         const inventory = formatKnownHostsContext(loadHosts())
         if (inventory) systemPrompt += `\n\n${inventory}`
@@ -970,12 +1023,15 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     // Inject Proactive Insights + Memory Consolidation
     if (contextPolicy.predictive) try {
         const { getInsightEngine, getMemoryConsolidator } = await import('../intelligence/autonomy-engine.js')
-        const insightBlock = getInsightEngine().buildInsightPromptBlock()
+        // Insights and the weekly summary are owner-only (decided by the engine
+        // from the viewer role); typed to compile before and after that change.
+        const viewer = { permission: principalContext.permission }
+        const insightBlock = (getInsightEngine() as { buildInsightPromptBlock(viewer?: { permission?: string }): string | null }).buildInsightPromptBlock(viewer)
         if (insightBlock) {
             systemPrompt += insightBlock
             console.log('[Pipeline] Injected proactive insights')
         }
-        const consolidationContext = getMemoryConsolidator().getConsolidationContext()
+        const consolidationContext = (getMemoryConsolidator() as { getConsolidationContext(viewer?: { permission?: string }): string | null }).getConsolidationContext(viewer)
         if (consolidationContext) {
             systemPrompt += consolidationContext
         }
@@ -1000,7 +1056,8 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     if (contextPolicy.longTermMemory) try {
         const journal = (state as any).journal
         if (journal) {
-            const journalContext = journal.getJournalContextForPrompt(content)
+            // The journal spans all users: owner-only, decided by the journal.
+            const journalContext = journal.getJournalContextForPrompt(content, { permission: principalContext.permission })
             if (journalContext) systemPrompt += journalContext
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
@@ -1255,7 +1312,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const { getAutoObserver } = await import('../memory/auto-observer.js')
             const observer = getAutoObserver()
             await observer.initialize()
-            await observer.observe(principalId, content, 'user', `${channel}-${Date.now()}`)
+            // The role decides alias registration (owner only). Typed for the
+            // options parameter so this compiles before and after that change.
+            await (observer as { observe(userId: string, message: string, role: 'user' | 'assistant', sessionId?: string, options?: { permission?: string }): Promise<unknown> })
+                .observe(principalId, content, 'user', `${channel}-${Date.now()}`, { permission: principalContext.permission })
         }
 
         // One memory prompt boundary combines governed facts with compact,
@@ -1499,10 +1559,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Response Cache — Check before LLM call
         // ============================================
         let cachedResponse: string | null = null
+        // Computed once: lookup and store must use the same history.
+        const cacheKeyMessages = responseCacheMessages(canonicalUser, channel, content)
         try {
             const { getCachedResponse } = await import('../llm/response-cache.js')
-            const messages = [{ role: 'user', content }]
-            cachedResponse = getCachedResponse(systemPrompt, messages)
+            cachedResponse = getCachedResponse(systemPrompt, cacheKeyMessages)
             if (cachedResponse) {
                 console.log(`[Pipeline] ✅ Cache HIT — skipping LLM call`)
             }
@@ -1550,10 +1611,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             setStatus('thinking', content.slice(0, 80))
         } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
 
-        // Task Tracker: start tracking this task
+        // Task Tracker: start tracking this task. The id lets a concurrent
+        // request's completion leave this task alone.
+        let trackedTaskId: string | undefined
         try {
             const { startTask } = await import('./task-tracker.js')
-            await startTask(content, channel, canonicalUser)
+            trackedTaskId = (await startTask(content, channel, canonicalUser))?.id
         } catch (err) { console.debug('[Pipeline] task tracker error:', err) }
 
         // Plugin Hook: beforeLLMCall — plugins may inject context (e.g. Brain knowledge search)
@@ -2056,9 +2119,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Cache successful response for future identical queries
             try {
                 const { cacheResponse } = await import('../llm/response-cache.js')
-                const messages = [{ role: 'user', content }]
                 if (!(result as any).error && result.validation?.success === true && !detectActionIntent(content).requiresTool) {
-                    cacheResponse(systemPrompt, messages, finalContent, routedModel || 'default')
+                    cacheResponse(systemPrompt, cacheKeyMessages, finalContent, routedModel || 'default')
                 }
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             console.log(`[Nova] [${channel}] Antwort gesendet (${supervised.content.length} chars, ${result.toolsExecuted.length} tools, Session: ${result.sessionId.slice(0, 8)}...)`)
@@ -2066,7 +2128,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Task Tracker: mark task as complete
             try {
                 const { completeTask } = await import('./task-tracker.js')
-                completeTask(Boolean((result as any).error) || result.validation?.success !== true)
+                // Typed for the optional task id so this compiles before and after it exists.
+                ;(completeTask as (failed?: boolean, taskId?: string) => void)(Boolean((result as any).error) || result.validation?.success !== true, trackedTaskId)
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             // Dashboard: update stats
             try {

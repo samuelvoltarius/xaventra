@@ -148,9 +148,9 @@ export class AuthManager {
      */
     loginDashboard(password: string, ip?: string): DashboardSession | null {
         if (!this.config.dashboardPassword) {
-            // No password set - allow access (first-time setup)
-            console.log('[Auth] No dashboard password set - allowing access')
-            return this.createSession(ip)
+            // Fail closed: without a configured password nobody logs in.
+            console.log('[Auth] No dashboard password set - login refused')
+            return null
         }
 
         const hashedInput = this.hashPassword(password)

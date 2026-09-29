@@ -30,6 +30,11 @@ export interface NativeReceiptRehydration {
     rejected: Array<{ receiptId: string; reason: string }>
 }
 
+/** Receipts only matter for a takeover of a still running mission. Older ones
+ * are dropped so the file (rewritten on every save) cannot grow forever. */
+const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+const MAX_RECEIPTS = 5_000
+
 function stableReceiptId(scopeId: string, principalId: string, channel: string, callId: string): string {
     return createHash('sha256').update(`${scopeId}\0${principalId}\0${channel}\0${callId}`).digest('hex')
 }
@@ -68,7 +73,15 @@ export class NativeToolReceiptStore {
         }
     }
 
-    private saveState(): void { atomicWriteJsonSync(this.file, this.state) }
+    private saveState(): void {
+        const cutoff = new Date(Date.now() - RECEIPT_RETENTION_MS).toISOString()
+        const kept = Object.values(this.state.receipts)
+            .filter(receipt => receipt.savedAt >= cutoff)
+            .sort((left, right) => right.savedAt.localeCompare(left.savedAt))
+            .slice(0, MAX_RECEIPTS)
+        this.state.receipts = Object.fromEntries(kept.map(receipt => [receipt.receiptId, receipt]))
+        atomicWriteJsonSync(this.file, this.state)
+    }
 
     exportScope(scopeId: string): NativeToolReceipt[] {
         return Object.values(this.state.receipts)

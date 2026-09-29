@@ -92,4 +92,28 @@ describe('NativeToolReceiptStore', () => {
             scopeId: f.scopeId, principalId: f.principalId, channel: f.channel, kernel: tamperedKernel,
         })).toMatchObject({ restored: 0, rejected: [{ reason: 'result hash mismatch' }] })
     })
+
+    it('drops receipts past the retention window when saving (R2 A27)', async () => {
+        const f = fixture()
+        const store = new IdempotencyStore(f.idempotencyFile)
+        const inputHash = evidenceHash(f.executionArgs)
+        await store.executeOnce({ key: f.key, runId: f.scopeId, operation: 'read_file', inputHash, execute: async () => f.result })
+        const stale = {
+            version: 1, receiptId: 'stale-receipt', scopeId: 'old-scope', principalId: 'owner-1', channel: 'cli',
+            contractFingerprint: 'x', idempotencyKey: 'old', executionInputHash: 'x',
+            evidence: { callId: 'old-call', toolName: 'read_file', resultHash: 'x' },
+            savedAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+        }
+        writeFileSync(f.receiptFile, JSON.stringify({ version: 1, receipts: { 'stale-receipt': stale } }))
+        const kernel = new ExecutionKernel('Lies die Datei a.txt', { allowedChanges: { allowedTools: ['read_file'] } })
+        expect(kernel.verify('read_file', f.result, { callId: 'call-1', arguments: f.evidenceArgs }).success).toBe(true)
+        new NativeToolReceiptStore(store, f.receiptFile).save({
+            scopeId: f.scopeId, principalId: f.principalId, channel: f.channel,
+            contract: kernel.contract, idempotencyKey: f.key, executionInputHash: inputHash,
+            evidence: kernel.getVerifiedToolCallEvidence('call-1')!,
+        })
+        const persisted = JSON.parse(readFileSync(f.receiptFile, 'utf8'))
+        expect(Object.keys(persisted.receipts)).toHaveLength(1)
+        expect(persisted.receipts['stale-receipt']).toBeUndefined()
+    })
 })

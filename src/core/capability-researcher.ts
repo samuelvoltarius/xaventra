@@ -103,7 +103,8 @@ function cacheKey(capability: string, nodeName: string, hw: string): string {
 // ============================================
 
 function isAppleSilicon(hardware: unknown): boolean {
-    return /apple|m[1-4]|metal/i.test(JSON.stringify(hardware ?? ''))
+    // Word boundaries: "nvme1" or "ram4" must not look like an Apple M1/M4 chip.
+    return /apple|\bm[1-4]\b|metal/i.test(JSON.stringify(hardware ?? ''))
 }
 
 function hasNvidiaCuda(hardware: unknown): boolean {
@@ -117,7 +118,7 @@ function isArmEdge(node: MeshSetupNode): boolean {
 function detectOs(node: MeshSetupNode): 'macos' | 'windows' | 'linux' | 'arm-linux' {
     const hw = JSON.stringify(node.hardware ?? {}).toLowerCase()
     const name = (node.name + ' ' + (node.role ?? '')).toLowerCase()
-    if (/mac|apple|m[1-4]/.test(hw) || /mac/.test(name)) return 'macos'
+    if (/mac|apple|\bm[1-4]\b/.test(hw) || /mac/.test(name)) return 'macos'
     if (/win/.test(hw) || /windows/.test(name)) return 'windows'
     if (isArmEdge(node)) return 'arm-linux'
     return 'linux'
@@ -444,6 +445,7 @@ export async function researchCapability(
     console.log(`[CapabilityResearcher] 🔬 Researching: ${capability} on ${node.name} (${detectOs(node)})`)
 
     let result: CapabilityResearchResult
+    let researched = false
 
     try {
         const { spawnSubagent } = await import('../agents/subagent-orchestrator.js')
@@ -486,15 +488,19 @@ export async function researchCapability(
         }
 
         console.log(`[CapabilityResearcher] ✅ Found: ${result.recommended.name} v${result.recommended.version} [confidence: ${confidence}]`)
+        researched = true
     } catch (err) {
         console.warn(`[CapabilityResearcher] ⚠️ Web-Recherche fehlgeschlagen (${err}) — nutze statisches Fallback`)
         result = getStaticFallback(capability, node)
     }
 
-    // Write cache
-    const cache = loadCache()
-    cache[key] = { ...result, cachedAt: Date.now() }
-    saveCache(cache)
+    // Only real research results are cached; a fallback after a transient
+    // failure must not suppress the next research attempt for a week.
+    if (researched) {
+        const cache = loadCache()
+        cache[key] = { ...result, cachedAt: Date.now() }
+        saveCache(cache)
+    }
 
     return result
 }

@@ -10,6 +10,7 @@
  */
 
 import { stripMissionProtocolMarkers } from './execution-control.js'
+import { isNovaSystemAuthored } from './system-message.js'
 import type { MessageContext, MessageExecutionOptions } from './message-pipeline.js'
 import type { PrincipalContext } from '../users/principal-id.js'
 import { startTrace, endTrace, runWithTrace, traceLog } from './request-tracer.js'
@@ -45,10 +46,26 @@ export type ExternalMessageHandler = (
     messageContext?: MessageContext,
 ) => Promise<any>
 
+/**
+ * Internal prefixes ([REMINDER], [HEARTBEAT], [SELF-THINK], ...) make the
+ * pipeline treat a message as system-authored. In external text they are
+ * neutralized ("[REMINDER]" -> "(REMINDER]"), so nobody can fake a system
+ * message. Only producers that pass `execution.systemAuthored` keep them.
+ */
+export function neutralizeInternalPrefixes(content: string): string {
+    let text = content
+    for (let guard = 0; guard < 8 && isNovaSystemAuthored({ content: text }); guard++) {
+        const start = text.length - text.trimStart().length
+        text = `${text.slice(0, start)}(${text.slice(start + 1)}`
+    }
+    return text
+}
+
 export function createDaemonMessageEntry(deps: DaemonMessageEntryDeps): ExternalMessageHandler {
     return async function handleMessage(channel, from, rawContent, replyFn, image, execution, messageContext) {
         // Trust boundary: external text never carries mission protocol markers.
-        const content = stripMissionProtocolMarkers(String(rawContent ?? ''))
+        const stripped = stripMissionProtocolMarkers(String(rawContent ?? ''))
+        const content = execution?.systemAuthored === true ? stripped : neutralizeInternalPrefixes(stripped)
         const traceId = startTrace(channel, from, content)
         recordChannelMessage({ channel, direction: 'inbound' })
         const { getStateMachine } = await import('./state-machine.js')

@@ -22,7 +22,7 @@ export interface ChannelStarterConfig {
     channels: {
         telegram?: { enabled: boolean; token: string; allowFrom?: string[] }
         whatsapp?: { enabled: boolean; authPath?: string }
-        discord?: { enabled: boolean; token?: string }
+        discord?: { enabled: boolean; token?: string; allowFrom?: string[]; guildId?: string }
         cli?: { enabled: boolean }
     }
     dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
@@ -463,7 +463,7 @@ async function startTelegramOnce(
                             await (adapter.send as any)({ to: replyTo, content: reply })
                         }
                     } catch { /* non-critical */ }
-                })
+                }, undefined, { systemAuthored: true })
             } catch (err) {
                 console.error(`[Reminder] Wakeup pipeline failed: ${err}`)
             }
@@ -532,7 +532,7 @@ async function startTelegramOnce(
                             })
                         }
                     } catch { /* non-critical */ }
-                })
+                }, undefined, { systemAuthored: true })
             } catch (err) {
                 console.error(`[Heartbeat] Wakeup failed: ${err}`)
             }
@@ -584,7 +584,8 @@ export async function startWhatsApp(
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 await (adapter as any).send({
                     channel: 'whatsapp',
-                    to: msg.from,
+                    // In groups `from` is the participant; the answer belongs in the group.
+                    to: msg.groupId || msg.from,
                     content: reply,
                 })
             })
@@ -626,8 +627,11 @@ export async function startDiscord(
     try {
         const { DiscordAdapter } = await import('../channels/discord.js')
 
+        // The adapter is fail-closed: without allowFrom it ignores everyone.
         const adapter = new DiscordAdapter({
             token: config.token,
+            allowFrom: config.allowFrom,
+            guildId: config.guildId,
         })
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -687,7 +691,8 @@ export async function startDashboard(
         setNovaMessageHandler(async (message: string, channel: string) => {
             // Collect the response via a callback
             let response = ''
-            const replyFn = async (msg: string) => { response = msg }
+            // Append every partial reply; overwriting delivered only the last one.
+            const replyFn = async (msg: string) => { response = response ? `${response}\n\n${msg}` : msg }
 
             // Route through the unified handler — gets ALL features automatically:
             // Admin code, slash commands, GraphRAG, Journal, LanceDB, Observer, etc.

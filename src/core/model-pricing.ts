@@ -86,6 +86,11 @@ export function parseNvidiaPowerDraw(value: string): number {
     return Number.isFinite(watts) && watts > 0 ? watts : 0
 }
 
+// nvidia-smi is a synchronous child process (up to 2 s); one reading is
+// reused briefly instead of blocking the event loop on every agent run.
+const POWER_SAMPLE_TTL_MS = 30_000
+let lastPowerSample: { watts: number; at: number } | null = null
+
 function localPowerWatts(explicit?: number): { watts: number; source: string } {
     const configured = Number(explicit ?? process.env.NOVA_LOCAL_POWER_WATTS ?? 0)
     if (Number.isFinite(configured) && configured > 0) {
@@ -95,13 +100,17 @@ function localPowerWatts(explicit?: number): { watts: number; source: string } {
         || process.env.NOVA_AUTO_MEASURE_LOCAL_POWER === '0') {
         return { watts: 0, source: 'unpriced local runtime' }
     }
-    try {
-        const measured = spawnSync('nvidia-smi', [
-            '--query-gpu=power.draw', '--format=csv,noheader,nounits',
-        ], { encoding: 'utf8', timeout: 2_000, windowsHide: true })
-        const watts = measured.status === 0 ? parseNvidiaPowerDraw(measured.stdout) : 0
-        if (watts > 0) return { watts, source: 'measured local GPU power via nvidia-smi' }
-    } catch { /* non-NVIDIA and restricted nodes remain explicitly unpriced */ }
+    if (!lastPowerSample || Date.now() - lastPowerSample.at > POWER_SAMPLE_TTL_MS) {
+        let watts = 0
+        try {
+            const measured = spawnSync('nvidia-smi', [
+                '--query-gpu=power.draw', '--format=csv,noheader,nounits',
+            ], { encoding: 'utf8', timeout: 2_000, windowsHide: true })
+            watts = measured.status === 0 ? parseNvidiaPowerDraw(measured.stdout) : 0
+        } catch { /* non-NVIDIA and restricted nodes remain explicitly unpriced */ }
+        lastPowerSample = { watts, at: Date.now() }
+    }
+    if (lastPowerSample.watts > 0) return { watts: lastPowerSample.watts, source: 'measured local GPU power via nvidia-smi' }
     return { watts: 0, source: 'unpriced local runtime' }
 }
 
@@ -126,7 +135,8 @@ export function estimateUsageCost(input: {
         ? (inputTokens * price.inputUsdPerMillion * (longContext54 ? 2 : 1)
             + outputTokens * price.outputUsdPerMillion * (longContext54 ? 1.5 : 1)) / 1_000_000
         : 0
-    const measuredPower = localPowerWatts(input.powerWatts)
+    // Cloud runs never measure local GPU power (it is not their cost).
+    const measuredPower = local ? localPowerWatts(input.powerWatts) : { watts: 0, source: 'unpriced model' }
     const powerWatts = measuredPower.watts
     const energyUsdPerKwh = Math.max(0, Number(process.env.NOVA_ENERGY_USD_PER_KWH || 0.30))
     const hardwareUsdPerHour = Math.max(0, Number(process.env.NOVA_HARDWARE_USD_PER_HOUR || 0))

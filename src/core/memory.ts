@@ -56,6 +56,7 @@ export class MemoryManager {
     private _saveTimer: NodeJS.Timeout | null = null
     private _dirtyConversations: Set<string> = new Set()
     private _deletedConversations: Set<string> = new Set()
+    private _unreadableConversations: Set<string> = new Set()
 
     constructor(config: MemoryConfig = {}) {
         this.config = {
@@ -84,9 +85,15 @@ export class MemoryManager {
 
             for (const id of index.conversationIds) {
                 const convPath = join(this.config.storagePath, `${id}.json`)
-                if (existsSync(convPath)) {
+                if (!existsSync(convPath)) continue
+                try {
                     const convData = readFileSync(convPath, 'utf-8')
                     this.conversations.set(id, JSON.parse(convData))
+                } catch (err) {
+                    // One damaged file must neither stop loading the others
+                    // nor disappear from the index on the next flush.
+                    this._unreadableConversations.add(id)
+                    console.warn(`[Memory] Conversation ${id} unreadable, kept on disk:`, err)
                 }
             }
 
@@ -121,7 +128,8 @@ export class MemoryManager {
 
         // Save index only if new conversations were added
         const indexPath = join(this.config.storagePath, 'index.json')
-        const index = { conversationIds: Array.from(this.conversations.keys()) }
+        const unreadable = [...this._unreadableConversations].filter(id => !this.conversations.has(id) && !deleted.has(id))
+        const index = { conversationIds: [...Array.from(this.conversations.keys()), ...unreadable] }
         writes.push(atomicWriteJson(indexPath, index))
 
         // Save only dirty conversations
@@ -133,6 +141,9 @@ export class MemoryManager {
         }
 
         for (const id of deleted) {
+            // Re-created after the clear: its new content is written above.
+            if (this.conversations.has(id)) continue
+            this._unreadableConversations.delete(id)
             writes.push(rm(join(this.config.storagePath, `${id}.json`), { force: true }))
         }
 
@@ -314,7 +325,7 @@ export class MemoryManager {
     }
 
     clearAll(): void {
-        for (const id of this.conversations.keys()) {
+        for (const id of [...this.conversations.keys(), ...this._unreadableConversations]) {
             this._deletedConversations.add(id)
         }
         this.conversations.clear()

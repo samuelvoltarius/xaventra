@@ -9,7 +9,7 @@
 
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { getNovaDataDir } from './data-root.js'
@@ -400,7 +400,9 @@ export function buildScpArgs(node: UpdateNodeConfig, sources: string[], target: 
 
 function releasePaths(node: UpdateNodeConfig, releaseId: string): { stage: string; backup: string } {
     return {
-        stage: `/tmp/nova-release-${releaseId}`,
+        // Not a predictable name in world-writable /tmp: another local user
+        // could pre-create it and swap dist after signature verification.
+        stage: `${node.path}/.nova-update/stage-${releaseId}`,
         backup: `${node.path}/.nova-update/${releaseId}`,
     }
 }
@@ -415,9 +417,14 @@ async function stageRelease(node: UpdateNodeConfig, release: SignedReleaseManife
     if (!existsSync(releaseDir)) mkdirSync(releaseDir, { recursive: true })
     const archive = join(releaseDir, `${release.payload.releaseId}.tar.gz`)
     if (!existsSync(archive)) {
-        await execFileAsync('tar', ['-czf', archive, 'dist', 'package.json', 'package-lock.json'], {
+        // Write under a temporary name: an archive interrupted by timeout or
+        // crash must never be reused (and hashed) as a complete release.
+        const partial = `${archive}.partial`
+        rmSync(partial, { force: true })
+        await execFileAsync('tar', ['-czf', partial, 'dist', 'package.json', 'package-lock.json'], {
             cwd: process.cwd(), timeout: 180_000, windowsHide: true, maxBuffer: 20 * 1024 * 1024,
         })
+        renameSync(partial, archive)
     }
     const archiveSha256 = createHash('sha256').update(readFileSync(archive)).digest('hex')
     await ssh(node, `set -eu; rm -rf '${stage}'; mkdir -p '${stage}'`)
@@ -429,6 +436,13 @@ async function stageRelease(node: UpdateNodeConfig, release: SignedReleaseManife
         ? `docker run --rm --network none -v '${stage}:/release:ro' -v "$config:/xaventra.config.json:ro" node:22-bookworm-slim node /release/dist/core/release-verifier.js /release/dist/.nova-release.json /release/dist /xaventra.config.json`
         : `node '${stage}/dist/core/release-verifier.js' '${stage}/dist/.nova-release.json' '${stage}/dist' "$config"`
     await ssh(node, `set -eu; ${selectConfig}; ${verifyCommand}`, 180_000)
+}
+
+/** Fails before anything is changed when a backup slot for this release is
+ * still occupied; a rollback after this check would demote the running dist. */
+async function assertActivationSlotFree(node: UpdateNodeConfig, releaseId: string): Promise<void> {
+    const { backup } = releasePaths(node, releaseId)
+    await ssh(node, `set -eu; mkdir -p '${backup}'; test ! -e '${backup}/dist'`)
 }
 
 async function activateSystemd(node: UpdateNodeConfig, releaseId: string): Promise<void> {
@@ -557,6 +571,11 @@ async function deployNode(node: UpdateNodeConfig, release: SignedReleaseManifest
         await assertDockerDiskHeadroom(node)
         log(`${node.name}: staging and signature verification`)
         await stageRelease(node, release)
+        try {
+            await assertActivationSlotFree(node, release.payload.releaseId)
+        } catch (error) {
+            throw new Error(`backup slot for ${release.payload.releaseId} already exists; deploy a new version instead of overwriting it: ${formatExecError(error, 1000)}`)
+        }
         log(`${node.name}: activating ${node.runtime} release`)
         activationStarted = true
         if (node.runtime === 'docker-compose') await activateDocker(node, release.payload.releaseId)
@@ -597,6 +616,7 @@ async function deployNode(node: UpdateNodeConfig, release: SignedReleaseManifest
 export async function deployUpdateToAllNodes(config: UpdateConfig, notifyFn?: (message: string) => void): Promise<boolean> {
     if (deploymentPromise) return deploymentPromise
     deploymentPromise = (async () => {
+        let checkpoint: NonNullable<PersistedUpdateState['activeDeployment']> | undefined
         updateStatus.running = true
         updateStatus.pendingUpdate = true
         updateStatus.updateLog = []
@@ -622,6 +642,7 @@ export async function deployUpdateToAllNodes(config: UpdateConfig, notifyFn?: (m
                 sourceNode: getLocalNodeId(),
             }
             saveState({ lastRelease: release.payload.releaseId, activeDeployment, receipts })
+            checkpoint = activeDeployment
             await publishUpdateState()
             const canaryCount = Math.max(1, Math.min(config.nodes.length, config.canaryCount || 1))
             for (let index = 0; index < config.nodes.length; index++) {
@@ -688,6 +709,15 @@ export async function deployUpdateToAllNodes(config: UpdateConfig, notifyFn?: (m
         } catch (error) {
             log(`Release aborted: ${String(error)}`)
             updateStatus.pendingUpdate = true
+            if (checkpoint) {
+                // A checkpoint left in 'deploying' would report running forever
+                // and silently block every later automatic rollout.
+                try {
+                    saveState({ activeDeployment: { ...checkpoint, phase: 'failed', receipts: [...checkpoint.receipts] } })
+                } catch (saveError) {
+                    log(`Release checkpoint could not be marked failed: ${String(saveError)}`)
+                }
+            }
             return false
         } finally {
             updateStatus.running = false
@@ -719,12 +749,25 @@ export function startUpdateChecker(config: UpdateConfig, notifyFn?: (message: st
         if (persisted.observedVersion && persisted.observedVersion !== current) {
             const activeForCurrent = persisted.activeDeployment?.version === current
                 && ['prepared', 'deploying'].includes(persisted.activeDeployment.phase)
-            if (activeForCurrent) return
-            const failedReleaseNeedsOperator = Boolean(persisted.lastRelease) && (persisted.receipts || []).some(
-                receipt => receipt.releaseId === persisted.lastRelease
-                    && receipt.status !== 'verified'
-                    && persisted.lastRelease?.startsWith(`${current}-`),
-            )
+            if (activeForCurrent) {
+                if (deploymentPromise) return
+                // Only this control plane deploys. A checkpoint still 'deploying'
+                // without a running deployment was interrupted (restart, lease
+                // loss, hydrated from the previous Main): report it, never
+                // silently wait forever and never auto-restart it.
+                const interrupted = persisted.activeDeployment!
+                saveState({ activeDeployment: { ...interrupted, phase: 'failed' } })
+                refreshStatusFromState(config)
+                notifyOnce(`release-interrupted:${interrupted.releaseId}`, `⚠️ Nova ${current}: Rollout ${interrupted.releaseId} wurde unterbrochen. Kein automatischer Neustart; /update deploy startet ihn manuell.`, notifyFn)
+                return
+            }
+            const failedReleaseNeedsOperator = (persisted.activeDeployment?.version === current
+                && persisted.activeDeployment.phase === 'failed')
+                || (Boolean(persisted.lastRelease) && (persisted.receipts || []).some(
+                    receipt => receipt.releaseId === persisted.lastRelease
+                        && receipt.status !== 'verified'
+                        && persisted.lastRelease?.startsWith(`${current}-`),
+                ))
             if (config.autoDeployOnVersionChange && !config.notifyOnly && !deploymentPromise && !failedReleaseNeedsOperator) {
                 void deployUpdateToAllNodes(config, notifyFn)
             } else if (failedReleaseNeedsOperator) {
