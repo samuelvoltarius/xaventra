@@ -765,7 +765,9 @@ export async function handleMessage(
     // Maschine geht und was nicht.
     try {
         const { getCapabilitiesPrompt } = await import('../memory/capabilities-store.js')
-        const gelernt = getCapabilitiesPrompt()
+        // Command details are owner-only; typed so it compiles before and after
+        // the options parameter exists.
+        const gelernt = (getCapabilitiesPrompt as (options?: { permission?: string }) => string)({ permission: principalContext.permission })
         if (gelernt.trim()) systemPrompt += '\n\n' + gelernt
     } catch { /* nicht kritisch */ }
 

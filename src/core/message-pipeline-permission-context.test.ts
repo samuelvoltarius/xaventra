@@ -11,4 +11,8 @@ describe('pipeline passes the principal role to role-gated context', () => {
     it('observe() receives the permission (R2 UEB-18)', () => {
         expect(pipelineSource).toMatch(/\.observe\(principalId, content, 'user', `\$\{channel\}-\$\{Date\.now\(\)\}`, \{ permission: principalContext\.permission \}\)/)
     })
+
+    it('getCapabilitiesPrompt() receives the permission (R2 UEB-19)', () => {
+        expect(pipelineSource).toMatch(/\(getCapabilitiesPrompt as [^\n]*\)\(\{ permission: principalContext\.permission \}\)/)
+    })
 })
