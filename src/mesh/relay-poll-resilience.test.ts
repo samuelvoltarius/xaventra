@@ -19,7 +19,7 @@ afterEach(async () => {
 describe('MI-7 relay poll resilience', () => {
     it('keeps delivering after a rejected envelope and acknowledges the rejected one', async () => {
         const token = ['relay-test-', 'credential-value-654321'].join('')
-        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, dataFile: join(mkdtempSync(join(tmpdir(), 'nova-mi7-')), 'queue.enc.json') })
+        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, allowSharedToken: true, dataFile: join(mkdtempSync(join(tmpdir(), 'nova-mi7-')), 'queue.enc.json') })
         active.push(relay)
         const source = new MeshIdentity('relay-a', mkdtempSync(join(tmpdir(), 'nova-mi7-a-')))
         const sender = new RelayMeshTransport('relay-a', { url: relay.url, token, pollMs: 60_000 })
