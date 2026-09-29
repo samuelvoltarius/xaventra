@@ -1972,6 +1972,7 @@
         "../config/config-path.js",
         "../users/principal-id.js",
         "./self-description.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]
@@ -4478,7 +4479,12 @@
     {
       "module": "src/resilience/ssrf-guard.ts",
       "imports": [
-        "node:net"
+        "node:dns/promises",
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:stream",
+        "node:zlib"
       ]
     },
     {
@@ -4676,12 +4682,14 @@
     {
       "module": "src/security/ssrf-guard.ts",
       "imports": [
+        "../resilience/ssrf-guard.js",
         "node:url"
       ]
     },
     {
       "module": "src/server/rest-api.ts",
       "imports": [
+        "node:crypto",
         "node:http"
       ]
     },
@@ -4993,6 +5001,7 @@
         "./tool-result-quality.js",
         "./vision-tool.js",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
