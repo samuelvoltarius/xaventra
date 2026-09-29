@@ -141,6 +141,12 @@ export class Factory extends EventEmitter {
 
             await this.reviewResults(task)
 
+            // A failed subtask is never reported as a completed task.
+            const failed = task.subtasks.filter(st => st.status === 'failed')
+            if (failed.length > 0) {
+                throw new Error(`${failed.length} Teilaufgabe(n) fehlgeschlagen: ${failed.map(st => st.error || st.type).join('; ').slice(0, 500)}`)
+            }
+
             // Complete
             task.status = 'completed'
             task.completedAt = Date.now()
@@ -314,7 +320,9 @@ export class Factory extends EventEmitter {
     // ============================================
 
     private async executeSubtasks(task: FactoryTask): Promise<void> {
-        for (const subtask of task.subtasks) {
+        // Snapshot: fixer subtasks appended below run in their own sub-agent
+        // and must not be re-executed (and re-fixed) by this loop.
+        for (const subtask of [...task.subtasks]) {
             if (subtask.status === 'completed') continue
 
             subtask.status = 'in_progress'
@@ -355,19 +363,16 @@ export class Factory extends EventEmitter {
 
         const prompt = prompts[subtask.type] || subtask.description
 
-        // Call actual LLM
-        try {
-            const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
-            const llm = await createNovaLLMClient({})
-            const response = await llm.complete([
-                { role: 'system', content: `Du bist ein ${_role || 'coder'} Agent. Antworte präzise und fokussiert.` },
-                { role: 'user', content: prompt }
-            ])
-            return response.content || `[${subtask.type.toUpperCase()}] Completed`
-        } catch (err) {
-            console.log(`[Factory] LLM call failed, using placeholder: ${err}`)
-            return `[${subtask.type.toUpperCase()}] Result for: ${prompt.slice(0, 50)}...`
-        }
+        // Call actual LLM. Without a real answer the subtask fails; a
+        // placeholder text must never count as a completed result.
+        const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
+        const llm = await createNovaLLMClient({})
+        const response = await llm.complete([
+            { role: 'system', content: `Du bist ein ${_role || 'coder'} Agent. Antworte präzise und fokussiert.` },
+            { role: 'user', content: prompt }
+        ])
+        if (!response.content?.trim()) throw new Error(`LLM lieferte keine Antwort für ${subtask.type}`)
+        return response.content
     }
 
     // ============================================
