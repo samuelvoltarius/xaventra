@@ -52,12 +52,14 @@ export class NativeReleaseSelection {
         }
         const lock = join(this.config.root, 'selection.lock'); mkdirSync(lock, { mode: 0o700 })
         writeUpdateState(join(lock, 'owner.json'), { bindingHash: repairHash(binding) })
-        let finished = false
+        let finished = false, intent = false
         try {
             await this.stopped(expected)
             const text = read(candidate.unitFile)
             if (hash(text) !== candidate.unitHash || hash(read(this.config.fragmentPath)) !== old.unitHash) throw Error('Native unit CAS mismatch')
             await this.authority(ticket)
+            // From here on a (possibly partial) intent may exist: keep the lock.
+            intent = true
             writeUpdateState(receiptPath, { binding, status: 'intent' })
             const temp = `${this.config.fragmentPath}.${randomUUID()}.pending`
             const fd = openSync(temp, 'wx', 0o600)
@@ -76,7 +78,10 @@ export class NativeReleaseSelection {
             writeUpdateState(receiptPath, { binding, status: 'selected' })
             finished = true
         } finally {
-            if (finished) this.releaseLock(repairHash(binding))
+            // Before any intent nothing on disk or in the manager changed, so an
+            // error must not strand this binding's own lock (it would block the
+            // rollback selection). Once an intent may exist, keep it for reconcile.
+            if (finished || !intent && !existsSync(receiptPath)) this.releaseLock(repairHash(binding))
         }
     }
     /** Read-only reconciliation of an interrupted selection, then durable mark.

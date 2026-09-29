@@ -1,5 +1,5 @@
 import { it, expect, vi } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -68,4 +68,30 @@ it('keeps one ticket binding throughout selection despite callback mutation', as
     f.auth.mockImplementation(async () => true)
     await f.selection.select('next', 'old', original)
     expect(control.reloads).toBe(1)
+})
+it('releases its own lock when fenced before the intent exists, so rollback selection still works', async () => {
+    const f = fixture(); await f.selection.select('next', 'old', f.ticket)
+    // Rollback direction: first authority check passes, the one before the intent fails.
+    f.auth.mockResolvedValueOnce(true).mockResolvedValue(false)
+    await expect(f.selection.select('old', 'next', f.ticket)).rejects.toThrow('fenced')
+    expect(existsSync(join(f.root, 'selection.lock'))).toBe(false)
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('next'); expect(control.reloads).toBe(1)
+    f.auth.mockResolvedValue(true)
+    await f.selection.select('old', 'next', f.ticket)
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old'); expect(control.reloads).toBe(2)
+    expect(existsSync(join(f.root, 'selection.lock'))).toBe(false)
+})
+it('releases its own lock when the stopped-service proof fails before the intent', async () => {
+    const f = fixture(); control.running = true
+    await expect(f.selection.select('next', 'old', f.ticket)).rejects.toThrow('clean stopped')
+    expect(existsSync(join(f.root, 'selection.lock'))).toBe(false)
+    control.running = false
+    await f.selection.select('next', 'old', f.ticket)
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('next')
+})
+it('never releases a lock owned by another selection binding', async () => {
+    const f = fixture(); mkdirSync(join(f.root, 'selection.lock'))
+    writeFileSync(join(f.root, 'selection.lock', 'owner.json'), JSON.stringify({ bindingHash: 'e'.repeat(64) }))
+    await expect(f.selection.select('next', 'old', f.ticket)).rejects.toThrow()
+    expect(existsSync(join(f.root, 'selection.lock', 'owner.json'))).toBe(true)
 })
