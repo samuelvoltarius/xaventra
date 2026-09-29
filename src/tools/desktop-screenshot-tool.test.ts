@@ -89,3 +89,15 @@ it.each([['socket only', 'NOVA_CAPTURE_TOKEN_FILE'], ['token only', 'NOVA_CAPTUR
         .toMatchObject({ success: false })
     expect(mocks.exec).not.toHaveBeenCalled()
 })
+// INT-4: the owner path without an enrolled capture adapter used to capture
+// the daemon's local display. It must refuse instead.
+it('refuses the owner without an enrolled capture adapter and never captures the local display', async () => {
+    vi.stubEnv('NOVA_CAPTURE_SOCKET', '')
+    vi.stubEnv('NOVA_CAPTURE_TOKEN_FILE', '')
+    const result = await withExecutionPolicyContext(owner, () => desktopScreenshotTool.handler({ name: 'fixture' }))
+    expect(result).toEqual({ success: false, captured: false, delivered: false, error: 'no enrolled capture adapter; local capture disabled' })
+    expect(mocks.exec).not.toHaveBeenCalled()
+    expect(mocks.capture).not.toHaveBeenCalled()
+    expect(mocks.write).not.toHaveBeenCalled()
+    expect(mocks.send).not.toHaveBeenCalled()
+})

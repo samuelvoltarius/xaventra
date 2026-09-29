@@ -105,7 +105,8 @@ never `desktop_input`); or an explicit operator `allow` rule in `toolPolicy`.
 Telegram channel, run id), so a caller that skips the governed executor
 cannot capture. When `NOVA_CAPTURE_SOCKET` or `NOVA_CAPTURE_TOKEN_FILE` is set
 it captures only through the enrolled adapter and never falls back to the
-daemon's local display. `send_file` delivers only to the authenticated
+daemon's local display; without an enrolled adapter it refuses and captures
+nothing. `send_file` delivers only to the authenticated
 Telegram requester of the current run; it ignores `chat_id` and never uses the
 last active chat.
 

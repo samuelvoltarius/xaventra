@@ -39,7 +39,10 @@ authenticated desktop client or an enrolled capture adapter is configured; it
 never captures the daemon's local display. When `NOVA_CAPTURE_SOCKET` or
 `NOVA_CAPTURE_TOKEN_FILE` is set, capture goes only through the enrolled
 adapter, without local-display fallback on denial, lock, timeout or
-misconfiguration.
+misconfiguration. Without an enrolled adapter the handler refuses with
+`no enrolled capture adapter; local capture disabled` (also for the owner and
+for an operator allow rule); only the authenticated Nova Desktop client path
+captures without Core-side enrollment.
 
 ## Enrollment boundaries
 

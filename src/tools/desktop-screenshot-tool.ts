@@ -15,36 +15,10 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { execSync } from 'node:child_process'
 import { getDesktopAgentContext } from '../desktop/desktop-agent-context.js'
 import { getDesktopControlQueue } from '../desktop/desktop-control.js'
 import { requestSessionCapture } from '../host/capture-agent.js'
 import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
-
-function captureDesktop(filePath: string): void {
-    const isWin = process.platform === 'win32'
-    if (isWin) {
-        // PowerShell native — union of all monitors, no external deps
-        const psScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$screens = [System.Windows.Forms.Screen]::AllScreens
-$bounds = [System.Drawing.Rectangle]::Empty
-foreach ($s in $screens) { $bounds = [System.Drawing.Rectangle]::Union($bounds, $s.Bounds) }
-$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-$g.Dispose()
-$bmp.Save('${filePath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-$bmp.Dispose()
-Write-Output 'OK'`
-        execSync(`powershell -NoProfile -Command "${psScript.replace(/\n/g, '; ')}"`, { timeout: 15000 })
-    } else if (process.platform === 'darwin') {
-        execSync(`screencapture -x "${filePath}"`, { timeout: 10000 })
-    } else {
-        execSync(`import -window root "${filePath}" 2>/dev/null || scrot "${filePath}"`, { timeout: 10000 })
-    }
-}
 
 export const desktopScreenshotTool = {
     name: 'desktop_screenshot',
@@ -95,15 +69,18 @@ export const desktopScreenshotTool = {
             if (!/^[a-zA-Z0-9_-]{1,100}$/.test(fileName)) return { success: false, error: 'Invalid screenshot name' }
             const filePath = join(visionDir, `${fileName}.png`)
 
-            if (process.env.NOVA_CAPTURE_SOCKET || process.env.NOVA_CAPTURE_TOKEN_FILE) {
-                // Workstation enrollment configured (even partially): only the
-                // enrolled adapter may capture. Never fall back to the local
-                // display on denial, lock, timeout or misconfiguration.
-                const image = await requestSessionCapture(process.env.NOVA_CAPTURE_SOCKET || '', process.env.NOVA_CAPTURE_TOKEN_FILE || '')
-                writeFileSync(filePath, image, { mode: 0o600, flag: 'wx' })
-            } else {
-                captureDesktop(filePath)
+            if (!process.env.NOVA_CAPTURE_SOCKET && !process.env.NOVA_CAPTURE_TOKEN_FILE) {
+                // INT-4: without an enrolled capture adapter nothing is
+                // captured. The daemon's own display is never a capture source
+                // (it may be a different user's session or a headless host).
+                return { success: false, captured: false, delivered: false,
+                    error: 'no enrolled capture adapter; local capture disabled' }
             }
+            // Workstation enrollment configured (even partially): only the
+            // enrolled adapter may capture. Never fall back to the local
+            // display on denial, lock, timeout or misconfiguration.
+            const image = await requestSessionCapture(process.env.NOVA_CAPTURE_SOCKET || '', process.env.NOVA_CAPTURE_TOKEN_FILE || '')
+            writeFileSync(filePath, image, { mode: 0o600, flag: 'wx' })
 
             if (!existsSync(filePath)) {
                 return { success: false, error: 'Screenshot konnte nicht erstellt werden.' }
