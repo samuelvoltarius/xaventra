@@ -29,6 +29,15 @@ describe('Telegram allowlist matches immutable user ids only', () => {
         expect(handler).toHaveBeenCalledTimes(1)
     })
 
+    it('never admits anyone through an empty entry (TELEGRAM_ALLOW_FROM="" or trailing comma)', async () => {
+        vi.spyOn(console, 'log').mockImplementation(() => undefined)
+        for (const allowFrom of [[''], ['', ' '], ['12345', '']]) {
+            const { adapter, handler } = adapterWith(allowFrom)
+            await (adapter as any).handleMessage(dm(999, ''))
+            expect(handler, JSON.stringify(allowFrom)).not.toHaveBeenCalled()
+        }
+    })
+
     it('matches a username only for entries explicitly marked with @ and warns about it', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
         const { adapter, handler } = adapterWith(['@alfred'])
