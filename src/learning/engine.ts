@@ -64,6 +64,7 @@ export class LearningEngine {
     private config: LearningConfig
     private persistTimer?: NodeJS.Timeout
     private lastBotResponses = new Map<string, string>()
+    private lastUserMessages = new Map<string, string>()
 
     constructor(config: Partial<LearningConfig> = {}) {
         this.config = {
@@ -120,14 +121,21 @@ export class LearningEngine {
      * Returns a learned response if available
      */
     processUserMessage(message: string, context?: { channel?: string; userId?: string }): LearnedResponse | null {
+        const scope = context?.userId || 'global'
+        const previousUserMessage = this.lastUserMessages.get(scope)
+        this.lastUserMessages.set(scope, message)
+
         // 1. Check for feedback in the message
         const feedbackType = this.feedback.detectFeedbackType(message)
         if (feedbackType) {
-            this.handleFeedback(feedbackType, message, context)
+            this.handleFeedback(feedbackType, message, context, previousUserMessage)
         }
 
-        // 2. Check for direct correction response
-        const correctionResponse = this.feedback.getLearnedResponse(message, context?.userId)
+        // 2. Check for direct correction response. A correction message is new
+        // input for the LLM, never answered from the store in the same call.
+        const correctionResponse = feedbackType === 'correction'
+            ? undefined
+            : this.feedback.getLearnedResponse(message, context?.userId)
         if (correctionResponse) {
             return {
                 response: correctionResponse,
@@ -180,7 +188,7 @@ export class LearningEngine {
     // Feedback Handling
     // ============================================
 
-    private handleFeedback(type: FeedbackType, message: string, context?: { channel?: string; userId?: string }): void {
+    private handleFeedback(type: FeedbackType, message: string, context?: { channel?: string; userId?: string }, previousUserMessage?: string): void {
         // Extract correction if present
         let correction: string | undefined
 
@@ -202,9 +210,14 @@ export class LearningEngine {
             }
         }
 
+        // A correction belongs to the question it corrects (the previous user
+        // message), not to the correction text itself — otherwise the next
+        // lookup echoes the correction back instead of acting on it.
+        if (type === 'correction' && !previousUserMessage) correction = undefined
+
         this.feedback.collectFeedback({
             type,
-            userMessage: message,
+            userMessage: type === 'correction' && previousUserMessage ? previousUserMessage : message,
             botResponse: this.lastBotResponses.get(context?.userId || 'global') || '',
             correction,
             ...context,
