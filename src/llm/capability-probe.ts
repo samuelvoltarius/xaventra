@@ -17,6 +17,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { envOpenAIKeyFor } from './endpoint-trust.js'
 
 
 // ============================================
@@ -164,7 +165,11 @@ export async function probeModel(endpoint: string, modelId: string, apiKey?: str
 
     const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
     if (apiKey) authHeaders['Authorization'] = `Bearer ${apiKey}`
-    else if (process.env.OPENAI_API_KEY && !isOllama) authHeaders['Authorization'] = `Bearer ${process.env.OPENAI_API_KEY}`
+    else {
+        // The env key belongs to OpenAI only — never a fallback bearer for other hosts.
+        const envKey = isOllama ? undefined : envOpenAIKeyFor(endpoint)
+        if (envKey) authHeaders['Authorization'] = `Bearer ${envKey}`
+    }
 
     const pingBody = isOllama
         ? { model: modelId, messages: [{ role: 'user', content: 'Hi' }], stream: false }
@@ -331,7 +336,7 @@ export async function probeAllModels(forceRefresh = false): Promise<ModelCapabil
                 if (/embed|nomic|bge|mxbai|e5-|gte-|minilm/.test(lower)) continue
                 if (/:cloud\b/.test(lower)) continue
                 if (lower.includes('gemini')) continue
-                candidates.push({ endpoint: entry.endpoint, model: entry.model })
+                candidates.push({ endpoint: entry.endpoint, model: entry.model, apiKey: entry.apiKey })
             }
         }
     } catch { /* factory optional */ }

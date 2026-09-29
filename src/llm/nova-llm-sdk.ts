@@ -39,6 +39,7 @@ export interface LLMMessage {
 }
 
 import { normalizeTokenUsage } from './token-usage.js'
+import { envOpenAIKeyFor, isLocalEndpoint } from './endpoint-trust.js'
 
 export interface ToolCall {
     id: string
@@ -1285,6 +1286,14 @@ export function classifyLocalModelFailure(message: string): 'transient-timeout' 
     return isOOM || isCrash || isCorrupt ? 'hard-failure' : 'soft-failure'
 }
 
+const CLOUD_PROVIDER_IDS = new Set(['openai', 'openai-codex', 'minimax', 'anthropic', 'claude', 'openrouter', 'groq'])
+
+/** A resolver pick counts as cloud when its provider is a cloud API or its endpoint is not local. */
+function isCloudResolution(resolved: { provider?: string; endpoint?: string }): boolean {
+    if (CLOUD_PROVIDER_IDS.has(String(resolved.provider || '').toLowerCase())) return true
+    return !!resolved.endpoint && !isLocalEndpoint(resolved.endpoint)
+}
+
 class LocalLLMProvider extends LLMProvider {
     private baseUrl: string
     private model: string
@@ -1487,8 +1496,15 @@ class LocalLLMProvider extends LLMProvider {
                 const { resolveModel } = await import('../core/model-resolver.js')
                 const resolved = await resolveModel('chat')
                 if (resolved?.endpoint && isChatModel(resolved.id)) {
-                    candidates.push({ baseUrl: resolved.endpoint, model: resolved.id, apiKey: resolved.apiKey })
-                    console.log(`[LocalLLM] Resolver candidate: ${resolved.id} @ ${resolved.endpoint}${resolved.apiKey ? ' [ext-key]' : ''}`)
+                    // Local first: a cloud pick (OpenAI, MiniMax, external provider)
+                    // is never used as a silent failover target for local calls —
+                    // it would ship the full context (memory, history) off-site.
+                    if (isCloudResolution(resolved)) {
+                        console.warn(`[LocalLLM] Resolver candidate ${resolved.id} @ ${resolved.endpoint} is cloud — not used as local failover`)
+                    } else {
+                        candidates.push({ baseUrl: resolved.endpoint, model: resolved.id, apiKey: resolved.apiKey })
+                        console.log(`[LocalLLM] Resolver candidate: ${resolved.id} @ ${resolved.endpoint}${resolved.apiKey ? ' [ext-key]' : ''}`)
+                    }
                 }
             } catch { /* resolver optional */ }
         }
@@ -1508,10 +1524,10 @@ class LocalLLMProvider extends LLMProvider {
             )
 
             for (const entry of discovered.filter(e => e.model === this.model)) {
-                candidates.push({ baseUrl: entry.endpoint!, model: entry.model })
+                candidates.push({ baseUrl: entry.endpoint!, model: entry.model, apiKey: entry.apiKey })
             }
             for (const entry of discovered.filter(e => e.model !== this.model)) {
-                candidates.push({ baseUrl: entry.endpoint!, model: entry.model })
+                candidates.push({ baseUrl: entry.endpoint!, model: entry.model, apiKey: entry.apiKey })
             }
         } catch { /* discovery is optional */ }
 
@@ -1584,8 +1600,9 @@ class LocalLLMProvider extends LLMProvider {
             return result
         } else {
             // OpenAI-compatible API (LMStudio, vLLM, external cloud providers)
-            // Use apiKey from resolver (external providers) or OPENAI_API_KEY env as fallback
-            const authKey = apiKey || process.env.OPENAI_API_KEY || ''
+            // Use apiKey carried with this candidate. OPENAI_API_KEY from the env
+            // only ever goes to OpenAI's own API, never to vLLM/mesh/other clouds.
+            const authKey = apiKey || envOpenAIKeyFor(baseUrl) || ''
             const authHeaders: Record<string, string> = authKey
                 ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authKey}` }
                 : { 'Content-Type': 'application/json' }
@@ -1673,7 +1690,7 @@ class LocalLLMProvider extends LLMProvider {
                 ? `${this.baseUrl}/chat/completions`
                 : `${this.baseUrl}/v1/chat/completions`)
 
-        const authKey = this.apiKey || process.env.OPENAI_API_KEY || ''
+        const authKey = this.apiKey || envOpenAIKeyFor(this.baseUrl) || ''
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (authKey) headers['Authorization'] = `Bearer ${authKey}`
 
@@ -1786,7 +1803,11 @@ export async function createNovaLLMClient(config: {
     /** Per-run client for concurrent rooms/bots; avoids mutating the legacy singleton. */
     isolated?: boolean
 }): Promise<NovaLLM> {
-    const llm = config.isolated ? new NovaLLM() : getNovaLLM()
+    // Every call gets its own client. Reconfiguring the shared singleton here
+    // switched the provider under running chats (primary LLM, agent loops)
+    // whenever a subagent, vision call or cloud fallback asked for another
+    // model. The singleton is only seeded once for legacy getNovaLLM() readers.
+    const llm = new NovaLLM()
 
     let model = config.model
     let provider = config.provider
@@ -1803,7 +1824,36 @@ export async function createNovaLLMClient(config: {
         try {
             const { resolveModel } = await import('../core/model-resolver.js')
             const role = config.role || (provider === 'openai' ? 'chat' : 'chat')
-            const resolved = await resolveModel(role)
+            let resolved = await resolveModel(role)
+            // Local first: `auto` never lands on a cloud provider unless the caller
+            // asked for that provider explicitly. Use a discovered local model
+            // instead; without one the local provider fails visibly.
+            // Resolver picks without endpoint come from an explicit config override
+            // (per-role or global model) and stay as configured. Auto-selected
+            // OpenAI/Codex/external picks carry an endpoint (Codex: provider id).
+            const autoCloudPick = !!resolved && (resolved.endpoint
+                ? isCloudResolution(resolved)
+                : String(resolved.provider).toLowerCase() === 'openai-codex')
+            if (resolved && (!provider || provider === 'local') && autoCloudPick) {
+                console.warn(`[NovaLLM] auto → ${resolved.provider}/${resolved.id} is cloud — staying local`)
+                resolved = null
+                try {
+                    const { availableLLMs } = await import('../core/llm-factory.js')
+                    const local = availableLLMs.find(entry =>
+                        entry.endpoint &&
+                        isLocalEndpoint(entry.endpoint) &&
+                        (entry.local || ['local', 'ollama', 'lmstudio', 'lm-studio', 'vllm', 'llamacpp', 'llama-cpp'].includes(String(entry.provider).toLowerCase())) &&
+                        !/embed|nomic|bge|mxbai|voice/i.test(entry.model)
+                    )
+                    if (local) {
+                        model = local.model
+                        baseUrl = local.endpoint
+                        if (local.apiKey) resolvedApiKey = local.apiKey
+                    }
+                } catch { /* discovery is optional */ }
+                provider = 'local'
+                model = model || 'auto'
+            }
             if (resolved) {
                 model = resolved.id
                 // Auto-detect provider from resolver. CRITICAL: cloud providers
@@ -1904,6 +1954,10 @@ export async function createNovaLLMClient(config: {
     if (resolvedApiKey) providerConfig.apiKey = resolvedApiKey
 
     llm.configure(providerConfig)
+    if (!config.isolated) {
+        const shared = getNovaLLM()
+        if (!shared.modelId) shared.configure(providerConfig)
+    }
     return llm
 }
 
