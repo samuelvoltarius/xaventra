@@ -14,6 +14,7 @@
 import { spawn, ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { hostname } from 'node:os'
 import { resolveConfigPath } from './config/config-path.js'
 
 
@@ -219,7 +220,9 @@ async function sendAlert(message: string): Promise<void> {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         chat_id: chatId,
-                        text: `🚨 WATCHDOG ALERT\n\n${message}`,
+                        // CL-07: deliberately unfenced (an alarm must arrive exactly
+                        // when no Main exists); tagged with the sending host.
+                        text: `🚨 WATCHDOG ALERT [${hostname()}]\n\n${message}`,
                     }),
                 })
                 log('INFO', 'Telegram alert sent')
