@@ -13,6 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { join, dirname } from 'node:path'
+import { redactSecrets } from '../security/secret-redaction.js'
 
 // ============================================
 // Types
@@ -60,6 +61,41 @@ const DATA_DIR = join(process.cwd(), '.nova-data')
 const EXAMPLES_FILE = join(DATA_DIR, 'tool-examples.json')
 const PATTERNS_FILE = join(DATA_DIR, 'tool-patterns.json')
 
+const MAX_EXAMPLES = 1000
+const MAX_SANITIZE_DEPTH = 8
+const SENSITIVE_KEYS = ['password', 'token', 'secret', 'key', 'auth', 'credential', 'apiKey', 'api_key']
+// Command-line credentials that the shared redactor does not cover yet.
+const SSHPASS_ARG = /(\bsshpass\s+-p\s*)(["']?)[^\s"']+\2/gi
+const URL_USERINFO = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@\/]+:)[^\s@\/]+@/gi
+
+function redactText(value: string): string {
+    return redactSecrets(value)
+        .replace(SSHPASS_ARG, '$1[REDACTED]')
+        .replace(URL_USERINFO, '$1[REDACTED]@')
+}
+
+// Recursively strips credentials before tool params are persisted: nested
+// objects/arrays by key name, every string value by content.
+function sanitizeValue(value: unknown, depth = 0): unknown {
+    if (typeof value === 'string') return redactText(value)
+    if (depth >= MAX_SANITIZE_DEPTH) return '[TRUNCATED]'
+    if (Array.isArray(value)) return value.map(item => sanitizeValue(item, depth + 1))
+    if (value && typeof value === 'object') {
+        const out: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] = SENSITIVE_KEYS.some(s => k.toLowerCase().includes(s.toLowerCase()))
+                ? '[REDACTED]'
+                : sanitizeValue(v, depth + 1)
+        }
+        return out
+    }
+    return value
+}
+
+function sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {
+    return sanitizeValue(params || {}) as Record<string, unknown>
+}
+
 function ensureDir(): void {
     if (!existsSync(DATA_DIR)) {
         mkdirSync(DATA_DIR, { recursive: true })
@@ -103,7 +139,7 @@ class ToolUsageLearner {
     private patterns: ToolPattern[] = []
 
     constructor() {
-        this.examples = loadExamples()
+        this.examples = loadExamples().slice(-MAX_EXAMPLES)
         this.patterns = loadPatterns()
         console.log(`[ToolLearner] Loaded ${this.examples.length} examples, ${this.patterns.length} patterns`)
     }
@@ -118,20 +154,14 @@ class ToolUsageLearner {
         wasCorrect: boolean,
         userId?: string,
     ): ToolUsageExample {
-        // SECURITY: Strip sensitive fields before persisting
-        const sanitizedParams = { ...extractedParams }
-        const sensitiveKeys = ['password', 'token', 'secret', 'key', 'auth', 'credential', 'apiKey', 'api_key']
-        for (const k of Object.keys(sanitizedParams)) {
-            if (sensitiveKeys.some(s => k.toLowerCase().includes(s))) {
-                sanitizedParams[k] = '[REDACTED]'
-            }
-        }
+        // SECURITY: Strip sensitive fields (nested) and inline secrets before persisting
+        const sanitizedParams = sanitizeParams(extractedParams)
 
         const example: ToolUsageExample = {
             userId,
             id: `ex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             toolName,
-            userRequest,
+            userRequest: redactText(String(userRequest ?? '')),
             extractedParams: sanitizedParams,
             wasCorrect,
             timestamp: Date.now(),
@@ -139,6 +169,7 @@ class ToolUsageLearner {
         }
 
         this.examples.push(example)
+        if (this.examples.length > MAX_EXAMPLES) this.examples = this.examples.slice(-MAX_EXAMPLES)
         saveExamples(this.examples)
 
         console.log(`[ToolLearner] Recorded ${wasCorrect ? '✅' : '❌'} usage of ${toolName}`)
@@ -161,7 +192,7 @@ class ToolUsageLearner {
         }
 
         example.wasCorrect = false
-        example.correction = { correctParams, explanation }
+        example.correction = { correctParams: sanitizeParams(correctParams), explanation: redactText(String(explanation ?? '')) }
         saveExamples(this.examples)
 
         console.log(`[ToolLearner] 📝 Correction recorded for ${example.toolName}`)
