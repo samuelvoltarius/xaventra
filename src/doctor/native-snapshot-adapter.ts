@@ -38,16 +38,24 @@ export class NativeSnapshotAdapter {
         const c = this.config, hash = createHash('sha256').update(readProtectedControllerFile(c.fragmentPath)).digest('hex')
         const release = hash === c.baseline.unitHash ? c.baseline : hash === c.candidate.unitHash ? c.candidate : undefined
         if (!release) return false
-        const state = await new NativeSystemdService({unit:c.unit,fragmentPath:c.fragmentPath,fragmentHash:release.unitHash,process:release.process}).inspect()
+        // 'baseline' (rehash of the preserved original) and 'restore' (copy into the
+        // third state) are rollback-only phases. There, a crashed / uncleanly exited
+        // CANDIDATE unit is acceptable as long as provably no process is left
+        // (failed or stopped, MainPID 0). The baseline unit and the forward
+        // 'snapshot' phase keep requiring a clean stop.
+        const candidateFailure = phase !== 'snapshot' && release === c.candidate
+        const observe = () => new NativeSystemdService({unit:c.unit,fragmentPath:c.fragmentPath,fragmentHash:release.unitHash,process:release.process}).inspect({ candidateFailure })
+        const state = await observe()
+        const halted = state.cleanStopped || candidateFailure && !state.running && state.pid === 0 && (state.stopped === true || state.failed === true)
         if (phase === 'snapshot' && (release !== c.baseline || state.running || !state.cleanStopped)) return false
-        if (phase === 'restore' && (state.running || !state.cleanStopped)) return false
+        if (phase === 'restore' && (state.running || !halted)) return false
         // Never treat a running original as a fenced rollback source. A running
         // candidate may be observed while its distinct ro baseline is rehashed.
-        if (phase === 'baseline' && (release === c.baseline && state.running || !state.running && !state.cleanStopped)) return false
+        if (phase === 'baseline' && (release === c.baseline && state.running || !state.running && !halted)) return false
         if (!await this.authority.quiescent(t)) return false
         // Re-observe after external IO: no service selection/PID/state change
         // may slip between admission and the final authority check.
-        const again = await new NativeSystemdService({unit:c.unit,fragmentPath:c.fragmentPath,fragmentHash:release.unitHash,process:release.process}).inspect()
+        const again = await observe()
         return JSON.stringify(state) === JSON.stringify(again) && t.expiresAt > Date.now()
             && await this.authority.authorized(t) && t.expiresAt > Date.now()
     }
