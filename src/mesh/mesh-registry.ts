@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { hostname, networkInterfaces, uptime } from 'os'
+import * as nodeOs from 'node:os'
 import { execSync } from 'child_process'
 import {
     isActiveNode,
@@ -371,7 +372,6 @@ function sendHeartbeat(): void {
     let gpu_vram_free_mb: number | undefined
     try {
         if (process.platform === 'linux') {
-            const { readFileSync, existsSync } = require('fs')
             if (existsSync('/sys/class/thermal/thermal_zone0/temp')) {
                 const tempVal = parseInt(readFileSync('/sys/class/thermal/thermal_zone0/temp', 'utf-8'))
                 if (!isNaN(tempVal)) temp = Math.round(tempVal / 1000)
@@ -392,7 +392,7 @@ function sendHeartbeat(): void {
                 }
             }
         } else {
-            const os = require('os')
+            const os = nodeOs
             cpu_load = os.loadavg()[0]
             ram_used_percent = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100)
             ram_free_gb = Math.round((os.freemem() / (1024 ** 3)) * 10) / 10
@@ -1385,7 +1385,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     let cpuName = 'unknown'
     let cpuCores = 0
     try {
-        const os = require('node:os')
+        const os = nodeOs
         const cpus = os.cpus()
         cpuCores = cpus.length
         cpuName = cpus[0]?.model?.trim() || 'unknown'
@@ -1418,7 +1418,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     // --- RAM ---
     let ramGb = 0
     try {
-        const os = require('node:os')
+        const os = nodeOs
         ramGb = Math.round(os.totalmem() / (1024 ** 3))
     } catch { }
     // ARM fallback: /proc/meminfo
@@ -1455,14 +1455,14 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     } catch { }
 
     // --- OS ---
-    let osName = process.platform
+    let osName: string = process.platform
     let osVersion = ''
     try {
-        const os = require('node:os')
+        const os = nodeOs
         osVersion = os.release()
         if (process.platform === 'linux') {
             try {
-                const { readFileSync: rfs, existsSync: efs } = require('node:fs')
+                const rfs = readFileSync, efs = existsSync
                 if (efs('/etc/os-release')) {
                     const rel = rfs('/etc/os-release', 'utf-8')
                     const name = rel.match(/PRETTY_NAME="(.+)"/)?.[1]

@@ -5,6 +5,8 @@
  * General-purpose utilities for the Nova ecosystem.
  */
 
+import { homedir } from 'node:os'
+
 // ============================================
 // Timeout & Fetch Helpers
 // ============================================
@@ -272,13 +274,13 @@ export function normalizePath(p: string): string {
 }
 
 export function shortenHomePath(input: string): string {
-    const home = require('node:os').homedir() as string
+    const home = homedir()
     if (input.startsWith(home)) return '~' + input.slice(home.length).replace(/\\/g, '/')
     return input
 }
 
 export function expandTilde(input: string): string {
     if (!input.startsWith('~')) return input
-    const home = require('node:os').homedir() as string
+    const home = homedir()
     return home + input.slice(1)
 }

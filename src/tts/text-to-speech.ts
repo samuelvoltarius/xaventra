@@ -9,7 +9,7 @@
  * Inspired by OpenClaw's tts-core.ts (19KB)
  */
 
-import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -454,7 +454,6 @@ function loadTtsConfig(): TtsConfig {
 export function cleanupTempFiles(maxAgeMs = 5 * 60 * 1000): number {
     if (!existsSync(TEMP_DIR)) return 0
 
-    const { readdirSync, statSync } = require('node:fs')
     const files = readdirSync(TEMP_DIR) as string[]
     let cleaned = 0
     const now = Date.now()
