@@ -8,9 +8,9 @@
  * 4. Reporting results
  */
 
-import { execSync, exec } from 'node:child_process'
+import { execFileSync, execSync, exec } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { FixProposal, FileChange } from './fix-generator.js'
 
 // ============================================
@@ -65,7 +65,7 @@ export class AutoTester {
 
         try {
             // 1. Create temp branch
-            this.tempBranch = `fix/${proposal.patternMatch.pattern.id}-${Date.now()}`
+            this.tempBranch = `fix/${String(proposal.patternMatch.pattern.id).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^[-.]+/, '')}-${Date.now()}`
             this.createBranch()
 
             // 2. Apply changes
@@ -77,20 +77,10 @@ export class AutoTester {
                 }
             }
 
-            // 3. Run commands (if any)
+            // 3. Commands proposed by the LLM are never executed (MI-9): the
+            // prompt contains attacker-influenced log lines. The fix fails.
             if (proposal.commands?.length) {
-                for (const cmd of proposal.commands) {
-                    try {
-                        console.log(`[AutoTester] Running: ${cmd}`)
-                        execSync(cmd, {
-                            cwd: this.config.workDir,
-                            timeout: this.config.timeout,
-                            stdio: 'pipe',
-                        })
-                    } catch (err) {
-                        errors.push(`Command failed: ${cmd} - ${err}`)
-                    }
-                }
+                errors.push(`Refused ${proposal.commands.length} LLM-proposed shell command(s); only file changes are tested`)
             }
 
             // 4. Run build
@@ -162,7 +152,7 @@ export class AutoTester {
             // Stash any changes
             execSync('git stash', { cwd: this.config.workDir, stdio: 'pipe' })
             // Create and checkout new branch
-            execSync(`git checkout -b ${this.tempBranch}`, { cwd: this.config.workDir, stdio: 'pipe' })
+            execFileSync('git', ['checkout', '-b', this.tempBranch], { cwd: this.config.workDir, stdio: 'pipe' })
             console.log(`[AutoTester] Created branch: ${this.tempBranch}`)
         } catch (err) {
             console.warn(`[AutoTester] Could not create branch (git may not be available)`)
@@ -173,7 +163,7 @@ export class AutoTester {
      * Apply a file change
      */
     private applyChange(change: FileChange): void {
-        const fullPath = join(this.config.workDir, change.filePath)
+        const fullPath = resolveChangePath(this.config.workDir, change.filePath)
 
         if (change.action === 'delete') {
             // We don't auto-delete files for safety
@@ -218,7 +208,7 @@ export class AutoTester {
         try {
             execSync('git checkout master', { cwd: this.config.workDir, stdio: 'pipe' })
             if (this.tempBranch) {
-                execSync(`git branch -D ${this.tempBranch}`, { cwd: this.config.workDir, stdio: 'pipe' })
+                execFileSync('git', ['branch', '-D', this.tempBranch], { cwd: this.config.workDir, stdio: 'pipe' })
             }
             execSync('git stash pop', { cwd: this.config.workDir, stdio: 'pipe' })
             console.log(`[AutoTester] Reverted to master`)
@@ -234,10 +224,10 @@ export class AutoTester {
         try {
             const message = `fix: ${proposal.description} (auto-fix by Supervisor)`
             execSync('git add -A', { cwd: this.config.workDir, stdio: 'pipe' })
-            execSync(`git commit -m "${message}"`, { cwd: this.config.workDir, stdio: 'pipe' })
+            execFileSync('git', ['commit', '-m', message], { cwd: this.config.workDir, stdio: 'pipe' })
             execSync('git checkout master', { cwd: this.config.workDir, stdio: 'pipe' })
-            execSync(`git merge ${this.tempBranch}`, { cwd: this.config.workDir, stdio: 'pipe' })
-            execSync(`git branch -d ${this.tempBranch}`, { cwd: this.config.workDir, stdio: 'pipe' })
+            execFileSync('git', ['merge', this.tempBranch], { cwd: this.config.workDir, stdio: 'pipe' })
+            execFileSync('git', ['branch', '-d', this.tempBranch], { cwd: this.config.workDir, stdio: 'pipe' })
             execSync('git stash pop', { cwd: this.config.workDir, stdio: 'pipe' })
             console.log(`[AutoTester] ✅ Merged fix to master: ${message}`)
         } catch (err) {
@@ -261,6 +251,29 @@ export class AutoTester {
             return false
         }
     }
+}
+
+/**
+ * MI-9: a model-proposed file path must stay inside the work directory and
+ * must not touch VCS, runtime data, dependencies or secret files.
+ */
+export function resolveChangePath(workDir: string, filePath: unknown): string {
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0') || isAbsolute(filePath)) {
+        throw new Error(`Refused change path: ${String(filePath).slice(0, 120)}`)
+    }
+    const root = resolve(workDir)
+    const target = resolve(root, filePath)
+    const rel = relative(root, target)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`Refused change path outside work dir: ${filePath}`)
+    const segments = rel.split(/[\\/]+/).map(segment => segment.toLowerCase())
+    if (segments.some(segment => ['.git', '.nova-data', '.nova-learning', 'node_modules', '.ssh'].includes(segment))) {
+        throw new Error(`Refused change path in protected directory: ${filePath}`)
+    }
+    const base = segments[segments.length - 1]
+    if (/^\.env(?:\..*)?$|^(?:xaventra|nova)\.config\.json$|\.(?:pem|key)$|^\.npmrc$|^package(?:-lock)?\.json$/.test(base)) {
+        throw new Error(`Refused change to protected file: ${filePath}`)
+    }
+    return target
 }
 
 // ============================================

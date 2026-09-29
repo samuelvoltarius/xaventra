@@ -10,7 +10,7 @@
  */
 
 import { EventEmitter } from 'node:events'
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -180,9 +180,11 @@ export class CircuitBreaker extends EventEmitter {
     private checkForRepairLoop(attempt: FixAttempt): void {
         // Count attempts for same pattern in last 5 minutes
         const fiveMinutesAgo = Date.now() - 300000
+        // MI-9: only failed attempts form a repair loop; successes do not.
         const samePatternAttempts = this.state.fixAttempts.filter(a =>
             a.pattern === attempt.pattern &&
-            a.timestamp > fiveMinutesAgo
+            a.timestamp > fiveMinutesAgo &&
+            !a.success
         )
 
         if (samePatternAttempts.length >= this.config.maxSameFixAttempts) {
@@ -261,8 +263,9 @@ export class CircuitBreaker extends EventEmitter {
             // Stash any changes first
             execSync('git stash --include-untracked', { encoding: 'utf-8', stdio: 'pipe' })
 
-            // Hard reset to rollback point
-            execSync(`git reset --hard ${this.state.rollbackPoint}`, { encoding: 'utf-8', stdio: 'pipe' })
+            // Hard reset to rollback point (sha from the state file: validated, no shell)
+            if (!/^[0-9a-f]{7,64}$/i.test(this.state.rollbackPoint)) throw new Error('invalid rollback point')
+            execFileSync('git', ['reset', '--hard', this.state.rollbackPoint], { encoding: 'utf-8', stdio: 'pipe' })
 
             console.log(`[Circuit Breaker] ✅ Rollback complete!`)
             this.emit('rollback', { sha: this.state.rollbackPoint })
