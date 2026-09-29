@@ -209,7 +209,7 @@ export async function remember(
         if (isMeshShareable(metadata)) {
             try {
                 const { shareMemory } = await import('../mesh/mesh-memory-sync.js')
-                shareMemory(redactSecrets(content), type as any, source).catch(() => { })
+                shareMemory(redactSecrets(content), type as any, source, 'global').catch(() => { })
             } catch { /* mesh not available */ }
         }
 
@@ -339,8 +339,25 @@ export async function forget(id: string): Promise<boolean> {
 
     try {
         const safeId = id.replace(/['"\\;]/g, '')
+        // A mesh copy is keyed by its redacted content, so read the row first.
+        let row: { content: string; metadata: Record<string, unknown> } | null = null
+        try {
+            const rows = await table.query().where(`id = '${safeId}'`).limit(1).toArray()
+            if (rows[0]) {
+                let metadata: Record<string, unknown> = {}
+                try { metadata = JSON.parse(String(rows[0].metadata || '{}')) } catch { /* unreadable metadata: not shareable */ }
+                row = { content: String(rows[0].content || ''), metadata }
+            }
+        } catch { /* lookup is best effort; the local delete still happens */ }
         await table.delete(`id = '${safeId}'`)
         console.log(`[LanceDB] 🗑️ Gelöscht: ${safeId}`)
+        // UEB-17: forgetting must also remove the shared/mesh copy.
+        if (row?.content && isMeshShareable(row.metadata)) {
+            try {
+                const { forgetSharedMemory } = await import('../mesh/mesh-memory-sync.js')
+                await forgetSharedMemory({ content: redactSecrets(row.content) }, { broadcast: true })
+            } catch { /* mesh not available */ }
+        }
         return true
     } catch (err) {
         console.error(`[LanceDB] Löschen fehlgeschlagen: ${err}`)
