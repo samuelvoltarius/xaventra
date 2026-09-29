@@ -130,6 +130,8 @@ export class OpenAIAgentsBackend implements AgentBackend {
                 try {
                     kernel.assertCanExecute(novaTool.name)
                     await execution.assertFence()
+                    const { guardToolEffect } = await import('../mesh/fence.js')
+                    await guardToolEffect(novaTool.name, { live: true })
                     const toolExecution = await this.idempotency.executeOnce({
                         key: idempotencyKey,
                         runId: execution.scopeId,
@@ -137,9 +139,11 @@ export class OpenAIAgentsBackend implements AgentBackend {
                         inputHash: executionInputHash,
                         compensate: prepareToolCompensation(novaTool.name, params),
                         deriveCompensation: result => deriveToolCompensation(novaTool.name, params, result),
-                        execute: async () => registry.get(novaTool.name)
-                            ? registry.execute(novaTool.name, params)
-                            : novaTool.handler(params),
+                        execute: async () => {
+                            if (registry.get(novaTool.name)) return registry.execute(novaTool.name, params)
+                            const { runFencedTool } = await import('../mesh/fence.js')
+                            return runFencedTool(novaTool.name, () => novaTool.handler(params))
+                        },
                     })
                     result = toolExecution.result
                     const validation = kernel.verify(novaTool.name, result, { callId: idempotencyKey, arguments: params })

@@ -137,10 +137,18 @@ export class TelegramAdapter implements ChannelAdapter {
      * leave a stale node able to emit a late reply after lease loss.
      */
     private guardBotEffects(bot: any): any {
+        // CL-07: defensively include every effect method of the SDK, also the
+        // ones no handler uses today, so a future call cannot bypass the fence.
         const effectMethods = [
             'answerCallbackQuery', 'deleteMessage', 'deleteMyCommands', 'deleteWebHook',
             'editMessageReplyMarkup', 'editMessageText', 'sendChatAction', 'sendDocument',
             'sendMessage', 'sendPhoto', 'setMessageReaction', 'setMyCommands', 'startPolling',
+            'sendVoice', 'sendAudio', 'sendVideo', 'sendVideoNote', 'sendAnimation', 'sendSticker',
+            'sendMediaGroup', 'sendLocation', 'sendVenue', 'sendContact', 'sendPoll', 'sendDice',
+            'forwardMessage', 'forwardMessages', 'copyMessage', 'copyMessages',
+            'pinChatMessage', 'unpinChatMessage', 'unpinAllChatMessages',
+            'editMessageCaption', 'editMessageMedia', 'editMessageLiveLocation', 'stopMessageLiveLocation',
+            'stopPoll', 'setWebHook', 'answerInlineQuery', 'setChatTitle', 'setChatDescription',
         ]
         for (const method of effectMethods) {
             if (typeof bot?.[method] !== 'function') continue

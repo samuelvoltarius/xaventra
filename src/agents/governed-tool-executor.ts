@@ -3,6 +3,7 @@ import type { ExecutionKernel } from '../core/execution-kernel.js'
 import { assertMissionFenceForContent, executionScopeForContent, makeIdempotencyKey,
     prepareToolCompensation, deriveToolCompensation, type IdempotencyStore } from '../core/execution-control.js'
 import { withSpan } from '../infra/telemetry.js'
+import { guardToolEffect } from '../mesh/fence.js'
 
 export interface GovernedToolExecutorOptions {
     kernel: ExecutionKernel
@@ -37,6 +38,9 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
         }
         kernel.assertCanExecute(name)
         await assertMissionFenceForContent(content)
+        // CL-07: every tool with an effect needs a live Main fence, not only
+        // mission content (observe: logged; enforce: FenceError).
+        await guardToolEffect(name, { live: true })
         const idempotencyRunId = executionScopeForContent(content, kernel.contract.id)
         const keyScope = attemptScope ? `${idempotencyRunId}:${attemptScope}` : idempotencyRunId
         const key = makeIdempotencyKey(keyScope, name, args)

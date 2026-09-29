@@ -394,8 +394,10 @@ async function startTelegramOnce(
         const { setReminderNotifyCallback, setReminderWakeupCallback, initReminders } = await import('../tools/reminder-tool.js')
         setReminderNotifyCallback(async (userId, channel, message) => {
             if (!(await verifyTelegramAuthority())) {
-                console.log('[Reminder] Unterdrückt: Node besitzt keine live verifizierte Telegram-Autorität')
-                return
+                // CL-07: throw instead of return, so the reminder is NOT marked
+                // fired and deleted; it stays pending for the fenced Main.
+                const { FenceError } = await import('../mesh/fence.js')
+                throw new FenceError('telegram', 'no live Main/Telegram authority', 'reminder:notify')
             }
             // Resolve the actual Telegram chat ID dynamically
             // userId might be "Sample" (username), but Telegram needs numeric chatId

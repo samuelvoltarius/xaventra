@@ -255,6 +255,35 @@ export async function runFenced<T>(service: string, effect: string, operation: (
     }
 }
 
+/**
+ * Tools that only read local state. Everything else counts as an effect and
+ * is fenced (fail-safe: a new or unknown tool is fenced by default).
+ */
+export const FENCE_EXEMPT_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+    'read_file', 'read_document', 'list_directory', 'codebase_search', 'code_search', 'find_files', 'code_outline',
+    'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
+    'find_capability', 'resolve_capability', 'list_sessions', 'mission_config',
+    'list_reminders', 'list_sub_agents', 'nova_trace_stats', 'list_tool_policies',
+])
+
+export function toolRequiresFence(name: string): boolean {
+    return !FENCE_EXEMPT_READ_ONLY_TOOLS.has(name)
+}
+
+/** Guard before a tool decision is committed (governed executors): live check. */
+export async function guardToolEffect(name: string, options: { live?: boolean } = {}): Promise<void> {
+    if (!toolRequiresFence(name)) return
+    await assertFenced(FENCE_MAIN_SERVICE, { live: options.live !== false, effect: `tool:${name}` })
+}
+
+/** Registry-level guard for every tool handler: cached fence + abort on lease
+ * loss while the handler runs (enforce). */
+export async function runFencedTool<T>(name: string, handler: () => Promise<T>): Promise<T> {
+    if (!toolRequiresFence(name)) return handler()
+    await assertFenced(FENCE_MAIN_SERVICE, { effect: `tool:${name}` })
+    return runFenced(FENCE_MAIN_SERVICE, `tool:${name}`, () => handler())
+}
+
 export function getFenceStatus(): {
     mode: FencingMode
     held: Array<{ service: string; epoch: number; coordinator: string; remainingMs: number | null; suspect: boolean }>

@@ -116,7 +116,20 @@ export class NovaScheduler {
     /**
      * Execute a scheduled pattern (spawns sub-agent)
      */
-    private async executePattern(pattern: Pattern): Promise<void> {
+    private async executePattern(pattern: Pattern, fenceRetry = 0): Promise<void> {
+        // CL-07: every node runs the cron, only the fenced Main may act. Without
+        // a fence (enforce) the run is not consumed but retried shortly.
+        try {
+            const { assertFenced } = await import('../mesh/fence.js')
+            await assertFenced('nova-main', { live: true, effect: `scheduler:${pattern.action}` })
+        } catch (error) {
+            if (fenceRetry < 5) {
+                const timer = setTimeout(() => { void this.executePattern(pattern, fenceRetry + 1) }, 60_000)
+                timer.unref?.()
+            }
+            console.log(`[NovaScheduler] ${pattern.action} zurückgestellt (kein gültiger Main-Fence, Versuch ${fenceRetry + 1}/6)`)
+            return
+        }
         console.log(`[NovaScheduler] 🚀 Executing: ${pattern.action} for ${pattern.userId}`)
 
         const taskId = `${pattern.id}-${Date.now()}`

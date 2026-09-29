@@ -10,6 +10,7 @@
  */
 
 import { assessmentFromEvent, evaluateProactivity, type ProactiveAssessment } from './proactive-policy.js'
+import { isFenceError } from '../mesh/fence.js'
 
 // ============================================
 // Types
@@ -139,6 +140,7 @@ export class ProactiveMessenger {
             // Send to all connected channels
             let success = false
             let anyConnected = false
+            let fenced = false
             for (const [name, sender] of this.channels) {
                 if (sender.isConnected()) {
                     anyConnected = true
@@ -151,13 +153,15 @@ export class ProactiveMessenger {
                             console.log(`[ProactiveMessenger] ⚠️ Not delivered via ${name}`)
                         }
                     } catch (err) {
+                        // CL-07: fenced is not failed; keep it for a later attempt.
+                        if (isFenceError(err)) fenced = true
                         console.log(`[ProactiveMessenger] ⚠️ Failed on ${name}: ${err}`)
                     }
                 }
             }
             if (success) this.markSent(msg)
-            // Nothing connected: keep for later. Connected but refused: drop.
-            return success ? 'sent' : anyConnected ? 'dropped' : 'deferred'
+            // Nothing connected or fenced: keep for later. Connected but refused: drop.
+            return success ? 'sent' : anyConnected && !fenced ? 'dropped' : 'deferred'
         }
 
         // Send to specific channel
@@ -182,6 +186,10 @@ export class ProactiveMessenger {
             this.markSent(msg)
             return 'sent'
         } catch (err) {
+            if (isFenceError(err)) {
+                console.log(`[ProactiveMessenger] Deferred ${msg.type} for ${msg.userId}: ${err}`)
+                return 'deferred'
+            }
             console.log(`[ProactiveMessenger] ❌ Send failed: ${err}`)
             return 'dropped'
         }

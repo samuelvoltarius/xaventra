@@ -15,6 +15,9 @@ export interface NovaReleaseManifest {
     sourceNode: string
     files: ReleaseFileEvidence[]
     treeHash: string
+    /** CL-07: lease epoch of the signing Main (absent on pre-fencing releases). */
+    mainLeaseEpoch?: number
+    fenceService?: string
 }
 
 export type SignedReleaseManifest = MeshEnvelope<NovaReleaseManifest>
@@ -49,6 +52,7 @@ export function verifyReleaseDirectory(
     envelope: SignedReleaseManifest,
     root: string,
     trustedPublicKeys: string[],
+    minimumEpoch = 0,
 ): { valid: boolean; reason?: string } {
     if (envelope.kind !== 'update.release' || !MeshIdentity.verify(envelope)) {
         return { valid: false, reason: 'invalid release signature' }
@@ -62,6 +66,11 @@ export function verifyReleaseDirectory(
     }
     if (manifest.treeHash !== releaseTreeHash(manifest.files)) {
         return { valid: false, reason: 'manifest tree hash mismatch' }
+    }
+    // CL-07: a node that already accepted a newer Main epoch refuses an
+    // older Main's release before anything is activated.
+    if (minimumEpoch > 0 && !(Number(manifest.mainLeaseEpoch) >= minimumEpoch)) {
+        return { valid: false, reason: `release epoch ${manifest.mainLeaseEpoch ?? 'none'} is older than accepted epoch ${minimumEpoch}` }
     }
     const absoluteRoot = resolve(root)
     for (const file of manifest.files) {
@@ -90,10 +99,11 @@ export function trustedKeysFromConfig(configPath: string, sourceNode: string): s
 }
 
 async function cli(): Promise<void> {
-    const [manifestPath, root, configPath] = process.argv.slice(2)
-    if (!manifestPath || !root || !configPath) throw new Error('usage: release-verifier <manifest> <root> <xaventra.config.json>')
+    const [manifestPath, root, configPath, fenceEpochPath] = process.argv.slice(2)
+    if (!manifestPath || !root || !configPath) throw new Error('usage: release-verifier <manifest> <root> <xaventra.config.json> [fence-epoch-file]')
     const envelope = JSON.parse(readFileSync(manifestPath, 'utf8')) as SignedReleaseManifest
-    const result = verifyReleaseDirectory(envelope, root, trustedKeysFromConfig(configPath, envelope.sourceNode))
+    const minimumEpoch = fenceEpochPath && existsSync(fenceEpochPath) ? Number(readFileSync(fenceEpochPath, 'utf8').trim()) || 0 : 0
+    const result = verifyReleaseDirectory(envelope, root, trustedKeysFromConfig(configPath, envelope.sourceNode), minimumEpoch)
     if (!result.valid) throw new Error(result.reason)
     process.stdout.write(`verified:${envelope.payload.releaseId}\n`)
 }

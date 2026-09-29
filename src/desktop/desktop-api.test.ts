@@ -20,6 +20,8 @@ vi.mock('../synthesis/self-evolution.js', () => ({
 vi.mock('../mesh/leader-election.js', async importOriginal => ({
     ...(await importOriginal<typeof import('../mesh/leader-election.js')>()),
     getServiceFencingToken: () => repairMocks.authoritative ? { epoch: 7, token: 'test-fencing-token' } : null,
+    // CL-07: the repair activation additionally confirms the fence live.
+    verifyLiveServiceLeadership: async () => repairMocks.authoritative,
 }))
 
 afterEach(() => vi.unstubAllEnvs())

@@ -15,6 +15,7 @@ import { promisify } from 'node:util'
 import { getNovaDataDir } from './data-root.js'
 import { getLocalNodeId, discoverNodes } from '../mesh/mesh-registry.js'
 import { getServiceFencingToken, MAIN_SERVICE } from '../mesh/leader-election.js'
+import { assertFenced, fenceSignal } from '../mesh/fence.js'
 import { MeshIdentity } from '../mesh/mesh-identity.js'
 import { installedUpdateVersion, type GitHubUpdatePolicy } from './github-update.js'
 import {
@@ -360,12 +361,18 @@ export function createSignedReleaseManifest(): SignedReleaseManifest {
         sourceNode,
         files,
         treeHash,
+        // CL-07: the signing Main's lease epoch travels in the signed manifest.
+        ...(getServiceFencingToken(MAIN_SERVICE) ? { mainLeaseEpoch: getServiceFencingToken(MAIN_SERVICE)!.epoch, fenceService: MAIN_SERVICE } : {}),
     }
     const identity = new MeshIdentity(sourceNode)
     const envelope = identity.create({
         kind: 'update.release', targetNode: '*', payload: manifest,
         principal: { id: `node:${sourceNode}`, role: 'system', channel: 'mesh-update' },
         ttlMs: 7 * 24 * 60 * 60_000,
+        fence: manifest.mainLeaseEpoch ? {
+            service: MAIN_SERVICE, epoch: manifest.mainLeaseEpoch,
+            token: getServiceFencingToken(MAIN_SERVICE)!.token, authority: 'supabase',
+        } : undefined,
     })
     writeFileSync(RELEASE_MARKER, JSON.stringify(envelope, null, 2))
     return envelope
@@ -378,16 +385,47 @@ function sshArgs(node: UpdateNodeConfig): string[] {
     ]
 }
 
+/** CL-07: every remote step is a Main effect. Live fence right before the
+ * step; the ssh/scp child is killed when the lease is lost (enforce). */
 async function ssh(node: UpdateNodeConfig, remoteCommand: string, timeout = 120_000): Promise<string> {
+    await assertFenced(MAIN_SERVICE, { live: true, effect: `updater:ssh:${node.name || node.host}` })
     const { stdout } = await execFileAsync('ssh', [...sshArgs(node), remoteCommand], {
-        cwd: process.cwd(), timeout, windowsHide: true, maxBuffer: 20 * 1024 * 1024,
+        cwd: process.cwd(), timeout, windowsHide: true, maxBuffer: 20 * 1024 * 1024, signal: fenceSignal(MAIN_SERVICE),
     })
     return String(stdout).trim()
 }
 
 async function scp(node: UpdateNodeConfig, sources: string[], target: string, timeout = 180_000): Promise<void> {
+    await assertFenced(MAIN_SERVICE, { live: true, effect: `updater:scp:${node.name || node.host}` })
     const args = buildScpArgs(node, sources, target)
-    await execFileAsync('scp', args, { cwd: process.cwd(), timeout, windowsHide: true, maxBuffer: 20 * 1024 * 1024 })
+    await execFileAsync('scp', args, { cwd: process.cwd(), timeout, windowsHide: true, maxBuffer: 20 * 1024 * 1024, signal: fenceSignal(MAIN_SERVICE) })
+}
+
+/**
+ * CL-07 receiver-side compare-and-set on the target host, run under flock
+ * before any mv/restart: proceed only if our Main epoch is >= the highest
+ * epoch that ever activated or restarted this node, then record it. A stale
+ * Main that wakes up mid-rollout therefore cannot swap dist or restart.
+ */
+export function fenceEpochGuardCommand(installPath: string, epoch: number): string {
+    if (!Number.isSafeInteger(epoch) || epoch < 1) throw new Error('invalid fence epoch')
+    if (!/^\/[A-Za-z0-9._/-]+$/.test(installPath)) throw new Error('unsafe install path for fence epoch file')
+    const file = `${installPath}/.nova-update/fence-epoch`
+    return [
+        `mkdir -p '${installPath}/.nova-update'`,
+        `exec 9>>'${file}.lock'`,
+        'flock -w 30 9',
+        `nova_fence_current=$(cat '${file}' 2>/dev/null || echo 0)`,
+        `[ "$nova_fence_current" -le ${epoch} ] || { echo "fenced: epoch ${epoch} < $nova_fence_current" >&2; exit 97; }`,
+        `echo ${epoch} > '${file}.tmp'`,
+        `mv '${file}.tmp' '${file}'`,
+    ].join('; ')
+}
+
+function releaseFenceCommand(node: UpdateNodeConfig): string {
+    const epoch = getServiceFencingToken(MAIN_SERVICE)?.epoch
+    // observe mode without a fence keeps the previous behaviour (logged above).
+    return epoch ? fenceEpochGuardCommand(node.path, epoch) : 'true'
 }
 
 export function buildScpArgs(node: UpdateNodeConfig, sources: string[], target: string): string[] {
@@ -434,7 +472,7 @@ async function stageRelease(node: UpdateNodeConfig, release: SignedReleaseManife
     const selectConfig = `config='${configRoot}/xaventra.config.json'; if [ ! -f "$config" ]; then config='${configRoot}/nova.config.json'; fi; test -f "$config"`
     const verifyCommand = node.runtime === 'docker-compose'
         ? `docker run --rm --network none -v '${stage}:/release:ro' -v "$config:/xaventra.config.json:ro" node:22-bookworm-slim node /release/dist/core/release-verifier.js /release/dist/.nova-release.json /release/dist /xaventra.config.json`
-        : `node '${stage}/dist/core/release-verifier.js' '${stage}/dist/.nova-release.json' '${stage}/dist' "$config"`
+        : `node '${stage}/dist/core/release-verifier.js' '${stage}/dist/.nova-release.json' '${stage}/dist' "$config" '${node.path}/.nova-update/fence-epoch'`
     await ssh(node, `set -eu; ${selectConfig}; ${verifyCommand}`, 180_000)
 }
 
@@ -449,6 +487,7 @@ async function activateSystemd(node: UpdateNodeConfig, releaseId: string): Promi
     const { stage, backup } = releasePaths(node, releaseId)
     await ssh(node, [
         'set -eu',
+        releaseFenceCommand(node),
         `mkdir -p '${backup}'`,
         `test ! -e '${backup}/dist'`,
         `mv '${node.path}/dist' '${backup}/dist'`,
@@ -468,6 +507,7 @@ async function activateDocker(node: UpdateNodeConfig, releaseId: string): Promis
         // A running Compose service can legitimately reference an untagged image
         // after an earlier release cleanup. Recover the configured base tag from
         // the container's immutable image id before creating the rollback tag.
+        releaseFenceCommand(node),
         recoverConfiguredDockerImageCommand(node),
         `mkdir -p '${backup}'`,
         `test ! -e '${backup}/dist'`,
@@ -535,9 +575,9 @@ export async function restartManagedNode(node: UpdateNodeConfig): Promise<void> 
     if (errors.length) throw new Error(errors.join(', '))
     const startedAt = Date.now()
     if (node.runtime === 'docker-compose') {
-        await ssh(node, `set -eu; cd '${node.composePath}'; docker compose restart '${node.service}'`, 180_000)
+        await ssh(node, `set -eu; ${releaseFenceCommand(node)}; cd '${node.composePath}'; docker compose restart '${node.service}'`, 180_000)
     } else {
-        await ssh(node, systemctl(node, `restart '${node.service}.service'`), 180_000)
+        await ssh(node, `set -eu; ${releaseFenceCommand(node)}; ${systemctl(node, `restart '${node.service}.service'`)}`, 180_000)
     }
     await verifyFreshHeartbeat(node, startedAt)
 }
@@ -547,6 +587,7 @@ async function rollback(node: UpdateNodeConfig, releaseId: string): Promise<void
     const failed = `${node.path}/.nova-update/failed-${releaseId}`
     const commands = [
         'set -eu',
+        releaseFenceCommand(node),
         `test -d '${backup}/dist'`,
         `mv '${node.path}/dist' '${failed}'`,
         `mv '${backup}/dist' '${node.path}/dist'`,

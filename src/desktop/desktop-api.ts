@@ -32,7 +32,7 @@ import { getDesktopModuleCatalog } from './module-catalog.js'
 import { getSkillProposals, updateSkillProposalStatus } from '../tools/skill-builder.js'
 import { getDesktopControlQueue } from './desktop-control.js'
 import { getLocalNodeId } from '../mesh/mesh-registry.js'
-import { getServiceFencingToken, MAIN_SERVICE } from '../mesh/leader-election.js'
+import { getServiceFencingToken, MAIN_SERVICE, verifyLiveServiceLeadership } from '../mesh/leader-election.js'
 import { getOrCreateUser, setUserPermission } from '../users/multi-user-middleware.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { DesktopControlResult } from './desktop-control.js'
@@ -495,6 +495,9 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     app.post('/api/desktop/trust/repairs/:id/approve', async (req, res) => {
         if (!isDesktopOwner(req)) return void res.status(403).json({ error: 'Owner authorization required' })
         if (!desktopControlPlaneAuthoritative()) return void res.status(409).json({ error: 'Authoritative Main and dashboard fencing required' })
+        // CL-07: the cached fence is deadline-bound; the repair activation is an
+        // effect, so confirm the Main fence live (read-only) right before it.
+        if (!(await verifyLiveServiceLeadership(MAIN_SERVICE))) return void res.status(409).json({ error: 'Live Main fencing required' })
         const proposal = getPatchProposals(500).find(item => item?.id === req.params.id && item?.doctorCorrelation && item?.repairProfileId)
         if (!proposal) return void res.status(404).json({ error: 'Doctor repair proposal not found' })
         if (proposal.status !== 'queued') return void res.status(409).json({

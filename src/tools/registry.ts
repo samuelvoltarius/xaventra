@@ -10,6 +10,7 @@
  */
 
 import { getSecurity } from '../resilience/security.js'
+import { runFencedTool } from '../mesh/fence.js'
 
 // ============================================
 // Types
@@ -140,7 +141,8 @@ export class ToolRegistry {
         // Execute
         try {
             console.log(`[Tools] Executing: ${call.name}`)
-            const result = await tool.handler(call.arguments)
+            // CL-07: legacy registry uses the same Main fence as the native one.
+            const result = await runFencedTool(call.name, () => tool.handler(call.arguments))
 
             // Check if result indicates error (some tools return {error: ...} instead of throwing)
             const hasError = result && typeof result === 'object' && 'error' in result
