@@ -9,6 +9,12 @@
  */
 
 import { URL } from 'node:url'
+import { checkHost, fetchWithSsrfGuard } from '../resilience/ssrf-guard.js'
+
+// NOTE (H5): outbound fetches in the runtime go through
+// src/resilience/ssrf-guard.ts. This module keeps its allowlist API for
+// compatibility but classifies addresses with that same guard, so both reject
+// the same bypass forms (bracketed IPv6, IPv4-mapped, CGNAT, *.localhost, …).
 
 // ============================================
 // Configuration
@@ -68,6 +74,10 @@ export function checkSSRF(urlString: string): SSRFCheckResult {
 
     const host = parsed.hostname.toLowerCase()
 
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { allowed: false, reason: `Blocked scheme: ${parsed.protocol}`, url: urlString, host, isLocal: false }
+    }
+
     // Always block cloud metadata endpoints
     if (BLOCKED_DOMAINS.some(d => host === d || host.endsWith(`.${d}`))) {
         return {
@@ -105,6 +115,9 @@ export function checkSSRF(urlString: string): SSRFCheckResult {
  * Check if a hostname resolves to a local/private address
  */
 function isLocalAddress(host: string): boolean {
+    // Shared classifier with the wired guard (IPv6, mapped, legacy IPv4 forms).
+    if (!checkHost(host).allowed) return true
+
     // Direct IP check
     if (PRIVATE_RANGES.some(r => r.test(host))) return true
 
@@ -144,7 +157,10 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
         console.log(`[SSRF Guard] 🚨 BLOCKED: ${check.reason}`)
         throw new Error(`SSRF Guard: ${check.reason}`)
     }
-    return fetch(url, options)
+    // Explicitly allowlisted local hosts keep the old direct path; everything
+    // else gets DNS resolution, address pinning and per-hop redirect checks.
+    if (check.isLocal) return fetch(url, { ...options, redirect: 'error' })
+    return fetchWithSsrfGuard(url, options)
 }
 
 export function initSSRFGuard(): void {
