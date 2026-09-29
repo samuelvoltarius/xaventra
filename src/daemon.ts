@@ -119,6 +119,7 @@ import { initMeshTransportRuntime, startMeshDataPlane, stopMeshTransportRuntime 
 import { initNovaState, getNovaState } from './core/nova-state.js'
 import { createDaemonMessageEntry } from './core/daemon-message-entry.js'
 import { setNovaConfig } from './core/config.js'
+import { resolveTelegramAllowFrom } from './core/telegram-allow-from.js'
 import { markStartupReady, startStartupPhase } from './core/startup-performance.js'
 
 /**
@@ -361,7 +362,7 @@ async function startDaemon() {
             ...config.channels.telegram,
             enabled: true,
             token: process.env.TELEGRAM_BOT_TOKEN,
-            allowFrom: process.env.TELEGRAM_ALLOW_FROM?.split(',') || config.channels.telegram?.allowFrom || [],
+            allowFrom: resolveTelegramAllowFrom(process.env.TELEGRAM_ALLOW_FROM, config.channels.telegram?.allowFrom),
         }
     }
 
