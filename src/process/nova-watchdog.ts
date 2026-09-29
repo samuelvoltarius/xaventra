@@ -16,7 +16,7 @@
 
 import { fork, type ChildProcess } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { platform, hostname } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -97,6 +97,19 @@ const getDefaultConfig = (): WatchdogConfig => {
 // ============================================
 // Watchdog
 // ============================================
+
+/** A daemon that ran this long before exiting starts a fresh restart budget. */
+const STABLE_RUN_MS = 10 * 60_000
+
+/**
+ * MI-15: restart accounting. Only real crashes (non-zero exit code) count
+ * against maxRestarts; an exit by signal (watchdog health restart, operator)
+ * does not. A stable run resets the budget instead of accumulating forever.
+ */
+export function nextRestartCount(previous: number, lastStart: number, now: number, code: number | null): number {
+    const base = lastStart > 0 && now - lastStart >= STABLE_RUN_MS ? 0 : previous
+    return code === null ? base : base + 1
+}
 
 export class NovaWatchdog {
     private config: WatchdogConfig
@@ -211,7 +224,7 @@ export class NovaWatchdog {
         // Clean PID file
         try {
             if (existsSync(this.config.pidFile)) {
-                require('fs').unlinkSync(this.config.pidFile)
+                unlinkSync(this.config.pidFile)
             }
         } catch { /* ignore */ }
 
@@ -289,7 +302,7 @@ export class NovaWatchdog {
                 if (code !== 0) {
                     state.status = 'crashed'
                     state.lastCrash = Date.now()
-                    state.restarts++
+                    state.restarts = nextRestartCount(state.restarts, state.lastStart, Date.now(), code)
                     state.errors.push(`Exit code ${code} (signal: ${signal}) at ${new Date().toISOString()}`)
 
                     // Keep only last 10 errors
@@ -335,6 +348,9 @@ export class NovaWatchdog {
 
     private startHealthChecker(daemon: DaemonConfig): void {
         if (!daemon.healthEndpoint || !daemon.healthInterval) return
+        // MI-15: one checker per daemon; a restart replaces, never adds, a checker.
+        const previous = this.healthCheckers.get(daemon.name)
+        if (previous) clearInterval(previous)
 
         const timer = setInterval(async () => {
             try {
@@ -393,7 +409,8 @@ export class NovaWatchdog {
             }
         })
 
-        this.healthServer.listen(this.config.healthPort, () => {
+        // MI-15: status/restart API is unauthenticated, so it listens on loopback only.
+        this.healthServer.listen(this.config.healthPort, '127.0.0.1', () => {
             this.log(`📡 Health API: http://localhost:${this.config.healthPort}/health`)
         })
 
@@ -438,7 +455,7 @@ export class NovaWatchdog {
         // Also write to log file
         try {
             const logFile = join(this.config.logDir, 'watchdog.log')
-            require('fs').appendFileSync(logFile, line + '\n')
+            appendFileSync(logFile, line + '\n')
         } catch { /* ignore */ }
     }
 }
