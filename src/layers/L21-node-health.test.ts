@@ -47,3 +47,21 @@ describe('L21 node health ssh hardening (R2 L2)', () => {
         expect(exec).not.toHaveBeenCalled()
     })
 })
+
+describe('L21 node health start without config nodes (R2 L18)', () => {
+    it('starts the periodic check even when only mesh nodes may exist', async () => {
+        const { getNodeHealthMonitor } = await import('./L21-node-health.js')
+        vi.useFakeTimers()
+        try {
+            const monitor = getNodeHealthMonitor()
+            monitor.stop()
+            const before = vi.getTimerCount()
+            monitor.start()
+            expect(vi.getTimerCount()).toBeGreaterThan(before)
+            monitor.stop()
+        } finally {
+            vi.clearAllTimers()
+            vi.useRealTimers()
+        }
+    })
+})

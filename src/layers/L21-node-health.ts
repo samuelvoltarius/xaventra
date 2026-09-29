@@ -589,8 +589,9 @@ class NodeHealthMonitor {
     start(): void {
         if (this.intervalId) return
         if (this.nodes.length === 0) {
-            console.log('[L21] No nodes configured — skipping health monitor')
-            return
+            // Mesh nodes arrive asynchronously and pass 1 reads the registry on
+            // every run, so an empty config list is no reason not to start.
+            console.log('[L21] No config nodes yet — monitoring mesh registry nodes only')
         }
 
         console.log(`[L21] 🏥 Node Health Monitor started — checking ${this.nodes.length} nodes every ${CHECK_INTERVAL_MS / 60000}min`)
