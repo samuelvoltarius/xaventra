@@ -47,13 +47,18 @@ All configuration options for Nova.
   "telegram": {
     "enabled": true,
     "token": "BOT_TOKEN",
-    "allowFrom": ["CHAT_ID_1", "CHAT_ID_2"]
+    "allowFrom": ["123456789", "987654321"]
   },
   "whatsapp": { "enabled": false },
   "discord": { "enabled": false, "token": "DISCORD_TOKEN" },
   "cli": { "enabled": true }
 }
 ```
+
+Telegram `allowFrom` entries are numeric Telegram **user** IDs (digit strings).
+Usernames match only when written explicitly as `@name` (mutable, not
+recommended); other non-numeric entries match nothing. An unreadable or
+malformed config is treated as restricted, not as open.
 
 ### Dashboard
 
@@ -157,6 +162,29 @@ is active:
 
 Planned handover requires `sql/mesh-coordination-v4.sql`. Without the
 transactional coordinator RPC Nova keeps the current Main and fails closed.
+
+A single node must declare itself with `"mesh": { "mode": "standalone" }`;
+without that declaration and without a reachable coordinator a node does not
+become local leader (split-brain guard).
+
+Direct-mesh peers must carry the peer's `publicKey` (PEM printed by
+`npm run mesh:identity` on that peer); key-less peers are rejected unless
+`mesh.security.allowTofu` is explicitly `true`. Roles are fail-closed: a peer
+without `roles` only gets `worker`; grant more only explicitly:
+
+```json
+"mesh": {
+  "mode": "direct",
+  "direct": {
+    "enabled": true,
+    "peers": [
+      { "nodeId": "nova-worker-1", "url": "http://100.64.0.10:9091",
+        "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n",
+        "roles": ["system", "worker"] }
+    ]
+  }
+}
+```
 
 ---
 

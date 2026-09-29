@@ -7,7 +7,14 @@
             "listenHost": "127.0.0.1",
             "port": 9091,
             "allowInsecureLan": false,
-            "peers": []
+            "peers": [
+                {
+                    "nodeId": "nova-worker-1",
+                    "url": "http://100.64.0.10:9091",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_OUTPUT_OF_npm_run_mesh_identity_ON_THE_PEER\n-----END PUBLIC KEY-----\n",
+                    "roles": ["system", "worker"]
+                }
+            ]
         },
         "security": {
             "allowTofu": false,
@@ -119,7 +126,7 @@
         "telegram": {
             "enabled": false,
             "token": "",
-            "allowFrom": []
+            "allowFrom": ["123456789"]
         },
         "discord": {
             "enabled": false,
