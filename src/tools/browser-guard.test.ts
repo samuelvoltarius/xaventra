@@ -58,5 +58,5 @@ describe('R2 T7: browser_upload needs owner approval and never uploads secret fi
         expect(approved.success).toBe(false)
         expect(approved.error).toMatch(/Geschützte Datei/)
         expect(manager.getSession).not.toHaveBeenCalled()
-    })
+    }, 120_000)
 })

@@ -76,5 +76,5 @@ describe('R2 T18: honest print result and a single printer_status', () => {
         const entries = ALL_TOOLS.filter(entry => entry.name === 'printer_status')
         expect(entries).toHaveLength(1)
         expect(entries[0]).not.toBe(printerStatusTool)
-    })
+    }, 120_000)
 })

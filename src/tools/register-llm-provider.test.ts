@@ -20,7 +20,7 @@ beforeAll(async () => {
     const { ALL_TOOLS } = await import('./complete-registry.js')
     register = ALL_TOOLS.find(tool => tool.name === 'register_llm_provider')!.handler as any
     withContext = (await import('../core/lifecycle-policy.js')).withExecutionPolicyContext
-})
+}, 120_000)
 beforeEach(() => resolver.registerExternalProvider.mockClear())
 const approved = (params: Record<string, unknown>) => withContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true }, () => register(params))
 

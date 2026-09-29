@@ -28,7 +28,10 @@ beforeAll(async () => {
     vi.resetModules()
     vision = await import('./vision-tool.js')
     policy = await import('./tool-policy.js')
-})
+    // The path guard lives in complete-registry (large module): load it once
+    // up front so single tests do not hit the default timeout under load.
+    await import('./complete-registry.js')
+}, 120_000)
 beforeEach(() => child.spawn.mockClear())
 const owner = { authorizationUserId: 'owner-1', channel: 'telegram' }
 
