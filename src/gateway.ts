@@ -8,10 +8,12 @@
  * - Can restart Nova on crash
  */
 
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage } from 'node:http'
+import { timingSafeEqual } from 'node:crypto'
 import { spawn, ChildProcess } from 'node:child_process'
 import { WebSocketServer, WebSocket } from 'ws'
 import { join } from 'node:path'
+import { getGatewayAuth } from './infra/gateway-auth.js'
 
 // ============================================
 // Types
@@ -271,22 +273,31 @@ function broadcast(data: unknown): void {
 // HTTP Server
 // ============================================
 
+/** The gateway starts/stops Nova and streams its logs: every route except
+ * /health and every WebSocket needs the gateway token (Bearer or ?token=). */
+export function isGatewayRequestAuthorized(req: Pick<IncomingMessage, 'headers' | 'url'>, token = getGatewayAuth().token || ''): boolean {
+    if (!token) return false
+    const header = String(req.headers?.authorization || '')
+    const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+    let query = ''
+    try { query = new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('token') || '' } catch { /* malformed */ }
+    const presented = Buffer.from(bearer || query)
+    const expected = Buffer.from(token)
+    return presented.length === expected.length && timingSafeEqual(presented, expected)
+}
+
 const httpServer = createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204)
-        res.end()
-        return
-    }
-
-    const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
 
     if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ status: 'ok', nova: state.novaStatus }))
+        return
+    }
+
+    if (!isGatewayRequestAuthorized(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' })
+        res.end(JSON.stringify({ error: 'Unauthorized' }))
         return
     }
 
@@ -424,7 +435,7 @@ const httpServer = createServer((req, res) => {
 // WebSocket Server
 // ============================================
 
-const wss = new WebSocketServer({ server: httpServer })
+const wss = new WebSocketServer({ server: httpServer, verifyClient: info => isGatewayRequestAuthorized(info.req) })
 
 wss.on('connection', (ws) => {
     console.log('[Gateway] Client connected')
@@ -501,7 +512,7 @@ function handleRpc(ws: WebSocket, req: JsonRpcRequest): void {
 // ============================================
 
 export function startGateway(port = 18789, autoStartNova = true): void {
-    httpServer.listen(port, () => {
+    httpServer.listen(port, '127.0.0.1', () => {
         console.log(`
 ╔═══════════════════════════════════════╗
 ║                                       ║
