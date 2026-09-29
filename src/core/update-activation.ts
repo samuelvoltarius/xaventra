@@ -3,6 +3,21 @@ import { join } from 'node:path'
 import { writeUpdateState as atomicWriteJsonSync } from './update-store.js'
 import { repairHash, verifyRepairValue, type SignedRepairValue, type RepairTicket, type RepairDeploymentDriver, type PreparedRepair } from '../doctor/repair-activation.js'
 
+/** Forward activation (stop, snapshot, select, start, verify) is not begun with less
+ * remaining ticket time: two bounded systemctl operations alone may take 2 x 35 s. */
+export const UPDATE_MIN_ACTIVATION_WINDOW_MS = 90_000
+/** Rollback-only grace after ticket expiry. Fixed and derived solely from the signed
+ * `expiresAt` (part of the ticket hash), so it cannot be extended by any caller.
+ * Forward steps never use it. Total bound: ticket lifetime (<= 600 s) + this grace. */
+export const UPDATE_ROLLBACK_GRACE_MS = 15 * 60_000
+export function updateRollbackDeadline(ticket: { expiresAt: number }): number {
+    return Number.isSafeInteger(ticket.expiresAt) ? ticket.expiresAt + UPDATE_ROLLBACK_GRACE_MS : 0
+}
+/** A driver may grant rollback-only authority until updateRollbackDeadline(ticket).
+ * Without this method rollback keeps requiring the unexpired forward authority. */
+export interface UpdateDeploymentDriver extends RepairDeploymentDriver {
+    hasRollbackAuthority?(ticket: RepairTicket): Promise<boolean>
+}
 export interface UpdateActivationReceipt {
     ticket: RepairTicket; status: 'accepted' | 'preparing' | 'activating' | 'verifying' | 'installed' | 'rolled-back' | 'blocked'
     updatedAt: number; releaseId?: string; previousReleaseId?: string; reason?: string
@@ -13,7 +28,7 @@ export interface UpdateActivationReceipt {
  * Durable intent precedes every potentially destructive action. A crash retains
  * the lock and exact IDs; neither a timeout nor a retry authorizes a second swap. */
 export class UpdateActivationController {
-    constructor(private root: string, private approvalKey: string, private driver: RepairDeploymentDriver,
+    constructor(private root: string, private approvalKey: string, private driver: UpdateDeploymentDriver,
         private accept: (releaseId: string, ticket: RepairTicket) => Promise<string>,
         private complete: (receipt: UpdateActivationReceipt) => Promise<void>) { mkdirSync(root, { recursive: true }) }
     status(id: string): UpdateActivationReceipt | undefined {
@@ -44,6 +59,15 @@ export class UpdateActivationController {
         let changed = false, maintenance = false, finalized = false
         const save = () => { r.updatedAt = Date.now(); atomicWriteJsonSync(join(this.root, `${t.attemptId}.json`), r) }
         const authority = async () => { if (Date.now() >= t.expiresAt || !await this.driver.hasAuthority(t)) throw Error('Update authority lost') }
+        // Rollback only: an expired ticket must not strand a stopped service, but the
+        // grace is bounded and still requires the driver's current lease/fencing.
+        const rollbackAuthority = async () => {
+            if (Date.now() >= updateRollbackDeadline(t)) throw Error('Rollback authority window closed')
+            const granted = this.driver.hasRollbackAuthority ? await this.driver.hasRollbackAuthority(t)
+                : Date.now() < t.expiresAt && await this.driver.hasAuthority(t)
+            if (!granted || Date.now() >= updateRollbackDeadline(t)) throw Error('Rollback authority lost')
+        }
+        const activationWindow = () => { if (t.expiresAt - Date.now() < UPDATE_MIN_ACTIVATION_WINDOW_MS) throw Error('Update ticket window too short for activation') }
         try {
             save(); await authority()
             r.status = 'preparing'; save()
@@ -54,7 +78,8 @@ export class UpdateActivationController {
             if (await this.driver.currentRelease(t.targetId) !== p.previousReleaseId) throw Error('Baseline changed')
             r.before = await this.accept(p.previousReleaseId, t)
             if (!r.before) throw Error('Baseline acceptance missing')
-            maintenance = true; await this.driver.beginMaintenance?.(t); await authority()
+            activationWindow()
+            maintenance = true; await this.driver.beginMaintenance?.(t); await authority(); activationWindow()
             r.status = 'activating'; save(); changed = true
             await this.driver.activate(p, t); await authority()
             r.status = 'verifying'; save()
@@ -67,7 +92,7 @@ export class UpdateActivationController {
             r.reason = 'Update failed; inspect protected controller evidence'
             if (changed && p) {
                 try {
-                    await authority(); await this.driver.rollback(p, t)
+                    await rollbackAuthority(); await this.driver.rollback(p, t)
                     if (await this.driver.currentRelease(t.targetId) !== p.previousReleaseId) throw Error('Rollback identity mismatch')
                     r.restoration = await this.accept(p.previousReleaseId, t)
                     if (!r.restoration || r.restoration !== r.before) throw Error('Restoration acceptance mismatch')

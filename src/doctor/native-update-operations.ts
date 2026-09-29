@@ -9,6 +9,7 @@ import { protectControllerDirectory, readProtectedControllerFile } from './repai
 import { writeUpdateState } from '../core/update-store.js'
 import type { NativeRelease, NativeStepOptions, NativeUpdateOperations } from './native-update-driver.js'
 import { NativeRollbackState } from './native-rollback-state.js'
+import { updateRollbackDeadline } from '../core/update-activation.js'
 
 export interface NativeOperationsEnrollment {
     root: string; targetId: string; baseline: string; candidate: string
@@ -21,6 +22,9 @@ export interface NativeOperationsEnrollment {
  * it must never thaw the preserved snapshot or silently migrate storage. */
 export interface NativeOperationsAuthority {
     authorized(ticket: RepairTicket): Promise<boolean>
+    /** Optional separate lease check for rollback steps (ticket may be expired within
+     * the bounded rollback grace). Without it, `authorized` is asked for rollback too. */
+    rollbackAuthorized?(ticket: RepairTicket): Promise<boolean>
     quiescent(ticket: RepairTicket): Promise<boolean>
     beginMaintenance(ticket: RepairTicket): Promise<void>
     verifyRelease(id: string, ticket: RepairTicket): Promise<boolean>
@@ -53,30 +57,37 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         protectControllerDirectory(c.root)
         this.variants = {...c.releases}
         const authorityHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t), quiescent:(t:RepairTicket) => this.authority.quiescent(t) }
+        // Restoration into the third state happens only during rollback.
+        const rollbackHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t,{rollback:true}), quiescent:(t:RepairTicket) => this.authority.quiescent(t) }
         if (c.rollback) {
             const r = c.rollback
             if (Object.hasOwn(c.releases,'__rollback') || old.rollbackStateId !== r.stateId
                 || !/^[a-f0-9]{64}$/.test(r.unitHash) || [old.unitHash,next.unitHash].includes(r.unitHash)
                 || r.process.executable !== old.process.executable || r.process.executableHash !== old.process.executableHash) throw Error('Native rollback program enrollment mismatch')
             this.variants.__rollback = {...old,...r,id:old.id}
-            this.rollback = new NativeRollbackState(s,r,authorityHooks)
+            this.rollback = new NativeRollbackState(s,r,rollbackHooks)
         } else if (old.rollbackStateId) throw Error('Native rollback enrollment missing')
-        this.selector = new NativeReleaseSelection({ root:c.root, unit:s.unit, fragmentPath:s.fragmentPath, releases:this.variants }, t => this.fenced(t))
+        this.selector = new NativeReleaseSelection({ root:c.root, unit:s.unit, fragmentPath:s.fragmentPath, releases:this.variants }, (t,rollback) => this.fenced(t,rollback === true))
         this.snapshots = new NativeSnapshotAdapter(s, authorityHooks)
     }
-    private bound(t: RepairTicket): boolean {
+    private bound(t: RepairTicket, rollback = false): boolean {
         const { attemptId, expiresAt, ...binding } = t
         return /^repair-[a-f0-9-]{36}$/.test(attemptId) && Number.isSafeInteger(expiresAt)
-            && expiresAt > Date.now() && repairHash(binding) === repairHash(this.config.snapshot.snapshot.binding)
+            && (rollback ? updateRollbackDeadline(t) : expiresAt) > Date.now() && repairHash(binding) === repairHash(this.config.snapshot.snapshot.binding)
     }
-    async hasAuthority(t: RepairTicket): Promise<boolean> {
-        return this.bound(t) && await this.authority.authorized(t) && this.bound(t)
+    /** options.rollback: bounded rollback grace; callers below grant it only to
+     * rollback-direction steps. Forward steps require an unexpired ticket. */
+    async hasAuthority(t: RepairTicket, options?: NativeStepOptions): Promise<boolean> {
+        const rollback = options?.rollback === true
+        const lease = rollback && this.authority.rollbackAuthorized ? this.authority.rollbackAuthorized.bind(this.authority) : this.authority.authorized.bind(this.authority)
+        return this.bound(t, rollback) && await lease(t) && this.bound(t, rollback)
     }
-    private async fenced(t: RepairTicket): Promise<boolean> {
-        return await this.hasAuthority(t) && await this.authority.quiescent(t) && await this.hasAuthority(t)
+    private async fenced(t: RepairTicket, rollback = false): Promise<boolean> {
+        const options: NativeStepOptions | undefined = rollback ? { rollback: true } : undefined
+        return await this.hasAuthority(t, options) && await this.authority.quiescent(t) && await this.hasAuthority(t, options)
     }
-    private async guard(t: RepairTicket): Promise<void> {
-        if (!await this.fenced(t)) throw Error('Native operations authority or fence missing')
+    private async guard(t: RepairTicket, rollback = false): Promise<void> {
+        if (!await this.fenced(t, rollback)) throw Error('Native operations authority or fence missing')
     }
     private service(id: string) {
         const r = this.variants[id], s = this.config.snapshot
@@ -104,59 +115,65 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         return { releaseId:r.id,programHash:r.programHash,stateId:r.stateId,running:state.running,cleanStopped:state.cleanStopped,
             stopped:state.stopped,failed:state.failed }
     }
-    async verifyRelease(id: string, t: RepairTicket) {
+    async verifyRelease(id: string, t: RepairTicket, options?: NativeStepOptions) {
         this.service(id)
-        return await this.hasAuthority(t) && await this.authority.verifyRelease(id,t) && await this.hasAuthority(t)
+        // A rollback only ever verifies (and later starts) the enrolled baseline.
+        const auth: NativeStepOptions | undefined = this.rollbackStep(options, undefined, id) ? { rollback: true } : undefined
+        return await this.hasAuthority(t, auth) && await this.authority.verifyRelease(id,t) && await this.hasAuthority(t, auth)
     }
     async beginMaintenance(t: RepairTicket) {
         if (!await this.hasAuthority(t)) throw Error('Native maintenance authority missing')
         await this.authority.beginMaintenance(t); await this.guard(t)
     }
-    quiescent(t: RepairTicket) { return this.fenced(t) }
+    quiescent(t: RepairTicket, options?: NativeStepOptions) { return this.fenced(t, options?.rollback === true) }
     async stop(id: string, t: RepairTicket, options?: NativeStepOptions) {
-        await this.guard(t)
+        // A rollback only ever stops the candidate; the baseline stop stays a forward step.
+        const rollback = options?.rollback === true && id === this.config.candidate
+        await this.guard(t, rollback)
         const key = this.selectedKey(id)
         // Rollback stop of the candidate may end uncleanly; never for the baseline.
-        const candidateFailure = options?.rollback === true && id === this.config.candidate && key === this.config.candidate
-        await this.service(key).stop(() => this.fenced(t), { candidateFailure })
+        const candidateFailure = rollback && key === this.config.candidate
+        await this.service(key).stop(() => this.fenced(t, rollback), { candidateFailure })
     }
     async resetFailed(id: string, t: RepairTicket, options: NativeStepOptions) {
         if (options?.rollback !== true || id !== this.config.candidate) throw Error('Native failure reset only for rollback of the enrolled candidate')
-        await this.guard(t)
+        await this.guard(t, true)
         const key = this.selectedKey(id)
         if (key !== this.config.candidate) throw Error('Native failure reset only for rollback of the enrolled candidate')
-        await this.service(key).resetFailed(() => this.fenced(t))
+        await this.service(key).resetFailed(() => this.fenced(t, true))
     }
     async snapshot(source: string, candidate: string, t: RepairTicket) {
         if (source !== this.config.baseline || candidate !== this.config.candidate) throw Error('Native snapshot direction mismatch')
         await this.guard(t); return this.snapshots.snapshot(t)
     }
-    async baselineUnchanged(source: string, t: RepairTicket) {
+    async baselineUnchanged(source: string, t: RepairTicket, options?: NativeStepOptions) {
         if (source !== this.config.baseline) throw Error('Native rollback source mismatch')
-        await this.guard(t); return this.snapshots.baselineUnchanged(t)
+        await this.guard(t, options?.rollback === true); return this.snapshots.baselineUnchanged(t)
     }
     async select(next: string, expected: string, t: RepairTicket, options?: NativeStepOptions) {
-        const candidateFailure = this.rollbackStep(options, expected, next) && options.candidateFailure === true
-        await this.guard(t)
-        if (!await this.verifyRelease(next,t)) throw Error('Native release proof missing before selection')
+        const rollback = this.rollbackStep(options, expected, next), candidateFailure = rollback && options.candidateFailure === true
+        const step: NativeStepOptions | undefined = rollback ? { rollback: true } : undefined
+        await this.guard(t, rollback)
+        if (!await this.verifyRelease(next,t,step)) throw Error('Native release proof missing before selection')
         const from = this.selectedKey(expected), to = this.rollback && next === this.config.baseline ? '__rollback' : next
-        if (to === '__rollback') await this.restoreRollback(next,t)
-        await this.guard(t); await this.selector.select(to,from,t,{ candidateFailure })
+        if (to === '__rollback') await this.restoreRollback(next,t,step)
+        await this.guard(t, rollback); await this.selector.select(to,from,t,{ candidateFailure, rollback })
     }
-    async restoreRollback(source: string, t: RepairTicket) {
+    async restoreRollback(source: string, t: RepairTicket, options?: NativeStepOptions) {
         if (source !== this.config.baseline || !this.rollback) throw Error('Native rollback restoration not enrolled')
-        await this.guard(t); return this.rollback.restore(t)
+        await this.guard(t, options?.rollback === true); return this.rollback.restore(t)
     }
     async start(id: string, t: RepairTicket, options?: NativeStepOptions) {
-        const candidateFailure = this.rollbackStep(options, undefined, id) && options.candidateFailure === true
-        await this.guard(t)
-        if (!await this.verifyRelease(id,t)) throw Error('Native runtime readiness proof missing')
+        const rollback = this.rollbackStep(options, undefined, id), candidateFailure = rollback && options.candidateFailure === true
+        const step: NativeStepOptions | undefined = rollback ? { rollback: true } : undefined
+        await this.guard(t, rollback)
+        if (!await this.verifyRelease(id,t,step)) throw Error('Native runtime readiness proof missing')
         const key = this.selectedKey(id), stateId = this.variants[key].stateId
         if (!await this.authority.runtimeReady(id,t,stateId)) throw Error('Native runtime readiness proof missing')
         // A successful unit start is NOT proof of writable independent state.
-        await this.guard(t)
+        await this.guard(t, rollback)
         if (this.selectedKey(id) !== key) throw Error('Native selection changed before start')
-        await this.service(key).start(() => this.fenced(t), { candidateFailure })
+        await this.service(key).start(() => this.fenced(t, rollback), { candidateFailure })
     }
     saveIntent(value: Parameters<NativeUpdateOperations['saveIntent']>[0]) {
         const c = this.config

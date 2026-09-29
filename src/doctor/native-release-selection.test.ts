@@ -1,4 +1,5 @@
-import { it, expect, vi } from 'vitest'
+import { it, expect, vi, afterEach } from 'vitest'
+import { UPDATE_ROLLBACK_GRACE_MS } from '../core/update-activation.js'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -104,4 +105,17 @@ it('accepts a stopped unit with an unclean last exit only under the explicit can
     expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old')
     control.running = true
     await expect(f.selection.select('next', 'old', { ...f.ticket, attemptId: 'repair-33333333-3333-4333-8333-333333333333' }, { candidateFailure: true })).rejects.toThrow('clean stopped')
+})
+afterEach(() => { vi.useRealTimers() })
+it('an expired ticket still admits the rollback selection within the grace, never a forward one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = fixture(); await f.selection.select('next', 'old', f.ticket)
+    vi.setSystemTime(f.ticket.expiresAt + 1_000)
+    await expect(f.selection.select('old', 'next', f.ticket)).rejects.toThrow('fenced')
+    await f.selection.select('old', 'next', f.ticket, { rollback: true })
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old')
+    expect(f.auth).toHaveBeenLastCalledWith(expect.anything(), true)
+    vi.setSystemTime(f.ticket.expiresAt + UPDATE_ROLLBACK_GRACE_MS)
+    const other = { ...f.ticket, attemptId: 'repair-44444444-4444-4444-8444-444444444444' }
+    await expect(f.selection.select('next', 'old', other, { rollback: true })).rejects.toThrow('fenced')
 })

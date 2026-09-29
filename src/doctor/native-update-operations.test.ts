@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,8 @@ vi.mock('./native-release-selection.js',()=>({NativeReleaseSelection:class {asyn
 vi.mock('./native-snapshot-adapter.js',()=>({NativeSnapshotAdapter:class {async snapshot(){state.copies++;return {}} async baselineUnchanged(){return true}}}))
 vi.mock('./native-rollback-state.js',()=>({NativeRollbackState:class {async restore(){return {candidateStateId:'rollback-state'}}}}))
 import { EnrolledNativeUpdateOperations } from './native-update-operations.js'
+import { UPDATE_ROLLBACK_GRACE_MS } from '../core/update-activation.js'
+afterEach(()=>{vi.useRealTimers()})
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
 beforeEach(()=>Object.assign(state,{unit:'old',running:false,starts:0,stops:0,copies:0,selections:0,calls:[]}))
 function fixture(){
@@ -86,9 +88,33 @@ it('grants candidate-failure tolerance only to rollback steps of the enrolled ca
     await f.ops.start('old',f.ticket,C)
     await f.ops.stop('old',f.ticket,R)
     expect(state.calls).toEqual([['inspect',{candidateFailure:true}],['inspect',{candidateFailure:false}],['resetFailed'],
-        ['select',{candidateFailure:true}],['start',{candidateFailure:true}],['stop',{candidateFailure:false}]])
+        ['select',{candidateFailure:true,rollback:true}],['start',{candidateFailure:true}],['stop',{candidateFailure:false}]])
 })
 it('never tolerates a failed baseline unit, even in a rollback step',async()=>{
     const f=fixture();await f.ops.inspect({rollback:true});await f.ops.inspect()
     expect(state.calls).toEqual([['inspect',{candidateFailure:false}],['inspect',{candidateFailure:false}]])
+})
+it('after ticket expiry admits only rollback-direction steps, bounded by the grace window',async()=>{
+    vi.useFakeTimers({toFake:['Date']})
+    const f=fixture(),R={rollback:true as const};state.unit='next'
+    vi.setSystemTime(f.ticket.expiresAt+1_000)
+    expect(await f.ops.hasAuthority(f.ticket)).toBe(false)
+    expect(await f.ops.hasAuthority(f.ticket,R)).toBe(true)
+    await expect(f.ops.start('next',f.ticket)).rejects.toThrow()
+    await expect(f.ops.start('next',f.ticket,R)).rejects.toThrow('rollback')
+    await expect(f.ops.select('next','old',f.ticket,R)).rejects.toThrow('rollback')
+    await expect(f.ops.select('old','next',f.ticket)).rejects.toThrow()
+    expect(await f.ops.verifyRelease('next',f.ticket,R).catch(()=>false)).toBe(false)
+    await f.ops.select('old','next',f.ticket,R);await f.ops.start('old',f.ticket,R)
+    expect([state.selections,state.starts]).toEqual([1,1])
+    vi.setSystemTime(f.ticket.expiresAt+UPDATE_ROLLBACK_GRACE_MS)
+    expect(await f.ops.hasAuthority(f.ticket,R)).toBe(false)
+    await expect(f.ops.stop('old',f.ticket,R)).rejects.toThrow()
+})
+it('uses a separate operator rollback authority for rollback steps when enrolled',async()=>{
+    const f=fixture(),rollbackAuthorized=vi.fn(async()=>false)
+    const ops=new EnrolledNativeUpdateOperations(f.config,{...f.authority,rollbackAuthorized})
+    expect(await ops.hasAuthority(f.ticket)).toBe(true)
+    expect(await ops.hasAuthority(f.ticket,{rollback:true})).toBe(false)
+    expect(rollbackAuthorized).toHaveBeenCalledWith(f.ticket)
 })

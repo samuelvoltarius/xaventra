@@ -1,16 +1,17 @@
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { NativeUpdateDriver } from './native-update-driver.js'
 import { repairHash, signRepairValue } from './repair-activation.js'
-import { UpdateActivationController } from '../core/update-activation.js'
+import { UpdateActivationController, UPDATE_ROLLBACK_GRACE_MS } from '../core/update-activation.js'
 import { generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+afterEach(() => { vi.useRealTimers() })
 function fixture(rollbackState = false) {
     const ticket = { targetId: 'native-fixture', proposalId: 'upstream-fixture', probeId: 'independent',
         patchHash: 'a'.repeat(64), baselineHash: 'b'.repeat(64), candidateHash: 'c'.repeat(64),
-        attemptId: 'repair-11111111-1111-4111-8111-111111111111', expiresAt: Date.now() + 60_000 }
+        attemptId: 'repair-11111111-1111-4111-8111-111111111111', expiresAt: Date.now() + 300_000 }
     const { attemptId, expiresAt, ...binding } = ticket
     let current = 'old', running = true, restored = false
     const phases: string[] = []
@@ -191,4 +192,42 @@ it('refuses rollback if the failed state is not cleared by the reset', async () 
     f.resetFailed.mockImplementation(async () => { f.phases.push('reset-failed') })
     await expect(f.driver.rollback(p, f.ticket)).rejects.toThrow('not reconciled')
     expect(f.ops.select).toHaveBeenCalledTimes(1)
+})
+it('ticket expiry between stop and start does not prevent the rollback', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = fixture(), p = await f.driver.prepare(f.ticket); await f.driver.activate(p, f.ticket)
+    const stop = f.ops.stop.getMockImplementation()!
+    f.ops.stop.mockImplementation(async (...args: any[]) => { await (stop as any)(...args); vi.setSystemTime(f.ticket.expiresAt + 1_000) })
+    expect(await f.driver.hasAuthority(f.ticket)).toBe(true)
+    await f.driver.rollback(p, f.ticket)
+    expect(f.phases.slice(-3)).toEqual(['stop', 'select:old', 'start'])
+    expect(await f.driver.hasAuthority(f.ticket)).toBe(false)
+    expect(await f.driver.hasRollbackAuthority(f.ticket)).toBe(true)
+    expect(f.ops.hasAuthority).toHaveBeenCalledWith(f.ticket, { rollback: true })
+    expect(f.ops.select.mock.calls.at(-1)?.[3]).toEqual({ rollback: true })
+})
+it('refuses every forward step once the ticket expired', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = fixture(), p = await f.driver.prepare(f.ticket)
+    f.ops.stop.mockImplementation(async () => { f.phases.push('stop'); vi.setSystemTime(f.ticket.expiresAt + 1_000) })
+    await expect(f.driver.activate(p, f.ticket)).rejects.toThrow('authority')
+    expect(f.ops.snapshot).not.toHaveBeenCalled(); expect(f.ops.select).not.toHaveBeenCalled(); expect(f.ops.start).not.toHaveBeenCalled()
+    await expect(f.driver.prepare(f.ticket)).rejects.toThrow('authority')
+})
+it('refuses the rollback after the bounded grace window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = fixture(), p = await f.driver.prepare(f.ticket); await f.driver.activate(p, f.ticket)
+    vi.setSystemTime(f.ticket.expiresAt + UPDATE_ROLLBACK_GRACE_MS)
+    await expect(f.driver.rollback(p, f.ticket)).rejects.toThrow('authority')
+    expect(f.ops.stop).toHaveBeenCalledTimes(1); expect(f.ops.select).toHaveBeenCalledTimes(1)
+})
+it('expired ticket during candidate verification: shared controller still rolls back the native driver', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = crashFixture(), keys = generateKeyPairSync('ed25519')
+    const root = mkdtempSync(join(tmpdir(), 'native-controller-expiry-'))
+    const signed = signRepairValue(f.ticket, keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
+    const probe = async (id: string) => { if (id === 'next') { vi.setSystemTime(f.ticket.expiresAt + 5_000); f.crash(); throw Error('candidate crashed late') } return id }
+    const receipt = await new UpdateActivationController(root, keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(), f.driver, probe, vi.fn(async () => {})).deploy(signed, {})
+    expect(receipt.status).toBe('rolled-back')
+    expect(f.unit).toEqual({ current: 'old', state: 'running' })
 })
