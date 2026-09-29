@@ -386,6 +386,9 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
         const { getStats, getPendingProposals } = await import('./self-update.js')
         const stats = getStats()
         const pending = getPendingProposals()
+        // Every source that evaluated successfully resolves its own findings
+        // that are no longer reproduced (R2 NZ-18).
+        evaluatedSources.add('self-update')
         if (stats.pending > 0) {
             generated.push(upsertFinding(findings, {
                 id: stableId(['self-update-pending']),
@@ -522,6 +525,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     try {
         const { getDisabledModels } = await import('../llm/model-perf-db.js')
         const disabled = getDisabledModels()
+        evaluatedSources.add('model-perf-db')
         if (disabled.length > 0) {
             generated.push(upsertFinding(findings, {
                 id: stableId(['llm-auto-disabled', disabled.map(d => d.model).sort().join(',')]),
@@ -540,9 +544,11 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     try {
         const { getQueueStats } = await import('../channels/message-queue.js')
         const queueStats = getQueueStats()
+        evaluatedSources.add('message-queue')
         if (queueStats.failed > 0) {
             generated.push(upsertFinding(findings, {
-                id: stableId(['msg-queue-failed', queueStats.failed]),
+                // Stable id: a changing counter must not open a new finding each run.
+                id: stableId(['msg-queue-failed']),
                 title: `${queueStats.failed} message(s) permanently failed`,
                 detail: `Message queue: ${queueStats.total} total, ${queueStats.pending} pending, ${queueStats.done} done, ${queueStats.failed} failed (max retries exceeded).`,
                 category: 'health',
