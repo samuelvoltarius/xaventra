@@ -1,4 +1,4 @@
-import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
+import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -14,16 +14,39 @@ const DEFAULT_REMOTE_TOOLS = new Set([
     'find_capability', 'resolve_capability', 'get_current_time',
 ])
 
+/**
+ * Roles granted to a peer whose configuration does not list `roles`.
+ * Deliberately non-privileged: owner/admin/system must be configured explicitly.
+ */
+export const DEFAULT_PEER_ROLES: readonly MeshRole[] = Object.freeze(['worker'] as MeshRole[])
+
 export interface MeshTrustConfig {
     mode: MeshMode
     peers: MeshPeer[]
+    /**
+     * Explicit opt-in (config `mesh.security.allowTofu: true`, default false):
+     * accept unknown or key-less peers and pin the first key seen per node id
+     * for the lifetime of this policy. Such peers only get DEFAULT_PEER_ROLES
+     * unless roles are configured.
+     */
     allowTofu?: boolean
     allowedTools?: string[]
 }
 
+/** Node ids of configured peers that have no usable `publicKey` (migration warning). */
+export function peersWithoutKeys(peers: MeshPeer[]): string[] {
+    return peers.filter(peer => !peer.publicKey || !peer.publicKey.trim()).map(peer => peer.nodeId)
+}
+
 export class MeshPolicy {
     private readonly replay = new MeshReplayGuard(2 * 60_000, 20_000, join(getNovaDataDir(), 'mesh-replay-cache.json'))
-    constructor(private readonly config: MeshTrustConfig, private readonly localNodeId: string) {}
+    private readonly tofuKeys = new Map<string, string>()
+    constructor(
+        private readonly config: MeshTrustConfig,
+        private readonly localNodeId: string,
+        /** Public key of this node; envelopes claiming `localNodeId` must be signed with it. */
+        private readonly localPublicKey?: string,
+    ) {}
 
     verify(envelope: MeshEnvelope): { accepted: boolean; reason?: string; duplicate?: boolean } {
         if (envelope.version !== 1 || !isSafeMeshKind(envelope.kind)) return { accepted: false, reason: 'invalid_schema' }
@@ -34,11 +57,15 @@ export class MeshPolicy {
         if (envelope.targetNode !== '*' && envelope.targetNode !== this.localNodeId) return { accepted: false, reason: 'wrong_target' }
         if (!MeshIdentity.verify(envelope)) return { accepted: false, reason: 'invalid_signature' }
         const peer = this.config.peers.find(item => item.nodeId === envelope.sourceNode)
-        if (!peer && !this.config.allowTofu && envelope.sourceNode !== this.localNodeId) return { accepted: false, reason: 'untrusted_node' }
-        if (peer?.publicKey && MeshIdentity.fingerprint(peer.publicKey) !== MeshIdentity.fingerprint(envelope.publicKey)) {
-            return { accepted: false, reason: 'public_key_mismatch' }
-        }
-        if (peer?.roles?.length && !peer.roles.includes(envelope.principal.role)) return { accepted: false, reason: 'role_not_allowed' }
+        const trust = this.trustedKey(envelope, peer)
+        if (!trust.accepted) return trust
+        // Authenticate against the trusted key itself, not just the key the envelope carries.
+        if (!MeshIdentity.verifyWithKey(envelope, trust.key)) return { accepted: false, reason: 'invalid_signature' }
+        const roles = envelope.sourceNode === this.localNodeId
+            ? undefined
+            : (peer?.roles?.length ? peer.roles : DEFAULT_PEER_ROLES)
+        if (roles && !roles.includes(envelope.principal.role)) return { accepted: false, reason: 'role_not_allowed' }
+        if (trust.pin) this.tofuKeys.set(envelope.sourceNode, trust.key)
         const replay = this.replay.accept(envelope)
         if (!replay.accepted) return { accepted: false, reason: replay.reason, duplicate: replay.reason === 'replay' }
         if (COORDINATED_KINDS.has(envelope.kind)) {
@@ -54,6 +81,25 @@ export class MeshPolicy {
         if (envelope.kind === 'codex.complete.request') return this.verifyCodexCompletion(envelope)
         if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
         return { accepted: true }
+    }
+
+    private trustedKey(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: true; key: string; pin?: boolean } | { accepted: false; reason: string } {
+        if (envelope.sourceNode === this.localNodeId) {
+            if (!this.localPublicKey || !samePublicKey(this.localPublicKey, envelope.publicKey)) return { accepted: false, reason: 'local_node_spoof' }
+            return { accepted: true, key: this.localPublicKey }
+        }
+        const configuredKey = peer?.publicKey?.trim() ? peer.publicKey : undefined
+        if (configuredKey) {
+            if (!samePublicKey(configuredKey, envelope.publicKey)) return { accepted: false, reason: 'public_key_mismatch' }
+            return { accepted: true, key: configuredKey }
+        }
+        if (!this.config.allowTofu) return { accepted: false, reason: peer ? 'missing_peer_key' : 'untrusted_node' }
+        const pinned = this.tofuKeys.get(envelope.sourceNode)
+        if (pinned) {
+            if (!samePublicKey(pinned, envelope.publicKey)) return { accepted: false, reason: 'public_key_mismatch' }
+            return { accepted: true, key: pinned }
+        }
+        return { accepted: true, key: envelope.publicKey, pin: true }
     }
 
     private verifyTool(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: boolean; reason?: string } {
@@ -134,6 +180,10 @@ export class MeshPolicy {
         }
         return { accepted: true }
     }
+}
+
+function samePublicKey(a: string, b: string): boolean {
+    return typeof a === 'string' && typeof b === 'string' && a.trim() === b.trim()
 }
 
 export function containsFreeShellPayload(value: unknown): boolean {
