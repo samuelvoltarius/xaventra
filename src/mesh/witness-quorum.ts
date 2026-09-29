@@ -48,22 +48,31 @@ export function loadWitnessQuorumConfig(): WitnessQuorumConfig | null {
     }
 }
 
+/** True when witness coordination is configured. Fail-closed: an existing
+ * but unreadable/unparsable config counts as "requested", because the node
+ * cannot prove that it is *not* supposed to be witness-controlled. */
 export function witnessModeRequested(): boolean {
+    let raw: string
     try {
         const configPath = resolveConfigPath()
         if (!existsSync(configPath)) return false
-        return JSON.parse(readFileSync(configPath, 'utf8'))?.mesh?.coordination?.mode === 'witness'
-    } catch { return false }
+        raw = readFileSync(configPath, 'utf8')
+    } catch { return true }
+    try { return JSON.parse(raw)?.mesh?.coordination?.mode === 'witness' } catch { return true }
 }
 
 /** Resolve an exclusive runtime service onto one shared main authority.
+ * The authority service itself (default `nova-main`) is always
+ * witness-controlled in witness mode, even if `services` omits it.
  * Mesh task leases intentionally remain on Supabase because its task RPCs
  * validate Supabase fencing epochs, not Witness quorum certificates. */
 export function resolveWitnessAuthority(service: string): string | null {
     const config = loadWitnessQuorumConfig()
     if (!config) return null
+    const authority = config.authorityService || 'nova-main'
+    if (service === authority) return authority
     const governed = new Set(config.services || ['telegram', 'whatsapp', 'discord', 'dashboard'])
-    return governed.has(service) ? (config.authorityService || 'nova-main') : null
+    return governed.has(service) ? authority : null
 }
 
 export async function acquireWitnessQuorumLease(

@@ -252,7 +252,7 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
     // quorum with Supabase because two independent authorities could each elect
     // a leader. Witness mode therefore fails closed when fewer than two votes
     // are available and never falls back to Supabase for that election.
-    const { resolveWitnessAuthority, acquireWitnessQuorumLease } = await import('./witness-quorum.js')
+    const { resolveWitnessAuthority, acquireWitnessQuorumLease, witnessModeRequested } = await import('./witness-quorum.js')
     const witnessAuthority = resolveWitnessAuthority(service)
     if (witnessAuthority) {
         const decision = await acquireWitnessQuorumLease(witnessAuthority, DEFAULT_LEASE_TTL_MS)
@@ -267,6 +267,9 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
     if (!config.url || !config.key) {
         if (standbyNode) {
             return { leader: false, reason: 'standby has no distributed coordinator; split-brain guard' }
+        }
+        if (witnessModeRequested()) {
+            return { leader: false, reason: 'witness coordination configured; local-only leader refused (split-brain guard)', coordinator: 'witness' }
         }
         const token = fencingToken(service, 1)
         localFencingTokens.set(service, { epoch: 1, token })
