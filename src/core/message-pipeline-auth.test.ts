@@ -93,3 +93,41 @@ describe('multi-user middleware failure is fail-closed', () => {
         expect(call.replies).toEqual(['command-ran'])
     })
 })
+
+describe('group/coalescing chat id comes from the message context', () => {
+    function withGlobalTelegramChat(chatId: string, userId: string) {
+        ;(globalThis as any).__novaState = { ...(globalThis as any).__novaState, lastActiveChatId: chatId, lastActiveUserId: userId }
+    }
+
+    it('never borrows the last Telegram chat for another channel', async () => {
+        withGlobalTelegramChat('tg-group-9', 'tg-user-1')
+        const call = run('/status please right now', 'Discord', 'discord-7')
+        await call.done
+        expect(mu.isGroupChat).toHaveBeenCalledWith('discord-7', 'discord-7')
+        expect(mu.shouldCoalesce).toHaveBeenCalledWith('discord-7', 'discord-7')
+        expect(mu.isGroupChat.mock.calls.flat()).not.toContain('tg-group-9')
+    })
+
+    it('does not use another Telegram sender\'s chat', async () => {
+        withGlobalTelegramChat('tg-group-9', 'tg-user-1')
+        const call = run('/status please right now', 'Telegram', 'tg-user-2')
+        await call.done
+        expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-user-2', 'tg-user-2')
+    })
+
+    it('prefers an explicit chat id from the message context', async () => {
+        withGlobalTelegramChat('tg-group-9', 'tg-user-1')
+        const replies: string[] = []
+        const handleCommand = vi.fn(async () => 'ok')
+        await handleMessage('Telegram', 'tg-user-1', '/status please right now', async m => { replies.push(m) },
+            { config: {}, llm: {}, tools: {} } as any, handleCommand, undefined, undefined, { chatId: 'tg-group-42' })
+        expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-group-42', 'tg-user-1')
+    })
+
+    it('keeps the legacy Telegram chat only when it belongs to the same sender', async () => {
+        withGlobalTelegramChat('tg-group-9', 'tg-user-1')
+        const call = run('/status please right now', 'Telegram', 'tg-user-1')
+        await call.done
+        expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-group-9', 'tg-user-1')
+    })
+})

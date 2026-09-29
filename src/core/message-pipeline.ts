@@ -199,6 +199,30 @@ export interface MessageExecutionOptions {
     requestId?: string
 }
 
+/** Per-message transport facts supplied by the channel adapter. */
+export interface MessageContext {
+    /** Real conversation/chat id of this message (e.g. a Telegram group id). */
+    chatId?: string
+}
+
+/**
+ * Chat id used for group tracking and coalescing. It belongs to this message:
+ * an explicit adapter-supplied id wins. The process-global Telegram
+ * `lastActiveChatId` is only a compatibility fallback for Telegram callers that
+ * do not pass the id yet, and only when that global was set by the same
+ * sender. Other channels never borrow Telegram's last chat.
+ */
+export function resolveConversationChatId(channel: string, from: string, context?: MessageContext): string {
+    const explicit = String(context?.chatId ?? '').trim()
+    if (explicit) return explicit
+    if (channel.toLowerCase() === 'telegram') {
+        const global = (globalThis as any).__novaState
+        const lastChat = String(global?.lastActiveChatId ?? '').trim()
+        if (lastChat && String(global?.lastActiveUserId ?? '') === String(from)) return lastChat
+    }
+    return from
+}
+
 export interface ScreenshotFallbackRequest {
     channel: string
     /** Raw channel identity: the authorization subject and the Telegram recipient. */
@@ -253,6 +277,7 @@ export async function handleMessage(
     handleCommandFn: (cmd: string, args: string, from: string, context?: PrincipalContext) => Promise<string | null>,
     image?: { data: string; mimeType: string },
     execution?: MessageExecutionOptions,
+    messageContext?: MessageContext,
 ) {
     execution?.abortSignal?.throwIfAborted()
     traceStep('input:accepted')
@@ -334,7 +359,7 @@ export async function handleMessage(
         mu.initMultiUser()
 
         // 1. Auth Check — block unauthorized users
-        const chatId = (globalThis as any).__novaState?.lastActiveChatId || from
+        const chatId = resolveConversationChatId(channel, from, messageContext)
         const authResult = mu.checkAuth(from, channel, canonicalUser)
 
         if (!authResult.allowed) {
