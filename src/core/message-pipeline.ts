@@ -325,6 +325,10 @@ export async function handleMessage(
     // ============================================
     // Multi-User Middleware (Auth, Coalescing, Onboarding, Group Chat)
     // ============================================
+    // Fail-closed: until checkAuth() has positively allowed this sender, any
+    // middleware failure (import, init, lookup) is treated like a denial. An
+    // exception must never skip the blocked/allowlist check.
+    let senderAuthorized = false
     try {
         const mu = await import('../users/multi-user-middleware.js')
         mu.initMultiUser()
@@ -338,6 +342,14 @@ export async function handleMessage(
             await replyFn(authResult.reason || '🔒 Zugriff verweigert.')
             return
         }
+        senderAuthorized = true
+
+        // 2. Tool Restrictions — the decided role is bound to this request
+        // before any optional middleware step can fail.
+        principalContext.permission = authResult.permission
+        ; (state as any).__userPermission = authResult.permission
+            ; (state as any).__userId = from
+        if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
 
         // 4. Group Chat — track who speaks
         if (mu.isGroupChat(chatId, from)) {
@@ -383,19 +395,18 @@ export async function handleMessage(
             }
         }
 
-        // 2. Tool Restrictions — store for later use in tool execution
-        principalContext.permission = authResult.permission
-        ; (state as any).__userPermission = authResult.permission
-            ; (state as any).__userId = from
-        if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
-
         // 3b. Track topic
         const topicWords = content.split(/\s+/).slice(0, 3).join(' ')
         mu.addUserTopic(from, topicWords)
 
     } catch (err) {
-        // Multi-user middleware is optional — don't block messages if it fails
-        console.log(`[MultiUser] ⚠ Middleware error (non-fatal): ${err}`)
+        if (!senderAuthorized) {
+            console.log(`[MultiUser] ❌ Middleware error before authorization — denied (fail-closed): ${err}`)
+            await replyFn('🔒 Zugriff verweigert.')
+            return
+        }
+        // Later steps (coalescing, onboarding, context) are optional.
+        console.log(`[MultiUser] ⚠ Middleware error after authorization (non-fatal): ${err}`)
     }
 
     // ============================================
