@@ -9,9 +9,27 @@
  * - "Ändere das Model auf gpt-5.4" → save_config({section: "llm", values: {model: "gpt-5.4"}})
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, existsSync } from 'node:fs'
 import { resolveConfigPath } from '../config/config-path.js'
+import { atomicWriteFileSync } from '../core/atomic-storage.js'
+import { ownerApprovalRefusal } from './owner-approval.js'
+
+/**
+ * R2 T1: sections that decide who is owner, where LLM traffic and keys go, or
+ * how Nova is reached. A tool call (model-authored, possibly injected) may not
+ * change them without an explicit owner approval.
+ */
+const PROTECTED_SECTIONS = ['telegram', 'channels', 'providers', 'supabase', 'server', 'dashboard', 'apis']
+const PROTECTED_KEY = /allow|url|endpoint|host|key|token|secret|password|auth|owner|admin/i
+
+function touchesProtected(section: string, values: Record<string, unknown>): boolean {
+    if (PROTECTED_SECTIONS.includes(section)) return true
+    const visit = (value: unknown, depth: number): boolean => {
+        if (!value || typeof value !== 'object' || depth > 8) return false
+        return Object.entries(value as Record<string, unknown>).some(([key, inner]) => PROTECTED_KEY.test(key) || visit(inner, depth + 1))
+    }
+    return visit(values, 0)
+}
 
 
 export const saveConfigTool = {
@@ -31,6 +49,12 @@ export const saveConfigTool = {
             description: 'Die Werte die gesetzt werden sollen (werden gemergt, nicht ersetzt). Beispiel: {"enabled": true, "token": "abc123"}',
             required: true,
         },
+        {
+            name: 'confirm',
+            type: 'string' as const,
+            description: 'Nur für geschützte Sektionen (telegram, channels, providers, supabase, server, dashboard, apis, Schlüssel/URLs): Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.',
+            required: false,
+        },
     ],
     handler: async (params: Record<string, unknown>) => {
         const section = params?.section
@@ -43,7 +67,7 @@ export const saveConfigTool = {
             }
         }
 
-        if (!values || typeof values !== 'object') {
+        if (!values || typeof values !== 'object' || Array.isArray(values)) {
             return {
                 success: false,
                 error: 'Values muss ein Objekt sein (z.B. {"enabled": true})',
@@ -73,6 +97,16 @@ export const saveConfigTool = {
             }
         }
 
+        if (touchesProtected(sectionKey, values as Record<string, unknown>)) {
+            const refusal = await ownerApprovalRefusal(params, 'save_config')
+            if (refusal) {
+                return {
+                    success: false,
+                    error: `Sektion "${sectionKey}" bzw. Zugangs-/Adressfelder sind geschützt (Owner, Kanäle, Provider, Schlüssel). ${refusal}`,
+                }
+            }
+        }
+
         try {
             // Read current config
             const configPath = resolveConfigPath()
@@ -93,8 +127,8 @@ export const saveConfigTool = {
                 config[sectionKey][key] = val
             }
 
-            // Write back
-            writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf-8')
+            // Write back atomically: an aborted write must not leave a broken config
+            atomicWriteFileSync(configPath, JSON.stringify(config, null, 4))
 
             console.log(`[save_config] ✅ ${sectionKey} updated:`, Object.keys(values as object).join(', '))
 
