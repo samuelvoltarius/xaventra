@@ -21,6 +21,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { atomicWriteJsonSync } from './atomic-storage.js'
 
 
 // ============================================
@@ -546,7 +547,7 @@ async function detectCapabilities(): Promise<void> {
             try {
                 const dir = join(process.cwd(), '.nova-data')
                 if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-                writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2))
+                writeFileSync(CACHE_FILE, JSON.stringify(resolverCacheForDisk(cache), null, 2))
             } catch { /* non-critical */ }
 
             // Log
@@ -669,6 +670,63 @@ export interface ExternalProvider {
 
 const PROVIDERS_FILE = join(process.cwd(), '.nova-data', 'external-providers.json')
 
+/** API keys stay in the provider registry; the resolver cache on disk never
+ * carries them (it is shared in diagnostics and backups far more casually). */
+export function resolverCacheForDisk(value: ResolverCache): ResolverCache {
+    const resolved: ResolverCache['resolved'] = {}
+    for (const [role, model] of Object.entries(value.resolved || {}) as Array<[ModelRole, ResolvedModel | undefined]>) {
+        if (!model) continue
+        const { apiKey: _apiKey, ...rest } = model
+        resolved[role] = rest
+    }
+    return { ...value, resolved }
+}
+
+function withExternalProviderKeys(value: ResolverCache): ResolverCache {
+    const providers = loadExternalProviders()
+    for (const model of Object.values(value.resolved || {})) {
+        if (!model || model.apiKey) continue
+        const provider = providers.find(entry => entry.name === model.provider && entry.enabled !== false)
+        if (provider?.apiKey) model.apiKey = provider.apiKey
+    }
+    return value
+}
+
+// Built-in providers are configured by the owner, never re-pointed by a tool call.
+const RESERVED_PROVIDER_NAMES = new Set([
+    'openai', 'openai-codex', 'codex', 'anthropic', 'claude', 'minimax', 'openrouter', 'groq',
+    'gemini', 'google', 'local', 'ollama', 'lm-studio', 'lmstudio', 'vllm', 'llama-cpp', 'llamacpp',
+])
+
+function isPrivateOrLocalHost(hostname: string): boolean {
+    const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return true
+    if (!host.includes('.')) return true  // single-label names resolve inside the LAN
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) return true  // IP literals: only named cloud APIs
+    return false
+}
+
+/** Returns an error message, or null when the registration may proceed. */
+export function validateExternalProviderRegistration(
+    provider: Pick<ExternalProvider, 'name' | 'baseUrl'>,
+    configuredProviders: Record<string, unknown>,
+    registered: ExternalProvider[],
+): string | null {
+    const name = String(provider.name || '')
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/i.test(name)) return `Ungültiger Provider-Name "${name}".`
+    const lower = name.toLowerCase()
+    if (RESERVED_PROVIDER_NAMES.has(lower)) return `Provider "${name}" ist fest konfiguriert und kann nicht per Registrierung überschrieben werden.`
+    const alreadyRegistered = registered.some(entry => entry.name.toLowerCase() === lower)
+    const configured = Object.keys(configuredProviders || {}).some(key => key.toLowerCase() === lower)
+    if (configured && !alreadyRegistered) return `Provider "${name}" existiert bereits in der Konfiguration und wird nicht überschrieben.`
+    let url: URL
+    try { url = new URL(String(provider.baseUrl || '')) } catch { return 'Ungültige base_url.' }
+    if (url.protocol !== 'https:') return 'base_url muss https:// verwenden.'
+    if (url.username || url.password) return 'base_url darf keine Zugangsdaten enthalten.'
+    if (isPrivateOrLocalHost(url.hostname)) return 'base_url muss ein öffentlicher, benannter API-Host sein (keine lokalen/internen Adressen).'
+    return null
+}
+
 function loadExternalProviders(): ExternalProvider[] {
     try {
         if (existsSync(PROVIDERS_FILE)) {
@@ -697,6 +755,13 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
     message: string
 }> {
     const providers = loadExternalProviders()
+    let configuredProviders: Record<string, unknown> = {}
+    try {
+        const configPath = resolveConfigPath()
+        if (existsSync(configPath)) configuredProviders = JSON.parse(readFileSync(configPath, 'utf-8'))?.providers || {}
+    } catch { /* validated against the registry alone */ }
+    const invalid = validateExternalProviderRegistration(provider, configuredProviders, providers)
+    if (invalid) return { success: false, modelsFound: [], message: `❌ ${invalid}` }
 
     // Test the provider first — quick model list fetch
     let modelsFound: string[] = provider.models || []
@@ -738,7 +803,7 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
                 baseUrl: provider.baseUrl,
                 enabled: provider.enabled,
             }
-            writeFileSync(configPath, JSON.stringify(cfg, null, 2))
+            atomicWriteJsonSync(configPath, cfg)
         }
     } catch { /* non-critical */ }
 
@@ -804,7 +869,7 @@ function init(): void {
         if (existsSync(CACHE_FILE)) {
             const data = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'))
             if (data.version === CACHE_VERSION && data.timestamp) {
-                cache = data
+                cache = withExternalProviderKeys(data)
                 const ageMs = Date.now() - data.timestamp
                 console.log(`[ModelResolver] Loaded ${ageMs < CACHE_TTL ? 'fresh' : 'stale'} cache (${Object.keys(cache?.resolved || {}).length} capabilities)`)
                 if (ageMs < CACHE_TTL) return
