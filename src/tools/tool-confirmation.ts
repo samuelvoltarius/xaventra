@@ -123,7 +123,9 @@ export const toolConfirmationTool = {
                     requiresConfirmation: true,
                     toolName,
                     description: pending.description,
-                    message: `Confirmation required for ${toolName}. Ask user to approve via /tool approve ${confId}`,
+                    // R2 T33: this record neither blocks nor unlocks anything;
+                    // say so instead of pointing at a command that does not exist.
+                    message: `${toolName} braucht eine ausdrückliche Freigabe des Owners. Dieser Eintrag ist nur eine Notiz: er gibt nichts frei und sperrt nichts. Werkzeuge mit Außenwirkung prüfen die Owner-Freigabe selbst.`,
                     pending: true
                 }
                 
@@ -152,10 +154,14 @@ export const toolConfirmationTool = {
                 }
                 
             case 'approve':
-                if (!confirmationId || !userId) {
-                    return { success: false, error: 'confirmationId and userId required for approve' }
+                // R2 T33: the model must never be able to approve on the user's behalf
+                return {
+                    success: false,
+                    approved: false,
+                    toolName,
+                    error: 'Freigaben kann nur der Owner selbst erteilen, nicht über dieses Werkzeug. Nichts wurde freigegeben.',
                 }
-                
+
                 const toApprove = pendingToolCalls.get(confirmationId)
                 if (!toApprove) {
                     return { success: false, error: 'Confirmation not found' }
