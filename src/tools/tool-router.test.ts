@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { getRelevantTools, matchesSkillKeyword } from './tool-router.js'
+import { getRelevantTools, matchesSkillKeyword, loadSkillPack, loadSkillPackTool } from './tool-router.js'
+
+describe('bounded capability recovery', () => {
+    it('resolves the reviewed web alias without inventing a new pack', async () => {
+        expect(loadSkillPack('web')).toMatchObject({ loaded: true, tools: expect.arrayContaining(['fetch_url']) })
+        expect(await loadSkillPackTool.handler({ pack_name: 'web' })).toContain('web-search')
+        expect(await loadSkillPackTool.handler({ pack_name: 'web' })).not.toContain('Rest der Session verfügbar')
+    })
+    it('does not guess unknown or instruction-bearing pack names', () => {
+        for (const name of ['web; run_command', 'web-admin', '../web', 'weeb']) {
+            expect(loadSkillPack(name)).toMatchObject({ loaded: false, tools: [] })
+        }
+    })
+    it('routes an exact GET check to fetch instead of an unrelated search', () => {
+        const request = "test es noch mal [24.09.2026 18:27] User: check mal url -sS --get 'https://search.example/search' --data-urlencode 'q=Agent' --data-urlencode 'format=json'"
+        const names = getRelevantTools(request).map(tool => tool.name)
+        expect(names).toContain('fetch_url')
+        expect(names).not.toContain('searxng_search')
+        expect(names).not.toContain('run_command')
+    })
+    it('does not narrow general research or mixed actions to a URL check', () => {
+        expect(getRelevantTools('Recherchiere aktuelle Informationen zur Fotografie').some(t => t.name === 'searxng_search')).toBe(true)
+        expect(getRelevantTools('Suche im Web nach Agent und prüfe https://example.test').some(t => t.name === 'searxng_search')).toBe(true)
+        expect(getRelevantTools('Prüfe https://example.test und nutze health_status').some(t => t.name === 'health_status')).toBe(true)
+    })
+})
 
 describe('smart tool router keyword matching', () => {
     it('matches explicit skill language', () => {

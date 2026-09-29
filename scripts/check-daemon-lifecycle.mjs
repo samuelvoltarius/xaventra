@@ -9,7 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 
-const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// Explicit staged source keeps the fixture runtime separate from immutable
+// package bytes. The default remains the checkout for existing CI callers.
+const sourceFlag = process.argv.indexOf('--source-root')
+if (sourceFlag !== -1 && (!process.argv[sourceFlag + 1] || process.argv[sourceFlag + 1].startsWith('--'))) throw Error('Missing staged source root')
+const source = sourceFlag === -1 ? resolve(dirname(fileURLToPath(import.meta.url)), '..') : resolve(process.argv[sourceFlag + 1])
 const root = mkdtempSync(join(tmpdir(), 'xaventra-daemon-lifecycle-'))
 const version = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')).version
 const token = 'synthetic-isolated-lifecycle-token'

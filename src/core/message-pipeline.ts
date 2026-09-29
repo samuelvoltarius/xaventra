@@ -1727,7 +1727,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             : isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         const successfulExecutions = ((result as any).toolExecutions || []).filter((execution: any) => execution.success)
         const failedExecutions = ((result as any).toolExecutions || []).filter((execution: any) => !execution.success)
-        const { authoritativeDiagnosticResponse } = await import('./tool-evidence-response.js')
+        const { authoritativeDiagnosticResponse, screenshotFailureResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
         const fulfillmentToolCount = kernelState
@@ -1737,7 +1737,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
         if (!isSystemMessage && actionIntent.kind === 'screenshot' && !screenshotDelivered) {
-            supervised.content = honestNoToolResponse('screenshot')
+            supervised.content = screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
                 supervised.content = 'Ich habe selbst einen konkreten Skill-Vorschlag erstellt. Er wartet gemäß PATCH_GATE auf deine Freigabe; die angeforderte Aktion ist noch nicht ausgeführt.'

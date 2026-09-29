@@ -12,6 +12,21 @@ const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([
     'research_capability_plan', 'research_all_capabilities',
 ])
 
+/** Only actual capture-tool failures, never model prose or unrelated diagnostics.
+ * Keep the failure visible without turning it into authority or claiming delivery. */
+export function screenshotFailureResponse(executions: ResponseToolExecution[]): string {
+    const failed = [...executions].reverse().find(item =>
+        item.success === false && (item.toolName || item.name) === 'desktop_screenshot')
+    const result = failed?.result
+    const detail = typeof result === 'string' ? result
+        : result && typeof result === 'object' && typeof (result as any).error === 'string'
+            ? (result as any).error : ''
+    const reason = safeResult(detail, 700)
+    return reason
+        ? `Der Screenshot-Auftrag ist fehlgeschlagen oder wurde gesperrt. Technischer Grund:\n${reason}\nEs wurde keine Bilddatei übertragen.`
+        : 'Ich konnte den Screenshot nicht zuverlässig erstellen oder senden. Es wurde keine Bilddatei übertragen.'
+}
+
 /** A fallback after exhausted synthesis is partial evidence, never task success.
  * Retain source-bearing observations; acknowledgements are not findings. */
 export function incompleteToolResponse(results: string[]): string {

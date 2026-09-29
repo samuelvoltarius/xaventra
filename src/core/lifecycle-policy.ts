@@ -21,6 +21,7 @@ export type LifecycleEvent =
 export interface ExecutionPolicyContext {
     runId?: string
     userId?: string
+    authUserId?: string
     channel?: string
     nodeId?: string
     approvalGranted?: boolean

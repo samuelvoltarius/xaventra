@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
+import { posix } from 'node:path'
 import type { DockerRepairEngine } from './docker-repair-driver.js'
 import type { RepairTicket } from './repair-activation.js'
 
 /** Executes only in a trusted, digest-pinned helper, never in the candidate.
  * Reject links/special files rather than following application-controlled paths.
  * Comparison includes directory/file modes and all content, not just filenames. */
-const COPY = String.raw`
+const WALK = String.raw`
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-if(fs.readdirSync('/destination').length)throw Error('Destination must be empty');
 function walk(root,copy){const entries=[];let bytes=0,count=0;
  function visit(relative){const full=path.join(root,relative),s=fs.lstatSync(full);
   if(++count>limits.maxEntries||s.isSymbolicLink()||(!s.isFile()&&!s.isDirectory())||s.isFile()&&s.nlink!==1)throw Error('Unsupported state entry');
@@ -15,6 +15,7 @@ function walk(root,copy){const entries=[];let bytes=0,count=0;
    if(copy&&relative){fs.mkdirSync(path.join('/destination',relative));fs.chmodSync(path.join('/destination',relative),s.mode&511);}
    entries.push([relative,'directory',s.mode&511]);
    for(const name of fs.readdirSync(full).sort())visit(path.join(relative,name));
+   if(copy&&limits.syncDirectories){const fd=fs.openSync(path.join('/destination',relative),'r');try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
   }else{
    bytes+=s.size;if(bytes>limits.maxBytes||s.size>limits.maxFileBytes)throw Error('State copy budget exceeded');
    const input=fs.openSync(full,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
@@ -36,6 +37,9 @@ function walk(root,copy){const entries=[];let bytes=0,count=0;
  }
  visit('');return crypto.createHash('sha256').update(JSON.stringify(entries)).digest('hex');
 }
+`
+const COPY = WALK + String.raw`
+if(fs.readdirSync('/destination').length)throw Error('Destination must be empty');
 fs.chmodSync('/destination',fs.statSync('/source').mode&511);
 const original=walk('/source',true),copied=walk('/destination',false),unchanged=walk('/source',false);
 if(original!==copied||original!==unchanged)throw Error('State snapshot mismatch');
@@ -50,7 +54,7 @@ export interface RepairStateCopyLimits {
 
 /** Operator-owned enrollment only. Defaults stay conservative; never accept
  * these budgets from an application request, release package or tool argument. */
-export function createRepairStateCopyScript(limits: RepairStateCopyLimits = {}): string {
+function copyLimits(limits: RepairStateCopyLimits = {}) {
     const values = { maxBytes: limits.maxBytes ?? 8 * 1024 ** 3,
         maxFileBytes: limits.maxFileBytes ?? 128 * 1024 ** 2,
         maxEntries: limits.maxEntries ?? 100_000, timeoutMs: limits.timeoutMs ?? 120_000 }
@@ -59,7 +63,34 @@ export function createRepairStateCopyScript(limits: RepairStateCopyLimits = {}):
         if (!Number.isSafeInteger(values[key]) || values[key] <= 0 || values[key] > maximum) throw new Error(`Invalid state copy limit: ${key}`)
     }
     if (values.maxFileBytes > values.maxBytes) throw new Error('File budget exceeds snapshot budget')
-    return `const limits=${JSON.stringify(values)};\n${COPY}`
+    return values
+}
+export function createRepairStateCopyScript(limits: RepairStateCopyLimits = {}): string {
+    return `const limits=${JSON.stringify(copyLimits(limits))};\n${COPY}`
+}
+const nativePath = (p: string) => typeof p === 'string' && p.startsWith('/') && p !== '/' && posix.normalize(p) === p
+    && !p.endsWith('/') && !/[\x00-\x1f\x7f]/.test(p)
+function nativeOwnership(body: string): string {
+    return body.replace('if(++count>limits.maxEntries', "if(s.uid!==process.getuid()||s.gid!==process.getgid())throw Error('Native state ownership mismatch');\n  if(++count>limits.maxEntries")
+}
+/** Same bounded traversal/digest as copying, with no filesystem write. */
+export function createNativeStateHashScript(source: string, limits: RepairStateCopyLimits = {}): string {
+    if (!nativePath(source)) throw Error('Canonical native state path required')
+    return `if(process.platform!=='linux')throw Error('Linux native hash required');\nconst limits=${JSON.stringify(copyLimits(limits))};\n${nativeOwnership(WALK)}\nconsole.log(JSON.stringify({hash:walk(${JSON.stringify(source)},false)}));`
+}
+
+/** Reuses the identical trusted copy algorithm, with operator-enrolled Linux
+ * paths only. Caller must stop/fence writers, mount baseline read-only, execute
+ * as its enrolled UID/GID and bound the helper lifetime. This alone is NOT a
+ * snapshot/fencing receipt and must not be used to claim sourceReadOnly. */
+export function createNativeStateCopyScript(source: string, destination: string, limits: RepairStateCopyLimits = {}): string {
+    if (!nativePath(source) || !nativePath(destination) || source === destination
+        || source.startsWith(`${destination}/`) || destination.startsWith(`${source}/`)) throw Error('Disjoint canonical native state paths required')
+    const body = COPY.replaceAll("'/source'", 'source').replaceAll("'/destination'", 'destination')
+    // Uniform ownership is required because the unprivileged helper must never
+    // silently change ownership while making the candidate copy.
+    const native = nativeOwnership(body)
+    return `if(process.platform!=='linux')throw Error('Linux native copy required');\nconst source=${JSON.stringify(source)},destination=${JSON.stringify(destination)};\nconst limits=${JSON.stringify({ ...copyLimits(limits), syncDirectories: true })};\n${native}\nconsole.log(JSON.stringify({sourceHash:original,copyHash:copied,sourceAfterHash:unchanged}));`
 }
 
 /** Local state clone is only one part of state readiness. The separate authority

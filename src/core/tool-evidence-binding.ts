@@ -93,6 +93,21 @@ function evidenceRequestText(input: string): string {
     return examples.length === 1 ? examples[0] : text
 }
 
+/** A deliberately narrow direct HTTP observation, not general web research.
+ * Strip only literal GET-example syntax. Unknown flags, mixed instructions and
+ * multiple destinations retain normal planning; pasted shell is never executed. */
+export function isDirectUrlCheck(input: string): boolean {
+    const text = evidenceRequestText(input)
+    const targets = inferRequiredToolTargets(text)
+    if (targets.length !== 1 || !/^https?:\/\//i.test(targets[0])) return false
+    const instruction = text
+        .replace(/--data-urlencode\s+(["'])([A-Za-z0-9_.~-]+)=([^"'\r\n]*)\1/g, ' ')
+        .replace(/https?:\/\/[^\s"'`<>\[\]]+/gi, ' ')
+        .replace(/(?:^|\s)(?:--get|-sS)(?=\s|$)/g, ' ')
+        .replace(/["'`\\:,.!?]/g, ' ').trim().replace(/\s+/g, ' ')
+    return /^(?:bitte )?(?:check|prüfe?|pruefe?|teste?|fetch|abrufen)(?: (?:mal|bitte|die|diese|diesen|das|es|url|link|adresse|nochmal|erneut|noch|einmal))*$/i.test(instruction)
+}
+
 function argumentStrings(value: unknown): string[] {
     if (typeof value === 'string') return [value]
     if (Array.isArray(value)) return value.flatMap(argumentStrings)

@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.78.56",
+  "version": "2.78.57",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -131,7 +131,6 @@
     "@whiskeysockets/baileys": "^6.7.0",
     "acorn": "^8.16.0",
     "acorn-walk": "^8.3.5",
-    "chromium": "^3.0.3",
     "croner": "^10.0.1",
     "discord.js": "^14.0.0",
     "dotenv": "^17.2.3",

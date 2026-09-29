@@ -3,10 +3,43 @@ import { join } from 'node:path'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { evaluateClarification } from './clarification-gate.js'
+import { BeliefStore, getBeliefStore, setBeliefStore } from './belief-store.js'
 import { getSessionContinuityStore, SessionContinuityStore, setSessionContinuityStore } from '../memory/session-summarizer.js'
 
 describe('ClarificationGate', () => {
-    beforeEach(() => setSessionContinuityStore(new SessionContinuityStore(join(mkdtempSync(join(tmpdir(), 'nova-clarify-')), 'continuity.json'))))
+    beforeEach(() => {
+        const root = mkdtempSync(join(tmpdir(), 'nova-clarify-'))
+        setSessionContinuityStore(new SessionContinuityStore(join(root, 'continuity.json')))
+        setBeliefStore(new BeliefStore(join(root, 'beliefs.json')))
+    })
+
+    it('does not ask the user to settle derived workflow reliability before a fresh observation', () => {
+        getBeliefStore().observe({ userId: 'user:a', subject: 'workflow:system-state', predicate: 'route-success', value: 'failed', source: 'outcome:failed', summary: 'failed observation', confidence: 1, supports: false })
+        expect(evaluateClarification('user:a', 'Prüfe den Systemstatus auf dem Main').action).toBe('continue')
+        expect(evaluateClarification('user:a', 'Und mach mal eine Screenshot deines Systems und send mir diesen').action).toBe('continue')
+        expect(getBeliefStore().unresolved('user:a')).toHaveLength(1)
+        expect(evaluateClarification('user:a', 'Lösche das').action).toBe('ask')
+    })
+
+    it('keeps actual factual conflicts and other users isolated', () => {
+        getBeliefStore().observe({ userId: 'user:a', subject: 'Archivserver', predicate: 'destination', value: 'unknown', source: 'user', summary: 'uncertain destination', confidence: 1, supports: false })
+        expect(evaluateClarification('user:b', 'Installiere Docker auf dem Archivserver').action).toBe('continue')
+        expect(evaluateClarification('user:a', 'Installiere Docker auf dem Archivserver').missingFields).toEqual(['belief'])
+    })
+
+    it('retires only the obsolete workflow question rather than replaying its old action', () => {
+        getSessionContinuityStore().setPendingClarification('user:a', {
+            id: 'old-workflow', originalRequest: 'Prüfe den Systemstatus auf dem Main',
+            question: 'Ich habe dazu widersprüchliche oder unsichere Evidence (workflow:system-state). Welche Angabe soll ich als gültig behandeln?',
+            missingFields: ['belief'], createdAt: Date.now(),
+        })
+        const current = 'Wie spät ist es?'
+        expect(evaluateClarification('user:a', current).content).toBe(current)
+    })
+
+    it('does not treat a screenshot as a target for an additional destructive action', () => {
+        expect(evaluateClarification('user:a', 'Mach einen Screenshot deines Systems und lösche das').action).toBe('ask')
+    })
 
     it('asks one targeted question for a high-impact action without a target', () => {
         const result = evaluateClarification('user:a', 'Installiere Codex')

@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { inferRequiredToolTargets, matchedToolTargets } from './tool-evidence-binding.js'
+import { inferRequiredToolTargets, matchedToolTargets, isDirectUrlCheck } from './tool-evidence-binding.js'
+
+describe('bounded direct HTTP routing', () => {
+    it('accepts only a single literal read request', () => {
+        expect(isDirectUrlCheck('Prüfe https://example.test/path')).toBe(true)
+        expect(isDirectUrlCheck("check mal url --get 'https://example.test/search' --data-urlencode 'q=Agent'")).toBe(true)
+        for (const request of [
+            'Prüfe https://one.test und https://two.test',
+            'Prüfe https://one.test und lösche die Datei',
+            'check https://one.test --header Authorization:secret',
+            'check https://one.test --data-urlencode @secrets',
+            'check https://one.test --request POST',
+            'Erkläre https://one.test',
+        ]) expect(isDirectUrlCheck(request)).toBe(false)
+    })
+})
 
 describe('explicit GET query target binding', () => {
     it('uses a Markdown destination, not its display label or markup', () => {

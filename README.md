@@ -25,10 +25,12 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Latest reliability iteration: [2.78.6 current-turn response contracts](docs/VERIFICATION_2.78.6.md).
-It tests the packaged app, complete daemon, real file tools, linked evidence and
-process restart. Scripted CI and real local-model checks are reported separately.
-Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
+Current candidate: **2.78.57 preview**, based on the published 2.78.56 preview.
+For the prior baseline, see the
+[bounded verification record](docs/VERIFICATION_2.78.56.md) and
+[recovery guide](docs/RECOVERY_2.78.56.md). Candidate implementation, isolated
+acceptance, signed publication, production activation and user acceptance are
+separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Why Xaventra
 
@@ -49,13 +51,26 @@ Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Current state
 
-Xaventra 2.78.6 is a versioned source release. Native Windows, Linux and macOS
+Xaventra 2.78.57 is a source-preview candidate. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.78.3.md) and
+See the [verification record](docs/VERIFICATION_2.78.56.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
+
+The current candidate includes authenticated desktop-capture and Telegram-delivery
+corrections, but successful production screenshot delivery is **not yet
+qualified**. It requires exact operator enrollment, an accessible unlocked
+desktop session and correlated capture/delivery evidence. A connected bot or
+passing source tests is not that proof. See [screenshot delivery](docs/SCREENSHOT_DELIVERY.md).
+
+The [native update driver](docs/NATIVE_UPDATE_DRIVER.md) has component and isolated
+Linux acceptance evidence, including one actual arm64 package and daemon
+lifecycle check. That payload is a dependency-only correction of the published
+baseline, not the complete current candidate. Protected native publication,
+production enrollment, real writer fencing and full update/rollback acceptance
+remain open; the Docker controller does not automatically update native services.
 
 Owner access requires a configured Telegram identity or an explicit grant from
 the local CLI or authenticated Desktop. OS mode and chat phrases do not grant
@@ -241,7 +256,9 @@ channel fencing.
 - [Production operations](docs/PRODUCTION_OPERATIONS.md)
 - [Mesh release updates](docs/MESH-RELEASE-UPDATES.md)
 - [Signed GitHub container updates, enrollment and rollback](docs/CONTAINER_UPDATES.md)
+- [Native update driver: implemented components and remaining gates](docs/NATIVE_UPDATE_DRIVER.md)
 - [Telegram high availability](docs/TELEGRAM.md)
+- [Authenticated screenshot capture and Telegram delivery](docs/SCREENSHOT_DELIVERY.md)
 - [Mesh architecture and transport](docs/MESH.md)
 
 Do not copy node identities, OAuth tokens or private Mesh keys between hosts.
@@ -275,7 +292,9 @@ lease/grant authority](docs/DOCKER_REPAIR.md), with a continuous disposable
 Doctor-to-Docker recovery test. Stateful production still requires real writer
 fencing and deployment adoption; a copied volume alone is not that proof.
 It is not generic autonomous production repair or fleet acceptance. See
-[implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md).
+[implemented behavior and acceptance limits](docs/AUTONOMOUS_REPAIR.md) and
+[bounded task recovery](docs/TASK_RECOVERY.md). A policy denial never authorizes
+retrying through another identity or channel.
 
 ## Security model
 

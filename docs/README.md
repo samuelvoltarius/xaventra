@@ -19,6 +19,7 @@ authoritative source files and required evidence.
 | [Configuration](./CONFIGURATION.md) | All config options explained |
 | [Tools Reference](./TOOLS.md) | Available tools and usage |
 | [Docker Host Access](./HOST_ACCESS.md) | Authenticated inventory, signed lifecycle permits, operator installation and recovery |
+| [Screenshot Delivery](./SCREENSHOT_DELIVERY.md) | Exact capture enrollment, locked-session failures and correlated Telegram acceptance |
 | [Dashboard](./DASHBOARD.md) | Dashboard user guide |
 | [Xaventra Desktop](./DESKTOP.md) | Cross-platform app, Studio, specialists, rooms, models and node enrollment |
 | [Self-Update](./SELF_UPDATE.md) | Auto-patching + L24 prompt optimization |
@@ -29,10 +30,23 @@ authoritative source files and required evidence.
 | [Troubleshooting](./TROUBLESHOOTING.md) | Common issues & fixes |
 | [Production Operations](./PRODUCTION_OPERATIONS.md) | Node roles, health, rollout, rollback and Telegram recovery |
 | [Signed Mesh Releases](./MESH-RELEASE-UPDATES.md) | Signed artifact rollout and receipts |
+| [Signed Container Updates](./CONTAINER_UPDATES.md) | Docker-specific controller enrollment, activation and rollback |
+| [Native Update Driver](./NATIVE_UPDATE_DRIVER.md) | Native component evidence, isolated acceptance and unfinished production gates |
+| [Bounded Task Recovery](./TASK_RECOVERY.md) | Candidate routing corrections and recovery without permission expansion |
+| [Update Completion Recovery](./UPDATE_COMPLETION_RECOVERY.md) | Ticket-owned completion lock reconciliation and restart evidence |
 | [Agent Harness Upgrade](./AGENT-HARNESS-UPGRADE.md) | Runtime profiles, resumable agents, ACP and sandboxing |
 | [Agent Landscape 2026](./AGENT_LANDSCAPE_2026.md) | Primary-source comparison with Hermes, Agent Zero and other agent runtimes |
 | [Trusted Execution](./TRUSTED_EXECUTION.md) | Evidence, validation and promotion rules |
 | [Public Release Checklist](./PUBLIC_RELEASE_CHECKLIST.md) | Fail-closed publication and clean-clone gates |
+
+## Evidence status
+
+The current source candidate is the 2.78.57 preview, based on published 2.78.56;
+see the baseline's [verification record](./VERIFICATION_2.78.56.md). Candidate
+guides describe source
+that may not yet be signed, published or activated. Tests and isolated fixtures
+do not imply production enrollment, successful Telegram screenshot delivery or
+completion of the [RC gates](./RELEASE_PLAN.md).
 
 ## 🚀 Quick Links
 

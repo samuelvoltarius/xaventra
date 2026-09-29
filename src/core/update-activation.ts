@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeUpdateState as atomicWriteJsonSync } from './update-store.js'
 import { repairHash, verifyRepairValue, type SignedRepairValue, type RepairTicket, type RepairDeploymentDriver, type PreparedRepair } from '../doctor/repair-activation.js'
@@ -30,10 +30,16 @@ export class UpdateActivationController {
         if (prior) {
             if (repairHash(prior.ticket) !== repairHash(t)) throw Error('Update replay mismatch')
             // Reconcile completion only; never repeat a container operation.
-            if (['installed', 'rolled-back'].includes(prior.status)) await this.finish(prior)
+            if (['installed', 'rolled-back'].includes(prior.status)) {
+                await this.finish(prior)
+                this.releaseLock(prior.ticket)
+            }
             return prior
         }
         const lock = join(this.root, 'activation.lock'); mkdirSync(lock)
+        // A persisted owner lets terminal reconciliation release this attempt's
+        // lock, never an ambiguous legacy lock or a later activation's lock.
+        atomicWriteJsonSync(join(lock, 'owner.json'), { ticketHash: repairHash(t) })
         let r: UpdateActivationReceipt = { ticket: t, status: 'accepted', updatedAt: Date.now() }, p: PreparedRepair | undefined
         let changed = false, maintenance = false, finalized = false
         const save = () => { r.updatedAt = Date.now(); atomicWriteJsonSync(join(this.root, `${t.attemptId}.json`), r) }
@@ -78,9 +84,17 @@ export class UpdateActivationController {
         } finally {
             // Failed drain might already have changed external admission. Retain
             // ownership until independently reconciled, even before container stop.
-            if (!maintenance || finalized) rmdirSync(lock)
+            if (!maintenance || finalized) this.releaseLock(t)
         }
         return r
+    }
+    private releaseLock(ticket: RepairTicket): void {
+        const lock = join(this.root, 'activation.lock'), owner = join(lock, 'owner.json')
+        if (!existsSync(owner)) return // Unknown ownership remains fail-closed.
+        const identity = JSON.parse(readFileSync(owner, 'utf8'))
+        if (identity.ticketHash !== repairHash(ticket)) return
+        unlinkSync(owner)
+        rmdirSync(lock)
     }
     private async finish(r: UpdateActivationReceipt): Promise<void> {
         const marker = join(this.root, `${r.ticket.attemptId}.completed.json`)

@@ -4,12 +4,8 @@ import { resolve, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MeshIdentity } from '../mesh/mesh-identity.js'
 import type { MeshEnvelope } from '../mesh/transport-contracts.js'
-
-export interface ReleaseFileEvidence {
-    path: string
-    sha256: string
-    size: number
-}
+import { releaseTreeHash, type ReleaseFileEvidence } from './release-tree.js'
+export { releaseTreeHash, type ReleaseFileEvidence } from './release-tree.js'
 
 export interface NovaReleaseManifest {
     schemaVersion: 1
@@ -47,11 +43,6 @@ export function listReleaseFiles(root: string): ReleaseFileEvidence[] {
     }
     visit(absoluteRoot)
     return files.sort((a, b) => a.path.localeCompare(b.path))
-}
-
-export function releaseTreeHash(files: ReleaseFileEvidence[]): string {
-    const canonical = files.map(file => `${file.path}\0${file.sha256}\0${file.size}`).join('\n')
-    return createHash('sha256').update(canonical).digest('hex')
 }
 
 export function verifyReleaseDirectory(

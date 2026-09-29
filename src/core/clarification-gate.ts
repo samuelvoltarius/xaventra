@@ -23,6 +23,11 @@ const IMPERSONAL_REFERENCE = /\b(?:(?:wie\s+spät|wie\s+viel\s+uhr)\s+ist\s+es|w
 const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send\w*|schick\w*|service\s+(?:start|stop|restart))\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
 
+// Only this bounded local capture + reply shape supplies its own referents.
+// A second operation, another recipient or unspecified capture stays gated.
+const OWN_SCREENSHOT_REPLY = /^(?:und\s+)?(?:mach|mache|erstelle)\s+(?:mal\s+)?(?:ein|eine|einen)\s+(?:screenshot|bildschirmfoto)\s+(?:deines systems|deines bildschirms)(?:\s+und\s+(?:send|sende|schick|schicke)\s+mir\s+(?:diesen|dieses|den|das))?[.!?]*$/i
+const OBSOLETE_WORKFLOW_QUESTION = /^Ich habe dazu widersprüchliche oder unsichere Evidence \(workflow:[a-z-]+\)\. Welche Angabe soll ich als gültig behandeln\?$/
+
 function hasExplicitReadUrlReference(text: string): boolean {
     const targets = inferRequiredToolTargets(text)
     return /^(?:test(?:e)?|prüfe?|pruefe?|check)\b/i.test(text)
@@ -52,6 +57,8 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // Old versions persisted target questions for announcements. Do not turn
     // the next ordinary reply into a resumed installation from that bad state.
     if (pending && (isConversationOnly(pending.originalRequest)
+        || (pending.missingFields.length === 1 && pending.missingFields[0] === 'belief'
+            && OBSOLETE_WORKFLOW_QUESTION.test(pending.question))
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'reference'
             && hasExplicitReadUrlReference(pending.originalRequest)))) {
         store.clearPendingClarification(principalId)
@@ -112,10 +119,15 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // URL resolves a read-only reference, not a missing deployment/deletion
     // destination. Multiple targets and unrelated actions still require context.
     const explicitReadTarget = hasExplicitReadUrlReference(text)
+    const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text)
     const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
-        && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget
-    const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText)
+        && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply
+    const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
+        // Outcome-derived route reliability is diagnostic metadata, not an
+        // unresolved user fact. Keep it stored; a new observation still needs
+        // independently verified evidence and never inherits success from it.
+        if (belief.subject.startsWith('workflow:') && belief.predicate === 'route-success') return false
         const terms = `${belief.subject} ${belief.predicate} ${belief.value}`.toLowerCase().split(/[^a-z0-9äöüß]+/i).filter(term => term.length >= 4)
         return terms.some(term => text.toLowerCase().includes(term))
     })

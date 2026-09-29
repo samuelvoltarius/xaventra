@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.78.57] — 2026-09-29
+
+- Preserve actual screenshot authorization/capture failures in replies; bind
+  capture delivery to the authenticated Telegram principal and accept the
+  canonical channel spelling. Add a bounded desktop-session capture adapter
+  that refuses locked sessions. Production enrollment and real delivery remain
+  separate acceptance gates; remote desktop control is not enabled by default.
+- Correct stale workflow-evidence clarification and scoped URL/tool routing
+  without dropping target, role, approval or tool-evidence checks.
+- Add native update verification, systemd identity/selection, snapshot and
+  rollback components using the existing activation controller. Include bounded
+  archive/build qualification and a separate signing entrypoint. These are
+  components, not an automatically enrolled production updater.
+- Remove the unused Windows Tint Chromium dependency; preserve Playwright.
+  Package executable permissions and declared dependency bin entrypoints, and
+  distinguish public Git metadata from private `.git` directories. Preserve
+  negative build evidence and reject private runtime configuration and keys.
+- Document source tests, isolated runtime evidence, release publication,
+  production activation and user acceptance as distinct states.
+
 ## [2.78.56] — 2026-09-26
 
 - Resolve single-target read-only URL references using the same conservative

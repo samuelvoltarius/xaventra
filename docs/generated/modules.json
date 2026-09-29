@@ -2649,6 +2649,24 @@
       ]
     },
     {
+      "module": "src/host/capture-agent-main.ts",
+      "imports": [
+        "./capture-agent.js"
+      ]
+    },
+    {
+      "module": "src/host/capture-agent.ts",
+      "imports": [
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:os",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
       "module": "src/host/docker-agent.ts",
       "imports": [
         "../security/secret-redaction.js",
@@ -4776,8 +4794,10 @@
     {
       "module": "src/tools/desktop-screenshot-tool.ts",
       "imports": [
+        "../core/lifecycle-policy.js",
         "../desktop/desktop-agent-context.js",
         "../desktop/desktop-control.js",
+        "../host/capture-agent.js",
         "node:child_process",
         "node:fs",
         "node:path"
@@ -5041,6 +5061,7 @@
       "module": "src/tools/tool-router.ts",
       "imports": [
         "../core/action-intent.js",
+        "../core/tool-evidence-binding.js",
         "./complete-registry.js"
       ]
     },

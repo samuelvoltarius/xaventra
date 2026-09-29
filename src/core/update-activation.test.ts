@@ -1,6 +1,6 @@
 import { it, expect, vi, afterEach } from 'vitest'
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
-import { mkdtempSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { UpdateActivationController } from './update-activation.js'
@@ -34,6 +34,23 @@ it('rolls back failed independent acceptance and verifies the original fingerpri
     const f = fixture(); f.probe.mockImplementation(async r => { if (r === 'new') throw Error('bad'); return 'baseline' })
     expect(await f.controller.deploy(f.signed, {})).toMatchObject({ status: 'rolled-back', restoration: 'baseline' })
     expect(f.driver.rollback).toHaveBeenCalledTimes(1); expect(f.complete).toHaveBeenCalledTimes(1)
+})
+it('reconciles a failed completion after restart and releases only its own activation lock', async () => {
+    const f = fixture(); f.complete.mockRejectedValueOnce(Error('completion reply lost'))
+    await expect(f.controller.deploy(f.signed, {})).rejects.toThrow('completion reply lost')
+    expect(existsSync(join(f.root, 'activation.lock'))).toBe(true)
+    const restarted = new UpdateActivationController(f.root, f.publicKey, f.driver, f.probe, f.complete)
+    expect((await restarted.deploy(f.signed, {})).status).toBe('installed')
+    expect(f.driver.activate).toHaveBeenCalledTimes(1)
+    expect(existsSync(join(f.root, 'activation.lock'))).toBe(false)
+})
+it.each(['unknown', 'different'])('terminal replay preserves a %s owner lock', async kind => {
+    const f = fixture(); await f.controller.deploy(f.signed, {})
+    const lock = join(f.root, 'activation.lock'); mkdirSync(lock)
+    if (kind === 'different') writeFileSync(join(lock, 'owner.json'), JSON.stringify({ ticketHash: 'd'.repeat(64) }))
+    await f.controller.deploy(f.signed, {})
+    expect(existsSync(lock)).toBe(true)
+    expect(f.driver.activate).toHaveBeenCalledTimes(1)
 })
 it('retains ownership and never reopens admission when rollback evidence differs', async () => {
     const f = fixture(); f.probe.mockResolvedValueOnce('baseline').mockRejectedValueOnce(Error('bad')).mockResolvedValueOnce('different')

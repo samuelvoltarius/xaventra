@@ -59,6 +59,16 @@ Send voice notes → Whisper transcription → Nova responds.
 ### Images
 Send images → L10 Vision analysis.
 
+### Desktop screenshots (candidate)
+
+Receiving an image is separate from capturing and sending the host desktop.
+The 2.78.57 screenshot corrections require an explicitly enrolled capture agent
+and an exact `desktop_screenshot` rule for the authenticated Telegram principal.
+Remote desktop control remains denied by default; a locked session must be
+unlocked locally, never bypassed. Production screenshot delivery is not yet
+qualified. See [capture enrollment and acceptance](./SCREENSHOT_DELIVERY.md)
+for failure diagnosis and the required correlated capture/delivery receipts.
+
 ### Evidence-based notifications
 
 Proactive messages require fresh evidence, impact/confidence thresholds,

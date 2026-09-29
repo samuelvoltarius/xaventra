@@ -14,6 +14,7 @@
 
 import { getToolRegistry } from './complete-registry.js'
 import { detectActionIntent } from '../core/action-intent.js'
+import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to LLM
@@ -297,8 +298,10 @@ const MAX_WORKER_TOOLS = 24
 /**
  * Load a skill pack by name (called by load_skill_pack tool)
  */
-export function loadSkillPack(name: string): { loaded: boolean; tools: string[]; error?: string } {
-    const pack = SKILL_PACKS.find(p => p.name === name)
+export function loadSkillPack(name: string): { loaded: boolean; tools: string[]; name?: string; error?: string } {
+    // Reviewed compatibility alias only; never derive tools from arbitrary text.
+    const canonicalName = name === 'web' ? 'web-search' : name
+    const pack = SKILL_PACKS.find(p => p.name === canonicalName)
     if (!pack) {
         return {
             loaded: false,
@@ -306,8 +309,8 @@ export function loadSkillPack(name: string): { loaded: boolean; tools: string[];
             error: `Skill-Pack "${name}" nicht gefunden. Verfügbare Packs:\n${SKILL_PACKS.map(p => `• ${p.name}: ${p.description}`).join('\n')}`,
         }
     }
-    sessionLoadedPacks.add(name)
-    return { loaded: true, tools: pack.tools }
+    sessionLoadedPacks.add(pack.name)
+    return { loaded: true, tools: [...pack.tools], name: pack.name }
 }
 
 /**
@@ -330,7 +333,7 @@ export function getSkillPacksSummary(): string {
  * 
  * 1. Always include CORE tools
  * 2. Scan message for skill-pack keywords → include matching packs
- * 3. Include manually loaded packs (session-wide)
+ * 3. Prefer the current instruction over older routing context
  * 4. Return deduplicated tool list
  */
 export function getRelevantTools(
@@ -342,6 +345,14 @@ export function getRelevantTools(
     const messageLower = userMessage.toLowerCase()
     const primaryLower = primaryMessage.toLowerCase()
     const primaryIntent = detectActionIntent(primaryMessage)
+
+    // Checking a concrete endpoint is not a search for pages about that URL.
+    // Keep the exact fetch inside the original immutable contract, including in
+    // all-tools mode. No fabricated search receipt or relaxed target validator.
+    if (isDirectUrlCheck(primaryMessage)) {
+        return [...CORE_TOOLS, 'fetch_url'].map(name => registry.get(name))
+            .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+    }
 
     // ── ALL-TOOLS MODE (default) ────────────────────────────────────────────────
     // Modern agentic models (MiniMax-M3, Claude, GPT) with large context windows
@@ -377,7 +388,8 @@ export function getRelevantTools(
     const rankedPacks = SKILL_PACKS
         .map(pack => ({
             pack,
-            primaryScore: (pack.name === 'files' && primaryIntent.kind === 'file' ? 10 : 0) + pack.keywords.reduce((score, keyword) =>
+            primaryScore: ((pack.name === 'files' && primaryIntent.kind === 'file')
+                || (pack.name === 'web-search' && primaryIntent.kind === 'web') ? 10 : 0) + pack.keywords.reduce((score, keyword) =>
                 score + (matchesSkillKeyword(primaryLower, keyword) ? Math.max(1, keyword.length / 8) : 0), 0),
             contextScore: pack.keywords.reduce((score, keyword) =>
                 score + (matchesSkillKeyword(messageLower, keyword) ? Math.max(1, keyword.length / 8) : 0), 0),
@@ -523,7 +535,7 @@ ${getSkillPacksSummary()}
 **WICHTIGE REGELN:**
 - Rufe Tools DIREKT auf — beschreibe sie nicht nur
 - Unsicher welches Tool? → \`nova_capabilities('suchbegriff')\`
-- Tool nicht in Liste? → \`load_skill_pack('pack-name')\`
+- Tool nicht in Liste? → \`load_skill_pack('pack-name')\` zeigt den Katalog, erweitert aber nicht den laufenden Tool-Vertrag.
 - Parallele unabhängige Aufgaben → immer \`spawn_subagents_parallel\`
 `
 }
@@ -534,7 +546,7 @@ ${getSkillPacksSummary()}
 
 export const loadSkillPackTool = {
     name: 'load_skill_pack',
-    description: 'Lädt ein Skill-Pack mit spezialisierten Tools. Nutze das wenn du ein Tool brauchst das nicht in deiner aktuellen Liste ist. Ohne Argument: zeigt alle verfügbaren Packs.',
+    description: 'Zeigt die Tools eines Skill-Packs im Katalog. Erweitert nicht die aktuelle Aufrufliste oder Berechtigungen. Ohne Argument: zeigt alle verfügbaren Packs.',
     category: 'system' as const,
     parameters: [
         { name: 'pack_name', type: 'string' as const, description: 'Name des Skill-Packs (z.B. bot-management, mesh-network, docker, voice-media, security, self-evolution)', required: false },
@@ -542,10 +554,10 @@ export const loadSkillPackTool = {
     handler: async (params: Record<string, unknown>) => {
         const name = params.pack_name as string
         if (!name) {
-            return `📦 Verfügbare Skill-Packs:\n\n${getSkillPacksSummary()}\n\nNutze \`load_skill_pack\` mit dem Pack-Namen um Tools zu laden.`
+            return `📦 Verfügbare Skill-Packs:\n\n${getSkillPacksSummary()}\n\nNutze \`load_skill_pack\` mit dem Pack-Namen für die Katalogauskunft. Der laufende Tool-Vertrag bleibt unverändert.`
         }
         const result = loadSkillPack(name)
         if (result.error) return result.error
-        return `✅ Skill-Pack "${name}" geladen!\n\nNeue Tools verfügbar:\n${result.tools.map(t => `• ${t}`).join('\n')}\n\nDiese Tools sind jetzt für den Rest der Session verfügbar.`
+        return `✅ Skill-Pack "${result.name}" gefunden.\n\nTools im Katalog:\n${result.tools.map(t => `• ${t}`).join('\n')}\n\nNutze nur Tools aus der aktuellen Aufrufliste. Der laufende Tool-Vertrag und alle Berechtigungen bleiben unverändert. Dies ist eine Katalogauskunft, keine Ausführung oder abgeschlossene Aufgabe.`
     },
 }

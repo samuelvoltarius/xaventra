@@ -49,7 +49,7 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
                 'nova.tool.name': name, 'nova.channel': channel, 'nova.run.id': idempotencyRunId,
             }, async () => {
                 const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-                return withExecutionPolicyContext({ runId: idempotencyRunId, userId, channel,
+                return withExecutionPolicyContext({ runId: idempotencyRunId, userId, authUserId, channel,
                     nodeId: process.env.NOVA_NODE_ID, workspaceId }, () => options.execute(name, args))
             }),
         })

@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse } from './tool-evidence-response.js'
+import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse } from './tool-evidence-response.js'
+
+describe('screenshot failure evidence', () => {
+    it('preserves the actual pre-execution policy denial', () => {
+        const text = screenshotFailureResponse([{ toolName: 'desktop_screenshot', success: false,
+            result: 'Error: Tool authorization rejected desktop_screenshot: Error: Desktop-Steuerung nur lokal' }])
+        expect(text).toContain('Desktop-Steuerung nur lokal')
+        expect(text).toContain('keine Bilddatei übertragen')
+    })
+    it('preserves locked-session evidence and redacts secrets', () => {
+        const text = screenshotFailureResponse([{ toolName: 'desktop_screenshot', success: false,
+            result: { error: 'Desktop session is locked; api_key=secret-value' } }])
+        expect(text).toContain('Desktop session is locked')
+        expect(text).not.toContain('secret-value')
+    })
+    it('does not invent a cause from another tool or successful capture', () => {
+        const text = screenshotFailureResponse([
+            { toolName: 'health_status', success: false, result: 'unrelated' },
+            { toolName: 'desktop_screenshot', success: true, result: 'capture succeeded' },
+        ])
+        expect(text).not.toContain('unrelated')
+        expect(text).not.toContain('capture succeeded')
+        expect(text).toContain('keine Bilddatei übertragen')
+    })
+})
 
 describe('grounded tool responses', () => {
     it('does not present acknowledgements and empty search as completed research', () => {

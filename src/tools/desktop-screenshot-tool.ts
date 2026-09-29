@@ -13,11 +13,13 @@
  * vision capture) AND auto-sends via Telegram unless send=false.
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { getDesktopAgentContext } from '../desktop/desktop-agent-context.js'
 import { getDesktopControlQueue } from '../desktop/desktop-control.js'
+import { requestSessionCapture } from '../host/capture-agent.js'
+import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 
 function captureDesktop(filePath: string): void {
     const isWin = process.platform === 'win32'
@@ -80,9 +82,16 @@ export const desktopScreenshotTool = {
             if (!existsSync(visionDir)) mkdirSync(visionDir, { recursive: true })
 
             const fileName = (params.name as string) || `desktop_${Date.now()}`
+            if (!/^[a-zA-Z0-9_-]{1,100}$/.test(fileName)) return { success: false, error: 'Invalid screenshot name' }
             const filePath = join(visionDir, `${fileName}.png`)
 
-            captureDesktop(filePath)
+            if (process.env.NOVA_CAPTURE_SOCKET || process.env.NOVA_CAPTURE_TOKEN_FILE) {
+                // Never fall back across the desktop-session boundary on denial.
+                const image = await requestSessionCapture(process.env.NOVA_CAPTURE_SOCKET || '', process.env.NOVA_CAPTURE_TOKEN_FILE || '')
+                writeFileSync(filePath, image, { mode: 0o600, flag: 'wx' })
+            } else {
+                captureDesktop(filePath)
+            }
 
             if (!existsSync(filePath)) {
                 return { success: false, error: 'Screenshot konnte nicht erstellt werden.' }
@@ -96,14 +105,20 @@ export const desktopScreenshotTool = {
             // Capture stays separate from delivery — the base64 still flows back
             // to the LLM (imageBase64/imageMimeType) for REAL vision analysis.
             let sentMsg = ''
+            let delivered = params.send === false
             if (params.send !== false) {
                 try {
+                    const context = getExecutionPolicyContext()
+                    if (context.channel?.toLowerCase() !== 'telegram' || !/^[1-9][0-9]*$/.test(context.authUserId || '')) {
+                        throw new Error('Authenticated Telegram recipient missing; image was not sent')
+                    }
                     const { executeSendFile } = await import('./send-file-tool.js')
                     const sendResult = await executeSendFile({
                         path: filePath,
                         caption: 'Screenshot vom Desktop 📸',
-                        chat_id: params.chat_id,
+                        chat_id: context.authUserId,
                     })
+                    delivered = /^✅ (?:Foto|Dokument) gesendet:/.test(sendResult)
                     sentMsg = ` | ${sendResult}`
                     console.log(`[Desktop] 📤 ${sendResult}`)
                 } catch (sendErr) {
@@ -113,7 +128,10 @@ export const desktopScreenshotTool = {
             }
 
             return {
-                success: true,
+                success: delivered,
+                captured: true,
+                delivered: params.send === false ? false : delivered,
+                ...(!delivered ? { error: 'Screenshot captured, but requested delivery was not verified' } : {}),
                 path: filePath,
                 screenshotPath: filePath,
                 imageBase64: base64,
