@@ -124,6 +124,14 @@ function memoryKeyVersion(record: Pick<GovernedMemory, 'memoryKeyVersion'>): num
     return Number.isSafeInteger(value) && value > 0 ? value : 1
 }
 
+/** Keeps a forgotten memory as a hash-only tombstone (fingerprint + memory key). */
+function forgetPlaintext(record: Partial<GovernedMemory>): void {
+    record.content = ''
+    delete record.subject
+    delete record.predicate
+    delete record.value
+}
+
 function compareMemoryGeneration(a: GovernedMemory, b: GovernedMemory): number {
     return memoryKeyVersion(a) - memoryKeyVersion(b)
         || a.updatedAt - b.updatedAt
@@ -512,9 +520,36 @@ export class MemoryGovernanceCoordinator {
         record.memoryKeyVersion = memoryKeyVersion(record) + 1
         record.updatedAt = Date.now()
         record.provenance.push({ source, evidence: 'manual', timestamp: record.updatedAt, verified: true })
+        // MA-15 (Alfred: forgetting must really forget): the barrier keeps only
+        // fingerprint + memory key; the plaintext leaves the store, its backup
+        // and every earlier audit line. Rephrasings are no longer caught.
+        forgetPlaintext(record)
         this.persist()
+        this.persist() // second write rotates the scrubbed store into the backup
+        this.scrubAudit(record.id)
         this.audit('rejected', record)
         return record
+    }
+
+    /** Rewrites audit.jsonl atomically without the plaintext of one memory. */
+    private scrubAudit(memoryId: string): void {
+        if (!existsSync(this.auditPath)) return
+        const lines = readFileSync(this.auditPath, 'utf-8').split(/\r?\n/)
+        let changed = false
+        const scrubbed = lines.map(line => {
+            if (!line.trim()) return line
+            try {
+                const entry = JSON.parse(line)
+                if (entry?.memoryId !== memoryId || !entry.record) return line
+                forgetPlaintext(entry.record)
+                changed = true
+                return JSON.stringify(entry)
+            } catch { return line }
+        })
+        if (!changed) return
+        const temporary = `${this.auditPath}.tmp`
+        writeFileSync(temporary, scrubbed.join('\n'))
+        renameSync(temporary, this.auditPath)
     }
 
     rescope(id: string, scope: string, source = 'migration'): GovernedMemory | null {
@@ -584,8 +619,10 @@ export class MemoryGovernanceCoordinator {
     ): Promise<number> {
         const projectBackends = options.projectBackends !== false
         let merged = 0
+        let scrubbed = false
         for (const remote of records) {
-            if (!remote?.id || !remote.content || !remote.scope || remote.status === 'candidate') continue
+            // A forgotten memory travels as a hash-only tombstone (MA-15): empty content is valid only for 'rejected'.
+            if (!remote?.id || (!remote.content && remote.status !== 'rejected') || !remote.scope || remote.status === 'candidate') continue
             const remoteVersion = memoryKeyVersion(remote)
             const local = this.store.records.find(record => record.id === remote.id)
             if (local) {
@@ -623,6 +660,13 @@ export class MemoryGovernanceCoordinator {
                 }],
             }
             if (competing) next.supersedes = competing.id
+            // An older peer may still ship a tombstone with plaintext: never keep it.
+            if (next.status === 'rejected') {
+                forgetPlaintext(next)
+                if (local) forgetPlaintext(local)
+                this.scrubAudit(next.id)
+                scrubbed = true
+            }
             if (local) Object.assign(local, next)
             else this.store.records.push(next)
             merged++
@@ -633,6 +677,7 @@ export class MemoryGovernanceCoordinator {
             this.audit('federated-merge', next, { sourceNode })
         }
         if (merged > 0) this.persist()
+        if (scrubbed) this.persist() // rotate the scrubbed store into the backup as well
         return merged
     }
 
