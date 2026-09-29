@@ -16,7 +16,15 @@ enables Git long paths without changing assertions. Desktop regression passes
 passes seven lifecycle checks with a scripted loopback model. Staged secret
 scan is clean. These are local, pre-commit results.
 
-Pending: exact-candidate CI, evidence CI, main CI and signed publication.
+Candidate `2e051cbc4c09d1a3e19be440d9900b4b88376244` passed all ten jobs in
+[CI 36577688221](https://github.com/samuelvoltarius/xaventra/actions/runs/36577688221).
+The first attempt failed only the macOS artifact-service upload after five
+network timeouts; the failed job rerun passed without changing source or gates.
+Downloaded Windows/Linux/macOS 2.78.58 reports each pass ten packaged UI,
+five isolated Core and seven full-daemon checks. These use a scripted provider,
+not Telegram. A complete 155-commit candidate history scan found no secrets.
+
+Pending: this evidence commit's own CI, main CI and signed publication.
 No full RC claim. Recovery must preserve the prior native program,
 runtime, channel credentials and workstation input journal; stop and verify the
 new process before restoring the previous selection. Never start a second
