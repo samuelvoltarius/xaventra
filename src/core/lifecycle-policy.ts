@@ -1,7 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { redactSecrets } from '../security/secret-redaction.js'
+
+/** Audit hygiene: payloads carry tool inputs/outputs (secrets, file contents). */
+const AUDIT_MAX_STRING = 2_000
+const AUDIT_MAX_BYTES = 5 * 1024 * 1024
 
 export type LifecycleEvent =
     | 'session.start'
@@ -147,7 +152,15 @@ export class LifecyclePolicy {
     private audit(entry: Record<string, unknown>): void {
         try {
             if (!existsSync(dirname(this.auditFile))) mkdirSync(dirname(this.auditFile), { recursive: true })
-            appendFileSync(this.auditFile, `${JSON.stringify({ ...entry, at: new Date().toISOString() })}\n`)
+            // Rotate instead of growing forever; one previous generation is kept.
+            if (existsSync(this.auditFile) && statSync(this.auditFile).size > AUDIT_MAX_BYTES) {
+                renameSync(this.auditFile, `${this.auditFile}.1`)
+            }
+            const line = JSON.stringify({ ...entry, at: new Date().toISOString() }, (_key, value) =>
+                typeof value === 'string' && value.length > AUDIT_MAX_STRING
+                    ? `${value.slice(0, AUDIT_MAX_STRING)}…[${value.length - AUDIT_MAX_STRING} Zeichen gekürzt]`
+                    : value)
+            appendFileSync(this.auditFile, `${redactSecrets(line)}\n`)
         } catch { /* policy decisions must not depend on telemetry storage */ }
     }
 }
