@@ -5,7 +5,7 @@
  * Supports API keys, OAuth tokens, and provider-specific refresh.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 // ============================================
@@ -131,7 +131,8 @@ export class OAuthManager {
             mkdirSync(dir, { recursive: true })
         }
 
-        writeFileSync(this.config.storePath, JSON.stringify(this.store, null, 2))
+        writeFileSync(this.config.storePath, JSON.stringify(this.store, null, 2), { mode: 0o600 })
+        try { chmodSync(this.config.storePath, 0o600) } catch { /* not supported on this filesystem */ }
     }
 
     // ============================================

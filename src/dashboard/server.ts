@@ -13,7 +13,7 @@ import { createServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, statSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { z } from 'zod'
@@ -1744,6 +1744,7 @@ app.post('/api/mesh/login-callback', async (req, res) => {
             expires: Date.now() + ((tokenData.expires_in || 3600) * 1000),
         }
         writeFileSync(authPath, JSON.stringify(authData, null, 2), { encoding: 'utf-8', mode: 0o600 })
+        try { chmodSync(authPath, 0o600) } catch { /* not supported on this filesystem */ }
 
         res.json({
             success: true,
