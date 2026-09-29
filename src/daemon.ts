@@ -21,6 +21,7 @@ installGlobalLogger()
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { hostname } from 'node:os'
 import { hasConflictingDaemonPid } from './core/pid-guard.js'
 
 // ============================================
@@ -279,7 +280,7 @@ async function startDaemon() {
         const { initGatewayAuth } = await import('./infra/gateway-auth.js')
         const auth = initGatewayAuth()
         if (auth.mode === 'token') {
-            console.log(`[Nova] 🔑 Gateway auth: Bearer token active`)
+            console.log(`[Nova] 🔑 Gateway token loaded (.nova-gateway-token): required by the dashboard and the standalone gateway`)
         }
     } catch (err) {
         console.warn(`[Nova] Gateway auth init skipped: ${err}`)
@@ -1165,7 +1166,7 @@ async function startDaemon() {
         const isMain = !(state as any).config?.edge
         initMeshEvents(isMain, 9090,
             isMain ? undefined : 'ws://100.64.0.21:9090',
-            isMain ? undefined : `nova-${require('os').hostname()}`)
+            isMain ? undefined : `nova-${hostname()}`)
     } catch (err) {
         console.log(`[Nova] ⚠ Mesh Events: ${err}`)
     }
@@ -1908,7 +1909,7 @@ async function startDaemon() {
                     } catch (err) {
                         console.error(`[Autonomy] 🧠 Reply send failed: ${err}`)
                     }
-                })
+                }, undefined, { systemAuthored: true })
                 return capturedReply
             })
             console.log('[Nova] ✓ Self-Thinking aktiv (autonome Pipeline-Injection)')

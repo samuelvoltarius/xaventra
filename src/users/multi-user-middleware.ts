@@ -239,8 +239,9 @@ const TOOL_PERMISSIONS: Record<UserPermission, { allowed: string[] | '*'; denied
     user: {
         allowed: [
             'google_search', 'fetch_url', 'read_url',
-            'read_file', 'list_directory', 'codebase_search',
-            'generate_image', 'reminder', 'timer',
+            // Names must match registered tools, or the grant silently does nothing.
+            'read_file', 'list_directory', 'code_search',
+            'generate_image', 'set_reminder', 'list_reminders', 'timer',
             'weather', 'translate', 'calculate',
         ],
         denied: [
