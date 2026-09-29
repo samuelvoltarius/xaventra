@@ -2923,7 +2923,7 @@
     {
       "name": "self_setup_apply",
       "category": "system",
-      "description": "Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus ist confirm=\"APPLY:<actionId>\" noetig; im YOLO-Modus nicht.",
+      "description": "Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per \"/setup apply <actionId>\" (bzw. \"/setup apply all\") erhaelt und dir nennt; Codes niemals selbst bilden. Im YOLO-Modus nicht (ausser GPU-Backends).",
       "parameters": [
         {
           "name": "action_id",

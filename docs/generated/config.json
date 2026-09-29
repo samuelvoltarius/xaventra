@@ -20,7 +20,7 @@
       "telegram": {
         "allowFrom": {
           "type": "array",
-          "items": "unknown"
+          "items": "string"
         },
         "enabled": "boolean",
         "token": "string"
@@ -114,7 +114,15 @@
         "listenHost": "string",
         "peers": {
           "type": "array",
-          "items": "unknown"
+          "items": {
+            "nodeId": "string",
+            "publicKey": "string",
+            "roles": {
+              "type": "array",
+              "items": "string"
+            },
+            "url": "string"
+          }
         },
         "port": "number"
       },
