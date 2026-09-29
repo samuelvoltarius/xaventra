@@ -162,6 +162,12 @@ const FORBIDDEN_PATTERNS = [
     /\bmodule\s*\./,
     /\.constructor\b/,
     /__proto__/,
+    // Known bypasses of the name checks above: bracket access to constructor,
+    // computed member names built from string pieces, Reflect, import.meta.
+    /\[\s*['"`]constructor['"`]\s*\]/,
+    /\[\s*['"`][^'"`\]]*['"`]\s*\+/,
+    /\bReflect\b/,
+    /\bimport\.meta\b/,
     /require\s*\(\s*['"]child_process['"]\s*\)/,
     /require\s*\(\s*['"]fs['"]\s*\)/,
     /import\s+.*from\s+['"]child_process['"]/,
