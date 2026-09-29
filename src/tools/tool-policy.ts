@@ -42,6 +42,10 @@ export const DEFAULT_POLICY: ToolPolicy = {
         // They are reachable only through the explicit grant paths in
         // checkTool() or an explicit operator allow rule.
         { tool: 'desktop_*', action: 'deny', reason: 'Desktop-Steuerung nur lokal über den authentifizierten Nova-Desktop-Client oder mit expliziter Owner-Freigabe' },
+        // R2 T11: screen and webcam capture are desktop access under another
+        // name; same lock (explicit operator allow rule required).
+        { tool: 'screen_capture', action: 'deny', reason: 'Bildschirmaufnahme wie Desktop-Steuerung nur mit expliziter Owner-Freigabe' },
+        { tool: 'webcam_capture', action: 'deny', reason: 'Webcam-Aufnahme wie Desktop-Steuerung nur mit expliziter Owner-Freigabe' },
         // Self-management requires confirmation
         { tool: 'self_extend', action: 'confirm', reason: 'Self-Extension erfordert Bestätigung' },
         { tool: 'self_manage', action: 'confirm', reason: 'Self-Management erfordert Bestätigung' },

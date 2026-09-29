@@ -9,9 +9,28 @@
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 const VISION_DIR = join(process.cwd(), '.nova-data', 'vision')
+
+/**
+ * R2 T11: captures are only written inside VISION_DIR. A model-supplied
+ * outputPath is reduced to a plain file name, so it cannot overwrite
+ * ~/.bashrc or any other file.
+ */
+function visionOutputPath(requested: unknown, fallback: string, extension: string): string {
+    if (typeof requested !== 'string' || !requested.trim()) return join(VISION_DIR, fallback)
+    const name = basename(requested.split('\\').join('/')).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '')
+    if (!name) return join(VISION_DIR, fallback)
+    return join(VISION_DIR, name.toLowerCase().endsWith(extension) ? name : `${name}${extension}`)
+}
+
+/** R2 T12/T23: image inputs pass the same path guard as read_file. */
+async function guardedImagePath(params: Record<string, unknown>, raw: unknown): Promise<{ path: string } | { error: string }> {
+    const { resolveGuardedFilePath } = await import('./complete-registry.js')
+    const guarded = await resolveGuardedFilePath({ ...params, path: String(raw ?? '') })
+    return 'error' in guarded ? { error: guarded.error } : { path: guarded.path }
+}
 
 export const screenCaptureTool = {
     name: 'screen_capture',
@@ -39,7 +58,7 @@ export const screenCaptureTool = {
             mkdirSync(VISION_DIR, { recursive: true })
         }
         
-        const screenshotPath = outputPath || join(VISION_DIR, `screenshot_${Date.now()}.png`)
+        const screenshotPath = visionOutputPath(outputPath, `screenshot_${Date.now()}.png`, '.png')
         
         // ── Linux: der Bildschirm gehoert dem X-Server, nicht PowerShell ──
         // Hier stand nur ein Windows-Zweig, der `powershell` aufrief. Auf
@@ -120,7 +139,6 @@ export const screenCaptureTool = {
             
             const proc = spawn('powershell', ['-NoProfile', '-Command', psScript], {
                 timeout: 15000,
-                shell: true
             })
             
             let stderr = ''
@@ -185,13 +203,15 @@ export const webcamCaptureTool = {
         }
     ],
     handler: async (params: { cameraIndex?: number; outputPath?: string }) => {
-        const { cameraIndex = 0, outputPath } = params
-        
+        const { outputPath } = params
+        // R2 T12: interpolated into Python source: integers only
+        const cameraIndex = Math.min(Math.max(Math.trunc(Number(params.cameraIndex) || 0), 0), 16)
+
         if (!existsSync(VISION_DIR)) {
             mkdirSync(VISION_DIR, { recursive: true })
         }
-        
-        const imagePath = outputPath || join(VISION_DIR, `webcam_${Date.now()}.jpg`)
+
+        const imagePath = visionOutputPath(outputPath, `webcam_${Date.now()}.jpg`, '.jpg')
         
         return new Promise((resolve) => {
             // Use OpenCV or simple Windows camera capture
@@ -212,8 +232,8 @@ try:
         print('ERROR:Failed to capture frame')
         sys.exit(1)
     
-    cv2.imwrite('${imagePath.replace(/\\/g, '\\\\')}', frame)
-    print('OK:${imagePath}')
+    cv2.imwrite(sys.argv[1], frame)
+    print('OK:' + sys.argv[1])
 except Exception as e:
     print(f'ERROR:{e}')
     sys.exit(1)
@@ -221,9 +241,8 @@ except Exception as e:
             const scriptPath = join(VISION_DIR, 'capture.py')
             writeFileSync(scriptPath, captureScript, 'utf-8')
             
-            const proc = spawn('python', [scriptPath], {
+            const proc = spawn('python', [scriptPath, imagePath], {
                 timeout: 15000,
-                shell: true
             })
             
             let stdout = ''
@@ -231,7 +250,7 @@ except Exception as e:
             
             proc.on('close', (code) => {
                 if (code === 0 && existsSync(imagePath)) {
-                    const { readFileSync } = require('node:fs')
+                    // R2 T25: bare require threw in ESM inside the close handler
                     const buffer = readFileSync(imagePath)
                     const base64 = buffer.toString('base64')
                     
@@ -280,9 +299,14 @@ export const faceDetectionTool = {
             default: 0.5
         }
     ],
-    handler: async (params: { imagePath: string; minConfidence?: number }) => {
-        const { imagePath: imgPath, minConfidence = 0.5 } = params
-        
+    handler: async (params: { imagePath: string; minConfidence?: number; [key: string]: unknown }) => {
+        const guarded = await guardedImagePath(params, params.imagePath)
+        if ('error' in guarded) return { success: false, error: guarded.error, faceCount: 0, faces: [] }
+        const imgPath = guarded.path
+        // R2 T12: values reach Python only as argv or validated numbers
+        const minConfidence = Math.min(Math.max(Number(params.minConfidence ?? 0.5) || 0, 0), 1)
+
+        if (!existsSync(VISION_DIR)) mkdirSync(VISION_DIR, { recursive: true })
         return new Promise((resolve) => {
             // MediaPipe face detection Python script
             const detectScript = `
@@ -294,11 +318,11 @@ import sys
 
 try:
     # Handle base64 or file path
-    if "${imgPath}".startswith('data:'):
+    if sys.argv[1].startswith('data:'):
         # base64 data URL
         pass  # Would need actual image data handling
     else:
-        image = mp.Image.create_from_file("${imgPath}")
+        image = mp.Image.create_from_file(sys.argv[1])
     
     # Face detection
     base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite')
@@ -330,10 +354,9 @@ except Exception as e:
 `
             const scriptPath = join(VISION_DIR, 'face_detect.py')
             writeFileSync(scriptPath, detectScript, 'utf-8')
-            
-            const proc = spawn('python', [scriptPath], {
+
+            const proc = spawn('python', [scriptPath, imgPath], {
                 timeout: 30000,
-                shell: true
             })
             
             let stdout = ''
@@ -405,9 +428,12 @@ export const handGestureTool = {
             default: 'gesture'
         }
     ],
-    handler: async (params: { imagePath: string; mode?: string }) => {
-        const { imagePath: imgPath, mode = 'gesture' } = params
-        
+    handler: async (params: { imagePath: string; mode?: string; [key: string]: unknown }) => {
+        const guarded = await guardedImagePath(params, params.imagePath)
+        if ('error' in guarded) return { success: false, error: guarded.error, handCount: 0, gestures: [] }
+        const imgPath = guarded.path
+
+        if (!existsSync(VISION_DIR)) mkdirSync(VISION_DIR, { recursive: true })
         return new Promise((resolve) => {
             const gestureScript = `
 import mediapipe as mp
@@ -416,8 +442,8 @@ from mediapipe.tasks.python import vision
 import sys
 
 try:
-    image = mp.Image.create_from_file("${imgPath}")
-    
+    image = mp.Image.create_from_file(sys.argv[1])
+
     # Hands detection
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
@@ -457,10 +483,9 @@ except Exception as e:
 `
             const scriptPath = join(VISION_DIR, 'hand_gesture.py')
             writeFileSync(scriptPath, gestureScript, 'utf-8')
-            
-            const proc = spawn('python', [scriptPath], {
+
+            const proc = spawn('python', [scriptPath, imgPath], {
                 timeout: 30000,
-                shell: true
             })
             
             let stdout = ''
@@ -519,15 +544,17 @@ export const screenAnalysisTool = {
             default: 'What is shown on the screen?'
         }
     ],
-    handler: async (params: { imagePath: string; question?: string }) => {
-        const { imagePath: imgPath, question = 'What is shown on the screen?' } = params
-        
+    handler: async (params: { imagePath: string; question?: string; [key: string]: unknown }) => {
+        const guarded = await guardedImagePath(params, params.imagePath)
+        if ('error' in guarded) return { success: false, error: guarded.error }
+        const imgPath = guarded.path
+
         // Read image and encode as base64
         if (!existsSync(imgPath)) {
             return { success: false, error: `Image not found: ${imgPath}` }
         }
-        
-        const { readFileSync } = require('node:fs')
+
+        // R2 T25: bare require is a ReferenceError in ESM
         const buffer = readFileSync(imgPath)
         const base64 = buffer.toString('base64')
         
