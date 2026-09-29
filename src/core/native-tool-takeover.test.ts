@@ -89,3 +89,31 @@ describe('native tool checkpoint takeover', () => {
             .resolves.toEqual({ imported: 0, checkpointFound: false, restored: 0, rejected: [] })
     })
 })
+
+describe('checkpoint size limit (R2 NZ-15)', () => {
+    it('refuses to publish a checkpoint that takeover readers would discard', async () => {
+        const { taskContractFingerprint } = await import('./native-tool-receipts.js')
+        const kernel = new ExecutionKernel('Lies viele Dateien', { allowedChanges: { allowedTools: ['read_file'] } })
+        const scopeId = 'mission:big:step:1'; const principalId = 'owner'; const channel = 'telegram'
+        const fingerprint = taskContractFingerprint(kernel.contract)
+        const records = Array.from({ length: 501 }, (_, i) => ({
+            key: `k${i}`, status: 'completed', runId: scopeId, operation: 'read_file', inputHash: 'h', result: { i },
+        }))
+        const receipts = records.map(record => ({
+            receiptId: `r-${record.key}`, scopeId, principalId, channel, contractFingerprint: fingerprint,
+            idempotencyKey: record.key, executionInputHash: 'h',
+            evidence: { toolName: 'read_file', resultHash: evidenceHash(record.result) },
+        }))
+        const write = vi.fn(async () => true)
+        const fence = { missionId: 'big', epoch: 1, token: 'token' }
+        const published = await publishNativeToolCheckpoint({
+            fence, scopeId, principalId, channel, kernel,
+            idempotency: { exportCompleted: () => records } as any,
+            receipts: { exportScope: () => receipts } as any,
+            authority: authority(fence),
+            transport: { write, read: async () => [] },
+        })
+        expect(published).toBe(false)
+        expect(write).not.toHaveBeenCalled()
+    })
+})
