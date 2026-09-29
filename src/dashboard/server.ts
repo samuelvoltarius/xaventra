@@ -11,18 +11,27 @@
 import express from 'express'
 import { createServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, statSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { z } from 'zod'
 import { resolveConfigPath } from '../config/config-path.js'
 import { dashboardAddress, listenDashboard } from './listener.js'
-import { isDashboardOwnerOnlyPath, isDashboardOwnerRequest } from './access-guard.js'
+import { buildNodeUpdateCommand, resolveMeshBundleUrl } from './mesh-update.js'
+import {
+    DASHBOARD_TOKEN_COOKIE, dashboardTokenFromHeaders, isAllowedDashboardHost, isDashboardOwnerOnlyPath,
+    isDashboardOwnerRequest, isSameOriginRequest, isValidDashboardToken,
+} from './access-guard.js'
+import { getGatewayAuth } from '../infra/gateway-auth.js'
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+function isRedactedPlaceholder(value: unknown): boolean {
+    return typeof value === 'string' && value.trim().startsWith('[REDACTED')
+}
 
 function safeDashboardPayload<T>(value: T): T {
     try { return JSON.parse(redactSecrets(JSON.stringify(value))) as T }
@@ -145,6 +154,8 @@ try {
 } catch { /* fresh start */ }
 
 function saveChatHistory() {
+    // N-3: the in-memory history is bounded like the persisted one.
+    if (chatHistory.length > 500) chatHistory.splice(0, chatHistory.length - 500)
     try {
         if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true })
         // Keep max 500 messages
@@ -473,18 +484,79 @@ const app = express()
 const server = createServer(app)
 // INT-10: the live feed carries chat history and state; only local, same-machine
 // clients (no foreign browser origin, no DNS-rebound host) may connect.
+// C-1: additionally the owner token (the existing gateway token in
+// .nova-gateway-token, 0600) — as HttpOnly cookie from the browser, as header
+// or as ?token= for scripts. Payloads are capped like the JSON body parser.
 const wss = new WebSocketServer({
     server,
+    maxPayload: 256 * 1024,
     verifyClient: (info: { origin: string; req: import('node:http').IncomingMessage }) => isDashboardOwnerRequest({
         remoteAddress: info.req.socket.remoteAddress, host: info.req.headers.host, origin: info.origin,
-    }),
+    }) && (hasDashboardToken(info.req.headers) || isValidDashboardToken(queryToken(info.req.url), dashboardToken())),
 })
+
+/**
+ * C-1/H-1/H-2: the dashboard token is the existing gateway token
+ * (infra/gateway-auth.ts, created 0600 at daemon start). Without a readable
+ * token nothing but the static shell is served (fail-closed).
+ * `dashboard.password` from the config is NOT evaluated; the token replaces it.
+ */
+function dashboardToken(): string {
+    try { return getGatewayAuth().token || '' } catch { return '' }
+}
+function hasDashboardToken(headers: import('node:http').IncomingHttpHeaders): boolean {
+    return isValidDashboardToken(dashboardTokenFromHeaders(headers as Record<string, string | string[] | undefined>), dashboardToken())
+}
+function queryToken(url: string | undefined): string {
+    try { return new URL(url || '/', 'http://dashboard.invalid').searchParams.get('token') || '' } catch { return '' }
+}
+/** Concrete bind host from startDashboard (wildcards add nothing); loopback names are always allowed. */
+const dashboardConfiguredHosts = new Set<string>()
 const isOwnerHttpRequest = (req: import('express').Request) => isDashboardOwnerRequest({
     remoteAddress: req.socket.remoteAddress, host: req.headers.host,
     origin: typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
 })
 
 app.disable('x-powered-by')
+
+// H-1: DNS rebinding and cross-origin requests are refused before anything
+// else, including the static shell.
+app.use((req, res, next) => {
+    if (!isAllowedDashboardHost(req.headers.host, dashboardConfiguredHosts)) {
+        console.warn(`[Dashboard] Blocked ${req.method} ${req.path}: unknown Host ${req.headers.host || '-'}`)
+        return void res.status(403).json({ error: 'Forbidden: unknown Host' })
+    }
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
+    if (!isSameOriginRequest(req.headers.host, origin)) {
+        console.warn(`[Dashboard] Blocked ${req.method} ${req.path}: foreign Origin ${origin}`)
+        return void res.status(403).json({ error: 'Forbidden: foreign Origin' })
+    }
+    next()
+})
+
+// C-1: opening /?token=<token> once stores the token as HttpOnly,
+// SameSite=Strict cookie and strips it from the address bar.
+app.get(['/', '/index.html'], (req, res, next) => {
+    const offered = typeof req.query.token === 'string' ? req.query.token : ''
+    if (offered) {
+        if (!isValidDashboardToken(offered, dashboardToken())) return void res.status(401).type('text/plain; charset=utf-8').send('Xaventra-Dashboard: Token ungültig.')
+        res.setHeader('Set-Cookie', `${DASHBOARD_TOKEN_COOKIE}=${encodeURIComponent(offered)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000`)
+        return void res.redirect(303, '/')
+    }
+    if (hasDashboardToken(req.headers)) return next()
+    res.status(401).type('text/plain; charset=utf-8').send('Xaventra-Dashboard: Token erforderlich. Einmal öffnen: http://127.0.0.1:<port>/?token=<Inhalt der Datei .nova-gateway-token im Nova-Ordner>')
+})
+
+// C-1/H-2: every API route (read and write) needs the token. The Desktop API
+// keeps its own bearer check when NOVA_DESKTOP_API_TOKEN is set; without it
+// (loopback mode) the dashboard token is required there as well.
+app.use('/api', (req, res, next) => {
+    const desktop = req.path === '/desktop' || req.path.startsWith('/desktop/')
+    if (desktop && process.env.NOVA_DESKTOP_API_TOKEN) return next()
+    if (hasDashboardToken(req.headers)) return next()
+    res.status(401).json({ error: 'Dashboard token required' })
+})
+
 app.use(express.json({ limit: '256kb' }))
 // Prevent stale cached dashboard assets
 app.use((req, res, next) => {
@@ -758,11 +830,18 @@ app.get('/api/sessions', (req, res) => {
     res.json(loadSessions())
 })
 
+/** N-4: a session id names one file directly inside .nova-sessions, never a path. */
+function sessionFilePath(id: string): string | null {
+    const value = String(id || '')
+    if (!value || value === '.' || value === '..' || value !== basename(value) || /[\\/\u0000]/.test(value)) return null
+    return join(process.cwd(), '.nova-sessions', `${value}.json`)
+}
+
 // Single session — load full messages for chat resume
 app.get('/api/sessions/:id', (req, res) => {
     try {
-        const sessionsDir = join(process.cwd(), '.nova-sessions')
-        const filePath = join(sessionsDir, `${req.params.id}.json`)
+        const filePath = sessionFilePath(req.params.id)
+        if (!filePath) return void res.status(400).json({ error: 'Invalid session id' })
         if (!existsSync(filePath)) {
             res.status(404).json({ error: 'Session not found' })
             return
@@ -805,8 +884,8 @@ app.get('/api/sessions/:id', (req, res) => {
 // Resume session — load messages into active chat history
 app.post('/api/sessions/:id/resume', (req, res) => {
     try {
-        const sessionsDir = join(process.cwd(), '.nova-sessions')
-        const filePath = join(sessionsDir, `${req.params.id}.json`)
+        const filePath = sessionFilePath(req.params.id)
+        if (!filePath) return void res.status(400).json({ error: 'Invalid session id' })
         if (!existsSync(filePath)) {
             res.status(404).json({ error: 'Session not found' })
             return
@@ -888,8 +967,8 @@ app.post('/api/proposals/:id/reject', async (req, res) => {
 // Config
 app.get('/api/config', (req, res) => {
     const config = loadConfig()
-    // Dashboard is localhost-only, no need to mask tokens
-    res.json(config)
+    // H-1: secrets never leave the process, not even to the owner console.
+    res.json(safeDashboardPayload(config))
 })
 
 // Models — capability probe results + perf summary
@@ -1143,10 +1222,24 @@ app.post('/api/config', (req, res) => {
 
     // Deep-merge channels config (don't wipe existing token when only changing enabled)
     if (req.body.channels) {
+        if (typeof req.body.channels !== 'object' || Array.isArray(req.body.channels)) return void res.status(400).json({ success: false, error: 'channels must be an object' })
         newConfig.channels = newConfig.channels || {}
         for (const [channelName, channelUpdate] of Object.entries(req.body.channels)) {
+            if (!channelUpdate || typeof channelUpdate !== 'object' || Array.isArray(channelUpdate)) continue
+            // H-1: GET /api/config is redacted; a redaction placeholder sent back
+            // must never overwrite the real secret.
+            const update = Object.fromEntries(Object.entries(channelUpdate as object).filter(([, value]) => !isRedactedPlaceholder(value)))
+            // Owner identity: an allowFrom update must name at least one real
+            // entry. Clearing it would open Nova to everyone (fail-closed).
+            if ('allowFrom' in update) {
+                const allowFrom = (update as any).allowFrom
+                if (!Array.isArray(allowFrom) || !allowFrom.length || allowFrom.some(entry => (typeof entry !== 'string' && typeof entry !== 'number') || !String(entry).trim())) {
+                    return void res.status(400).json({ success: false, error: 'allowFrom must list at least one non-empty entry' })
+                }
+                ; (update as any).allowFrom = allowFrom.map(entry => String(entry).trim())
+            }
             const existing = (newConfig.channels as any)[channelName] || {}
-                ; (newConfig.channels as any)[channelName] = { ...existing, ...(channelUpdate as object) }
+                ; (newConfig.channels as any)[channelName] = { ...existing, ...update }
         }
     }
 
@@ -1366,7 +1459,7 @@ app.get('/api/mesh/tasks/:id', async (req, res) => {
 // Mesh: Serve update bundle (tar.gz of dist/ + public/)
 app.get('/api/mesh/bundle', async (req, res) => {
     try {
-        const { execSync } = await import('child_process')
+        const { execFileSync } = await import('child_process')
         const { join } = await import('path')
         const { readFileSync, unlinkSync } = await import('fs')
         const { tmpdir } = await import('os')
@@ -1380,10 +1473,7 @@ app.get('/api/mesh/bundle', async (req, res) => {
         // Runtime configuration may contain credentials. It never belongs in a
         // distributable bundle, under either the current or legacy filename.
 
-        execSync(
-            `tar czf "${tmpFile}" ${files.join(' ')}`,
-            { cwd: baseDir, timeout: 30_000 }
-        )
+        execFileSync('tar', ['czf', tmpFile, ...files], { cwd: baseDir, timeout: 30_000 })
 
         const data = readFileSync(tmpFile)
         res.setHeader('Content-Type', 'application/gzip')
@@ -1406,14 +1496,18 @@ app.post('/api/mesh/update-node', async (req, res) => {
             return res.status(400).json({ error: 'targetNode required' })
         }
 
-        // Get the dashboard URL this request came from
-        const sourceHost = req.headers.host?.split(':')[0] || req.socket.localAddress || '100.64.0.10'
-        const sourcePort = '3001'
-        const bundleUrl = `http://${sourceHost}:${sourcePort}/api/mesh/bundle`
+        // H-3: the bundle URL comes only from configuration
+        // (NOVA_MESH_BUNDLE_URL / dashboard.bundleUrl), never from the request
+        // Host header, and is validated to a plain URL before it enters the
+        // node's command line.
+        const bundleUrl = resolveMeshBundleUrl(loadConfig())
+        if (!bundleUrl) {
+            return res.status(503).json({ success: false, error: 'Mesh bundle URL not configured (NOVA_MESH_BUNDLE_URL or dashboard.bundleUrl)' })
+        }
 
-        // Send a shell task to the node: download bundle, extract, restart
+        // Send the update task to the node: download bundle, extract, restart
         const { delegateTask } = await import('../mesh/mesh-registry.js')
-        const updateCmd = `cd ~/nova-core && curl -sL "${bundleUrl}" -o /tmp/nova-bundle.tar.gz && tar xzf /tmp/nova-bundle.tar.gz --overwrite && rm /tmp/nova-bundle.tar.gz && echo "UPDATE_OK: $(date)" && (killall -q node; sleep 2; cd ~/nova-core && nohup node dist/daemon.js > nova.log 2>&1 &)`
+        const updateCmd = buildNodeUpdateCommand(bundleUrl)
 
         const task = await delegateTask(targetNode, updateCmd)
         if (task) {
@@ -1649,7 +1743,8 @@ app.post('/api/mesh/login-callback', async (req, res) => {
             refresh: tokenData.refresh_token,
             expires: Date.now() + ((tokenData.expires_in || 3600) * 1000),
         }
-        writeFileSync(authPath, JSON.stringify(authData, null, 2), 'utf-8')
+        writeFileSync(authPath, JSON.stringify(authData, null, 2), { encoding: 'utf-8', mode: 0o600 })
+        try { chmodSync(authPath, 0o600) } catch { /* not supported on this filesystem */ }
 
         res.json({
             success: true,
@@ -2270,10 +2365,13 @@ export function getDashboardAddress(): string | null { return dashboardAddress(s
 export async function startDashboard(port: number = 3011, host: string = '127.0.0.1'): Promise<string> {
     if (dashboardStarted) return dashboardUrl
     state.stats = loadStats()
+    const bindHost = String(host || '').trim().toLowerCase()
+    if (bindHost && !['0.0.0.0', '::', '[::]'].includes(bindHost)) dashboardConfiguredHosts.add(bindHost)
+    if (!dashboardToken()) console.warn('[Dashboard] Kein Gateway-Token lesbar: API und Live-Feed bleiben gesperrt')
     dashboardUrl = await listenDashboard(server, port, host)
     dashboardStarted = true
     dashboardPort = Number(new URL(dashboardUrl).port)
-    console.log(`\n✨ Xaventra Dashboard: ${dashboardUrl}\n`)
+    console.log(`\n✨ Xaventra Dashboard: ${dashboardUrl}\n   Zugang einmalig mit ${dashboardUrl}/?token=<Inhalt von .nova-gateway-token>\n`)
     return dashboardUrl
 }
 

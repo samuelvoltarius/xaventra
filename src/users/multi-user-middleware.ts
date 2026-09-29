@@ -629,6 +629,10 @@ export function handleUserCommand(action: string, args: string, fromUser: string
             if (!args) return '❌ Syntax: /users block <userId|name>'
             const target = resolveCurrentUser(args)
             if (target.error) return `❌ ${target.error}`
+            // N-5: nobody blocks an owner; only the owner blocks an admin.
+            const targetPermission = getUserPermission(target.id)
+            if (targetPermission === 'owner') return '🔒 Ein Owner kann nicht blockiert werden.'
+            if (targetPermission === 'admin' && perm !== 'owner') return '🔒 Nur der Owner kann Admins blockieren.'
             const success = setUserPermission(target.id, 'blocked')
             return success ? `🚫 ${target.user.name || target.id} (\`${target.id}\`) blockiert.` : '❌ User konnte nicht aktualisiert werden.'
         }
@@ -638,6 +642,8 @@ export function handleUserCommand(action: string, args: string, fromUser: string
             if (!args) return '❌ Syntax: /users unblock <userId|name>'
             const target = resolveCurrentUser(args)
             if (target.error) return `❌ ${target.error}`
+            // N-5: unblock only lifts a block; it never demotes an active user.
+            if (getUserPermission(target.id) !== 'blocked') return `❌ ${target.user.name || target.id} ist nicht blockiert.`
             const success = setUserPermission(target.id, 'guest')
             return success ? `✅ ${target.user.name || target.id} (\`${target.id}\`) entblockt (als guest).` : '❌ User konnte nicht aktualisiert werden.'
         }

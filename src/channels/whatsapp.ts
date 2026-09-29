@@ -25,6 +25,12 @@ interface WhatsAppState {
     phoneNumber?: string
 }
 
+/** Digits of the user part of a JID or phone entry (`+43 660…`, `43660…:12@s.whatsapp.net`). */
+export function normalizeWhatsAppNumber(value: unknown): string {
+    const user = String(value ?? '').trim().split('@')[0].split(':')[0]
+    return user.replace(/\D/g, '')
+}
+
 // ============================================
 // WhatsApp Adapter Class
 // ============================================
@@ -35,6 +41,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     private config: WhatsAppConfig
     private state: WhatsAppState = { connected: false }
     private messageHandler?: (msg: IncomingMessage) => void
+    private sentMessageIds = new Set<string>()
 
     // Reconnect state — exponential backoff, max 10 attempts
     private _reconnectAttempts = 0
@@ -133,46 +140,80 @@ export class WhatsAppAdapter implements ChannelAdapter {
         this.sock.ev.on('creds.update', saveCreds)
 
         // Handle incoming messages
-        this.sock.ev.on('messages.upsert', async (m: any) => {
-            if (!m.messages?.[0]) return
+        this.sock.ev.on('messages.upsert', (m: any) => this.handleUpsert(m))
+    }
 
-            const msg = m.messages[0]
-            if (msg.key.fromMe && !this.config.selfChatMode) return
+    /**
+     * H-4/M-4/N-6: admission policy for one `messages.upsert` event.
+     * - only live deliveries (`type: 'notify'`); `append` echoes Nova's own
+     *   sends and history sync, which must never re-enter as input
+     * - `fromMe` only in the owner's own self-chat, and never a message this
+     *   adapter sent itself
+     * - DMs and groups only from exact allowFrom numbers; empty allowFrom
+     *   admits nobody but the self-chat (fail-closed)
+     * - groups: `deny` drops, `mention-only` needs an explicit @mention of the
+     *   linked account; the sender identity is the participant, not the group
+     * - every message of a batch is handled, not only the first
+     */
+    handleUpsert(m: any): void {
+        if (m?.type !== 'notify' || !Array.isArray(m.messages)) return
+        for (const msg of m.messages) {
+            const incoming = this.admit(msg)
+            if (incoming && this.messageHandler) this.messageHandler(incoming)
+        }
+    }
 
-            const content = msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                ''
+    private admit(msg: any): IncomingMessage | null {
+        const key = msg?.key
+        const remoteJid = String(key?.remoteJid || '')
+        if (!key?.id || !remoteJid) return null
+        if (this.sentMessageIds.has(key.id)) return null
 
-            if (!content) return
+        const content = msg.message?.conversation ||
+            msg.message?.extendedTextMessage?.text ||
+            ''
+        if (!content) return null
 
-            const from = msg.key.remoteJid!
-            const isGroup = from.endsWith('@g.us')
+        const own = normalizeWhatsAppNumber(this.sock?.user?.id)
+        const isGroup = remoteJid.endsWith('@g.us')
 
-            // Check allowlist
-            if (!isGroup && this.config.allowFrom?.length) {
-                const senderPhone = from.split('@')[0]
-                if (!this.config.allowFrom.some(p => p.includes(senderPhone))) {
-                    console.log(`[Nova WhatsApp] Ignoring message from non-allowed: ${senderPhone}`)
-                    return
-                }
+        if (key.fromMe) {
+            const selfChat = !isGroup && Boolean(own) && normalizeWhatsAppNumber(remoteJid) === own
+            if (!selfChat || !this.config.selfChatMode) return null
+            return this.toIncoming(msg, remoteJid, content, false)
+        }
+
+        const senderJid = isGroup ? String(key.participant || msg.participant || '') : remoteJid
+        const sender = normalizeWhatsAppNumber(senderJid)
+        const allowed = (this.config.allowFrom || []).map(normalizeWhatsAppNumber).filter(Boolean)
+        if (!sender || !allowed.includes(sender)) {
+            console.log(`[Nova WhatsApp] Ignoring message from non-allowed: ${sender || '?'}${isGroup ? ' (group)' : ''}`)
+            return null
+        }
+
+        if (isGroup) {
+            const policy = this.config.groupPolicy || 'mention-only'
+            if (policy === 'deny') return null
+            if (policy === 'mention-only') {
+                const mentioned: string[] = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+                const ownIds = [own, normalizeWhatsAppNumber(this.sock?.user?.lid)].filter(Boolean)
+                if (!mentioned.some(jid => ownIds.includes(normalizeWhatsAppNumber(jid)))) return null
             }
+            return this.toIncoming(msg, senderJid, content, true, remoteJid)
+        }
+        return this.toIncoming(msg, remoteJid, content, false)
+    }
 
-            // Create incoming message
-            const incoming: IncomingMessage = {
-                id: msg.key.id!,
-                channel: 'whatsapp',
-                from,
-                content,
-                timestamp: msg.messageTimestamp as number * 1000,
-                isGroup,
-                groupId: isGroup ? from : undefined,
-            }
-
-            // Call handler
-            if (this.messageHandler) {
-                this.messageHandler(incoming)
-            }
-        })
+    private toIncoming(msg: any, from: string, content: string, isGroup: boolean, groupId?: string): IncomingMessage {
+        return {
+            id: msg.key.id!,
+            channel: 'whatsapp',
+            from,
+            content,
+            timestamp: Number(msg.messageTimestamp) * 1000,
+            isGroup,
+            groupId,
+        }
     }
 
     // ============================================
@@ -224,13 +265,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
             this._reconnectTimer = null
         }
 
+        // M-3: close the socket only. logout() unlinks the companion device and
+        // would force a new QR scan after every leadership change.
         if (this.sock) {
-            try {
-                await this.sock.logout()
-            } catch {
-                // logout() can fail if already disconnected
-                try { this.sock.end(undefined) } catch { /* ignore */ }
-            }
+            try { this.sock.end(undefined) } catch { /* ignore */ }
             this.sock = null
         }
         this.state.connected = false
@@ -248,7 +286,12 @@ export class WhatsAppAdapter implements ChannelAdapter {
 
         const jid = msg.to.includes('@') ? msg.to : `${msg.to}@s.whatsapp.net`
 
-        await this.sock.sendMessage(jid, { text: msg.content })
+        const sent = await this.sock.sendMessage(jid, { text: msg.content })
+        // H-4: remember own message ids so an echo can never become input.
+        if (sent?.key?.id) {
+            this.sentMessageIds.add(sent.key.id)
+            if (this.sentMessageIds.size > 500) this.sentMessageIds.delete(this.sentMessageIds.values().next().value)
+        }
         console.log(`[Nova WhatsApp] Sent message to ${jid.split('@')[0]}`)
     }
 

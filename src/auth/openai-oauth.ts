@@ -16,7 +16,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomBytes, createHash } from 'node:crypto'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { chmodSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 
 // ============================================
@@ -116,7 +116,8 @@ export function saveOpenAITokens(tokens: OpenAITokens): void {
     const path = getTokenPath()
     const dir = dirname(path)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    writeFileSync(path, JSON.stringify(tokens, null, 2))
+    writeFileSync(path, JSON.stringify(tokens, null, 2), { mode: 0o600 })
+    try { chmodSync(path, 0o600) } catch { /* not supported on this filesystem */ }
 }
 
 export function hasOpenAIAuth(): boolean {
@@ -500,7 +501,8 @@ function bridgeToAuthJson(tokens: OpenAITokens): void {
             accountId: tokens.accountId,
         }
 
-        writeFileSync(authPath, JSON.stringify(auth, null, 2))
+        writeFileSync(authPath, JSON.stringify(auth, null, 2), { mode: 0o600 })
+        try { chmodSync(authPath, 0o600) } catch { /* not supported on this filesystem */ }
         console.log(`[OpenAI OAuth] ✅ Bridged ${tokens.apiKey ? 'API key' : 'access token'} to auth.json`)
     } catch (err) {
         console.log(`[OpenAI OAuth] ⚠️ Bridge to auth.json failed: ${err}`)

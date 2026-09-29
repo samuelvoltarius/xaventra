@@ -147,8 +147,8 @@ class CodexAppServerSession {
                 }
                 for (const listener of this.listeners) listener(message)
             })
-            proc.on('error', error => this.failAll(new Error(`Codex app-server konnte nicht starten: ${error.message}`)))
-            proc.on('exit', code => this.failAll(new Error(`Codex app-server beendet (${code ?? 'unknown'})`)))
+            proc.on('error', error => this.onProcessEnd(proc, new Error(`Codex app-server konnte nicht starten: ${error.message}`)))
+            proc.on('exit', code => this.onProcessEnd(proc, new Error(`Codex app-server beendet (${code ?? 'unknown'})`)))
             // Deliberately discard stderr: it can include transient auth URLs.
             proc.stderr.resume()
             await this.requestRaw('initialize', {
@@ -161,6 +161,20 @@ class CodexAppServerSession {
             throw error
         })
         return this.ready
+    }
+
+    /** M-2: a dead process is forgotten, so the next request starts a fresh one. */
+    private onProcessEnd(proc: ChildProcessWithoutNullStreams, error: Error): void {
+        if (this.process === proc) {
+            this.process = null
+            this.ready = null
+        }
+        this.failAll(error)
+    }
+
+    /** In use: a request is pending or a turn is streaming to a subscriber. */
+    isBusy(): boolean {
+        return this.pending.size > 0 || this.listeners.size > 0
     }
 
     private failAll(error: Error): void {
@@ -184,19 +198,38 @@ class CodexAppServerSession {
     close(): void {
         const proc = this.process
         this.process = null
+        this.ready = null
         if (proc && !proc.killed) proc.kill('SIGTERM')
     }
 }
 
 const sessions = new Map<string, CodexAppServerSession>()
 
+/** M-1: at most this many app-server processes (one per principal) live at once. */
+function maxCodexSessions(): number {
+    const value = Number(process.env.NOVA_CODEX_MAX_SESSIONS)
+    return Number.isInteger(value) && value > 0 ? value : 4
+}
+
 function sessionFor(principalId: string, nodeId = getLocalCodexNodeId()): CodexAppServerSession {
     const key = `${nodeId}:${codexPrincipalHash(principalId)}`
     let session = sessions.get(key)
-    if (!session) {
-        session = new CodexAppServerSession(principalId, nodeId)
+    if (session) {
+        // Least-recently-used order: re-insert on every use.
+        sessions.delete(key)
         sessions.set(key, session)
+        return session
     }
+    // M-1: evict the least recently used idle session (its process is ended);
+    // if every session is busy, refuse instead of growing without bound.
+    while (sessions.size >= maxCodexSessions()) {
+        const idle = [...sessions.entries()].find(([, candidate]) => !candidate.isBusy())
+        if (!idle) throw new Error('Zu viele gleichzeitige Codex-Sitzungen auf diesem Node')
+        idle[1].close()
+        sessions.delete(idle[0])
+    }
+    session = new CodexAppServerSession(principalId, nodeId)
+    sessions.set(key, session)
     return session
 }
 

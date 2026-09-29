@@ -11,7 +11,7 @@
  * - xAI API Key
  */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { exec } from 'node:child_process'
 import { loginOpenAI, type OpenAITokens } from './openai-oauth.js'
@@ -57,7 +57,8 @@ function saveCredentials(provider: string, credentials: {
         ...credentials,
     }
 
-    writeFileSync(authPath, JSON.stringify(data, null, 2))
+    writeFileSync(authPath, JSON.stringify(data, null, 2), { mode: 0o600 })
+    try { chmodSync(authPath, 0o600) } catch { /* not supported on this filesystem */ }
     console.log(`[Nova Login] ✓ Credentials gespeichert: ${authPath}`)
 }
 
