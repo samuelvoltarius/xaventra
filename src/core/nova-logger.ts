@@ -30,7 +30,23 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 
 const LOG_DIR = join(process.cwd(), 'logs')
 const MAX_LOG_DAYS = 7
-const MIN_LEVEL = (process.env.LOG_LEVEL as LogLevel) || 'info'
+// Unknown or upper-case values (e.g. LOG_LEVEL=INFO) must not silence every
+// level including errors (R2 NZ-30).
+const ENV_LEVEL = String(process.env.LOG_LEVEL || '').trim().toLowerCase()
+const MIN_LEVEL: LogLevel = Object.prototype.hasOwnProperty.call(LOG_LEVELS, ENV_LEVEL) ? ENV_LEVEL as LogLevel : 'info'
+
+/** Never throw from a console wrapper: circular objects and BigInt break
+ * JSON.stringify, and Error objects would otherwise be logged as {} (R2 NZ-20). */
+export function formatLogArg(value: unknown): string {
+    if (typeof value === 'string') return value
+    if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`
+    try {
+        const json = JSON.stringify(value)
+        return json === undefined ? String(value) : json
+    } catch {
+        try { return String(value) } catch { return '[unprintable]' }
+    }
+}
 
 // ============================================
 // Logger Class
@@ -90,9 +106,7 @@ class NovaLogger {
         const tzM = pad(Math.abs(tzMin) % 60)
         const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}${tzSign}${tzH}:${tzM}`
         const levelTag = level.toUpperCase().padEnd(5)
-        const message = args.map(a =>
-            typeof a === 'string' ? a : JSON.stringify(a)
-        ).join(' ')
+        const message = args.map(formatLogArg).join(' ')
         return `${timestamp} [${levelTag}] ${message}`
     }
 

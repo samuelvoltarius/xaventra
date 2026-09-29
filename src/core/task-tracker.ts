@@ -360,6 +360,19 @@ export function getTaskData(): { current: TrackedTask | null, history: TrackedTa
 // ============================================
 
 const LOG_RING_SIZE = 200
+
+/** Never throw from the console wrapper: circular objects and BigInt break
+ * JSON.stringify, and Error objects would otherwise be logged as {} (R2 NZ-20). */
+function formatLogArg(value: unknown): string {
+    if (typeof value === 'string') return value
+    if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`
+    try {
+        const json = JSON.stringify(value)
+        return json === undefined ? String(value) : json
+    } catch {
+        try { return String(value) } catch { return '[unprintable]' }
+    }
+}
 const logRing: string[] = []
 let logInterceptorInstalled = false
 
@@ -377,7 +390,7 @@ export function installLogInterceptor(): void {
 
     const capture = (level: string, args: unknown[]): void => {
         const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+        const msg = args.map(formatLogArg).join(' ')
         // Clean up ANSI codes and excessive whitespace
         const clean = msg.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '').trim()
         if (!clean) return
