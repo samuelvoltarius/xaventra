@@ -65,10 +65,18 @@ malformed config is treated as restricted, not as open.
 ```json
 "dashboard": {
   "enabled": true,
-  "port": 18789,
-  "password": "optional"
+  "host": "127.0.0.1",
+  "port": 3011
 }
 ```
+
+The dashboard has no login. Memory, conversations, knowledge graph, journal,
+config and logs (`/api/memory*`, `/api/chat*`, `/api/sessions*`,
+`/api/core-facts`, `/api/graph`, `/api/journal`, `/api/summaries*`,
+`/api/config`, `/api/logs`, `/api/cold-storage`) and the live WebSocket feed
+are served only to requests from the same machine (loopback peer, loopback
+`Host`/`Origin`), even if `host` is set to a non-loopback address. Writes are
+loopback-only as well.
 
 ### Telemetry (OpenTelemetry)
 

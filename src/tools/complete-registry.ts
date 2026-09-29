@@ -111,6 +111,15 @@ export function isSecretFilePath(path: string, root: string = getFileToolWorkspa
     return false
 }
 
+/** Knowledge-graph scopes for the (runner-injected) requester; undefined = owner, all scopes. */
+export async function kgSearchScopes(params: Record<string, unknown>): Promise<string[] | undefined> {
+    if (await filePermissionFor(params) === 'owner') return undefined
+    const { principalScope } = await import('../users/principal-id.js')
+    const ids = [params.userId, params.authorizationUserId]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    return [...new Set([...ids.map(id => principalScope(id)), 'global'])]
+}
+
 async function filePermissionFor(params: Record<string, unknown>): Promise<FilePermission> {
     const id = typeof params.authorizationUserId === 'string' ? params.authorizationUserId : ''
     if (!id) return 'guest'
@@ -3352,7 +3361,9 @@ export const ALL_TOOLS: NovaTool[] = [
         handler: async (params: Record<string, unknown>) => {
             try {
                 const { searchGraph } = await import('../memory/knowledge-graph.js')
-                const result = searchGraph(String(params.query))
+                // INT-10: principal-bound. Only the owner searches every scope;
+                // everyone else sees their own scope and global facts.
+                const result = searchGraph(String(params.query), 6, await kgSearchScopes(params))
                 return result || 'Keine Treffer im Knowledge Graph.'
             } catch (err) {
                 return `KG-Suche Fehler: ${err}`

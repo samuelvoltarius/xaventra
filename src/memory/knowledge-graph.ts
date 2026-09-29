@@ -380,8 +380,11 @@ export function getContextForPrompt(query: string, allowedScopes?: readonly stri
 /**
  * Keyword search across all graph nodes and edges — no LLM needed.
  * Returns a formatted context string.
+ * @param allowedScopes when given, only nodes/relations whose governance record
+ * belongs to one of these scopes are searched (principal-bound, INT-10).
+ * Omit only for the owner.
  */
-export function searchGraph(query: string, limit = 6): string {
+export function searchGraph(query: string, limit = 6, allowedScopes?: readonly string[]): string {
     const tokens = query.toLowerCase()
         .replace(/[^\w\säöüß]/g, ' ')
         .split(/\s+/)
@@ -392,8 +395,10 @@ export function searchGraph(query: string, limit = 6): string {
     const scored = graph.nodes.filter(node => {
         const id = node.properties.governanceId
         if (!id) return false
-        const status = getMemoryGovernanceCoordinator().get(id)?.status
-        return status === 'verified' || status === 'canonical'
+        const record = getMemoryGovernanceCoordinator().get(id)
+        const status = record?.status
+        if (status !== 'verified' && status !== 'canonical') return false
+        return !allowedScopes || allowedScopes.includes(String(record?.scope || ''))
     }).map(node => {
         let score = 0
         const nl = node.label.toLowerCase()
@@ -416,7 +421,7 @@ export function searchGraph(query: string, limit = 6): string {
 
     const lines = [`[Graph-Suche: "${query}"]`]
     for (const { node } of scored) {
-        const rels = queryRelations(node.label)
+        const rels = queryRelations(node.label, allowedScopes)
         const relStr = rels.slice(0, 3).map(r => `${r.relation}→${r.target}`).join(', ')
         lines.push(`- ${node.label} (${node.type})${relStr ? ': ' + relStr : ''}`)
     }

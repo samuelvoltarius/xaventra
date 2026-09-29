@@ -19,6 +19,7 @@ import { redactSecrets } from '../security/secret-redaction.js'
 import { z } from 'zod'
 import { resolveConfigPath } from '../config/config-path.js'
 import { dashboardAddress, listenDashboard } from './listener.js'
+import { isDashboardOwnerOnlyPath, isDashboardOwnerRequest } from './access-guard.js'
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -470,7 +471,18 @@ function loadSessions(): any[] {
 
 const app = express()
 const server = createServer(app)
-const wss = new WebSocketServer({ server })
+// INT-10: the live feed carries chat history and state; only local, same-machine
+// clients (no foreign browser origin, no DNS-rebound host) may connect.
+const wss = new WebSocketServer({
+    server,
+    verifyClient: (info: { origin: string; req: import('node:http').IncomingMessage }) => isDashboardOwnerRequest({
+        remoteAddress: info.req.socket.remoteAddress, host: info.req.headers.host, origin: info.origin,
+    }),
+})
+const isOwnerHttpRequest = (req: import('express').Request) => isDashboardOwnerRequest({
+    remoteAddress: req.socket.remoteAddress, host: req.headers.host,
+    origin: typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
+})
 
 app.disable('x-powered-by')
 app.use(express.json({ limit: '256kb' }))
@@ -515,6 +527,15 @@ app.use((req, res, next) => {
     next()
 })
 
+// INT-10: the dashboard has no login; memory, conversations, knowledge and
+// configuration are owner data and are served only to requests from this
+// machine (loopback peer + loopback Host/Origin), whatever dashboard.host is.
+app.use((req, res, next) => {
+    if (!isDashboardOwnerOnlyPath(req.path) || isOwnerHttpRequest(req)) return next()
+    console.warn(`[Dashboard] 🛡️ Blocked owner-only ${req.method} ${req.path} from ${req.socket.remoteAddress || '?'} (host ${req.headers.host || '-'})`)
+    res.status(403).json({ error: 'Forbidden: owner-only dashboard data is served to this machine only' })
+})
+
 
 
 // Full state
@@ -525,7 +546,8 @@ app.get('/api/status', (req, res) => {
     state.layers = loadLayers()
     state.errors = loadErrors()
     state.stats = loadStats()
-    res.json(safeDashboardPayload(state))
+    // Memory excerpts ("thoughts") are owner data (INT-10).
+    res.json(safeDashboardPayload(isOwnerHttpRequest(req) ? state : { ...state, thoughts: [] }))
 })
 
 // Stats
@@ -1725,6 +1747,8 @@ app.get('/api/memory/search', async (req, res) => {
         const query = String(req.query.q || '')
         const limit = parseInt(String(req.query.limit || '20'))
         const lancedb = (await import('../memory/lancedb-memory.js')).default
+        // Owner console (guarded above as owner-only): unscoped on purpose,
+        // the owner may inspect every principal's rows.
         const results = await lancedb.recall(query || 'recent conversations', limit)
         res.json(safeDashboardPayload({ results: results.map(r => ({ ...r.entry, score: r.score })) }))
     } catch (err) {
