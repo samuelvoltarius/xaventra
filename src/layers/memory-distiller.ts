@@ -48,15 +48,43 @@ const DATA_DIR   = join(process.cwd(), '.nova-data')
 const DIARY_DIR  = join(DATA_DIR, 'memories', 'diary')
 const CONFIG_PATH = resolveConfigPath()
 
-function ownerMemoryScope(): string {
-    try {
-        const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'))
-        const owner = String(config.channels?.telegram?.allowFrom?.[0]
-            || config.channels?.whatsapp?.allowFrom?.[0] || 'owner')
-        return principalScope(resolvePrincipalId(config, 'telegram', owner))
-    } catch {
-        return principalScope('owner')
+function readDistillerConfig(): any {
+    try { return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) } catch { return {} }
+}
+
+/** Canonical principal of the configured owner (first allowFrom entry). */
+function ownerPrincipalId(config: any = readDistillerConfig()): string {
+    const telegramOwner = config.channels?.telegram?.allowFrom?.[0]
+    if (telegramOwner) return resolvePrincipalId(config, 'telegram', String(telegramOwner))
+    const whatsappOwner = config.channels?.whatsapp?.allowFrom?.[0]
+    if (whatsappOwner) return resolvePrincipalId(config, 'whatsapp', String(whatsappOwner))
+    return 'owner'
+}
+
+const sanitizeSessionName = (value: string) => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_')
+
+/**
+ * Map a session log (named after the display alias or raw id, see logSession)
+ * and a line's channel back to the canonical principal. Ambiguous mappings
+ * return null so the line is skipped instead of being attributed to someone.
+ */
+export function sessionLinePrincipal(config: any, sessionName: string, channel: string): string | null {
+    const aliases: Record<string, string> = config?.userAliases || {}
+    const rawCandidates = new Set<string>()
+    for (const [raw, alias] of Object.entries(aliases)) {
+        if (sanitizeSessionName(alias) === sessionName) rawCandidates.add(raw)
     }
+    if (rawCandidates.size === 0) rawCandidates.add(sessionName)
+    // A raw id that is explicitly bound to another channel only (e.g.
+    // `discord:d-9`) cannot be the sender of a line logged on this channel.
+    const mappings: Record<string, string> = config?.userPrincipals || {}
+    const normalizedChannel = String(channel || '').trim().toLowerCase() || 'unknown'
+    const plausible = [...rawCandidates].filter(raw => {
+        if (mappings[`${normalizedChannel}:${raw}`] || mappings[raw]) return true
+        return !Object.keys(mappings).some(key => key.endsWith(`:${raw}`))
+    })
+    const principals = new Set(plausible.map(raw => resolvePrincipalId(config, normalizedChannel, raw)))
+    return principals.size === 1 ? [...principals][0] : null
 }
 
 function ensureDiaryDir(): void {
@@ -122,14 +150,16 @@ async function pushToBrain(episodes: BrainEpisode[], date: string): Promise<{ pu
 async function extractWithLLM(
     llm: any,
     journalText: string,
-    date: string
+    date: string,
+    subject = 'den Benutzer',
 ): Promise<DistilledMemory | null> {
     const prompt = `Du bist Nova, eine autonome KI-Assistentin. Heute ist ${date}.
 
 Analysiere die heutigen Gespräche und destilliere NUR echtes, dauerhaftes Wissen.
+Die Gespräche stammen ausschließlich von EINER Person (${subject}); ordne nichts anderen Personen zu.
 
 KRITISCHE REGELN für die Extraktion:
-- userFacts: NUR dauerhafte Fakten über Sample (Name, Hardware, Projekte, Vorlieben, Haustiere, Familie).
+- userFacts: NUR dauerhafte Fakten über ${subject} (Name, Hardware, Projekte, Vorlieben, Haustiere, Familie).
   KEINE Gesprächsfetzen, KEINE einzelnen Wörter, KEINE Fragen, KEINE deiner eigenen Antworten.
   Jeder Fakt muss ein vollständiger, eigenständiger Satz sein der in 6 Monaten noch wahr ist.
   FALSCH: "Name: da", "Warum ging das nicht?", "Context: ich habe..."
@@ -143,7 +173,7 @@ ${journalText}
 
 Antworte NUR mit validem JSON (keine Codeblöcke):
 {
-  "userFacts": ["Dauerhafte Fakten über Sample — vollständige Sätze — max 6, lieber weniger und gut"],
+  "userFacts": ["Dauerhafte Fakten über ${subject} — vollständige Sätze — max 6, lieber weniger und gut"],
   "decisions": ["Heute getroffene konkrete Entscheidungen — max 5"],
   "learnings": ["Technische Erkenntnisse die dauerhaft nützlich sind — max 6"],
   "openQuestions": ["Offene TODOs / ungelöste Probleme — max 5"],
@@ -255,16 +285,23 @@ function writeDiary(memory: DistilledMemory): void {
 
 const SESSIONS_DIR = join(DATA_DIR, 'sessions')
 
+interface PrincipalTranscript {
+    principalId: string
+    displayName: string
+    transcript: string
+}
+
 /**
- * Read today's conversations from session JSONL files.
- * These are the raw, ground-truth conversations (logSession writes them).
- * Returns a clean transcript per real user (skips system/autonomy identities).
+ * Read today's conversations from session JSONL files, grouped per canonical
+ * principal. These are the raw, ground-truth conversations (logSession writes
+ * them). Users are never merged into one transcript: each principal is
+ * distilled on its own and only into its own memory scope.
  */
-function readTodaysSessions(date: string): string {
-    if (!existsSync(SESSIONS_DIR)) return ''
+function readTodaysSessionsByPrincipal(date: string, config: any): PrincipalTranscript[] {
+    if (!existsSync(SESSIONS_DIR)) return []
 
     const skipUsers = new Set(['nova-self', 'Nova-Autonomy', 'system', 'internal'])
-    const transcripts: string[] = []
+    const byPrincipal = new Map<string, { displayName: string; blocks: string[] }>()
 
     for (const file of readdirSync(SESSIONS_DIR)) {
         if (!file.endsWith('.jsonl')) continue
@@ -276,25 +313,34 @@ function readTodaysSessions(date: string): string {
                 .split('\n')
                 .filter(l => l.trim())
 
-            const todayLines: string[] = []
+            const todayLines = new Map<string, string[]>()
             for (const line of lines) {
                 try {
                     const entry = JSON.parse(line)
                     // Only today's messages
-                    if (entry.ts && entry.ts.startsWith(date)) {
-                        const role = entry.role === 'user' ? userName : 'Nova'
-                        todayLines.push(`${role}: ${(entry.content || '').slice(0, 500)}`)
-                    }
+                    if (!entry.ts || !String(entry.ts).startsWith(date)) continue
+                    const principalId = sessionLinePrincipal(config, userName, String(entry.channel || ''))
+                    if (!principalId) continue
+                    const role = entry.role === 'user' ? userName : 'Nova'
+                    const bucket = todayLines.get(principalId) || []
+                    bucket.push(`${role}: ${(entry.content || '').slice(0, 500)}`)
+                    todayLines.set(principalId, bucket)
                 } catch { /* skip malformed line */ }
             }
 
-            if (todayLines.length > 0) {
-                transcripts.push(`=== Gespräch mit ${userName} ===\n${todayLines.join('\n')}`)
+            for (const [principalId, bucket] of todayLines) {
+                const current = byPrincipal.get(principalId) || { displayName: userName, blocks: [] }
+                current.blocks.push(`=== Gespräch mit ${userName} ===\n${bucket.join('\n')}`)
+                byPrincipal.set(principalId, current)
             }
         } catch { /* skip unreadable file */ }
     }
 
-    return transcripts.join('\n\n')
+    return [...byPrincipal.entries()].map(([principalId, value]) => ({
+        principalId,
+        displayName: value.displayName,
+        transcript: value.blocks.join('\n\n'),
+    }))
 }
 
 // ── CORE_FACTS Writer — curated persistent facts ───────────────────────────────
@@ -307,11 +353,14 @@ function readTodaysSessions(date: string): string {
  * Store distilled facts + learnings into LanceDB for associative recall.
  * Again: only curated content, never raw transcripts.
  */
-async function storeGovernedMemory(memory: DistilledMemory): Promise<number> {
+async function storeGovernedMemory(memory: DistilledMemory, principalId: string): Promise<number> {
     try {
         const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
         const governance = getMemoryGovernanceCoordinator()
-        const ownerScope = ownerMemoryScope()
+        // Everything distilled from a principal's conversation stays in that
+        // principal's scope. Nothing is promoted to `global` automatically:
+        // a distilled "learning" can still carry private details.
+        const scope = principalScope(principalId)
         let stored = 0
 
         for (const fact of memory.userFacts) {
@@ -319,7 +368,7 @@ async function storeGovernedMemory(memory: DistilledMemory): Promise<number> {
             const record = await governance.record({
                 content: fact,
                 kind: 'fact',
-                scope: ownerScope,
+                scope,
                 source: `distiller:${memory.date}`,
                 evidence: 'distillation',
                 confidence: 0.85,
@@ -332,7 +381,7 @@ async function storeGovernedMemory(memory: DistilledMemory): Promise<number> {
             const record = await governance.record({
                 content: learning,
                 kind: 'learning',
-                scope: 'global',
+                scope,
                 source: `distiller:${memory.date}`,
                 evidence: 'distillation',
                 confidence: 0.8,
@@ -349,6 +398,19 @@ async function storeGovernedMemory(memory: DistilledMemory): Promise<number> {
 
 // ── Main Distillation Run ─────────────────────────────────────────────────────
 
+function mergeDistilledMemories(memories: DistilledMemory[], date: string): DistilledMemory {
+    return {
+        date,
+        userFacts: memories.flatMap(item => item.userFacts),
+        decisions: memories.flatMap(item => item.decisions),
+        learnings: memories.flatMap(item => item.learnings),
+        openQuestions: memories.flatMap(item => item.openQuestions),
+        mistakes: memories.flatMap(item => item.mistakes),
+        mood: memories.map(item => item.mood).find(Boolean) || '',
+        diaryText: memories.map(item => item.diaryText).filter(Boolean).join('\n\n'),
+    }
+}
+
 /**
  * Run the nightly distillation for a given date (default: yesterday at 02:00 = today's data).
  * At 02:00 AM we distill the day that just ended (= today in most cases).
@@ -362,8 +424,10 @@ export async function runDistillation(
 
     console.log(`[MemoryDistiller] 🌙 Starting nightly distillation for ${date}...`)
 
-    // ── 1. Read TODAY'S CONVERSATIONS from sessions (the ground truth) ──────────
-    const sessionText = readTodaysSessions(date)
+    // ── 1. Read TODAY'S CONVERSATIONS per principal (the ground truth) ─────────
+    const config = readDistillerConfig()
+    const ownerId = ownerPrincipalId(config)
+    const transcripts = readTodaysSessionsByPrincipal(date, config)
 
     // Also load journal for tool stats / topics (supplementary)
     let entry: any = null
@@ -374,34 +438,52 @@ export async function runDistillation(
     } catch { /* journal optional */ }
 
     // Need at least conversations OR journal events to distill
-    if (!sessionText && (!entry || entry.events?.length === 0)) {
+    if (transcripts.length === 0 && (!entry || entry.events?.length === 0)) {
         console.log(`[MemoryDistiller] No conversations or journal data for ${date} — skipping`)
         return null
     }
 
-    // ── 2. Build distillation input — conversations are primary ────────────────
-    const journalText = [
-        sessionText ? `GESPRÄCHE DES TAGES:\n${sessionText.slice(0, 12000)}` : '',
-        entry ? `\nTECHNISCHE EVENTS:\nTools genutzt: ${entry.toolsUsed?.join(', ') || 'keine'} | Fehler: ${entry.errorsEncountered || 0} | Topics: ${entry.topics?.join(', ') || 'keine'}` : '',
-    ].filter(Boolean).join('\n')
-
-    // ── 3. Extract structured knowledge via LLM ────────────────────────────────
-    let memory: DistilledMemory
-
-    if (llm) {
-        const extracted = await extractWithLLM(llm, journalText, date)
-        memory = extracted ?? (entry ? extractFallback(entry, date) : null as any)
-        if (!memory) { console.log('[MemoryDistiller] LLM extraction failed, no fallback data'); return null }
-    } else {
+    if (!llm) {
         console.log('[MemoryDistiller] No LLM — skipping (curation needs LLM, no regex fallback to avoid garbage)')
         return null
     }
 
-    // ── 4. Write diary ────────────────────────────────────────────────────────
+    // The journal is process-wide (all users' tool stats/topics). It is only
+    // ever attached to the owner's own distillation.
+    const technicalText = entry
+        ? `\nTECHNISCHE EVENTS:\nTools genutzt: ${entry.toolsUsed?.join(', ') || 'keine'} | Fehler: ${entry.errorsEncountered || 0} | Topics: ${entry.topics?.join(', ') || 'keine'}`
+        : ''
+    if (technicalText && !transcripts.some(item => item.principalId === ownerId)) {
+        transcripts.push({ principalId: ownerId, displayName: 'den Benutzer', transcript: '' })
+    }
+
+    // ── 2./3. Distill each principal separately and store into ITS scope ───────
+    const distilled: Array<{ principalId: string; memory: DistilledMemory }> = []
+    let governedStored = 0
+    for (const item of transcripts) {
+        const isOwner = item.principalId === ownerId
+        const input = [
+            item.transcript ? `GESPRÄCHE DES TAGES:\n${item.transcript.slice(0, 12000)}` : '',
+            isOwner ? technicalText : '',
+        ].filter(Boolean).join('\n')
+        if (!input) continue
+        const extracted = await extractWithLLM(llm, input, date, item.displayName)
+        const principalMemory = extracted ?? (isOwner && entry ? extractFallback(entry, date) : null)
+        if (!principalMemory) continue
+        governedStored += await storeGovernedMemory(principalMemory, item.principalId)
+        distilled.push({ principalId: item.principalId, memory: principalMemory })
+    }
+    if (distilled.length === 0) {
+        console.log('[MemoryDistiller] LLM extraction failed, no fallback data')
+        return null
+    }
+    const memory = mergeDistilledMemories(distilled.map(item => item.memory), date)
+    const ownerMemory = distilled.find(item => item.principalId === ownerId)?.memory
+
+    // ── 4. Write diary (local operator artifact, not a prompt source) ─────────
     writeDiary(memory)
 
-    // ── 4b. PERSIST curated facts → CORE_FACTS + LanceDB ───────────────────────
-    const governedStored = await storeGovernedMemory(memory)
+    // ── 4b. Governed records were written per principal above ─────────────────
     console.log(`[MemoryDistiller] 💾 Governed: ${governedStored} memory records evaluated for canonical projection`)
 
     // ── 4c. Record mistakes as anti-patterns (NOT as behavior) ─────────────────
@@ -413,21 +495,24 @@ export async function runDistillation(
     }
 
     // ── 5. Push to Brain ──────────────────────────────────────────────────────
+    // The legacy Brain export has no per-user scope, so it only ever receives
+    // the owner's own distillation.
     const episodes: BrainEpisode[] = []
+    const exported = ownerMemory ?? { userFacts: [], decisions: [], learnings: [] }
 
-    memory.userFacts.forEach(f => episodes.push({
+    exported.userFacts.forEach(f => episodes.push({
         content: f,
         type: 'fact',
         source: `nova-distiller:${date}`,
     }))
 
-    memory.decisions.forEach(d => episodes.push({
+    exported.decisions.forEach(d => episodes.push({
         content: d,
         type: 'decision',
         source: `nova-distiller:${date}`,
     }))
 
-    memory.learnings.forEach(l => episodes.push({
+    exported.learnings.forEach(l => episodes.push({
         content: l,
         type: 'learning',
         source: `nova-distiller:${date}`,
