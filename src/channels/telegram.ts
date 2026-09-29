@@ -17,6 +17,12 @@ import { formatTelegramMessage } from './telegram-presentation.js'
 
 export interface TelegramConfig {
     token: string
+    /**
+     * DM allowlist. Numeric entries match the immutable Telegram user id.
+     * Entries starting with `@` match the (mutable, re-assignable) username and
+     * log a warning. Bare non-numeric entries match nothing (since 29.09.2026;
+     * previously they matched the username).
+     */
     allowFrom?: string[]
     groupPolicy?: 'allow' | 'mention-only' | 'deny'
     username?: string
@@ -30,6 +36,30 @@ export interface TelegramConfig {
      * the authority decision (defer instead of drop).
      */
     persistInbound?: (message: { id: string; chatId: string; from: string; content: string }) => void
+}
+
+/** Allowlist entry matching: numeric ids only; `@name` explicitly opts into username matching. */
+export function telegramAllowlistMatches(entry: string, userId: string, username: string): boolean {
+    const value = String(entry ?? '').trim()
+    if (!value) return false
+    if (value.startsWith('@')) {
+        return Boolean(username) && value.slice(1).toLowerCase() === username.toLowerCase()
+    }
+    return /^-?\d+$/.test(value) && value === userId
+}
+
+function warnAboutAllowlist(entries: string[]): void {
+    const usernames = entries.filter(entry => String(entry).trim().startsWith('@'))
+    const ignored = entries.filter(entry => {
+        const value = String(entry).trim()
+        return value && !value.startsWith('@') && !/^-?\d+$/.test(value)
+    })
+    if (usernames.length) {
+        console.warn(`[Nova Telegram] ⚠ allowFrom enthält Username-Einträge (${usernames.join(', ')}): Usernames sind änderbar und können neu vergeben werden — besser numerische User-IDs verwenden.`)
+    }
+    if (ignored.length) {
+        console.warn(`[Nova Telegram] ⚠ allowFrom-Einträge ohne numerische ID werden ignoriert: ${ignored.join(', ')} (Username bewusst mit "@" kennzeichnen)`)
+    }
 }
 
 const UPDATE_ID_PROPERTY = '__novaUpdateId'
@@ -74,6 +104,7 @@ export class TelegramAdapter implements ChannelAdapter {
             groupPolicy: 'mention-only',
             ...config,
         }
+        warnAboutAllowlist(this.config.allowFrom || [])
     }
 
     private async hasLiveAuthority(): Promise<boolean> {
@@ -1201,9 +1232,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Check allowlist for DMs
         if (!isGroup && this.config.allowFrom?.length) {
-            const allowed = this.config.allowFrom.some(
-                a => a === userId || a === username || a === `@${username}`
-            )
+            const allowed = this.config.allowFrom.some(entry => telegramAllowlistMatches(entry, userId, username))
             if (!allowed) {
                 if (log) console.log(`[Nova Telegram] Ignoring from non-allowed: ${username || userId}`)
                 return false
