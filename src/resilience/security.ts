@@ -299,7 +299,22 @@ export class SecurityLayer {
      * @param isElevatedUser If true, allow sudo/docker etc. (owner/admin only)
      */
     checkCommand(command: string, isElevatedUser = false): SecurityCheckResult {
-        const commandLower = command.toLowerCase()
+        // MI-20: match on a normalized form so extra whitespace or quotes do
+        // not bypass the denylist (still a denylist, not a security boundary).
+        const commandLower = command.toLowerCase().replace(/["'`\\]/g, '').replace(/\s+/g, ' ').trim()
+
+        // Recursive forced delete of the filesystem root in any flag spelling
+        // (rm -rf /, rm -r -f /, rm --recursive --force /*, ...).
+        const rmRoot = /(?:^|[;&|(\s])rm\s+((?:-{1,2}[a-z-]+\s+)+)(?:--\s+)?\/\*?(?:\s|$|[;&|)])/.exec(commandLower)
+        if (rmRoot) {
+            const flags = rmRoot[1]
+            const recursive = /(?:^|\s)-[a-z]*r|--recursive/.test(flags)
+            const force = /(?:^|\s)-[a-z]*f|--force/.test(flags)
+            if (recursive && force) {
+                this.logBlock('command', command, 'Recursive forced delete of /')
+                return { allowed: false, reason: `Destruktiver Befehl blockiert`, severity: 'critical', blocked: 'rm -rf /' }
+            }
+        }
 
         // Always blocked - even for admins (destructive commands)
         for (const blocked of ALWAYS_BLOCKED_COMMANDS) {
