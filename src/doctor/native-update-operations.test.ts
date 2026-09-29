@@ -118,3 +118,14 @@ it('uses a separate operator rollback authority for rollback steps when enrolled
     expect(await ops.hasAuthority(f.ticket,{rollback:true})).toBe(false)
     expect(rollbackAuthorized).toHaveBeenCalledWith(f.ticket)
 })
+it('maps an unselected-candidate rollback to the enrolled rollback unit only',async()=>{
+    const f=fixture(),R={rollback:true as const}
+    await expect(f.ops.select('old','old',f.ticket,R)).rejects.toThrow('rollback')
+    f.config.releases.old.rollbackStateId='rollback-state'
+    f.config.rollback={root:'/rollback-journal',destination:'/rollback',stateId:'rollback-state',unitFile:'/rollback-unit',unitHash:hash('__rollback'),process:f.config.releases.old.process}
+    const ops=new EnrolledNativeUpdateOperations(f.config,f.authority)
+    await expect(ops.select('old','old',f.ticket,{rollback:true,candidateFailure:true})).rejects.toThrow('rollback')
+    await expect(ops.select('old','old',f.ticket)).rejects.toThrow()
+    await ops.select('old','old',f.ticket,R)
+    expect(state.unit).toBe('__rollback');expect(state.selections).toBe(1)
+})

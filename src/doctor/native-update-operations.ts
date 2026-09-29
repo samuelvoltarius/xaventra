@@ -102,11 +102,13 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         if (!key || expected && this.variants[key].id !== expected) throw Error('Unenrolled native unit content or release mismatch')
         return key
     }
-    /** Rollback direction only: from the enrolled candidate back to the baseline. */
+    /** Rollback direction only: from the enrolled candidate back to the baseline, or
+     * (candidate never selected) from the still selected baseline unit to the
+     * separately enrolled rollback runtime of that baseline. */
     private rollbackStep(options: NativeStepOptions | undefined, from: string | undefined, to: string | undefined): boolean {
         if (!options) return false
-        if (options.rollback !== true || from !== undefined && from !== this.config.candidate
-            || to !== undefined && to !== this.config.baseline) throw Error('Native rollback tolerance outside the rollback direction')
+        const source = from === undefined || from === this.config.candidate || from === this.config.baseline && to === this.config.baseline && !!this.rollback
+        if (options.rollback !== true || !source || to !== undefined && to !== this.config.baseline) throw Error('Native rollback tolerance outside the rollback direction')
         return true
     }
     async inspect(options?: NativeStepOptions) {
@@ -154,6 +156,9 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
     }
     async select(next: string, expected: string, t: RepairTicket, options?: NativeStepOptions) {
         const rollback = this.rollbackStep(options, expected, next), candidateFailure = rollback && options.candidateFailure === true
+        // Re-selecting the same release (baseline -> its rollback unit) is a rollback
+        // step only; the unclean-exit tolerance only applies when leaving the candidate.
+        if (!rollback && next === expected || candidateFailure && expected !== this.config.candidate) throw Error('Native rollback tolerance outside the rollback direction')
         const step: NativeStepOptions | undefined = rollback ? { rollback: true } : undefined
         await this.guard(t, rollback)
         if (!await this.verifyRelease(next,t,step)) throw Error('Native release proof missing before selection')

@@ -152,7 +152,12 @@ export class NativeUpdateDriver implements UpdateDeploymentDriver {
         await this.guard(t, true, rollback)
         if (!await (step ? this.ops.verifyRelease(to, t, step) : this.ops.verifyRelease(to, t))) throw Error('Native release changed before start')
         await this.guard(t, true, rollback)
-        await (admit ? this.ops.select(to, from, t, admit) : this.ops.select(to, from, t))
+        // Rollback before the candidate was ever selected: the baseline unit is still
+        // selected and was proven cleanly stopped above. Without a separate rollback
+        // runtime there is nothing to swap; it is verified below and started again in
+        // its original state. With one, the operations map old -> rollback unit.
+        const inPlace = rollback && from === old.id && !old.rollbackStateId
+        if (!inPlace) await (admit ? this.ops.select(to, from, t, admit) : this.ops.select(to, from, t))
         const selected = await this.observed(to, step), expectedState = rollback ? old.rollbackStateId || old.stateId : next.stateId
         if (selected.running || !(selected.cleanStopped || candidateFailure && selected.stopped === true) || selected.stateId !== expectedState) throw Error('Native selected runtime state mismatch')
         await this.guard(t, true, rollback)
