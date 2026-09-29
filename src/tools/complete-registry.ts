@@ -2017,13 +2017,13 @@ export const securityAuditTools: NovaTool[] = [
 export const hooksTools: NovaTool[] = [
     {
         name: 'create_hook',
-        description: 'Erstellt einen Event-Hook (webhook, email, script) der bei Events ausgelï¿½st wird',
+        description: 'Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelï¿½st wird',
         category: 'system',
         parameters: [
             { name: 'name', type: 'string', description: 'Name des Hooks', required: true },
             { name: 'event', type: 'string', description: 'Event: message.received, tool.executed, evolution.completed, error.critical, startup, shutdown', required: true },
-            { name: 'type', type: 'string', description: 'webhook, email, oder script', required: true },
-            { name: 'target', type: 'string', description: 'URL/Email/Script-Pfad', required: true },
+            { name: 'type', type: 'string', description: 'webhook oder email', required: true },
+            { name: 'target', type: 'string', description: 'URL oder E-Mail-Adresse', required: true },
         ],
         handler: async (params) => {
             const { createHook } = await import('../hooks/event-hooks.js')
@@ -2591,7 +2591,8 @@ export const agentPatternTools: NovaTool[] = [
         handler: async (params) => {
             const { addToolPolicy } = await import('../agents/agent-patterns.js')
             addToolPolicy({ pattern: params.pattern as string, action: params.action as 'allow' | 'deny' | 'confirm', reason: params.reason as string })
-            return { success: true }
+            // UEB-9: the rule lives in memory only; say so instead of implying permanence
+            return { success: true, persistent: false, message: 'Regel gesetzt. Sie gilt nur bis zum nächsten Neustart (nur im Speicher, nicht in der Konfiguration gespeichert).' }
         },
     },
     {
