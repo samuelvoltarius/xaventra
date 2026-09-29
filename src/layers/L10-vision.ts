@@ -139,12 +139,14 @@ export class VisionAnalyzer {
     async captureScreenshot(url: string): Promise<{ path: string; buffer: Buffer }> {
         console.log(`[L10 Vision] Capturing: ${url}`)
 
+        let browser: { close(): Promise<void> } | null = null
         try {
             // Dynamic import Playwright
             const pw = await import('playwright')
 
-            const browser = await pw.chromium.launch({ headless: true })
-            const page = await browser.newPage({
+            const chromium = await pw.chromium.launch({ headless: true })
+            browser = chromium
+            const page = await chromium.newPage({
                 viewport: { width: this.config.maxWidth, height: this.config.maxHeight }
             })
 
@@ -163,7 +165,6 @@ export class VisionAnalyzer {
             })
 
             writeFileSync(filepath, buffer)
-            await browser.close()
 
             console.log(`[L10 Vision] Screenshot saved: ${filepath}`)
             return { path: filepath, buffer }
@@ -171,6 +172,9 @@ export class VisionAnalyzer {
         } catch (err) {
             console.error(`[L10 Vision] Screenshot failed: ${err}`)
             throw err
+        } finally {
+            // goto/screenshot errors used to leak a Chromium process
+            if (browser) await browser.close().catch(() => undefined)
         }
     }
 

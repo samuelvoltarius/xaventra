@@ -152,9 +152,9 @@ export class MultiBotManager {
         const instance = this.bots.get(botId)
         if (!instance) return false
 
-        // No allowlist = everyone allowed
+        // No allowlist = nobody (fail-closed)
         if (!instance.config.allowedUsers || instance.config.allowedUsers.length === 0) {
-            return true
+            return false
         }
 
         return instance.config.allowedUsers.includes(userId)

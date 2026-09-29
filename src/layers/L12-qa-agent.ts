@@ -229,6 +229,11 @@ Antworte NUR mit dem Test-Code, keine Erklärungen:
     ): Promise<TestResult> {
         console.log(`[L12 QA Agent] Running tests in: ${projectPath}`)
 
+        // filter is interpolated into a shell command: plain path/pattern only.
+        if (filter !== undefined && !/^[A-Za-z0-9_./:@*-]+$/.test(filter)) {
+            throw new Error(`Invalid test filter: ${JSON.stringify(filter.slice(0, 80))}`)
+        }
+
         const framework = this.detectFramework(projectPath)
         let command: string
 
