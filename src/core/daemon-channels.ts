@@ -49,7 +49,10 @@ export type MessageHandler = (
     from: string,
     content: string,
     replyFn: (msg: string) => Promise<void>,
-    image?: { data: string; mimeType: string }
+    image?: { data: string; mimeType: string },
+    execution?: import('./message-pipeline.js').MessageExecutionOptions,
+    /** Transport facts of this message; chatId is the real conversation id. */
+    messageContext?: import('./message-pipeline.js').MessageContext,
 ) => Promise<void>
 
 /** Globally unique queue/dedup key for a Telegram inbound message. The adapter
@@ -265,7 +268,7 @@ async function startTelegramOnce(
                 }
                 const delivery = await presentation.deliver(reply)
                 logRuntimeEvent({ event: 'telegram.reply.sent', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, detail: delivery })
-            }, msg.image)
+            }, msg.image, undefined, { chatId: String(chatId) })
             await presentation.clearProgress()
             queue?.markDone(msgId)
             logRuntimeEvent({ event: 'telegram.message.completed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, durationMs: Date.now() - processingStartedAt })
@@ -373,7 +376,7 @@ async function startTelegramOnce(
                         await messageHandler(message.channel, message.from, message.content, async reply => {
                             if (!(await verifyTelegramAuthority())) throw new Error('Telegram replay fenced')
                             await (adapter.send as any)({ to: message.chatId, content: reply })
-                        })
+                        }, undefined, undefined, { chatId: message.chatId ? String(message.chatId) : undefined })
                         queue.markDone(message.id)
                     } catch {
                         queue.incrementRetry(message.id)

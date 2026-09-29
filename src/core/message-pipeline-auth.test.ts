@@ -124,10 +124,15 @@ describe('group/coalescing chat id comes from the message context', () => {
         expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-group-42', 'tg-user-1')
     })
 
-    it('keeps the legacy Telegram chat only when it belongs to the same sender', async () => {
+    // INT-3c: this used to assert the legacy fallback to the process-global
+    // Telegram chat for the same sender. All Telegram entries now pass the
+    // real chat id, so the global fallback was removed: without an explicit
+    // chat id the sender id is used, even for the same sender.
+    it('no longer borrows the global Telegram chat, even for the same sender', async () => {
         withGlobalTelegramChat('tg-group-9', 'tg-user-1')
         const call = run('/status please right now', 'Telegram', 'tg-user-1')
         await call.done
-        expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-group-9', 'tg-user-1')
+        expect(mu.shouldCoalesce).toHaveBeenCalledWith('tg-user-1', 'tg-user-1')
+        expect(mu.shouldCoalesce.mock.calls.flat()).not.toContain('tg-group-9')
     })
 })

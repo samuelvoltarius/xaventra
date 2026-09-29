@@ -271,20 +271,15 @@ export interface MessageContext {
 
 /**
  * Chat id used for group tracking and coalescing. It belongs to this message:
- * an explicit adapter-supplied id wins. The process-global Telegram
- * `lastActiveChatId` is only a compatibility fallback for Telegram callers that
- * do not pass the id yet, and only when that global was set by the same
- * sender. Other channels never borrow Telegram's last chat.
+ * the adapter-supplied id wins, otherwise the sender id. The process-global
+ * Telegram `lastActiveChatId` is never borrowed (INT-3c): every Telegram
+ * entry (live inbound, failover and startup replays) passes the real chat id,
+ * and internal callers (mission engine, reminders) must not be merged into a
+ * user's chat.
  */
-export function resolveConversationChatId(channel: string, from: string, context?: MessageContext): string {
+export function resolveConversationChatId(_channel: string, from: string, context?: MessageContext): string {
     const explicit = String(context?.chatId ?? '').trim()
-    if (explicit) return explicit
-    if (channel.toLowerCase() === 'telegram') {
-        const global = (globalThis as any).__novaState
-        const lastChat = String(global?.lastActiveChatId ?? '').trim()
-        if (lastChat && String(global?.lastActiveUserId ?? '') === String(from)) return lastChat
-    }
-    return from
+    return explicit || from
 }
 
 export interface ScreenshotFallbackRequest {
@@ -352,6 +347,12 @@ export async function handleMessage(
     const canonicalUser = configAliases[from] || from
     const principalId = resolvePrincipalId((state as any).config, channel, from)
     const principalContext: PrincipalContext = { channel, rawUserId: from, principalId }
+    // Scopes for shared memory recall; evaluated lazily so the role decided by
+    // checkAuth below is used. Unscoped legacy rows are owner-only.
+    const memoryRecallAccess = () => ({
+        scopes: [...compatiblePrincipalScopes(principalContext, canonicalUser), 'global'],
+        includeUnscoped: principalContext.permission === 'owner',
+    })
     let requestUserContext = ''
     let requestGroupContext = ''
 
@@ -1624,7 +1625,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     tools: executionTools,
                     abortSignal: agentSignal,
                     memory: state.memory ? {
-                        recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
+                        recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
                         store: (e: any) => state.memory.store(e),
                     } : undefined,
                     onStepUpdate: async (status: string) => {
@@ -1742,7 +1743,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 tools: executionTools,
                 abortSignal: agentSignal,
                 memory: state.memory ? {
-                    recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
+                    recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
                     store: (e: any) => state.memory.store(e),
                 } : undefined,
             }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
@@ -1802,7 +1803,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         tools: executionTools,
                         abortSignal: agentSignal,
                         memory: state.memory ? {
-                            recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
+                            recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
                             store: (e: any) => state.memory.store(e),
                         } : undefined,
                     }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })

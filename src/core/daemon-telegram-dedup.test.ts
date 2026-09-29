@@ -62,3 +62,14 @@ describe('H10 daemon Telegram dedup', () => {
         expect(handler).toHaveBeenCalledTimes(1)
     })
 })
+
+// INT-3c: the real conversation id travels with the message instead of the
+// pipeline borrowing the process-global lastActiveChatId.
+describe('INT-3c Telegram inbound passes the real chat id', () => {
+    it('hands the group chat id to the message handler as messageContext', async () => {
+        const { handler, deliver } = await startHarness()
+        await deliver({ id: 'tg-update:1', from: '9', to: '-100777', content: 'in der Gruppe' })
+        expect(handler).toHaveBeenCalledTimes(1)
+        expect(handler.mock.calls[0][6]).toEqual({ chatId: '-100777' })
+    })
+})

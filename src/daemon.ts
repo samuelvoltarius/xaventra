@@ -115,69 +115,23 @@ import type { LLMEntry } from './core/llm-factory.js'
 // Message Pipeline (imported from core/message-pipeline.ts)
 // ============================================
 import { NOVA_PERSONA, logSession, handleMessage as _handleMessage, preloadPipelineModules } from './core/message-pipeline.js'
-import type { MessageExecutionOptions } from './core/message-pipeline.js'
 import { initMeshTransportRuntime, startMeshDataPlane, stopMeshTransportRuntime } from './mesh/mesh-transport-runtime.js'
 import { initNovaState, getNovaState } from './core/nova-state.js'
-import { startTrace, endTrace, runWithTrace, traceLog } from './core/request-tracer.js'
-import { interactiveRequestGate } from './core/request-gate.js'
-import { getMessageBus } from './core/message-bus.js'
+import { createDaemonMessageEntry } from './core/daemon-message-entry.js'
 import { setNovaConfig } from './core/config.js'
-import { recordChannelMessage, recordExecutionStage, withSpan } from './infra/telemetry.js'
 import { markStartupReady, startStartupPhase } from './core/startup-performance.js'
 
-export async function handleMessage(
-    channel: string,
-    from: string,
-    content: string,
-    replyFn: (msg: string) => Promise<void>,
-    image?: { data: string; mimeType: string },
-    execution?: MessageExecutionOptions,
-) {
-    const traceId = startTrace(channel, from, content)
-    recordChannelMessage({ channel, direction: 'inbound' })
-    const { getStateMachine } = await import('./core/state-machine.js')
-    const runtimeState = getStateMachine()
-    if (!runtimeState.beginOperation(traceId, `message:${channel}`)) {
-        endTrace(traceId)
-        throw new Error('Runtime state authority rejected duplicate or invalid message operation')
-    }
-    let runtimeError: string | undefined
-    try {
-        getMessageBus().emitSync('user:message', { channel, userId: from, content, hasImage: Boolean(image) }, { source: 'daemon', correlationId: traceId })
-        const priority = channel === 'internal' || from === 'Nova-Autonomy' ? -10 : 10
-        return await withSpan('nova.channel.message', {
-            'nova.trace.id': traceId,
-            'nova.channel': channel,
-            'nova.has_image': Boolean(image),
-            'nova.system_authored': channel === 'internal' || from === 'Nova-Autonomy',
-        }, async () => interactiveRequestGate.run(() => runWithTrace(traceId, async () => {
-                traceLog(traceId, 'pipeline:start')
-                recordExecutionStage({ stage: 'pipeline.started', success: true })
-                const observedReply = async (message: string): Promise<void> => {
-                    try {
-                        await replyFn(message)
-                        recordChannelMessage({ channel, direction: 'outbound', success: true })
-                    } catch (error) {
-                        recordChannelMessage({ channel, direction: 'outbound', success: false })
-                        throw error
-                    }
-                }
-                const result = await _handleMessage(channel, from, content, observedReply, state as any, handleCommand, image, execution)
-                traceLog(traceId, 'pipeline:complete')
-                recordExecutionStage({ stage: 'pipeline.completed', success: true })
-                getMessageBus().emitSync('llm:response', { channel, userId: from, completed: true }, { source: 'pipeline', correlationId: traceId })
-                return result
-            }), priority))
-    } catch (error) {
-        runtimeError = String(error).slice(0, 200)
-        recordExecutionStage({ stage: 'pipeline.failed', success: false })
-        getMessageBus().emitSync('system:error', { channel, userId: from, error: String(error) }, { source: 'pipeline', correlationId: traceId })
-        throw error
-    } finally {
-        runtimeState.completeOperation(traceId, runtimeError)
-        endTrace(traceId)
-    }
-}
+/**
+ * External message entry (channels, REST, voice, mesh-direct, queue replays).
+ * Strips mission protocol markers from untrusted text; the mission engine
+ * below calls the pipeline (_handleMessage) directly and is the only producer
+ * of those markers.
+ */
+export const handleMessage = createDaemonMessageEntry({
+    pipeline: _handleMessage,
+    getState: () => state as any,
+    handleCommand: (cmd, args, from, context) => handleCommand(cmd, args, from, context),
+})
 
 
 // ============================================
@@ -960,52 +914,15 @@ async function startDaemon() {
         })
         await vectorMemory.initialize()
 
-        // Combine both memory systems
-        state.memory = {
-            // Use vector for semantic search
-            recall: async (query: string, userId: string, limit: number) => {
-                const vectorResults = await vectorMemory.recall(query, userId, limit)
-                const localResults = await localMemory.recall(query, userId, limit)
-
-                // Also try LanceDB if available
-                let lanceResults: Array<{ content: string; score: number }> = []
-                try {
-                    const lance = (state as any).lanceMemory
-                    if (lance) {
-                        const results = await lance.recall(query, limit)
-                        lanceResults = results.map((r: any) => ({
-                            content: r.entry?.content || r.content || '',
-                            score: r.score || 0.5,
-                        }))
-                    }
-                } catch { /* lance optional */ }
-
-                // Combine and deduplicate
-                const seen = new Set<string>()
-                const combined = []
-                for (const r of [...vectorResults, ...localResults, ...lanceResults]) {
-                    const key = r.content.slice(0, 50)
-                    if (!seen.has(key)) {
-                        seen.add(key)
-                        combined.push(r)
-                    }
-                }
-                return combined.slice(0, limit)
-            },
-            // Store in ALL systems (local + vector + LanceDB)
-            store: async (entry: any) => {
-                await localMemory.store(entry)
-                await vectorMemory.store(entry)
-
-                // NOTE: LanceDB storage is handled exclusively by message-pipeline.ts
-                // (extracts facts, filters noise, avoids duplicates)
-                // Do NOT write to LanceDB here — it caused double-writes
-            },
-            getStats: () => ({
-                ...localMemory.getStats(),
-                vectorStats: vectorMemory.getStats(),
-            }),
-        }
+        // Combine both memory systems. LanceDB recall is principal-scoped
+        // (INT-3b): callers pass the request's scopes/role; without them only
+        // user:<userId> + global are searched, never unscoped legacy rows.
+        const { createCombinedMemory } = await import('./memory/combined-memory.js')
+        state.memory = createCombinedMemory({
+            local: localMemory,
+            vector: vectorMemory,
+            getLance: () => (state as any).lanceMemory,
+        })
 
         const stats = localMemory.getStats()
         const vStats = vectorMemory.getStats()
@@ -1779,7 +1696,7 @@ async function startDaemon() {
                             if (tgAdapter && pending.channel === 'Telegram') {
                                 try { await (tgAdapter.send as any)({ to: pending.chatId, content: reply }) } catch { /* ignore */ }
                             }
-                        })
+                        }, undefined, undefined, { chatId: pending.chatId ? String(pending.chatId) : undefined })
                         markDone(pending.id)
                     } catch (err) {
                         console.log(`[Nova] ⚠ Replay failed for msg ${pending.id}: ${err}`)
