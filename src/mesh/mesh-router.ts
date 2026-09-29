@@ -488,48 +488,18 @@ export const routeTask = async (
 // ============================================
 
 export const executeRemote = async (
-    decision: RoutingDecision,
-    command: string,
-    timeoutMs = 30_000
+    _decision: RoutingDecision,
+    _command: string,
+    _timeoutMs = 30_000
 ): Promise<{ success: boolean; output: string; executionMs: number }> => {
-    if (decision.isLocal) {
-        // Execute locally
-        const start = Date.now()
-        return new Promise((resolve) => {
-            exec(command, { timeout: timeoutMs }, (err, stdout, stderr) => {
-                resolve({
-                    success: !err,
-                    output: stdout || stderr || (err?.message ?? ''),
-                    executionMs: Date.now() - start,
-                })
-            })
-        })
+    // R2: this built a shell string from registry-controlled host/user plus
+    // the command, with StrictHostKeyChecking=no. It has no callers; remote
+    // work goes through the signed mesh transport. Refuse instead of running.
+    return {
+        success: false,
+        output: 'executeRemote ist deaktiviert: entfernte Ausführung nur über den signierten Mesh-Transport.',
+        executionMs: 0,
     }
-
-    // Execute via SSH
-    const start = Date.now()
-    const sshCmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${decision.sshUser}@${decision.host} "${command.replace(/"/g, '\\"')}"`
-
-    return new Promise((resolve) => {
-        exec(sshCmd, { timeout: timeoutMs }, (err, stdout, stderr) => {
-            const executionMs = Date.now() - start
-
-            // Record OTel metric
-            try {
-                const { recordMeshEvent } = require('../infra/telemetry.js')
-                recordMeshEvent({
-                    event: err ? 'remote_exec_fail' : 'remote_exec_ok',
-                    nodeId: decision.nodeId,
-                })
-            } catch { /* no telemetry */ }
-
-            resolve({
-                success: !err,
-                output: stdout || stderr || (err?.message ?? ''),
-                executionMs,
-            })
-        })
-    })
 }
 
 // ============================================
