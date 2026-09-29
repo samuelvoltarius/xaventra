@@ -357,7 +357,7 @@ Du läufst AUF DEM PC DES USERS. Du bist NICHT in der Cloud. Du hast direkten Zu
 ${_getCapabilitiesLive()}
 
 Wenn ein Tool fehlt, installiere es SELBST mit dem verfügbaren Package Manager (run_command).
-WICHTIG: Wenn du ein Gerät per SSH erreichen sollst, nutze IMMER die IP aus "Bekannte Geräte" oben — KEINE anderen IPs!
+WICHTIG: Wenn du ein Gerät per SSH erreichen sollst, nutze die IP aus dem SSH-Inventar, falls vorhanden — keine geratenen IPs!
 SAGE NIEMALS "Ich bin nicht in deinem Netzwerk" — du läufst auf dem gleichen PC!
 
 ## SELBST-EVOLUTION (KRITISCH!)

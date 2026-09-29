@@ -39,3 +39,12 @@ describe('soul persistence (R2 NZ-3)', () => {
         expect(loadSoul().name).toBe('Beta')
     })
 })
+
+describe('system prompt device wording (R2 UEB-14)', () => {
+    it('does not refer to a "Bekannte Geräte" section that only the owner prompt carries', async () => {
+        const { buildSystemPromptFromSoul } = await import('./soul.js')
+        const prompt = buildSystemPromptFromSoul({ name: 'Nova', language: 'Deutsch', personality: 'p', createdAt: 0, updatedAt: 0 })
+        expect(prompt).not.toContain('Bekannte Geräte')
+        expect(prompt).toContain('SSH-Inventar, falls vorhanden')
+    })
+})
