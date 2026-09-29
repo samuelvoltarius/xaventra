@@ -3332,6 +3332,25 @@ _Deaktivieren: /verbose off_`
         // ============================================
         // Pre-Flight Checks
         // ============================================
+        // ============================================
+        // Owner approval for tools with external/physical effect (R2)
+        // ============================================
+        case 'freigabe':
+        {
+            // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
+            if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
+            const [toolName, ...rest] = args.trim().split(/\s+/).filter(Boolean)
+            if (!toolName || !/^[a-z][a-z0-9_]{1,63}$/.test(toolName)) {
+                return 'Nutzung: /freigabe <werkzeug> [detail] — gibt einen Einmal-Code aus (5 min, einmal, nur für dich). ' +
+                    'Beispiel: /freigabe execute_python, /freigabe register_llm_provider <name>@<https-url>'
+            }
+            const { toolApprovalTarget } = await import('../tools/owner-approval.js')
+            const target = toolApprovalTarget(toolName, rest.join(' ').trim() || undefined)
+            const token = issueSetupConfirmation(setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from), target)
+            return `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
+Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
+        }
+
         case 'preflight':
         {
             try {
