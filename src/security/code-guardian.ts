@@ -246,115 +246,114 @@ export async function sandboxTest(code: string, timeoutMs: number = 3000): Promi
     duration: number
 }> {
     const start = Date.now()
+    const done = (safe: boolean, error?: string) => ({ ...(error ? { safe, error } : { safe }), duration: Date.now() - start })
+
+    let vm: typeof import('node:vm')
+    let isProxy: (value: unknown) => boolean
+    try {
+        vm = await import('node:vm')
+        isProxy = (await import('node:util')).types.isProxy
+    } catch (error) {
+        // Fail-closed: without a sandbox nothing is vouched for.
+        return done(false, `Sandbox nicht verfügbar: ${String(error).slice(0, 120)}`)
+    }
+
+    // Compile in the host first: a syntax error is a host SyntaxError and the
+    // code is simply not verifiable (fail-closed).
+    let script: import('node:vm').Script
+    try {
+        script = new vm.Script(code, { filename: 'sandbox-test.js' })
+    } catch {
+        return done(false, 'Code ist im Sandbox-Test nicht auswertbar (Syntaxfehler) — ohne Prüfung keine Freigabe')
+    }
+
+    // Isolated realm: no host objects or functions are placed into the
+    // context (they would leak the host Function constructor and with it
+    // `process`). All stubs are created INSIDE the context; string code
+    // generation (eval/new Function) is disabled; microtasks are bounded by
+    // the timeout.
+    let context: import('node:vm').Context
+    try {
+        context = vm.createContext(Object.create(null), {
+            codeGeneration: { strings: false, wasm: false },
+            microtaskMode: 'afterEvaluate',
+        })
+        vm.runInContext(SANDBOX_PRELUDE, context, { timeout: timeoutMs })
+    } catch (error) {
+        return done(false, `Sandbox konnte nicht vorbereitet werden: ${String(error).slice(0, 120)}`)
+    }
+
+    const readAccessLog = (): string[] => {
+        try {
+            const raw = vm.runInContext('__nova_readAccessLog()', context, { timeout: 250 })
+            if (typeof raw !== 'string') return ['access log unreadable']
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed.map(entry => String(entry)) : ['access log unreadable']
+        } catch {
+            return ['access log unreadable']
+        }
+    }
+    const dangerousAccess = (log: string[]) => log.filter(a =>
+        a.includes('process.exit') ||
+        a.includes("require('") ||
+        a.includes('fetch()') ||
+        a.includes('access log unreadable'))
 
     try {
-        const { createContext, runInNewContext } = await import('node:vm')
-
-        // Create a restricted context — no access to real globals
-        const sandbox = {
-            console: {
-                log: () => { },
-                error: () => { },
-                warn: () => { },
-            },
-            // Track what the code tries to do
-            __accessLog: [] as string[],
-            setTimeout: () => { sandbox.__accessLog.push('setTimeout') },
-            setInterval: () => { sandbox.__accessLog.push('setInterval') },
-            // Block dangerous globals
-            process: new Proxy({}, {
-                get: (_target, prop) => {
-                    sandbox.__accessLog.push(`process.${String(prop)}`)
-                    if (prop === 'env') return {}
-                    if (prop === 'exit') return () => { sandbox.__accessLog.push('process.exit BLOCKED') }
-                    return undefined
-                },
-            }),
-            require: (mod: string) => {
-                sandbox.__accessLog.push(`require('${mod}')`)
-                throw new Error(`require('${mod}') is not allowed in sandbox`)
-            },
-            fetch: () => {
-                sandbox.__accessLog.push('fetch()')
-                throw new Error('fetch() is not allowed in sandbox')
-            },
-            // Provide safe globals
-            Math,
-            JSON,
-            Date,
-            parseInt,
-            parseFloat,
-            String,
-            Number,
-            Boolean,
-            Array,
-            Object,
-            Map,
-            Set,
-            RegExp,
-            Error,
-            Promise,
+        script.runInContext(context, { timeout: timeoutMs })
+    } catch (error: unknown) {
+        // Never read properties of a thrown value that may come from the
+        // sandbox (getters/proxies would run attacker code in the host).
+        let code: unknown
+        if (!isProxy(error) && error !== null && typeof error === 'object') {
+            try { code = Object.getOwnPropertyDescriptor(error, 'code')?.value } catch { code = undefined }
         }
-
-        createContext(sandbox)
-
-        // Run with timeout
-        runInNewContext(code, sandbox, {
-            timeout: timeoutMs,
-            filename: 'sandbox-test.js',
-        })
-
-        const duration = Date.now() - start
-
-        // Check what the code tried to access
-        const dangerousAccess = sandbox.__accessLog.filter(a =>
-            a.includes('process.exit') ||
-            a.includes("require('child") ||
-            a.includes("require('fs") ||
-            a.includes("require('net") ||
-            a.includes('fetch()')
-        )
-
-        if (dangerousAccess.length > 0) {
-            return {
-                safe: false,
-                error: `Sandbox detected dangerous access: ${dangerousAccess.join(', ')}`,
-                duration,
-            }
+        if (code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
+            return done(false, `Code exceeded ${timeoutMs}ms timeout — possible infinite loop or DoS`)
         }
-
-        return { safe: true, duration }
-
-    } catch (err: any) {
-        const duration = Date.now() - start
-
-        // Timeout = code tried to run forever (suspicious)
-        if (err.message?.includes('Script execution timed out')) {
-            return {
-                safe: false,
-                error: `Code exceeded ${timeoutMs}ms timeout — possible infinite loop or DoS`,
-                duration,
-            }
-        }
-
-        // Sandbox violations (require blocked, etc.) — this is EXPECTED for malicious code
-        if (err.message?.includes('not allowed in sandbox')) {
-            return {
-                safe: false,
-                error: `Sandbox violation: ${err.message}`,
-                duration,
-            }
-        }
-
-        // Syntax errors are fine (code just doesn't work)
-        if (err instanceof SyntaxError) {
-            return { safe: true, duration }
-        }
-
-        // Other runtime errors — code ran but crashed, probably fine
-        return { safe: true, duration }
+        const violations = dangerousAccess(readAccessLog())
+        if (violations.length > 0) return done(false, `Sandbox violation: ${violations.join(', ')}`)
+        // Fail-closed: a crash during the sandbox run is not evidence of safety.
+        return done(false, 'Code warf beim Sandbox-Test einen Laufzeitfehler — ohne erfolgreichen Lauf keine Freigabe')
     }
+
+    const violations = dangerousAccess(readAccessLog())
+    if (violations.length > 0) {
+        return done(false, `Sandbox detected dangerous access: ${violations.join(', ')}`)
+    }
+    return done(true)
 }
+
+/**
+ * Runs inside the sandbox context before the tested code. Everything here is
+ * created in the context's own realm. The access log lives in a closure and is
+ * only readable through a non-configurable accessor that serialises with the
+ * JSON.stringify captured at setup time.
+ */
+const SANDBOX_PRELUDE = `(() => {
+    'use strict';
+    const log = [];
+    const stringify = JSON.stringify;
+    const push = (entry) => { log[log.length] = String(entry); };
+    const define = (name, value) => Object.defineProperty(globalThis, name, { value, writable: false, configurable: false, enumerable: false });
+    define('__nova_readAccessLog', () => stringify(log));
+    define('console', Object.freeze({ log: () => {}, error: () => {}, warn: () => {}, info: () => {}, debug: () => {} }));
+    define('setTimeout', () => { push('setTimeout'); });
+    define('setInterval', () => { push('setInterval'); });
+    define('require', (mod) => { push("require('" + String(mod) + "')"); throw new Error("require('" + String(mod) + "') is not allowed in sandbox"); });
+    define('fetch', () => { push('fetch()'); throw new Error('fetch() is not allowed in sandbox'); });
+    define('process', new Proxy(Object.freeze({}), {
+        get: (_target, prop) => {
+            push('process.' + String(prop));
+            if (prop === 'env') return {};
+            if (prop === 'exit') return () => { push('process.exit BLOCKED'); throw new Error('process.exit is not allowed in sandbox'); };
+            return undefined;
+        },
+    }));
+    const moduleObject = { exports: {} };
+    globalThis.module = moduleObject;
+    globalThis.exports = moduleObject.exports;
+})();`
 
 // ============================================
 // 4. Signed Patches — Confidence Tracking
@@ -471,10 +470,14 @@ export async function fullSecurityCheck(
             .replace(/\bexport\s+/g, '')
             .replace(/\bimport\s+.*?from\s+['"][^'"]+['"];?/g, '')
 
-        try {
-            sandboxResult = await sandboxTest(jsCode, 3000)
-        } catch {
-            // Sandbox not available — skip
+        // Never execute code the static analysis already rejected.
+        if (astResult.safe) {
+            try {
+                sandboxResult = await sandboxTest(jsCode, 3000)
+            } catch (error) {
+                // Fail-closed: an unavailable sandbox is not a pass.
+                sandboxResult = { safe: false, error: `Sandbox nicht verfügbar: ${String(error).slice(0, 120)}`, duration: 0 }
+            }
         }
     }
 
@@ -482,7 +485,9 @@ export async function fullSecurityCheck(
     const signature = signPatch(code, path, source, astResult, sandboxResult)
 
     // Decision
-    const allowed = astResult.safe && (sandboxResult?.safe ?? true) && !killSwitchActive
+    // Code files need a successful sandbox run; missing/failed runs are unsafe.
+    const needsSandbox = path.endsWith('.js') || path.endsWith('.ts') || path.endsWith('.mjs')
+    const allowed = astResult.safe && (needsSandbox ? sandboxResult?.safe === true : true) && !killSwitchActive
 
     if (!allowed) {
         const reasons: string[] = []

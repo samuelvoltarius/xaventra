@@ -646,6 +646,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/tools/complete-registry-file-guard.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/tools/complete-registry.ts",
       "path": ".nova-data"
     },
@@ -796,6 +800,18 @@
     {
       "owner": "src/llm/model-perf-db.ts",
       "path": ".nova-data/model-perf.json"
+    },
+    {
+      "owner": "src/tools/complete-registry-file-guard.test.ts",
+      "path": ".nova-data/multi-user"
+    },
+    {
+      "owner": "src/tools/complete-registry-file-guard.test.ts",
+      "path": ".nova-data/multi-user/users.json"
+    },
+    {
+      "owner": "src/tools/complete-registry-write-guard.test.ts",
+      "path": ".nova-data/multi-user/users.json"
     },
     {
       "owner": "src/auth/openai-oauth.ts",

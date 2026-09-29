@@ -12,8 +12,10 @@
  * - Multi-Bot tools
  */
 
+import * as pathModule from 'node:path'
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { withRepairAdmission } from '../doctor/repair-drain-client.js'
 import { callDockerHost } from '../host/docker-client.js'
 import { sshTool } from './ssh-tool.js'
@@ -44,6 +46,106 @@ export interface NovaTool {
 }
 
 // ============================================
+// File access boundary (H6)
+// ============================================
+
+type FilePermission = 'owner' | 'admin' | 'user' | 'guest' | 'blocked'
+
+/** Workspace root for file tools: configured root, else the process cwd. */
+export function getFileToolWorkspaceRoot(): string {
+    return pathModule.resolve(process.env.XAVENTRA_WORKSPACE_ROOT || process.env.NOVA_WORKSPACE_ROOT || process.cwd())
+}
+
+const IS_WINDOWS = process.platform === 'win32'
+
+function comparablePath(path: string): string {
+    const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+    return IS_WINDOWS ? normalized.toLowerCase() : normalized
+}
+
+/** Real path for existing targets (symlink escape), resolved path otherwise. */
+function canonicalPath(path: string): string {
+    try { return realpathSync.native(path) } catch { /* not existing yet */ }
+    const { dirname, basename, join: joinPath } = pathModule
+    const parent = dirname(path)
+    if (parent === path) return path
+    return joinPath(canonicalPath(parent), basename(path))
+}
+
+export function isPathWithin(root: string, target: string): boolean {
+    const rel = pathModule.relative(comparablePath(root), comparablePath(target))
+    return rel === '' || (!rel.startsWith('..') && !pathModule.isAbsolute(rel))
+}
+
+const SECRET_BASENAMES: RegExp[] = [
+    /^\.env(?:\..*)?$/i,
+    /^xaventra\.config\.json$/i,
+    /^nova\.config\.json$/i,
+    /\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i, /\.keystore$/i, /\.jks$/i,
+    /id_(?:rsa|ed25519|ecdsa|dsa)/i,
+    /^\.git-credentials$/i, /^\.netrc$/i, /^\.npmrc$/i, /^\.pgpass$/i,
+]
+const SECRET_DIRECTORY_SEGMENTS = ['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker']
+
+/** True when the path names a secret file or lies in a secret directory. */
+export function isSecretFilePath(path: string, root: string = getFileToolWorkspaceRoot()): boolean {
+    const normalized = comparablePath(path)
+    const segments = normalized.split('/').filter(Boolean)
+    const base = segments[segments.length - 1] || ''
+    if (SECRET_BASENAMES.some(pattern => pattern.test(base))) return true
+    // Directory rules apply below the workspace root (the root itself may live
+    // inside such a directory, e.g. a worktree under .nova-data).
+    const scoped = isPathWithin(root, path)
+        ? comparablePath(pathModule.relative(root, path)).split('/').filter(Boolean)
+        : segments
+    if (scoped.some(segment => SECRET_DIRECTORY_SEGMENTS.includes(segment.toLowerCase()))) return true
+    let dataIndex = -1
+    scoped.forEach((segment, index) => { if (segment.toLowerCase() === '.nova-data') dataIndex = index })
+    if (dataIndex >= 0) {
+        const inside = scoped.slice(dataIndex + 1).map(segment => segment.toLowerCase())
+        if (inside[0] === 'multi-user') return true
+        if (inside.some(segment => /(?:token|secret|credential|password|auth|private|\.key$)/i.test(segment))) return true
+    }
+    const home = comparablePath(homedir())
+    if (normalized === home + '/.ssh' || normalized.startsWith(home + '/.ssh/')) return true
+    return false
+}
+
+async function filePermissionFor(params: Record<string, unknown>): Promise<FilePermission> {
+    const id = typeof params.authorizationUserId === 'string' ? params.authorizationUserId : ''
+    if (!id) return 'guest'
+    try {
+        const { getUserPermission } = await import('../users/multi-user-middleware.js')
+        return getUserPermission(id, typeof params.channel === 'string' ? params.channel : undefined) as FilePermission
+    } catch {
+        return 'guest'
+    }
+}
+
+/**
+ * Resolves a model-supplied path and enforces the boundary: non-owner roles
+ * stay inside the workspace root; secret files are denied to everyone unless
+ * the owner explicitly enabled XAVENTRA_ALLOW_SECRET_FILE_READ=1.
+ */
+export async function resolveGuardedFilePath(params: Record<string, unknown>): Promise<{ path: string } | { error: string; blocked: true; path: string }> {
+    const raw = String(params.path ?? '')
+    const root = getFileToolWorkspaceRoot()
+    const requested = pathModule.resolve(root, raw)
+    const real = canonicalPath(requested)
+    const permission = await filePermissionFor(params)
+    if (permission === 'blocked') return { error: 'Zugriff verweigert.', blocked: true, path: raw }
+    const privileged = permission === 'owner'
+    if (!privileged && (!isPathWithin(root, requested) || !isPathWithin(canonicalPath(root), real))) {
+        return { error: `Zugriff außerhalb des Arbeitsbereichs verweigert: ${raw}`, blocked: true, path: raw }
+    }
+    if ((isSecretFilePath(requested, root) || isSecretFilePath(real, canonicalPath(root)))
+        && !(privileged && process.env.XAVENTRA_ALLOW_SECRET_FILE_READ === '1')) {
+        return { error: `Geschützte Datei (Zugangsdaten/Konfiguration) wird nicht gelesen: ${raw}`, blocked: true, path: raw }
+    }
+    return { path: requested }
+}
+
+// ============================================
 // File Tools
 // ============================================
 
@@ -56,8 +158,10 @@ export const fileTools: NovaTool[] = [
             { name: 'path', type: 'string', description: 'Pfad zur Dokumentdatei', required: true },
         ],
         handler: async (params) => {
+            const guarded = await resolveGuardedFilePath(params)
+            if ('error' in guarded) return guarded
             const { readDocument } = await import('./document-reader.js')
-            return readDocument(params.path as string)
+            return readDocument(guarded.path)
         },
     },
     {
@@ -71,8 +175,10 @@ export const fileTools: NovaTool[] = [
         ],
         handler: async (params) => {
             const { readFileSync, existsSync, statSync } = await import('node:fs')
-            const path = params.path as string
-            if (!existsSync(path)) return { error: `Datei nicht gefunden: ${path}` }
+            const guarded = await resolveGuardedFilePath(params)
+            if ('error' in guarded) return guarded
+            const path = guarded.path
+            if (!existsSync(path)) return { error: `Datei nicht gefunden: ${params.path}` }
 
             const content = readFileSync(path, 'utf-8')
             const startLine = params.start_line as number | undefined
@@ -104,9 +210,19 @@ export const fileTools: NovaTool[] = [
         handler: async (params) => {
             const { writeFileSync, mkdirSync, existsSync } = await import('node:fs')
             const { dirname, resolve, relative } = await import('node:path')
-            const path = resolve(params.path as string)
-            const cwd = process.cwd()
-            const rel = relative(cwd, path).replace(/\\/g, '/')
+            const root = getFileToolWorkspaceRoot()
+            const path = resolve(root, params.path as string)
+            const rel = relative(root, path).replace(/\\/g, '/')
+
+            // === SECURITY: never outside the workspace root (also via symlinks) ===
+            if (!isPathWithin(root, path) || !isPathWithin(canonicalPath(root), canonicalPath(path))) {
+                console.log(`[SECURITY] BLOCKED write outside workspace: ${params.path}`)
+                return {
+                    error: `GESCHUETZT: "${params.path}" liegt ausserhalb des Arbeitsbereichs. Schreibvorgang blockiert.`,
+                    blocked: true,
+                    path: rel,
+                }
+            }
 
             // === SECURITY: Protected Paths (Prompt Injection â†’ RCE Prevention) ===
             const PROTECTED_PATTERNS = [
@@ -121,12 +237,17 @@ export const fileTools: NovaTool[] = [
                 /^src\/tools\/tool-policy\.ts$/,
                 /^\.env/,
                 /^nova\.config\.json$/,
+                /^xaventra\.config\.json$/,
+                /^\.nova-data\/multi-user\//,
+                /^dist\//,
                 /^package\.json$/,
                 /^tsconfig\.json$/,
                 /^scripts\/deploy/,
             ]
 
-            const isProtected = PROTECTED_PATTERNS.some(p => p.test(rel))
+            // Case-insensitive: on Windows "XAVENTRA.CONFIG.JSON" is the same file.
+            const isProtected = PROTECTED_PATTERNS.some(p => new RegExp(p.source, 'i').test(rel))
+                || isSecretFilePath(path, root)
             if (isProtected) {
                 console.log(`[SECURITY] ðŸš¨ BLOCKED write to protected path: ${rel}`)
                 return {
@@ -212,7 +333,9 @@ export const fileTools: NovaTool[] = [
         ],
         handler: async (params) => {
             const { readdirSync, statSync } = await import('node:fs')
-            const path = params.path as string
+            const guarded = await resolveGuardedFilePath(params)
+            if ('error' in guarded) return guarded
+            const path = guarded.path
             const entries = readdirSync(path)
             const result = entries.map(e => {
                 const fullPath = join(path, e)

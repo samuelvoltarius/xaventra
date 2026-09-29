@@ -48,6 +48,12 @@ export function reconcileConfiguredOwner(
     user: UserRecord,
     allowFrom: string[],
 ): { user: UserRecord; changed: boolean } {
+    // The unauthenticated REST principal (no NOVA_API_TOKEN) must never hold
+    // elevated rights, not even through a stored explicit grant (K1).
+    if (String(user.channel).toLowerCase() === 'rest-api' && user.id !== 'rest-api:token'
+        && ['owner', 'admin'].includes(user.permission)) {
+        return { user: { ...user, permission: 'user', permissionSource: undefined }, changed: true }
+    }
     if (isConfiguredOwner(user.id, user.channel, allowFrom)) {
         if (user.permission === 'owner' && user.permissionSource === 'configured') return { user, changed: false }
         return { user: { ...user, permission: 'owner', permissionSource: 'configured' }, changed: true }
@@ -169,15 +175,29 @@ export function isBlocked(userId: string): boolean {
     return users[userId]?.permission === 'blocked'
 }
 
-function getConfigAllowFrom(): string[] {
+/**
+ * Marker returned when the configuration exists but cannot be trusted
+ * (unreadable, invalid JSON, malformed allow-list). A non-empty list means
+ * "restricted": new users become guests and nobody matches as configured owner.
+ */
+const RESTRICTED_ALLOW_FROM = Object.freeze(['__xaventra_config_unreadable__'])
+
+/** Fail-closed (H6): only a readable config without allow-list is open. */
+export function getConfigAllowFrom(configPath: string = resolveConfigPath()): string[] {
     try {
-        const configPath = resolveConfigPath()
-        if (existsSync(configPath)) {
-            const config = JSON.parse(readFileSync(configPath, 'utf-8'))
-            return config.channels?.telegram?.allowFrom || config.telegram?.allowFrom || config.allowFrom || []
+        if (!existsSync(configPath)) return []
+        const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+        const allowFrom = config?.channels?.telegram?.allowFrom ?? config?.telegram?.allowFrom ?? config?.allowFrom
+        if (allowFrom === undefined || allowFrom === null) return []
+        if (!Array.isArray(allowFrom) || allowFrom.some(value => typeof value !== 'string' && typeof value !== 'number')) {
+            console.warn('[MultiUser] allowFrom is malformed — treating access as restricted')
+            return [...RESTRICTED_ALLOW_FROM]
         }
-    } catch { }
-    return []
+        return allowFrom.map(value => String(value))
+    } catch (error) {
+        console.warn(`[MultiUser] Config unreadable — treating access as restricted: ${String(error).slice(0, 120)}`)
+        return [...RESTRICTED_ALLOW_FROM]
+    }
 }
 
 // ============================================
@@ -410,16 +430,38 @@ interface MessageBuffer {
     chatId: string
     messages: { content: string; timestamp: number }[]
     timer: ReturnType<typeof setTimeout> | null
-    resolve: ((merged: string) => void) | null
+    /** One resolver per coalesced call; all of them are settled on flush. */
+    resolvers: Array<(merged: string) => void>
 }
 
 const messageBuffers: Map<string, MessageBuffer> = new Map()
 
 const COALESCE_WINDOW_MS = 2500 // 2.5 seconds
 
+/**
+ * Returned to every call whose text was merged into a LATER message of the
+ * same burst. It is a slash command that the command layer answers with
+ * "__HANDLED__", so the pipeline finishes that request silently instead of
+ * waiting forever (K4) or processing the text twice.
+ */
+export const COALESCED_MESSAGE_MARKER = '/__coalesced__'
+
+export function isCoalescedMarker(content: string): boolean {
+    return content === COALESCED_MESSAGE_MARKER
+}
+
 export function shouldCoalesce(chatId: string, userId: string): boolean {
     const key = `${chatId}:${userId}`
     return messageBuffers.has(key)
+}
+
+function flushBuffer(key: string, buffer: MessageBuffer): void {
+    if (messageBuffers.get(key) === buffer) messageBuffers.delete(key)
+    const merged = buffer.messages.map(m => m.content).join('\n')
+    const resolvers = buffer.resolvers.splice(0)
+    if (resolvers.length > 1) console.log(`[Coalesce] Merged ${buffer.messages.length} messages from ${buffer.userId}`)
+    // The newest request carries the merged text; earlier ones end as handled.
+    resolvers.forEach((resolve, index) => resolve(index === resolvers.length - 1 ? merged : COALESCED_MESSAGE_MARKER))
 }
 
 export function coalesceMessage(
@@ -430,43 +472,18 @@ export function coalesceMessage(
     const key = `${chatId}:${userId}`
 
     return new Promise((resolve) => {
-        const existing = messageBuffers.get(key)
-
-        if (existing) {
-            // Add to existing buffer
-            existing.messages.push({ content, timestamp: Date.now() })
-
-            // Reset timer
-            if (existing.timer) clearTimeout(existing.timer)
-            existing.resolve = resolve
-
-            existing.timer = setTimeout(() => {
-                // Merge all buffered messages
-                const merged = existing.messages.map(m => m.content).join('\n')
-                const count = existing.messages.length
-                messageBuffers.delete(key)
-
-                console.log(`[Coalesce] Merged ${count} messages from ${userId}`)
-                resolve(merged)
-            }, COALESCE_WINDOW_MS)
-        } else {
-            // First message — start buffer
-            const buffer: MessageBuffer = {
-                userId,
-                chatId,
-                messages: [{ content, timestamp: Date.now() }],
-                timer: null,
-                resolve,
-            }
-
-            buffer.timer = setTimeout(() => {
-                const merged = buffer.messages.map(m => m.content).join('\n')
-                messageBuffers.delete(key)
-                resolve(merged)
-            }, COALESCE_WINDOW_MS)
-
+        let buffer = messageBuffers.get(key)
+        if (!buffer) {
+            buffer = { userId, chatId, messages: [], timer: null, resolvers: [] }
             messageBuffers.set(key, buffer)
         }
+        buffer.messages.push({ content, timestamp: Date.now() })
+        buffer.resolvers.push(resolve)
+
+        // Reset the window; every earlier resolver stays in the list.
+        if (buffer.timer) clearTimeout(buffer.timer)
+        const current = buffer
+        buffer.timer = setTimeout(() => flushBuffer(key, current), COALESCE_WINDOW_MS)
     })
 }
 

@@ -13,15 +13,19 @@ describe('real REST listener', () => {
         const { url, handler } = await start()
         expect((await fetch(`${url}/v1/health`)).status).toBe(200)
         expect((await fetch(`${url}/v1/status`)).status).toBe(401)
-        const response = await fetch(`${url}/v1/message`, { method: 'POST', headers: { Authorization: 'Bearer synthetic-api-test' }, body: JSON.stringify({ content: 'hello' }) })
+        // K1: POST now requires an explicit JSON content type (blocks browser
+        // simple requests) and the sender is derived from the bearer token
+        // instead of the former body-controlled default 'api-user'.
+        const response = await fetch(`${url}/v1/message`, { method: 'POST', headers: { Authorization: 'Bearer synthetic-api-test', 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'hello' }) })
         expect(await response.json()).toEqual({ ok: true, response: 'verified response' })
-        expect(handler).toHaveBeenCalledWith('rest-api', 'api-user', 'hello', expect.any(Function))
+        expect(handler).toHaveBeenCalledWith('rest-api', 'rest-api:token', 'hello', expect.any(Function))
     })
     it('rejects malformed requests without an uncaught async exception or pipeline call', async () => {
         vi.stubEnv('NOVA_API_TOKEN', '')
         const { url, handler } = await start()
         for (const payload of [null, { content: 42 }, { content: 'hello', from: {} }]) {
-            const response = await fetch(`${url}/v1/message`, { method: 'POST', body: JSON.stringify(payload) })
+            // K1: JSON content type is mandatory; malformed JSON bodies still yield 400.
+            const response = await fetch(`${url}/v1/message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
             expect(response.status).toBe(400)
         }
         expect(handler).not.toHaveBeenCalled()

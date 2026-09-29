@@ -18,7 +18,10 @@ describe('request-scoped slash command RBAC', () => {
         const result = await handleCommand(command, 'new attacker 192.0.2.20 operator env:XAVENTRA_SSH_FIXTURE', 'user-1', state(), [], {
             channel: 'telegram', rawUserId: 'user-1', principalId: 'user-1', permission: 'user',
         })
-        expect(result).toContain('Owner/Admin')
+        // K2: host commands are owner-only in the central role table, which
+        // rejects before the handler's own Owner/Admin check is reached.
+        expect(result).toContain('🔒')
+        expect(result).toContain('owner')
     })
     it('accepts host references but rejects plaintext password persistence through slash commands', async () => {
         const identity = { channel: 'telegram', rawUserId: 'owner-fixture', principalId: 'owner-fixture', permission: 'owner' as const }
