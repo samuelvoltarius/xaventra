@@ -21,6 +21,7 @@ import { callDockerHost } from '../host/docker-client.js'
 import { sshTool } from './ssh-tool.js'
 import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
+import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
@@ -3429,16 +3430,42 @@ export const ALL_TOOLS: NovaTool[] = [
             { name: 'base_url', type: 'string', description: 'OpenAI-kompatibler Basis-URL (z.B. https://api.minimax.chat/v1)', required: true },
             { name: 'models', type: 'string', description: 'Kommagetrennte Modell-IDs (optional â€” werden sonst auto-entdeckt)', required: false },
             { name: 'roles', type: 'string', description: 'Kommagetrennte Rollen: chat,code,vision,embedding (Standard: chat,code)', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
-                const { registerExternalProvider } = await import('../core/model-resolver.js')
+                // R2 R1/A8: a provider receives every prompt and the API key.
+                // New name only (no silent overwrite), public https endpoint
+                // (SSRF guard), explicit owner approval.
+                const name = String(params.name ?? '').trim()
+                if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$/.test(name)) return 'Provider-Registrierung abgelehnt: ungültiger Name.'
+                const baseUrl = String(params.base_url ?? '').trim().replace(/\/$/, '')
+                if (!/^https:\/\//i.test(baseUrl)) return 'Provider-Registrierung abgelehnt: base_url muss eine https-Adresse sein.'
+                const { checkUrlResolved } = await import('../resilience/ssrf-guard.js')
+                const target = await checkUrlResolved(baseUrl)
+                if (!target.allowed) return `Provider-Registrierung abgelehnt: base_url nicht erlaubt (${target.reason}).`
+                const { registerExternalProvider, listExternalProviders } = await import('../core/model-resolver.js')
+                const existing = listExternalProviders().some(p => p.name.toLowerCase() === name.toLowerCase())
+                let configured = false
+                try {
+                    const { readFileSync, existsSync } = await import('node:fs')
+                    const configPath = resolveConfigPath()
+                    if (existsSync(configPath)) {
+                        const providers = JSON.parse(readFileSync(configPath, 'utf-8'))?.providers || {}
+                        configured = Object.keys(providers).some(key => key.toLowerCase() === name.toLowerCase())
+                    }
+                } catch {
+                    return 'Provider-Registrierung abgelehnt: Konfiguration nicht lesbar.'
+                }
+                if (existing || configured) return `Provider-Registrierung abgelehnt: "${name}" existiert bereits und wird über dieses Werkzeug nicht überschrieben.`
+                const refusal = await ownerApprovalRefusal(params, 'register_llm_provider')
+                if (refusal) return refusal
                 const models = params.models ? String(params.models).split(',').map(m => m.trim()).filter(Boolean) : undefined
                 const roles = params.roles ? String(params.roles).split(',').map(r => r.trim()) as any[] : ['chat', 'code']
                 const result = await registerExternalProvider({
-                    name: String(params.name),
+                    name,
                     apiKey: String(params.api_key),
-                    baseUrl: String(params.base_url).replace(/\/$/, ''),
+                    baseUrl,
                     models,
                     roles,
                     enabled: true,
