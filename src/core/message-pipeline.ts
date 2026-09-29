@@ -199,6 +199,139 @@ export interface MessageExecutionOptions {
     requestId?: string
 }
 
+/** The agent exceeded its wall-clock budget; its signal has been aborted. */
+export class AgentDeadlineError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'AgentDeadlineError'
+    }
+}
+
+/**
+ * Run one agent invocation with a signal that is aborted by either the
+ * execution's own abort signal or the deadline. Unlike a bare Promise.race,
+ * the losing agent is actually told to stop, and the timer is always cleared.
+ */
+export async function runWithAbortDeadline<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    options: { timeoutMs: number; parentSignal?: AbortSignal; label?: string },
+): Promise<T> {
+    const controller = new AbortController()
+    const parent = options.parentSignal
+    const onParentAbort = () => controller.abort(parent?.reason)
+    if (parent?.aborted) onParentAbort()
+    else parent?.addEventListener('abort', onParentAbort, { once: true })
+    const aborted = new Promise<never>((_, reject) => {
+        const rejectWithReason = () => reject(controller.signal.reason)
+        if (controller.signal.aborted) rejectWithReason()
+        else controller.signal.addEventListener('abort', rejectWithReason, { once: true })
+    })
+    aborted.catch(() => undefined)
+    const timer = setTimeout(() => controller.abort(new AgentDeadlineError(
+        `[Timeout] ${options.label || 'runNovaAgent'} exceeded ${options.timeoutMs}ms`)), options.timeoutMs)
+    try {
+        if (controller.signal.aborted) throw controller.signal.reason
+        return await Promise.race([run(controller.signal), aborted])
+    } finally {
+        clearTimeout(timer)
+        parent?.removeEventListener('abort', onParentAbort)
+    }
+}
+
+/**
+ * Decide how a failed agent run is answered. A deadline or an abort must never
+ * be papered over with an unguarded plain LLM completion.
+ */
+export function agentFailureDisposition(error: unknown, parentSignal?: AbortSignal): 'cancelled' | 'timeout' | 'fallback' {
+    if (parentSignal?.aborted) return 'cancelled'
+    if (error instanceof AgentDeadlineError) return 'timeout'
+    const name = (error as { name?: unknown } | null)?.name
+    if (name === 'AbortError' || /\bAbortError\b/.test(String(error))) return 'cancelled'
+    return 'fallback'
+}
+
+/** Progress heartbeats/step updates stop once the final answer phase begins. */
+export function createProgressGate(send: (message: string) => Promise<void>) {
+    let closed = false
+    return {
+        async send(message: string): Promise<void> {
+            if (closed) return
+            await send(message)
+        },
+        close(): void { closed = true },
+        get closed(): boolean { return closed },
+    }
+}
+
+/** Per-message transport facts supplied by the channel adapter. */
+export interface MessageContext {
+    /** Real conversation/chat id of this message (e.g. a Telegram group id). */
+    chatId?: string
+}
+
+/**
+ * Chat id used for group tracking and coalescing. It belongs to this message:
+ * an explicit adapter-supplied id wins. The process-global Telegram
+ * `lastActiveChatId` is only a compatibility fallback for Telegram callers that
+ * do not pass the id yet, and only when that global was set by the same
+ * sender. Other channels never borrow Telegram's last chat.
+ */
+export function resolveConversationChatId(channel: string, from: string, context?: MessageContext): string {
+    const explicit = String(context?.chatId ?? '').trim()
+    if (explicit) return explicit
+    if (channel.toLowerCase() === 'telegram') {
+        const global = (globalThis as any).__novaState
+        const lastChat = String(global?.lastActiveChatId ?? '').trim()
+        if (lastChat && String(global?.lastActiveUserId ?? '') === String(from)) return lastChat
+    }
+    return from
+}
+
+export interface ScreenshotFallbackRequest {
+    channel: string
+    /** Raw channel identity: the authorization subject and the Telegram recipient. */
+    from: string
+    /** Canonical principal used by the tool policy. */
+    principalId: string
+    content: string
+    tools?: { execute?: (name: string, args: Record<string, unknown>) => Promise<any> }
+    telegram?: { sendPhoto?: (chatId: string, path: string, caption?: string) => Promise<unknown> }
+}
+
+/**
+ * Deterministic screenshot fallback for providers that acknowledge a capture
+ * request without emitting a tool call. It is not a second authority: the
+ * capture passes the same authorizeToolExecution boundary (tool policy,
+ * channel, owner grant and role) as every governed tool call. Only Telegram
+ * has a delivery path; everything else, and every denial, is a no-op so the
+ * model's normal reply stands.
+ */
+export async function runAuthorizedScreenshotFallback(
+    request: ScreenshotFallbackRequest,
+): Promise<{ path: string; size?: number } | null> {
+    if (request.channel.toLowerCase() !== 'telegram') return null
+    if (!request.tools?.execute || !request.telegram?.sendPhoto) return null
+    let args: Record<string, unknown>
+    try {
+        const { authorizeToolExecution } = await import('../agents/tool-authorization.js')
+        args = await authorizeToolExecution('desktop_screenshot', { send: false, chat_id: request.from }, {
+            userId: request.principalId,
+            authUserId: request.from,
+            channel: request.channel,
+            requestText: request.content,
+            governedReadOnly: false,
+        })
+    } catch (error) {
+        console.log(`[Pipeline] Screenshot fallback not authorized: ${error}`)
+        return null
+    }
+    const screenshotResult: any = await request.tools.execute('desktop_screenshot', args)
+    const imgPath = screenshotResult?.screenshotPath || screenshotResult?.path
+    if (!screenshotResult?.success || !imgPath || !existsSync(imgPath)) return null
+    await request.telegram.sendPhoto(request.from, imgPath, 'Desktop Screenshot')
+    return { path: imgPath, size: screenshotResult.size }
+}
+
 export async function handleMessage(
     channel: string,
     from: string,
@@ -208,6 +341,7 @@ export async function handleMessage(
     handleCommandFn: (cmd: string, args: string, from: string, context?: PrincipalContext) => Promise<string | null>,
     image?: { data: string; mimeType: string },
     execution?: MessageExecutionOptions,
+    messageContext?: MessageContext,
 ) {
     execution?.abortSignal?.throwIfAborted()
     traceStep('input:accepted')
@@ -280,12 +414,16 @@ export async function handleMessage(
     // ============================================
     // Multi-User Middleware (Auth, Coalescing, Onboarding, Group Chat)
     // ============================================
+    // Fail-closed: until checkAuth() has positively allowed this sender, any
+    // middleware failure (import, init, lookup) is treated like a denial. An
+    // exception must never skip the blocked/allowlist check.
+    let senderAuthorized = false
     try {
         const mu = await import('../users/multi-user-middleware.js')
         mu.initMultiUser()
 
         // 1. Auth Check — block unauthorized users
-        const chatId = (globalThis as any).__novaState?.lastActiveChatId || from
+        const chatId = resolveConversationChatId(channel, from, messageContext)
         const authResult = mu.checkAuth(from, channel, canonicalUser)
 
         if (!authResult.allowed) {
@@ -293,6 +431,14 @@ export async function handleMessage(
             await replyFn(authResult.reason || '🔒 Zugriff verweigert.')
             return
         }
+        senderAuthorized = true
+
+        // 2. Tool Restrictions — the decided role is bound to this request
+        // before any optional middleware step can fail.
+        principalContext.permission = authResult.permission
+        ; (state as any).__userPermission = authResult.permission
+            ; (state as any).__userId = from
+        if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
 
         // 4. Group Chat — track who speaks
         if (mu.isGroupChat(chatId, from)) {
@@ -338,19 +484,18 @@ export async function handleMessage(
             }
         }
 
-        // 2. Tool Restrictions — store for later use in tool execution
-        principalContext.permission = authResult.permission
-        ; (state as any).__userPermission = authResult.permission
-            ; (state as any).__userId = from
-        if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
-
         // 3b. Track topic
         const topicWords = content.split(/\s+/).slice(0, 3).join(' ')
         mu.addUserTopic(from, topicWords)
 
     } catch (err) {
-        // Multi-user middleware is optional — don't block messages if it fails
-        console.log(`[MultiUser] ⚠ Middleware error (non-fatal): ${err}`)
+        if (!senderAuthorized) {
+            console.log(`[MultiUser] ❌ Middleware error before authorization — denied (fail-closed): ${err}`)
+            await replyFn('🔒 Zugriff verweigert.')
+            return
+        }
+        // Later steps (coalescing, onboarding, context) are optional.
+        console.log(`[MultiUser] ⚠ Middleware error after authorization (non-fatal): ${err}`)
     }
 
     // ============================================
@@ -835,7 +980,12 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     let predictivePromise: Promise<any> | null = null
     if (contextPolicy.predictive) try {
         const { preloadContext } = await import('./predictive-context.js')
-        predictivePromise = preloadContext(content, contextPolicy.timeBudgetMs)
+        // Same scopes as the governed memory context; legacy unscoped rows
+        // are owner data and never reach another principal's prompt.
+        predictivePromise = preloadContext(content, contextPolicy.timeBudgetMs, {
+            scopes: [...compatiblePrincipalScopes(principalContext, canonicalUser), 'global'],
+            includeUnscoped: principalContext.permission === 'owner',
+        })
     } catch (err) { console.debug('[Pipeline] predictive context not available:', err) }
 
     if (contextPolicy.longTermMemory) try {
@@ -1431,6 +1581,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             ? state.tools.getAll().filter((tool: any) => execution.allowedTools!.includes(tool.name))
             : undefined
         let lastProgress = 'LLM/Tools laufen'
+        // Progress is closed as soon as the main agent run settles, so a late
+        // step update or heartbeat can never arrive after the final answer.
+        const progress = createProgressGate(replyFn)
         const progressStartedAt = Date.now()
         const progressChannel = channel.toLowerCase()
         const shouldSendProgress =
@@ -1442,8 +1595,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const progressTimer = shouldSendProgress
             ? setInterval(async () => {
                 const elapsed = Math.round((Date.now() - progressStartedAt) / 1000)
+                if (progress.closed) return
                 try {
-                    await replyFn(`⏳ Ich arbeite noch (${elapsed}s): ${lastProgress}`)
+                    await progress.send(`⏳ Ich arbeite noch (${elapsed}s): ${lastProgress}`)
                 } catch (err) {
                     console.log(`[Pipeline] Progress heartbeat failed: ${err} `)
                 }
@@ -1458,7 +1612,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         try {
             traceStep('agent:start')
             execution?.abortSignal?.throwIfAborted()
-            result = await Promise.race([
+            result = await runWithAbortDeadline(agentSignal =>
                 runNovaAgent({
                     userId: principalId,
                     authUserId: from,
@@ -1468,12 +1622,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     systemPrompt,
                     llm: llmForCall,
                     tools: executionTools,
-                    abortSignal: execution?.abortSignal,
+                    abortSignal: agentSignal,
                     memory: state.memory ? {
                         recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                         store: (e: any) => state.memory.store(e),
                     } : undefined,
                     onStepUpdate: async (status: string) => {
+                        if (progress.closed || agentSignal.aborted) return
                         try {
                             lastProgress = status
                             // Zentrale Fortschrittsdatei fuer ALLE Oberflaechen.
@@ -1489,7 +1644,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                                         String(status).replace(/\s+/g, ' ').slice(0, 160))
                                 } catch { /* Anzeige darf den Lauf nie stoppen */ }
                             }
-                            await replyFn(status)
+                            await progress.send(status)
                         } catch (err) {
                             console.log(`[Pipeline] Step update delivery failed: ${err} `)
                         }
@@ -1509,11 +1664,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                             : undefined,
                     deniedTools: desktopBot?.deniedTools,
                     workspaceId: desktopContext?.workspaceId,
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('[Timeout] runNovaAgent exceeded 300s')), TOTAL_TIMEOUT)
-                ),
-            ])
+                }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             // Orchestrator: Task completed successfully
             if (orchestrator) {
@@ -1526,6 +1677,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
             throw err
         } finally {
+            progress.close()
             if (progressTimer) clearInterval(progressTimer)
         }
 
@@ -1579,7 +1731,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             // Retry the agent call
-            const retryResult = await runNovaAgent({
+            const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
                 userId: principalId,
                 authUserId: from,
                 channel,
@@ -1588,12 +1740,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 systemPrompt: loadSoul(),
                 llm: state.llm,
                 tools: executionTools,
-                abortSignal: execution?.abortSignal,
+                abortSignal: agentSignal,
                 memory: state.memory ? {
                     recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                     store: (e: any) => state.memory.store(e),
                 } : undefined,
-            })
+            }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             supervised = superviseResponse(retryResult.content, { attempt })
             result = retryResult
@@ -1639,7 +1791,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 console.log(`[Pipeline] 🔄 Announce-without-act erkannt ("${text.slice(0, 50)}") — erzwinge Tool-Retry`)
                 try {
                     const { runNovaAgent } = await import('../agents/nova-runner.js')
-                    const retryResult = await runNovaAgent({
+                    const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
                         userId: principalId,
                         authUserId: from,
                         channel,
@@ -1648,12 +1800,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         systemPrompt: systemPrompt + '\n\n🚨 PFLICHT: Beantworte die Anfrage indem du JETZT die passenden Tools über den Function-Call-Mechanismus aufrufst. Gib KEINE Ankündigung wie "ich check das" — RUF DIE TOOLS AUF und liefere das Ergebnis. Für Uhrzeit: get_current_time. Für offene Programme/Fenster: run_command oder ein Desktop-Tool.',
                         llm: state.llm,
                         tools: executionTools,
-                        abortSignal: execution?.abortSignal,
+                        abortSignal: agentSignal,
                         memory: state.memory ? {
                             recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                             store: (e: any) => state.memory.store(e),
                         } : undefined,
-                    })
+                    }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
                     const retryExecutedTools = retryResult.toolsExecuted?.length || 0
                     if (retryExecutedTools > 0 || (!detectActionIntent(content).requiresTool && retryResult.content && retryResult.content.trim().length > text.length)) {
                         console.log(`[Pipeline] ✅ Retry lieferte echte Antwort (${retryResult.toolsExecuted?.length || 0} tools)`)
@@ -1663,6 +1815,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         ;(result as any).screenshotPath = retryResult.screenshotPath
                     }
                 } catch (retryErr) {
+                    if (execution?.abortSignal?.aborted) throw retryErr
                     console.debug('[Pipeline] Announce-retry failed:', retryErr)
                 }
             }
@@ -1675,21 +1828,21 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const preGateIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         if (!isSystemMessage && !(result as any).actionState && preGateIntent.kind === 'screenshot' && !screenshotDelivered && (result.toolsExecuted || []).length === 0) {
             try {
-                const screenshotResult: any = await state.tools.execute('desktop_screenshot', {
-                    send: false,
-                    chat_id: from,
-                })
-                const imgPath = screenshotResult?.screenshotPath || screenshotResult?.path
                 const tg = state.channels?.telegram || state.telegram
-                if (screenshotResult?.success && imgPath && existsSync(imgPath) && tg?.sendPhoto) {
-                    await tg.sendPhoto(from, imgPath, 'Desktop Screenshot')
+                const captured = await runAuthorizedScreenshotFallback({
+                    channel, from, principalId, content,
+                    tools: state.tools,
+                    telegram: tg,
+                })
+                if (captured) {
+                    const imgPath = captured.path
                     screenshotDelivered = true
                     ;(result as any).screenshotPath = imgPath
                     ;(result as any).toolsExecuted = ['desktop_screenshot']
                     ;(result as any).toolExecutions = [{
                         tool: 'desktop_screenshot',
                         success: true,
-                        result: { path: imgPath, size: screenshotResult.size },
+                        result: { path: imgPath, size: captured.size },
                     }]
                     const currentTime = new Date().toLocaleTimeString('de-DE', {
                         hour: '2-digit',
@@ -2030,6 +2183,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
     } catch (err) {
         console.error(`[Nova] [${channel}] Fehler: ${err}`)
+        const disposition = agentFailureDisposition(err, execution?.abortSignal)
 
         // Resilience: Track error and attempt auto-fix
         try {
@@ -2048,6 +2202,22 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const { updateNovaStatus: setStatus } = await import('../dashboard/server.js')
             setStatus('idle')
         } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
+
+        // A deadline or abort stopped the agent on purpose. Never replace it
+        // with an unguarded plain completion (no tools, no evidence, no RBAC).
+        if (disposition === 'cancelled') {
+            if (execution?.abortSignal?.aborted) throw err
+            try {
+                await replyFn('Die Anfrage wurde abgebrochen. Bitte versuche es erneut.')
+            } catch { /* nothing more to do */ }
+            return
+        }
+        if (disposition === 'timeout') {
+            try {
+                await replyFn('Die Anfrage hat das Zeitlimit überschritten und wurde abgebrochen.')
+            } catch { /* nothing more to do */ }
+            return
+        }
 
         // Fallback to simple LLM call if agent runner fails
         try {

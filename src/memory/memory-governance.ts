@@ -172,6 +172,14 @@ function initialStatus(proposal: MemoryProposal): MemoryLifecycle {
     return 'candidate'
 }
 
+/** Evidence strong enough to deliberately re-enter a forgotten fact. */
+function isAuthoritativeEvidence(proposal: MemoryProposal): boolean {
+    return proposal.evidence === 'manual'
+        || proposal.evidence === 'correction'
+        || proposal.evidence === 'explicit_user_instruction'
+        || (proposal.evidence === 'verified_tool_result' && proposal.verified === true)
+}
+
 function defaultTtl(proposal: MemoryProposal): number | undefined {
     if (proposal.ttlMs != null) return proposal.ttlMs
     if (proposal.kind === 'operational' || proposal.evidence === 'verified_tool_result') return 30 * 60_000
@@ -292,6 +300,20 @@ export class MemoryGovernanceCoordinator {
         const hash = fingerprint(content)
         const key = deriveMemoryKey(proposal)
         const provenance = toProvenance(proposal, now)
+
+        // Forgetting is durable: a rejected (forgotten/retracted) fact is a
+        // terminal barrier for its scoped memory key and content. Only an
+        // explicit instruction, correction, manual entry or a verified tool
+        // result may deliberately re-enter it; distillation, plain statements
+        // and inferences (e.g. replayed logs) must not recreate it.
+        if (!isAuthoritativeEvidence(proposal)) {
+            const barrier = this.store.records.find(record =>
+                record.scope === proposal.scope
+                && record.status === 'rejected'
+                && (record.memoryKey === key || record.fingerprint === hash
+                    || memoryRelevance(record.content, content) >= 0.88))
+            if (barrier) return null
+        }
 
         const duplicate = this.store.records.find(record =>
             record.scope === proposal.scope

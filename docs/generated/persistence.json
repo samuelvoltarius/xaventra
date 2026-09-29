@@ -430,6 +430,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/layers/memory-distiller-scope.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/layers/memory-distiller.ts",
       "path": ".nova-data"
     },
@@ -503,6 +507,10 @@
     },
     {
       "owner": "src/memory/retrieval-evaluator.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/session-summarizer-forget.test.ts",
       "path": ".nova-data"
     },
     {

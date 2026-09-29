@@ -31,6 +31,25 @@ export interface SearchResult {
     score: number
 }
 
+/** Principal-bound read access for recall. */
+export interface RecallAccess {
+    /** Allowed `metadata.scope` values, e.g. `user:<principal>` and `global`. */
+    scopes: string[]
+    /** Legacy rows without a scope are visible only to the owner. */
+    includeUnscoped?: boolean
+}
+
+/**
+ * True when a stored row may be shown to a principal with this access. Rows
+ * carry their scope in metadata.scope (`user:X` / `global`); rows without one
+ * predate scoping and are treated as owner data.
+ */
+export function isRecallAllowed(metadata: Record<string, unknown>, access: RecallAccess): boolean {
+    const scope = typeof metadata?.scope === 'string' ? metadata.scope.trim() : ''
+    if (!scope) return access.includeUnscoped === true
+    return access.scopes.includes(scope)
+}
+
 // ============================================
 // Configuration
 // ============================================
@@ -197,7 +216,8 @@ export async function remember(
 export async function recall(
     query: string,
     limit: number = 5,
-    typeFilter?: MemoryEntry['type']
+    typeFilter?: MemoryEntry['type'],
+    access?: RecallAccess,
 ): Promise<SearchResult[]> {
     // Input validation
     if (!query || typeof query !== 'string') {
@@ -205,6 +225,7 @@ export async function recall(
         return []
     }
 
+    if (access && access.scopes.length === 0 && access.includeUnscoped !== true) return []
     if (!await ensureInitialized()) return []
 
     try {
@@ -215,7 +236,9 @@ export async function recall(
         const queryEmbedding = await getEmbedding(expandedQuery)
 
         // 3) Fetch more candidates than needed (for re-ranking)
-        const candidateCount = Math.max(limit * 3, 15)
+        // Scope filtering happens after the vector search, so over-fetch a bit
+        // more when the caller is principal-bound.
+        const candidateCount = access ? Math.max(limit * 6, 30) : Math.max(limit * 3, 15)
         let search = table.search(queryEmbedding).limit(candidateCount)
 
         const VALID_TYPES = new Set(['conversation', 'learning', 'fact', 'code', 'error_solution'])
@@ -251,6 +274,16 @@ export async function recall(
                 return coordinator.isRecallable(String(metadata.governanceId), now)
             })
         } catch { /* governance catalog is optional for legacy databases */ }
+
+        // 5b) Principal scope filter (fail-closed, outside the optional
+        // governance try): another principal's rows never reach the prompt.
+        if (access) {
+            governed = governed.filter((entry: any) => {
+                let metadata: Record<string, unknown> = {}
+                try { metadata = JSON.parse(entry.metadata || '{}') } catch { /* unscoped legacy row */ }
+                return isRecallAllowed(metadata, access)
+            })
+        }
 
         // 6) Hybrid re-rank: keyword scoring + temporal decay + MMR diversity
         const reranked = hybridRerankResults(governed, query)
