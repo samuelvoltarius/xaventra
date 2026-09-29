@@ -14,10 +14,10 @@ delete process.env.NOVA_MESH_SUPABASE_URL
 const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network in tests'))
 
 const queue = vi.hoisted(() => ({ stats: { total: 0, pending: 0, done: 0, failed: 0 } }))
-const perf = vi.hoisted(() => ({ disabled: [] as any[] }))
+const perf = vi.hoisted(() => ({ disabled: [] as any[], onCall: undefined as undefined | (() => void) }))
 vi.mock('../config/config-path.js', () => ({ resolveConfigPath: () => join(process.cwd(), 'missing-config.json') }))
 vi.mock('../channels/message-queue.js', () => ({ getQueueStats: () => queue.stats }))
-vi.mock('../llm/model-perf-db.js', () => ({ getDisabledModels: () => perf.disabled }))
+vi.mock('../llm/model-perf-db.js', () => ({ getDisabledModels: () => { perf.onCall?.(); return perf.disabled } }))
 vi.mock('./self-update.js', () => ({ getStats: () => ({ pending: 0 }), getPendingProposals: () => [] }))
 vi.mock('../layers/L0-health-monitor.js', () => ({}))
 vi.mock('../layers/L15-self-check.js', () => ({}))
@@ -56,5 +56,29 @@ describe('self-doctor resolves findings that are no longer reproduced (R2 NZ-18)
         const stillOpen = third.findings.filter(f => f.status === 'open' && ['message-queue', 'model-perf-db'].includes(f.source))
         expect(stillOpen).toEqual([])
         expect(fetchSpy).not.toHaveBeenCalled()
+    })
+})
+
+describe('self-doctor summary and concurrent status changes (R2 NZ-33, NZ-34)', () => {
+    it('shows the message queue inline without require() in ESM', async () => {
+        const { runSelfDoctor } = await import('./self-doctor.js')
+        queue.stats = { total: 4, pending: 0, done: 4, failed: 0 }
+        const result = await runSelfDoctor()
+        expect(result.summary).toContain('Message Queue')
+    })
+
+    it('keeps a dismissal made while a run was in progress', async () => {
+        const { runSelfDoctor, updateDoctorFindingStatus } = await import('./self-doctor.js')
+        queue.stats = { total: 9, pending: 5, done: 4, failed: 0 }
+        const first = await runSelfDoctor()
+        const backlog = first.findings.find(f => f.source === 'message-queue' && f.status === 'open')!
+        expect(backlog).toBeTruthy()
+
+        perf.onCall = () => { updateDoctorFindingStatus(backlog.id, 'dismissed') }
+        const second = await runSelfDoctor()
+        perf.onCall = undefined
+        expect(second.findings.find(f => f.id === backlog.id)).toBeUndefined()
+        const { getDoctorFindings } = await import('./self-doctor.js')
+        expect(getDoctorFindings().find(f => f.id === backlog.id)?.status).toBe('dismissed')
     })
 })
