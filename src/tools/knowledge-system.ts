@@ -20,7 +20,7 @@ import {
     existsSync, mkdirSync, readFileSync, writeFileSync,
     readdirSync, rmSync, statSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, isAbsolute } from 'node:path'
 
 // ============================================
 // Types
@@ -73,6 +73,26 @@ function slugify(text: string): string {
         .slice(0, 60)
 }
 
+/**
+ * R2 T2: an item directory is always exactly one valid, non-empty slug below
+ * KNOWLEDGE_DIR. Titles are slugified; a direct id must already be a slug.
+ * Anything else (empty slug, "..", separators) resolves to null.
+ */
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+function itemDirFor(id: string): string | null {
+    if (!SLUG_PATTERN.test(id)) return null
+    const dir = join(KNOWLEDGE_DIR, id)
+    const rel = relative(KNOWLEDGE_DIR, dir)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel) || /[\\/]/.test(rel)) return null
+    return dir
+}
+
+function isPlainFileName(fileName: string): boolean {
+    return typeof fileName === 'string' && fileName.length > 0 && fileName !== '.' && fileName !== '..'
+        && !/[\\/\0]/.test(fileName)
+}
+
 // ============================================
 // CRUD Operations
 // ============================================
@@ -90,7 +110,9 @@ export function storeKnowledge(
     ensureKnowledgeDir()
 
     const id = slugify(title)
-    const itemDir = join(KNOWLEDGE_DIR, id)
+    const safeDir = itemDirFor(id)
+    if (!safeDir) throw new Error('Titel ergibt keinen gültigen Wissens-Schlüssel (nur Buchstaben/Ziffern)')
+    const itemDir = safeDir
     const isUpdate = existsSync(itemDir)
 
     if (!existsSync(itemDir)) {
@@ -139,14 +161,14 @@ export function storeKnowledge(
 export function getKnowledge(idOrTitle: string): KnowledgeItem | null {
     ensureKnowledgeDir()
 
-    const id = slugify(idOrTitle)
-    const itemDir = join(KNOWLEDGE_DIR, id)
+    const id = slugify(String(idOrTitle ?? ''))
+    const itemDir = itemDirFor(id)
 
-    if (!existsSync(itemDir)) {
-        // Try direct ID match
-        const directDir = join(KNOWLEDGE_DIR, idOrTitle)
-        if (!existsSync(directDir)) return null
-        return getKnowledgeById(idOrTitle)
+    if (!itemDir || !existsSync(itemDir)) {
+        // Try direct ID match (only a valid slug, never a path)
+        const directDir = itemDirFor(String(idOrTitle ?? ''))
+        if (!directDir || !existsSync(directDir)) return null
+        return getKnowledgeById(String(idOrTitle))
     }
 
     return getKnowledgeById(id)
@@ -183,13 +205,13 @@ function getKnowledgeById(id: string): KnowledgeItem | null {
 export function deleteKnowledge(idOrTitle: string): boolean {
     ensureKnowledgeDir()
 
-    const id = slugify(idOrTitle)
-    const itemDir = join(KNOWLEDGE_DIR, id)
+    const id = slugify(String(idOrTitle ?? ''))
+    const itemDir = itemDirFor(id)
 
-    if (!existsSync(itemDir)) {
-        // Try direct
-        const directDir = join(KNOWLEDGE_DIR, idOrTitle)
-        if (!existsSync(directDir)) return false
+    if (!itemDir || !existsSync(itemDir)) {
+        // Try direct (only a valid slug below KNOWLEDGE_DIR, never a path)
+        const directDir = itemDirFor(String(idOrTitle ?? ''))
+        if (!directDir || !existsSync(directDir)) return false
         rmSync(directDir, { recursive: true, force: true })
         console.log(`[Knowledge] Deleted: ${idOrTitle}`)
         return true
@@ -324,7 +346,9 @@ export function addArtifact(
     content: string
 ): boolean {
     const id = slugify(knowledgeId)
-    const artifactDir = join(KNOWLEDGE_DIR, id, 'artifacts')
+    const itemDir = itemDirFor(id)
+    if (!itemDir || !isPlainFileName(fileName)) return false
+    const artifactDir = join(itemDir, 'artifacts')
 
     if (!existsSync(artifactDir)) {
         mkdirSync(artifactDir, { recursive: true })
@@ -337,7 +361,9 @@ export function addArtifact(
 
 export function getArtifact(knowledgeId: string, fileName: string): string | null {
     const id = slugify(knowledgeId)
-    const filePath = join(KNOWLEDGE_DIR, id, 'artifacts', fileName)
+    const itemDir = itemDirFor(id)
+    if (!itemDir || !isPlainFileName(fileName)) return null
+    const filePath = join(itemDir, 'artifacts', fileName)
 
     if (!existsSync(filePath)) return null
     return readFileSync(filePath, 'utf-8')
