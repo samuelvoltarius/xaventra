@@ -112,3 +112,13 @@ describe('context-aware tool selection', () => {
         expect(tools.some(t => t.name === 'desktop_status')).toBe(true)
     })
 })
+
+describe('desktop route delivery boundary', () => {
+    it('does not expose generic send_file on the desktop capture/computer-use routes', () => {
+        for (const text of ['Schick mir einen Screenshot vom Desktop', 'computer use: klicke auf OK']) {
+            const names = getRelevantTools(text).map(t => t.name)
+            expect(names).toContain('desktop_screenshot')
+            expect(names).not.toContain('send_file')
+        }
+    })
+})

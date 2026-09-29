@@ -26,9 +26,34 @@ export function makeIdempotencyKey(runId: string, operation: string, input: unkn
     return createHash('sha256').update(`${runId}\0${operation}\0${stable}`).digest('hex')
 }
 
+/** Idempotency scope of a request. A `[NOVA_MISSION_KEY:x]` marker is adopted
+ * only together with a syntactically valid `[NOVA_MISSION_FENCE:...]` of the
+ * same mission (`x` must be `<missionId>:step:<...>`); the fence's liveness is
+ * checked separately by assertMissionFenceForContent before any tool runs.
+ * A key without such a fence (e.g. typed by a user) is ignored. */
 export function executionScopeForContent(content: string, fallbackRunId: string): string {
     const missionKey = content.match(/\[NOVA_MISSION_KEY:([^\]]+)\]/)?.[1]?.trim()
-    return missionKey && /^[A-Za-z0-9._:-]{1,200}$/.test(missionKey) ? missionKey : fallbackRunId
+    if (!missionKey || !/^[A-Za-z0-9._:-]{1,200}$/.test(missionKey)) return fallbackRunId
+    const fence = missionFenceForContent(content)
+    return fence && missionKey.startsWith(`${fence.missionId}:step:`) ? missionKey : fallbackRunId
+}
+
+const MISSION_MARKER = /\[\s*NOVA_MISSION_(?:KEY|FENCE)\s*:[^\]\[]*\]?/gi
+
+/** Remove mission protocol markers (`[NOVA_MISSION_KEY:` / `[NOVA_MISSION_FENCE:`)
+ * from external, untrusted text (user messages, observations) before it enters
+ * a pipeline whose content is parsed for markers. Repeats until stable so a
+ * marker cannot be re-assembled from nested fragments. Only the server-side
+ * mission executor may add these markers afterwards. */
+export function stripMissionProtocolMarkers(text: string): string {
+    let current = text
+    for (let i = 0; i < 32; i++) {
+        const next = current.replace(MISSION_MARKER, '')
+        if (next === current) return current
+        current = next
+    }
+    // Pathological nesting: neutralise any remaining opener.
+    return current.replace(/\[(?=\s*NOVA_MISSION_)/gi, '(')
 }
 
 export interface MissionExecutionFence { missionId: string; epoch: number; token: string }

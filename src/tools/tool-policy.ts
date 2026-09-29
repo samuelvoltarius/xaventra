@@ -5,6 +5,8 @@
  * Supports allow/deny/confirm actions.
  */
 
+import { getDesktopAgentContext } from '../desktop/desktop-agent-context.js'
+
 // ============================================
 // Types
 // ============================================
@@ -36,8 +38,10 @@ export const DEFAULT_POLICY: ToolPolicy = {
     rules: [
         // SSH only on CLI channel
         { tool: 'ssh_*', action: 'deny', channels: ['telegram', 'discord', 'whatsapp'], reason: 'SSH nur über CLI erlaubt' },
-        // Desktop control only on CLI
-        { tool: 'desktop_*', action: 'deny', channels: ['telegram', 'discord', 'whatsapp'], reason: 'Desktop-Steuerung nur lokal' },
+        // Desktop tools are denied on EVERY channel (cli/web/api/rest included).
+        // They are reachable only through the explicit grant paths in
+        // checkTool() or an explicit operator allow rule.
+        { tool: 'desktop_*', action: 'deny', reason: 'Desktop-Steuerung nur lokal über den authentifizierten Nova-Desktop-Client oder mit expliziter Owner-Freigabe' },
         // Self-management requires confirmation
         { tool: 'self_extend', action: 'confirm', reason: 'Self-Extension erfordert Bestätigung' },
         { tool: 'self_manage', action: 'confirm', reason: 'Self-Management erfordert Bestätigung' },
@@ -92,6 +96,9 @@ export function evaluatePolicy(
 
 let currentPolicy: ToolPolicy = DEFAULT_POLICY
 
+/** Tools the authenticated Nova Desktop client executes on its own machine. */
+const DESKTOP_CLIENT_TOOLS = ['desktop_workspace', 'desktop_control', 'desktop_status', 'desktop_screenshot']
+
 /**
  * Load policy from nova config.
  */
@@ -124,10 +131,22 @@ export function checkTool(
 ): { allowed: boolean; needsConfirmation: boolean; reason?: string } {
     const owner=process.env.NOVA_DESKTOP_TELEGRAM_OWNER_ID
     const enrolled=owner&&context.authUserId===owner&&/^[1-9][0-9]*$/.test(owner)&&process.env.NOVA_CAPTURE_SOCKET&&process.env.NOVA_CAPTURE_TOKEN_FILE
-    const rules=enrolled ? [
+    const grants:PolicyRule[]=[]
+    // Grant 1: the enrolled workstation owner, Telegram only.
+    if(enrolled){
+        grants.push({tool:'desktop_screenshot',action:'allow',channels:['telegram']})
+        if(process.env.NOVA_DESKTOP_INPUT_ENABLED==='1')grants.push({tool:'desktop_input',action:'allow',channels:['telegram']})
+    }
+    // Grant 2: the authenticated Nova Desktop client (AsyncLocalStorage set by
+    // the desktop API after client authentication, not a spoofable channel
+    // string alone) for its own client-side tools. Never desktop_input.
+    const client=getDesktopAgentContext()
+    if(client?.clientId&&client.principalId&&context.channel==='desktop'){
+        for(const tool of DESKTOP_CLIENT_TOOLS)grants.push({tool,action:'allow',channels:['desktop']})
+    }
+    const rules=grants.length ? [
         ...currentPolicy.rules.filter(r=>!DEFAULT_POLICY.rules.includes(r)),
-        {tool:'desktop_screenshot',action:'allow' as const,channels:['telegram']},
-        ...(process.env.NOVA_DESKTOP_INPUT_ENABLED==='1'?[{tool:'desktop_input',action:'allow' as const,channels:['telegram']}]:[]),
+        ...grants,
         ...DEFAULT_POLICY.rules,
     ] : currentPolicy.rules
     const result = evaluatePolicy(toolName, context, {...currentPolicy,rules})

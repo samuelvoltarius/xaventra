@@ -900,95 +900,33 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
         },
     })
 
-    // --- Desktop Screenshot Tool (Native, no Python/nut-js needed) ---
+    // --- Desktop Screenshot Tool ---
+    // Same name as before, but delegated to the hardened desktopScreenshotTool
+    // so every path (cli.ts, llm/base.ts, tools/executor.ts) enforces the same
+    // owner/principal/channel/run checks and the authenticated recipient. The
+    // legacy path never captures the daemon's local display: without an
+    // authenticated Nova Desktop client or an enrolled capture adapter
+    // (NOVA_CAPTURE_SOCKET / NOVA_CAPTURE_TOKEN_FILE) it refuses. A
+    // model-supplied chat_id is dropped; delivery goes to the authenticated
+    // Telegram requester only.
 
     registry.register({
         name: 'desktop_screenshot',
-        description: 'Nimm einen Screenshot des gesamten Desktops auf. Funktioniert ohne Browser. Das Bild wird automatisch an die KI weitergeleitet zur Analyse UND (sofern send=true und Telegram aktiv) direkt an den Nutzer gesendet.',
+        description: 'Nimm einen Screenshot des freigegebenen Desktops über den angemeldeten Desktop-Client oder den eingerichteten Capture-Adapter auf. Das Bild geht an die KI zur Analyse und (sofern send != false) an den authentifizierten Telegram-Anfragenden.',
         category: 'system',
         parameters: [
             { name: 'name', type: 'string', description: 'Optionaler Dateiname (ohne Endung)', required: false },
             { name: 'send', type: 'boolean', description: 'Screenshot direkt an den Nutzer senden (default: true)', required: false },
         ],
         handler: async (params) => {
-            try {
-                const { existsSync, mkdirSync, readFileSync } = await import('node:fs')
-                const { join } = await import('node:path')
-                const { execSync } = await import('node:child_process')
-
-                const visionDir = join(process.cwd(), '.nova-vision')
-                if (!existsSync(visionDir)) mkdirSync(visionDir, { recursive: true })
-
-                const fileName = (params.name as string) || `desktop_${Date.now()}`
-                const filePath = join(visionDir, `${fileName}.png`)
-
-                const isWin = process.platform === 'win32'
-
-                if (isWin) {
-                    // PowerShell native screenshot — no dependencies needed
-                    const psScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$screens = [System.Windows.Forms.Screen]::AllScreens
-$bounds = [System.Drawing.Rectangle]::Empty
-foreach ($s in $screens) { $bounds = [System.Drawing.Rectangle]::Union($bounds, $s.Bounds) }
-$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-$g.Dispose()
-$bmp.Save('${filePath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-$bmp.Dispose()
-Write-Output 'OK'`
-                    execSync(`powershell -NoProfile -Command "${psScript.replace(/\n/g, '; ')}"`, { timeout: 15000 })
-                } else if (process.platform === 'darwin') {
-                    execSync(`screencapture -x "${filePath}"`, { timeout: 10000 })
-                } else {
-                    // Linux fallback
-                    execSync(`import -window root "${filePath}" 2>/dev/null || scrot "${filePath}"`, { timeout: 10000 })
-                }
-
-                if (!existsSync(filePath)) {
-                    return { success: false, error: 'Screenshot konnte nicht erstellt werden.' }
-                }
-
-                // Read as base64 for LLM vision
-                const imageBuffer = readFileSync(filePath)
-                const base64 = imageBuffer.toString('base64')
-
-                console.log(`[Desktop] 📸 Screenshot: ${filePath} (${(imageBuffer.length / 1024).toFixed(0)} KB)`)
-
-                // Auto-send to the user (default true) so we never claim "sent"
-                // without actually sending. Capture stays separate from delivery:
-                // the base64 still flows back to the LLM for real vision analysis.
-                let sentMsg = ''
-                if (params.send !== false) {
-                    try {
-                        const { executeSendFile } = await import('./send-file-tool.js')
-                        const sendResult = await executeSendFile({
-                            path: filePath,
-                            caption: 'Screenshot vom Desktop 📸',
-                            chat_id: params.chat_id,
-                        })
-                        sentMsg = ` | ${sendResult}`
-                        console.log(`[Desktop] 📤 ${sendResult}`)
-                    } catch (sendErr) {
-                        sentMsg = ` | ⚠️ Senden fehlgeschlagen: ${sendErr}`
-                        console.log(`[Desktop] ⚠️ Auto-send failed: ${sendErr}`)
-                    }
-                }
-
-                return {
-                    success: true,
-                    path: filePath,
-                    screenshotPath: filePath,
-                    imageBase64: base64,
-                    imageMimeType: 'image/png',
-                    size: imageBuffer.length,
-                    message: `Screenshot gespeichert: ${filePath}${sentMsg}`,
-                }
-            } catch (err) {
-                return { success: false, error: `Screenshot-Fehler: ${err}` }
+            const { getDesktopAgentContext } = await import('../desktop/desktop-agent-context.js')
+            if (!getDesktopAgentContext() && !process.env.NOVA_CAPTURE_SOCKET && !process.env.NOVA_CAPTURE_TOKEN_FILE) {
+                return { success: false, captured: false, delivered: false,
+                    error: 'Desktop screenshot requires an authenticated desktop client or an enrolled capture adapter; local display capture is disabled' }
             }
+            const { desktopScreenshotTool } = await import('./desktop-screenshot-tool.js')
+            const { chat_id: _modelRecipient, ...forwarded } = params
+            return desktopScreenshotTool.handler(forwarded)
         },
     })
 

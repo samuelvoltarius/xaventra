@@ -49,8 +49,8 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
                 'nova.tool.name': name, 'nova.channel': channel, 'nova.run.id': idempotencyRunId,
             }, async () => {
                 const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-                return withExecutionPolicyContext({ runId: idempotencyRunId, userId, authUserId, channel,
-                    nodeId: process.env.NOVA_NODE_ID, workspaceId }, () => options.execute(name, args))
+                return withExecutionPolicyContext({ runId: idempotencyRunId, contractId: kernel.contract.id,
+                    userId, authUserId, channel, nodeId: process.env.NOVA_NODE_ID, workspaceId }, () => options.execute(name, args))
             }),
         })
         const value = execution.result as any
@@ -59,6 +59,17 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
             throw new ToolAuthorizationError(String(value.error || 'Tool blocked by policy'))
         }
         if (callId) options.record(callId, { idempotencyKey: key, executionInputHash })
-        return execution.result
+        return execution.replayed ? markReplayed(execution.result) : execution.result
     }
+}
+
+/** A result served from the idempotency cache must never look like a fresh
+ * effect. Object results keep their fields and gain `replayed: true,
+ * executedNow: false`; any other value (string, number, null, array) is
+ * wrapped as `{ result, replayed: true, executedNow: false }`. */
+export function markReplayed(result: unknown): Record<string, unknown> {
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+        return { ...(result as Record<string, unknown>), replayed: true, executedNow: false }
+    }
+    return { result, replayed: true, executedNow: false }
 }

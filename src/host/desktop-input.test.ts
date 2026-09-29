@@ -23,3 +23,8 @@ it('does not repeat an input after uncertain execution',async()=>{
  await expect(executeDesktopInputOnce(root,id,{action:'key',key:'Tab'},run)).rejects.toThrow('uncertain')
  expect(run).toHaveBeenCalledOnce()
 })
+it.each(['ctrl+alt+Delete','alt+ctrl+Delete','ctrl+alt+BackSpace','ctrl+alt+shift+BackSpace','super+l','super+shift+l',
+ ...Array.from({length:12},(_,i)=>`ctrl+alt+F${i+1}`),'alt+ctrl+F1','ctrl+alt+shift+F7'])('refuses session-critical key combo %s',key=>
+ expect(()=>desktopInputArgs({action:'key',key})).toThrow())
+it.each(['alt+F4','ctrl+a','Delete','BackSpace','ctrl+BackSpace','F5','ctrl+F4','l','shift+Tab'])('keeps ordinary key %s',key=>
+ expect(desktopInputArgs({action:'key',key})).toEqual(['key','--clearmodifiers',key]))

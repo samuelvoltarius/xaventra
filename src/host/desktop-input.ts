@@ -15,9 +15,17 @@ export function desktopInputArgs(value: any): string[] {
         return args
     }
     if(value.action==='type') { if(typeof value.text!=='string'||!value.text.length||value.text.length>2000||/[\x00-\x1f\x7f]/.test(value.text))throw Error('Invalid text');return ['type','--clearmodifiers','--delay','1','--',value.text] }
-    if(value.action==='key') { if(typeof value.key!=='string'||! /^(?:(?:ctrl|alt|shift|super)\+){0,3}(?:[a-z0-9]|Return|Escape|Tab|BackSpace|Delete|Home|End|Left|Right|Up|Down|Page_Up|Page_Down|space|F(?:[1-9]|1[0-2]))$/.test(value.key))throw Error('Invalid key');return ['key','--clearmodifiers',value.key] }
+    if(value.action==='key') { if(typeof value.key!=='string'||! /^(?:(?:ctrl|alt|shift|super)\+){0,3}(?:[a-z0-9]|Return|Escape|Tab|BackSpace|Delete|Home|End|Left|Right|Up|Down|Page_Up|Page_Down|space|F(?:[1-9]|1[0-2]))$/.test(value.key))throw Error('Invalid key');if(isSessionCriticalKey(value.key))throw Error('Session-critical key combination refused');return ['key','--clearmodifiers',value.key] }
     if(!['up','down'].includes(value.direction)||!Number.isInteger(value.amount)||value.amount<1||value.amount>20)throw Error('Invalid scroll')
     return ['click','--repeat',String(value.amount),'--delay','50',value.direction==='up'?'4':'5']
+}
+
+/** Combos that end, lock or switch away from the X session (server zap,
+ * three-finger salute, screen lock, VT switch). alt+F4 stays allowed. */
+function isSessionCriticalKey(key:string):boolean {
+    const parts=key.split('+'),base=parts.pop()!,mods=new Set(parts)
+    if(mods.has('ctrl')&&mods.has('alt')&&(base==='Delete'||base==='BackSpace'||/^F(?:[1-9]|1[0-2])$/.test(base)))return true
+    return mods.has('super')&&base==='l'
 }
 
 /** Intent is durable BEFORE input. An uncertain effect is never repeated. */
