@@ -3501,7 +3501,9 @@ import { resolveConfigPath } from '../config/config-path.js'
 ALL_TOOLS.push(
     cadGenerateTool as any,
     printerDiscoveryTool as any,
-    printerStatusTool as any,
+    // R2 T18: not registered — the name belongs to the configured Moonraker
+    // printer_status from 3dprinter.ts, which this legacy entry silently replaced.
+    // printerStatusTool as any,
     printerSliceTool as any,
     printerPrintTool as any,
     desktopScreenshotTool as any,  // proper desktop capture: vision + auto-send

@@ -10,8 +10,23 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { ownerApprovalRefusal } from './owner-approval.js'
+
+/** R2 T9: printer URLs are plain http(s) base URLs, never shell text. */
+function printerBaseUrl(raw: unknown): string | null {
+    try {
+        const url = new URL(String(raw ?? ''))
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+        if (url.username || url.password) return null
+        return url.origin + url.pathname.replace(/\/+$/, '')
+    } catch {
+        return null
+    }
+}
+
+const GCODE_FILE = /\.(gcode|gco|g|bgcode)$/i
 
 export interface PrinterConfig {
     name: string
@@ -36,7 +51,8 @@ export const printerDiscoveryTool = {
         }
     ],
     handler: async (params: { timeout?: number }) => {
-        const { timeout = 10 } = params
+        // R2 T9: the timeout is interpolated into Python source: numbers only
+        const timeout = Math.min(Math.max(Math.round(Number(params.timeout) || 10), 1), 60)
         
         return new Promise((resolve) => {
             const proc = spawn('python', ['-c', `
@@ -52,24 +68,25 @@ def discover_printers(timeout=${timeout}):
         ('_octoprint._tcp', 80),
     ]
     
-    # Simple socket-based discovery on common IPs
+    # Simple socket-based discovery on common IPs (parallel: 762 addresses
+    # one after another took longer than the tool timeout, R2 T18)
+    from concurrent.futures import ThreadPoolExecutor
     ranges = ['192.168.1.', '192.168.0.', '10.0.0.']
-    discovered = []
-    
-    for base in ranges:
-        for i in range(1, 255):
-            ip = base + str(i)
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.5)
-                result = sock.connect_ex((ip, 80))
-                if result == 0:
-                    # Port open - could be a printer
-                    discovered.append(ip)
-                sock.close()
-            except:
-                pass
-    
+    candidates = [base + str(i) for base in ranges for i in range(1, 255)]
+
+    def probe(ip):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex((ip, 80))
+            sock.close()
+            return ip if result == 0 else None
+        except:
+            return None
+
+    with ThreadPoolExecutor(max_workers=128) as pool:
+        discovered = [ip for ip in pool.map(probe, candidates) if ip]
+
     # Moonraker/Klipper typically on port 7125
     for ip in discovered:
         try:
@@ -146,17 +163,18 @@ export const printerStatusTool = {
         }
     ],
     handler: async (params: { printerUrl: string; apiKey?: string }) => {
-        const { printerUrl, apiKey } = params
-        
+        const { apiKey } = params
+        const printerUrl = printerBaseUrl(params.printerUrl)
+        if (!printerUrl) return { success: false, error: 'Ungültige Drucker-URL (nur http/https).' }
+
+        // R2 T9: plain HTTP request instead of a cmd/curl shell string
         return new Promise((resolve) => {
-            const auth = apiKey ? ` -H "X-Api-Key: ${apiKey}"` : ''
-            const curlCmd = `curl -s${auth} "${printerUrl}/printer/objects/query?heater_bed&toolhead&print_stats"`
-            
-            const proc = spawn('cmd', ['/c', curlCmd], { timeout: 10000 })
-            let stdout = ''
-            proc.stdout?.on('data', (d) => { stdout += d.toString() })
-            
-            proc.on('close', (code) => {
+            fetch(`${printerUrl}/printer/objects/query?heater_bed&toolhead&print_stats`, {
+                headers: apiKey ? { 'X-Api-Key': String(apiKey) } : {},
+                signal: AbortSignal.timeout(10000),
+            }).then(async response => {
+                const stdout = await response.text()
+                const code = response.ok ? 0 : response.status
                 if (code === 0 && stdout.includes('temperature')) {
                     try {
                         const data = JSON.parse(stdout)
@@ -178,15 +196,13 @@ export const printerStatusTool = {
                     resolve({
                         success: false,
                         error: 'Could not connect to printer',
-                        message: stdout || 'Connection failed'
+                        message: stdout.slice(0, 500) || 'Connection failed'
                     })
                 }
-            })
-            
-            proc.on('error', (err) => {
+            }).catch((err) => {
                 resolve({
                     success: false,
-                    error: err.message,
+                    error: err instanceof Error ? err.message : String(err),
                     message: 'Failed to query printer'
                 })
             })
@@ -259,9 +275,9 @@ export const printerSliceTool = {
                 stlFile
             ]
             
+            // R2 T9: argument vector without a shell
             const proc = spawn(orcaPath, slicerArgs, {
                 timeout: 120000,
-                shell: true
             })
             
             let stderr = ''
@@ -315,65 +331,58 @@ export const printerPrintTool = {
             type: 'string',
             description: 'API key for the printer',
             required: false
+        },
+        {
+            name: 'confirm',
+            type: 'string',
+            description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.',
+            required: false
         }
     ],
-    handler: async (params: { printerUrl: string; gcodeFile: string; apiKey?: string }) => {
-        const { printerUrl, gcodeFile, apiKey } = params
-        
-        if (!existsSync(gcodeFile)) {
-            return { success: false, error: `G-code file not found: ${gcodeFile}` }
+    handler: async (params: { printerUrl: string; gcodeFile: string; apiKey?: string; [key: string]: unknown }) => {
+        const { gcodeFile, apiKey } = params
+        const printerUrl = printerBaseUrl(params.printerUrl)
+        if (!printerUrl) return { success: false, error: 'Ungültige Drucker-URL (nur http/https).' }
+
+        // R2 T9: only real G-code files are uploaded (never configs or keys)
+        if (typeof gcodeFile !== 'string' || !GCODE_FILE.test(gcodeFile) || !existsSync(gcodeFile) || !statSync(gcodeFile).isFile()) {
+            return { success: false, error: `G-code file not found or not a G-code file: ${String(gcodeFile)}` }
         }
-        
+
         if (!apiKey) {
             return { success: false, error: 'API key required for printing' }
         }
-        
-        return new Promise((resolve) => {
-            // Moonraker API - upload file and start print
-            const uploadCmd = `curl -s -X POST "${printerUrl}/api/files/local" ` +
-                `-H "X-Api-Key: ${apiKey}" ` +
-                `-F "file=@${gcodeFile}" ` +
-                `-F "root=gcodes" `
-            
-            const proc = spawn('cmd', ['/c', uploadCmd], { timeout: 60000 })
-            let stdout = ''
-            proc.stdout?.on('data', (d) => { stdout += d.toString() })
-            
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    // Try to start the print
-                    const startCmd = `curl -s -X POST "${printerUrl}/api/job" ` +
-                        `-H "X-Api-Key: ${apiKey}" ` +
-                        `-H "Content-Type: application/json" ` +
-                        `-d '{"command": "start"}" `
-                    
-                    const startProc = spawn('cmd', ['/c', startCmd], { timeout: 10000 })
-                    let startOut = ''
-                    startProc.stdout?.on('data', (d) => { startOut += d.toString() })
-                    
-                    startProc.on('close', () => {
-                        resolve({
-                            success: true,
-                            message: 'Print job sent to printer',
-                            response: startOut || stdout
-                        })
-                    })
-                } else {
-                    resolve({
-                        success: false,
-                        error: 'Failed to upload file',
-                        details: stdout
-                    })
-                }
+
+        // R2 T10: starting a print is a physical action: owner approval
+        const refusal = await ownerApprovalRefusal(params, 'printer_print')
+        if (refusal) return { success: false, error: refusal }
+
+        // R2 T9/T18: plain HTTP requests (no shell), status codes checked
+        try {
+            const form = new FormData()
+            form.append('file', new Blob([readFileSync(gcodeFile)]), basename(gcodeFile))
+            form.append('root', 'gcodes')
+            const upload = await fetch(`${printerUrl}/api/files/local`, {
+                method: 'POST',
+                headers: { 'X-Api-Key': String(apiKey) },
+                body: form,
+                signal: AbortSignal.timeout(60000),
             })
-            
-            proc.on('error', (err) => {
-                resolve({
-                    success: false,
-                    error: err.message
-                })
+            const uploadText = await upload.text()
+            if (!upload.ok) return { success: false, error: `Upload failed: HTTP ${upload.status}`, details: uploadText.slice(0, 500) }
+
+            const start = await fetch(`${printerUrl}/api/job`, {
+                method: 'POST',
+                headers: { 'X-Api-Key': String(apiKey), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: 'start' }),
+                signal: AbortSignal.timeout(10000),
             })
-        })
+            const startText = await start.text()
+            if (!start.ok) return { success: false, error: `Upload ok, but start failed: HTTP ${start.status}`, details: startText.slice(0, 500) }
+            return { success: true, message: 'Print job sent to printer and started', response: startText || uploadText }
+        } catch (err) {
+            return { success: false, error: err instanceof Error ? err.message : String(err) }
+        }
     }
 }
 
