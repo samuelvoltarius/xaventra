@@ -50,3 +50,20 @@ it.each(['approval','version','commit','duplicate','tree','archive','shared','ex
     },mode==='approval')
     expect(r.status).not.toBe(0);expect(existsSync(f.out)).toBe(false)
 })
+it('rejects architecture labels swapped together with their archives via the ELF machine',()=>{
+    const root=mkdtempSync(join(dir,'elf-')),version='2.79.0',commit='a'.repeat(40)
+    const builds=(['x64','arm64'] as const).map(arch=>{
+        const elf=Buffer.alloc(64);elf.write('\x7fELF','latin1');elf[4]=2;elf[5]=1;elf[6]=1;elf.writeUInt16LE(3,16);elf.writeUInt16LE(arch==='x64'?62:183,18)
+        const body=Buffer.from('fixture-'+arch),path='node_modules/fixture/addon.node',archive=join(root,`${arch}.tar.gz`)
+        const bytes=gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',body.length),body,Buffer.alloc(512-body.length),
+            nativeArchiveHeader(path,elf.length),elf,Buffer.alloc(512-elf.length+1024)]));writeFileSync(archive,bytes)
+        const treeHash=releaseTreeHash([{path:'dist/daemon.js',size:body.length,sha256:hash(body)},{path,size:elf.length,sha256:hash(elf)}])
+        return {arch,archive,treeHash,size:bytes.length,sha256:hash(bytes)}
+    })
+    const key=generateKeyPairSync('ed25519'),env={...process.env,XAVENTRA_UPDATE_PUBLISHER_ID:'fixture',XAVENTRA_UPDATE_PUBLISHER_KEY:key.privateKey.export({type:'pkcs8',format:'pem'}).toString()}
+    const run=(entries:any[],name:string)=>{const text=JSON.stringify({schema:1,version,commit,builds:entries}),planPath=join(root,name+'.json');writeFileSync(planPath,text)
+        return spawnSync(process.execPath,[script,version,commit,planPath,hash(text),join(root,name)],{encoding:'utf8',timeout:30000,env})}
+    const correct=run(builds,'correct');expect(correct.status,correct.stderr).toBe(0)
+    const swapped=run([{...builds[1],arch:'x64'},{...builds[0],arch:'arm64'}],'swapped')
+    expect(swapped.status).not.toBe(0);expect(swapped.stderr).toMatch(/ELF architecture/);expect(existsSync(join(root,'swapped'))).toBe(false)
+})

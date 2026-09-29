@@ -11,8 +11,9 @@ import { NATIVE_CHECKSUM_ASSET,NATIVE_MANIFEST_ASSET,nativeProgramAsset,nativeDe
 import { createHash,generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync,createReadStream,cpSync,rmSync,copyFileSync,existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join,dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
 
 assert.equal(process.env.XAVENTRA_NATIVE_FIXTURE,'1')
@@ -39,15 +40,22 @@ if(process.argv[2]==='--verify'){
         console.log(JSON.stringify({verified:true,releaseId:result.releaseId,targets:result.targets.map(t=>t.arch)}))
     }catch(error){console.error('Native publication rejected: '+String(error?.message).slice(0,200));process.exitCode=1}
 }else{
-    assert.equal(process.argv[2],'--publisher')
-    const publisher=process.argv[3],root=mkdtempSync(join(tmpdir(),'xaventra-native-publication-'))
+    // --publisher <bundle> runs a bundled signer; --publisher-source <publish-native-update.mjs>
+    // runs the reviewed source directly (Node type stripping + ts-source-hooks), as CI signs.
+    assert.ok(['--publisher','--publisher-source'].includes(process.argv[2]))
+    const publisherArgs=process.argv[2]==='--publisher-source'?['--experimental-transform-types','--import',pathToFileURL(join(dirname(process.argv[3]),'ts-source-hooks.mjs')).href,process.argv[3]]:[process.argv[3]]
+    const root=mkdtempSync(join(tmpdir(),'xaventra-native-publication-'))
     const keys=generateKeyPairSync('ed25519'),publicKey=join(root,'publisher-public.pem')
     writeFileSync(publicKey,keys.publicKey.export({type:'spki',format:'pem'}).toString(),{flag:'wx'})
     const builds={}
     for(const arch of ['x64','arm64']){
         const source=join(root,'payload-'+arch);mkdirSync(join(source,'dist'),{recursive:true})
-        const files=[['dist/daemon.js',`export const fixture=${JSON.stringify(arch)}\n`],['package.json','{"name":"fixture"}\n']].map(([path,text])=>{
-            writeFileSync(join(source,path),text);return {path,size:Buffer.byteLength(text),sha256:hash(text)}})
+        // A minimal ELF64 header for this architecture (x64=62, arm64=183) so the
+        // signer's per-file ELF machine check is exercised, not bypassed.
+        const elf=Buffer.alloc(64);elf.write('\x7fELF','latin1');elf[4]=2;elf[5]=1;elf[6]=1;elf.writeUInt16LE(3,16);elf.writeUInt16LE(arch==='x64'?62:183,18)
+        mkdirSync(join(source,'node_modules','fixture-addon'),{recursive:true})
+        const files=[['dist/daemon.js',Buffer.from(`export const fixture=${JSON.stringify(arch)}\n`)],['node_modules/fixture-addon/addon.node',elf],['package.json',Buffer.from('{"name":"fixture"}\n')]].map(([path,data])=>{
+            writeFileSync(join(source,path),data);return {path,size:data.length,sha256:hash(data)}})
         const archive=join(root,`build-${arch}.tar.gz`),r=await buildNativeArchive(source,archive,files)
         builds[arch]={arch,archive,sha256:r.sha256,size:r.size,treeHash:r.treeHash}
     }
@@ -55,7 +63,7 @@ if(process.argv[2]==='--verify'){
     let n=0
     const plan=(entries,name)=>{const text=JSON.stringify({schema:1,version:VERSION,commit:COMMIT,builds:entries}),path=join(root,(name||'plan')+'-'+(++n)+'.json');writeFileSync(path,text,{flag:'wx'});return {path,sha:hash(text)}}
     const publish=(p,{commit=COMMIT,sha=p.sha,out=join(root,'out-'+(++n))}={})=>{
-        const r=spawnSync(process.execPath,[publisher,VERSION,commit,p.path,sha,out],{encoding:'utf8',timeout:60000,env,maxBuffer:1024*1024})
+        const r=spawnSync(process.execPath,[...publisherArgs,VERSION,commit,p.path,sha,out],{encoding:'utf8',timeout:60000,env,maxBuffer:1024*1024})
         return {status:r.status,out,stderr:(r.stderr||'').split('\n').find(l=>/Error/.test(l))?.slice(0,200)}}
     const verify=(dir,listing,key=publicKey)=>{const r=spawnSync(process.execPath,[process.argv[1],'--verify',dir,key,...(listing?[listing]:[])],{encoding:'utf8',timeout:60000,env:{PATH:process.env.PATH,XAVENTRA_NATIVE_FIXTURE:'1'}});return {status:r.status,stderr:r.stderr.trim().slice(0,200)}}
     const cases={}
@@ -67,7 +75,10 @@ if(process.argv[2]==='--verify'){
     // Publisher-side negatives: each must fail before a publishable manifest exists.
     reject('wrong-plan-hash',publish(plan([builds.x64,builds.arm64]),{sha:'0'.repeat(64)}))
     reject('missing-archive',publish(plan([builds.x64,{...builds.arm64,archive:join(root,'absent.tar.gz')}])))
-    reject('wrong-architecture',publish(plan([builds.x64,{...builds.x64,arch:'x64'}])))
+    reject('duplicate-architecture',publish(plan([builds.x64,{...builds.x64,arch:'x64'}])))
+    // Labels swapped together with their archives: hashes stay consistent, only
+    // the ELF machine inside each archive can reveal the mismatch.
+    reject('swapped-architecture',publish(plan([{...builds.arm64,arch:'x64'},{...builds.x64,arch:'arm64'}])))
     reject('wrong-revision',publish(plan([builds.x64,builds.arm64]),{commit:'b'.repeat(40)}))
     reject('shared-archive',publish(plan([builds.x64,{...builds.x64,arch:'arm64'}])))
     reject('existing-output',publish(plan([builds.x64,builds.arm64]),{out:good.out}))

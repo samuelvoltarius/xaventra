@@ -4,7 +4,8 @@
 import { createHash,createPrivateKey,createPublicKey,sign } from 'node:crypto'
 import { readFileSync,createReadStream,mkdirSync,mkdtempSync,writeFileSync,copyFileSync,readdirSync,renameSync,rmdirSync,existsSync,constants } from 'node:fs'
 import { join,dirname,basename,resolve } from 'node:path'
-import { verifyNativeArchive } from '../src/core/native-archive.ts'
+import { stageNativeArchiveBytes } from '../src/core/native-archive.ts'
+import { validateNativeBinaryHeader } from '../src/core/native-build-qualification.ts'
 import { encodeNativeUpdatePackage } from '../src/core/update-package.ts'
 import { verifyNativeReleaseEvidence,verifyNativePublication } from '../src/core/native-release-evidence.ts'
 import { NATIVE_ARCHES,NATIVE_CHECKSUM_ASSET,NATIVE_MANIFEST_ASSET,formatNativeChecksums,nativeDescriptorAsset,nativeProgramAsset,nativeReleaseInventory } from '../src/core/native-release-assets.ts'
@@ -33,10 +34,17 @@ for(const arch of NATIVE_ARCHES){
     // Publish exactly the verified bytes: copy first, then stream-verify the copy.
     const program=join(staging,nativeProgramAsset(version,arch))
     copyFileSync(b.archive,program,constants.COPYFILE_EXCL)
-    await verifyNativeArchive(createReadStream(program),b)
+    // Same bounded canonical parser as verifyNativeArchive, plus an ELF header
+    // check per file: labels swapped together with archives cannot be signed.
+    let file,elf=0
+    await stageNativeArchiveBytes(createReadStream(program),b,{
+        begin(f){file={path:f.path,head:[],length:0}},
+        write(bytes){if(file.length<64){file.head.push(bytes.subarray(0,64-file.length));file.length+=Math.min(bytes.length,64-file.length)}},
+        end(){if(validateNativeBinaryHeader(file.path,Buffer.concat(file.head),arch))elf++;file=undefined},
+    })
     const bytes=encodeNativeUpdatePackage({schema:1,kind:'native',repository:'samuelvoltarius/xaventra',version,commit,platform:'linux',arch,treeHash:b.treeHash,archive:{sha256:b.sha256,size:b.size},entrypoint:'dist/daemon.js'})
     const name=nativeDescriptorAsset(version,arch)
-    prepared.push({arch,treeHash:b.treeHash,program:{name:nativeProgramAsset(version,arch),sha256:b.sha256},bytes,artifact:{name,platform:'linux',arch,size:bytes.length,sha256:hash(bytes)}})
+    prepared.push({arch,elfBinaries:elf,treeHash:b.treeHash,program:{name:nativeProgramAsset(version,arch),sha256:b.sha256},bytes,artifact:{name,platform:'linux',arch,size:bytes.length,sha256:hash(bytes)}})
 }
 if(new Set(prepared.map(p=>p.program.sha256)).size!==prepared.length)throw Error('Native architectures share one program archive')
 // No package loading, lifecycle scripts, npm, extraction, network or child
@@ -65,4 +73,4 @@ verifyNativePublication({names,signed:JSON.parse(readFileSync(join(output,NATIVE
     descriptors:Object.fromEntries(prepared.map(p=>[p.arch,readFileSync(join(output,p.artifact.name))]))})
 // Renamed program bytes must still be the checksummed, verified bytes.
 for(const p of prepared)if(createHash('sha256').update(readFileSync(join(output,p.program.name))).digest('hex')!==p.program.sha256)throw Error('Native program bytes changed after verification')
-console.log(JSON.stringify({version,commit,publisher:keyId,assets:nativeReleaseInventory(version)}))
+console.log(JSON.stringify({version,commit,publisher:keyId,elfBinaries:Object.fromEntries(prepared.map(p=>[p.arch,p.elfBinaries])),assets:nativeReleaseInventory(version)}))
