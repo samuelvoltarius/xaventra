@@ -9,6 +9,7 @@ import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 
 
 // ============================================
@@ -264,6 +265,39 @@ export const imageGenToolDef = {
     },
 }
 
+/** Telegram private-chat id of the authenticated requester, or undefined.
+ * Same rule as send_file: channel telegram and a numeric authUserId from the
+ * trusted execution policy context — never model arguments, never the
+ * process-global last active chat. */
+function authenticatedTelegramRecipient(): string | undefined {
+    const context = getExecutionPolicyContext()
+    if (context.channel?.toLowerCase() !== 'telegram') return undefined
+    return /^[1-9][0-9]*$/.test(context.authUserId || '') ? context.authUserId : undefined
+}
+
+/** Deliver a generated image to the authenticated requester. Without one the
+ * image is not sent; the returned note names the saved file path. */
+export async function deliverGeneratedImage(path: string, model: string): Promise<string> {
+    const chatId = authenticatedTelegramRecipient()
+    if (!chatId) {
+        console.log('[ImageGen] Kein authentifizierter Telegram-Empfänger — Bild gespeichert, nicht gesendet.')
+        return `\n⚠️ Kein authentifizierter Telegram-Empfänger in diesem Auftrag — Bild nicht gesendet. Datei: ${path}`
+    }
+    try {
+        const { getTelegramAdapter } = await import('../channels/telegram.js')
+        const tg = getTelegramAdapter()
+        if (!tg) return `\n⚠️ Telegram nicht verbunden — Bild nicht gesendet. Datei: ${path}`
+        // Never expose the raw user/planner prompt as a photo caption.
+        await tg.sendPhoto(chatId, path, `🖼️ Erstellt mit ${model}`)
+        console.log('[ImageGen] ✅ Bild an den authentifizierten Anfragenden gesendet')
+        return '\n📤 Bild an Telegram gesendet.'
+    } catch (sendErr) {
+        const errMsg = sendErr instanceof Error ? sendErr.message : String(sendErr)
+        console.log(`[ImageGen] ❌ Telegram auto-send failed: ${errMsg}`)
+        return `\n⚠️ Auto-Send fehlgeschlagen: ${errMsg}. Bild ist unter ${path} gespeichert.`
+    }
+}
+
 export async function executeImageGen(args: Record<string, unknown>): Promise<string> {
     const prompt = String(args.prompt || '')
     const aspectRatio = String(args.aspect_ratio || '1:1')
@@ -275,34 +309,7 @@ export async function executeImageGen(args: Record<string, unknown>): Promise<st
         let response = `✅ Bild generiert: ${result.path}`
         if (result.revisedPrompt) response += `\nRevisierter Prompt: ${result.revisedPrompt}`
 
-        // Auto-send via Telegram if available
-        try {
-            const { getTelegramAdapter } = await import('../channels/telegram.js')
-            const tg = getTelegramAdapter()
-            if (tg) {
-                let chatId = tg.getLastActiveChat()
-
-                // Fallback: Check global state for active chat
-                if (!chatId) {
-                    const globalState = (globalThis as any).__novaState
-                    chatId = globalState?.lastActiveChatId
-                }
-
-                if (chatId) {
-                    // Never expose the raw user/planner prompt as a photo caption.
-                    await tg.sendPhoto(chatId, result.path, `🖼️ Erstellt mit ${result.model}`)
-                    response += '\n📤 Bild an Telegram gesendet.'
-                    console.log(`[ImageGen] ✅ Auto-sent photo to chat ${chatId}`)
-                } else {
-                    console.log('[ImageGen] ⚠️ Kein aktiver Chat — Bild gespeichert, aber nicht gesendet.')
-                    response += '\n⚠️ Kein aktiver Chat — nutze send_file zum Senden.'
-                }
-            }
-        } catch (sendErr) {
-            const errMsg = sendErr instanceof Error ? sendErr.message : String(sendErr)
-            console.log(`[ImageGen] ❌ Telegram auto-send failed: ${errMsg}`)
-            response += `\n⚠️ Auto-Send fehlgeschlagen: ${errMsg}. Bild ist unter ${result.path} gespeichert.`
-        }
+        response += await deliverGeneratedImage(result.path, result.model)
 
         return response
     } catch (err: unknown) {
