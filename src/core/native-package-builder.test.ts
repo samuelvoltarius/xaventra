@@ -31,6 +31,10 @@ it('builds deterministic real archives and independently verifies contents',asyn
     const f=fixture(),a=await buildNativeArchive(f.root,f.out,f.files),b=await buildNativeArchive(f.root,join(f.dir,'second.tar.gz'),f.files)
     expect(a).toEqual(b);expect(readFileSync(f.out)).toEqual(readFileSync(join(f.dir,'second.tar.gz')))
 })
+it('uses bounded-cost default compression rather than maximum compression',async()=>{
+    const f=fixture();await buildNativeArchive(f.root,f.out,f.files)
+    expect(readFileSync(f.out)[8]).toBe(0) // gzip XFL: no maximum-compression flag
+})
 it.each(['hash','size','duplicate','missing','private','traversal','hardlink','inside'])('rejects %s input without a successful package receipt',async mode=>{
     const f=fixture()
     if(mode==='hash')f.files[0].sha256='a'.repeat(64)

@@ -70,7 +70,7 @@ export async function buildNativeArchive(root: string, output: string, approved:
                 }finally{await handle.close()}
             }
             yield Buffer.alloc(1024)
-        })()),createGzip({level:9}),async function*(input){
+        })()),createGzip({level:6}),async function*(input){
             for await(const chunk of input){size+=chunk.length;if(size>2*1024**3)throw Error('Native package compressed budget exceeded');compressedHash.update(chunk);yield chunk}
         },createWriteStream(output,{flags:'wx',mode:0o600,flush:true}),{signal:abort.signal})
         const result={sha256:compressedHash.digest('hex'),size,treeHash:releaseTreeHash(files)}

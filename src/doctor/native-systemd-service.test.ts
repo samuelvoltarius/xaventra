@@ -6,7 +6,7 @@ const enrollment = { unit, fragmentPath, fragmentHash: createHash('sha256').upda
     process: { executable: '/opt/fixture/node', executableHash: 'a'.repeat(64), argv: ['/opt/fixture/node','/opt/fixture/app.js'], cwd: '/fixture', cgroup: '0::/system.slice/xaventra-fixture.service\n' } }
 function fixture(overrides = {}) {
     const fields = { Id: unit, LoadState: 'loaded', ActiveState: 'active', SubState: 'running', MainPID: '123', Result: 'success',
-        ExecMainCode: '0', ExecMainStatus: '0', FragmentPath: fragmentPath, DropInPaths: '', Restart: 'no', KillMode: 'control-group', NeedDaemonReload: 'no', ...overrides }
+        ExecMainCode: '0', ExecMainStatus: '0', FragmentPath: fragmentPath, DropInPaths: '', Restart: 'no', KillMode: 'control-group', NeedDaemonReload: 'no', User:'1001',Group:'1002',DynamicUser:'no',...overrides }
     const transport = { readUnit: vi.fn(() => content), run: vi.fn(async (args: string[]) => {
         if (args[0] === 'stop') Object.assign(fields, { ActiveState: 'inactive', SubState: 'dead', MainPID: '0' })
         if (args[0] === 'start') Object.assign(fields, { ActiveState: 'active', SubState: 'running', MainPID: '456' })
@@ -63,4 +63,20 @@ it('rejects wrong process after start, without claiming success', async () => {
     f.verifyProcess.mockRejectedValue(Error('wrong executable'))
     await expect(f.service.start(async () => true)).rejects.toThrow('wrong executable')
     expect(f.transport.run.mock.calls.filter(([a]) => a[0] === 'start')).toHaveLength(1)
+})
+it.each([{User:'0'},{Group:'0'},{DynamicUser:'yes'},{User:'named-user'}])('refuses wrong runtime account before starting: %j',async changes=>{
+    const f=fixture({ActiveState:'inactive',SubState:'dead',MainPID:'0',...changes})
+    const service=new NativeSystemdService({...enrollment,process:{...enrollment.process,runtimeAccount:{uid:1001,gid:1002}}},f.transport,f.verifyProcess)
+    await expect(service.start(async()=>true)).rejects.toThrow('account enrollment mismatch')
+    expect(f.transport.run.mock.calls.every(([args])=>args[0]==='show')).toBe(true)
+})
+it('does not let caller mutation retarget an enrolled service after construction', async () => {
+    const f = fixture(), supplied = structuredClone(enrollment)
+    const service = new NativeSystemdService(supplied, f.transport, f.verifyProcess)
+    supplied.unit = 'other.service'
+    supplied.fragmentPath = '/etc/systemd/system/other.service'
+    supplied.process.argv[1] = '/opt/fixture/substituted.js'
+    await service.stop(async () => true)
+    expect(f.transport.run.mock.calls.every(([args]) => args[1] === unit)).toBe(true)
+    expect(f.verifyProcess.mock.calls[0][1]).toEqual(enrollment.process)
 })

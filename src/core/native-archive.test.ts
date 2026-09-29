@@ -2,10 +2,26 @@ import { it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { Readable } from 'node:stream'
-import { nativeArchiveHeader, verifyNativeArchive } from './native-archive.js'
+import { nativeArchiveHeader, verifyNativeArchive, stageNativeArchiveBytes } from './native-archive.js'
 import { releaseTreeHash } from './release-tree.js'
 
 const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+it('stages exact chunks and zero-length files using the canonical verifier',async()=>{
+    const f=fixture(),compressed=gzipSync(f.raw),seen:Buffer[][]=[]
+    let ended=0
+    const files=await stageNativeArchiveBytes(Readable.from([compressed]),{sha256:hash(compressed),size:compressed.length,treeHash:f.treeHash},{
+        begin(){seen.push([])},write(bytes){seen.at(-1)!.push(Buffer.from(bytes))},end(){ended++},
+    })
+    expect(files).toHaveLength(2);expect(ended).toBe(2)
+    expect(seen.map(parts=>Buffer.concat(parts).toString())).toEqual(['real file bytes',''])
+})
+it('does not return verified evidence when a staging write fails',async()=>{
+    const f=fixture(),compressed=gzipSync(f.raw),source=Readable.from([compressed])
+    await expect(stageNativeArchiveBytes(source,{sha256:hash(compressed),size:compressed.length,treeHash:f.treeHash},{
+        begin(){},write(){throw Error('disk full')},end(){throw Error('unexpected success')},
+    })).rejects.toThrow('disk full')
+    expect(source.destroyed).toBe(true)
+})
 function fixture(entries = [{path:'dist/daemon.js',data:Buffer.from('real file bytes')},{path:'empty',data:Buffer.alloc(0)}]) {
     const raw = Buffer.concat([...entries.flatMap(f=>[nativeArchiveHeader(f.path,f.data.length),f.data,Buffer.alloc((512-f.data.length%512)%512)]),Buffer.alloc(1024)])
     const treeHash = releaseTreeHash(entries.map(f=>({path:f.path,size:f.data.length,sha256:hash(f.data)})).sort((a,b)=>a.path.localeCompare(b.path)))
@@ -20,6 +36,12 @@ it.each([1,17,65536])('validates real compressed bytes across %s-byte input chun
 })
 it('hashes files larger than stream chunks without buffering entire payload',async()=>{
     const f=fixture([{path:'dist/daemon.js',data:Buffer.alloc(200000,7)}]);expect((await verify(f.raw,f.treeHash))[0].size).toBe(200000)
+})
+it.each([0o600,0o644,0o755])('retains signed mode %s for empty and nonempty entries',async mode=>{
+    const f=fixture(),raw=Buffer.from(f.raw)
+    nativeArchiveHeader('dist/daemon.js',15,mode).copy(raw,0)
+    nativeArchiveHeader('empty',0,mode).copy(raw,1024)
+    expect((await verify(raw,f.treeHash)).map(file=>file.mode)).toEqual([mode,mode])
 })
 it.each(['payload','link','hardlink','pax','checksum','padding','truncated','one-end','extra-end','after-end','duplicate','parent-file','bad-mode','wrong-tree'])('rejects %s even with correctly committed compressed bytes',async mode=>{
     const f=fixture();let raw=Buffer.from(f.raw),tree=f.treeHash

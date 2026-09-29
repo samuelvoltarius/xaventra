@@ -11,11 +11,14 @@ import assert from 'node:assert/strict'
 assert.equal(process.env.XAVENTRA_NATIVE_FIXTURE,'1')
 assert.equal(process.platform,'linux');assert.equal(process.getuid(),0)
 const root=mkdtempSync('/var/lib/xaventra-native-program-'),results=[]
-for(const mode of ['valid','changed-code','extra-file','symlink','hardlink','writable','archive','wrong-tree','archive-tree-mismatch']){
+chmodSync(root,0o755) // Fresh synthetic fixture only; private records remain0600.
+for(const mode of ['valid','valid-executable','valid-private','lost-executable','added-executable','broadened-read','changed-code','extra-file','symlink','hardlink','writable','archive','wrong-tree','archive-tree-mismatch']){
     const base=join(root,mode),app=join(base,'app');mkdirSync(base);mkdirSync(app);mkdirSync(join(app,'dist'))
-    const daemon=join(app,'dist','daemon.js');writeFileSync(daemon,'export const fixture = true\n',{mode:0o644})
+    const signedMode=['valid-executable','lost-executable'].includes(mode)?0o755:['valid-private','broadened-read'].includes(mode)?0o600:0o644
+    const daemon=join(app,'dist','daemon.js');writeFileSync(daemon,'export const fixture = true\n',{mode:signedMode})
+    chmodSync(daemon,signedMode)
     const content=Buffer.from(mode==='archive-tree-mismatch'?'different signed archive contents\n':'export const fixture = true\n')
-    const archive=join(base,'archive.tar.gz'),archiveBytes=gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',content.length),content,Buffer.alloc((512-content.length%512)%512+1024)]))
+    const archive=join(base,'archive.tar.gz'),archiveBytes=gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',content.length,signedMode),content,Buffer.alloc((512-content.length%512)%512+1024)]))
     writeFileSync(archive,archiveBytes,{mode:0o600})
     const digest=b=>createHash('sha256').update(b).digest('hex')
     const treeHash=releaseTreeHash(nativeProgramInventory(app)),keys=generateKeyPairSync('ed25519')
@@ -29,9 +32,9 @@ for(const mode of ['valid','changed-code','extra-file','symlink','hardlink','wri
     const ticket={...binding,attemptId:'repair-11111111-1111-4111-8111-111111111111',expiresAt:Date.now()+60000}
     const manifestPath=join(base,'manifest.json'),descriptorRecordPath=join(base,'descriptor.json'),publisherKeyPath=join(base,'publisher.pub'),enrollmentPath=join(base,'enrollment.json')
     writeFileSync(manifestPath,JSON.stringify(signed),{mode:0o600});writeFileSync(descriptorRecordPath,JSON.stringify({base64:bytes.toString('base64')}),{mode:0o600});writeFileSync(publisherKeyPath,policy.publisherKeys.fixture,{mode:0o600})
-    const enrolled={...expected,sourceHash:binding.baselineHash,manifestPath,descriptorRecordPath,publisherKeyPath,publisherKeyId:'fixture',root:app,archive}
+    const enrolled={...expected,runtimeAccount:{uid:65534,gid:65534},sourceHash:binding.baselineHash,manifestPath,descriptorRecordPath,publisherKeyPath,publisherKeyId:'fixture',root:app,archive}
     writeFileSync(enrollmentPath,JSON.stringify({schema:1,binding,releases:{old:enrolled,next:{...enrolled,sourceHash:binding.candidateHash}}}),{mode:0o600})
-    const profile={executable:'/fixture/node',executableHash:'a'.repeat(64),argv:['/fixture/node',join(app,'dist','daemon.js')],cwd:'/',cgroup:'fixture'}
+    const profile={runtimeAccount:enrolled.runtimeAccount,executable:'/fixture/node',executableHash:'a'.repeat(64),argv:['/fixture/node',join(app,'dist','daemon.js')],cwd:'/',cgroup:'fixture'}
     const old={id:'old',sourceHash:binding.baselineHash,programHash:treeHash,stateId:'old-state',unitFile:join(base,'old.service'),unitHash:'1'.repeat(64),process:profile}
     const next={...old,id:'next',sourceHash:binding.candidateHash,stateId:'next-state',previousReleaseId:'old',packageHash:descriptorHash,binding,unitHash:'2'.repeat(64)}
     const source=join(base,'old-state'),destination=join(base,'next-state')
@@ -42,12 +45,24 @@ for(const mode of ['valid','changed-code','extra-file','symlink','hardlink','wri
     if(mode==='symlink')symlinkSync(daemon,join(app,'alias.js'))
     if(mode==='hardlink')linkSync(daemon,join(app,'alias.js'))
     if(mode==='writable')chmodSync(daemon,0o666)
+    if(mode==='lost-executable'||mode==='broadened-read')chmodSync(daemon,0o644)
+    if(mode==='added-executable')chmodSync(daemon,0o755)
     if(mode==='archive')writeFileSync(archive,Buffer.alloc(archiveBytes.length,1))
     if(mode==='wrong-tree')expected.treeHash='d'.repeat(64)
     const verify=()=>verifyNativeInstalledRelease(signed,policy,expected,bytes,{root:app,archive})
-    if(mode==='valid'){const result=await verify();assert.equal(result.installedTreeVerified,true);assert.equal(result.archiveTreeVerified,true);assert.equal(result.files,1);assert.equal(await new NativeReleaseEnrollment(enrollmentPath).verify('old',old,ticket),true);assert.equal(await ops.verifyRelease('next',ticket),true)}
+    if(mode.startsWith('valid')){
+        const result=await verify();assert.equal(result.installedTreeVerified,true);assert.equal(result.archiveTreeVerified,true);assert.equal(result.files,1)
+        if(mode==='valid-private'){
+            // Signed0600 bytes are valid but not runnable by the enrolled UID.
+            await assert.rejects(()=>new NativeReleaseEnrollment(enrollmentPath).verify('old',old,ticket),/EACCES/)
+            await assert.rejects(()=>ops.verifyRelease('next',ticket),/EACCES/)
+        }else{
+            assert.equal(await new NativeReleaseEnrollment(enrollmentPath).verify('old',old,ticket),true)
+            assert.equal(await ops.verifyRelease('next',ticket),true)
+        }
+    }
     else await assert.rejects(verify)
-    if(['changed-code','extra-file','symlink','hardlink','writable','archive','archive-tree-mismatch'].includes(mode)){
+    if(['lost-executable','added-executable','broadened-read','changed-code','extra-file','symlink','hardlink','writable','archive','archive-tree-mismatch'].includes(mode)){
         // No fixture unit is installed: rejection must occur at publisher/tree
         // verification before unit selection, reload or start can be reached.
         await assert.rejects(()=>ops.select('next','old',ticket),/Native (program|artifact|archive|installed)/)

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 export interface NativeProcessIdentity {
     pid: number; startTicks: string; executable: string; executableHash: string
     argv: string[]; cwd: string; cgroup: string
+    runtimeAccount?: { uid:number; gid:number }
 }
 export interface ProcessIdentityReader {
     read(path: string, limit: number): Promise<Buffer>
@@ -43,6 +44,7 @@ export type NativeProcessProfile = Omit<NativeProcessIdentity, 'pid' | 'startTic
  * protected enrollment. Start ticks are an observed incarnation anchor, not a
  * release identity. Keep checking them throughout the verification. */
 export async function verifyNativeServiceProcess(pid: number, profile: NativeProcessProfile, reader: ProcessIdentityReader = linuxProcessIdentityReader): Promise<void> {
+    profile = structuredClone(profile)
     if (!Number.isSafeInteger(pid) || pid < 1) throw Error('Invalid service PID')
     const ticks = startTicks(await reader.read(`/proc/${pid}/stat`, 8192), pid)
     await verifyNativeProcess({ ...profile, pid, startTicks: ticks }, reader)
@@ -51,6 +53,9 @@ export async function verifyNativeServiceProcess(pid: number, profile: NativePro
  * Callers must not populate expected identity from the process being verified.
  * This proves executable identity, not JS module contents or HTTP readiness. */
 export async function verifyNativeProcess(expected: NativeProcessIdentity, reader: ProcessIdentityReader = linuxProcessIdentityReader): Promise<void> {
+    expected=structuredClone(expected)
+    const account=expected.runtimeAccount
+    if(account&&![account.uid,account.gid].every(n=>Number.isSafeInteger(n)&&n>0&&n<0xffffffff))throw Error('Invalid enrolled process account')
     if (reader === linuxProcessIdentityReader && process.platform !== 'linux') throw Error('Linux process identity required')
     if (!Number.isSafeInteger(expected.pid) || expected.pid < 1 || !/^[0-9]+$/.test(expected.startTicks)
         || !/^[a-f0-9]{64}$/.test(expected.executableHash) || !expected.executable.startsWith('/') || !expected.cwd.startsWith('/')
@@ -64,6 +69,15 @@ export async function verifyNativeProcess(expected: NativeProcessIdentity, reade
         if (JSON.stringify(raw.subarray(0, -1).toString('utf8').split('\0')) !== JSON.stringify(expected.argv)
             || (await reader.read(`${root}/cgroup`, 16 * 1024)).toString('utf8') !== expected.cgroup) throw Error('Process invocation identity mismatch')
         if (await reader.hash(`${root}/exe`) !== expected.executableHash) throw Error('Process executable hash mismatch')
+        if(account){
+            const status=(await reader.read(`${root}/status`,64*1024)).toString('utf8')
+            for(const [key,value] of [['Uid',account.uid],['Gid',account.gid]] as const){
+                const lines=status.split('\n').filter(line=>line.startsWith(key+':'))
+                if(lines.length!==1)throw Error('Process account observation missing or ambiguous')
+                const ids=lines[0].slice(4).trim().split(/\s+/)
+                if(ids.length!==4||ids.some(id=>!/^\d+$/.test(id)||Number(id)!==value))throw Error('Process account identity mismatch')
+            }
+        }
     }
     if (startTicks(await reader.read(`${root}/stat`, 8192), expected.pid) !== expected.startTicks) throw Error('Process incarnation changed')
 }

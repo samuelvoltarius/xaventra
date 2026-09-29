@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { readProtectedControllerFile } from './repair-controller-files.js'
 import { verifyNativeServiceProcess, type NativeProcessProfile } from './native-process-identity.js'
-const properties = ['Id', 'LoadState', 'ActiveState', 'SubState', 'MainPID', 'Result', 'ExecMainCode', 'ExecMainStatus', 'FragmentPath', 'DropInPaths', 'Restart', 'KillMode', 'NeedDaemonReload']
+const properties = ['Id', 'LoadState', 'ActiveState', 'SubState', 'MainPID', 'Result', 'ExecMainCode', 'ExecMainStatus', 'FragmentPath', 'DropInPaths', 'Restart', 'KillMode', 'NeedDaemonReload','User','Group','DynamicUser']
 export interface SystemdObservation { running: boolean; cleanStopped: boolean; pid: number }
 export interface SystemdTransport {
     run(args: string[]): Promise<string>
@@ -29,6 +29,7 @@ export class NativeSystemdService {
     constructor(private enrollment: { unit: string; fragmentPath: string; fragmentHash: string; process?: NativeProcessProfile },
         private transport: SystemdTransport = localSystemdTransport(),
         private verifyProcess: (pid: number, profile: NativeProcessProfile) => Promise<void> = verifyNativeServiceProcess) {
+        this.enrollment = structuredClone(enrollment)
         if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.service$/.test(enrollment.unit)
             || enrollment.fragmentPath !== `/etc/systemd/system/${enrollment.unit}`
             || !/^[a-f0-9]{64}$/.test(enrollment.fragmentHash)) throw Error('Explicit native systemd enrollment required')
@@ -37,7 +38,7 @@ export class NativeSystemdService {
         const before = await this.metadata()
         if (before.running) {
             if (!this.enrollment.process) throw Error('Native process enrollment missing')
-            await this.verifyProcess(before.pid, this.enrollment.process)
+            await this.verifyProcess(before.pid, structuredClone(this.enrollment.process))
             const after = await this.metadata()
             if (!after.running || after.pid !== before.pid) throw Error('Systemd process changed during verification')
         }
@@ -56,6 +57,8 @@ export class NativeSystemdService {
             || fields.FragmentPath !== this.enrollment.fragmentPath || fields.DropInPaths !== '' || fields.NeedDaemonReload !== 'no'
             || fields.Restart !== 'no' || fields.KillMode !== 'control-group') throw Error('Systemd identity or exclusive restart ownership mismatch')
         const content = this.transport.readUnit(this.enrollment.fragmentPath)
+        const account=this.enrollment.process?.runtimeAccount
+        if(account&&(fields.User!==String(account.uid)||fields.Group!==String(account.gid)||fields.DynamicUser!=='no'))throw Error('Systemd runtime account enrollment mismatch')
         if (createHash('sha256').update(content).digest('hex') !== this.enrollment.fragmentHash) throw Error('Systemd unit content changed')
         if (!/^\d+$/.test(fields.MainPID)) throw Error('Invalid systemd PID')
         const pid = Number(fields.MainPID)

@@ -5,6 +5,14 @@ import { pipeline } from 'node:stream/promises'
 import { releaseTreeHash, type ReleaseFileEvidence } from './release-tree.js'
 
 const MAX_BYTES = 2 * 1024 ** 3, MAX_FILES = 100_000
+export interface NativeArchiveFileEvidence extends ReleaseFileEvidence { mode: number }
+/** Receives uncommitted bytes: callers may write disposable staging only.
+ * No file or callback result is verified until the entire scan resolves. */
+export interface NativeArchiveStagingSink {
+    begin(file: { path: string; size: number; mode: number }): void
+    write(bytes: Buffer): void
+    end(): void
+}
 /** Canonical native v1 USTAR header. Only regular files, never links or
  * extension records. This format is deliberately narrower than general tar. */
 export function nativeArchiveHeader(path: string, size: number, mode = 0o644): Buffer {
@@ -28,12 +36,20 @@ export function nativeArchiveHeader(path: string, size: number, mode = 0o644): B
 
 /** Bounded streaming archive inventory. Does not extract or execute anything.
  * Both compressed digest and decompressed tree must match signed commitments. */
-export async function verifyNativeArchive(source: Readable, expected: { sha256: string; size: number; treeHash: string }): Promise<ReleaseFileEvidence[]> {
+export async function verifyNativeArchive(source: Readable, expected: { sha256: string; size: number; treeHash: string }): Promise<NativeArchiveFileEvidence[]> {
+    return scanNativeArchive(source,expected)
+}
+/** Same bounded canonical parser, with a staging-only sink. Failed output must
+ * remain untrusted; this function does not authorize activation or execution. */
+export async function stageNativeArchiveBytes(source: Readable, expected: { sha256: string; size: number; treeHash: string }, sink: NativeArchiveStagingSink) {
+    return scanNativeArchive(source,expected,sink)
+}
+async function scanNativeArchive(source: Readable, expected: { sha256: string; size: number; treeHash: string }, sink?: NativeArchiveStagingSink): Promise<NativeArchiveFileEvidence[]> {
     if (!/^[a-f0-9]{64}$/.test(expected.sha256) || !/^[a-f0-9]{64}$/.test(expected.treeHash)
         || !Number.isSafeInteger(expected.size) || expected.size < 1 || expected.size > MAX_BYTES) throw Error('Native archive commitment invalid')
-    const files: ReleaseFileEvidence[] = [], paths = new Set<string>(), directories = new Set<string>()
+    const files: NativeArchiveFileEvidence[] = [], paths = new Set<string>(), directories = new Set<string>()
     let compressed = 0, expanded = 0, payload = 0, padding = 0, terminators = 0, total = 0
-    let pending = Buffer.alloc(0), current: { path: string; size: number; hash: ReturnType<typeof createHash> } | undefined
+    let pending = Buffer.alloc(0), current: { path: string; size: number; mode: number; hash: ReturnType<typeof createHash> } | undefined
     const digest = createHash('sha256'), abort = new AbortController()
     const timer = setTimeout(() => abort.abort(), 60_000)
     const strings = (h: Buffer, start: number, length: number) => h.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '')
@@ -52,9 +68,10 @@ export async function verifyNativeArchive(source: Readable, expected: { sha256: 
                 while (pending.length) {
                     if (current) {
                         const n = Math.min(payload, pending.length)
+                        sink?.write(pending.subarray(0,n))
                         current.hash.update(pending.subarray(0, n)); pending = pending.subarray(n); payload -= n
                         if (payload) break
-                        files.push({ path: current.path, size: current.size, sha256: current.hash.digest('hex') }); current = undefined
+                        files.push({ path: current.path, size: current.size, mode: current.mode, sha256: current.hash.digest('hex') }); sink?.end(); current = undefined
                     }
                     if (padding) {
                         const n = Math.min(padding, pending.length)
@@ -83,8 +100,9 @@ export async function verifyNativeArchive(source: Readable, expected: { sha256: 
                     if(paths.size+directories.size>MAX_FILES)throw Error('Native archive inventory budget exceeded')
                     if (total > MAX_BYTES) throw Error('Native archive payload budget exceeded')
                     payload = size; padding = (512 - size % 512) % 512
-                    current = { path, size, hash: createHash('sha256') }
-                    if (!size) { files.push({path, size, sha256:current.hash.digest('hex')}); current = undefined }
+                    current = { path, size, mode, hash: createHash('sha256') }
+                    sink?.begin({path,size,mode})
+                    if (!size) { files.push({path, size, mode, sha256:current.hash.digest('hex')}); sink?.end(); current = undefined }
                 }
             }
         }, { signal: abort.signal })

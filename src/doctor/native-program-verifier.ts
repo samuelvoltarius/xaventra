@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { closeSync, constants, createReadStream, fstatSync, lstatSync, openSync, readSync, opendirSync, realpathSync } from 'node:fs'
-import { verifyNativeArchive } from '../core/native-archive.js'
+import { verifyNativeArchive, type NativeArchiveFileEvidence } from '../core/native-archive.js'
 import { dirname, join, resolve } from 'node:path'
-import { releaseTreeHash, type ReleaseFileEvidence } from '../core/release-tree.js'
+import { releaseTreeHash } from '../core/release-tree.js'
 import { verifyNativeReleaseEvidence } from '../core/native-release-evidence.js'
 import type { GitHubUpdatePolicy, SignedUpstreamManifest } from '../core/github-update.js'
 import { protectControllerDirectory } from './repair-controller-files.js'
@@ -13,10 +13,10 @@ function identity(s: ReturnType<typeof lstatSync>): string {
 }
 /** Linux root observer only. Root-owned, runtime-nonwritable paths are required;
  * this is not protection against a concurrently malicious privileged operator. */
-export function nativeProgramInventory(root: string): ReleaseFileEvidence[] {
+export function nativeProgramInventory(root: string): NativeArchiveFileEvidence[] {
     if (process.platform !== 'linux' || process.getuid?.() !== 0) throw Error('Native program verification requires Linux root')
     root = resolve(root); protectControllerDirectory(root)
-    const deadline=Date.now()+60_000, files:ReleaseFileEvidence[]=[]
+    const deadline=Date.now()+60_000, files:NativeArchiveFileEvidence[]=[]
     let entries=0, bytes=0
     const visit=(directory:string, prefix:string, depth:number) => {
         if(depth>64 || Date.now()>deadline)throw Error('Native program traversal budget exceeded')
@@ -32,7 +32,7 @@ export function nativeProgramInventory(root: string): ReleaseFileEvidence[] {
                 if(!s.isFile() || s.isSymbolicLink() || s.nlink!==1 || s.uid!==0 || s.mode&0o6022)throw Error('Native program file is not protected')
                 bytes+=s.size
                 if(!Number.isSafeInteger(bytes) || bytes>MAX_BYTES)throw Error('Native program byte budget exceeded')
-                files.push({path:rel,size:s.size,sha256:protectedFileHash(path,s.size,deadline)})
+                files.push({path:rel,size:s.size,mode:s.mode&0o7777,sha256:protectedFileHash(path,s.size,deadline)})
             }
         }}finally{handle.closeSync()}
         if(identity(lstatSync(directory))!==identity(before))throw Error('Native program directory changed during scan')
@@ -74,9 +74,13 @@ export async function verifyNativeInstalledRelease(signed:SignedUpstreamManifest
     if(identity(fstatSync(fd))!==archiveBefore){closeSync(fd);throw Error('Native archive changed before inventory')}
     // The stream owns this descriptor. A second synchronous close races its
     // asynchronous cleanup and can close a newly reused directory descriptor.
-    await verifyNativeArchive(createReadStream(archive,{fd,autoClose:true}), {...evidence.descriptor.archive,treeHash:expected.treeHash})
+    const archived=await verifyNativeArchive(createReadStream(archive,{fd,autoClose:true}), {...evidence.descriptor.archive,treeHash:expected.treeHash})
     const first=nativeProgramInventory(paths.root), second=nativeProgramInventory(paths.root)
     if(releaseTreeHash(first)!==expected.treeHash || releaseTreeHash(second)!==expected.treeHash
         || archiveBefore!==identity(lstatSync(archive)))throw Error('Native installed program tree or archive mismatch')
+    // The existing tree digest intentionally binds bytes, not permissions.
+    // Modes are separately authenticated by the signed compressed archive.
+    const modes=new Map(archived.map(file=>[file.path,file.mode]))
+    if([first,second].some(files=>files.some(file=>modes.get(file.path)!==file.mode)))throw Error('Native installed program mode mismatch')
     return {...evidence,installedTreeVerified:true as const,archiveTreeVerified:true as const,files:first.length}
 }

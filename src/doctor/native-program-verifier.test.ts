@@ -15,12 +15,12 @@ import { nativeProgramInventory,verifyNativeInstalledRelease } from './native-pr
 import { releaseTreeHash } from '../core/release-verifier.js'
 import { encodeNativeUpdatePackage } from '../core/update-package.js'
 afterEach(()=>vi.unstubAllGlobals())
-function fixture(archiveContent='fixture'){
+function fixture(archiveContent='fixture',archiveMode=0o644){
     vi.stubGlobal('process',{...process,platform:'linux',getuid:()=>0})
     const root=realpathSync(mkdtempSync(join(tmpdir(),'native-program-')));mkdirSync(join(root,'app'));mkdirSync(join(root,'app','dist'))
     const app=join(root,'app'),daemon=join(app,'dist','daemon.js'),archive=join(root,'archive');writeFileSync(daemon,'fixture')
     const content=Buffer.from(archiveContent)
-    writeFileSync(archive,gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',content.length),content,Buffer.alloc((512-content.length%512)%512+1024)])))
+    writeFileSync(archive,gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',content.length,archiveMode),content,Buffer.alloc((512-content.length%512)%512+1024)])))
     const hash=(b:any)=>createHash('sha256').update(b).digest('hex'),treeHash=releaseTreeHash(nativeProgramInventory(app))
     const descriptor:any={schema:1,kind:'native',repository:'samuelvoltarius/xaventra',version:'2.79.0',commit:'a'.repeat(40),platform:'linux',arch:'arm64',treeHash,archive:{sha256:hash(readFileSync(archive)),size:readFileSync(archive).length},entrypoint:'dist/daemon.js'}
     const bytes=encodeNativeUpdatePackage(descriptor),descriptorHash=hash(bytes),keys=generateKeyPairSync('ed25519')
@@ -30,6 +30,12 @@ function fixture(archiveContent='fixture'){
     return {app,daemon,archive,verify:()=>verifyNativeInstalledRelease(signed,policy,expected,bytes,{root:app,archive})}
 }
 it('verifies actual archive and complete file inventory',async()=>{expect((await fixture().verify()).archiveTreeVerified).toBe(true)})
+it('rejects lost executable permissions despite identical signed file bytes',async()=>{
+    await expect(fixture('fixture',0o755).verify()).rejects.toThrow('Native installed program mode mismatch')
+})
+it('rejects broadened read permissions despite identical signed file bytes',async()=>{
+    await expect(fixture('fixture',0o600).verify()).rejects.toThrow('Native installed program mode mismatch')
+})
 it('rejects a correctly signed archive whose contents differ from the correctly signed installed tree',async()=>{
     await expect(fixture('different bytes signed by same publisher').verify()).rejects.toThrow('Native archive commitment mismatch')
 })

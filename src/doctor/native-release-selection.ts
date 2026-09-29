@@ -14,6 +14,7 @@ const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 export class NativeReleaseSelection {
     constructor(private config: { root: string; unit: string; fragmentPath: string; releases: Record<string, NativeSelectedRelease> },
         private authorized: (ticket: RepairTicket) => Promise<boolean>) {
+        this.config = structuredClone(config)
         protectControllerDirectory(config.root)
         protectControllerDirectory(dirname(config.fragmentPath))
     }
@@ -27,9 +28,12 @@ export class NativeReleaseSelection {
         if (state.running || !state.cleanStopped) throw Error('Native selection requires clean stopped service')
     }
     private async authority(ticket: RepairTicket): Promise<void> {
-        if (ticket.expiresAt <= Date.now() || !await this.authorized(ticket) || ticket.expiresAt <= Date.now()) throw Error('Native selection fenced')
+        const observed = structuredClone(ticket), binding = repairHash(observed)
+        if (ticket.expiresAt <= Date.now() || !await this.authorized(observed)
+            || repairHash(observed) !== binding || ticket.expiresAt <= Date.now()) throw Error('Native selection fenced')
     }
     async select(next: string, expected: string, ticket: RepairTicket): Promise<void> {
+        ticket = structuredClone(ticket)
         if (!/^repair-[a-f0-9-]{36}$/.test(ticket.attemptId) || next === expected) throw Error('Invalid native selection')
         const old = this.config.releases[expected], candidate = this.config.releases[next]
         if (!old || !candidate || old.unitHash === candidate.unitHash) throw Error('Distinct enrolled native releases required')
@@ -79,6 +83,7 @@ export class NativeReleaseSelection {
      * Does not rename or reload. If the loaded manager differs, stop for operator
      * reconciliation. Releases only a lock owned by this exact selection. */
     async reconcile(next: string, expected: string, ticket: RepairTicket): Promise<void> {
+        ticket = structuredClone(ticket)
         const old = this.config.releases[expected], candidate = this.config.releases[next]
         if (!old || !candidate) throw Error('Unknown enrolled native release')
         const binding = { ticketHash: repairHash(ticket), next, expected, oldHash: old.unitHash, nextHash: candidate.unitHash }

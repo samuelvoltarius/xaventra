@@ -6,7 +6,10 @@ import { spawnSync } from 'node:child_process'
 const [builder,commit,version,dependencyPatch]=process.argv.slice(2)
 if(!/^[a-f0-9]{40}$/.test(commit||''))throw Error('Exact published commit required')
 const root=mkdtempSync(join(tmpdir(),'native-real-build-')),source=join(root,'source')
-const env={PATH:dirname(process.execPath)+':'+process.env.PATH,HOME:root}
+// Keep builder output beside this fixture's logs/source. The caller can choose
+// durable retention via TMPDIR; do not silently fall back to system /tmp inside
+// the intentionally minimal child environment.
+const env={PATH:dirname(process.execPath)+':'+process.env.PATH,HOME:root,TMPDIR:root}
 const clone=spawnSync('git',['clone','--depth','1','https://github.com/samuelvoltarius/xaventra',source],{env,encoding:'utf8',timeout:120000,maxBuffer:1024*1024})
 writeFileSync(join(root,'clone.log'),clone.stdout+'\n'+clone.stderr)
 if(clone.status!==0)throw Error('Public clone failed; retained '+root)

@@ -47,3 +47,25 @@ it('retains interrupted intent, refuses blind replay and reconciles without anot
     await f.selection.reconcile('next', 'old', f.ticket)
     expect(control.reloads).toBe(1); expect(existsSync(join(f.root, 'selection.lock'))).toBe(false)
 })
+it('rejects a replacement unit even when caller mutates its enrolled hash', async () => {
+    const f = fixture()
+    writeFileSync(f.releases.next.unitFile, 'unapproved')
+    f.releases.next.unitHash = createHash('sha256').update('unapproved').digest('hex')
+    await expect(f.selection.select('next', 'old', f.ticket)).rejects.toThrow('CAS mismatch')
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old')
+    expect(control.reloads).toBe(0)
+})
+it('keeps one ticket binding throughout selection despite callback mutation', async () => {
+    const f = fixture(), original = structuredClone(f.ticket)
+    f.auth.mockImplementation(async (ticket?: any) => {
+        if (ticket) ticket.attemptId = 'repair-22222222-2222-4222-8222-222222222222'
+        return true
+    })
+    await expect(f.selection.select('next', 'old', f.ticket)).rejects.toThrow('fenced')
+    expect(f.ticket).toEqual(original)
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old')
+    expect(control.reloads).toBe(0)
+    f.auth.mockImplementation(async () => true)
+    await f.selection.select('next', 'old', original)
+    expect(control.reloads).toBe(1)
+})
