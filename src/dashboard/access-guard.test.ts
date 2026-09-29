@@ -43,6 +43,7 @@ describe('dashboard access guard (INT-10)', () => {
 describe('dashboard server enforces the guard (INT-10)', () => {
     let url = ''
     let stop: () => Promise<void> = async () => undefined
+    let token = ''
     const sandbox = join(process.cwd(), '.nova-test-tmp', `dashboard-guard-${randomUUID()}`)
 
     beforeAll(async () => {
@@ -51,12 +52,14 @@ describe('dashboard server enforces the guard (INT-10)', () => {
         const server = await import('./server.js')
         url = await server.startDashboard(0, '127.0.0.1')
         stop = server.stopDashboard
+        // R2 C-1: every API call and the live feed now also need the owner token.
+        token = (await import('../infra/gateway-auth.js')).getGatewayAuth().token || ''
     }, 60_000)
     afterAll(async () => { await stop(); vi.restoreAllMocks() })
 
     const get = (path: string, host: string) => new Promise<number>((resolve, reject) => {
         const target = new URL(path, url)
-        const req = request({ hostname: target.hostname, port: target.port, path: target.pathname + target.search, method: 'GET', headers: { host } }, res => {
+        const req = request({ hostname: target.hostname, port: target.port, path: target.pathname + target.search, method: 'GET', headers: { host, authorization: `Bearer ${token}` } }, res => {
             res.resume()
             resolve(res.statusCode || 0)
         })
@@ -77,7 +80,7 @@ describe('dashboard server enforces the guard (INT-10)', () => {
     it('refuses a WebSocket from a foreign browser origin but accepts a local one', async () => {
         const wsUrl = url.replace(/^http/, 'ws')
         const outcome = (origin: string) => new Promise<string>(resolve => {
-            const ws = new WebSocket(wsUrl, { origin })
+            const ws = new WebSocket(wsUrl, { origin, headers: { authorization: `Bearer ${token}` } })
             ws.on('open', () => { ws.close(); resolve('open') })
             ws.on('unexpected-response', (_req, res) => { resolve(`http-${res.statusCode}`) })
             ws.on('error', () => resolve('error'))
