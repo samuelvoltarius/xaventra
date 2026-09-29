@@ -57,3 +57,24 @@ it('marks a replayed receipt as replayed, not as a fresh effect',async()=>{
  expect(replay).toMatchObject({replayed:true,executedNow:false,status:'replayed'})
  expect(String(replay.message)).toMatch(/no new input/i)
 })
+it('binds the input id to the server-side contract id with a new version tag',async()=>{
+ vi.stubEnv('NOVA_DESKTOP_TELEGRAM_OWNER_ID','123');vi.stubEnv('NOVA_DESKTOP_INPUT_ENABLED','1')
+ const {createHash}=await import('node:crypto')
+ const uuid=(parts:unknown[])=>{const h=createHash('sha256').update(JSON.stringify(parts)).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`}
+ const p={requestText,step:'one',action:'{"action":"key","key":"Tab"}'}
+ // Without a contract id the v2 id is unchanged (compatible with existing journals).
+ await withExecutionPolicyContext({channel:'telegram',authUserId:'123',runId:'r'},()=>desktopInputTool.handler(p))
+ expect(call.mock.calls[0][2]).toBe(uuid(['desktop_input/v2','r','123','one']))
+ // With a contract id the id is v3 and differs per contract.
+ await withExecutionPolicyContext({channel:'telegram',authUserId:'123',runId:'r',contractId:'c1'},()=>desktopInputTool.handler(p))
+ await withExecutionPolicyContext({channel:'telegram',authUserId:'123',runId:'r',contractId:'c2'},()=>desktopInputTool.handler(p))
+ expect(call.mock.calls[1][2]).toBe(uuid(['desktop_input/v3','r','c1','123','one']))
+ expect(call.mock.calls[2][2]).not.toBe(call.mock.calls[1][2])
+})
+it('keeps a fenced mission step id stable across reconstructed runs (different contract ids)',async()=>{
+ vi.stubEnv('NOVA_DESKTOP_TELEGRAM_OWNER_ID','123');vi.stubEnv('NOVA_DESKTOP_INPUT_ENABLED','1')
+ fence.mockReturnValue({epoch:3,token:'mission:m_1:3:node-a'})
+ const text='[NOVA_MISSION_KEY:m_1:step:1] [NOVA_MISSION_FENCE:m_1:3:mission:m_1:3:node-a] klick'
+ for(const contractId of ['c1','c2'])expect(await withExecutionPolicyContext({channel:'telegram',authUserId:'123',runId:'m_1:step:1',contractId},()=>desktopInputTool.handler({requestText:text,step:'one',action:'{"action":"key","key":"Tab"}'}))).toMatchObject({success:true})
+ expect(call.mock.calls[0][2]).toBe(call.mock.calls[1][2])
+})
