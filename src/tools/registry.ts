@@ -342,6 +342,20 @@ export class ToolRegistry {
 // Built-in Tools
 // ============================================
 
+/** UEB-28: owner/admin from the execution context count as elevated; everything else does not. */
+export async function callerIsElevated(): Promise<boolean> {
+    try {
+        const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+        const context = getExecutionPolicyContext()
+        if (!context.authUserId) return false
+        const { getUserPermission } = await import('../users/multi-user-middleware.js')
+        const permission = getUserPermission(context.authUserId, context.channel)
+        return permission === 'owner' || permission === 'admin'
+    } catch {
+        return false
+    }
+}
+
 export function registerBuiltinTools(registry: ToolRegistry): void {
     const security = getSecurity()
 
@@ -426,8 +440,10 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
             const command = params.command as string
             const cwd = params.cwd as string | undefined
 
-            // Security check (existing)
-            const check = security.checkCommand(command, true)
+            // UEB-28: elevation follows the caller's real role from the
+            // server-side execution context (owner/admin = elevated). No
+            // identity or an unreadable role means not elevated (fail-closed).
+            const check = security.checkCommand(command, await callerIsElevated())
             if (!check.allowed) throw new Error(check.reason)
 
             // Database safety check (NEW - Prisma Guards)
@@ -448,8 +464,9 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
                     }
                 }
             } catch (guardErr) {
-                // Guards not available, continue with normal execution
-                console.log(`[Tools] Prisma guards not loaded: ${guardErr}`)
+                // UEB-28 (same class as UEB-7): no guard, no execution
+                console.log(`[Tools] Prisma guards not loaded, command refused: ${guardErr}`)
+                return { success: false, blocked: true, error: 'Befehl nicht ausgeführt: Der Datenbank-Schutz (L8) konnte nicht geladen werden.' }
             }
 
             const { execSync } = await import('node:child_process')
