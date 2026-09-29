@@ -411,14 +411,21 @@ export const systemTools: NovaTool[] = [
             // ============================================
             // L8 Prisma Guards: Block dangerous DB operations
             // ============================================
+            // UEB-7: fail-closed. If the guard cannot be loaded or evaluated,
+            // the command does not run; and there is no confirmation path here,
+            // so the message does not promise one.
+            let safety: { blocked: boolean; reason?: string; suggestion?: string }
             try {
                 const prismaGuards = await import('../layers/L8-prisma-guards.js')
-                const safety = prismaGuards.default.checkDatabaseSafety(command)
-                if (safety.blocked) {
-                    console.log(`[L8 PrismaGuards] ??? Blocked: ${safety.reason}`)
-                    return `??? **Blocked by Safety Guard**\n\n${safety.reason}\n${safety.suggestion ? `\n?? ${safety.suggestion}` : ''}\n\n_Use explicit confirmation to override._`
-                }
-            } catch { /* L8 not loaded â€” skip */ }
+                safety = prismaGuards.default.checkDatabaseSafety(command)
+            } catch (error) {
+                console.log(`[L8 PrismaGuards] Guard unavailable, command refused: ${String(error).slice(0, 120)}`)
+                return `❌ Befehl nicht ausgeführt: Der Datenbank-Schutz (L8) konnte nicht geladen oder geprüft werden (${String(error).slice(0, 120)}). Ohne diese Prüfung führt run_command keine Befehle aus.`
+            }
+            if (safety?.blocked) {
+                console.log(`[L8 PrismaGuards] Blocked: ${safety.reason}`)
+                return `🛑 **Vom Datenbank-Schutz blockiert**\n\n${safety.reason}\n${safety.suggestion ? `\n💡 ${safety.suggestion}` : ''}\n\n_run_command führt diesen Befehl nicht aus; eine Freigabe über dieses Werkzeug gibt es nicht. Wenn er wirklich nötig ist, muss der Owner ihn selbst ausführen._`
+            }
 
             // ============================================
             // SECURITY: Dangerous Command Detection
