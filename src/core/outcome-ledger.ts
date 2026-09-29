@@ -94,6 +94,12 @@ function haMirroringEnabled(): boolean {
     return process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true'
 }
 
+/** Checkpoint files are named after the runId. Only plain id characters are
+ * allowed, so a peer-supplied runId cannot contain path separators or "..". */
+export function isSafeCheckpointRunId(runId: unknown): runId is string {
+    return typeof runId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,199}$/.test(runId) && !runId.includes('..')
+}
+
 export class OutcomeLedger {
     constructor(
         private readonly dataDir = DEFAULT_DATA_DIR,
@@ -242,6 +248,7 @@ export class OutcomeLedger {
     }
 
     saveCheckpoint(checkpoint: Omit<OutcomeCheckpoint, 'version' | 'savedAt'>): OutcomeCheckpoint {
+        if (!isSafeCheckpointRunId(checkpoint.runId)) throw new Error('Unsafe checkpoint runId rejected')
         const complete: OutcomeCheckpoint = { ...checkpoint, version: 1, savedAt: new Date().toISOString() }
         atomicWriteJsonSync(join(this.checkpointDir, `${checkpoint.runId}.json`), safePayload(complete as unknown as Record<string, unknown>))
         this.append(checkpoint.runId, 'checkpoint.saved', {
@@ -261,6 +268,8 @@ export class OutcomeLedger {
 
     importCheckpoint(checkpoint: OutcomeCheckpoint): boolean {
         if (checkpoint?.version !== 1 || !checkpoint.runId || !checkpoint.backend || !checkpoint.savedAt) return false
+        // runId arrives from mesh peers (run.checkpoint): never let it leave checkpointDir (R2 NZ-4).
+        if (!isSafeCheckpointRunId(checkpoint.runId)) return false
         const current = this.loadCheckpoint(checkpoint.runId)
         if (current && current.savedAt >= checkpoint.savedAt) return false
         if (!existsSync(this.checkpointDir)) mkdirSync(this.checkpointDir, { recursive: true })
@@ -269,6 +278,7 @@ export class OutcomeLedger {
     }
 
     loadCheckpoint(runId: string): OutcomeCheckpoint | null {
+        if (!isSafeCheckpointRunId(runId)) return null
         const path = join(this.checkpointDir, `${runId}.json`)
         try {
             return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as OutcomeCheckpoint : null

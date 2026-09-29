@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -204,5 +204,30 @@ describe('OutcomeLedger', () => {
         expect(firstResolved).toBe(first)
         expect(secondResolved).toBe(second)
         expect(firstResolved).not.toBe(secondResolved)
+    })
+})
+
+describe('checkpoint runId path safety (R2 NZ-4)', () => {
+    it('rejects mesh checkpoints whose runId escapes the checkpoint directory', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-runid-'))
+        tempDirs.push(dir)
+        // Ledger two levels below dir: "../../victim" would land at dir/victim.json.
+        const ledger = new OutcomeLedger(join(dir, 'ledger'), false)
+        for (const runId of ['../../victim', '..\..\victim', 'a/b', '..', '']) {
+            const checkpoint = { version: 1, runId, backend: 'native', savedAt: new Date().toISOString() } as unknown as OutcomeCheckpoint
+            expect(ledger.importCheckpoint(checkpoint), runId).toBe(false)
+            expect(ledger.loadCheckpoint(runId), runId).toBeNull()
+        }
+        expect(existsSync(join(dir, 'victim.json'))).toBe(false)
+        expect(() => ledger.saveCheckpoint({ runId: '../escape', backend: 'native' } as any)).toThrow()
+    })
+
+    it('still accepts normal run ids', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-runid-ok-'))
+        tempDirs.push(dir)
+        const ledger = new OutcomeLedger(dir, false)
+        const checkpoint = { version: 1, runId: 'native-0123abcd', backend: 'native', savedAt: new Date().toISOString() } as unknown as OutcomeCheckpoint
+        expect(ledger.importCheckpoint(checkpoint)).toBe(true)
+        expect(ledger.loadCheckpoint('native-0123abcd')?.runId).toBe('native-0123abcd')
     })
 })
