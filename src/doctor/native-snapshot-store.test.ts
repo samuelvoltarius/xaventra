@@ -6,6 +6,7 @@ vi.mock('./repair-controller-files.js', () => ({ protectControllerDirectory: () 
 vi.mock('./native-state-mount.js', () => ({ verifyNativeReadOnlyMount: vi.fn(async () => ({ mountId:'7' })) }))
 import { verifyNativeReadOnlyMount } from './native-state-mount.js'
 import { NativeSnapshotStore } from './native-snapshot-store.js'
+import { UPDATE_ROLLBACK_GRACE_MS } from '../core/update-activation.js'
 function fixture() {
     vi.mocked(verifyNativeReadOnlyMount).mockReset().mockResolvedValue({ mountId:'7' } as any)
     const root = mkdtempSync(join(tmpdir(),'native-snapshot-')), hash = 'a'.repeat(64)
@@ -53,4 +54,19 @@ it('rejects a different original hash on completed receipt replay without recopy
     expect(await f.store.verifiedBaseline(f.ticket)).toEqual(proof)
     await expect(f.store.snapshot(f.ticket,'b'.repeat(64))).rejects.toThrow('original hash')
     expect(f.ops.copy).toHaveBeenCalledTimes(1)
+})
+it('honours the bounded rollback grace only for rollback phases, never for a forward snapshot', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+        const f = fixture(); await f.store.snapshot(f.ticket)
+        vi.setSystemTime(f.ticket.expiresAt + 1_000)
+        expect(await f.store.baselineUnchanged(f.ticket)).toBe(true)
+        const restore = new NativeSnapshotStore({ ...f.config, root: mkdtempSync(join(tmpdir(), 'native-restore-')), destination: '/fixture/rollback', candidateStateId: 'rollback' }, f.ops)
+        expect((await restore.snapshot(f.ticket, f.hash)).candidateStateId).toBe('rollback')
+        const forward = new NativeSnapshotStore({ ...f.config, root: mkdtempSync(join(tmpdir(), 'native-forward-')) }, f.ops)
+        await expect(forward.snapshot(f.ticket)).rejects.toThrow('fence')
+        vi.setSystemTime(f.ticket.expiresAt + UPDATE_ROLLBACK_GRACE_MS)
+        await expect(f.store.baselineUnchanged(f.ticket)).rejects.toThrow('fence')
+        expect(f.ops.copy).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
 })

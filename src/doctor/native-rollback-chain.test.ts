@@ -30,6 +30,7 @@ vi.mock('./native-systemd-service.js', () => ({ NativeSystemdService: class {
 } }))
 import { NativeSnapshotAdapter } from './native-snapshot-adapter.js'
 import { NativeRollbackState } from './native-rollback-state.js'
+import { UPDATE_ROLLBACK_GRACE_MS } from '../core/update-activation.js'
 afterEach(() => { vi.useRealTimers() })
 const hash = (s: string) => createHash('sha256').update(s).digest('hex')
 function chain(authority: any = { authorized: vi.fn(async () => true), quiescent: vi.fn(async () => true) }) {
@@ -69,4 +70,27 @@ it('never tolerates an uncleanly stopped BASELINE unit, also in rollback phases'
     await expect(f.adapter.baselineUnchanged(f.ticket)).rejects.toThrow('fence')
     await expect(f.rollback.restore(f.ticket)).rejects.toThrow()
     expect(control.inspects.filter(o => o.candidateFailure === true)).toHaveLength(0)
+})
+it('ticket expired within the rollback grace: rollback phases still work under the rollback lease, forward refused', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // Production-like lease: the forward grant ends with the ticket, a separate rollback grant does not.
+    const authority = { authorized: vi.fn(async (t: any) => Date.now() < t.expiresAt), rollbackAuthorized: vi.fn(async () => true), quiescent: vi.fn(async () => true) }
+    const f = chain(authority); await forward(f); control.service = 'failed'
+    vi.setSystemTime(f.ticket.expiresAt + 1_000)
+    expect(await f.adapter.baselineUnchanged(f.ticket)).toBe(true)
+    expect((await f.rollback.restore(f.ticket)).candidateStateId).toBe('rollback')
+    expect(authority.rollbackAuthorized).toHaveBeenCalled()
+    control.unit = 'old'; control.service = 'clean'
+    await expect(f.adapter.snapshot(f.ticket)).rejects.toThrow('fence')
+    control.unit = 'next'; control.service = 'failed'
+    vi.setSystemTime(f.ticket.expiresAt + UPDATE_ROLLBACK_GRACE_MS)
+    await expect(f.adapter.baselineUnchanged(f.ticket)).rejects.toThrow('fence')
+    await expect(f.rollback.restore(f.ticket)).rejects.toThrow()
+})
+it('without a rollback lease, an expired ticket keeps failing closed at the forward lease', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const authority = { authorized: vi.fn(async (t: any) => Date.now() < t.expiresAt), quiescent: vi.fn(async () => true) }
+    const f = chain(authority); await forward(f); control.service = 'failed'
+    vi.setSystemTime(f.ticket.expiresAt + 1_000)
+    await expect(f.adapter.baselineUnchanged(f.ticket)).rejects.toThrow('fence')
 })

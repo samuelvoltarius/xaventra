@@ -56,9 +56,11 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         }
         protectControllerDirectory(c.root)
         this.variants = {...c.releases}
-        const authorityHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t), quiescent:(t:RepairTicket) => this.authority.quiescent(t) }
+        const authorityHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t), quiescent:(t:RepairTicket) => this.authority.quiescent(t),
+            rollbackAuthorized:(t:RepairTicket) => this.hasAuthority(t,{rollback:true}) }
         // Restoration into the third state happens only during rollback.
-        const rollbackHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t,{rollback:true}), quiescent:(t:RepairTicket) => this.authority.quiescent(t) }
+        const rollbackHooks = { authorized:(t:RepairTicket) => this.hasAuthority(t,{rollback:true}), quiescent:(t:RepairTicket) => this.authority.quiescent(t),
+            rollbackAuthorized:(t:RepairTicket) => this.hasAuthority(t,{rollback:true}) }
         if (c.rollback) {
             const r = c.rollback
             if (Object.hasOwn(c.releases,'__rollback') || old.rollbackStateId !== r.stateId

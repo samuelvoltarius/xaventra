@@ -5,6 +5,7 @@ import { NativeSystemdService } from './native-systemd-service.js'
 import { readProtectedControllerFile } from './repair-controller-files.js'
 import type { NativeProcessProfile } from './native-process-identity.js'
 import type { RepairTicket } from './repair-activation.js'
+import { updateRollbackDeadline } from '../core/update-activation.js'
 
 export interface NativeSnapshotAdapterEnrollment {
     snapshot: SnapshotEnrollment; helper: NativeStateHelperProfile
@@ -20,6 +21,8 @@ export class NativeSnapshotAdapter {
     constructor(config: NativeSnapshotAdapterEnrollment, private authority: {
         authorized(ticket: RepairTicket): Promise<boolean>
         quiescent(ticket: RepairTicket): Promise<boolean>
+        /** Lease for the rollback-only phases; without it `authorized` is asked. */
+        rollbackAuthorized?(ticket: RepairTicket): Promise<boolean>
     }) {
         this.config = structuredClone(config)
         const c = this.config
@@ -34,7 +37,12 @@ export class NativeSnapshotAdapter {
         })
     }
     private async fenced(t: RepairTicket, phase: 'snapshot' | 'baseline' | 'restore'): Promise<boolean> {
-        if (!Number.isSafeInteger(t.expiresAt) || t.expiresAt <= Date.now() || !await this.authority.authorized(t)) return false
+        // Rollback-only phases may run until the bounded rollback deadline derived from
+        // the signed expiresAt; the forward 'snapshot' phase needs an unexpired ticket.
+        const rollback = phase !== 'snapshot', deadline = rollback ? updateRollbackDeadline(t) : t.expiresAt
+        const lease = (ticket: RepairTicket) => rollback && this.authority.rollbackAuthorized
+            ? this.authority.rollbackAuthorized(ticket) : this.authority.authorized(ticket)
+        if (!Number.isSafeInteger(t.expiresAt) || deadline <= Date.now() || !await lease(t)) return false
         const c = this.config, hash = createHash('sha256').update(readProtectedControllerFile(c.fragmentPath)).digest('hex')
         const release = hash === c.baseline.unitHash ? c.baseline : hash === c.candidate.unitHash ? c.candidate : undefined
         if (!release) return false
@@ -56,8 +64,8 @@ export class NativeSnapshotAdapter {
         // Re-observe after external IO: no service selection/PID/state change
         // may slip between admission and the final authority check.
         const again = await observe()
-        return JSON.stringify(state) === JSON.stringify(again) && t.expiresAt > Date.now()
-            && await this.authority.authorized(t) && t.expiresAt > Date.now()
+        return JSON.stringify(state) === JSON.stringify(again) && deadline > Date.now()
+            && await lease(t) && deadline > Date.now()
     }
     snapshot(ticket: RepairTicket) { return this.store.snapshot(ticket) }
     baselineUnchanged(ticket: RepairTicket) { return this.store.baselineUnchanged(ticket) }
