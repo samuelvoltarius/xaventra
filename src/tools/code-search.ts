@@ -75,9 +75,12 @@ export function codeSearch(
         includes?: string[]
         matchPerLine?: boolean
         maxResults?: number
+        /** R2 T23: paths (files or directories) that must not be read */
+        skip?: (fullPath: string) => boolean
     } = {}
 ): SearchResult {
     const {
+        skip,
         isRegex = false,
         caseInsensitive = false,
         includes = [],
@@ -122,6 +125,7 @@ export function codeSearch(
             if (DEFAULT_IGNORE.includes(entry)) continue
 
             const fullPath = join(dir, entry)
+            if (skip?.(fullPath)) continue
             let stat
             try {
                 stat = statSync(fullPath)
@@ -328,14 +332,21 @@ export const codeSearchTool = {
             ? (params.includes as string).split(',').map(s => s.trim())
             : []
 
+        // R2 T23: same boundary as read_file (workspace for non-owners, never
+        // secret files), also for every file the recursive search opens.
+        const { resolveGuardedFilePath, isSecretFilePath } = await import('./complete-registry.js')
+        const guarded = await resolveGuardedFilePath(params)
+        if ('error' in guarded) return guarded
+
         return codeSearch(
-            params.path as string,
+            guarded.path,
             params.query as string,
             {
                 isRegex: params.is_regex as boolean,
                 caseInsensitive: params.case_insensitive as boolean,
                 includes,
                 matchPerLine: !(params.files_only as boolean),
+                skip: (fullPath: string) => isSecretFilePath(fullPath),
             }
         )
     },
@@ -357,8 +368,13 @@ export const findByNameTool = {
             ? (params.extensions as string).split(',').map(s => s.trim().replace(/^\./, ''))
             : []
 
+        // R2 T23: same boundary as read_file
+        const { resolveGuardedFilePath } = await import('./complete-registry.js')
+        const guarded = await resolveGuardedFilePath(params)
+        if ('error' in guarded) return guarded
+
         return findByName(
-            params.path as string,
+            guarded.path,
             params.pattern as string,
             {
                 type: (params.type as 'file' | 'directory' | 'any') || 'any',

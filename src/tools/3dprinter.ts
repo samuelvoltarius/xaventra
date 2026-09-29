@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { ownerApprovalRefusal } from './owner-approval.js'
 
 
 // ============================================
@@ -293,8 +294,12 @@ export const printerTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'filename', type: 'string', description: 'G-Code Dateiname (z.B. benchy.gcode)', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
+            // R2 T10: physical action only on the owner's explicit say-so
+            const refusal = await ownerApprovalRefusal(params, 'printer_start')
+            if (refusal) return { success: false, error: refusal }
             const result = await startPrint(params.filename as string)
             return { success: true, message: `Druck gestartet: ${params.filename}`, result }
         },
@@ -313,8 +318,12 @@ export const printerTools: NovaTool[] = [
         name: 'printer_resume',
         description: 'Setzt einen pausierten Druckjob fort.',
         category: 'other',
-        parameters: [],
-        handler: async () => {
+        parameters: [
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
+        ],
+        handler: async (params) => {
+            const refusal = await ownerApprovalRefusal(params, 'printer_resume')
+            if (refusal) return { success: false, error: refusal }
             await resumePrint()
             return { success: true, message: '▶️ Druck fortgesetzt' }
         },
@@ -335,8 +344,12 @@ export const printerTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'gcode', type: 'string', description: 'G-Code Befehl (z.B. G28, M104 S200, M84)', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
+            // R2 T10: heating/moving the printer only on the owner's explicit say-so
+            const refusal = await ownerApprovalRefusal(params, 'printer_gcode')
+            if (refusal) return { success: false, error: refusal }
             const result = await sendGcode(params.gcode as string)
             return { success: true, gcode: params.gcode, result }
         },

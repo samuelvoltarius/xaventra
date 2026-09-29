@@ -8,8 +8,12 @@
  */
 
 import { spawn } from 'node:child_process'
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+
+/** R2 T14: a project name is one plain directory name below CAD_PROJECTS_DIR. */
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+const OUTPUT_FILES: Record<string, string> = { stl: 'output.stl', step: 'output.step' }
 
 const CAD_PROJECTS_DIR = join(process.cwd(), '.nova-data', 'cad', 'projects')
 
@@ -41,7 +45,13 @@ export const cadGenerateTool = {
     ],
     handler: async (params: { description: string; projectName?: string; exportFormat?: string }) => {
         const { description, projectName = 'default', exportFormat = 'stl' } = params
-        
+        if (typeof projectName !== 'string' || !PROJECT_NAME.test(projectName)) {
+            return { success: false, error: 'Ungültiger Projektname (nur Buchstaben, Ziffern, _ und -).', description }
+        }
+        const outputFile = OUTPUT_FILES[String(exportFormat).toLowerCase()]
+        if (!outputFile) return { success: false, error: `Exportformat nicht unterstützt: ${String(exportFormat)} (stl oder step)`, description }
+        if (typeof description !== 'string' || !description.trim()) return { success: false, error: 'Beschreibung fehlt.' }
+
         if (!existsSync(CAD_PROJECTS_DIR)) {
             mkdirSync(CAD_PROJECTS_DIR, { recursive: true })
         }
@@ -54,11 +64,14 @@ export const cadGenerateTool = {
         const scriptPath = join(projectDir, `generate_${Date.now()}.py`)
         const pythonScript = generateBuild123dScript(description, exportFormat)
         writeFileSync(scriptPath, pythonScript, 'utf-8')
-        
+        // R2 T26: an old output must never be reported as this run's result
+        const outputPath = join(projectDir, outputFile)
+        rmSync(outputPath, { force: true })
+
         return new Promise((resolve) => {
+            // R2 T14: argument vector, no shell
             const proc = spawn('python', [scriptPath], {
                 cwd: projectDir,
-                shell: true,
                 timeout: 60000
             })
             
@@ -69,14 +82,15 @@ export const cadGenerateTool = {
             proc.stderr?.on('data', (data) => { stderr += data.toString() })
             
             proc.on('close', (code) => {
-                if (code === 0) {
-                    const files = getGeneratedFiles(projectDir)
+                // R2 T26: success only with exit 0, the success marker and the file
+                if (code === 0 && stdout.includes('SUCCESS:') && existsSync(outputPath)) {
                     resolve({
                         success: true,
-                        output: files[0] || projectDir,
+                        output: outputPath,
+                        files: getGeneratedFiles(projectDir),
                         description,
                         projectName,
-                        message: files.length > 0 ? `CAD generated: ${files[0].split('/').pop()}` : 'CAD generation completed'
+                        message: `CAD generated: ${outputFile}`
                     })
                 } else {
                     resolve({
@@ -99,20 +113,27 @@ export const cadGenerateTool = {
 }
 
 function generateBuild123dScript(description: string, exportFormat: string): string {
-    const safeDesc = description.replace(/"/g, '\\"')
-    const outputFile = exportFormat === 'step' ? 'output.step' : exportFormat === 'obj' ? 'output.obj' : 'output.stl'
-    
+    // R2 T14: the description enters Python only as a JSON string literal
+    // (valid Python), never inside quotes it could close.
+    const descLiteral = JSON.stringify(String(description))
+    const outputFile = OUTPUT_FILES[String(exportFormat).toLowerCase()] || 'output.stl'
+    const exporter = outputFile.endsWith('.step') ? 'export_step' : 'export_stl'
+
     return `#!/usr/bin/env python3
 """
-Nova CAD Generation - Generated from: "${safeDesc}"
+Nova CAD Generation
 """
 
 from build123d import *
 import math
 import os
+import re
+import sys
+
+DESCRIPTION = ${descLiteral}
 
 def create_model():
-    desc = """${safeDesc}""".lower()
+    desc = DESCRIPTION.lower()
     
     with BuildPart() as part:
         if "cube" in desc or "würfel" in desc or "box" in desc:
@@ -156,10 +177,9 @@ def create_model():
             if m:
                 v = float(m.group(1))
                 s = v / 1000 if v < 100 else v / 100
-            with BuildPart().build():
-                with Locations((0, 0, 0)):
-                    hexagon = RegularPolygon(radius=s, num_sides=6)
-                    extrude(amount=s * 0.6)
+            with BuildSketch():
+                RegularPolygon(radius=s, side_count=6)
+            extrude(amount=s * 0.6)
                     
         elif "bolt" in desc or "schraube" in desc:
             s = 0.006
@@ -167,9 +187,9 @@ def create_model():
             if m:
                 v = float(m.group(1))
                 s = v / 1000 if v < 100 else v / 100
-            with BuildPart().build():
-                Cylinder(s * 1.5, s * 0.5)
-                Cylinder(s * 0.6, s * 3, position=(0, 0, -s * 0.5))
+            Cylinder(s * 1.5, s * 0.5)
+            with Locations((0, 0, -s * 0.5)):
+                Cylinder(s * 0.6, s * 3)
                 
         elif "ring" in desc or "torus" in desc:
             r, tube = 0.01, 0.002
@@ -185,20 +205,20 @@ def create_model():
     return part
 
 try:
-    import re
     part = create_model()
     export_path = "${outputFile}"
-    exporters.export(part, export_path)
+    ${exporter}(part.part, export_path)
     print(f"SUCCESS:{export_path}")
 except Exception as e:
     print(f"ERROR:{e}")
     import traceback
     traceback.print_exc()
+    sys.exit(1)
 `
 }
 
 function getGeneratedFiles(dir: string): string[] {
-    const { readdirSync } = require('node:fs')
+    // R2 T25: bare require is a ReferenceError in ESM
     try {
         return readdirSync(dir)
             .filter(f => f.endsWith('.stl') || f.endsWith('.step') || f.endsWith('.obj'))

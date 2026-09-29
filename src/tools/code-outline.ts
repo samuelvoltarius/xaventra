@@ -508,7 +508,11 @@ export const codeOutlineTool = {
         { name: 'path', type: 'string' as const, description: 'Pfad zur Datei', required: true },
     ],
     handler: async (params: Record<string, unknown>) => {
-        return getFileOutline(params.path as string)
+        // R2 T23: same boundary as read_file
+        const { resolveGuardedFilePath } = await import('./complete-registry.js')
+        const guarded = await resolveGuardedFilePath(params)
+        if ('error' in guarded) return guarded
+        return getFileOutline(guarded.path)
     },
 }
 
@@ -522,8 +526,12 @@ export const viewCodeItemTool = {
         { name: 'context', type: 'number' as const, description: 'Extra Kontext-Zeilen vor/nach dem Symbol', required: false },
     ],
     handler: async (params: Record<string, unknown>) => {
+        // R2 T23: same boundary as read_file
+        const { resolveGuardedFilePath } = await import('./complete-registry.js')
+        const guarded = await resolveGuardedFilePath(params)
+        if ('error' in guarded) return guarded
         return viewCodeItem(
-            params.path as string,
+            guarded.path,
             params.name as string,
             (params.context as number) || 0
         )

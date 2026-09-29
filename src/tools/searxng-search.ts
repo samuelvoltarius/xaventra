@@ -1,4 +1,5 @@
 
+import { existsSync, readFileSync } from 'node:fs'
 import { resolveConfigPath } from '../config/config-path.js'
 /**
  * SearXNG Search — Self-Hosted Privacy-Friendly Search
@@ -141,8 +142,7 @@ export function getSearXNGUrl(): string | null {
 
     // 2. xaventra.config.json
     try {
-        const { existsSync, readFileSync } = require('node:fs')
-        const { join } = require('node:path')
+        // R2 T25: static imports; bare require threw in ESM and the configured URL was ignored
         const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))

@@ -21,6 +21,7 @@ import { callDockerHost } from '../host/docker-client.js'
 import { sshTool } from './ssh-tool.js'
 import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
+import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
@@ -262,6 +263,8 @@ export const fileTools: NovaTool[] = [
                 /^nova\.config\.json$/,
                 /^xaventra\.config\.json$/,
                 /^\.nova-data\/multi-user\//,
+                // R2 T24: files here are auto-registered as executable tools on startup
+                /^\.nova-tools\//,
                 /^dist\//,
                 /^package\.json$/,
                 /^tsconfig\.json$/,
@@ -411,14 +414,21 @@ export const systemTools: NovaTool[] = [
             // ============================================
             // L8 Prisma Guards: Block dangerous DB operations
             // ============================================
+            // UEB-7: fail-closed. If the guard cannot be loaded or evaluated,
+            // the command does not run; and there is no confirmation path here,
+            // so the message does not promise one.
+            let safety: { blocked: boolean; reason?: string; suggestion?: string }
             try {
                 const prismaGuards = await import('../layers/L8-prisma-guards.js')
-                const safety = prismaGuards.default.checkDatabaseSafety(command)
-                if (safety.blocked) {
-                    console.log(`[L8 PrismaGuards] ??? Blocked: ${safety.reason}`)
-                    return `??? **Blocked by Safety Guard**\n\n${safety.reason}\n${safety.suggestion ? `\n?? ${safety.suggestion}` : ''}\n\n_Use explicit confirmation to override._`
-                }
-            } catch { /* L8 not loaded â€” skip */ }
+                safety = prismaGuards.default.checkDatabaseSafety(command)
+            } catch (error) {
+                console.log(`[L8 PrismaGuards] Guard unavailable, command refused: ${String(error).slice(0, 120)}`)
+                return `❌ Befehl nicht ausgeführt: Der Datenbank-Schutz (L8) konnte nicht geladen oder geprüft werden (${String(error).slice(0, 120)}). Ohne diese Prüfung führt run_command keine Befehle aus.`
+            }
+            if (safety?.blocked) {
+                console.log(`[L8 PrismaGuards] Blocked: ${safety.reason}`)
+                return `🛑 **Vom Datenbank-Schutz blockiert**\n\n${safety.reason}\n${safety.suggestion ? `\n💡 ${safety.suggestion}` : ''}\n\n_run_command führt diesen Befehl nicht aus; eine Freigabe über dieses Werkzeug gibt es nicht. Wenn er wirklich nötig ist, muss der Owner ihn selbst ausführen._`
+            }
 
             // ============================================
             // SECURITY: Dangerous Command Detection
@@ -1202,8 +1212,13 @@ export const evolutionTools: NovaTool[] = [
         category: 'system',
         parameters: [
             { name: 'package', type: 'string', description: 'Paketname (z.B. firebase/agent-skills)', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
+            // R2 T28: third-party skill content ends up in the prompt for good
+            // (and npx runs remote code): only on the owner's explicit say-so.
+            const refusal = await ownerApprovalRefusal(params, 'import_skill')
+            if (refusal) return { success: false, message: refusal }
             const { importSkill } = await import('./skills-import-cli.js')
             return await importSkill(params.package as string)
         },
@@ -1913,7 +1928,7 @@ export const meshBrainTools: NovaTool[] = [
         handler: async (params) => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
-            const config = JSON.parse(require('fs').readFileSync(resolveConfigPath(), 'utf-8'))
+            const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
             const nodes = (config.nodes || []).filter((n: any) => n.enabled !== false)
             if (!params.force) {
                 const cached = brain.load()
@@ -2004,13 +2019,13 @@ export const securityAuditTools: NovaTool[] = [
 export const hooksTools: NovaTool[] = [
     {
         name: 'create_hook',
-        description: 'Erstellt einen Event-Hook (webhook, email, script) der bei Events ausgelï¿½st wird',
+        description: 'Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelï¿½st wird',
         category: 'system',
         parameters: [
             { name: 'name', type: 'string', description: 'Name des Hooks', required: true },
             { name: 'event', type: 'string', description: 'Event: message.received, tool.executed, evolution.completed, error.critical, startup, shutdown', required: true },
-            { name: 'type', type: 'string', description: 'webhook, email, oder script', required: true },
-            { name: 'target', type: 'string', description: 'URL/Email/Script-Pfad', required: true },
+            { name: 'type', type: 'string', description: 'webhook oder email', required: true },
+            { name: 'target', type: 'string', description: 'URL oder E-Mail-Adresse', required: true },
         ],
         handler: async (params) => {
             const { createHook } = await import('../hooks/event-hooks.js')
@@ -2578,7 +2593,8 @@ export const agentPatternTools: NovaTool[] = [
         handler: async (params) => {
             const { addToolPolicy } = await import('../agents/agent-patterns.js')
             addToolPolicy({ pattern: params.pattern as string, action: params.action as 'allow' | 'deny' | 'confirm', reason: params.reason as string })
-            return { success: true }
+            // UEB-9: the rule lives in memory only; say so instead of implying permanence
+            return { success: true, persistent: false, message: 'Regel gesetzt. Sie gilt nur bis zum nächsten Neustart (nur im Speicher, nicht in der Konfiguration gespeichert).' }
         },
     },
     {
@@ -2676,6 +2692,7 @@ const selfModificationTools: NovaTool[] = [
             { name: 'code', type: 'string', description: 'Python-Code als String (inline)', required: false },
             { name: 'file', type: 'string', description: 'Pfad zu einer .py Datei', required: false },
             { name: 'install', type: 'string', description: 'Komma-getrennte pip-Pakete die vorher installiert werden sollen (z.B. "python-docx,requests")', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt (Pflicht, außer die Pipeline hat die Freigabe bereits erteilt). Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             const { executeExecutePython } = await import('./execute-python-tool.js')
@@ -3421,16 +3438,43 @@ export const ALL_TOOLS: NovaTool[] = [
             { name: 'base_url', type: 'string', description: 'OpenAI-kompatibler Basis-URL (z.B. https://api.minimax.chat/v1)', required: true },
             { name: 'models', type: 'string', description: 'Kommagetrennte Modell-IDs (optional â€” werden sonst auto-entdeckt)', required: false },
             { name: 'roles', type: 'string', description: 'Kommagetrennte Rollen: chat,code,vision,embedding (Standard: chat,code)', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
-                const { registerExternalProvider } = await import('../core/model-resolver.js')
+                // R2 R1/A8: a provider receives every prompt and the API key.
+                // New name only (no silent overwrite), public https endpoint
+                // (SSRF guard), explicit owner approval.
+                const name = String(params.name ?? '').trim()
+                if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$/.test(name)) return 'Provider-Registrierung abgelehnt: ungültiger Name.'
+                const baseUrl = String(params.base_url ?? '').trim().replace(/\/$/, '')
+                if (!/^https:\/\//i.test(baseUrl)) return 'Provider-Registrierung abgelehnt: base_url muss eine https-Adresse sein.'
+                const { checkUrlResolved } = await import('../resilience/ssrf-guard.js')
+                const target = await checkUrlResolved(baseUrl)
+                if (!target.allowed) return `Provider-Registrierung abgelehnt: base_url nicht erlaubt (${target.reason}).`
+                const { registerExternalProvider, listExternalProviders } = await import('../core/model-resolver.js')
+                const existing = listExternalProviders().some(p => p.name.toLowerCase() === name.toLowerCase())
+                let configured = false
+                try {
+                    const { readFileSync, existsSync } = await import('node:fs')
+                    const configPath = resolveConfigPath()
+                    if (existsSync(configPath)) {
+                        const providers = JSON.parse(readFileSync(configPath, 'utf-8'))?.providers || {}
+                        configured = Object.keys(providers).some(key => key.toLowerCase() === name.toLowerCase())
+                    }
+                } catch {
+                    return 'Provider-Registrierung abgelehnt: Konfiguration nicht lesbar.'
+                }
+                if (existing || configured) return `Provider-Registrierung abgelehnt: "${name}" existiert bereits und wird über dieses Werkzeug nicht überschrieben.`
+                // UEB-8: the one-time owner code is bound to exactly this name and base URL
+                const refusal = await ownerApprovalRefusal(params, 'register_llm_provider', `${name}@${baseUrl}`)
+                if (refusal) return refusal
                 const models = params.models ? String(params.models).split(',').map(m => m.trim()).filter(Boolean) : undefined
                 const roles = params.roles ? String(params.roles).split(',').map(r => r.trim()) as any[] : ['chat', 'code']
                 const result = await registerExternalProvider({
-                    name: String(params.name),
+                    name,
                     apiKey: String(params.api_key),
-                    baseUrl: String(params.base_url).replace(/\/$/, ''),
+                    baseUrl,
                     models,
                     roles,
                     enabled: true,
@@ -3500,7 +3544,9 @@ import { resolveConfigPath } from '../config/config-path.js'
 ALL_TOOLS.push(
     cadGenerateTool as any,
     printerDiscoveryTool as any,
-    printerStatusTool as any,
+    // R2 T18: not registered — the name belongs to the configured Moonraker
+    // printer_status from 3dprinter.ts, which this legacy entry silently replaced.
+    // printerStatusTool as any,
     printerSliceTool as any,
     printerPrintTool as any,
     desktopScreenshotTool as any,  // proper desktop capture: vision + auto-send

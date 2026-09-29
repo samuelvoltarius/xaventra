@@ -274,7 +274,15 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'color_temp', type: 'number', description: 'Farbtemperatur in Kelvin (nur für Lichter)', required: false },
         ],
         handler: async (params) => {
-            const { entity_id, ...extra } = params
+            // R2 T19: only the declared service fields. The runner appends
+            // userId/channel/authorizationUserId/requestText to every call;
+            // those must never reach Home Assistant (rejected as extra keys,
+            // and the user's message text would land in HA's logs).
+            const entity_id = params.entity_id
+            const extra: Record<string, unknown> = {}
+            for (const key of ['brightness', 'color_temp'] as const) {
+                if (params[key] !== undefined && params[key] !== null) extra[key] = params[key]
+            }
             const result = await hassTurnOn(entity_id as string, Object.keys(extra).length > 0 ? extra : undefined)
             return { success: true, result }
         },

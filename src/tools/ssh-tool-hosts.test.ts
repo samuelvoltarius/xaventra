@@ -60,3 +60,21 @@ describe('SSH host metadata storage boundary', () => {
         expect(loadHosts().hosts).toEqual([])
     })
 })
+
+describe('R2 T4: host lookup never redirects to a different machine', () => {
+    it('does not fuzzy-match addresses or reverse-contained aliases, and ignores ambiguous matches', () => {
+        saveHosts({ hosts: [
+            { name: '192.168.1.1', alias: [], ip: '192.168.1.1', user: 'root', description: 'Auto-saved by Nova SSH', lastSeen: null },
+            { name: 'pi', alias: ['pi'], ip: '192.0.2.20', user: 'pi', description: '', lastSeen: null },
+            { name: 'jetson-orin', alias: [], ip: '192.0.2.30', user: 'nv', description: '', lastSeen: null },
+            { name: 'jetson-nano', alias: [], ip: '192.0.2.31', user: 'nv', description: '', lastSeen: null },
+            { name: 'spark-gx10', alias: [], ip: '192.0.2.40', user: 'sp', description: '', lastSeen: null },
+        ] })
+        expect(lookupHost('192.168.1.10')).toBeNull()
+        expect(lookupHost('192.168.1')).toBeNull()
+        expect(lookupHost('raspberry-pi-2')).toBeNull()
+        expect(lookupHost('jetson')).toBeNull()
+        expect(lookupHost('spark')?.ip).toBe('192.0.2.40')
+        expect(lookupHost('pi')?.ip).toBe('192.0.2.20')
+    })
+})

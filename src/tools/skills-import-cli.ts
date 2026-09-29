@@ -2,7 +2,7 @@
 // Wraps npx skills add and registers the skill in Nova
 
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SKILLS_DIR = join(process.cwd(), '.agent', 'skills')
@@ -17,6 +17,10 @@ export async function importSkill(packageName: string): Promise<{ success: boole
     const sanitized = packageName.replace(/[^a-zA-Z0-9\-_\/\.@]/g, '')
     if (sanitized !== packageName) {
         return { success: false, message: 'Invalid characters in package name' }
+    }
+    // R2 T28: a leading dash would be read as an option by npx/skills
+    if (sanitized.startsWith('-')) {
+        return { success: false, message: 'Invalid package name' }
     }
 
     console.log(`[Skills CLI] Installing: ${sanitized}`)
@@ -68,7 +72,7 @@ export async function importSkill(packageName: string): Promise<{ success: boole
 export function listInstalledSkills(): string[] {
     if (!existsSync(SKILLS_DIR)) return []
 
-    const { readdirSync } = require('node:fs')
+    // R2 T25: static import instead of bare require (ESM)
     const entries = readdirSync(SKILLS_DIR, { withFileTypes: true })
     return entries
         .filter((e: any) => e.isDirectory())
@@ -81,7 +85,6 @@ export function removeSkill(name: string): boolean {
     if (!existsSync(skillDir)) return false
 
     try {
-        const { rmSync } = require('node:fs')
         rmSync(skillDir, { recursive: true, force: true })
         console.log(`[Skills CLI] Removed: ${name}`)
         return true

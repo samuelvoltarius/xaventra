@@ -12,6 +12,10 @@
  * Install: npm install playwright && npx playwright install chromium
  */
 
+import { existsSync as fsExists, statSync as fsStat } from 'node:fs'
+import { basename } from 'node:path'
+import { checkUrl, checkUrlResolved } from '../resilience/ssrf-guard.js'
+
 // ============================================
 // Types
 // ============================================
@@ -53,6 +57,23 @@ const DEFAULT_CONFIG: BrowserConfig = {
 // ============================================
 // Browser Adapter
 // ============================================
+
+/**
+ * R2 T6: the browser only opens http(s) URLs that pass the resolved SSRF
+ * check (no file:, no loopback/REST API, no LAN/Tailnet/metadata targets).
+ */
+export async function assertBrowserUrlAllowed(url: unknown): Promise<void> {
+    const check = await checkUrlResolved(String(url ?? ''))
+    if (!check.allowed) throw new Error(`Browser-Ziel blockiert: ${check.reason || 'nicht erlaubt'}`)
+}
+
+/** R2 T31: a screenshot name is a plain file name inside the screenshot directory. */
+export function safeScreenshotName(name?: string): string | undefined {
+    if (!name) return undefined
+    const plain = basename(String(name).split('\\').join('/')).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '')
+    if (!plain || plain === '.png') return undefined
+    return plain.toLowerCase().endsWith('.png') ? plain : `${plain}.png`
+}
 
 export class BrowserAdapter {
     private config: BrowserConfig
@@ -98,7 +119,7 @@ export class BrowserAdapter {
             // installiert war. Am 30.08.2026 am laufenden System gesehen.
             const systemBrowser = (): string | undefined => {
                 if (process.env.NOVA_OS_MODE !== 'true') return undefined
-                const { existsSync: da } = require('node:fs') as typeof import('node:fs')
+                const da = fsExists
                 for (const [pfad, kanal] of [
                     ['/usr/bin/chromium', 'chromium'],
                     ['/usr/bin/chromium-browser', 'chromium'],
@@ -108,7 +129,7 @@ export class BrowserAdapter {
                     // Die Ubuntu-Huelle chromium-browser verlangt snap und
                     // funktioniert nicht — sie hat kaum Inhalt.
                     try {
-                        if (da(pfad) && (require('node:fs') as typeof import('node:fs')).statSync(pfad).size > 100_000) return kanal
+                        if (da(pfad) && fsStat(pfad).size > 100_000) return kanal
                     } catch { /* weiter */ }
                 }
                 return undefined
@@ -131,6 +152,17 @@ export class BrowserAdapter {
                     ? this.config.storageStatePath : undefined,
             })
             this.context = context
+            // R2 T6: every request of this context passes the SSRF guard
+            // (navigations with DNS resolution), so redirects and page scripts
+            // cannot reach loopback, LAN, Tailnet or metadata addresses.
+            await context.route('**/*', async (route: any) => {
+                const request = route.request()
+                const target = String(request.url())
+                const verdict = !/^https?:/i.test(target)
+                    ? { allowed: false }
+                    : request.isNavigationRequest() ? await checkUrlResolved(target) : checkUrl(target)
+                return verdict.allowed ? route.continue() : route.abort('blockedbyclient')
+            })
             this.page = await context.newPage()
             console.log('[Browser] Launched')
         } catch (err) {
@@ -182,6 +214,7 @@ export class BrowserAdapter {
 
     async goto(url: string): Promise<PageContent> {
         this.ensurePage()
+        await assertBrowserUrlAllowed(url)
         console.log(`[Browser] → ${url}`)
 
         await this.page.goto(url, {
@@ -292,6 +325,7 @@ export class BrowserAdapter {
 
     async newTab(url?: string): Promise<{ index: number; url: string; title: string }> {
         this.ensurePage()
+        if (url) await assertBrowserUrlAllowed(url)
         const page = await this.context.newPage()
         if (url) await page.goto(url, { timeout: this.config.timeout, waitUntil: 'domcontentloaded' })
         this.page = page
@@ -377,7 +411,7 @@ export class BrowserAdapter {
         }
 
         const timestamp = Date.now()
-        const filename = name || `screenshot-${timestamp}.png`
+        const filename = safeScreenshotName(name) || `screenshot-${timestamp}.png`
         const filepath = join(this.config.screenshotDir, filename)
 
         await this.page.screenshot({ path: filepath })
@@ -397,7 +431,7 @@ export class BrowserAdapter {
         }
 
         const timestamp = Date.now()
-        const filename = name || `fullpage-${timestamp}.png`
+        const filename = safeScreenshotName(name) || `fullpage-${timestamp}.png`
         const filepath = join(this.config.screenshotDir, filename)
 
         await this.page.screenshot({ path: filepath, fullPage: true })
@@ -417,7 +451,7 @@ export class BrowserAdapter {
         }
 
         const timestamp = Date.now()
-        const filename = name || `element-${timestamp}.png`
+        const filename = safeScreenshotName(name) || `element-${timestamp}.png`
         const filepath = join(this.config.screenshotDir, filename)
 
         await this.page.locator(selector).screenshot({ path: filepath })
