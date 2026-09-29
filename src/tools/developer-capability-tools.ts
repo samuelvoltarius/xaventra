@@ -53,10 +53,14 @@ export const developerCapabilityTools: NovaTool[] = [
         ],
         handler: async params => {
             const { getContinuableSubagentRuntime } = await import('../agents/continuable-subagents.js')
+            // UEB-12: pass the authorized parent identity explicitly (as INT-12
+            // does for spawn_subagent), never model-authored task fields.
+            const { subagentParentIdentity } = await import('./complete-registry.js')
             return getContinuableSubagentRuntime().start({
                 task: String(params.task),
                 tools: Array.isArray(params.tools) ? params.tools.map(String) : undefined,
                 meshNode: params.mesh_node ? String(params.mesh_node) : undefined,
+                ...(await subagentParentIdentity(params)),
             })
         },
     },
@@ -71,6 +75,38 @@ export const developerCapabilityTools: NovaTool[] = [
         handler: async params => {
             const { getContinuableSubagentRuntime } = await import('../agents/continuable-subagents.js')
             return getContinuableSubagentRuntime().followup(String(params.conversation_id), String(params.prompt))
+        },
+    },
+    {
+        // UEB-12: "Nova, stopp" — interrupt running subagents with the
+        // existing runtime hooks (ContinuableSubagentRuntime.interrupt,
+        // cancelSubagent); no new infrastructure.
+        name: 'subagent_interrupt',
+        description: 'Unterbricht laufende Subagenten ("Nova, stopp"). Mit id nur diesen einen (Subagent- oder Conversation-ID), ohne id alle laufenden.',
+        category: 'other',
+        parameters: [
+            { name: 'id', type: 'string', description: 'Optionale Subagent- oder Conversation-ID' },
+        ],
+        handler: async params => {
+            const [{ getContinuableSubagentRuntime }, { cancelSubagent, listSubagents }] = await Promise.all([
+                import('../agents/continuable-subagents.js'), import('../agents/subagent-orchestrator.js'),
+            ])
+            const runtime = getContinuableSubagentRuntime()
+            const id = typeof params.id === 'string' ? params.id.trim() : ''
+            const stopped: string[] = []
+            if (id) {
+                if (runtime.interrupt(id) || cancelSubagent(id)) stopped.push(id)
+            } else {
+                for (const record of runtime.list()) if (record.phase === 'running' && runtime.interrupt(record.id)) stopped.push(record.id)
+                for (const agent of listSubagents()) if (agent.status === 'running' && cancelSubagent(agent.id)) stopped.push(agent.id)
+            }
+            return {
+                success: stopped.length > 0,
+                stopped,
+                message: stopped.length > 0
+                    ? `${stopped.length} Subagent(en) unterbrochen.`
+                    : (id ? `Kein laufender Subagent mit ID ${id}.` : 'Kein laufender Subagent.'),
+            }
         },
     },
     {
