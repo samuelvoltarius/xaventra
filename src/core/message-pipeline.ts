@@ -944,8 +944,9 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
 
     // ============================================
     // Known hosts are inventory data, never an authorization grant.
+    // Names, IPs and logins are only shown to the owner (R2 A9).
     // ============================================
-    if (contextPolicy.mesh) try {
+    if (contextPolicy.mesh && principalContext.permission === 'owner') try {
         const { loadHosts, formatKnownHostsContext } = await import('../tools/ssh-tool-hosts.js')
         const inventory = formatKnownHostsContext(loadHosts())
         if (inventory) systemPrompt += `\n\n${inventory}`
