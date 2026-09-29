@@ -199,6 +199,70 @@ export interface MessageExecutionOptions {
     requestId?: string
 }
 
+/** The agent exceeded its wall-clock budget; its signal has been aborted. */
+export class AgentDeadlineError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'AgentDeadlineError'
+    }
+}
+
+/**
+ * Run one agent invocation with a signal that is aborted by either the
+ * execution's own abort signal or the deadline. Unlike a bare Promise.race,
+ * the losing agent is actually told to stop, and the timer is always cleared.
+ */
+export async function runWithAbortDeadline<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    options: { timeoutMs: number; parentSignal?: AbortSignal; label?: string },
+): Promise<T> {
+    const controller = new AbortController()
+    const parent = options.parentSignal
+    const onParentAbort = () => controller.abort(parent?.reason)
+    if (parent?.aborted) onParentAbort()
+    else parent?.addEventListener('abort', onParentAbort, { once: true })
+    const aborted = new Promise<never>((_, reject) => {
+        const rejectWithReason = () => reject(controller.signal.reason)
+        if (controller.signal.aborted) rejectWithReason()
+        else controller.signal.addEventListener('abort', rejectWithReason, { once: true })
+    })
+    aborted.catch(() => undefined)
+    const timer = setTimeout(() => controller.abort(new AgentDeadlineError(
+        `[Timeout] ${options.label || 'runNovaAgent'} exceeded ${options.timeoutMs}ms`)), options.timeoutMs)
+    try {
+        if (controller.signal.aborted) throw controller.signal.reason
+        return await Promise.race([run(controller.signal), aborted])
+    } finally {
+        clearTimeout(timer)
+        parent?.removeEventListener('abort', onParentAbort)
+    }
+}
+
+/**
+ * Decide how a failed agent run is answered. A deadline or an abort must never
+ * be papered over with an unguarded plain LLM completion.
+ */
+export function agentFailureDisposition(error: unknown, parentSignal?: AbortSignal): 'cancelled' | 'timeout' | 'fallback' {
+    if (parentSignal?.aborted) return 'cancelled'
+    if (error instanceof AgentDeadlineError) return 'timeout'
+    const name = (error as { name?: unknown } | null)?.name
+    if (name === 'AbortError' || /\bAbortError\b/.test(String(error))) return 'cancelled'
+    return 'fallback'
+}
+
+/** Progress heartbeats/step updates stop once the final answer phase begins. */
+export function createProgressGate(send: (message: string) => Promise<void>) {
+    let closed = false
+    return {
+        async send(message: string): Promise<void> {
+            if (closed) return
+            await send(message)
+        },
+        close(): void { closed = true },
+        get closed(): boolean { return closed },
+    }
+}
+
 /** Per-message transport facts supplied by the channel adapter. */
 export interface MessageContext {
     /** Real conversation/chat id of this message (e.g. a Telegram group id). */
@@ -1512,6 +1576,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             ? state.tools.getAll().filter((tool: any) => execution.allowedTools!.includes(tool.name))
             : undefined
         let lastProgress = 'LLM/Tools laufen'
+        // Progress is closed as soon as the main agent run settles, so a late
+        // step update or heartbeat can never arrive after the final answer.
+        const progress = createProgressGate(replyFn)
         const progressStartedAt = Date.now()
         const progressChannel = channel.toLowerCase()
         const shouldSendProgress =
@@ -1523,8 +1590,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const progressTimer = shouldSendProgress
             ? setInterval(async () => {
                 const elapsed = Math.round((Date.now() - progressStartedAt) / 1000)
+                if (progress.closed) return
                 try {
-                    await replyFn(`⏳ Ich arbeite noch (${elapsed}s): ${lastProgress}`)
+                    await progress.send(`⏳ Ich arbeite noch (${elapsed}s): ${lastProgress}`)
                 } catch (err) {
                     console.log(`[Pipeline] Progress heartbeat failed: ${err} `)
                 }
@@ -1539,7 +1607,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         try {
             traceStep('agent:start')
             execution?.abortSignal?.throwIfAborted()
-            result = await Promise.race([
+            result = await runWithAbortDeadline(agentSignal =>
                 runNovaAgent({
                     userId: principalId,
                     authUserId: from,
@@ -1549,12 +1617,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     systemPrompt,
                     llm: llmForCall,
                     tools: executionTools,
-                    abortSignal: execution?.abortSignal,
+                    abortSignal: agentSignal,
                     memory: state.memory ? {
                         recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                         store: (e: any) => state.memory.store(e),
                     } : undefined,
                     onStepUpdate: async (status: string) => {
+                        if (progress.closed || agentSignal.aborted) return
                         try {
                             lastProgress = status
                             // Zentrale Fortschrittsdatei fuer ALLE Oberflaechen.
@@ -1570,7 +1639,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                                         String(status).replace(/\s+/g, ' ').slice(0, 160))
                                 } catch { /* Anzeige darf den Lauf nie stoppen */ }
                             }
-                            await replyFn(status)
+                            await progress.send(status)
                         } catch (err) {
                             console.log(`[Pipeline] Step update delivery failed: ${err} `)
                         }
@@ -1590,11 +1659,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                             : undefined,
                     deniedTools: desktopBot?.deniedTools,
                     workspaceId: desktopContext?.workspaceId,
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('[Timeout] runNovaAgent exceeded 300s')), TOTAL_TIMEOUT)
-                ),
-            ])
+                }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             // Orchestrator: Task completed successfully
             if (orchestrator) {
@@ -1607,6 +1672,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
             throw err
         } finally {
+            progress.close()
             if (progressTimer) clearInterval(progressTimer)
         }
 
@@ -1660,7 +1726,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             // Retry the agent call
-            const retryResult = await runNovaAgent({
+            const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
                 userId: principalId,
                 authUserId: from,
                 channel,
@@ -1669,12 +1735,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 systemPrompt: loadSoul(),
                 llm: state.llm,
                 tools: executionTools,
-                abortSignal: execution?.abortSignal,
+                abortSignal: agentSignal,
                 memory: state.memory ? {
                     recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                     store: (e: any) => state.memory.store(e),
                 } : undefined,
-            })
+            }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             supervised = superviseResponse(retryResult.content, { attempt })
             result = retryResult
@@ -1720,7 +1786,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 console.log(`[Pipeline] 🔄 Announce-without-act erkannt ("${text.slice(0, 50)}") — erzwinge Tool-Retry`)
                 try {
                     const { runNovaAgent } = await import('../agents/nova-runner.js')
-                    const retryResult = await runNovaAgent({
+                    const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
                         userId: principalId,
                         authUserId: from,
                         channel,
@@ -1729,12 +1795,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         systemPrompt: systemPrompt + '\n\n🚨 PFLICHT: Beantworte die Anfrage indem du JETZT die passenden Tools über den Function-Call-Mechanismus aufrufst. Gib KEINE Ankündigung wie "ich check das" — RUF DIE TOOLS AUF und liefere das Ergebnis. Für Uhrzeit: get_current_time. Für offene Programme/Fenster: run_command oder ein Desktop-Tool.',
                         llm: state.llm,
                         tools: executionTools,
-                        abortSignal: execution?.abortSignal,
+                        abortSignal: agentSignal,
                         memory: state.memory ? {
                             recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l),
                             store: (e: any) => state.memory.store(e),
                         } : undefined,
-                    })
+                    }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
                     const retryExecutedTools = retryResult.toolsExecuted?.length || 0
                     if (retryExecutedTools > 0 || (!detectActionIntent(content).requiresTool && retryResult.content && retryResult.content.trim().length > text.length)) {
                         console.log(`[Pipeline] ✅ Retry lieferte echte Antwort (${retryResult.toolsExecuted?.length || 0} tools)`)
@@ -1744,6 +1810,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         ;(result as any).screenshotPath = retryResult.screenshotPath
                     }
                 } catch (retryErr) {
+                    if (execution?.abortSignal?.aborted) throw retryErr
                     console.debug('[Pipeline] Announce-retry failed:', retryErr)
                 }
             }
@@ -2111,6 +2178,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
     } catch (err) {
         console.error(`[Nova] [${channel}] Fehler: ${err}`)
+        const disposition = agentFailureDisposition(err, execution?.abortSignal)
 
         // Resilience: Track error and attempt auto-fix
         try {
@@ -2129,6 +2197,22 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const { updateNovaStatus: setStatus } = await import('../dashboard/server.js')
             setStatus('idle')
         } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
+
+        // A deadline or abort stopped the agent on purpose. Never replace it
+        // with an unguarded plain completion (no tools, no evidence, no RBAC).
+        if (disposition === 'cancelled') {
+            if (execution?.abortSignal?.aborted) throw err
+            try {
+                await replyFn('Die Anfrage wurde abgebrochen. Bitte versuche es erneut.')
+            } catch { /* nothing more to do */ }
+            return
+        }
+        if (disposition === 'timeout') {
+            try {
+                await replyFn('Die Anfrage hat das Zeitlimit überschritten und wurde abgebrochen.')
+            } catch { /* nothing more to do */ }
+            return
+        }
 
         // Fallback to simple LLM call if agent runner fails
         try {
