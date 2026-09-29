@@ -127,3 +127,68 @@ it.each(['unclean', 'copy-mismatch', 'unfenced'])('rejects %s before selecting c
     await expect(f.driver.activate(p, f.ticket)).rejects.toThrow()
     expect(f.ops.select).not.toHaveBeenCalled()
 })
+/** Simulated enrolled unit: the candidate may crash (exit 1 -> unit failed, MainPID 0)
+ * or fail with a process left over. Strict observation throws on 'failed' like systemd. */
+function crashFixture() {
+    const f = fixture(), unit = { current: 'old', state: 'running' as 'running' | 'clean' | 'failed' | 'failed-with-pid' | 'unclean' }
+    const observe = (options?: any) => {
+        if (unit.state === 'failed-with-pid' || unit.state === 'failed' && !(options?.rollback && unit.current === 'next')) throw Error('Systemd service transition or failed state')
+        return { releaseId: unit.current, programHash: f.releases[unit.current].programHash, stateId: f.releases[unit.current].stateId,
+            running: unit.state === 'running', cleanStopped: unit.state === 'clean', stopped: ['clean', 'unclean'].includes(unit.state), failed: unit.state === 'failed' }
+    }
+    const stoppedFor = (options?: any) => unit.state === 'clean' || options?.candidateFailure && unit.state === 'unclean'
+    f.ops.inspect.mockImplementation(async (options?: any) => observe(options))
+    f.ops.stop.mockImplementation(async () => { f.phases.push('stop'); unit.state = 'clean' })
+    f.ops.select.mockImplementation(async (id: string, _from: string, _t: any, options?: any) => {
+        if (!stoppedFor(options)) throw Error('Native selection requires clean stopped service'); f.phases.push(`select:${id}`); unit.current = id })
+    f.ops.start.mockImplementation(async (_id: string, _t: any, options?: any) => {
+        if (!stoppedFor(options)) throw Error('Systemd start requires clean stopped state'); f.phases.push('start'); unit.state = 'running' })
+    const resetFailed = vi.fn(async (id: string, _t: any, options?: any) => {
+        if (!options?.rollback || id !== 'next' || unit.state !== 'failed') throw Error('reset refused'); f.phases.push('reset-failed'); unit.state = 'unclean' })
+    Object.assign(f.ops, { resetFailed })
+    f.ops.saveIntent.mockImplementation((v: any) => { f.phases.push(`intent:${v.from}->${v.to}`) })
+    return { ...f, unit, resetFailed, crash: (state: 'failed' | 'failed-with-pid' = 'failed') => { unit.state = state } }
+}
+it('rolls back after the candidate exits with code 1: resets the failed unit, selects and starts the baseline', async () => {
+    const f = crashFixture(), p = await f.driver.prepare(f.ticket)
+    await f.driver.activate(p, f.ticket); f.crash()
+    await expect(f.driver.currentRelease(f.ticket.targetId)).rejects.toThrow('failed state')
+    await f.driver.rollback(p, f.ticket)
+    expect(await f.driver.currentRelease(f.ticket.targetId)).toBe('old')
+    expect(f.phases).toEqual(['intent:old->next', 'stop', 'snapshot', 'select:next', 'start',
+        'intent:next->old', 'reset-failed', 'select:old', 'start'])
+    expect(f.ops.baselineUnchanged).toHaveBeenCalledTimes(2)
+    // The forward path never carried a rollback tolerance.
+    expect(f.ops.select.mock.calls[0][3]).toBeUndefined(); expect(f.ops.start.mock.calls[0][2]).toBeUndefined()
+    expect(f.ops.select.mock.calls[1][3]).toEqual({ rollback: true, candidateFailure: true })
+})
+it('rolls back through the signed shared controller when the candidate crashes before acceptance', async () => {
+    const f = crashFixture(), keys = generateKeyPairSync('ed25519')
+    const root = mkdtempSync(join(tmpdir(), 'native-controller-crash-'))
+    const signed = signRepairValue(f.ticket, keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
+    const probe = async (id: string) => { if (id === 'next') { f.crash(); throw Error('candidate exited with code 1') } return id }
+    const receipt = await new UpdateActivationController(root, keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(), f.driver, probe, vi.fn(async () => {})).deploy(signed, {})
+    expect(receipt.status).toBe('rolled-back')
+    expect(f.unit).toEqual({ current: 'old', state: 'running' })
+    expect(f.resetFailed).toHaveBeenCalledTimes(1)
+})
+it('refuses rollback when the failed candidate may still own a process (MainPID != 0)', async () => {
+    const f = crashFixture(), p = await f.driver.prepare(f.ticket)
+    await f.driver.activate(p, f.ticket); f.crash('failed-with-pid')
+    await expect(f.driver.rollback(p, f.ticket)).rejects.toThrow('failed state')
+    expect(f.resetFailed).not.toHaveBeenCalled()
+    expect(f.ops.select).toHaveBeenCalledTimes(1); expect(f.ops.start).toHaveBeenCalledTimes(1)
+})
+it('never tolerates an unclean baseline stop in the forward path', async () => {
+    const f = crashFixture(), p = await f.driver.prepare(f.ticket)
+    f.ops.stop.mockImplementation(async () => { f.phases.push('stop'); f.unit.state = 'unclean' })
+    await expect(f.driver.activate(p, f.ticket)).rejects.toThrow('clean stop')
+    expect(f.resetFailed).not.toHaveBeenCalled(); expect(f.ops.snapshot).not.toHaveBeenCalled(); expect(f.ops.select).not.toHaveBeenCalled()
+})
+it('refuses rollback if the failed state is not cleared by the reset', async () => {
+    const f = crashFixture(), p = await f.driver.prepare(f.ticket)
+    await f.driver.activate(p, f.ticket); f.crash()
+    f.resetFailed.mockImplementation(async () => { f.phases.push('reset-failed') })
+    await expect(f.driver.rollback(p, f.ticket)).rejects.toThrow('not reconciled')
+    expect(f.ops.select).toHaveBeenCalledTimes(1)
+})

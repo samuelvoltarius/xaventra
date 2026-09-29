@@ -7,7 +7,7 @@ import { NativeReleaseSelection, type NativeSelectedRelease } from './native-rel
 import { NativeSnapshotAdapter, type NativeSnapshotAdapterEnrollment } from './native-snapshot-adapter.js'
 import { protectControllerDirectory, readProtectedControllerFile } from './repair-controller-files.js'
 import { writeUpdateState } from '../core/update-store.js'
-import type { NativeRelease, NativeUpdateOperations } from './native-update-driver.js'
+import type { NativeRelease, NativeStepOptions, NativeUpdateOperations } from './native-update-driver.js'
 import { NativeRollbackState } from './native-rollback-state.js'
 
 export interface NativeOperationsEnrollment {
@@ -89,10 +89,20 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         if (!key || expected && this.variants[key].id !== expected) throw Error('Unenrolled native unit content or release mismatch')
         return key
     }
-    async inspect() {
+    /** Rollback direction only: from the enrolled candidate back to the baseline. */
+    private rollbackStep(options: NativeStepOptions | undefined, from: string | undefined, to: string | undefined): boolean {
+        if (!options) return false
+        if (options.rollback !== true || from !== undefined && from !== this.config.candidate
+            || to !== undefined && to !== this.config.baseline) throw Error('Native rollback tolerance outside the rollback direction')
+        return true
+    }
+    async inspect(options?: NativeStepOptions) {
         const key = this.selectedKey(), r = this.variants[key]
-        const state = await this.service(key).inspect()
-        return { releaseId:r.id,programHash:r.programHash,stateId:r.stateId,running:state.running,cleanStopped:state.cleanStopped }
+        // A failed unit is only observable for the candidate's own unit content in rollback.
+        const candidateFailure = this.rollbackStep(options, undefined, undefined) && key === this.config.candidate
+        const state = await this.service(key).inspect({ candidateFailure })
+        return { releaseId:r.id,programHash:r.programHash,stateId:r.stateId,running:state.running,cleanStopped:state.cleanStopped,
+            stopped:state.stopped,failed:state.failed }
     }
     async verifyRelease(id: string, t: RepairTicket) {
         this.service(id)
@@ -103,7 +113,20 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         await this.authority.beginMaintenance(t); await this.guard(t)
     }
     quiescent(t: RepairTicket) { return this.fenced(t) }
-    async stop(id: string, t: RepairTicket) { await this.guard(t); await this.service(this.selectedKey(id)).stop(() => this.fenced(t)) }
+    async stop(id: string, t: RepairTicket, options?: NativeStepOptions) {
+        await this.guard(t)
+        const key = this.selectedKey(id)
+        // Rollback stop of the candidate may end uncleanly; never for the baseline.
+        const candidateFailure = options?.rollback === true && id === this.config.candidate && key === this.config.candidate
+        await this.service(key).stop(() => this.fenced(t), { candidateFailure })
+    }
+    async resetFailed(id: string, t: RepairTicket, options: NativeStepOptions) {
+        if (options?.rollback !== true || id !== this.config.candidate) throw Error('Native failure reset only for rollback of the enrolled candidate')
+        await this.guard(t)
+        const key = this.selectedKey(id)
+        if (key !== this.config.candidate) throw Error('Native failure reset only for rollback of the enrolled candidate')
+        await this.service(key).resetFailed(() => this.fenced(t))
+    }
     async snapshot(source: string, candidate: string, t: RepairTicket) {
         if (source !== this.config.baseline || candidate !== this.config.candidate) throw Error('Native snapshot direction mismatch')
         await this.guard(t); return this.snapshots.snapshot(t)
@@ -112,18 +135,20 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         if (source !== this.config.baseline) throw Error('Native rollback source mismatch')
         await this.guard(t); return this.snapshots.baselineUnchanged(t)
     }
-    async select(next: string, expected: string, t: RepairTicket) {
+    async select(next: string, expected: string, t: RepairTicket, options?: NativeStepOptions) {
+        const candidateFailure = this.rollbackStep(options, expected, next) && options.candidateFailure === true
         await this.guard(t)
         if (!await this.verifyRelease(next,t)) throw Error('Native release proof missing before selection')
         const from = this.selectedKey(expected), to = this.rollback && next === this.config.baseline ? '__rollback' : next
         if (to === '__rollback') await this.restoreRollback(next,t)
-        await this.guard(t); await this.selector.select(to,from,t)
+        await this.guard(t); await this.selector.select(to,from,t,{ candidateFailure })
     }
     async restoreRollback(source: string, t: RepairTicket) {
         if (source !== this.config.baseline || !this.rollback) throw Error('Native rollback restoration not enrolled')
         await this.guard(t); return this.rollback.restore(t)
     }
-    async start(id: string, t: RepairTicket) {
+    async start(id: string, t: RepairTicket, options?: NativeStepOptions) {
+        const candidateFailure = this.rollbackStep(options, undefined, id) && options.candidateFailure === true
         await this.guard(t)
         if (!await this.verifyRelease(id,t)) throw Error('Native runtime readiness proof missing')
         const key = this.selectedKey(id), stateId = this.variants[key].stateId
@@ -131,7 +156,7 @@ export class EnrolledNativeUpdateOperations implements NativeUpdateOperations {
         // A successful unit start is NOT proof of writable independent state.
         await this.guard(t)
         if (this.selectedKey(id) !== key) throw Error('Native selection changed before start')
-        await this.service(key).start(() => this.fenced(t))
+        await this.service(key).start(() => this.fenced(t), { candidateFailure })
     }
     saveIntent(value: Parameters<NativeUpdateOperations['saveIntent']>[0]) {
         const c = this.config

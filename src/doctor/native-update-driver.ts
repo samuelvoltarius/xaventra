@@ -7,7 +7,15 @@ export interface NativeRelease {
 }
 export interface NativeObservation {
     releaseId: string; programHash: string; stateId: string; running: boolean; cleanStopped: boolean
+    /** Stopped without any process, whatever the last exit status was. */
+    stopped?: boolean
+    /** Only in rollback observations of the candidate: unit failed, no process left. */
+    failed?: boolean
 }
+/** Marks a ROLLBACK step. candidateFailure additionally admits a candidate that
+ * exited uncleanly (after reset-failed) for the baseline selection/start. The
+ * operations adapter must honour it only for the enrolled rollback direction. */
+export interface NativeStepOptions { rollback: true; candidateFailure?: boolean }
 export interface NativeSnapshot {
     bindingHash: string; sourceStateId: string; candidateStateId: string
     sourceHash: string; copyHash: string; sourceAfterHash: string; sourceReadOnly: true
@@ -20,16 +28,18 @@ export interface NativeSnapshot {
  * baselineUnchanged validates that receipt and current baseline bytes. */
 export interface NativeUpdateOperations {
     hasAuthority(ticket: RepairTicket): Promise<boolean>
-    inspect(): Promise<NativeObservation>
+    inspect(options?: NativeStepOptions): Promise<NativeObservation>
     verifyRelease(id: string, ticket: RepairTicket): Promise<boolean>
     beginMaintenance(ticket: RepairTicket): Promise<void>
     quiescent(ticket: RepairTicket): Promise<boolean>
-    stop(expected: string, ticket: RepairTicket): Promise<void>
+    stop(expected: string, ticket: RepairTicket, options?: NativeStepOptions): Promise<void>
+    /** Rollback only: clear the failed state of the crashed candidate unit (no process). */
+    resetFailed?(expected: string, ticket: RepairTicket, options: NativeStepOptions): Promise<void>
     snapshot(source: string, candidate: string, ticket: RepairTicket): Promise<NativeSnapshot>
     baselineUnchanged(source: string, ticket: RepairTicket): Promise<boolean>
     restoreRollback?(source: string, ticket: RepairTicket): Promise<NativeSnapshot>
-    select(next: string, expected: string, ticket: RepairTicket): Promise<void>
-    start(expected: string, ticket: RepairTicket): Promise<void>
+    select(next: string, expected: string, ticket: RepairTicket, options?: NativeStepOptions): Promise<void>
+    start(expected: string, ticket: RepairTicket, options?: NativeStepOptions): Promise<void>
     saveIntent(value: { attemptId: string; ticketHash: string; from: string; to: string; rollback: boolean }): void
 }
 /** Uses UpdateActivationController's durable lifecycle, receipt, replay and
@@ -59,8 +69,8 @@ export class NativeUpdateDriver implements RepairDeploymentDriver {
             || !this.ops.restoreRollback)) throw Error('Independent rollback state adapter required')
         return [old, next, binding]
     }
-    private async observed(expected?: string): Promise<NativeObservation> {
-        const value = await this.ops.inspect(), r = this.enrollment.releases[value.releaseId]
+    private async observed(expected?: string, options?: NativeStepOptions): Promise<NativeObservation> {
+        const value = await (options ? this.ops.inspect(options) : this.ops.inspect()), r = this.enrollment.releases[value.releaseId]
         if (!r || (expected && value.releaseId !== expected) || value.programHash !== r.programHash
             || value.stateId !== r.stateId && (!r.rollbackStateId || value.stateId !== r.rollbackStateId)) throw Error('Native runtime identity mismatch')
         return value
@@ -87,7 +97,8 @@ export class NativeUpdateDriver implements RepairDeploymentDriver {
         const [old, next, binding] = this.pair(t)
         if (p.releaseId !== next.id || p.previousReleaseId !== old.id || repairHash(p.binding) !== repairHash(binding)) throw Error('Native prepared identity mismatch')
         await this.guard(t, true)
-        const value = await this.observed()
+        const step: NativeStepOptions | undefined = rollback ? { rollback: true } : undefined
+        const value = await this.observed(undefined, step)
         const from = rollback ? value.releaseId : old.id, to = rollback ? old.id : next.id
         if ((!rollback && (value.releaseId !== old.id || value.stateId !== old.stateId || !value.running)) || (rollback && ![old.id, next.id].includes(value.releaseId))) throw Error('Native ambiguous switch state')
         if (rollback && !await this.ops.baselineUnchanged(old.id, t)) throw Error('Native rollback baseline unverified')
@@ -98,10 +109,23 @@ export class NativeUpdateDriver implements RepairDeploymentDriver {
         if (!await this.ops.verifyRelease(to, t)) throw Error('Native release verification failed')
         await this.guard(t, true)
         this.ops.saveIntent({ attemptId: t.attemptId, ticketHash: repairHash(t), from, to, rollback })
-        if (value.running) await this.ops.stop(from, t)
+        if (value.running) await (step ? this.ops.stop(from, t, step) : this.ops.stop(from, t))
         await this.guard(t, true)
-        const stopped = await this.observed(from)
-        if (stopped.running || !stopped.cleanStopped) throw Error('Native clean stop not proven')
+        let stopped = await this.observed(from, step)
+        // Rollback after a candidate crash / unclean candidate exit: the candidate's
+        // data is abandoned, so only "no process left" is required. The baseline in
+        // the forward path (and a stopped baseline in rollback) must stop cleanly.
+        const candidateFailure = rollback && from === next.id && !stopped.running && !stopped.cleanStopped
+        if (candidateFailure) {
+            if (stopped.failed === true) {
+                if (!this.ops.resetFailed) throw Error('Native failed candidate reset not supported')
+                await this.ops.resetFailed(from, t, { rollback: true })
+                await this.guard(t, true)
+                stopped = await this.observed(from, step)
+            }
+            if (stopped.running || stopped.failed === true || stopped.stopped !== true) throw Error('Native candidate failure not reconciled; no process may remain')
+        } else if (stopped.running || !stopped.cleanStopped) throw Error('Native clean stop not proven')
+        const admit: NativeStepOptions | undefined = candidateFailure ? { rollback: true, candidateFailure: true } : step
         if (rollback) {
             if (!await this.ops.baselineUnchanged(old.id,t)) throw Error('Native rollback baseline changed during stop')
             if (old.rollbackStateId) {
@@ -120,12 +144,12 @@ export class NativeUpdateDriver implements RepairDeploymentDriver {
         await this.guard(t, true)
         if (!await this.ops.verifyRelease(to, t)) throw Error('Native release changed before start')
         await this.guard(t, true)
-        await this.ops.select(to, from, t)
-        const selected = await this.observed(to), expectedState = rollback ? old.rollbackStateId || old.stateId : next.stateId
-        if (selected.running || !selected.cleanStopped || selected.stateId !== expectedState) throw Error('Native selected runtime state mismatch')
+        await (admit ? this.ops.select(to, from, t, admit) : this.ops.select(to, from, t))
+        const selected = await this.observed(to, step), expectedState = rollback ? old.rollbackStateId || old.stateId : next.stateId
+        if (selected.running || !(selected.cleanStopped || candidateFailure && selected.stopped === true) || selected.stateId !== expectedState) throw Error('Native selected runtime state mismatch')
         await this.guard(t, true)
-        await this.ops.start(to, t)
-        const started = await this.observed(to)
+        await (admit ? this.ops.start(to, t, admit) : this.ops.start(to, t))
+        const started = await this.observed(to, step)
         if (!started.running || started.stateId !== expectedState) throw Error('Native start not confirmed')
         await this.guard(t)
     }

@@ -3,19 +3,20 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-const state = vi.hoisted(() => ({ unit:'old',running:false,starts:0,stops:0,copies:0,selections:0 }))
+const state = vi.hoisted(() => ({ unit:'old',running:false,starts:0,stops:0,copies:0,selections:0,calls:[] as any[] }))
 vi.mock('./repair-controller-files.js',()=>({protectControllerDirectory:()=>{},readProtectedControllerFile:(path:string)=>path.endsWith('.service')?state.unit:readFileSync(path,'utf8')}))
 vi.mock('./native-systemd-service.js',()=>({NativeSystemdService:class {
-    async inspect(){return {running:state.running,cleanStopped:!state.running,pid:state.running?42:0}}
-    async stop(check:any){if(!await check())throw Error('fenced');state.stops++;state.running=false}
-    async start(check:any){if(!await check())throw Error('fenced');state.starts++;state.running=true}
+    async inspect(options?:any){state.calls.push(['inspect',options]);return {running:state.running,cleanStopped:!state.running,stopped:!state.running,failed:false,pid:state.running?42:0}}
+    async stop(check:any,options?:any){state.calls.push(['stop',options]);if(!await check())throw Error('fenced');state.stops++;state.running=false}
+    async start(check:any,options?:any){state.calls.push(['start',options]);if(!await check())throw Error('fenced');state.starts++;state.running=true}
+    async resetFailed(check:any){state.calls.push(['resetFailed']);if(!await check())throw Error('fenced');return {running:false,cleanStopped:false,stopped:true,failed:false,pid:0}}
 }}))
-vi.mock('./native-release-selection.js',()=>({NativeReleaseSelection:class {async select(next:string){state.selections++;state.unit=next}}}))
+vi.mock('./native-release-selection.js',()=>({NativeReleaseSelection:class {async select(next:string,_expected:string,_t:any,options?:any){state.calls.push(['select',options]);state.selections++;state.unit=next}}}))
 vi.mock('./native-snapshot-adapter.js',()=>({NativeSnapshotAdapter:class {async snapshot(){state.copies++;return {}} async baselineUnchanged(){return true}}}))
 vi.mock('./native-rollback-state.js',()=>({NativeRollbackState:class {async restore(){return {candidateStateId:'rollback-state'}}}}))
 import { EnrolledNativeUpdateOperations } from './native-update-operations.js'
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
-beforeEach(()=>Object.assign(state,{unit:'old',running:false,starts:0,stops:0,copies:0,selections:0}))
+beforeEach(()=>Object.assign(state,{unit:'old',running:false,starts:0,stops:0,copies:0,selections:0,calls:[]}))
 function fixture(){
     const binding={targetId:'fixture',proposalId:'upstream-fixture',probeId:'probe',patchHash:'a'.repeat(64),baselineHash:'b'.repeat(64),candidateHash:'c'.repeat(64)}
     const ticket={...binding,attemptId:'repair-11111111-1111-4111-8111-111111111111',expiresAt:Date.now()+60000}
@@ -71,4 +72,23 @@ it('maps a protected rollback unit to original release plus third state, passing
     expect(f.authority.runtimeReady).toHaveBeenCalledWith('old',f.ticket,'rollback-state')
     f.config.rollback.process={...f.config.rollback.process,executable:'/other'}
     expect(()=>new EnrolledNativeUpdateOperations(f.config,f.authority)).toThrow('program enrollment')
+})
+it('grants candidate-failure tolerance only to rollback steps of the enrolled candidate',async()=>{
+    const f=fixture(),R={rollback:true},C={rollback:true,candidateFailure:true}
+    state.unit='next'
+    await f.ops.inspect(R);await f.ops.inspect()
+    await f.ops.resetFailed('next',f.ticket,R)
+    await expect(f.ops.resetFailed('next',f.ticket)).rejects.toThrow('rollback')
+    await expect(f.ops.resetFailed('old',f.ticket,R)).rejects.toThrow('rollback')
+    await expect(f.ops.select('next','old',f.ticket,C)).rejects.toThrow('rollback')
+    await f.ops.select('old','next',f.ticket,C)
+    await expect(f.ops.start('next',f.ticket,C)).rejects.toThrow('rollback')
+    await f.ops.start('old',f.ticket,C)
+    await f.ops.stop('old',f.ticket,R)
+    expect(state.calls).toEqual([['inspect',{candidateFailure:true}],['inspect',{candidateFailure:false}],['resetFailed'],
+        ['select',{candidateFailure:true}],['start',{candidateFailure:true}],['stop',{candidateFailure:false}]])
+})
+it('never tolerates a failed baseline unit, even in a rollback step',async()=>{
+    const f=fixture();await f.ops.inspect({rollback:true});await f.ops.inspect()
+    expect(state.calls).toEqual([['inspect',{candidateFailure:false}],['inspect',{candidateFailure:false}]])
 })

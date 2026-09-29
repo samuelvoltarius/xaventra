@@ -3,18 +3,18 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-const control = vi.hoisted(() => ({ running: false, failReload: false, reloads: 0 }))
+const control = vi.hoisted(() => ({ running: false, unclean: false, failReload: false, reloads: 0 }))
 vi.mock('./repair-controller-files.js', () => ({ protectControllerDirectory: () => {}, readProtectedControllerFile: (p: string) => readFileSync(p, 'utf8') }))
 vi.mock('./native-systemd-service.js', () => ({
     NativeSystemdService: class {
         constructor(private c: any) {}
-        async inspect() { if (createHash('sha256').update(readFileSync(this.c.fragmentPath)).digest('hex') !== this.c.fragmentHash) throw Error('Unit identity mismatch'); return { running: control.running, cleanStopped: !control.running, pid: 0 } }
+        async inspect() { if (createHash('sha256').update(readFileSync(this.c.fragmentPath)).digest('hex') !== this.c.fragmentHash) throw Error('Unit identity mismatch'); return { running: control.running, cleanStopped: !control.running && !control.unclean, stopped: !control.running, failed: false, pid: 0 } }
     },
     localSystemdTransport: () => ({ run: async () => { control.reloads++; if (control.failReload) throw Error('reload interrupted') } }),
 }))
 import { NativeReleaseSelection } from './native-release-selection.js'
 function fixture() {
-    control.running = false; control.failReload = false; control.reloads = 0
+    control.running = false; control.unclean = false; control.failReload = false; control.reloads = 0
     const root = mkdtempSync(join(tmpdir(), 'native-selection-')), fragmentPath = join(root, 'unit.service')
     const releases: any = {}
     for (const id of ['old', 'next']) { const unitFile = join(root, `${id}.unit`); writeFileSync(unitFile, id); releases[id] = { unitFile, unitHash: createHash('sha256').update(id).digest('hex'), process: {} } }
@@ -94,4 +94,14 @@ it('never releases a lock owned by another selection binding', async () => {
     writeFileSync(join(f.root, 'selection.lock', 'owner.json'), JSON.stringify({ bindingHash: 'e'.repeat(64) }))
     await expect(f.selection.select('next', 'old', f.ticket)).rejects.toThrow()
     expect(existsSync(join(f.root, 'selection.lock', 'owner.json'))).toBe(true)
+})
+it('accepts a stopped unit with an unclean last exit only under the explicit candidate-failure tolerance', async () => {
+    const f = fixture(); await f.selection.select('next', 'old', f.ticket)
+    control.unclean = true // candidate crashed, reset-failed done: no process, non-zero exit status remains
+    await expect(f.selection.select('old', 'next', f.ticket)).rejects.toThrow('clean stopped')
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('next')
+    await f.selection.select('old', 'next', f.ticket, { candidateFailure: true })
+    expect(readFileSync(f.fragmentPath, 'utf8')).toBe('old')
+    control.running = true
+    await expect(f.selection.select('next', 'old', { ...f.ticket, attemptId: 'repair-33333333-3333-4333-8333-333333333333' }, { candidateFailure: true })).rejects.toThrow('clean stopped')
 })
