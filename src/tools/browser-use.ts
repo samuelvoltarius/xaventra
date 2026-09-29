@@ -22,6 +22,7 @@
 import { join } from 'node:path'
 import { mkdirSync, existsSync } from 'node:fs'
 import { BrowserAdapter } from './browser.js'
+import { ownerApprovalRefusal } from './owner-approval.js'
 import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 import { getOperatorBrowserManager } from './operator-browser-manager.js'
 
@@ -604,13 +605,31 @@ export const browserUseTools: BrowserTool[] = [
     },
     {
         name: 'browser_upload',
-        description: 'Lädt freigegebene lokale Dateien über ein Datei-Eingabefeld hoch.',
+        description: 'Lädt lokale Dateien über ein Datei-Eingabefeld der offenen Seite hoch. Nur mit ausdrücklicher Owner-Freigabe (confirm); Zugangsdaten-/Konfigurationsdateien nie.',
         category: 'browser',
         parameters: [
             { name: 'selector', type: 'string', description: 'CSS-Selektor des input[type=file]', required: true },
             { name: 'paths', type: 'object', description: 'Liste absoluter Dateipfade', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
-        handler: async params => { await (await getSession()).upload(String(params.selector), Array.isArray(params.paths) ? params.paths.map(String) : [String(params.paths)]); return { success: true } },
+        handler: async params => {
+            // R2 T7: uploading hands local files to a third party: owner
+            // approval, and the same path guard as read_file (secret files
+            // and, for non-owners, the workspace boundary) for every path.
+            const paths = Array.isArray(params.paths) ? params.paths.map(String) : [String(params.paths ?? '')]
+            if (!paths.length || paths.some(path => !path.trim())) return { success: false, error: 'Mindestens ein Dateipfad ist nötig.' }
+            const refusal = await ownerApprovalRefusal(params, 'browser_upload')
+            if (refusal) return { success: false, error: refusal }
+            const { resolveGuardedFilePath } = await import('./complete-registry.js')
+            const resolved: string[] = []
+            for (const path of paths) {
+                const guarded = await resolveGuardedFilePath({ ...params, path })
+                if ('error' in guarded) return { success: false, error: guarded.error }
+                resolved.push(guarded.path)
+            }
+            await (await getSession()).upload(String(params.selector), resolved)
+            return { success: true, uploaded: resolved.length }
+        },
     },
     {
         name: 'browser_download',
