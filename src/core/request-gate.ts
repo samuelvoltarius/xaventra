@@ -13,7 +13,15 @@ export class RequestGate {
     private rejected = 0
     private queue: Pending<unknown>[] = []
 
-    constructor(private readonly maxConcurrent = 4, private readonly maxQueue = 100) {}
+    private readonly maxConcurrent: number
+    private readonly maxQueue: number
+
+    // NaN/0/negative limits (e.g. NOVA_MAX_CONCURRENT_REQUESTS=abc) would make
+    // every request wait forever; fall back to the defaults (R2 NZ-31).
+    constructor(maxConcurrent = 4, maxQueue = 100) {
+        this.maxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent >= 1 ? maxConcurrent : 4
+        this.maxQueue = Number.isInteger(maxQueue) && maxQueue >= 0 ? maxQueue : 100
+    }
 
     run<T>(task: () => Promise<T>, priority = 0): Promise<T> {
         if (this.active < this.maxConcurrent) return this.execute(task)
