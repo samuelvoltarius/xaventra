@@ -65,6 +65,8 @@ const ROLE_RANK: Record<string, number> = { blocked: -1, guest: 0, user: 1, admi
  * a second line of defence.
  */
 const COMMAND_MINIMUM_ROLE: Readonly<Record<string, CommandRole>> = Object.freeze({
+    // Internal: a message merged into a later one of the same burst (K4).
+    __coalesced__: 'guest',
     // Read-only self-description / help, own session reset.
     help: 'guest', hilfe: 'guest', befehle: 'guest', commands: 'guest',
     identity: 'guest', whoami: 'guest', capabilities: 'guest', info: 'guest',
@@ -133,6 +135,10 @@ export async function handleCommand(
     if (roleDenial) return roleDenial
 
     switch (cmd) {
+        case '__coalesced__':
+            // Text was merged into the next message of the same burst, which
+            // answers it. Finish this request silently (multi-user coalescing).
+            return '__HANDLED__'
         case 'docker': {
             const { dockerInventoryCommand } = await import('./docker-command.js')
             return dockerInventoryCommand(args, state.tools, principalContext)

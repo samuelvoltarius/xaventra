@@ -430,16 +430,38 @@ interface MessageBuffer {
     chatId: string
     messages: { content: string; timestamp: number }[]
     timer: ReturnType<typeof setTimeout> | null
-    resolve: ((merged: string) => void) | null
+    /** One resolver per coalesced call; all of them are settled on flush. */
+    resolvers: Array<(merged: string) => void>
 }
 
 const messageBuffers: Map<string, MessageBuffer> = new Map()
 
 const COALESCE_WINDOW_MS = 2500 // 2.5 seconds
 
+/**
+ * Returned to every call whose text was merged into a LATER message of the
+ * same burst. It is a slash command that the command layer answers with
+ * "__HANDLED__", so the pipeline finishes that request silently instead of
+ * waiting forever (K4) or processing the text twice.
+ */
+export const COALESCED_MESSAGE_MARKER = '/__coalesced__'
+
+export function isCoalescedMarker(content: string): boolean {
+    return content === COALESCED_MESSAGE_MARKER
+}
+
 export function shouldCoalesce(chatId: string, userId: string): boolean {
     const key = `${chatId}:${userId}`
     return messageBuffers.has(key)
+}
+
+function flushBuffer(key: string, buffer: MessageBuffer): void {
+    if (messageBuffers.get(key) === buffer) messageBuffers.delete(key)
+    const merged = buffer.messages.map(m => m.content).join('\n')
+    const resolvers = buffer.resolvers.splice(0)
+    if (resolvers.length > 1) console.log(`[Coalesce] Merged ${buffer.messages.length} messages from ${buffer.userId}`)
+    // The newest request carries the merged text; earlier ones end as handled.
+    resolvers.forEach((resolve, index) => resolve(index === resolvers.length - 1 ? merged : COALESCED_MESSAGE_MARKER))
 }
 
 export function coalesceMessage(
@@ -450,43 +472,18 @@ export function coalesceMessage(
     const key = `${chatId}:${userId}`
 
     return new Promise((resolve) => {
-        const existing = messageBuffers.get(key)
-
-        if (existing) {
-            // Add to existing buffer
-            existing.messages.push({ content, timestamp: Date.now() })
-
-            // Reset timer
-            if (existing.timer) clearTimeout(existing.timer)
-            existing.resolve = resolve
-
-            existing.timer = setTimeout(() => {
-                // Merge all buffered messages
-                const merged = existing.messages.map(m => m.content).join('\n')
-                const count = existing.messages.length
-                messageBuffers.delete(key)
-
-                console.log(`[Coalesce] Merged ${count} messages from ${userId}`)
-                resolve(merged)
-            }, COALESCE_WINDOW_MS)
-        } else {
-            // First message — start buffer
-            const buffer: MessageBuffer = {
-                userId,
-                chatId,
-                messages: [{ content, timestamp: Date.now() }],
-                timer: null,
-                resolve,
-            }
-
-            buffer.timer = setTimeout(() => {
-                const merged = buffer.messages.map(m => m.content).join('\n')
-                messageBuffers.delete(key)
-                resolve(merged)
-            }, COALESCE_WINDOW_MS)
-
+        let buffer = messageBuffers.get(key)
+        if (!buffer) {
+            buffer = { userId, chatId, messages: [], timer: null, resolvers: [] }
             messageBuffers.set(key, buffer)
         }
+        buffer.messages.push({ content, timestamp: Date.now() })
+        buffer.resolvers.push(resolve)
+
+        // Reset the window; every earlier resolver stays in the list.
+        if (buffer.timer) clearTimeout(buffer.timer)
+        const current = buffer
+        buffer.timer = setTimeout(() => flushBuffer(key, current), COALESCE_WINDOW_MS)
     })
 }
 
