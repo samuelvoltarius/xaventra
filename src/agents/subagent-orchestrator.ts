@@ -497,7 +497,10 @@ export async function spawnParallel(tasks: SubagentTask[]): Promise<SubagentResu
  * Returns a combined summary once all are done.
  */
 export async function spawnSubagentsParallel(
-    tasks: Array<{ task: string; tools?: string[] | string; timeout_seconds?: number; mesh_node?: string }>
+    tasks: Array<{ task: string; tools?: string[] | string; timeout_seconds?: number; mesh_node?: string }>,
+    /** Authorized parent identity, set by the caller from the server-side
+     * execution context. Never taken from the (model-supplied) task specs. */
+    parent?: { userId?: string; authUserId?: string },
 ): Promise<string> {
     if (!tasks.length) return 'Keine Tasks angegeben.'
     console.log(`[SubagentOrch] 🚀 Parallel spawn: ${tasks.length} subagents`)
@@ -507,6 +510,8 @@ export async function spawnSubagentsParallel(
         tools: normalizeToolList(t.tools),
         timeoutMs: (t.timeout_seconds || 60) * 1000,
         meshNode: t.mesh_node,
+        ...(parent?.userId ? { userId: parent.userId } : {}),
+        ...(parent?.authUserId ? { authUserId: parent.authUserId } : {}),
     })))
     return results.map((r, i) =>
         `[${i + 1}/${results.length}] ${r.status.toUpperCase()} (${r.durationMs}ms):\n${r.output || r.error || '(leer)'}`

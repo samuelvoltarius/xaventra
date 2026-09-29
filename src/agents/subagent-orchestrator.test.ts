@@ -86,3 +86,19 @@ describe('subagent orchestrator', () => {
         expect(listSubagents()).toEqual([])
     })
 })
+
+// INT-12: spawn_subagents_parallel receives the authorized parent identity
+// explicitly and ignores identity fields inside model-authored task specs.
+// (One task per call: concurrent first-time runs race the nova-runner module
+// mock in this harness, which is unrelated to the identity under test.)
+describe('parallel subagents use the authorized parent identity (INT-12)', () => {
+    it('applies the explicit parent and ignores task-level identity', async () => {
+        for (const task of [{ task: 'a', tools: 'web_search', userId: 'mallory', authUserId: '999' } as any, { task: 'b', tools: 'web_search' }]) {
+            const summary = await spawnSubagentsParallel([task], { userId: 'alice', authUserId: 'tg-1' })
+            expect(summary).toContain('COMPLETED')
+        }
+        const calls = runner.runNovaAgent.mock.calls.map(call => call[0] as any)
+        expect(calls.map(call => call.userId)).toEqual(['alice', 'alice'])
+        expect(calls.map(call => call.authUserId)).toEqual(['tg-1', 'tg-1'])
+    })
+})

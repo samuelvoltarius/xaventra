@@ -111,6 +111,20 @@ export function isSecretFilePath(path: string, root: string = getFileToolWorkspa
     return false
 }
 
+/**
+ * INT-12: parent identity for subagents, taken from the authorized execution
+ * context (governed executor) and otherwise from the runner-injected
+ * userId/authorizationUserId. Never from model-authored task fields.
+ */
+export async function subagentParentIdentity(params: Record<string, unknown>): Promise<{ userId?: string; authUserId?: string }> {
+    const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+    const context = getExecutionPolicyContext()
+    const clean = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined
+    const userId = clean(context.userId) || clean(context.authUserId) || clean(params.userId) || clean(params.authorizationUserId)
+    const authUserId = clean(context.authUserId) || (clean(context.userId) ? undefined : clean(params.authorizationUserId)) || userId
+    return { ...(userId ? { userId } : {}), ...(authUserId ? { authUserId } : {}) }
+}
+
 /** Knowledge-graph scopes for the (runner-injected) requester; undefined = owner, all scopes. */
 export async function kgSearchScopes(params: Record<string, unknown>): Promise<string[] | undefined> {
     if (await filePermissionFor(params) === 'owner') return undefined
@@ -3296,6 +3310,7 @@ export const ALL_TOOLS: NovaTool[] = [
                     tools,
                     timeoutMs: (Number(params.timeout_seconds) || 60) * 1000,
                     meshNode: params.mesh_node ? String(params.mesh_node) : undefined,
+                    ...(await subagentParentIdentity(params)),
                 })
                 if (result.status === 'completed') {
                     return `âœ… Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
@@ -3343,7 +3358,7 @@ export const ALL_TOOLS: NovaTool[] = [
                 const raw = params.tasks
                 const tasks = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : [])
                 if (!tasks.length) return 'Keine Tasks Ã¼bergeben.'
-                return await spawnSubagentsParallel(tasks)
+                return await spawnSubagentsParallel(tasks, await subagentParentIdentity(params))
             } catch (err) {
                 return `Parallel-Spawn-Fehler: ${err}`
             }
