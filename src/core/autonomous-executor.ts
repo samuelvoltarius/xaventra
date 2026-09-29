@@ -273,6 +273,11 @@ function createFallbackSteps(goal: string): MissionStep[] {
 // ============================================
 
 export async function startMission(goal: string, userId: string, channel: string): Promise<Mission> {
+    if (activeMission && activeMission.status === 'paused') {
+        // Never overwrite a paused mission silently: its lease, root goal and
+        // history would be lost. The owner decides explicitly.
+        throw new Error(`Eine pausierte Mission existiert noch ("${activeMission.goal.slice(0, 60)}"). Erst /mission resume oder /mission stop.`)
+    }
     if (activeMission && activeMission.status === 'active') {
         // Queue the mission instead of erroring
         missionQueue.push({ goal, userId, channel })
@@ -434,28 +439,32 @@ async function executeNextStep(): Promise<void> {
         return
     }
 
-    const stepIndex = activeMission.currentStep
-    if (stepIndex >= activeMission.steps.length) {
+    // Bind this run to the mission that was active when it started. After any
+    // await, cancel + a new /mission may have replaced the global activeMission.
+    const mission = activeMission
+    const stepIndex = mission.currentStep
+    if (stepIndex >= mission.steps.length) {
         // All steps done!
         await completeMission()
         return
     }
 
-    const step = activeMission.steps[stepIndex]
-    const missionService = `mission:${activeMission.id}`
+    const step = mission.steps[stepIndex]
+    const missionService = `mission:${mission.id}`
     const { getServiceFencingToken } = await import('../mesh/leader-election.js')
     let fence = getServiceFencingToken(missionService)
-    if (!fence || fence.token !== activeMission.fencingToken || fence.epoch !== activeMission.leaseEpoch) {
+    if (!fence || fence.token !== mission.fencingToken || fence.epoch !== mission.leaseEpoch) {
         const { acquireMissionOwnership } = await import('../mesh/mesh-registry.js')
-        const ownership = await acquireMissionOwnership(activeMission.id)
+        const ownership = await acquireMissionOwnership(mission.id)
         if (ownership) {
-            Object.assign(activeMission, ownership)
+            Object.assign(mission, ownership)
             fence = getServiceFencingToken(missionService)
         }
     }
-    if (!fence || fence.token !== activeMission.fencingToken || fence.epoch !== activeMission.leaseEpoch) {
-        activeMission.status = 'paused'
-        activeMission.progressUpdates.push('⏸️ Ausführung gestoppt: Mission-Fencing ist nicht mehr gültig')
+    if (activeMission !== mission || mission.status !== 'active' || isExecuting) return
+    if (!fence || fence.token !== mission.fencingToken || fence.epoch !== mission.leaseEpoch) {
+        mission.status = 'paused'
+        mission.progressUpdates.push('⏸️ Ausführung gestoppt: Mission-Fencing ist nicht mehr gültig')
         saveMissions()
         return
     }
@@ -464,7 +473,7 @@ async function executeNextStep(): Promise<void> {
     step.startedAt = Date.now()
     saveMissions()
 
-    console.log(`[Mission] ▶️ Step ${step.id}/${activeMission.steps.length}: ${step.description}`)
+    console.log(`[Mission] ▶️ Step ${step.id}/${mission.steps.length}: ${step.description}`)
 
     // Capture the response from the pipeline
     let stepResult = ''
@@ -472,24 +481,38 @@ async function executeNextStep(): Promise<void> {
         stepResult += msg + '\n'
     }
 
+    let stepTimer: NodeJS.Timeout | undefined
+    let stepTimedOut = false
     try {
-        step.executionKey ||= `${activeMission.id}:step:${step.id}`
+        step.executionKey ||= `${mission.id}:step:${step.id}`
         const missionMarker = `[NOVA_MISSION_KEY:${step.executionKey}]`
-        const fenceMarker = `[NOVA_MISSION_FENCE:${activeMission.id}:${activeMission.leaseEpoch}:${activeMission.fencingToken}]`
+        const fenceMarker = `[NOVA_MISSION_FENCE:${mission.id}:${mission.leaseEpoch}:${mission.fencingToken}]`
         // Inject the subtask as a synthetic message into the pipeline
         // We use 'mission' as a special channel marker
-        await Promise.race([
-            pipelineHandler(
-                activeMission.channel,
-                activeMission.createdBy,
-                `${missionMarker} ${fenceMarker} [MISSION Schritt ${step.id}/${activeMission.steps.length}] ${step.command}`,
-                captureReply,
-                daemonState
-            ),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Step timeout')), config.timeoutPerStep)
-            ),
-        ])
+        const run = pipelineHandler(
+            mission.channel,
+            mission.createdBy,
+            `${missionMarker} ${fenceMarker} [MISSION Schritt ${step.id}/${mission.steps.length}] ${step.command}`,
+            captureReply,
+            daemonState
+        )
+        // The pipeline run cannot be aborted. A timeout must therefore never
+        // lead to a retry of the same step while the first run may still be
+        // executing tools; a late rejection must not become unhandled.
+        run.catch(() => { })
+        try {
+            await Promise.race([
+                run,
+                new Promise((_, reject) => {
+                    stepTimer = setTimeout(() => {
+                        stepTimedOut = true
+                        reject(new Error('Step timeout'))
+                    }, config.timeoutPerStep)
+                }),
+            ])
+        } finally {
+            if (stepTimer) clearTimeout(stepTimer)
+        }
 
         // Capture result and require the independent Outcome Ledger validator.
         step.result = stepResult.slice(0, 2000)
@@ -510,38 +533,61 @@ async function executeNextStep(): Promise<void> {
             step.error = outcome
                 ? `Outcome ${outcome.runId} not independently validated (${outcome.status})`
                 : 'No Outcome Ledger evidence found for mission step'
-            activeMission.progressUpdates.push(
-                `⚠️ [${step.id}/${activeMission.steps.length}] ${step.description} — nicht verifiziert (${formatDuration(step.finishedAt - step.startedAt!)})`
+            mission.progressUpdates.push(
+                `⚠️ [${step.id}/${mission.steps.length}] ${step.description} — nicht verifiziert (${formatDuration(step.finishedAt - step.startedAt!)})`
             )
             console.log(`[Mission] ⚠️ Step ${step.id} has no successful independent validation`)
         } else {
             step.status = 'done'
             if (step.goalId) getGoalManager().update(step.goalId, { status: 'completed' }, { runId: outcome!.runId, ref: `outcome:${outcome!.runId}` })
-            activeMission.completedIdempotencyKeys ||= []
-            if (step.executionKey && !activeMission.completedIdempotencyKeys.includes(step.executionKey)) {
-                activeMission.completedIdempotencyKeys.push(step.executionKey)
+            mission.completedIdempotencyKeys ||= []
+            if (step.executionKey && !mission.completedIdempotencyKeys.includes(step.executionKey)) {
+                mission.completedIdempotencyKeys.push(step.executionKey)
             }
-            activeMission.pendingActions = activeMission.steps
+            mission.pendingActions = mission.steps
                 .filter(candidate => candidate.status === 'pending' || candidate.status === 'active')
                 .map(candidate => candidate.command)
-            activeMission.progressUpdates.push(
-                `✅ [${step.id}/${activeMission.steps.length}] ${step.description} (${formatDuration(step.finishedAt - step.startedAt!)})`
+            mission.progressUpdates.push(
+                `✅ [${step.id}/${mission.steps.length}] ${step.description} (${formatDuration(step.finishedAt - step.startedAt!)})`
             )
         }
 
         console.log(`[Mission] ✅ Step ${step.id} done (${formatDuration(step.finishedAt - step.startedAt!)})`)
 
     } catch (err) {
-        step.retries++
         const errMsg = String(err)
+        if (stepTimedOut) {
+            // Fail closed: the timed-out run may still be executing side
+            // effects. No automatic retry and no automatic next step.
+            step.status = 'failed'
+            step.error = 'Step timeout: Lauf nicht abbrechbar, kein automatischer Retry'
+            step.finishedAt = Date.now()
+            if (step.goalId) getGoalManager().update(step.goalId, { status: 'failed' })
+            console.error(`[Mission] ⏱️ Step ${step.id} timed out — mission paused, no retry`)
+            if (activeMission === mission) {
+                isExecuting = false
+                if (mission.status === 'active') {
+                    mission.currentStep++
+                    mission.status = 'paused'
+                    if (mission.rootGoalId) getGoalManager().update(mission.rootGoalId, { status: 'blocked' })
+                    mission.progressUpdates.push(
+                        `⏱️ [${step.id}] Timeout nach ${Math.round(config.timeoutPerStep / 1000)}s — der Lauf kann noch weiterarbeiten, daher kein Retry. Mission pausiert, fortsetzen mit /mission resume.`
+                    )
+                }
+                saveMissions()
+            }
+            return
+        }
+        step.retries++
         console.error(`[Mission] ❌ Step ${step.id} failed (retry ${step.retries}/${config.maxRetries}): ${errMsg}`)
 
         if (step.retries <= config.maxRetries) {
             // Retry
             step.status = 'pending'
-            activeMission.progressUpdates.push(
+            mission.progressUpdates.push(
                 `🔄 [${step.id}] Retry ${step.retries}/${config.maxRetries}: ${errMsg.slice(0, 100)}`
             )
+            if (activeMission !== mission) return
             isExecuting = false
             setTimeout(() => executeNextStep(), config.delayBetweenSteps * 2)
             saveMissions()
@@ -552,21 +598,23 @@ async function executeNextStep(): Promise<void> {
             step.error = errMsg.slice(0, 500)
             if (step.goalId) getGoalManager().update(step.goalId, { status: 'failed' })
             step.finishedAt = Date.now()
-            activeMission.progressUpdates.push(
+            mission.progressUpdates.push(
                 `❌ [${step.id}] Fehlgeschlagen nach ${config.maxRetries} Versuchen: ${errMsg.slice(0, 100)}`
             )
         }
     }
 
-    isExecuting = false
-
-    // Check if mission was cancelled/paused while step was executing
-    // (status may have been changed externally by cancelMission/pauseMission)
-    if (!activeMission) {
+    // Mission cancelled or replaced while the step was executing: a new
+    // mission owns the execution flag now, never touch its state.
+    if (activeMission !== mission) {
         console.log('[Mission] 🛑 Mission was cancelled during step execution')
         return
     }
-    const currentStatus = activeMission.status as string
+    isExecuting = false
+
+    // Check if mission was paused while step was executing
+    // (status may have been changed externally by pauseMission)
+    const currentStatus = mission.status as string
     if (currentStatus === 'cancelled' || currentStatus === 'paused') {
         console.log(`[Mission] ${currentStatus === 'cancelled' ? '🛑' : '⏸️'} Mission ${currentStatus} — stopping execution loop`)
         saveMissions()
@@ -574,19 +622,19 @@ async function executeNextStep(): Promise<void> {
     }
 
     // Advance to next step
-    activeMission.currentStep++
+    mission.currentStep++
     saveMissions()
 
     // Notify user periodically
-    if (activeMission.currentStep % config.notifyEveryNSteps === 0 && notifyUser) {
-        const progress = formatMissionProgress(activeMission)
+    if (mission.currentStep % config.notifyEveryNSteps === 0 && notifyUser) {
+        const progress = formatMissionProgress(mission)
         try {
             await notifyUser(progress)
         } catch { /* notification non-critical */ }
     }
 
     // Continue with next step after delay
-    if (activeMission.status === 'active') {
+    if (activeMission === mission && mission.status === 'active') {
         setTimeout(() => executeNextStep(), config.delayBetweenSteps)
     }
 }
