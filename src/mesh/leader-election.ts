@@ -12,7 +12,7 @@ import { hostname } from 'node:os'
 import { getLocalNodeId, type MeshNode } from './mesh-registry.js'
 import { recordMainRole } from '../infra/telemetry.js'
 import { resolveConfigPath } from '../config/config-path.js'
-import { adoptFence, dropFence, getHeldFence, markFenceSuspect, monoNow } from './fence.js'
+import { adoptFence, dropFence, getFenceStatus, getHeldFence, markFenceSuspect, monoNow } from './fence.js'
 
 
 type SupabaseConfig = { url: string; key: string }
@@ -550,7 +550,33 @@ function fenceLocally(service: string, reason: string): boolean {
     clearLeaseDeadline(service)
     renewalMisses.delete(service)
     const hadFence = dropFence(service, reason)
+    // Mission leases are sub-leases of nova-main: they fall with it, in the
+    // same synchronous step, and are released so the new Main can take over.
+    if (service === MAIN_SERVICE) {
+        for (const sub of getFenceStatus().held.filter(item => item.service.startsWith(MISSION_SUB_LEASE_PREFIX))) {
+            const epoch = getHeldFence(sub.service, Number.NEGATIVE_INFINITY)?.epoch
+            fenceLocally(sub.service, `sub-lease of ${MAIN_SERVICE}: ${reason}`)
+            if (epoch) void releaseLeaseEpoch(sub.service, epoch)
+        }
+    }
     return hadFence || Boolean(timer)
+}
+
+const MISSION_SUB_LEASE_PREFIX = 'mission:'
+
+/** Best-effort transactional release of a lease this process no longer uses. */
+async function releaseLeaseEpoch(service: string, epoch: number): Promise<void> {
+    try {
+        const configFile = readCoordinatorConfigFile()
+        if (configFile.status !== 'ok') return
+        const config = loadSupabaseConfig(configFile)
+        if (!config.url || !config.key) return
+        await fetch(`${config.url}/rpc/nova_release_service_lease`, {
+            method: 'POST', headers: headers(config.key),
+            body: JSON.stringify({ p_service: service, p_holder_node_id: getLocalNodeId(), p_epoch: epoch }),
+            signal: AbortSignal.timeout(5000),
+        })
+    } catch { /* the lease expires on its own */ }
 }
 
 async function relinquishLeadership(service: string, reason: string, coordinator?: LeaseDecision['coordinator']): Promise<void> {

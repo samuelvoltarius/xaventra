@@ -189,6 +189,20 @@ describe('CL-07 lease hardening', () => {
         } finally { off(); stopLeaseRenewal(service) }
     })
 
+    it('drops and releases mission sub-leases in the same step as nova-main', async () => {
+        useConfig(SUPABASE)
+        const state: Coordinator = { holder: getLocalNodeId(), instance: getLocalInstanceId(), epoch: 60, calls: [], v2: true }
+        stubCoordinator(state)
+        expect(await shouldStartExclusiveService('nova-main')).toBe(true)
+        expect(await shouldStartExclusiveService('mission:sub-1')).toBe(true)
+        state.calls.length = 0
+        stopLeaseRenewal('nova-main')
+        expect(getServiceFencingToken('nova-main')).toBeNull()
+        expect(getServiceFencingToken('mission:sub-1')).toBeNull()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        expect(state.calls).toContain('POST rpc/nova_release_service_lease')
+    })
+
     it('marks held fences suspect after an event-loop gap longer than TTL/2', async () => {
         useConfig(SUPABASE)
         stubCoordinator({ holder: getLocalNodeId(), instance: getLocalInstanceId(), epoch: 30, calls: [], v2: true })
