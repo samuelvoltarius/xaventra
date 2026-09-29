@@ -43,9 +43,8 @@ describe('R2 T25: no bare require in ESM code paths', () => {
 describe('R2 T25: source scan (vitest itself provides require, production ESM does not)', () => {
     it.each(['searxng-search.ts', 'skills-import-cli.ts', 'complete-registry.ts', 'vision-tool.ts', 'cad-tool.ts', 'browser.ts'])('%s has no bare require of fs/path', (file) => {
         const source = readFileSync(join(__dirname, file), 'utf8')
-        const code = source.split('
-').filter(line => !line.trim().startsWith('//'))
-        expect(code.filter(line => /(^|[^\w.'"`])require\((['"])(node:)?(fs|path)\)/.test(line))).toEqual([])
+        const code = source.split('\n').filter(line => !line.trim().startsWith('//'))
+        expect(code.filter(line => /(^|[^\w.'"`])require\((['"])(node:)?(fs|path)\2\)/.test(line))).toEqual([])
     })
 })
 
