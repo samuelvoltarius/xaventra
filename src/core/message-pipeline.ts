@@ -1256,7 +1256,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const { getAutoObserver } = await import('../memory/auto-observer.js')
             const observer = getAutoObserver()
             await observer.initialize()
-            await observer.observe(principalId, content, 'user', `${channel}-${Date.now()}`)
+            // The role decides alias registration (owner only). Typed for the
+            // options parameter so this compiles before and after that change.
+            await (observer as { observe(userId: string, message: string, role: 'user' | 'assistant', sessionId?: string, options?: { permission?: string }): Promise<unknown> })
+                .observe(principalId, content, 'user', `${channel}-${Date.now()}`, { permission: principalContext.permission })
         }
 
         // One memory prompt boundary combines governed facts with compact,
