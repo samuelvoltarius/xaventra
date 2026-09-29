@@ -71,6 +71,8 @@ class SelfImprovementEngine {
         rulesApplied: 0,
     }
     private intervalId: ReturnType<typeof setInterval> | null = null
+    private analysisInFlight: Promise<number> | null = null
+    private analyzedCorrectionIds = new Set<string>()
     private llm: any = null
     private lastEvolutionProposal: number = 0
 
@@ -89,11 +91,27 @@ class SelfImprovementEngine {
      * Analyze corrections and generate new rules
      */
     async analyzeCorrections(): Promise<number> {
+        // One run at a time: L7 triggers a run after every correction while
+        // the 5-min timer runs too; parallel runs created duplicate rules.
+        if (this.analysisInFlight) return this.analysisInFlight
+        this.analysisInFlight = this.runCorrectionAnalysis()
+        try {
+            return await this.analysisInFlight
+        } finally {
+            this.analysisInFlight = null
+        }
+    }
+
+    private async runCorrectionAnalysis(): Promise<number> {
         let newRules = 0
         try {
             const { getCorrectionLearner } = await import('./L7-learning.js')
             const learner = getCorrectionLearner()
-            const corrections = learner.getRecentCorrections?.(20) || []
+            // Each correction counts once; re-reading the same last 20 every
+            // 5 minutes used to push any rule to confidence 1.0 in ~35 min.
+            const corrections = (learner.getRecentCorrections?.(20) || [])
+                .filter(c => !this.analyzedCorrectionIds.has(c.id))
+            for (const c of corrections) this.analyzedCorrectionIds.add(c.id)
 
             if (corrections.length === 0) {
                 console.log('[L20] No corrections to analyze')
