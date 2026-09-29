@@ -932,6 +932,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let finalContent = response.content || ''
         let incompleteSynthesis = false
         let policyBlocked = false
+        let checkpointUnreplicated = false
         let awaitingPolicyApproval = false
         let failureEscalationContent: string | undefined
         const nativeExecutionMetadata = new Map<string, { idempotencyKey: string; executionInputHash: string }>()
@@ -967,7 +968,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     fence: nativeMissionFence, scopeId: nativeExecutionScope, principalId: userId, channel,
                     kernel, idempotency: executionStore, receipts: nativeReceiptStore,
                 })
-                if (!replicated) console.warn(`[Xaventra Agent] Native tool checkpoint replication unavailable for ${nativeExecutionScope}`)
+                if (!replicated) {
+                    // Like the OpenAI Agents backend: an unreplicated fenced checkpoint
+                    // must stop the mission step, or a takeover could repeat effects.
+                    console.warn(`[Xaventra Agent] Native tool checkpoint replication unavailable for ${nativeExecutionScope}; stopping further tools`)
+                    checkpointUnreplicated = true
+                    policyBlocked = true
+                }
             }
         }
 
@@ -1584,9 +1591,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
         // L17 persistence is handled per verified tool outcome above. The final
         // model response is deliberately not stored as execution evidence.
-        if (policyBlocked) finalContent = awaitingPolicyApproval
-            ? 'Diese Aktion wartet auf Freigabe. Es wurde keine Ersatzaktion gestartet.'
-            : 'Diese Aktion wurde durch die Richtlinie gesperrt. Es wurde keine Ersatzaktion gestartet.'
+        if (policyBlocked) finalContent = checkpointUnreplicated
+            ? 'Missionsschritt gestoppt: Der Zwischenstand konnte nicht abgesichert repliziert werden. Es wurden keine weiteren Werkzeuge ausgeführt.'
+            : awaitingPolicyApproval
+                ? 'Diese Aktion wartet auf Freigabe. Es wurde keine Ersatzaktion gestartet.'
+                : 'Diese Aktion wurde durch die Richtlinie gesperrt. Es wurde keine Ersatzaktion gestartet.'
         if (actionIntent.requiresTool) {
             console.log(`[ActionLifecycle] ${JSON.stringify(actionLifecycle.getSnapshot())}`)
         }
