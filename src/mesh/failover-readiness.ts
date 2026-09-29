@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { getActiveMission } from '../core/autonomous-executor.js'
 import { isHaStateAvailable } from '../core/ha-state.js'
 import { discoverNodes, getMeshMainAuthority, type MeshMainAuthority, type MeshNode } from './mesh-registry.js'
-import { getPreferredTakeoverNode } from './leader-election.js'
+import { getLeaseProtocol, getPreferredTakeoverNode, readCoordinatorFencingStatus, type CoordinatorFencingStatus } from './leader-election.js'
+import { getFenceStatus, getFencingMode, type FencingMode } from './fence.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -25,6 +26,8 @@ export function evaluateFailoverReadiness(input: {
     standby?: { nodeId: string } | null
     haStateAvailable: boolean
     mission?: { status: string; checkpointAt?: number; ownerNode?: string } | null
+    /** CL-07: local fencing mode, lease RPC generation and coordinator facts. */
+    fencing?: { mode: FencingMode; protocol: 'v2' | 'v1' | null; status: CoordinatorFencingStatus | null }
     now?: number
 }): FailoverReadiness {
     const now = input.now ?? Date.now()
@@ -32,6 +35,10 @@ export function evaluateFailoverReadiness(input: {
     const authorityFresh = Boolean(input.authority && Date.parse(input.authority.expiresAt) > now && input.authority.epoch > 0)
     const mainActive = Boolean(input.authority && active.some(node => node.node_id === input.authority!.nodeId))
     const telegramFenced = Boolean(input.authority?.services.includes('nova-main') && input.authority.services.includes('telegram'))
+    const status = input.fencing?.status || null
+    const fencingEnforced = Boolean(input.fencing?.mode === 'enforce' && input.fencing.protocol === 'v2'
+        && Number(status?.version) >= 5 && status?.epoch_sequence === true && status?.epoch_guard_trigger === true)
+    const leaseTableLocked = Boolean(status && status.lease_table_anon_writable === false && Number(status.lease_write_policies ?? 1) === 0)
     const missionCheckpointReady = !input.mission || input.mission.status !== 'active'
         || Boolean(input.mission.checkpointAt && now - input.mission.checkpointAt <= 120_000 && input.mission.ownerNode)
     const gates: ReadinessGate[] = [
@@ -42,6 +49,16 @@ export function evaluateFailoverReadiness(input: {
         { id: 'standby', ok: Boolean(input.standby && input.standby.nodeId !== input.authority?.nodeId), evidence: input.standby?.nodeId || 'no eligible standby' },
         { id: 'shared-state', ok: input.mode !== 'ha' || input.haStateAvailable, evidence: input.haStateAvailable ? 'encrypted HA state reachable' : 'HA state unavailable' },
         { id: 'mission-checkpoint', ok: missionCheckpointReady, evidence: input.mission?.checkpointAt ? `checkpoint ${new Date(input.mission.checkpointAt).toISOString()}` : 'no active mission' },
+        {
+            id: 'fencing-enforced', ok: input.mode !== 'ha' || fencingEnforced,
+            evidence: input.fencing
+                ? `mode ${input.fencing.mode}, lease RPC ${input.fencing.protocol || 'unknown'}, coordinator ${status ? `v${status.version ?? '?'}` : 'without v5 status'}`
+                : 'fencing not evaluated',
+        },
+        {
+            id: 'lease-table-locked', ok: input.mode !== 'ha' || leaseTableLocked,
+            evidence: status ? `anon writable: ${status.lease_table_anon_writable}, write policies: ${status.lease_write_policies ?? '?'}` : 'nova_fencing_status unavailable (v5 not applied?)',
+        },
     ]
     // 75s node expiry + 15s recovery watcher + 15s service startup margin.
     const estimatedRtoMs = 105_000
@@ -66,15 +83,17 @@ function configuredMode(): 'standalone' | 'direct' | 'ha' {
 }
 
 export async function inspectFailoverReadiness(): Promise<FailoverReadiness> {
-    const [nodes, authority, standby, haStateAvailable] = await Promise.all([
+    const [nodes, authority, standby, haStateAvailable, fencingStatus] = await Promise.all([
         discoverNodes({ activeOnly: true }),
         getMeshMainAuthority(),
         getPreferredTakeoverNode(),
         isHaStateAvailable(),
+        readCoordinatorFencingStatus(),
     ])
     return evaluateFailoverReadiness({
         mode: configuredMode(), nodes, authority, standby, haStateAvailable,
         mission: getActiveMission(),
+        fencing: { mode: getFencingMode(), protocol: getLeaseProtocol(), status: fencingStatus },
     })
 }
 
@@ -83,5 +102,14 @@ export function formatFailoverReadiness(report: FailoverReadiness): string {
         `${report.ready ? '✅' : '⚠️'} Failover ${report.ready ? 'bereit' : 'nicht vollständig bereit'} (${report.mode})`,
         `Main: ${report.main || 'nicht verifiziert'} | Standby: ${report.standby || 'keiner'} | RTO-Ziel: ${Math.round(report.estimatedRtoMs / 1000)}s`,
         ...report.gates.map(gate => `${gate.ok ? '✅' : '❌'} ${gate.id}: ${gate.evidence}`),
+        fencingSummary(),
     ].join('\n')
+}
+
+/** CL-07 observe-period counters of this process (violations = would block). */
+function fencingSummary(): string {
+    const status = getFenceStatus()
+    const held = status.held.map(item => `${item.service}@${item.epoch}${item.suspect ? '?' : ''}`).join(', ') || 'keine'
+    return `🔒 Fencing ${status.mode}: Verstöße ${status.violations}, blockiert ${status.blocked}, abgebrochen ${status.aborted} | gehalten: ${held}`
+        + (status.lastViolation ? ` | zuletzt: ${status.lastViolation.slice(0, 160)}` : '')
 }

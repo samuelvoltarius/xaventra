@@ -13,6 +13,7 @@ import { EventEmitter } from 'node:events'
 import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { hostname } from 'node:os'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -291,7 +292,8 @@ export class CircuitBreaker extends EventEmitter {
                 return
             }
 
-            const message = `🚨 *NOVA CIRCUIT BREAKER*
+            // CL-07: deliberately unfenced alarm; tagged with the sending host.
+            const message = `🚨 *NOVA CIRCUIT BREAKER* [${hostname()}]
 
 ⛔ *Status:* GESTOPPT
 📍 *Grund:* ${reason}

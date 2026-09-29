@@ -1576,10 +1576,20 @@ async function startDaemon() {
                 console.log(`[Proactive] Suppressed ${source}: ${event.reason}`)
                 return false
             }
+            // CL-07: one fenced proactive path. Without a live Main/Telegram
+            // fence a non-Main drops the message (the real Main raises its own);
+            // a Main whose live check hiccups keeps it in the proactive buffer
+            // (the channel sender re-checks and defers on FenceError).
             try {
                 const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
-                if (!await verifyLiveServiceLeadership('telegram')) return false
+                const live = await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')
+                if (!live) {
+                    const { hasValidFence } = await import('./mesh/fence.js')
+                    if (!hasValidFence(MAIN_SERVICE) || !hasValidFence('telegram')) {
+                        console.log(`[Proactive] Fenced ${source}: no live Main/Telegram authority on this node`)
+                        return false
+                    }
+                }
             } catch {
                 return false
             }
@@ -1602,8 +1612,11 @@ async function startDaemon() {
                 const telegram = state.channels.telegram
                 if (!telegram) return false
                 const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
-                if (!await verifyLiveServiceLeadership('telegram')) return false
+                if (!await verifyLiveServiceLeadership(MAIN_SERVICE) || !await verifyLiveServiceLeadership('telegram')) {
+                    // CL-07: fenced, not failed: the messenger keeps it buffered.
+                    const { FenceError } = await import('./mesh/fence.js')
+                    throw new FenceError('telegram', 'no live Main/Telegram authority', 'proactive:telegram')
+                }
                 await telegram.send({ to: userId, content })
                 return true
             },
@@ -1615,6 +1628,10 @@ async function startDaemon() {
             send: async (userId, content) => {
                 const whatsapp = state.channels.whatsapp
                 if (!whatsapp) return false
+                // CL-07: WhatsApp was only fenced at start; now per message.
+                const { assertFenced } = await import('./mesh/fence.js')
+                await assertFenced('nova-main', { live: true, effect: 'proactive:whatsapp' })
+                await assertFenced('whatsapp', { live: true, effect: 'proactive:whatsapp' })
                 await whatsapp.send({ to: userId, content })
                 return true
             },
@@ -1710,8 +1727,20 @@ async function startDaemon() {
                 const { awaitRuntimeReady } = await import('./core/runtime-readiness.js')
                 await awaitRuntimeReady()
                 const { markProcessing, markDone, incrementRetry, isMessageProcessable } = await import('./channels/message-queue.js')
+                const { assertFenced, isFenceError } = await import('./mesh/fence.js')
                 for (const pending of pendingReplay) {
                     if (!isMessageProcessable(pending.id)) continue
+                    // CL-07: replay runs the full pipeline with tools; only the
+                    // fenced Main may do that. Unfenced (enforce) = stays pending.
+                    try {
+                        await assertFenced('nova-main', { live: true, effect: 'replay' })
+                    } catch (error) {
+                        if (isFenceError(error)) {
+                            console.log(`[Nova] Replay ${pending.id} zurückgestellt: kein gültiger Main-Fence`)
+                            continue
+                        }
+                        throw error
+                    }
                     try {
                         markProcessing(pending.id)
                         await handleMessage(pending.channel, pending.from, pending.content, async (reply) => {
@@ -2765,6 +2794,14 @@ async function startDaemon() {
         console.log(`\n[Nova] ${signal} empfangen — Graceful Shutdown...`)
         state.running = false
         state.runtimeReady = false
+
+        // CL-07: leases belong to this process instance; release them so the
+        // successor does not wait a full TTL (and nothing here acts later).
+        try {
+            const { releaseHeldLeasesForShutdown } = await import('./mesh/leader-election.js')
+            const released = await releaseHeldLeasesForShutdown()
+            if (released.length) console.log(`[Nova] ✓ Leases freigegeben: ${released.join(', ')}`)
+        } catch { /* non-critical: leases expire on their own */ }
 
         // Flush AutoObserver facts to disk
         try {

@@ -8,6 +8,8 @@ const shared = vi.hoisted(() => ({
         return true
     }),
     pullSharedMemory: vi.fn(async () => shared.entry ? [shared.entry] : []),
+    // CL-07: HA writes go through the fenced variant; same storage here.
+    pushSharedMemoryFenced: vi.fn(async (entry: any) => shared.pushSharedMemory(entry)),
 }))
 
 vi.mock('../memory/shared-memory.js', () => shared)

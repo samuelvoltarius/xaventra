@@ -27,7 +27,7 @@ vi.mock('../mesh/mesh-identity.js', () => ({
 }))
 vi.mock('./github-update.js', () => ({ installedUpdateVersion: () => '9.9.9' }))
 vi.mock('./release-verifier.js', () => ({ listReleaseFiles: () => [], releaseTreeHash: () => 'a'.repeat(64) }))
-vi.mock('../memory/shared-memory.js', () => ({ pushSharedMemory: async () => true, pullSharedMemory: async () => [] }))
+vi.mock('../memory/shared-memory.js', () => ({ pushSharedMemory: async () => true, pushSharedMemoryFenced: async () => true, pullSharedMemory: async () => [] }))
 
 import { deployUpdateToAllNodes, getUpdateStatus, startUpdateChecker, stopUpdateChecker, type UpdateNodeConfig } from './auto-updater.js'
 import { getNovaDataDir } from './data-root.js'

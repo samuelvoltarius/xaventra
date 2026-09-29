@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { assertFenced, getHeldFence } from '../mesh/fence.js'
 
 
 export type SharedMemoryEntry = {
@@ -20,9 +21,23 @@ export type SharedMemoryEntry = {
     sourceNode?: string
     scope?: string
     metadata?: Record<string, unknown>
+    /** CL-07: lease epoch of the fenced writer (v5 column; absent before). */
+    writerEpoch?: number
 }
 
 const TABLE = 'nova_shared_memory'
+let warnedSplitAuthority = false
+
+function loadLeaseAuthorityUrl(): string {
+    try {
+        const configPath = resolveConfigPath()
+        if (existsSync(configPath)) {
+            const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+            if (config.supabase?.meshUrl) return String(config.supabase.meshUrl)
+        }
+    } catch { /* ignore */ }
+    return process.env.NOVA_MESH_SUPABASE_URL || ''
+}
 
 function loadSupabaseConfig(): { url: string; key: string } {
     try {
@@ -151,9 +166,65 @@ export async function pullSharedMemory(params: {
             sourceNode: row.source_node,
             scope: row.scope,
             metadata: row.metadata ?? {},
+            writerEpoch: row.writer_epoch === null || row.writer_epoch === undefined ? undefined : Number(row.writer_epoch),
         }))
     } catch {
         return []
+    }
+}
+
+/**
+ * CL-07 fenced write for HA scopes. With a Supabase fence held and the v5
+ * migration applied, the row is written through nova_fenced_upsert_shared_memory:
+ * Postgres checks holder, instance, epoch and expiry against the lease row in
+ * the same transaction and never lets an older writer_epoch overwrite a newer
+ * one. Without a fence: enforce refuses, observe logs and writes as before.
+ */
+export async function pushSharedMemoryFenced(entry: SharedMemoryEntry, fenceService = 'nova-main'): Promise<boolean> {
+    const fence = getHeldFence(fenceService)
+    if (!fence) {
+        try {
+            await assertFenced(fenceService, { effect: `shared-write:${entry.scope || 'local-memory'}` })
+        } catch { return false }
+        return pushSharedMemory(entry)
+    }
+    const config = loadSupabaseConfig()
+    if (!config.url || !config.key) return false
+    if (fence.coordinator !== 'supabase') return pushSharedMemory(entry)
+    // The fenced RPC must run in the database that holds the lease rows.
+    const leaseUrl = loadLeaseAuthorityUrl()
+    if (leaseUrl && leaseUrl.replace(/\/$/, '') !== config.url.replace(/\/$/, '')) {
+        if (!warnedSplitAuthority) {
+            warnedSplitAuthority = true
+            console.warn('[SharedMemory] HA scopes live outside the lease database (learningUrl != meshUrl); fenced upsert unavailable, writing unfenced')
+        }
+        return pushSharedMemory(entry)
+    }
+    const row = {
+        id: entry.id, user_id: entry.userId, role: entry.role, content: entry.content, timestamp: entry.timestamp,
+        keywords: entry.keywords ?? [], source_node: entry.sourceNode ?? readNodeId(),
+        scope: entry.scope ?? 'local-memory', metadata: entry.metadata ?? {},
+    }
+    try {
+        const res = await fetch(`${config.url}/rpc/nova_fenced_upsert_shared_memory`, {
+            method: 'POST', headers: headers(config.key),
+            body: JSON.stringify({
+                p_fence_service: fenceService, p_epoch: fence.epoch, p_holder_node_id: fence.nodeId,
+                p_holder_instance_id: fence.instanceId, p_row: row,
+            }),
+            signal: AbortSignal.timeout(5000),
+        })
+        // v5 not applied yet: behave as before (the gate fencing-enforced stays false).
+        if (res.status === 404 || res.status === 400) return pushSharedMemory(entry)
+        if (!res.ok) return false
+        const value = await res.json() as { written?: boolean; reason?: string; current_epoch?: number }
+        if (value.written !== true) {
+            console.warn(`[SharedMemory] Fenced write of ${entry.scope}/${entry.id} rejected: ${value.reason || 'unknown'} (epoch ${fence.epoch}, current ${value.current_epoch ?? '?'})`)
+            return false
+        }
+        return true
+    } catch {
+        return false
     }
 }
 

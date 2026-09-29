@@ -195,6 +195,16 @@ export function startRestApi(
                 const channel = REST_API_CHANNEL
                 const from = process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
 
+                // CL-07: the REST entry runs the full pipeline with tools; on a
+                // node without the Main fence it is refused (enforce) or logged.
+                try {
+                    const { assertFenced } = await import('../mesh/fence.js')
+                    await assertFenced('nova-main', { live: true, effect: 'rest:/v1/message' })
+                } catch (error) {
+                    json(res, 503, { error: 'Not the active Main node (fenced)', detail: String((error as Error)?.message || error).slice(0, 200) })
+                    return
+                }
+
                 let response = ''
                 try {
                     await handleMessage(channel, from, content, async (msg) => {

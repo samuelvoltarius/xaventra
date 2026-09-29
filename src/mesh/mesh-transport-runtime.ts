@@ -16,6 +16,8 @@ import type {
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
+import { checkDelegatedFence } from './fence-highwater.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -135,6 +137,46 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
 
 export function getMeshTransport(): MeshTransportRouter | null { return router }
 
+/** CL-07: the Main fence that delegated work carries (signed with the envelope). */
+export function currentMainMeshFence(): MeshFence | undefined {
+    const fence = getHeldFence('nova-main')
+    if (!fence) return undefined
+    return {
+        service: fence.service, epoch: fence.epoch, token: fence.token,
+        authority: fence.coordinator === 'witness' ? 'witness' : fence.coordinator === 'local' ? 'static' : 'supabase',
+    }
+}
+
+/**
+ * CL-07 receiver check for delegated work: token must match the sending node,
+ * the epoch must not be below the persisted high-water mark (which it raises),
+ * and where a coordinator is reachable the fence is confirmed live. observe:
+ * logged only; enforce: the request is refused.
+ */
+export async function verifyDelegatedEnvelopeFence(envelope: MeshEnvelope, live = true): Promise<{ ok: boolean; reason: string }> {
+    if (!envelope.fence?.token || !envelope.fence.epoch) return { ok: false, reason: 'delegated request carries no Main fence' }
+    return checkDelegatedFence({
+        service: envelope.fence.service, epoch: envelope.fence.epoch, token: envelope.fence.token, sourceNode: envelope.sourceNode,
+    }, { live })
+}
+
+async function admitDelegatedEnvelope(envelope: MeshEnvelope): Promise<string | null> {
+    const verdict = await verifyDelegatedEnvelopeFence(envelope)
+    if (verdict.ok) return null
+    if (getFencingMode() === 'enforce') {
+        console.warn(`[MeshTransport] ${envelope.kind} from ${envelope.sourceNode} refused (fenced): ${verdict.reason}`)
+        return verdict.reason
+    }
+    console.warn(`[MeshTransport] observe: ${envelope.kind} from ${envelope.sourceNode} would be refused: ${verdict.reason}`)
+    return null
+}
+
+function withEnvelopeFence<T>(envelope: MeshEnvelope, fn: () => Promise<T>): Promise<T> {
+    const fence = envelope.fence
+    if (!fence?.token || !fence.epoch) return fn()
+    return runWithDelegatedFence({ service: fence.service, epoch: fence.epoch, token: fence.token, sourceNode: envelope.sourceNode }, fn)
+}
+
 export async function sendAgentRequest(targetNode: string, prompt: string, options: Partial<AgentRequestPayload> = {}): Promise<{ requestId: string; ack: MeshAck }> {
     const transport = router || initMeshTransportRuntime()
     const runId = randomUUID()
@@ -143,7 +185,8 @@ export async function sendAgentRequest(targetNode: string, prompt: string, optio
         successCriteria: options.successCriteria, budget: options.budget,
         idempotencyKey: options.idempotencyKey || runId,
     }
-    const envelope = transport.create('agent.request', targetNode, payload, { runId, ttlMs: Math.max(60_000, payload.budget?.timeoutMs || 0) })
+    await assertFenced('nova-main', { live: true, effect: 'mesh:agent.request' })
+    const envelope = transport.create('agent.request', targetNode, payload, { runId, ttlMs: Math.max(60_000, payload.budget?.timeoutMs || 0), fence: currentMainMeshFence() })
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
 }
 
@@ -191,7 +234,8 @@ export async function cancelMeshRun(
 export async function sendToolRequest(targetNode: string, payload: ToolRequestPayload): Promise<{ requestId: string; ack: MeshAck }> {
     const transport = router || initMeshTransportRuntime()
     const runId = randomUUID()
-    const envelope = transport.create('tool.request', targetNode, payload, { runId, ttlMs: Math.max(30_000, payload.timeoutMs || 0) })
+    await assertFenced('nova-main', { live: true, effect: 'mesh:tool.request' })
+    const envelope = transport.create('tool.request', targetNode, payload, { runId, ttlMs: Math.max(30_000, payload.timeoutMs || 0), fence: currentMainMeshFence() })
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
 }
 
@@ -390,6 +434,11 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const cached = processed.get(payload.idempotencyKey)
         if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         if (!messageHandler) throw new Error('agent handler unavailable')
+        const agentFenceRefusal = await admitDelegatedEnvelope(envelope)
+        if (agentFenceRefusal) {
+            await sendResult(envelope, makeResult(envelope.id, false, undefined, `fenced: ${agentFenceRefusal}`))
+            return
+        }
         const now = Date.now()
         for (const [requestId, expiresAt] of cancelledAgentRuns) if (expiresAt <= now) cancelledAgentRuns.delete(requestId)
         if (cancelledAgentRuns.has(envelope.id)) {
@@ -402,14 +451,14 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         activeAgentRuns.set(envelope.id, controller)
         let output = ''
         try {
-            await messageHandler(
+            await withEnvelopeFence(envelope, () => messageHandler(
                 'mesh-direct',
                 payload.userId || envelope.principal.id,
                 payload.prompt,
                 async content => { if (!controller.signal.aborted) output += content },
                 undefined,
                 { abortSignal: controller.signal, allowedTools: payload.allowedTools || [], requestId: envelope.id },
-            )
+            ))
             if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)
             rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
@@ -480,13 +529,18 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         if (containsFreeShellPayload(payload.arguments)) throw new Error('free shell payload rejected')
         const cached = processed.get(payload.idempotencyKey)
         if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
+        const toolFenceRefusal = await admitDelegatedEnvelope(envelope)
+        if (toolFenceRefusal) {
+            await sendResult(envelope, makeResult(envelope.id, false, undefined, `fenced: ${toolFenceRefusal}`))
+            return
+        }
         const started = Date.now()
         try {
             const { getToolRegistry } = await import('../tools/complete-registry.js')
             // Remote callers act as an unprivileged guest: identity fields are
             // never taken from the envelope payload (policy rejects them, too).
             const { authorizationUserId: _a, authUserId: _b, userId: _c, channel: _d, ...toolArguments } = payload.arguments as Record<string, unknown>
-            const resultValue = await getToolRegistry().execute(payload.tool, toolArguments)
+            const resultValue = await withEnvelopeFence(envelope, () => getToolRegistry().execute(payload.tool, toolArguments))
             const resultHash = createHash('sha256').update(JSON.stringify(resultValue)).digest('hex')
             const result: ResultPayload = { requestId: envelope.id, success: true, result: resultValue, evidence: [{ tool: payload.tool, requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - started }] }
             rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)

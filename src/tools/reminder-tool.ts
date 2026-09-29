@@ -114,6 +114,15 @@ export async function checkAndFireReminders(): Promise<void> {
                     `\u23f0 **Erinnerung!**\n\n${reminder.message}`
                 )
             } catch (err) {
+                // CL-07: no Main/Telegram fence is not a failed delivery. The
+                // reminder stays pending (not fired, not deleted, attempts
+                // unchanged) and is retried until the fenced Main delivers it.
+                const { isFenceError } = await import('../mesh/fence.js')
+                if (isFenceError(err)) {
+                    console.log(`[Reminder] Zurückgestellt (kein gültiger Fence): ${reminder.id}`)
+                    pendingRetry = true
+                    continue
+                }
                 const attempts = ((reminder as StoredReminder & { attempts?: number }).attempts || 0) + 1
                 ;(reminder as StoredReminder & { attempts?: number }).attempts = attempts
                 console.error(`[Reminder] Notify failed (attempt ${attempts}/${MAX_NOTIFY_ATTEMPTS}): ${err}`)

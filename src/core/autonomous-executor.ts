@@ -18,6 +18,7 @@ import { detectActionIntent } from './action-intent.js'
 import { createTaskContract, validateTaskCompletion, type TaskContract } from './task-contract.js'
 import { getOutcomeLedger } from './outcome-ledger.js'
 import { getGoalManager } from './goal-manager.js'
+import { assertFenced } from '../mesh/fence.js'
 
 // ============================================
 // Types
@@ -451,6 +452,18 @@ async function executeNextStep(): Promise<void> {
 
     const step = mission.steps[stepIndex]
     const missionService = `mission:${mission.id}`
+    // CL-07: the mission lease is a sub-lease of nova-main. Without a live Main
+    // fence (enforce) no mission lease is taken and no step starts.
+    try {
+        await assertFenced('nova-main', { live: true, effect: `mission-step:${mission.id}` })
+    } catch {
+        if (activeMission === mission && mission.status === 'active') {
+            mission.status = 'paused'
+            mission.progressUpdates.push('⏸️ Ausführung gestoppt: kein gültiger Main-Fence')
+            saveMissions()
+        }
+        return
+    }
     const { getServiceFencingToken } = await import('../mesh/leader-election.js')
     let fence = getServiceFencingToken(missionService)
     if (!fence || fence.token !== mission.fencingToken || fence.epoch !== mission.leaseEpoch) {
@@ -1035,6 +1048,14 @@ export function stopMissionRecoveryWatcher(): void {
 export function suspendMissionForLeadershipLoss(): void {
     stopMissionRecoveryWatcher()
     if (!activeMission || activeMission.status !== 'active') return
+    // CL-07: stop renewing the mission sub-lease (synchronous fence + abort of
+    // the running step's tools) and release it, so the new Main can take the
+    // mission over at once instead of finding it held by a paused owner.
+    const service = `mission:${activeMission.id}`
+    void import('../mesh/leader-election.js').then(async ({ stopLeaseRenewal, yieldServiceLeadership }) => {
+        const released = typeof yieldServiceLeadership === 'function' ? await yieldServiceLeadership(service).catch(() => null) : null
+        if (!released || released.leader) stopLeaseRenewal(service)
+    }).catch(() => undefined)
     activeMission.status = 'paused'
     if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'blocked' })
     activeMission.progressUpdates.push('⏸️ Mission pausiert: Main-Lease verloren')

@@ -28,6 +28,7 @@ import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
 import { missionWorkspaceTools } from './mission-workspace-tools.js'
 import { developerCapabilityTools } from './developer-capability-tools.js'
+import { runFencedTool } from '../mesh/fence.js'
 
 // ============================================
 // Tool Interface
@@ -3690,8 +3691,11 @@ export class NovaToolRegistry {
             // Validator not available, proceed without validation
         }
 
-        // Execute tool and attempt L0 auto-repair if it fails
-        let result = await tool.handler(params)
+        // Execute tool and attempt L0 auto-repair if it fails. CL-07: every
+        // handler with an effect runs behind the Main fence and is aborted
+        // when the lease is lost (enforce); read-only tools are exempt.
+        const fencedHandler = (input: Record<string, unknown>) => runFencedTool(name, () => tool.handler(input))
+        let result = await fencedHandler(params)
         result = await executionPipeline.postprocess(name, params, result, isSuccessfulToolResult(result))
 
         // Check if result indicates an error
@@ -3725,7 +3729,7 @@ export class NovaToolRegistry {
                     name,
                     params,
                     result as any,
-                    tool.handler
+                    fencedHandler
                 )
                 return executionPipeline.finalize(name, params, diagnosedResult, false)
             } catch (repairErr) {

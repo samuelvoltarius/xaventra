@@ -61,9 +61,9 @@ async function acquire(name: string, node: string, ttl = 1000) {
 
 async function cleanup(): Promise<void> {
     await fetch(`${url}/nova_mesh_tasks?id=eq.${encodeURIComponent(taskId)}`, { method: 'DELETE', headers }).catch(() => undefined)
-    for (const name of [service, `mesh-task:${taskId}`, takeoverService]) {
-        await fetch(`${url}/nova_mesh_leases?service=eq.${encodeURIComponent(name)}`, { method: 'DELETE', headers }).catch(() => undefined)
-    }
+    // CL-07: lease rows are never deleted over REST (v5 makes the table
+    // read-only for anon). The suffixed test services expire on their own and
+    // the epoch sequence guarantees they can never collide with real epochs.
 }
 
 try {

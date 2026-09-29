@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,9 @@ import { resolveConfigPath } from '../config/config-path.js'
 
 
 export interface WitnessEndpoint { id: string; url: string; secret: string }
+
+/** CL-07: highest witness epoch this process has seen per service. */
+const witnessEpochHighWater = new Map<string, number>()
 export interface WitnessQuorumConfig {
     mode: 'witness'
     witnesses: WitnessEndpoint[]
@@ -89,30 +92,40 @@ export async function acquireWitnessQuorumLease(
         return { leader: false, reason: 'witness mode requires exactly three independent, uniquely identified endpoints with secrets', coordinator: 'witness' }
     }
 
-    const requestId = randomUUID()
-    const requestBody = JSON.stringify({ service, nodeId, holderHostname: hostname(), ttlMs, requestId })
-    const settled = await Promise.all(config.witnesses.map(async witness => {
-        const timestamp = String(Date.now())
-        try {
-            const response = await fetch(`${witness.url}/v1/lease/acquire`, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json', 'x-nova-timestamp': timestamp,
-                    'x-nova-signature': sign(witness.secret, `${timestamp}.${requestBody}`),
-                },
-                body: requestBody, signal: AbortSignal.timeout(config.timeoutMs || 5000),
-            })
-            if (!response.ok) return null
-            const responseBody = await response.text()
-            if (!equalSignature(response.headers.get('x-nova-signature') || '', sign(witness.secret, responseBody))) return null
-            const decision = JSON.parse(responseBody) as WitnessDecision
-            if (decision.witnessId !== witness.id || decision.requestId !== requestId || decision.service !== service) return null
-            return decision
-        } catch { return null }
-    }))
+    const ask = (proposedEpoch: number) => {
+        const requestId = randomUUID()
+        const requestBody = JSON.stringify({ service, nodeId, holderHostname: hostname(), ttlMs, requestId, proposedEpoch })
+        return Promise.all(config.witnesses.map(async witness => {
+            const timestamp = String(Date.now())
+            try {
+                const response = await fetch(`${witness.url}/v1/lease/acquire`, {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json', 'x-nova-timestamp': timestamp,
+                        'x-nova-signature': sign(witness.secret, `${timestamp}.${requestBody}`),
+                    },
+                    body: requestBody, signal: AbortSignal.timeout(config.timeoutMs || 5000),
+                })
+                if (!response.ok) return null
+                const responseBody = await response.text()
+                if (!equalSignature(response.headers.get('x-nova-signature') || '', sign(witness.secret, responseBody))) return null
+                const decision = JSON.parse(responseBody) as WitnessDecision
+                if (decision.witnessId !== witness.id || decision.requestId !== requestId || decision.service !== service) return null
+                return decision
+            } catch { return null }
+        }))
+    }
+    const noteSeen = (decisions: Array<WitnessDecision | null>) => {
+        for (const item of decisions) {
+            const epoch = Number(item?.epoch || 0)
+            if (Number.isSafeInteger(epoch) && epoch > (witnessEpochHighWater.get(service) || 0)) witnessEpochHighWater.set(service, epoch)
+        }
+    }
 
-    const valid = settled.filter((item): item is WitnessDecision => item !== null)
-    const approvals = valid.filter(item => item.leader && item.holderNodeId === nodeId && item.expiresAt)
+    let settled = await ask(witnessEpochHighWater.get(service) || 0)
+    noteSeen(settled)
+    let valid = settled.filter((item): item is WitnessDecision => item !== null)
+    let approvals = valid.filter(item => item.leader && item.holderNodeId === nodeId && item.expiresAt)
     if (approvals.length < 2) {
         const denied = valid.find(item => !item.leader)
         return {
@@ -122,14 +135,32 @@ export async function acquireWitnessQuorumLease(
         }
     }
 
+    // CL-07: witnesses count independently, so approvals can disagree and a
+    // takeover could otherwise yield a LOWER epoch than an earlier term that
+    // only a now-unreachable witness knew. The term is max(everything seen),
+    // committed back to the approving witnesses before it is used.
+    const epoch = Math.max(...approvals.map(item => Number(item.epoch || 0)), witnessEpochHighWater.get(service) || 0)
+    if (approvals.some(item => Number(item.epoch) !== epoch)) {
+        settled = await ask(epoch)
+        noteSeen(settled)
+        valid = settled.filter((item): item is WitnessDecision => item !== null)
+        approvals = valid.filter(item => item.leader && item.holderNodeId === nodeId && item.expiresAt && Number(item.epoch) === epoch)
+        if (approvals.length < 2) {
+            return { leader: false, coordinator: 'witness', reason: `witness quorum could not commit epoch ${epoch}: ${approvals.length}/2 approvals` }
+        }
+    }
+
     const leaseExpiresAtMs = Math.min(...approvals.map(item => Date.parse(item.expiresAt!)), Date.now() + ttlMs) - 1000
     if (leaseExpiresAtMs <= Date.now()) return { leader: false, coordinator: 'witness', reason: 'witness certificate already expired' }
-    const certificate = approvals.sort((a, b) => a.witnessId.localeCompare(b.witnessId))
-        .map(item => `${item.witnessId}:${item.epoch}:${item.expiresAt}:${item.requestId}`).join('|')
-    const epoch = Math.max(...approvals.map(item => Number(item.epoch || 0)))
     return {
         leader: true, epoch, coordinator: 'witness', leaseExpiresAt: new Date(leaseExpiresAtMs).toISOString(),
-        fencingToken: `${service}:q${epoch}:${createHash('sha256').update(certificate).digest('hex')}`,
+        // Stable per term (no certificate hash): renewals keep the same token.
+        fencingToken: `${service}:q${epoch}:${nodeId}`,
         reason: `independent witness quorum acquired (${approvals.length}/3)`,
     }
+}
+
+/** Test helper: forget the per-process witness epoch high-water marks. */
+export function resetWitnessEpochHighWaterForTests(): void {
+    witnessEpochHighWater.clear()
 }
