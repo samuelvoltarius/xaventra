@@ -41,6 +41,11 @@ export interface LLMMessage {
 import { normalizeTokenUsage } from './token-usage.js'
 import { envOpenAIKeyFor, isLocalEndpoint } from './endpoint-trust.js'
 
+// Cloud/remote calls never hang on undici defaults (300 s headers, endless
+// trickling streams): completions and streams get a hard cap.
+const REQUEST_TIMEOUT_MS = 120_000
+const STREAM_TIMEOUT_MS = 300_000
+
 export interface ToolCall {
     id: string
     name: string
@@ -684,6 +689,7 @@ class ClaudeProvider extends LLMProvider {
 
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
+            signal: AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
             headers: {
                 ...anthropicAuthHeaders(token),
                 'Content-Type': 'application/json',
@@ -719,6 +725,7 @@ class ClaudeProvider extends LLMProvider {
 
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
+            signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
             headers: {
                 ...anthropicAuthHeaders(token),
                 'Content-Type': 'application/json',
@@ -923,6 +930,7 @@ class OpenAIProvider extends LLMProvider {
         try {
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
+                signal: AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -1009,6 +1017,7 @@ class OpenAIProvider extends LLMProvider {
         try {
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
+                signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -1739,6 +1748,7 @@ class LocalLLMProvider extends LLMProvider {
 
         const response = await fetch(endpoint, {
             method: 'POST',
+            signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
             headers,
             body: JSON.stringify(requestBody),
         })

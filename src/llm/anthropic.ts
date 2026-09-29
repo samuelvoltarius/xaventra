@@ -4,6 +4,11 @@
  * Supports Claude 3.5, 4, Opus, Sonnet models
  */
 
+// Cloud/remote calls never hang on undici defaults (300 s headers, endless
+// trickling streams): completions and streams get a hard cap.
+const REQUEST_TIMEOUT_MS = 120_000
+const STREAM_TIMEOUT_MS = 300_000
+
 // ============================================
 // Types
 // ============================================
@@ -61,6 +66,7 @@ export class AnthropicLLM {
 
         const response = await fetch(`${ANTHROPIC_API}/messages`, {
             method: 'POST',
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             headers: {
                 'x-api-key': this.apiKey,
                 'anthropic-version': '2023-06-01',
@@ -106,6 +112,7 @@ export class AnthropicLLM {
 
         const response = await fetch(`${ANTHROPIC_API}/messages`, {
             method: 'POST',
+            signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
             headers: {
                 'x-api-key': this.apiKey,
                 'anthropic-version': '2023-06-01',
