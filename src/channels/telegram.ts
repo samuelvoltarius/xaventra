@@ -24,6 +24,23 @@ export interface TelegramConfig {
     verifyAuthority?: () => Promise<boolean>
 }
 
+const UPDATE_ID_PROPERTY = '__novaUpdateId'
+
+/** Copy the raw update_id onto the message object (non-enumerable) so the
+ * 'message' listeners can build a globally unique dedup key. */
+export function stampTelegramUpdate(update: any): void {
+    const message = update?.message
+    if (!message || typeof message !== 'object' || !Number.isSafeInteger(update.update_id)) return
+    Object.defineProperty(message, UPDATE_ID_PROPERTY, { value: update.update_id, enumerable: false, configurable: true })
+}
+
+/** Globally unique inbound key: Telegram update_id when known, otherwise
+ * chat-scoped message_id (message_id alone is only unique per chat). */
+export function telegramInboundKey(msg: any, updateId: unknown = msg?.[UPDATE_ID_PROPERTY]): string {
+    if (Number.isSafeInteger(updateId)) return `tg-update:${updateId}`
+    return `tg:${msg?.chat?.id ?? 'unknown'}:${msg?.message_id ?? 'unknown'}`
+}
+
 // ============================================
 // Telegram Adapter Class
 // ============================================
@@ -121,6 +138,13 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Step 1: Start WITHOUT polling to clear webhook first
         this.bot = this.guardBotEffects(new TelegramBot(this.config.token, { polling: false }))
+        const processUpdate = typeof this.bot.processUpdate === 'function' ? this.bot.processUpdate.bind(this.bot) : undefined
+        if (processUpdate) {
+            this.bot.processUpdate = (update: any) => {
+                stampTelegramUpdate(update)
+                return processUpdate(update)
+            }
+        }
 
         // Step 2: Delete any existing webhook — KEEP pending updates (drop_pending_updates: false)
         // This is critical: an active webhook silently blocks all polling-based updates,
@@ -307,7 +331,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
                 // Create message with transcribed text
                 const incoming: IncomingMessage = {
-                    id: msg.message_id.toString(),
+                    id: telegramInboundKey(msg),
                     channel: 'telegram',
                     from: userId,
                     to: chatId,
@@ -347,7 +371,7 @@ export class TelegramAdapter implements ChannelAdapter {
                             { timeout: 60_000 }
                         ).toString().trim()
                         const incoming: IncomingMessage = {
-                            id: msg.message_id.toString(), channel: 'telegram', from: userId,
+                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
                             to: chatId, content: remoteResult, timestamp: msg.date * 1000, isGroup: false,
                         }
                         if (this.messageHandler) {
@@ -365,7 +389,7 @@ export class TelegramAdapter implements ChannelAdapter {
                         const { transcribe } = await import('../voice/voice-input.js')
                         const result = await transcribe(tempPath, { model: 'whisper-local' })
                         const incoming: IncomingMessage = {
-                            id: msg.message_id.toString(), channel: 'telegram', from: userId,
+                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
                             to: chatId, content: result.text, timestamp: msg.date * 1000, isGroup: false,
                         }
                         if (this.messageHandler) {
@@ -439,7 +463,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 : `📄 Datei empfangen: ${fileName} (${mimeType}, ${Math.round(buffer.byteLength / 1024)} KB)\nGespeichert unter: ${savePath}\n\nBitte analysiere diese Datei.`
 
             const incoming: IncomingMessage = {
-                id: msg.message_id.toString(),
+                id: telegramInboundKey(msg),
                 channel: 'telegram',
                 from: userId,
                 to: chatId,
@@ -1202,7 +1226,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Create incoming message
         const incoming: IncomingMessage = {
-            id: msg.message_id.toString(),
+            id: telegramInboundKey(msg),
             channel: 'telegram',
             from: userId,
             to: chatId,  // <-- chatId for replies

@@ -52,6 +52,15 @@ export type MessageHandler = (
     image?: { data: string; mimeType: string }
 ) => Promise<void>
 
+/** Globally unique queue/dedup key for a Telegram inbound message. The adapter
+ * already provides `tg-update:<update_id>` or `tg:<chat>:<message_id>`; a bare
+ * message_id (only unique per chat) is scoped by chat here. */
+export function telegramQueueKey(msg: { id?: unknown }, chatId: unknown): string {
+    const raw = msg?.id === undefined || msg?.id === null ? '' : String(msg.id)
+    if (raw.startsWith('tg:') || raw.startsWith('tg-update:')) return raw
+    return `tg:${String(chatId ?? 'unknown')}:${raw || `local-${Date.now()}`}`
+}
+
 export async function verifyTelegramAuthority(
     verify?: (service: string) => Promise<boolean>,
 ): Promise<boolean> {
@@ -184,7 +193,7 @@ async function startTelegramOnce(
         }
 
         // ---- Persistent Message Queue ----
-        const msgId = String(msg.updateId || msg.id || `tg-${Date.now()}`)
+        const msgId = telegramQueueKey(msg, chatId)
         logRuntimeEvent({ event: 'telegram.message.received', channel: 'Telegram', userId: String(msg.from), messageId: msgId })
         let _queueMarkDone: ((id: string) => void) | undefined
         let _queueIncrementRetry: ((id: string) => void) | undefined
