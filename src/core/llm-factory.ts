@@ -653,6 +653,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                     } as any)
                     ; (wrapper as any)._openaiAdapter = null
                     ; (wrapper as any)._anthropicAdapter = null
+                    ; (wrapper as any)._minimaxAdapter = null
                     activeModelId = newModel
                     activeProvider = 'local' as LLMProviderType
                     console.log(`[NovaLLM] ✅ Switched to ${discovered.provider}/${newModel} (OpenAI-compatible external)`)
@@ -677,12 +678,16 @@ export async function createLLM(config: { provider?: string; model?: string; int
                         }
                         const apiKey = keyMap[resolvedProvider]
                         if (apiKey) {
-                            const { createOpenAILLM } = await import('../llm/openai.js')
                             const baseUrl = openaiCompatible[resolvedProvider] || 'https://api.openai.com/v1'
-                            const openaiLLM = createOpenAILLM({ apiKey, model: newModel, baseUrl })
+                            // Same OpenAI-compatible SDK contract as external
+                            // providers: keeps tools, tool turns, limits and usage
+                            // (the legacy adapter silently dropped all of them).
+                            const { createNovaLLMClient: createSwitchClient } = await import('../llm/nova-llm-sdk.js')
+                            const openaiLLM = await createSwitchClient({ provider: 'local', model: newModel, baseUrl, apiKey, isolated: true })
                                 // Patch the wrapper's complete to use this adapter
                                 ; (wrapper as any)._openaiAdapter = openaiLLM
                                 ; (wrapper as any)._anthropicAdapter = null
+                                ; (wrapper as any)._minimaxAdapter = null
                             activeModelId = newModel
                             activeProvider = resolvedProvider as LLMProviderType
                             console.log(`[NovaLLM] ✅ Switched to ${resolvedProvider}/${newModel} (OpenAI-compatible)`)
@@ -703,6 +708,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                             const anthropicLLM = createAnthropicLLM({ apiKey, model: newModel })
                                 ; (wrapper as any)._anthropicAdapter = anthropicLLM
                                 ; (wrapper as any)._openaiAdapter = null
+                                ; (wrapper as any)._minimaxAdapter = null
                             activeModelId = newModel
                             activeProvider = 'claude' as LLMProviderType
                             console.log(`[NovaLLM] ✅ Switched to anthropic/${newModel} (Claude direct)`)
@@ -744,6 +750,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                 }
                 llm.configure(providerConfig)
                     ; (wrapper as any)._openaiAdapter = null  // Clear any OpenAI adapter
+                    ; (wrapper as any)._minimaxAdapter = null  // complete() would still prefer MiniMax
                 activeModelId = newModel
                 activeProvider = sdkProvider as LLMProviderType
                 console.log(`[NovaLLM] ✅ Model switched to ${sdkProvider}/${newModel}`)
@@ -1070,17 +1077,12 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
             const openaiAdapter = (wrapper as any)._openaiAdapter
             if (openaiAdapter) {
                 try {
-                    const response = await openaiAdapter.complete(
-                        msgs.map((m: { role: string; content: string; image?: { data: string; mimeType: string } }) => ({
-                            role: m.role as 'system' | 'user' | 'assistant',
-                            content: m.content,
-                            ...(m.image && { image: m.image }),
-                        }))
-                    )
-                    return { content: response.content, toolCalls: undefined, usage: undefined }
+                    const response = await openaiAdapter.complete(msgs as any, (tools || []) as any, options)
+                    return { content: response.content, toolCalls: response.toolCalls, usage: response.usage }
                 } catch (err) {
-                    console.log(`[NovaLLM] OpenAI adapter failed, falling back: ${err}`)
-                        ; (wrapper as any)._openaiAdapter = null
+                    // Fall back for this call only. Dropping the adapter would
+                    // silently return every later call to the previous model.
+                    console.log(`[NovaLLM] ${activeProvider}/${activeModelId} failed, falling back for this call: ${err}`)
                 }
             }
 
