@@ -20,6 +20,8 @@ export type LifecycleEvent =
 
 export interface ExecutionPolicyContext {
     runId?: string
+    /** Server-side kernel task contract id of the governed run (never model-supplied). */
+    contractId?: string
     userId?: string
     authUserId?: string
     channel?: string
