@@ -199,6 +199,51 @@ export interface MessageExecutionOptions {
     requestId?: string
 }
 
+export interface ScreenshotFallbackRequest {
+    channel: string
+    /** Raw channel identity: the authorization subject and the Telegram recipient. */
+    from: string
+    /** Canonical principal used by the tool policy. */
+    principalId: string
+    content: string
+    tools?: { execute?: (name: string, args: Record<string, unknown>) => Promise<any> }
+    telegram?: { sendPhoto?: (chatId: string, path: string, caption?: string) => Promise<unknown> }
+}
+
+/**
+ * Deterministic screenshot fallback for providers that acknowledge a capture
+ * request without emitting a tool call. It is not a second authority: the
+ * capture passes the same authorizeToolExecution boundary (tool policy,
+ * channel, owner grant and role) as every governed tool call. Only Telegram
+ * has a delivery path; everything else, and every denial, is a no-op so the
+ * model's normal reply stands.
+ */
+export async function runAuthorizedScreenshotFallback(
+    request: ScreenshotFallbackRequest,
+): Promise<{ path: string; size?: number } | null> {
+    if (request.channel.toLowerCase() !== 'telegram') return null
+    if (!request.tools?.execute || !request.telegram?.sendPhoto) return null
+    let args: Record<string, unknown>
+    try {
+        const { authorizeToolExecution } = await import('../agents/tool-authorization.js')
+        args = await authorizeToolExecution('desktop_screenshot', { send: false, chat_id: request.from }, {
+            userId: request.principalId,
+            authUserId: request.from,
+            channel: request.channel,
+            requestText: request.content,
+            governedReadOnly: false,
+        })
+    } catch (error) {
+        console.log(`[Pipeline] Screenshot fallback not authorized: ${error}`)
+        return null
+    }
+    const screenshotResult: any = await request.tools.execute('desktop_screenshot', args)
+    const imgPath = screenshotResult?.screenshotPath || screenshotResult?.path
+    if (!screenshotResult?.success || !imgPath || !existsSync(imgPath)) return null
+    await request.telegram.sendPhoto(request.from, imgPath, 'Desktop Screenshot')
+    return { path: imgPath, size: screenshotResult.size }
+}
+
 export async function handleMessage(
     channel: string,
     from: string,
@@ -1675,21 +1720,21 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const preGateIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         if (!isSystemMessage && !(result as any).actionState && preGateIntent.kind === 'screenshot' && !screenshotDelivered && (result.toolsExecuted || []).length === 0) {
             try {
-                const screenshotResult: any = await state.tools.execute('desktop_screenshot', {
-                    send: false,
-                    chat_id: from,
-                })
-                const imgPath = screenshotResult?.screenshotPath || screenshotResult?.path
                 const tg = state.channels?.telegram || state.telegram
-                if (screenshotResult?.success && imgPath && existsSync(imgPath) && tg?.sendPhoto) {
-                    await tg.sendPhoto(from, imgPath, 'Desktop Screenshot')
+                const captured = await runAuthorizedScreenshotFallback({
+                    channel, from, principalId, content,
+                    tools: state.tools,
+                    telegram: tg,
+                })
+                if (captured) {
+                    const imgPath = captured.path
                     screenshotDelivered = true
                     ;(result as any).screenshotPath = imgPath
                     ;(result as any).toolsExecuted = ['desktop_screenshot']
                     ;(result as any).toolExecutions = [{
                         tool: 'desktop_screenshot',
                         success: true,
-                        result: { path: imgPath, size: screenshotResult.size },
+                        result: { path: imgPath, size: captured.size },
                     }]
                     const currentTime = new Date().toLocaleTimeString('de-DE', {
                         hour: '2-digit',
