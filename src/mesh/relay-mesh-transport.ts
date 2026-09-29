@@ -67,7 +67,14 @@ export class RelayMeshTransport implements MeshTransport {
             const rows = await response.json() as Array<{ receipt?: string; envelope: MeshEnvelope }>
             this.queued = rows.length
             for (const row of rows) {
-                for (const handler of this.handlers) await handler(row.envelope)
+                // MI-7: one rejected envelope must not abort the poll or stay at
+                // the head of the queue. Rejection is terminal (policy/replay),
+                // so the row is acknowledged and dropped, never executed.
+                try {
+                    for (const handler of this.handlers) await handler(row.envelope)
+                } catch (error) {
+                    console.warn(`[RelayTransport] Dropped envelope ${String(row.envelope?.id || row.receipt || '?').slice(0, 80)}: ${String(error).slice(0, 160)}`)
+                }
                 if (row.receipt) await fetch(`${this.config.url.replace(/\/$/, '')}/envelopes/${encodeURIComponent(row.receipt)}/ack`, { method: 'POST', headers: this.headers(), signal: AbortSignal.timeout(5000) })
                 this.queued = Math.max(0, this.queued - 1)
             }
