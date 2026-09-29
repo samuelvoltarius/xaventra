@@ -54,7 +54,8 @@ const DANGEROUS_DB_PATTERNS: DangerousPattern[] = [
         requiresConfirmation: true,
     },
     {
-        pattern: /DELETE\s+FROM\s+\w+\s*;/i,
+        // No WHERE anywhere in the same statement (quoted names, missing ';').
+        pattern: /\bDELETE\s+FROM\s+\S+(?![^;]*\bWHERE\b)/i,
         severity: 'critical',
         description: 'DELETE ohne WHERE - löscht ALLE Zeilen',
         requiresConfirmation: true,
@@ -67,7 +68,7 @@ const DANGEROUS_DB_PATTERNS: DangerousPattern[] = [
         requiresConfirmation: true,
     },
     {
-        pattern: /UPDATE\s+\w+\s+SET\s+[^W]+;$/i,
+        pattern: /\bUPDATE\s+\S+\s+SET\b(?![^;]*\bWHERE\b)/i,
         severity: 'critical',
         description: 'UPDATE ohne WHERE - ändert ALLE Zeilen',
         requiresConfirmation: true,
@@ -139,7 +140,9 @@ export function checkDatabaseSafety(input: string): DatabaseSafetyResult {
         if (pattern.pattern.test(input)) {
             return {
                 safe: false,
-                blocked: pattern.severity === 'critical',
+                // No confirmation flow is wired into the tool path, so every
+                // pattern that requires confirmation is blocked (fail-closed).
+                blocked: pattern.requiresConfirmation || pattern.severity === 'critical',
                 severity: pattern.severity,
                 reason: pattern.description,
                 suggestion: pattern.suggestion,
