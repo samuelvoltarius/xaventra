@@ -210,9 +210,19 @@ export const fileTools: NovaTool[] = [
         handler: async (params) => {
             const { writeFileSync, mkdirSync, existsSync } = await import('node:fs')
             const { dirname, resolve, relative } = await import('node:path')
-            const path = resolve(params.path as string)
-            const cwd = process.cwd()
-            const rel = relative(cwd, path).replace(/\\/g, '/')
+            const root = getFileToolWorkspaceRoot()
+            const path = resolve(root, params.path as string)
+            const rel = relative(root, path).replace(/\\/g, '/')
+
+            // === SECURITY: never outside the workspace root (also via symlinks) ===
+            if (!isPathWithin(root, path) || !isPathWithin(canonicalPath(root), canonicalPath(path))) {
+                console.log(`[SECURITY] BLOCKED write outside workspace: ${params.path}`)
+                return {
+                    error: `GESCHUETZT: "${params.path}" liegt ausserhalb des Arbeitsbereichs. Schreibvorgang blockiert.`,
+                    blocked: true,
+                    path: rel,
+                }
+            }
 
             // === SECURITY: Protected Paths (Prompt Injection â†’ RCE Prevention) ===
             const PROTECTED_PATTERNS = [
@@ -227,12 +237,17 @@ export const fileTools: NovaTool[] = [
                 /^src\/tools\/tool-policy\.ts$/,
                 /^\.env/,
                 /^nova\.config\.json$/,
+                /^xaventra\.config\.json$/,
+                /^\.nova-data\/multi-user\//,
+                /^dist\//,
                 /^package\.json$/,
                 /^tsconfig\.json$/,
                 /^scripts\/deploy/,
             ]
 
-            const isProtected = PROTECTED_PATTERNS.some(p => p.test(rel))
+            // Case-insensitive: on Windows "XAVENTRA.CONFIG.JSON" is the same file.
+            const isProtected = PROTECTED_PATTERNS.some(p => new RegExp(p.source, 'i').test(rel))
+                || isSecretFilePath(path, root)
             if (isProtected) {
                 console.log(`[SECURITY] ðŸš¨ BLOCKED write to protected path: ${rel}`)
                 return {
