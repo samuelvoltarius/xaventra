@@ -691,7 +691,8 @@ export async function startDashboard(
         setNovaMessageHandler(async (message: string, channel: string) => {
             // Collect the response via a callback
             let response = ''
-            const replyFn = async (msg: string) => { response = msg }
+            // Append every partial reply; overwriting delivered only the last one.
+            const replyFn = async (msg: string) => { response = response ? `${response}\n\n${msg}` : msg }
 
             // Route through the unified handler — gets ALL features automatically:
             // Admin code, slash commands, GraphRAG, Journal, LanceDB, Observer, etc.

@@ -48,4 +48,15 @@ describe('channel starters match the hardened adapters', () => {
         await captured.whatsappHandler!({ from: '4366012345@s.whatsapp.net', groupId: '1203630@g.us', content: '@nova hallo', isGroup: true })
         expect(captured.whatsappSend).toHaveBeenCalledWith(expect.objectContaining({ to: '1203630@g.us' }))
     })
+
+    it('returns every partial dashboard reply, not only the last (R2 UEB-3)', async () => {
+        const handler = vi.fn(async (_channel: string, _from: string, _content: string, reply: (text: string) => Promise<void>) => {
+            await reply('Teil eins')
+            await reply('Teil zwei')
+        })
+        await startDashboard({ enabled: true, port: 3011 }, handler as any, state())
+        const response = await captured.dashboardHandler!('hallo', 'dashboard')
+        expect(response).toContain('Teil eins')
+        expect(response).toContain('Teil zwei')
+    })
 })
