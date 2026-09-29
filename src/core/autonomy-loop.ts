@@ -574,18 +574,12 @@ async function gatherAutonomyContext(checks: CheckResult[], idleMin: number): Pr
     try {
         const { getActiveMission, getMissionQueue } = await import('./autonomous-executor.js')
         const mission = getActiveMission()
-        if (mission && mission.status === 'active') {
-            const done = mission.steps.filter((s: any) => s.status === 'done').length
-            const total = mission.steps.length
-            const current = mission.steps.find((s: any) => s.status === 'active' || s.status === 'pending')
-            triggers.push({
-                type: 'mission',
-                priority: 'high',
-                context: `AKTIVE MISSION: "${mission.goal}" — Fortschritt: ${done}/${total} — Aktueller Schritt: ${current?.description || 'unbekannt'}\n→ Arbeite am aktuellen Schritt weiter. Nutze deine Tools.`,
-            })
-        }
+        // An active mission is driven exclusively by the mission executor
+        // (which also starts the queue). A self-think run with tools on the
+        // same step would execute it a second time in parallel.
+        const executorOwnsWork = mission?.status === 'active'
         const queue = getMissionQueue?.()
-        if (queue && queue.length > 0) {
+        if (!executorOwnsWork && queue && queue.length > 0) {
             triggers.push({
                 type: 'mission',
                 priority: 'high',
@@ -848,7 +842,24 @@ function buildProactivePrompt(ctx: AutonomyContext): string {
 // Main Loop
 // ============================================
 
+// Cron, the startup run and /autonomy check must never overlap: a slow local
+// model would otherwise execute the same self-goal twice in parallel.
+let cycleInFlight = false
+
 async function runAutonomyLoop(): Promise<AutonomyReport> {
+    if (cycleInFlight) {
+        console.log('[Autonomy] Cycle skipped: previous cycle still running')
+        return { timestamp: Date.now(), checks: [], summary: 'Übersprungen: vorheriger Zyklus läuft noch', notificationSent: false }
+    }
+    cycleInFlight = true
+    try {
+        return await runAutonomyCycle()
+    } finally {
+        cycleInFlight = false
+    }
+}
+
+async function runAutonomyCycle(): Promise<AutonomyReport> {
     if (!config.enabled) {
         return { timestamp: Date.now(), checks: [], summary: 'Disabled', notificationSent: false }
     }
@@ -928,7 +939,7 @@ async function runAutonomyLoop(): Promise<AutonomyReport> {
                 if (isEmpty) {
                     console.log(`[Autonomy] ⚠ Goal lieferte leere Antwort — nicht als erledigt markiert: "${goal.goal}"`)
                     // Don't complete — will retry next cycle
-                    return
+                    return report
                 }
 
                 // Extract GOAL_DONE summary if Nova included it.
