@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const spawned = vi.hoisted(() => ({ calls: [] as Array<{ command: string; args: string[]; options: any }> }))
+const spawned = vi.hoisted(() => ({ calls: [] as Array<{ command: string; args: string[]; options: any }>, procs: [] as any[] }))
 
 vi.mock('node:child_process', async importOriginal => {
     const actual = await importOriginal<typeof import('node:child_process')>()
@@ -14,6 +14,9 @@ vi.mock('node:child_process', async importOriginal => {
             spawned.calls.push({ command, args, options })
             const proc: any = new EventEmitter()
             proc.stdin = new PassThrough()
+            proc.stdinText = ''
+            proc.stdin.on('data', (chunk: Buffer) => { proc.stdinText += chunk.toString() })
+            spawned.procs.push(proc)
             proc.stdout = new PassThrough()
             proc.stderr = new PassThrough()
             proc.kill = () => true
@@ -38,6 +41,7 @@ afterEach(() => {
     resetCodexBinaryCacheForTests()
     rmSync(testRoot, { recursive: true, force: true })
     spawned.calls = []
+    spawned.procs = []
 })
 
 function fakeBinary(): void {
@@ -80,5 +84,18 @@ describe('R2 L7: Codex LLM proxy runs read-only in an empty workdir', () => {
 
         expect(spawned.calls).toHaveLength(1)
         expectSandboxed(spawned.calls[0])
+    })
+
+    it('R2 L17: stream() passes the prompt via stdin, not argv', async () => {
+        fakeBinary()
+        const adapter = new CodexCLIAdapter('gpt-test')
+        const secret = 'Systemprompt mit Gedächtnis ' + 'x'.repeat(40_000)
+
+        for await (const _chunk of adapter.stream(secret)) { /* drain */ }
+
+        const args = spawned.calls[0].args
+        expect(args.some(arg => arg.includes('Systemprompt'))).toBe(false)
+        expect(args.at(-1)).toBe('-')
+        expect(spawned.procs[0].stdinText).toBe(secret)
     })
 })

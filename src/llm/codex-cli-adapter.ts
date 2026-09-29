@@ -398,7 +398,9 @@ export class CodexCLIAdapter {
             '--skip-git-repo-check',
             ...codexProxySandboxArgs(),
             '-m', model,
-            fullPrompt,
+            // Prompt via stdin like complete(): argv is visible in the process
+            // list and limited to ~32k chars on Windows.
+            '-',
         ]
 
         const command = this.binaryPath.endsWith('.js') ? process.execPath : this.binaryPath
@@ -409,6 +411,7 @@ export class CodexCLIAdapter {
             timeout,
             env: { ...process.env, NO_COLOR: '1' },
         })
+        proc.stdin?.write(fullPrompt)
         proc.stdin?.end()
 
         let buffer = ''
