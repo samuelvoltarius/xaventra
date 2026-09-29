@@ -37,10 +37,22 @@ function compactSnapshot(records: GovernedMemory[]): GovernedMemory[] {
         .slice(0, MAX_RECORDS_PER_SYNC)
 }
 
+let warnedNoTrustedNodes = false
+
+// Fail-closed: shared_memory rows (including source_node) are writable by
+// every node holding the shared key, so without an explicit allow-list no
+// remote snapshot - and therefore no remote tombstone - is imported.
 function isTrustedNode(nodeId: string): boolean {
     const configured = (process.env.NOVA_MEMORY_TRUSTED_NODES || '')
         .split(',').map(value => value.trim()).filter(Boolean)
-    return configured.length === 0 || configured.includes(nodeId)
+    if (configured.length === 0) {
+        if (!warnedNoTrustedNodes) {
+            warnedNoTrustedNodes = true
+            console.log('[L22] NOVA_MEMORY_TRUSTED_NODES not set - remote governance snapshots are ignored')
+        }
+        return false
+    }
+    return configured.includes(nodeId)
 }
 
 async function publishGovernanceSnapshot(): Promise<boolean> {
@@ -68,7 +80,7 @@ async function publishGovernanceSnapshot(): Promise<boolean> {
 
 async function importRemoteSnapshots(): Promise<number> {
     const localNode = readNodeId()
-    const entries = await pullSharedMemory({ limit: 200 })
+    const entries = await pullSharedMemory({ scope: SNAPSHOT_SCOPE, limit: 200 })
     let imported = 0
     for (const entry of entries) {
         if (entry.scope !== SNAPSHOT_SCOPE || entry.sourceNode === localNode) continue

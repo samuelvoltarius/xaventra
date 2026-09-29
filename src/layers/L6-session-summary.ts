@@ -24,6 +24,7 @@ const pendingSessions: Map<string, {
     messagesSinceLastSummary: number
 }> = new Map()
 const sessionGenerations = new Map<string, number>()
+const MAX_PENDING_SESSIONS = 50
 
 export function clearSessionSummary(userId: string): void {
     sessionGenerations.set(userId, (sessionGenerations.get(userId) || 0) + 1)
@@ -350,7 +351,16 @@ export function trackSession(
     const key = `${channel}:${userId}`
     const existing = pendingSessions.get(key)
     const count = (existing?.messagesSinceLastSummary || 0) + 1
+    // Re-insert so Map order is least-recently-used first, then bound it:
+    // every conversation used to stay referenced (and flushed via LLM on
+    // shutdown) until restart.
+    pendingSessions.delete(key)
     pendingSessions.set(key, { userId, channel, history, messagesSinceLastSummary: count })
+    while (pendingSessions.size > MAX_PENDING_SESSIONS) {
+        const oldest = pendingSessions.keys().next().value
+        if (oldest === undefined) break
+        pendingSessions.delete(oldest)
+    }
 
     // Auto-summarize if threshold reached
     if (count >= AUTO_SUMMARY_THRESHOLD) {

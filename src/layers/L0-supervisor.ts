@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getDefaultModel } from '../core/model-defaults.js'
 
 
 // ============================================
@@ -64,7 +65,6 @@ export function getNovaEnforcedPersona(): string {
     // Dynamic model resolution — always returns the CURRENTLY active model
     let modelInfo = 'unbekannt'
     try {
-        const { getDefaultModel } = require('../core/model-defaults.js')
         modelInfo = getDefaultModel()
     } catch {
         try {
@@ -432,6 +432,20 @@ function updateHeartbeatFile(tasks: ScheduledTask[]): void {
 
 let heartbeatInterval: NodeJS.Timeout | null = null
 
+/** Id of the pseudo task passed to the heartbeat callback on ticks without due tasks. */
+export const HEARTBEAT_TICK_TASK_ID = 'heartbeat-tick'
+
+function createHeartbeatTickTask(): ScheduledTask {
+    return {
+        id: HEARTBEAT_TICK_TASK_ID,
+        userId: '',
+        channel: 'heartbeat',
+        description: 'Heartbeat-Tick (keine fällige Aufgabe)',
+        scheduledFor: Date.now(),
+        completed: false,
+    }
+}
+
 export function startHeartbeat(
     onTaskDue: (task: ScheduledTask) => Promise<void>,
     intervalMs = 30 * 60 * 1000  // 30 minutes
@@ -450,6 +464,17 @@ export function startHeartbeat(
                 markTaskComplete(task.id)
             } catch (err) {
                 console.error(`[L0 Heartbeat] Task-Fehler: ${err}`)
+            }
+        }
+
+        // The daemon hangs periodic work (health check, journal summary,
+        // daily digest) into this callback. Without a due task it would
+        // never run, so every otherwise empty tick delivers a pseudo task.
+        if (dueTasks.length === 0) {
+            try {
+                await onTaskDue(createHeartbeatTickTask())
+            } catch (err) {
+                console.error(`[L0 Heartbeat] Tick-Fehler: ${err}`)
             }
         }
     }, intervalMs)

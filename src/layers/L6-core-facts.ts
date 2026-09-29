@@ -91,9 +91,12 @@ export function addFact(fact: CoreFact): void {
         fact = { ...fact, governanceId: governed.id, governanceStatus: governed.status }
     }
     // Dedup: check if similar fact exists
+    // Prefix dedup never replaces another governed record: that would drop
+    // its projection and removeFactByGovernanceId could no longer find it.
     const existing = store.facts.findIndex(f =>
         f.fact.toLowerCase() === fact.fact.toLowerCase() ||
-        (f.category === fact.category && f.fact.includes(fact.fact.slice(0, 30)))
+        (f.category === fact.category && f.fact.includes(fact.fact.slice(0, 30))
+            && (!f.governanceId || !fact.governanceId || f.governanceId === fact.governanceId))
     )
 
     if (existing >= 0) {

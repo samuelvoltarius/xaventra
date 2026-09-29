@@ -66,6 +66,9 @@ class SelfCheckManager extends EventEmitter {
     private toolCallActive = false  // Track if a tool is currently executing
 
     private checkInterval: NodeJS.Timeout | null = null
+    private lastActSignature = ''
+    private lastActAt = 0
+    private readonly ACT_REPEAT_MS = 60 * 60_000      // same issue set re-triggers shouldAct at most hourly
     private readonly SILENCE_THRESHOLD_MS = 30000       // 30s without response = possible problem
     private readonly SILENCE_WARN_MAX_MS = 5 * 60_000   // Stop warning after 5 min — user is gone
     private readonly MAX_CONSECUTIVE_SILENCES = 3
@@ -529,9 +532,19 @@ ${check.suggestions.length > 0 ? `\n💡 Vorschläge:\n${check.suggestions.map(s
 
         this.checkInterval = setInterval(() => {
             const result = this.performSelfCheck()
-            if (result.shouldAct) {
-                this.emit('shouldAct', result)
-            }
+            if (!result.shouldAct) return
+            // shouldAct triggers an LLM diagnosis in the daemon. The same
+            // unchanged issues (e.g. a tool that failed 3x and was never used
+            // again) would otherwise re-trigger it every interval.
+            const signature = result.issues
+                .map(issue => issue.replace(/\d+(?:[.,]\d+)?/g, '#'))
+                .sort()
+                .join('|')
+            const now = Date.now()
+            if (signature === this.lastActSignature && now - this.lastActAt < this.ACT_REPEAT_MS) return
+            this.lastActSignature = signature
+            this.lastActAt = now
+            this.emit('shouldAct', result)
         }, intervalSeconds * 1000)
     }
 

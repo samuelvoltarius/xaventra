@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getModelScoreAdjustment, getAvgLatency } from '../llm/model-perf-db.js'
+import { getAvailableModels } from '../llm/model-discovery.js'
 
 // ============================================
 // Model Capabilities Registry
@@ -274,7 +275,6 @@ export interface RouterConfig {
 // Build initial available models from discovery cache (if any)
 function getInitialAvailableModels(): string[] {
     try {
-        const { getAvailableModels } = require('../llm/model-discovery.js')
         const discovered = getAvailableModels()
         if (discovered && discovered.length > 0) {
             return discovered.map((m: any) => m.id)

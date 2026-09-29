@@ -65,11 +65,14 @@ function getKnowledgePath(): string {
     return join(dir, KNOWLEDGE_FILE)
 }
 
-function loadKnowledge(): LearnedKnowledge[] {
+// includeUnusable: the write path must keep legacy records that recall
+// filters out, otherwise the first new solution deletes them from disk.
+function loadKnowledge(includeUnusable = false): LearnedKnowledge[] {
     const path = getKnowledgePath()
     if (!existsSync(path)) return []
     try {
         const parsed = JSON.parse(readFileSync(path, 'utf-8')) as LearnedKnowledge[]
+        if (includeUnusable) return Array.isArray(parsed) ? parsed : []
         return parsed.filter(entry => {
             const solution = String(entry?.solution || '')
             const metaOnly = /^Tool\s+(nova_capabilities|find_capability|resolve_capability|load_skill_pack|build_skill|create_skill):/i.test(solution)
@@ -125,10 +128,10 @@ export function rememberSolution(
         console.warn(`[L17 Learning] Ignored non-fulfilling outcome from ${evidence.toolName}`)
         return false
     }
-    const knowledge = loadKnowledge()
+    const knowledge = loadKnowledge(true)
 
     // Check if we already know this
-    const existing = knowledge.find(k => k.userId === userId && k.problem.toLowerCase() === problem.toLowerCase())
+    const existing = knowledge.find(k => k.userId === userId && String(k?.problem || '').toLowerCase() === problem.toLowerCase())
     if (existing) {
         existing.successCount++
         existing.solution = solution
