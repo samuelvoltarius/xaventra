@@ -310,7 +310,11 @@ class SubAgentManager extends EventEmitter {
 
             // === DYNAMIC HOST-SPECIFIC CHECKS ===
             // For SSH: actually ping the target host and test connectivity
-            if (toolName === 'ssh_command' && params?.host) {
+            // Host goes into shell strings below: only plain hostnames/IPs.
+            if (toolName === 'ssh_command' && params?.host
+                && !/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}$/.test(String(params.host))) {
+                results.push('[Diagnose] ⚠️ Ungültiger Hostname — Host-Checks übersprungen')
+            } else if (toolName === 'ssh_command' && params?.host) {
                 const host = String(params.host)
                 console.log(`[L8 Diagnose] 🏓 Pinging ${host}...`)
 
