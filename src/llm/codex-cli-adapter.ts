@@ -10,7 +10,7 @@
  */
 
 import { spawn, execSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -217,6 +217,23 @@ export function getCodexDiscoveryStatus(): {
 // Codex CLI LLM Adapter
 // ============================================
 
+// Codex is an agent with a shell tool. As an LLM proxy it runs with the
+// read-only sandbox (independent of ~/.codex/config.toml) and in an empty
+// working directory, so the daemon's cwd (xaventra.config.json, .env) is not
+// its workspace. Flags verified against `codex exec --help`.
+let codexWorkdir: string | null = null
+
+export function codexProxyWorkdir(): string {
+    if (!codexWorkdir || !existsSync(codexWorkdir)) {
+        codexWorkdir = mkdtempSync(join(tmpdir(), 'nova-codex-proxy-'))
+    }
+    return codexWorkdir
+}
+
+export function codexProxySandboxArgs(): string[] {
+    return ['--sandbox', 'read-only', '-C', codexProxyWorkdir()]
+}
+
 export class CodexCLIAdapter {
     private binaryPath: string
     private model: string
@@ -279,6 +296,7 @@ export class CodexCLIAdapter {
                 '--json',
                 '--ephemeral',
                 '--skip-git-repo-check',
+                ...codexProxySandboxArgs(),
                 '-m', model,
                 '-',
             ]
@@ -286,6 +304,7 @@ export class CodexCLIAdapter {
             const invocation = resolveCodexCommand(this.binaryPath, args)
             proc = spawn(invocation.command, invocation.args, {
                 stdio: ['pipe', 'pipe', 'pipe'],
+                cwd: codexProxyWorkdir(),
                 env: { ...process.env, NO_COLOR: '1' },
             })
             proc.stdin?.write(fullPrompt)
@@ -377,6 +396,7 @@ export class CodexCLIAdapter {
             '--json',
             '--ephemeral',
             '--skip-git-repo-check',
+            ...codexProxySandboxArgs(),
             '-m', model,
             fullPrompt,
         ]
@@ -385,6 +405,7 @@ export class CodexCLIAdapter {
         const commandArgs = this.binaryPath.endsWith('.js') ? [this.binaryPath, ...args] : args
         const proc = spawn(command, commandArgs, {
             stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: codexProxyWorkdir(),
             timeout,
             env: { ...process.env, NO_COLOR: '1' },
         })
