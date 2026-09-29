@@ -7,11 +7,12 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { getLocalNodeId, type MeshNode } from './mesh-registry.js'
 import { recordMainRole } from '../infra/telemetry.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { adoptFence, dropFence, getHeldFence, markFenceSuspect, monoNow } from './fence.js'
 
 
 type SupabaseConfig = { url: string; key: string }
@@ -26,6 +27,12 @@ export type LeaseDecision = {
     coordinator?: 'local' | 'supabase' | 'witness'
     /** The coordinator positively reported a different current holder. */
     heldByOther?: boolean
+    /** Monotonic (performance.now) local deadline; never later than the real expiry. */
+    deadlineMono?: number
+    /** Lease RPC generation the coordinator answered with (v2 = instance-fenced). */
+    protocol?: 'v2' | 'v1'
+    /** Server clock at decision time (v2); bounds the deadline without the local wall clock. */
+    serverNow?: string
 }
 
 const LEASE_TABLE = 'nova_mesh_leases'
@@ -40,10 +47,24 @@ const takeoverTimers = new Map<string, ReturnType<typeof setInterval>>()
 const leadershipTakeoverHandlers = new Map<string, Set<() => Promise<void> | void>>()
 const renewalMisses = new Map<string, number>()
 const leadershipLostHandlers = new Map<string, Set<() => Promise<void> | void>>()
-const localFencingTokens = new Map<string, { epoch: number; token: string }>()
-const localLeaseExpiries = new Map<string, number>()
 const leaseUnavailableWarnings = new Map<string, { status: number; lastLoggedAt: number; failures: number }>()
 const LEASE_WARNING_INTERVAL_MS = 5 * 60_000
+/** One id per process start: two processes on one node never share a lease (CL-07). */
+const LOCAL_INSTANCE_ID = randomUUID()
+let leaseProtocol: 'v2' | 'v1' | null = null
+let lastV1Warning = 0
+let eventLoopGapTimer: ReturnType<typeof setInterval> | null = null
+let eventLoopLastTick = 0
+const EVENT_LOOP_PROBE_MS = 1_000
+
+export function getLocalInstanceId(): string {
+    return LOCAL_INSTANCE_ID
+}
+
+/** Which lease RPC the coordinator answered last: v2 (fencing enforceable) or v1 (legacy). */
+export function getLeaseProtocol(): 'v2' | 'v1' | null {
+    return leaseProtocol
+}
 
 export function noteLeaseUnavailable(
     service: string,
@@ -72,15 +93,82 @@ function fencingToken(service: string, epoch: number, nodeId = getLocalNodeId())
     return `${service}:${epoch}:${nodeId}`
 }
 
+/** Cached fence of this process; null once the monotonic deadline passed. */
 export function getServiceFencingToken(service: string): { epoch: number; token: string } | null {
-    return localFencingTokens.get(service) || null
+    const fence = getHeldFence(service)
+    return fence ? { epoch: fence.epoch, token: fence.token } : null
 }
 
-/** Revalidate authority before external side effects; cached fencing tokens
- * alone are insufficient during a coordinator/network partition. */
+/**
+ * Read-only live check (CL-07): never acquires, renews or takes over a lease.
+ * Uses the v5 RPC nova_check_fence; against a v1-only coordinator it reads
+ * the lease row instead.
+ */
+export async function checkLiveFence(service: string): Promise<{ valid: boolean; reason: string }> {
+    const fence = getHeldFence(service)
+    if (!fence) return { valid: false, reason: 'no lease held by this process' }
+    if (fence.coordinator === 'local') return { valid: true, reason: 'single-node lease' }
+    // The witness protocol has no read-only endpoint; its local deadline is
+    // bounded by the quorum certificate (min expiry - 1 s).
+    if (fence.coordinator === 'witness') return { valid: true, reason: 'witness lease within quorum deadline' }
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status === 'unreadable') return { valid: false, reason: 'coordinator config unreadable' }
+    const config = loadSupabaseConfig(configFile)
+    if (!config.url || !config.key) return { valid: false, reason: 'no coordinator configured for live check' }
+    try {
+        const res = await fetch(`${config.url}/rpc/nova_check_fence`, {
+            method: 'POST', headers: headers(config.key),
+            body: JSON.stringify({ p_service: service, p_epoch: fence.epoch, p_holder_node_id: fence.nodeId, p_holder_instance_id: fence.instanceId }),
+            signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) {
+            const value = await res.json() as { valid?: boolean; epoch?: number }
+            return value.valid === true
+                ? { valid: true, reason: 'live fence confirmed (nova_check_fence)' }
+                : { valid: false, reason: `live fence rejected by coordinator (current epoch ${value.epoch ?? 'none'})` }
+        }
+        if (res.status !== 404 && res.status !== 400) return { valid: false, reason: `live fence check failed (${res.status})` }
+        // v1-only coordinator: read the row, never write it.
+        const row = await fetch(`${config.url}/${LEASE_TABLE}?service=eq.${encodeURIComponent(service)}&select=*`, {
+            method: 'GET', headers: headers(config.key), signal: AbortSignal.timeout(5000),
+        })
+        if (!row.ok) return { valid: false, reason: `lease row unreadable (${row.status})` }
+        const lease = ((await row.json()) as Array<{ holder_node_id?: string; holder_instance_id?: string | null; epoch?: number; expires_at?: string }>)[0]
+        const valid = Boolean(lease && lease.holder_node_id === fence.nodeId && Number(lease.epoch) === fence.epoch
+            && (!lease.holder_instance_id || lease.holder_instance_id === fence.instanceId) && !isExpired(lease.expires_at))
+        return { valid, reason: valid ? 'live fence confirmed by lease row (v1 coordinator)' : 'lease row does not match this fence (v1 coordinator)' }
+    } catch (error) {
+        return { valid: false, reason: `live fence check failed (${String(error).slice(0, 160)})` }
+    }
+}
+
+/** Revalidate authority before external side effects. Read-only (CL-07):
+ * a check never has the side effect of an election. */
 export async function verifyLiveServiceLeadership(service: string): Promise<boolean> {
-    const decision = await acquireServiceLease(service)
-    return decision.leader === true && Boolean(decision.epoch && decision.fencingToken)
+    return (await checkLiveFence(service)).valid
+}
+
+/** Worker-side check of a Main's fence (node + epoch, any instance). */
+export async function checkRemoteFence(service: string, epoch: number, holderNodeId: string): Promise<{ valid: boolean; available: boolean; reason: string }> {
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status !== 'ok') return { valid: false, available: false, reason: 'coordinator config unavailable' }
+    const config = loadSupabaseConfig(configFile)
+    if (!config.url || !config.key) return { valid: false, available: false, reason: 'no Supabase coordinator on this node' }
+    try {
+        const res = await fetch(`${config.url}/rpc/nova_check_fence`, {
+            method: 'POST', headers: headers(config.key),
+            body: JSON.stringify({ p_service: service, p_epoch: epoch, p_holder_node_id: holderNodeId, p_holder_instance_id: null }),
+            signal: AbortSignal.timeout(5000),
+        })
+        if (res.status === 404 || res.status === 400) return { valid: false, available: false, reason: 'coordinator lacks nova_check_fence (v5 not applied)' }
+        if (!res.ok) return { valid: false, available: true, reason: `remote fence check failed (${res.status})` }
+        const value = await res.json() as { valid?: boolean; epoch?: number }
+        return value.valid === true
+            ? { valid: true, available: true, reason: 'remote fence confirmed' }
+            : { valid: false, available: true, reason: `remote fence stale (current epoch ${value.epoch ?? 'none'})` }
+    } catch (error) {
+        return { valid: false, available: true, reason: `remote fence check failed (${String(error).slice(0, 160)})` }
+    }
 }
 
 function nodeStrength(node: any): number {
@@ -181,77 +269,61 @@ function isExpired(expiresAt?: string): boolean {
     return !expiresAt || new Date(expiresAt).getTime() <= Date.now()
 }
 
-async function writeLease(params: {
-    config: SupabaseConfig
-    service: string
-    method: 'POST' | 'PATCH'
-    previous?: { holder_node_id?: string; expires_at?: string; epoch?: number }
-}): Promise<{ ok: boolean; epoch?: number }> {
-    const nodeId = getLocalNodeId()
-    const now = new Date()
-    const expiresAt = new Date(now.getTime() + DEFAULT_LEASE_TTL_MS)
-    const sameHolder = params.previous?.holder_node_id === nodeId
-    const epoch = params.method === 'POST' ? 1 : sameHolder ? Number(params.previous?.epoch || 1) : Number(params.previous?.epoch || 0) + 1
-    const compare = params.previous
-        ? `&holder_node_id=eq.${encodeURIComponent(params.previous.holder_node_id || '')}&expires_at=eq.${encodeURIComponent(params.previous.expires_at || '')}`
-        : ''
-    const path = params.method === 'PATCH'
-        ? `${LEASE_TABLE}?service=eq.${encodeURIComponent(params.service)}${compare}`
-        : LEASE_TABLE
-
-    const res = await fetch(`${params.config.url}/${path}`, {
-        method: params.method,
-        headers: {
-            ...headers(params.config.key),
-            Prefer: 'return=representation',
-        },
-        body: JSON.stringify({
-            service: params.service,
-            holder_node_id: nodeId,
-            holder_hostname: hostname(),
-            lease_ttl_ms: DEFAULT_LEASE_TTL_MS,
-            acquired_at: now.toISOString(),
-            updated_at: now.toISOString(),
-            expires_at: expiresAt.toISOString(),
-            epoch,
-        }),
-        signal: AbortSignal.timeout(5000),
-    })
-
-    if (!res.ok) return { ok: false }
-    const rows = await res.json().catch(() => []) as unknown[]
-    if (!Array.isArray(rows) || rows.length !== 1) return { ok: false }
-    return { ok: true, epoch }
+function warnV1Coordinator(): void {
+    const now = Date.now()
+    if (now - lastV1Warning < LEASE_WARNING_INTERVAL_MS) return
+    lastV1Warning = now
+    console.warn('[Leader] WARNING: coordinator only offers the v1 lease RPC (no process fencing, no read-only check); '
+        + 'fencing-enforced gate is false. Apply sql/mesh-coordination-v5.sql with database-admin access.')
 }
 
+/** v2 (node + instance) first; a v1-only coordinator keeps working as before
+ * with a visible warning. null = neither RPC exists (fail closed upstream). */
 async function acquireLeaseTransaction(config: SupabaseConfig, service: string): Promise<LeaseDecision | null> {
     const nodeId = getLocalNodeId()
     try {
-        const res = await fetch(`${config.url}/rpc/nova_acquire_service_lease`, {
+        let protocol: 'v2' | 'v1' = 'v2'
+        let res = await fetch(`${config.url}/rpc/nova_acquire_service_lease_v2`, {
             method: 'POST', headers: headers(config.key),
             body: JSON.stringify({
-                p_service: service, p_holder_node_id: nodeId,
+                p_service: service, p_holder_node_id: nodeId, p_holder_instance_id: LOCAL_INSTANCE_ID,
                 p_holder_hostname: hostname(), p_ttl_ms: DEFAULT_LEASE_TTL_MS,
             }),
             signal: AbortSignal.timeout(5000),
         })
-        if (res.status === 404 || res.status === 400) return null
+        if (res.status === 404 || res.status === 400) {
+            protocol = 'v1'
+            res = await fetch(`${config.url}/rpc/nova_acquire_service_lease`, {
+                method: 'POST', headers: headers(config.key),
+                body: JSON.stringify({
+                    p_service: service, p_holder_node_id: nodeId,
+                    p_holder_hostname: hostname(), p_ttl_ms: DEFAULT_LEASE_TTL_MS,
+                }),
+                signal: AbortSignal.timeout(5000),
+            })
+            if (res.status === 404 || res.status === 400) return null
+        }
         if (!res.ok) return { leader: false, reason: `transactional lease RPC failed (${res.status}); split-brain guard` }
+        leaseProtocol = protocol
+        if (protocol === 'v1') warnV1Coordinator()
         const value = await res.json() as {
-            leader?: boolean; holder_node_id?: string; holder_hostname?: string
-            epoch?: number; expires_at?: string; reason?: string
+            leader?: boolean; holder_node_id?: string; holder_instance_id?: string | null; holder_hostname?: string
+            epoch?: number; expires_at?: string; server_now?: string; reason?: string
         }
         const epoch = Number(value.epoch || 0) || undefined
         const token = value.leader && epoch ? fencingToken(service, epoch, nodeId) : undefined
-        if (token && epoch) localFencingTokens.set(service, { epoch, token })
+        const otherHolder = Boolean(value.holder_node_id) && (value.holder_node_id !== nodeId
+            || (protocol === 'v2' && value.holder_instance_id !== LOCAL_INSTANCE_ID))
         return {
             leader: value.leader === true,
             holder: value.holder_hostname || value.holder_node_id,
             epoch, fencingToken: token,
             leaseExpiresAt: value.expires_at,
+            serverNow: value.server_now,
             coordinator: 'supabase',
+            protocol,
             reason: value.reason || (value.leader ? 'transactional lease acquired' : `lease held until ${value.expires_at || 'unknown'}`),
-            heldByOther: value.leader !== true && Boolean(value.holder_node_id) && value.holder_node_id !== nodeId,
+            heldByOther: value.leader !== true && otherHolder,
         }
     } catch (error) {
         return { leader: false, reason: `transactional lease failed; split-brain guard (${error})` }
@@ -264,18 +336,32 @@ async function bootstrapLeaseTable(config: SupabaseConfig): Promise<void> {
 
 /**
  * Acquire or renew a lease. For distributed coordinators the returned
- * `leaseExpiresAt` is bounded by (local request start + TTL): the coordinator
- * sets its expiry with its own clock *after* the request started, so this local
- * deadline is never later than the real one regardless of clock skew.
+ * deadline is bounded by (local request start + remaining lease): the
+ * coordinator sets its expiry *after* the request started, so the local
+ * deadline is never later than the real one. The remaining lease is taken
+ * from the server's own clock (expires_at - server_now, v2) where available,
+ * and the deadline is kept on the monotonic clock (CL-07), so local wall-clock
+ * jumps cannot extend it.
+ *
+ * This does NOT cache a fencing token. Only the renewal path
+ * (shouldStartExclusiveService / watchForServiceLeadership) adopts a fence.
  */
 export async function acquireServiceLease(service: string): Promise<LeaseDecision> {
     const requestStartedAt = Date.now()
+    const requestStartedMono = monoNow()
     const decision = await acquireServiceLeaseDecision(service)
     if (!decision.leader || decision.coordinator === 'local') return decision
     const reported = decision.leaseExpiresAt ? Date.parse(decision.leaseExpiresAt) : Number.NaN
-    const bound = requestStartedAt + DEFAULT_LEASE_TTL_MS
-    const deadline = Number.isFinite(reported) ? Math.min(reported, bound) : bound
-    return { ...decision, leaseExpiresAt: new Date(deadline).toISOString() }
+    const serverNow = decision.serverNow ? Date.parse(decision.serverNow) : Number.NaN
+    const reportedRemaining = Number.isFinite(reported)
+        ? reported - (Number.isFinite(serverNow) ? serverNow : requestStartedAt)
+        : DEFAULT_LEASE_TTL_MS
+    const remaining = Math.max(0, Math.min(DEFAULT_LEASE_TTL_MS, reportedRemaining))
+    return {
+        ...decision,
+        leaseExpiresAt: new Date(requestStartedAt + remaining).toISOString(),
+        deadlineMono: requestStartedMono + remaining,
+    }
 }
 
 async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecision> {
@@ -287,6 +373,11 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
     if (process.env.NOVA_DISABLE_LEADER_ELECTION === 'true') {
         if (standbyNode) {
             return { leader: false, reason: 'standby cannot disable distributed leader election; split-brain guard' }
+        }
+        const disabledConfig = readCoordinatorConfigFile()
+        if (disabledConfig.status === 'unreadable'
+            || (disabledConfig.status === 'ok' && String(disabledConfig.raw?.mesh?.mode || '').toLowerCase() === 'ha')) {
+            return { leader: false, reason: 'NOVA_DISABLE_LEADER_ELECTION is refused in mesh.mode=ha; split-brain guard' }
         }
         return { leader: true, reason: 'leader election disabled', epoch: 1, fencingToken: fencingToken(service, 1), coordinator: 'local' }
     }
@@ -306,10 +397,6 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
     const witnessAuthority = resolveWitnessAuthority(service)
     if (witnessAuthority) {
         const decision = await acquireWitnessQuorumLease(witnessAuthority, DEFAULT_LEASE_TTL_MS)
-        if (decision.leader && decision.fencingToken && decision.epoch) {
-            localFencingTokens.set(service, { epoch: decision.epoch, token: decision.fencingToken })
-            if (decision.leaseExpiresAt) localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
-        }
         return { ...decision, reason: `${decision.reason}; authority=${witnessAuthority}; service=${service}` }
     }
 
@@ -325,7 +412,6 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
             return { leader: false, reason: 'no distributed coordinator configured and config does not declare single-node (set mesh.mode="standalone"); split-brain guard' }
         }
         const token = fencingToken(service, 1)
-        localFencingTokens.set(service, { epoch: 1, token })
         return { leader: true, reason: 'single-node config (mesh.mode=standalone); local-only leader', epoch: 1, fencingToken: token, coordinator: 'local' }
     }
 
@@ -358,28 +444,25 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
 
         const leases = (await res.json()) as Array<{
             holder_node_id?: string
+            holder_instance_id?: string | null
             holder_hostname?: string
             expires_at?: string
             epoch?: number
         }>
         const lease = leases[0]
 
+        // CL-07: lease rows are written only by the transactional RPCs. The
+        // former REST/CAS writes computed the epoch on the client and could
+        // restart it at 1; without an RPC this node fails closed.
         if (!lease) {
             const transactional = await acquireLeaseTransaction(config, service)
             if (transactional) return transactional
-            const written = await writeLease({ config, service, method: 'POST' })
-            if (written.ok) {
-                const token = fencingToken(service, written.epoch!)
-                localFencingTokens.set(service, { epoch: written.epoch!, token })
-            }
-            return written.ok
-                ? { leader: true, reason: 'new lease acquired', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!), coordinator: 'supabase' }
-                : { leader: false, reason: 'failed to create lease', coordinator: 'supabase' }
+            return { leader: false, coordinator: 'supabase', reason: 'lease RPC unavailable (REST lease writes are disabled); apply sql/mesh-coordination-v2.sql and v5; split-brain guard' }
         }
 
         // Existing deployments may predate fencing epochs. The migration is
-        // additive; if it cannot be applied, the subsequent CAS write fails
-        // closed instead of running without a valid fencing token.
+        // additive; if it cannot be applied, the node fails closed instead of
+        // running without a valid fencing token.
         if (lease.epoch === undefined) {
             return { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'lease epoch missing; apply sql/mesh-coordination-v2.sql' }
         }
@@ -391,23 +474,13 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
         if (lease.holder_node_id === nodeId || isExpired(lease.expires_at)) {
             const transactional = await acquireLeaseTransaction(config, service)
             if (transactional) return transactional
-            // The REST/CAS fallback judges expiry with this node's wall clock.
-            // Taking over another node's lease must be decided with server time
-            // (nova_acquire_service_lease uses now()), so it is refused here.
-            if (lease.holder_node_id !== nodeId) {
-                return {
-                    leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, coordinator: 'supabase', heldByOther: true,
-                    reason: 'takeover requires the transactional lease RPC (server time); REST/CAS takeover disabled, apply sql/mesh-coordination-v2.sql',
-                }
+            // Renewal and takeover are decided with server time by the
+            // transactional RPC only; REST/CAS lease writes are disabled.
+            return {
+                leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, coordinator: 'supabase',
+                heldByOther: lease.holder_node_id !== nodeId,
+                reason: 'renewal/takeover requires the transactional lease RPC (server time); REST/CAS writes disabled, apply sql/mesh-coordination-v2.sql and v5',
             }
-            const written = await writeLease({ config, service, method: 'PATCH', previous: lease })
-            if (written.ok) {
-                const token = fencingToken(service, written.epoch!)
-                localFencingTokens.set(service, { epoch: written.epoch!, token })
-            }
-            return written.ok
-                ? { leader: true, reason: 'lease renewed', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!), coordinator: 'supabase' }
-                : { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'failed to update lease', coordinator: 'supabase' }
         }
 
         return {
@@ -415,11 +488,23 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
             holder: lease.holder_hostname ?? lease.holder_node_id,
             reason: `lease held until ${lease.expires_at}`,
             coordinator: 'supabase',
-            heldByOther: lease.holder_node_id !== nodeId,
+            heldByOther: lease.holder_node_id !== nodeId
+                || Boolean(lease.holder_instance_id && lease.holder_instance_id !== LOCAL_INSTANCE_ID),
         }
     } catch (err) {
         return { leader: false, reason: `lease check failed; split-brain guard (${err})` }
     }
+}
+
+/** Adopt a decision obtained on the renewal path as this process's fence. */
+function adoptLease(service: string, decision: LeaseDecision): void {
+    if (!decision.leader || !decision.epoch || !decision.fencingToken) return
+    adoptFence({
+        service, epoch: decision.epoch, token: decision.fencingToken,
+        coordinator: decision.coordinator || 'supabase',
+        nodeId: getLocalNodeId(), instanceId: LOCAL_INSTANCE_ID,
+        deadlineMono: decision.coordinator === 'local' ? undefined : decision.deadlineMono,
+    })
 }
 
 export async function shouldStartExclusiveService(service: string): Promise<boolean> {
@@ -429,7 +514,7 @@ export async function shouldStartExclusiveService(service: string): Promise<bool
         console.log(`[Leader] Skipping ${service}; active on ${decision.holder ?? 'another node'} (${decision.reason})`)
         return false
     }
-    if (decision.leaseExpiresAt) localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
+    adoptLease(service, decision)
     console.log(`[Leader] Starting ${service}: ${decision.reason}`)
     startLeaseRenewal(service)
     return true
@@ -442,12 +527,13 @@ function clearLeaseDeadline(service: string): void {
 }
 
 /** Drop leadership at hardExpiry - safety margin even if a renewal tick is
- * late or hangs; interval ticks alone cannot guarantee this. */
+ * late or hangs; interval ticks alone cannot guarantee this. The deadline is
+ * monotonic (performance.now), so wall-clock jumps cannot move it. */
 function armLeaseDeadline(service: string): void {
     clearLeaseDeadline(service)
-    const hardExpiry = localLeaseExpiries.get(service)
-    if (!hardExpiry || !Number.isFinite(hardExpiry)) return
-    const delay = Math.max(0, hardExpiry - LEASE_SAFETY_MARGIN_MS - Date.now())
+    const hardExpiry = getHeldFence(service, Number.NEGATIVE_INFINITY)?.deadlineMono
+    if (hardExpiry === undefined || !Number.isFinite(hardExpiry)) return
+    const delay = Math.max(0, hardExpiry - LEASE_SAFETY_MARGIN_MS - monoNow())
     const timer = setTimeout(() => {
         void relinquishLeadership(service, 'lease deadline reached before a successful renewal')
     }, delay)
@@ -455,15 +541,20 @@ function armLeaseDeadline(service: string): void {
     leaseDeadlineTimers.set(service, timer)
 }
 
-async function relinquishLeadership(service: string, reason: string, coordinator?: LeaseDecision['coordinator']): Promise<void> {
+/** Synchronous self-fencing: token gone and in-flight work aborted before any
+ * await, so nothing scheduled after this point can act on the old term. */
+function fenceLocally(service: string, reason: string): boolean {
     const timer = renewTimers.get(service)
-    if (!timer) return
-    clearInterval(timer)
+    if (timer) clearInterval(timer)
     renewTimers.delete(service)
     clearLeaseDeadline(service)
     renewalMisses.delete(service)
-    localFencingTokens.delete(service)
-    localLeaseExpiries.delete(service)
+    const hadFence = dropFence(service, reason)
+    return hadFence || Boolean(timer)
+}
+
+async function relinquishLeadership(service: string, reason: string, coordinator?: LeaseDecision['coordinator']): Promise<void> {
+    if (!fenceLocally(service, reason)) return
     console.warn(`[Leader] Lost ${service} leadership: ${reason}`)
     recordMainRole({ event: 'lease.lost', service, leader: false, coordinator })
     for (const handler of leadershipLostHandlers.get(service) || []) {
@@ -471,22 +562,45 @@ async function relinquishLeadership(service: string, reason: string, coordinator
     }
 }
 
+/**
+ * Event-loop gap watch (CL-07): a pause longer than TTL/2 (GC, swap, SIGSTOP,
+ * docker pause, blocking execSync) marks every held fence suspect, so the next
+ * effect must pass a live check before it may act.
+ */
+export function noteEventLoopGap(gapMs: number): string[] {
+    if (gapMs <= DEFAULT_LEASE_TTL_MS / 2) return []
+    const marked = markFenceSuspect()
+    if (marked.length) console.warn(`[Leader] Event loop stalled ${Math.round(gapMs / 1000)}s; live fence check required for ${marked.join(', ')}`)
+    return marked
+}
+
+function ensureEventLoopGapWatch(): void {
+    if (eventLoopGapTimer) return
+    eventLoopLastTick = monoNow()
+    eventLoopGapTimer = setInterval(() => {
+        const now = monoNow()
+        const gap = now - eventLoopLastTick - EVENT_LOOP_PROBE_MS
+        eventLoopLastTick = now
+        if (gap > 0) noteEventLoopGap(gap)
+    }, EVENT_LOOP_PROBE_MS)
+    if (eventLoopGapTimer.unref) eventLoopGapTimer.unref()
+}
+
 function startLeaseRenewal(service: string): void {
     if (renewTimers.has(service)) return
+    ensureEventLoopGapWatch()
     const timer = setInterval(async () => {
         const decision = await acquireServiceLease(service)
         if (renewTimers.get(service) !== timer) {
-            // Leadership was dropped (deadline/loss) while this tick was in flight.
-            if (!renewTimers.has(service)) localFencingTokens.delete(service)
+            // Leadership was dropped (deadline/loss) while this tick was in
+            // flight; the fence was already dropped synchronously then.
             return
         }
         if (decision.leader) {
             recordMainRole({ event: 'lease.renewed', service, leader: true, coordinator: decision.coordinator })
             renewalMisses.set(service, 0)
-            if (decision.leaseExpiresAt) {
-                localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
-                armLeaseDeadline(service)
-            }
+            adoptLease(service, decision)
+            armLeaseDeadline(service)
             return
         }
         if (decision.heldByOther) {
@@ -495,8 +609,8 @@ function startLeaseRenewal(service: string): void {
         }
         const misses = (renewalMisses.get(service) || 0) + 1
         renewalMisses.set(service, misses)
-        const hardExpiry = localLeaseExpiries.get(service)
-        if (misses < 3 && (!hardExpiry || Date.now() < hardExpiry - LEASE_SAFETY_MARGIN_MS)) return
+        const hardExpiry = getHeldFence(service, Number.NEGATIVE_INFINITY)?.deadlineMono
+        if (misses < 3 && (hardExpiry === undefined || monoNow() < hardExpiry - LEASE_SAFETY_MARGIN_MS)) return
         await relinquishLeadership(service, `${misses} failed renewals (${decision.reason})`, decision.coordinator)
     }, Math.max(15_000, Math.floor(DEFAULT_LEASE_TTL_MS / 3)))
     if (timer.unref) timer.unref()
@@ -504,15 +618,9 @@ function startLeaseRenewal(service: string): void {
     armLeaseDeadline(service)
 }
 
+/** Stop renewing and ALWAYS forget the cached fence (also for ad-hoc leases). */
 export function stopLeaseRenewal(service: string): void {
-    clearLeaseDeadline(service)
-    const timer = renewTimers.get(service)
-    if (!timer) return
-    clearInterval(timer)
-    renewTimers.delete(service)
-    renewalMisses.delete(service)
-    localFencingTokens.delete(service)
-    localLeaseExpiries.delete(service)
+    fenceLocally(service, 'lease renewal stopped')
 }
 
 /** Voluntarily expire an owned Supabase lease so the strongest healthy node
@@ -572,6 +680,28 @@ export async function yieldMainToPreferredIfSafe(isSafe: () => Promise<boolean> 
     return yieldServiceLeadership(MAIN_SERVICE)
 }
 
+/**
+ * Graceful shutdown (CL-07): leases are bound to this process instance, so a
+ * restarted process cannot renew them. Release them transactionally so the
+ * successor (same node or standby) does not wait for the full TTL. Channels
+ * and missions first, nova-main last. Best effort; a crash still waits.
+ */
+export async function releaseHeldLeasesForShutdown(timeoutMs = 5_000): Promise<string[]> {
+    const { getFenceStatus } = await import('./fence.js')
+    const services = getFenceStatus().held.map(item => item.service)
+        .sort((a, b) => Number(a === MAIN_SERVICE) - Number(b === MAIN_SERVICE))
+    const released: string[] = []
+    const run = (async () => {
+        for (const service of services) {
+            const decision = await yieldServiceLeadership(service)
+            if (!decision.leader) released.push(service)
+        }
+    })()
+    await Promise.race([run, new Promise(resolve => { const t = setTimeout(resolve, timeoutMs); t.unref?.() })])
+    for (const service of services) stopLeaseRenewal(service)
+    return released
+}
+
 export function onLeadershipLost(service: string, handler: () => Promise<void> | void): () => void {
     if (!leadershipLostHandlers.has(service)) leadershipLostHandlers.set(service, new Set())
     leadershipLostHandlers.get(service)!.add(handler)
@@ -608,7 +738,7 @@ export function watchForServiceLeadership(
         if (!decision.leader) return
         clearInterval(timer)
         takeoverTimers.delete(service)
-        if (decision.leaseExpiresAt) localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
+        adoptLease(service, decision)
         startLeaseRenewal(service)
         console.log(`[Leader] Taking over ${service}: ${decision.reason}`)
         recordMainRole({ event: 'lease.takeover', service, leader: true, coordinator: decision.coordinator })

@@ -2766,6 +2766,14 @@ async function startDaemon() {
         state.running = false
         state.runtimeReady = false
 
+        // CL-07: leases belong to this process instance; release them so the
+        // successor does not wait a full TTL (and nothing here acts later).
+        try {
+            const { releaseHeldLeasesForShutdown } = await import('./mesh/leader-election.js')
+            const released = await releaseHeldLeasesForShutdown()
+            if (released.length) console.log(`[Nova] ✓ Leases freigegeben: ${released.join(', ')}`)
+        } catch { /* non-critical: leases expire on their own */ }
+
         // Flush AutoObserver facts to disk
         try {
             const { getAutoObserver } = await import('./memory/auto-observer.js')

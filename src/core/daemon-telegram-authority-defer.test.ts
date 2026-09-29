@@ -10,7 +10,8 @@ vi.mock('../mesh/leader-election.js', async importOriginal => {
     const actual = await importOriginal<typeof import('../mesh/leader-election.js')>()
     return {
         ...actual,
-        shouldStartExclusiveService: async () => true,
+        // CL-07: the real acquisition adopts the fence that the read-only
+        // live check (nova_check_fence) later confirms.
         watchForServiceLeadership: vi.fn(),
         onLeadershipLost: vi.fn(() => () => undefined),
         stopLeaseRenewal: vi.fn(),
@@ -52,6 +53,7 @@ describe('H12 Telegram inbound survives a coordinator 5xx', () => {
         vi.stubGlobal('fetch', vi.fn(async (url: string) => {
             if (outage) return json({ message: 'upstream unavailable' }, 503)
             const expires = new Date(Date.now() + 90_000).toISOString()
+            if (url.includes('/rpc/nova_check_fence')) return json({ valid: true, epoch: 2 })
             if (url.includes('/rpc/nova_acquire_service_lease')) return json({ leader: true, holder_node_id: getLocalNodeId(), epoch: 2, expires_at: expires })
             return json([{ holder_node_id: getLocalNodeId(), expires_at: expires, epoch: 2 }])
         }))
