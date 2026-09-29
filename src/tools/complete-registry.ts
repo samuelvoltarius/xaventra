@@ -263,6 +263,8 @@ export const fileTools: NovaTool[] = [
                 /^nova\.config\.json$/,
                 /^xaventra\.config\.json$/,
                 /^\.nova-data\/multi-user\//,
+                // R2 T24: files here are auto-registered as executable tools on startup
+                /^\.nova-tools\//,
                 /^dist\//,
                 /^package\.json$/,
                 /^tsconfig\.json$/,
