@@ -17,6 +17,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
+import { constantTimeTokenEquals } from '../security/token-compare.js'
 import type { DoctorReport, DoctorIssue, ApplyFixResult } from './types.js'
 import { NovaConfigSchema } from '../core/config.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -99,7 +100,7 @@ export async function queueDoctorFixProposals(report: DoctorReport): Promise<{ q
 
 export async function applyApprovedDoctorProposal(proposal: DoctorConfigProposal, approvalToken: string): Promise<ApplyFixResult> {
     const expected = process.env.NOVA_PATCH_GATE_TOKEN
-    if (!expected || approvalToken !== expected) return { applied: false, message: 'PATCH_GATE token invalid' }
+    if (!expected || !constantTimeTokenEquals(approvalToken, expected)) return { applied: false, message: 'PATCH_GATE token invalid' }
     if (proposal.kind !== 'doctor-config' || proposal.status !== 'queued') return { applied: false, message: 'Doctor proposal is not queued' }
     const configPath = resolveConfigPath(NOVA_DIR)
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, any>

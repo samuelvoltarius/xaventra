@@ -3,7 +3,8 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { constantTimeTokenEquals } from '../security/token-compare.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { assertPatchSourcePath, validatePatchInSandbox, getPatchSnapshotHash, type PatchSandboxResult } from './patch-sandbox.js'
 import { repairHash, repairRpcEnvelope, signRepairValue, verifyRepairValue, type SignedRepairValue, type RepairTicket, type RepairReceipt } from '../doctor/repair-activation.js'
@@ -82,12 +83,9 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
     finally { activeEvolution = null }
 }
 
-/** Constant-time token compare; hashing first hides length differences. */
+/** Constant-time token compare (shared helper). */
 function patchGateTokenMatches(provided: unknown, expected: string): boolean {
-    if (typeof provided !== 'string') return false
-    const a = createHash('sha256').update(provided, 'utf8').digest()
-    const b = createHash('sha256').update(expected, 'utf8').digest()
-    return timingSafeEqual(a, b) && provided.length === expected.length
+    return constantTimeTokenEquals(provided, expected)
 }
 
 /** Shared slash/Telegram/tool approval boundary. Unbound apply requests are
