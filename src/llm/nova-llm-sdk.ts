@@ -633,9 +633,25 @@ class LegacyCloudProvider extends LLMProvider {
 // Claude Provider
 // ============================================
 
+/**
+ * Anthropic auth headers: API keys go in x-api-key, OAuth access tokens
+ * (sk-ant-oat…) as Bearer. A Bearer API key is rejected with 401.
+ */
+function anthropicAuthHeaders(token: string): Record<string, string> {
+    return token.startsWith('sk-ant-oat')
+        ? { 'Authorization': `Bearer ${token}` }
+        : { 'x-api-key': token }
+}
+
 class ClaudeProvider extends LLMProvider {
+    /** Configured key (xaventra.config.json) first, then .nova-data/auth.json. */
+    private async resolveToken(): Promise<string> {
+        if (this.config.apiKey) return this.config.apiKey
+        return (await this.tokenManager.getToken('anthropic')).token
+    }
+
     async complete(messages: LLMMessage[], tools?: ToolDefinition[], options?: LLMCallOptions): Promise<LLMResponse> {
-        const { token } = await this.tokenManager.getToken('anthropic')
+        const token = await this.resolveToken()
 
         // Convert messages
         const systemMsg = messages.find(m => m.role === 'system')?.content || ''
@@ -669,7 +685,7 @@ class ClaudeProvider extends LLMProvider {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${token}`,
+                ...anthropicAuthHeaders(token),
                 'Content-Type': 'application/json',
                 'anthropic-version': '2023-06-01',
             },
@@ -686,7 +702,7 @@ class ClaudeProvider extends LLMProvider {
     }
 
     async *stream(messages: LLMMessage[], tools?: ToolDefinition[]): AsyncGenerator<StreamChunk> {
-        const { token } = await this.tokenManager.getToken('anthropic')
+        const token = await this.resolveToken()
 
         const systemMsg = messages.find(m => m.role === 'system')?.content || ''
         const chatMessages = messages
@@ -704,7 +720,7 @@ class ClaudeProvider extends LLMProvider {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${token}`,
+                ...anthropicAuthHeaders(token),
                 'Content-Type': 'application/json',
                 'anthropic-version': '2023-06-01',
             },
@@ -856,8 +872,22 @@ class OpenAIProvider extends LLMProvider {
         }
     }
 
+    /**
+     * Configured key (xaventra.config.json) first, then .nova-data/auth.json.
+     * Without either, an empty token routes to the Codex CLI when available.
+     */
+    private async resolveToken(): Promise<string> {
+        if (this.config.apiKey) return this.config.apiKey
+        try {
+            return (await this.tokenManager.getToken('openai')).token
+        } catch (err) {
+            if (this.codexAdapter) return ''
+            throw err
+        }
+    }
+
     async complete(messages: LLMMessage[], tools?: ToolDefinition[], options?: LLMCallOptions): Promise<LLMResponse> {
-        const { token } = await this.tokenManager.getToken('openai')
+        const token = await this.resolveToken()
 
         // If no API key, use Codex CLI directly
         if (!token || token === 'undefined') {
@@ -959,7 +989,7 @@ class OpenAIProvider extends LLMProvider {
     }
 
     async *stream(messages: LLMMessage[], tools?: ToolDefinition[]): AsyncGenerator<StreamChunk> {
-        const { token } = await this.tokenManager.getToken('openai')
+        const token = await this.resolveToken()
 
         // If no API key, use Codex CLI directly
         if (!token || token === 'undefined') {
