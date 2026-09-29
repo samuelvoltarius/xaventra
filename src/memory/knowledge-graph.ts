@@ -244,11 +244,13 @@ function governanceIdFromSource(source: string): string | null {
     return source.startsWith('governance:') ? source.slice('governance:'.length) : null
 }
 
-function isGovernanceProjectionActive(source: string): boolean {
+function isGovernanceProjectionActive(source: string, allowedScopes?: readonly string[]): boolean {
     const id = governanceIdFromSource(source)
     if (!id) return false
-    const status = getMemoryGovernanceCoordinator().get(id)?.status
-    return status === 'verified' || status === 'canonical'
+    const record = getMemoryGovernanceCoordinator().get(id)
+    const status = record?.status
+    if (status !== 'verified' && status !== 'canonical') return false
+    return !allowedScopes || allowedScopes.includes(String(record?.scope || ''))
 }
 
 export function removeGovernanceProjection(governanceId: string): number {
@@ -269,12 +271,15 @@ export function removeGovernanceProjection(governanceId: string): number {
 // Query Operations
 // ============================================
 
-export function queryRelations(label: string): Array<{ relation: string; target: string; weight: number }> {
+export function queryRelations(
+    label: string,
+    allowedScopes?: readonly string[],
+): Array<{ relation: string; target: string; weight: number }> {
     const id = normalizeId(label)
     const results: Array<{ relation: string; target: string; weight: number }> = []
 
     for (const edge of graph.edges) {
-        if (!isGovernanceProjectionActive(edge.source)) continue
+        if (!isGovernanceProjectionActive(edge.source, allowedScopes)) continue
         if (edge.from === id) {
             const targetNode = graph.nodes.find(n => n.id === edge.to)
             results.push({
@@ -304,13 +309,19 @@ export function queryByType(type: GraphNode['type']): GraphNode[] {
     })
 }
 
-export function getContextForPrompt(query: string): string {
+/**
+ * @param allowedScopes when given, only nodes/relations whose governance record
+ * belongs to one of these scopes are used (principal-bound prompt context).
+ */
+export function getContextForPrompt(query: string, allowedScopes?: readonly string[]): string {
     const queryLower = query.toLowerCase()
     const activeNodes = graph.nodes.filter(n => {
         const governanceId = n.properties.governanceId
         if (!governanceId) return false
-        const status = getMemoryGovernanceCoordinator().get(governanceId)?.status
-        return status === 'verified' || status === 'canonical'
+        const record = getMemoryGovernanceCoordinator().get(governanceId)
+        const status = record?.status
+        if (status !== 'verified' && status !== 'canonical') return false
+        return !allowedScopes || allowedScopes.includes(String(record?.scope || ''))
     })
 
     // 1. Exact label match (original behavior)
@@ -350,7 +361,7 @@ export function getContextForPrompt(query: string): string {
 
     const facts: string[] = []
     for (const node of relevantNodes.slice(0, 8)) {  // cap at 8 nodes
-        const relations = queryRelations(node.label)
+        const relations = queryRelations(node.label, allowedScopes)
         if (relations.length > 0) {
             const props = Object.entries(node.properties).map(([k, v]) => `${k}=${v}`).join(', ')
             facts.push(`${node.label} (${node.type}${props ? ': ' + props : ''}):`)

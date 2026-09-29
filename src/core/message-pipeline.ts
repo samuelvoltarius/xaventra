@@ -980,7 +980,12 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     let predictivePromise: Promise<any> | null = null
     if (contextPolicy.predictive) try {
         const { preloadContext } = await import('./predictive-context.js')
-        predictivePromise = preloadContext(content, contextPolicy.timeBudgetMs)
+        // Same scopes as the governed memory context; legacy unscoped rows
+        // are owner data and never reach another principal's prompt.
+        predictivePromise = preloadContext(content, contextPolicy.timeBudgetMs, {
+            scopes: [...compatiblePrincipalScopes(principalContext, canonicalUser), 'global'],
+            includeUnscoped: principalContext.permission === 'owner',
+        })
     } catch (err) { console.debug('[Pipeline] predictive context not available:', err) }
 
     if (contextPolicy.longTermMemory) try {

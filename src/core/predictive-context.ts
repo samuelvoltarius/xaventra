@@ -134,13 +134,23 @@ export function predictContext(message: string): PredictedContext {
     return ctx
 }
 
+/** Principal-bound memory access for the preload. */
+export interface PreloadAccess {
+    /** Allowed memory scopes (`user:<principal>` variants and `global`). */
+    scopes: string[]
+    /** Legacy memories without a scope are owner-only. */
+    includeUnscoped: boolean
+}
+
 /**
  * Pre-load context in parallel based on predictions.
  * Returns whatever loaded successfully within the time budget.
+ * Without `access` no personal memory or graph facts are loaded (fail closed).
  */
 export async function preloadContext(
     message: string,
-    timeBudgetMs: number = 2000
+    timeBudgetMs: number = 2000,
+    access?: PreloadAccess,
 ): Promise<PreloadedContext> {
     const start = Date.now()
     const predictions = predictContext(message)
@@ -162,13 +172,13 @@ export async function preloadContext(
     const tasks: Promise<void>[] = []
 
     // Pre-load vector memory
-    if (predictions.memoryQueries?.length) {
+    if (access && predictions.memoryQueries?.length) {
         tasks.push(
             (async () => {
                 try {
                     const lanceMemory = (await import('../memory/lancedb-memory.js')).default
                     for (const query of predictions.memoryQueries!.slice(0, 2)) {
-                        const results = await lanceMemory.recall(query, 3)
+                        const results = await lanceMemory.recall(query, 3, undefined, access)
                         if (results?.length) {
                             result.memories.push(
                                 ...results.map((r: any) => r.entry?.content || String(r)).slice(0, 2)
@@ -181,13 +191,13 @@ export async function preloadContext(
     }
 
     // Pre-load graph facts
-    if (predictions.graphNodes?.length) {
+    if (access && predictions.graphNodes?.length) {
         tasks.push(
             (async () => {
                 try {
                     const knowledgeGraph = (await import('../memory/knowledge-graph.js')).default
                     for (const topic of predictions.graphNodes!.slice(0, 3)) {
-                        const contextStr = knowledgeGraph.getContextForPrompt(topic)
+                        const contextStr = knowledgeGraph.getContextForPrompt(topic, access.scopes)
                         if (contextStr && contextStr.length > 10) {
                             result.graphFacts.push(contextStr.slice(0, 300))
                         }
