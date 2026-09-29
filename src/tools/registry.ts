@@ -345,48 +345,37 @@ export class ToolRegistry {
 export function registerBuiltinTools(registry: ToolRegistry): void {
     const security = getSecurity()
 
-    // --- Workspace Resolution Helper ---
-    function getWorkspaceRoot(): string {
-        const { existsSync, mkdirSync, readFileSync } = require('node:fs')
-        const { join } = require('node:path')
-        const { homedir } = require('node:os')
-
-        // Try to read from config.json
-        try {
-            const configPath = join(process.cwd(), 'config.json')
-            if (existsSync(configPath)) {
-                const config = JSON.parse(readFileSync(configPath, 'utf-8'))
-                if (config.workspace?.root) {
-                    const wsRoot = config.workspace.root
-                    if (!existsSync(wsRoot)) mkdirSync(wsRoot, { recursive: true })
-                    return wsRoot
-                }
-            }
-        } catch { /* fallback */ }
-
-        // Default: ~/nova-workspace
-        const defaultWs = join(homedir(), 'nova-workspace')
-        if (!existsSync(defaultWs)) mkdirSync(defaultWs, { recursive: true })
-        return defaultWs
+    // --- File Tools (INT-9) ---
+    // The legacy registry (cli.ts, llm/base.ts, tools/executor.ts) delegates
+    // to the hardened complete-registry handlers, so every path shares the
+    // same workspace root, secret-file deny list, write protection list and
+    // CodeGuardian. Identity fields are never taken from model arguments; they
+    // come only from the server-side execution context (else: guest rules,
+    // i.e. inside the workspace root).
+    async function delegateFileTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+        const { fileTools, getFileToolWorkspaceRoot } = await import('./complete-registry.js')
+        const tool = fileTools.find(item => item.name === name)
+        if (!tool) throw new Error(`hardened file tool missing: ${name}`)
+        const { resolve } = await import('node:path')
+        const check = security.checkPath(resolve(getFileToolWorkspaceRoot(), String(params.path ?? '')))
+        if (!check.allowed) return { error: check.reason, blocked: true, path: String(params.path ?? '') }
+        const { authorizationUserId: _auth, userId: _user, channel: _channel, ...modelArgs } = params
+        const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+        const context = getExecutionPolicyContext()
+        const identity = context.authUserId ? { authorizationUserId: context.authUserId, channel: context.channel, userId: context.userId } : {}
+        return tool.handler({ ...modelArgs, ...identity })
     }
-
-    // --- File Tools ---
 
     registry.register({
         name: 'read_file',
-        description: 'Read the contents of a file',
+        description: 'Read the contents of a file inside the workspace',
         category: 'file',
         parameters: [
-            { name: 'path', type: 'string', description: 'File path to read', required: true },
+            { name: 'path', type: 'string', description: 'File path to read (relative to the workspace root)', required: true },
+            { name: 'start_line', type: 'number', description: 'First line (1-based, inclusive). Optional.', required: false },
+            { name: 'end_line', type: 'number', description: 'Last line (1-based, inclusive). Optional.', required: false },
         ],
-        handler: async (params) => {
-            const path = params.path as string
-            const check = security.checkPath(path)
-            if (!check.allowed) throw new Error(check.reason)
-
-            const { readFileSync } = await import('node:fs')
-            return readFileSync(path, 'utf-8')
-        },
+        handler: async (params) => delegateFileTool('read_file', params),
     })
 
     // --- Universal Document Reader (PDF, DOCX, XLSX, PPTX, Images, etc.) ---
@@ -396,90 +385,30 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
         description: 'Liest JEDES Dateiformat: PDF, DOCX, XLSX, PPTX, Bilder, und mehr. Benutze dieses Tool statt read_file für Dokumente die nicht reiner Text sind. Erkennt das Format automatisch und verwendet die beste Methode (lokal, Python, oder VLM/Vision).',
         category: 'file',
         parameters: [
-            { name: 'path', type: 'string', description: 'Absoluter Pfad zur Datei', required: true },
+            { name: 'path', type: 'string', description: 'Pfad zur Datei (relativ zum Arbeitsbereich)', required: true },
         ],
-        handler: async (params) => {
-            const path = params.path as string
-            const check = security.checkPath(path)
-            if (!check.allowed) throw new Error(check.reason)
-
-            const { readDocument } = await import('./document-reader.js')
-            return await readDocument(path)
-        },
+        handler: async (params) => delegateFileTool('read_document', params),
     })
 
     registry.register({
         name: 'write_file',
-        description: 'Write content to a file. Relative paths resolve to ~/nova-workspace/. Returns success status and the absolute path.',
+        description: 'Write content to a file inside the workspace. Protected system/config/secret paths and unsafe code are refused.',
         category: 'file',
         parameters: [
-            { name: 'path', type: 'string', description: 'File path to write (relative paths go to ~/nova-workspace/)', required: true },
+            { name: 'path', type: 'string', description: 'File path to write (relative to the workspace root)', required: true },
             { name: 'content', type: 'string', description: 'Content to write', required: true },
         ],
-        handler: async (params) => {
-            const { resolve, isAbsolute, dirname } = await import('node:path')
-            const { writeFileSync, existsSync, mkdirSync } = await import('node:fs')
-
-            const inputPath = params.path as string
-            // Resolve relative paths to workspace, not cwd
-            const absolutePath = isAbsolute(inputPath)
-                ? inputPath
-                : resolve(getWorkspaceRoot(), inputPath)
-            const content = params.content as string
-
-            const check = security.checkPath(absolutePath)
-            if (!check.allowed) {
-                return {
-                    success: false,
-                    error: check.reason,
-                    path: absolutePath,
-                    cwd: process.cwd()
-                }
-            }
-
-            try {
-                // Auto-create parent directories
-                const dir = dirname(absolutePath)
-                if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-                writeFileSync(absolutePath, content, 'utf-8')
-                return { success: true, path: absolutePath, bytesWritten: content.length }
-            } catch (err) {
-                return {
-                    success: false,
-                    error: String(err),
-                    path: absolutePath
-                }
-            }
-        },
+        handler: async (params) => delegateFileTool('write_file', params),
     })
 
     registry.register({
         name: 'list_directory',
-        description: 'List files and folders in a directory',
+        description: 'List files and folders in a directory inside the workspace',
         category: 'file',
         parameters: [
             { name: 'path', type: 'string', description: 'Directory path', required: true },
         ],
-        handler: async (params) => {
-            const path = params.path as string
-            const check = security.checkPath(path)
-            if (!check.allowed) throw new Error(check.reason)
-
-            const { readdirSync, statSync } = await import('node:fs')
-            const { join } = await import('node:path')
-
-            const entries = readdirSync(path)
-            return entries.map(name => {
-                const fullPath = join(path, name)
-                const stat = statSync(fullPath)
-                return {
-                    name,
-                    type: stat.isDirectory() ? 'directory' : 'file',
-                    size: stat.size,
-                }
-            })
-        },
+        handler: async (params) => delegateFileTool('list_directory', params),
     })
 
     // --- System Tools ---
