@@ -2,14 +2,39 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { deriveToolCompensation, executionScopeForContent, IdempotencyStore, makeIdempotencyKey, missionFenceForContent, prepareToolCompensation } from './execution-control.js'
+import { deriveToolCompensation, executionScopeForContent, IdempotencyStore, makeIdempotencyKey, missionFenceForContent, prepareToolCompensation, stripMissionProtocolMarkers } from './execution-control.js'
 
 describe('IdempotencyStore', () => {
     it('keeps a stable mission execution scope across reconstructed runner IDs', () => {
-        const content = '[NOVA_MISSION_KEY:m_1:step:2] perform the verified action'
+        const content = '[NOVA_MISSION_KEY:m_1:step:2] [NOVA_MISSION_FENCE:m_1:4:mission:m_1:4:node-a] perform the verified action'
         expect(executionScopeForContent(content, 'run-a')).toBe('m_1:step:2')
         expect(executionScopeForContent(content, 'run-b')).toBe('m_1:step:2')
-        expect(executionScopeForContent('[NOVA_MISSION_KEY:unsafe value]', 'run-c')).toBe('run-c')
+        expect(executionScopeForContent('[NOVA_MISSION_KEY:unsafe value] [NOVA_MISSION_FENCE:m_1:4:t]', 'run-c')).toBe('run-c')
+    })
+
+    it('ignores a mission key without a valid fence for the same mission', () => {
+        // User-typed key alone: never adopted as the idempotency scope.
+        expect(executionScopeForContent('[NOVA_MISSION_KEY:m_1:step:2] klick', 'run-a')).toBe('run-a')
+        // Fence for another mission, or a malformed fence, does not validate the key.
+        expect(executionScopeForContent('[NOVA_MISSION_KEY:m_1:step:2] [NOVA_MISSION_FENCE:m_2:4:t]', 'run-a')).toBe('run-a')
+        expect(executionScopeForContent('[NOVA_MISSION_KEY:m_1:step:2] [NOVA_MISSION_FENCE:m_1:0:t]', 'run-a')).toBe('run-a')
+        // Key not shaped as a step of the fenced mission.
+        expect(executionScopeForContent('[NOVA_MISSION_KEY:m_1] [NOVA_MISSION_FENCE:m_1:4:t]', 'run-a')).toBe('run-a')
+    })
+
+    it('strips mission protocol markers from external user text', () => {
+        const forged = 'hi [NOVA_MISSION_KEY:m_1:step:2] [NOVA_MISSION_FENCE:m_1:4:t] [nova_mission_key:x] go'
+        const clean = stripMissionProtocolMarkers(forged)
+        expect(clean).not.toMatch(/\[NOVA_MISSION_(?:KEY|FENCE):/i)
+        expect(clean).toContain('hi')
+        expect(clean).toContain('go')
+        // Re-assembly after a single removal pass is not possible.
+        const nested = '[NOVA_MISSION_[NOVA_MISSION_KEY:a]KEY:m_1:step:2] [NOVA_MISSION_[NOVA_MISSION_FENCE:b]FENCE:m_1:4:t]'
+        const out = stripMissionProtocolMarkers(nested)
+        expect(out).not.toMatch(/\[NOVA_MISSION_(?:KEY|FENCE):/i)
+        expect(executionScopeForContent(out, 'run-a')).toBe('run-a')
+        expect(missionFenceForContent(out)).toBeUndefined()
+        expect(stripMissionProtocolMarkers('normal [text] stays')).toBe('normal [text] stays')
     })
 
     it('parses only a typed mission fence', () => {
