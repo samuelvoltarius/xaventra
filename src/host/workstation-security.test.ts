@@ -41,3 +41,41 @@ it('requires the runtime directory to be private (0700) or group-traversable onl
     for (const mode of [0o40770, 0o40755, 0o40777, 0o40701])
         expect(() => ws.assertOwnedPrivate('runtime', facts('dir', mode), 'dir', 1500, bits)).toThrow(/unsafe/)
 })
+
+const base = { uid: 1500, username: 'xaventra-ws', expectedAccount: 'xaventra-ws', env: {}, sessions: [] as ws.LogindSession[] }
+it('runs only as the explicitly named dedicated account', () => {
+    expect(() => ws.assertDedicatedWorkstationAccount(base)).not.toThrow()
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, expectedAccount: undefined })).toThrow(/NOVA_WORKSTATION_ACCOUNT/)
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, username: 'alfred' })).toThrow(/dedicated account/)
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, uid: 0, username: 'root', expectedAccount: 'root' })).toThrow(/root/)
+})
+it('refuses a UID that owns a graphical logind session or inherited a display', () => {
+    const personal = { id: '2', uid: 1500, type: 'wayland', state: 'active', active: true }
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, sessions: [personal] })).toThrow(/graphical login session/)
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, sessions: [{ ...personal, type: 'x11', state: 'online', active: false }] })).toThrow()
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, sessions: [{ ...personal, uid: 1000 }] })).not.toThrow()
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, sessions: [{ ...personal, type: 'tty' }] })).not.toThrow()
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, sessions: [{ ...personal, state: 'closing' }] })).not.toThrow()
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, env: { DISPLAY: ':0' } })).toThrow(/display/)
+    expect(() => ws.assertDedicatedWorkstationAccount({ ...base, env: { WAYLAND_DISPLAY: 'wayland-0' } })).toThrow(/display/)
+})
+it('parses logind session records', () => {
+    const files: Record<string, string> = {
+        '/run/systemd/sessions/2': 'UID=1000\nUSER=alfred\nACTIVE=1\nSTATE=active\nTYPE=wayland\nCLASS=user\n',
+        '/run/systemd/sessions/2.ref': 'x', '/run/systemd/sessions/c1': 'UID=1500\nTYPE=unspecified\nSTATE=online\n',
+    }
+    const io = { list: () => ['2', '2.ref', 'c1'], read: (p: string) => files[p] }
+    expect(ws.readLogindSessions('/run/systemd/sessions', io)).toEqual([
+        { id: '2', uid: 1000, type: 'wayland', state: 'active', active: true },
+        { id: 'c1', uid: 1500, type: 'unspecified', state: 'online', active: false },
+    ])
+    expect(ws.readLogindSessions('/missing', { list: () => { throw Error('ENOENT') }, read: () => '' })).toEqual([])
+})
+it('wires the account guard into the workstation entry point before any display starts', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('./workstation-main.ts', import.meta.url), 'utf8')
+    const guard = src.indexOf('assertDedicatedWorkstationAccount(')
+    expect(guard).toBeGreaterThan(0)
+    expect(guard).toBeLessThan(src.indexOf("start('/usr/bin/Xvfb'"))
+    expect(guard).toBeLessThan(src.indexOf('writeFileSync(auth'))
+})

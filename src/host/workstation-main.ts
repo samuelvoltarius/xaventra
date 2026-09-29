@@ -4,15 +4,20 @@ import { promisify } from 'node:util'
 import { randomBytes } from 'node:crypto'
 import { existsSync, writeFileSync, readFileSync, chmodSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { userInfo } from 'node:os'
 import { createCaptureAgent } from './capture-agent.js'
 import { executeDesktopInputOnce, runDesktopInput } from './desktop-input.js'
 import { planWorkstationPaths, workstationChildEnv, checkOwnedPrivatePath, assertOutsideShellHome,
- RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS } from './workstation-security.js'
+ RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS, assertDedicatedWorkstationAccount, readLogindSessions } from './workstation-security.js'
 
 const [runtime,state,tokenFile]=process.argv.slice(2)
 if(process.platform!=='linux'||process.getuid?.()===0||process.argv.length!==5
  ||![runtime,state,tokenFile].every(p=>p?.startsWith('/')))throw Error('Explicit unprivileged workstation paths required')
 const exec=promisify(execFile),children:ReturnType<typeof spawn>[]=[],uid=process.getuid!()
+// Never run as the personal desktop user: explicit dedicated account name,
+// no graphical logind session for this UID, no inherited display.
+assertDedicatedWorkstationAccount({uid,username:userInfo().username,expectedAccount:process.env.NOVA_WORKSTATION_ACCOUNT,
+ env:process.env,sessions:readLogindSessions()})
 // Journal, token and X credentials live outside the HOME of the agent-controlled
 // shell; every private path is verified owner-only before anything starts.
 const paths=planWorkstationPaths(runtime,state),{auth,socket}=paths
