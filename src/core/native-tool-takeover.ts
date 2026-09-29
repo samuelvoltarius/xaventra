@@ -79,6 +79,11 @@ function pairIsValid(checkpoint: NativeToolCheckpoint, receipt: NativeToolReceip
         && evidenceHash(record!.result) === receipt.evidence.resultHash
 }
 
+/** Readers reject larger checkpoints (bounded peer payload). Publishing one
+ * would silently fall back to an older checkpoint on takeover and repeat
+ * already completed side effects, so publishing refuses it too (R2 NZ-15). */
+export const MAX_NATIVE_CHECKPOINT_ENTRIES = 500
+
 export async function publishNativeToolCheckpoint(input: {
     fence: MissionExecutionFence
     scopeId: string
@@ -94,6 +99,10 @@ export async function publishNativeToolCheckpoint(input: {
     const receipts = input.receipts.exportScope(input.scopeId)
     const records = input.idempotency.exportCompleted(receipts.map(receipt => receipt.idempotencyKey))
     const byKey = new Map(records.map(record => [record.key, record]))
+    if (receipts.length > MAX_NATIVE_CHECKPOINT_ENTRIES || records.length > MAX_NATIVE_CHECKPOINT_ENTRIES) {
+        console.warn(`[NativeTakeover] Checkpoint for ${input.scopeId} exceeds ${MAX_NATIVE_CHECKPOINT_ENTRIES} receipts; not published`)
+        return false
+    }
     if (!receipts.length || receipts.some(receipt => !pairIsValid({
         version: 1, missionId: input.fence.missionId, scopeId: input.scopeId,
         principalId: input.principalId, channel: input.channel,
@@ -126,8 +135,8 @@ export async function hydrateNativeToolCheckpoint(input: {
         .map(item => item.payload)
         .filter(checkpoint => checkpoint?.version === 1
             && typeof checkpoint.savedAt === 'string'
-            && Array.isArray(checkpoint.records) && checkpoint.records.length <= 500
-            && Array.isArray(checkpoint.receipts) && checkpoint.receipts.length <= 500
+            && Array.isArray(checkpoint.records) && checkpoint.records.length <= MAX_NATIVE_CHECKPOINT_ENTRIES
+            && Array.isArray(checkpoint.receipts) && checkpoint.receipts.length <= MAX_NATIVE_CHECKPOINT_ENTRIES
             && checkpoint.missionId === input.fence.missionId
             && checkpoint.scopeId === input.scopeId
             && checkpoint.principalId === input.principalId

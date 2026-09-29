@@ -57,3 +57,31 @@ describe('canonical state-machine operation authority', () => {
         expect(state.getActiveOperationCount()).toBe(0)
     })
 })
+
+describe('watchdog timeout does not lock out new requests (R2 NZ-2)', () => {
+    beforeEach(() => resetStateMachine())
+
+    it('admits new operations while a long operation has timed the state into error', () => {
+        const state = getStateMachine()
+        expect(state.beginOperation('long-run')).toBe(true)
+        state.fail('timeout in thinking')
+        expect(state.getState()).toBe('error')
+
+        expect(state.beginOperation('owner-message')).toBe(true)
+        expect(state.getActiveOperationCount()).toBe(2)
+
+        state.completeOperation('owner-message')
+        expect(state.getState()).toBe('error')
+        state.completeOperation('long-run')
+        expect(state.getState()).toBe('idle')
+    })
+
+    it('recovers a stale error before admitting when no work is active', () => {
+        const state = getStateMachine()
+        state.fail('earlier failure')
+        expect(state.beginOperation('next')).toBe(true)
+        expect(state.getState()).toBe('thinking')
+        state.completeOperation('next')
+        expect(state.getState()).toBe('idle')
+    })
+})

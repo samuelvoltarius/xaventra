@@ -71,3 +71,16 @@ URL: [https://search.example](https://search.example)
         expect(ambiguous).toEqual(['https://one.example/search', 'https://two.example/search'])
     })
 })
+
+describe('path target coverage (R2 NZ-21)', () => {
+    it('does not let a relative file name cover an absolute target', () => {
+        expect(matchedToolTargets(['/etc/nginx/nginx.conf'], { path: 'nginx.conf' })).toEqual([])
+        expect(matchedToolTargets(['c:/nova/xaventra.config.json'], { path: 'xaventra.config.json' })).toEqual([])
+    })
+
+    it('still accepts the exact or a more qualified argument', () => {
+        expect(matchedToolTargets(['/etc/nginx/nginx.conf'], { path: '/etc/nginx/nginx.conf' })).toEqual(['/etc/nginx/nginx.conf'])
+        expect(matchedToolTargets(['nginx.conf'], { path: '/etc/nginx/nginx.conf' })).toEqual(['nginx.conf'])
+        expect(matchedToolTargets(['src/app.ts'], { path: 'app.ts' })).toEqual(['src/app.ts'])
+    })
+})

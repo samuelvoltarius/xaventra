@@ -1,5 +1,6 @@
-import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { exec } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { promisify } from 'node:util'
 import { hostname, platform } from 'node:os'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
@@ -125,6 +126,19 @@ export interface SelfSetupOptions {
 export function isExplicitSelfSetupRequest(input: string): boolean {
     const text = input.toLowerCase().replace(/\s+/g, ' ').trim()
     return /\b(?:self[- ]?setup|setup(?:-| )?plan|installier\w*|deinstallier\w*|konfigurier\w*|einricht\w*|was fehlt|welche\w* (?:capabilit|fähigkeit)\w* fehl\w*|prüf\w* (?:die )?(?:capabilit|hardware|runtime)|scan\w* (?:die )?(?:hardware|runtime)|ollama|ffmpeg|embedding|vision|whisper|\bstt\b|\btts\b|codex)\b/i.test(text)
+}
+
+const execAsync = promisify(exec)
+// Same host shape as capability-researcher (K2): optional user@, no spaces,
+// quotes, shell metacharacters or a leading "-" (R2 NZ-5).
+const SAFE_SSH_HOST = /^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/
+
+/** Remote actions are only executed in the shape the planner generates:
+ * `ssh -- <safe host> '<single-quoted command>'`. Older or tampered state
+ * entries are refused instead of being handed to a shell. */
+function isSafeRemoteShellCommand(command: string): boolean {
+    const match = /^ssh -- (\S+) '/.exec(command)
+    return !!match && SAFE_SSH_HOST.test(match[1])
 }
 
 const DATA_DIR = join(process.cwd(), '.nova-data')
@@ -361,7 +375,9 @@ function computeActions(
             reason: 'Nova arbeitet im Plan+Freigabe-Modus; fehlende Voice-Pakete sollen geplant, nicht beim Boot still installiert werden.',
             risk: 'low',
             configPath: 'voice.autoInstallDeps',
-            patch: { voice: { ...(config.voice || {}), autoInstallDeps: false } },
+            // mergePatch is deep: only the changed key, so later owner edits
+            // of other voice settings are not reverted on apply (R2 NZ-17).
+            patch: { voice: { autoInstallDeps: false } },
         })
     }
 
@@ -395,9 +411,7 @@ function computeActions(
             configPath: 'memory.embedding.ollamaHost',
             patch: {
                 memory: {
-                    ...(config.memory || {}),
                     embedding: {
-                        ...(config.memory?.embedding || {}),
                         provider: 'ollama',
                         ollamaHost: bestEmbedding.services.ollama,
                         model: bestEmbedding.ollamaModels.find(m => /embed|nomic|mxbai/i.test(m)) || config.memory?.embedding?.model || 'nomic-embed-text',
@@ -415,7 +429,9 @@ function computeActions(
             title: `Embedding-Modell auf ${node.name} vorbereiten`,
             reason: `${node.name} kann Embeddings lokal bereitstellen, hat aber kein erkanntes Embedding-Modell.`,
             risk: 'medium',
-            command: node.host ? `ssh ${node.host} "ollama pull nomic-embed-text"` : undefined,
+            // node.host is self-reported by the mesh registry: never put an
+            // unvalidated value into a shell command (R2 NZ-5).
+            command: node.host && SAFE_SSH_HOST.test(node.host) ? `ssh -- ${node.host} 'ollama pull nomic-embed-text'` : undefined,
         })
     }
 
@@ -624,19 +640,30 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
 
     if (action.type === 'config_patch') {
         if (!action.patch) return { success: false, message: 'Diese Config-Aktion ist nur ein manueller Hinweis.' }
-        const config = readConfig()
+        // An unreadable config must not be replaced by the bare patch, and a
+        // crash while writing must not leave a truncated config (R2 NZ-17).
+        let config: any = {}
+        if (existsSync(CONFIG_FILE)) {
+            try { config = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) }
+            catch { return { success: false, message: 'Config nicht lesbar – Patch nicht angewendet.' } }
+        }
         const next = mergePatch(config, action.patch)
-        writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2) + '\n')
+        const tmp = `${CONFIG_FILE}.${process.pid}.tmp`
+        writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n')
+        renameSync(tmp, CONFIG_FILE)
         action.applied = true
         writeState(state)
         return { success: true, message: `Config angewendet: ${action.configPath || action.id}` }
     }
 
     if (!action.command) return { success: false, message: 'Keine ausfuehrbare Command-Aktion vorhanden.' }
+    if (action.type === 'remote_shell' && !isSafeRemoteShellCommand(action.command)) {
+        return { success: false, message: `Remote-Aktion ${action.id} abgelehnt: Host/Befehl nicht im erwarteten Format. Setup-Plan neu erstellen.` }
+    }
     try {
-        // stdio: 'pipe' — daemon has no TTY; 'inherit' throws "handle invalid" in pm2/background
-        const out = execSync(action.command, {
-            stdio: ['pipe', 'pipe', 'pipe'],
+        // Async: a 5-minute install must not block Telegram, REST and the mesh
+        // heartbeat on the daemon event loop (R2 NZ-16). No TTY: output is piped.
+        const { stdout: out } = await execAsync(action.command, {
             encoding: 'utf-8',
             timeout: 300_000,
             windowsHide: true,

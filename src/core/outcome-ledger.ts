@@ -94,6 +94,12 @@ function haMirroringEnabled(): boolean {
     return process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true'
 }
 
+/** Checkpoint files are named after the runId. Only plain id characters are
+ * allowed, so a peer-supplied runId cannot contain path separators or "..". */
+export function isSafeCheckpointRunId(runId: unknown): runId is string {
+    return typeof runId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,199}$/.test(runId) && !runId.includes('..')
+}
+
 export class OutcomeLedger {
     constructor(
         private readonly dataDir = DEFAULT_DATA_DIR,
@@ -102,6 +108,12 @@ export class OutcomeLedger {
          * production HA store. */
         private readonly mirrorToHa = dataDir === DEFAULT_DATA_DIR,
     ) {}
+
+    /** Runs started by this process and still open, plus runs whose events a
+     * peer synced to us in this process. Neither is "abandoned after a crash"
+     * for a periodic sweep (R2 NZ-14). */
+    private readonly liveRunIds = new Set<string>()
+    private readonly peerRunIds = new Set<string>()
 
     private dayFile(timestamp = new Date()): string {
         return join(this.dataDir, `${timestamp.toISOString().slice(0, 10)}.jsonl`)
@@ -122,6 +134,8 @@ export class OutcomeLedger {
             payload: safePayload(payload),
         }
         appendFileSync(this.dayFile(), `${JSON.stringify(event)}\n`)
+        if (type === 'run.started') this.liveRunIds.add(runId)
+        else if (type === 'run.completed' || type === 'run.failed') this.liveRunIds.delete(runId)
         if (this.mirrorToHa && haMirroringEnabled()) {
             void import('./ha-state.js')
                 .then(({ writeHaRecord }) => writeHaRecord('outcome-ledger', event.eventId, event, {
@@ -149,6 +163,7 @@ export class OutcomeLedger {
         if (!Number.isFinite(timestamp.getTime())) return false
         const sanitized: OutcomeEvent = { ...event, payload: safePayload(event.payload || {}) }
         appendFileSync(this.dayFile(timestamp), `${JSON.stringify(sanitized)}\n`)
+        this.peerRunIds.add(event.runId)
         return true
     }
 
@@ -162,6 +177,7 @@ export class OutcomeLedger {
             if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true })
             const sanitized: OutcomeEvent = { ...event, payload: safePayload(event.payload || {}) }
             appendFileSync(this.dayFile(timestamp), `${JSON.stringify(sanitized)}\n`)
+            this.peerRunIds.add(event.runId)
             known.add(event.eventId)
             imported++
         }
@@ -228,9 +244,12 @@ export class OutcomeLedger {
 
     /** Close abandoned in-flight runs after a process crash. Approval waits are
      * durable checkpoints and are intentionally not failed by this sweep. */
-    failStaleRuns(maxAgeMs = 15 * 60_000, nowMs = Date.now()): string[] {
+    failStaleRuns(maxAgeMs = 15 * 60_000, nowMs = Date.now(), options: { keepLiveRuns?: boolean } = {}): string[] {
+        // Periodic callers (Main handover check) pass keepLiveRuns: a quiet but
+        // still running local run or a peer's run is not a crash leftover.
         const stale = this.listRuns(500).filter(run =>
-            run.status === 'running' && nowMs - Date.parse(run.updatedAt) > maxAgeMs)
+            run.status === 'running' && nowMs - Date.parse(run.updatedAt) > maxAgeMs
+            && !(options.keepLiveRuns && (this.liveRunIds.has(run.runId) || this.peerRunIds.has(run.runId))))
         for (const run of stale) {
             this.fail(run.runId, {
                 success: false,
@@ -242,6 +261,7 @@ export class OutcomeLedger {
     }
 
     saveCheckpoint(checkpoint: Omit<OutcomeCheckpoint, 'version' | 'savedAt'>): OutcomeCheckpoint {
+        if (!isSafeCheckpointRunId(checkpoint.runId)) throw new Error('Unsafe checkpoint runId rejected')
         const complete: OutcomeCheckpoint = { ...checkpoint, version: 1, savedAt: new Date().toISOString() }
         atomicWriteJsonSync(join(this.checkpointDir, `${checkpoint.runId}.json`), safePayload(complete as unknown as Record<string, unknown>))
         this.append(checkpoint.runId, 'checkpoint.saved', {
@@ -261,6 +281,8 @@ export class OutcomeLedger {
 
     importCheckpoint(checkpoint: OutcomeCheckpoint): boolean {
         if (checkpoint?.version !== 1 || !checkpoint.runId || !checkpoint.backend || !checkpoint.savedAt) return false
+        // runId arrives from mesh peers (run.checkpoint): never let it leave checkpointDir (R2 NZ-4).
+        if (!isSafeCheckpointRunId(checkpoint.runId)) return false
         const current = this.loadCheckpoint(checkpoint.runId)
         if (current && current.savedAt >= checkpoint.savedAt) return false
         if (!existsSync(this.checkpointDir)) mkdirSync(this.checkpointDir, { recursive: true })
@@ -269,6 +291,7 @@ export class OutcomeLedger {
     }
 
     loadCheckpoint(runId: string): OutcomeCheckpoint | null {
+        if (!isSafeCheckpointRunId(runId)) return null
         const path = join(this.checkpointDir, `${runId}.json`)
         try {
             return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as OutcomeCheckpoint : null

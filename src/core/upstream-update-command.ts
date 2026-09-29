@@ -29,6 +29,8 @@ export async function upstreamUpdateCommand(args: string, permission: string, so
     const [action = 'status', id, ...extra] = args.trim().split(/\s+/).filter(Boolean)
     if (extra.length || !['status', 'check', 'prepare', 'deploy'].includes(action)) return '/update check · /update prepare <Release-ID> · /update deploy <Release-ID> · /update status'
     if (['prepare', 'deploy'].includes(action) && !['owner', 'admin'].includes(permission)) return '🔒 Nur Owner/Admin dürfen Update-Pakete vorbereiten oder aktivieren.'
+    // check/status also reach GitHub and the update controller (R2 NZ-42).
+    if (!['owner', 'admin'].includes(permission)) return '🔒 Nur Owner/Admin dürfen Update-Prüfungen und Controller-Status abfragen.'
     if (action === 'status') {
         const status = await source.status(), release = id || status.releaseId
         if (release && (id || process.env.XAVENTRA_UPDATE_CLIENT_FILE)) {

@@ -6,8 +6,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { execSync } from 'node:child_process'
+import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
+import { execFileSync, execSync } from 'node:child_process'
 
 // ============================================
 // Types
@@ -96,7 +96,9 @@ function ensureInitialized(): void {
 }
 
 function saveHistory(): void {
-    ensureInitialized()
+    // Only ensure the directory: ensureInitialized() reloads the file and
+    // would discard the in-memory change that is being saved (R2 NZ-35b).
+    if (!existsSync(PROPOSALS_DIR)) mkdirSync(PROPOSALS_DIR, { recursive: true })
     writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2))
 }
 
@@ -107,9 +109,20 @@ function saveHistory(): void {
 /**
  * Prüft ob eine Änderung sicher ist
  */
+/** Repository-relative path with forward slashes, or null if it is absolute
+ * or leaves the repository (R2 NZ-35: includes() accepted "../x/src/core/"). */
+function repoRelativePath(file: string): string | null {
+    const raw = String(file || '')
+    if (!raw || isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) return null
+    const rel = normalize(raw).replace(/\\/g, '/')
+    if (rel === '..' || rel.startsWith('../') || rel.split('/').includes('..')) return null
+    return rel
+}
+
 function isSafeChange(proposal: SelfUpdateProposal): { safe: boolean; reason?: string } {
     // Check file path is in allowed directory
-    const isAllowedPath = ALLOWED_DIRECTORIES.some(dir => proposal.file.includes(dir))
+    const rel = repoRelativePath(proposal.file)
+    const isAllowedPath = rel !== null && ALLOWED_DIRECTORIES.some(dir => rel.startsWith(dir))
     if (!isAllowedPath) {
         return { safe: false, reason: `Datei nicht in erlaubtem Verzeichnis: ${proposal.file}` }
     }
@@ -223,8 +236,12 @@ export async function applyUpdate(proposalId: string, force: boolean = false): P
         }
     }
 
-    // Read current file
-    const fullPath = join(process.cwd(), proposal.file)
+    // Read current file – never outside the repository, even with force.
+    const fullPath = resolve(process.cwd(), proposal.file)
+    const inside = relative(process.cwd(), fullPath)
+    if (!inside || inside.startsWith('..') || isAbsolute(inside)) {
+        return { success: false, message: `Datei außerhalb des Repositorys: ${proposal.file}` }
+    }
     if (!existsSync(fullPath)) {
         return { success: false, message: `Datei nicht gefunden: ${fullPath}` }
     }
@@ -243,7 +260,8 @@ export async function applyUpdate(proposalId: string, force: boolean = false): P
     writeFileSync(backupPath, currentContent)
 
     // Apply change
-    const newContent = currentContent.replace(proposal.oldCode, proposal.newCode)
+    // Function replacer: "$&", "$1" etc. in newCode stay literal (R2 NZ-35).
+    const newContent = currentContent.replace(proposal.oldCode, () => proposal.newCode)
     writeFileSync(fullPath, newContent)
 
     // Validate it compiles
@@ -280,7 +298,8 @@ export async function commitAndPush(message: string): Promise<{
 
         // Commit with [Nova Auto] prefix
         const commitMessage = `[Nova Auto] ${message}`
-        execSync(`git commit -m "${commitMessage}"`, { cwd: process.cwd(), stdio: 'pipe' })
+        // argv, not a shell string: the message may contain quotes/$() (R2 NZ-35).
+        execFileSync('git', ['commit', '-m', commitMessage], { cwd: process.cwd(), stdio: 'pipe' })
 
         // Push
         execSync('git push', { cwd: process.cwd(), stdio: 'pipe' })

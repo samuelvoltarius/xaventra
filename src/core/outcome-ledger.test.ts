@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -204,5 +204,50 @@ describe('OutcomeLedger', () => {
         expect(firstResolved).toBe(first)
         expect(secondResolved).toBe(second)
         expect(firstResolved).not.toBe(secondResolved)
+    })
+})
+
+describe('periodic stale sweep keeps live runs (R2 NZ-14)', () => {
+    it('does not fail a quiet run of this process or a peer run when keepLiveRuns is set', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-live-'))
+        tempDirs.push(dir)
+        const ledger = new OutcomeLedger(dir, false)
+        const contract = createTaskContract('long build', { requiresTool: false, kind: 'none' })
+        ledger.start(contract, { channel: 'test' })
+        const timestamp = new Date().toISOString()
+        ledger.importEvents([{ version: 1, eventId: 'peer-1', runId: 'peer-run', type: 'run.started', timestamp, payload: {} }])
+
+        expect(ledger.failStaleRuns(1_000, Date.now() + 20 * 60_000, { keepLiveRuns: true })).toEqual([])
+        expect(ledger.getRun(contract.id)?.status).toBe('running')
+        expect(ledger.getRun('peer-run')?.status).toBe('running')
+
+        // Crash reconciliation by a fresh process still closes abandoned runs.
+        const restarted = new OutcomeLedger(dir, false)
+        expect(restarted.failStaleRuns(1_000, Date.now() + 20 * 60_000, { keepLiveRuns: true }).sort()).toEqual([contract.id, 'peer-run'].sort())
+    })
+})
+
+describe('checkpoint runId path safety (R2 NZ-4)', () => {
+    it('rejects mesh checkpoints whose runId escapes the checkpoint directory', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-runid-'))
+        tempDirs.push(dir)
+        // Ledger two levels below dir: "../../victim" would land at dir/victim.json.
+        const ledger = new OutcomeLedger(join(dir, 'ledger'), false)
+        for (const runId of ['../../victim', '..\\..\\victim', 'a/b', '..', '']) {
+            const checkpoint = { version: 1, runId, backend: 'native', savedAt: new Date().toISOString() } as unknown as OutcomeCheckpoint
+            expect(ledger.importCheckpoint(checkpoint), runId).toBe(false)
+            expect(ledger.loadCheckpoint(runId), runId).toBeNull()
+        }
+        expect(existsSync(join(dir, 'victim.json'))).toBe(false)
+        expect(() => ledger.saveCheckpoint({ runId: '../escape', backend: 'native' } as any)).toThrow()
+    })
+
+    it('still accepts normal run ids', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-outcome-runid-ok-'))
+        tempDirs.push(dir)
+        const ledger = new OutcomeLedger(dir, false)
+        const checkpoint = { version: 1, runId: 'native-0123abcd', backend: 'native', savedAt: new Date().toISOString() } as unknown as OutcomeCheckpoint
+        expect(ledger.importCheckpoint(checkpoint)).toBe(true)
+        expect(ledger.loadCheckpoint('native-0123abcd')?.runId).toBe('native-0123abcd')
     })
 })

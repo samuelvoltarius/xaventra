@@ -63,23 +63,28 @@ export class ProactiveMessenger {
         console.log('[ProactiveMessenger] Initialized')
     }
 
-    private canSend(msg: ProactiveMessage): boolean {
+    /** 'defer': quiet hours or daily budget – keep the message and deliver it
+     * later instead of dropping it silently (R2 NZ-12). 'duplicate': already
+     * delivered within the dedupe window. */
+    private canSend(msg: ProactiveMessage): 'ok' | 'defer' | 'duplicate' {
         const today = new Date().toISOString().slice(0, 10)
         if (today !== this.budgetDate) {
             this.budgetDate = today
             this.sentToday = 0
         }
-        if (msg.priority !== 'urgent') {
-            if (this.sentToday >= this.policy.dailyBudget) return false
+        const key = `${msg.userId}:${msg.channel}:${msg.type}:${msg.assessment?.dedupeKey || msg.content}`
+        const lastSent = this.recent.get(key) ?? 0
+        if (Date.now() - lastSent < this.policy.dedupeWindowMs) return 'duplicate'
+        // A user-requested alarm (Wecker) is due exactly now: quiet hours and
+        // budget must not swallow it.
+        if (msg.priority !== 'urgent' && msg.type !== 'alarm') {
+            if (this.sentToday >= this.policy.dailyBudget) return 'defer'
             const hour = new Date().getHours()
             const { quietHoursStart: start, quietHoursEnd: end } = this.policy
             const quiet = start > end ? hour >= start || hour < end : hour >= start && hour < end
-            if (quiet) return false
+            if (quiet) return 'defer'
         }
-        const key = `${msg.userId}:${msg.channel}:${msg.type}:${msg.assessment?.dedupeKey || msg.content}`
-        const lastSent = this.recent.get(key) ?? 0
-        if (Date.now() - lastSent < this.policy.dedupeWindowMs) return false
-        return true
+        return 'ok'
     }
 
     private enqueue(msg: ProactiveMessage): void {
@@ -99,60 +104,86 @@ export class ProactiveMessenger {
      * Send a proactive message to a user
      */
     async send(msg: ProactiveMessage): Promise<boolean> {
+        const outcome = await this.attempt(msg)
+        if (outcome === 'deferred') this.enqueue(msg)
+        return outcome === 'sent'
+    }
+
+    private markSent(msg: ProactiveMessage): void {
+        this.sentToday++
+        this.recent.set(`${msg.userId}:${msg.channel}:${msg.type}:${msg.assessment?.dedupeKey || msg.content}`, Date.now())
+    }
+
+    /** alreadyApproved: queued messages passed the evidence policy when they
+     * were deferred; their 15-minute evidence window must not expire them
+     * while they wait for quiet hours to end or a channel to reconnect. */
+    private async attempt(msg: ProactiveMessage, alreadyApproved = false): Promise<'sent' | 'deferred' | 'dropped'> {
         if (!msg.assessment) {
             console.log('[ProactiveMessenger] Suppressed: no typed evidence assessment')
-            return false
+            return 'dropped'
         }
-        const decision = evaluateProactivity(msg.assessment)
+        const decision = alreadyApproved ? { allow: true, reason: 'approved before deferral' } : evaluateProactivity(msg.assessment)
         if (!decision.allow) {
             console.log(`[ProactiveMessenger] Suppressed: ${decision.reason}`)
-            return false
+            return 'dropped'
         }
-        if (!this.canSend(msg)) return false
+        const gate = this.canSend(msg)
+        if (gate === 'duplicate') return 'dropped'
+        if (gate === 'defer') {
+            console.log(`[ProactiveMessenger] Deferred ${msg.type} for ${msg.userId} (quiet hours or daily budget)`)
+            return 'deferred'
+        }
         console.log(`[ProactiveMessenger] Sending ${msg.type} to ${msg.userId} via ${msg.channel}`)
 
         if (msg.channel === 'all') {
             // Send to all connected channels
             let success = false
+            let anyConnected = false
             for (const [name, sender] of this.channels) {
                 if (sender.isConnected()) {
+                    anyConnected = true
                     try {
-                        await sender.send(msg.userId, msg.content)
-                        success = true
-                        console.log(`[ProactiveMessenger] ✅ Sent via ${name}`)
+                        // false = not delivered (e.g. no leadership): not a success (R2 NZ-13).
+                        if (await sender.send(msg.userId, msg.content) === true) {
+                            success = true
+                            console.log(`[ProactiveMessenger] ✅ Sent via ${name}`)
+                        } else {
+                            console.log(`[ProactiveMessenger] ⚠️ Not delivered via ${name}`)
+                        }
                     } catch (err) {
                         console.log(`[ProactiveMessenger] ⚠️ Failed on ${name}: ${err}`)
                     }
                 }
             }
-            if (success) {
-                this.sentToday++
-                this.recent.set(`${msg.userId}:${msg.channel}:${msg.type}:${msg.assessment.dedupeKey}`, Date.now())
-            }
-            return success
+            if (success) this.markSent(msg)
+            // Nothing connected: keep for later. Connected but refused: drop.
+            return success ? 'sent' : anyConnected ? 'dropped' : 'deferred'
         }
 
         // Send to specific channel
         const sender = this.channels.get(msg.channel)
         if (!sender) {
             console.log(`[ProactiveMessenger] ❌ Channel ${msg.channel} not registered`)
-            return false
+            return 'dropped'
         }
 
         if (!sender.isConnected()) {
             console.log(`[ProactiveMessenger] ❌ Channel ${msg.channel} not connected`)
-            if (!this.processing) this.enqueue(msg)  // processQueue keeps one copy in remaining
-            return false
+            return 'deferred'
         }
 
         try {
-            await sender.send(msg.userId, msg.content)
-            this.sentToday++
-            this.recent.set(`${msg.userId}:${msg.channel}:${msg.type}:${msg.assessment.dedupeKey}`, Date.now())
-            return true
+            // false = not delivered (e.g. no Main/Telegram leadership during a
+            // failover). It must neither count nor block the retry (R2 NZ-13).
+            if (await sender.send(msg.userId, msg.content) !== true) {
+                console.log(`[ProactiveMessenger] ❌ Not delivered via ${msg.channel}`)
+                return 'dropped'
+            }
+            this.markSent(msg)
+            return 'sent'
         } catch (err) {
             console.log(`[ProactiveMessenger] ❌ Send failed: ${err}`)
-            return false
+            return 'dropped'
         }
     }
 
@@ -230,17 +261,19 @@ export class ProactiveMessenger {
         let sent = 0
 
         const remaining: ProactiveMessage[] = []
-        for (const msg of this.queue) {
-            const success = await this.send(msg)
-            if (success) {
-                sent++
-            } else {
-                remaining.push(msg)
+        const batch = this.queue
+        this.queue = []
+        try {
+            for (const msg of batch) {
+                const outcome = await this.attempt(msg, true)
+                if (outcome === 'sent') sent++
+                else if (outcome === 'deferred') remaining.push(msg)
             }
+        } finally {
+            // Messages deferred by send() while this batch ran are kept as well.
+            this.queue = [...remaining, ...this.queue].slice(-this.policy.maxQueueSize)
+            this.processing = false
         }
-
-        this.queue = remaining
-        this.processing = false
         return sent
     }
 

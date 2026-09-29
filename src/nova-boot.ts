@@ -11,9 +11,10 @@
  */
 
 import { execSync, exec } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { platform } from 'node:os'
 import { resolveConfigPath } from './config/config-path.js'
+import { effectiveSshdAuth, firewallChangeApproved, ufwOutputIsActive } from './core/system-security-checks.js'
 import { join } from 'node:path'
 
 
@@ -269,10 +270,20 @@ class NovaBoot {
             return
         }
 
-        const config = readFileSync(sshConfig, 'utf-8')
+        // Effective settings (R2 NZ-26): comments ignored, first value wins,
+        // drop-ins (included at the top) first, sshd default = password auth on.
+        const dropInDir = '/etc/ssh/sshd_config.d'
+        const texts: string[] = []
+        try {
+            for (const name of readdirSync(dropInDir).filter(file => file.endsWith('.conf')).sort()) {
+                try { texts.push(readFileSync(join(dropInDir, name), 'utf-8')) } catch { /* unreadable drop-in */ }
+            }
+        } catch { /* no drop-in directory */ }
+        texts.push(readFileSync(sshConfig, 'utf-8'))
+        const auth = effectiveSshdAuth(texts)
 
         // Check for password auth
-        if (config.includes('PasswordAuthentication yes')) {
+        if (auth.passwordAuthentication) {
             console.log('  ⚠️ SSH: Password auth enabled (consider key-only)')
             this.status.securityIssues.push('SSH password auth enabled')
         } else {
@@ -280,7 +291,7 @@ class NovaBoot {
         }
 
         // Check root login
-        if (config.includes('PermitRootLogin yes')) {
+        if (auth.permitRootLogin === 'yes') {
             console.log('  ⚠️ SSH: Root login enabled')
             this.status.securityIssues.push('SSH root login enabled')
         } else {
@@ -289,15 +300,20 @@ class NovaBoot {
     }
 
     private async checkFirewall(): Promise<void> {
-        const hasUfw = this.checkCommand('ufw status')
+        // `ufw status` exits 0 even when inactive (R2 NZ-26).
+        let ufwActive = false
+        try { ufwActive = ufwOutputIsActive(execSync('ufw status', { stdio: 'pipe', encoding: 'utf-8' })) } catch { /* no ufw */ }
         const hasFirewalld = this.checkCommand('firewall-cmd --state')
 
-        if (!hasUfw && !hasFirewalld) {
-            console.log('  ⚠️ No firewall detected!')
-            this.status.securityIssues.push('No firewall installed')
+        if (!ufwActive && !hasFirewalld) {
+            console.log('  ⚠️ No active firewall detected!')
+            this.status.securityIssues.push('No active firewall')
 
-            // Auto-install UFW if root
-            if (this.isRoot && platform() === 'linux') {
+            // A default-deny firewall can lock out SSH on a custom port and
+            // block mesh/REST: only with explicit operator opt-in (R2 NZ-25).
+            if (!firewallChangeApproved()) {
+                console.log('  ℹ️ Firewall not changed. Set NOVA_GENESIS_FIREWALL=apply to let Genesis install and enable UFW (deny incoming, allow ssh).')
+            } else if (this.isRoot && platform() === 'linux') {
                 console.log('  🔧 Installing UFW...')
                 try {
                     execSync('apt-get install -y ufw && ufw default deny incoming && ufw default allow outgoing && ufw allow ssh && ufw --force enable', { stdio: 'pipe' })

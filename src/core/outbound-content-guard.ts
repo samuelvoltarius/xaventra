@@ -17,7 +17,9 @@ export function isInternalOutboundArtifact(value: unknown): boolean {
 export function sanitizeInternalOutboundArtifacts(value: unknown): string {
     let text = String(value ?? '')
     text = text
-        .replace(/^[\s\S]*?<\/(?:think|thinking)>/i, '')
+        // Orphan closing tag only (reasoning without an opening tag). If an
+        // opening tag comes first, visible text before it is kept (R2 NZ-32).
+        .replace(/^(?:(?!<(?:think|thinking)>)[\s\S])*?<\/(?:think|thinking)>/i, '')
         .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
         .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/<(?:think|thinking)>[\s\S]*$/gi, '')

@@ -7,7 +7,7 @@
  */
 
 import 'dotenv/config'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -73,7 +73,10 @@ function loadFindings(): DoctorFinding[] {
 
 function saveFindings(findings: DoctorFinding[]): void {
     ensureDir()
-    writeFileSync(FINDINGS_FILE, JSON.stringify(findings.slice(0, 200), null, 2))
+    // Atomic replace: a crash while writing must not truncate the store (R2 NZ-33).
+    const tmp = `${FINDINGS_FILE}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(findings.slice(0, 200), null, 2))
+    renameSync(tmp, FINDINGS_FILE)
 }
 
 function getSourceNode(): string | undefined {
@@ -223,6 +226,7 @@ export function updateDoctorFindingStatus(id: string, status: DoctorStatus): boo
 
 export async function runSelfDoctor(): Promise<DoctorRunResult> {
     const findings = loadFindings()
+    const runStartedAt = nowIso()
     const generated: DoctorFinding[] = []
     const evaluatedSources = new Set<string>()
 
@@ -386,6 +390,9 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
         const { getStats, getPendingProposals } = await import('./self-update.js')
         const stats = getStats()
         const pending = getPendingProposals()
+        // Every source that evaluated successfully resolves its own findings
+        // that are no longer reproduced (R2 NZ-18).
+        evaluatedSources.add('self-update')
         if (stats.pending > 0) {
             generated.push(upsertFinding(findings, {
                 id: stableId(['self-update-pending']),
@@ -522,6 +529,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     try {
         const { getDisabledModels } = await import('../llm/model-perf-db.js')
         const disabled = getDisabledModels()
+        evaluatedSources.add('model-perf-db')
         if (disabled.length > 0) {
             generated.push(upsertFinding(findings, {
                 id: stableId(['llm-auto-disabled', disabled.map(d => d.model).sort().join(',')]),
@@ -540,9 +548,11 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     try {
         const { getQueueStats } = await import('../channels/message-queue.js')
         const queueStats = getQueueStats()
+        evaluatedSources.add('message-queue')
         if (queueStats.failed > 0) {
             generated.push(upsertFinding(findings, {
-                id: stableId(['msg-queue-failed', queueStats.failed]),
+                // Stable id: a changing counter must not open a new finding each run.
+                id: stableId(['msg-queue-failed']),
                 title: `${queueStats.failed} message(s) permanently failed`,
                 detail: `Message queue: ${queueStats.total} total, ${queueStats.pending} pending, ${queueStats.done} done, ${queueStats.failed} failed (max retries exceeded).`,
                 category: 'health',
@@ -626,6 +636,17 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
         if (resolved) await syncFinding(resolved)
     }
 
+    // The run awaited many probes: keep status changes (e.g. dismissed) and
+    // runtime findings that were written in the meantime (R2 NZ-33).
+    for (const onDisk of loadFindings()) {
+        if (!onDisk?.id || !(String(onDisk.updatedAt || '') >= runStartedAt)) continue
+        const mine = findings.find(f => f.id === onDisk.id)
+        if (!mine) findings.push(onDisk)
+        else if (!generated.includes(mine) || onDisk.status !== 'open') {
+            mine.status = onDisk.status
+            mine.updatedAt = onDisk.updatedAt
+        }
+    }
     saveFindings(findings)
     await Promise.all(generated.map(f => syncFinding(f)))
     try {
@@ -638,16 +659,31 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
 
     const open = findings.filter(f => f.status === 'open')
     const healthy = open.filter(f => f.severity !== 'info').length === 0
+    // ESM has no require(): load the inline status modules here (R2 NZ-34).
+    const inline: DoctorInlineStatus = {}
+    try {
+        const { getProbeStatusSummary } = await import('../llm/capability-probe.js')
+        inline.probeSummary = getProbeStatusSummary()
+    } catch { /* optional */ }
+    try {
+        const { getQueueStats } = await import('../channels/message-queue.js')
+        inline.queueStats = getQueueStats()
+    } catch { /* optional */ }
     return {
         healthy,
         generated: generated.length,
         open: open.length,
         findings: open.slice(0, 20),
-        summary: formatDoctorSummary({ healthy, generated: generated.length, open: open.length, findings: open.slice(0, 20) }),
+        summary: formatDoctorSummary({ healthy, generated: generated.length, open: open.length, findings: open.slice(0, 20) }, inline),
     }
 }
 
-export function formatDoctorSummary(result: Omit<DoctorRunResult, 'summary'>): string {
+export interface DoctorInlineStatus {
+    probeSummary?: string
+    queueStats?: { total: number; pending: number; done: number; failed: number }
+}
+
+export function formatDoctorSummary(result: Omit<DoctorRunResult, 'summary'>, inline: DoctorInlineStatus = {}): string {
     const icon = result.healthy ? '✅' : '⚠️'
     const lines = [
         `## ${icon} Nova Self-Doctor`,
@@ -685,23 +721,16 @@ export function formatDoctorSummary(result: Omit<DoctorRunResult, 'summary'>): s
     }
 
     // Quick LLM status inline (no finding needed if all good)
-    try {
-        const { getProbeStatusSummary } = require('../llm/capability-probe.js')
-        const probeSummary = getProbeStatusSummary()
-        if (probeSummary) {
-            lines.push('', probeSummary)
-        }
-    } catch { /* optional */ }
+    if (inline.probeSummary) {
+        lines.push('', inline.probeSummary)
+    }
 
     // Message queue inline
-    try {
-        const { getQueueStats } = require('../channels/message-queue.js')
-        const qs = getQueueStats()
-        if (qs.total > 0) {
-            const qIcon = qs.failed > 0 ? '⚠️' : '✅'
-            lines.push(`\n**📬 Message Queue**: ${qIcon} ${qs.done} done · ${qs.pending} pending · ${qs.failed} failed`)
-        }
-    } catch { /* optional */ }
+    const qs = inline.queueStats
+    if (qs && qs.total > 0) {
+        const qIcon = qs.failed > 0 ? '⚠️' : '✅'
+        lines.push(`\n**📬 Message Queue**: ${qIcon} ${qs.done} done · ${qs.pending} pending · ${qs.failed} failed`)
+    }
 
     return lines.join('\n')
 }

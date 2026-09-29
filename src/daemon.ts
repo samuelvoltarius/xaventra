@@ -119,6 +119,7 @@ import { initMeshTransportRuntime, startMeshDataPlane, stopMeshTransportRuntime 
 import { initNovaState, getNovaState } from './core/nova-state.js'
 import { createDaemonMessageEntry } from './core/daemon-message-entry.js'
 import { setNovaConfig } from './core/config.js'
+import { resolveTelegramAllowFrom } from './core/telegram-allow-from.js'
 import { markStartupReady, startStartupPhase } from './core/startup-performance.js'
 
 /**
@@ -222,8 +223,11 @@ async function startDaemon() {
         if (!existsSync(join(process.cwd(), '.nova-data'))) mkdirSync(join(process.cwd(), '.nova-data'), { recursive: true })
         if (existsSync(offlineTrackFile)) {
             const hb = JSON.parse(readFileSync(offlineTrackFile, 'utf-8'))
-            if (hb.shutdownAt) {
-                _offlineDurationMs = Date.now() - new Date(hb.shutdownAt).getTime()
+            // After a crash there is no shutdownAt: the last 5-minute heartbeat
+            // is the best known "went offline" time (R2 NZ-28).
+            const offlineSince = hb.shutdownAt || hb.lastHeartbeat || hb.startedAt
+            if (offlineSince && Number.isFinite(new Date(offlineSince).getTime())) {
+                _offlineDurationMs = Date.now() - new Date(offlineSince).getTime()
                 const offlineH = Math.round(_offlineDurationMs / 1000 / 60 / 60 * 10) / 10
                 console.log(`[Nova] ⏱ Offline-Dauer seit letztem Shutdown: ${offlineH}h`)
             }
@@ -361,7 +365,7 @@ async function startDaemon() {
             ...config.channels.telegram,
             enabled: true,
             token: process.env.TELEGRAM_BOT_TOKEN,
-            allowFrom: process.env.TELEGRAM_ALLOW_FROM?.split(',') || config.channels.telegram?.allowFrom || [],
+            allowFrom: resolveTelegramAllowFrom(process.env.TELEGRAM_ALLOW_FROM, config.channels.telegram?.allowFrom),
         }
     }
 
@@ -638,11 +642,19 @@ async function startDaemon() {
     // External supervisor heartbeat. The supervisor is a separate process and
     // remains able to restart Nova when this event loop or process dies.
     const supervisorUrl = process.env.NOVA_SUPERVISOR_URL || 'http://127.0.0.1:3099'
+    // The supervisor API requires its token (R2 NZ-8): env when spawned by the
+    // supervisor, token file when an already running daemon was adopted.
+    const supervisorToken = (): string => {
+        const fromEnv = String(process.env.NOVA_SUPERVISOR_TOKEN || '').trim()
+        if (fromEnv) return fromEnv
+        try { return readFileSync(join(process.cwd(), '.nova-data', 'supervisor.token'), 'utf8').trim() } catch { return '' }
+    }
     const sendSupervisorHeartbeat = async () => {
         try {
+            const token = supervisorToken()
             await fetch(`${supervisorUrl}/api/heartbeat`, {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
                 body: JSON.stringify({ pid: process.pid, services: serviceRuntime.getStatus(), timestamp: Date.now() }),
                 signal: AbortSignal.timeout(2000),
             })
@@ -699,14 +711,9 @@ async function startDaemon() {
                     ...availableLLMs.map((m: any) => m.model),
                     ...available.map((m: any) => m.id),
                 ])]
-                // preferLocal: false — MiniMax/Cloud APIs are primary, local models are fallback only.
-                // Local models (qwen2.5:3b, gemma, etc.) are only used when cloud APIs are unavailable.
-                const hasMiniMax = availableModelIds.some(id => id.toLowerCase().startsWith('minimax'))
-                const hasCloudApi = availableModelIds.some(id =>
-                    id.toLowerCase().startsWith('minimax') ||
-                    id.toLowerCase().startsWith('gpt') ||
-                    id.toLowerCase().startsWith('claude')
-                )
+                // Local first (R2 UEB-13, Alfred's rule "Daten lokal, Cloud nie still"):
+                // a reachable cloud key must not silently flip the router to cloud.
+                // An explicitly configured cloud primary model still applies.
 
                 // Use already-parsed config (don't re-read xaventra.config.json — it may be stale or mid-write)
                 // `config` is the authoritative in-memory config loaded at daemon startup
@@ -717,7 +724,7 @@ async function startDaemon() {
 
                 configureRouter({
                     availableModels: availableModelIds,
-                    preferLocal: !hasCloudApi,
+                    preferLocal: true,
                     maxCostTier: 'high',
                     preferSpeed: false,
                     preferredModel,
@@ -777,28 +784,9 @@ async function startDaemon() {
             .catch(() => { })
     }, 2 * 60 * 60 * 1000)
 
-    // ProviderRegistry: Auto-detect TTS engine based on available providers
-    setTimeout(async () => {
-        try {
-            const { getProviderRegistry } = await import('./llm/provider-registry.js')
-            const reg = getProviderRegistry()
-            const ttsProv = reg.getBestTTSProvider()
-            if (ttsProv) {
-                const cfg = (state as any).config
-                if (cfg?.voice?.enabled && cfg.voice.ttsEngine !== ttsProv.provider.id) {
-                    cfg.voice.ttsEngine = ttsProv.provider.id
-                    console.log(`[Nova] 🎙 Auto-detected TTS provider: ${ttsProv.provider.name}`)
-                }
-            }
-            // Auto-detect preferCloud based on live connectivity
-            const preferCloud = await reg.shouldPreferCloud()
-            if (preferCloud) {
-                const { configureRouter } = await import('./layers/L18-llm-router.js')
-                configureRouter({ preferLocal: false })
-                console.log(`[Nova] 🌐 ProviderRegistry: Cloud verfügbar — preferLocal=false gesetzt`)
-            }
-        } catch { /* non-critical */ }
-    }, 5_000)
+    // R2 UEB-13: the former ProviderRegistry block (TTS engine switch, now
+    // without effect, and preferLocal=false on cloud connectivity) is removed;
+    // the router stays local-first.
 
     // VRAM Manager (async, non-blocking)
     import('./layers/vram-manager.js').then(m => {
@@ -852,9 +840,20 @@ async function startDaemon() {
         const _repairEngine = getSelfRepairEngine() // Triggered for initialization
 
         // Global error handler for self-repair
+        // A single uncaught exception is diagnosed and tolerated; repeated
+        // ones mean an undefined process state. Exit non-zero so the
+        // supervisor/systemd restarts a clean daemon (R2 NZ-29).
+        const uncaughtAt: number[] = []
         process.on('uncaughtException', (error) => {
             console.error('[L0] Uncaught Exception:', error.message)
             handleUncaughtError(error)
+            const now = Date.now()
+            uncaughtAt.push(now)
+            while (uncaughtAt.length && now - uncaughtAt[0] > 10 * 60_000) uncaughtAt.shift()
+            if (uncaughtAt.length >= 3) {
+                console.error('[L0] 3 uncaught exceptions within 10 min — exiting for a clean restart')
+                setTimeout(() => process.exit(1), 1_000).unref?.()
+            }
         })
 
         process.on('unhandledRejection', (reason) => {
@@ -1406,19 +1405,10 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Health Monitor nicht verfügbar: ${err}`)
         }
 
-        startHeartbeat(async (task) => {
-            console.log(`[L0 Heartbeat] Task fällig: ${task.description}`)
-
-            // Find the channel to send to
-            if (task.channel === 'Telegram' && state.channels.telegram) {
-                try {
-                    await state.channels.telegram.send({ to: task.userId, content: `⏰ Erinnerung: ${task.description}` })
-                    console.log(`[L0 Heartbeat] ✓ Erinnerung gesendet an ${task.userId}`)
-                } catch (err) {
-                    console.error(`[L0 Heartbeat] Fehler: ${err}`)
-                }
-            }
-
+        // Periodic work has its own 5-minute tick (R2 UEB-5). Before, it only
+        // ran inside the heartbeat callback, i.e. only when a scheduled task
+        // was due (never, in practice).
+        const runPeriodicHeartbeatWork = async (): Promise<void> => {
             // Run health check with each heartbeat tick
             if (healthMonitorReady) {
                 try {
@@ -1460,6 +1450,32 @@ async function startDaemon() {
                     }
                 }
             } catch { /* non-critical */ }
+        }
+        let periodicHeartbeatRunning = false
+        setInterval(() => {
+            if (periodicHeartbeatRunning) return
+            periodicHeartbeatRunning = true
+            void runPeriodicHeartbeatWork()
+                .catch(() => undefined)
+                .finally(() => { periodicHeartbeatRunning = false })
+        }, 5 * 60 * 1000).unref?.()
+
+        startHeartbeat(async (task) => {
+            // The L0 heartbeat may pass a pseudo task on ticks without due
+            // tasks (layers fix R2 L3, id 'heartbeat-tick'). Periodic work
+            // already runs on the tick above, so it is not a "due task".
+            if (task.id === 'heartbeat-tick' || task.channel === 'heartbeat') return
+            console.log(`[L0 Heartbeat] Task fällig: ${task.description}`)
+
+            // Find the channel to send to
+            if (task.channel === 'Telegram' && state.channels.telegram) {
+                try {
+                    await state.channels.telegram.send({ to: task.userId, content: `⏰ Erinnerung: ${task.description}` })
+                    console.log(`[L0 Heartbeat] ✓ Erinnerung gesendet an ${task.userId}`)
+                } catch (err) {
+                    console.error(`[L0 Heartbeat] Fehler: ${err}`)
+                }
+            }
         }, 5 * 60 * 1000)  // Check every 5 minutes
 
         const pending = getDueTasks().length
@@ -1574,32 +1590,37 @@ async function startDaemon() {
             })
         }
 
-        // Register Telegram channel
-        if (state.channels.telegram) {
-            proactive.registerChannel({
-                name: 'telegram',
-                isConnected: () => !!state.channels.telegram,
-                send: async (userId, content) => {
-                    const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                    if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
-                    if (!await verifyLiveServiceLeadership('telegram')) return false
-                    await state.channels.telegram.send({ to: userId, content })
-                    return true
-                },
-            })
-        }
+        // Register channels unconditionally (R2 NZ-10): Telegram may connect
+        // after boot, after a reconnect or when a standby node becomes Main.
+        // isConnected() is evaluated per message; until then messages are
+        // deferred in the proactive queue instead of "channel not registered".
+        proactive.registerChannel({
+            name: 'telegram',
+            isConnected: () => !!state.channels.telegram,
+            send: async (userId, content) => {
+                const telegram = state.channels.telegram
+                if (!telegram) return false
+                const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
+                if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
+                if (!await verifyLiveServiceLeadership('telegram')) return false
+                await telegram.send({ to: userId, content })
+                return true
+            },
+        })
 
-        // Register WhatsApp channel
-        if (state.channels.whatsapp) {
-            proactive.registerChannel({
-                name: 'whatsapp',
-                isConnected: () => !!state.channels.whatsapp,
-                send: async (userId, content) => {
-                    await state.channels.whatsapp.send({ to: userId, content })
-                    return true
-                },
-            })
-        }
+        proactive.registerChannel({
+            name: 'whatsapp',
+            isConnected: () => !!state.channels.whatsapp,
+            send: async (userId, content) => {
+                const whatsapp = state.channels.whatsapp
+                if (!whatsapp) return false
+                await whatsapp.send({ to: userId, content })
+                return true
+            },
+        })
+
+        // Deliver deferred messages (quiet hours, budget, channel reconnect).
+        setInterval(() => { void proactive.processQueue().catch(() => undefined) }, 60_000).unref?.()
 
         // Wire sub-agent events to proactive messenger (auto-report)
         subAgentManager.on('task-complete', async (event: any) => {
@@ -1634,7 +1655,8 @@ async function startDaemon() {
                 content,
                 priority: 'normal',
                 type: 'notification',
-                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1 }),
+                // Per-job dedupe key: different jobs within 30 min are not duplicates (R2 NZ-12).
+                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1, dedupeKey: `scheduler:${userId}:${content}`.slice(0, 200) }),
             })
         })
 
@@ -2068,7 +2090,7 @@ async function startDaemon() {
                     if (mission && ['planning', 'active'].includes(mission.status)) return false
                     const { getOutcomeLedger } = await import('./core/outcome-ledger.js')
                     const ledger = getOutcomeLedger()
-                    ledger.failStaleRuns()
+                    ledger.failStaleRuns(undefined, undefined, { keepLiveRuns: true })
                     return !ledger.listRuns(200).some(run => run.status === 'running')
                 })
                 if (!decision.leader && decision.reason !== 'local node is not Main') {
@@ -2309,8 +2331,9 @@ async function startDaemon() {
         const monitor = getServiceMonitor()
             ; (state as any).serviceMonitor = monitor
 
-        // Wire alerts to the fenced proactive channel.
-        if (state.channels.telegram) {
+        // Wire alerts to the fenced proactive channel. Always wired: the
+        // governed path checks channel and leadership per alert (R2 NZ-10).
+        {
             monitor.setAlertCallback(async (target, status) => {
                 const msg = status === 'down'
                     ? `🚨 *ALERT: ${target.name} ist DOWN!*\n\nURL: ${target.url}\nSeit: ${target.downSince ? new Date(target.downSince).toLocaleString('de-DE') : 'jetzt'}\nFehlversuche: ${target.consecutiveFailures}`
@@ -2324,6 +2347,9 @@ async function startDaemon() {
                         status === 'down' ? 'error' : 'info',
                         0.98,
                         `service:${target.name}:${status}`,
+                        // Measured by the L19 probe: explicit evidence, otherwise
+                        // the event bus suppresses the alert (R2 NZ-11).
+                        [`health:service:${target.name}`],
                     )
                 } catch {
                     console.log(`[L19] Alert could not be sent: ${msg.slice(0, 100)}`)
@@ -2345,8 +2371,8 @@ async function startDaemon() {
         const nodeHealth = getNodeHealthMonitor()
             ; (state as any).nodeHealth = nodeHealth
 
-        // Wire alerts to Telegram proactive messaging
-        if (state.channels.telegram) {
+        // Wire alerts to Telegram proactive messaging (always, R2 NZ-10)
+        {
             nodeHealth.setAlertCallback(async (message: string) => {
                 try {
                     await (state as any).sendGovernedProactive?.(message, 'node-health', 'error', 0.98)
@@ -2499,8 +2525,8 @@ async function startDaemon() {
             })
         }
 
-        // === FEATURE 5: Wire insight delivery to Telegram ===
-        if (state.channels.telegram) {
+        // === FEATURE 5: Wire insight delivery to Telegram (always, R2 NZ-10) ===
+        {
             insightEngine.setSendFunction(async (userId: string, channel: string, content: string) => {
                 try {
                     const { isInternalOutboundArtifact } = await import('./core/outbound-content-guard.js')
@@ -2671,6 +2697,7 @@ async function startDaemon() {
                     'info',
                     0.99,
                     `startup-health:${(state as any).startTime || 'current'}`,
+                    ['health:startup'],
                 )
                 console.log(`[Nova] ${sent ? '✓ Startup Health Report governed gesendet' : 'Startup Health Report durch Policy unterdrückt'}`)
             } else {
@@ -2760,6 +2787,24 @@ async function startDaemon() {
 
         // Stop LearningEngine
         ;(state as any).learningCoordinator?.stop?.()
+
+        // Flush session summaries and user patterns (R2 NZ-24; previously only
+        // in the unused gracefulShutdown). Bounded so a slow summary cannot
+        // block the shutdown.
+        const boundedStep = (step: Promise<unknown>, ms: number) =>
+            Promise.race([step, new Promise(resolve => setTimeout(resolve, ms).unref?.())])
+        try {
+            const { flushAllSessions } = await import('./layers/L6-session-summary.js')
+            await boundedStep(flushAllSessions(), 10_000)
+            console.log('[Nova] ✓ Session-Summaries gespeichert')
+        } catch (err) {
+            console.log(`[Nova] Session flush error: ${err}`)
+        }
+        try {
+            const { flush } = await import('./intelligence/user-patterns.js')
+            flush()
+            console.log('[Nova] ✓ User-Patterns gespeichert')
+        } catch { /* non-critical */ }
 
         // Stop signed mesh listeners, pollers and outbox retries before exit.
         try {

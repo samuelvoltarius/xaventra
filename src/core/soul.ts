@@ -8,7 +8,7 @@
  * - Updates: /persona command or via chat
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, renameSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ============================================
@@ -37,6 +37,13 @@ const DEFAULT_SOUL: Soul = {
 }
 
 let cachedSoul: Soul | null = null
+// Cache key (path + mtime): an external edit of SOUL.md must not be masked by
+// the process-wide cache forever (R2 NZ-3).
+let cachedSoulKey = ''
+
+function soulFileKey(path: string): string {
+    try { return `${path}:${statSync(path).mtimeMs}` } catch { return '' }
+}
 
 export function getSoulPath(): string {
     const rootPath = join(process.cwd(), 'SOUL.md')
@@ -49,9 +56,9 @@ export function soulExists(): boolean {
 }
 
 export function loadSoul(): Soul {
-    if (cachedSoul) return cachedSoul
-
     const path = getSoulPath()
+    if (cachedSoul && cachedSoulKey && cachedSoulKey === soulFileKey(path)) return cachedSoul
+
     if (!existsSync(path)) {
         return { ...DEFAULT_SOUL }
     }
@@ -60,6 +67,7 @@ export function loadSoul(): Soul {
         const content = readFileSync(path, 'utf-8')
         const soul = parseSoulFile(content)
         cachedSoul = soul
+        cachedSoulKey = soulFileKey(path)
         return soul
     } catch (err) {
         console.log(`[Soul] Failed to load: ${err}`)
@@ -74,8 +82,15 @@ export function saveSoul(soul: Soul): void {
     }
 
     const content = formatSoulFile(soul)
-    writeFileSync(getSoulPath(), content)
+    const path = getSoulPath()
+    // The short soul format is lossy for a hand-written root SOUL.md: keep the
+    // previous file as .bak and replace atomically (R2 NZ-3).
+    if (existsSync(path)) copyFileSync(path, `${path}.bak`)
+    const tmp = `${path}.${process.pid}.tmp`
+    writeFileSync(tmp, content)
+    renameSync(tmp, path)
     cachedSoul = soul
+    cachedSoulKey = soulFileKey(path)
     console.log(`[Soul] Saved: ${soul.name}`)
 }
 
@@ -342,7 +357,7 @@ Du läufst AUF DEM PC DES USERS. Du bist NICHT in der Cloud. Du hast direkten Zu
 ${_getCapabilitiesLive()}
 
 Wenn ein Tool fehlt, installiere es SELBST mit dem verfügbaren Package Manager (run_command).
-WICHTIG: Wenn du ein Gerät per SSH erreichen sollst, nutze IMMER die IP aus "Bekannte Geräte" oben — KEINE anderen IPs!
+WICHTIG: Wenn du ein Gerät per SSH erreichen sollst, nutze die IP aus dem SSH-Inventar, falls vorhanden — keine geratenen IPs!
 SAGE NIEMALS "Ich bin nicht in deinem Netzwerk" — du läufst auf dem gleichen PC!
 
 ## SELBST-EVOLUTION (KRITISCH!)

@@ -11,8 +11,10 @@
  */
 
 import { spawn, ChildProcess } from 'node:child_process'
-import { existsSync, appendFileSync, mkdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { existsSync, appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 
 // ============================================
@@ -27,7 +29,40 @@ const CONFIG = {
     heartbeatFailuresBeforeRestart: 3,
     maxRestarts: 5,
     restartDelay: 5000,        // 5 seconds between restarts
+    // A heartbeat only proves recovery after the daemon stayed up this long;
+    // otherwise a crash shortly after boot restarts forever (R2 NZ-23).
+    stableUptimeMs: 10 * 60_000,
     logDir: '.nova-logs',
+    // The API controls the daemon: loopback only, token required (R2 NZ-8).
+    host: '127.0.0.1',
+    tokenFile: join('.nova-data', 'supervisor.token'),
+}
+
+/** Shared secret for the supervisor API. The spawned daemon receives it via
+ * NOVA_SUPERVISOR_TOKEN; an adopted daemon reads CONFIG.tokenFile. */
+export function loadSupervisorToken(): string {
+    const fromEnv = String(process.env.NOVA_SUPERVISOR_TOKEN || '').trim()
+    if (fromEnv.length >= 16) return fromEnv
+    try {
+        const existing = readFileSync(CONFIG.tokenFile, 'utf8').trim()
+        if (existing.length >= 16) return existing
+    } catch { /* create below */ }
+    const token = randomBytes(32).toString('hex')
+    mkdirSync(join(CONFIG.tokenFile, '..'), { recursive: true })
+    writeFileSync(CONFIG.tokenFile, token + '\n', { mode: 0o600 })
+    return token
+}
+
+let supervisorToken = ''
+export function setSupervisorTokenForTest(token: string): void { supervisorToken = token }
+
+function isAuthorized(req: IncomingMessage): boolean {
+    const header = String(req.headers?.authorization || '')
+    const presented = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+    if (!supervisorToken || !presented) return false
+    const a = Buffer.from(presented)
+    const b = Buffer.from(supervisorToken)
+    return a.length === b.length && timingSafeEqual(a, b)
 }
 
 // ============================================
@@ -44,6 +79,10 @@ interface SupervisorState {
     services: Record<string, unknown>
     novaPid: number | null
     missedHeartbeats: number
+    /** PID that was adopted (not spawned) by this supervisor. */
+    adoptedPid: number | null
+    /** Adopted PID that stopped sending heartbeats: never adopt it again. */
+    rejectedPid: number | null
 }
 
 const state: SupervisorState = {
@@ -56,7 +95,10 @@ const state: SupervisorState = {
     services: {},
     novaPid: null,
     missedHeartbeats: 0,
+    adoptedPid: null,
+    rejectedPid: null,
 }
+export const supervisorState = state
 
 function isProcessAlive(pid: number | null | undefined): boolean {
     if (!pid) return false
@@ -98,8 +140,14 @@ function startNova(): void {
     }
 
     const existingPid = pidFromFile()
-    if (isProcessAlive(existingPid)) {
+    if (existingPid && existingPid === state.rejectedPid && isProcessAlive(existingPid)) {
+        // The hanging adopted daemon ignored SIGTERM: it must not be adopted
+        // again, otherwise the supervisor loops on "adopted" forever (R2 NZ-23).
+        log(`Adopted Nova (PID: ${existingPid}) still hangs, force killing`, 'WARN')
+        try { process.kill(existingPid, 'SIGKILL') } catch { /* already gone */ }
+    } else if (isProcessAlive(existingPid)) {
         state.novaPid = existingPid
+        state.adoptedPid = existingPid
         state.status = 'running'
         state.startTime = Date.now()
         state.lastHeartbeat = Date.now()
@@ -119,6 +167,7 @@ function startNova(): void {
             cwd: process.cwd(),
             stdio: ['ignore', 'pipe', 'pipe'],
             shell: false,
+            env: { ...process.env, NOVA_SUPERVISOR_TOKEN: supervisorToken },
         })
         state.novaProcess = child
 
@@ -194,7 +243,7 @@ function stopNova(): void {
     }
 }
 
-function handleCrash(reason: string): void {
+export function handleCrash(reason: string): void {
     state.status = 'crashed'
     state.crashes.push({ time: Date.now(), reason })
 
@@ -204,6 +253,15 @@ function handleCrash(reason: string): void {
     }
 
     log(`Nova crashed: ${reason}`, 'ERROR')
+
+    // An adopted daemon has no ChildProcess handle. If it hangs, terminate it
+    // by PID so the restart does not simply adopt the same hanging process.
+    if (!state.novaProcess && state.adoptedPid && isProcessAlive(state.adoptedPid)) {
+        state.rejectedPid = state.adoptedPid
+        log(`Terminating hanging adopted Nova (PID: ${state.adoptedPid})`, 'WARN')
+        try { process.kill(state.adoptedPid, 'SIGTERM') } catch { /* already gone */ }
+    }
+    state.adoptedPid = null
 
     // Check restart limit
     if (state.restartCount >= CONFIG.maxRestarts) {
@@ -227,9 +285,10 @@ function handleCrash(reason: string): void {
 // Heartbeat Monitor
 // ============================================
 
-function receiveHeartbeat(pid?: number): void {
+export function receiveHeartbeat(pid?: number): void {
     state.lastHeartbeat = Date.now()
-    state.restartCount = 0  // Reset on successful heartbeat
+    // Reset only after stable uptime, not on the first heartbeat after boot.
+    if (state.startTime && Date.now() - state.startTime >= CONFIG.stableUptimeMs) state.restartCount = 0
     state.missedHeartbeats = 0
     if (pid && isProcessAlive(pid)) state.novaPid = pid
     if (state.status === 'crashed' || state.status === 'restarting' || state.status === 'starting') {
@@ -255,25 +314,24 @@ function checkHeartbeat(): void {
 // HTTP API
 // ============================================
 
-function handleRequest(req: IncomingMessage, res: ServerResponse): void {
+export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = req.url || '/'
     const method = req.method || 'GET'
 
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    // No CORS: browsers must not drive this API (R2 NZ-8).
     res.setHeader('Content-Type', 'application/json')
-
-    if (method === 'OPTIONS') {
-        res.writeHead(200)
-        res.end()
-        return
-    }
 
     // Routes
     if (url === '/health' && method === 'GET') {
         res.writeHead(200)
         res.end(JSON.stringify({ ok: true, name: 'nova-supervisor' }))
+        return
+    }
+
+    // Everything else can stop/start Nova or fake its health: token required.
+    if (!isAuthorized(req)) {
+        res.writeHead(401)
+        res.end(JSON.stringify({ error: 'Unauthorized' }))
         return
     }
 
@@ -358,10 +416,12 @@ async function main(): Promise<void> {
     console.log('╚═══════════════════════════════════════════════════════╝')
     console.log('')
 
-    // Start HTTP server
+    supervisorToken = loadSupervisorToken()
+
+    // Start HTTP server (loopback only)
     const server = createServer(handleRequest)
-    server.listen(CONFIG.port, () => {
-        log(`Supervisor API running on http://localhost:${CONFIG.port}`)
+    server.listen(CONFIG.port, CONFIG.host, () => {
+        log(`Supervisor API running on http://${CONFIG.host}:${CONFIG.port} (Bearer token: ${CONFIG.tokenFile})`)
         console.log('')
         console.log('  Endpoints:')
         console.log('    GET  /health          - Supervisor health')
@@ -395,4 +455,6 @@ async function main(): Promise<void> {
     })
 }
 
-main().catch(console.error)
+// Run only as entry point (npm run supervisor), not when imported by tests.
+const entry = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : ''
+if (entry === import.meta.url) main().catch(console.error)

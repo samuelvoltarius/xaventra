@@ -215,9 +215,12 @@ export async function startTask(userMessage: string, channel: string, user: stri
 /**
  * Advance to next step. Called when a tool finishes or major progress made.
  */
-export function advanceStep(toolName?: string, success = true): void {
+export function advanceStep(toolName?: string, success = true, taskId?: string): void {
     const task = trackerState.currentTask
     if (!task || task.status !== 'active') return
+    // Concurrent requests share one tracker: a caller that knows its task id
+    // must not advance someone else's task (R2 NZ-37).
+    if (taskId && task.id !== taskId) return
 
     const current = task.steps[task.currentStep]
     if (current) {
@@ -242,9 +245,10 @@ export function advanceStep(toolName?: string, success = true): void {
 /**
  * Complete the current task. Called after reply is sent.
  */
-export function completeTask(failed = false): void {
+export function completeTask(failed = false, taskId?: string): void {
     const task = trackerState.currentTask
     if (!task) return
+    if (taskId && task.id !== taskId) return
 
     // Mark remaining steps
     for (const step of task.steps) {
@@ -289,7 +293,7 @@ export function getFormattedStatus(): string {
 📋 Letzte Aufgabe:
 "${last.summary}"
 ✅ Abgeschlossen in ${dur} (${last.steps.length} Schritte)
-📅 ${new Date(last.finishedAt || last.startedAt).toLocaleString('de-DE')}`
+📅 ${new Date(last.finishedAt || last.startedAt).toLocaleString('de-DE', { timeZone: 'Europe/Vienna' })}`
         }
         return '💤 *Keine aktive Aufgabe* — Ich warte auf deine nächste Anfrage.'
     }
@@ -336,8 +340,9 @@ export function getFormattedHistory(count = 5): string {
             ? t.duration < 1000 ? `${t.duration}ms` : `${(t.duration / 1000).toFixed(1)}s`
             : '?'
         const icon = t.status === 'done' ? '✅' : '❌'
+        // Owner wall clock, not the server TZ (often UTC) (R2 NZ-43).
         const date = new Date(t.startedAt).toLocaleString('de-DE', {
-            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Europe/Vienna',
         })
         return `${i + 1}. ${icon} ${t.summary}\n   ${t.steps.length} Schritte | ${dur} | ${date}`
     }).join('\n\n')
@@ -360,6 +365,19 @@ export function getTaskData(): { current: TrackedTask | null, history: TrackedTa
 // ============================================
 
 const LOG_RING_SIZE = 200
+
+/** Never throw from the console wrapper: circular objects and BigInt break
+ * JSON.stringify, and Error objects would otherwise be logged as {} (R2 NZ-20). */
+function formatLogArg(value: unknown): string {
+    if (typeof value === 'string') return value
+    if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`
+    try {
+        const json = JSON.stringify(value)
+        return json === undefined ? String(value) : json
+    } catch {
+        try { return String(value) } catch { return '[unprintable]' }
+    }
+}
 const logRing: string[] = []
 let logInterceptorInstalled = false
 
@@ -376,8 +394,8 @@ export function installLogInterceptor(): void {
     const originalError = console.error.bind(console)
 
     const capture = (level: string, args: unknown[]): void => {
-        const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+        const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Vienna' })
+        const msg = args.map(formatLogArg).join(' ')
         // Clean up ANSI codes and excessive whitespace
         const clean = msg.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '').trim()
         if (!clean) return

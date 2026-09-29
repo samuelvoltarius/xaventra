@@ -32,3 +32,15 @@ describe('tool task context', () => {
         expect(result).not.toContain('Embedding')
     })
 })
+
+describe('numeric option choice (R2 NZ-38)', () => {
+    it('keeps the recent tool context when the user answers with an option number', () => {
+        const history = [
+            { role: 'user', content: 'Prüfe die Docker-Container auf dem Spark' },
+            { role: 'assistant', content: 'Welche Aktion? 1) Logs anzeigen 2) Neustart vorschlagen' },
+        ]
+        const context = buildToolTaskContext(history, '2')
+        expect(context).toContain('Docker-Container')
+        expect(context.endsWith('2')).toBe(true)
+    })
+})
