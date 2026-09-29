@@ -5007,6 +5007,7 @@
     {
       "module": "src/tools/desktop-input-tool.ts",
       "imports": [
+        "../core/execution-control.js",
         "../core/lifecycle-policy.js",
         "../host/capture-agent.js",
         "../host/desktop-input.js",
