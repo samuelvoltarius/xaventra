@@ -1611,10 +1611,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             setStatus('thinking', content.slice(0, 80))
         } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
 
-        // Task Tracker: start tracking this task
+        // Task Tracker: start tracking this task. The id lets a concurrent
+        // request's completion leave this task alone.
+        let trackedTaskId: string | undefined
         try {
             const { startTask } = await import('./task-tracker.js')
-            await startTask(content, channel, canonicalUser)
+            trackedTaskId = (await startTask(content, channel, canonicalUser))?.id
         } catch (err) { console.debug('[Pipeline] task tracker error:', err) }
 
         // Plugin Hook: beforeLLMCall — plugins may inject context (e.g. Brain knowledge search)
@@ -2126,7 +2128,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Task Tracker: mark task as complete
             try {
                 const { completeTask } = await import('./task-tracker.js')
-                completeTask(Boolean((result as any).error) || result.validation?.success !== true)
+                // Typed for the optional task id so this compiles before and after it exists.
+                ;(completeTask as (failed?: boolean, taskId?: string) => void)(Boolean((result as any).error) || result.validation?.success !== true, trackedTaskId)
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             // Dashboard: update stats
             try {

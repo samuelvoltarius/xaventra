@@ -31,4 +31,9 @@ describe('pipeline passes the principal role to role-gated context', () => {
         expect(pipelineSource).toContain('cacheResponse(systemPrompt, cacheKeyMessages, finalContent')
         expect(pipelineSource).not.toContain("const messages = [{ role: 'user', content }]")
     })
+
+    it('completes only its own tracked task (R2 UEB-26)', () => {
+        expect(pipelineSource).toContain('trackedTaskId = (await startTask(content, channel, canonicalUser))?.id')
+        expect(pipelineSource).toMatch(/completeTask as [^)]*\) => void\)\([^;]*, trackedTaskId\)/)
+    })
 })
