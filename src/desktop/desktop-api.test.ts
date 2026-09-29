@@ -23,6 +23,7 @@ vi.mock('../mesh/leader-election.js', async importOriginal => ({
 }))
 
 afterEach(() => vi.unstubAllEnvs())
+const DESKTOP_TOKEN = ['desktop-test-', 'token-0123456789'].join('')
 
 describe('Desktop execution identity and current-message boundary', () => {
     it('uses the same channel identity mapping as the real pipeline', () => {
@@ -81,7 +82,8 @@ describe('Desktop Doctor repair approval boundary', () => {
     })
 
     it('shows sanitized persisted evidence only to the owner and forwards a transient token to the canonical gate', async () => {
-        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', '')
+        // TOK-1: the owner is authenticated by the Desktop token, not by x-nova-principal.
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', DESKTOP_TOKEN)
         vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
         repairMocks.authoritative = true
         repairMocks.approve.mockClear()
@@ -89,10 +91,14 @@ describe('Desktop Doctor repair approval boundary', () => {
         const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve))
         const endpoint = `http://127.0.0.1:${(server.address() as any).port}/api/desktop`
         const request = (path: string, owner = 'owner', init: RequestInit = {}) => fetch(endpoint + path, {
-            ...init, headers: { 'Content-Type': 'application/json', 'x-nova-principal': owner, ...(init.headers || {}) },
+            ...init, headers: {
+                'Content-Type': 'application/json', 'x-nova-principal': owner,
+                ...(owner === 'owner' ? { Authorization: `Bearer ${DESKTOP_TOKEN}` } : {}), ...(init.headers || {}),
+            },
         })
         try {
-            expect((await request('/trust/repairs', 'different-user')).status).toBe(403)
+            // Without the Desktop token the caller is not the owner, whatever it claims.
+            expect((await request('/trust/repairs', 'different-user')).status).toBe(401)
             const listed = await (await request('/trust/repairs')).json() as any
             expect(listed.authoritative).toBe(true)
             expect(listed.proposals[0]).toMatchObject({ id: 'patch-doctor-1', evidence: { verified: true, rollbackPassed: true, recoveryPassed: true } })
@@ -107,20 +113,20 @@ describe('Desktop Doctor repair approval boundary', () => {
     })
 
     it('fails closed before approval when this process lacks Main/dashboard fencing', async () => {
-        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', ''); vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', DESKTOP_TOKEN); vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
         repairMocks.authoritative = false; repairMocks.approve.mockClear()
         const app = express(); app.use(express.json()); registerDesktopApi(app, () => null)
         const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve))
         try {
             const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/desktop/trust/repairs/patch-doctor-1/approve`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nova-principal': 'owner' }, body: JSON.stringify({ approvalToken: 'never-forwarded' }),
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nova-principal': 'owner', Authorization: `Bearer ${DESKTOP_TOKEN}` }, body: JSON.stringify({ approvalToken: 'never-forwarded' }),
             })
             expect(response.status).toBe(409); expect(repairMocks.approve).not.toHaveBeenCalled()
         } finally { repairMocks.authoritative = true; server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     })
 
     it('never resubmits a pending or terminal repair to the activation controller', async () => {
-        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', ''); vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', DESKTOP_TOKEN); vi.stubEnv('NOVA_DESKTOP_OWNER_ID', 'owner')
         repairMocks.authoritative = true; repairMocks.approve.mockClear()
         const prior = repairMocks.proposals[0].status
         repairMocks.proposals[0].status = 'applied'
@@ -128,7 +134,7 @@ describe('Desktop Doctor repair approval boundary', () => {
         const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve))
         try {
             const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/desktop/trust/repairs/patch-doctor-1/approve`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nova-principal': 'owner' }, body: JSON.stringify({ approvalToken: 'must-not-forward' }),
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nova-principal': 'owner', Authorization: `Bearer ${DESKTOP_TOKEN}` }, body: JSON.stringify({ approvalToken: 'must-not-forward' }),
             })
             expect(response.status).toBe(409); expect(repairMocks.approve).not.toHaveBeenCalled()
             expect(JSON.stringify(await response.json())).not.toContain('must-not-forward')
