@@ -1583,32 +1583,37 @@ async function startDaemon() {
             })
         }
 
-        // Register Telegram channel
-        if (state.channels.telegram) {
-            proactive.registerChannel({
-                name: 'telegram',
-                isConnected: () => !!state.channels.telegram,
-                send: async (userId, content) => {
-                    const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                    if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
-                    if (!await verifyLiveServiceLeadership('telegram')) return false
-                    await state.channels.telegram.send({ to: userId, content })
-                    return true
-                },
-            })
-        }
+        // Register channels unconditionally (R2 NZ-10): Telegram may connect
+        // after boot, after a reconnect or when a standby node becomes Main.
+        // isConnected() is evaluated per message; until then messages are
+        // deferred in the proactive queue instead of "channel not registered".
+        proactive.registerChannel({
+            name: 'telegram',
+            isConnected: () => !!state.channels.telegram,
+            send: async (userId, content) => {
+                const telegram = state.channels.telegram
+                if (!telegram) return false
+                const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
+                if (!await verifyLiveServiceLeadership(MAIN_SERVICE)) return false
+                if (!await verifyLiveServiceLeadership('telegram')) return false
+                await telegram.send({ to: userId, content })
+                return true
+            },
+        })
 
-        // Register WhatsApp channel
-        if (state.channels.whatsapp) {
-            proactive.registerChannel({
-                name: 'whatsapp',
-                isConnected: () => !!state.channels.whatsapp,
-                send: async (userId, content) => {
-                    await state.channels.whatsapp.send({ to: userId, content })
-                    return true
-                },
-            })
-        }
+        proactive.registerChannel({
+            name: 'whatsapp',
+            isConnected: () => !!state.channels.whatsapp,
+            send: async (userId, content) => {
+                const whatsapp = state.channels.whatsapp
+                if (!whatsapp) return false
+                await whatsapp.send({ to: userId, content })
+                return true
+            },
+        })
+
+        // Deliver deferred messages (quiet hours, budget, channel reconnect).
+        setInterval(() => { void proactive.processQueue().catch(() => undefined) }, 60_000).unref?.()
 
         // Wire sub-agent events to proactive messenger (auto-report)
         subAgentManager.on('task-complete', async (event: any) => {
@@ -1643,7 +1648,8 @@ async function startDaemon() {
                 content,
                 priority: 'normal',
                 type: 'notification',
-                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1 }),
+                // Per-job dedupe key: different jobs within 30 min are not duplicates (R2 NZ-12).
+                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1, dedupeKey: `scheduler:${userId}:${content}`.slice(0, 200) }),
             })
         })
 
@@ -2318,8 +2324,9 @@ async function startDaemon() {
         const monitor = getServiceMonitor()
             ; (state as any).serviceMonitor = monitor
 
-        // Wire alerts to the fenced proactive channel.
-        if (state.channels.telegram) {
+        // Wire alerts to the fenced proactive channel. Always wired: the
+        // governed path checks channel and leadership per alert (R2 NZ-10).
+        {
             monitor.setAlertCallback(async (target, status) => {
                 const msg = status === 'down'
                     ? `🚨 *ALERT: ${target.name} ist DOWN!*\n\nURL: ${target.url}\nSeit: ${target.downSince ? new Date(target.downSince).toLocaleString('de-DE') : 'jetzt'}\nFehlversuche: ${target.consecutiveFailures}`
@@ -2333,6 +2340,9 @@ async function startDaemon() {
                         status === 'down' ? 'error' : 'info',
                         0.98,
                         `service:${target.name}:${status}`,
+                        // Measured by the L19 probe: explicit evidence, otherwise
+                        // the event bus suppresses the alert (R2 NZ-11).
+                        [`health:service:${target.name}`],
                     )
                 } catch {
                     console.log(`[L19] Alert could not be sent: ${msg.slice(0, 100)}`)
@@ -2354,8 +2364,8 @@ async function startDaemon() {
         const nodeHealth = getNodeHealthMonitor()
             ; (state as any).nodeHealth = nodeHealth
 
-        // Wire alerts to Telegram proactive messaging
-        if (state.channels.telegram) {
+        // Wire alerts to Telegram proactive messaging (always, R2 NZ-10)
+        {
             nodeHealth.setAlertCallback(async (message: string) => {
                 try {
                     await (state as any).sendGovernedProactive?.(message, 'node-health', 'error', 0.98)
@@ -2508,8 +2518,8 @@ async function startDaemon() {
             })
         }
 
-        // === FEATURE 5: Wire insight delivery to Telegram ===
-        if (state.channels.telegram) {
+        // === FEATURE 5: Wire insight delivery to Telegram (always, R2 NZ-10) ===
+        {
             insightEngine.setSendFunction(async (userId: string, channel: string, content: string) => {
                 try {
                     const { isInternalOutboundArtifact } = await import('./core/outbound-content-guard.js')
@@ -2680,6 +2690,7 @@ async function startDaemon() {
                     'info',
                     0.99,
                     `startup-health:${(state as any).startTime || 'current'}`,
+                    ['health:startup'],
                 )
                 console.log(`[Nova] ${sent ? '✓ Startup Health Report governed gesendet' : 'Startup Health Report durch Policy unterdrückt'}`)
             } else {
