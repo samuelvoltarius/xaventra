@@ -121,7 +121,9 @@ export function listenCaptureAgent(socketPath: string, tokenFile: string) {
     const server = createCaptureAgent(readFileSync(tokenFile, 'utf8').trim(),captureSessionDesktop,
         journal ? async(id,action)=>{await assertDesktopSessionUnlocked();return executeDesktopInputOnce(journal,id,action,runDesktopInput)} : undefined)
     // An existing socket is never unlinked or stolen from another process.
-    server.listen(socketPath, () => chmodSync(socketPath, 0o660))
+    // MI-23: create the socket with 0660 already (umask during the synchronous bind), no open window.
+    const previousUmask = process.umask(0o117)
+    try { server.listen(socketPath, () => chmodSync(socketPath, 0o660)) } finally { process.umask(previousUmask) }
     return server
 }
 
