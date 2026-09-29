@@ -2,6 +2,9 @@
 
 ## [2.78.57] — 2026-09-29
 
+- Refresh Desktop build-tool lockfile dependencies for the fast-uri authority
+  parsing and undici WebSocket decompression advisories; retain audit gates.
+
 - Preserve actual screenshot authorization/capture failures in replies; bind
   capture delivery to the authenticated Telegram principal and accept the
   canonical channel spelling. Add a bounded desktop-session capture adapter
