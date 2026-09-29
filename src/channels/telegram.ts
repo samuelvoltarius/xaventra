@@ -22,9 +22,18 @@ export interface TelegramConfig {
     username?: string
     /** Runtime-owned Main + Telegram lease verifier. Never inferred from the bot token. */
     verifyAuthority?: () => Promise<boolean>
+    /**
+     * Durable inbound log. Called synchronously from the update listener,
+     * i.e. before the library acknowledges the update with the next poll
+     * offset and before any (network) authority check. When set, a persisted
+     * text/photo update is always handed to the message handler, which owns
+     * the authority decision (defer instead of drop).
+     */
+    persistInbound?: (message: { id: string; chatId: string; from: string; content: string }) => void
 }
 
 const UPDATE_ID_PROPERTY = '__novaUpdateId'
+const PERSISTED_PROPERTY = '__novaPersisted'
 
 /** Copy the raw update_id onto the message object (non-enumerable) so the
  * 'message' listeners can build a globally unique dedup key. */
@@ -228,10 +237,7 @@ export class TelegramAdapter implements ChannelAdapter {
         }
 
         // Handle incoming messages (queued per chat to prevent API rate-limiting)
-        this.bot.on('message', (msg: any) => {
-            const chatId = String(msg.chat?.id || 'unknown')
-            this.enqueueMessage(chatId, () => this.handleMessage(msg))
-        })
+        this.bot.on('message', (msg: any) => this.onRawMessage(msg))
 
         // Handle voice messages
         this.bot.on('voice', (msg: any) => {
@@ -1164,12 +1170,34 @@ export class TelegramAdapter implements ChannelAdapter {
         }
     }
 
-    private async handleMessage(msg: any): Promise<void> {
-        if (!(await this.acceptInbound())) return
-        const chatId = msg.chat.id.toString()
+    /** Synchronous 'message' listener: persist first, then process per chat. */
+    private onRawMessage(msg: any): void {
+        this.persistInboundSync(msg)
+        const chatId = String(msg?.chat?.id || 'unknown')
+        this.enqueueMessage(chatId, () => this.handleMessage(msg))
+    }
+
+    private persistInboundSync(msg: any): void {
+        if (!this.config.persistInbound || !msg?.chat) return
+        if (!this.passesInboundPolicy(msg, false)) return
+        const content = msg.text || msg.caption || (msg.photo?.length ? 'Was zeigt dieses Bild?' : '')
+        if (!content) return
+        try {
+            this.config.persistInbound({
+                id: telegramInboundKey(msg), chatId: String(msg.chat.id),
+                from: String(msg.from?.id ?? ''), content: String(content),
+            })
+            Object.defineProperty(msg, PERSISTED_PROPERTY, { value: true, enumerable: false, configurable: true })
+        } catch (error) {
+            console.warn(`[Nova Telegram] Inbound persistence failed; falling back to live-authority admission: ${error}`)
+        }
+    }
+
+    /** Local, synchronous admission policy (allowlist for DMs, group mention rule). */
+    private passesInboundPolicy(msg: any, log: boolean): boolean {
         const userId = msg.from?.id?.toString() ?? ''
         const username = msg.from?.username ?? ''
-        const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        const isGroup = msg.chat?.type === 'group' || msg.chat?.type === 'supergroup'
 
         // Check allowlist for DMs
         if (!isGroup && this.config.allowFrom?.length) {
@@ -1177,16 +1205,33 @@ export class TelegramAdapter implements ChannelAdapter {
                 a => a === userId || a === username || a === `@${username}`
             )
             if (!allowed) {
-                console.log(`[Nova Telegram] Ignoring from non-allowed: ${username || userId}`)
-                return
+                if (log) console.log(`[Nova Telegram] Ignoring from non-allowed: ${username || userId}`)
+                return false
             }
         }
 
         // Check group mention requirement
         if (isGroup && this.config.groupPolicy === 'mention-only') {
             const mentioned = msg.text?.includes(`@${this.botUsername}`)
-            if (!mentioned && !msg.photo) return
+            if (!mentioned && !msg.photo) return false
         }
+        return true
+    }
+
+    private async handleMessage(msg: any): Promise<void> {
+        // A durably persisted update is never dropped here: without live
+        // authority it is handed on (without Bot API effects) so the runtime can
+        // defer it. Unpersisted updates keep the fail-closed drop.
+        const persisted = msg?.[PERSISTED_PROPERTY] === true
+        const authorized = !this.disconnecting && await this.hasLiveAuthority()
+        if (!authorized && !persisted) {
+            console.warn('[Nova Telegram] Eingang verworfen: live Main-/Telegram-Autorität fehlt')
+            return
+        }
+        const chatId = msg.chat.id.toString()
+        const userId = msg.from?.id?.toString() ?? ''
+        const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        if (!this.passesInboundPolicy(msg, true)) return
 
         // Handle text or caption
         let content = msg.text || msg.caption || ''
@@ -1241,11 +1286,13 @@ export class TelegramAdapter implements ChannelAdapter {
         // Track last active chat for proactive messages
         this.lastActiveChat = chatId
 
-        // Auto-react to user message based on sentiment (emojis!)
-        this.autoReactToMessage(chatId, msg.message_id, content)
+        if (authorized) {
+            // Auto-react to user message based on sentiment (emojis!)
+            this.autoReactToMessage(chatId, msg.message_id, content)
 
-        // Show "typing..." indicator while processing
-        this.startTyping(chatId)
+            // Show "typing..." indicator while processing
+            this.startTyping(chatId)
+        }
 
         if (this.messageHandler) {
             // MUST await so errors are caught and typing is always stopped
