@@ -215,9 +215,12 @@ export async function startTask(userMessage: string, channel: string, user: stri
 /**
  * Advance to next step. Called when a tool finishes or major progress made.
  */
-export function advanceStep(toolName?: string, success = true): void {
+export function advanceStep(toolName?: string, success = true, taskId?: string): void {
     const task = trackerState.currentTask
     if (!task || task.status !== 'active') return
+    // Concurrent requests share one tracker: a caller that knows its task id
+    // must not advance someone else's task (R2 NZ-37).
+    if (taskId && task.id !== taskId) return
 
     const current = task.steps[task.currentStep]
     if (current) {
@@ -242,9 +245,10 @@ export function advanceStep(toolName?: string, success = true): void {
 /**
  * Complete the current task. Called after reply is sent.
  */
-export function completeTask(failed = false): void {
+export function completeTask(failed = false, taskId?: string): void {
     const task = trackerState.currentTask
     if (!task) return
+    if (taskId && task.id !== taskId) return
 
     // Mark remaining steps
     for (const step of task.steps) {
