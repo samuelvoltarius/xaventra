@@ -141,7 +141,7 @@ function pruneSubagents(now = Date.now()): void {
 }
 
 /** Parent identity: explicit task fields win, then the governed tool call's context. */
-async function resolveParentIdentity(task: SubagentTask): Promise<{ userId: string; authUserId: string }> {
+export async function resolveParentIdentity(task: SubagentTask): Promise<{ userId: string; authUserId: string }> {
     let context: { userId?: string; authUserId?: string } = {}
     try {
         const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
@@ -379,10 +379,13 @@ async function runMeshSubagent(
  * Spawn a subagent to handle a focused subtask.
  * Returns result when done (respects timeoutMs).
  */
-export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult> {
+export async function spawnSubagent(task: SubagentTask, options: { signal?: AbortSignal } = {}): Promise<SubagentResult> {
     pruneSubagents()
     const id = randomUUID().slice(0, 8)
     const timeoutMs = task.timeoutMs ?? 60_000
+    if (options.signal?.aborted) {
+        return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: task.meshNode ? 'mesh' : 'local', error: 'Subagent interrupted' }
+    }
     const abortSignal = { cancelled: false }
     // Hard abort: fires after timeout and cancels any in-flight fetch inside nova-runner
     const hardAbort = new AbortController()
@@ -418,10 +421,28 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
     }
     run.then(markSettled, markSettled)
 
+    // An external stop ("Nova, stopp", interrupt) cancels the real run:
+    // the hard abort reaches nova-runner and cancels a mesh run remotely.
+    let removeStopListener: (() => void) | undefined
+    const stopped = new Promise<SubagentResult>((resolve) => {
+        if (!options.signal) return
+        const onStop = () => {
+            abortSignal.cancelled = true
+            hardAbort.abort()
+            resolve({
+                id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0,
+                mode: task.meshNode ? 'mesh' : 'local', meshNode: task.meshNode, error: 'Subagent interrupted',
+            })
+        }
+        options.signal.addEventListener('abort', onStop, { once: true })
+        removeStopListener = () => options.signal?.removeEventListener('abort', onStop)
+    })
+
     // Wrap with timeout
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const promise = Promise.race([
         run,
+        stopped,
         new Promise<SubagentResult>((resolve) =>
             timeoutHandle = setTimeout(() => {
                 abortSignal.cancelled = true
@@ -437,7 +458,7 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
                 })
             }, timeoutMs)
         ),
-    ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
+    ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle); removeStopListener?.() })
     timeoutHandle?.unref?.()
 
     const active: ActiveSubagent = {

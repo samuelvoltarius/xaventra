@@ -164,3 +164,23 @@ describe('Self Evolution', async () => {
         expect(stats.failed).toBeLessThanOrEqual(stats.total)
     })
 })
+
+describe('Synthesis sandbox static gate bypasses (R2 MA-10)', async () => {
+    const { validateSkillCode } = await import('./sandbox.js')
+
+    it.each([
+        "const F = (()=>{})['constr'+'uctor']; F('return 1')()",
+        "const x = [].map['constructor']",
+        "Reflect.get(Object, 'x')",
+        "const u = import.meta.url",
+    ])('rejects %s', code => {
+        expect(validateSkillCode(code).valid).toBe(false)
+    })
+
+    it('pipeline validates the generated test code as well', async () => {
+        const { readFileSync } = await import('node:fs')
+        const { fileURLToPath } = await import('node:url')
+        const source = readFileSync(fileURLToPath(new URL('./pipeline.ts', import.meta.url)), 'utf8')
+        expect(source).toMatch(/validateSkillCode\(skill\.testCode/)
+    })
+})

@@ -85,7 +85,14 @@ export class SynthesisPipeline {
             console.log(`[Synthesis] Stage 2: Validating...`)
             currentStage = 'validate'
 
-            const validation = validateSkillCode(skill.code)
+            // The LLM-written test code runs in the same worker as the skill,
+            // so it passes the same static gate.
+            const codeValidation = validateSkillCode(skill.code)
+            const testValidation = validateSkillCode(skill.testCode || '')
+            const validation = {
+                valid: codeValidation.valid && testValidation.valid,
+                errors: [...codeValidation.errors, ...testValidation.errors.map(error => `testCode: ${error}`)],
+            }
             if (!validation.valid) {
                 return {
                     success: false,

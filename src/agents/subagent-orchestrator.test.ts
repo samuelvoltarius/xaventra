@@ -102,3 +102,31 @@ describe('parallel subagents use the authorized parent identity (INT-12)', () =>
         expect(calls.map(call => call.authUserId)).toEqual(['tg-1', 'tg-1'])
     })
 })
+
+// R2 MA-7: an external stop signal cancels the real run, not just the waiting.
+describe('external stop signal (R2 MA-7)', () => {
+    it('aborts the running nova-runner turn and reports cancelled', async () => {
+        let runnerSignal: AbortSignal | undefined
+        runner.runNovaAgent.mockImplementation(async (params: any) => {
+            runnerSignal = params.abortSignal
+            await new Promise(resolve => setTimeout(resolve, 5_000))
+            return done
+        })
+        const stop = new AbortController()
+        const pending = spawnSubagent({ task: 'long research', timeoutMs: 30_000 }, { signal: stop.signal })
+        for (let i = 0; i < 50 && !runnerSignal; i++) await new Promise(resolve => setTimeout(resolve, 5))
+        stop.abort()
+        const started = Date.now()
+        const result = await pending
+        expect(result.status).toBe('cancelled')
+        expect(Date.now() - started).toBeLessThan(1_000)
+        expect(runnerSignal?.aborted).toBe(true)
+    })
+
+    it('does not start at all when already stopped', async () => {
+        const stop = new AbortController(); stop.abort()
+        const result = await spawnSubagent({ task: 'x' }, { signal: stop.signal })
+        expect(result.status).toBe('cancelled')
+        expect(runner.runNovaAgent).not.toHaveBeenCalled()
+    })
+})

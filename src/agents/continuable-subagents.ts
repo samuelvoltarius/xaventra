@@ -7,7 +7,7 @@ import type { SubagentResult, SubagentTask } from './subagent-orchestrator.js'
 export interface ContinuableSubagentProvider {
     name: string
     capabilities: Readonly<{ coldResume: boolean; mesh: boolean; toolFilter: boolean }>
-    run(request: { conversationId: string; task: SubagentTask; prompt: string; signal?: AbortSignal }): Promise<SubagentResult>
+    run(request: { conversationId: string; task: SubagentTask; prompt: string; signal?: AbortSignal; history?: readonly ContinuableTurn[] }): Promise<SubagentResult>
 }
 
 export interface ContinuableTurn {
@@ -34,6 +34,15 @@ export interface ContinuableSubagentRecord {
 
 function hash(value: string): string { return createHash('sha256').update(value).digest('hex') }
 
+/** A follow-up continues the conversation: earlier turns go along, bounded. */
+export function continuationPrompt(turns: readonly ContinuableTurn[], prompt: string): string {
+    const previous = turns.slice(-5)
+    if (previous.length === 0) return prompt
+    const history = previous.map((turn, index) =>
+        `[${index + 1}] Auftrag: ${turn.prompt.slice(0, 1_000)}\nErgebnis (${turn.status}): ${turn.output.slice(0, 2_000)}`).join('\n\n')
+    return `Bisheriger Verlauf dieser Subagent-Konversation:\n${history}\n\nNächster Auftrag: ${prompt}`
+}
+
 export class ContinuableSubagentRuntime {
     private readonly providers = new Map<string, ContinuableSubagentProvider>()
     private readonly records = new Map<string, ContinuableSubagentRecord>()
@@ -56,10 +65,14 @@ export class ContinuableSubagentRuntime {
     async start(task: SubagentTask, provider = task.meshNode ? 'nova-mesh' : 'nova-local'): Promise<ContinuableSubagentRecord> {
         const id = randomUUID()
         const now = new Date().toISOString()
+        // The conversation acts for, and belongs to, the parent principal of
+        // the governed tool call (not a role-less "subagent:<id>" guest).
+        const { resolveParentIdentity } = await import('./subagent-orchestrator.js')
+        const parent = await resolveParentIdentity(task)
         const record: ContinuableSubagentRecord = {
             id,
             provider,
-            task: { ...task, userId: `subagent:${id}` },
+            task: { ...task, userId: parent.userId, authUserId: parent.authUserId },
             principalId: `subagent:${id}`,
             phase: 'idle',
             turns: [],
@@ -75,14 +88,31 @@ export class ContinuableSubagentRuntime {
         const record = this.records.get(id)
         if (!record) throw new Error(`Continuable subagent not found: ${id}`)
         if (!prompt.trim()) throw new Error('Subagent follow-up must not be empty')
+        await this.assertRequester(record)
         return this.runTurn(record, prompt)
     }
 
-    interrupt(id: string): boolean {
+    /** Stops the turn in flight. The provider receives the abort signal and the
+     * turn is recorded as interrupted, never as complete. */
+    interrupt(id: string, requesterAuthUserId?: string): boolean {
         const controller = this.active.get(id)
         if (!controller) return false
+        const record = this.records.get(id)
+        if (requesterAuthUserId && record?.task.authUserId && requesterAuthUserId !== record.task.authUserId) return false
         controller.abort(new Error('Subagent interrupted'))
         return true
+    }
+
+    /** Another principal must not continue (and read) someone else's conversation. */
+    private async assertRequester(record: ContinuableSubagentRecord): Promise<void> {
+        let requester: string | undefined
+        try {
+            const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+            requester = getExecutionPolicyContext().authUserId
+        } catch { /* no governed caller context */ }
+        if (requester && record.task.authUserId && requester !== record.task.authUserId) {
+            throw new Error(`Continuable subagent ${record.id} belongs to another principal`)
+        }
     }
 
     get(id: string): ContinuableSubagentRecord | undefined {
@@ -104,7 +134,15 @@ export class ContinuableSubagentRuntime {
         record.updatedAt = new Date().toISOString()
         this.persist()
         try {
-            const result = await provider.run({ conversationId: record.id, task: record.task, prompt, signal: controller.signal })
+            const stopped = new Promise<never>((_, reject) => {
+                controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })
+            })
+            stopped.catch(() => undefined)
+            const result = await Promise.race([
+                provider.run({ conversationId: record.id, task: record.task, prompt, signal: controller.signal, history: structuredClone(record.turns) }),
+                stopped,
+            ])
+            if (controller.signal.aborted) throw controller.signal.reason
             const turn: ContinuableTurn = {
                 id: result.id,
                 prompt: prompt.slice(0, 4_000),
@@ -149,10 +187,10 @@ let runtime: ContinuableSubagentRuntime | null = null
 export function getContinuableSubagentRuntime(): ContinuableSubagentRuntime {
     if (!runtime) {
         runtime = new ContinuableSubagentRuntime()
-        const run = async ({ task, prompt, signal }: { task: SubagentTask; prompt: string; signal?: AbortSignal }) => {
+        const run = async ({ task, prompt, signal, history }: { task: SubagentTask; prompt: string; signal?: AbortSignal; history?: readonly ContinuableTurn[] }) => {
             const { spawnSubagent } = await import('./subagent-orchestrator.js')
             if (signal?.aborted) throw signal.reason
-            return spawnSubagent({ ...task, task: prompt })
+            return spawnSubagent({ ...task, task: continuationPrompt(history || [], prompt) }, { signal })
         }
         runtime.registerProvider({ name: 'nova-local', capabilities: Object.freeze({ coldResume: true, mesh: false, toolFilter: true }), run })
         runtime.registerProvider({ name: 'nova-mesh', capabilities: Object.freeze({ coldResume: true, mesh: true, toolFilter: true }), run })

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
@@ -46,6 +46,8 @@ export function workflowSignature(episode: Pick<WorkflowEpisode, 'steps'>): stri
 export class WorkflowEpisodeStore {
     private episodes: WorkflowEpisode[] = []
     private tombstones: EpisodeTombstone[] = []
+    /** Set when the local file (and with it the tombstones) could not be read. */
+    private readonly tombstonesUnknown: boolean = false
 
     constructor(private readonly path = DEFAULT_EPISODE_FILE) {
         try {
@@ -54,7 +56,14 @@ export class WorkflowEpisodeStore {
                 this.episodes = parsed.episodes || []
                 this.tombstones = parsed.tombstones || []
             }
-        } catch { this.episodes = []; this.tombstones = [] }
+        } catch {
+            this.episodes = []
+            this.tombstones = []
+            // Keep the unreadable file (it holds the retractions) and do not
+            // re-import shared episodes whose retraction may be lost with it.
+            this.tombstonesUnknown = true
+            try { renameSync(path, `${path}.corrupt-${Date.now()}`) } catch { /* best effort */ }
+        }
     }
 
     record(input: Omit<WorkflowEpisode, 'id' | 'createdAt' | 'evidenceRef'>): WorkflowEpisode | null {
@@ -116,6 +125,7 @@ export class WorkflowEpisodeStore {
             } catch { /* malformed shared tombstone is ignored */ }
         }
         for (const entry of entries) {
+            if (this.tombstonesUnknown) break
             if (entry.metadata?.format !== 'nova-workflow-episode-v1') continue
             try {
                 const episode = JSON.parse(entry.content) as WorkflowEpisode

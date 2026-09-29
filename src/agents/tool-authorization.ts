@@ -8,6 +8,8 @@ const governedReadOnlyTools = new Set([
     'list_reminders', 'list_sub_agents', 'nova_trace_stats',
 ])
 
+const toolPolicyManagementTools = new Set(['set_tool_policy', 'list_tool_policies'])
+
 export interface ToolAuthority {
     userId: string
     authUserId: string
@@ -38,6 +40,16 @@ async function authorize(name: string, args: Record<string, unknown>, authority:
     const policy = checkTool(name, { userId, authUserId, channel: channel.toLowerCase() })
     if (!policy.allowed || policy.needsConfirmation) {
         throw new Error(policy.reason || `Tool ${name} requires authorization or confirmation`)
+    }
+    // Owner rules from set_tool_policy. 'allow' never widens the role check below;
+    // 'deny' and 'confirm' (no confirmation path here) block. The policy tools
+    // themselves stay usable so a broad rule cannot lock the owner out.
+    if (!toolPolicyManagementTools.has(name)) {
+        const { checkToolPolicy } = await import('./agent-patterns.js')
+        const custom = checkToolPolicy(name, userId)
+        if (custom.action !== 'allow') {
+            throw new Error(custom.reason || `Tool policy ${custom.action} blocks ${name}`)
+        }
     }
     if (governedReadOnly) {
         if (!governedReadOnlyTools.has(name)) throw new Error(`Read-only automation policy blocked tool: ${name}`)

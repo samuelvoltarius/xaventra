@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { redactSecrets } from '../security/secret-redaction.js'
 
 // ============================================
 // Types
@@ -167,12 +168,42 @@ export function findCapability(keywords: string[]): Capability | null {
 // PROMPT INJECTION - This is the key!
 // ============================================
 
+export interface CapabilityPromptOptions {
+    /** Role of the prompt recipient. Command details and failure texts only for 'owner'. */
+    permission?: string
+}
+
+/** Program name only ("curl"), never arguments, paths, hosts or tokens. */
+function commandProgram(command: string): string {
+    const first = command.trim().split(/\s+/)[0] || ''
+    const base = first.replace(/^["']|["']$/g, '').split(/[\\/]/).pop() || ''
+    return base.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 30) || 'Kommando'
+}
+
+/** Redacted single-line text that cannot break out of the prompt list. */
+function promptSafe(text: string, max: number): string {
+    return redactSecrets(String(text || '')).replace(/[`\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+const COMMAND_PREFIX = 'Befehl ausführen:'
+
+function promptCapabilityName(cap: Capability): string {
+    // Legacy entries stored the first 40 characters of the raw command.
+    if (cap.name.startsWith(COMMAND_PREFIX)) {
+        return `${COMMAND_PREFIX} ${commandProgram(cap.name.slice(COMMAND_PREFIX.length))}`
+    }
+    return promptSafe(cap.name, 80)
+}
+
 /**
  * Generate prompt section with Nova's known capabilities
  * This gets INJECTED into every system prompt!
  */
-export function getCapabilitiesPrompt(): string {
+export function getCapabilitiesPrompt(options: CapabilityPromptOptions = {}): string {
+    const isOwner = options.permission === 'owner'
+    // Other roles never see what the owner ran: no command entries, no examples.
     const capabilities = loadCapabilities()
+        .filter(cap => isOwner || !cap.name.startsWith(COMMAND_PREFIX))
 
     if (capabilities.length === 0) {
         return ''
@@ -206,9 +237,9 @@ Du hast folgende Aktionen bereits erfolgreich ausgeführt - nutze dieses Wissen!
         prompt += `**${categoryLabels[category] || category}**:\n`
 
         for (const cap of sorted) {
-            prompt += `- ${cap.name} (${cap.successCount}x ✅)`
-            if (cap.examples.length > 0) {
-                prompt += ` → z.B. \`${cap.examples[0].slice(0, 60)}...\``
+            prompt += `- ${promptCapabilityName(cap)} (${cap.successCount}x ✅)`
+            if (isOwner && cap.examples.length > 0) {
+                prompt += ` → z.B. \`${promptSafe(cap.examples[0], 60)}...\``
             }
             prompt += '\n'
         }
@@ -219,7 +250,7 @@ Du hast folgende Aktionen bereits erfolgreich ausgeführt - nutze dieses Wissen!
 ⚠️ WICHTIG: Du KANNST diese Dinge! Sage nicht "ich kann keine Audio erstellen" wenn du es schon ${capabilities.filter(c => c.category === 'audio').length}x getan hast!
 `
 
-    return prompt + getUnavailablePrompt()
+    return prompt + getUnavailablePrompt(options)
 }
 
 // ============================================
@@ -266,13 +297,13 @@ export function recordUnavailable(tool: string, reason: string, hint?: string): 
         if (found) {
             found.failCount++
             found.lastFailed = now
-            found.reason = reason.slice(0, 300)
+            found.reason = redactSecrets(reason).slice(0, 300)
             if (hint) found.hint = hint
             found.resolved = false
         } else {
             list.push({
                 tool,
-                reason: reason.slice(0, 300),
+                reason: redactSecrets(reason).slice(0, 300),
                 hint,
                 failCount: 1,
                 firstFailed: now,
@@ -294,7 +325,8 @@ export function clearUnavailable(tool: string): void {
     } catch { /* egal */ }
 }
 
-export function getUnavailablePrompt(): string {
+export function getUnavailablePrompt(options: CapabilityPromptOptions = {}): string {
+    const isOwner = options.permission === 'owner'
     // Erst ab dem zweiten Fehlschlag als "geht hier nicht" melden — ein
     // einzelner Fehler kann ein Netzaussetzer oder ein Tippfehler sein.
     const list = loadUnavailable().filter(u => !u.resolved && u.failCount >= 2)
@@ -306,8 +338,10 @@ Das hast du hier schon erfolglos versucht — probiere es nicht blind erneut:
 
 `
     for (const u of list.sort((a, b) => b.failCount - a.failCount).slice(0, 12)) {
-        p += `- \`${u.tool}\` (${u.failCount}x fehlgeschlagen): ${u.reason}`
-        if (u.hint) p += ` → ${u.hint}`
+        // Failure texts may carry user input or secrets: owner only, redacted.
+        p += `- \`${promptSafe(u.tool, 60)}\` (${u.failCount}x fehlgeschlagen)`
+        if (isOwner) p += `: ${promptSafe(u.reason, 200)}`
+        if (u.hint) p += ` → ${promptSafe(u.hint, 120)}`
         p += '\n'
     }
     p += `
@@ -315,6 +349,41 @@ Du bist root: fehlt nur ein Paket, ruest es nach und trage die Faehigkeit danach
 wieder als verfuegbar ein. Bleibt es unmoeglich, sag es klar und nenne den Ersatzweg.
 `
     return p
+}
+
+/**
+ * Learn from one tool outcome. Only the owner's runs teach this machine-wide
+ * store: another role must neither mark a tool as unavailable for everyone
+ * (including the owner) nor place its failure text into other prompts.
+ */
+export function learnToolOutcome(input: {
+    tool: string
+    args?: Record<string, unknown>
+    result: unknown
+    permission?: string
+}): 'ignored' | 'failure' | 'success' {
+    if (input.permission !== 'owner') return 'ignored'
+    const r = input.result as any
+    const fehlertext = String((r && typeof r === 'object' && (r.error || r.stderr)) || '')
+    const gescheitert = Boolean(fehlertext)
+        || (r && typeof r === 'object' && (r.success === false || r.blocked === true))
+    if (gescheitert) {
+        const hinweis = /browser|chromium|playwright/i.test(input.tool + fehlertext)
+            ? 'stattdessen fetch_url oder web_search; nachruestbar mit apt install chromium-browser'
+            : /display|desktop|screenshot/i.test(input.tool + fehlertext)
+                ? 'keine grafische Oberflaeche vorhanden'
+                : undefined
+        recordUnavailable(input.tool, (fehlertext || 'Werkzeug meldete Fehlschlag').slice(0, 200), hinweis)
+        return 'failure'
+    }
+    // Erfolg: falls frueher als unmoeglich gelernt, wieder freigeben
+    clearUnavailable(input.tool)
+    recordCapability(
+        input.tool,
+        generateDescription(input.tool, input.args || {}, true) || input.tool,
+        detectCategory(input.tool, input.args || {}) || 'other',
+    ).catch(() => { })
+    return 'success'
 }
 
 // ============================================
@@ -416,9 +485,10 @@ export function generateDescription(
         return 'Dateien lesen'
     }
 
-    // Generic
+    // Generic: program name only. The raw command may contain tokens, hosts
+    // or paths, and one entry per distinct command grew the store unbounded.
     if (command.length > 10) {
-        return `Befehl ausführen: ${command.slice(0, 40)}...`
+        return `${COMMAND_PREFIX} ${commandProgram(command)}`
     }
 
     return `${toolName} erfolgreich ausgeführt`

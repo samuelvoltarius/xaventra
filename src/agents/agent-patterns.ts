@@ -26,7 +26,14 @@ const toolPolicies: ToolPolicy[] = []
 const toolCallCounts = new Map<string, number>()
 
 export function addToolPolicy(policy: ToolPolicy): void {
-    toolPolicies.push(policy)
+    // Reject what checkToolPolicy could not enforce instead of reporting success.
+    if (!policy || typeof policy.pattern !== 'string' || !policy.pattern.trim()) {
+        throw new Error('Tool policy needs a pattern')
+    }
+    if (!['allow', 'deny', 'confirm'].includes(policy.action)) {
+        throw new Error(`Unsupported tool policy action: ${String(policy.action)} (allow, deny, confirm)`)
+    }
+    toolPolicies.push({ ...policy, pattern: policy.pattern.trim() })
 }
 
 export function removeToolPolicy(pattern: string): boolean {

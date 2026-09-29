@@ -1099,39 +1099,18 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         if (backgroundLearningEnabled) {
                             try {
                                 const store = await import('../memory/capabilities-store.js')
-                                const r = result as any
-                                const fehlertext = String(
-                                    (r && typeof r === 'object' && (r.error || r.stderr)) || ''
-                                )
-                                // Jeden Fehlschlag merken — welche Fehlertexte ein
-                                // Werkzeug wirft, laesst sich nicht zuverlaessig
-                                // erraten (browser_open lieferte keinen der
-                                // erwarteten Texte und wurde deshalb nie gelernt).
-                                // Die Unterscheidung "einmalig vs. dauerhaft"
-                                // trifft der Zaehler: erst ab dem zweiten Fehlschlag
-                                // taucht ein Werkzeug im Prompt als unmoeglich auf.
-                                const gescheitert = Boolean(fehlertext)
-                                    || (r && typeof r === 'object' && (r.success === false || r.blocked === true))
-                                if (gescheitert) {
-                                    const hinweis = /browser|chromium|playwright/i.test(call.name + fehlertext)
-                                        ? 'stattdessen fetch_url oder web_search; nachruestbar mit apt install chromium-browser'
-                                        : /display|desktop|screenshot/i.test(call.name + fehlertext)
-                                            ? 'keine grafische Oberflaeche vorhanden'
-                                            : undefined
-                                    store.recordUnavailable(
-                                        call.name,
-                                        (fehlertext || 'Werkzeug meldete Fehlschlag').slice(0, 200),
-                                        hinweis,
-                                    )
-                                } else {
-                                    // Erfolg: falls frueher als unmoeglich gelernt, wieder freigeben
-                                    store.clearUnavailable(call.name)
-                                    store.recordCapability(
-                                        call.name,
-                                        store.generateDescription?.(call.name, call.arguments || {}, true) || call.name,
-                                        store.detectCategory?.(call.name, call.arguments || {}) || 'other',
-                                    ).catch(() => { })
-                                }
+                                // Jeden Fehlschlag merken, erst ab dem zweiten taucht ein
+                                // Werkzeug im Prompt als unmoeglich auf. Nur Owner-Laeufe
+                                // lehren den maschinenweiten Speicher: sonst koennte jeder
+                                // Nutzer Werkzeuge fuer alle sperren und Fehlertexte in
+                                // fremde Prompts bringen (R2 MA-3).
+                                const { getUserPermission } = await import('../users/multi-user-middleware.js')
+                                store.learnToolOutcome({
+                                    tool: call.name,
+                                    args: call.arguments || {},
+                                    result,
+                                    permission: getUserPermission(authUserId, channel),
+                                })
                             } catch { /* Lernen darf den Lauf nie stoppen */ }
                         }
 

@@ -8,7 +8,7 @@
  * Replaces the need for external observer.sh / reflector.sh scripts.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDurableMemoryCandidate, memoryRelevance } from './memory-quality.js'
 import { curateFacts } from './memory-curator.js'
@@ -128,6 +128,42 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
     },
 ]
 
+export interface ObserveOptions {
+    /** Resolved role of the sender. Alias auto-registration happens only for 'owner'. */
+    permission?: string
+}
+
+/**
+ * Register `name` as alias for the numeric `userId` in the main config.
+ * Returns true when written. Refuses lowercase words ("ich bin müde"),
+ * existing aliases for this id, and names already used by another id or
+ * principal mapping. Writes atomically (tmp + rename).
+ */
+export function registerOwnerAlias(configPath: string, userId: string, name: string): boolean {
+    const rawName = name.trim()
+    if (!rawName || !/^\p{Lu}/u.test(rawName)) return false
+    if (!existsSync(configPath)) return false
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+    if (!config.userAliases) config.userAliases = {}
+    if (config.userAliases[userId]) return false
+    const wanted = rawName.toLowerCase()
+    const taken = [
+        ...Object.values(config.userAliases || {}),
+        ...Object.values(config.userPrincipals || {}),
+        ...Object.keys(config.userAliases || {}),
+    ].some(value => String(value).trim().toLowerCase() === wanted)
+    if (taken) {
+        console.warn(`[Observer] Alias "${rawName}" for ${userId} not registered: name already in use`)
+        return false
+    }
+    config.userAliases[userId] = rawName
+    const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`
+    writeFileSync(tmpPath, JSON.stringify(config, null, 2))
+    renameSync(tmpPath, configPath)
+    console.log(`[Observer] 🏷️ Auto-registered alias: ${userId} → ${rawName}`)
+    return true
+}
+
 // ============================================
 // Auto-Observer Class
 // ============================================
@@ -174,7 +210,7 @@ export class AutoObserver {
     // Core: Extract facts from a message
     // ============================================
 
-    async observe(userId: string, message: string, role: 'user' | 'assistant', sessionId?: string): Promise<ExtractedFact[]> {
+    async observe(userId: string, message: string, role: 'user' | 'assistant', sessionId?: string, options?: ObserveOptions): Promise<ExtractedFact[]> {
         if (!this.initialized) await this.initialize()
 
         const extracted: ExtractedFact[] = []
@@ -225,22 +261,16 @@ export class AutoObserver {
             const userFacts = this.facts.get(userId)!
             userFacts.push(...extracted)
 
-            // Auto-register user alias when name is extracted for numeric IDs (e.g. Telegram)
+            // Auto-register user alias when name is extracted for numeric IDs (e.g. Telegram).
+            // Only the owner may do this: the alias becomes canonicalUser (session file,
+            // memory scopes, Telegram recipient lookup), so a guest saying "Ich heiße Alfred"
+            // must never be able to take over another person's name. Callers that do not
+            // pass the permission never register (fail-closed).
             const nameFacts = extracted.filter(f => f.type === 'name')
-            if (nameFacts.length > 0 && /^\d+$/.test(userId)) {
+            if (nameFacts.length > 0 && /^\d+$/.test(userId) && options?.permission === 'owner') {
                 try {
-                    const configPath = resolveConfigPath()
-                    if (existsSync(configPath)) {
-                        const config = JSON.parse(readFileSync(configPath, 'utf-8'))
-                        if (!config.userAliases) config.userAliases = {}
-                        // Extract clean name from "Name: Sample" format
-                        const rawName = nameFacts[0].content.replace(/^Name:\s*/i, '').trim()
-                        if (rawName && !config.userAliases[userId]) {
-                            config.userAliases[userId] = rawName
-                            writeFileSync(configPath, JSON.stringify(config, null, 2))
-                            console.log(`[Observer] 🏷️ Auto-registered alias: ${userId} → ${rawName}`)
-                        }
-                    }
+                    const rawName = nameFacts[0].content.replace(/^Name:\s*/i, '').trim()
+                    registerOwnerAlias(resolveConfigPath(), userId, rawName)
                 } catch (err) {
                     console.error(`[Observer] Alias registration error: ${err}`)
                 }

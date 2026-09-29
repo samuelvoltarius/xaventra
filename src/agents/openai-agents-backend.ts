@@ -111,12 +111,21 @@ export class OpenAIAgentsBackend implements AgentBackend {
             },
             timeoutMs: Math.min(input.contract.budget.timeoutMs, 120_000),
             timeoutBehavior: 'error_as_result',
-            execute: async (params: Record<string, unknown>) => {
+            execute: async (modelParams: Record<string, unknown>) => {
                 const startedAt = Date.now()
+                // Same boundary as the native runner: channel policy, owner tool
+                // rules and the role check; model-supplied userId/channel are
+                // overwritten. No authorization identity means no execution.
+                const { authorizeToolExecution } = await import('./tool-authorization.js')
+                const params = await authorizeToolExecution(novaTool.name, modelParams, {
+                    userId: input.userId,
+                    authUserId: input.authUserId || input.userId,
+                    channel: input.channel,
+                    requestText: input.content,
+                    governedReadOnly: false,
+                })
                 const idempotencyKey = makeIdempotencyKey(execution.scopeId, novaTool.name, params)
                 const executionInputHash = evidenceHash(params)
-                const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.userId, authUserId: input.authUserId })
-                if (!policy.allowed) throw new Error(policy.reason || `Tool ${novaTool.name} is denied by Nova policy`)
                 let result: unknown
                 try {
                     kernel.assertCanExecute(novaTool.name)

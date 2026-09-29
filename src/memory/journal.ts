@@ -10,7 +10,8 @@
  * Persisted to .nova-data/journal/YYYY-MM-DD.json
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { join } from 'node:path'
 
 // ============================================
@@ -86,7 +87,10 @@ export function getTodayEntry(): JournalEntry {
         try {
             currentEntry = JSON.parse(readFileSync(path, 'utf-8'))
             return currentEntry!
-        } catch { /* create new */ }
+        } catch {
+            // Keep the unreadable day instead of overwriting it with the next event.
+            try { renameSync(path, `${path}.corrupt-${Date.now()}`) } catch { /* best effort */ }
+        }
     }
 
     currentEntry = {
@@ -107,7 +111,7 @@ function saveEntry(): void {
     if (!currentEntry) return
     ensureJournalDir()
     currentEntry.updatedAt = Date.now()
-    writeFileSync(getJournalPath(currentEntry.date), JSON.stringify(currentEntry, null, 2))
+    atomicWriteJsonSync(getJournalPath(currentEntry.date), currentEntry)
 
     // Also write markdown version for episodic memory
     saveMarkdownJournal(currentEntry)
@@ -317,7 +321,10 @@ export function getRecentEntries(days: number = 7): JournalEntry[] {
     }).filter(Boolean) as JournalEntry[]
 }
 
-export function getJournalContextForPrompt(query: string): string {
+export function getJournalContextForPrompt(query: string, options: { permission?: string } = {}): string {
+    // The journal spans all users (active ids, tools, a summary of every chat):
+    // owner-only. Callers that do not pass the role get nothing (fail-closed).
+    if (options.permission !== 'owner') return ''
     const recent = getRecentEntries(3)
     if (recent.length === 0) return ''
 

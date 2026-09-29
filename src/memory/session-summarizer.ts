@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -68,6 +68,30 @@ interface ContinuityStore {
     backfilled?: string[]
     /** Per-principal forget barriers applied to any later log backfill. */
     forgotten?: Record<string, ForgetRecord>
+}
+
+/**
+ * Shared continuity rows land in the owner's prompt ("Kritische Anweisungen"),
+ * and every worker holds the Supabase key. A self-computed hash is no proof of
+ * origin, so rows are HMAC-signed with a secret only trusted nodes share.
+ * Without that secret nothing is imported (fail-closed).
+ */
+const CONTINUITY_SIGNING_ENV = 'NOVA_CONTINUITY_SIGNING_KEY'
+
+function continuitySigningKey(): string | undefined {
+    const key = process.env[CONTINUITY_SIGNING_ENV]?.trim()
+    return key && key.length >= 16 ? key : undefined
+}
+
+function signContinuity(content: string, key: string): string {
+    return createHmac('sha256', key).update(content).digest('hex')
+}
+
+function hasValidContinuitySignature(content: string, signature: unknown, key: string): boolean {
+    if (typeof signature !== 'string' || !/^[0-9a-f]{64}$/.test(signature)) return false
+    const expected = Buffer.from(signContinuity(content, key), 'hex')
+    const actual = Buffer.from(signature, 'hex')
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
 
 function matchesForgetQuery(query: string, value: string): boolean {
@@ -549,12 +573,15 @@ export class SessionContinuityStore {
 
     async hydrateShared(): Promise<number> {
         if (sideEffectsDisabled()) return 0
+        const signingKey = continuitySigningKey()
+        if (!signingKey) return 0
         const entries = await pullSharedMemory({ scope: SHARED_SCOPE, limit: 500 })
         let merged = 0
         for (const entry of entries) {
             if (entry.metadata?.format !== 'nova-session-continuity-v1') continue
             const hash = createHash('sha256').update(entry.content).digest('hex').slice(0, 24)
             if (entry.metadata?.hash !== hash) continue
+            if (!hasValidContinuitySignature(entry.content, entry.metadata?.signature, signingKey)) continue
             try {
                 const payload = JSON.parse(entry.content) as {
                     version: number
@@ -565,7 +592,10 @@ export class SessionContinuityStore {
                 if (payload.principalId !== entry.userId) continue
                 const local = this.sessions.get(payload.principalId)
                 if (local && local.lastUpdated >= payload.summary.lastUpdated) continue
-                this.sessions.set(payload.principalId, { ...emptySummary(), ...payload.summary })
+                // A local "vergiss" also wins against a newer remote copy.
+                const barrier = this.forgotten.get(payload.principalId)
+                if (barrier?.allBefore !== undefined && payload.summary.lastUpdated <= barrier.allBefore) continue
+                this.sessions.set(payload.principalId, this.withoutForgotten(payload.principalId, { ...emptySummary(), ...payload.summary }))
                 merged++
             } catch { /* malformed remote continuity is ignored */ }
         }
@@ -573,10 +603,33 @@ export class SessionContinuityStore {
         return merged
     }
 
+    /** Drops every item matching a local forget barrier from an imported summary. */
+    private withoutForgotten(principalId: string, summary: SessionSummary): SessionSummary {
+        const barrier = this.forgotten.get(principalId)
+        if (!barrier?.queries.length) return summary
+        const forgotten = (value: string) => barrier.queries.some(query => matchesForgetQuery(query, value))
+        const keep = (items: string[] = []) => items.filter(item => !forgotten(item))
+        return {
+            ...summary,
+            projectContext: summary.projectContext && forgotten(summary.projectContext) ? '' : summary.projectContext,
+            criticalInstructions: keep(summary.criticalInstructions),
+            recentActions: keep(summary.recentActions),
+            doNotTouch: keep(summary.doNotTouch),
+            techStack: Object.fromEntries(Object.entries(summary.techStack || {}).filter(([key, value]) => !forgotten(`${key} ${value}`))),
+            openGoals: keep(summary.openGoals),
+            verifiedOutcomes: keep(summary.verifiedOutcomes),
+            decisions: keep(summary.decisions),
+            preferences: keep(summary.preferences),
+            uncertainties: keep(summary.uncertainties),
+            lastUserIntent: summary.lastUserIntent && forgotten(summary.lastUserIntent) ? '' : summary.lastUserIntent,
+        }
+    }
+
     private async publishShared(principalId: string, summary: SessionSummary): Promise<void> {
         if (sideEffectsDisabled()) return
         const content = JSON.stringify({ version: 1, principalId, summary })
         const hash = createHash('sha256').update(content).digest('hex').slice(0, 24)
+        const signingKey = continuitySigningKey()
         await pushSharedMemory({
             id: `session_continuity_${createHash('sha256').update(principalId).digest('hex').slice(0, 24)}`,
             userId: principalId,
@@ -586,7 +639,11 @@ export class SessionContinuityStore {
             sourceNode: readNodeId(),
             scope: SHARED_SCOPE,
             keywords: ['session-continuity', 'goals', 'verified-outcomes'],
-            metadata: { format: 'nova-session-continuity-v1', hash },
+            metadata: {
+                format: 'nova-session-continuity-v1',
+                hash,
+                ...(signingKey ? { signature: signContinuity(content, signingKey) } : {}),
+            },
         })
     }
 
