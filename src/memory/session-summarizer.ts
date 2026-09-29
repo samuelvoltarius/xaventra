@@ -53,10 +53,25 @@ export interface ConversationTurn {
     timestamp: number
 }
 
+interface ForgetRecord {
+    /** Topics the principal asked to forget; matching log lines are never re-imported. */
+    queries: string[]
+    /** A forget-all: nothing logged at or before this time is re-imported. */
+    allBefore?: number
+}
+
 interface ContinuityStore {
     version: 1
     updatedAt: number
     sessions: Record<string, SessionSummary>
+    /** Principals whose legacy session logs were already imported (survives restarts). */
+    backfilled?: string[]
+    /** Per-principal forget barriers applied to any later log backfill. */
+    forgotten?: Record<string, ForgetRecord>
+}
+
+function matchesForgetQuery(query: string, value: string): boolean {
+    return value.toLowerCase().includes(query.toLowerCase()) || memoryRelevance(query, value) > 0
 }
 
 export interface AddTurnOptions {
@@ -179,6 +194,7 @@ export class SessionContinuityStore {
     private readonly sessions = new Map<string, SessionSummary>()
     private readonly turnHistory = new Map<string, ConversationTurn[]>()
     private readonly backfilled = new Set<string>()
+    private readonly forgotten = new Map<string, ForgetRecord>()
 
     constructor(path = getNovaDataDir('memory', 'session-continuity.json')) {
         this.path = path
@@ -192,6 +208,15 @@ export class SessionContinuityStore {
             for (const [id, value] of Object.entries(parsed.sessions || {})) {
                 this.sessions.set(id, { ...emptySummary(), ...value })
             }
+            for (const id of Array.isArray(parsed.backfilled) ? parsed.backfilled : []) {
+                if (typeof id === 'string' && id) this.backfilled.add(id)
+            }
+            for (const [id, value] of Object.entries(parsed.forgotten || {})) {
+                this.forgotten.set(id, {
+                    queries: Array.isArray(value?.queries) ? value.queries.filter(item => typeof item === 'string') : [],
+                    allBefore: Number.isFinite(value?.allBefore) ? Number(value.allBefore) : undefined,
+                })
+            }
         } catch {
             // A damaged optional continuity cache must not block canonical memory.
             this.sessions.clear()
@@ -200,7 +225,24 @@ export class SessionContinuityStore {
 
     private persist(): void {
         const sessions = Object.fromEntries(this.sessions)
-        atomicWriteJsonSync(this.path, { version: 1, updatedAt: Date.now(), sessions } satisfies ContinuityStore)
+        atomicWriteJsonSync(this.path, {
+            version: 1,
+            updatedAt: Date.now(),
+            sessions,
+            backfilled: [...this.backfilled],
+            forgotten: Object.fromEntries(this.forgotten),
+        } satisfies ContinuityStore)
+    }
+
+    private isForgotten(principalId: string, content: string, loggedAt?: string): boolean {
+        const barrier = this.forgotten.get(principalId)
+        if (!barrier) return false
+        if (barrier.allBefore !== undefined) {
+            const timestamp = loggedAt ? Date.parse(loggedAt) : NaN
+            // Undated legacy lines cannot be proven newer than the forget-all.
+            if (!Number.isFinite(timestamp) || timestamp <= barrier.allBefore) return true
+        }
+        return barrier.queries.some(query => matchesForgetQuery(query, content))
     }
 
     addTurn(sessionId: string, role: 'user' | 'assistant', content: string, options: AddTurnOptions = {}): void {
@@ -263,10 +305,11 @@ export class SessionContinuityStore {
             try {
                 const lines = readFileSync(path, 'utf8').split(/\r?\n/).filter(Boolean).slice(-200)
                 for (const line of lines) {
-                    const entry = JSON.parse(line) as { role?: string; content?: string; channel?: string }
+                    const entry = JSON.parse(line) as { role?: string; content?: string; channel?: string; ts?: string }
                     if (entry.role !== 'user' || !entry.content) continue
                     const safeContent = cleanText(entry.content, 500)
                     if (!safeContent) continue
+                    if (this.isForgotten(safeId, safeContent, entry.ts)) continue
                     this.applyUserContent(summary, safeContent, entry.channel)
                     imported++
                 }
@@ -274,9 +317,11 @@ export class SessionContinuityStore {
         }
         if (imported > 0) {
             this.sessions.set(safeId, summary)
-            this.persist()
             void this.publishShared(safeId, summary)
         }
+        // Persist the marker even when nothing was imported, so a restart
+        // never replays the log (and with it forgotten content).
+        this.persist()
         return imported
     }
 
@@ -415,13 +460,23 @@ export class SessionContinuityStore {
     }
 
     forget(sessionId: string, query: string, all = false): number {
+        // Record the barrier first: even content that only exists in the raw
+        // session log (not yet backfilled) must never be re-imported.
+        const barrierId = cleanText(sessionId, 160)
+        if (barrierId) {
+            const barrier = this.forgotten.get(barrierId) || { queries: [] }
+            if (all) barrier.allBefore = Date.now()
+            else if (query.trim()) barrier.queries = [...new Set([...barrier.queries, query.trim()])].slice(-100)
+            this.forgotten.set(barrierId, barrier)
+        }
         const summary = this.sessions.get(sessionId)
-        if (!summary) return 0
+        if (!summary) {
+            if (barrierId) this.persist()
+            return 0
+        }
         const next = all ? emptySummary() : { ...summary }
         let removed = 0
-        const matches = (value: string) =>
-            value.toLowerCase().includes(query.toLowerCase())
-            || memoryRelevance(query, value) > 0
+        const matches = (value: string) => matchesForgetQuery(query, value)
         const filter = (items: string[]) => items.filter(item => {
             if (!matches(item)) return true
             removed++
@@ -452,7 +507,10 @@ export class SessionContinuityStore {
                 return false
             }))
         }
-        if (removed === 0 && !all) return 0
+        if (removed === 0 && !all) {
+            this.persist()
+            return 0
+        }
         next.lastUserIntent = ''
         next.lastUpdated = Date.now()
         this.sessions.set(sessionId, next)
