@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { atomicWriteJsonSync } from './atomic-storage.js'
 
 
 // ============================================
@@ -35,6 +36,7 @@ const EXECUTION_LOG_FILE = join(process.cwd(), '.nova-data', 'heartbeat-log.json
 
 let config: HeartbeatConfig = { enabled: true, intervalMinutes: 5 }
 let schedulerRunning = false
+let fallbackTimer: ReturnType<typeof setInterval> | null = null
 
 // Callback for sending messages to admin
 let notifyCallback: ((message: string) => Promise<void>) | null = null
@@ -66,7 +68,7 @@ function saveConfigValue(key: string, value: unknown): void {
             const data = JSON.parse(readFileSync(configPath, 'utf-8'))
             if (!data.heartbeat) data.heartbeat = {}
             data.heartbeat[key] = value
-            writeFileSync(configPath, JSON.stringify(data, null, 2))
+            atomicWriteJsonSync(configPath, data)
             console.log(`[Heartbeat] Config saved: ${key}=${value}`)
         }
     } catch (err) {
@@ -197,16 +199,17 @@ async function checkHeartbeat(): Promise<void> {
             if (wasExecutedToday(routine.task, timeKey)) continue
 
             console.log(`[Heartbeat] ❤️ Firing routine: ${timeKey} — ${routine.task.slice(0, 60)}...`)
-            markExecuted(routine.task, timeKey)
 
             try {
                 const { getAdminChatId } = await import('../tools/reminder-tool.js')
                 const adminChatId = getAdminChatId()
 
                 if (!adminChatId) {
+                    // Not executed: stays due for the next check in the window.
                     console.log('[Heartbeat] ⚠ No admin chatId available — skipping')
                     continue
                 }
+                markExecuted(routine.task, timeKey)
 
                 // Notify the user
                 if (notifyCallback) {
@@ -249,6 +252,16 @@ export async function initHeartbeat(): Promise<void> {
         console.log('[Heartbeat] Created empty heartbeat.md')
     }
 
+    await scheduleHeartbeatChecker()
+}
+
+/** (Re)registers the checker with the current interval. The firing window
+ * equals the interval, so both must always change together. */
+async function scheduleHeartbeatChecker(): Promise<void> {
+    if (fallbackTimer) {
+        clearInterval(fallbackTimer)
+        fallbackTimer = null
+    }
     // Register with CronerScheduler
     try {
         const { getCronerScheduler } = await import('./croner-scheduler.js')
@@ -270,7 +283,7 @@ export async function initHeartbeat(): Promise<void> {
         console.log(`[Heartbeat] ❤️ Active: ${routines.length} routines, interval: every ${config.intervalMinutes} minutes`)
     } catch (err) {
         console.log(`[Heartbeat] Croner not available, using setInterval: ${err}`)
-        setInterval(() => checkHeartbeat(), config.intervalMinutes * 60 * 1000)
+        fallbackTimer = setInterval(() => checkHeartbeat(), config.intervalMinutes * 60 * 1000)
         schedulerRunning = true
     }
 }
@@ -315,6 +328,8 @@ export function handleHeartbeatCommand(args: string): string {
         config.enabled = true
         saveConfigValue('enabled', true)
         saveConfigValue('intervalMinutes', config.intervalMinutes)
+        // Disabled at boot means nothing was ever scheduled.
+        if (!schedulerRunning) void scheduleHeartbeatChecker()
         return '❤️ Heartbeat **enabled**'
     }
 
@@ -337,6 +352,9 @@ export function handleHeartbeatCommand(args: string): string {
     if (!isNaN(num) && num >= 1 && num <= 60) {
         config.intervalMinutes = num
         saveConfigValue('intervalMinutes', num)
+        // The check frequency must follow the window, otherwise routines
+        // between two checks never fire.
+        if (schedulerRunning) void scheduleHeartbeatChecker()
         return `❤️ Heartbeat interval set to **${num} minutes** (saved to config)`
     }
 
