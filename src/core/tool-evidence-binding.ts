@@ -115,8 +115,15 @@ function argumentStrings(value: unknown): string[] {
     return Object.values(value as Record<string, unknown>).flatMap(argumentStrings)
 }
 
+/** Absolute path or URL: fully qualified, so a shorter argument cannot stand for it. */
+function isQualifiedTarget(target: string): boolean {
+    return target.startsWith('/') || target.startsWith('~') || /^[a-z]:\//.test(target) || /^[a-z][a-z0-9+.-]*:\/\//.test(target)
+}
+
 export function matchedToolTargets(requiredTargets: readonly string[], args: Record<string, unknown>): string[] {
     const values = argumentStrings(args).map(normalizeEvidenceTarget).filter(Boolean)
+    // A relative argument ("nginx.conf" in the cwd) must not cover a fully
+    // qualified target ("/etc/nginx/nginx.conf") (R2 NZ-21).
     return requiredTargets.filter(target => values.some(value =>
-        value === target || value.endsWith(`/${target}`) || target.endsWith(`/${value}`)))
+        value === target || value.endsWith(`/${target}`) || (!isQualifiedTarget(target) && target.endsWith(`/${value}`))))
 }
