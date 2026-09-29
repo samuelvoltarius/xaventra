@@ -711,14 +711,9 @@ async function startDaemon() {
                     ...availableLLMs.map((m: any) => m.model),
                     ...available.map((m: any) => m.id),
                 ])]
-                // preferLocal: false — MiniMax/Cloud APIs are primary, local models are fallback only.
-                // Local models (qwen2.5:3b, gemma, etc.) are only used when cloud APIs are unavailable.
-                const hasMiniMax = availableModelIds.some(id => id.toLowerCase().startsWith('minimax'))
-                const hasCloudApi = availableModelIds.some(id =>
-                    id.toLowerCase().startsWith('minimax') ||
-                    id.toLowerCase().startsWith('gpt') ||
-                    id.toLowerCase().startsWith('claude')
-                )
+                // Local first (R2 UEB-13, Alfred's rule "Daten lokal, Cloud nie still"):
+                // a reachable cloud key must not silently flip the router to cloud.
+                // An explicitly configured cloud primary model still applies.
 
                 // Use already-parsed config (don't re-read xaventra.config.json — it may be stale or mid-write)
                 // `config` is the authoritative in-memory config loaded at daemon startup
@@ -729,7 +724,7 @@ async function startDaemon() {
 
                 configureRouter({
                     availableModels: availableModelIds,
-                    preferLocal: !hasCloudApi,
+                    preferLocal: true,
                     maxCostTier: 'high',
                     preferSpeed: false,
                     preferredModel,
@@ -789,28 +784,9 @@ async function startDaemon() {
             .catch(() => { })
     }, 2 * 60 * 60 * 1000)
 
-    // ProviderRegistry: Auto-detect TTS engine based on available providers
-    setTimeout(async () => {
-        try {
-            const { getProviderRegistry } = await import('./llm/provider-registry.js')
-            const reg = getProviderRegistry()
-            const ttsProv = reg.getBestTTSProvider()
-            if (ttsProv) {
-                const cfg = (state as any).config
-                if (cfg?.voice?.enabled && cfg.voice.ttsEngine !== ttsProv.provider.id) {
-                    cfg.voice.ttsEngine = ttsProv.provider.id
-                    console.log(`[Nova] 🎙 Auto-detected TTS provider: ${ttsProv.provider.name}`)
-                }
-            }
-            // Auto-detect preferCloud based on live connectivity
-            const preferCloud = await reg.shouldPreferCloud()
-            if (preferCloud) {
-                const { configureRouter } = await import('./layers/L18-llm-router.js')
-                configureRouter({ preferLocal: false })
-                console.log(`[Nova] 🌐 ProviderRegistry: Cloud verfügbar — preferLocal=false gesetzt`)
-            }
-        } catch { /* non-critical */ }
-    }, 5_000)
+    // R2 UEB-13: the former ProviderRegistry block (TTS engine switch, now
+    // without effect, and preferLocal=false on cloud connectivity) is removed;
+    // the router stays local-first.
 
     // VRAM Manager (async, non-blocking)
     import('./layers/vram-manager.js').then(m => {

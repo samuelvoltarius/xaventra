@@ -65,4 +65,12 @@ describe('daemon wiring (R2 core-n-z)', () => {
         expect(handler).toMatch(/uncaughtAt\.length >= 3/)
         expect(handler).toMatch(/process\.exit\(1\)/)
     })
+
+    it('UEB-13: the router stays local-first; cloud connectivity never flips it silently', () => {
+        expect(source).toMatch(/preferLocal: true,/)
+        expect(source).not.toMatch(/preferLocal: !hasCloudApi/)
+        expect(source).not.toMatch(/configureRouter\(\{ preferLocal: false \}\)/)
+        expect(source).not.toMatch(/shouldPreferCloud\(\)/)
+        expect(source).not.toMatch(/cfg\.voice\.ttsEngine = ttsProv/)
+    })
 })
