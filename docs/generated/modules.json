@@ -2586,6 +2586,7 @@
     {
       "module": "src/doctor/native-release-selection.ts",
       "imports": [
+        "../core/update-activation.js",
         "../core/update-store.js",
         "./native-process-identity.js",
         "./native-systemd-service.js",
@@ -2631,6 +2632,7 @@
     {
       "module": "src/doctor/native-snapshot-adapter.ts",
       "imports": [
+        "../core/update-activation.js",
         "./native-process-identity.js",
         "./native-snapshot-store.js",
         "./native-state-helper.js",
@@ -2643,6 +2645,7 @@
     {
       "module": "src/doctor/native-snapshot-store.ts",
       "imports": [
+        "../core/update-activation.js",
         "../core/update-store.js",
         "./docker-repair-state.js",
         "./native-state-mount.js",
@@ -2697,12 +2700,14 @@
     {
       "module": "src/doctor/native-update-driver.ts",
       "imports": [
+        "../core/update-activation.js",
         "./repair-activation.js"
       ]
     },
     {
       "module": "src/doctor/native-update-operations.ts",
       "imports": [
+        "../core/update-activation.js",
         "../core/update-store.js",
         "./native-release-selection.js",
         "./native-rollback-state.js",
