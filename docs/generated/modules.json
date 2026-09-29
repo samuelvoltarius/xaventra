@@ -5199,6 +5199,7 @@
     {
       "module": "src/tools/send-file-tool.ts",
       "imports": [
+        "../core/lifecycle-policy.js",
         "node:fs",
         "node:path"
       ]

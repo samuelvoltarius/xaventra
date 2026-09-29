@@ -10,6 +10,7 @@
 
 import { existsSync, statSync, readFileSync } from 'node:fs'
 import { extname, basename } from 'node:path'
+import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'])
 const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.log', '.json', '.csv', '.yaml', '.yml', '.toml', '.env', '.sh', '.py', '.ts', '.js'])
@@ -22,8 +23,10 @@ export async function executeSendFile(params: Record<string, unknown>): Promise<
     const caption = params.caption as string | undefined
     const forceDocument = params.as_document === true
 
-    // Allow optional explicit chatId (for multi-user scenarios)
-    const explicitChatId = params.chat_id ? String(params.chat_id) : undefined
+    // The recipient is derived only from the authenticated execution context
+    // (the Telegram requester), never from model arguments (`chat_id`) and never
+    // from a process-global "last active chat".
+    const authenticatedChatId = authenticatedTelegramRecipient()
 
     if (!filePath) return '❌ Kein Dateipfad angegeben.'
     if (!existsSync(filePath)) return `❌ Datei nicht gefunden: ${filePath}`
@@ -66,12 +69,9 @@ export async function executeSendFile(params: Record<string, unknown>): Promise<
             return `❌ Telegram nicht verbunden. Datei: ${filePath} (${formatSize(fileSize)})`
         }
 
-        // Determine target chat:
-        // 1. Explicit chatId from params (multi-user tool calls)
-        // 2. Last active chat from adapter
-        const chatId = explicitChatId || tg.getLastActiveChat()
+        const chatId = authenticatedChatId
         if (!chatId) {
-            return `❌ Kein aktiver Telegram-Chat. Bitte zuerst eine Nachricht senden, dann erneut versuchen.`
+            return `❌ Kein authentifizierter Telegram-Empfänger in diesem Auftrag; Datei wurde nicht gesendet. Datei: ${filePath}`
         }
 
         // Size check before attempting upload
@@ -113,6 +113,13 @@ export async function executeSendFile(params: Record<string, unknown>): Promise<
     }
 }
 
+/** Telegram private-chat id of the authenticated requester, or undefined. */
+function authenticatedTelegramRecipient(): string | undefined {
+    const context = getExecutionPolicyContext()
+    if (context.channel?.toLowerCase() !== 'telegram') return undefined
+    return /^[1-9][0-9]*$/.test(context.authUserId || '') ? context.authUserId : undefined
+}
+
 function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -125,13 +132,12 @@ function formatSize(bytes: number): string {
 
 export const sendFileTool = {
     name: 'send_file',
-    description: 'Sendet eine Datei (Foto, Dokument, CSV, PDF, etc.) via Telegram an den Nutzer. Für kleine Textdateien wird der Inhalt inline angezeigt wenn Telegram nicht verfügbar ist.',
+    description: 'Sendet eine Datei (Foto, Dokument, CSV, PDF, etc.) via Telegram an den authentifizierten anfragenden Nutzer. Für kleine Textdateien wird der Inhalt inline angezeigt wenn Telegram nicht verfügbar ist.',
     category: 'communication' as const,
     parameters: [
         { name: 'path', type: 'string' as const, description: 'Absoluter Pfad zur Datei', required: true },
         { name: 'caption', type: 'string' as const, description: 'Optionaler Dateiname/Beschriftung', required: false },
         { name: 'as_document', type: 'boolean' as const, description: 'Immer als Dokument senden (nicht als Foto)', required: false },
-        { name: 'chat_id', type: 'string' as const, description: 'Optionale Chat-ID (für Multi-User)', required: false },
     ],
     execute: executeSendFile,
 }

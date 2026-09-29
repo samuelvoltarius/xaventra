@@ -84,7 +84,9 @@ const SKILL_PACKS: SkillPack[] = [
     {
         name: 'desktop-capture', description: 'Desktop-Screenshot erstellen und senden',
         keywords: ['screenshot', 'screen shot', 'bildschirm', 'desktop', 'screnn shot'],
-        tools: ['desktop_screenshot', 'desktop_input', 'analyze_image', 'send_file'],
+        // No generic send_file here: desktop_screenshot delivers its own image
+        // to the authenticated requester; send_file would let the model pick files.
+        tools: ['desktop_screenshot', 'desktop_input', 'analyze_image'],
     },
     {
         name:'computer-use',description:'Freigegebenen Desktop per Screenshot, Maus und Tastatur bedienen',
