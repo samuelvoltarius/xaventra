@@ -3463,7 +3463,8 @@ export const ALL_TOOLS: NovaTool[] = [
                     return 'Provider-Registrierung abgelehnt: Konfiguration nicht lesbar.'
                 }
                 if (existing || configured) return `Provider-Registrierung abgelehnt: "${name}" existiert bereits und wird über dieses Werkzeug nicht überschrieben.`
-                const refusal = await ownerApprovalRefusal(params, 'register_llm_provider')
+                // UEB-8: the one-time owner code is bound to exactly this name and base URL
+                const refusal = await ownerApprovalRefusal(params, 'register_llm_provider', `${name}@${baseUrl}`)
                 if (refusal) return refusal
                 const models = params.models ? String(params.models).split(',').map(m => m.trim()).filter(Boolean) : undefined
                 const roles = params.roles ? String(params.roles).split(',').map(r => r.trim()) as any[] : ['chat', 'code']

@@ -11,7 +11,8 @@
  * Only the owner can approve. Everything else fails closed.
  */
 
-export const toolApprovalTarget = (toolName: string) => `tool:${toolName}`
+/** Target of a one-time token; `detail` binds it to concrete values (e.g. name and URL). */
+export const toolApprovalTarget = (toolName: string, detail?: string) => detail ? `tool:${toolName}:${detail}` : `tool:${toolName}`
 
 function clean(value: unknown): string {
     return typeof value === 'string' ? value.trim() : ''
@@ -22,7 +23,7 @@ function clean(value: unknown): string {
  * The identity comes from the execution context, falling back to the
  * runner-injected authorizationUserId/channel, never from other model fields.
  */
-export async function ownerApprovalRefusal(params: Record<string, unknown>, toolName: string): Promise<string | null> {
+export async function ownerApprovalRefusal(params: Record<string, unknown>, toolName: string, detail?: string): Promise<string | null> {
     try {
         const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
         const context = getExecutionPolicyContext()
@@ -36,8 +37,8 @@ export async function ownerApprovalRefusal(params: Record<string, unknown>, tool
         if (context.approvalGranted === true) return null
         const { consumeSetupConfirmation, setupConfirmationPrincipal } = await import('../core/setup-confirmation.js')
         const principal = setupConfirmationPrincipal(channel, clean(context.userId) || clean(params.userId) || authUserId)
-        if (consumeSetupConfirmation(principal, toolApprovalTarget(toolName), params.confirm)) return null
-        return `❌ ${toolName} braucht eine ausdrückliche Freigabe des Owners (Einmal-Code für "${toolApprovalTarget(toolName)}"). Codes niemals selbst bilden — nicht ausgeführt.`
+        if (consumeSetupConfirmation(principal, toolApprovalTarget(toolName, detail), params.confirm)) return null
+        return `❌ ${toolName} braucht eine ausdrückliche Freigabe des Owners (Einmal-Code für "${toolApprovalTarget(toolName, detail)}"). Codes niemals selbst bilden — nicht ausgeführt.`
     } catch (error) {
         return `❌ ${toolName}: Freigabe konnte nicht geprüft werden (${String(error).slice(0, 120)}) — nicht ausgeführt.`
     }
