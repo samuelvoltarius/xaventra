@@ -79,6 +79,11 @@ const PREFERENCE_TRIGGERS = [
     /remember that/i,
 ]
 
+/** Minimum normalized length of a message that may be matched to a learned correction. */
+const MIN_CORRECTION_PATTERN_LENGTH = 12
+/** Bounded store: it is persisted every minute and holds full user/bot text. */
+const MAX_FEEDBACK_ENTRIES = 500
+
 // ============================================
 // Feedback Collector Class
 // ============================================
@@ -124,6 +129,11 @@ export class FeedbackCollector {
         }
 
         this.feedbackStore.set(feedback.id, feedback)
+        while (this.feedbackStore.size > MAX_FEEDBACK_ENTRIES) {
+            const oldest = this.feedbackStore.keys().next().value
+            if (oldest === undefined) break
+            this.feedbackStore.delete(oldest)
+        }
         console.log(`[Nova Learning] Collected ${feedback.type} feedback: ${feedback.id}`)
 
         // Auto-process corrections
@@ -144,6 +154,9 @@ export class FeedbackCollector {
         // Extract the key pattern from user message
         const pattern = this.extractPattern(feedback.userMessage)
         const scope = feedback.userId || 'global'
+        // Too short to identify a question ("ja", "10", emoji only) — learning
+        // it would answer unrelated short messages with this correction.
+        if (pattern.length < MIN_CORRECTION_PATTERN_LENGTH) return
 
         // Store the correction inside the immutable principal scope. A
         // correction from one user must never become another user's answer.
@@ -169,6 +182,7 @@ export class FeedbackCollector {
 
     getLearnedResponse(message: string, userId?: string): string | undefined {
         const pattern = this.extractPattern(message)
+        if (pattern.length < MIN_CORRECTION_PATTERN_LENGTH) return undefined
         const scope = userId || 'global'
         const scopedPattern = `${scope}::${pattern}`
 
@@ -182,6 +196,7 @@ export class FeedbackCollector {
             const separator = storedKey.indexOf('::')
             if (separator < 0 || storedKey.slice(0, separator) !== scope) continue
             const storedPattern = storedKey.slice(separator + 2)
+            if (storedPattern.length < MIN_CORRECTION_PATTERN_LENGTH) continue
             if (pattern.includes(storedPattern) || storedPattern.includes(pattern)) {
                 return response
             }
@@ -238,7 +253,7 @@ export class FeedbackCollector {
             const data = JSON.parse(json)
 
             if (data.feedback) {
-                this.feedbackStore = new Map(data.feedback)
+                this.feedbackStore = new Map((data.feedback as Array<[string, Feedback]>).slice(-MAX_FEEDBACK_ENTRIES))
             }
             if (data.corrections) {
                 this.learnedCorrections = new Map(

@@ -7,6 +7,11 @@
 
 import { CodexCLIAdapter, isCodexAvailable, isCodexAuthenticated } from './codex-cli-adapter.js'
 
+// Cloud/remote calls never hang on undici defaults (300 s headers, endless
+// trickling streams): completions and streams get a hard cap.
+const REQUEST_TIMEOUT_MS = 120_000
+const STREAM_TIMEOUT_MS = 300_000
+
 // ============================================
 // Types
 // ============================================
@@ -84,6 +89,7 @@ export class OpenAILLM {
         try {
             const response = await fetch(`${this.baseUrl}/chat/completions`, {
                 method: 'POST',
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',
@@ -177,6 +183,7 @@ export class OpenAILLM {
         try {
             const response = await fetch(`${this.baseUrl}/chat/completions`, {
                 method: 'POST',
+                signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',

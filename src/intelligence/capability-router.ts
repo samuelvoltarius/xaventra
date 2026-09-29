@@ -12,6 +12,8 @@
  */
 
 import { execSync, execFileSync } from 'node:child_process'
+import { isIP } from 'node:net'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
 // ============================================
@@ -72,7 +74,7 @@ function checkLocal(check: CapabilityCheck): boolean {
                 execSync(`${process.platform === 'win32' ? 'where' : 'which'} ${check.value}`, { stdio: 'ignore', timeout: 5000 })
                 return true
             case 'node_module':
-                require.resolve(check.value)
+                createRequire(import.meta.url).resolve(check.value)
                 return true
             case 'command':
                 execSync(check.value, { stdio: 'ignore', timeout: 5000 })
@@ -90,8 +92,21 @@ function checkLocal(check: CapabilityCheck): boolean {
 // Remote capability check
 // ============================================
 
+/**
+ * node.ip comes from the shared mesh registry (Supabase) and is not trusted:
+ * only a literal IPv4/IPv6 address is accepted, and ssh is started with an
+ * argument list, never through a local shell string.
+ */
+function isValidNodeIp(ip: unknown): ip is string {
+    return typeof ip === 'string' && isIP(ip) !== 0
+}
+
+function sshArgs(ip: string, connectTimeout: number, remoteCmd: string): string[] {
+    return ['-o', 'StrictHostKeyChecking=no', '-o', `ConnectTimeout=${connectTimeout}`, `xaventra@${ip}`, remoteCmd]
+}
+
 async function checkRemote(ip: string, check: CapabilityCheck): Promise<boolean> {
-    const ssh = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 xaventra@${ip}`
+    if (!isValidNodeIp(ip)) return false
     try {
         let cmd = ''
         switch (check.type) {
@@ -107,7 +122,7 @@ async function checkRemote(ip: string, check: CapabilityCheck): Promise<boolean>
             default:
                 return false
         }
-        const result = execSync(`${ssh} '${cmd}'`, { timeout: 8000 }).toString()
+        const result = execFileSync('ssh', sshArgs(ip, 5, cmd), { timeout: 8000 }).toString()
         return result.includes('ok')
     } catch {
         return false
@@ -169,13 +184,13 @@ async function installLocal(methods: InstallMethod[]): Promise<boolean> {
 // ============================================
 
 async function installRemote(ip: string, methods: InstallMethod[], platform = 'linux'): Promise<boolean> {
-    const ssh = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 xaventra@${ip}`
+    if (!isValidNodeIp(ip)) return false
     for (const method of methods) {
         if (method.platform && !platform.includes(method.platform)) continue
         if (method.type === 'apt' || method.type === 'pip' || method.type === 'pip3' || method.type === 'shell') {
             try {
                 console.log(`[CapabilityRouter] 🔧 Remote install on ${ip}: ${method.command}`)
-                execSync(`${ssh} '${method.command}'`, { timeout: 180_000, stdio: 'pipe' })
+                execFileSync('ssh', sshArgs(ip, 10, method.command), { timeout: 180_000, stdio: 'pipe' })
                 console.log(`[CapabilityRouter] ✅ Remote install succeeded on ${ip}`)
                 return true
             } catch (err) {
@@ -220,6 +235,11 @@ export async function resolveCapability(query: CapabilityQuery): Promise<Capabil
 
     // 3. Score and sort nodes
     const scored = meshNodes
+        .filter(n => {
+            if (!n?.ip || isValidNodeIp(n.ip)) return true
+            console.warn(`[CapabilityRouter] Ignoring mesh node ${n.hostname || n.node_id || '?'} with invalid ip`)
+            return false
+        })
         .map(n => ({ node: n, score: scoreNode(n, query) }))
         .filter(s => s.score >= 0)
         .sort((a, b) => b.score - a.score)

@@ -34,6 +34,10 @@ export interface LearnedPattern {
 // ============================================
 
 const FEEDBACK_DIR = '.nova-feedback'
+// Bounded stores: every click rewrites these files synchronously, and they
+// hold full user/bot text across all users.
+const MAX_FEEDBACK_ENTRIES = 500
+const MAX_BAD_RESPONSES = 10
 let feedbackCache: FeedbackEntry[] = []
 let patternsCache: Map<string, LearnedPattern> = new Map()
 
@@ -125,6 +129,7 @@ export function recordFeedback(
     }
 
     feedbackCache.push(entry)
+    if (feedbackCache.length > MAX_FEEDBACK_ENTRIES) feedbackCache = feedbackCache.slice(-MAX_FEEDBACK_ENTRIES)
     saveFeedback()
 
     // Update patterns
@@ -158,6 +163,7 @@ function updatePatterns(entry: FeedbackEntry): void {
         pattern.confidence = Math.min(100, pattern.confidence + 10)
     } else {
         pattern.badResponses.push(entry.assistantResponse)
+        if (pattern.badResponses.length > MAX_BAD_RESPONSES) pattern.badResponses = pattern.badResponses.slice(-MAX_BAD_RESPONSES)
         if (entry.correction) {
             pattern.goodResponse = entry.correction
         }

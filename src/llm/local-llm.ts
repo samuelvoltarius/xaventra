@@ -454,6 +454,7 @@ export class LocalLLM {
     private async *streamOllama(messages: LocalLLMMessage[]): AsyncGenerator<string> {
         const response = await fetch(`${this.config.baseUrl}/api/chat`, {
             method: 'POST',
+            signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? 55_000),
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: this.config.model,
@@ -469,13 +470,17 @@ export class LocalLLM {
 
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
+        let lineBuffer = ''
 
         while (true) {
             const { done, value } = await reader.read()
             if (done) break
 
-            const chunk = decoder.decode(value, { stream: true })
-            const lines = chunk.split('\n').filter(l => l.trim())
+            // NDJSON lines can span chunk boundaries — keep the incomplete tail.
+            lineBuffer += decoder.decode(value, { stream: true })
+            const parts = lineBuffer.split('\n')
+            lineBuffer = parts.pop() || ''
+            const lines = parts.filter(l => l.trim())
 
             for (const line of lines) {
                 try {
@@ -487,6 +492,12 @@ export class LocalLLM {
                     // Skip invalid lines
                 }
             }
+        }
+        if (lineBuffer.trim()) {
+            try {
+                const data = JSON.parse(lineBuffer)
+                if (data.message?.content) yield data.message.content
+            } catch { /* trailing garbage */ }
         }
     }
 

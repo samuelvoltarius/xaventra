@@ -393,9 +393,13 @@ class InsightEngine {
     }
 
     /**
-     * Build prompt block for undelivered insights
+     * Build prompt block for undelivered insights.
+     * Insights are global (self-reflection on other users' chats, service and
+     * node failures) — owner prompts only. Anyone else gets nothing and the
+     * insights stay undelivered for the owner.
      */
-    buildInsightPromptBlock(): string | null {
+    buildInsightPromptBlock(viewer?: { permission?: string }): string | null {
+        if (viewer?.permission !== 'owner') return null
         const undelivered = this.getUndeliveredInsights(3)
         if (undelivered.length === 0) return null
 
@@ -524,9 +528,11 @@ Erstelle eine konzise Wochenzusammenfassung.`
     }
 
     /**
-     * Get consolidation context for system prompt
+     * Get consolidation context for system prompt.
+     * The weekly summary is built from every user's journal — owner prompts only.
      */
-    getConsolidationContext(): string | null {
+    getConsolidationContext(viewer?: { permission?: string }): string | null {
+        if (viewer?.permission !== 'owner') return null
         if (this.consolidations.length === 0) return null
 
         const recent = this.consolidations.slice(-3)

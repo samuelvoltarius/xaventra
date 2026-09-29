@@ -157,12 +157,18 @@ export class ProviderRegistry {
         return result
     }
 
-    /** Detect which providers support TTS */
+    /**
+     * Cloud TTS provider for the configured engine.
+     * Spoken answers carry private content, so a cloud TTS is only returned when
+     * voice.ttsEngine in xaventra.config.json already names it. A key being
+     * present (even just OPENAI_API_KEY in the env) never switches a local
+     * engine (Chatterbox/Piper) to the cloud.
+     */
     getBestTTSProvider(): { provider: ProviderProfile; apiKey: string } | null {
+        const configured = String(this.loadConfig()?.voice?.ttsEngine || '').toLowerCase()
+        if (!configured) return null
         const enabled = this.getEnabledProviders()
-        const ttsProviders = enabled.filter(p => p.provider.capabilities.tts)
-        // Prefer MiniMax TTS (best quality)
-        return ttsProviders.find(p => p.provider.id === 'minimax') || ttsProviders[0] || null
+        return enabled.find(p => p.provider.capabilities.tts && p.provider.id === configured) || null
     }
 
     /** Detect which providers support image generation */

@@ -7,7 +7,7 @@
  * and analyzed hourly by trace-analyzer.ts to produce routing insights.
  */
 
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
@@ -113,9 +113,30 @@ function getTracePath(): string {
     return join(DATA_DIR, `${date}.jsonl`)
 }
 
+// Traces are routing telemetry, not a message archive: the analyzer reads the
+// last 7 days, older day files are deleted once per day.
+const TRACE_RETENTION_DAYS = 14
+let lastPruneDay = ''
+
+function pruneOldTraces(): void {
+    const today = new Date().toISOString().slice(0, 10)
+    if (lastPruneDay === today) return
+    lastPruneDay = today
+    const cutoff = new Date(Date.now() - TRACE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    try {
+        for (const file of readdirSync(DATA_DIR)) {
+            const day = file.match(/^(\d{4}-\d{2}-\d{2})\.jsonl$/)?.[1]
+            if (day && day < cutoff) unlinkSync(join(DATA_DIR, file))
+        }
+    } catch (err) {
+        console.warn('[Trace] Failed to prune old traces:', err)
+    }
+}
+
 function writeTrace(trace: NovaTrace): void {
     try {
         if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true })
+        pruneOldTraces()
         appendFileSync(getTracePath(), JSON.stringify(trace) + '\n', 'utf-8')
     } catch (err) {
         console.warn('[Trace] Failed to write trace:', err)
@@ -146,7 +167,9 @@ class TraceRecorder {
             userId: opts.userId,
             channel: opts.channel,
             startedAt: Date.now(),
-            userMessage: opts.userMessage.slice(0, 300),
+            // Message text is not persisted (privacy; "forget" cannot reach
+            // trace files). Length and task type are enough for routing.
+            userMessage: '',
             messageLength: opts.userMessage.length,
             hasImage: opts.hasImage,
             modelUsed: opts.modelUsed,
@@ -235,7 +258,7 @@ class TraceRecorder {
             provider: t.provider || 'unknown',
             taskType: t.taskType,
             llmLatencyMs,
-            inputTokensEst: estimateTokens(t.userMessage),
+            inputTokensEst: Math.ceil(t.messageLength / 4),
             outputTokensEst: estimateTokens(opts.responseContent),
             selfHealingRetries: t.selfHealingRetries,
             toolCalls: t.toolCalls,
