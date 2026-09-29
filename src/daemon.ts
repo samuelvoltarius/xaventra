@@ -638,11 +638,19 @@ async function startDaemon() {
     // External supervisor heartbeat. The supervisor is a separate process and
     // remains able to restart Nova when this event loop or process dies.
     const supervisorUrl = process.env.NOVA_SUPERVISOR_URL || 'http://127.0.0.1:3099'
+    // The supervisor API requires its token (R2 NZ-8): env when spawned by the
+    // supervisor, token file when an already running daemon was adopted.
+    const supervisorToken = (): string => {
+        const fromEnv = String(process.env.NOVA_SUPERVISOR_TOKEN || '').trim()
+        if (fromEnv) return fromEnv
+        try { return readFileSync(join(process.cwd(), '.nova-data', 'supervisor.token'), 'utf8').trim() } catch { return '' }
+    }
     const sendSupervisorHeartbeat = async () => {
         try {
+            const token = supervisorToken()
             await fetch(`${supervisorUrl}/api/heartbeat`, {
                 method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
                 body: JSON.stringify({ pid: process.pid, services: serviceRuntime.getStatus(), timestamp: Date.now() }),
                 signal: AbortSignal.timeout(2000),
             })
