@@ -11,6 +11,43 @@ session. Screenshots and input address only the child display owned by this
 process; loss of that display stops the adapter. This account is a separate
 workspace, not a full VM/security boundary against all local kernel attacks.
 
+### Startup guards (enforced by `workstation-main`)
+
+The process refuses to start unless all of the following hold:
+
+- `NOVA_WORKSTATION_ACCOUNT` is set in the unit to the dedicated account name
+  and equals the running user; root is refused.
+- The UID owns no graphical (`x11`/`wayland`/`mir`) logind session
+  (`/run/systemd/sessions/*`) and the service did not inherit `DISPLAY` or
+  `WAYLAND_DISPLAY`. Never run it as the personal desktop user.
+- `<runtime-directory>` is owned by the account and is `0700`, or `0750` when
+  the daemon reaches the socket through the group (no group write, no other
+  bits). `<state-directory>` is owned by the account and `0700`.
+- `<token-file>` is a regular file (not a symlink) owned by the account with
+  no group/other bits (`0600`), and not inside the shell HOME.
+
+Layout created by the process:
+
+| Path | Mode | Content |
+|---|---|---|
+| `<runtime>/desktop.sock` | 0660 | daemon-facing socket |
+| `<runtime>/private/` | 0700 | Xauthority and transient captures |
+| `<state>/input-receipts/` | 0700 | durable input intents and receipts |
+| `<state>/home/` | 0700 | HOME and cwd of openbox, xterm and xmessage |
+
+The agent-controlled shell no longer has the state directory as HOME, so the
+journal and token are not in its HOME. It still runs with the same UID; code
+alone cannot stop a same-UID shell from reaching `<state>` by absolute path.
+Full isolation requires a deployment change: run the X children (openbox,
+xterm) as a second unprivileged account without access to `<state>` and the
+token, or remove the interactive shell. Until then treat journal integrity as
+best effort against the agent's own shell.
+
+Upgrading an existing installation: dotfiles that lived directly in `<state>`
+(for example `.bash_history`, `.config/`) stay there and should be moved into
+`<state>/home` or removed. `<runtime>/private` must not exist before start;
+a systemd `RuntimeDirectory=` is cleaned automatically.
+
 Use a private Unix socket and explicit daemon group access as below. The daemon
 must load the operator tool policy at startup, and the input tool must be present
 in its installed build. Running the workstation alone does not add tools to an
@@ -56,6 +93,27 @@ These settings grant only the two named tools to that Telegram identity;
 existing explicit policy denials/confirmation rules still take precedence,
 and normal user-role authorization remains mandatory. Other desktop tools,
 users and remote channels receive no new grant. Do not use model-provided IDs.
+
+All `desktop_*` tools are denied by default on every channel, including CLI,
+web, API and REST, for owners and admins alike. Grants exist only through:
+the enrolled Telegram owner above; the authenticated Nova Desktop client
+context on the `desktop` channel for its own client-side tools
+(`desktop_workspace`, `desktop_control`, `desktop_status`, `desktop_screenshot`,
+never `desktop_input`); or an explicit operator `allow` rule in `toolPolicy`.
+
+`desktop_screenshot` also checks the rule inside its handler (owner ID,
+Telegram channel, run id), so a caller that skips the governed executor
+cannot capture. When `NOVA_CAPTURE_SOCKET` or `NOVA_CAPTURE_TOKEN_FILE` is set
+it captures only through the enrolled adapter and never falls back to the
+daemon's local display. `send_file` delivers only to the authenticated
+Telegram requester of the current run; it ignores `chat_id` and never uses the
+last active chat.
+
+`desktop_input` refuses session-critical keys (`ctrl+alt+Delete`,
+`ctrl+alt+BackSpace`, `super+l`, `ctrl+alt+F1`..`F12`); `alt+F4` is allowed.
+Its idempotency scope is the server-side run: a `[NOVA_MISSION_KEY:...]` in
+the request is accepted only with the live mission fencing token. A repeated
+step returns `status: "replayed"`, `executedNow: false`; no new input ran.
 
 ## Acceptance and limits
 
