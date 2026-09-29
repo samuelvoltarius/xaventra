@@ -6,7 +6,7 @@ import { getCapabilityGraph } from './capability-graph.js'
 import { DirectMeshTransport } from './direct-mesh-transport.js'
 import { LocalMeshTransport } from './local-mesh-transport.js'
 import { MeshIdentity } from './mesh-identity.js'
-import { containsFreeShellPayload } from './mesh-policy.js'
+import { containsFreeShellPayload, DEFAULT_PEER_ROLES, peersWithoutKeys } from './mesh-policy.js'
 import { MeshTransportRouter } from './mesh-transport-router.js'
 import { RelayMeshTransport } from './relay-mesh-transport.js'
 import { SupabaseMeshTransport } from './supabase-mesh-transport.js'
@@ -76,7 +76,8 @@ function loadRuntimeConfig(): RuntimeConfig {
         nodeId: String(peer.nodeId || peer.name || ''), url: peer.url ? String(peer.url) : undefined,
         transport: 'direct', status: 'unknown', publicKey: peer.publicKey ? String(peer.publicKey) : undefined,
         allowedTools: Array.isArray(peer.allowedTools) ? peer.allowedTools.map(String) : undefined,
-        roles: Array.isArray(peer.roles) ? peer.roles : ['system', 'owner', 'admin', 'worker'],
+        // Fail-closed: privileged roles (system/owner/admin) must be configured explicitly per peer.
+        roles: Array.isArray(peer.roles) && peer.roles.length ? peer.roles : [...DEFAULT_PEER_ROLES],
     })).filter((peer: MeshPeer) => peer.nodeId)
     const supabase = {
         url: process.env.NOVA_MESH_SUPABASE_URL || config.supabase?.meshUrl,
@@ -110,6 +111,12 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
     const relay = new RelayMeshTransport(nodeId, config.relay)
     router = new MeshTransportRouter(identity, principal, { mode: config.mode, peers: config.direct.peers, allowTofu: config.allowTofu, allowedTools: config.allowedTools }, [direct, supabase, relay, local])
     router.subscribe(envelope => handleEnvelope(envelope, runtimeMessageHandler))
+    const keyless = peersWithoutKeys(config.direct.peers)
+    if (keyless.length) {
+        console.warn(`[MeshTransport] WARNING: peers without publicKey will be ${config.allowTofu ? 'trusted on first use (mesh.security.allowTofu=true)' : 'REJECTED (missing_peer_key)'}: ${keyless.join(', ')}. ` +
+            'Migration: run `npm run mesh:identity` on each peer and copy its publicKey into mesh.direct.peers[].publicKey ' +
+            `and list roles explicitly (default is ${DEFAULT_PEER_ROLES.join(',')}).`)
+    }
     console.log(`[MeshTransport] mode=${config.mode} node=${nodeId} direct=:${config.direct.port} peers=${config.direct.peers.length} key=${MeshIdentity.fingerprint(identity.publicKey)}`)
     return router
 }

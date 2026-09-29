@@ -78,6 +78,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/channels/message-queue.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/channels/message-queue.ts",
       "path": ".nova-data"
     },
@@ -115,6 +119,14 @@
     },
     {
       "owner": "src/core/correction-detector.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/daemon-telegram-authority-defer.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/daemon-telegram-dedup.test.ts",
       "path": ".nova-data"
     },
     {

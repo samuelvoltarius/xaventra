@@ -24,12 +24,17 @@ export type LeaseDecision = {
     fencingToken?: string
     leaseExpiresAt?: string
     coordinator?: 'local' | 'supabase' | 'witness'
+    /** The coordinator positively reported a different current holder. */
+    heldByOther?: boolean
 }
 
 const LEASE_TABLE = 'nova_mesh_leases'
 export const MAIN_SERVICE = 'nova-main'
 export const MAIN_BOUND_SERVICES = ['telegram', 'whatsapp', 'discord', 'dashboard'] as const
 const DEFAULT_LEASE_TTL_MS = 90_000
+/** Leadership is dropped this long before the locally computed hard expiry. */
+export const LEASE_SAFETY_MARGIN_MS = 10_000
+const leaseDeadlineTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const renewTimers = new Map<string, ReturnType<typeof setInterval>>()
 const takeoverTimers = new Map<string, ReturnType<typeof setInterval>>()
 const leadershipTakeoverHandlers = new Map<string, Set<() => Promise<void> | void>>()
@@ -122,16 +127,37 @@ async function isPreferredTakeoverCandidate(): Promise<boolean> {
     return !preferred || preferred.nodeId === getLocalNodeId()
 }
 
-function loadSupabaseConfig(): SupabaseConfig {
+type CoordinatorConfigFile =
+    | { status: 'ok'; raw: any }
+    | { status: 'missing' }
+    | { status: 'unreadable'; error: string }
+
+function readCoordinatorConfigFile(): CoordinatorConfigFile {
+    let text: string
     try {
         const configPath = resolveConfigPath()
-        if (existsSync(configPath)) {
-            const config = JSON.parse(readFileSync(configPath, 'utf-8'))
-            if (config.supabase?.meshUrl && config.supabase?.meshKey) {
-                return { url: config.supabase.meshUrl, key: config.supabase.meshKey }
-            }
-        }
-    } catch { /* ignore */ }
+        if (!existsSync(configPath)) return { status: 'missing' }
+        text = readFileSync(configPath, 'utf-8')
+    } catch (error) { return { status: 'unreadable', error: String(error) } }
+    try {
+        const raw = JSON.parse(text)
+        if (!raw || typeof raw !== 'object') return { status: 'unreadable', error: 'config root is not an object' }
+        return { status: 'ok', raw }
+    } catch (error) { return { status: 'unreadable', error: String(error) } }
+}
+
+/** Local-only leadership needs an explicit single-node declaration; the mere
+ * absence of coordinator credentials is not proof that no other Main exists. */
+export function configDeclaresSingleNode(raw: any): boolean {
+    const mode = String(raw?.mesh?.mode || '').toLowerCase()
+    const coordination = String(raw?.mesh?.coordination?.mode || '').toLowerCase()
+    return mode === 'standalone' || ['local', 'standalone', 'single-node'].includes(coordination)
+}
+
+function loadSupabaseConfig(file: CoordinatorConfigFile = readCoordinatorConfigFile()): SupabaseConfig {
+    if (file.status === 'ok' && file.raw.supabase?.meshUrl && file.raw.supabase?.meshKey) {
+        return { url: file.raw.supabase.meshUrl, key: file.raw.supabase.meshKey }
+    }
 
     if (process.env.NOVA_MESH_SUPABASE_URL && process.env.NOVA_MESH_SUPABASE_KEY) {
         return {
@@ -225,6 +251,7 @@ async function acquireLeaseTransaction(config: SupabaseConfig, service: string):
             leaseExpiresAt: value.expires_at,
             coordinator: 'supabase',
             reason: value.reason || (value.leader ? 'transactional lease acquired' : `lease held until ${value.expires_at || 'unknown'}`),
+            heldByOther: value.leader !== true && Boolean(value.holder_node_id) && value.holder_node_id !== nodeId,
         }
     } catch (error) {
         return { leader: false, reason: `transactional lease failed; split-brain guard (${error})` }
@@ -235,7 +262,23 @@ async function bootstrapLeaseTable(config: SupabaseConfig): Promise<void> {
     console.warn(`[Leader] Lease schema is not current for ${config.url}; apply sql/mesh-coordination-v2.sql with database-admin access.`)
 }
 
+/**
+ * Acquire or renew a lease. For distributed coordinators the returned
+ * `leaseExpiresAt` is bounded by (local request start + TTL): the coordinator
+ * sets its expiry with its own clock *after* the request started, so this local
+ * deadline is never later than the real one regardless of clock skew.
+ */
 export async function acquireServiceLease(service: string): Promise<LeaseDecision> {
+    const requestStartedAt = Date.now()
+    const decision = await acquireServiceLeaseDecision(service)
+    if (!decision.leader || decision.coordinator === 'local') return decision
+    const reported = decision.leaseExpiresAt ? Date.parse(decision.leaseExpiresAt) : Number.NaN
+    const bound = requestStartedAt + DEFAULT_LEASE_TTL_MS
+    const deadline = Number.isFinite(reported) ? Math.min(reported, bound) : bound
+    return { ...decision, leaseExpiresAt: new Date(deadline).toISOString() }
+}
+
+async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecision> {
     if (service === MAIN_SERVICE && !isMainLeadershipEligible()) {
         return { leader: false, reason: 'node is explicitly main-ineligible (worker-only)' }
     }
@@ -248,11 +291,18 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         return { leader: true, reason: 'leader election disabled', epoch: 1, fencingToken: fencingToken(service, 1), coordinator: 'local' }
     }
 
+    // An unreadable config hides which coordinator is authoritative (witness,
+    // Supabase or single-node). Fail closed instead of guessing.
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status === 'unreadable') {
+        return { leader: false, reason: `coordinator config unreadable; coordinator unknown, split-brain guard (${configFile.error.slice(0, 160)})` }
+    }
+
     // Coordinator choice is explicit. Nodes must never silently mix a Witness
     // quorum with Supabase because two independent authorities could each elect
     // a leader. Witness mode therefore fails closed when fewer than two votes
     // are available and never falls back to Supabase for that election.
-    const { resolveWitnessAuthority, acquireWitnessQuorumLease } = await import('./witness-quorum.js')
+    const { resolveWitnessAuthority, acquireWitnessQuorumLease, witnessModeRequested } = await import('./witness-quorum.js')
     const witnessAuthority = resolveWitnessAuthority(service)
     if (witnessAuthority) {
         const decision = await acquireWitnessQuorumLease(witnessAuthority, DEFAULT_LEASE_TTL_MS)
@@ -263,14 +313,20 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         return { ...decision, reason: `${decision.reason}; authority=${witnessAuthority}; service=${service}` }
     }
 
-    const config = loadSupabaseConfig()
+    const config = loadSupabaseConfig(configFile)
     if (!config.url || !config.key) {
         if (standbyNode) {
             return { leader: false, reason: 'standby has no distributed coordinator; split-brain guard' }
         }
+        if (witnessModeRequested()) {
+            return { leader: false, reason: 'witness coordination configured; local-only leader refused (split-brain guard)', coordinator: 'witness' }
+        }
+        if (configFile.status !== 'ok' || !configDeclaresSingleNode(configFile.raw)) {
+            return { leader: false, reason: 'no distributed coordinator configured and config does not declare single-node (set mesh.mode="standalone"); split-brain guard' }
+        }
         const token = fencingToken(service, 1)
         localFencingTokens.set(service, { epoch: 1, token })
-        return { leader: true, reason: 'no distributed coordinator configured; local-only leader', epoch: 1, fencingToken: token, coordinator: 'local' }
+        return { leader: true, reason: 'single-node config (mesh.mode=standalone); local-only leader', epoch: 1, fencingToken: token, coordinator: 'local' }
     }
 
     const nodeId = getLocalNodeId()
@@ -317,8 +373,8 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
                 localFencingTokens.set(service, { epoch: written.epoch!, token })
             }
             return written.ok
-                ? { leader: true, reason: 'new lease acquired', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!) }
-                : { leader: false, reason: 'failed to create lease' }
+                ? { leader: true, reason: 'new lease acquired', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!), coordinator: 'supabase' }
+                : { leader: false, reason: 'failed to create lease', coordinator: 'supabase' }
         }
 
         // Existing deployments may predate fencing epochs. The migration is
@@ -329,20 +385,29 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         }
 
         if (isExpired(lease.expires_at) && lease.holder_node_id !== nodeId && !(await isPreferredTakeoverCandidate())) {
-            return { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'expired lease; stronger standby has takeover priority' }
+            return { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'expired lease; stronger standby has takeover priority', coordinator: 'supabase', heldByOther: true }
         }
 
         if (lease.holder_node_id === nodeId || isExpired(lease.expires_at)) {
             const transactional = await acquireLeaseTransaction(config, service)
             if (transactional) return transactional
+            // The REST/CAS fallback judges expiry with this node's wall clock.
+            // Taking over another node's lease must be decided with server time
+            // (nova_acquire_service_lease uses now()), so it is refused here.
+            if (lease.holder_node_id !== nodeId) {
+                return {
+                    leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, coordinator: 'supabase', heldByOther: true,
+                    reason: 'takeover requires the transactional lease RPC (server time); REST/CAS takeover disabled, apply sql/mesh-coordination-v2.sql',
+                }
+            }
             const written = await writeLease({ config, service, method: 'PATCH', previous: lease })
             if (written.ok) {
                 const token = fencingToken(service, written.epoch!)
                 localFencingTokens.set(service, { epoch: written.epoch!, token })
             }
             return written.ok
-                ? { leader: true, reason: lease.holder_node_id === nodeId ? 'lease renewed' : 'expired lease acquired', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!) }
-                : { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'failed to update lease' }
+                ? { leader: true, reason: 'lease renewed', epoch: written.epoch, fencingToken: fencingToken(service, written.epoch!), coordinator: 'supabase' }
+                : { leader: false, holder: lease.holder_hostname ?? lease.holder_node_id, reason: 'failed to update lease', coordinator: 'supabase' }
         }
 
         return {
@@ -350,6 +415,7 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
             holder: lease.holder_hostname ?? lease.holder_node_id,
             reason: `lease held until ${lease.expires_at}`,
             coordinator: 'supabase',
+            heldByOther: lease.holder_node_id !== nodeId,
         }
     } catch (err) {
         return { leader: false, reason: `lease check failed; split-brain guard (${err})` }
@@ -369,37 +435,77 @@ export async function shouldStartExclusiveService(service: string): Promise<bool
     return true
 }
 
+function clearLeaseDeadline(service: string): void {
+    const deadline = leaseDeadlineTimers.get(service)
+    if (deadline) clearTimeout(deadline)
+    leaseDeadlineTimers.delete(service)
+}
+
+/** Drop leadership at hardExpiry - safety margin even if a renewal tick is
+ * late or hangs; interval ticks alone cannot guarantee this. */
+function armLeaseDeadline(service: string): void {
+    clearLeaseDeadline(service)
+    const hardExpiry = localLeaseExpiries.get(service)
+    if (!hardExpiry || !Number.isFinite(hardExpiry)) return
+    const delay = Math.max(0, hardExpiry - LEASE_SAFETY_MARGIN_MS - Date.now())
+    const timer = setTimeout(() => {
+        void relinquishLeadership(service, 'lease deadline reached before a successful renewal')
+    }, delay)
+    if (timer.unref) timer.unref()
+    leaseDeadlineTimers.set(service, timer)
+}
+
+async function relinquishLeadership(service: string, reason: string, coordinator?: LeaseDecision['coordinator']): Promise<void> {
+    const timer = renewTimers.get(service)
+    if (!timer) return
+    clearInterval(timer)
+    renewTimers.delete(service)
+    clearLeaseDeadline(service)
+    renewalMisses.delete(service)
+    localFencingTokens.delete(service)
+    localLeaseExpiries.delete(service)
+    console.warn(`[Leader] Lost ${service} leadership: ${reason}`)
+    recordMainRole({ event: 'lease.lost', service, leader: false, coordinator })
+    for (const handler of leadershipLostHandlers.get(service) || []) {
+        try { await handler() } catch { /* best effort */ }
+    }
+}
+
 function startLeaseRenewal(service: string): void {
     if (renewTimers.has(service)) return
     const timer = setInterval(async () => {
         const decision = await acquireServiceLease(service)
+        if (renewTimers.get(service) !== timer) {
+            // Leadership was dropped (deadline/loss) while this tick was in flight.
+            if (!renewTimers.has(service)) localFencingTokens.delete(service)
+            return
+        }
         if (decision.leader) {
             recordMainRole({ event: 'lease.renewed', service, leader: true, coordinator: decision.coordinator })
             renewalMisses.set(service, 0)
-            if (decision.leaseExpiresAt) localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
+            if (decision.leaseExpiresAt) {
+                localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
+                armLeaseDeadline(service)
+            }
+            return
+        }
+        if (decision.heldByOther) {
+            await relinquishLeadership(service, `lease is held by ${decision.holder ?? 'another node'} (${decision.reason})`, decision.coordinator)
             return
         }
         const misses = (renewalMisses.get(service) || 0) + 1
         renewalMisses.set(service, misses)
         const hardExpiry = localLeaseExpiries.get(service)
-        if (misses < 3 && (!hardExpiry || Date.now() < hardExpiry)) return
-
-        clearInterval(timer)
-        renewTimers.delete(service)
-        renewalMisses.delete(service)
-        localFencingTokens.delete(service)
-        localLeaseExpiries.delete(service)
-        console.warn(`[Leader] Lost ${service} leadership after ${misses} failed renewals`)
-        recordMainRole({ event: 'lease.lost', service, leader: false, coordinator: decision.coordinator })
-        for (const handler of leadershipLostHandlers.get(service) || []) {
-            try { await handler() } catch { /* best effort */ }
-        }
+        if (misses < 3 && (!hardExpiry || Date.now() < hardExpiry - LEASE_SAFETY_MARGIN_MS)) return
+        await relinquishLeadership(service, `${misses} failed renewals (${decision.reason})`, decision.coordinator)
     }, Math.max(15_000, Math.floor(DEFAULT_LEASE_TTL_MS / 3)))
     if (timer.unref) timer.unref()
     renewTimers.set(service, timer)
+    armLeaseDeadline(service)
 }
 
 export function stopLeaseRenewal(service: string): void {
+    clearLeaseDeadline(service)
     const timer = renewTimers.get(service)
     if (!timer) return
     clearInterval(timer)
@@ -502,6 +608,7 @@ export function watchForServiceLeadership(
         if (!decision.leader) return
         clearInterval(timer)
         takeoverTimers.delete(service)
+        if (decision.leaseExpiresAt) localLeaseExpiries.set(service, Date.parse(decision.leaseExpiresAt))
         startLeaseRenewal(service)
         console.log(`[Leader] Taking over ${service}: ${decision.reason}`)
         recordMainRole({ event: 'lease.takeover', service, leader: true, coordinator: decision.coordinator })

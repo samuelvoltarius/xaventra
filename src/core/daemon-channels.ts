@@ -52,6 +52,18 @@ export type MessageHandler = (
     image?: { data: string; mimeType: string }
 ) => Promise<void>
 
+/** Globally unique queue/dedup key for a Telegram inbound message. The adapter
+ * already provides `tg-update:<update_id>` or `tg:<chat>:<message_id>`; a bare
+ * message_id (only unique per chat) is scoped by chat here. */
+export function telegramQueueKey(msg: { id?: unknown }, chatId: unknown): string {
+    const raw = msg?.id === undefined || msg?.id === null ? '' : String(msg.id)
+    if (raw.startsWith('tg:') || raw.startsWith('tg-update:')) return raw
+    return `tg:${String(chatId ?? 'unknown')}:${raw || `local-${Date.now()}`}`
+}
+
+/** Retry interval for inbound updates deferred because authority could not be verified. */
+export const TELEGRAM_AUTHORITY_RETRY_MS = 15_000
+
 export async function verifyTelegramAuthority(
     verify?: (service: string) => Promise<boolean>,
 ): Promise<boolean> {
@@ -147,67 +159,106 @@ async function startTelegramOnce(
     }
 
     const { createTelegramAdapter } = await import('../channels/telegram.js')
+    // Loaded before the adapter exists so the poll listener can persist
+    // synchronously (before the update is acknowledged by the next poll).
+    const inboundQueue = await import('../channels/message-queue.js').catch(() => null)
+
+    // Updates whose authority check failed stay `pending` in the durable queue
+    // and are retried here; if this adapter is retired they remain queued for
+    // the successor (HA hydrate) or the next startup drain.
+    const deferredInbound = new Map<string, any>()
+    let deferredTimer: ReturnType<typeof setTimeout> | undefined
+    let inboundClosed = false
+    const inFlight = new Set<string>()
 
     const adapter = createTelegramAdapter({
         token: config.token,
         allowFrom: config.allowFrom || [],
         groupPolicy: 'mention-only',
         verifyAuthority: verifyTelegramAuthority,
+        persistInbound: inboundQueue
+            ? (entry: { id: string; chatId: string; from: string; content: string }) => {
+                inboundQueue.logIncoming({ ...entry, channel: 'Telegram' })
+            }
+            : undefined,
     })
 
-    adapter.onMessage(async (msg: any) => {
-        if (!(await verifyTelegramAuthority())) {
-            console.warn('[Nova Telegram] Eingang verworfen: keine live verifizierte Main-/Telegram-Lease')
-            return
-        }
-        const processingStartedAt = Date.now()
-        // Store last active chat ID on global state for dynamic resolution
-        const chatId = msg.to || msg.groupId || msg.from
-        const presentation = new TelegramPresentationSession(adapter as any, String(chatId))
-        if (chatId && (globalThis as any).__novaState) {
-            (globalThis as any).__novaState.lastActiveChatId = chatId
-            ;(globalThis as any).__novaState.lastActiveUserId = String(msg.from)
-            state.lastActiveChatId = String(chatId)
-            state.lastActiveUserId = String(msg.from)
-            // Store as adminChatId so heartbeat always has a target
-            if (!(globalThis as any).__novaState.adminChatId) {
-                (globalThis as any).__novaState.adminChatId = chatId
-                state.adminChatId = String(chatId)
-                console.log(`[Nova] Admin chatId gespeichert: ${chatId}`)
-            }
-            const { publishChannelState } = await import('./ha-state.js')
-            void publishChannelState('Telegram', {
-                lastActiveChatId: String(chatId),
-                adminChatId: String((globalThis as any).__novaState.adminChatId || chatId),
-                lastActiveUserId: String(msg.from),
-            }).catch(() => { /* local channel remains available */ })
-        }
+    const scheduleDeferredInbound = (): void => {
+        if (deferredTimer || inboundClosed) return
+        deferredTimer = setTimeout(() => {
+            deferredTimer = undefined
+            if (inboundClosed) { deferredInbound.clear(); return }
+            const batch = [...deferredInbound.values()]
+            deferredInbound.clear()
+            void (async () => {
+                for (const message of batch) {
+                    try { await handleInbound(message) } catch { /* retry bookkeeping happens inside */ }
+                }
+            })()
+        }, TELEGRAM_AUTHORITY_RETRY_MS)
+        if ((deferredTimer as any).unref) (deferredTimer as any).unref()
+    }
 
-        // ---- Persistent Message Queue ----
-        const msgId = String(msg.updateId || msg.id || `tg-${Date.now()}`)
+    const handleInbound = async (msg: any): Promise<void> => {
+        const processingStartedAt = Date.now()
+        const chatId = msg.to || msg.groupId || msg.from
+
+        // ---- Persistent Message Queue: persist BEFORE the authority check ----
+        const msgId = telegramQueueKey(msg, chatId)
         logRuntimeEvent({ event: 'telegram.message.received', channel: 'Telegram', userId: String(msg.from), messageId: msgId })
-        let _queueMarkDone: ((id: string) => void) | undefined
-        let _queueIncrementRetry: ((id: string) => void) | undefined
-        let accepted = true
+        let queue: typeof import('../channels/message-queue.js') | null = inboundQueue
+        let processable = true
         try {
-            const queue = await import('../channels/message-queue.js')
-            accepted = queue.logIncoming({ id: msgId, chatId: String(chatId), from: String(msg.from), content: msg.content, channel: 'Telegram' })
-            _queueMarkDone = queue.markDone
-            _queueIncrementRetry = queue.incrementRetry
-        } catch { /* queue optional */ }
-        if (!accepted) {
+            queue ||= await import('../channels/message-queue.js')
+            // Idempotent: a no-op when the adapter already persisted this update.
+            queue.logIncoming({ id: msgId, chatId: String(chatId), from: String(msg.from), content: msg.content, channel: 'Telegram' })
+            processable = queue.isMessageProcessable(msgId)
+        } catch { queue = null /* queue optional */ }
+        if (!processable || inFlight.has(msgId)) {
             logRuntimeEvent({ event: 'telegram.message.duplicate', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true })
             return
         }
 
+        if (!(await verifyTelegramAuthority())) {
+            // Never drop an acknowledged update: keep it pending and retry.
+            console.warn(`[Nova Telegram] Eingang ${msgId} zurückgestellt: Main-/Telegram-Lease nicht live verifizierbar`)
+            logRuntimeEvent({ event: 'telegram.message.deferred', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: false })
+            if (!inboundClosed) {
+                deferredInbound.set(msgId, msg)
+                scheduleDeferredInbound()
+            }
+            return
+        }
+
+        inFlight.add(msgId)
+        // Store last active chat ID on global state for dynamic resolution
+        const presentation = new TelegramPresentationSession(adapter as any, String(chatId))
         try {
+            if (chatId && (globalThis as any).__novaState) {
+                (globalThis as any).__novaState.lastActiveChatId = chatId
+                ;(globalThis as any).__novaState.lastActiveUserId = String(msg.from)
+                state.lastActiveChatId = String(chatId)
+                state.lastActiveUserId = String(msg.from)
+                // Store as adminChatId so heartbeat always has a target
+                if (!(globalThis as any).__novaState.adminChatId) {
+                    (globalThis as any).__novaState.adminChatId = chatId
+                    state.adminChatId = String(chatId)
+                    console.log(`[Nova] Admin chatId gespeichert: ${chatId}`)
+                }
+                const { publishChannelState } = await import('./ha-state.js')
+                void publishChannelState('Telegram', {
+                    lastActiveChatId: String(chatId),
+                    adminChatId: String((globalThis as any).__novaState.adminChatId || chatId),
+                    lastActiveUserId: String(msg.from),
+                }).catch(() => { /* local channel remains available */ })
+            }
+
             const { awaitRuntimeReady } = await import('./runtime-readiness.js')
             if (!(globalThis as any).__novaState?.runtimeReady) {
                 console.log(`[Nova Telegram] ⏸ Nachricht ${msgId} persistent gepuffert — warte auf runtimeReady`)
             }
             await awaitRuntimeReady()
-            const queue = await import('../channels/message-queue.js')
-            queue.markProcessing(msgId)
+            queue?.markProcessing(msgId)
             await messageHandler('Telegram', msg.from, msg.content, async (reply) => {
                 if (!(await verifyTelegramAuthority())) {
                     throw new Error('Telegram reply fenced: Main-/Telegram-Lease ist nicht mehr gültig')
@@ -216,25 +267,38 @@ async function startTelegramOnce(
                 logRuntimeEvent({ event: 'telegram.reply.sent', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, detail: delivery })
             }, msg.image)
             await presentation.clearProgress()
-            _queueMarkDone?.(msgId)
+            queue?.markDone(msgId)
             logRuntimeEvent({ event: 'telegram.message.completed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, durationMs: Date.now() - processingStartedAt })
         } catch (err) {
             await presentation.clearProgress().catch(() => { /* best effort after failure */ })
-            _queueIncrementRetry?.(msgId)
+            queue?.incrementRetry(msgId)
             logRuntimeEvent({ event: 'telegram.message.failed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: false, durationMs: Date.now() - processingStartedAt, detail: String(err).slice(0, 500) })
             throw err
+        } finally {
+            inFlight.delete(msgId)
         }
-    })
+    }
+
+    adapter.onMessage(handleInbound)
+
+    const closeInbound = (): void => {
+        inboundClosed = true
+        if (deferredTimer) clearTimeout(deferredTimer)
+        deferredTimer = undefined
+        deferredInbound.clear()
+    }
 
     try {
         await adapter.connect()
         if (!(await verifyTelegramAuthority())) {
+            closeInbound()
             await adapter.disconnect?.()
             stopLeaseRenewal('telegram')
             watchForServiceLeadership(MAIN_SERVICE, () => startTelegram(config, messageHandler, state))
             return
         }
     } catch (error) {
+        closeInbound()
         await adapter.disconnect?.().catch(() => {})
         stopLeaseRenewal('telegram')
         watchForServiceLeadership('telegram', () => startTelegram(config, messageHandler, state))
@@ -248,6 +312,7 @@ async function startTelegramOnce(
     const retire = async (service: string) => {
         if (retired) return
         retired = true
+        closeInbound()
         removeTelegramLost?.()
         removeMainLost?.()
         // A callback from an older adapter must never fence its replacement.

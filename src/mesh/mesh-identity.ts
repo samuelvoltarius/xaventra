@@ -70,6 +70,15 @@ export class MeshIdentity {
         catch { return false }
     }
 
+    /** Verifies payload hash and signature against an externally trusted public key. */
+    static verifyWithKey(envelope: MeshEnvelope, publicKey: string): boolean {
+        const { signature, ...unsigned } = envelope
+        const hash = createHash('sha256').update(stable(envelope.payload)).digest('hex')
+        if (hash !== envelope.payloadHash) return false
+        try { return verify(null, Buffer.from(stable(unsigned)), publicKey, Buffer.from(signature, 'base64url')) }
+        catch { return false }
+    }
+
     static fingerprint(publicKey: string): string {
         return createHash('sha256').update(publicKey).digest('hex').slice(0, 24)
     }

@@ -72,7 +72,7 @@ export class MeshTransportRouter implements MeshTransport {
         private readonly trust: MeshTrustConfig,
         private readonly transports: MeshTransport[],
     ) {
-        this.policy = new MeshPolicy(trust, identity.nodeId)
+        this.policy = new MeshPolicy(trust, identity.nodeId, identity.publicKey)
         for (const transport of transports) transport.subscribe(envelope => this.receive(envelope))
         this.retryTimer = setInterval(() => { void this.flushOutbox() }, 3000)
         if (this.retryTimer.unref) this.retryTimer.unref()

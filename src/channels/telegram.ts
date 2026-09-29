@@ -17,11 +17,67 @@ import { formatTelegramMessage } from './telegram-presentation.js'
 
 export interface TelegramConfig {
     token: string
+    /**
+     * DM allowlist. Numeric entries match the immutable Telegram user id.
+     * Entries starting with `@` match the (mutable, re-assignable) username and
+     * log a warning. Bare non-numeric entries match nothing (since 29.09.2026;
+     * previously they matched the username).
+     */
     allowFrom?: string[]
     groupPolicy?: 'allow' | 'mention-only' | 'deny'
     username?: string
     /** Runtime-owned Main + Telegram lease verifier. Never inferred from the bot token. */
     verifyAuthority?: () => Promise<boolean>
+    /**
+     * Durable inbound log. Called synchronously from the update listener,
+     * i.e. before the library acknowledges the update with the next poll
+     * offset and before any (network) authority check. When set, a persisted
+     * text/photo update is always handed to the message handler, which owns
+     * the authority decision (defer instead of drop).
+     */
+    persistInbound?: (message: { id: string; chatId: string; from: string; content: string }) => void
+}
+
+/** Allowlist entry matching: numeric ids only; `@name` explicitly opts into username matching. */
+export function telegramAllowlistMatches(entry: string, userId: string, username: string): boolean {
+    const value = String(entry ?? '').trim()
+    if (!value) return false
+    if (value.startsWith('@')) {
+        return Boolean(username) && value.slice(1).toLowerCase() === username.toLowerCase()
+    }
+    return /^-?\d+$/.test(value) && value === userId
+}
+
+function warnAboutAllowlist(entries: string[]): void {
+    const usernames = entries.filter(entry => String(entry).trim().startsWith('@'))
+    const ignored = entries.filter(entry => {
+        const value = String(entry).trim()
+        return value && !value.startsWith('@') && !/^-?\d+$/.test(value)
+    })
+    if (usernames.length) {
+        console.warn(`[Nova Telegram] ⚠ allowFrom enthält Username-Einträge (${usernames.join(', ')}): Usernames sind änderbar und können neu vergeben werden — besser numerische User-IDs verwenden.`)
+    }
+    if (ignored.length) {
+        console.warn(`[Nova Telegram] ⚠ allowFrom-Einträge ohne numerische ID werden ignoriert: ${ignored.join(', ')} (Username bewusst mit "@" kennzeichnen)`)
+    }
+}
+
+const UPDATE_ID_PROPERTY = '__novaUpdateId'
+const PERSISTED_PROPERTY = '__novaPersisted'
+
+/** Copy the raw update_id onto the message object (non-enumerable) so the
+ * 'message' listeners can build a globally unique dedup key. */
+export function stampTelegramUpdate(update: any): void {
+    const message = update?.message
+    if (!message || typeof message !== 'object' || !Number.isSafeInteger(update.update_id)) return
+    Object.defineProperty(message, UPDATE_ID_PROPERTY, { value: update.update_id, enumerable: false, configurable: true })
+}
+
+/** Globally unique inbound key: Telegram update_id when known, otherwise
+ * chat-scoped message_id (message_id alone is only unique per chat). */
+export function telegramInboundKey(msg: any, updateId: unknown = msg?.[UPDATE_ID_PROPERTY]): string {
+    if (Number.isSafeInteger(updateId)) return `tg-update:${updateId}`
+    return `tg:${msg?.chat?.id ?? 'unknown'}:${msg?.message_id ?? 'unknown'}`
 }
 
 // ============================================
@@ -48,6 +104,7 @@ export class TelegramAdapter implements ChannelAdapter {
             groupPolicy: 'mention-only',
             ...config,
         }
+        warnAboutAllowlist(this.config.allowFrom || [])
     }
 
     private async hasLiveAuthority(): Promise<boolean> {
@@ -121,6 +178,13 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Step 1: Start WITHOUT polling to clear webhook first
         this.bot = this.guardBotEffects(new TelegramBot(this.config.token, { polling: false }))
+        const processUpdate = typeof this.bot.processUpdate === 'function' ? this.bot.processUpdate.bind(this.bot) : undefined
+        if (processUpdate) {
+            this.bot.processUpdate = (update: any) => {
+                stampTelegramUpdate(update)
+                return processUpdate(update)
+            }
+        }
 
         // Step 2: Delete any existing webhook — KEEP pending updates (drop_pending_updates: false)
         // This is critical: an active webhook silently blocks all polling-based updates,
@@ -204,10 +268,7 @@ export class TelegramAdapter implements ChannelAdapter {
         }
 
         // Handle incoming messages (queued per chat to prevent API rate-limiting)
-        this.bot.on('message', (msg: any) => {
-            const chatId = String(msg.chat?.id || 'unknown')
-            this.enqueueMessage(chatId, () => this.handleMessage(msg))
-        })
+        this.bot.on('message', (msg: any) => this.onRawMessage(msg))
 
         // Handle voice messages
         this.bot.on('voice', (msg: any) => {
@@ -307,7 +368,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
                 // Create message with transcribed text
                 const incoming: IncomingMessage = {
-                    id: msg.message_id.toString(),
+                    id: telegramInboundKey(msg),
                     channel: 'telegram',
                     from: userId,
                     to: chatId,
@@ -347,7 +408,7 @@ export class TelegramAdapter implements ChannelAdapter {
                             { timeout: 60_000 }
                         ).toString().trim()
                         const incoming: IncomingMessage = {
-                            id: msg.message_id.toString(), channel: 'telegram', from: userId,
+                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
                             to: chatId, content: remoteResult, timestamp: msg.date * 1000, isGroup: false,
                         }
                         if (this.messageHandler) {
@@ -365,7 +426,7 @@ export class TelegramAdapter implements ChannelAdapter {
                         const { transcribe } = await import('../voice/voice-input.js')
                         const result = await transcribe(tempPath, { model: 'whisper-local' })
                         const incoming: IncomingMessage = {
-                            id: msg.message_id.toString(), channel: 'telegram', from: userId,
+                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
                             to: chatId, content: result.text, timestamp: msg.date * 1000, isGroup: false,
                         }
                         if (this.messageHandler) {
@@ -439,7 +500,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 : `📄 Datei empfangen: ${fileName} (${mimeType}, ${Math.round(buffer.byteLength / 1024)} KB)\nGespeichert unter: ${savePath}\n\nBitte analysiere diese Datei.`
 
             const incoming: IncomingMessage = {
-                id: msg.message_id.toString(),
+                id: telegramInboundKey(msg),
                 channel: 'telegram',
                 from: userId,
                 to: chatId,
@@ -1140,29 +1201,66 @@ export class TelegramAdapter implements ChannelAdapter {
         }
     }
 
-    private async handleMessage(msg: any): Promise<void> {
-        if (!(await this.acceptInbound())) return
-        const chatId = msg.chat.id.toString()
+    /** Synchronous 'message' listener: persist first, then process per chat. */
+    private onRawMessage(msg: any): void {
+        this.persistInboundSync(msg)
+        const chatId = String(msg?.chat?.id || 'unknown')
+        this.enqueueMessage(chatId, () => this.handleMessage(msg))
+    }
+
+    private persistInboundSync(msg: any): void {
+        if (!this.config.persistInbound || !msg?.chat) return
+        if (!this.passesInboundPolicy(msg, false)) return
+        const content = msg.text || msg.caption || (msg.photo?.length ? 'Was zeigt dieses Bild?' : '')
+        if (!content) return
+        try {
+            this.config.persistInbound({
+                id: telegramInboundKey(msg), chatId: String(msg.chat.id),
+                from: String(msg.from?.id ?? ''), content: String(content),
+            })
+            Object.defineProperty(msg, PERSISTED_PROPERTY, { value: true, enumerable: false, configurable: true })
+        } catch (error) {
+            console.warn(`[Nova Telegram] Inbound persistence failed; falling back to live-authority admission: ${error}`)
+        }
+    }
+
+    /** Local, synchronous admission policy (allowlist for DMs, group mention rule). */
+    private passesInboundPolicy(msg: any, log: boolean): boolean {
         const userId = msg.from?.id?.toString() ?? ''
         const username = msg.from?.username ?? ''
-        const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        const isGroup = msg.chat?.type === 'group' || msg.chat?.type === 'supergroup'
 
         // Check allowlist for DMs
         if (!isGroup && this.config.allowFrom?.length) {
-            const allowed = this.config.allowFrom.some(
-                a => a === userId || a === username || a === `@${username}`
-            )
+            const allowed = this.config.allowFrom.some(entry => telegramAllowlistMatches(entry, userId, username))
             if (!allowed) {
-                console.log(`[Nova Telegram] Ignoring from non-allowed: ${username || userId}`)
-                return
+                if (log) console.log(`[Nova Telegram] Ignoring from non-allowed: ${username || userId}`)
+                return false
             }
         }
 
         // Check group mention requirement
         if (isGroup && this.config.groupPolicy === 'mention-only') {
             const mentioned = msg.text?.includes(`@${this.botUsername}`)
-            if (!mentioned && !msg.photo) return
+            if (!mentioned && !msg.photo) return false
         }
+        return true
+    }
+
+    private async handleMessage(msg: any): Promise<void> {
+        // A durably persisted update is never dropped here: without live
+        // authority it is handed on (without Bot API effects) so the runtime can
+        // defer it. Unpersisted updates keep the fail-closed drop.
+        const persisted = msg?.[PERSISTED_PROPERTY] === true
+        const authorized = !this.disconnecting && await this.hasLiveAuthority()
+        if (!authorized && !persisted) {
+            console.warn('[Nova Telegram] Eingang verworfen: live Main-/Telegram-Autorität fehlt')
+            return
+        }
+        const chatId = msg.chat.id.toString()
+        const userId = msg.from?.id?.toString() ?? ''
+        const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        if (!this.passesInboundPolicy(msg, true)) return
 
         // Handle text or caption
         let content = msg.text || msg.caption || ''
@@ -1202,7 +1300,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Create incoming message
         const incoming: IncomingMessage = {
-            id: msg.message_id.toString(),
+            id: telegramInboundKey(msg),
             channel: 'telegram',
             from: userId,
             to: chatId,  // <-- chatId for replies
@@ -1217,11 +1315,13 @@ export class TelegramAdapter implements ChannelAdapter {
         // Track last active chat for proactive messages
         this.lastActiveChat = chatId
 
-        // Auto-react to user message based on sentiment (emojis!)
-        this.autoReactToMessage(chatId, msg.message_id, content)
+        if (authorized) {
+            // Auto-react to user message based on sentiment (emojis!)
+            this.autoReactToMessage(chatId, msg.message_id, content)
 
-        // Show "typing..." indicator while processing
-        this.startTyping(chatId)
+            // Show "typing..." indicator while processing
+            this.startTyping(chatId)
+        }
 
         if (this.messageHandler) {
             // MUST await so errors are caught and typing is always stopped

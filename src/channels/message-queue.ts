@@ -15,7 +15,7 @@
  * Max retention: 24 hours (Telegram's own buffer window)
  */
 
-import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, appendFileSync, mkdirSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteFileSync } from '../core/atomic-storage.js'
 import { createHash } from 'node:crypto'
@@ -46,6 +46,8 @@ export interface QueuedMessage {
 
 const QUEUE_DIR = join(process.cwd(), '.nova-data')
 const QUEUE_FILE = join(QUEUE_DIR, 'msg-queue.jsonl')
+/** Unparsable lines are moved here (append-only) instead of being lost. */
+const QUARANTINE_FILE = join(QUEUE_DIR, 'msg-queue.corrupt.jsonl')
 const MAX_AGE_MS = 24 * 60 * 60 * 1000  // 24 hours
 const MAX_RETRIES = 3
 const SHARED_QUEUE_SCOPE = 'ha-message-queue'
@@ -62,17 +64,68 @@ function ensureDir(): void {
 // Init — load existing queue on startup
 // ============================================
 
-function loadQueue(): QueuedMessage[] {
+interface QueueSnapshot {
+    /** false when the file could not be read at all; callers must not compact then. */
+    ok: boolean
+    messages: QueuedMessage[]
+    corrupt: string[]
+}
+
+function isQueuedMessage(value: unknown): value is QueuedMessage {
+    const message = value as QueuedMessage
+    return Boolean(message) && typeof message === 'object' && typeof message.id === 'string' && message.id.length > 0
+        && typeof message.receivedAt === 'string' && typeof message.status === 'string'
+}
+
+/** Parse the JSONL queue line by line: one torn/corrupt line (e.g. a crash
+ * during append) must never discard the valid entries around it. */
+function readQueue(): QueueSnapshot {
     ensureDir()
-    if (!existsSync(QUEUE_FILE)) return []
-    try {
-        return readFileSync(QUEUE_FILE, 'utf-8')
-            .split('\n')
-            .filter(Boolean)
-            .map(line => JSON.parse(line) as QueuedMessage)
-    } catch {
-        return []
+    if (!existsSync(QUEUE_FILE)) return { ok: true, messages: [], corrupt: [] }
+    let text: string
+    try { text = readFileSync(QUEUE_FILE, 'utf-8') } catch (error) {
+        console.warn(`[MsgQueue] Queue unreadable, leaving it untouched: ${error}`)
+        return { ok: false, messages: [], corrupt: [] }
     }
+    const messages: QueuedMessage[] = []
+    const corrupt: string[] = []
+    for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+            const parsed = JSON.parse(line)
+            if (isQueuedMessage(parsed)) messages.push(parsed)
+            else corrupt.push(line)
+        } catch {
+            corrupt.push(line)
+        }
+    }
+    return { ok: true, messages, corrupt }
+}
+
+function quarantine(lines: string[]): boolean {
+    if (!lines.length) return true
+    try {
+        ensureDir()
+        appendFileSync(QUARANTINE_FILE, lines.map(line => JSON.stringify({ quarantinedAt: new Date().toISOString(), line })).join('\n') + '\n')
+        console.warn(`[MsgQueue] ${lines.length} corrupt queue line(s) moved to ${QUARANTINE_FILE}`)
+        return true
+    } catch (error) {
+        console.warn(`[MsgQueue] Could not quarantine corrupt queue lines: ${error}`)
+        return false
+    }
+}
+
+/** Load the queue for a rewrite. Returns null when a rewrite would lose data. */
+function loadQueueForRewrite(): QueuedMessage[] | null {
+    const snapshot = readQueue()
+    if (!snapshot.ok) return null
+    // Keep the raw corrupt lines in the queue file unless they are safely quarantined.
+    if (!quarantine(snapshot.corrupt)) return null
+    return snapshot.messages
+}
+
+function loadQueue(): QueuedMessage[] {
+    return readQueue().messages
 }
 
 function compactQueue(messages: QueuedMessage[]): void {
@@ -91,7 +144,8 @@ export function initMessageQueue(): QueuedMessage[] {
     _initialized = true
 
     const now = Date.now()
-    const messages = loadQueue()
+    const snapshot = readQueue()
+    const messages = snapshot.messages
     const fresh = messages.filter(m => {
         const age = now - new Date(m.receivedAt).getTime()
         return age < MAX_AGE_MS
@@ -103,8 +157,9 @@ export function initMessageQueue(): QueuedMessage[] {
         _index.set(m.id, m.status)
     }
 
-    // Compact file (drop old entries)
-    if (fresh.length !== messages.length) {
+    // Compact file (drop old entries and quarantined corrupt lines). Never
+    // compact when the file could not be read: that would erase the queue.
+    if (snapshot.ok && (fresh.length !== messages.length || snapshot.corrupt.length > 0) && quarantine(snapshot.corrupt)) {
         compactQueue(fresh)
         console.log(`[MsgQueue] Compacted: kept ${fresh.length}/${messages.length} entries`)
     }
@@ -145,7 +200,8 @@ function mirrorMessage(message: QueuedMessage): void {
 export async function hydrateSharedMessageQueue(): Promise<{ available: boolean; pending: QueuedMessage[] }> {
     if (!(await isHaStateAvailable())) return { available: false, pending: [] }
 
-    const local = loadQueue()
+    const local = loadQueueForRewrite()
+    if (!local) return { available: true, pending: [] }
     const merged = new Map(local.map(message => [message.id, message]))
     const records = await readHaRecords<QueuedMessage>(SHARED_QUEUE_SCOPE, 500)
     const now = Date.now()
@@ -205,7 +261,9 @@ export function logIncoming(params: {
 
     _index.set(msg.id, 'pending')
     ensureDir()
-    appendFileSync(QUEUE_FILE, JSON.stringify(msg) + '\n')
+    // A crash during a previous append can leave a torn last line without a
+    // newline; start on a fresh line so this entry stays parseable.
+    appendFileSync(QUEUE_FILE, (endsWithoutNewline(QUEUE_FILE) ? '\n' : '') + JSON.stringify(msg) + '\n')
     mirrorMessage(msg)
     return true
 }
@@ -236,7 +294,8 @@ export function markFailed(id: string): void {
  * Increment retry counter for a message.
  */
 export function incrementRetry(id: string): void {
-    const messages = loadQueue()
+    const messages = loadQueueForRewrite()
+    if (!messages) return
     const msg = messages.find(m => m.id === id)
     if (msg) {
         msg.retries++
@@ -254,7 +313,8 @@ export function incrementRetry(id: string): void {
 function _updateStatus(id: string, status: MsgStatus): void {
     _index.set(id, status)
     // Update in file (rewrite only the changed line)
-    const messages = loadQueue()
+    const messages = loadQueueForRewrite()
+    if (!messages) return
     const msg = messages.find(m => m.id === id)
     if (msg) {
         msg.status = status
@@ -265,6 +325,20 @@ function _updateStatus(id: string, status: MsgStatus): void {
         compactQueue(messages)
         mirrorMessage(msg)
     }
+}
+
+function endsWithoutNewline(path: string): boolean {
+    try {
+        if (!existsSync(path)) return false
+        const size = statSync(path).size
+        if (size === 0) return false
+        const fd = openSync(path, 'r')
+        try {
+            const last = Buffer.alloc(1)
+            readSync(fd, last, 0, 1, size - 1)
+            return last[0] !== 0x0a
+        } finally { closeSync(fd) }
+    } catch { return false }
 }
 
 export function isMessageProcessable(id: string): boolean {
