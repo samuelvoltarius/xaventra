@@ -1,5 +1,5 @@
 import { it,expect,vi,afterEach } from 'vitest'
-import { mkdtempSync,mkdirSync,writeFileSync,readFileSync } from 'node:fs'
+import { mkdtempSync,mkdirSync,writeFileSync,readFileSync,realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash,generateKeyPairSync,sign } from 'node:crypto'
@@ -17,7 +17,7 @@ import { encodeNativeUpdatePackage } from '../core/update-package.js'
 afterEach(()=>vi.unstubAllGlobals())
 function fixture(archiveContent='fixture'){
     vi.stubGlobal('process',{...process,platform:'linux',getuid:()=>0})
-    const root=mkdtempSync(join(tmpdir(),'native-program-'));mkdirSync(join(root,'app'));mkdirSync(join(root,'app','dist'))
+    const root=realpathSync(mkdtempSync(join(tmpdir(),'native-program-')));mkdirSync(join(root,'app'));mkdirSync(join(root,'app','dist'))
     const app=join(root,'app'),daemon=join(app,'dist','daemon.js'),archive=join(root,'archive');writeFileSync(daemon,'fixture')
     const content=Buffer.from(archiveContent)
     writeFileSync(archive,gzipSync(Buffer.concat([nativeArchiveHeader('dist/daemon.js',content.length),content,Buffer.alloc((512-content.length%512)%512+1024)])))

@@ -1,5 +1,5 @@
 import { it,expect } from 'vitest'
-import { mkdtempSync,mkdirSync,writeFileSync } from 'node:fs'
+import { mkdtempSync,mkdirSync,writeFileSync,realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -11,7 +11,7 @@ it.each(['arch','short','endian','class','type','windows','text'])('rejects %s n
     expect(()=>validateNativeBinaryHeader('addon.node',b,'x64')).toThrow()
 })
 function fixture(wrong=false){
-    const dir=mkdtempSync(join(tmpdir(),'native-qualified-')),root=join(dir,'app');mkdirSync(root);mkdirSync(join(root,'dist'))
+    const dir=realpathSync(mkdtempSync(join(tmpdir(),'native-qualified-'))),root=join(dir,'app');mkdirSync(root);mkdirSync(join(root,'dist'))
     const version='2.79.0',pkg={name:'@xaventra/core',version,type:'module',main:'dist/daemon.js'}
     const values={'package.json':Buffer.from(JSON.stringify(pkg)),'package-lock.json':Buffer.from(JSON.stringify({name:pkg.name,version:wrong?'0.0.0':version,lockfileVersion:3,packages:{'':{version}}})),'dist/daemon.js':Buffer.from('export {}'),'dist/addon.node':elf()}
     const files=Object.entries(values).map(([path,b])=>{writeFileSync(join(root,path),b);return {path,size:b.length,sha256:createHash('sha256').update(b).digest('hex')}})
