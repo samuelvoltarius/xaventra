@@ -30,12 +30,15 @@ export function buildToolTaskContext(
     }
 
     let active = prior.slice(boundary + 1)
-    if (/^\d+$/.test(current.trim())) active = active.slice(-3)
+    // A bare number answers offered options: keep the last turns (R2 NZ-38;
+    // previously FOLLOW_UP below cleared them again).
+    const numericChoice = /^\d+$/.test(current.trim())
+    if (numericChoice) active = active.slice(-3)
     // Explicit new turns never inherit tool packs merely because an older
     // conversation mentioned setup/install/deploy. Short messages used to keep
     // the entire window and could turn "dich besser machen" into an unrelated
     // self_setup_plan call. Deictic follow-ups retain the active task window.
-    if (!FOLLOW_UP.test(current.trim())) active = []
+    if (!numericChoice && !FOLLOW_UP.test(current.trim())) active = []
 
     return [...active.map(m => m.content), current].join('\n')
 }
