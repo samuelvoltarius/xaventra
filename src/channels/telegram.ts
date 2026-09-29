@@ -10,6 +10,7 @@ import { isInternalOutboundArtifact, sanitizeInternalOutboundArtifacts } from '.
 import { createDraftStream, type DraftStream } from './telegram-stream.js'
 import { mayRetryTelegramPolling, telegramConflictRetryDelay } from './telegram-polling-guard.js'
 import { formatTelegramMessage } from './telegram-presentation.js'
+import type { PrincipalContext } from '../users/principal-id.js'
 
 // ============================================
 // Types
@@ -525,11 +526,63 @@ export class TelegramAdapter implements ChannelAdapter {
         }
     }
 
+    /**
+     * INT-1: an inline button press is a request by `query.from`, not by the
+     * chat. Resolve the same principal/role a normal text message from that
+     * user would get (DM allowlist, multi-user checkAuth, userPrincipals) so
+     * the central slash role gate sees the real role. Returns null when the
+     * sender would not be admitted as a message sender either.
+     */
+    private async resolveCallbackPrincipal(query: any): Promise<PrincipalContext | null> {
+        const userId = query?.from?.id?.toString() ?? ''
+        if (!/^-?\d+$/.test(userId)) return null
+        const chatType = query?.message?.chat?.type
+        const isGroup = chatType === 'group' || chatType === 'supergroup'
+        if (!isGroup && this.config.allowFrom?.length
+            && !this.config.allowFrom.some(entry => telegramAllowlistMatches(entry, userId, query.from?.username ?? ''))) {
+            return null
+        }
+        try {
+            const mu = await import('../users/multi-user-middleware.js')
+            mu.initMultiUser()
+            const config = (globalThis as any).__novaState?.config
+            const alias = config?.userAliases?.[userId] || userId
+            const auth = mu.checkAuth(userId, 'telegram', alias)
+            if (!auth.allowed) return null
+            const { resolvePrincipalId } = await import('../users/principal-id.js')
+            return {
+                channel: 'telegram',
+                rawUserId: userId,
+                principalId: resolvePrincipalId(config, 'telegram', userId),
+                permission: auth.permission,
+            }
+        } catch (error) {
+            // Fail closed: without a positive auth decision the button acts as nobody.
+            console.warn(`[Nova Telegram] Callback principal unresolved: ${String(error).slice(0, 120)}`)
+            return null
+        }
+    }
+
     private async handleFeedback(query: any): Promise<void> {
         if (!(await this.acceptInbound())) return
         const data = query.data
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
+        const needsPrincipal = typeof data === 'string'
+            && /^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_)/.test(data)
+        const principal = needsPrincipal ? await this.resolveCallbackPrincipal(query) : null
+        if (needsPrincipal && !principal) {
+            try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Zugriff verweigert.' }) } catch { /* ignore */ }
+            return
+        }
+        const buttonDenial = async (command: string): Promise<boolean> => {
+            const { getCommandMinimumRole } = await import('../core/slash-commands.js')
+            const rank: Record<string, number> = { blocked: -1, guest: 0, user: 1, admin: 2, owner: 3 }
+            const required = getCommandMinimumRole(command)
+            if ((rank[principal?.permission || 'guest'] ?? -1) >= rank[required]) return false
+            try { await this.bot.answerCallbackQuery(query.id, { text: `🔒 Nur für Rolle ${required}.` }) } catch { /* ignore */ }
+            return true
+        }
 
         if (data?.startsWith('feedback_')) {
             const [, rating, messageId] = data.split('_')
@@ -625,6 +678,7 @@ export class TelegramAdapter implements ChannelAdapter {
             const parts = data.split('_')
             const provider = parts[1]
             const model = parts.slice(2).join('_').replace(/_[a-z0-9]+$/, '')  // Remove hash suffix if present
+            if (await buttonDenial('model')) return
             try {
                 const { createLLM } = await import('../core/llm-factory.js')
                 // Get the wrapper from the global state (stored by message-pipeline)
@@ -676,6 +730,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 const { availableLLMs } = await import('../core/llm-factory.js')
 
                 // Special routing for some commands
+                if (cmd === 'mission_config' && await buttonDenial('mission')) return
                 if (cmd === 'models') {
                     const { resolvePrincipalId } = await import('../users/principal-id.js')
                     const principalId = resolvePrincipalId(state?.config, 'telegram', userId || String(chatId))
@@ -720,7 +775,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 }
 
                 // Route to handleCommand — chatId is used as 'from' for button responses
-                const response = await handleCommand(cmd, '', chatId!, state, availableLLMs)
+                const response = await handleCommand(cmd, '', chatId!, state, availableLLMs, principal!)
                 if (response) {
                     // handleCommand returned text (non-Telegram fallback or no-button command)
                     await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
@@ -746,7 +801,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 if (state) {
                     const { handleCommand } = await import('../core/slash-commands.js')
                     const { availableLLMs } = await import('../core/llm-factory.js')
-                    const response = await handleCommand('persona', presets[preset] || preset, chatId!, state, availableLLMs)
+                    const response = await handleCommand('persona', presets[preset] || preset, chatId!, state, availableLLMs, principal!)
                     if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
                 }
                 await this.bot.answerCallbackQuery(query.id, { text: `✅ Persona: ${preset}` })
@@ -765,7 +820,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     const { handleCommand } = await import('../core/slash-commands.js')
                     const { availableLLMs } = await import('../core/llm-factory.js')
                     await this.bot.answerCallbackQuery(query.id, { text: `⏳ Lerne ${skill}...` })
-                    const response = await handleCommand('learn', skill, chatId!, state, availableLLMs)
+                    const response = await handleCommand('learn', skill, chatId!, state, availableLLMs, principal!)
                     if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
                 }
             } catch (err) {
@@ -782,7 +837,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 if (state) {
                     const { handleCommand } = await import('../core/slash-commands.js')
                     const { availableLLMs } = await import('../core/llm-factory.js')
-                    const response = await handleCommand('llm', action, chatId!, state, availableLLMs)
+                    const response = await handleCommand('llm', action, chatId!, state, availableLLMs, principal!)
                     if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
                 }
                 await this.bot.answerCallbackQuery(query.id)
@@ -820,6 +875,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Mission config buttons (from /mission config)
         if (data?.startsWith('mcfg_')) {
+            if (await buttonDenial('mission')) return
             try {
                 const { updateMissionConfig, getMissionConfig, formatMissionConfig } = await import('../core/autonomous-executor.js')
                 const action = data.replace('mcfg_', '')
