@@ -19,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
-import { cpus } from 'node:os'
+import { constants as osConstants, cpus } from 'node:os'
 import { resolveConfigPath } from './config/config-path.js'
 
 
@@ -87,8 +87,10 @@ async function commandStart(): Promise<void> {
             stdio: 'inherit',
             env: process.env,
         })
-        child.on('exit', (code) => {
-            process.exit(code ?? 0)
+        child.on('exit', (code, signal) => {
+            // Death by signal (e.g. OOM SIGKILL) is a failure, not success:
+            // systemd Restart=on-failure must see it (R2 NZ-40).
+            process.exit(code ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1))
         })
         child.on('error', error => {
             console.error(c.error(`Failed to start Xaventra: ${error.message}`))
@@ -1266,7 +1268,7 @@ async function commandStatus(): Promise<void> {
 
     // Try to connect to gateway
     try {
-        const res = await fetch('http://localhost:18789/api/status')
+        const res = await fetch('http://localhost:18789/api/status', { signal: AbortSignal.timeout(5000) })
         if (res.ok) {
             const data = await res.json() as { nova: string; pid?: number; uptime?: number; crashCount?: number }
             console.log(`  ${c.dim('Xaventra:')}        ${data.nova === 'running' ? c.ok('Running') : c.warn(data.nova)}`)

@@ -289,7 +289,7 @@ export function getFormattedStatus(): string {
 📋 Letzte Aufgabe:
 "${last.summary}"
 ✅ Abgeschlossen in ${dur} (${last.steps.length} Schritte)
-📅 ${new Date(last.finishedAt || last.startedAt).toLocaleString('de-DE')}`
+📅 ${new Date(last.finishedAt || last.startedAt).toLocaleString('de-DE', { timeZone: 'Europe/Vienna' })}`
         }
         return '💤 *Keine aktive Aufgabe* — Ich warte auf deine nächste Anfrage.'
     }
@@ -336,8 +336,9 @@ export function getFormattedHistory(count = 5): string {
             ? t.duration < 1000 ? `${t.duration}ms` : `${(t.duration / 1000).toFixed(1)}s`
             : '?'
         const icon = t.status === 'done' ? '✅' : '❌'
+        // Owner wall clock, not the server TZ (often UTC) (R2 NZ-43).
         const date = new Date(t.startedAt).toLocaleString('de-DE', {
-            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Europe/Vienna',
         })
         return `${i + 1}. ${icon} ${t.summary}\n   ${t.steps.length} Schritte | ${dur} | ${date}`
     }).join('\n\n')
@@ -389,7 +390,7 @@ export function installLogInterceptor(): void {
     const originalError = console.error.bind(console)
 
     const capture = (level: string, args: unknown[]): void => {
-        const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Vienna' })
         const msg = args.map(formatLogArg).join(' ')
         // Clean up ANSI codes and excessive whitespace
         const clean = msg.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '').trim()
