@@ -9,6 +9,7 @@ import { execSync, spawn } from 'node:child_process'
 import { platform } from 'node:os'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { ownerApprovalRefusal } from './owner-approval.js'
 
 // ============================================
 // Platform Detection
@@ -127,6 +128,17 @@ function restartViaSystemd(): RestartResult {
  * Direct restart - spawn new process and exit current
  */
 function restartDirect(): RestartResult {
+    // R2 T13: under a systemd unit (INVOCATION_ID is set by systemd) a child
+    // spawned here lives in the unit's cgroup; when this process exits, systemd
+    // removes the whole cgroup and nothing comes back. Report that honestly
+    // instead of "Bin gleich wieder da".
+    if (process.env.INVOCATION_ID) {
+        return {
+            success: false,
+            method: 'direct',
+            message: 'Kein Neustart: Nova läuft unter einer systemd-Unit, die nicht "nova" heißt. Ein Selbstneustart von innen würde den Dienst beenden, ohne ihn wieder zu starten. Bitte über die Unit (systemctl restart <unit>) bzw. npm run xaventra:restart neu starten.',
+        }
+    }
     console.log('[SelfManagement] Direct restart - spawning new process...')
 
     const npmCmd = isWindows ? 'npm.cmd' : 'npm'
@@ -213,8 +225,13 @@ export const selfManagementTools = [
         name: 'nova_restart',
         description: 'Startet Nova komplett neu. Nutze das bei Updates oder wenn etwas hängt.',
         category: 'system' as const,
-        parameters: [],
-        handler: async () => {
+        parameters: [
+            { name: 'confirm', type: 'string' as const, description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
+        ],
+        handler: async (params: Record<string, unknown> = {}) => {
+            // R2 T13: a restart is an outage; only on the owner's explicit say-so
+            const refusal = await ownerApprovalRefusal(params, 'nova_restart')
+            if (refusal) return { success: false, method: 'none', message: refusal }
             const result = await restartNova()
             return result
         },
