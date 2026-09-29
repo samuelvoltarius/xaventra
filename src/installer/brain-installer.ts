@@ -264,7 +264,8 @@ function saveBrainConfig(nodeName: string, brainUrl: string, sshHost: string): v
             maxResults: 5,
         }
 
-        writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+        // MI-11: a newly created config (secrets) must not inherit a world-readable umask.
+        writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 })
         console.log(`[BrainInstaller] Saved brainUrl=${brainUrl} to xaventra.config.json`)
     } catch (e) {
         console.warn(`[BrainInstaller] Could not save config: ${e}`)
