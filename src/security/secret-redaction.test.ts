@@ -21,3 +21,22 @@ describe('secret redaction', () => {
         expect(output).toBe('Mein Key ist [REDACTED_API_KEY]')
     })
 })
+
+describe('secret redaction: sshpass and URL credentials (handover from layers review)', () => {
+    it('redacts sshpass -p passwords', () => {
+        const password = ['Pw', 'Geheim', '-2026!'].join('')
+        for (const line of [`sshpass -p ${password} ssh pi@10.0.0.5`, `sshpass -p'${password}' ssh pi@10.0.0.5`, `sshpass -e -p "${password}" scp a b`]) {
+            const output = redactSecrets(line)
+            expect(output, line).not.toContain(password)
+            expect(output).toContain('[REDACTED]')
+        }
+    })
+
+    it('redacts the password part of URL userinfo but keeps user and host', () => {
+        const password = ['s3cr', 'etPass'].join('')
+        const output = redactSecrets(`git clone https://alfred:${password}@git.example.com/repo.git and postgres://nova:${password}@db:5432/x`)
+        expect(output).not.toContain(password)
+        expect(output).toContain('https://alfred:[REDACTED]@git.example.com/repo.git')
+        expect(output).toContain('postgres://nova:[REDACTED]@db:5432/x')
+    })
+})

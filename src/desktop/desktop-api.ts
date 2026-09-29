@@ -77,22 +77,61 @@ function tokenFrom(req: Request): string {
     return auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : ''
 }
 
+/** Requests authenticated by NOVA_DESKTOP_API_TOKEN; only these act as the Desktop owner (TOK-1). */
+const tokenAuthenticated = new WeakSet<Request>()
+const DESKTOP_LOCAL_PRINCIPAL = 'desktop-local'
+
+function desktopOwnerId(): string {
+    return String(process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner').trim().slice(0, 200)
+}
+
+/**
+ * MI-12: tokenless mode is only for a direct loopback client. A Host header
+ * that is not loopback (DNS rebinding), proxy headers (a reverse proxy makes
+ * every client look like 127.0.0.1) or a cross-site browser request is refused.
+ */
+function isDirectLoopbackClient(req: Request): boolean {
+    if (!isLoopback(req)) return false
+    const host = String(req.headers.host || '').trim().toLowerCase()
+    if (!/^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/.test(host)) return false
+    if (req.headers['x-forwarded-for'] || req.headers.forwarded || req.headers['x-real-ip'] || req.headers['x-forwarded-host']) return false
+    if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') return false
+    const origin = req.headers.origin
+    if (origin !== undefined) {
+        try {
+            if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(String(origin)).hostname)) return false
+        } catch { return false }
+    }
+    return true
+}
+
 function requireDesktopAuth(req: Request, res: Response, next: NextFunction): void {
-    // Desktop is a separate trust surface. Loopback may run without a token;
-    // remote endpoints require an explicit Desktop token and HTTPS at the app.
-    // Do not silently reuse the broader REST API credential.
+    // Desktop is a separate trust surface. Loopback may run without a token,
+    // but only as a non-owner principal; the owner is whoever holds
+    // NOVA_DESKTOP_API_TOKEN. Do not silently reuse the REST API credential.
     const expected = process.env.NOVA_DESKTOP_API_TOKEN || ''
-    if (isLoopback(req) && !expected) return next()
+    if (!expected) {
+        if (!isDirectLoopbackClient(req)) return void res.status(401).json({ error: 'Desktop authentication required' })
+        // TOK-1: the owner identity cannot be claimed by a client header.
+        const claimed = String(req.headers['x-nova-principal'] || '').trim().slice(0, 200)
+        if (claimed && claimed === desktopOwnerId()) {
+            return void res.status(403).json({ error: 'Desktop owner access requires NOVA_DESKTOP_API_TOKEN' })
+        }
+        return next()
+    }
     const supplied = tokenFrom(req)
-    if (!expected || supplied.length !== expected.length) return void res.status(401).json({ error: 'Desktop authentication required' })
+    if (supplied.length !== expected.length) return void res.status(401).json({ error: 'Desktop authentication required' })
     let difference = 0
     for (let i = 0; i < expected.length; i++) difference |= expected.charCodeAt(i) ^ supplied.charCodeAt(i)
     if (difference !== 0) return void res.status(401).json({ error: 'Desktop authentication required' })
+    tokenAuthenticated.add(req)
     next()
 }
 
 function principal(req: Request): string {
-    return String(req.headers['x-nova-principal'] || process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner').trim().slice(0, 200)
+    // TOK-1: a token-authenticated request is the owner, whatever the header says.
+    if (tokenAuthenticated.has(req)) return desktopOwnerId()
+    return String(req.headers['x-nova-principal'] || DESKTOP_LOCAL_PRINCIPAL).trim().slice(0, 200)
 }
 
 // Room/profile ownership uses the Desktop identifier. Execution and memory use
@@ -108,7 +147,7 @@ function desktopClientId(req: Request): string {
 }
 
 function safeError(error: unknown): string { return redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 500) }
-function isDesktopOwner(req: Request): boolean { return principal(req) === (process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner') }
+function isDesktopOwner(req: Request): boolean { return tokenAuthenticated.has(req) }
 function desktopControlPlaneAuthoritative(): boolean {
     return Boolean(getServiceFencingToken(MAIN_SERVICE) && getServiceFencingToken('dashboard'))
 }

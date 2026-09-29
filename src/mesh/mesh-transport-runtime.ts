@@ -11,7 +11,7 @@ import { MeshTransportRouter } from './mesh-transport-router.js'
 import { RelayMeshTransport } from './relay-mesh-transport.js'
 import { SupabaseMeshTransport } from './supabase-mesh-transport.js'
 import type {
-    AgentRequestPayload, CapabilityPayload, CodexCompletionRequestPayload, CodexStatusRequestPayload, MeshAck, MeshEnvelope, MeshMode, MeshPeer,
+    AgentRequestPayload, CapabilityPayload, CodexCompletionRequestPayload, CodexStatusRequestPayload, MeshAck, MeshEnvelope, MeshFence, MeshMode, MeshPeer,
     MeshPrincipal, MissionRequestPayload, ResultPayload, RunCancelPayload, ToolInventoryPayload, ToolRequestPayload,
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
@@ -50,6 +50,18 @@ const processed = new Map<string, ResultPayload>()
 const activeAgentRuns = new Map<string, AbortController>()
 const cancelledAgentRuns = new Map<string, number>()
 const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
+/** MI-17: idempotency/result caches are bounded (oldest entries evicted first). */
+export const MAX_PROCESSED_RESULTS = 2_000
+export const MAX_PENDING_RESULTS = 1_000
+export function rememberBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+    map.delete(key)
+    map.set(key, value)
+    while (map.size > max) {
+        const oldest = map.keys().next()
+        if (oldest.done) break
+        map.delete(oldest.value)
+    }
+}
 interface PeerState {
     nodeId: string; lastSeen: number; status?: string; uptimeMs?: number
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
@@ -133,6 +145,36 @@ export async function sendAgentRequest(targetNode: string, prompt: string, optio
     }
     const envelope = transport.create('agent.request', targetNode, payload, { runId, ttlMs: Math.max(60_000, payload.budget?.timeoutMs || 0) })
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
+}
+
+/**
+ * Signs a payload for storage in a shared table (legacy `nova_mesh_tasks`).
+ * Readers accept such rows only after verifyStoredMeshEnvelope().
+ */
+export function signStoredMeshEnvelope<T>(
+    kind: 'agent.request' | 'mission.request',
+    targetNode: string | '*',
+    payload: T,
+    options: { runId?: string; fence?: MeshFence; ttlMs?: number } = {},
+): MeshEnvelope<T> {
+    const transport = router || initMeshTransportRuntime()
+    return transport.create(kind, targetNode, payload, options)
+}
+
+/**
+ * Parses and verifies a stored envelope: signature against the configured
+ * peer key (or the local key), configured peer roles and the payload schema.
+ * Rows that fail are never executed (fail-closed).
+ */
+export function verifyStoredMeshEnvelope<T>(
+    raw: string,
+    options: { kinds: Array<'agent.request' | 'mission.request'>; requireLocalTarget?: boolean; requireUnexpired?: boolean },
+): { accepted: boolean; envelope?: MeshEnvelope<T>; reason?: string } {
+    let envelope: MeshEnvelope<T>
+    try { envelope = JSON.parse(raw) as MeshEnvelope<T> } catch { return { accepted: false, reason: 'invalid_json' } }
+    const transport = router || initMeshTransportRuntime()
+    const decision = transport.verifyStored(envelope as MeshEnvelope, options)
+    return decision.accepted ? { accepted: true, envelope } : { accepted: false, reason: decision.reason || 'rejected' }
 }
 
 export async function cancelMeshRun(
@@ -267,7 +309,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     if (envelope.kind === 'run.result') {
         const result = envelope.payload as ResultPayload
         if (result?.requestId) {
-            results.set(result.requestId, result)
+            rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
             try {
                 const { getOutcomeLedger } = await import('../core/outcome-ledger.js')
                 for (const evidence of result.evidence || []) getOutcomeLedger().recordTool(envelope.runId || result.requestId, { ...evidence, sourceNode: envelope.sourceNode, transportVerified: true })
@@ -352,7 +394,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         for (const [requestId, expiresAt] of cancelledAgentRuns) if (expiresAt <= now) cancelledAgentRuns.delete(requestId)
         if (cancelledAgentRuns.has(envelope.id)) {
             const result = makeResult(envelope.id, false, undefined, 'mesh agent request cancelled before execution')
-            processed.set(payload.idempotencyKey, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS)
             await sendResult(envelope, result)
             return
         }
@@ -370,10 +412,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             )
             if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } finally {
             activeAgentRuns.delete(envelope.id)
         }
@@ -387,7 +429,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const controller = activeAgentRuns.get(payload.requestId)
         controller?.abort()
         const result = makeResult(envelope.id, true, { requestId: payload.requestId, cancelled: Boolean(controller) })
-        processed.set(payload.idempotencyKey, result)
+        rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS)
         await sendResult(envelope, result)
         return
     }
@@ -399,10 +441,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             const { getCodexRuntimeStatus } = await import('../auth/codex-runtime.js')
             const status = await getCodexRuntimeStatus(envelope.principal.id)
             const result = makeResult(envelope.id, true, { available: status.available, authenticated: status.authenticated, nodeId: status.nodeId })
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
@@ -426,10 +468,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 result: completion,
                 evidence: [{ tool: 'codex_inference', requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - startedAt }],
             }
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
@@ -441,13 +483,16 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const started = Date.now()
         try {
             const { getToolRegistry } = await import('../tools/complete-registry.js')
-            const resultValue = await getToolRegistry().execute(payload.tool, payload.arguments)
+            // Remote callers act as an unprivileged guest: identity fields are
+            // never taken from the envelope payload (policy rejects them, too).
+            const { authorizationUserId: _a, authUserId: _b, userId: _c, channel: _d, ...toolArguments } = payload.arguments as Record<string, unknown>
+            const resultValue = await getToolRegistry().execute(payload.tool, toolArguments)
             const resultHash = createHash('sha256').update(JSON.stringify(resultValue)).digest('hex')
             const result: ResultPayload = { requestId: envelope.id, success: true, result: resultValue, evidence: [{ tool: payload.tool, requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - started }] }
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
@@ -455,7 +500,15 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const payload = envelope.payload as MissionRequestPayload
         if (!envelope.fence) throw new Error('mission handoff requires fence')
         const { acceptMissionHandoff } = await import('../core/autonomous-executor.js')
-        const accepted = acceptMissionHandoff(payload.checkpoint, { ownerNode: getLocalNodeId(), leaseEpoch: envelope.fence.epoch, fencingToken: envelope.fence.token })
+        // MI-1/MI-6: the sender of a handed-off mission is the verified node, never the checkpoint's channel/createdBy.
+        let checkpoint: string
+        try {
+            checkpoint = JSON.stringify({ ...(JSON.parse(payload.checkpoint) as Record<string, unknown>), channel: 'mesh', createdBy: `mesh:${envelope.sourceNode}` })
+        } catch {
+            await sendResult(envelope, makeResult(envelope.id, false, undefined, 'mission checkpoint rejected'))
+            return
+        }
+        const accepted = acceptMissionHandoff(checkpoint, { ownerNode: getLocalNodeId(), leaseEpoch: envelope.fence.epoch, fencingToken: envelope.fence.token })
         await sendResult(envelope, makeResult(envelope.id, accepted, accepted ? `Mission ${payload.missionId} accepted` : undefined, accepted ? undefined : 'mission checkpoint rejected'))
     }
 }

@@ -8,9 +8,10 @@
  * Prinzip: Probe → Lernen → Speichern → Wiederverwenden
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { exec } from 'node:child_process'
+import { isIP } from 'node:net'
+import { execFile } from 'node:child_process'
 
 const INTEL_DIR = join(process.cwd(), '.nova-data', 'node-intel')
 
@@ -59,13 +60,34 @@ export interface NodePlaybook {
 // SSH Helper
 // ============================================
 
+/** Optional `user@` plus a literal IP or plain hostname; never an ssh option. */
+export function isSafeSshTarget(host: unknown): host is string {
+    if (typeof host !== 'string' || host.length > 300) return false
+    const at = host.lastIndexOf('@')
+    const user = at >= 0 ? host.slice(0, at) : ''
+    const target = at >= 0 ? host.slice(at + 1) : host
+    if (at >= 0 && !/^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/.test(user)) return false
+    if (isIP(target)) return true
+    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(target)
+}
+
+/** Playbook file name derived from a node name; no separators or traversal. */
+export function playbookFileName(name: string): string {
+    const safe = String(name).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '_').replace(/^\.+/, '_').slice(0, 120)
+    return `${safe || '_'}.json`
+}
+
 function sshTry(host: string, cmd: string, timeoutMs = 5000): Promise<string | null> {
     return new Promise(resolve => {
+        if (!isSafeSshTarget(host)) {
+            resolve(null)
+            return
+        }
         // BatchMode=yes intentionally disables password prompts.
         // Key-based SSH required for background discovery — add the node's public key
         // to ~/.ssh/authorized_keys on the target host to enable auto-discovery.
-        const full = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=4 -o BatchMode=yes ${host} "${cmd}"`
-        exec(full, { timeout: timeoutMs }, (err, stdout) => {
+        // No local shell; unknown host keys are pinned on first use and a changed key is refused.
+        execFile('ssh', ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=4', '-o', 'BatchMode=yes', '--', host, cmd], { timeout: timeoutMs }, (err, stdout) => {
             if (err) {
                 const msg = err.message || ''
                 // Surface auth failures clearly so they don't look like connectivity issues
@@ -465,7 +487,7 @@ export class NodeIntelligence {
     // ============================================
 
     static load(name: string): NodePlaybook | null {
-        const path = join(INTEL_DIR, `${name.toLowerCase().replace(/\s+/g, '-')}.json`)
+        const path = join(INTEL_DIR, playbookFileName(name))
         try {
             if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'))
         } catch { /* ignore */ }
@@ -474,13 +496,12 @@ export class NodeIntelligence {
 
     static save(playbook: NodePlaybook): void {
         if (!existsSync(INTEL_DIR)) mkdirSync(INTEL_DIR, { recursive: true })
-        const path = join(INTEL_DIR, `${playbook.nodeId.toLowerCase().replace(/\s+/g, '-')}.json`)
+        const path = join(INTEL_DIR, playbookFileName(playbook.nodeId))
         writeFileSync(path, JSON.stringify(playbook, null, 2))
     }
 
     static listAll(): NodePlaybook[] {
         if (!existsSync(INTEL_DIR)) return []
-        const { readdirSync } = require('node:fs')
         return readdirSync(INTEL_DIR)
             .filter((f: string) => f.endsWith('.json'))
             .map((f: string) => {

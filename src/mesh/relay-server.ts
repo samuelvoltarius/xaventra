@@ -28,6 +28,15 @@ export interface MeshRelayServerOptions {
     maxBodyBytes?: number
     maxItems?: number
     maxTtlMs?: number
+    /**
+     * TOK-2/MI-13: one bearer token per node id. A node may only read and
+     * acknowledge its own inbox and only post envelopes it signed itself.
+     */
+    nodeTokens?: Record<string, string>
+    /** Optional pinned public keys per node; posts are verified against them instead of the self-carried key. */
+    peerKeys?: Record<string, string>
+    /** Legacy: accept the shared `token` without node binding (any holder reads every inbox). Explicit opt-in only. */
+    allowSharedToken?: boolean
 }
 
 export interface MeshRelayServer {
@@ -45,11 +54,23 @@ function json(response: ServerResponse, status: number, body: unknown): void {
     response.end(data)
 }
 
-function authorized(request: IncomingMessage, token: string): boolean {
-    const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') || ''
+function tokenMatches(supplied: string, token: string): boolean {
     const expectedHash = createHash('sha256').update(token).digest()
     const suppliedHash = createHash('sha256').update(supplied).digest()
     return supplied.length > 0 && timingSafeEqual(expectedHash, suppliedHash)
+}
+
+/** Authenticated caller: `nodeId` is set for node-bound tokens, absent for the legacy shared token. */
+function authenticate(request: IncomingMessage, options: MeshRelayServerOptions): { ok: boolean; nodeId?: string } {
+    const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') || ''
+    if (!supplied) return { ok: false }
+    let bound: string | undefined
+    for (const [nodeId, token] of Object.entries(options.nodeTokens || {})) {
+        if (tokenMatches(supplied, token)) bound = nodeId
+    }
+    if (bound) return { ok: true, nodeId: bound }
+    if (options.allowSharedToken && tokenMatches(supplied, options.token)) return { ok: true }
+    return { ok: false }
 }
 
 async function readBody(request: IncomingMessage, limit: number): Promise<unknown> {
@@ -98,6 +119,15 @@ function persistStore(path: string, key: Buffer, store: RelayStore): void {
 
 export async function startMeshRelayServer(options: MeshRelayServerOptions): Promise<MeshRelayServer> {
     if (!options.token || options.token.length < 24) throw new Error('relay token must contain at least 24 characters')
+    const nodeTokenEntries = Object.entries(options.nodeTokens || {})
+    for (const [nodeId, token] of nodeTokenEntries) {
+        if (!NODE_ID.test(nodeId) || typeof token !== 'string' || token.length < 24) throw new Error(`relay node token for ${nodeId} is invalid (min. 24 characters)`)
+    }
+    if (new Set(nodeTokenEntries.map(([, token]) => token)).size !== nodeTokenEntries.length) throw new Error('relay node tokens must be unique per node')
+    if (!nodeTokenEntries.length && !options.allowSharedToken) {
+        throw new Error('relay requires per-node tokens (nodeTokens / NOVA_MESH_RELAY_NODE_TOKENS); the unbound shared token needs explicit allowSharedToken')
+    }
+    if (!nodeTokenEntries.length) console.warn('[MeshRelay] WARNING: shared token mode, any token holder can read and acknowledge every inbox')
     const host = options.host || '127.0.0.1'
     const port = options.port ?? 3310
     const dataFile = options.dataFile || join(getNovaDataDir(), 'relay', 'queue.enc.json')
@@ -131,7 +161,8 @@ export async function startMeshRelayServer(options: MeshRelayServerOptions): Pro
                 prune()
                 return json(response, 200, { ok: true, service: 'nova-mesh-relay', queued: store.items.length, peers: peers.size, encryptedAtRest: true })
             }
-            if (!authorized(request, options.token)) return json(response, 401, { error: 'unauthorized' })
+            const caller = authenticate(request, options)
+            if (!caller.ok) return json(response, 401, { error: 'unauthorized' })
             prune()
 
             if (request.method === 'GET' && url.pathname === '/peers') {
@@ -149,6 +180,12 @@ export async function startMeshRelayServer(options: MeshRelayServerOptions): Pro
                 if (envelope.expiresAt <= Date.now() || envelope.expiresAt > Date.now() + maxTtl) {
                     return json(response, 400, { error: 'invalid_expiry' })
                 }
+                // A node-bound caller may only relay envelopes it signed itself.
+                if (caller.nodeId && envelope.sourceNode !== caller.nodeId) return json(response, 403, { error: 'source_node_mismatch' })
+                if (options.peerKeys) {
+                    const pinned = options.peerKeys[envelope.sourceNode]
+                    if (!pinned || !MeshIdentity.verifyWithKey(envelope, pinned)) return json(response, 400, { error: 'untrusted_signature' })
+                }
                 const duplicate = store.items.find(item => item.id === envelope.id && item.to === to)
                 if (duplicate) return json(response, 200, { status: 'duplicate', receipt: duplicate.id })
                 if (store.items.length >= maxItems) return json(response, 503, { error: 'relay_capacity_reached' })
@@ -163,6 +200,7 @@ export async function startMeshRelayServer(options: MeshRelayServerOptions): Pro
             if (request.method === 'GET' && url.pathname === '/envelopes') {
                 const nodeId = url.searchParams.get('to') || ''
                 if (!NODE_ID.test(nodeId)) return json(response, 400, { error: 'invalid_node' })
+                if (caller.nodeId && caller.nodeId !== nodeId) return json(response, 403, { error: 'foreign_inbox' })
                 peers.set(nodeId, Date.now())
                 const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 100)))
                 const rows: Array<{ receipt: string; envelope: MeshEnvelope }> = []
@@ -182,6 +220,7 @@ export async function startMeshRelayServer(options: MeshRelayServerOptions): Pro
                 if (!item) return json(response, 404, { error: 'receipt_not_found' })
                 const nodeId = Object.entries(item.receipts).find(([, value]) => value === receipt)?.[0]
                 if (!nodeId) return json(response, 404, { error: 'receipt_not_found' })
+                if (caller.nodeId && caller.nodeId !== nodeId) return json(response, 404, { error: 'receipt_not_found' })
                 if (item.to === '*') {
                     item.ackedBy.push(nodeId)
                     delete item.receipts[nodeId]
@@ -213,11 +252,19 @@ export async function startMeshRelayServer(options: MeshRelayServerOptions): Pro
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/relay-server.js')) {
     const token = process.env.NOVA_MESH_RELAY_TOKEN || ''
-    startMeshRelayServer({
+    const jsonEnv = (name: string): Record<string, string> | undefined => {
+        const raw = process.env[name]
+        if (!raw) return undefined
+        try { return JSON.parse(raw) as Record<string, string> } catch { throw new Error(`${name} must be a JSON object`) }
+    }
+    Promise.resolve().then(() => startMeshRelayServer({
         host: process.env.NOVA_MESH_RELAY_HOST || '127.0.0.1',
         port: Number(process.env.NOVA_MESH_RELAY_PORT || 3310), token,
         storageKey: process.env.NOVA_MESH_RELAY_STORAGE_KEY,
         dataFile: process.env.NOVA_MESH_RELAY_DATA_FILE,
-    }).then(relay => console.log(`[MeshRelay] listening on ${relay.url}`))
+        nodeTokens: jsonEnv('NOVA_MESH_RELAY_NODE_TOKENS'),
+        peerKeys: jsonEnv('NOVA_MESH_RELAY_PEER_KEYS'),
+        allowSharedToken: process.env.NOVA_MESH_RELAY_ALLOW_SHARED_TOKEN === '1',
+    })).then(relay => console.log(`[MeshRelay] listening on ${relay.url}`))
         .catch(error => { console.error(`[MeshRelay] startup failed: ${error}`); process.exit(1) })
 }

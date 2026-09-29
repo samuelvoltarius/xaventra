@@ -82,6 +82,11 @@ export class MeshTransportRouter implements MeshTransport {
         return this.identity.create({ kind, targetNode, payload, principal: options.principal || this.principal, runId: options.runId, fence: options.fence, ttlMs: options.ttlMs })
     }
 
+    /** Policy check for envelopes read back from a shared store (see MeshPolicy.verifyStored). */
+    verifyStored(envelope: MeshEnvelope, options: Parameters<MeshPolicy['verifyStored']>[1]): { accepted: boolean; reason?: string } {
+        return this.policy.verifyStored(envelope, options)
+    }
+
     async discover(): Promise<MeshPeer[]> {
         const all = (await Promise.all(this.transports.map(transport => transport.discover().catch(() => [])))).flat()
         const unique = new Map<string, MeshPeer>()

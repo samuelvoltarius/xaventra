@@ -97,7 +97,11 @@ export class MeshReplayGuard {
     }
 
     accept(envelope: MeshEnvelope, now = Date.now()): { accepted: boolean; reason?: string } {
-        if (Math.abs(now - envelope.createdAt) > this.maxSkewMs || envelope.expiresAt < now) {
+        // MI-8: outbox, Supabase and relay deliver late on purpose. Freshness is
+        // bounded by the signed expiresAt; createdAt may only not lie in the
+        // future beyond the clock skew. The key stays cached until expiresAt.
+        if (!Number.isFinite(envelope.createdAt) || !Number.isFinite(envelope.expiresAt) ||
+            envelope.createdAt - now > this.maxSkewMs || envelope.expiresAt < now || envelope.expiresAt < envelope.createdAt) {
             return { accepted: false, reason: 'expired_or_clock_skew' }
         }
         const key = `${envelope.sourceNode}:${envelope.id}:${envelope.nonce}`

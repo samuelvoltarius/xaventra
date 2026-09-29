@@ -1,4 +1,4 @@
-import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
+import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshEnvelopeKind, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -13,6 +13,42 @@ const DEFAULT_REMOTE_TOOLS = new Set([
     'health_status', 'nova_status', 'nova_introspect', 'nova_capabilities', 'mesh_status', 'mesh_nodes', 'mesh_transport_status',
     'find_capability', 'resolve_capability', 'get_current_time',
 ])
+
+/**
+ * MI-6: minimum principal role per request kind (fail-closed). Observers may
+ * only publish state; mission handoff and Codex access need a privileged role.
+ */
+const REQUEST_ROLES: Partial<Record<MeshEnvelopeKind, readonly MeshRole[]>> = {
+    'tool.request': ['system', 'owner', 'admin', 'worker'],
+    'agent.request': ['system', 'owner', 'admin', 'worker'],
+    'mission.request': ['system', 'owner', 'admin'],
+    'codex.status.request': ['system', 'owner', 'admin'],
+    'codex.complete.request': ['system', 'owner', 'admin'],
+}
+
+/** Tools whose arguments name filesystem locations; mesh callers stay inside the workspace. */
+const REMOTE_PATH_TOOLS = new Set(['read_file', 'read_document', 'list_directory', 'find_files', 'code_search', 'code_outline', 'view_code_item'])
+const PATH_ARGUMENT_KEY = /^(?:path|paths|file|files|file_path|filepath|dir|directory|root|cwd|target)$/i
+/** Identity fields a remote caller must never inject into local tool arguments. */
+const RESERVED_ARGUMENT_KEYS = new Set(['authorizationuserid', 'authuserid', 'userid', 'channel', 'principal', 'principalid', 'role', 'permission'])
+const PROTECTED_PATH_SEGMENTS = new Set(['.nova-data', '.nova-learning', '.git', '.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker'])
+const SECRET_BASENAMES: RegExp[] = [
+    /^\.env(?:\..*)?$/i, /^xaventra\.config\.json$/i, /^nova\.config\.json$/i,
+    /\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i, /\.keystore$/i, /\.jks$/i,
+    /id_(?:rsa|ed25519|ecdsa|dsa)/i, /^\.git-credentials$/i, /^\.netrc$/i, /^\.npmrc$/i, /^\.pgpass$/i,
+]
+
+/** Relative, no traversal, not in data/secret directories, not a secret file. */
+export function isSafeRemotePath(value: unknown): boolean {
+    if (typeof value !== 'string' || value.includes('\0')) return false
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    if (/^[\\/~]/.test(trimmed) || /^[A-Za-z]:/.test(trimmed)) return false
+    const segments = trimmed.split(/[\\/]+/).filter(Boolean)
+    if (segments.some(segment => segment === '..' || PROTECTED_PATH_SEGMENTS.has(segment.toLowerCase()))) return false
+    const base = segments[segments.length - 1] || ''
+    return !SECRET_BASENAMES.some(pattern => pattern.test(base))
+}
 
 /**
  * Roles granted to a peer whose configuration does not list `roles`.
@@ -68,6 +104,8 @@ export class MeshPolicy {
         if (trust.pin) this.tofuKeys.set(envelope.sourceNode, trust.key)
         const replay = this.replay.accept(envelope)
         if (!replay.accepted) return { accepted: false, reason: replay.reason, duplicate: replay.reason === 'replay' }
+        const requestRoles = REQUEST_ROLES[envelope.kind]
+        if (requestRoles && !requestRoles.includes(envelope.principal.role)) return { accepted: false, reason: 'request_role_not_allowed' }
         if (COORDINATED_KINDS.has(envelope.kind)) {
             if (this.config.mode === 'standalone') return { accepted: false, reason: 'coordination_disabled_in_standalone' }
             if (this.config.mode === 'ha' && (!envelope.fence?.token || !envelope.fence.epoch)) {
@@ -81,6 +119,49 @@ export class MeshPolicy {
         if (envelope.kind === 'codex.complete.request') return this.verifyCodexCompletion(envelope)
         if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
         return { accepted: true }
+    }
+
+    /**
+     * Verifies an envelope persisted in a shared store (legacy `nova_mesh_tasks`
+     * rows). Same origin, key and role rules as verify(), but without the
+     * replay cache (single execution is enforced by the fenced task claim) and
+     * never trust-on-first-use: a stored row must not pin a new key.
+     */
+    verifyStored(
+        envelope: MeshEnvelope,
+        options: { kinds: MeshEnvelopeKind[]; requireLocalTarget?: boolean; requireUnexpired?: boolean; now?: number },
+    ): { accepted: boolean; reason?: string } {
+        try {
+            if (!envelope || typeof envelope !== 'object' || envelope.version !== 1 || !options.kinds.includes(envelope.kind) ||
+                typeof envelope.sourceNode !== 'string' || typeof envelope.publicKey !== 'string' || typeof envelope.signature !== 'string') {
+                return { accepted: false, reason: 'invalid_schema' }
+            }
+            if (!envelope.principal || typeof envelope.principal.id !== 'string' ||
+                !['system', 'owner', 'admin', 'worker', 'observer'].includes(envelope.principal.role)) {
+                return { accepted: false, reason: 'invalid_principal' }
+            }
+            if (options.requireLocalTarget && envelope.targetNode !== this.localNodeId) return { accepted: false, reason: 'wrong_target' }
+            if (options.requireUnexpired && !(envelope.expiresAt >= (options.now ?? Date.now()))) return { accepted: false, reason: 'expired' }
+            if (!MeshIdentity.verify(envelope)) return { accepted: false, reason: 'invalid_signature' }
+            const peer = this.config.peers.find(item => item.nodeId === envelope.sourceNode)
+            if (envelope.sourceNode !== this.localNodeId && !peer?.publicKey?.trim()) {
+                return { accepted: false, reason: peer ? 'missing_peer_key' : 'untrusted_node' }
+            }
+            const trust = this.trustedKey(envelope, peer)
+            if (!trust.accepted) return trust
+            if (!MeshIdentity.verifyWithKey(envelope, trust.key)) return { accepted: false, reason: 'invalid_signature' }
+            const roles = envelope.sourceNode === this.localNodeId
+                ? undefined
+                : (peer?.roles?.length ? peer.roles : DEFAULT_PEER_ROLES)
+            if (roles && !roles.includes(envelope.principal.role)) return { accepted: false, reason: 'role_not_allowed' }
+            const requestRoles = REQUEST_ROLES[envelope.kind]
+            if (requestRoles && !requestRoles.includes(envelope.principal.role)) return { accepted: false, reason: 'request_role_not_allowed' }
+            if (envelope.kind === 'agent.request') return this.verifyAgent(envelope, peer)
+            if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
+            return { accepted: true }
+        } catch {
+            return { accepted: false, reason: 'invalid_schema' }
+        }
     }
 
     private trustedKey(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: true; key: string; pin?: boolean } | { accepted: false; reason: string } {
@@ -113,6 +194,16 @@ export class MeshPolicy {
         }
         if (NEVER_REMOTE.has(payload.tool)) return { accepted: false, reason: 'tool_never_remote' }
         if (containsFreeShellPayload(payload.arguments)) return { accepted: false, reason: 'free_shell_payload' }
+        if (Object.keys(payload.arguments).some(key => RESERVED_ARGUMENT_KEYS.has(key.toLowerCase()))) {
+            return { accepted: false, reason: 'reserved_identity_argument' }
+        }
+        if (REMOTE_PATH_TOOLS.has(payload.tool)) {
+            for (const [key, value] of Object.entries(payload.arguments)) {
+                if (!PATH_ARGUMENT_KEY.test(key)) continue
+                const values = Array.isArray(value) ? value : [value]
+                if (!values.length || !values.every(isSafeRemotePath)) return { accepted: false, reason: 'remote_path_not_allowed' }
+            }
+        }
         const globallyAllowed = new Set(this.config.allowedTools?.length ? this.config.allowedTools : DEFAULT_REMOTE_TOOLS)
         if (!globallyAllowed.has(payload.tool)) return { accepted: false, reason: 'tool_not_globally_allowed' }
         if (peer?.allowedTools?.length && !peer.allowedTools.includes(payload.tool)) return { accepted: false, reason: 'tool_not_allowed_for_peer' }

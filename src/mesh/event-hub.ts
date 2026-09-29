@@ -34,14 +34,28 @@ type EventHandler = (event: MeshEvent) => void | Promise<void>
 let wss: WebSocketServer | null = null
 const connectedClients = new Map<string, WebSocket>()
 
-export function startMeshHub(port = 9090): void {
-    if (wss) return
+/**
+ * MI-3: this legacy hub has no peer authentication. It therefore only binds
+ * to loopback; cross-node traffic belongs to the signed mesh transport.
+ */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
 
-    wss = new WebSocketServer({ port, host: '0.0.0.0' })
+/** Event types that carry owner data and never leave the process over the hub. */
+const LOCAL_ONLY_EVENT_TYPES = new Set(['mesh:memory_share'])
+
+export function startMeshHub(port = 9090, host = '127.0.0.1'): WebSocketServer | null {
+    if (wss) return wss
+    if (!LOOPBACK_HOSTS.has(host)) {
+        console.warn(`[MeshHub] Refusing to expose the unauthenticated legacy hub on ${host}; loopback only (signed mesh transport is authoritative)`)
+        return null
+    }
+
+    wss = new WebSocketServer({ port, host })
 
     wss.on('connection', (ws, req) => {
         const clientIp = req.socket.remoteAddress || 'unknown'
         let clientId = `node-${clientIp}`
+        let registered = false
 
         ws.on('message', (raw) => {
             try {
@@ -49,6 +63,7 @@ export function startMeshHub(port = 9090): void {
 
                 // Registration message
                 if (msg.type === 'mesh:register') {
+                    registered = true
                     clientId = msg.data?.nodeId || clientId
                     connectedClients.set(clientId, ws)
                     console.log(`[MeshHub] 🟢 Node registered: ${clientId} (${clientIp})`)
@@ -61,6 +76,9 @@ export function startMeshHub(port = 9090): void {
                     }))
                     return
                 }
+
+                // Unregistered sockets cannot inject events.
+                if (!registered || typeof msg.type !== 'string') return
 
                 // Broadcast event to all OTHER clients
                 const event: MeshEvent = {
@@ -91,10 +109,20 @@ export function startMeshHub(port = 9090): void {
         })
     })
 
-    console.log(`[MeshHub] ✅ Server started on port ${port} — waiting for nodes...`)
+    console.log(`[MeshHub] ✅ Server started on ${host}:${port} — waiting for nodes...`)
+    return wss
+}
+
+export async function stopMeshHub(): Promise<void> {
+    const server = wss
+    wss = null
+    for (const ws of connectedClients.values()) ws.terminate()
+    connectedClients.clear()
+    if (server) await new Promise<void>(resolve => server.close(() => resolve()))
 }
 
 function broadcastToOthers(event: MeshEvent, excludeId: string): void {
+    if (LOCAL_ONLY_EVENT_TYPES.has(event.type)) return
     const msg = JSON.stringify(event)
     for (const [id, ws] of connectedClients) {
         if (id !== excludeId && ws.readyState === WebSocket.OPEN) {
@@ -195,8 +223,8 @@ export function emit(type: string, data: unknown): void {
     // Handle locally
     handleEvent(event)
 
-    // Send to hub (if client)
-    if (clientWs?.readyState === WebSocket.OPEN) {
+    // Send to hub (if client); owner data stays local.
+    if (clientWs?.readyState === WebSocket.OPEN && !LOCAL_ONLY_EVENT_TYPES.has(type)) {
         clientWs.send(JSON.stringify(event))
     }
 

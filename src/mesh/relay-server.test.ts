@@ -21,7 +21,7 @@ describe('Nova mesh relay', () => {
     it('authenticates, verifies, stores encrypted, delivers and acknowledges signed envelopes', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'nova-relay-store-'))
         const token = ['relay-test-', 'credential-value-123456'].join('')
-        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, dataFile: join(directory, 'queue.enc.json') })
+        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, allowSharedToken: true, dataFile: join(directory, 'queue.enc.json') })
         active.push(relay)
         const senderIdentity = identity('relay-a')
         const sender = new RelayMeshTransport('relay-a', { url: relay.url, token, pollMs: 25 })
@@ -61,7 +61,7 @@ describe('Nova mesh relay', () => {
 
     it('rejects missing credentials and unsigned envelopes', async () => {
         const token = ['relay-test-', 'credential-value-123456'].join('')
-        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, dataFile: join(mkdtempSync(join(tmpdir(), 'nova-relay-auth-')), 'queue.enc.json') })
+        const relay = await startMeshRelayServer({ host: '127.0.0.1', port: 0, token, allowSharedToken: true, dataFile: join(mkdtempSync(join(tmpdir(), 'nova-relay-auth-')), 'queue.enc.json') })
         active.push(relay)
         expect((await fetch(`${relay.url}/envelopes?to=node-a`)).status).toBe(401)
         const response = await fetch(`${relay.url}/envelopes`, {

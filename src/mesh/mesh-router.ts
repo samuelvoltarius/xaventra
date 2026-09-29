@@ -12,7 +12,8 @@
  * - model-router.ts (task type detection)
  */
 
-import { exec } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
+import { isIP } from 'node:net'
 
 // ============================================
 // Types
@@ -312,15 +313,29 @@ const latencyToScore = (ms: number): number => {
     return 20
 }
 
-const measureLatency = (host: string): Promise<number> => {
+/**
+ * MI-2: node addresses come from the shared registry table and are untrusted.
+ * Only a literal IP or a plain DNS hostname is pinged, and never via a shell.
+ */
+export const isSafePingHost = (host: unknown): host is string => {
+    if (typeof host !== 'string' || !host || host.length > 253) return false
+    if (isIP(host)) return true
+    return /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(host)
+}
+
+export const measureLatency = (host: string): Promise<number> => {
     return new Promise<number>((resolve) => {
+        if (!isSafePingHost(host)) {
+            resolve(9999) // Invalid address: treated as unreachable, never executed
+            return
+        }
         const start = Date.now()
         const isWindows = process.platform === 'win32'
-        const cmd = isWindows
-            ? `ping -n 1 -w 2000 ${host}`
-            : `ping -c 1 -W 2 ${host}`
+        const args = isWindows
+            ? ['-n', '1', '-w', '2000', host]
+            : ['-c', '1', '-W', '2', host]
 
-        exec(cmd, { timeout: 5000 }, (err) => {
+        execFile('ping', args, { timeout: 5000 }, (err) => {
             if (err) {
                 resolve(9999) // Unreachable
             } else {

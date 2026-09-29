@@ -14,6 +14,8 @@
  */
 
 import { exec, execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { isSafeSshTarget } from '../mesh/node-intelligence.js'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -21,6 +23,7 @@ import { resolveConfigPath } from '../config/config-path.js'
 
 
 const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,19 +65,27 @@ const CONFIG_PATH = resolveConfigPath(ROOT_DIR)
 
 // ── SSH helper ────────────────────────────────────────────────────────────────
 
+// MI-24: no local shell, validated target (host names come from `tailscale
+// status`, i.e. from other peers), host keys pinned on first use.
+function assertSshTarget(host: string): void {
+    if (!isSafeSshTarget(host)) throw new Error(`Refusing SSH target: ${String(host).slice(0, 80)}`)
+}
+
 async function sshCmd(host: string, cmd: string, timeout = 30000): Promise<{ stdout: string; stderr: string }> {
+    assertSshTarget(host)
     const sshArgs = [
         '-o', 'ConnectTimeout=15',
-        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'StrictHostKeyChecking=accept-new',
         '-o', 'BatchMode=yes',
-        host, cmd,
+        '--', host, cmd,
     ]
-    return execAsync(`ssh ${sshArgs.map(a => JSON.stringify(a)).join(' ')}`, { timeout })
+    const { stdout, stderr } = await execFileAsync('ssh', sshArgs, { timeout, encoding: 'utf-8' })
+    return { stdout: String(stdout), stderr: String(stderr) }
 }
 
 async function scpFile(localPath: string, host: string, remotePath: string): Promise<void> {
-    const cmd = `scp -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${JSON.stringify(localPath)} ${host}:${JSON.stringify(remotePath)}`
-    await execAsync(cmd, { timeout: 60000 })
+    assertSshTarget(host)
+    await execFileAsync('scp', ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', '--', localPath, `${host}:${remotePath}`], { timeout: 60000 })
 }
 
 // ── Node capability check ─────────────────────────────────────────────────────
@@ -183,6 +194,9 @@ async function installOnNode(
     const log = opts.onProgress ?? console.log
     const port = opts.port ?? 8765
     const password = opts.neo4jPassword ?? generatePassword()
+    // The password and port end up in a remote shell command line.
+    if (!/^[A-Za-z0-9._@%+=:,-]{12,128}$/.test(password)) throw new Error('Neo4j password must be 12-128 characters of [A-Za-z0-9._@%+=:,-]')
+    if (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) throw new Error('Invalid brain port')
 
     log(`🚀 Installing Nova Brain on ${node.name} (${node.host})...`)
 
@@ -264,15 +278,17 @@ function saveBrainConfig(nodeName: string, brainUrl: string, sshHost: string): v
             maxResults: 5,
         }
 
-        writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+        // MI-11: a newly created config (secrets) must not inherit a world-readable umask.
+        writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 })
         console.log(`[BrainInstaller] Saved brainUrl=${brainUrl} to xaventra.config.json`)
     } catch (e) {
         console.warn(`[BrainInstaller] Could not save config: ${e}`)
     }
 }
 
-function generatePassword(): string {
-    return 'nova-' + Math.random().toString(36).slice(2, 10) + '-brain'
+/** Exported for tests. Cryptographically random (MI-24), shell-safe alphabet. */
+export function generatePassword(): string {
+    return 'nova-' + randomBytes(24).toString('base64url').replace(/[^A-Za-z0-9]/g, 'x')
 }
 
 // ── Check if Brain is already running ────────────────────────────────────────
@@ -285,7 +301,7 @@ export async function detectExistingBrain(): Promise<{ running: boolean; url: st
         if (url) {
             // Try to ping it
             try {
-                const { stdout } = await execAsync(`curl -s --max-time 4 ${url}/health`, { timeout: 6000 })
+                const { stdout } = await execFileAsync('curl', ['-s', '--max-time', '4', '--', `${String(url).replace(/\/$/, '')}/health`], { timeout: 6000, encoding: 'utf-8' })
                 if (stdout.includes('"ok":true')) {
                     return { running: true, url }
                 }

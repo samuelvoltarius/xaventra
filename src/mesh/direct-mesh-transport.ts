@@ -190,7 +190,8 @@ export class DirectMeshTransport implements MeshTransport {
             if (envelope.kind === 'mesh.ack') {
                 const ack = envelope.payload as MeshAck
                 const pending = this.pending.get(ack.envelopeId)
-                if (pending) { clearTimeout(pending.timeout); this.pending.delete(ack.envelopeId); pending.resolve(ack) }
+                // MI-22: only the addressed peer (verified sender) can confirm delivery.
+                if (pending && envelope.sourceNode === pending.peerId) { clearTimeout(pending.timeout); this.pending.delete(ack.envelopeId); pending.resolve(ack) }
                 return
             }
             const known = this.peerBySocket.get(socket)

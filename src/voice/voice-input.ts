@@ -8,9 +8,22 @@
  */
 
 import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs'
-import { execSync } from 'node:child_process'
-import { join } from 'node:path'
+import { execFile, execSync } from 'node:child_process'
+import { basename, dirname, extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+
+/**
+ * MI-14: transcription runs asynchronously (no execSync on the event loop)
+ * and without a shell; paths and options are passed as arguments.
+ */
+function runFile(file: string, args: string[], timeoutMs: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+        execFile(file, args, { encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+            if (error) reject(error)
+            else resolve(String(stdout ?? ''))
+        })
+    })
+}
 
 // ============================================
 // Types
@@ -50,24 +63,19 @@ async function transcribeWithFasterWhisper(
     const pythonPath = config.pythonPath || join(process.env.HOME || '~', 'agentv', '.venv', 'bin', 'python')
     const model = config.whisperModel || 'large-v3-turbo'
     const computeType = config.computeType || 'int8'
-    const langArg = config.language ? `"${config.language}"` : 'None'
-
-    // Inline Python script for faster-whisper
+    // Inline Python script for faster-whisper; all values arrive via argv.
     const script = `
 import sys, json
 from faster_whisper import WhisperModel
-model = WhisperModel("${model}", device="auto", compute_type="${computeType}")
-segments, info = model.transcribe("${audioPath.replace(/"/g, '\\"')}", language=${langArg}, beam_size=5, vad_filter=True)
+audio, model_name, compute_type, language = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] or None
+model = WhisperModel(model_name, device="auto", compute_type=compute_type)
+segments, info = model.transcribe(audio, language=language, beam_size=5, vad_filter=True)
 text = " ".join([s.text.strip() for s in segments])
 print(json.dumps({"text": text, "language": info.language, "duration": info.duration}))
 `
 
     try {
-        const result = execSync(`${pythonPath} -c '${script.replace(/'/g, "'\\''")}'`, {
-            encoding: 'utf-8',
-            timeout: 60_000,
-            maxBuffer: 10 * 1024 * 1024,
-        }).trim()
+        const result = (await runFile(pythonPath, ['-c', script, audioPath, model, computeType, config.language || ''], 60_000)).trim()
 
         const data = JSON.parse(result)
         console.log(`[VoiceInput] faster-whisper: "${data.text}" (${data.language}, ${data.duration?.toFixed(1)}s)`)
@@ -122,14 +130,16 @@ async function transcribeWithLocalWhisper(
     audioPath: string,
     language?: string
 ): Promise<TranscriptionResult> {
-    const outputPath = audioPath.replace(/\.[^.]+$/, '.txt')
+    // whisper writes <name>.txt into --output_dir (default: cwd), so pin it
+    // next to the audio file where the result is read from.
+    const outputDir = dirname(audioPath)
+    const outputPath = join(outputDir, `${basename(audioPath, extname(audioPath))}.txt`)
 
     try {
-        const langArg = language ? `--language ${language}` : ''
-        execSync(`whisper "${audioPath}" --output_format txt ${langArg}`, {
-            encoding: 'utf-8',
-            timeout: 60000,
-        })
+        await runFile('whisper', [
+            audioPath, '--output_format', 'txt', '--output_dir', outputDir,
+            ...(language ? ['--language', language] : []),
+        ], 60_000)
 
         if (existsSync(outputPath)) {
             const text = readFileSync(outputPath, 'utf-8').trim()

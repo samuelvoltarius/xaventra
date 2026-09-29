@@ -159,6 +159,9 @@ export function createQuorumWitnessServer(options: {
 }): { server: Server; store: QuorumWitnessStore; listen: () => Promise<number> } {
     if (!options.witnessId || options.secret.length < 16) throw new Error('Witness id and a secret of at least 16 characters are required')
     const store = new QuorumWitnessStore(options.witnessId, options.stateFile)
+    // TOK-3/MI-21: a signed request is accepted once. The body carries a
+    // unique requestId (nonce); its signature is remembered for the window.
+    const seenSignatures = new Map<string, number>()
     const server = createServer(async (req, res) => {
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, { 'content-type': 'application/json' })
@@ -188,6 +191,13 @@ export function createQuorumWitnessServer(options: {
             res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'invalid witness authentication' }))
             return
         }
+        const now = Date.now()
+        for (const [seen, expiresAt] of seenSignatures) if (expiresAt < now) seenSignatures.delete(seen)
+        if (seenSignatures.has(requestSignature)) {
+            res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'replayed witness request' }))
+            return
+        }
+        seenSignatures.set(requestSignature, timestampMs + 31_000)
 
         try {
             const input = JSON.parse(body) as Record<string, unknown>

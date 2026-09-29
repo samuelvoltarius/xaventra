@@ -9,6 +9,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash, scryptSync } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { hostname as osHostname, userInfo } from 'node:os'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'encrypted')
 const KEY_FILE = join(DATA_DIR, 'master.key')
@@ -79,7 +80,7 @@ export function initEncryption(password?: string): boolean {
         authTag: authTag.toString('hex'),
         encryptedKey: encrypted.toString('hex'),
         createdAt: Date.now(),
-    }))
+    }), { mode: 0o600 })
 
     console.log('[EncryptedMemory] ✅ New master key generated')
     return true
@@ -88,8 +89,8 @@ export function initEncryption(password?: string): boolean {
 function getDefaultPassword(): string {
     // Machine-specific default password (not secure against targeted attacks,
     // but prevents casual file access)
-    const hostname = require('node:os').hostname()
-    const username = require('node:os').userInfo().username
+    const hostname = osHostname()
+    const username = userInfo().username
     return createHash('sha256').update(`nova-${hostname}-${username}`).digest('hex')
 }
 

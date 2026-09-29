@@ -4,6 +4,11 @@ const TELEGRAM_TOKEN = /\b\d{8,12}:[A-Za-z0-9_-]{25,}\b/g
 const KNOWN_API_TOKEN = /\b(?:tvly-(?:dev|prod)-|sk-(?:proj-)?|gh[pousr]_|xox[baprs]-|AIza)[A-Za-z0-9_-]{16,}\b/g
 const GENERIC_SECRET_ASSIGNMENT = /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passphrase|private[_-]?key)\b\s*[=:]\s*)(["']?)([^\s,;"'}]+)\2/gi
 
+// `sshpass -p <password>` (also -p<password>) on command lines.
+const SSHPASS_PASSWORD = /(\bsshpass\s+(?:-[A-Za-z]+\s+)*-p\s*)(["']?)([^\s"']+)\2/g
+// Credentials in URL userinfo: scheme://user:password@host
+const URL_USERINFO_PASSWORD = /(\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:/@"'<>]+:)([^\s/@"'<>]+)(@)/g
+
 // PEM private key blocks (RSA/EC/OPENSSH/PKCS#8/encrypted). A block without
 // END marker (truncated output) is redacted to the end of the text.
 const PEM_PRIVATE_KEY = /-----BEGIN ((?:[A-Z0-9]+ )*PRIVATE KEY)-----[\s\S]*?(?:-----END \1-----|$)/g
@@ -20,6 +25,8 @@ const ESCAPED_JSON_SECRET_VALUE = new RegExp(String.raw`(\\"${SECRET_KEY_NAME}\\
 export function redactSecrets(value: string): string {
     return value
         .replace(PEM_PRIVATE_KEY, '[REDACTED_PRIVATE_KEY]')
+        .replace(SSHPASS_PASSWORD, '$1$2[REDACTED]$2')
+        .replace(URL_USERINFO_PASSWORD, '$1[REDACTED]$3')
         .replace(JSON_SECRET_VALUE, '$1"[REDACTED]"')
         .replace(ESCAPED_JSON_SECRET_VALUE, '$1\\"[REDACTED]\\"')
         .replace(ENV_SECRET, '$1[REDACTED]')

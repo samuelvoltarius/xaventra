@@ -37,6 +37,14 @@ export interface SubAgentTask {
 // Nova Scheduler
 // ============================================
 
+/**
+ * MI-19: user times ("07:30") are meant in the owner's time zone, not the
+ * server's (often UTC). Same default as the croner scheduler.
+ */
+export function schedulerTimezone(): string {
+    return process.env.NOVA_TIMEZONE || 'Europe/Vienna'
+}
+
 export class NovaScheduler {
     private jobs: Map<string, ScheduledJob> = new Map()
     private runningTasks: Map<string, SubAgentTask> = new Map()
@@ -88,7 +96,7 @@ export class NovaScheduler {
         try {
             const task = schedule(pattern.cronExpression, () => {
                 this.executePattern(pattern)
-            })
+            }, { timezone: schedulerTimezone() })
 
             this.jobs.set(pattern.id, {
                 id: pattern.id,

@@ -14,7 +14,7 @@
  *   - Touches database or auth sessions
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { constantTimeTokenEquals } from '../security/token-compare.js'
@@ -106,9 +106,13 @@ export async function applyApprovedDoctorProposal(proposal: DoctorConfigProposal
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, any>
     setConfigValue(config, proposal.configPath, proposal.configValue)
     if (!NovaConfigSchema.safeParse(config).success) return { applied: false, message: 'Live config validation failed' }
+    // MI-11: the config holds secrets; backup and replacement stay owner-only
+    // (0600) instead of inheriting the umask (world-readable 0644).
     copyFileSync(configPath, `${configPath}.bak`)
+    chmodSync(`${configPath}.bak`, 0o600)
     const temp = `${configPath}.tmp`
-    writeFileSync(temp, JSON.stringify(config, null, 4))
+    writeFileSync(temp, JSON.stringify(config, null, 4), { mode: 0o600 })
+    chmodSync(temp, 0o600)
     renameSync(temp, configPath)
     return { applied: true, message: `${proposal.configPath} via PATCH_GATE aktualisiert`, requiresRestart: true }
 }

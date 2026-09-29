@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { hostname, networkInterfaces, uptime } from 'os'
+import * as nodeOs from 'node:os'
 import { execSync } from 'child_process'
 import {
     isActiveNode,
@@ -371,7 +372,6 @@ function sendHeartbeat(): void {
     let gpu_vram_free_mb: number | undefined
     try {
         if (process.platform === 'linux') {
-            const { readFileSync, existsSync } = require('fs')
             if (existsSync('/sys/class/thermal/thermal_zone0/temp')) {
                 const tempVal = parseInt(readFileSync('/sys/class/thermal/thermal_zone0/temp', 'utf-8'))
                 if (!isNaN(tempVal)) temp = Math.round(tempVal / 1000)
@@ -392,7 +392,7 @@ function sendHeartbeat(): void {
                 }
             }
         } else {
-            const os = require('os')
+            const os = nodeOs
             cpu_load = os.loadavg()[0]
             ram_used_percent = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100)
             ram_free_gb = Math.round((os.freemem() / (1024 ** 3)) * 10) / 10
@@ -803,16 +803,61 @@ export async function listRecoverableMissionCheckpoints(): Promise<Array<{ missi
         )
         if (!response.ok) return []
         const rows = await response.json() as Array<{ id?: string; task?: string; updated_at?: string }>
-        return rows.flatMap(row => {
-            if (!row.id?.startsWith('mission-') || !row.task?.startsWith('mission:')) return []
-            const checkpoint = row.task.slice('mission:'.length)
-            try {
-                const parsed = JSON.parse(checkpoint) as { id?: string }
-                if (!parsed.id || `mission-${parsed.id}` !== row.id) return []
-                return [{ missionId: parsed.id, checkpoint, updatedAt: row.updated_at || '' }]
-            } catch { return [] }
-        })
+        const recoverable: Array<{ missionId: string; checkpoint: string; updatedAt: string }> = []
+        for (const row of rows) {
+            if (!row.id?.startsWith('mission-') || typeof row.task !== 'string') continue
+            const opened = await openSignedMissionCheckpoint(row.task, row.id)
+            if ('rejected' in opened) {
+                console.warn(`[Mesh] Mission checkpoint ${row.id} ignored: ${opened.rejected}`)
+                continue
+            }
+            recoverable.push({ missionId: opened.missionId, checkpoint: opened.checkpoint, updatedAt: row.updated_at || '' })
+        }
+        return recoverable
     } catch { return [] }
+}
+
+/**
+ * MI-1: a mission row from the shared task table is only a checkpoint if it
+ * carries a mission.request envelope signed by the local node or a configured
+ * peer key. The sender is never taken from the row: channel and createdBy are
+ * rebound to `mesh:<verified node>`, which holds no owner rights.
+ */
+export async function openSignedMissionCheckpoint(
+    task: string,
+    rowId?: string,
+): Promise<{ missionId: string; checkpoint: string; sourceNode: string } | { rejected: string }> {
+    if (!task.startsWith('mission:')) return { rejected: 'not a mission row' }
+    try {
+        const { verifyStoredMeshEnvelope } = await import('./mesh-transport-runtime.js')
+        const verified = verifyStoredMeshEnvelope<{ missionId: string; checkpoint: string }>(task.slice('mission:'.length), { kinds: ['mission.request'] })
+        const envelope = verified.envelope
+        if (!verified.accepted || !envelope) return { rejected: `unsigned or untrusted checkpoint (${verified.reason})` }
+        const missionId = missionIdFromCheckpoint(envelope.payload.checkpoint)
+        if (!missionId || missionId !== envelope.payload.missionId) return { rejected: 'checkpoint mission id mismatch' }
+        if (rowId !== undefined && rowId !== `mission-${missionId}`) return { rejected: 'row id does not match the signed mission' }
+        const mission = JSON.parse(envelope.payload.checkpoint) as Record<string, unknown>
+        const checkpoint = JSON.stringify({ ...mission, channel: 'mesh', createdBy: `mesh:${envelope.sourceNode}` })
+        return { missionId, checkpoint, sourceNode: envelope.sourceNode }
+    } catch (error) {
+        return { rejected: `checkpoint verification unavailable: ${String(error).slice(0, 120)}` }
+    }
+}
+
+/** MI-1: signed chat task from the legacy queue; the prompt runs as `mesh-<verified node>`. */
+export async function openSignedChatTask(task: string): Promise<{ prompt: string; sourceNode: string } | { rejected: string }> {
+    if (!task.startsWith('agent:')) return { rejected: 'unsigned task rejected' }
+    try {
+        const { verifyStoredMeshEnvelope } = await import('./mesh-transport-runtime.js')
+        const verified = verifyStoredMeshEnvelope<{ prompt: string }>(task.slice('agent:'.length), {
+            kinds: ['agent.request'], requireLocalTarget: true, requireUnexpired: true,
+        })
+        const envelope = verified.envelope
+        if (!verified.accepted || !envelope) return { rejected: `unsigned or untrusted task (${verified.reason})` }
+        return { prompt: envelope.payload.prompt, sourceNode: envelope.sourceNode }
+    } catch (error) {
+        return { rejected: `task verification unavailable: ${String(error).slice(0, 120)}` }
+    }
 }
 
 export async function publishMissionCheckpoint(mission: Record<string, any>): Promise<boolean> {
@@ -820,8 +865,23 @@ export async function publishMissionCheckpoint(mission: Record<string, any>): Pr
     const id = `mission-${mission.id}`
     const terminal = mission.status === 'done' || mission.status === 'failed' || mission.status === 'cancelled'
     const status = terminal ? (mission.status === 'done' ? 'done' : 'failed') : mission.status === 'paused' ? 'accepted' : 'running'
+    let signedCheckpoint: string
+    try {
+        // MI-1: readers only accept checkpoints signed by a trusted node key.
+        const { signStoredMeshEnvelope } = await import('./mesh-transport-runtime.js')
+        signedCheckpoint = JSON.stringify(signStoredMeshEnvelope('mission.request', '*', {
+            missionId: String(mission.id),
+            checkpoint: JSON.stringify({ ...mission, checkpointAt: Date.now() }),
+            phase: String(mission.status || 'running'),
+            pendingActions: [],
+            idempotencyKey: `mission:${mission.id}`,
+        }, { runId: String(mission.id), ttlMs: 24 * 60 * 60_000 }))
+    } catch (error) {
+        console.warn(`[Mesh] Mission checkpoint not published, signing unavailable: ${String(error).slice(0, 160)}`)
+        return false
+    }
     const payload = {
-        task: `mission:${JSON.stringify({ ...mission, checkpointAt: Date.now() })}`,
+        task: `mission:${signedCheckpoint}`,
         status, owner_node: mission.ownerNode || NODE_ID, claimed_at: Date.now(),
         lease_epoch: mission.leaseEpoch, fencing_token: mission.fencingToken,
         run_id: mission.id, idempotency_key: `mission:${mission.id}`,
@@ -892,6 +952,17 @@ export async function delegateTask(
 
     // Compatibility fallback for nodes that have not received transport-v1.
     if (!SUPABASE_URL || !SUPABASE_KEY) return delegation.transport === 'outbox' ? delegation : null
+    let signedTask: string
+    try {
+        // MI-1: the legacy queue carries a signed agent.request, never plain text.
+        const { signStoredMeshEnvelope } = await import('./mesh-transport-runtime.js')
+        signedTask = `agent:${JSON.stringify(signStoredMeshEnvelope('agent.request', targetNodeId, {
+            prompt: task, idempotencyKey: `mesh-task:${delegation.id}`,
+        }, { ttlMs: 60 * 60_000 }))}`
+    } catch (error) {
+        console.error(`[Mesh] Task delegation failed, signing unavailable: ${String(error).slice(0, 160)}`)
+        return null
+    }
     try {
         const res = await fetch(`${SUPABASE_URL}/${TASKS_TABLE}`, {
             method: 'POST',
@@ -905,7 +976,7 @@ export async function delegateTask(
                 id: delegation.id,
                 from_node: delegation.from_node,
                 to_node: delegation.to_node,
-                task: `chat:${delegation.task}`,
+                task: signedTask,
                 status: 'pending',
                 created_at: Date.now(),
             }),
@@ -1154,9 +1225,10 @@ export function startTaskPoller(): void {
                     // Check if this is a chat task (LLM query) or shell command
                     if (claimed.task.startsWith('mission:')) {
                         const { acceptMissionHandoff } = await import('../core/autonomous-executor.js')
-                        const serializedMission = claimed.task.slice('mission:'.length)
-                        const missionId = missionIdFromCheckpoint(serializedMission)
-                        if (!missionId) throw new Error('Mission handoff rejected because the checkpoint has no valid mission id')
+                        const opened = await openSignedMissionCheckpoint(claimed.task)
+                        if ('rejected' in opened) throw new Error(`Mission handoff rejected: ${opened.rejected}`)
+                        const serializedMission = opened.checkpoint
+                        const missionId = opened.missionId
                         // The mesh-task fence protects delivery/claiming. The
                         // native executor additionally needs its own mission
                         // fence so the previous node cannot continue the same
@@ -1167,8 +1239,10 @@ export function startTaskPoller(): void {
                         if (!accepted) throw new Error('Mission handoff rejected because this node already owns another mission or the checkpoint is invalid')
                         handedOffMission = true
                         output = `Mission ${claimed.run_id || claimed.id} resumed from fenced checkpoint at epoch ${missionOwnership.leaseEpoch}`
-                    } else if (task.task.startsWith('chat:')) {
-                        const prompt = task.task.slice(5).trim()
+                    } else if (claimed.task.startsWith('agent:')) {
+                        const opened = await openSignedChatTask(claimed.task)
+                        if ('rejected' in opened) throw new Error(`Mesh task rejected: ${opened.rejected}`)
+                        const prompt = opened.prompt.trim()
                         console.log(`[Mesh] 💬 Chat task detected, routing to LLM: "${prompt.slice(0, 60)}"`)
 
                         try {
@@ -1176,7 +1250,7 @@ export function startTaskPoller(): void {
                             const { handleMessage } = await import('../daemon.js')
                             let response = ''
                             const replyFn = async (msg: string) => { response = msg }
-                            await handleMessage('mobile-mesh', `mesh-${task.from_node}`, prompt, replyFn)
+                            await handleMessage('mobile-mesh', `mesh-${opened.sourceNode}`, prompt, replyFn)
                             output = response || ''
                             if (output) {
                                 console.log(`[Mesh] 💬 LLM response: ${output.slice(0, 80)}...`)
@@ -1242,7 +1316,7 @@ export function startTaskPoller(): void {
                             output = `⚠️ Kein LLM auf Node "${hostname()}" verfügbar (weder API, Ollama noch llama.cpp)`
                         }
                     } else {
-                        throw new Error('Untyped mesh task rejected: raw shell/task strings are not executable')
+                        throw new Error('Untyped or unsigned mesh task rejected: only signed agent/mission rows are executable')
                     }
 
                     if (handedOffMission) {
@@ -1311,7 +1385,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     let cpuName = 'unknown'
     let cpuCores = 0
     try {
-        const os = require('node:os')
+        const os = nodeOs
         const cpus = os.cpus()
         cpuCores = cpus.length
         cpuName = cpus[0]?.model?.trim() || 'unknown'
@@ -1344,7 +1418,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     // --- RAM ---
     let ramGb = 0
     try {
-        const os = require('node:os')
+        const os = nodeOs
         ramGb = Math.round(os.totalmem() / (1024 ** 3))
     } catch { }
     // ARM fallback: /proc/meminfo
@@ -1381,14 +1455,14 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     } catch { }
 
     // --- OS ---
-    let osName = process.platform
+    let osName: string = process.platform
     let osVersion = ''
     try {
-        const os = require('node:os')
+        const os = nodeOs
         osVersion = os.release()
         if (process.platform === 'linux') {
             try {
-                const { readFileSync: rfs, existsSync: efs } = require('node:fs')
+                const rfs = readFileSync, efs = existsSync
                 if (efs('/etc/os-release')) {
                     const rel = rfs('/etc/os-release', 'utf-8')
                     const name = rel.match(/PRETTY_NAME="(.+)"/)?.[1]
