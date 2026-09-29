@@ -54,6 +54,27 @@ export interface ResearchOptions {
 }
 
 // ============================================
+// Input validation (K2): capability names and hosts are untrusted
+// ============================================
+
+const CAPABILITY_NAME = /^[a-z0-9_-]{1,40}$/
+// Plain host names / IPv4 / user@host. No leading '-', no shell metacharacters.
+const SAFE_SSH_HOST = /^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/
+
+export function isValidCapabilityName(capability: unknown): capability is string {
+    return typeof capability === 'string' && CAPABILITY_NAME.test(capability)
+}
+
+function assertValidCapabilityName(capability: unknown): asserts capability is string {
+    if (!isValidCapabilityName(capability)) throw new Error('Invalid capability name (allowed: ^[a-z0-9_-]{1,40}$)')
+}
+
+/** POSIX single-quote a string for a shell word: nothing inside is expanded. */
+function shellSingleQuote(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+// ============================================
 // Cache
 // ============================================
 
@@ -298,12 +319,13 @@ function getStaticFallback(capability: string, node: MeshSetupNode): CapabilityR
     const candidate: CapabilityCandidate = capEntry
         ? (capEntry[os] ?? capEntry['_default'] ?? {
             name: capability,
-            installCommand: `echo "Kein Rezept fuer ${capability} auf ${os}"`,
+            // Never interpolate the (untrusted) capability into a shell string.
+            installCommand: 'echo "Kein statisches Rezept fuer diese Capability auf diesem Betriebssystem"',
             rationale: 'Statisches Fallback nicht vorhanden — Web-Recherche empfohlen',
         })
         : {
             name: capability,
-            installCommand: `echo "Kein Rezept fuer ${capability}"`,
+            installCommand: 'echo "Kein statisches Rezept fuer diese Capability"',
             rationale: 'Unbekannte Capability — manuelle Recherche nötig',
         }
 
@@ -400,6 +422,7 @@ export async function researchCapability(
     node: MeshSetupNode,
     options: ResearchOptions = {},
 ): Promise<CapabilityResearchResult> {
+    assertValidCapabilityName(capability)
     const hwKey = JSON.stringify(node.hardware ?? {}).slice(0, 80)
     const key = cacheKey(capability, node.name, hwKey)
 
@@ -509,6 +532,7 @@ export async function researchAllMissingCapabilities(
 // ============================================
 
 export function researchResultToSetupAction(res: CapabilityResearchResult): SetupAction {
+    assertValidCapabilityName(res.capability)
     const localHost = hostname()
     const isLocal = res.nodeName === localHost
         || res.nodeName === 'localhost'
@@ -529,10 +553,13 @@ export function researchResultToSetupAction(res: CapabilityResearchResult): Setu
         title: `${res.capability} installieren: ${res.recommended.name}${versionLabel}`,
         reason: res.recommended.rationale,
         risk: 'medium',
+        // Remote: the install command is one single-quoted argument for ssh,
+        // so the local shell never expands $(), backticks or quotes in it.
+        // Option-like or malformed hosts are refused (no command).
         command: isLocal
             ? res.recommended.installCommand
-            : res.nodeHost
-                ? `ssh ${res.nodeHost} "${res.recommended.installCommand.replace(/"/g, '\\"')}"`
+            : res.nodeHost && SAFE_SSH_HOST.test(res.nodeHost)
+                ? `ssh -- ${res.nodeHost} ${shellSingleQuote(res.recommended.installCommand)}`
                 : undefined,
         // Full research metadata — shown in /setup plan, never affects execution
         research: {

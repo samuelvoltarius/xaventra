@@ -6,6 +6,7 @@
 
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -50,6 +51,70 @@ export interface LLMEntry {
 }
 
 // ============================================
+// Central command -> minimum role table (K2)
+// ============================================
+
+export type CommandRole = 'guest' | 'user' | 'admin' | 'owner'
+
+const ROLE_RANK: Record<string, number> = { blocked: -1, guest: 0, user: 1, admin: 2, owner: 3 }
+
+/**
+ * Checked BEFORE dispatch. Every command that is not listed here requires
+ * owner, including commands added later. Only read-only, self-scoped commands
+ * are opened to lower roles; per-command checks inside the handlers remain as
+ * a second line of defence.
+ */
+const COMMAND_MINIMUM_ROLE: Readonly<Record<string, CommandRole>> = Object.freeze({
+    // Read-only self-description / help, own session reset.
+    help: 'guest', hilfe: 'guest', befehle: 'guest', commands: 'guest',
+    identity: 'guest', whoami: 'guest', capabilities: 'guest', info: 'guest',
+    clear: 'guest', reset: 'guest',
+    // Principal-scoped or read-only status; handlers keep their own finer checks.
+    status: 'user', layers: 'user', memory: 'user', think: 'user',
+    codex: 'user', login: 'user', benchmark: 'user', skills: 'user', lernstatus: 'user',
+    // User administration: handler enforces owner for promotion.
+    users: 'admin', user: 'admin',
+})
+
+export function getCommandMinimumRole(cmd: string): CommandRole {
+    const key = String(cmd || '').trim().toLowerCase()
+    return Object.prototype.hasOwnProperty.call(COMMAND_MINIMUM_ROLE, key) ? COMMAND_MINIMUM_ROLE[key] : 'owner'
+}
+
+function commandRoleDenial(cmd: string, permission: string): string | null {
+    const required = getCommandMinimumRole(cmd)
+    const actual = ROLE_RANK[permission] ?? -1
+    if (actual >= ROLE_RANK[required]) return null
+    return `🔒 /${cmd} ist nur für die Rolle ${required}${required === 'owner' ? '' : ' (oder höher)'} freigegeben. Deine Rolle: ${permission}.`
+}
+
+// ============================================
+// /setup apply confirmations (K2): issued by the server, single use,
+// bound to principal + target, short-lived. Never derived from the request.
+// ============================================
+
+const SETUP_CONFIRMATION_TTL_MS = 5 * 60_000
+const setupConfirmations = new Map<string, { principal: string; target: string; expiresAt: number }>()
+
+function issueSetupConfirmation(principal: string, target: string): string {
+    const now = Date.now()
+    for (const [token, entry] of setupConfirmations) if (entry.expiresAt <= now) setupConfirmations.delete(token)
+    const token = randomBytes(18).toString('base64url')
+    setupConfirmations.set(token, { principal, target, expiresAt: now + SETUP_CONFIRMATION_TTL_MS })
+    return token
+}
+
+function consumeSetupConfirmation(principal: string, target: string, token: string | undefined): boolean {
+    if (!token) return false
+    const entry = setupConfirmations.get(token)
+    if (!entry) return false
+    if (entry.expiresAt <= Date.now()) { setupConfirmations.delete(token); return false }
+    if (entry.principal !== principal || entry.target !== target) return false
+    setupConfirmations.delete(token)
+    return true
+}
+
+// ============================================
 // Command Handler
 // ============================================
 
@@ -64,6 +129,8 @@ export async function handleCommand(
     // Store state globally for Telegram inline button callbacks
     ; (globalThis as any).__novaState = state
     const requestPermission = principalContext?.permission || 'guest'
+    const roleDenial = commandRoleDenial(cmd, requestPermission)
+    if (roleDenial) return roleDenial
 
     switch (cmd) {
         case 'docker': {
@@ -3501,6 +3568,10 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                 case 'research': {
                     const capArg = rest2[0] || ''
                     const forceArg = rest2.includes('--force')
+                    if (capArg && capArg !== 'all' && !capArg.startsWith('--')) {
+                        const { isValidCapabilityName } = await import('./capability-researcher.js')
+                        if (!isValidCapabilityName(capArg)) return '❌ Ungültige Capability. Erlaubt: a-z, 0-9, _ und -, höchstens 40 Zeichen.'
+                    }
 
                     if (capArg && capArg !== 'all' && !capArg.startsWith('--')) {
                         // Single capability - full research loop, persisted into setup-state.json
@@ -3517,18 +3588,33 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
 
                 case 'apply': {
                     const actionIdArg = rest2[0]
+                    const confirmationArg = rest2[1]
                     if (!actionIdArg) return '❌ Usage: /setup apply <actionId|all>'
+                    if (!/^[A-Za-z0-9:_.-]{1,128}$/.test(actionIdArg)) return '❌ Ungültige Aktions-ID.'
                     const { applySelfSetupAction, applySelfSetupPlan, loadSelfSetupState } = await import('../core/self-setup-orchestrator.js')
+                    // The confirmation is never built from the request itself:
+                    // the first call only issues a single-use token that the
+                    // same principal must send back explicitly.
+                    const confirmPrincipal = `${principalContext?.channel || 'unknown'}:${principalContext?.principalId || from}`
                     if (actionIdArg === 'all') {
                         const st2 = loadSelfSetupState()
                         if (!st2) return '❌ Kein Setup-Plan. Erst /setup plan ausführen.'
-                        const confirmStr = st2.mode === 'yolo' ? '' : `APPLY_ALL:${st2.generatedAt}`
-                        const res = await applySelfSetupPlan(confirmStr)
+                        const target = `all:${st2.generatedAt}`
+                        if (!confirmationArg) {
+                            const token = issueSetupConfirmation(confirmPrincipal, target)
+                            return `⚠️ Bestätigung nötig: alle Aktionen des Plans vom ${st2.generatedAt} ausführen.\nZum Ausführen innerhalb von 5 Minuten senden:\n/setup apply all ${token}`
+                        }
+                        if (!consumeSetupConfirmation(confirmPrincipal, target, confirmationArg)) return '❌ Bestätigung ungültig oder abgelaufen. /setup apply all erneut aufrufen.'
+                        const res = await applySelfSetupPlan(`APPLY_ALL:${st2.generatedAt}`)
                         return `${res.success ? '✅' : '⚠️'} ${res.message}\nApplied: ${res.applied.join(', ') || '–'}\nFailed: ${res.failed.join(', ') || '–'}`
                     }
-                    const st2 = loadSelfSetupState()
-                    const confirmStr = st2?.mode === 'yolo' ? '' : `APPLY:${actionIdArg}`
-                    const res = await applySelfSetupAction(actionIdArg, confirmStr)
+                    const target = `action:${actionIdArg}`
+                    if (!confirmationArg) {
+                        const token = issueSetupConfirmation(confirmPrincipal, target)
+                        return `⚠️ Bestätigung nötig für Aktion ${actionIdArg}. Vorher mit /setup plan prüfen, was ausgeführt wird.\nZum Ausführen innerhalb von 5 Minuten senden:\n/setup apply ${actionIdArg} ${token}`
+                    }
+                    if (!consumeSetupConfirmation(confirmPrincipal, target, confirmationArg)) return '❌ Bestätigung ungültig oder abgelaufen. /setup apply <id> erneut aufrufen.'
+                    const res = await applySelfSetupAction(actionIdArg, `APPLY:${actionIdArg}`)
                     return `${res.success ? '✅' : '❌'} ${res.message}`
                 }
                 default:
@@ -3538,8 +3624,8 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
 /setup plan — Frischen Scan + Plan generieren
 /setup research — Alle fehlenden Capabilities via Websuche recherchieren
 /setup research <cap> — Einzelne Capability recherchieren (stt/tts/llm/embedding/vision/ffmpeg)
-/setup apply <id> — Einzelne Aktion ausführen
-/setup apply all — Alle Aktionen im YOLO-Modus ausführen`
+/setup apply <id> — Bestätigungs-Token anfordern, dann /setup apply <id> <token>
+/setup apply all — Bestätigungs-Token für alle Aktionen anfordern, dann /setup apply all <token>`
             }
         }
 
