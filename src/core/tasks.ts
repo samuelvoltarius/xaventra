@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ============================================
@@ -316,6 +316,9 @@ export class TaskQueue {
             }
         } catch (err) {
             console.error('[TaskQueue] Failed to load:', err)
+            // Keep the unreadable file: the next save must not silently
+            // replace the whole queue with an empty one (R2 NZ-39).
+            try { renameSync(this.filePath, `${this.filePath}.corrupt-${Date.now()}`) } catch { /* ignore */ }
         }
     }
 
@@ -326,7 +329,9 @@ export class TaskQueue {
             }
 
             const data = Object.fromEntries(this.tasks)
-            writeFileSync(this.filePath, JSON.stringify(data, null, 2))
+            const tmp = `${this.filePath}.${process.pid}.tmp`
+            writeFileSync(tmp, JSON.stringify(data, null, 2))
+            renameSync(tmp, this.filePath)
         } catch (err) {
             console.error('[TaskQueue] Failed to save:', err)
         }
