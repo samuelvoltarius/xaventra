@@ -226,6 +226,11 @@ export function detectPlatformRole(): RoleConfig {
         try {
             platformInfo = JSON.parse(readFileSync(halPath, 'utf-8'))
             console.log(`[HAL] Platform detected from HAL: ${platformInfo!.name} (${platformInfo!.platform})`)
+            // An unknown platform value has no role preset; use OS detection.
+            if (!['desktop', 'rpi', 'jetson', 'dgx'].includes(platformInfo?.platform as string)) {
+                console.log(`[HAL] ⚠ unknown platform "${platformInfo?.platform}" in platform-info.json, falling back to OS detection`)
+                platformInfo = null
+            }
         } catch {
             console.log('[HAL] ⚠ platform-info.json unreadable, falling back to OS detection')
         }
