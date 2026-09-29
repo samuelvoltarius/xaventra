@@ -471,7 +471,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const started = Date.now()
         try {
             const { getToolRegistry } = await import('../tools/complete-registry.js')
-            const resultValue = await getToolRegistry().execute(payload.tool, payload.arguments)
+            // Remote callers act as an unprivileged guest: identity fields are
+            // never taken from the envelope payload (policy rejects them, too).
+            const { authorizationUserId: _a, authUserId: _b, userId: _c, channel: _d, ...toolArguments } = payload.arguments as Record<string, unknown>
+            const resultValue = await getToolRegistry().execute(payload.tool, toolArguments)
             const resultHash = createHash('sha256').update(JSON.stringify(resultValue)).digest('hex')
             const result: ResultPayload = { requestId: envelope.id, success: true, result: resultValue, evidence: [{ tool: payload.tool, requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - started }] }
             processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
@@ -485,7 +488,15 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const payload = envelope.payload as MissionRequestPayload
         if (!envelope.fence) throw new Error('mission handoff requires fence')
         const { acceptMissionHandoff } = await import('../core/autonomous-executor.js')
-        const accepted = acceptMissionHandoff(payload.checkpoint, { ownerNode: getLocalNodeId(), leaseEpoch: envelope.fence.epoch, fencingToken: envelope.fence.token })
+        // MI-1/MI-6: the sender of a handed-off mission is the verified node, never the checkpoint's channel/createdBy.
+        let checkpoint: string
+        try {
+            checkpoint = JSON.stringify({ ...(JSON.parse(payload.checkpoint) as Record<string, unknown>), channel: 'mesh', createdBy: `mesh:${envelope.sourceNode}` })
+        } catch {
+            await sendResult(envelope, makeResult(envelope.id, false, undefined, 'mission checkpoint rejected'))
+            return
+        }
+        const accepted = acceptMissionHandoff(checkpoint, { ownerNode: getLocalNodeId(), leaseEpoch: envelope.fence.epoch, fencingToken: envelope.fence.token })
         await sendResult(envelope, makeResult(envelope.id, accepted, accepted ? `Mission ${payload.missionId} accepted` : undefined, accepted ? undefined : 'mission checkpoint rejected'))
     }
 }
