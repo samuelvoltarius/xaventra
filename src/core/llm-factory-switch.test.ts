@@ -20,6 +20,7 @@ vi.mock('../llm/openai.js', () => ({
 import { availableLLMs, createLLM, invalidateConfigCache } from './llm-factory.js'
 import { setNovaConfig } from './config.js'
 import * as fallback from '../llm/model-fallback.js'
+import { createNovaLLMClient } from '../llm/nova-llm-sdk.js'
 
 const configFile = () => join(process.cwd(), 'xaventra.config.json')
 let originalConfig = ''
@@ -64,5 +65,30 @@ describe('runtime model switch', () => {
         expect(result.toolCalls?.[0]?.name).toBe('read_file')
         expect(result.usage?.totalTokens).toBe(12)
         expect(sdkComplete).toHaveBeenLastCalledWith(messages, tools, { maxTokens: 64 })
+    })
+})
+
+describe('cloud failover (R2 UEB-22)', () => {
+    async function localPrimaryFallingBackTo(model: string) {
+        vi.spyOn(fallback, 'runWithModelFallback').mockImplementationOnce(async (options: any) =>
+            ({ result: await options.run('openai', model), attempts: [], model } as any))
+        const llm: any = await createLLM({ provider: 'local', model: 'local-model' })
+        vi.mocked(createNovaLLMClient).mockClear()
+        return llm
+    }
+
+    it('never routes a prompt silently to a cloud model that was not approved', async () => {
+        const llm = await localPrimaryFallingBackTo('gpt-unapproved')
+        await expect(llm.complete('Hallo')).rejects.toThrow(/nicht freigegeben/)
+        expect(createNovaLLMClient).not.toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai' }))
+    })
+
+    it('uses a cloud fallback the owner listed in fallbackModels', async () => {
+        const cfg = JSON.parse(originalConfig)
+        writeFileSync(configFile(), JSON.stringify({ ...cfg, fallbackModels: ['gpt-approved'] }))
+        invalidateConfigCache()
+        const llm = await localPrimaryFallingBackTo('gpt-approved')
+        await expect(llm.complete('Hallo')).resolves.toMatchObject({ content: 'from switched model' })
+        expect(createNovaLLMClient).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai', model: 'gpt-approved' }))
     })
 })

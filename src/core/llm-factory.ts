@@ -1168,7 +1168,16 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             throw lastLocalError
                         }
 
-                        // Cloud fallback — map provider name
+                        // Cloud fallback only to a model the owner listed in
+                        // fallbackModels (or the provider already chosen as
+                        // primary). Anything else is a visible error, never a
+                        // silent route of the prompt to another cloud.
+                        const configuredFallbacks = (getNovaConfig() as any)?.fallbackModels
+                        const approved = _provider === activeProvider
+                            || (Array.isArray(configuredFallbacks) && configuredFallbacks.includes(fallbackModel))
+                        if (!approved) {
+                            throw new Error(`Cloud-Failover auf ${_provider}/${fallbackModel} nicht freigegeben (nicht in fallbackModels konfiguriert)`)
+                        }
                         const sdkProv = _provider
                         activeLLM = await createNovaLLMClient({ provider: sdkProv as any, model: fallbackModel })
                     }
