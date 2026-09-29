@@ -953,13 +953,25 @@ export function shouldRecoverMission(active: Mission | null): boolean {
 }
 
 /** Accept a checkpoint only after the mesh worker has obtained a fresh fence. */
-export function acceptMissionHandoff(serialized: string, ownership: { ownerNode: string; leaseEpoch?: number; fencingToken?: string }): boolean {
+export function acceptMissionHandoff(
+    serialized: string,
+    ownership: { ownerNode: string; leaseEpoch?: number; fencingToken?: string },
+    verifiedSourceNode?: string,
+): boolean {
     try {
         const mission = JSON.parse(serialized) as Mission
         if (!mission?.id || !Array.isArray(mission.steps)) return false
         if (activeMission && activeMission.id !== mission.id) return false
+        // A handed-off mission never runs with the owner/Telegram identity from
+        // the checkpoint: it runs as `mesh:<verified node>` without owner rights.
+        const nodePattern = /^[A-Za-z0-9._-]{1,64}$/
+        const createdBy = verifiedSourceNode && nodePattern.test(verifiedSourceNode)
+            ? `mesh:${verifiedSourceNode}`
+            : (/^mesh:[A-Za-z0-9._-]{1,64}$/.test(String(mission.createdBy)) ? mission.createdBy : 'mesh:unverified')
         activeMission = {
             ...mission,
+            channel: 'mesh',
+            createdBy,
             status: mission.status === 'paused' ? 'paused' : 'active',
             ownerNode: ownership.ownerNode,
             leaseEpoch: ownership.leaseEpoch,
