@@ -78,6 +78,16 @@ export const desktopScreenshotTool = {
                     message: 'Screenshot wurde vom verbundenen Desktop-Client aufgenommen und per SHA-256 verifiziert. Beschreibe nur sichtbare Bildinhalte.',
                 }
             }
+            // Defense in depth (H1): the handler enforces the same owner opt-in,
+            // principal and channel rule as desktop_input, so a caller that
+            // bypasses the governed executor still cannot capture host pixels.
+            const policyContext = getExecutionPolicyContext()
+            const owner = process.env.NOVA_DESKTOP_TELEGRAM_OWNER_ID
+            if (!owner || !/^[1-9][0-9]*$/.test(owner) || policyContext.authUserId !== owner
+                || policyContext.channel?.toLowerCase() !== 'telegram' || !policyContext.runId) {
+                return { success: false, captured: false, delivered: false,
+                    error: 'Desktop screenshot requires the enrolled authenticated Telegram owner and run; nothing was captured' }
+            }
             const visionDir = join(process.cwd(), '.nova-vision')
             if (!existsSync(visionDir)) mkdirSync(visionDir, { recursive: true })
 
@@ -86,7 +96,9 @@ export const desktopScreenshotTool = {
             const filePath = join(visionDir, `${fileName}.png`)
 
             if (process.env.NOVA_CAPTURE_SOCKET || process.env.NOVA_CAPTURE_TOKEN_FILE) {
-                // Never fall back across the desktop-session boundary on denial.
+                // Workstation enrollment configured (even partially): only the
+                // enrolled adapter may capture. Never fall back to the local
+                // display on denial, lock, timeout or misconfiguration.
                 const image = await requestSessionCapture(process.env.NOVA_CAPTURE_SOCKET || '', process.env.NOVA_CAPTURE_TOKEN_FILE || '')
                 writeFileSync(filePath, image, { mode: 0o600, flag: 'wx' })
             } else {
