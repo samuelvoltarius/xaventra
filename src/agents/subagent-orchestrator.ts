@@ -80,8 +80,11 @@ export interface SubagentTask {
     systemPrompt?: string
     /** Model to use (defaults to auto) */
     model?: string
-    /** Parent userId for context */
+    /** Parent canonical principal (memory/session identity). Defaults to the
+     * principal of the governed tool call that spawned this subagent. */
     userId?: string
+    /** Parent raw channel identity used for authorization. */
+    authUserId?: string
     /** Optional isolated writable workspace for implementation subagents. */
     workspace?: {
         mode?: 'temporary' | 'worktree' | 'container' | 'native'
@@ -112,11 +115,42 @@ interface ActiveSubagent {
     task: SubagentTask
     status: SubagentStatus
     startedAt: number
+    /** Set once the underlying run has actually settled. */
+    finishedAt?: number
     promise: Promise<SubagentResult>
     cancel?: () => void
 }
 
 const activeSubagents = new Map<string, ActiveSubagent>()
+
+/** Finished entries are kept for inspection, but not forever. */
+const FINISHED_RETENTION_MS = 10 * 60_000
+const MAX_FINISHED_ENTRIES = 100
+
+function pruneSubagents(now = Date.now()): void {
+    const finished: ActiveSubagent[] = []
+    for (const [id, agent] of activeSubagents) {
+        if (agent.finishedAt === undefined) continue
+        if (now - agent.finishedAt > FINISHED_RETENTION_MS) activeSubagents.delete(id)
+        else finished.push(agent)
+    }
+    if (finished.length > MAX_FINISHED_ENTRIES) {
+        finished.sort((a, b) => (a.finishedAt as number) - (b.finishedAt as number))
+        for (const agent of finished.slice(0, finished.length - MAX_FINISHED_ENTRIES)) activeSubagents.delete(agent.id)
+    }
+}
+
+/** Parent identity: explicit task fields win, then the governed tool call's context. */
+async function resolveParentIdentity(task: SubagentTask): Promise<{ userId: string; authUserId: string }> {
+    let context: { userId?: string; authUserId?: string } = {}
+    try {
+        const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+        context = getExecutionPolicyContext()
+    } catch { /* no governed parent context */ }
+    const userId = task.userId || context.userId || 'subagent'
+    const authUserId = task.authUserId || (task.userId ? task.userId : context.authUserId) || userId
+    return { userId, authUserId }
+}
 
 // ============================================
 // Safe tool whitelist (no risky ops by default)
@@ -140,7 +174,16 @@ const RISKY_TOOLS = new Set([
     'deploy', 'docker_run',
 ])
 
-function filterTools(requested: string[] | undefined): string[] | undefined {
+/** Tool lists arrive as arrays or, from tool calls, as comma-separated strings. */
+export function normalizeToolList(requested: unknown): string[] | undefined {
+    if (requested === undefined || requested === null) return undefined
+    const items = Array.isArray(requested) ? requested : String(requested).split(',')
+    const names = items.map(item => String(item ?? '').trim()).filter(Boolean)
+    return names.length > 0 ? names : undefined
+}
+
+function filterTools(requestedInput: unknown): string[] | undefined {
+    const requested = normalizeToolList(requestedInput)
     if (!requested || requested.length === 0) return Array.from(SAFE_DEFAULT_TOOLS)
     // Remove risky tools unless explicitly approved
     return requested.filter(t => !RISKY_TOOLS.has(t))
@@ -206,8 +249,12 @@ async function runLocalSubagent(
         }
 
         // Channels and subagents share the governed SDK continuation runtime.
+        // The subagent acts for its parent principal, in its own conversation.
+        const parent = await resolveParentIdentity(task)
         const result = await runNovaAgent({
-            userId: task.userId || 'subagent',
+            userId: parent.userId,
+            authUserId: parent.authUserId,
+            conversationId: `subagent:${id}`,
             channel: 'subagent',
             content: task.task,
             systemPrompt,
@@ -269,8 +316,9 @@ async function runMeshSubagent(
             return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode }
         }
         console.log(`[SubagentOrch] 🌐 Delegating to ${meshNode} through signed MeshTransport`)
+        const parent = await resolveParentIdentity(task)
         const sent = await sendAgentRequest(meshNode, task.task, {
-            userId: task.userId || 'subagent',
+            userId: parent.userId,
             allowedTools: filterTools(task.tools),
             budget: { timeoutMs: task.timeoutMs || 60_000 },
             idempotencyKey: `subagent:${id}`,
@@ -332,6 +380,7 @@ async function runMeshSubagent(
  * Returns result when done (respects timeoutMs).
  */
 export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult> {
+    pruneSubagents()
     const id = randomUUID().slice(0, 8)
     const timeoutMs = task.timeoutMs ?? 60_000
     const abortSignal = { cancelled: false }
@@ -356,10 +405,23 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
         ? () => runMeshSubagent(id, task, task.meshNode!, hardAbort.signal)
         : () => runLocalSubagent(id, task, abortSignal, hardAbort)
 
+    // The concurrency slot is held until the underlying run has really
+    // settled, not merely until the caller stopped waiting (timeout).
+    let settled = false
+    const run = Promise.resolve().then(runFn)
+    const markSettled = () => {
+        if (settled) return
+        settled = true
+        releaseSlot()
+        const entry = activeSubagents.get(id)
+        if (entry) entry.finishedAt = Date.now()
+    }
+    run.then(markSettled, markSettled)
+
     // Wrap with timeout
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const promise = Promise.race([
-        runFn(),
+        run,
         new Promise<SubagentResult>((resolve) =>
             timeoutHandle = setTimeout(() => {
                 abortSignal.cancelled = true
@@ -402,13 +464,13 @@ export async function spawnSubagent(task: SubagentTask): Promise<SubagentResult>
             meshNode: task.meshNode,
             error: String(err),
         }
-    } finally {
-        releaseSlot()
     }
 
     // Update status in registry
-    if (activeSubagents.has(id)) {
-        activeSubagents.get(id)!.status = result.status
+    const entry = activeSubagents.get(id)
+    if (entry) {
+        entry.status = result.status
+        if (settled && entry.finishedAt === undefined) entry.finishedAt = Date.now()
     }
 
     // Audit log
@@ -435,13 +497,14 @@ export async function spawnParallel(tasks: SubagentTask[]): Promise<SubagentResu
  * Returns a combined summary once all are done.
  */
 export async function spawnSubagentsParallel(
-    tasks: Array<{ task: string; tools?: string[]; timeout_seconds?: number; mesh_node?: string }>
+    tasks: Array<{ task: string; tools?: string[] | string; timeout_seconds?: number; mesh_node?: string }>
 ): Promise<string> {
     if (!tasks.length) return 'Keine Tasks angegeben.'
     console.log(`[SubagentOrch] 🚀 Parallel spawn: ${tasks.length} subagents`)
     const results = await spawnParallel(tasks.map(t => ({
         task: t.task,
-        tools: t.tools,
+        // Same contract as spawn_subagent: "a, b" or ["a", "b"].
+        tools: normalizeToolList(t.tools),
         timeoutMs: (t.timeout_seconds || 60) * 1000,
         meshNode: t.mesh_node,
     })))
@@ -465,6 +528,7 @@ export function cancelSubagent(id: string): boolean {
  * List all active/recent subagents.
  */
 export function listSubagents(): Array<{ id: string; task: string; status: SubagentStatus; durationMs: number }> {
+    pruneSubagents()
     return Array.from(activeSubagents.values()).map(a => ({
         id: a.id,
         task: a.task.task.slice(0, 80),
