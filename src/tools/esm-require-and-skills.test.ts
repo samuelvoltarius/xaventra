@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -37,6 +37,15 @@ describe('R2 T25: no bare require in ESM code paths', () => {
         const { listInstalledSkills } = await import('./skills-import-cli.js')
         mkdirSync(join(dir, '.agent', 'skills', 'demo-skill'), { recursive: true })
         expect(listInstalledSkills()).toEqual(['demo-skill'])
+    })
+})
+
+describe('R2 T25: source scan (vitest itself provides require, production ESM does not)', () => {
+    it.each(['searxng-search.ts', 'skills-import-cli.ts', 'complete-registry.ts', 'vision-tool.ts', 'cad-tool.ts', 'browser.ts'])('%s has no bare require of fs/path', (file) => {
+        const source = readFileSync(join(__dirname, file), 'utf8')
+        const code = source.split('
+').filter(line => !line.trim().startsWith('//'))
+        expect(code.filter(line => /(^|[^\w.'"`])require\((['"])(node:)?(fs|path)\)/.test(line))).toEqual([])
     })
 })
 
