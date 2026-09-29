@@ -2068,7 +2068,7 @@ async function startDaemon() {
                     if (mission && ['planning', 'active'].includes(mission.status)) return false
                     const { getOutcomeLedger } = await import('./core/outcome-ledger.js')
                     const ledger = getOutcomeLedger()
-                    ledger.failStaleRuns()
+                    ledger.failStaleRuns(undefined, undefined, { keepLiveRuns: true })
                     return !ledger.listRuns(200).some(run => run.status === 'running')
                 })
                 if (!decision.leader && decision.reason !== 'local node is not Main') {

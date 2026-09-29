@@ -109,6 +109,12 @@ export class OutcomeLedger {
         private readonly mirrorToHa = dataDir === DEFAULT_DATA_DIR,
     ) {}
 
+    /** Runs started by this process and still open, plus runs whose events a
+     * peer synced to us in this process. Neither is "abandoned after a crash"
+     * for a periodic sweep (R2 NZ-14). */
+    private readonly liveRunIds = new Set<string>()
+    private readonly peerRunIds = new Set<string>()
+
     private dayFile(timestamp = new Date()): string {
         return join(this.dataDir, `${timestamp.toISOString().slice(0, 10)}.jsonl`)
     }
@@ -128,6 +134,8 @@ export class OutcomeLedger {
             payload: safePayload(payload),
         }
         appendFileSync(this.dayFile(), `${JSON.stringify(event)}\n`)
+        if (type === 'run.started') this.liveRunIds.add(runId)
+        else if (type === 'run.completed' || type === 'run.failed') this.liveRunIds.delete(runId)
         if (this.mirrorToHa && haMirroringEnabled()) {
             void import('./ha-state.js')
                 .then(({ writeHaRecord }) => writeHaRecord('outcome-ledger', event.eventId, event, {
@@ -155,6 +163,7 @@ export class OutcomeLedger {
         if (!Number.isFinite(timestamp.getTime())) return false
         const sanitized: OutcomeEvent = { ...event, payload: safePayload(event.payload || {}) }
         appendFileSync(this.dayFile(timestamp), `${JSON.stringify(sanitized)}\n`)
+        this.peerRunIds.add(event.runId)
         return true
     }
 
@@ -168,6 +177,7 @@ export class OutcomeLedger {
             if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true })
             const sanitized: OutcomeEvent = { ...event, payload: safePayload(event.payload || {}) }
             appendFileSync(this.dayFile(timestamp), `${JSON.stringify(sanitized)}\n`)
+            this.peerRunIds.add(event.runId)
             known.add(event.eventId)
             imported++
         }
@@ -234,9 +244,12 @@ export class OutcomeLedger {
 
     /** Close abandoned in-flight runs after a process crash. Approval waits are
      * durable checkpoints and are intentionally not failed by this sweep. */
-    failStaleRuns(maxAgeMs = 15 * 60_000, nowMs = Date.now()): string[] {
+    failStaleRuns(maxAgeMs = 15 * 60_000, nowMs = Date.now(), options: { keepLiveRuns?: boolean } = {}): string[] {
+        // Periodic callers (Main handover check) pass keepLiveRuns: a quiet but
+        // still running local run or a peer's run is not a crash leftover.
         const stale = this.listRuns(500).filter(run =>
-            run.status === 'running' && nowMs - Date.parse(run.updatedAt) > maxAgeMs)
+            run.status === 'running' && nowMs - Date.parse(run.updatedAt) > maxAgeMs
+            && !(options.keepLiveRuns && (this.liveRunIds.has(run.runId) || this.peerRunIds.has(run.runId))))
         for (const run of stale) {
             this.fail(run.runId, {
                 success: false,
