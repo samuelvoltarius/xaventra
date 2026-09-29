@@ -27,12 +27,27 @@ interface SharedMemory {
     timestamp: string
     hash: string          // Content hash for dedup
     synced: boolean
+    /** Visibility; only 'global' entries enter the shared mesh pool (UEB-17). Missing = legacy global. */
+    scope?: string
 }
 
 interface SyncState {
     lastSync: string
     totalSynced: number
     nodeMemories: Record<string, number>  // node -> count
+    /** Content hashes that were forgotten; never re-accepted from the mesh (UEB-17). */
+    tombstones?: string[]
+}
+
+const MAX_TOMBSTONES = 5_000
+export const GLOBAL_MEMORY_SCOPE = 'global'
+
+function memoryHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex').slice(0, 16)
+}
+
+function isTombstoned(hash: string): boolean {
+    return (syncState.tombstones || []).includes(hash)
 }
 
 // ============================================
@@ -53,11 +68,13 @@ let syncState: SyncState = {
 /**
  * Add a memory to the shared pool and broadcast to mesh
  */
-export async function shareMemory(content: string, type: SharedMemory['type'], source: string): Promise<void> {
-    const hash = createHash('sha256').update(content).digest('hex').slice(0, 16)
+export async function shareMemory(content: string, type: SharedMemory['type'], source: string, scope: string = GLOBAL_MEMORY_SCOPE): Promise<void> {
+    // UEB-17: private/scoped memories never enter the shared pool or the mesh.
+    if (scope !== GLOBAL_MEMORY_SCOPE) return
+    const hash = memoryHash(content)
 
-    // Dedup check
-    if (sharedMemories.some(m => m.hash === hash)) return
+    // Dedup check; a forgotten memory is not shared again implicitly
+    if (sharedMemories.some(m => m.hash === hash) || isTombstoned(hash)) return
 
     const memory: SharedMemory = {
         id: `mem_${Date.now()}_${hash.slice(0, 8)}`,
@@ -67,6 +84,7 @@ export async function shareMemory(content: string, type: SharedMemory['type'], s
         timestamp: new Date().toISOString(),
         hash,
         synced: false,
+        scope,
     }
 
     sharedMemories.push(memory)
@@ -90,6 +108,9 @@ export async function shareMemory(content: string, type: SharedMemory['type'], s
  * Receive a shared memory from another node
  */
 export function receiveSharedMemory(memory: SharedMemory): boolean {
+    if (!memory || typeof memory.content !== 'string' || typeof memory.hash !== 'string') return false
+    // UEB-17: only global entries are accepted, forgotten ones stay forgotten
+    if ((memory.scope ?? GLOBAL_MEMORY_SCOPE) !== GLOBAL_MEMORY_SCOPE || isTombstoned(memory.hash)) return false
     // Dedup
     if (sharedMemories.some(m => m.hash === memory.hash)) return false
 
@@ -102,6 +123,30 @@ export function receiveSharedMemory(memory: SharedMemory): boolean {
     saveMemories()
     console.log(`[MeshMemory] 📥 Received from ${memory.source}: "${memory.content.slice(0, 50)}..."`)
     return true
+}
+
+/**
+ * UEB-17: "vergiss" must also remove mesh copies. Removes matching entries
+ * from the shared pool (and shared.json), records tombstones so the content
+ * is not re-imported, and broadcasts the forget to the other nodes.
+ */
+export async function forgetSharedMemory(match: { content?: string; hash?: string }, options: { broadcast?: boolean } = {}): Promise<number> {
+    const hashes = new Set<string>()
+    if (typeof match.hash === 'string' && match.hash) hashes.add(match.hash)
+    if (typeof match.content === 'string' && match.content) hashes.add(memoryHash(match.content))
+    if (!hashes.size) return 0
+    const before = sharedMemories.length
+    sharedMemories = sharedMemories.filter(m => !hashes.has(m.hash))
+    const removed = before - sharedMemories.length
+    syncState.tombstones = [...new Set([...(syncState.tombstones || []), ...hashes])].slice(-MAX_TOMBSTONES)
+    saveMemories()
+    if (options.broadcast !== false) {
+        try {
+            const { emit } = await import('./event-hub.js')
+            emit('mesh:memory_forget', { hashes: [...hashes] })
+        } catch { /* Event Hub not available */ }
+    }
+    return removed
 }
 
 /**
@@ -166,6 +211,10 @@ export async function initMeshMemory(): Promise<void> {
             if (event.data?.memory) {
                 receiveSharedMemory(event.data.memory)
             }
+        })
+        on('mesh:memory_forget', (event: any) => {
+            const hashes = Array.isArray(event.data?.hashes) ? event.data.hashes.filter((hash: unknown) => typeof hash === 'string' && /^[0-9a-f]{16}$/.test(hash)) : []
+            for (const hash of hashes.slice(0, 500)) void forgetSharedMemory({ hash }, { broadcast: false })
         })
     } catch { /* Event Hub not available */ }
 
