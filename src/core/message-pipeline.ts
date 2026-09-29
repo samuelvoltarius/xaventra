@@ -5,7 +5,7 @@
  * and the main handleMessage function.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, openSync, readSync, fstatSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
@@ -191,6 +191,53 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
         })
         appendFileSync(logFile, entry + '\n')
     } catch { /* logging is non-critical */ }
+}
+
+/**
+ * Last turns of this user's session log on this channel (read from the file
+ * tail only). Used for the response-cache key, so "und das zweite?" in a
+ * different conversation never returns an old answer.
+ */
+export function recentSessionTurns(user: string, channel: string, limit = 12): Array<{ role: string; content: string }> {
+    try {
+        const safeName = user.replace(/[^a-zA-Z0-9_-]/g, '_')
+        const logFile = join(process.cwd(), '.nova-data', 'sessions', `${safeName}.jsonl`)
+        if (!existsSync(logFile)) return []
+        const fd = openSync(logFile, 'r')
+        let text = ''
+        try {
+            const size = fstatSync(fd).size
+            const length = Math.min(size, 64 * 1024)
+            const buffer = Buffer.alloc(length)
+            readSync(fd, buffer, 0, length, size - length)
+            text = buffer.toString('utf8')
+            // The first line of a partial tail read may be cut off.
+            if (length < size) text = text.slice(text.indexOf('\n') + 1)
+        } finally {
+            closeSync(fd)
+        }
+        const turns: Array<{ role: string; content: string }> = []
+        for (const line of text.split('\n')) {
+            if (!line.trim()) continue
+            try {
+                const entry = JSON.parse(line)
+                if (entry.channel === channel && (entry.role === 'user' || entry.role === 'assistant')) {
+                    turns.push({ role: entry.role, content: String(entry.content ?? '') })
+                }
+            } catch { /* skip damaged line */ }
+        }
+        return turns.slice(-limit)
+    } catch {
+        return []
+    }
+}
+
+/** Cache-key messages: prior turns plus the current message exactly once. */
+export function responseCacheMessages(user: string, channel: string, content: string): Array<{ role: string; content: string }> {
+    const turns = recentSessionTurns(user, channel)
+    const last = turns[turns.length - 1]
+    const prior = last && last.role === 'user' && last.content === content.slice(0, 2000) ? turns.slice(0, -1) : turns
+    return [...prior, { role: 'user', content }]
 }
 
 export interface MessageExecutionOptions {
@@ -973,12 +1020,15 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     // Inject Proactive Insights + Memory Consolidation
     if (contextPolicy.predictive) try {
         const { getInsightEngine, getMemoryConsolidator } = await import('../intelligence/autonomy-engine.js')
-        const insightBlock = getInsightEngine().buildInsightPromptBlock()
+        // Insights and the weekly summary are owner-only (decided by the engine
+        // from the viewer role); typed to compile before and after that change.
+        const viewer = { permission: principalContext.permission }
+        const insightBlock = (getInsightEngine() as { buildInsightPromptBlock(viewer?: { permission?: string }): string | null }).buildInsightPromptBlock(viewer)
         if (insightBlock) {
             systemPrompt += insightBlock
             console.log('[Pipeline] Injected proactive insights')
         }
-        const consolidationContext = getMemoryConsolidator().getConsolidationContext()
+        const consolidationContext = (getMemoryConsolidator() as { getConsolidationContext(viewer?: { permission?: string }): string | null }).getConsolidationContext(viewer)
         if (consolidationContext) {
             systemPrompt += consolidationContext
         }
@@ -1506,10 +1556,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Response Cache — Check before LLM call
         // ============================================
         let cachedResponse: string | null = null
+        // Computed once: lookup and store must use the same history.
+        const cacheKeyMessages = responseCacheMessages(canonicalUser, channel, content)
         try {
             const { getCachedResponse } = await import('../llm/response-cache.js')
-            const messages = [{ role: 'user', content }]
-            cachedResponse = getCachedResponse(systemPrompt, messages)
+            cachedResponse = getCachedResponse(systemPrompt, cacheKeyMessages)
             if (cachedResponse) {
                 console.log(`[Pipeline] ✅ Cache HIT — skipping LLM call`)
             }
@@ -2063,9 +2114,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Cache successful response for future identical queries
             try {
                 const { cacheResponse } = await import('../llm/response-cache.js')
-                const messages = [{ role: 'user', content }]
                 if (!(result as any).error && result.validation?.success === true && !detectActionIntent(content).requiresTool) {
-                    cacheResponse(systemPrompt, messages, finalContent, routedModel || 'default')
+                    cacheResponse(systemPrompt, cacheKeyMessages, finalContent, routedModel || 'default')
                 }
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             console.log(`[Nova] [${channel}] Antwort gesendet (${supervised.content.length} chars, ${result.toolsExecuted.length} tools, Session: ${result.sessionId.slice(0, 8)}...)`)

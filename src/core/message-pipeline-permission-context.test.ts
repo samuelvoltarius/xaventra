@@ -19,4 +19,16 @@ describe('pipeline passes the principal role to role-gated context', () => {
     it('getJournalContextForPrompt() receives the permission (R2 UEB-20)', () => {
         expect(pipelineSource).toContain('journal.getJournalContextForPrompt(content, { permission: principalContext.permission })')
     })
+
+    it('insights and weekly summary receive the viewer role (R2 UEB-21)', () => {
+        expect(pipelineSource).toContain('const viewer = { permission: principalContext.permission }')
+        expect(pipelineSource).toMatch(/\.buildInsightPromptBlock\(viewer\)/)
+        expect(pipelineSource).toMatch(/\.getConsolidationContext\(viewer\)/)
+    })
+
+    it('response cache lookup and store use the conversation history (R2 UEB-21)', () => {
+        expect(pipelineSource).toContain('getCachedResponse(systemPrompt, cacheKeyMessages)')
+        expect(pipelineSource).toContain('cacheResponse(systemPrompt, cacheKeyMessages, finalContent')
+        expect(pipelineSource).not.toContain("const messages = [{ role: 'user', content }]")
+    })
 })
