@@ -16,6 +16,7 @@ export class DiscordAdapter implements ChannelAdapter {
     private client: any = null
     private config: DiscordConfig
     private messageHandler?: (msg: IncomingMessage) => void
+    private warnedEmptyAllowlist = false
 
     constructor(config: DiscordConfig) {
         this.config = config
@@ -38,25 +39,43 @@ export class DiscordAdapter implements ChannelAdapter {
             console.log(`[Nova Discord] Connected as ${this.client.user?.tag}`)
         })
 
-        this.client.on('messageCreate', (msg: any) => {
-            if (msg.author.bot) return
-
-            const incoming: IncomingMessage = {
-                id: msg.id,
-                channel: 'discord',
-                from: msg.author.id,
-                content: msg.content,
-                timestamp: msg.createdTimestamp,
-                isGroup: msg.guild !== null,
-                groupId: msg.channel.id,
-            }
-
-            if (this.messageHandler) {
-                this.messageHandler(incoming)
-            }
-        })
+        this.client.on('messageCreate', (msg: any) => this.handleMessageCreate(msg))
 
         await this.client.login(this.config.token)
+    }
+
+    /**
+     * H-5: fail-closed admission. Only authors listed in allowFrom (exact
+     * Discord user ids) reach the pipeline; an empty or missing allowFrom
+     * admits nobody. With guildId set, server messages from other guilds are
+     * dropped.
+     */
+    handleMessageCreate(msg: any): void {
+        if (!msg?.author || msg.author.bot) return
+        const allowed = (this.config.allowFrom || []).map(entry => String(entry ?? '').trim()).filter(Boolean)
+        if (!allowed.length) {
+            if (!this.warnedEmptyAllowlist) {
+                this.warnedEmptyAllowlist = true
+                console.warn('[Nova Discord] allowFrom ist leer: alle Discord-Nachrichten werden ignoriert (fail-closed)')
+            }
+            return
+        }
+        if (!allowed.includes(String(msg.author.id))) return
+        if (this.config.guildId && msg.guild && String(msg.guild.id) !== String(this.config.guildId)) return
+
+        const incoming: IncomingMessage = {
+            id: msg.id,
+            channel: 'discord',
+            from: msg.author.id,
+            content: msg.content,
+            timestamp: msg.createdTimestamp,
+            isGroup: msg.guild !== null,
+            groupId: msg.channel.id,
+        }
+
+        if (this.messageHandler) {
+            this.messageHandler(incoming)
+        }
     }
 
     async disconnect(): Promise<void> {
