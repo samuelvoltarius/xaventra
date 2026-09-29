@@ -48,6 +48,12 @@ export function reconcileConfiguredOwner(
     user: UserRecord,
     allowFrom: string[],
 ): { user: UserRecord; changed: boolean } {
+    // The unauthenticated REST principal (no NOVA_API_TOKEN) must never hold
+    // elevated rights, not even through a stored explicit grant (K1).
+    if (String(user.channel).toLowerCase() === 'rest-api' && user.id !== 'rest-api:token'
+        && ['owner', 'admin'].includes(user.permission)) {
+        return { user: { ...user, permission: 'user', permissionSource: undefined }, changed: true }
+    }
     if (isConfiguredOwner(user.id, user.channel, allowFrom)) {
         if (user.permission === 'owner' && user.permissionSource === 'configured') return { user, changed: false }
         return { user: { ...user, permission: 'owner', permissionSource: 'configured' }, changed: true }

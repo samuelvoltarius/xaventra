@@ -7,6 +7,14 @@
  * Auth: Bearer token via NOVA_API_TOKEN env var
  * Without NOVA_API_TOKEN only loopback development binding is allowed.
  *
+ * Identity: the caller can never choose channel/sender. Every message runs as
+ * channel `rest-api`; the sender is `rest-api:token` for a valid bearer token
+ * and `rest-api:local` for unauthenticated loopback use. `channel`/`from` in
+ * the JSON body are ignored. Browsers are kept out: no CORS unless
+ * NOVA_API_CORS_ORIGINS lists origins explicitly, POST requires
+ * `Content-Type: application/json`, and without a token only loopback Host
+ * headers are accepted (DNS rebinding).
+ *
  * Endpoints:
  *   GET  /v1/health          — liveness probe, no auth needed
  *   POST /v1/message         — send message through Nova pipeline
@@ -14,6 +22,7 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse, type Server } from 'node:http'
+import { createHash, timingSafeEqual } from 'node:crypto'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,11 +41,41 @@ type MessageHandler = (
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+export const REST_API_CHANNEL = 'rest-api'
+export const REST_API_TOKEN_PRINCIPAL = 'rest-api:token'
+export const REST_API_LOCAL_PRINCIPAL = 'rest-api:local'
+
+/** Constant-time string comparison (hashing first hides length differences). */
+function safeEqual(a: string, b: string): boolean {
+    const left = createHash('sha256').update(a, 'utf8').digest()
+    const right = createHash('sha256').update(b, 'utf8').digest()
+    return timingSafeEqual(left, right) && a.length === b.length
+}
+
 function checkAuth(req: IncomingMessage): boolean {
     const token = process.env.NOVA_API_TOKEN
-    if (!token) return true                         // No token set → open (warn at startup)
-    const header = req.headers['authorization'] ?? ''
-    return header === `Bearer ${token}`
+    if (!token) return true                         // No token set → loopback-only dev mode (Host check below)
+    const header = req.headers['authorization']
+    if (typeof header !== 'string') return false
+    return safeEqual(header, `Bearer ${token}`)
+}
+
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+
+/** Host header without port; bracketed IPv6 stays bracketed. */
+function hostHeaderName(req: IncomingMessage): string {
+    const host = String(req.headers['host'] ?? '').trim().toLowerCase()
+    if (host.startsWith('[')) {
+        const end = host.indexOf(']')
+        return end > 0 ? host.slice(0, end + 1) : host
+    }
+    const colon = host.lastIndexOf(':')
+    return colon >= 0 ? host.slice(0, colon) : host
+}
+
+function allowedCorsOrigins(): string[] {
+    return String(process.env.NOVA_API_CORS_ORIGINS ?? '')
+        .split(',').map(value => value.trim()).filter(value => value && value !== '*')
 }
 
 // ─── Body reader ──────────────────────────────────────────────────────────────
@@ -84,11 +123,28 @@ export function startRestApi(
             const url = req.url ?? '/'
             const method = req.method ?? 'GET'
 
-            // ── CORS (for browser clients) ─────────────────────────────────────
-            res.setHeader('Access-Control-Allow-Origin', '*')
-            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-            if (method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+            // ── DNS rebinding: without a token only loopback Host headers ────────
+            if (!process.env.NOVA_API_TOKEN && !LOOPBACK_HOSTNAMES.has(hostHeaderName(req))) {
+                json(res, 403, { error: 'Forbidden host' })
+                return
+            }
+
+            // ── CORS: none by default; only explicitly configured origins ───────
+            const origin = typeof req.headers['origin'] === 'string' ? req.headers['origin'] : undefined
+            if (origin !== undefined) {
+                if (!allowedCorsOrigins().includes(origin)) {
+                    json(res, 403, { error: 'Cross-origin requests are not allowed' })
+                    return
+                }
+                res.setHeader('Access-Control-Allow-Origin', origin)
+                res.setHeader('Vary', 'Origin')
+                res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+            }
+            if (method === 'OPTIONS') {
+                if (origin === undefined) { json(res, 405, { error: 'Method not allowed' }); return }
+                res.writeHead(204); res.end(); return
+            }
 
             // ── GET /v1/health ─────────────────────────────────────────────────
             if (method === 'GET' && url === '/v1/health') {
@@ -110,6 +166,11 @@ export function startRestApi(
 
             // ── POST /v1/message ───────────────────────────────────────────────
             if (method === 'POST' && url === '/v1/message') {
+                const contentType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+                if (contentType !== 'application/json') {
+                    json(res, 415, { error: 'Content-Type must be application/json' })
+                    return
+                }
                 let body: { content?: string; from?: string; channel?: string }
                 try {
                     body = JSON.parse(await readBody(req))
@@ -128,8 +189,11 @@ export function startRestApi(
                     json(res, 400, { error: 'from and channel must be strings' })
                     return
                 }
-                const from    = body.from    || 'api-user'
-                const channel = body.channel || 'rest-api'
+                // Identity is never taken from the body (K1): a body claiming
+                // channel "telegram"/"cli" used to inherit owner rights. The
+                // fields stay accepted for compatibility but are ignored.
+                const channel = REST_API_CHANNEL
+                const from = process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
 
                 let response = ''
                 try {
