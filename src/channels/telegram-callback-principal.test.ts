@@ -107,3 +107,35 @@ describe('Telegram callback buttons use the pressing user\'s role (INT-1)', () =
         expect(state.llm.switchModel).toHaveBeenCalledWith('gpt-x', 'openai')
     })
 })
+
+describe('memory_clear button requires a role (review open point after INT-1)', () => {
+    const withMemory = () => { const clear = vi.fn(async () => true); (globalThis as any).__novaState.memory = { clear }; return clear }
+    it('blocks a guest wiping a group chat memory', async () => {
+        mu.roles.set('222', 'guest')
+        const clear = withMemory()
+        const { instance } = adapter(['111'])
+        await (instance as any).handleFeedback(press(222, 'memory_clear', -500, 'group'))
+        expect(clear).not.toHaveBeenCalled()
+    })
+    it('blocks a non-owner user wiping a group chat memory', async () => {
+        mu.roles.set('333', 'user')
+        const clear = withMemory()
+        const { instance } = adapter([])
+        await (instance as any).handleFeedback(press(333, 'memory_clear', -500, 'group'))
+        expect(clear).not.toHaveBeenCalled()
+    })
+    it('lets a user clear the memory of their own private chat', async () => {
+        mu.roles.set('333', 'user')
+        const clear = withMemory()
+        const { instance } = adapter([])
+        await (instance as any).handleFeedback(press(333, 'memory_clear'))
+        expect(clear).toHaveBeenCalledWith('333')
+    })
+    it('lets the owner clear a group chat memory', async () => {
+        mu.roles.set('111', 'owner')
+        const clear = withMemory()
+        const { instance } = adapter(['111'])
+        await (instance as any).handleFeedback(press(111, 'memory_clear', -500, 'group'))
+        expect(clear).toHaveBeenCalledWith('-500')
+    })
+})

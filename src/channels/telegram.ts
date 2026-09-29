@@ -569,7 +569,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const needsPrincipal = typeof data === 'string'
-            && /^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_)/.test(data)
+            && (/^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_)/.test(data) || data === 'memory_clear')
         const principal = needsPrincipal ? await this.resolveCallbackPrincipal(query) : null
         if (needsPrincipal && !principal) {
             try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Zugriff verweigert.' }) } catch { /* ignore */ }
@@ -854,6 +854,14 @@ export class TelegramAdapter implements ChannelAdapter {
                 const state = (globalThis as any).__novaState
                 if (state) {
                     if (action === 'clear') {
+                        // Wiping memory is destructive: a user may clear their own private
+                        // chat; any other chat (groups) needs the owner-level role gate.
+                        const ownPrivateChat = query.message?.chat?.type === 'private' && String(query.from?.id) === chatId
+                        const rank: Record<string, number> = { blocked: -1, guest: 0, user: 1, admin: 2, owner: 3 }
+                        if (ownPrivateChat ? (rank[principal?.permission || 'guest'] ?? -1) < rank.user : await buttonDenial('memory_clear')) {
+                            if (ownPrivateChat) try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur für Rolle user.' }) } catch { /* ignore */ }
+                            return
+                        }
                         if (state.memory) {
                             await state.memory.clear(chatId!)
                             await this.bot.sendMessage(chatId, '🗑️ Memory gelöscht!', { parse_mode: 'Markdown' })
