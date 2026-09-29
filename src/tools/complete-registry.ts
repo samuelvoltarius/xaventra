@@ -1210,8 +1210,13 @@ export const evolutionTools: NovaTool[] = [
         category: 'system',
         parameters: [
             { name: 'package', type: 'string', description: 'Paketname (z.B. firebase/agent-skills)', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
+            // R2 T28: third-party skill content ends up in the prompt for good
+            // (and npx runs remote code): only on the owner's explicit say-so.
+            const refusal = await ownerApprovalRefusal(params, 'import_skill')
+            if (refusal) return { success: false, message: refusal }
             const { importSkill } = await import('./skills-import-cli.js')
             return await importSkill(params.package as string)
         },
@@ -1921,7 +1926,7 @@ export const meshBrainTools: NovaTool[] = [
         handler: async (params) => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
-            const config = JSON.parse(require('fs').readFileSync(resolveConfigPath(), 'utf-8'))
+            const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
             const nodes = (config.nodes || []).filter((n: any) => n.enabled !== false)
             if (!params.force) {
                 const cached = brain.load()
