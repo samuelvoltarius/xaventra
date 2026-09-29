@@ -3,6 +3,7 @@ import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { request } from 'node:http'
 import { createUpdateControllerServer } from './update-controller-server.js'
 import { updateControllerRequest } from './update-controller-client.js'
 import { upstreamUpdateCommand } from './upstream-update-command.js'
@@ -57,4 +58,40 @@ it('slash deploy sends an exact ID and shows accepted, never prematurely install
     const output = await upstreamUpdateCommand(`deploy ${id}`, 'owner', source, client)
     expect(output).toContain('angenommen – noch nicht installiert'); expect(output).not.toContain('installiert und geprüft')
     expect(source.prepare).toHaveBeenCalledWith(id)
+}))
+it('does not accept a job or take the lock when authorization outlives the request', async () => fixture(async f => {
+    let authorized!: () => void; const done = new Promise<void>(r => { authorized = r })
+    f.authorize.mockImplementation(async () => { await new Promise(r => setTimeout(r, 5_500)); authorized(); return true })
+    await expect(updateControllerRequest('deploy', id, f.config)).rejects.toThrow()
+    await done; await new Promise(r => setTimeout(r, 100))
+    expect(existsSync(join(f.root, 'jobs/job.lock'))).toBe(false)
+    expect(existsSync(join(f.root, 'jobs', `${id}.json`))).toBe(false)
+    expect(f.deploy).not.toHaveBeenCalled()
+    // No stuck accepted job: a fresh, promptly authorized request is accepted and runs.
+    f.authorize.mockResolvedValue(true)
+    expect((await updateControllerRequest('deploy', id, f.config))?.state).toBe('accepted')
+    f.release()
+    await expect.poll(async () => (await updateControllerRequest('status', id, f.config))?.state).toBe('installed')
+    expect(f.deploy).toHaveBeenCalledTimes(1)
+    expect(existsSync(join(f.root, 'jobs/job.lock'))).toBe(false)
+}), 20_000)
+it('does not strand an accepted job or lock when the client disconnects during authorization', async () => fixture(async f => {
+    let entered!: () => void, finish!: () => void
+    const started = new Promise<void>(r => { entered = r }), gate = new Promise<void>(r => { finish = r })
+    f.authorize.mockImplementation(async () => { entered(); await gate; return true })
+    const url = new URL(f.config.url)
+    const req = request({ host: url.hostname, port: url.port, path: '/update', method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${f.options.token}` } })
+    req.on('error', () => {})
+    req.end(JSON.stringify({ operation: 'deploy', releaseId: id, challenge: randomUUID(), targetId: 'fixture' }))
+    await started; req.destroy(); await new Promise(r => setTimeout(r, 100))
+    finish(); await new Promise(r => setTimeout(r, 200))
+    expect(existsSync(join(f.root, 'jobs/job.lock'))).toBe(false)
+    expect(existsSync(join(f.root, 'jobs', `${id}.json`))).toBe(false)
+    expect(f.deploy).not.toHaveBeenCalled()
+    f.authorize.mockResolvedValue(true)
+    expect((await updateControllerRequest('deploy', id, f.config))?.state).toBe('accepted')
+    f.release()
+    await expect.poll(async () => (await updateControllerRequest('status', id, f.config))?.state).toBe('installed')
+    expect(existsSync(join(f.root, 'jobs/job.lock'))).toBe(false)
 }))

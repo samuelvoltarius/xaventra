@@ -10,6 +10,8 @@ function fixture(overrides = {}) {
     const transport = { readUnit: vi.fn(() => content), run: vi.fn(async (args: string[]) => {
         if (args[0] === 'stop') Object.assign(fields, { ActiveState: 'inactive', SubState: 'dead', MainPID: '0' })
         if (args[0] === 'start') Object.assign(fields, { ActiveState: 'active', SubState: 'running', MainPID: '456' })
+        // systemd resets state/result only; the last main exit status stays visible.
+        if (args[0] === 'reset-failed' && fields.ActiveState === 'failed') Object.assign(fields, { ActiveState: 'inactive', SubState: 'dead', Result: 'success' })
         return args[0] === 'show' ? Object.entries(fields).map(([k, v]) => `${k}=${v}`).join('\n') + '\n' : ''
     }) }
     const verifyProcess = vi.fn(async () => {})
@@ -79,4 +81,52 @@ it('does not let caller mutation retarget an enrolled service after construction
     await service.stop(async () => true)
     expect(f.transport.run.mock.calls.every(([args]) => args[1] === unit)).toBe(true)
     expect(f.verifyProcess.mock.calls[0][1]).toEqual(enrollment.process)
+})
+const crashed = { ActiveState: 'failed', SubState: 'failed', MainPID: '0', Result: 'exit-code', ExecMainCode: '1', ExecMainStatus: '1' }
+it('keeps refusing a failed unit by default, also for start and stop', async () => {
+    const f = fixture(crashed)
+    await expect(f.service.inspect()).rejects.toThrow('failed state')
+    await expect(f.service.start(async () => true)).rejects.toThrow('failed state')
+    await expect(f.service.stop(async () => true)).rejects.toThrow('failed state')
+    expect(f.transport.run.mock.calls.every(([a]) => a[0] === 'show')).toBe(true)
+})
+it('rollback of a crashed candidate: failed without process is observed, reset through the transport, then startable', async () => {
+    const f = fixture(crashed)
+    expect(await f.service.inspect({ candidateFailure: true })).toMatchObject({ running: false, cleanStopped: false, failed: true, pid: 0 })
+    const after = await f.service.resetFailed(async () => true)
+    expect(after).toMatchObject({ running: false, cleanStopped: false, stopped: true, failed: false, pid: 0 })
+    // The candidate's non-zero exit status remains: a normal start still demands a clean stop.
+    await expect(f.service.start(async () => true)).rejects.toThrow('clean stopped')
+    await f.service.start(async () => true, { candidateFailure: true })
+    expect((await f.service.inspect()).running).toBe(true)
+    expect(f.transport.run.mock.calls.filter(([a]) => a[0] !== 'show').map(([a]) => a)).toEqual([
+        ['reset-failed', unit, '--no-ask-password'], ['start', unit, '--no-ask-password'],
+    ])
+})
+it.each([{ MainPID: '77' }, { SubState: 'stop-sigterm' }, { ActiveState: 'deactivating', SubState: 'stop-sigterm' }])('refuses a failed/stopping unit that may still own a process: %j', async changes => {
+    const f = fixture({ ...crashed, ...changes })
+    await expect(f.service.inspect({ candidateFailure: true })).rejects.toThrow()
+    await expect(f.service.resetFailed(async () => true)).rejects.toThrow()
+    expect(f.transport.run.mock.calls.every(([a]) => a[0] === 'show')).toBe(true)
+})
+it('does not reset a failed unit without authority', async () => {
+    const f = fixture(crashed), auth = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+    await expect(f.service.resetFailed(auth)).rejects.toThrow('fenced')
+    expect(f.transport.run.mock.calls.every(([a]) => a[0] === 'show')).toBe(true)
+})
+it('rejects a failed state that reset-failed did not clear', async () => {
+    const f = fixture(crashed), run = f.transport.run.getMockImplementation()!
+    f.transport.run.mockImplementation(async (args: string[]) => args[0] === 'reset-failed' ? '' : run(args))
+    await expect(f.service.resetFailed(async () => true)).rejects.toThrow()
+})
+it('accepts a non-clean candidate stop only with the rollback tolerance and no process left', async () => {
+    for (const tolerant of [false, true]) {
+        const f = fixture(), run = f.transport.run.getMockImplementation()!
+        f.transport.run.mockImplementation(async (args: string[]) => {
+            if (args[0] === 'stop') { Object.assign(f.fields, { ActiveState: 'failed', SubState: 'failed', MainPID: '0', Result: 'exit-code', ExecMainCode: '1', ExecMainStatus: '143' }); return '' }
+            return run(args)
+        })
+        const stopping = f.service.stop(async () => true, tolerant ? { candidateFailure: true } : undefined)
+        if (tolerant) await stopping; else await expect(stopping).rejects.toThrow()
+    }
 })

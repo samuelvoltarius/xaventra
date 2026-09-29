@@ -18,7 +18,8 @@ export function createUpdateControllerServer(options: { root: string; targetId: 
     const active = new Set<string>()
     const tokenHash = createHash('sha256').update(`Bearer ${options.token}`).digest()
     return createServer(async (req, res) => {
-        const timer = setTimeout(() => req.destroy(), 5000)
+        let expired = false
+        const timer = setTimeout(() => { expired = true; req.destroy() }, 5000)
         try {
             if (req.method !== 'POST' || req.url !== '/update' || !timingSafeEqual(tokenHash, createHash('sha256').update(req.headers.authorization || '').digest())) throw Error('Denied')
             const chunks: Buffer[] = []; let size = 0
@@ -33,13 +34,22 @@ export function createUpdateControllerServer(options: { root: string; targetId: 
             }
             if (!job && input.operation === 'deploy') {
                 if (!await options.authorize(input.releaseId)) throw Error('No current operator grant')
+                // The grant may outlive its request (5 s timer, client gone, reply
+                // already sent). Never take the lock or accept a job nobody can be
+                // told about and whose detached start would never be triggered.
+                // (The body iterator itself destroys req after reading, so req.destroyed is no signal.)
+                if (expired || res.destroyed || res.writableEnded || !res.socket || res.socket.destroyed) throw Error('Request no longer answerable')
                 // One controller transaction, including downloads, across requests
                 // and processes. A crash deliberately leaves the lock in place.
                 mkdirSync(join(options.root, 'job.lock'))
                 job = { releaseId: input.releaseId, targetId: options.targetId, state: 'accepted', updatedAt: Date.now() }
                 atomicWriteJsonSync(path, job); active.add(input.releaseId)
                 const current = job
-                res.once('finish', () => { void (async () => {
+                // Start exactly once after the acknowledgement was flushed ('finish')
+                // or its connection ended ('close'); the accepted job is persisted and
+                // must run either way, it can never remain stuck as 'accepted'.
+                let detached = false
+                const run = () => { if (detached) return; detached = true; void (async () => {
                     try {
                         current.state = 'running'; current.updatedAt = Date.now(); atomicWriteJsonSync(path, current)
                         current.receipt = await options.deploy(input.releaseId)
@@ -53,12 +63,16 @@ export function createUpdateControllerServer(options: { root: string; targetId: 
                             const { rmdirSync } = await import('node:fs'); rmdirSync(join(options.root, 'job.lock'))
                         }
                     }
-                })().catch(() => { /* Persistent job/lock is the authoritative uncertain state. */ }) })
+                })().catch(() => { /* Persistent job/lock is the authoritative uncertain state. */ }) }
+                res.once('finish', run); res.once('close', run)
             }
             res.setHeader('content-type', 'application/json')
             res.end(JSON.stringify(signRepairValue({ challenge: input.challenge, targetId: options.targetId, releaseId: input.releaseId,
                 expiresAt: Date.now() + 10_000, job: job || null }, options.receiptPrivateKey)))
-        } catch { res.writeHead(409).end('Update request denied or locked; inspect controller status') }
+        } catch {
+            if (!res.headersSent && !res.destroyed) res.writeHead(409).end('Update request denied or locked; inspect controller status')
+            else if (!res.writableEnded) res.destroy()
+        }
         finally { clearTimeout(timer) }
     })
 }

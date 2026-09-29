@@ -3,15 +3,16 @@ import { generateKeyPairSync, randomUUID } from 'node:crypto'
 import { mkdtempSync, existsSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { UpdateActivationController } from './update-activation.js'
+import { UpdateActivationController, UPDATE_MIN_ACTIVATION_WINDOW_MS, UPDATE_ROLLBACK_GRACE_MS } from './update-activation.js'
 import { signRepairValue } from '../doctor/repair-activation.js'
 
 const roots: string[] = []
-afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }) })
-function fixture() {
+afterEach(() => { vi.useRealTimers(); for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }) })
+// Ticket lifetime must exceed the minimum activation window (was 60 s before that gate).
+function fixture(lifetime = 300_000) {
     const root = mkdtempSync(join(tmpdir(), 'update-activation-')); roots.push(root)
     const keys = generateKeyPairSync('ed25519'), publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
-    const ticket = { proposalId: 'upstream-fixture', targetId: 'fixture', probeId: 'health', patchHash: 'a'.repeat(64), baselineHash: 'b'.repeat(64), candidateHash: 'c'.repeat(64), attemptId: `repair-${randomUUID()}`, expiresAt: Date.now() + 60_000 }
+    const ticket = { proposalId: 'upstream-fixture', targetId: 'fixture', probeId: 'health', patchHash: 'a'.repeat(64), baselineHash: 'b'.repeat(64), candidateHash: 'c'.repeat(64), attemptId: `repair-${randomUUID()}`, expiresAt: Date.now() + lifetime }
     const { attemptId, expiresAt, ...binding } = ticket
     let current = 'old'
     const driver = { hasAuthority: vi.fn(async () => true), prepare: vi.fn(async () => ({ releaseId: 'new', previousReleaseId: 'old', binding })),
@@ -84,4 +85,34 @@ it('never overwrites an earlier receipt with a conflicting replay', async () => 
     const changed = signRepairValue({ ...f.ticket, probeId: 'other' }, f.keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
     await expect(f.controller.deploy(changed, {})).rejects.toThrow('replay')
     expect(f.controller.status(f.ticket.attemptId)?.ticket.probeId).toBe('health')
+})
+
+it('refuses to begin activating when the remaining ticket time is below the minimum window', async () => {
+    const f = fixture(UPDATE_MIN_ACTIVATION_WINDOW_MS - 1_000)
+    const result = await f.controller.deploy(f.signed, {})
+    expect(result.status).toBe('blocked')
+    expect(f.driver.beginMaintenance).not.toHaveBeenCalled(); expect(f.driver.activate).not.toHaveBeenCalled()
+    expect(existsSync(join(f.root, 'activation.lock'))).toBe(false)
+})
+it('ticket expiry during activation: forward step refused, rollback still runs under the bounded grace', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = fixture(), rollbackAuthority = vi.fn(async () => true)
+    Object.assign(f.driver, { hasRollbackAuthority: rollbackAuthority })
+    f.driver.activate.mockImplementation(async () => { vi.setSystemTime(f.ticket.expiresAt + 1_000) })
+    const result = await f.controller.deploy(f.signed, {})
+    expect(result).toMatchObject({ status: 'rolled-back', restoration: 'baseline' })
+    expect(f.probe).not.toHaveBeenCalledWith('new', expect.anything())
+    expect(f.driver.rollback).toHaveBeenCalledTimes(1); expect(rollbackAuthority).toHaveBeenCalled()
+})
+it('the rollback grace is bounded and needs the driver rollback authority', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    for (const variant of ['beyond-grace', 'no-rollback-authority', 'rollback-authority-denied']) {
+        const f = fixture()
+        if (variant !== 'no-rollback-authority') Object.assign(f.driver, { hasRollbackAuthority: vi.fn(async () => variant !== 'rollback-authority-denied') })
+        f.driver.activate.mockImplementation(async () => { vi.setSystemTime(f.ticket.expiresAt + (variant === 'beyond-grace' ? UPDATE_ROLLBACK_GRACE_MS : 1_000)) })
+        expect((await f.controller.deploy(f.signed, {})).status).toBe('blocked')
+        expect(f.driver.rollback).not.toHaveBeenCalled()
+        expect(existsSync(join(f.root, 'activation.lock'))).toBe(true)
+        vi.setSystemTime(Date.now() - 2 * UPDATE_ROLLBACK_GRACE_MS)
+    }
 })

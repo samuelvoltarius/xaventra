@@ -6,6 +6,7 @@ import type { NativeProcessProfile } from './native-process-identity.js'
 import { protectControllerDirectory, readProtectedControllerFile as read } from './repair-controller-files.js'
 import { writeUpdateState } from '../core/update-store.js'
 import { repairHash, type RepairTicket } from './repair-activation.js'
+import { updateRollbackDeadline } from '../core/update-activation.js'
 export interface NativeSelectedRelease { unitFile: string; unitHash: string; process: NativeProcessProfile }
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 /** Protected stopped-service unit CAS. Caller holds the shared activation lock.
@@ -13,7 +14,7 @@ const hash = (text: string) => createHash('sha256').update(text).digest('hex')
  * artifact. Enrollment contains complete operator-approved unit files only. */
 export class NativeReleaseSelection {
     constructor(private config: { root: string; unit: string; fragmentPath: string; releases: Record<string, NativeSelectedRelease> },
-        private authorized: (ticket: RepairTicket) => Promise<boolean>) {
+        private authorized: (ticket: RepairTicket, rollback?: boolean) => Promise<boolean>) {
         this.config = structuredClone(config)
         protectControllerDirectory(config.root)
         protectControllerDirectory(dirname(config.fragmentPath))
@@ -23,60 +24,71 @@ export class NativeReleaseSelection {
         if (!r || !/^[a-f0-9]{64}$/.test(r.unitHash)) throw Error('Unknown enrolled native release')
         return new NativeSystemdService({ unit: this.config.unit, fragmentPath: this.config.fragmentPath, fragmentHash: r.unitHash, process: r.process })
     }
-    private async stopped(id: string): Promise<void> {
+    /** candidateFailure: rollback after a candidate crash (caller-verified direction);
+     * the unit must still be stopped without any process, only the exit may be unclean. */
+    private async stopped(id: string, candidateFailure = false): Promise<void> {
         const state = await this.service(id).inspect()
-        if (state.running || !state.cleanStopped) throw Error('Native selection requires clean stopped service')
+        if (state.running || !(state.cleanStopped || candidateFailure && state.stopped === true && state.pid === 0)) throw Error('Native selection requires clean stopped service')
     }
-    private async authority(ticket: RepairTicket): Promise<void> {
+    /** rollback: caller-verified rollback direction; valid until the bounded
+     * rollback deadline derived from the signed expiresAt, never for forward steps. */
+    private async authority(ticket: RepairTicket, rollback = false): Promise<void> {
         const observed = structuredClone(ticket), binding = repairHash(observed)
-        if (ticket.expiresAt <= Date.now() || !await this.authorized(observed)
-            || repairHash(observed) !== binding || ticket.expiresAt <= Date.now()) throw Error('Native selection fenced')
+        const deadline = rollback ? updateRollbackDeadline(ticket) : ticket.expiresAt
+        if (!Number.isSafeInteger(ticket.expiresAt) || deadline <= Date.now() || !await (rollback ? this.authorized(observed, true) : this.authorized(observed))
+            || repairHash(observed) !== binding || deadline <= Date.now()) throw Error('Native selection fenced')
     }
-    async select(next: string, expected: string, ticket: RepairTicket): Promise<void> {
+    async select(next: string, expected: string, ticket: RepairTicket, options: { candidateFailure?: boolean; rollback?: boolean } = {}): Promise<void> {
         ticket = structuredClone(ticket)
+        const unclean = options.candidateFailure === true, rollback = options.rollback === true || unclean
         if (!/^repair-[a-f0-9-]{36}$/.test(ticket.attemptId) || next === expected) throw Error('Invalid native selection')
         const old = this.config.releases[expected], candidate = this.config.releases[next]
         if (!old || !candidate || old.unitHash === candidate.unitHash) throw Error('Distinct enrolled native releases required')
         const binding = { ticketHash: repairHash(ticket), next, expected, oldHash: old.unitHash, nextHash: candidate.unitHash }
         // Direction separates activation and rollback within the same attempt.
         const receiptPath = join(this.config.root, `${repairHash(binding)}.selection.json`)
-        await this.authority(ticket)
+        await this.authority(ticket, rollback)
         if (existsSync(receiptPath)) {
             const prior = JSON.parse(read(receiptPath, true))
             if (repairHash(prior.binding) !== repairHash(binding)) throw Error('Native selection replay mismatch')
             // An intent is ambiguous. Never repeat rename/reload after a crash.
             // Independently inspect disk + loaded unit in reconcile(), below.
             if (prior.status !== 'selected') throw Error('Native selection intent requires reconciliation')
-            await this.stopped(next); await this.authority(ticket)
+            await this.stopped(next, unclean); await this.authority(ticket, rollback)
             this.releaseLock(repairHash(binding)); return
         }
         const lock = join(this.config.root, 'selection.lock'); mkdirSync(lock, { mode: 0o700 })
         writeUpdateState(join(lock, 'owner.json'), { bindingHash: repairHash(binding) })
-        let finished = false
+        let finished = false, intent = false
         try {
-            await this.stopped(expected)
+            await this.stopped(expected, unclean)
             const text = read(candidate.unitFile)
             if (hash(text) !== candidate.unitHash || hash(read(this.config.fragmentPath)) !== old.unitHash) throw Error('Native unit CAS mismatch')
-            await this.authority(ticket)
+            await this.authority(ticket, rollback)
+            // From here on a (possibly partial) intent may exist: keep the lock.
+            intent = true
             writeUpdateState(receiptPath, { binding, status: 'intent' })
             const temp = `${this.config.fragmentPath}.${randomUUID()}.pending`
             const fd = openSync(temp, 'wx', 0o600)
             try { writeFileSync(fd, text); fsyncSync(fd) } finally { closeSync(fd) }
             // Check after disk IO and immediately before synchronous replacement.
-            await this.stopped(expected); await this.authority(ticket)
+            await this.stopped(expected, unclean); await this.authority(ticket, rollback)
             if (hash(read(this.config.fragmentPath)) !== old.unitHash) throw Error('Native unit CAS changed')
             renameSync(temp, this.config.fragmentPath)
             if (process.platform !== 'win32') {
                 const directory = openSync(dirname(this.config.fragmentPath), 'r')
                 try { fsyncSync(directory) } finally { closeSync(directory) }
             }
-            await this.authority(ticket)
+            await this.authority(ticket, rollback)
             await localSystemdTransport().run(['daemon-reload'])
-            await this.stopped(next); await this.authority(ticket)
+            await this.stopped(next, unclean); await this.authority(ticket, rollback)
             writeUpdateState(receiptPath, { binding, status: 'selected' })
             finished = true
         } finally {
-            if (finished) this.releaseLock(repairHash(binding))
+            // Before any intent nothing on disk or in the manager changed, so an
+            // error must not strand this binding's own lock (it would block the
+            // rollback selection). Once an intent may exist, keep it for reconcile.
+            if (finished || !intent && !existsSync(receiptPath)) this.releaseLock(repairHash(binding))
         }
     }
     /** Read-only reconciliation of an interrupted selection, then durable mark.

@@ -6,6 +6,7 @@ import { repairHash, type RepairBinding, type RepairTicket } from './repair-acti
 import { verifyNativeReadOnlyMount, type NativeStateMountProfile } from './native-state-mount.js'
 import { createNativeStateCopyScript } from './docker-repair-state.js'
 import type { NativeSnapshot } from './native-update-driver.js'
+import { updateRollbackDeadline } from '../core/update-activation.js'
 
 export interface SnapshotEnrollment {
     root: string; sourceStateId: string; candidateStateId: string
@@ -32,8 +33,11 @@ export class NativeSnapshotStore {
         const identity = repairHash({ ticket: t, enrollment: this.config })
         return { identity, receipt: join(this.config.root, `${identity}.snapshot.json`), lock: join(this.config.root, 'snapshot.lock') }
     }
-    private async guard(t: RepairTicket, phase: 'snapshot' | 'baseline' = 'snapshot') {
-        if (!Number.isSafeInteger(t.expiresAt) || t.expiresAt <= Date.now() || !await this.ops.fenced(t, phase) || t.expiresAt <= Date.now()) throw Error('Snapshot authority or writer fence lost')
+    /** rollback: bounded rollback deadline (derived from the signed expiresAt, the
+     * ticket and thus the receipt identity stay unchanged) instead of expiresAt. */
+    private async guard(t: RepairTicket, phase: 'snapshot' | 'baseline' = 'snapshot', rollback = false) {
+        const deadline = rollback ? updateRollbackDeadline(t) : t.expiresAt
+        if (!Number.isSafeInteger(t.expiresAt) || deadline <= Date.now() || !await this.ops.fenced(t, phase) || deadline <= Date.now()) throw Error('Snapshot authority or writer fence lost')
         protectControllerDirectory(this.config.root)
         return verifyNativeReadOnlyMount(this.config.sourceMount)
     }
@@ -53,13 +57,16 @@ export class NativeSnapshotStore {
     }
     async snapshot(t: RepairTicket, expectedSourceHash?: string): Promise<NativeSnapshot> {
         if (expectedSourceHash !== undefined && !/^[a-f0-9]{64}$/.test(expectedSourceHash)) throw Error('Invalid expected snapshot hash')
-        const p = this.paths(t), before = await this.guard(t)
+        // A copy bound to an already verified original hash is the rollback restoration
+        // into the third state (NativeRollbackState); a forward snapshot never passes one.
+        const rollback = expectedSourceHash !== undefined
+        const p = this.paths(t), before = await this.guard(t, 'snapshot', rollback)
         if (existsSync(p.receipt)) {
             const proof = this.read(p.receipt, p.identity)
             if (expectedSourceHash !== undefined && proof.sourceHash !== expectedSourceHash) throw Error('Snapshot original hash mismatch')
             if (proof.bindingHash !== repairHash(t) || await this.ops.hash(this.config.sourceMount.path) !== proof.sourceHash
                 || await this.ops.hash(this.config.destination) !== proof.copyHash) throw Error('Snapshot replay state changed')
-            if (repairHash(await this.guard(t)) !== repairHash(before)) throw Error('Snapshot mount changed')
+            if (repairHash(await this.guard(t, 'snapshot', rollback)) !== repairHash(before)) throw Error('Snapshot mount changed')
             this.release(p.lock, p.identity)
             return proof
         }
@@ -67,12 +74,12 @@ export class NativeSnapshotStore {
         writeUpdateState(join(p.lock, 'owner.json'), { identity: p.identity })
         writeUpdateState(p.receipt, { identity: p.identity, status: 'intent' })
         // Failure anywhere below retains both intent and lock. No retry of copy.
-        if (repairHash(await this.guard(t)) !== repairHash(before)) throw Error('Snapshot mount changed')
+        if (repairHash(await this.guard(t, 'snapshot', rollback)) !== repairHash(before)) throw Error('Snapshot mount changed')
         const copied = await this.ops.copy()
         if (expectedSourceHash !== undefined && copied.sourceHash !== expectedSourceHash) throw Error('Snapshot original hash mismatch')
         if (!/^[a-f0-9]{64}$/.test(copied.sourceHash) || copied.sourceHash !== copied.copyHash || copied.sourceHash !== copied.sourceAfterHash
             || await this.ops.hash(this.config.sourceMount.path) !== copied.sourceHash || await this.ops.hash(this.config.destination) !== copied.copyHash) throw Error('Snapshot hash mismatch')
-        if (repairHash(await this.guard(t)) !== repairHash(before)) throw Error('Snapshot mount changed')
+        if (repairHash(await this.guard(t, 'snapshot', rollback)) !== repairHash(before)) throw Error('Snapshot mount changed')
         const proof: NativeSnapshot = { ...copied, bindingHash: repairHash(t), sourceStateId: this.config.sourceStateId,
             candidateStateId: this.config.candidateStateId, sourceReadOnly: true }
         writeUpdateState(p.receipt, { identity: p.identity, status: 'complete', mount: before, proof })
@@ -84,8 +91,9 @@ export class NativeSnapshotStore {
     }
     /** Revalidated original receipt, never a new hash chosen by the caller. */
     async verifiedBaseline(t: RepairTicket): Promise<NativeSnapshot | null> {
-        const p = this.paths(t), before = await this.guard(t, 'baseline'), proof = this.read(p.receipt, p.identity)
+        // Baseline re-verification only serves rollback: bounded rollback grace.
+        const p = this.paths(t), before = await this.guard(t, 'baseline', true), proof = this.read(p.receipt, p.identity)
         const unchanged = proof.bindingHash === repairHash(t) && await this.ops.hash(this.config.sourceMount.path) === proof.sourceHash
-        return repairHash(await this.guard(t, 'baseline')) === repairHash(before) && unchanged ? proof : null
+        return repairHash(await this.guard(t, 'baseline', true)) === repairHash(before) && unchanged ? proof : null
     }
 }
