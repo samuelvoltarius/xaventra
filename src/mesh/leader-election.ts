@@ -122,16 +122,37 @@ async function isPreferredTakeoverCandidate(): Promise<boolean> {
     return !preferred || preferred.nodeId === getLocalNodeId()
 }
 
-function loadSupabaseConfig(): SupabaseConfig {
+type CoordinatorConfigFile =
+    | { status: 'ok'; raw: any }
+    | { status: 'missing' }
+    | { status: 'unreadable'; error: string }
+
+function readCoordinatorConfigFile(): CoordinatorConfigFile {
+    let text: string
     try {
         const configPath = resolveConfigPath()
-        if (existsSync(configPath)) {
-            const config = JSON.parse(readFileSync(configPath, 'utf-8'))
-            if (config.supabase?.meshUrl && config.supabase?.meshKey) {
-                return { url: config.supabase.meshUrl, key: config.supabase.meshKey }
-            }
-        }
-    } catch { /* ignore */ }
+        if (!existsSync(configPath)) return { status: 'missing' }
+        text = readFileSync(configPath, 'utf-8')
+    } catch (error) { return { status: 'unreadable', error: String(error) } }
+    try {
+        const raw = JSON.parse(text)
+        if (!raw || typeof raw !== 'object') return { status: 'unreadable', error: 'config root is not an object' }
+        return { status: 'ok', raw }
+    } catch (error) { return { status: 'unreadable', error: String(error) } }
+}
+
+/** Local-only leadership needs an explicit single-node declaration; the mere
+ * absence of coordinator credentials is not proof that no other Main exists. */
+export function configDeclaresSingleNode(raw: any): boolean {
+    const mode = String(raw?.mesh?.mode || '').toLowerCase()
+    const coordination = String(raw?.mesh?.coordination?.mode || '').toLowerCase()
+    return mode === 'standalone' || ['local', 'standalone', 'single-node'].includes(coordination)
+}
+
+function loadSupabaseConfig(file: CoordinatorConfigFile = readCoordinatorConfigFile()): SupabaseConfig {
+    if (file.status === 'ok' && file.raw.supabase?.meshUrl && file.raw.supabase?.meshKey) {
+        return { url: file.raw.supabase.meshUrl, key: file.raw.supabase.meshKey }
+    }
 
     if (process.env.NOVA_MESH_SUPABASE_URL && process.env.NOVA_MESH_SUPABASE_KEY) {
         return {
@@ -248,6 +269,13 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         return { leader: true, reason: 'leader election disabled', epoch: 1, fencingToken: fencingToken(service, 1), coordinator: 'local' }
     }
 
+    // An unreadable config hides which coordinator is authoritative (witness,
+    // Supabase or single-node). Fail closed instead of guessing.
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status === 'unreadable') {
+        return { leader: false, reason: `coordinator config unreadable; coordinator unknown, split-brain guard (${configFile.error.slice(0, 160)})` }
+    }
+
     // Coordinator choice is explicit. Nodes must never silently mix a Witness
     // quorum with Supabase because two independent authorities could each elect
     // a leader. Witness mode therefore fails closed when fewer than two votes
@@ -263,7 +291,7 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         return { ...decision, reason: `${decision.reason}; authority=${witnessAuthority}; service=${service}` }
     }
 
-    const config = loadSupabaseConfig()
+    const config = loadSupabaseConfig(configFile)
     if (!config.url || !config.key) {
         if (standbyNode) {
             return { leader: false, reason: 'standby has no distributed coordinator; split-brain guard' }
@@ -271,9 +299,12 @@ export async function acquireServiceLease(service: string): Promise<LeaseDecisio
         if (witnessModeRequested()) {
             return { leader: false, reason: 'witness coordination configured; local-only leader refused (split-brain guard)', coordinator: 'witness' }
         }
+        if (configFile.status !== 'ok' || !configDeclaresSingleNode(configFile.raw)) {
+            return { leader: false, reason: 'no distributed coordinator configured and config does not declare single-node (set mesh.mode="standalone"); split-brain guard' }
+        }
         const token = fencingToken(service, 1)
         localFencingTokens.set(service, { epoch: 1, token })
-        return { leader: true, reason: 'no distributed coordinator configured; local-only leader', epoch: 1, fencingToken: token, coordinator: 'local' }
+        return { leader: true, reason: 'single-node config (mesh.mode=standalone); local-only leader', epoch: 1, fencingToken: token, coordinator: 'local' }
     }
 
     const nodeId = getLocalNodeId()
