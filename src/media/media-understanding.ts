@@ -145,7 +145,9 @@ export async function fetchUrlContent(url: string): Promise<UrlContent> {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), 15_000)
 
-        const response = await fetch(url, {
+        // MI-4: SSRF guard (DNS-resolved, pinned address, every redirect hop checked).
+        const { fetchWithSsrfGuard } = await import('../resilience/ssrf-guard.js')
+        const response = await fetchWithSsrfGuard(url, {
             headers: {
                 'User-Agent': 'Nova/1.0 (Media Understanding)',
                 'Accept': 'text/html,application/json,text/plain',
