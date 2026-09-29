@@ -3321,6 +3321,7 @@ import { printerDiscoveryTool, printerStatusTool, printerSliceTool, printerPrint
 import { screenCaptureTool, webcamCaptureTool, faceDetectionTool, handGestureTool, screenAnalysisTool } from './vision-tool.js'
 import { toolConfirmationTool } from './tool-confirmation.js'
 import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
+import { desktopInputTool } from './desktop-input-tool.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -3332,6 +3333,7 @@ ALL_TOOLS.push(
     printerSliceTool as any,
     printerPrintTool as any,
     desktopScreenshotTool as any,  // proper desktop capture: vision + auto-send
+    desktopInputTool as any,
     screenCaptureTool as any,
     webcamCaptureTool as any,
     faceDetectionTool as any,

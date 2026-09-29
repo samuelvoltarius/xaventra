@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.78.58] — 2026-09-29
+
+- Load configured tool policy at daemon startup and preserve authenticated
+  Telegram identity through both agent authorization paths.
+- Add opt-in desktop mouse, keyboard and scroll tools with correlated durable
+  input receipts and refusal to repeat uncertain effects.
+- Add a separate authenticated Xvfb working desktop. Personal sessions remain
+  untouched; capture, input and Telegram delivery require separate verification.
+
+
 ## [2.78.57] — 2026-09-29
 
 - Refresh Desktop build-tool lockfile dependencies for the fast-uri authority

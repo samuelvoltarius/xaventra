@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { executeDesktopInputOnce, runDesktopInput } from './desktop-input.js'
 
 const MAX_IMAGE = 16 * 1024 * 1024
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
@@ -18,13 +19,16 @@ function checkImage(image: Buffer): void {
 
 /** Runs only inside the operator-enrolled desktop session. No client-supplied
  * executable, flags, destination, environment or display identity is accepted. */
-export async function captureSessionDesktop(): Promise<Buffer> {
+export async function assertDesktopSessionUnlocked(): Promise<void> {
     if (process.platform !== 'linux' || !process.env.DISPLAY) throw Error('Desktop session unavailable')
     // Never unlock, wake, or bypass the session. Unknown lock state fails closed.
     const lock = await promisify(execFile)('/usr/bin/gdbus', ['call', '--session', '--dest', 'org.gnome.ScreenSaver',
         '--object-path', '/org/gnome/ScreenSaver', '--method', 'org.gnome.ScreenSaver.GetActive'], { timeout: 3000, maxBuffer: 4096 })
     if (lock.stdout.trim() === '(true,)') throw new CaptureSessionLocked()
     if (lock.stdout.trim() !== '(false,)') throw Error('Desktop lock state unavailable')
+}
+export async function captureSessionDesktop(): Promise<Buffer> {
+    await assertDesktopSessionUnlocked()
     const root = mkdtempSync(join(tmpdir(), 'xaventra-capture-'))
     try {
         const path = join(root, 'screen.png')
@@ -39,7 +43,7 @@ export async function captureSessionDesktop(): Promise<Buffer> {
     }
 }
 
-export function createCaptureAgent(token: string, capture = captureSessionDesktop) {
+export function createCaptureAgent(token: string, capture = captureSessionDesktop, input?: (id:string,action:unknown)=>Promise<unknown>) {
     if (token.length < 32) throw Error('Strong capture token required')
     let busy = false
     const server = createServer(async (req, res) => {
@@ -47,19 +51,21 @@ export function createCaptureAgent(token: string, capture = captureSessionDeskto
         const fail = (status: number, message: string) => { res.statusCode = status; res.end(message) }
         const auth = Buffer.from(String(req.headers.authorization || '')), expected = Buffer.from(`Bearer ${token}`)
         if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) { req.resume(); return fail(401, 'Capture authentication required') }
-        if (req.method !== 'POST' || req.url !== '/v1/capture') { req.resume(); return fail(404, 'Unsupported capture operation') }
+        const isInput=req.url==='/v1/input'&&!!input
+        if (req.method !== 'POST' || (req.url !== '/v1/capture'&&!isInput)) { req.resume(); return fail(404, 'Unsupported capture operation') }
         let locked = false
         try {
             let body = ''
             for await (const chunk of req) {
                 body += chunk
-                if (Buffer.byteLength(body) > 512) throw Error('Request exceeds limit')
+                if (Buffer.byteLength(body) > (isInput?16384:512)) throw Error('Request exceeds limit')
             }
             const data = JSON.parse(body)
-            if (!data || Object.keys(data).length !== 1 || typeof data.requestId !== 'string'
+            if (!data || Object.keys(data).length !== (isInput?2:1) || (isInput&&!Object.hasOwn(data,'action')) || typeof data.requestId !== 'string'
                 || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(data.requestId)) return fail(400, 'Only a capture request ID is allowed')
             if (busy) return fail(409, 'Capture already in progress')
             busy = true; locked = true
+            if(isInput){const result=await input!(data.requestId,data.action);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return}
             const image = await capture()
             checkImage(image)
             res.setHeader('Content-Type', 'image/png')
@@ -111,8 +117,26 @@ export async function requestSessionCapture(socketPath: string, tokenFile: strin
 export function listenCaptureAgent(socketPath: string, tokenFile: string) {
     if (process.platform !== 'linux' || !socketPath.startsWith('/') || !tokenFile.startsWith('/')) throw Error('Explicit Linux socket/token paths required')
     if (statSync(tokenFile).mode & 0o077) throw Error('Capture token must be private')
-    const server = createCaptureAgent(readFileSync(tokenFile, 'utf8').trim())
+    const journal=process.env.NOVA_DESKTOP_INPUT_JOURNAL
+    const server = createCaptureAgent(readFileSync(tokenFile, 'utf8').trim(),captureSessionDesktop,
+        journal ? async(id,action)=>{await assertDesktopSessionUnlocked();return executeDesktopInputOnce(journal,id,action,runDesktopInput)} : undefined)
     // An existing socket is never unlinked or stolen from another process.
     server.listen(socketPath, () => chmodSync(socketPath, 0o660))
     return server
+}
+
+export async function requestSessionInput(socketPath:string,tokenFile:string,requestId:string,action:unknown):Promise<any> {
+    if(process.platform!=='linux'||!socketPath.startsWith('/')||!tokenFile.startsWith('/'))throw Error('Enrolled local desktop endpoint required')
+    const socket=statSync(socketPath),secret=statSync(tokenFile)
+    if(!socket.isSocket()||(socket.mode&7)||!secret.isFile()||(secret.mode&0o077))throw Error('Unsafe desktop endpoint permissions')
+    const token=readFileSync(tokenFile,'utf8').trim();if(token.length<32)throw Error('Invalid desktop credential')
+    const expectedHash=digest(Buffer.from(JSON.stringify(action)))
+    return new Promise((resolve,reject)=>{
+        const req=request({socketPath,method:'POST',path:'/v1/input',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}},res=>{
+            let body='';res.on('data',chunk=>{body+=chunk;if(Buffer.byteLength(body)>4096)req.destroy(Error('Input receipt limit'))});res.on('error',reject)
+            res.on('end',()=>{try{if(res.statusCode===423)throw new CaptureSessionLocked();if(res.statusCode!==200)throw Error('Desktop input unavailable or uncertain; do not repeat automatically');const r=JSON.parse(body);if(r.requestId!==requestId||r.hash!==expectedHash||r.status!=='completed')throw Error('Desktop input receipt mismatch');resolve(r)}catch(e){reject(e)}})
+        })
+        const timer=setTimeout(()=>req.destroy(Error('Desktop input timeout; effect uncertain')),15000)
+        req.on('error',reject);req.on('close',()=>clearTimeout(timer));req.end(JSON.stringify({requestId,action}))
+    })
 }

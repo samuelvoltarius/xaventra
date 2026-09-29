@@ -60,3 +60,18 @@ it('reports a locked session without presenting an image or unlocking it', async
     expect(response.headers.get('x-capture-sha256')).toBeNull()
     expect(await response.text()).toContain('unlock locally')
 })
+it('keeps input disabled on capture-only agents',async()=>{
+ expect((await call({requestId:randomUUID(),action:{action:'key',key:'Tab'}},token,'/v1/input')).status).toBe(404)
+})
+it('authenticates input and returns only the correlated executor receipt',async()=>{
+ await new Promise<void>(r=>server.close(()=>r()))
+ const input=vi.fn(async(id:string)=>({requestId:id,status:'completed'}))
+ server=createCaptureAgent(token,capture,input)
+ await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(server.address() as any).port}`
+ const id=randomUUID(),body={requestId:id,action:{action:'key',key:'Tab'}}
+ expect((await call(body,'wrong','/v1/input')).status).toBe(401);expect(input).not.toHaveBeenCalled()
+ expect(await (await call(body,token,'/v1/input')).json()).toMatchObject({requestId:id,status:'completed'})
+ expect(input).toHaveBeenCalledOnce();expect(capture).not.toHaveBeenCalled()
+ input.mockRejectedValueOnce(new CaptureSessionLocked())
+ expect((await call({...body,requestId:randomUUID()},token,'/v1/input')).status).toBe(423)
+})

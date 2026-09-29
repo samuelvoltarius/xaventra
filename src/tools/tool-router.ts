@@ -84,7 +84,12 @@ const SKILL_PACKS: SkillPack[] = [
     {
         name: 'desktop-capture', description: 'Desktop-Screenshot erstellen und senden',
         keywords: ['screenshot', 'screen shot', 'bildschirm', 'desktop', 'screnn shot'],
-        tools: ['desktop_screenshot', 'analyze_image', 'send_file'],
+        tools: ['desktop_screenshot', 'desktop_input', 'analyze_image', 'send_file'],
+    },
+    {
+        name:'computer-use',description:'Freigegebenen Desktop per Screenshot, Maus und Tastatur bedienen',
+        keywords:['computer use','computer-use','maus','tastatur','klicken','klick','tippe','scroll'],
+        tools:['desktop_screenshot','desktop_input'],
     },
     {
         name: 'nova-desktop-control', description: 'Nova Desktop sicher navigieren, fokussieren und aktualisieren',

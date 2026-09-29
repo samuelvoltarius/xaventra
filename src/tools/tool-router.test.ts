@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { getRelevantTools, matchesSkillKeyword, loadSkillPack, loadSkillPackTool } from './tool-router.js'
 
 describe('bounded capability recovery', () => {
+    it('exposes actual computer-use tools for the requested capability', () => {
+        const names=getRelevantTools('Kannst du computer use nutzen und mit der Maus klicken?').map(t=>t.name)
+        expect(names).toContain('desktop_input')
+        expect(names).toContain('desktop_screenshot')
+    })
     it('resolves the reviewed web alias without inventing a new pack', async () => {
         expect(loadSkillPack('web')).toMatchObject({ loaded: true, tools: expect.arrayContaining(['fetch_url']) })
         expect(await loadSkillPackTool.handler({ pack_name: 'web' })).toContain('web-search')

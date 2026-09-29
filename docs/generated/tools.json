@@ -943,6 +943,23 @@
       ]
     },
     {
+      "name": "desktop_input",
+      "category": "system",
+      "description": "Bediene den freigegebenen X11-Desktop: move, click, type, key oder scroll. Erst desktop_screenshot zur Orientierung nutzen. Gesperrte Sitzungen werden nicht entsperrt. Erfolg belegt die Eingabe, nicht den gewünschten Bildschirminhalt; danach Screenshot prüfen. Bei unklarem Ergebnis nicht blind wiederholen.",
+      "parameters": [
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "desktop_screenshot",
       "category": "system",
       "description": "Nimm einen Screenshot des gesamten Desktops (alle Monitore) auf. Das Bild wird automatisch an dich (KI) zur echten Bildanalyse weitergeleitet UND direkt an den Nutzer gesendet (sofern send != false). Nutze dies wenn der Nutzer einen Screenshot/Bildschirmfoto möchte oder du sehen willst was auf dem Bildschirm ist.",

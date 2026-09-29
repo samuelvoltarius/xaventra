@@ -25,10 +25,10 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current candidate: **2.78.57 preview**, based on the published 2.78.56 preview.
-See the candidate's [bounded verification record](docs/VERIFICATION_2.78.57.md)
-and [recovery guide](docs/RECOVERY_2.78.57.md); the
-[2.78.56 record](docs/VERIFICATION_2.78.56.md) remains the prior baseline.
+Current candidate: **2.78.58 preview**, based on the published 2.78.57 preview.
+See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
+[verification record](docs/VERIFICATION_2.78.58.md). The
+[2.78.57 record](docs/VERIFICATION_2.78.57.md) remains the prior baseline.
 Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
@@ -52,19 +52,21 @@ separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Current state
 
-Xaventra 2.78.57 is a source-preview candidate. Native Windows, Linux and macOS
+Xaventra 2.78.58 is a source-preview candidate. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.78.57.md) and
+See the [verification record](docs/VERIFICATION_2.78.58.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 The current candidate includes authenticated desktop-capture and Telegram-delivery
 corrections, but successful production screenshot delivery is **not yet
 qualified**. It requires exact operator enrollment, an accessible unlocked
-desktop session and correlated capture/delivery evidence. A connected bot or
-passing source tests is not that proof. See [screenshot delivery](docs/SCREENSHOT_DELIVERY.md).
+desktop session or dedicated Xvfb workspace and correlated capture/delivery evidence. A connected bot or
+passing source tests is not that proof. Opt-in mouse, keyboard and scroll actions
+use durable receipts and remain restricted to the enrolled Telegram owner.
+See [computer use](docs/COMPUTER_USE.md) and [screenshot delivery](docs/SCREENSHOT_DELIVERY.md).
 
 The [native update driver](docs/NATIVE_UPDATE_DRIVER.md) has component and isolated
 Linux acceptance evidence, including a clean 2.78.57 arm64 candidate package,

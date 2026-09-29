@@ -2846,11 +2846,22 @@
     {
       "module": "src/host/capture-agent.ts",
       "imports": [
+        "./desktop-input.js",
         "node:child_process",
         "node:crypto",
         "node:fs",
         "node:http",
         "node:os",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/host/desktop-input.ts",
+      "imports": [
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
         "node:path",
         "node:util"
       ]
@@ -2870,6 +2881,18 @@
       "imports": [
         "node:fs",
         "node:http"
+      ]
+    },
+    {
+      "module": "src/host/workstation-main.ts",
+      "imports": [
+        "./capture-agent.js",
+        "./desktop-input.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:util"
       ]
     },
     {
@@ -4950,6 +4973,7 @@
         "./code-outline.js",
         "./code-search.js",
         "./config-tool.js",
+        "./desktop-input-tool.js",
         "./desktop-screenshot-tool.js",
         "./developer-capability-tools.js",
         "./homeassistant.js",
@@ -4978,6 +5002,15 @@
         "../config/config-path.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/desktop-input-tool.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "../host/capture-agent.js",
+        "../host/desktop-input.js",
+        "node:crypto"
       ]
     },
     {

@@ -352,6 +352,8 @@ async function startDaemon() {
     }
 
     const config: NovaConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
+    const { loadPolicy } = await import('./tools/tool-policy.js')
+    loadPolicy(config as any)
         ; (state as any).config = config  // Store for runtime access (userAliases, etc.)
     setNovaConfig(config as any)  // Publish to getNovaConfig() singleton (used by plugins)
     try {

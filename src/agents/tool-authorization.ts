@@ -35,7 +35,7 @@ async function authorize(name: string, args: Record<string, unknown>, authority:
     const { userId, authUserId, channel, requestText, governedReadOnly } = authority
     if (isHistoryOnlyRequest(requestText)) throw new Error('Current request permits conversation recall only, not tool execution')
     if (isConversationOnly(requestText)) throw new Error('Current statement or explanation does not authorize tool execution')
-    const policy = checkTool(name, { userId, channel: channel.toLowerCase() })
+    const policy = checkTool(name, { userId, authUserId, channel: channel.toLowerCase() })
     if (!policy.allowed || policy.needsConfirmation) {
         throw new Error(policy.reason || `Tool ${name} requires authorization or confirmation`)
     }

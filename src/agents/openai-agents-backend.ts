@@ -102,9 +102,9 @@ export class OpenAIAgentsBackend implements AgentBackend {
             description: novaTool.description,
             parameters: toolSchema(novaTool) as any,
             strict: false,
-            isEnabled: () => checkTool(novaTool.name, { channel: input.channel, userId: input.authUserId || input.userId }).allowed,
+            isEnabled: () => checkTool(novaTool.name, { channel: input.channel, userId: input.userId, authUserId: input.authUserId }).allowed,
             needsApproval: () => {
-                const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.authUserId || input.userId })
+                const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.userId, authUserId: input.authUserId })
                 return policy.needsConfirmation
                     || input.contract.approvalPolicy.mode === 'all_changes'
                     || (input.contract.approvalPolicy.mode === 'risky_tools' && HIGH_RISK_TOOLS.test(novaTool.name))
@@ -115,7 +115,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
                 const startedAt = Date.now()
                 const idempotencyKey = makeIdempotencyKey(execution.scopeId, novaTool.name, params)
                 const executionInputHash = evidenceHash(params)
-                const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.authUserId || input.userId })
+                const policy = checkTool(novaTool.name, { channel: input.channel, userId: input.userId, authUserId: input.authUserId })
                 if (!policy.allowed) throw new Error(policy.reason || `Tool ${novaTool.name} is denied by Nova policy`)
                 let result: unknown
                 try {

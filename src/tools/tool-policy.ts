@@ -71,12 +71,12 @@ export function evaluatePolicy(
         if (!matchesPattern(toolName, rule.tool)) continue
 
         // Check channel restriction
-        if (rule.channels && context.channel) {
+        if (rule.channels) {
             if (!rule.channels.includes(context.channel)) continue
         }
 
         // Check user restriction
-        if (rule.users && context.userId) {
+        if (rule.users) {
             if (!rule.users.includes(context.userId)) continue
         }
 
@@ -120,9 +120,17 @@ export function getPolicy(): ToolPolicy {
  */
 export function checkTool(
     toolName: string,
-    context: { channel?: string; userId?: string }
+    context: { channel?: string; userId?: string; authUserId?: string }
 ): { allowed: boolean; needsConfirmation: boolean; reason?: string } {
-    const result = evaluatePolicy(toolName, context, currentPolicy)
+    const owner=process.env.NOVA_DESKTOP_TELEGRAM_OWNER_ID
+    const enrolled=owner&&context.authUserId===owner&&/^[1-9][0-9]*$/.test(owner)&&process.env.NOVA_CAPTURE_SOCKET&&process.env.NOVA_CAPTURE_TOKEN_FILE
+    const rules=enrolled ? [
+        ...currentPolicy.rules.filter(r=>!DEFAULT_POLICY.rules.includes(r)),
+        {tool:'desktop_screenshot',action:'allow' as const,channels:['telegram']},
+        ...(process.env.NOVA_DESKTOP_INPUT_ENABLED==='1'?[{tool:'desktop_input',action:'allow' as const,channels:['telegram']}]:[]),
+        ...DEFAULT_POLICY.rules,
+    ] : currentPolicy.rules
+    const result = evaluatePolicy(toolName, context, {...currentPolicy,rules})
 
     return {
         allowed: result.action !== 'deny',
