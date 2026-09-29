@@ -11,6 +11,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fetchWithSsrfGuard, validateWebhookUrl } from '../resilience/ssrf-guard.js'
 
 // ============================================
 // Types
@@ -81,6 +82,11 @@ export function createHook(params: {
     target: string
     headers?: Record<string, string>
 }): Hook {
+    // Model-supplied shell strings would become stored code execution with the
+    // daemon's full environment: script hooks are not accepted.
+    if (params.type === 'script') throw new Error('Script-Hooks sind nicht zulässig (keine Shell-Strings)')
+    if (params.type !== 'webhook' && params.type !== 'email') throw new Error(`Unbekannter Hook-Typ: ${String(params.type)}`)
+    if (params.type === 'webhook') validateWebhookUrl(params.target)
     const hooks = loadHooks()
     const hook: Hook = {
         id: `hook-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -192,7 +198,7 @@ async function executeWebhook(
     const timeout = setTimeout(() => controller.abort(), 10_000)
 
     try {
-        const response = await fetch(hook.target, {
+        const response = await fetchWithSsrfGuard(hook.target, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -201,6 +207,7 @@ async function executeWebhook(
             },
             body: JSON.stringify(payload),
             signal: controller.signal,
+            redirect: 'error',
         })
 
         return {
@@ -221,13 +228,14 @@ function executeEmail(
     data: Record<string, unknown>,
     timestamp: number,
 ): HookResult {
-    // Email sending would require SMTP setup
-    // For now, log as a notification
-    console.log(`[Hooks] 📧 Email Hook "${hook.name}" → ${hook.target}: ${event}`)
+    // Email sending would require SMTP setup. Nothing is sent, so this must
+    // not be reported as a successful delivery.
+    console.log(`[Hooks] 📧 Email Hook "${hook.name}" → ${hook.target}: ${event} (nicht zugestellt)`)
     return {
         hookId: hook.id,
         event,
-        success: true,
+        success: false,
+        error: 'E-Mail-Hooks werden nicht unterstützt (kein SMTP)',
         timestamp,
     }
 }
@@ -235,26 +243,12 @@ function executeEmail(
 async function executeScript(
     hook: Hook,
     event: HookEvent,
-    data: Record<string, unknown>,
+    _data: Record<string, unknown>,
     timestamp: number,
 ): Promise<HookResult> {
-    const { execSync } = await import('node:child_process')
-
-    try {
-        const output = execSync(hook.target, {
-            encoding: 'utf-8',
-            timeout: 30_000,
-            env: {
-                ...process.env,
-                NOVA_EVENT: event,
-                NOVA_DATA: JSON.stringify(data),
-            },
-        })
-
-        return { hookId: hook.id, event, success: true, timestamp }
-    } catch (err: any) {
-        return { hookId: hook.id, event, success: false, error: err.message, timestamp }
-    }
+    // Fail-closed: previously stored script hooks hold a shell string. They
+    // are never executed (no execSync with the daemon environment).
+    return { hookId: hook.id, event, success: false, error: 'Script-Hooks werden nicht ausgeführt (keine Shell-Strings)', timestamp }
 }
 
 // ============================================
