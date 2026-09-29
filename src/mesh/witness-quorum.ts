@@ -118,6 +118,7 @@ export async function acquireWitnessQuorumLease(
         return {
             leader: false, holder: denied?.holderHostname || denied?.holderNodeId, coordinator: 'witness',
             reason: `witness quorum denied: ${approvals.length}/2 approvals (${valid.length}/3 authenticated responses)`,
+            heldByOther: Boolean(denied?.holderNodeId && denied.holderNodeId !== nodeId),
         }
     }
 
