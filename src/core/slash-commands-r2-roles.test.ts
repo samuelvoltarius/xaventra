@@ -15,6 +15,9 @@ function state(): DaemonState {
 
 const commands = ['preflight', 'persona', 'task', 'log', 'logs', 'world', 'worldmodel', 'lagebild', 'update']
 
+// UEB-6: /monitor add/remove changes what the L19 monitor probes (owner only).
+const monitorArgs = ['', 'add evil http://example.invalid', 'remove x', 'list']
+
 describe('R2 role findings stay owner-only', () => {
     it.each(commands)('/%s requires owner', command => {
         expect(getCommandMinimumRole(command)).toBe('owner')
@@ -25,6 +28,17 @@ describe('R2 role findings stay owner-only', () => {
             const result = await handleCommand(command, 'history', `${permission}-1`, state(), [],
                 { channel: 'telegram', rawUserId: `${permission}-1`, principalId: `${permission}-1`, permission } as any)
             expect(result, command).toContain('🔒')
+        }
+    })
+
+    it('UEB-6: /monitor is owner-only for every subcommand', async () => {
+        expect(getCommandMinimumRole('monitor')).toBe('owner')
+        for (const permission of ['guest', 'user', 'admin'] as const) {
+            for (const args of monitorArgs) {
+                const result = await handleCommand('monitor', args, `${permission}-1`, state(), [],
+                    { channel: 'telegram', rawUserId: `${permission}-1`, principalId: `${permission}-1`, permission } as any)
+                expect(result, `${permission} ${args}`).toContain('🔒')
+            }
         }
     })
 })
