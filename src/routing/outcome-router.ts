@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -101,6 +101,9 @@ function stablePercentage(value: string): number {
     for (const char of value) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619) }
     return (hash >>> 0) % 100
 }
+
+/** Shadow decisions are telemetry: rotate to one `.1` generation above this size. */
+const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 export class OutcomeRouter {
     constructor(
@@ -306,6 +309,9 @@ export class OutcomeRouter {
         }
         try {
             if (!existsSync(dirname(this.decisionFile))) mkdirSync(dirname(this.decisionFile), { recursive: true })
+            else if (existsSync(this.decisionFile) && statSync(this.decisionFile).size > DECISION_LOG_MAX_BYTES) {
+                renameSync(this.decisionFile, `${this.decisionFile}.1`)
+            }
             appendFileSync(this.decisionFile, `${JSON.stringify(decision)}\n`)
         } catch { /* routing must never fail due to telemetry */ }
         return decision
