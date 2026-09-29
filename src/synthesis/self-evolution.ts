@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { assertPatchSourcePath, validatePatchInSandbox, getPatchSnapshotHash, type PatchSandboxResult } from './patch-sandbox.js'
 import { repairHash, repairRpcEnvelope, signRepairValue, verifyRepairValue, type SignedRepairValue, type RepairTicket, type RepairReceipt } from '../doctor/repair-activation.js'
@@ -82,12 +82,20 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
     finally { activeEvolution = null }
 }
 
+/** Constant-time token compare; hashing first hides length differences. */
+function patchGateTokenMatches(provided: unknown, expected: string): boolean {
+    if (typeof provided !== 'string') return false
+    const a = createHash('sha256').update(provided, 'utf8').digest()
+    const b = createHash('sha256').update(expected, 'utf8').digest()
+    return timingSafeEqual(a, b) && provided.length === expected.length
+}
+
 /** Shared slash/Telegram/tool approval boundary. Unbound apply requests are
  * refused, never interpreted as permission for a different patch. */
 export async function approveEvolutionProposal(id: string, approvalToken: string, expectedRequest?: EvolutionRequest): Promise<EvolutionResult> {
     const ROOT = getRepairSourceRoot()
     const expected = process.env.NOVA_PATCH_GATE_TOKEN
-    if (!expected || approvalToken !== expected) return { success: false, error: 'PATCH_GATE token invalid' }
+    if (!expected || !patchGateTokenMatches(approvalToken, expected)) return { success: false, error: 'PATCH_GATE token invalid' }
     const proposals = readArray(PROPOSALS), proposal = proposals.find(p => p.id === id)
     if (!proposal || proposal.kind === 'doctor-config' || proposal.status !== 'queued') return { success: false, error: 'A queued source proposalId is required' }
     const fail = (error: string): EvolutionResult => ({ success: false, proposalId: id, error })
