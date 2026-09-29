@@ -45,11 +45,16 @@ export class QuorumWitnessStore {
     private state: WitnessState = { leases: {}, checkpoints: {} }
 
     constructor(readonly witnessId: string, private readonly file: string) {
+        // Fail closed: silently resetting a corrupt state file would restart
+        // epochs at 1 and let a stale holder's fencing token become valid again.
+        if (!existsSync(file)) return
+        let parsed: unknown
         try {
-            if (existsSync(file)) this.state = JSON.parse(readFileSync(file, 'utf8')) as WitnessState
-        } catch {
-            this.state = { leases: {}, checkpoints: {} }
+            parsed = JSON.parse(readFileSync(file, 'utf8'))
+        } catch (error) {
+            throw new Error(`witness state file ${file} is corrupt or unreadable; refusing to serve (restore it from backup): ${String(error).slice(0, 200)}`)
         }
+        this.state = validateWitnessState(parsed, file)
     }
 
     acquire(input: { service: string; nodeId: string; holderHostname: string; ttlMs: number; requestId: string }, now = Date.now()): WitnessDecision {
@@ -119,6 +124,24 @@ export class QuorumWitnessStore {
         if (!this.currentLease(input.service, input.nodeId, input.epoch, now)) throw new Error('stale or unauthorized checkpoint reader')
         return Object.values(this.state.checkpoints || {}).filter(item => item.service === input.service)
     }
+}
+
+function validateWitnessState(value: unknown, file: string): WitnessState {
+    const invalid = (detail: string) => new Error(`witness state file ${file} is corrupt (${detail}); refusing to serve (restore it from backup)`)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid('root is not an object')
+    const state = value as WitnessState
+    if (!state.leases || typeof state.leases !== 'object' || Array.isArray(state.leases)) throw invalid('leases missing')
+    for (const [service, lease] of Object.entries(state.leases)) {
+        if (!lease || typeof lease !== 'object' || typeof lease.holderNodeId !== 'string'
+            || !Number.isSafeInteger(lease.epoch) || lease.epoch < 1 || !Number.isFinite(Date.parse(lease.expiresAt))) {
+            throw invalid(`lease ${service} is invalid`)
+        }
+    }
+    if (state.checkpoints !== undefined && (typeof state.checkpoints !== 'object' || state.checkpoints === null || Array.isArray(state.checkpoints))) {
+        throw invalid('checkpoints is not an object')
+    }
+    state.checkpoints ||= {}
+    return state
 }
 
 function signature(secret: string, value: string): string {
