@@ -2888,11 +2888,19 @@
       "imports": [
         "./capture-agent.js",
         "./desktop-input.js",
+        "./workstation-security.js",
         "node:child_process",
         "node:crypto",
         "node:fs",
         "node:path",
         "node:util"
+      ]
+    },
+    {
+      "module": "src/host/workstation-security.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
       ]
     },
     {
