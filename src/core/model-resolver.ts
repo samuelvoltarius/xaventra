@@ -368,42 +368,9 @@ async function detectCapabilities(): Promise<void> {
 
                 let found = false
 
-                // Priority 3: OpenAI/Codex subscription for LLM roles.
-                // External providers are cloud fallbacks, but OpenAI/Codex is the
-                // preferred primary when the subscription is available.
-                if (!found && isLLM && (openaiModels.length > 0 || codexModels.length > 0)) {
-                    const combinedOpenAIModels = [...openaiModels, ...codexModels]
-                    const model = findBestOpenAI(combinedOpenAIModels, role)
-                    if (model) {
-                        const fromCodex = codexModels.includes(model) && !openaiModels.includes(model)
-                        resolved[role] = {
-                            id: model,
-                            provider: fromCodex ? 'openai-codex' : 'openai',
-                            role,
-                            capabilities: [role],
-                            endpoint: fromCodex ? undefined : 'https://api.openai.com/v1',
-                        }
-                        found = true
-                    }
-                }
-
-                // Priority 4: Registered external providers (minimax, kimi, deepseek, etc.)
-                if (!found && isLLM && externalProviderServices.length > 0) {
-                    for (const ext of externalProviderServices) {
-                        if (!ext.roles.includes(role)) continue
-                        if (ext.models.length === 0) continue
-                        resolved[role] = {
-                            id: ext.models[0],
-                            provider: ext.name,
-                            role,
-                            capabilities: [role],
-                            endpoint: ext.endpoint,
-                            apiKey: ext.apiKey,
-                        }
-                        found = true
-                        break
-                    }
-                }
+                // Local first (owner rule): running local/mesh services are
+                // resolved before OpenAI/Codex and registered cloud providers,
+                // which remain fallbacks (priorities 6 and 7 below).
 
                 // Priority 5: AI Scanner results (all devices in network, running + installed)
                 if (!found && sortedServices.length > 0) {
@@ -418,7 +385,11 @@ async function detectCapabilities(): Promise<void> {
                         ? sortedServices.filter(s => s.status === 'running' && s.type === 'llm' && s.models.length > 0)
                         : []
 
-                    const candidates = [...matching, ...llmServices]
+                    // LLM/embedding roles only take running services: an installed
+                    // but stopped local model must not shadow the cloud fallback.
+                    const candidates = (isLLM || role === 'embedding')
+                        ? [...matching, ...llmServices].filter(svc => svc.status === 'running')
+                        : [...matching, ...llmServices]
 
                     // For LLM/embedding roles: find the GLOBALLY best model across ALL services
                     // (not just the first service that has any match — avoids picking a weak local
