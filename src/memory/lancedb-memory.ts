@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { getEmbedding as getMultiProviderEmbedding } from './embedding-providers.js'
 import { hybridRerankResults } from './hybrid-search.js'
 import { expandQueryRuleBased } from './query-expansion.js'
+import { redactSecrets } from '../security/secret-redaction.js'
 
 // ============================================
 // Types
@@ -48,6 +49,11 @@ export function isRecallAllowed(metadata: Record<string, unknown>, access: Recal
     const scope = typeof metadata?.scope === 'string' ? metadata.scope.trim() : ''
     if (!scope) return access.includeUnscoped === true
     return access.scopes.includes(scope)
+}
+
+/** Fail-closed: only explicitly global entries opted in with meshShare leave this node. */
+export function isMeshShareable(metadata: Record<string, unknown> | null | undefined): boolean {
+    return metadata?.scope === 'global' && metadata?.meshShare === true
 }
 
 // ============================================
@@ -196,11 +202,16 @@ export async function remember(
         await table.add([entry])
         console.log(`[LanceDB] 📝 Gespeichert: "${content.slice(0, 50)}..."`)
 
-        // Auto-share to mesh network
-        try {
-            const { shareMemory } = await import('../mesh/mesh-memory-sync.js')
-            shareMemory(content, type as any, source).catch(() => { })
-        } catch { /* mesh not available */ }
+        // Mesh copies carry no scope and cannot be forgotten remotely yet
+        // (mesh-memory-sync has no scope field and no delete/tombstone). So a
+        // private or unscoped entry never leaves this node; only entries that
+        // are explicitly global and marked for sharing are sent, redacted.
+        if (isMeshShareable(metadata)) {
+            try {
+                const { shareMemory } = await import('../mesh/mesh-memory-sync.js')
+                shareMemory(redactSecrets(content), type as any, source).catch(() => { })
+            } catch { /* mesh not available */ }
+        }
 
         return entry.id
     } catch (err) {
