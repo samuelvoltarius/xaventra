@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getDefaultModel } from '../core/model-defaults.js'
 
 
 // ============================================
@@ -64,7 +65,6 @@ export function getNovaEnforcedPersona(): string {
     // Dynamic model resolution — always returns the CURRENTLY active model
     let modelInfo = 'unbekannt'
     try {
-        const { getDefaultModel } = require('../core/model-defaults.js')
         modelInfo = getDefaultModel()
     } catch {
         try {

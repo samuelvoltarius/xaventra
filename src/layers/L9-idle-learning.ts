@@ -8,7 +8,8 @@
  * 4. Optionally notify user of what was learned
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 
 // ============================================
 // Types
@@ -257,9 +258,9 @@ class IdleLearningManager {
 
     private saveData(): void {
         try {
-            const dir = this.dataPath.split('/').slice(0, -1).join('/')
+            const dir = dirname(this.dataPath)
             if (!existsSync(dir)) {
-                require('fs').mkdirSync(dir, { recursive: true })
+                mkdirSync(dir, { recursive: true })
             }
             writeFileSync(this.dataPath, JSON.stringify({
                 patterns: Array.from(this.patterns.values()),

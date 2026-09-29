@@ -11,7 +11,7 @@
  * Result: Nova wakes up "smarter" the next morning.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInternalOutboundArtifact, sanitizeInternalOutboundArtifacts } from '../core/outbound-content-guard.js'
 
@@ -376,7 +376,6 @@ function findRecentCodeFiles(hoursBack: number): string[] {
                     walk(fullPath)
                 } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.js'))) {
                     try {
-                        const { statSync } = require('node:fs')
                         const stat = statSync(fullPath)
                         if (stat.mtimeMs > cutoff) results.push(fullPath)
                     } catch { /* skip */ }
