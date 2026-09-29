@@ -57,7 +57,13 @@ export class QuorumWitnessStore {
         this.state = validateWitnessState(parsed, file)
     }
 
-    acquire(input: { service: string; nodeId: string; holderHostname: string; ttlMs: number; requestId: string }, now = Date.now()): WitnessDecision {
+    /**
+     * CL-07: epochs only rise. A live renewal by the same holder keeps the term
+     * (raised to a higher proposal from the quorum client); anything else,
+     * including re-acquiring after expiry, starts a new term above both the
+     * stored epoch and the client's proposal (max of all epochs it has seen).
+     */
+    acquire(input: { service: string; nodeId: string; holderHostname: string; ttlMs: number; requestId: string; proposedEpoch?: number }, now = Date.now()): WitnessDecision {
         const current = this.state.leases[input.service]
         const expired = !current || Date.parse(current.expiresAt) <= now
         if (current && !expired && current.holderNodeId !== input.nodeId) {
@@ -69,7 +75,9 @@ export class QuorumWitnessStore {
             }
         }
 
-        const epoch = !current ? 1 : current.holderNodeId === input.nodeId ? current.epoch : current.epoch + 1
+        const proposed = Number.isSafeInteger(input.proposedEpoch) && Number(input.proposedEpoch) > 0 ? Number(input.proposedEpoch) : 0
+        const sameLiveTerm = Boolean(current && !expired && current.holderNodeId === input.nodeId)
+        const epoch = sameLiveTerm ? Math.max(current!.epoch, proposed) : Math.max((current?.epoch || 0) + 1, proposed)
         const lease: WitnessLease = {
             service: input.service, holderNodeId: input.nodeId, holderHostname: input.holderHostname, epoch,
             expiresAt: new Date(now + Math.max(100, Math.min(input.ttlMs, 5 * 60_000))).toISOString(),
@@ -208,6 +216,7 @@ export function createQuorumWitnessServer(options: {
                 result = store.acquire({
                     service: String(input.service), nodeId: String(input.nodeId), holderHostname: String(input.holderHostname),
                     ttlMs: Number(input.ttlMs || 90_000), requestId: String(input.requestId),
+                    proposedEpoch: Number(input.proposedEpoch || 0),
                 })
             } else if (req.url === '/v1/checkpoint/write') {
                 if (!input.id || typeof input.epoch !== 'number' || !Number.isSafeInteger(input.epoch)) throw new Error('missing required checkpoint fields')

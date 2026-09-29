@@ -148,6 +148,31 @@ export async function verifyLiveServiceLeadership(service: string): Promise<bool
     return (await checkLiveFence(service)).valid
 }
 
+export interface CoordinatorFencingStatus {
+    version?: number
+    epoch_sequence?: boolean
+    epoch_guard_trigger?: boolean
+    lease_table_anon_writable?: boolean
+    lease_write_policies?: number
+}
+
+/** Read-only facts from nova_fencing_status() (v5); null when unavailable. */
+export async function readCoordinatorFencingStatus(): Promise<CoordinatorFencingStatus | null> {
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status !== 'ok') return null
+    const config = loadSupabaseConfig(configFile)
+    if (!config.url || !config.key) return null
+    try {
+        const res = await fetch(`${config.url}/rpc/nova_fencing_status`, {
+            method: 'POST', headers: headers(config.key), body: '{}', signal: AbortSignal.timeout(5000),
+        })
+        if (!res.ok) return null
+        return await res.json() as CoordinatorFencingStatus
+    } catch {
+        return null
+    }
+}
+
 /** Worker-side check of a Main's fence (node + epoch, any instance). */
 export async function checkRemoteFence(service: string, epoch: number, holderNodeId: string): Promise<{ valid: boolean; available: boolean; reason: string }> {
     const configFile = readCoordinatorConfigFile()
