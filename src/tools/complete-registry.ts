@@ -1265,17 +1265,39 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'self_setup_apply',
-        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus ist confirm="APPLY:<actionId>" noetig; im YOLO-Modus nicht.',
+        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Im YOLO-Modus nicht (ausser GPU-Backends).',
         category: 'system',
         parameters: [
             { name: 'action_id', type: 'string', description: 'Action-ID aus self_setup_plan oder "all"', required: true },
-            { name: 'confirm', type: 'string', description: 'Freigabe: APPLY:<actionId> oder APPLY_ALL:<generatedAt>', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode aus der Antwort auf /setup apply (vom Owner genannt)', required: false },
         ],
         handler: async (params) => {
-            const { applySelfSetupAction, applySelfSetupPlan } = await import('../core/self-setup-orchestrator.js')
-            const actionId = String(params.action_id)
-            if (actionId === 'all') return await applySelfSetupPlan(String(params.confirm || ''))
-            return await applySelfSetupAction(actionId, String(params.confirm || ''))
+            // INT-6: the confirmation is the one-time, principal-bound token the
+            // /setup apply slash command issued, never a model-constructible
+            // string like "APPLY:<id>". Channel and principal come from the
+            // server-side execution context (runner-injected), not the model.
+            const { applySelfSetupAction, applySelfSetupPlan, loadSelfSetupState } = await import('../core/self-setup-orchestrator.js')
+            const { consumeSetupConfirmation, setupActionTarget, setupConfirmationPrincipal, setupPlanTarget } = await import('../core/setup-confirmation.js')
+            const actionId = String(params.action_id || '')
+            if (!/^[A-Za-z0-9:_.-]{1,128}$/.test(actionId)) return { success: false, message: 'Ungueltige Aktions-ID.' }
+            const principal = setupConfirmationPrincipal(String(params.channel || ''), String(params.userId || params.authorizationUserId || ''))
+            const token = typeof params.confirm === 'string' ? params.confirm.trim() : ''
+            const state = loadSelfSetupState()
+            if (!state) return { success: false, message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
+            const needsToken = (id: string) => state.mode !== 'yolo'
+                || state.actions.find(a => a.id === id)?.verification?.kind === 'gpu_backend'
+            const refusal = (command: string) => ({
+                success: false,
+                message: `Freigabe fehlt oder ist ungueltig/abgelaufen. Der Owner muss selbst "${command}" senden und dir den Einmal-Code nennen (oder "${command} <code>" direkt senden).`,
+            })
+            if (actionId === 'all') {
+                if (state.mode === 'yolo') return await applySelfSetupPlan('')
+                if (!consumeSetupConfirmation(principal, setupPlanTarget(state.generatedAt), token)) return refusal('/setup apply all')
+                return await applySelfSetupPlan(`APPLY_ALL:${state.generatedAt}`)
+            }
+            if (!needsToken(actionId)) return await applySelfSetupAction(actionId, '')
+            if (!consumeSetupConfirmation(principal, setupActionTarget(actionId), token)) return refusal(`/setup apply ${actionId}`)
+            return await applySelfSetupAction(actionId, `APPLY:${actionId}`)
         },
     },
     {

@@ -584,7 +584,7 @@ export function formatSelfSetupPlan(state: SelfSetupState): string {
         '',
         state.mode === 'yolo'
             ? 'YOLO aktiv: self_setup_apply kann ohne Einzel-Confirm ausfuehren.'
-            : 'Aktionen werden NICHT automatisch ausgefuehrt. self_setup_apply braucht confirm="APPLY:<actionId>".',
+            : 'Aktionen werden NICHT automatisch ausgefuehrt. Freigabe nur durch den Owner: /setup apply <actionId> liefert einen Einmal-Code.',
         '',
     ]
     if (state.actions.length === 0) {
@@ -619,7 +619,7 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
     // Native runtime changes remain approval-gated even when general YOLO mode is enabled.
     const alwaysConfirm = action.verification?.kind === 'gpu_backend'
     if ((state.mode !== 'yolo' || alwaysConfirm) && confirm !== `APPLY:${actionIdToApply}`) {
-        return { success: false, message: `Freigabe fehlt. Erwartet confirm="APPLY:${actionIdToApply}".` }
+        return { success: false, message: `Freigabe fehlt. Der Owner gibt die Aktion mit /setup apply ${actionIdToApply} frei.` }
     }
 
     if (action.type === 'config_patch') {
@@ -669,7 +669,7 @@ export async function applySelfSetupPlan(confirm = ''): Promise<{ success: boole
             success: false,
             applied: [],
             failed: [],
-            message: `Freigabe fehlt. Erwartet confirm="APPLY_ALL:${state.generatedAt}" oder YOLO-Modus.`,
+            message: 'Freigabe fehlt. Der Owner gibt den Plan mit /setup apply all frei (oder YOLO-Modus).',
         }
     }
 

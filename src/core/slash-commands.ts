@@ -6,7 +6,7 @@
 
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { consumeSetupConfirmation, issueSetupConfirmation, setupActionTarget, setupConfirmationPrincipal, setupPlanTarget } from './setup-confirmation.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -90,31 +90,8 @@ function commandRoleDenial(cmd: string, permission: string): string | null {
     return `🔒 /${cmd} ist nur für die Rolle ${required}${required === 'owner' ? '' : ' (oder höher)'} freigegeben. Deine Rolle: ${permission}.`
 }
 
-// ============================================
-// /setup apply confirmations (K2): issued by the server, single use,
-// bound to principal + target, short-lived. Never derived from the request.
-// ============================================
-
-const SETUP_CONFIRMATION_TTL_MS = 5 * 60_000
-const setupConfirmations = new Map<string, { principal: string; target: string; expiresAt: number }>()
-
-function issueSetupConfirmation(principal: string, target: string): string {
-    const now = Date.now()
-    for (const [token, entry] of setupConfirmations) if (entry.expiresAt <= now) setupConfirmations.delete(token)
-    const token = randomBytes(18).toString('base64url')
-    setupConfirmations.set(token, { principal, target, expiresAt: now + SETUP_CONFIRMATION_TTL_MS })
-    return token
-}
-
-function consumeSetupConfirmation(principal: string, target: string, token: string | undefined): boolean {
-    if (!token) return false
-    const entry = setupConfirmations.get(token)
-    if (!entry) return false
-    if (entry.expiresAt <= Date.now()) { setupConfirmations.delete(token); return false }
-    if (entry.principal !== principal || entry.target !== target) return false
-    setupConfirmations.delete(token)
-    return true
-}
+// /setup apply confirmations (K2) live in ./setup-confirmation.js and are
+// shared with the self_setup_apply tool (INT-6).
 
 // ============================================
 // Command Handler
@@ -3601,11 +3578,11 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     // The confirmation is never built from the request itself:
                     // the first call only issues a single-use token that the
                     // same principal must send back explicitly.
-                    const confirmPrincipal = `${principalContext?.channel || 'unknown'}:${principalContext?.principalId || from}`
+                    const confirmPrincipal = setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from)
                     if (actionIdArg === 'all') {
                         const st2 = loadSelfSetupState()
                         if (!st2) return '❌ Kein Setup-Plan. Erst /setup plan ausführen.'
-                        const target = `all:${st2.generatedAt}`
+                        const target = setupPlanTarget(st2.generatedAt)
                         if (!confirmationArg) {
                             const token = issueSetupConfirmation(confirmPrincipal, target)
                             return `⚠️ Bestätigung nötig: alle Aktionen des Plans vom ${st2.generatedAt} ausführen.\nZum Ausführen innerhalb von 5 Minuten senden:\n/setup apply all ${token}`
@@ -3614,7 +3591,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                         const res = await applySelfSetupPlan(`APPLY_ALL:${st2.generatedAt}`)
                         return `${res.success ? '✅' : '⚠️'} ${res.message}\nApplied: ${res.applied.join(', ') || '–'}\nFailed: ${res.failed.join(', ') || '–'}`
                     }
-                    const target = `action:${actionIdArg}`
+                    const target = setupActionTarget(actionIdArg)
                     if (!confirmationArg) {
                         const token = issueSetupConfirmation(confirmPrincipal, target)
                         return `⚠️ Bestätigung nötig für Aktion ${actionIdArg}. Vorher mit /setup plan prüfen, was ausgeführt wird.\nZum Ausführen innerhalb von 5 Minuten senden:\n/setup apply ${actionIdArg} ${token}`
