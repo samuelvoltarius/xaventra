@@ -13,6 +13,10 @@ import type { Browser, Page } from 'playwright'
 
 let browser: Browser | null = null
 let page: Page | null = null
+// R2 T20: one launch for concurrent first calls, and one search at a time on
+// the shared page, so a search never reads another caller's results.
+let pageLaunch: Promise<Page> | null = null
+let searchQueue: Promise<unknown> = Promise.resolve()
 
 // ============================================
 // Browser Management
@@ -20,7 +24,11 @@ let page: Page | null = null
 
 async function getPage(): Promise<Page> {
     if (page) return page
+    pageLaunch ||= launchPage().finally(() => { pageLaunch = null })
+    return pageLaunch
+}
 
+async function launchPage(): Promise<Page> {
     const { chromium } = await import('playwright')
 
     if (!browser) {
@@ -93,7 +101,16 @@ export async function googleSearch(
 // Strategy 1: Google via Playwright
 // ============================================
 
-async function tryGoogleBrowser(
+function tryGoogleBrowser(
+    query: string,
+    count: number
+): Promise<{ query: string; results: GoogleSearchResult[]; error?: string }> {
+    const run = searchQueue.then(() => searchOnSharedPage(query, count))
+    searchQueue = run.catch(() => undefined)
+    return run
+}
+
+async function searchOnSharedPage(
     query: string,
     count: number
 ): Promise<{ query: string; results: GoogleSearchResult[]; error?: string }> {
