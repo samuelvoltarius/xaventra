@@ -50,6 +50,18 @@ const processed = new Map<string, ResultPayload>()
 const activeAgentRuns = new Map<string, AbortController>()
 const cancelledAgentRuns = new Map<string, number>()
 const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
+/** MI-17: idempotency/result caches are bounded (oldest entries evicted first). */
+export const MAX_PROCESSED_RESULTS = 2_000
+export const MAX_PENDING_RESULTS = 1_000
+export function rememberBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+    map.delete(key)
+    map.set(key, value)
+    while (map.size > max) {
+        const oldest = map.keys().next()
+        if (oldest.done) break
+        map.delete(oldest.value)
+    }
+}
 interface PeerState {
     nodeId: string; lastSeen: number; status?: string; uptimeMs?: number
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
@@ -297,7 +309,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     if (envelope.kind === 'run.result') {
         const result = envelope.payload as ResultPayload
         if (result?.requestId) {
-            results.set(result.requestId, result)
+            rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
             try {
                 const { getOutcomeLedger } = await import('../core/outcome-ledger.js')
                 for (const evidence of result.evidence || []) getOutcomeLedger().recordTool(envelope.runId || result.requestId, { ...evidence, sourceNode: envelope.sourceNode, transportVerified: true })
@@ -382,7 +394,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         for (const [requestId, expiresAt] of cancelledAgentRuns) if (expiresAt <= now) cancelledAgentRuns.delete(requestId)
         if (cancelledAgentRuns.has(envelope.id)) {
             const result = makeResult(envelope.id, false, undefined, 'mesh agent request cancelled before execution')
-            processed.set(payload.idempotencyKey, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS)
             await sendResult(envelope, result)
             return
         }
@@ -400,10 +412,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             )
             if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } finally {
             activeAgentRuns.delete(envelope.id)
         }
@@ -417,7 +429,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const controller = activeAgentRuns.get(payload.requestId)
         controller?.abort()
         const result = makeResult(envelope.id, true, { requestId: payload.requestId, cancelled: Boolean(controller) })
-        processed.set(payload.idempotencyKey, result)
+        rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS)
         await sendResult(envelope, result)
         return
     }
@@ -429,10 +441,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             const { getCodexRuntimeStatus } = await import('../auth/codex-runtime.js')
             const status = await getCodexRuntimeStatus(envelope.principal.id)
             const result = makeResult(envelope.id, true, { available: status.available, authenticated: status.authenticated, nodeId: status.nodeId })
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
@@ -456,10 +468,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 result: completion,
                 evidence: [{ tool: 'codex_inference', requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - startedAt }],
             }
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
@@ -477,10 +489,10 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             const resultValue = await getToolRegistry().execute(payload.tool, toolArguments)
             const resultHash = createHash('sha256').update(JSON.stringify(resultValue)).digest('hex')
             const result: ResultPayload = { requestId: envelope.id, success: true, result: resultValue, evidence: [{ tool: payload.tool, requestHash: envelope.payloadHash, resultHash, verified: true, durationMs: Date.now() - started }] }
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         } catch (error) {
             const result = makeResult(envelope.id, false, undefined, String(error).slice(0, 500))
-            processed.set(payload.idempotencyKey, result); await sendResult(envelope, result)
+            rememberBounded(processed, payload.idempotencyKey, result, MAX_PROCESSED_RESULTS); await sendResult(envelope, result)
         }
         return
     }
