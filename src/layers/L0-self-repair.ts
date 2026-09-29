@@ -101,6 +101,8 @@ const FIX_PATTERNS: Array<{
 // Self-Repair Engine
 // ============================================
 
+const MAX_TRACKED_ISSUES = 500
+
 export class SelfRepairEngine {
     private issues: CodeIssue[] = []
     private repairs: RepairAction[] = []
@@ -131,6 +133,8 @@ export class SelfRepairEngine {
         }
 
         this.issues.push(issue)
+        // Bounded: an error loop must not grow memory until restart.
+        if (this.issues.length > MAX_TRACKED_ISSUES) this.issues.splice(0, this.issues.length - MAX_TRACKED_ISSUES)
         console.log(`[L0 Self-Repair] Issue erkannt: ${issue.errorType} in ${issue.file}`)
 
         return issue
