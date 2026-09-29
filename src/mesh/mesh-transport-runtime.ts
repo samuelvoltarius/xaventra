@@ -11,7 +11,7 @@ import { MeshTransportRouter } from './mesh-transport-router.js'
 import { RelayMeshTransport } from './relay-mesh-transport.js'
 import { SupabaseMeshTransport } from './supabase-mesh-transport.js'
 import type {
-    AgentRequestPayload, CapabilityPayload, CodexCompletionRequestPayload, CodexStatusRequestPayload, MeshAck, MeshEnvelope, MeshMode, MeshPeer,
+    AgentRequestPayload, CapabilityPayload, CodexCompletionRequestPayload, CodexStatusRequestPayload, MeshAck, MeshEnvelope, MeshFence, MeshMode, MeshPeer,
     MeshPrincipal, MissionRequestPayload, ResultPayload, RunCancelPayload, ToolInventoryPayload, ToolRequestPayload,
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
@@ -133,6 +133,36 @@ export async function sendAgentRequest(targetNode: string, prompt: string, optio
     }
     const envelope = transport.create('agent.request', targetNode, payload, { runId, ttlMs: Math.max(60_000, payload.budget?.timeoutMs || 0) })
     return { requestId: envelope.id, ack: await transport.send(targetNode, envelope) }
+}
+
+/**
+ * Signs a payload for storage in a shared table (legacy `nova_mesh_tasks`).
+ * Readers accept such rows only after verifyStoredMeshEnvelope().
+ */
+export function signStoredMeshEnvelope<T>(
+    kind: 'agent.request' | 'mission.request',
+    targetNode: string | '*',
+    payload: T,
+    options: { runId?: string; fence?: MeshFence; ttlMs?: number } = {},
+): MeshEnvelope<T> {
+    const transport = router || initMeshTransportRuntime()
+    return transport.create(kind, targetNode, payload, options)
+}
+
+/**
+ * Parses and verifies a stored envelope: signature against the configured
+ * peer key (or the local key), configured peer roles and the payload schema.
+ * Rows that fail are never executed (fail-closed).
+ */
+export function verifyStoredMeshEnvelope<T>(
+    raw: string,
+    options: { kinds: Array<'agent.request' | 'mission.request'>; requireLocalTarget?: boolean; requireUnexpired?: boolean },
+): { accepted: boolean; envelope?: MeshEnvelope<T>; reason?: string } {
+    let envelope: MeshEnvelope<T>
+    try { envelope = JSON.parse(raw) as MeshEnvelope<T> } catch { return { accepted: false, reason: 'invalid_json' } }
+    const transport = router || initMeshTransportRuntime()
+    const decision = transport.verifyStored(envelope as MeshEnvelope, options)
+    return decision.accepted ? { accepted: true, envelope } : { accepted: false, reason: decision.reason || 'rejected' }
 }
 
 export async function cancelMeshRun(

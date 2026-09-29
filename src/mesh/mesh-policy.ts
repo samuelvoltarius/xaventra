@@ -1,4 +1,4 @@
-import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
+import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshEnvelopeKind, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -81,6 +81,47 @@ export class MeshPolicy {
         if (envelope.kind === 'codex.complete.request') return this.verifyCodexCompletion(envelope)
         if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
         return { accepted: true }
+    }
+
+    /**
+     * Verifies an envelope persisted in a shared store (legacy `nova_mesh_tasks`
+     * rows). Same origin, key and role rules as verify(), but without the
+     * replay cache (single execution is enforced by the fenced task claim) and
+     * never trust-on-first-use: a stored row must not pin a new key.
+     */
+    verifyStored(
+        envelope: MeshEnvelope,
+        options: { kinds: MeshEnvelopeKind[]; requireLocalTarget?: boolean; requireUnexpired?: boolean; now?: number },
+    ): { accepted: boolean; reason?: string } {
+        try {
+            if (!envelope || typeof envelope !== 'object' || envelope.version !== 1 || !options.kinds.includes(envelope.kind) ||
+                typeof envelope.sourceNode !== 'string' || typeof envelope.publicKey !== 'string' || typeof envelope.signature !== 'string') {
+                return { accepted: false, reason: 'invalid_schema' }
+            }
+            if (!envelope.principal || typeof envelope.principal.id !== 'string' ||
+                !['system', 'owner', 'admin', 'worker', 'observer'].includes(envelope.principal.role)) {
+                return { accepted: false, reason: 'invalid_principal' }
+            }
+            if (options.requireLocalTarget && envelope.targetNode !== this.localNodeId) return { accepted: false, reason: 'wrong_target' }
+            if (options.requireUnexpired && !(envelope.expiresAt >= (options.now ?? Date.now()))) return { accepted: false, reason: 'expired' }
+            if (!MeshIdentity.verify(envelope)) return { accepted: false, reason: 'invalid_signature' }
+            const peer = this.config.peers.find(item => item.nodeId === envelope.sourceNode)
+            if (envelope.sourceNode !== this.localNodeId && !peer?.publicKey?.trim()) {
+                return { accepted: false, reason: peer ? 'missing_peer_key' : 'untrusted_node' }
+            }
+            const trust = this.trustedKey(envelope, peer)
+            if (!trust.accepted) return trust
+            if (!MeshIdentity.verifyWithKey(envelope, trust.key)) return { accepted: false, reason: 'invalid_signature' }
+            const roles = envelope.sourceNode === this.localNodeId
+                ? undefined
+                : (peer?.roles?.length ? peer.roles : DEFAULT_PEER_ROLES)
+            if (roles && !roles.includes(envelope.principal.role)) return { accepted: false, reason: 'role_not_allowed' }
+            if (envelope.kind === 'agent.request') return this.verifyAgent(envelope, peer)
+            if (envelope.kind === 'mission.request') return this.verifyMission(envelope)
+            return { accepted: true }
+        } catch {
+            return { accepted: false, reason: 'invalid_schema' }
+        }
     }
 
     private trustedKey(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: true; key: string; pin?: boolean } | { accepted: false; reason: string } {
