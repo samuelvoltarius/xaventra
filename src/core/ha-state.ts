@@ -10,7 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getServiceFencingToken } from '../mesh/leader-election.js'
-import { probeSharedMemory, pullSharedMemory, pushSharedMemory } from '../memory/shared-memory.js'
+import { probeSharedMemory, pullSharedMemory, pushSharedMemoryFenced } from '../memory/shared-memory.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -90,15 +90,18 @@ export async function isHaStateAvailable(): Promise<boolean> {
     return isHaStateKeyConfigured() && await probeSharedMemory()
 }
 
+/** CL-07: HA records are written through the fenced upsert of `fenceService`
+ * (default nova-main; channel state uses its channel lease). */
 export async function writeHaRecord(
     scope: string,
     id: string,
     payload: unknown,
     metadata: Record<string, unknown> = {},
+    fenceService = 'nova-main',
 ): Promise<boolean> {
     const content = seal(payload)
     if (!content) return false
-    return pushSharedMemory({
+    return pushSharedMemoryFenced({
         id,
         userId: 'system',
         role: 'system',
@@ -107,18 +110,20 @@ export async function writeHaRecord(
         keywords: ['ha', scope],
         scope,
         metadata: { ...metadata, format: FORMAT, encrypted: true },
-    })
+    }, fenceService)
 }
 
-export async function readHaRecords<T>(scope: string, limit = 500): Promise<Array<{ id: string; timestamp: number; payload: T }>> {
+/** Newest first by writer epoch (CL-07), then by writer timestamp. A writer's
+ * wall clock alone must not decide which record is current. */
+export async function readHaRecords<T>(scope: string, limit = 500): Promise<Array<{ id: string; timestamp: number; writerEpoch: number; payload: T }>> {
     const entries = await pullSharedMemory({ scope, limit })
-    const records: Array<{ id: string; timestamp: number; payload: T }> = []
+    const records: Array<{ id: string; timestamp: number; writerEpoch: number; payload: T }> = []
     for (const entry of entries) {
         if (entry.metadata?.format !== FORMAT || entry.metadata?.encrypted !== true) continue
         const payload = unseal<T>(entry.content)
-        if (payload) records.push({ id: entry.id, timestamp: entry.timestamp, payload })
+        if (payload) records.push({ id: entry.id, timestamp: entry.timestamp, writerEpoch: Number(entry.writerEpoch || 0), payload })
     }
-    return records
+    return records.sort((a, b) => b.writerEpoch - a.writerEpoch || b.timestamp - a.timestamp)
 }
 
 export async function publishChannelState(channel: string, state: {
@@ -139,14 +144,14 @@ export async function publishChannelState(channel: string, state: {
     return writeHaRecord(CHANNEL_SCOPE, `ha_channel_${channel.toLowerCase()}`, payload, {
         channel,
         leaseEpoch: fence?.epoch,
-    })
+    }, channel.toLowerCase())
 }
 
 export async function hydrateChannelState(channel: string, state: Record<string, any>): Promise<HaChannelState | null> {
     const records = await readHaRecords<HaChannelState>(CHANNEL_SCOPE, 20)
     const record = records
         .filter(item => item.payload.version === 1 && item.payload.channel.toLowerCase() === channel.toLowerCase())
-        .sort((a, b) => b.timestamp - a.timestamp)[0]?.payload
+        .sort((a, b) => b.writerEpoch - a.writerEpoch || b.timestamp - a.timestamp)[0]?.payload
     if (!record) return null
 
     if (record.lastActiveChatId) state.lastActiveChatId = record.lastActiveChatId

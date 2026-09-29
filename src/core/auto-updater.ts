@@ -223,9 +223,10 @@ export function canResumeReleaseCheckpoint(
 
 async function publishUpdateState(state = loadState()): Promise<boolean> {
     try {
-        const { pushSharedMemory } = await import('../memory/shared-memory.js')
+        // CL-07: the release checkpoint is a Main write; fenced upsert.
+        const { pushSharedMemoryFenced } = await import('../memory/shared-memory.js')
         const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
-        return pushSharedMemory({
+        return pushSharedMemoryFenced({
             id: 'mesh-release-checkpoint', userId: 'nova-system', role: 'system',
             scope: 'mesh-release-checkpoint', sourceNode: getLocalNodeId(), timestamp: Date.now(),
             content: JSON.stringify(state),
@@ -238,7 +239,7 @@ export async function hydrateUpdateCheckpointFromMesh(): Promise<boolean> {
     try {
         const { pullSharedMemory } = await import('../memory/shared-memory.js')
         const entries = await pullSharedMemory({ scope: 'mesh-release-checkpoint', limit: 20 })
-        for (const entry of entries.sort((a, b) => b.timestamp - a.timestamp)) {
+        for (const entry of entries.sort((a, b) => (b.writerEpoch || 0) - (a.writerEpoch || 0) || b.timestamp - a.timestamp)) {
             if (entry.metadata?.format !== 'nova-mesh-release-checkpoint-v1') continue
             const remote = JSON.parse(entry.content) as PersistedUpdateState
             if (!canResumeReleaseCheckpoint(remote.activeDeployment, readLocalReleaseId())) continue
