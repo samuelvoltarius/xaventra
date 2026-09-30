@@ -4676,6 +4676,8 @@
     {
       "module": "src/resilience/security.ts",
       "imports": [
+        "node:fs",
+        "node:os",
         "node:path"
       ]
     },
