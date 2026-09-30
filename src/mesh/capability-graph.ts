@@ -250,6 +250,8 @@ function canonicalizeNodes(input: CapabilityGraphNode[]): CapabilityGraphNode[] 
 
 export class CapabilityGraph {
     private snapshot: CapabilityGraphSnapshot
+    /** Set by ingest(); this node is the only authority for its own entry. */
+    private localNodeId?: string
 
     constructor(private readonly file = DEFAULT_FILE) {
         this.snapshot = sanitizeCapabilitySnapshot(this.load())
@@ -398,11 +400,17 @@ export class CapabilityGraph {
 
     ingest(scan: AIScanResult | null, meshNodes: MeshNode[] = [], localNodeId?: string): CapabilityGraphSnapshot {
         const now = new Date().toISOString()
+        if (localNodeId) this.localNodeId = localNodeId
         const byId = new Map(this.snapshot.nodes.map(node => [node.id, node]))
 
         for (const mesh of meshNodes) {
             const existing = byId.get(mesh.node_id)
-            const runtimes = [...(existing?.runtimes || [])]
+            // A heartbeat that lists ai_services is the node's complete current
+            // advertisement: heartbeat-sourced runtimes it no longer lists are
+            // dropped instead of kept forever (probe evidence stays).
+            const advertised = mesh.software?.ai_services
+            const runtimes = (existing?.runtimes || []).filter(runtime =>
+                !Array.isArray(advertised) || runtime.verificationSource !== 'mesh-heartbeat')
             for (const service of mesh.software?.ai_services || []) {
                 const id = `${mesh.node_id}:${service.name}:${service.endpoint}`
                 const runtime: CapabilityRuntime = {
@@ -486,6 +494,9 @@ export class CapabilityGraph {
         const nodes = new Map(this.snapshot.nodes.map(node => [node.id, node]))
         for (const incoming of remote.nodes) {
             if (!incoming?.id || !Array.isArray(incoming.runtimes)) continue
+            // Peers relay our own node back to us from their copy of our old
+            // snapshots; accepting it would refresh runtimes we no longer have.
+            if (this.localNodeId && incoming.id === this.localNodeId) continue
             const existing = nodes.get(incoming.id)
             const merged = existing ? mergeNodeEvidence(existing, incoming) : incoming
             nodes.set(incoming.id, {
