@@ -1,4 +1,5 @@
 import { toolProvidesActionEvidence } from './action-intent.js'
+import { FENCE_EXEMPT_READ_ONLY_TOOLS } from '../mesh/fence.js'
 
 export type ActionPhase = 'discover' | 'resolve' | 'execute' | 'verify' | 'learn' | 'awaiting_approval' | 'failed'
 
@@ -12,6 +13,14 @@ export interface ActionLifecycleSnapshot {
 
 const DISCOVERY = new Set(['nova_capabilities', 'find_capability', 'load_skill_pack', 'list_custom_tools'])
 const RESOLUTION = new Set(['resolve_capability', 'build_skill', 'create_skill', 'load_skills'])
+
+/** A failed read-only lookup is data for the model, not a reason to stop the
+ * run. Live 01.10.2026 load_skill_pack("system") (no such pack) stopped a
+ * screenshot request before desktop_screenshot was ever called. Effects and
+ * unknown tools still stop. */
+export function readOnlyFailureContinues(toolName: string): boolean {
+    return DISCOVERY.has(toolName) || FENCE_EXEMPT_READ_ONLY_TOOLS.has(toolName)
+}
 
 export class ActionLifecycle {
     private snapshot: ActionLifecycleSnapshot = {

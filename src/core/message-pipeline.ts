@@ -1903,12 +1903,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
         }
 
-        // Deterministic fallback for screenshots. Some providers repeatedly
-        // acknowledge the request without emitting a structured tool call.
-        // Execute the known local tool directly instead of asking the model a
-        // third time or returning another promise without an action.
+        // Deterministic fallback for screenshots. Some providers acknowledge
+        // the request without a tool call, others wander into introspection
+        // and stop there (live 01.10.2026). Whatever else ran: without a
+        // delivered picture or a successful capture, execute the known local
+        // tool through the same authorization boundary.
         const preGateIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
-        if (!isSystemMessage && !(result as any).actionState && preGateIntent.kind === 'screenshot' && !screenshotDelivered && (result.toolsExecuted || []).length === 0) {
+        const { shouldRunScreenshotFallback, applyScreenshotFallback } = await import('./screenshot-delivery.js')
+        if (shouldRunScreenshotFallback({ isSystemMessage, intentKind: preGateIntent.kind, screenshotDelivered, result: result as any })) {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 const captured = await runAuthorizedScreenshotFallback({
@@ -1919,13 +1921,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 if (captured) {
                     const imgPath = captured.path
                     screenshotDelivered = true
-                    ;(result as any).screenshotPath = imgPath
-                    ;(result as any).toolsExecuted = ['desktop_screenshot']
-                    ;(result as any).toolExecutions = [{
-                        tool: 'desktop_screenshot',
-                        success: true,
-                        result: { path: imgPath, size: captured.size },
-                    }]
+                    // Keeps earlier tool evidence and marks a kernel actionState
+                    // fulfilled, so the evidence gate below keeps this text.
+                    applyScreenshotFallback(result as any, captured)
                     const currentTime = new Date().toLocaleTimeString('de-DE', {
                         hour: '2-digit',
                         minute: '2-digit',

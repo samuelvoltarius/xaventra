@@ -564,7 +564,13 @@ export const loadSkillPackTool = {
             return `📦 Verfügbare Skill-Packs:\n\n${getSkillPacksSummary()}\n\nNutze \`load_skill_pack\` mit dem Pack-Namen für die Katalogauskunft. Der laufende Tool-Vertrag bleibt unverändert.`
         }
         const result = loadSkillPack(name)
-        if (result.error) return result.error
+        // An unknown pack is a catalog answer, not a tool failure: live
+        // 01.10.2026 load_skill_pack("system") was scored as failed and
+        // stopped a screenshot request before the capture.
+        if (result.error) return {
+            success: true, found: false,
+            output: `Kein Skill-Pack "${name}" im Katalog. Verfügbare Packs:\n${SKILL_PACKS.map(p => `• ${p.name}: ${p.description}`).join('\n')}\n\nDer laufende Tool-Vertrag bleibt unverändert; nutze die Tools aus deiner aktuellen Aufrufliste.`,
+        }
         return `✅ Skill-Pack "${result.name}" gefunden.\n\nTools im Katalog:\n${result.tools.map(t => `• ${t}`).join('\n')}\n\nNutze nur Tools aus der aktuellen Aufrufliste. Der laufende Tool-Vertrag und alle Berechtigungen bleiben unverändert. Dies ist eine Katalogauskunft, keine Ausführung oder abgeschlossene Aufgabe.`
     },
 }

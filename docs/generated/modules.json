@@ -98,6 +98,7 @@
       "imports": [
         "../auth/codex-installer.js",
         "../core/action-intent.js",
+        "../core/action-lifecycle.js",
         "../core/context-policy.js",
         "../core/execution-control.js",
         "../core/execution-kernel.js",
@@ -1214,6 +1215,7 @@
     {
       "module": "src/core/action-lifecycle.ts",
       "imports": [
+        "../mesh/fence.js",
         "./action-intent.js"
       ]
     },

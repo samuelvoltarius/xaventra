@@ -6,6 +6,7 @@
 
 import { getToolRegistry } from '../tools/complete-registry.js'
 import { ToolAuthorizationError } from './tool-authorization.js'
+import { readOnlyFailureContinues } from '../core/action-lifecycle.js'
 import { getLoopDetector } from '../tools/loop-detection.js'
 import { getTraceRecorder } from '../learning/trace.js'
 import { getPluginManager } from '../plugins/plugin-sdk.js'
@@ -1303,7 +1304,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         if (!verifiedSuccess && verification.reason) {
                             if (!recoveredSuccess) resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
                         }
-                        if (!verifiedSuccess && !recoveredSuccess) hasToolErrors = true
+                        // A failed read-only lookup goes back to the model as data;
+                        // only effects and unknown tools stop the governed run.
+                        if (!verifiedSuccess && !recoveredSuccess && !readOnlyFailureContinues(call.name)) hasToolErrors = true
                         const effectiveSuccess = verifiedSuccess || recoveredSuccess
                         if (!effectiveSuccess && !policyBlocked) {
                             failureObservations.push({
@@ -1490,7 +1493,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             console.warn(`[Xaventra Agent] Typed tool recovery stopped safely: ${String(recoveryError)}`)
                         }
                         console.error(`[Nova Agent] Tool error (${call.name}): ${err}`)
-                        hasToolErrors = true
+                        if (!readOnlyFailureContinues(call.name)) hasToolErrors = true
                         toolExecutions.push({
                             callId,
                             toolName: call.name,
