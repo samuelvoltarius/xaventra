@@ -1764,8 +1764,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Auto-Send Screenshots to User
         // If tool execution produced a screenshot, send it directly in chat
         // ============================================
-        let screenshotDelivered = false
-        if ((result as any).screenshotPath && channel.toLowerCase() === 'telegram') {
+        // Live 30.09.2026 every screenshot arrived twice: desktop_screenshot had
+        // already sent it and this block sent the same file again.
+        const { pendingScreenshot } = await import('./screenshot-delivery.js')
+        let screenshotDelivered = (result as any).screenshotDelivered === true
+        if (pendingScreenshot(result as any) && channel.toLowerCase() === 'telegram') {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 if (tg?.sendPhoto) {

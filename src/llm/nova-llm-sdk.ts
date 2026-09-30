@@ -1333,6 +1333,29 @@ function isCloudResolution(resolved: { provider?: string; endpoint?: string }): 
     return !!resolved.endpoint && !isLocalEndpoint(resolved.endpoint)
 }
 
+/**
+ * OpenAI-compatible servers (vLLM) only read images as content parts. Before
+ * 30.09.2026 local images went out as Ollama-style `images` to every local
+ * server (vLLM ignored them) and were dropped entirely for Ollama, so Nova
+ * never saw a screenshot although the Spark model reads images correctly.
+ */
+export function toOpenAIImageParts(messages: any[]): any[] {
+    return messages.map(message => {
+        const { __images, ...rest } = message
+        if (!Array.isArray(__images) || __images.length === 0) return rest
+        return {
+            ...rest,
+            content: [
+                { type: 'text', text: typeof rest.content === 'string' ? rest.content : '' },
+                ...__images.map((image: any) => {
+                    const mimeType = typeof image.mimeType === 'string' && /^image\/[a-z0-9.+-]+$/i.test(image.mimeType) ? image.mimeType : 'image/png'
+                    return { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image.data}` } }
+                }),
+            ],
+        }
+    })
+}
+
 class LocalLLMProvider extends LLMProvider {
     private baseUrl: string
     private model: string
@@ -1387,9 +1410,10 @@ class LocalLLMProvider extends LLMProvider {
                 msg.tool_call_id = m.toolCallId || 'call_unknown'
             }
 
-            // Ollama multimodal images
+            // Images travel as an internal list and get the backend's format at
+            // the end: Ollama `images`, OpenAI/vLLM `image_url` content parts.
             if ((m as any).image?.data) {
-                msg.images = [(m as any).image.data]
+                msg.__images = [{ data: (m as any).image.data, mimeType: (m as any).image.mimeType }]
             }
             return msg
         })
@@ -1404,7 +1428,8 @@ class LocalLLMProvider extends LLMProvider {
             const prev = deduped[deduped.length - 1]
             if (prev && prev.role === msg.role && msg.role === 'user') {
                 prev.content = prev.content + '\n' + msg.content
-            } else if (msg.content || msg.tool_calls || msg.role === 'tool') {
+                if (msg.__images) prev.__images = [...(prev.__images || []), ...msg.__images]
+            } else if (msg.content || msg.tool_calls || msg.role === 'tool' || msg.__images) {
                 deduped.push(msg)
             }
         }
@@ -1422,11 +1447,11 @@ class LocalLLMProvider extends LLMProvider {
                 if (m.role === 'assistant' && m.tool_calls) {
                     return { role: 'assistant', content: m.content || JSON.stringify(m.tool_calls) }
                 }
-                return { role: m.role, content: m.content || '' }
+                return { role: m.role, content: m.content || '', ...(m.__images ? { images: m.__images.map((image: any) => image.data) } : {}) }
             })
         }
 
-        return chatMessages
+        return toOpenAIImageParts(chatMessages)
     }
 
     async complete(
