@@ -78,6 +78,21 @@ const COMMAND_MINIMUM_ROLE: Readonly<Record<string, CommandRole>> = Object.freez
     users: 'admin', user: 'admin',
 })
 
+/** /knoten: own profile plus every mesh peer's signed profile (Stufe 1, S1.4). */
+export async function formatAllNodeProfiles(now = Date.now()): Promise<string> {
+    const { collectNodeProfile, formatNodeOverview } = await import('./node-profile.js')
+    const { getMeshPeerStates } = await import('../mesh/mesh-transport-runtime.js')
+    const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
+    const localId = getLocalNodeId()
+    const local = await collectNodeProfile()
+    const peers = Object.values(getMeshPeerStates())
+        .filter(peer => peer.nodeId && peer.nodeId !== localId)
+        .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+        // Staleness from the 30 s heartbeat; the profile itself is only sent on change.
+        .map(peer => ({ nodeId: peer.nodeId, profile: peer.profile || null, lastSeen: peer.lastSeen }))
+    return formatNodeOverview([{ nodeId: localId, profile: { ...local, nodeId: localId }, local: true }, ...peers], now)
+}
+
 export function getCommandMinimumRole(cmd: string): CommandRole {
     const key = String(cmd || '').trim().toLowerCase()
     return Object.prototype.hasOwnProperty.call(COMMAND_MINIMUM_ROLE, key) ? COMMAND_MINIMUM_ROLE[key] : 'owner'
@@ -3553,6 +3568,11 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         // ─────────────────────────────────────────────────────────────────
         // SELF-SETUP  /setup [plan|apply <id>|status]
         // ─────────────────────────────────────────────────────────────────
+        case 'knoten':
+        case 'nodes': {
+            return formatAllNodeProfiles()
+        }
+
         case 'setup': {
             const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'
             const rest2 = args.trim().split(/\s+/).slice(1)
@@ -3562,6 +3582,9 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     const { formatSelfSetupStatus } = await import('../core/self-setup-orchestrator.js')
                     return formatSelfSetupStatus()
                 }
+                case 'knoten':
+                case 'all':
+                    return formatAllNodeProfiles()
                 case 'plan': {
                     const { runSelfSetupScan, formatSelfSetupPlan } = await import('../core/self-setup-orchestrator.js')
                     const st = await runSelfSetupScan()

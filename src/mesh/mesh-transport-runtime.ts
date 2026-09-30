@@ -18,6 +18,7 @@ import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
 import { checkDelegatedFence } from './fence-highwater.js'
+import { sanitizeNodeProfile, type NodeProfile } from '../core/node-profile.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -67,6 +68,8 @@ export function rememberBounded<K, V>(map: Map<K, V>, key: K, value: V, max: num
 interface PeerState {
     nodeId: string; lastSeen: number; status?: string; uptimeMs?: number
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
+    /** Kept separately: capability-graph snapshots reuse node.capabilities without a profile. */
+    profile?: NodeProfile; profileSeen?: number
 }
 const peerStatePath = join(getNovaDataDir(), 'mesh-peer-state.json')
 let peerStates: Record<string, PeerState> = (() => {
@@ -279,6 +282,17 @@ export async function waitForMeshRunResult(requestId: string, timeoutMs = 10_000
 export function getMeshRunResult(requestId: string): ResultPayload | undefined { return results.get(requestId) }
 export function getMeshPeerStates(): Readonly<Record<string, PeerState>> { return Object.freeze({ ...peerStates }) }
 
+/** node.capabilities → peer state. The Knotenprofil is bounded, bound to the
+ * authenticated source node, and kept when a message carries none (profiles
+ * are only sent on start/change; graph snapshots never carry one). */
+export function peerStateWithCapabilities(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
+    const profile = sanitizeNodeProfile((payload as { profile?: unknown } | null)?.profile)
+    return {
+        ...previous, nodeId: sourceNode, lastSeen: now, capabilities: payload, publicKeyFingerprint,
+        ...(profile ? { profile: { ...profile, nodeId: sourceNode }, profileSeen: now } : {}),
+    }
+}
+
 export async function publishMeshCheckpoint(targetNode: string, runId: string, payload: Record<string, unknown>, fence?: any): Promise<MeshAck> {
     const transport = router || initMeshTransportRuntime()
     const envelope = transport.create('run.checkpoint', targetNode, payload, { runId, fence, ttlMs: 24 * 60 * 60_000 })
@@ -291,6 +305,7 @@ export async function publishMeshEvidence(targetNode: string, runId: string, pay
     return transport.send(targetNode, envelope)
 }
 
+let lastPublishedProfile: { fingerprint: string; sentAt: number } | null = null
 export function startMeshDataPlane(intervalMs = 30_000): void {
     if (heartbeatTimer) return
     const publish = async () => {
@@ -314,6 +329,15 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
                 verifiedAt,
             })),
         }
+        try {
+            const { collectNodeProfile, profileFingerprint, shouldPublishProfile } = await import('../core/node-profile.js')
+            const profile = await collectNodeProfile()
+            const fingerprint = profileFingerprint(profile)
+            if (shouldPublishProfile(fingerprint, lastPublishedProfile, Date.now())) {
+                capabilityPayload.profile = profile as unknown as Record<string, unknown>
+                lastPublishedProfile = { fingerprint, sentAt: Date.now() }
+            }
+        } catch { /* profile is optional; capabilities still publish */ }
         const capability = transport.create('node.capabilities', '*', capabilityPayload)
         await transport.broadcast(capability)
         try {
@@ -400,7 +424,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 tombstones: [],
             }, envelope.sourceNode)
         }
-        peerStates[envelope.sourceNode] = { ...peerStates[envelope.sourceNode], nodeId: envelope.sourceNode, lastSeen: Date.now(), capabilities: payload, publicKeyFingerprint: MeshIdentity.fingerprint(envelope.publicKey) }
+        peerStates[envelope.sourceNode] = peerStateWithCapabilities(peerStates[envelope.sourceNode], envelope.sourceNode, payload, MeshIdentity.fingerprint(envelope.publicKey))
         persistPeerStates()
         return
     }

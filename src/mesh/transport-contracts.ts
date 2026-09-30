@@ -101,6 +101,8 @@ export interface CapabilityPayload {
     hardware?: Record<string, unknown>
     runtimes: Array<{ name?: string; type: string; endpoint?: string; models?: string[]; capabilities?: string[]; status: string; verifiedAt: string }>
     capabilities: string[]
+    /** Knotenprofil incl. local self-check (src/core/node-profile.ts), bounded by the receiver. */
+    profile?: Record<string, unknown>
 }
 
 export interface ToolInventoryPayload {
