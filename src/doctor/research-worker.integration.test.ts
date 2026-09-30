@@ -46,7 +46,10 @@ describe('Doctor investigation through the actual native execution pipeline', ()
         } finally { registry.register(original) }
     }, 30_000)
 
-    it('persists unknown failure escalation without asking the model to select build_skill', async () => {
+    // One helper, two paths: a normal run still escalates an unknown tool
+    // failure into one Doctor case; a Doctor diagnosis itself must not (live
+    // 30.09.2026 its own budget failures produced 175 cases about the Doctor).
+    async function unknownFailureRun(run: (llm: any, contract: TaskContract) => Promise<{ output: string }>) {
         const registry = getToolRegistry()
         const originalHealth = registry.get('health_status')!
         const originalBuildSkill = registry.get('build_skill')!
@@ -54,7 +57,7 @@ describe('Doctor investigation through the actual native execution pipeline', ()
         const buildSkillHandler = vi.fn(async () => ({ success: true, output: 'must never execute' }))
         registry.register({ ...originalHealth, handler: healthHandler })
         registry.register({ ...originalBuildSkill, handler: buildSkillHandler })
-        const root = join(process.cwd(), '.nova-data', 'typed-failure-escalation-native')
+        const root = join(process.cwd(), '.nova-data', `typed-failure-escalation-native-${process.pid}-${Math.random().toString(16).slice(2)}`)
         const previousDoctor = getFailureResearchCoordinator()
         const previousStore = getToolFailureEscalationStore()
         const previousContinuity = getSessionContinuityStore()
@@ -65,7 +68,7 @@ describe('Doctor investigation through the actual native execution pipeline', ()
         setToolFailureEscalationStore(store)
         setSessionContinuityStore(continuity)
         const contract: TaskContract = {
-            id: 'doctor-typed-unknown-escalation', version: 1, goal: 'Collect current health evidence', createdAt: new Date().toISOString(),
+            id: `doctor-typed-unknown-escalation-${Math.random().toString(16).slice(2)}`, version: 1, goal: 'Collect current health evidence', createdAt: new Date().toISOString(),
             expectedArtifacts: [], requiredTests: [],
             successCriteria: [{ id: 'evidence', kind: 'verified_tool', required: true, description: 'Verified health evidence' }],
             allowedChanges: { readOnly: true, allowedPaths: [], allowedTools: ['health_status'], externalSideEffects: false },
@@ -76,17 +79,12 @@ describe('Doctor investigation through the actual native execution pipeline', ()
             usage: { promptTokens: 20, completionTokens: 5, totalTokens: 25 },
         }))
         try {
-            await withOutcomeLedger(new OutcomeLedger(join(root, 'ledger')), async () => {
-                const result = await createResearchWorker(() => true, { modelId: 'scripted-fixture', complete })
-                    .execute({ contract, content: contract.goal, caseId: 'unknown-escalation', signal: new AbortController().signal, purpose: 'research' })
-                expect(result.output).toContain('Doctor-Diagnose')
+            return await withOutcomeLedger(new OutcomeLedger(join(root, 'ledger')), async () => {
+                const result = await run({ modelId: 'scripted-fixture', complete }, contract)
                 expect(complete).toHaveBeenCalledTimes(1)
                 expect(healthHandler).toHaveBeenCalledTimes(1)
                 expect(buildSkillHandler).not.toHaveBeenCalled()
-                expect(store.list()).toHaveLength(1)
-                expect(store.list()[0]).toMatchObject({ classification: 'unknown', state: 'doctor-queued' })
-                expect(doctor.list()).toHaveLength(1)
-                expect(new ToolFailureEscalationStore(join(root, 'escalations.json')).list()).toHaveLength(1)
+                return { result, store, doctor, root }
             })
         } finally {
             registry.register(originalHealth)
@@ -95,6 +93,27 @@ describe('Doctor investigation through the actual native execution pipeline', ()
             setToolFailureEscalationStore(previousStore)
             setSessionContinuityStore(previousContinuity)
         }
+    }
+
+    it('a normal run persists unknown failure escalation without asking the model to select build_skill', async () => {
+        const { runNovaAgent } = await import('../agents/nova-runner.js')
+        const { result, store, doctor, root } = await unknownFailureRun((llm, contract) => runNovaAgent({
+            userId: 'Nova-Autonomy', authUserId: 'Nova-Autonomy', channel: 'internal', conversationId: 'doctor:unknown-escalation',
+            content: contract.goal, contract, llm, tools: [{ name: 'health_status' }], abortSignal: new AbortController().signal,
+        }).then(value => ({ output: value.content || '' })))
+        expect(result.output).toContain('Doctor-Diagnose')
+        expect(store.list()).toHaveLength(1)
+        expect(store.list()[0]).toMatchObject({ classification: 'unknown', state: 'doctor-queued' })
+        expect(doctor.list()).toHaveLength(1)
+        expect(new ToolFailureEscalationStore(join(root, 'escalations.json')).list()).toHaveLength(1)
+    }, 30_000)
+
+    it('a Doctor diagnosis never escalates its own tool failure into a new Doctor case', async () => {
+        const { result, store, doctor } = await unknownFailureRun((llm, contract) => createResearchWorker(() => true, llm)
+            .execute({ contract, content: contract.goal, caseId: 'unknown-escalation', signal: new AbortController().signal, purpose: 'research' }))
+        expect(result.output).not.toContain('Doctor-Diagnose vorgemerkt')
+        expect(store.list()).toHaveLength(0)
+        expect(doctor.list()).toHaveLength(0)
     }, 30_000)
 
     it('cannot read a file outside the exact candidate profile through the native tool executor', async () => {

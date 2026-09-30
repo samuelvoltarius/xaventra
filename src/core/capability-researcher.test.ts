@@ -32,15 +32,12 @@ describe('capability researcher shell safety (K2)', () => {
         expect(res.recommended.installCommand).not.toContain('unknowncap')
     })
 
-    it('quotes the remote install command so the local shell cannot expand it', () => {
-        const action = researchResultToSetupAction(result())
-        expect(action.type).toBe('remote_shell')
-        expect(action.command).toBe(`ssh -- remote.example 'echo $(id) \`id\` "quoted" '\\''single'\\'''`)
-    })
-
-    it('refuses remote commands for option-like or malformed hosts', () => {
-        for (const nodeHost of ['-oProxyCommand=touch /tmp/p', 'host;id', 'host name', '$(id)']) {
-            expect(researchResultToSetupAction(result({ nodeHost })).command, nodeHost).toBeUndefined()
+    it('never turns a researched install command into an executable action (Stufe 1)', () => {
+        for (const overrides of [{}, { nodeName: 'localhost', nodeHost: 'localhost' }, { nodeHost: '-oProxyCommand=touch /tmp/p' }, { nodeHost: 'host;id' }]) {
+            const action = researchResultToSetupAction(result(overrides))
+            expect(action.command, JSON.stringify(overrides)).toBeUndefined()
+            // The recommendation stays visible as text for the owner.
+            expect(action.research?.installMethod).toBe(result().recommended.installCommand)
         }
     })
 

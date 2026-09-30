@@ -126,6 +126,11 @@ export interface AgentRunParams {
     /** Bot-level monotonic tool deny list. */
     deniedTools?: string[]
     botId?: string
+    /** Read-only self-diagnosis (Doctor). No background learning, no new
+     * Doctor case from its own tool failures, turn budget from the contract.
+     * Live 30.09.2026: learning wrote 1010 of 1012 memory records, own budget
+     * failures became new cases, and a fixed 4-turn limit cut every run. */
+    diagnostic?: boolean
 }
 
 export interface AgentResponse {
@@ -185,10 +190,21 @@ function menschenlesbar(ergebnisse: string[], _auftrag: string): string {
     return incompleteToolResponse(ergebnisse)
 }
 
+/** SDK turns for one run. Even the old unlimited setting stays bounded by SDK
+ * turns and the kernel inference/time budget. A diagnosis may use the tool
+ * calls its contract grants (live 30.09.2026 a fixed 4-turn limit cut every
+ * Doctor run short of its 6 granted calls); the Kernel still enforces that
+ * budget per call. */
+export function sdkTurnLimit(configuredRounds: number, diagnosticContract?: Pick<TaskContract, 'budget'>): number {
+    const roundTurns = Number.isFinite(configuredRounds) && configuredRounds > 0 ? Math.floor(configuredRounds) + 1 : 51
+    return diagnosticContract ? Math.max(roundTurns, diagnosticContract.budget.maxToolCalls + 1) : roundTurns
+}
+
 export async function runNovaAgent(params: AgentRunParams): Promise<AgentResponse> {
     const { userId, authUserId = userId, channel, content, image, systemPrompt, llm, tools, memory, onStepUpdate, abortSignal, contract, workspaceId, conversationId, modelOverride, preferredNodeIds = [], deniedTools = [], botId } = params
     const isBenchmarkRun = channel === 'benchmark'
-    const backgroundLearningEnabled = !isBenchmarkRun && !sideEffectsDisabled()
+    const isDiagnosticRun = params.diagnostic === true
+    const backgroundLearningEnabled = !isBenchmarkRun && !isDiagnosticRun && !sideEffectsDisabled()
     const isInternalRequest = isNovaSystemAuthored({ from: authUserId, canonicalUser: userId, content })
     const scope = { conversationId, botId }
     const session = getSession(userId, channel, scope)
@@ -1521,6 +1537,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // ============================================
                 if (policyBlocked) {
                     finalContent = awaitingPolicyApproval ? 'Diese Aktion wartet auf Freigabe. Es wurde keine Ersatzaktion gestartet.' : 'Diese Aktion wurde durch die Richtlinie gesperrt. Es wurde keine Ersatzaktion gestartet.'
+                } else if (hasToolErrors && failureObservations.length > 0 && isDiagnosticRun) {
+                    // A failing diagnosis is reported by its own case; escalating
+                    // it again would create a Doctor case about the Doctor.
+                    incompleteSynthesis = true
+                    finalContent = menschenlesbar(toolResults, content)
                 } else if (hasToolErrors && failureObservations.length > 0) {
                     // A failed tool result is evidence, never a prompt that may
                     // choose commands, permissions or build_skill. Persist one
@@ -1544,10 +1565,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             try {
                 const { runGovernedSdkLoop } = await import('./governed-sdk-loop.js')
                 const configuredRounds = Number(process.env.NOVA_MAX_TOOL_ROUNDS ?? (process.env.NOVA_OS_MODE === 'true' ? 50 : 3))
-                // Even the old unlimited setting remains bounded by SDK turns
-                // and the kernel inference/time budget.
-                const maxTurns = Number.isFinite(configuredRounds) && configuredRounds > 0
-                    ? Math.floor(configuredRounds) + 1 : 51
+                const maxTurns = sdkTurnLimit(configuredRounds, isDiagnosticRun ? contract : undefined)
                 finalContent = await runGovernedSdkLoop({
                     messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
                     maxTurns, signal: abortSignal, execute: executeSdkTool,

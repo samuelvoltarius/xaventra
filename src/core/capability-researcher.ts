@@ -58,8 +58,6 @@ export interface ResearchOptions {
 // ============================================
 
 const CAPABILITY_NAME = /^[a-z0-9_-]{1,40}$/
-// Plain host names / IPv4 / user@host. No leading '-', no shell metacharacters.
-const SAFE_SSH_HOST = /^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/
 
 export function isValidCapabilityName(capability: unknown): capability is string {
     return typeof capability === 'string' && CAPABILITY_NAME.test(capability)
@@ -67,11 +65,6 @@ export function isValidCapabilityName(capability: unknown): capability is string
 
 function assertValidCapabilityName(capability: unknown): asserts capability is string {
     if (!isValidCapabilityName(capability)) throw new Error('Invalid capability name (allowed: ^[a-z0-9_-]{1,40}$)')
-}
-
-/** POSIX single-quote a string for a shell word: nothing inside is expanded. */
-function shellSingleQuote(value: string): string {
-    return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 // ============================================
@@ -559,14 +552,11 @@ export function researchResultToSetupAction(res: CapabilityResearchResult): Setu
         title: `${res.capability} installieren: ${res.recommended.name}${versionLabel}`,
         reason: res.recommended.rationale,
         risk: 'medium',
-        // Remote: the install command is one single-quoted argument for ssh,
-        // so the local shell never expands $(), backticks or quotes in it.
-        // Option-like or malformed hosts are refused (no command).
-        command: isLocal
-            ? res.recommended.installCommand
-            : res.nodeHost && SAFE_SSH_HOST.test(res.nodeHost)
-                ? `ssh -- ${res.nodeHost} ${shellSingleQuote(res.recommended.installCommand)}`
-                : undefined,
+        // Stufe 1 (30.09.2026): a command found by web research is model
+        // output. It is shown as text (research.installMethod) and is never
+        // executable, not even with the owner token. Installation belongs to
+        // a signed catalog, not to whatever the research proposes.
+        command: undefined,
         // Full research metadata — shown in /setup plan, never affects execution
         research: {
             name: res.recommended.name,

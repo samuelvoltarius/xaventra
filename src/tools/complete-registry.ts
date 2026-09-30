@@ -59,6 +59,7 @@ export function getFileToolWorkspaceRoot(): string {
 }
 
 const IS_WINDOWS = process.platform === 'win32'
+export const AUTO_PROVISION_DISABLED = 'Auto-Provisioning ist abgeschaltet und installiert nichts. Nutze self_setup_plan fuer einen belegten Vorschlag; installieren kann nur der Owner mit /setup apply.'
 
 function comparablePath(path: string): string {
     const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -1384,28 +1385,14 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'auto_provision',
-        description: 'Legacy: installiert fehlende Capability nur mit confirm="AUTO_PROVISION:<capability>" oder YOLO-Modus. Sonst self_setup_plan nutzen.',
+        description: 'Abgeschaltet: installiert nichts. Fuer fehlende Faehigkeiten self_setup_plan nutzen; installieren nur der Owner per /setup apply.',
         category: 'system',
         parameters: [
-            { name: 'capability', type: 'string', description: 'Was installiert werden soll: vision, tts, stt, llm, embedding', required: true },
-            { name: 'confirm', type: 'string', description: 'Freigabe: AUTO_PROVISION:<capability>', required: false },
+            { name: 'capability', type: 'string', description: 'Gewuenschte Capability (nur fuer den Hinweis)', required: false },
         ],
-        handler: async (params) => {
-            const capability = String(params.capability)
-            let cfg: any = {}
-            try {
-                const { readFileSync } = await import('node:fs')
-                const { join } = await import('node:path')
-                cfg = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
-            } catch { cfg = {} }
-            const yolo = process.env.NOVA_SELF_SETUP_YOLO === '1' || process.env.NOVA_YOLO === '1' || cfg.selfSetup?.mode === 'yolo' || cfg.selfSetup?.yolo === true
-            if (!yolo && params.confirm !== `AUTO_PROVISION:${capability}`) {
-                return `Auto-Provisioning ist gesperrt. Nutze self_setup_plan oder bestaetige mit confirm="AUTO_PROVISION:${capability}".`
-            }
-            const { autoProvision } = await import('../mesh/capability-orchestrator.js')
-            const result = await autoProvision(capability)
-            return result.message
-        },
+        // A confirm string the model can compose itself is no approval, and
+        // YOLO must not reopen a shell path (Stufe 1, 30.09.2026).
+        handler: async () => AUTO_PROVISION_DISABLED,
     },
     {
         name: 'find_capability',

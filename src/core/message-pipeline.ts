@@ -897,7 +897,7 @@ async function handleMessageInScope(
         const { isExplicitSelfSetupRequest } = await import('./self-setup-orchestrator.js')
         const missing = isExplicitSelfSetupRequest(content) ? getMissingCapabilities() : []
         if (missing.length > 0) {
-            systemPrompt += `\n\nExplizit angefragte, derzeit nicht verifizierte Capabilities: ${missing.join(', ')}. Nutze self_setup_plan für einen belegten Plan; behaupte niemals weitere fehlende Fähigkeiten. auto_provision braucht explizite Freigabe oder YOLO-Modus.`
+            systemPrompt += `\n\nExplizit angefragte, derzeit nicht verifizierte Capabilities: ${missing.join(', ')}. Nutze self_setup_plan für einen belegten Plan; behaupte niemals weitere fehlende Fähigkeiten. auto_provision ist abgeschaltet; installieren kann nur der Owner mit /setup apply.`
         }
     } catch (err) { console.debug('[Pipeline] capabilities not available:', err) }
 

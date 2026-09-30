@@ -236,9 +236,10 @@ describe('SelfSetupOrchestrator', () => {
 
         const action = researchResultToSetupAction(result)
         expect(action.type).toBe('remote_shell')
-        // K2: the host is now separated from ssh options by `--` and the
-        // install command is passed as one single-quoted word.
-        expect(action.command).toContain("ssh -- xaventra@100.64.0.24 '")
+        expect(action.target).toBe('MacMini')
+        // Stufe 1: researched commands are text only, never executable.
+        expect(action.command).toBeUndefined()
+        expect(action.research?.installMethod).toBeTruthy()
     })
 
     it('persists single-capability research actions into setup state', async () => {

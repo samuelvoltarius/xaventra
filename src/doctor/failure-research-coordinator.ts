@@ -44,6 +44,18 @@ export const RESEARCH_TOOLS = Object.freeze([
     'nova_trace_stats', 'find_capability',
 ])
 
+/** Identity of an observation for re-investigation. Live 30.09.2026 the case
+ * "Success rate is 7.0% across 748 traces" was investigated 35 times, twice
+ * verified, because every new count reset it. Numbers, times and ids are the
+ * measurement, not a new kind of fault; the text around them decides. */
+export function observationFingerprint(finding: Pick<DoctorFinding, 'title' | 'detail' | 'source' | 'category'>): string {
+    const shape = (value: string) => String(value || '')
+        .replace(/[0-9a-f]{12,}/gi, '<id>')
+        .replace(/\d+(?:[.,:]\d+)*/g, '<n>')
+        .replace(/\s+/g, ' ').trim()
+    return createHash('sha256').update(JSON.stringify([shape(finding.title), shape(finding.detail), finding.source, finding.category])).digest('hex')
+}
+
 export class FailureResearchCoordinator {
     private cases: FailureResearchCase[] = []
     private processing = false
@@ -53,7 +65,7 @@ export class FailureResearchCoordinator {
 
     ingest(finding: DoctorFinding): FailureResearchCase {
         const id = createHash('sha256').update(finding.id).digest('hex').slice(0, 24)
-        const observationHash = createHash('sha256').update(JSON.stringify([finding.title, finding.detail, finding.source, finding.category])).digest('hex')
+        const observationHash = observationFingerprint(finding)
         let item = this.cases.find(value => value.id === id)
         if (!item) {
             item = {
