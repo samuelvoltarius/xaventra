@@ -22,6 +22,9 @@ describe('Codex only for the owner', () => {
     })
 
     it('the adapter refuses before spawning anything for a guest', async () => {
+        // CI runners have no Codex CLI; any existing file lets the adapter be
+        // constructed. The refusal must happen before it is ever spawned.
+        process.env.NOVA_CODEX_BIN = process.execPath
         await runWithLlmPrincipal(async () => {
             setLlmPrincipalPermission('guest')
             const adapter = new CodexCLIAdapter('gpt-test')

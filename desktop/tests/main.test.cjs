@@ -76,6 +76,18 @@ test('Linux plaintext fallback cannot be used to store a credential', t => {
   assert.equal(JSON.parse(readFileSync(join(root, 'connection.json'), 'utf8')).encryptedToken, undefined)
 })
 
+test('an environment token authenticates without touching the OS keychain', async t => {
+  const { handlers, context, evaluate } = harness(t)
+  context.process.env.XAVENTRA_DESKTOP_API_TOKEN = 'synthetic-env-token'
+  context.require('electron').safeStorage.isEncryptionAvailable = () => { throw new Error('Keychain interaction must be explicit') }
+  const seen = []
+  context.endpointRequest = async request => { seen.push(request.headers.Authorization); return { status: 200, text: '{}' } }
+  evaluate('sendHttpRequest = endpointRequest')
+  handlers.get('nova:config:get')()
+  await handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' })
+  assert.deepEqual(seen, ['Bearer synthetic-env-token'])
+})
+
 test('bootstrap has a bounded retry budget while chat keeps its configured deadline', async t => {
   const { handlers, context, evaluate } = harness(t)
   const deadlines = []

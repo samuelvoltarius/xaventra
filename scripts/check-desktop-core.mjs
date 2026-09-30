@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createWriteStream, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -18,6 +19,12 @@ Object.assign(env, { HOME: root, USERPROFILE: root, APPDATA: join(root, 'appdata
   NODE_ENV: 'test', NOVA_TEST_MODE: '1', NOVA_NO_SIDE_EFFECTS: '1', NOVA_SKIP_MODEL_RESOLVER_INIT: '1', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled',
   NOVA_NODE_ID: 'desktop-core-fixture', NOVA_DESKTOP_OWNER_ID: 'desktop-core-test', NOVA_AUTO_START_OLLAMA: '0', NOVA_OTEL_ENABLED: 'false', OTEL_SDK_DISABLED: 'true',
   NOVA_AGENT_TIMEOUT_MS: '20000', NOVA_MAX_TOOL_ROUNDS: '3' })
+// TOK-1: only a token holder is the Desktop owner. Core and packaged client
+// share one disposable token; the client reads it from its environment
+// because CI runners have no OS keychain.
+const desktopToken = randomBytes(24).toString('hex')
+env.NOVA_DESKTOP_API_TOKEN = desktopToken
+env.XAVENTRA_DESKTOP_API_TOKEN = desktopToken
 if (fullDaemon) {
   env.NOVA_NODE_ONLY = 'false'
   for (const key of ['XAVENTRA_ACCEPTANCE_BASE_URL', 'XAVENTRA_ACCEPTANCE_MODEL']) if (process.env[key]) env[key] = process.env[key]
@@ -60,8 +67,11 @@ const stopDaemon = async () => {
   assert.equal(code, 0, 'Authenticated, instance-scoped daemon shutdown failed')
   assert.equal(child.exitCode, 0); assert.equal(child.signalCode, null)
 }
+// Requests as another principal carry no owner token, so they must be refused
+// outright; only the token holder acts as the Desktop owner.
 const api = async (path, options = {}, principal = info.principal) => {
-  const response = await fetch(`${info.endpoint}/api/desktop${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-nova-principal': principal, ...options.headers }, signal: AbortSignal.timeout(40000) })
+  const auth = principal === info.principal ? { Authorization: `Bearer ${desktopToken}` } : {}
+  const response = await fetch(`${info.endpoint}/api/desktop${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-nova-principal': principal, ...auth, ...options.headers }, signal: AbortSignal.timeout(40000) })
   return { status: response.status, body: await response.json() }
 }
 try {
@@ -87,7 +97,7 @@ try {
     assert.equal(repairs.body.proposals.filter(item => item.id === 'patch_desktop_doctor_fixture').length, 1)
     assert.ok(repairs.body.proposals[0].evidence.rollbackPassed && repairs.body.proposals[0].evidence.recoveryPassed)
     assert.ok(!JSON.stringify(repairs.body).includes('PRIVATE_FIXTURE'))
-    assert.equal((await api('/trust/repairs', {}, 'different-user')).status, 403)
+    assert.equal((await api('/trust/repairs', {}, 'different-user')).status, 401)
     await page.locator('[data-section="trust"]').click()
     await page.locator('.repair-card').filter({ hasText: 'Disposable signed Doctor repair' }).waitFor()
     const card = await page.locator('.repair-card').filter({ hasText: 'Disposable signed Doctor repair' }).innerText()
@@ -141,7 +151,7 @@ try {
     assert.ok(run.body.tools.some(tool => tool.toolName === 'read_file' && tool.success === true))
     assert.ok(run.body.tools.some(tool => String(tool.result).includes('VERIFIED_DESKTOP_CORE_731')))
     report.outcome = run.body
-    assert.equal((await api(`/trust/runs/${reply.runId}`, {}, 'different-user')).status, 404)
+    assert.equal((await api(`/trust/runs/${reply.runId}`, {}, 'different-user')).status, 401)
     await page.locator(`.run-link[data-run-id="${reply.runId}"]`).click()
     await page.locator('.run-detail').waitFor()
     assert.ok((await page.locator('.run-detail').innerText()).includes('bestanden'))
@@ -164,7 +174,9 @@ try {
     assert.equal(memory.scope, `user:desktop:${info.principal}`)
     assert.ok(memory.records.some(record => record.content.includes('OWN_SCOPED_MEMORY_731')))
     assert.ok(!memory.records.some(record => record.content.includes('OTHER_SCOPED_MEMORY_912')))
-    assert.ok(!(await api('/memory', {}, 'different-user')).body.records.some(record => record.content.includes('OWN_SCOPED_MEMORY_731')))
+    const foreign = await api('/memory', {}, 'different-user')
+    assert.equal(foreign.status, 401)
+    assert.ok(!JSON.stringify(foreign.body).includes('OWN_SCOPED_MEMORY_731'))
     assert.ok(!(await api('/trust/runs')).body.runs.some(run => run.runId === 'unscoped-fixture-run'))
     assert.equal((await api('/trust/runs/unscoped-fixture-run')).status, 404)
   })

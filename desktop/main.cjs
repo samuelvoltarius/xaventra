@@ -188,6 +188,10 @@ function executeWorkspaceOperation(event, input) {
 }
 
 function getToken(config) {
+  // Headless or keyring-less hosts (CI, Linux without a secret service) pass
+  // the owner token through the environment; it is never written to disk.
+  const fromEnv = String(process.env.XAVENTRA_DESKTOP_API_TOKEN || '').trim()
+  if (fromEnv) return fromEnv
   if (!config.encryptedToken) return ''
   if (!secureStorageAvailable()) throw new Error('Stored token cannot be decrypted on this system')
   return safeStorage.decryptString(Buffer.from(config.encryptedToken, 'base64'))
