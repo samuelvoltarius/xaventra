@@ -30,6 +30,26 @@ export interface LocalLLMMessage {
     content: string
 }
 
+/**
+ * OpenAI-compatible servers (vLLM) only see images as content parts. Nova's
+ * internal `image` field was sent as-is and silently ignored: live 30.09.2026
+ * the Spark vLLM read test images correctly but never received a screenshot.
+ */
+export function toOpenAIChatMessages(messages: Array<Record<string, any>>): Array<Record<string, any>> {
+    return messages.map(message => {
+        const { image, ...rest } = message
+        if (!image?.data) return rest
+        const mimeType = typeof image.mimeType === 'string' && /^image\/[a-z0-9.+-]+$/i.test(image.mimeType) ? image.mimeType : 'image/png'
+        return {
+            ...rest,
+            content: [
+                { type: 'text', text: typeof rest.content === 'string' ? rest.content : '' },
+                { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image.data}` } },
+            ],
+        }
+    })
+}
+
 export interface LocalLLMResponse {
     content: string
     model: string
@@ -378,7 +398,7 @@ export class LocalLLM {
                 headers,
                 body: JSON.stringify({
                     model: this.config.model,
-                    messages: normalizedMessages,
+                    messages: toOpenAIChatMessages(normalizedMessages as any),
                     ...(tools.length > 0 && {
                         tools: tools.map(tool => ({ type: 'function', function: tool })),
                     }),
@@ -522,7 +542,7 @@ export class LocalLLM {
                 headers,
                 body: JSON.stringify({
                     model: this.config.model,
-                    messages: normalizedMessages,
+                    messages: toOpenAIChatMessages(normalizedMessages as any),
                     stream: true,
                 }),
                 signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? 55_000),

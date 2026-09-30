@@ -14,6 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { getDesktopAgentContext } from '../desktop/desktop-agent-context.js'
 import { getDesktopControlQueue } from '../desktop/desktop-control.js'
@@ -65,8 +66,12 @@ export const desktopScreenshotTool = {
             const visionDir = join(process.cwd(), '.nova-vision')
             if (!existsSync(visionDir)) mkdirSync(visionDir, { recursive: true })
 
-            const fileName = (params.name as string) || `desktop_${Date.now()}`
-            if (!/^[a-zA-Z0-9_-]{1,100}$/.test(fileName)) return { success: false, error: 'Invalid screenshot name' }
+            // The model's name is only a prefix. Live 30.09.2026 it reused the name
+            // of an earlier capture from the conversation and the exclusive write
+            // below failed with EEXIST; every capture now gets a fresh file.
+            const prefix = (params.name as string) || 'desktop'
+            if (!/^[a-zA-Z0-9_-]{1,60}$/.test(prefix)) return { success: false, error: 'Invalid screenshot name' }
+            const fileName = `${prefix}_${Date.now()}_${randomBytes(4).toString('hex')}`
             const filePath = join(visionDir, `${fileName}.png`)
 
             if (!process.env.NOVA_CAPTURE_SOCKET && !process.env.NOVA_CAPTURE_TOKEN_FILE) {

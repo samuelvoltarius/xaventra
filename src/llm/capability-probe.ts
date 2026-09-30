@@ -102,6 +102,10 @@ interface ProbeCache {
 
 const CACHE_FILE = join(process.cwd(), '.nova-data', 'model-capabilities.json')
 const CACHE_TTL_MS = 60 * 60 * 1000  // 1 hour
+// Bump whenever the probe itself changes meaning. v1 results came from the
+// 15-token probes and recorded reasoning models as blind; after the 2.79.2 fix
+// the Spark still read vision=false from that cache for up to two hours.
+export const PROBE_CACHE_VERSION = 2
 let _cache: ProbeCache | null = null
 
 function loadCache(): ProbeCache {
@@ -109,10 +113,10 @@ function loadCache(): ProbeCache {
     try {
         if (existsSync(CACHE_FILE)) {
             const data = JSON.parse(readFileSync(CACHE_FILE, 'utf-8')) as ProbeCache
-            if (data.version === 1) { _cache = data; return _cache }
+            if (data.version === PROBE_CACHE_VERSION) { _cache = data; return _cache }
         }
     } catch { /* corrupt */ }
-    _cache = { version: 1, lastProbed: '', results: {} }
+    _cache = { version: PROBE_CACHE_VERSION, lastProbed: '', results: {} }
     return _cache
 }
 

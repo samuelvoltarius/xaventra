@@ -101,3 +101,18 @@ it('refuses the owner without an enrolled capture adapter and never captures the
     expect(mocks.write).not.toHaveBeenCalled()
     expect(mocks.send).not.toHaveBeenCalled()
 })
+
+// Live 30.09.2026: the model passed the name of an earlier capture from the
+// conversation ("desktop_1790796410061"); the exclusive write failed with EEXIST.
+it('writes every capture to a fresh file even when the model repeats a name', async () => {
+    const reused = 'desktop_1790796410061'
+    for (let i = 0; i < 2; i++) {
+        expect(await withExecutionPolicyContext(owner, () => desktopScreenshotTool.handler({ name: reused, send: false })))
+            .toMatchObject({ success: true, captured: true })
+    }
+    const paths = mocks.write.mock.calls.map(call => String(call[0]))
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+    for (const path of paths) expect(path).toMatch(/desktop_1790796410061_\d+_[0-9a-f]{8}\.png$/)
+    for (const call of mocks.write.mock.calls) expect(call[2]).toMatchObject({ flag: 'wx' })
+})

@@ -542,6 +542,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/llm/capability-probe-reasoning.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/llm/capability-probe.ts",
       "path": ".nova-data"
     },

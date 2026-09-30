@@ -50,3 +50,22 @@ describe('capability probe with reasoning models', () => {
         expect(result.roles).not.toContain('vision')
     })
 })
+
+describe('capability probe cache', () => {
+    // Live 30.09.2026 22:08: after the 2.79.2 fix the Spark still read
+    // vision=false for qwen from the v1 cache written by the 15-token probe.
+    it('ignores results cached by an older probe version', async () => {
+        const { mkdirSync, writeFileSync } = await import('node:fs')
+        const { join } = await import('node:path')
+        mkdirSync(join(process.cwd(), '.nova-data'), { recursive: true })
+        const probedAt = new Date().toISOString()
+        writeFileSync(join(process.cwd(), '.nova-data', 'model-capabilities.json'), JSON.stringify({
+            version: 1, lastProbed: probedAt,
+            results: { 'http://127.0.0.1:8000|qwen': { endpoint: 'http://127.0.0.1:8000', model: 'qwen', online: true, supportsVision: false, roles: ['chat'], probedAt, lastProbed: probedAt } },
+        }))
+        vi.resetModules()
+        const fresh = await import('./capability-probe.js')
+        expect(fresh.PROBE_CACHE_VERSION).toBeGreaterThan(1)
+        expect(fresh.getCachedProbe('qwen')).toBeNull()
+    })
+})

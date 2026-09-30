@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.79.3] — 2026-09-30
+
+- Desktop screenshot: a model-supplied name is only a prefix; every capture
+  gets a fresh file. Live the model reused an earlier capture's name from the
+  conversation and the exclusive write failed with EEXIST.
+- Capability probe cache is versioned (v2). After the 2.79.2 probe fix the
+  Spark still read vision=false from results the old 15-token probe had
+  cached, so Nova kept saying she cannot see images.
+- Local vision requests carry the image as OpenAI `image_url` parts (vLLM)
+  or Ollama `images`. Before, vLLM silently ignored the picture, so Nova
+  answered "Ich sehe das Bild nicht" right after taking a screenshot.
+- Screenshots are delivered once: the pipeline skips pictures the tool already
+  sent and only forwards captures from the current run (live: two copies per
+  request, a third on the follow-up question).
+- Setup: opt-in `--workstation-desktop` (Linux, apt) installs the XFCE
+  workstation desktop; interactive setups ask, default no.
+
+
 ## [2.79.2] — 2026-09-30
 
 - Model capability probe gives reasoning models room to think (512 tokens) and

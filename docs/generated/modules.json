@@ -1937,6 +1937,10 @@
       "imports": []
     },
     {
+      "module": "src/core/screenshot-delivery.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/self-architecture.ts",
       "imports": [
         "node:fs",
@@ -5262,6 +5266,7 @@
         "../desktop/desktop-agent-context.js",
         "../desktop/desktop-control.js",
         "../host/capture-agent.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

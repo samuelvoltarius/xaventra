@@ -148,6 +148,8 @@ export interface AgentResponse {
     error?: string
     sessionId?: string
     screenshotPath?: string
+    /** The screenshot was already sent to the user by the tool itself. */
+    screenshotDelivered?: boolean
     actionState?: {
         requiresTool: boolean
         kind: string
@@ -941,6 +943,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // Handle tool calls if any
         const toolsUsed: string[] = []
         const toolsExecuted: string[] = []
+        // Screenshots a tool already delivered itself (desktop_screenshot sends
+        // the photo); the pipeline must not send them a second time.
+        const deliveredScreenshots = new Set<string>()
+        // Only pictures produced in THIS run may be forwarded; a file from the
+        // previous message is not a new screenshot (live 30.09.: third copy).
+        const runScreenshots: string[] = []
         const toolExecutions: NonNullable<AgentResponse['toolExecutions']> = []
         let toolEvidenceSequence = 0
         const nextToolEvidenceId = (call: { id?: string; name: string }) =>
@@ -1358,6 +1366,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     // gesetzter Zusatzpfad darf niemals das Ergebnis
                                     // eines gelungenen Werkzeugs zunichte machen.
                                 }
+                                runScreenshots.push(imgPath)
+                                if (res?.delivered === true) deliveredScreenshots.add(imgPath)
                                 console.log(`[Nova Agent] 🖼️ Screenshot path captured: ${imgPath}`)
                             }
                         }
@@ -1805,25 +1815,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             getCoreRuntime().watchdog.ping()
         } catch { /* core-runtime not available */ }
 
-        // Collect screenshot path from tool executions
-        let screenshotPath: string | undefined
-        try {
-            const { existsSync } = await import('node:fs')
-            // Check .nova-vision folder for latest screenshot
-            const { join, resolve } = await import('node:path')
-            const visionDir = join(process.cwd(), '.nova-vision')
-            if (existsSync(visionDir)) {
-                const { readdirSync, statSync } = await import('node:fs')
-                const files = readdirSync(visionDir)
-                    .filter(f => f.match(/\.(png|jpg|jpeg|gif|webp)$/i))
-                    .map(f => ({ name: f, path: join(visionDir, f), mtime: statSync(join(visionDir, f)).mtimeMs }))
-                    .sort((a, b) => b.mtime - a.mtime)
-                // Use most recent screenshot if created within last 30s
-                if (files.length > 0 && (Date.now() - files[0].mtime) < 30_000) {
-                    screenshotPath = files[0].path
-                }
-            }
-        } catch { /* non-critical */ }
+        // Collect the screenshot produced by a tool in this run (never an older
+        // file from the vision folder).
+        const screenshotPath: string | undefined = runScreenshots.at(-1)
 
         _traceRecorder.finish(_traceId, { success: taskValidation.success, responseContent: finalContent })
         return {
@@ -1838,6 +1832,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             tokens: kernel.inference.snapshot().totalTokens,
             sessionId,
             screenshotPath,
+            screenshotDelivered: !!screenshotPath && deliveredScreenshots.has(screenshotPath),
             toolExecutions,
             actionState: {
                 requiresTool: actionIntent.requiresTool,
