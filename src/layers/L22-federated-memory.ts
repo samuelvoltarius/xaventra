@@ -30,9 +30,18 @@ export function readNodeId(): string {
     }
 }
 
+// Only memories that mean something on another node travel. Operational notes
+// (health_status, nova_introspect, mesh_nodes observations every 10 minutes,
+// 30-minute TTL) describe this node's own state, and expiry is time-based on
+// every node. Live 30.09.2026 they were 1010 of 1012 records and every new note
+// re-shipped up to 500 full records to all peers.
+export function isReplicatedMemory(record: GovernedMemory): boolean {
+    return record.status !== 'candidate' && record.status !== 'expired' && record.kind !== 'operational'
+}
+
 function compactSnapshot(records: GovernedMemory[]): GovernedMemory[] {
     return [...records]
-        .filter(record => record.status !== 'candidate')
+        .filter(isReplicatedMemory)
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, MAX_RECORDS_PER_SYNC)
 }

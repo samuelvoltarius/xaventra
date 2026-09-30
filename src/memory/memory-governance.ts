@@ -122,6 +122,7 @@ const TERMINAL_MEMORY_STATES = new Set<MemoryLifecycle>(['rejected', 'expired', 
 // Every federated merge appends one provenance entry, and records bounce
 // between peers: live on 30.09.2026 one record carried 1566 entries (NAS
 // snapshot 32 MB, audit.jsonl 16 GB). Keep the origin plus the newest entries.
+export const OPERATIONAL_RETENTION_MS = 24 * 60 * 60_000
 export const MAX_PROVENANCE_ENTRIES = 32
 export function boundProvenance(list: MemoryProvenance[] | undefined): MemoryProvenance[] {
     if (!Array.isArray(list)) return []
@@ -618,8 +619,25 @@ export class MemoryGovernanceCoordinator {
         return record
     }
 
+    // Terminal operational notes (tool observations with a 30-minute TTL) are
+    // node-local status, not memories: drop them a day after they ended instead
+    // of accumulating (live 30.09.2026: 1010 of 1012 records). Runs on the
+    // replication cadence, not on every read.
+    private pruneOperational(now = Date.now()): void {
+        const before = this.store.records.length
+        this.store.records = this.store.records.filter(record => !(record.kind === 'operational'
+            && TERMINAL_MEMORY_STATES.has(record.status) && record.status !== 'rejected'
+            && now - record.updatedAt > OPERATIONAL_RETENTION_MS))
+        const pruned = before - this.store.records.length
+        if (pruned === 0) return
+        if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true })
+        appendFileSync(this.auditPath, JSON.stringify({ timestamp: now, event: 'operational-pruned', count: pruned }) + '\n')
+        this.persist()
+    }
+
     getReplicationSnapshot(): GovernedMemory[] {
         this.expireRecords()
+        this.pruneOperational()
         return this.store.records.map(record => {
             const copy = JSON.parse(JSON.stringify(record)) as GovernedMemory
             copy.provenance = boundProvenance(copy.provenance)

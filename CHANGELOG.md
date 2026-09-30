@@ -10,6 +10,11 @@
 - Memory governance: provenance per record is bounded (origin plus newest 31).
   Federated merges appended one entry per hop; one record carried 1566 entries,
   the NAS snapshot reached 32 MB (upload always failed) and audit.jsonl 16 GB.
+- Governance replication ships only memories that matter on another node:
+  operational tool notes (health_status, nova_introspect, mesh_nodes; 30-minute
+  TTL) and expired records stay local, and terminal operational notes are
+  pruned a day after they ended. Live they were 1010 of 1012 records; each new
+  note re-shipped up to 500 full records to every peer (about 80 MB audit/hour).
 
 
 ## [2.79.0] — 2026-09-30
