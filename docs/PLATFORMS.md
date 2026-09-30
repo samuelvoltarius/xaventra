@@ -12,10 +12,17 @@ already be installed. No administrator permission is required for Core setup.
 | Include Desktop | `./install.ps1 -Desktop` | `sh install.sh --desktop` |
 | Include Chromium | `./install.ps1 -Browser` | `sh install.sh --browser` |
 | Allow native dependency installers | `./install.ps1 -Native` | `sh install.sh --native` |
+| Full workstation desktop for computer use (XFCE, ~300 MB, apt-get) | not available | `sh install.sh --workstation-desktop` |
 | Configure provider | `npm run cli -- setup` | `npm run cli -- setup` |
 | Start Core | `npm start` | `npm start` |
 | Stop this Core | `npm run xaventra:stop` | `npm run xaventra:stop` |
 | Restart this Core | `npm run xaventra:restart` | `npm run xaventra:restart` |
+
+On Linux an interactive install asks once whether to add the full workstation
+desktop (default no); `--no-workstation-desktop` skips the question. It installs
+`xfce4 xfce4-terminal thunar dbus-x11` without recommends (via `sudo` when not
+root). The workstation service then starts XFCE instead of its minimal openbox
+desktop after its next restart; nothing is restarted by setup.
 
 The shell-independent alternative is `node scripts/setup.mjs` with the Unix-style
 flags. This also avoids changing PowerShell execution policy. Missing prerequisites
