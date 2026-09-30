@@ -8,6 +8,14 @@
 - Capability probe cache is versioned (v2). After the 2.79.2 probe fix the
   Spark still read vision=false from results the old 15-token probe had
   cached, so Nova kept saying she cannot see images.
+- Local vision requests carry the image as OpenAI `image_url` parts (vLLM)
+  or Ollama `images`. Before, vLLM silently ignored the picture, so Nova
+  answered "Ich sehe das Bild nicht" right after taking a screenshot.
+- Screenshots are delivered once: the pipeline skips pictures the tool already
+  sent and only forwards captures from the current run (live: two copies per
+  request, a third on the follow-up question).
+- Setup: opt-in `--workstation-desktop` (Linux, apt) installs the XFCE
+  workstation desktop; interactive setups ask, default no.
 
 
 ## [2.79.2] — 2026-09-30

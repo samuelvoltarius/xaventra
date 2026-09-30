@@ -1937,6 +1937,10 @@
       "imports": []
     },
     {
+      "module": "src/core/screenshot-delivery.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/self-architecture.ts",
       "imports": [
         "node:fs",
