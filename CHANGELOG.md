@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.79.0] — 2026-09-30
+
+Breaking: mesh protocol and configuration change. Update all nodes together.
+
+- Close findings from two full code reviews: authenticated dashboard/WebSocket
+  (gateway token), no owner rights over REST, numeric `allowFrom`, signed mesh
+  tasks, peers need `publicKey` and explicit `roles`, trusted-node lists for
+  shared memory, continuity signing key, endpoint trust for model providers,
+  no silent cloud failover, stricter plugin and skill checks.
+- Lease fencing: sequence-backed monotonic epochs, per-process instance IDs,
+  read-only live fence checks, fenced tool, Telegram, proactive, reminder,
+  scheduler, REST and updater effects, worker-side epoch high-water mark.
+  Default `NOVA_FENCING_MODE=observe`; migration `sql/mesh-coordination-v5.sql`
+  is applied separately after all nodes run this release.
+- Forget leaves only a hash tombstone; Codex sessions are owner-only.
+- `/freigabe <tool> [detail]`: owner one-time code for blocked tools.
+- Nachtwache: read-only service, disk, backup and file probes as an opt-in
+  autonomy check source (`autonomy.nightwatch.enabled`).
+
+
 ## [2.78.58] — 2026-09-29
 
 - Load configured tool policy at daemon startup and preserve authenticated

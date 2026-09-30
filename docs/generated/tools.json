@@ -524,7 +524,7 @@
     {
       "name": "browser_upload",
       "category": "browser",
-      "description": "Lädt freigegebene lokale Dateien über ein Datei-Eingabefeld hoch.",
+      "description": "Lädt lokale Dateien über ein Datei-Eingabefeld der offenen Seite hoch. Nur mit ausdrücklicher Owner-Freigabe (confirm); Zugangsdaten-/Konfigurationsdateien nie.",
       "parameters": [
         {
           "name": "selector",
@@ -535,6 +535,11 @@
           "name": "paths",
           "type": "object",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -762,7 +767,7 @@
     {
       "name": "create_hook",
       "category": "system",
-      "description": "Erstellt einen Event-Hook (webhook, email, script) der bei Events ausgelï¿½st wird",
+      "description": "Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelï¿½st wird",
       "parameters": [
         {
           "name": "name",
@@ -1185,6 +1190,11 @@
           "name": "install",
           "type": "string",
           "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -1494,6 +1504,11 @@
           "name": "package",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -2234,7 +2249,13 @@
       "name": "nova_restart",
       "category": "system",
       "description": "Startet Nova komplett neu. Nutze das bei Updates oder wenn etwas hängt.",
-      "parameters": []
+      "parameters": [
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
+        }
+      ]
     },
     {
       "name": "nova_status",
@@ -2341,6 +2362,11 @@
           "name": "gcode",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -2375,6 +2401,11 @@
           "name": "apiKey",
           "type": "string",
           "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -2382,7 +2413,13 @@
       "name": "printer_resume",
       "category": "other",
       "description": "Setzt einen pausierten Druckjob fort.",
-      "parameters": []
+      "parameters": [
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
+        }
+      ]
     },
     {
       "name": "printer_slice",
@@ -2415,6 +2452,11 @@
           "name": "filename",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -2423,23 +2465,6 @@
       "category": "other",
       "description": "Gibt den aktuellen Status des 3D Druckers zurück (Druckfortschritt, Temperaturen, Dateiname, verbleibende Zeit).",
       "parameters": []
-    },
-    {
-      "name": "printer_status",
-      "category": "media",
-      "description": "Get the current status of a 3D printer (temperature, job progress, state).",
-      "parameters": [
-        {
-          "name": "printerUrl",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "apiKey",
-          "type": "string",
-          "required": false
-        }
-      ]
     },
     {
       "name": "process_kill",
@@ -2571,6 +2596,11 @@
         },
         {
           "name": "roles",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "confirm",
           "type": "string",
           "required": false
         }
@@ -2715,6 +2745,11 @@
           "name": "values",
           "type": "object",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -3262,6 +3297,18 @@
           "name": "goal",
           "type": "string",
           "required": true
+        }
+      ]
+    },
+    {
+      "name": "subagent_interrupt",
+      "category": "other",
+      "description": "Unterbricht laufende Subagenten (\"Nova, stopp\"). Mit id nur diesen einen (Subagent- oder Conversation-ID), ohne id alle laufenden.",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": false
         }
       ]
     },

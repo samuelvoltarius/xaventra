@@ -65,6 +65,7 @@
         "../core/execution-control.js",
         "../core/execution-kernel.js",
         "../infra/telemetry.js",
+        "../mesh/fence.js",
         "./tool-authorization.js"
       ]
     },
@@ -1236,6 +1237,7 @@
     {
       "module": "src/core/auto-updater.ts",
       "imports": [
+        "../mesh/fence.js",
         "../mesh/leader-election.js",
         "../mesh/mesh-identity.js",
         "../mesh/mesh-registry.js",
@@ -1252,6 +1254,7 @@
     {
       "module": "src/core/autonomous-executor.ts",
       "imports": [
+        "../mesh/fence.js",
         "./action-intent.js",
         "./atomic-storage.js",
         "./goal-manager.js",
@@ -1424,7 +1427,8 @@
         "./message-bus.js",
         "./message-pipeline.js",
         "./request-gate.js",
-        "./request-tracer.js"
+        "./request-tracer.js",
+        "./system-message.js"
       ]
     },
     {
@@ -1463,7 +1467,6 @@
     {
       "module": "src/core/environment.ts",
       "imports": [
-        "../tools/ssh-tool-hosts.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -1573,6 +1576,7 @@
       "module": "src/core/heartbeat.ts",
       "imports": [
         "../config/config-path.js",
+        "./atomic-storage.js",
         "node:fs",
         "node:path"
       ]
@@ -1601,6 +1605,7 @@
     {
       "module": "src/core/lifecycle-policy.ts",
       "imports": [
+        "../security/secret-redaction.js",
         "node:async_hooks",
         "node:crypto",
         "node:fs",
@@ -1670,6 +1675,7 @@
       "module": "src/core/model-resolver.ts",
       "imports": [
         "../config/config-path.js",
+        "./atomic-storage.js",
         "./side-effects.js",
         "node:fs",
         "node:path"
@@ -1852,6 +1858,7 @@
     {
       "module": "src/core/proactive.ts",
       "imports": [
+        "../mesh/fence.js",
         "./proactive-policy.js"
       ]
     },
@@ -1964,7 +1971,8 @@
         "node:child_process",
         "node:fs",
         "node:os",
-        "node:path"
+        "node:path",
+        "node:util"
       ]
     },
     {
@@ -2048,6 +2056,10 @@
       ]
     },
     {
+      "module": "src/core/system-security-checks.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/task-contract.ts",
       "imports": [
         "./action-intent.js",
@@ -2070,6 +2082,10 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/core/telegram-allow-from.ts",
+      "imports": []
     },
     {
       "module": "src/core/tool-evidence-binding.ts",
@@ -2215,15 +2231,19 @@
         "./core/pid-guard.js",
         "./core/startup-performance.js",
         "./core/task-tracker.js",
+        "./core/telegram-allow-from.js",
         "./mesh/mesh-transport-runtime.js",
         "dotenv/config",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
     {
       "module": "src/dashboard/access-guard.ts",
-      "imports": []
+      "imports": [
+        "node:crypto"
+      ]
     },
     {
       "module": "src/dashboard/listener.ts",
@@ -2232,13 +2252,19 @@
       ]
     },
     {
+      "module": "src/dashboard/mesh-update.ts",
+      "imports": []
+    },
+    {
       "module": "src/dashboard/server.ts",
       "imports": [
         "../config/config-path.js",
         "../core/atomic-storage.js",
+        "../infra/gateway-auth.js",
         "../security/secret-redaction.js",
         "./access-guard.js",
         "./listener.js",
+        "./mesh-update.js",
         "express",
         "node:fs",
         "node:http",
@@ -2751,6 +2777,23 @@
       ]
     },
     {
+      "module": "src/doctor/nightwatch-checks.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "node:child_process"
+      ]
+    },
+    {
+      "module": "src/doctor/nightwatch.ts",
+      "imports": [
+        "../core/autonomy-loop.js",
+        "../users/principal-id.js",
+        "./nightwatch-checks.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/repair-activation.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -2897,7 +2940,9 @@
     {
       "module": "src/gateway.ts",
       "imports": [
+        "./infra/gateway-auth.js",
         "node:child_process",
+        "node:crypto",
         "node:http",
         "node:path",
         "ws"
@@ -2912,6 +2957,7 @@
     {
       "module": "src/hooks/event-hooks.ts",
       "imports": [
+        "../resilience/ssrf-guard.js",
         "node:fs",
         "node:path"
       ]
@@ -3048,7 +3094,9 @@
       "module": "src/installer/brain-installer.ts",
       "imports": [
         "../config/config-path.js",
+        "../mesh/node-intelligence.js",
         "node:child_process",
+        "node:crypto",
         "node:fs",
         "node:path",
         "node:util"
@@ -3070,6 +3118,8 @@
       "module": "src/intelligence/capability-router.ts",
       "imports": [
         "node:child_process",
+        "node:module",
+        "node:net",
         "node:path"
       ]
     },
@@ -3145,7 +3195,8 @@
     {
       "module": "src/intelligence/model-router.ts",
       "imports": [
-        "../config/config-path.js"
+        "../config/config-path.js",
+        "node:fs"
       ]
     },
     {
@@ -3249,6 +3300,7 @@
       "module": "src/layers/L0-supervisor.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/model-defaults.js",
         "node:fs",
         "node:path"
       ]
@@ -3342,6 +3394,7 @@
     {
       "module": "src/layers/L18-llm-router.ts",
       "imports": [
+        "../llm/model-discovery.js",
         "../llm/model-perf-db.js",
         "node:fs",
         "node:path"
@@ -3435,6 +3488,7 @@
       "module": "src/layers/L7-tool-learning.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
         "node:fs",
         "node:path"
       ]
@@ -3460,7 +3514,8 @@
     {
       "module": "src/layers/L9-idle-learning.ts",
       "imports": [
-        "node:fs"
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -3644,6 +3699,7 @@
       "module": "src/llm/capability-probe.ts",
       "imports": [
         "../config/config-path.js",
+        "./endpoint-trust.js",
         "node:fs",
         "node:path"
       ]
@@ -3651,6 +3707,7 @@
     {
       "module": "src/llm/codex-cli-adapter.ts",
       "imports": [
+        "./llm-principal.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -3685,6 +3742,10 @@
       ]
     },
     {
+      "module": "src/llm/endpoint-trust.ts",
+      "imports": []
+    },
+    {
       "module": "src/llm/fallback.ts",
       "imports": [
         "./base.js"
@@ -3702,6 +3763,12 @@
       ]
     },
     {
+      "module": "src/llm/llm-principal.ts",
+      "imports": [
+        "node:async_hooks"
+      ]
+    },
+    {
       "module": "src/llm/local-llm.ts",
       "imports": [
         "../config/config-path.js",
@@ -3714,13 +3781,17 @@
       "imports": [
         "../config/config-path.js",
         "../core/atomic-storage.js",
+        "../core/model-defaults.js",
         "node:fs",
         "node:path"
       ]
     },
     {
       "module": "src/llm/model-fallback.ts",
-      "imports": []
+      "imports": [
+        "../core/model-defaults.js",
+        "./model-discovery.js"
+      ]
     },
     {
       "module": "src/llm/model-perf-db.ts",
@@ -3744,6 +3815,7 @@
         "../core/client-identity.js",
         "../infra/telemetry.js",
         "./codex-cli-adapter.js",
+        "./endpoint-trust.js",
         "./model-fallback.js",
         "./model-perf-db.js",
         "./providers/minimax.js",
@@ -3860,6 +3932,7 @@
     {
       "module": "src/memory/capabilities-store.ts",
       "imports": [
+        "../security/secret-redaction.js",
         "node:fs",
         "node:path"
       ]
@@ -3891,6 +3964,7 @@
     {
       "module": "src/memory/journal.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "node:fs",
         "node:path"
       ]
@@ -3906,6 +3980,7 @@
     {
       "module": "src/memory/lancedb-memory.ts",
       "imports": [
+        "../security/secret-redaction.js",
         "./embedding-providers.js",
         "./hybrid-search.js",
         "./query-expansion.js",
@@ -3923,6 +3998,7 @@
     {
       "module": "src/memory/local-memory.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "./shared-memory.js",
         "node:fs",
         "node:path"
@@ -4000,6 +4076,7 @@
       "module": "src/memory/shared-memory.ts",
       "imports": [
         "../config/config-path.js",
+        "../mesh/fence.js",
         "node:fs",
         "node:path"
       ]
@@ -4024,6 +4101,7 @@
     {
       "module": "src/memory/vector-memory.ts",
       "imports": [
+        "../core/atomic-storage.js",
         "./shared-memory.js",
         "node:fs",
         "node:path"
@@ -4126,6 +4204,7 @@
         "../config/config-path.js",
         "../core/autonomous-executor.js",
         "../core/ha-state.js",
+        "./fence.js",
         "./leader-election.js",
         "./mesh-registry.js",
         "node:fs",
@@ -4133,14 +4212,31 @@
       ]
     },
     {
+      "module": "src/mesh/fence-highwater.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./fence.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/mesh/fence.ts",
+      "imports": [
+        "../infra/telemetry.js",
+        "node:async_hooks"
+      ]
+    },
+    {
       "module": "src/mesh/leader-election.ts",
       "imports": [
         "../config/config-path.js",
         "../infra/telemetry.js",
+        "./fence.js",
         "./mesh-registry.js",
+        "node:crypto",
         "node:fs",
-        "node:os",
-        "node:path"
+        "node:os"
       ]
     },
     {
@@ -4222,6 +4318,7 @@
         "child_process",
         "crypto",
         "fs",
+        "node:os",
         "os",
         "path"
       ]
@@ -4235,7 +4332,8 @@
     {
       "module": "src/mesh/mesh-router.ts",
       "imports": [
-        "node:child_process"
+        "node:child_process",
+        "node:net"
       ]
     },
     {
@@ -4264,6 +4362,8 @@
         "../core/data-root.js",
         "./capability-graph.js",
         "./direct-mesh-transport.js",
+        "./fence-highwater.js",
+        "./fence.js",
         "./local-mesh-transport.js",
         "./mesh-identity.js",
         "./mesh-policy.js",
@@ -4286,6 +4386,7 @@
       "imports": [
         "node:child_process",
         "node:fs",
+        "node:net",
         "node:path"
       ]
     },
@@ -4383,6 +4484,7 @@
       "module": "src/nova-boot.ts",
       "imports": [
         "./config/config-path.js",
+        "./core/system-security-checks.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -4427,7 +4529,8 @@
       "imports": [
         "node:crypto",
         "node:fs",
-        "node:path"
+        "node:path",
+        "node:url"
       ]
     },
     {
@@ -4750,6 +4853,7 @@
       "imports": [
         "node:crypto",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
@@ -4836,9 +4940,11 @@
       "module": "src/supervisor.ts",
       "imports": [
         "node:child_process",
+        "node:crypto",
         "node:fs",
         "node:http",
-        "node:path"
+        "node:path",
+        "node:url"
       ]
     },
     {
@@ -4857,6 +4963,7 @@
         "node:child_process",
         "node:events",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
@@ -4994,6 +5101,7 @@
       "imports": [
         "../config/config-path.js",
         "./complete-registry.js",
+        "./owner-approval.js",
         "node:fs",
         "node:path"
       ]
@@ -5016,8 +5124,10 @@
     {
       "module": "src/tools/browser-automation.ts",
       "imports": [
+        "../resilience/ssrf-guard.js",
         "node:child_process",
         "node:fs",
+        "node:module",
         "node:os",
         "node:path"
       ]
@@ -5028,13 +5138,18 @@
         "../core/lifecycle-policy.js",
         "./browser.js",
         "./operator-browser-manager.js",
+        "./owner-approval.js",
         "node:fs",
         "node:path"
       ]
     },
     {
       "module": "src/tools/browser.ts",
-      "imports": []
+      "imports": [
+        "../resilience/ssrf-guard.js",
+        "node:fs",
+        "node:path"
+      ]
     },
     {
       "module": "src/tools/cad-tool.ts",
@@ -5078,6 +5193,7 @@
         "../doctor/repair-drain-client.js",
         "../host/docker-client.js",
         "../learning/trace-analyzer.js",
+        "../mesh/fence.js",
         "./3dprinter.js",
         "./api-key-tool.js",
         "./blue-team-tools.js",
@@ -5095,6 +5211,7 @@
         "./knowledge-system.js",
         "./minimax-tools.js",
         "./mission-workspace-tools.js",
+        "./owner-approval.js",
         "./printer-tool.js",
         "./reminder-tool.js",
         "./searxng-search.js",
@@ -5116,8 +5233,9 @@
       "module": "src/tools/config-tool.ts",
       "imports": [
         "../config/config-path.js",
-        "node:fs",
-        "node:path"
+        "../core/atomic-storage.js",
+        "./owner-approval.js",
+        "node:fs"
       ]
     },
     {
@@ -5163,6 +5281,7 @@
     {
       "module": "src/tools/execute-python-tool.ts",
       "imports": [
+        "./owner-approval.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -5251,6 +5370,10 @@
       ]
     },
     {
+      "module": "src/tools/owner-approval.ts",
+      "imports": []
+    },
+    {
       "module": "src/tools/patch.ts",
       "imports": [
         "../resilience/backup.js",
@@ -5266,6 +5389,7 @@
     {
       "module": "src/tools/printer-tool.ts",
       "imports": [
+        "./owner-approval.js",
         "node:child_process",
         "node:fs",
         "node:path"
@@ -5274,6 +5398,7 @@
     {
       "module": "src/tools/registry.ts",
       "imports": [
+        "../mesh/fence.js",
         "../resilience/security.js"
       ]
     },
@@ -5287,7 +5412,8 @@
     {
       "module": "src/tools/searxng-search.ts",
       "imports": [
-        "../config/config-path.js"
+        "../config/config-path.js",
+        "node:fs"
       ]
     },
     {
@@ -5307,6 +5433,7 @@
     {
       "module": "src/tools/self-management.ts",
       "imports": [
+        "./owner-approval.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -5502,7 +5629,9 @@
     },
     {
       "module": "src/utils/nova-utils.ts",
-      "imports": []
+      "imports": [
+        "node:os"
+      ]
     },
     {
       "module": "src/utils/polls.ts",
@@ -5566,6 +5695,7 @@
         "./config/config-path.js",
         "node:child_process",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
