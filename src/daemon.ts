@@ -20,7 +20,7 @@ import { installGlobalLogger } from './core/nova-logger.js'
 installGlobalLogger()
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, readdirSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { hostname } from 'node:os'
 import { hasConflictingDaemonPid } from './core/pid-guard.js'
 
@@ -1877,6 +1877,10 @@ async function startDaemon() {
         const autonomyCfg = (config as any).autonomy || {}
         const quietCfg = autonomyCfg.quietHours || {}
         const quietEnabled = quietCfg.enabled !== false // default: true
+        // Nachtwache is opt-in: autonomy.nightwatch.enabled=true plus a private
+        // probe config (default .nova-data/nightwatch.json, see docs/NIGHTWATCH.md).
+        const nightwatchCfg = autonomyCfg.nightwatch || {}
+        const nightwatchEnabled = nightwatchCfg.enabled === true
 
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
@@ -1884,6 +1888,13 @@ async function startDaemon() {
             quietHoursEnd: quietEnabled ? (quietCfg.end ?? 7) : -1,
             maxNotificationsPerHour: autonomyCfg.selfThinkMaxPerHour || 3,
             socialCheckIns: autonomyCfg.socialCheckIns === true,
+            checks: { nightwatch: nightwatchEnabled } as any,
+            ...(nightwatchEnabled ? {
+                nightwatch: {
+                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
+                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
+                },
+            } : {}),
         })
 
         console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)

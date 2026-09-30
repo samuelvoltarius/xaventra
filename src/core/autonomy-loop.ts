@@ -31,6 +31,12 @@ export interface AutonomyConfig {
         inbound: boolean             // Watch inbound folders
         logs: boolean                // Error log scanning
         uptime: boolean              // Process uptime tracking
+        nightwatch?: boolean         // Nachtwache (read-only probes), opt-in
+    }
+    /** Where the Nachtwache reads its private config and writes its journal. */
+    nightwatch?: {
+        configPath: string
+        journalDir: string
     }
 }
 
@@ -69,6 +75,7 @@ const DEFAULT_CONFIG: AutonomyConfig = {
         inbound: true,
         logs: true,
         uptime: true,
+        nightwatch: false,
     },
 }
 
@@ -838,6 +845,33 @@ function buildProactivePrompt(ctx: AutonomyContext): string {
     return parts.join('\n')
 }
 
+// Nachtwache: one source per config/journal pair, so its own rate limit and
+// in-flight sharing survive across cycles.
+let nightwatchSource: { key: string; run: () => Promise<CheckResult[]> } | null = null
+
+async function checkNightwatch(): Promise<CheckResult[]> {
+    const paths = config.nightwatch ?? {
+        configPath: join(DATA_DIR, 'nightwatch.json'),
+        journalDir: join(DATA_DIR, 'nightwatch'),
+    }
+    const key = `${paths.configPath} ${paths.journalDir}`
+    try {
+        if (!nightwatchSource || nightwatchSource.key !== key) {
+            const { createNightwatchSource } = await import('../doctor/nightwatch.js')
+            nightwatchSource = { key, run: createNightwatchSource(paths) }
+        }
+        return await nightwatchSource.run()
+    } catch (error) {
+        return [{
+            source: 'nightwatch',
+            severity: 'warning',
+            message: `Nachtwache läuft nicht: ${String((error as Error)?.message || error).slice(0, 300)}`,
+            timestamp: Date.now(),
+            requiresNotification: true,
+        }]
+    }
+}
+
 // ============================================
 // Main Loop
 // ============================================
@@ -886,6 +920,9 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     }
     if (config.checks.uptime) {
         checks.push(...await checkUptime())
+    }
+    if (config.checks.nightwatch) {
+        checks.push(...await checkNightwatch())
     }
 
     console.log(`[Autonomy] 📋 ${checks.length} checks completed`)

@@ -57,14 +57,17 @@ and skips corrupt lines. The morning briefing reads from here.
 `formatNightwatchReport(report, principal)` renders findings with evidence for
 the owner only; every other principal gets a refusal.
 
-## Not wired yet
+## Activation
 
-The module is not registered anywhere. To activate it:
+The watch is wired into the autonomy loop as check source `nightwatch`
+(`src/core/autonomy-loop.ts`) and is **off by default**. To switch it on, set in
+the daemon config:
 
-1. Add the source as an autonomy check (`src/core/autonomy-loop.ts`, next to
-   `checkSystemHealth`), gated by a config flag.
-2. Provide a private config (e.g. `.nova-data/nightwatch.json`) and a dedicated
-   read-only SSH key per host, ideally restricted on the host side to the
-   commands above.
-3. Make sure proactive delivery works after a Telegram reconnect/failover, not
-   only when Telegram was connected at boot.
+```json
+"autonomy": { "nightwatch": { "enabled": true } }
+```
+
+Optional `configPath` (default `.nova-data/nightwatch.json`) and `journalDir`
+(default `.nova-data/nightwatch`). A missing or invalid probe config shows up as
+a warning, it never silently disables the watch. Remote hosts need a dedicated
+read-only SSH key, ideally restricted on the host side to the commands above.
