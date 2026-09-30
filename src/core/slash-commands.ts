@@ -286,8 +286,8 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             for (const node of nodes) {
                 try {
                     progress.push(`📤 ${node.name} — backup + deploy...`)
-                    execSync(`ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${node.host} "cd ~/nova-core && rm -rf dist.bak && cp -r dist dist.bak 2>/dev/null || true"`, { timeout: 15000 })
-                    execSync(`scp -o StrictHostKeyChecking=no -r dist/ xaventra.config.json ${node.host}:~/nova-core/`, { cwd: process.cwd(), timeout: 120000 })
+                    execSync(`ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${node.host} "cd ~/nova-core && rm -rf dist.bak && cp -r dist dist.bak 2>/dev/null || true"`, { timeout: 15000 })
+                    execSync(`scp -o StrictHostKeyChecking=accept-new -r dist/ xaventra.config.json ${node.host}:~/nova-core/`, { cwd: process.cwd(), timeout: 120000 })
                     progress.push(`✅ ${node.name} — files deployed`)
                 } catch {
                     progress.push(`⚠️ ${node.name} — deploy fehlgeschlagen`)
@@ -297,7 +297,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             // Step 3: Restart remote daemons
             for (const node of nodes) {
                 try {
-                    execSync(`ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${node.host} "cd ~/nova-core && { kill \\$(cat .nova.pid 2>/dev/null) 2>/dev/null || killall node 2>/dev/null || true; }; sleep 2; setsid bash -c 'NOVA_ROLE=edge NOVA_NODE_ONLY=true npx tsx src/daemon.ts > /tmp/nova-node.log 2>&1' &"`, { timeout: 30000 })
+                    execSync(`ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${node.host} "cd ~/nova-core && { kill \\$(cat .nova.pid 2>/dev/null) 2>/dev/null || killall node 2>/dev/null || true; }; sleep 2; setsid bash -c 'NOVA_ROLE=edge NOVA_NODE_ONLY=true npx tsx src/daemon.ts > /tmp/nova-node.log 2>&1' &"`, { timeout: 30000 })
                     progress.push(`🔄 ${node.name} — daemon restarted`)
                 } catch {
                     progress.push(`⚠️ ${node.name} — restart fehlgeschlagen`)
@@ -319,7 +319,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             for (const node of nodes) {
                 try {
                     const check = execSync(
-                        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${node.host} "test -d ~/nova-core/dist.bak && echo yes || echo no"`,
+                        `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${node.host} "test -d ~/nova-core/dist.bak && echo yes || echo no"`,
                         { timeout: 10000 }
                     ).toString().trim()
 
@@ -328,7 +328,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                         continue
                     }
 
-                    execSync(`ssh -o StrictHostKeyChecking=no ${node.host} "cd ~/nova-core && rm -rf dist && mv dist.bak dist && { kill \\$(cat .nova.pid 2>/dev/null) 2>/dev/null || killall node 2>/dev/null || true; }; sleep 2; setsid bash -c 'NOVA_ROLE=edge NOVA_NODE_ONLY=true npx tsx src/daemon.ts > /tmp/nova-node.log 2>&1' &"`, { timeout: 30000 })
+                    execSync(`ssh -o StrictHostKeyChecking=accept-new ${node.host} "cd ~/nova-core && rm -rf dist && mv dist.bak dist && { kill \\$(cat .nova.pid 2>/dev/null) 2>/dev/null || killall node 2>/dev/null || true; }; sleep 2; setsid bash -c 'NOVA_ROLE=edge NOVA_NODE_ONLY=true npx tsx src/daemon.ts > /tmp/nova-node.log 2>&1' &"`, { timeout: 30000 })
                     results.push(`✅ ${node.name} — rollback + restart`)
                 } catch {
                     results.push(`❌ ${node.name} — rollback fehlgeschlagen`)
@@ -2387,7 +2387,7 @@ Nutze \`/nodes pair ${name}\` um die Verbindung zu testen.`
                             const sshUser = node.ssh_user || 'root'
                             const sshPort = node.ssh_port || 22
                             const result = execSync(
-                                `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -p ${sshPort} ${sshUser}@${node.ip} "hostname && echo OK"`,
+                                `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p ${sshPort} ${sshUser}@${node.ip} "hostname && echo OK"`,
                                 { timeout: 10000, encoding: 'utf-8' }
                             ).trim()
                             return `✅ **Pairing erfolgreich!**
@@ -2666,7 +2666,7 @@ Prüft einen neuen Host auf:
 
                         try {
                             const { execSync } = await import('child_process')
-                            const sshOpts = `-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -p ${checkPort}`
+                            const sshOpts = `-o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes -p ${checkPort}`
 
                             // Step 1: Reachability
                             steps.push('📡 SSH-Verbindung testen...')

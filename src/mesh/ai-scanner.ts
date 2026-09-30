@@ -783,7 +783,7 @@ async function scanRemoteAISoftware(
             `echo ===END===`
 
         const { stdout } = await execFileAsync('ssh', [
-            '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
             `${user}@${host}`, remoteCommand,
         ], { timeout: 30000, maxBuffer: 5 * 1024 * 1024 })
 

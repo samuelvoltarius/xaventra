@@ -147,13 +147,13 @@ export async function deploySkill(skillName: string): Promise<{
 
             // Create remote skill directory
             execSync(
-                `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${target.user}@${target.host} "mkdir -p ${target.remotePath}/${skillName}"`,
+                `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${target.user}@${target.host} "mkdir -p ${target.remotePath}/${skillName}"`,
                 { timeout: 15000, stdio: 'pipe' }
             )
 
             // Copy files via tar pipe
             execSync(
-                `cd "${skillDir}" && tar czf - . | ssh -o StrictHostKeyChecking=no ${target.user}@${target.host} "cd ${target.remotePath}/${skillName} && tar xzf -"`,
+                `cd "${skillDir}" && tar czf - . | ssh -o StrictHostKeyChecking=accept-new ${target.user}@${target.host} "cd ${target.remotePath}/${skillName} && tar xzf -"`,
                 { timeout: 30000, stdio: 'pipe', shell: 'C:\\Program Files\\Git\\bin\\bash.exe' }
             )
 

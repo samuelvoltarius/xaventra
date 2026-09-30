@@ -390,7 +390,7 @@ ${context ? `Kontext: ${context}` : ''}
 Gib mir 3-5 KONKRETE Lösungsvorschläge als kurze Befehle oder Aktionen.
 Antworte NUR mit den Lösungen, eine pro Zeile, ohne Nummerierung.
 Beispiel-Format:
-ssh -o StrictHostKeyChecking=no user@host
+ssh -o StrictHostKeyChecking=accept-new user@host
 Erhöhe Timeout: timeout 60 command
 Nutze alternative: scp statt pscp`
 

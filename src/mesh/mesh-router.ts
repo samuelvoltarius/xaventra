@@ -493,7 +493,7 @@ export const executeRemote = async (
     _timeoutMs = 30_000
 ): Promise<{ success: boolean; output: string; executionMs: number }> => {
     // R2: this built a shell string from registry-controlled host/user plus
-    // the command, with StrictHostKeyChecking=no. It has no callers; remote
+    // the command, with host-key checking disabled. It has no callers; remote
     // work goes through the signed mesh transport. Refuse instead of running.
     return {
         success: false,

@@ -332,7 +332,7 @@ async function discoverMeshModels(): Promise<DiscoveredModel[]> {
 
             try {
                 const { stdout } = await execAsync(
-                    `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${user}@${ip} "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'"`,
+                    `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 ${user}@${ip} "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'"`,
                     { timeout: 15000 }
                 )
                 const data = JSON.parse(stdout.trim()) as { models?: Array<{ name: string }> }

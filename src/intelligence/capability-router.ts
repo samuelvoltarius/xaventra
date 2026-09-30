@@ -102,7 +102,7 @@ function isValidNodeIp(ip: unknown): ip is string {
 }
 
 function sshArgs(ip: string, connectTimeout: number, remoteCmd: string): string[] {
-    return ['-o', 'StrictHostKeyChecking=no', '-o', `ConnectTimeout=${connectTimeout}`, `xaventra@${ip}`, remoteCmd]
+    return ['-o', 'StrictHostKeyChecking=accept-new', '-o', `ConnectTimeout=${connectTimeout}`, `xaventra@${ip}`, remoteCmd]
 }
 
 async function checkRemote(ip: string, check: CapabilityCheck): Promise<boolean> {
@@ -254,7 +254,7 @@ export async function resolveCapability(query: CapabilityQuery): Promise<Capabil
                 node: { id: node.node_id, ip: node.ip, hostname: node.hostname || node.ip, platform: node.platform || 'linux' },
                 installed: false,
                 runRemotely: true,
-                sshPrefix: `ssh -o StrictHostKeyChecking=no xaventra@${node.ip}`,
+                sshPrefix: `ssh -o StrictHostKeyChecking=accept-new xaventra@${node.ip}`,
             }
         }
     }
@@ -276,7 +276,7 @@ export async function resolveCapability(query: CapabilityQuery): Promise<Capabil
                 node: { id: bestNode.node_id, ip: bestNode.ip, hostname: bestNode.hostname, platform: bestNode.platform || 'linux' },
                 installed: true,
                 runRemotely: true,
-                sshPrefix: `ssh -o StrictHostKeyChecking=no xaventra@${bestNode.ip}`,
+                sshPrefix: `ssh -o StrictHostKeyChecking=accept-new xaventra@${bestNode.ip}`,
             }
         }
     }

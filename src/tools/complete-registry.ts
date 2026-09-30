@@ -3089,7 +3089,7 @@ const meshDownloadFileTool: NovaTool = {
         try {
             // Method 1: SSH cat + base64 (works everywhere, no SCP needed)
             const b64output = execSync(
-                `ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ${user}@${host} "base64 '${remotePath}'"`,
+                `ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new ${user}@${host} "base64 '${remotePath}'"`,
                 { encoding: 'utf-8', timeout: 60_000, maxBuffer: 50 * 1024 * 1024 }
             )
             const buffer = Buffer.from(b64output.trim(), 'base64')
