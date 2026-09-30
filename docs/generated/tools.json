@@ -103,15 +103,10 @@
     {
       "name": "auto_provision",
       "category": "system",
-      "description": "Legacy: installiert fehlende Capability nur mit confirm=\"AUTO_PROVISION:<capability>\" oder YOLO-Modus. Sonst self_setup_plan nutzen.",
+      "description": "Abgeschaltet: installiert nichts. Fuer fehlende Faehigkeiten self_setup_plan nutzen; installieren nur der Owner per /setup apply.",
       "parameters": [
         {
           "name": "capability",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "confirm",
           "type": "string",
           "required": false
         }

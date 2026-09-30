@@ -318,6 +318,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/doctor/doctor-stufe1.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/doctor/failure-research-worker.test.ts",
       "path": ".nova-data"
     },
