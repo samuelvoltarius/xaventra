@@ -206,6 +206,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/node-profile.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/outcome-ledger.ts",
       "path": ".nova-data"
     },
@@ -315,6 +319,10 @@
     },
     {
       "owner": "src/dev/verify-production-trace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/claude-handoff.test.ts",
       "path": ".nova-data"
     },
     {
@@ -607,6 +615,10 @@
     },
     {
       "owner": "src/mesh/auto-provisioner.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/capability-graph-phantom.test.ts",
       "path": ".nova-data"
     },
     {
@@ -1004,6 +1016,10 @@
     {
       "owner": "src/layers/L0-supervisor.ts",
       "path": ".nova-data/scheduled-tasks.json"
+    },
+    {
+      "owner": "src/doctor/claude-handoff.ts",
+      "path": ".nova-data/self-doctor/claude-handoff.json"
     },
     {
       "owner": "src/dev/generate-runtime-catalogs.test.ts",

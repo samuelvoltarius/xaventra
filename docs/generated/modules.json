@@ -1767,6 +1767,14 @@
       ]
     },
     {
+      "module": "src/core/node-profile.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/nova-logger.ts",
       "imports": [
         "node:fs",
@@ -2494,6 +2502,17 @@
     {
       "module": "src/discord/targets.ts",
       "imports": []
+    },
+    {
+      "module": "src/doctor/claude-handoff.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./failure-research-coordinator.js",
+        "node:crypto",
+        "node:fs"
+      ]
     },
     {
       "module": "src/doctor/collect.ts",
@@ -4369,6 +4388,7 @@
       "imports": [
         "../config/config-path.js",
         "../core/data-root.js",
+        "../core/node-profile.js",
         "./capability-graph.js",
         "./direct-mesh-transport.js",
         "./fence-highwater.js",
