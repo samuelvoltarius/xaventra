@@ -5262,6 +5262,7 @@
         "../desktop/desktop-agent-context.js",
         "../desktop/desktop-control.js",
         "../host/capture-agent.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

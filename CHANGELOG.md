@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.79.3] — 2026-09-30
+
+- Desktop screenshot: a model-supplied name is only a prefix; every capture
+  gets a fresh file. Live the model reused an earlier capture's name from the
+  conversation and the exclusive write failed with EEXIST.
+
+
 ## [2.79.2] — 2026-09-30
 
 - Model capability probe gives reasoning models room to think (512 tokens) and
