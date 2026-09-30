@@ -79,7 +79,7 @@ describe('legacy registry file tools use the complete-registry guards (INT-9)', 
         expect(readFileSync(join(workspace, 'xaventra.config.json'), 'utf8')).toBe('{"secret":true}')
         expect(existsSync(join(outside, 'new.txt'))).toBe(false)
         const ok = await run('write_file', { path: 'notes/new.txt', content: 'hello' })
-        expect(ok.success).toBe(true)
+        expect(ok.success, JSON.stringify(ok.result)).toBe(true)
         expect(readFileSync(join(workspace, 'notes', 'new.txt'), 'utf8')).toBe('hello')
     })
 
@@ -88,7 +88,7 @@ describe('legacy registry file tools use the complete-registry guards (INT-9)', 
         const run = legacy()
         const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', runId: 'r1' },
             () => run('read_file', { path: join(outside, 'o.txt') }))
-        expect(result.success).toBe(true)
+        expect(result.success, JSON.stringify(result.result)).toBe(true)
         expect((result.result as any).content).toBe('outside text')
     })
 })
