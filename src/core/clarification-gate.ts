@@ -25,7 +25,13 @@ const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5
 
 // Only this bounded local capture + reply shape supplies its own referents.
 // A second operation, another recipient or unspecified capture stays gated.
-const OWN_SCREENSHOT_REPLY = /^(?:und\s+)?(?:mach|mache|erstelle)\s+(?:mal\s+)?(?:ein|eine|einen)\s+(?:screenshot|bildschirmfoto)\s+(?:deines systems|deines bildschirms)(?:\s+und\s+(?:send|sende|schick|schicke)\s+mir\s+(?:diesen|dieses|den|das))?[.!?]*$/i
+const OWN_SCREENSHOT_REPLY = /^(?:und\s+)?(?:bitte\s+)?(?:mach|mache|erstelle)\s+(?:mal\s+)?(?:ein|eine|einen)\s+(?:screenshot|bildschirmfoto)\s+deines\s+(?:systems|bildschirms|desktops|arbeitsdesktops)(?:\s+und\s+(?:send|sende|schick|schicke)\s+(?:mir\s+(?:diesen|dieses|den|das|ihn|es)|(?:diesen|dieses|den|das|ihn|es)\s+mir))?[.!?]*$/i
+// A pending question is only an answer slot while the conversation is fresh.
+// A clarification persisted a day ago (and copied along on an update) must
+// never turn the next unrelated message into that old action.
+export const PENDING_CLARIFICATION_TTL_MS = 30 * 60_000
+// Small talk is never an answer that authorizes the pending action.
+const SMALL_TALK = /^(?:und\s+)?(?:wie\s+geht(?:['’]?s|\s+es)(?:\s+(?:dir|euch))?|wie\s+läuft(?:['’]?s|\s+es)|was\s+machst\s+du|alles\s+(?:gut|ok|klar|fit))\b[^.!]*[?!.]*$/i
 const OBSOLETE_WORKFLOW_QUESTION = /^Ich habe dazu widersprüchliche oder unsichere Evidence \(workflow:[a-z-]+\)\. Welche Angabe soll ich als gültig behandeln\?$/
 
 function hasExplicitReadUrlReference(text: string): boolean {
@@ -56,11 +62,15 @@ export function evaluateClarification(principalId: string, content: string): Cla
     let pending = store.getSummary(principalId)?.pendingClarification
     // Old versions persisted target questions for announcements. Do not turn
     // the next ordinary reply into a resumed installation from that bad state.
-    if (pending && (isConversationOnly(pending.originalRequest)
+    const expired = pending && (typeof pending.createdAt !== 'number' || !Number.isFinite(pending.createdAt)
+        || Date.now() - pending.createdAt > PENDING_CLARIFICATION_TTL_MS)
+    if (pending && (expired || isConversationOnly(pending.originalRequest)
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'belief'
             && OBSOLETE_WORKFLOW_QUESTION.test(pending.question))
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'reference'
-            && hasExplicitReadUrlReference(pending.originalRequest)))) {
+            && hasExplicitReadUrlReference(pending.originalRequest))
+        || (pending.missingFields.length === 1 && ['target', 'reference'].includes(pending.missingFields[0])
+            && OWN_SCREENSHOT_REPLY.test(pending.originalRequest.trim())))) {
         store.clearPendingClarification(principalId)
         pending = undefined
     }
@@ -72,7 +82,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
         }
         // A new announcement/explanation is not an answer authorizing the old
         // action. Leave that clarification pending and answer this turn normally.
-        if (isConversationOnly(text)) {
+        if (isConversationOnly(text) || SOCIAL.test(text) || SMALL_TALK.test(text)) {
             return { action: 'continue', content: text, missingFields: [], confidence: 1, evidence: ['conversation does not resume pending action'] }
         }
         const restored = store.consumePendingClarification(principalId)!

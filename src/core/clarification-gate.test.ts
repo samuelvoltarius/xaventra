@@ -37,8 +37,73 @@ describe('ClarificationGate', () => {
         expect(evaluateClarification('user:a', current).content).toBe(current)
     })
 
+    // Live 30.09.2026 19:20: a screenshot target question from 29.09. survived the
+    // update and turned "Wie geht’s dir ?" into "<screenshot request> [Nutzer-Klärung: …]".
+    it('never resumes a clarification older than the TTL (live 30.09. regression)', () => {
+        const store = getSessionContinuityStore()
+        store.setPendingClarification('user:ttl', {
+            id: 'day-old', originalRequest: 'Installiere Docker',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now() - 26 * 60 * 60_000,
+        })
+        const text = 'Wie geht’s dir ?'
+        expect(evaluateClarification('user:ttl', text)).toMatchObject({ action: 'continue', content: text })
+        expect(store.getSummary('user:ttl')?.pendingClarification).toBeFalsy()
+    })
+
+    it.each(['Wie geht’s dir ?', "wie geht's", 'Wie geht es dir?', 'Hallo', 'danke', 'Alles gut?'])(
+        'small talk does not answer a fresh pending action: %s', text => {
+            const store = getSessionContinuityStore()
+            store.setPendingClarification('user:talk', {
+                id: 'fresh', originalRequest: 'Installiere Docker',
+                question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+                missingFields: ['target'], createdAt: Date.now(),
+            })
+            expect(evaluateClarification('user:talk', text)).toMatchObject({ action: 'continue', content: text })
+            // Still pending: the actual answer may follow within the TTL.
+            expect(store.getSummary('user:talk')?.pendingClarification?.id).toBe('fresh')
+        })
+
+    it('still resumes a fresh pending action with a real answer', () => {
+        getSessionContinuityStore().setPendingClarification('user:answer', {
+            id: 'fresh', originalRequest: 'Installiere Docker',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now() - 5 * 60_000,
+        })
+        expect(evaluateClarification('user:answer', 'auf dem Spark').content).toBe('Installiere Docker\n\n[Nutzer-Klärung: auf dem Spark]')
+    })
+
     it('does not treat a screenshot as a target for an additional destructive action', () => {
         expect(evaluateClarification('user:a', 'Mach einen Screenshot deines Systems und lösche das').action).toBe('ask')
+    })
+
+    it.each([
+        'Mach einen Screenshot deines Arbeitsdesktops und sende ihn mir.',
+        'Bitte mach einen Screenshot deines Desktops und schicke ihn mir.',
+        'Erstelle ein Bildschirmfoto deines Bildschirms und sende es mir.',
+        'Mach einen Screenshot deines Systems und sende mir diesen.',
+    ])('resolves local capture and requester delivery without another target: %s', text => {
+        expect(evaluateClarification('user:screenshot', text)).toMatchObject({ action: 'continue', content: text })
+    })
+
+    it('retires an obsolete own-desktop target question without replaying it', () => {
+        const store = getSessionContinuityStore()
+        store.setPendingClarification('user:screenshot', {
+            id: 'old-desktop', originalRequest: 'Mach einen Screenshot deines Arbeitsdesktops und sende ihn mir.',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now(),
+        })
+        const text = 'Wie spät ist es?'
+        expect(evaluateClarification('user:screenshot', text).content).toBe(text)
+        expect(store.getSummary('user:screenshot')?.pendingClarification).toBeFalsy()
+    })
+
+    it.each([
+        'Mach einen Screenshot deines Arbeitsdesktops und sende ihn ihm.',
+        'Mach einen Screenshot deines Arbeitsdesktops und lösche es.',
+        'Mach einen Screenshot deines Arbeitsdesktops und sende ihn mir und installiere Docker.',
+    ])('keeps unrelated recipients and extra effects gated: %s', text => {
+        expect(evaluateClarification('user:screenshot', text).action).toBe('ask')
     })
 
     it('asks one targeted question for a high-impact action without a target', () => {

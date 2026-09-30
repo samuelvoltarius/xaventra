@@ -119,6 +119,16 @@ const STATUS_RANK: Record<MemoryLifecycle, number> = {
 
 const TERMINAL_MEMORY_STATES = new Set<MemoryLifecycle>(['rejected', 'expired', 'superseded'])
 
+// Every federated merge appends one provenance entry, and records bounce
+// between peers: live on 30.09.2026 one record carried 1566 entries (NAS
+// snapshot 32 MB, audit.jsonl 16 GB). Keep the origin plus the newest entries.
+export const MAX_PROVENANCE_ENTRIES = 32
+export function boundProvenance(list: MemoryProvenance[] | undefined): MemoryProvenance[] {
+    if (!Array.isArray(list)) return []
+    if (list.length <= MAX_PROVENANCE_ENTRIES) return list
+    return [list[0], ...list.slice(-(MAX_PROVENANCE_ENTRIES - 1))]
+}
+
 function memoryKeyVersion(record: Pick<GovernedMemory, 'memoryKeyVersion'>): number {
     const value = Number(record.memoryKeyVersion || 1)
     return Number.isSafeInteger(value) && value > 0 ? value : 1
@@ -265,6 +275,7 @@ export class MemoryGovernanceCoordinator {
     private persist(): void {
         if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true })
         this.store.updatedAt = Date.now()
+        for (const record of this.store.records) record.provenance = boundProvenance(record.provenance)
         const temporary = `${this.storePath}.tmp`
         writeFileSync(temporary, JSON.stringify(this.store, null, 2))
         if (existsSync(this.storePath)) copyFileSync(this.storePath, this.backupPath)
@@ -609,7 +620,11 @@ export class MemoryGovernanceCoordinator {
 
     getReplicationSnapshot(): GovernedMemory[] {
         this.expireRecords()
-        return this.store.records.map(record => JSON.parse(JSON.stringify(record)) as GovernedMemory)
+        return this.store.records.map(record => {
+            const copy = JSON.parse(JSON.stringify(record)) as GovernedMemory
+            copy.provenance = boundProvenance(copy.provenance)
+            return copy
+        })
     }
 
     async mergeReplicationSnapshot(
@@ -655,9 +670,9 @@ export class MemoryGovernanceCoordinator {
                 ...JSON.parse(JSON.stringify(remote)),
                 memoryKeyVersion: remoteVersion,
                 backends: projectBackends ? (local?.backends || {}) : {},
-                provenance: [...(remote.provenance || []), {
+                provenance: boundProvenance([...(Array.isArray(remote.provenance) ? remote.provenance : []), {
                     source: `federated:${sourceNode}`, evidence: 'manual', timestamp: Date.now(), verified: true,
-                }],
+                }]),
             }
             if (competing) next.supersedes = competing.id
             // An older peer may still ship a tombstone with plaintext: never keep it.

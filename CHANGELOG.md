@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.79.1] — 2026-09-30
+
+- Clarification gate: a pending question expires after 30 minutes and small
+  talk or greetings never answer it. Live on 30.09. a screenshot question from
+  the day before turned "Wie geht's dir?" into the old screenshot request.
+  Own-desktop screenshot requests ("Arbeitsdesktop", "Desktop", "schick ihn mir")
+  resolve their own target; stale questions of that shape are retired.
+- Memory governance: provenance per record is bounded (origin plus newest 31).
+  Federated merges appended one entry per hop; one record carried 1566 entries,
+  the NAS snapshot reached 32 MB (upload always failed) and audit.jsonl 16 GB.
+
+
 ## [2.79.0] — 2026-09-30
 
 Breaking: mesh protocol and configuration change. Update all nodes together.
