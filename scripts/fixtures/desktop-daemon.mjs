@@ -151,7 +151,10 @@ const { getNovaState } = await load('core/nova-state.js')
 const ready = setInterval(async () => {
   if (!getNovaState().runtimeReady || !existsSync(join(root, '.nova-data', 'daemon-control.json'))) return
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/desktop/bootstrap`, { signal: AbortSignal.timeout(2000) })
+    // TOK-1: the Desktop API answers only the token holder; the parent passes one disposable token.
+    const token = process.env.NOVA_DESKTOP_API_TOKEN || process.env.XAVENTRA_DESKTOP_API_TOKEN
+    const response = await fetch(`http://127.0.0.1:${port}/api/desktop/bootstrap`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(2000) })
     if (!response.ok || !(await response.json()).controlPlane?.authoritative) return
     clearInterval(ready)
     process.send?.({ endpoint: `http://127.0.0.1:${port}`, principal, roomId: room.id, allowed, forbidden, fullDaemon: true, pid: process.pid, model, activationCountFile })

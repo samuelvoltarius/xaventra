@@ -8,6 +8,8 @@
  * 4. Sensitive data leaks
  */
 
+import { realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { normalize, resolve, sep } from 'node:path'
 
 // ============================================
@@ -64,9 +66,42 @@ const BLOCKED_PATHS_UNIX = [
     '/.mozilla',
 ]
 
+// macOS: /etc and /var are symlinks into /private; resolved paths use the target.
+const BLOCKED_PATHS_DARWIN = ['/private/etc', '/private/var']
+
 const BLOCKED_PATHS = process.platform === 'win32'
     ? BLOCKED_PATHS_WINDOWS
-    : BLOCKED_PATHS_UNIX
+    : process.platform === 'darwin' ? [...BLOCKED_PATHS_UNIX, ...BLOCKED_PATHS_DARWIN] : BLOCKED_PATHS_UNIX
+
+/**
+ * Match on path-segment boundaries, never on substrings: "/var" must block
+ * "/var/log" but not "/home/x/various", "/lib" not ".../library".
+ * Rooted entries ("/etc", "C:\\Windows") match as prefix; the others
+ * ("/.ssh", "\\AppData\\Local\\Microsoft") match anywhere as whole segments.
+ */
+export function matchesBlockedPath(normalizedPath: string, blocked: string, windows = process.platform === 'win32'): boolean {
+    const separator = windows ? '\\' : '/'
+    const path = normalizedPath.toLowerCase()
+    const entry = blocked.toLowerCase()
+    const rooted = windows ? /^[a-z]:\\/.test(entry) : !entry.startsWith('/.')
+    if (rooted) return path === entry || path.startsWith(entry + separator)
+    return path.endsWith(entry) || path.includes(entry + separator)
+}
+
+/** The per-user temp directory on macOS lives under /private/var/folders; /tmp on Linux is not blocked either. */
+function isInsideDarwinTempDir(normalizedPath: string): boolean {
+    if (process.platform !== 'darwin') return false
+    const roots = new Set<string>()
+    try { roots.add(normalize(tmpdir())); roots.add(normalize(realpathSync(tmpdir()))) } catch { /* no temp dir: no exemption */ }
+    const path = normalizedPath.toLowerCase()
+    for (const root of roots) {
+        const r = root.replace(/\/+$/, '').toLowerCase()
+        if (r.startsWith('/private/var/folders/') || r.startsWith('/var/folders/')) {
+            if (path === r || path.startsWith(r + '/')) return true
+        }
+    }
+    return false
+}
 
 // ============================================
 // Blocked File Extensions
@@ -227,8 +262,10 @@ export class SecurityLayer {
         const normalizedPath = normalize(resolve(filePath))
 
         // Check against blocked system paths
+        const tempExempt = isInsideDarwinTempDir(normalizedPath)
         for (const blocked of BLOCKED_PATHS) {
-            if (normalizedPath.toLowerCase().includes(blocked.toLowerCase())) {
+            if (tempExempt && blocked.startsWith('/') && !blocked.startsWith('/.')) continue
+            if (matchesBlockedPath(normalizedPath, blocked)) {
                 this.logBlock('path', filePath, `Matches blocked path: ${blocked}`)
                 return {
                     allowed: false,

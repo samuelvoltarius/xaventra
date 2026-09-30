@@ -1,6 +1,7 @@
 // Production Desktop HTTP ingress/message pipeline, not a browser or full daemon.
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -16,6 +17,10 @@ Object.assign(env, { HOME: root, USERPROFILE: root, APPDATA: join(root, 'appdata
   NODE_ENV: 'test', NOVA_TEST_MODE: '1', NOVA_NO_SIDE_EFFECTS: '1', NOVA_SKIP_MODEL_RESOLVER_INIT: '1', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled',
   NOVA_NODE_ID: 'desktop-core-fixture', NOVA_DESKTOP_OWNER_ID: 'desktop-core-test', NOVA_AUTO_START_OLLAMA: '0', NOVA_OTEL_ENABLED: 'false', OTEL_SDK_DISABLED: 'true',
   NOVA_AGENT_TIMEOUT_MS: '15000', XAVENTRA_RESPONSE_CONTRACT_FIXTURE: '1' })
+// TOK-1: only a token holder is the Desktop owner; one disposable token per run.
+const desktopToken = randomBytes(24).toString('hex')
+env.NOVA_DESKTOP_API_TOKEN = desktopToken
+env.XAVENTRA_DESKTOP_API_TOKEN = desktopToken
 mkdirSync(env.APPDATA); mkdirSync(env.LOCALAPPDATA)
 const child = spawn(process.execPath, [resolve('scripts/fixtures/desktop-core.mjs'), root], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
 let log = ''; child.stdout.on('data', data => { log += data }); child.stderr.on('data', data => { log += data })
@@ -23,7 +28,7 @@ const watchdog = setTimeout(() => child.kill(), 90_000)
 try {
   const info = await new Promise((resolve, reject) => { child.once('message', resolve); child.once('error', reject); child.once('exit', () => reject(new Error('Fixture exited before ready'))) })
   const api = async (path, options = {}) => {
-    const response = await fetch(`${info.endpoint}/api/desktop${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-nova-principal': info.principal }, signal: AbortSignal.timeout(25000) })
+    const response = await fetch(`${info.endpoint}/api/desktop${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-nova-principal': info.principal, Authorization: `Bearer ${desktopToken}` }, signal: AbortSignal.timeout(25000) })
     assert.equal(response.ok, true, `HTTP ${response.status}`)
     return response.json()
   }

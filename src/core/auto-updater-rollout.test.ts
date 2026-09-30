@@ -98,6 +98,11 @@ describe('mesh rollout failure handling', () => {
         await deployUpdateToAllNodes({ enabled: true, notifyOnly: false, nodes: [node] })
         expect(sshCommands().length).toBeGreaterThan(0)
         expect(sshCommands().some(command => command.includes('/tmp/'))).toBe(false)
-        expect(calls.filter(call => call.file === 'scp').some(call => call.args.join(' ').includes('/tmp/'))).toBe(false)
+        // The remote target is the last scp argument (host:path). Local sources may live in
+        // os.tmpdir() (e.g. /tmp on Linux); only the remote staging location matters here.
+        const scpTargets = calls.filter(call => call.file === 'scp').map(call => call.args.at(-1) || '')
+        expect(scpTargets.length).toBeGreaterThan(0)
+        expect(scpTargets.every(target => target.startsWith(`${node.user}@${node.host}:`))).toBe(true)
+        expect(scpTargets.some(target => target.includes('/tmp/'))).toBe(false)
     })
 })

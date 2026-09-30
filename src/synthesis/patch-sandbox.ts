@@ -73,7 +73,8 @@ function snapshot(root: string): Snapshot {
     for (const file of tracked.split('\0').filter(Boolean).sort()) {
         if (forbidden(file)) continue
         if (!safeRelative(file)) throw new Error('Non-canonical tracked path')
-        if (!/^(?:src|test|scripts|docs|models|catalogs|contracts|desktop|\.github)\//.test(file)
+        // sql/ and plugins/ hold tracked fixtures the test suite reads (schema pins, built-in plugin).
+        if (!/^(?:src|test|scripts|docs|models|catalogs|contracts|desktop|sql|plugins|\.github)\//.test(file)
             && !/^[^/]+\.(?:json|ts|js|mjs|cjs|md|sh|ps1)$/.test(file)) continue
         if (/\.(?:gguf|bin|exe|zip|png|jpg|ico|icns)$/i.test(file)) continue
         assertRegularPath(root, file)
