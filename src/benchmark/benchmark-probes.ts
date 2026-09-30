@@ -309,7 +309,8 @@ async function probeMemory(workspace: string): Promise<BenchmarkProbeResult> {
     return result('benchmark_memory_probe', {
         'retrieved fact': Boolean(match && match.value === 'Ultramarin'),
         tombstone: writer.get(old!.id)?.status === 'superseded',
-        'new fact': corrected?.status === 'rejected' && corrected.value === 'Beta',
+        // MA-15 (30.09.): a forgotten fact keeps only its hash tombstone, no plaintext.
+        'new fact': corrected?.status === 'rejected' && !corrected.value && !corrected.content && Boolean(corrected.fingerprint),
         source: match?.provenance.some(item => item.source === 'benchmark-fixture' && item.verified) === true,
         'scope evidence': leaked.length === 0,
         'tombstone evidence': replica.get(corrected!.id)?.status === 'rejected',
