@@ -433,6 +433,27 @@ GRANT EXECUTE ON FUNCTION public.nova_check_fence(TEXT, BIGINT, TEXT, TEXT) TO n
 GRANT EXECUTE ON FUNCTION public.nova_fenced_upsert_shared_memory(TEXT, BIGINT, TEXT, TEXT, JSONB) TO nova_anon, nova_admin;
 GRANT EXECUTE ON FUNCTION public.nova_fencing_status() TO nova_anon, nova_admin;
 
+-- Deployments whose PostgREST role is not nova_anon (live 30.09.2026: a
+-- dedicated app role) got 403 on the new RPCs after the schema reload and lost
+-- every lease. Every role that may already call the v1 lease RPC gets the same
+-- right on the v5 functions.
+DO $$
+DECLARE v_role TEXT;
+BEGIN
+    FOR v_role IN
+        SELECT DISTINCT r.rolname FROM pg_roles r
+        WHERE r.rolname NOT IN ('nova_anon', 'nova_admin')
+          AND NOT r.rolsuper
+          AND r.rolname NOT LIKE 'pg\_%'
+          AND has_function_privilege(r.oid, 'public.nova_acquire_service_lease(text, text, text, integer)', 'EXECUTE')
+    LOOP
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.nova_acquire_service_lease_v2(TEXT, TEXT, TEXT, TEXT, INTEGER) TO %I', v_role);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.nova_check_fence(TEXT, BIGINT, TEXT, TEXT) TO %I', v_role);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.nova_fenced_upsert_shared_memory(TEXT, BIGINT, TEXT, TEXT, JSONB) TO %I', v_role);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.nova_fencing_status() TO %I', v_role);
+    END LOOP;
+END $$;
+
 NOTIFY pgrst, 'reload schema';
 COMMIT;
 
