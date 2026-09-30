@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.79.2] — 2026-09-30
+
+- Model capability probe gives reasoning models room to think (512 tokens) and
+  reads their reasoning text when no answer fits. Live the Spark vLLM reads
+  images correctly but answered the 15-token vision probe with nothing, so
+  Nova reported "kein Provider für vision".
+- Workstation runs a full XFCE session (own session bus, inside its own
+  virtual display) when XFCE is installed; otherwise the minimal openbox
+  desktop stays.
+- Migration `sql/mesh-coordination-v5.sql` grants the new RPCs to every role
+  that may call the v1 lease RPC, not only `nova_anon`. Live the coordinator's
+  PostgREST role was a dedicated app role: 403 after the schema reload and
+  every lease was lost until granted by hand.
+
+
 ## [2.79.1] — 2026-09-30
 
 - Clarification gate: a pending question expires after 30 minutes and small

@@ -3016,10 +3016,15 @@
       ]
     },
     {
+      "module": "src/host/workstation-desktop.ts",
+      "imports": []
+    },
+    {
       "module": "src/host/workstation-main.ts",
       "imports": [
         "./capture-agent.js",
         "./desktop-input.js",
+        "./workstation-desktop.js",
         "./workstation-security.js",
         "node:child_process",
         "node:crypto",

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { userInfo } from 'node:os'
 import { createCaptureAgent } from './capture-agent.js'
 import { executeDesktopInputOnce, runDesktopInput } from './desktop-input.js'
+import { planDesktopSession } from './workstation-desktop.js'
 import { planWorkstationPaths, workstationChildEnv, checkOwnedPrivatePath, assertOutsideShellHome,
  RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS, assertDedicatedWorkstationAccount, readLogindSessions } from './workstation-security.js'
 
@@ -48,9 +49,9 @@ x.on('exit',()=>{if(!stopping){console.error('Owned display exited');stop()}})
 let ready=false
 for(let n=0;n<50;n++){live();try{await exec('/usr/bin/xdotool',['getdisplaygeometry'],{env,timeout:1000});ready=true;break}catch{}await new Promise(r=>setTimeout(r,100))}
 if(!ready){stop();throw Error('Virtual display readiness failed')}
-start('/usr/bin/openbox',[])
-start('/usr/bin/xterm',['-title','Xaventra Terminal','-geometry','90x25+100+350','-e','/bin/bash','--noprofile','--norc'])
-start('/usr/bin/xmessage',['-title','Xaventra Arbeitsdesktop','-geometry','620x180+100+100','-buttons','Bereit:0','Eigener Xaventra-Arbeitsdesktop\nGetrennt von der persoenlichen Sitzung.\nScreenshot und Computer Use arbeiten hier.'])
+const desktop=planDesktopSession(existsSync)
+for(const program of desktop.programs)start(program.file,program.args)
+console.log(`Workstation desktop: ${desktop.kind}`)
 const server=createCaptureAgent(readFileSync(tokenFile,'utf8').trim(),async()=>{
  live();const path=join(paths.captureDir,`capture-${randomBytes(12).toString('hex')}.png`)
  try{await exec('/usr/bin/scrot',['--overwrite',path],{env,timeout:15000,maxBuffer:4096});live();return readFileSync(path)}finally{if(existsSync(path))unlinkSync(path)}

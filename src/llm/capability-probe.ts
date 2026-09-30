@@ -141,6 +141,10 @@ function isCacheStale(result: ModelCapabilityProbeResult): boolean {
 // first load. Cloud APIs respond fast, but a uniform high timeout is safe since
 // probing runs in the background and never blocks anything.
 const PROBE_TIMEOUT_MS = 35_000
+// Live 30.09.2026: the Spark vLLM (reasoning model) answered the vision probe
+// with content=null at max_tokens 15 (finish_reason length) and was recorded as
+// blind, although it reads images correctly. Budget for thinking first.
+export const PROBE_ANSWER_TOKENS = 512
 
 /**
  * Test if a model endpoint is alive and what it supports.
@@ -236,7 +240,11 @@ export async function probeModel(endpoint: string, modelId: string, apiKey?: str
             })
             if (!res.ok) return null
             const data = await res.json() as any
-            return data.choices?.[0]?.message?.content || data.message?.content || null
+            const message = data.choices?.[0]?.message || data.message
+            // Reasoning models (vLLM reasoning parser) think first: with a small
+            // budget content stays null and only the reasoning text exists. That
+            // text is still the model's own reading of the input.
+            return message?.content || message?.reasoning_content || message?.reasoning || null
         } catch { return null }
     }
 
@@ -282,7 +290,7 @@ export async function probeModel(endpoint: string, modelId: string, apiKey?: str
                 { type: 'text', text: 'What colour is this image? Answer in one word.' },
                 { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
             ] }]
-        const visionAns = await askModel(visionMsg, 15)
+        const visionAns = await askModel(visionMsg, PROBE_ANSWER_TOKENS)
         // Vision works if the model correctly identifies red (not a refusal/hallucination)
         base.supportsVision = !!visionAns && /\b(rot|red|rouge|rojo)\b/i.test(visionAns)
     } catch { /* sharp or vision unavailable */ }
@@ -290,14 +298,14 @@ export async function probeModel(endpoint: string, modelId: string, apiKey?: str
     // ---- Step 4: CODE — give a tiny coding task, check for valid code ----
     let codeWorks = false
     try {
-        const codeAns = await askModel([{ role: 'user', content: 'Write a JavaScript function named add that returns the sum of two numbers a and b. Code only.' }], 80)
+        const codeAns = await askModel([{ role: 'user', content: 'Write a JavaScript function named add that returns the sum of two numbers a and b. Code only.' }], PROBE_ANSWER_TOKENS)
         codeWorks = !!codeAns && /function\s+add|const\s+add|add\s*=/.test(codeAns) && /return|=>/.test(codeAns) && /\+/.test(codeAns)
     } catch { /* optional */ }
 
     // ---- Step 5: REASONING — multi-step logic check ----
     let reasoningWorks = false
     try {
-        const reasonAns = await askModel([{ role: 'user', content: 'Tom is older than Sara. Sara is older than Max. Who is the youngest? Answer with just the name.' }], 15)
+        const reasonAns = await askModel([{ role: 'user', content: 'Tom is older than Sara. Sara is older than Max. Who is the youngest? Answer with just the name.' }], PROBE_ANSWER_TOKENS)
         reasoningWorks = !!reasonAns && /max/i.test(reasonAns)
     } catch { /* optional */ }
 
