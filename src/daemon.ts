@@ -1962,6 +1962,8 @@ async function startDaemon() {
             const { createResearchWorker } = await import('./doctor/research-worker.js')
             const { setDoctorResearchWorker, getAutonomyStatus } = await import('./core/autonomy-loop.js')
             const { hasGlobalAutonomyAuthority } = await import('./core/autonomy-authority.js')
+            const { setClaudeHandoffConfig } = await import('./doctor/claude-handoff.js')
+            setClaudeHandoffConfig((config as any).autonomy?.claudeHandoff)
             setDoctorResearchWorker(createResearchWorker(
                 () => getAutonomyStatus().running && getAutonomyStatus().config.enabled && hasGlobalAutonomyAuthority(),
                 state.llm,

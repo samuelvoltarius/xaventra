@@ -14,6 +14,10 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { join } from 'node:path'
 import { hasGlobalAutonomyAuthority } from './autonomy-authority.js'
 
+function currentPackageVersion(): string {
+    try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.0.0' } catch { return '0.0.0' }
+}
+
 // ============================================
 // Types
 // ============================================
@@ -1028,6 +1032,14 @@ async function runDoctorPhase(): Promise<void> {
             await reconcileRepairActivations()
             reconcileDoctorRepairs(getFailureResearchCoordinator())
             await proposeDoctorRepair(getFailureResearchCoordinator(), doctorResearchWorker)
+            // S1.7: verified cases go to Claude as data; after a rollout Nova
+            // says whether the finding closed. Outbox always, delivery opt-in.
+            try {
+                const { runClaudeHandoffTick } = await import('../doctor/claude-handoff.js')
+                const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
+                const handoff = await runClaudeHandoffTick({ cases: getFailureResearchCoordinator().list(), node: getLocalNodeId(), version: currentPackageVersion() })
+                if (handoff.queued || handoff.delivered || handoff.reconciled) console.log(`[Autonomy] Claude-Übergabe: ${handoff.queued} neu, ${handoff.delivered} zugestellt, ${handoff.reconciled} nach Rollout geprüft`)
+            } catch (err) { console.debug(`[Autonomy] Claude handoff non-critical error: ${err}`) }
         }
     } catch (err) {
         console.debug(`[Autonomy] Self-Doctor non-critical error: ${err}`)
