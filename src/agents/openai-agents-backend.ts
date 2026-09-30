@@ -124,8 +124,12 @@ export class OpenAIAgentsBackend implements AgentBackend {
                     requestText: input.content,
                     governedReadOnly: false,
                 })
-                const idempotencyKey = makeIdempotencyKey(execution.scopeId, novaTool.name, params)
-                const executionInputHash = evidenceHash(params)
+                // Key and input hash stay bound to the model's arguments, as in
+                // 2.78.58: the authorization context (request text, identity) is
+                // not part of the effect, and a successor resuming with other
+                // wording must still find the predecessor's completed call.
+                const idempotencyKey = makeIdempotencyKey(execution.scopeId, novaTool.name, modelParams)
+                const executionInputHash = evidenceHash(modelParams)
                 let result: unknown
                 try {
                     kernel.assertCanExecute(novaTool.name)

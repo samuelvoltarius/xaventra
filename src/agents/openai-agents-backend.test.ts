@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Usage, type Model, type ModelProvider, type ModelRequest, type ModelResponse, type StreamEvent } from '@openai/agents'
 import { OutcomeLedger } from '../core/outcome-ledger.js'
 import { createTaskContract } from '../core/task-contract.js'
-import { IdempotencyStore } from '../core/execution-control.js'
+import { IdempotencyStore, makeIdempotencyKey } from '../core/execution-control.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { OpenAIAgentsBackend } from './openai-agents-backend.js'
 
@@ -222,5 +222,30 @@ describe('OpenAIAgentsBackend role check (R2 MA-13)', () => {
         expect(seen).toHaveLength(1)
         expect(seen[0].userId).toBe('test-user')
         expect(seen[0].channel).toBe('test')
+    })
+})
+
+describe('OpenAIAgentsBackend idempotency key', () => {
+    it('binds the key to the model arguments, not to request text or identity', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'nova-agents-key-'))
+        tempDirs.push(dir)
+        const contract = createTaskContract('Run echo tool', { requiresTool: true, kind: 'generic-action' }, ['echo_tool'])
+        const idempotency = new IdempotencyStore(join(dir, 'idempotency.json'))
+        const tools = [{
+            name: 'echo_tool', description: 'Returns verified echo evidence', category: 'other' as const,
+            parameters: [{ name: 'value', type: 'string', description: 'Value', required: true }],
+            handler: async (params: Record<string, unknown>) => ({ success: true, output: params.value }),
+        }]
+        const backend = new OpenAIAgentsBackend({ modelProvider: { getModel: () => new ToolCallingModel() }, ledger: new OutcomeLedger(join(dir, 'ledger')),
+            idempotencyStore: idempotency, maxTurns: 4 })
+        await backend.run({ contract, userId: 'test-user', channel: 'test', content: 'Run echo tool, first wording', tools })
+        // A successor only knows the model's call; it must find the completed effect.
+        let repeated = false
+        const replay = await idempotency.executeOnce({
+            key: makeIdempotencyKey(contract.id, 'echo_tool', { value: 'ok' }), runId: contract.id, operation: 'echo_tool',
+            inputHash: 'successor', execute: async () => { repeated = true; return { success: true } },
+        })
+        expect(replay.replayed).toBe(true)
+        expect(repeated).toBe(false)
     })
 })

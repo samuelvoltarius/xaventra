@@ -1,6 +1,7 @@
 // Real compiled Desktop API + message pipeline in a disposable child process.
 // Only the model and optional subsystems are fixtures; tools/validator/ledger
 // are production code. This does not start the full daemon or production nodes.
+import assert from 'node:assert/strict'
 import express from 'express'
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -54,7 +55,7 @@ await new Promise(resolve => model.listen(0, '127.0.0.1', resolve))
 const baseUrl = `http://127.0.0.1:${model.address().port}/v1`
 const config = { name: 'Xaventra', provider: 'local', model: 'fixture-model', fallbackModels: [],
   providers: { local: { enabled: true, baseUrl } }, userPrincipals: {},
-  multiUser: { enabled: true }, autonomy: { enabled: false }, mesh: { enabled: false }, mcp: { servers: [] } }
+  multiUser: { enabled: true }, autonomy: { enabled: false }, mesh: { enabled: false, mode: 'standalone' }, mcp: { servers: [] } }
 writeFileSync(join(root, 'xaventra.config.json'), JSON.stringify(config))
 writeFileSync(join(root, 'package.json'), readFileSync(join(source, 'package.json')))
 const { initNovaState } = await load('core/nova-state.js')
@@ -70,8 +71,9 @@ const { getLifecyclePolicy } = await load('core/lifecycle-policy.js')
 getLifecyclePolicy().register({ id: 'desktop-core-read-only', event: 'tool.before', priority: -1000, failClosed: true,
   handler: payload => payload.toolName === 'read_file' && resolve(String(payload.input?.path || '')) === allowed
     ? { decision: 'allow' } : { decision: 'deny', reason: 'Disposable acceptance permits only its exact evidence file' } })
-const { acquireServiceLease } = await load('mesh/leader-election.js')
-await acquireServiceLease('nova-main'); await acquireServiceLease('dashboard')
+const { shouldStartExclusiveService } = await load('mesh/leader-election.js')
+// Same path as the daemon: only the renewal path holds a fencing token (CL-07).
+assert.ok(await shouldStartExclusiveService('nova-main')); assert.ok(await shouldStartExclusiveService('dashboard'))
 const { getTopicRoomStore } = await load('desktop/topic-room-store.js')
 const room = getTopicRoomStore().createRoom(principal, { title: 'Core acceptance', topic: '', botIds: ['nova'], preferredNodeIds: [], modelMode: 'auto' })
 const { getMemoryGovernanceCoordinator } = await load('memory/memory-governance.js')

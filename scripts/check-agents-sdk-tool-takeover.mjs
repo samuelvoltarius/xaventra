@@ -13,7 +13,8 @@ const sleep = ms => new Promise(resolveSleep => setTimeout(resolveSleep, ms))
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'))
 const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value))
 const runChild = (childPhase, env) => new Promise((resolveChild, reject) => {
-    const child = spawn(process.execPath, [import.meta.filename, childPhase], { cwd: root, env, stdio: 'inherit' })
+    // Each node process keeps its user store inside the disposable QA directory.
+    const child = spawn(process.execPath, [import.meta.filename, childPhase], { cwd: env.XAVENTRA_AGENTS_TAKEOVER_QA_DIR || root, env, stdio: 'inherit' })
     child.once('error', reject)
     child.once('exit', (code, signal) => code === 0 ? resolveChild() : reject(new Error(`${childPhase} failed (${code ?? signal})`)))
 })
@@ -23,6 +24,7 @@ async function modules() {
         'agents/openai-agents-backend', 'core/execution-control', 'core/native-tool-receipts',
         'core/outcome-ledger', 'core/task-contract', 'core/tool-evidence-binding',
         'mesh/quorum-witness', 'mesh/witness-checkpoint-transport', 'mesh/witness-quorum',
+        'users/multi-user-middleware',
     ]
     const loaded = await Promise.all(names.map(name => import(pathToFileURL(join(root, `dist/${name}.js`)).href)))
     return Object.assign({}, ...loaded)
@@ -87,9 +89,14 @@ async function childPhase() {
     const m = await modules()
     const missionId = 'agents-sdk-process-takeover'
     const service = `mission:${missionId}`
-    const scopeId = 'mission:agents-sdk-process-takeover:step:1'
+    // Production step key format (autonomous-executor): <missionId>:step:<stepId>.
+    const scopeId = `${missionId}:step:1`
     const principalId = 'qa-owner'
     const channel = 'acceptance'
+    // Agents SDK tools pass the common role check (R2 MA-13): the QA principal
+    // is an explicit owner, not an implicit one.
+    m.getOrCreateUser(principalId, channel, 'QA owner')
+    m.setUserPermission(principalId, 'owner')
     const nodeId = phase === 'execute' ? 'agents-node-a' : 'agents-node-b'
     const nodeDir = join(dir, nodeId)
     mkdirSync(nodeDir, { recursive: true })
