@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.79.4] — 2026-10-01
+
+Stufe 1 of the self-reliance plan: Xaventra sees itself correctly and only
+suggests; nothing new installs, repairs or restarts on its own.
+
+- Doctor stops looping: an observation is identified without its numbers,
+  times and ids (live one case was investigated 35 times because every new
+  count reset it); diagnostic runs do no background learning, never escalate
+  their own tool failures into new Doctor cases, and get the SDK turns their
+  contract grants.
+- `auto_provision` is disabled and installs nothing (the confirm string was
+  composable by the model); web-researched install commands are shown as text,
+  never executable.
+- SSH never disables host-key verification (`accept-new` at all 14 call sites).
+- Knotenprofil: every node reports role, native/container, read-only root,
+  GPU use ("via vLLM" only for its own endpoint), install path and a local
+  self-check inside its signed `node.capabilities`, on start, on change and
+  every 6 h. Owner command `/knoten` shows all nodes.
+- Capability graph: a node's own entry is never taken back from peers'
+  snapshots, and heartbeat runtimes a node no longer lists are dropped
+  (live a phantom vLLM on ns2 kept circulating).
+- Verified Doctor cases go to a local outbox for Claude as data; delivery only
+  with `autonomy.claudeHandoff.url` (default off). After a rollout Nova says
+  once whether the finding closed.
+
 ## [2.79.3] — 2026-09-30
 
 - Desktop screenshot: a model-supplied name is only a prefix; every capture

@@ -3568,8 +3568,8 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         // ─────────────────────────────────────────────────────────────────
         // SELF-SETUP  /setup [plan|apply <id>|status]
         // ─────────────────────────────────────────────────────────────────
-        case 'knoten':
-        case 'nodes': {
+        // /nodes stays the older mesh command above; /setup knoten is the alias.
+        case 'knoten': {
             return formatAllNodeProfiles()
         }
 
