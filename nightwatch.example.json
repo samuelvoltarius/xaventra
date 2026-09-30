@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "intervalMinutes": 30,
+  "hosts": {
+    "web1": { "kind": "ssh", "target": "nightwatch@web1.example.invalid", "identityFile": "/home/nova/.ssh/nightwatch_ed25519" },
+    "db1": { "kind": "ssh", "target": "nightwatch@db1.example.invalid", "port": 2222, "identityFile": "/home/nova/.ssh/nightwatch_ed25519" },
+    "nas": { "kind": "ssh", "target": "nightwatch@nas.example.invalid", "identityFile": "/home/nova/.ssh/nightwatch_ed25519" }
+  },
+  "checks": [
+    { "id": "nova-daemon", "label": "Nova-Dienst", "kind": "systemd", "unit": "xaventra-native.service" },
+    { "id": "llm", "label": "Lokales Modell", "kind": "http", "url": "http://127.0.0.1:8000/v1/models" },
+    { "id": "stt", "label": "Spracherkennung", "kind": "http", "url": "http://127.0.0.1:8017/health" },
+    { "id": "local-disk", "label": "Platte lokal", "kind": "disk", "mount": "/" },
+
+    { "id": "web1-site", "label": "Website", "kind": "http", "url": "https://www.example.invalid/" },
+    { "id": "web1-disk", "label": "Platte web1", "kind": "disk", "host": "web1", "mount": "/" },
+    { "id": "web1-backup", "label": "Backup web1", "kind": "backup", "host": "web1", "dir": "/var/backups/site", "maxAgeHours": 26, "namePattern": "*.tar.gz" },
+
+    { "id": "db1-disk", "label": "Platte db1", "kind": "disk", "host": "db1", "mount": "/", "warnPercent": 85, "critPercent": 95 },
+    { "id": "db1-postgres", "label": "Datenbank db1", "kind": "systemd", "host": "db1", "unit": "postgresql.service" },
+
+    { "id": "nas-backup-script", "label": "Backup-Skript NAS", "kind": "file", "host": "nas", "path": "/opt/backup/nas_backup.sh", "executable": true },
+    { "id": "nas-backup-age", "label": "Backup NAS", "kind": "backup", "host": "nas", "dir": "/volume1/backup/daily", "maxAgeHours": 26 }
+  ]
+}
