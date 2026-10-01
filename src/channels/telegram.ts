@@ -246,7 +246,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 // Memory & Learning
                 { command: 'memory', description: '💾 Memory-Status' },
                 { command: 'skills', description: '📚 Gelernte Skills' },
-                { command: 'learn', description: '📖 Neues Wissen beibringen' },
+                { command: 'learn', description: '📖 Neues Werkzeug bauen lassen' },
+                { command: 'werkzeuge', description: '🧰 Selbst gebaute Werkzeuge (Owner)' },
                 // Multi-Agent
                 { command: 'bot', description: '🤖 Bot-Team & Instanzen' },
                 { command: 'subagent', description: '🎯 Sub-Agent starten' },
@@ -1009,7 +1010,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 const approve = data.startsWith('skill_ok:')
                 const proposalId = data.slice(9)
 
-                await this.bot.answerCallbackQuery(query.id, { text: approve ? '🧪 Sandbox freigeben…' : '🗑️ Ablehnen…' })
+                await this.bot.answerCallbackQuery(query.id, { text: approve ? '✅ Freigeben…' : '🗑️ Ablehnen…' })
 
                 const { updateSkillProposalStatus, getSkillProposals } = await import('../tools/skill-builder.js')
 
@@ -1017,14 +1018,15 @@ export class TelegramAdapter implements ChannelAdapter {
                     const proposals = getSkillProposals(200)
                     const proposal = proposals.find(p => p.id === proposalId)
                     if (!proposal) {
-                        await this.bot.sendMessage(chatId, `❌ Skill-Proposal nicht gefunden: \`${proposalId}\``, { parse_mode: 'Markdown' })
-                    } else if (proposal.status !== 'proposed') {
+                        await this.bot.sendMessage(chatId, `❌ Werkzeug nicht gefunden: \`${proposalId}\``, { parse_mode: 'Markdown' })
+                    } else if (proposal.status === 'active' || proposal.status === 'rejected') {
                         await this.bot.sendMessage(chatId, `⚠️ Bereits: ${proposal.status}`, { parse_mode: 'Markdown' })
                     } else {
-                        const queued = updateSkillProposalStatus(proposalId, 'approved', proposal.ownerId)
-                        const msg = queued
-                            ? `🧪 *Skill \`${proposal.name}\`: Sandbox freigegeben*\n\nNoch nicht aktiv. Nova benötigt verifizierte Sandbox-, Benchmark- und Canary-Ergebnisse sowie die abschließende Owner-Freigabe.`
-                            : `❌ Sandbox-Freigabe fehlgeschlagen für \`${proposal.name}\`.`
+                        // Owner-Freigabe gilt nur für genau diesen Code; aktiv wird es erst mit grünen Tests.
+                        const approved = updateSkillProposalStatus(proposalId, 'approved', proposal.ownerId)
+                        const msg = approved
+                            ? `🧰 *Werkzeug \`forge_${approved.name}\`*: ${approved.status === 'active' ? 'aktiv' : `freigegeben, Status ${approved.status}`}`
+                            : `❌ Freigabe fehlgeschlagen für \`${proposal.name}\`.`
                         await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' })
                     }
                 } else {

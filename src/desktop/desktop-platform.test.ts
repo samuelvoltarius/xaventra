@@ -7,7 +7,7 @@ import { TopicRoomStore } from './topic-room-store.js'
 import { ExternalAgentRegistry } from './external-agent-registry.js'
 import { NodeEnrollmentService } from './node-enrollment.js'
 import { getDesktopModuleCatalog } from './module-catalog.js'
-import { advanceSkillProposal, createSkillProposal, getSkillProposals } from '../tools/skill-builder.js'
+import { createSkillProposal, getSkillProposals } from '../tools/skill-builder.js'
 import { DesktopControlQueue } from './desktop-control.js'
 import { pruneDesktopCaptures, withDesktopBotTimeout } from './desktop-api.js'
 import { getDesktopAgentContext, publishDesktopAgentOutcome, runWithDesktopAgentContext } from './desktop-agent-context.js'
@@ -108,19 +108,20 @@ describe('Nova Desktop platform stores', () => {
         expect(modules.find(module => module.id === 'skill-forge')?.inspiration).toBe('Ada-SI')
     })
 
-    it('keeps Ada-SI-inspired Forge code inert until every evidence gate passes', () => {
-        const proposal = createSkillProposal({
-            ownerId: 'owner-a', name: 'sum_values', description: 'Adds two values', why: 'fixture gap',
-            code: 'return Number(params.a) + Number(params.b)',
-            parameters: [{ name: 'a', type: 'number', description: 'A' }, { name: 'b', type: 'number', description: 'B' }],
-        })
+    it('keeps Ada-SI-inspired Forge code inert until its sandbox tests pass', async () => {
+        const base = {
+            ownerId: 'owner-a', description: 'Adds two values', why: 'fixture gap',
+            parameters: [{ name: 'a', type: 'number' as const, description: 'A' }, { name: 'b', type: 'number' as const, description: 'B' }],
+            manifest: { net: [], fs: [], wirkung: 'lesend' as const },
+            tests: [{ name: '1+2', params: { a: 1, b: 2 }, expect: { equals: 3 } }],
+        }
+        // Old function-body drafts are not a module and never enter the register.
+        await expect(createSkillProposal({ ...base, name: 'sum_values_old', code: 'return Number(params.a) + Number(params.b)' })).rejects.toThrow(/abgelehnt/)
+        const proposal = await createSkillProposal({ ...base, name: 'sum_values', code: 'export default async function (params) { return Number(params.a) + Number(params.b) }' })
         expect(proposal.status).toBe('proposed')
-        expect(proposal.activationBlockedReason).toContain('Native sandbox')
-        expect(advanceSkillProposal(proposal.id, 'owner-a', 'active', 'operator:test', { operatorApproved: true })).toBeNull()
-        expect(advanceSkillProposal(proposal.id, 'owner-a', 'sandbox-authorized', 'operator:test', { operatorApproved: true })?.status).toBe('sandbox-authorized')
-        expect(advanceSkillProposal(proposal.id, 'owner-a', 'sandbox-tested', 'unverified:test')).toBeNull()
+        expect(proposal.activationBlockedReason).toContain('Noch nicht getestet')
         expect(getSkillProposals(10, 'owner-b')).toEqual([])
-        expect(() => createSkillProposal({ ownerId: 'owner-a', name: 'escape', description: 'bad', why: 'test', code: 'return process.env' })).toThrow('Static skill validation failed')
+        await expect(createSkillProposal({ ...base, name: 'escape_env', code: "export default async function () { return process.binding('fs') }" })).rejects.toThrow(/abgelehnt/)
     })
 
     it('delivers only typed desktop commands and requires a matching client acknowledgement', () => {

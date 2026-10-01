@@ -1787,6 +1787,16 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ L7 Learning nicht verfügbar: ${err}`)
     }
 
+    // P9 Werkzeug-Schmiede: local learning model only, card executors, active forge_* tools.
+    try {
+        const { initToolForge } = await import('./tools/skill-builder.js')
+        const forge = await initToolForge({ learningModel: serviceModels.learning ?? null })
+        console.log(`[Nova] ✓ Werkzeug-Schmiede: ${forge.active} aktive Werkzeuge${forge.support.ok ? '' : ` — ${forge.support.reason}`}${serviceModels.learning ? '' : ' (ohne lokales Lern-Modell: kein Selbstbau)'}`)
+        if (forge.legacyToolsIgnored > 0) console.warn(`[Nova] ⚠ ${forge.legacyToolsIgnored} alte .nova-tools/*.json werden nicht mehr geladen (stillgelegt)`)
+    } catch (err) {
+        console.log(`[Nova] ⚠ Werkzeug-Schmiede nicht verfügbar: ${err}`)
+    }
+
     // ============================================
     // Start L15 Self-Check (Proactive Self-Awareness)
     // ============================================

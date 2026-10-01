@@ -398,7 +398,7 @@
         "../core/task-contract.js",
         "../doctor/gpu-runtime.js",
         "../doctor/tool-contract.js",
-        "../learning/personal-skill-compiler.js",
+        "../learning/routine-skills.js",
         "../memory/memory-governance.js",
         "../memory/workflow-episode-store.js",
         "../mesh/capability-graph.js",
@@ -1332,7 +1332,6 @@
     {
       "module": "src/core/autonomy-ladder.ts",
       "imports": [
-        "../learning/personal-skill-compiler.js",
         "./execution-preflight.js"
       ]
     },
@@ -3406,10 +3405,6 @@
       "imports": []
     },
     {
-      "module": "src/infra/plugins.ts",
-      "imports": []
-    },
-    {
       "module": "src/infra/proxmox-command.ts",
       "imports": [
         "../core/approval-cards.js",
@@ -3802,16 +3797,6 @@
       "imports": []
     },
     {
-      "module": "src/layers/L17-autonomous-learning.ts",
-      "imports": [
-        "../core/action-intent.js",
-        "../core/atomic-storage.js",
-        "../tools/tool-result-quality.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/layers/L18-llm-router.ts",
       "imports": [
         "../llm/model-discovery.js",
@@ -3914,13 +3899,6 @@
       ]
     },
     {
-      "module": "src/layers/L8-meta-learning.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/layers/L8-prisma-guards.ts",
       "imports": []
     },
@@ -4015,8 +3993,6 @@
       "module": "src/learning/engine.ts",
       "imports": [
         "./feedback.js",
-        "./patterns.js",
-        "./skills.js",
         "node:fs/promises",
         "node:path"
       ]
@@ -4030,35 +4006,29 @@
     {
       "module": "src/learning/learning-coordinator.ts",
       "imports": [
-        "../core/atomic-storage.js",
         "../core/data-root.js",
         "../core/task-contract.js",
         "../security/secret-redaction.js",
         "./engine.js",
-        "node:fs",
-        "node:path"
+        "./procedure-store.js"
       ]
     },
     {
       "module": "src/learning/pattern-store.ts",
       "imports": [
+        "../core/data-root.js",
         "node:fs",
         "node:path"
       ]
     },
     {
-      "module": "src/learning/patterns.ts",
+      "module": "src/learning/procedure-store.ts",
       "imports": [
-        "node:crypto"
-      ]
-    },
-    {
-      "module": "src/learning/personal-skill-compiler.ts",
-      "imports": [
+        "../core/action-intent.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
-        "../memory/workflow-episode-store.js",
-        "node:crypto",
+        "../security/secret-redaction.js",
+        "../tools/tool-result-quality.js",
         "node:fs",
         "node:path"
       ]
@@ -4082,20 +4052,6 @@
         "../core/side-effects.js",
         "../security/secret-redaction.js",
         "node:crypto",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/learning/skills.ts",
-      "imports": [
-        "./patterns.js",
-        "node:crypto"
-      ]
-    },
-    {
-      "module": "src/learning/teaching.ts",
-      "imports": [
         "node:fs",
         "node:path"
       ]
@@ -4864,15 +4820,6 @@
         "node:crypto",
         "node:fs",
         "node:http",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/mesh/skill-distributor.ts",
-      "imports": [
-        "node:child_process",
-        "node:crypto",
-        "node:fs",
         "node:path"
       ]
     },
@@ -5755,41 +5702,12 @@
       ]
     },
     {
-      "module": "src/synthesis/generator.ts",
-      "imports": []
-    },
-    {
-      "module": "src/synthesis/index.ts",
-      "imports": [
-        "./generator.js",
-        "./pipeline.js",
-        "./sandbox.js"
-      ]
-    },
-    {
       "module": "src/synthesis/patch-sandbox.ts",
       "imports": [
         "node:child_process",
         "node:crypto",
         "node:fs",
         "node:path"
-      ]
-    },
-    {
-      "module": "src/synthesis/pipeline.ts",
-      "imports": [
-        "./generator.js",
-        "./sandbox.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/synthesis/sandbox.ts",
-      "imports": [
-        "node:fs",
-        "node:path",
-        "node:worker_threads"
       ]
     },
     {
@@ -6033,7 +5951,6 @@
         "./self-introspect.js",
         "./self-management.js",
         "./skill-builder.js",
-        "./skill-synthesis.js",
         "./ssh-tool.js",
         "./tavily-search.js",
         "./tool-confirmation.js",
@@ -6109,6 +6026,17 @@
       "module": "src/tools/executor.ts",
       "imports": [
         "./registry.js"
+      ]
+    },
+    {
+      "module": "src/tools/forge-sandbox.ts",
+      "imports": [
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:module",
+        "node:os",
+        "node:path"
       ]
     },
     {
@@ -6241,13 +6169,6 @@
       ]
     },
     {
-      "module": "src/tools/self-extension.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/tools/self-introspect.ts",
       "imports": [
         "node:fs",
@@ -6275,20 +6196,17 @@
     {
       "module": "src/tools/skill-builder.ts",
       "imports": [
+        "../core/action-policy.js",
         "../core/atomic-storage.js",
+        "../core/autonomy-defaults.js",
         "../core/data-root.js",
-        "../synthesis/sandbox.js",
+        "../core/side-effects.js",
+        "../security/secret-redaction.js",
         "./complete-registry.js",
+        "./forge-sandbox.js",
         "node:crypto",
-        "node:fs"
-      ]
-    },
-    {
-      "module": "src/tools/skill-synthesis.ts",
-      "imports": [
-        "../core/model-resolver.js",
-        "./self-extension.js",
-        "./skill-builder.js"
+        "node:fs",
+        "node:path"
       ]
     },
     {

@@ -6,7 +6,7 @@ import { loadSkillPackTool } from '../tools/tool-router.js'
 
 describe('a failing catalog lookup does not stop the run', () => {
     it('lets catalog lookups fail softly', () => {
-        for (const name of ['load_skill_pack', 'nova_capabilities', 'find_capability', 'list_custom_tools'])
+        for (const name of ['load_skill_pack', 'nova_capabilities', 'find_capability', 'list_skills'])
             expect(readOnlyFailureContinues(name), name).toBe(true)
     })
 

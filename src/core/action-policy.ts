@@ -306,6 +306,10 @@ export const AKTIONSARTEN: Readonly<Record<string, KindEntry>> = Object.freeze({
     'nachricht-senden': kind('L2', 'Nachricht nach außen senden', 'extern'),
     'drucken': kind('L2', 'drucken', 'physisch'),
     'schalten': kind('L2', 'schalten (Home Assistant)', 'physisch'),
+    // P9 Werkzeug-Schmiede: Aktivierung selbst gebauter Werkzeuge (lesend = selbst, ohne Art).
+    'werkzeug-schreibend': kind('L2', 'selbst gebautes Werkzeug mit schreibender Wirkung aktivieren'),
+    'werkzeug-extern': kind('L2', 'selbst gebautes Werkzeug mit Wirkung nach außen aktivieren', 'extern'),
+    'werkzeug-physisch': kind('L2', 'selbst gebautes Werkzeug mit physischer Wirkung aktivieren', 'physisch'),
     // L3 — gefährlich (zusätzlich zur Nie-Liste ausdrücklich benannt)
     'daten-loeschen': kind('L3', 'Daten löschen'),
     'firewall-aendern': kind('L3', 'Firewall ändern'),

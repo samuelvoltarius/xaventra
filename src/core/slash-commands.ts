@@ -710,7 +710,9 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 return learnText
             }
 
-            return '🧰 Neue Fähigkeiten baut die Werkzeug-Schmiede: /werkzeuge'
+            // Neue Fähigkeiten baut die Werkzeug-Schmiede (lokales Lern-Modell, Sandbox, Tests).
+            const { handleWerkzeugeCommand } = await import('../tools/skill-builder.js')
+            return handleWerkzeugeCommand(`bau ${args}`, principalContext)
         }
 
         // ============================================
@@ -3630,6 +3632,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const { formatDelegiert } = await import('./delegation.js')
             const limit = Math.min(30, Math.max(3, Number.parseInt(args.trim(), 10) || 10))
             return formatDelegiert(undefined, limit)
+        }
+
+        // P9 Werkzeug-Schmiede: Einblick, an/aus, bauen (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'werkzeuge': {
+            const { handleWerkzeugeCommand } = await import('../tools/skill-builder.js')
+            return handleWerkzeugeCommand(args, principalContext)
         }
 
         // Phase 8: kausales Gedächtnis (owner only, see COMMAND_MINIMUM_ROLE default)

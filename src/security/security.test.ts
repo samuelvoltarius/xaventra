@@ -166,7 +166,7 @@ describe('Exec Approvals', async () => {
 
 // ============================================
 // Code Guardian — anomaly detection + kill switch
-// (validateSkillCode lives in synthesis/sandbox.ts, not here)
+// (forge code is checked by tools/forge-sandbox.ts: CodeGuardian + module allowlist + real sandbox)
 // ============================================
 
 describe('Code Guardian', async () => {

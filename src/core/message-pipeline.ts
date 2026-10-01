@@ -1967,6 +1967,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const failedExecutions = ((result as any).toolExecutions || []).filter((execution: any) => !execution.success)
         // P8 Routine-Skills: Ergebnis des angewendeten Skills zählen und den Lauf
         // für die Wiederholungserkennung beobachten (nur Owner, keine Gruppe).
+        let routineLearned: { counted: boolean; created?: { name: string; steps: Array<{ tool: string }> } } | null = null
         try {
             const { getRoutineSkillStore, finishRoutineSkillRun } = await import('../learning/routine-skills.js')
             const learned = finishRoutineSkillRun(getRoutineSkillStore(), {
@@ -1977,8 +1978,19 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 awaitingApproval: kernelState?.awaitingApproval === true || (result as any).validation?.awaitingApproval === true,
                 steps: (result as any).toolExecutions || [],
             })
+            routineLearned = learned as typeof routineLearned
             if (learned?.counted && learned.created) console.log(`[Skills] Neuer Routine-Skill angelegt: ${learned.created.name} (${learned.created.id})`)
         } catch (err) { console.debug('[Pipeline] routine skill bookkeeping failed:', err) }
+        // P9 Werkzeug-Schmiede: fehlendes Werkzeug, Wiederholung oder Owner-Wunsch → Bau im Hintergrund.
+        try {
+            const { noteForgeNeed } = await import('../tools/skill-builder.js')
+            const need = noteForgeNeed({
+                principalId, permission: principalContext.permission, isGroup: requestIsGroup, systemAuthored: isSystemMessage,
+                request: content, toolExecutions: (result as any).toolExecutions || [],
+                routineSkillCreated: routineLearned?.counted ? routineLearned.created ?? null : null,
+            })
+            if (need.queued) console.log(`[Werkzeuge] Bedarf erkannt (${need.kind}): Bau läuft im Hintergrund`)
+        } catch (err) { console.debug('[Pipeline] forge need hook failed:', err) }
         const { authoritativeDiagnosticResponse, screenshotFailureResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic

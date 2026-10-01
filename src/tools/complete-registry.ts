@@ -2134,52 +2134,6 @@ export const learningTools: NovaTool[] = [
 ]
 
 // ============================================
-// Self-Extension Tools
-// ============================================
-
-export const extensionTools: NovaTool[] = [
-    {
-        name: 'create_tool',
-        description: 'Legt einen reviewbaren Nova-Studio-Forge-Vorschlag an. Das Tool wird nicht direkt registriert oder ausgeführt.',
-        category: 'other',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Tools', required: true },
-            { name: 'description', type: 'string', description: 'Beschreibung', required: true },
-            { name: 'code', type: 'string', description: 'JavaScript-Code (hat Zugriff auf params, fetch, console, JSON)', required: true },
-        ],
-        handler: async (params) => {
-            const { createSkillProposal } = await import('./skill-builder.js')
-            try {
-                const proposal = createSkillProposal({
-                    ownerId: 'nova-self',
-                    name: String(params.name || ''),
-                    description: String(params.description || ''),
-                    why: 'Neue Runtime-Fähigkeit angefordert',
-                    code: String(params.code || ''),
-                })
-                return { success: true, proposalId: proposal.id, status: proposal.status, message: `Forge-Vorschlag "${proposal.name}" gespeichert; nicht aktiv.` }
-            } catch (error) {
-                return { success: false, error: error instanceof Error ? error.message : String(error) }
-            }
-        },
-    },
-    {
-        name: 'list_custom_tools',
-        description: 'Listet alle selbst erstellten Tools auf',
-        category: 'other',
-        parameters: [],
-        handler: async () => {
-            const { loadCustomTools } = await import('./self-extension.js')
-            const tools = loadCustomTools()
-            return {
-                count: tools.length,
-                tools: tools.map(t => ({ name: t.name, description: t.description })),
-            }
-        },
-    },
-]
-
-// ============================================
 // Bot Management Tools
 // ============================================
 
@@ -2637,8 +2591,7 @@ import { tavilySearchTool } from './tavily-search.js'
 import { searxngSearchTool } from './searxng-search.js'
 import { reminderTool, listRemindersTool } from './reminder-tool.js'
 import { selfManagementTools } from './self-management.js'
-import { skillSynthesisTool, listSkillsTool, deleteSkillTool } from './skill-synthesis.js'
-import { buildSkillTool } from './skill-builder.js'
+import { buildSkillTool, createSkillTool, listSkillsTool, deleteSkillTool } from './skill-builder.js'
 import { isSuccessfulToolResult } from './tool-result-quality.js'
 import { selfIntrospect } from './self-introspect.js'
 import { loadTraceInsights, runTraceAnalysis } from '../learning/trace-analyzer.js'
@@ -2664,47 +2617,6 @@ const selfModificationTools: NovaTool[] = [
         handler: async (params) => {
             const { executeExecutePython } = await import('./execute-python-tool.js')
             return await executeExecutePython(params)
-        },
-    },
-    {
-        name: 'create_runtime_tool',
-        description: 'Kompatibilitätsname für einen Nova-Studio-Forge-Vorschlag. Keine direkte Laufzeitregistrierung und keine automatische Dependency-Installation.',
-        category: 'system',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Tool-Name (snake_case, z.B. send_email)', required: true },
-            { name: 'description', type: 'string', description: 'Was macht das Tool? (fï¿½r LLM-Auswahl)', required: true },
-            { name: 'code', type: 'string', description: 'JavaScript-Code. Nutze params.xyz fï¿½r Parameter. Kein import/require/fs/child_process erlaubt. fetch() ist verfï¿½gbar.', required: true },
-            { name: 'test_input', type: 'string', description: 'Optional: JSON-Objekt zum Testen (z.B. {"query": "test"})', required: false },
-        ],
-        handler: async (params) => {
-            const { createSkillProposal } = await import('./skill-builder.js')
-            const name = String(params.name || '').toLowerCase().replace(/\s+/g, '_')
-            const description = String(params.description || '')
-            const code = String(params.code || '')
-
-            if (!name || !description || !code) return '? name, description und code sind erforderlich.'
-
-            try {
-                const proposal = createSkillProposal({ ownerId: 'nova-self', name, description, why: 'Runtime-Capability-Gap', code })
-                return `🧪 Forge-Vorschlag **${proposal.name}** gespeichert (${proposal.id}). Test-Input wurde nicht ausgeführt; echte Sandbox-Evidence ist Pflicht.`
-            } catch (error) {
-                return `❌ Forge-Vorschlag abgelehnt: ${error instanceof Error ? error.message : String(error)}`
-            }
-        },
-    },
-    {
-        name: 'list_custom_tools',
-        description: 'Zeigt alle Tools die Nova selbst erstellt hat (aus .nova-tools/).',
-        category: 'system',
-        parameters: [],
-        handler: async () => {
-            const { loadCustomTools } = await import('./self-extension.js')
-            const tools = loadCustomTools()
-            if (tools.length === 0) return { count: 0, message: 'Keine selbst erstellten Tools vorhanden.', tools: [] }
-            return {
-                count: tools.length,
-                tools: tools.map(t => ({ name: t.name, description: t.description, createdAt: new Date(t.createdAt).toLocaleString('de-DE'), createdBy: t.createdBy })),
-            }
         },
     },
     {
@@ -3177,7 +3089,6 @@ export const ALL_TOOLS: NovaTool[] = [
     ...hooksTools,
     ...mediaTools,
     ...learningTools,
-    ...extensionTools,
     ...botTools,
     ...selfManagementTools,
     ...mediaProviderTools,
@@ -3206,7 +3117,7 @@ export const ALL_TOOLS: NovaTool[] = [
     searxngSearchTool,
     reminderTool,
     listRemindersTool,
-    skillSynthesisTool,
+    createSkillTool,
     listSkillsTool,
     deleteSkillTool,
     buildSkillTool,
@@ -3544,7 +3455,8 @@ export class NovaToolRegistry {
 
     constructor() {
         this.registerAll()
-        this.loadCustomToolsFromDisk()
+        // Self-built tools come only from the Werkzeug-Schmiede (forge_*, sandboxed);
+        // the old .nova-tools/*.json loader (code built from text inside the daemon) is gone.
     }
 
     registerAll(): void {
@@ -3561,39 +3473,6 @@ export class NovaToolRegistry {
         }).catch(() => { /* tool-router not yet available */ })
 
         console.log(`[Tools] ${this.tools.size} Tools registriert`)
-    }
-
-    /**
-     * Auto-load persisted custom tools from .nova-tools/ on startup.
-     * Nova never forgets tools she built!
-     */
-    private async loadCustomToolsFromDisk(): Promise<void> {
-        try {
-            const { loadCustomTools, executeCustomTool } = await import('./self-extension.js')
-            const customTools = loadCustomTools()
-
-            for (const ct of customTools) {
-                // Skip if already registered (built-in overrides custom)
-                if (this.tools.has(ct.name)) continue
-
-                this.register({
-                    name: ct.name,
-                    description: ct.description,
-                    category: 'other',
-                    parameters: ct.parameters.map(p => ({
-                        ...p,
-                        type: p.type as 'string' | 'number' | 'boolean' | 'object',
-                    })),
-                    handler: async (p) => executeCustomTool(ct, p),
-                })
-            }
-
-            if (customTools.length > 0) {
-                console.log(`[Tools] ${customTools.length} Custom-Tools aus .nova-tools/ geladen`)
-            }
-        } catch (err) {
-            // self-extension not available, skip
-        }
     }
 
     register(tool: NovaTool): void {

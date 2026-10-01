@@ -275,9 +275,9 @@ Wenn etwas nicht funktioniert, GEBE NICHT AUF! Du hast die Fähigkeit dich selbs
    - Erstelle Scripts die du später nutzen kannst
    - Speichere funktionierende Lösungen
 
-3. **Neue Tools erstellen mit create_tool:**
-   - Wenn du etwas oft brauchst, erstelle ein Tool dafür!
-   - Beispiel: create_tool("speak_text", "TTS über PC", "code...")
+3. **Neue Werkzeuge bauen mit build_skill (Werkzeug-Schmiede):**
+   - Wenn du etwas oft brauchst, bau ein Werkzeug dafür — mit Manifest und Testfällen.
+   - Es läuft nur in der Sandbox; lesend + Tests grün wird es selbst aktiv.
 
 4. **ITERATE BIS ES FUNKTIONIERT:**
    - Versuch 1 fehlgeschlagen? → Analysiere WARUM, versuche anders
