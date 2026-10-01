@@ -1371,11 +1371,9 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Initialize HEARTBEAT Scheduler (Layer 0)
+    // Periodic L0 work (health, journal summary, daily digest)
     // ============================================
     try {
-        const { startHeartbeat, getDueTasks } = await import('./layers/L0-supervisor.js')
-
         // Health Monitor — runs with heartbeat
         let healthMonitorReady = false
         try {
@@ -1461,28 +1459,9 @@ async function startDaemon() {
                 .finally(() => { periodicHeartbeatRunning = false })
         }, 5 * 60 * 1000).unref?.()
 
-        startHeartbeat(async (task) => {
-            // The L0 heartbeat may pass a pseudo task on ticks without due
-            // tasks (layers fix R2 L3, id 'heartbeat-tick'). Periodic work
-            // already runs on the tick above, so it is not a "due task".
-            if (task.id === 'heartbeat-tick' || task.channel === 'heartbeat') return
-            console.log(`[L0 Heartbeat] Task fällig: ${task.description}`)
-
-            // Find the channel to send to
-            if (task.channel === 'Telegram' && state.channels.telegram) {
-                try {
-                    await state.channels.telegram.send({ to: task.userId, content: `⏰ Erinnerung: ${task.description}` })
-                    console.log(`[L0 Heartbeat] ✓ Erinnerung gesendet an ${task.userId}`)
-                } catch (err) {
-                    console.error(`[L0 Heartbeat] Fehler: ${err}`)
-                }
-            }
-        }, 5 * 60 * 1000)  // Check every 5 minutes
-
-        const pending = getDueTasks().length
-        console.log(`[Nova] ✓ HEARTBEAT Scheduler aktiv (${pending} fällige Tasks)`)
+        console.log('[Nova] ✓ L0-Takt aktiv (Health, Journal, Tagesbericht alle 5 min)')
     } catch (err) {
-        console.log(`[Nova] ⚠ HEARTBEAT nicht verfügbar: ${err}`)
+        console.log(`[Nova] ⚠ L0-Takt nicht verfügbar: ${err}`)
     }
 
     // Telegram was already started in the fast-path above (right after LLM init).
@@ -1552,11 +1531,9 @@ async function startDaemon() {
     try {
         const { getProactiveMessenger } = await import('./core/proactive.js')
         const { assessmentFromEvent } = await import('./core/proactive-policy.js')
-        const { getSubAgentManager } = await import('./agents/sub-agent.js')
         const { getScheduler } = await import('./scheduler/nova-scheduler.js')
 
         const proactive = getProactiveMessenger()
-        const subAgentManager = getSubAgentManager()
         const scheduler = getScheduler()
         const proactiveOwner = config.channels?.telegram?.allowFrom?.[0]
         ;(state as any).sendGovernedProactive = async (
@@ -1639,31 +1616,6 @@ async function startDaemon() {
 
         // Deliver deferred messages (quiet hours, budget, channel reconnect).
         setInterval(() => { void proactive.processQueue().catch(() => undefined) }, 60_000).unref?.()
-
-        // Wire sub-agent events to proactive messenger (auto-report)
-        subAgentManager.on('task-complete', async (event: any) => {
-            console.log(`[Proactive] 📣 Auto-reporting task completion to ${event.config.userId}`)
-            await proactive.send({
-                userId: event.config.userId,
-                channel: event.config.channel as any,
-                content: event.message,
-                priority: 'normal',
-                type: 'notification',
-                assessment: assessmentFromEvent({ source: 'subagent-orchestrator', summary: `Task ${event.config?.taskId || event.taskId || 'unknown'} emitted a completion event`, severity: 'info', confidence: 0.98 }),
-            })
-        })
-
-        subAgentManager.on('task-error', async (event: any) => {
-            console.log(`[Proactive] 🚨 Auto-reporting task error to ${event.config.userId}`)
-            await proactive.send({
-                userId: event.config.userId,
-                channel: event.config.channel as any,
-                content: event.message,
-                priority: 'high',
-                type: 'error',
-                assessment: assessmentFromEvent({ source: 'subagent-orchestrator', summary: `Task ${event.config?.taskId || event.taskId || 'unknown'} emitted an error event`, severity: 'error', confidence: 0.98, actionAvailable: true }),
-            })
-        })
 
         // Wire scheduler to proactive messenger
         scheduler.setMessageSender(async (userId, channel, content) => {

@@ -34,7 +34,7 @@ describe('daemon wiring (R2 core-n-z)', () => {
         expect(source).toMatch(/failStaleRuns\(undefined, undefined, \{ keepLiveRuns: true \}\)/)
     })
 
-    it('UEB-5: periodic health/journal/digest work has its own tick and ignores the heartbeat pseudo task', () => {
+    it('UEB-5: periodic health/journal/digest work has its own tick', () => {
         const periodic = block('const runPeriodicHeartbeatWork = async', 4000)
         expect(periodic).toMatch(/runHealthCheck\(\)/)
         expect(periodic).toMatch(/generateDailySummary\(\)/)
@@ -42,10 +42,8 @@ describe('daemon wiring (R2 core-n-z)', () => {
         const tick = block('let periodicHeartbeatRunning = false', 1500)
         expect(tick).toMatch(/setInterval\(/)
         expect(tick).toMatch(/runPeriodicHeartbeatWork\(\)/)
-        const heartbeat = block('startHeartbeat(async (task) => {', 700)
-        expect(heartbeat).toMatch(/task\.id === 'heartbeat-tick' \|\| task\.channel === 'heartbeat'\) return/)
-        expect(heartbeat.indexOf("'heartbeat-tick'")).toBeLessThan(heartbeat.indexOf('Task fällig'))
-        expect(heartbeat).not.toMatch(/runHealthCheck/)
+        // P9: the dead L0 task heartbeat (scheduled-tasks.json) is gone; only this tick remains.
+        expect(source).not.toMatch(/startHeartbeat\(/)
     })
 
     it('NZ-24: the active shutdown flushes session summaries and user patterns', () => {
