@@ -196,6 +196,9 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
     const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
     registerThoughtCardExecutor()
+    // Release-Knopf (Phase 6a): refuses every press while autonomy.releaseButton is off.
+    const { registerReleaseButtonExecutor } = await import('./release-button.js')
+    registerReleaseButtonExecutor()
 }
 
 // ---------------------------------------------------------------------------

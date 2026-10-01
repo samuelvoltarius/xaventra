@@ -1941,6 +1941,14 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
         }
 
+        // Phase 6a Release-Knopf: off until autonomy.releaseButton.enabled=true;
+        // Main only, GitHub read-only until the owner presses Ja on the card.
+        try {
+            const { startReleaseButton } = await import('./core/release-button.js')
+            const releaseButton = startReleaseButton(config)
+            if (releaseButton.started) console.log(`[Nova] ✓ Release-Knopf aktiv (${releaseButton.reason})`)
+        } catch (err) { console.debug(`[Nova] Release-Knopf skipped: ${err}`) }
+
         console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)
 
         // Wire self-thinking callback — Nova can now think autonomously

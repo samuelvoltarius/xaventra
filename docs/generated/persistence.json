@@ -234,6 +234,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/release-button.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/self-architecture.ts",
       "path": ".nova-data"
     },
