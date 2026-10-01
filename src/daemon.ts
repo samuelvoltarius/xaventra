@@ -1982,6 +1982,24 @@ async function startDaemon() {
             if (releaseButton.started) console.log(`[Nova] ✓ Release-Knopf aktiv (${releaseButton.reason})`)
         } catch (err) { console.debug(`[Nova] Release-Knopf skipped: ${err}`) }
 
+        // Phase 4 Release-Wächter (autonomy.selfUpdate.enabled, Standard aus): the one
+        // check for new signed releases. It was never started before 2.82.0; the mesh
+        // updater, delegation and auto reminders now defer to / ask through it.
+        try {
+            const { readSelfUpdateSettings, startSelfUpdateWatch } = await import('./core/self-update/release-watch.js')
+            const selfUpdate = readSelfUpdateSettings(config)
+            if (selfUpdate.enabled && process.env.NOVA_NODE_ONLY !== 'true') {
+                const { createSelfUpdateThoughtSink } = await import('./core/thought-hub.js')
+                const { installedUpdateVersion } = await import('./core/github-update.js')
+                const { getNovaDataDir } = await import('./core/data-root.js')
+                const watch = startSelfUpdateWatch({
+                    settings: selfUpdate, currentVersion: installedUpdateVersion(),
+                    sink: createSelfUpdateThoughtSink(), statePath: getNovaDataDir('self-update', 'release-watch.json'),
+                })
+                if (watch) console.log(`[Xaventra] ✓ Release-Wächter aktiv (alle ${selfUpdate.intervalMinutes} min, Kanal ${selfUpdate.channel})`)
+            }
+        } catch (err) { console.debug(`[Xaventra] Release-Wächter skipped: ${err}`) }
+
         // Phase 6e: Delegation (autonomy.delegation.enabled) and proactive
         // reminders from sources (autonomy.autoReminders.enabled). P8: both on
         // at the Main by default (false = off), never on a worker.

@@ -35,7 +35,7 @@
  *   listApprovalCards({ status?, limit? }) · noteThought({ quelle, titel, status, text? }) · readThoughts()
  */
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
@@ -221,7 +221,19 @@ function alwaysAllowed(card: ApprovalCard): boolean {
 const baseDir = (opts: CardStoreOptions = {}) => opts.dataDir || getNovaDataDir()
 const storeDir = (opts: CardStoreOptions = {}) => join(baseDir(opts), 'approval-cards')
 const cardsFile = (opts: CardStoreOptions = {}) => join(storeDir(opts), 'cards.json')
-const thoughtsFile = (opts: CardStoreOptions = {}) => join(storeDir(opts), 'gedanken.jsonl')
+/**
+ * Card protocol (2.82.0): was `gedanken.jsonl`, easily confused with the
+ * planner's thoughts (`thoughts/thoughts.json`). Now `karten-protokoll.jsonl`;
+ * an old file is renamed once on first access (nothing lost, nothing doubled).
+ */
+export const CARD_PROTOCOL_FILE = 'karten-protokoll.jsonl'
+const LEGACY_CARD_PROTOCOL_FILE = 'gedanken.jsonl'
+const thoughtsFile = (opts: CardStoreOptions = {}) => {
+    const file = join(storeDir(opts), CARD_PROTOCOL_FILE)
+    const legacy = join(storeDir(opts), LEGACY_CARD_PROTOCOL_FILE)
+    if (!existsSync(file) && existsSync(legacy)) { try { renameSync(legacy, file) } catch { /* next access retries */ } }
+    return file
+}
 const nowOf = (opts: CardStoreOptions = {}) => (opts.now || Date.now)()
 const iso = (ms: number) => new Date(ms).toISOString()
 

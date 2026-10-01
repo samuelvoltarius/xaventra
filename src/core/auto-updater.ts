@@ -779,7 +779,11 @@ export function startUpdateChecker(config: UpdateConfig, notifyFn?: (message: st
     if (!config.enabled) return
     const check = (): void => {
         if (config.github) {
-            void import('./upstream-update-command.js').then(async ({ configuredUpstreamSource }) => {
+            // 2.82.0: release discovery is the Release-Wächter's job; while it runs it reports a
+            // new signed release once (as a thought) and this updater does not check a second time.
+            void import('./self-update/release-watch.js').then(async ({ isSelfUpdateWatchRunning }) => {
+                if (isSelfUpdateWatchRunning()) { updateStatus.lastCheck = new Date().toISOString(); return }
+                const { configuredUpstreamSource } = await import('./upstream-update-command.js')
                 const result = await configuredUpstreamSource().check()
                 if (result.state === 'available') notifyOnce(`upstream:${result.releaseId}`, `📦 Xaventra ${result.version}: neue Publisher-verifizierte GitHub-Release. /update check zeigt Details; keine automatische Installation.`, notifyFn)
             }).catch(() => log('GitHub release check unavailable'))

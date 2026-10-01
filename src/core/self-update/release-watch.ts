@@ -233,13 +233,67 @@ export class SelfUpdateWatch {
     }
 }
 
+let activeWatch: SelfUpdateWatch | null = null
+
+/** True while the Release-Wächter runs; other release checks then defer to it (2.82.0). */
+export function isSelfUpdateWatchRunning(): boolean { return activeWatch !== null }
+
 /** Periodic read-only check. Returns null (no timer, no I/O) while disabled. */
 export function startSelfUpdateWatch(deps: SelfUpdateWatchDeps): { watch: SelfUpdateWatch; stop: () => void } | null {
     if (!deps.settings.enabled) return null
     const watch = new SelfUpdateWatch(deps)
+    activeWatch = watch
     const run = () => { watch.tick().catch(() => undefined) }
     const first = setTimeout(run, 60_000)
     const timer = setInterval(run, deps.settings.intervalMinutes * 60_000)
     first.unref?.(); timer.unref?.()
-    return { watch, stop: () => { clearTimeout(first); clearInterval(timer) } }
+    return { watch, stop: () => { clearTimeout(first); clearInterval(timer); if (activeWatch === watch) activeWatch = null } }
+}
+
+// ---------------------------------------------------------------------------
+// The one release lookup (2.82.0 Aufräumen „Release-Prüfungen bündeln“)
+// ---------------------------------------------------------------------------
+
+export type ReleaseTagState = 'veroeffentlicht' | 'entwurf' | 'fehlt' | 'unbekannt'
+export interface ReleaseTagLookup { state: ReleaseTagState; status: number | null; publishedAt?: string; detail: string }
+
+export const RELEASE_LOOKUP_MAX_AGE_MS = 10 * 60_000
+const lookupCaches = new WeakMap<object, Map<string, { at: number; value: ReleaseTagLookup }>>()
+const REPO_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/
+
+/**
+ * Does release `tag` exist on GitHub (published, not a draft)? Delegation's
+ * `release-tag` criterion and the auto-reminders' re-check of an unconfirmed
+ * release both ask here: a published release is answered from one request for
+ * 10 minutes (missing/draft is asked again — it may flip any minute). Signature
+ * and content are judged only by the Release-Wächter above.
+ */
+export async function lookupReleaseTag(tag: string, options: { repo?: string; fetcher?: Fetch; maxAgeMs?: number; now?: () => number } = {}): Promise<ReleaseTagLookup> {
+    const repo = options.repo && REPO_PATTERN.test(options.repo) ? options.repo : UPDATE_REPOSITORY
+    const fetcher = options.fetcher || fetch
+    const now = (options.now || Date.now)()
+    let cache = lookupCaches.get(fetcher)
+    if (!cache) { cache = new Map(); lookupCaches.set(fetcher, cache) }
+    const key = `${repo}@${tag}`
+    const hit = cache.get(key)
+    if (hit && now - hit.at < (options.maxAgeMs ?? RELEASE_LOOKUP_MAX_AGE_MS)) return hit.value
+    let value: ReleaseTagLookup
+    try {
+        const response = await fetcher(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(String(tag))}`, {
+            method: 'GET', headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'xaventra-release-watch' }, redirect: 'error',
+        } as any)
+        if (response.status === 404) value = { state: 'fehlt', status: 404, detail: `Release ${tag} gibt es nicht (GitHub 404)` }
+        else if (!response.ok) value = { state: 'unbekannt', status: response.status, detail: `GitHub HTTP ${response.status}` }
+        else {
+            const body: any = await response.json()
+            value = body?.draft === true
+                ? { state: 'entwurf', status: response.status, detail: `Release ${tag} ist nur ein Entwurf` }
+                : { state: 'veroeffentlicht', status: response.status, ...(body?.published_at ? { publishedAt: String(body.published_at) } : {}), detail: `Release ${tag} existiert${body?.published_at ? ` (veröffentlicht ${String(body.published_at).slice(0, 16)})` : ''}` }
+        }
+    } catch (error) {
+        value = { state: 'unbekannt', status: null, detail: `GitHub nicht erreichbar: ${safeReason(error)}` }
+    }
+    // Only a published release is stable; "fehlt"/"Entwurf" may flip any minute, so they are asked again.
+    if (value.state === 'veroeffentlicht') cache.set(key, { at: now, value })
+    return value
 }
