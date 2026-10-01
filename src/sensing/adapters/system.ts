@@ -85,9 +85,18 @@ export function installEvents(entry: any): RawEvent[] {
     return []
 }
 
+/**
+ * Self-Doctor findings whose source already reaches the owner over the governed
+ * Weg A: local disk/RAM (L0 health monitor) and nodes that went offline (L21,
+ * which watches the mesh registry). Forwarding them again made two or three
+ * Telegram messages for one fact (2.82.0).
+ */
+export const DOCTOR_SOURCES_REPORTED_ELSEWHERE: ReadonlySet<string> = new Set(['L0-health-monitor', 'mesh-registry'])
+
 export function doctorEvents(findings: any[], known: Set<string>): RawEvent[] {
     return findings
         .filter(f => f && f.status === 'open' && (f.severity === 'critical' || f.severity === 'warning') && !known.has(f.id))
+        .filter(f => !DOCTOR_SOURCES_REPORTED_ELSEWHERE.has(String(f.source || '')))
         .slice(0, 10)
         .map((f): RawEvent => ({
             kind: 'system.doctor', subject: String(f.category || 'doctor'), severity: f.severity === 'critical' ? 'warning' : 'info',

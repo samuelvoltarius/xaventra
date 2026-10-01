@@ -81,7 +81,12 @@ export interface StepContext {
     signals: () => Promise<ResponsibilitySignals>
 }
 export interface StepResult { ok: boolean; message: string; toolCalls?: number; costUsd?: number; rolledBack?: boolean }
-export interface StepExecutor { kind: string; run(step: MissionStep, mission: Mission, ctx: StepContext): Promise<StepResult> }
+export interface StepExecutor {
+    kind: string
+    /** False when the path exists but is switched off (e.g. self-heal disabled). Default: available. */
+    available?(): boolean | Promise<boolean>
+    run(step: MissionStep, mission: Mission, ctx: StepContext): Promise<StepResult>
+}
 
 export interface MissionCardPort {
     create(input: NewCardInput): { ok: true; card: ApprovalCard; created: boolean } | { ok: false; reason: string }

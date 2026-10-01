@@ -21,9 +21,9 @@ import type { EventSink, SensingEvent } from '../sensing/ports.js'
 import { promotedKinds, resetTrust, type PromotedKind } from './action-policy.js'
 import { defaultOn } from './autonomy-defaults.js'
 import { getNovaDataDir } from './data-root.js'
-import { createMissionEngine, type Mission, type MissionCardPort, type MissionEngine, type StepExecutor } from './missions.js'
+import { createMissionEngine, planSteps, type Mission, type MissionCardPort, type MissionEngine, type StepExecutor } from './missions.js'
 import {
-    createResponsibilityManager, type Responsibility, type ResponsibilityManager, type ResponsibilitySignals, type ThoughtPort,
+    createResponsibilityManager, type CheckOutcome, type Responsibility, type ResponsibilityManager, type ResponsibilitySignals, type ThoughtPort,
 } from './responsibilities.js'
 
 export interface ResponsibilitySettings {
@@ -81,6 +81,35 @@ export interface ResponsibilityRuntime {
 
 const EVENT_KIND = /error|fehler|offline|down|failed|nightwatch|paused/i
 
+/**
+ * 2.82.0 (ein Sachverhalt = eine Meldung): Platte, RAM und „Knoten still“
+ * melden L0 (lokal) und L21 (entfernt, Mesh) schon über den governed Weg A.
+ * Eine knoten-gesund-Mission, die außer der Diagnose nichts ausführen kann
+ * (entfernter Knoten, Selbstheilung aus), endet nur in „Brauche dich“ — eine
+ * zweite Telegram-Meldung. Solche Verletzungen werden still als Info-Gedanke
+ * notiert (nur Bericht, kein Telegram) und starten keine Mission.
+ */
+export async function canActOn(responsibility: Responsibility, executors: readonly StepExecutor[]): Promise<boolean> {
+    if (responsibility.regel !== 'knoten-gesund') return true
+    for (const step of planSteps(responsibility)) {
+        if (step.kind === 'diagnose') continue
+        const executor = executors.find(item => item.kind === step.kind)
+        if (!executor) continue
+        try { if ((await executor.available?.()) !== false) return true } catch { /* unavailable */ }
+    }
+    return false
+}
+
+async function splitReportOnly(outcomes: readonly CheckOutcome[], executors: readonly StepExecutor[]): Promise<{ actionable: CheckOutcome[]; reportOnly: CheckOutcome[] }> {
+    const actionable: CheckOutcome[] = []
+    const reportOnly: CheckOutcome[] = []
+    for (const outcome of outcomes) {
+        if (outcome.erfuellt === false && outcome.responsibility.status === 'aktiv' && !(await canActOn(outcome.responsibility, executors))) reportOnly.push(outcome)
+        else actionable.push(outcome)
+    }
+    return { actionable, reportOnly }
+}
+
 export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): ResponsibilityRuntime {
     const isMain = () => { try { return deps.isMain() === true } catch { return false } }
     const responsibilities = createResponsibilityManager({ dataDir: deps.dataDir, now: deps.now, localNodeId: deps.localNodeId, ports: deps.ports })
@@ -101,7 +130,17 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
         lastSignals = signals
         const synced = responsibilities.sync(signals)
         const outcomes = responsibilities.check(signals)
-        const started = missions.startForViolations(outcomes)
+        const { actionable, reportOnly } = await splitReportOnly(outcomes, deps.executors)
+        for (const outcome of reportOnly) {
+            deps.ports.thoughts.add({
+                source: 'verantwortung', kind: 'ereignis', permission: 'selbst', severity: 'info',
+                title: `${outcome.responsibility.titel}: verletzt (Systemalarm meldet bereits)`,
+                evidence: `${outcome.verletzt.map(item => item.befund).join('; ')} — keine Mission: kein Ausführer außer Diagnose (Selbstheilung aus oder entfernter Knoten)`,
+                signature: `verantwortung:${outcome.responsibility.id}:nur-melden`,
+                node: outcome.responsibility.scope[0],
+            })
+        }
+        const started = missions.startForViolations(actionable)
         await missions.tick()
         return {
             active: true, reason, aktiviert: synced.aktiviert.length, vorgeschlagen: synced.vorgeschlagen.length,
@@ -297,6 +336,10 @@ function productionExecutors(): StepExecutor[] {
         },
         {
             kind: 'self-heal-zyklus',
+            async available() {
+                const { getSelfHealSettings } = await import('../doctor/self-heal-runtime.js')
+                return getSelfHealSettings().enabled === true
+            },
             async run() {
                 const { getSelfHealSettings, runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
                 if (!getSelfHealSettings().enabled) return { ok: false, message: 'Selbstheilung ist aus (autonomy.selfHeal.enabled ist nicht true)' }
