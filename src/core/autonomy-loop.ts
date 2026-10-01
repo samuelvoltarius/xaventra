@@ -260,9 +260,10 @@ function evaluate(checks: CheckResult[]): { shouldNotify: boolean; summary: stri
     const hour = now.getHours()
 
     // Quiet hours check
-    const inQuietHours = config.quietHoursStart > config.quietHoursEnd
+    // quietHoursStart < 0 switches quiet hours off (as in the delivery path below).
+    const inQuietHours = config.quietHoursStart >= 0 && (config.quietHoursStart > config.quietHoursEnd
         ? (hour >= config.quietHoursStart || hour < config.quietHoursEnd)
-        : (hour >= config.quietHoursStart && hour < config.quietHoursEnd)
+        : (hour >= config.quietHoursStart && hour < config.quietHoursEnd))
 
     // Rate limiting
     if (Date.now() - lastNotificationReset > 3600000) {
@@ -816,7 +817,7 @@ async function checkNightwatch(): Promise<CheckResult[]> {
         configPath: join(DATA_DIR, 'nightwatch.json'),
         journalDir: join(DATA_DIR, 'nightwatch'),
     }
-    const key = `${paths.configPath} ${paths.journalDir}`
+    const key = `${paths.configPath}\u0000${paths.journalDir}`
     try {
         if (!nightwatchSource || nightwatchSource.key !== key) {
             const { createNightwatchSource } = await import('../doctor/nightwatch.js')

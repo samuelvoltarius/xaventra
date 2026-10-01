@@ -31,6 +31,8 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }); setAutonomyNoti
 
 describe('autonomy report: honest about not being sent', () => {
     it('a notifier that declines (false) leaves notificationSent false and is asked once per finding set', async () => {
+        // Night hour on purpose: quietHoursStart -1 must switch quiet hours off at any time.
+        vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 2, 3, 0, 0))
         const notify = vi.fn(async () => false)
         setAutonomyNotifier(notify)
         updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: true },
@@ -41,6 +43,7 @@ describe('autonomy report: honest about not being sent', () => {
         expect(first.notificationSent).toBe(false)
         expect(second.notificationSent).toBe(false)
         expect(notify).toHaveBeenCalledTimes(1)
+        vi.useRealTimers()
     })
 
     it('daemon: the loop notifier no longer goes through the governed path; no false "Telegram aktiv" lines', () => {

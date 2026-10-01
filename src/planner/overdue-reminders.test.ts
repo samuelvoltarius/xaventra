@@ -47,12 +47,12 @@ describe('overdue reminders arrive without the autonomy report', () => {
         expect(notify).toHaveBeenCalledWith('owner-1', 'telegram', expect.stringContaining('Zahnarzt'))
     })
 
-    it('old path (planner reminders off, the 2.82 default): the reminder checker delivers it, exactly once', async () => {
+    it('old path (planner reminders explicitly off): the reminder checker delivers it, exactly once', async () => {
         const notify = vi.fn(async () => undefined)
         rt.setReminderNotifyCallback(notify)
         rt.setReminderWakeupCallback(vi.fn(async () => undefined))
         await rt.initReminders()
-        await runtime.startPlannerRuntime({ planner: { enabled: true } }, { dataDir: join(cwd, '.nova-data'), now: () => t, authority: () => true, startTimer: false })
+        await runtime.startPlannerRuntime({ planner: { enabled: true, reminders: false } }, { dataDir: join(cwd, '.nova-data'), now: () => t, authority: () => true, startTimer: false })
         await rt.checkAndFireReminders()
         await rt.checkAndFireReminders()
         expect(notify).toHaveBeenCalledTimes(1)
