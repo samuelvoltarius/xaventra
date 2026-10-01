@@ -2953,6 +2953,39 @@
       ]
     },
     {
+      "module": "src/doctor/self-heal-recipes.ts",
+      "imports": [
+        "./self-heal.js",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:stream/promises",
+        "node:zlib"
+      ]
+    },
+    {
+      "module": "src/doctor/self-heal-runtime.ts",
+      "imports": [
+        "../core/autonomy-loop.js",
+        "../core/data-root.js",
+        "./self-heal-recipes.js",
+        "./self-heal.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/doctor/self-heal.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/autonomy-loop.js",
+        "../security/secret-redaction.js",
+        "./nightwatch.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/doctor/tool-contract.ts",
       "imports": []
     },
@@ -4389,6 +4422,7 @@
         "../config/config-path.js",
         "../core/data-root.js",
         "../core/node-profile.js",
+        "../doctor/self-heal.js",
         "./capability-graph.js",
         "./direct-mesh-transport.js",
         "./fence-highwater.js",

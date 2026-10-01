@@ -1882,6 +1882,12 @@ async function startDaemon() {
         const nightwatchCfg = autonomyCfg.nightwatch || {}
         const nightwatchEnabled = nightwatchCfg.enabled === true
 
+        // Stufe 3: Selbstheilung stays off until autonomy.selfHeal.enabled=true.
+        try {
+            const { setSelfHealConfig } = await import('./doctor/self-heal-runtime.js')
+            setSelfHealConfig(autonomyCfg.selfHeal)
+        } catch (err) { console.debug(`[Nova] Selbstheilung config skipped: ${err}`) }
+
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
             quietHoursStart: quietEnabled ? (quietCfg.start ?? 23) : -1,

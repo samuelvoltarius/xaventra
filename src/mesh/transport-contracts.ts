@@ -103,6 +103,8 @@ export interface CapabilityPayload {
     capabilities: string[]
     /** Knotenprofil incl. local self-check (src/core/node-profile.ts), bounded by the receiver. */
     profile?: Record<string, unknown>
+    /** Stufe 3: bounded self-heal summary (src/doctor/self-heal.ts); the Main forwards notifiable reports once. */
+    selfHeal?: Record<string, unknown>
 }
 
 export interface ToolInventoryPayload {

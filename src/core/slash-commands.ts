@@ -3573,6 +3573,16 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             return formatAllNodeProfiles()
         }
 
+        // Stufe 3: Selbstheilung (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'heilung': {
+            const { formatSelfHealOverview } = await import('../doctor/self-heal-runtime.js')
+            return formatSelfHealOverview()
+        }
+        case 'selbstheilung': {
+            const { handleSelfHealSwitch } = await import('../doctor/self-heal-runtime.js')
+            return handleSelfHealSwitch(args)
+        }
+
         case 'setup': {
             const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'
             const rest2 = args.trim().split(/\s+/).slice(1)

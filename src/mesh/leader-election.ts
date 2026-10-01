@@ -83,6 +83,12 @@ export function noteLeaseUnavailable(
     return { shouldLog, failures }
 }
 
+/** Read-only snapshot of lease coordinator refusals (e.g. 403) for the
+ * self-heal report recipe; reporting only, never a DB change. */
+export function getLeaseCoordinatorFailures(): Array<{ service: string; status: number; failures: number }> {
+    return [...leaseUnavailableWarnings.entries()].map(([service, warning]) => ({ service, status: warning.status, failures: warning.failures }))
+}
+
 export function noteLeaseCoordinatorHealthy(service: string): number {
     const previous = leaseUnavailableWarnings.get(service)
     leaseUnavailableWarnings.delete(service)

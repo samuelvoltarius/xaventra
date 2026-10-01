@@ -19,6 +19,7 @@ import { resolveConfigPath } from '../config/config-path.js'
 import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
 import { checkDelegatedFence } from './fence-highwater.js'
 import { sanitizeNodeProfile, type NodeProfile } from '../core/node-profile.js'
+import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -70,6 +71,8 @@ interface PeerState {
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
     /** Kept separately: capability-graph snapshots reuse node.capabilities without a profile. */
     profile?: NodeProfile; profileSeen?: number
+    /** Stufe 3: the worker's self-heal summary, sent only on change; workers never notify the owner themselves. */
+    selfHeal?: SelfHealMeshSummary; selfHealSeen?: number
 }
 const peerStatePath = join(getNovaDataDir(), 'mesh-peer-state.json')
 let peerStates: Record<string, PeerState> = (() => {
@@ -287,9 +290,11 @@ export function getMeshPeerStates(): Readonly<Record<string, PeerState>> { retur
  * are only sent on start/change; graph snapshots never carry one). */
 export function peerStateWithCapabilities(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
     const profile = sanitizeNodeProfile((payload as { profile?: unknown } | null)?.profile)
+    const selfHeal = sanitizeSelfHealSummary((payload as { selfHeal?: unknown } | null)?.selfHeal)
     return {
         ...previous, nodeId: sourceNode, lastSeen: now, capabilities: payload, publicKeyFingerprint,
         ...(profile ? { profile: { ...profile, nodeId: sourceNode }, profileSeen: now } : {}),
+        ...(selfHeal ? { selfHeal, selfHealSeen: now } : {}),
     }
 }
 
@@ -306,6 +311,7 @@ export async function publishMeshEvidence(targetNode: string, runId: string, pay
 }
 
 let lastPublishedProfile: { fingerprint: string; sentAt: number } | null = null
+let lastPublishedSelfHeal: { fingerprint: string; sentAt: number } | null = null
 export function startMeshDataPlane(intervalMs = 30_000): void {
     if (heartbeatTimer) return
     const publish = async () => {
@@ -338,6 +344,17 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
                 lastPublishedProfile = { fingerprint, sentAt: Date.now() }
             }
         } catch { /* profile is optional; capabilities still publish */ }
+        try {
+            const { currentSelfHealMeshSummary } = await import('../doctor/self-heal-runtime.js')
+            const { selfHealSummaryFingerprint } = await import('../doctor/self-heal.js')
+            const { shouldPublishProfile } = await import('../core/node-profile.js')
+            const summary = currentSelfHealMeshSummary()
+            const fingerprint = selfHealSummaryFingerprint(summary)
+            if (summary && shouldPublishProfile(fingerprint, lastPublishedSelfHeal, Date.now())) {
+                capabilityPayload.selfHeal = summary as unknown as Record<string, unknown>
+                lastPublishedSelfHeal = { fingerprint, sentAt: Date.now() }
+            }
+        } catch { /* self-heal summary is optional */ }
         const capability = transport.create('node.capabilities', '*', capabilityPayload)
         await transport.broadcast(capability)
         try {

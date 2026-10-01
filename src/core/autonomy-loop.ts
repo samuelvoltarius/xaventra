@@ -876,6 +876,23 @@ async function checkNightwatch(): Promise<CheckResult[]> {
     }
 }
 
+// Stufe 3: own phase, off until autonomy.selfHeal.enabled=true. Findings come
+// back as CheckResults, so the normal alarm policy (quiet hours, dedupe,
+// governed notifier) applies on the Main; a worker gets nothing back.
+async function runSelfHealPhase(isMain: boolean): Promise<CheckResult[]> {
+    try {
+        const { runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
+        const checks = await runSelfHealCycle({
+            isMain,
+            nightwatchJournalDir: config.checks.nightwatch ? (config.nightwatch?.journalDir ?? join(DATA_DIR, 'nightwatch')) : undefined,
+        })
+        return isMain ? checks : []
+    } catch (error) {
+        console.debug(`[Autonomy] Selbstheilung non-critical error: ${error}`)
+        return []
+    }
+}
+
 // ============================================
 // Main Loop
 // ============================================
@@ -902,6 +919,9 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
         return { timestamp: Date.now(), checks: [], summary: 'Disabled', notificationSent: false }
     }
     if (!hasGlobalAutonomyAuthority()) {
+        // Stufe 3: a worker heals only its own data dir; its reports ride the
+        // mesh to the Main. Nothing here reaches act()/the owner channel.
+        await runSelfHealPhase(false)
         return { timestamp: Date.now(), checks: [], summary: 'Standby: fenced Main lease required', notificationSent: false }
     }
 
@@ -928,6 +948,8 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     if (config.checks.nightwatch) {
         checks.push(...await checkNightwatch())
     }
+    // Stufe 3 (S3.1-S3.5): Selbstheilung as its own phase after the Nachtwache.
+    checks.push(...await runSelfHealPhase(true))
 
     console.log(`[Autonomy] 📋 ${checks.length} checks completed`)
 
