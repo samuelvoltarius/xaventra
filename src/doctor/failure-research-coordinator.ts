@@ -114,6 +114,14 @@ export class FailureResearchCoordinator {
 
     list(): FailureResearchCase[] { return this.cases.map(item => structuredClone(item)) }
 
+    /** Phase 3 Bug-Finder: Beleg-Verweise (keine Inhalte) an einen bestehenden Fall hängen. */
+    addEvidenceRefs(id: string, refs: readonly string[]): void {
+        const item = this.cases.find(value => value.id === id)
+        if (!item || !refs.length) return
+        item.evidenceRefs = [...new Set([...item.evidenceRefs, ...refs.map(ref => redactSecrets(String(ref)).slice(0, 120))])].slice(-30)
+        this.persist()
+    }
+
     isCurrentObservation(id: string, hash: string): boolean {
         return this.cases.some(c => c.id === id && c.observationHash === hash && c.findingOpen !== false)
     }

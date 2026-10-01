@@ -2005,6 +2005,12 @@ async function startDaemon() {
             const { hasGlobalAutonomyAuthority } = await import('./core/autonomy-authority.js')
             const { setClaudeHandoffConfig } = await import('./doctor/claude-handoff.js')
             setClaudeHandoffConfig((config as any).autonomy?.claudeHandoff)
+            // Phase 3 „Denken": everything off until autonomy.thinking.enabled + part switch.
+            try {
+                const { setThinkingConfig, setIdeaFormulator, createLlmFormulator } = await import('./thinking/thinking-runtime.js')
+                setThinkingConfig((config as any).autonomy?.thinking)
+                if (state.llm) setIdeaFormulator(createLlmFormulator({ complete: (messages, options) => (state.llm as any).complete(messages, options) }))
+            } catch (err) { console.debug(`[Xaventra] Denken config skipped: ${err}`) }
             setDoctorResearchWorker(createResearchWorker(
                 () => getAutonomyStatus().running && getAutonomyStatus().config.enabled && hasGlobalAutonomyAuthority(),
                 state.llm,

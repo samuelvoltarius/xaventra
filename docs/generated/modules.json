@@ -5469,6 +5469,83 @@
       ]
     },
     {
+      "module": "src/thinking/bug-finder.ts",
+      "imports": [
+        "../core/self-doctor.js",
+        "../doctor/failure-research-coordinator.js",
+        "../security/secret-redaction.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/thinking/decision-learning.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../doctor/self-heal.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/thinking/idea-run.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../learning/trace-analyzer.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/thinking/model-scout.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./ports.js",
+        "./probe-set.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/thinking/ports.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:child_process",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/thinking/probe-set.ts",
+      "imports": [
+        "../doctor/failure-research-coordinator.js",
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/thinking/thinking-runtime.ts",
+      "imports": [
+        "../doctor/failure-research-coordinator.js",
+        "./bug-finder.js",
+        "./decision-learning.js",
+        "./idea-run.js",
+        "./model-scout.js",
+        "./ports.js",
+        "./probe-set.js",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/tools/3dprinter.ts",
       "imports": [
         "../config/config-path.js",

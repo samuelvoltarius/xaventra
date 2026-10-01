@@ -385,3 +385,45 @@ rejects or switches off; `/geraete konten` proposes own mail/calendar accounts
 („lesend verbinden?“); `/geraete ruhe` derives a quiet-hours proposal from the owner's
 own message timestamps (`.nova-data/sessions/<owner>.jsonl`, timestamps only). Until a
 proposal is accepted the cautious default applies: 22–7 only urgent, max. 10 per day.
+
+## Denken (Phase 3): Ideen, Modell-Scout, Bug-Finder, Lernen
+
+Off by default. Nothing runs until `autonomy.thinking.enabled` **and** the part's own
+switch are `true`. Runs as its own autonomy-loop phase after the Doctor, **only on the
+Main** (workers think nothing and send nothing). Code: `src/thinking/`.
+
+```json
+{ "autonomy": { "thinking": {
+    "enabled": true,
+    "ideas":     { "enabled": true, "nightStartHour": 1, "nightEndHour": 5, "maxPerDay": 3 },
+    "scout":     { "enabled": true, "memoryBudgetGB": 96, "minImprovementPercent": 5,
+                   "sources": [ { "type": "huggingface", "limit": 50, "timeoutMs": 10000 },
+                                { "type": "fixture", "path": ".nova-data/thinking/scout-fixture.json" } ] },
+    "bugFinder": { "enabled": true, "minOccurrences": 5, "windowDays": 7 },
+    "learning":  { "enabled": true },
+    "load":      { "maxGpuUtilPercent": 20, "vllmMetricsUrl": "http://127.0.0.1:8000" }
+} } }
+```
+
+| Part | When | What it does | Output |
+|------|------|--------------|--------|
+| Ideen-Lauf | night window, ≤ 1×/day, only if GPU/vLLM measured idle | fixed rules over traces (`analyzeTraces`, same numbers as `nova_trace_stats`), tool latency, error rate, repeated arguments, retries, model success rate, L14 costs; the model only words the text | ≤ 3 ideas/day (hard cap, config can only lower), each with evidence (number before + source) and a measurable target, stage `fragen` |
+| Modell-Scout | weekly | candidates from configured sources (Hugging Face API read-only GET with time limit, or offline fixture; no source = nothing), filter: fits GB10 memory (unknown size = rejected), vLLM-compatible (transformers/safetensors, not GGUF-only), licence allow-list; probe set from Doctor cases + anonymous everyday questions (private content is dropped, numbers masked); comparison only through an injected `ScoutRunner` and only while the GPU is idle | "Modell Z war X % besser" with test report, stage `fragen`. **Never switches by itself**, downloads nothing, starts no model |
+| Bug-Finder | hourly | same fault fingerprint (Stufe-1 `observationFingerprint`) ≥ N times with evidence → one Doctor case in the existing queue; no duplicates (same fingerprint/case id = skipped) | Doctor investigation → on `verified` the existing Claude handoff → after a rollout the existing follow-up check |
+| Lernen | on every button answer | `recordDecision(kind, answer)` → outcome ledger; after 5× "Ja" in a row (minimum, config can only raise) a thought "Immer erlauben?" — never for printing, switching, sending, buying, never for the never-list; "Nein" lowers future importance of that kind (min. factor 0.2) | thought, stage `fragen` |
+
+Load gate (`LoadProbe`): `nvidia-smi utilization.gpu` (no shell, time limit, 3 samples, max
+counts) plus vLLM `/metrics` queue when `load.vllmMetricsUrl` is set. Not measurable =
+busy. GPU above `maxGpuUtilPercent` or any running/waiting vLLM request = no run (OOM 13.09.).
+
+Ports (documented in `src/thinking/ports.ts`):
+- `ThoughtSink` — the only exit. Default appends to `.nova-data/thinking/thoughts.jsonl`
+  (0600, secrets redacted). `proposal.autoExecute` is always `false`; execution needs an
+  owner button and a code-generated ticket (Phase 1 cards). Replace with `setThoughtSink`.
+- `Schedule` — default `IntervalSchedule` (ideas 20 h, scout 7 days, bugs 1 h, state in
+  `.nova-data/thinking/schedule.json`), polled once per autonomy cycle. Replace with
+  `setThinkingSchedule` (planner jobs).
+- `ScoutRunner` (`setScoutRunner`) and idea `Formulator` (`setIdeaFormulator`; the daemon
+  wires the running model) are optional.
+
+State files: `.nova-data/thinking/ideas-state.json`, `scout-report.json`, `decisions.json`.

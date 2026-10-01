@@ -966,6 +966,8 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
 
     // Diagnosis must not be starved by self-goal idle/boot early returns.
     await runDoctorPhase()
+    // Phase 3 „Denken": off until autonomy.thinking.enabled; results only as thoughts.
+    await runThinkingPhase()
 
     // Phase 4: EXECUTE PENDING GOALS
     // Nova actually works on her own goals — not just reports them
@@ -1072,6 +1074,17 @@ async function runDoctorPhase(): Promise<void> {
         console.debug(`[Autonomy] Self-Doctor non-critical error: ${err}`)
     }
 
+}
+
+// Phase 3 (Autonomie-Plan): Ideen-Lauf, Modell-Scout, Bug-Finder. Only on the
+// Main; writes thoughts to the ThoughtSink port, never to the owner channel.
+async function runThinkingPhase(): Promise<void> {
+    try {
+        const { runThinkingTick } = await import('../thinking/thinking-runtime.js')
+        await runThinkingTick({ isMain: config.enabled && hasGlobalAutonomyAuthority() })
+    } catch (err) {
+        console.debug(`[Autonomy] Denken non-critical error: ${err}`)
+    }
 }
 
 // ============================================
