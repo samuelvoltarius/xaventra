@@ -3268,6 +3268,13 @@ export const ALL_TOOLS: NovaTool[] = [
                 } catch { /* non-critical */ }
 
                 const resolvedId = aliases[rawTo] || String(params.to)
+                // Anyone but the owner is "nach außen senden" (Alfred 23.09./01.10.):
+                // only with the owner's approval, bound to this recipient.
+                const { isConfiguredOwner, getConfigAllowFrom } = await import('../users/multi-user-middleware.js')
+                if (!isConfiguredOwner(resolvedId, 'telegram', getConfigAllowFrom())) {
+                    const refusal = await ownerApprovalRefusal(params, 'send_telegram_message', resolvedId)
+                    if (refusal) return { success: false, error: refusal }
+                }
                 const sent = (tg as any).bot?.sendMessage
                     ? await (tg as any).bot.sendMessage(resolvedId, String(params.message))
                     : await tg.send({ to: resolvedId, content: String(params.message), channel: 'telegram' })
