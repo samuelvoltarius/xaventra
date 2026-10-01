@@ -1875,8 +1875,17 @@ async function startDaemon() {
 
         const { startAutonomyLoop } = await import('./core/autonomy-loop.js')
 
-        // Build the notification function — sends to admin via best available channel
-        const notifyFn = async (message: string) => {
+        // The aggregated autonomy report is not a Telegram path (2.82.0): its
+        // source was never a trusted producer, so the governed path dropped it
+        // every time while the loop logged "sent". Its findings already reach
+        // the owner once each (L0 health, L21 nodes, planner reminders and
+        // Nachtwache); sending the summary too would repeat them. Declining here
+        // makes the loop log honestly; the report stays in autonomy-reports.
+        const notifyFn = async (_message: string): Promise<boolean> => false
+        // Mission Engine (/mission) progress keeps its previous notifier unchanged.
+        // NOTE (2.82.0, not changed here): 'autonomy-loop' is not a trusted
+        // producer, so the governed path drops these messages as well.
+        const missionNotifyFn = async (message: string) => {
             const governed = (state as any).sendGovernedProactive
             if (governed) {
                 await governed(message, 'autonomy-loop', 'warning', 0.9)
@@ -2116,7 +2125,7 @@ async function startDaemon() {
                 handleMessage: async (ch: string, from: string, content: string, replyFn: (msg: string) => Promise<void>, st: any) => {
                     return _handleMessage(ch, from, content, replyFn, st || state as any, handleCommand)
                 },
-                notifyFn,
+                notifyFn: missionNotifyFn,
                 llm: state.llm,
                 state: state as any,
             })
@@ -2700,21 +2709,13 @@ async function startDaemon() {
         // already reach Telegram once over the governed path; the copy came back
         // a second time inside the next chat reply ("PROAKTIVE BEOBACHTUNGEN").
 
-        // === FEATURE 5: Wire insight delivery to Telegram (always, R2 NZ-10) ===
+        // === FEATURE 5: insight delivery (no own Telegram path) ===
         {
-            insightEngine.setSendFunction(async (userId: string, channel: string, content: string) => {
-                try {
-                    const { isInternalOutboundArtifact } = await import('./core/outbound-content-guard.js')
-                    if (isInternalOutboundArtifact(content)) {
-                        console.log('[Insights] Internal planner/reasoning artifact suppressed')
-                        return
-                    }
-                    await (state as any).sendGovernedProactive?.(content, 'insight-engine', 'info', 0.9)
-                } catch (err) {
-                    console.log(`[Insights] Delivery failed: ${err}`)
-                }
-            })
-            console.log('[Nova] ✓ Insight Delivery → Telegram aktiv')
+            // The insight engine never called its send function, and its source
+            // would have been dropped by the governed path anyway (2.82.0).
+            // Insights only enrich the next chat reply; say so instead of
+            // claiming a Telegram path.
+            console.log('[Nova] ✓ Insights: nur als Kontext in der nächsten Antwort (kein eigener Telegram-Versand)')
         }
 
         const goalStats = autonomy.getSelfGoalEngine().getStats()

@@ -92,7 +92,8 @@ let running = false
 let lastReport: AutonomyReport | null = null
 let notificationCount = 0
 let lastNotificationReset = Date.now()
-let sendNotification: ((message: string) => Promise<void>) | null = null
+/** Returns false when it deliberately does not deliver (2.82.0: the daemon's notifier). */
+let sendNotification: ((message: string) => Promise<boolean | void>) | null = null
 let lastImportantFingerprint = ''
 let lastImportantNotificationAt = 0
 const IMPORTANT_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -385,15 +386,21 @@ async function act(evaluation: { shouldNotify: boolean; summary: string; importa
         msg += `\n_Status: Ich bleibe im Hintergrund wach. 🌙✨_`
 
         try {
-            await sendNotification(msg)
-            report.notificationSent = true
-            notificationCount++
+            const delivered = await sendNotification(msg)
             lastImportantFingerprint = evaluation.important
                 .map(item => `${item.source}:${item.severity}:${item.message.replace(/\d+(?:[.,]\d+)?/g, '#')}`)
                 .sort()
                 .join('|')
             lastImportantNotificationAt = Date.now()
-            console.log(`[Autonomy] 📣 Notification sent (${notificationCount} this hour)`)
+            if (delivered === false) {
+                // Honest log: the report is not a Telegram path (2.82.0); its findings
+                // reach the owner through L0/L21/the planner, the report stays in the log.
+                console.log(`[Autonomy] Report nicht per Telegram gesendet (nur Log): ${evaluation.important.map(item => item.source).join(', ')}`)
+            } else {
+                report.notificationSent = true
+                notificationCount++
+                console.log(`[Autonomy] 📣 Notification sent (${notificationCount} this hour)`)
+            }
         } catch (err) {
             console.error(`[Autonomy] ❌ Notification failed: ${err}`)
         }
@@ -1133,7 +1140,12 @@ function saveReport(report: AutonomyReport): void {
 // Lifecycle
 // ============================================
 
-export async function startAutonomyLoop(notifyFn: (msg: string) => Promise<void>, userConfig?: Partial<AutonomyConfig>): Promise<void> {
+/** Replaces the report notifier (also used by startAutonomyLoop). */
+export function setAutonomyNotifier(fn: ((msg: string) => Promise<boolean | void>) | null): void {
+    sendNotification = fn
+}
+
+export async function startAutonomyLoop(notifyFn: (msg: string) => Promise<boolean | void>, userConfig?: Partial<AutonomyConfig>): Promise<void> {
     if (running) {
         console.log('[Autonomy] Already running')
         return
@@ -1148,7 +1160,7 @@ export async function startAutonomyLoop(notifyFn: (msg: string) => Promise<void>
         }
     }
 
-    sendNotification = notifyFn
+    setAutonomyNotifier(notifyFn)
     // thinkFn is set separately via setThinkCallback
     running = true
 
