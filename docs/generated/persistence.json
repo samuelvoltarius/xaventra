@@ -374,6 +374,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/doctor/self-heal-runtime.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/doctor/self-heal-runtime.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/hooks/event-hooks.test.ts",
       "path": ".nova-data"
     },

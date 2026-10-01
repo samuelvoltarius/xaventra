@@ -629,12 +629,16 @@ export async function createLLM(config: { provider?: string; model?: string; int
         /**
          * Actually switch the runtime model. Reconfigures the underlying NovaLLM client.
          */
-        async switchModel(newModel: string, newProvider?: string): Promise<boolean> {
+        async switchModel(newModel: string, newProvider?: string, endpoint?: string): Promise<boolean> {
             let resolvedProvider = newProvider || activeProvider
+            // `endpoint` pins the exact runtime when the same model is served twice
+            // (Stufe 3: switch to the second known endpoint and back).
             const discovered = availableLLMs.find(l =>
                 l.model === newModel &&
+                (!endpoint || l.endpoint === endpoint) &&
                 (newProvider ? l.provider === newProvider || (newProvider === 'local' && isLocalLLMEntry(l)) : true)
             )
+            if (endpoint && !discovered) return false
 
             // Auto-detect provider from model name if not explicitly set
             if (newModel.startsWith('claude')) {

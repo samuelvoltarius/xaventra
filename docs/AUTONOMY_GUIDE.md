@@ -129,3 +129,43 @@ When a task exceeds current node capacity:
 | Light delegation | Mesh node |
 
 Auto-destroys instances after task completion (cost control!).
+
+---
+
+## Selbstheilung (Stufe 3)
+
+Off by default. Enable per node in the config:
+
+```json
+{ "autonomy": { "selfHeal": {
+    "enabled": true,
+    "logRotateBytes": 536870912,
+    "diskPercent": 90,
+    "endpoints": [
+        { "model": "<model>", "endpoint": "http://<first>:8000/v1" },
+        { "model": "<model>", "endpoint": "http://<second>:8000/v1" }
+    ]
+} } }
+```
+
+Runs as its own autonomy-loop phase after the Nachtwache (`src/doctor/self-heal.ts`,
+recipes in `src/doctor/self-heal-recipes.ts`). Only three recipes act without asking,
+all inside the node's own data directory or its own LLM runtime:
+
+| Recipe | Symptom (measured) | Action | After-probe | Rückweg |
+|--------|--------------------|--------|-------------|---------|
+| `log-rotation` | own audit/log file ≥ `logRotateBytes` | gzip into `.nova-data/self-heal/archive/` (never deleted) | archive unpacks byte-identical | original file restored, broken archive kept as `.unvollstaendig` |
+| `cache-leeren` | disk ≥ `diskPercent` and own caches (`tmp`, `cache`, `bench-temp`, `resolver-cache.json`) not empty | move into quarantine, then free it | cache paths empty | everything moved back |
+| `endpoint-umschalten` | first endpoint dead twice, second answers (and back when the first returns) | switch the runtime model to the other known endpoint | new endpoint answers | switch back |
+
+Proposals only (never executed): service restart when the Nachtwache sees the own
+REST endpoint hanging (max 1× per 6 h, never on the NAS), disk ≥ `diskPercent`,
+lease coordinator refusing (403) — report + diagnostics, no DB change.
+
+Brakes: cooldown and daily counter per recipe, `/selbstheilung aus|an` (owner, global
+Not-Aus), a recipe switches itself off after 2 failed heals (`/selbstheilung an <rezept>`).
+`/heilung` shows status, brakes, open proposals and the journal
+(`.nova-data/self-heal/journal/YYYY-MM-DD.jsonl`). The never-list is a code constant;
+a recipe touching it is rejected at load. With `NOVA_FENCING_MODE=enforce` and no valid
+Main lease nothing acts. Workers never notify the owner; their reports ride the signed
+`node.capabilities` message and the Main forwards each one once.
