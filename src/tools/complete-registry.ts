@@ -2961,7 +2961,7 @@ const meshTools: NovaTool[] = [
     },
     {
         name: 'mesh_delegate',
-        description: 'Delegiert eine Aufgabe an einen anderen Nova-Node im Mesh. Der Node bekommt die Aufgabe und arbeitet sie ab.',
+        description: 'Übergibt eine Aufgabe an einen anderen Knoten im Mesh („an Knoten übergeben“); der Knoten arbeitet sie ab. Nicht dasselbe wie die Delegation an Claude, Codex, Hermes oder einen Unteragenten.',
         category: 'system',
         parameters: [
             { name: 'node_id', type: 'string', description: 'ID des Ziel-Nodes (z.B. nova-a1b2c3d4)', required: true },
@@ -2970,8 +2970,8 @@ const meshTools: NovaTool[] = [
         handler: async (params) => {
             const { delegateTask } = await import('../mesh/mesh-registry.js')
             const result = await delegateTask(String(params.node_id), String(params.task))
-            if (!result) return '? Delegation fehlgeschlagen. Node nicht erreichbar.'
-            return `Task delegiert!\nID: ${result.id}\nAn: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
+            if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
+            return `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
         },
     },
     {

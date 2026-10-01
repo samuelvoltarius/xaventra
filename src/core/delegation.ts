@@ -42,6 +42,10 @@
  *   leaves a thought.
  * - P8: on at the Main by default (`autonomy.delegation.enabled=false` = off). A mesh worker
  *   (`NOVA_NODE_ONLY=true`) never delegates and never polls.
+ * - P9: polling only runs while delegations are open (armed by delegate(), stopped by the
+ *   tick that finds none). Callers: Missions-Schritt `delegieren` (core/missions.ts via
+ *   responsibility-runtime) and Auftrags-Schritte with `an` (core/autonomous-executor.ts).
+ *   Not to be confused with the mesh `delegateTask` (user text: „an Knoten übergeben“).
  *
  * Files: `<data>/delegation/delegations.json` { version: 1, records }.
  */
@@ -81,6 +85,12 @@ export interface DelegationRequest {
     missionId?: string
     /** Declared by the caller: the task changes systems (raises to L2). */
     aendert?: boolean
+    /**
+     * Owner approval that was already given for exactly this task (a mission
+     * step card answered Ja). Only code paths that hold such an answer pass it;
+     * an L2 task then goes out without a second card and records who approved.
+     */
+    freigabeVon?: string
 }
 
 export interface DelegationAnswer {
@@ -680,7 +690,10 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
             const records = load()
             records.push(record)
             save(records)
-            if (level.stufe === 'L2') {
+            const preApproved = typeof request.freigabeVon === 'string' && /^[A-Za-z0-9:_.@-]{2,64}$/.test(request.freigabeVon) ? request.freigabeVon : undefined
+            if (level.stufe === 'L2' && preApproved) {
+                mutate(id, item => { item.freigabeVon = preApproved; setStatus(item, 'wartet-auf-freigabe', `Freigabe ${preApproved} (vorab, Karte des Aufrufers)`) })
+            } else if (level.stufe === 'L2') {
                 const createCard: CreateCard = deps.createCard ?? (await import('./approval-cards.js')).createApprovalCard as unknown as CreateCard
                 const card = createCard({
                     art: 'delegation',
@@ -813,9 +826,11 @@ export function getDelegationService(): DelegationService {
     return current ?? configureDelegation({})
 }
 
-/** Public entry for missions and tools. */
-export function delegate(request: DelegationRequest): ReturnType<DelegationService['delegate']> {
-    return getDelegationService().delegate(request)
+/** Public entry for missions and Aufträge. Arms the poll timer while something is open. */
+export async function delegate(request: DelegationRequest): ReturnType<DelegationService['delegate']> {
+    const result = await getDelegationService().delegate(request)
+    if (result.ok) armDelegationPolling()
+    return result
 }
 
 /** Survives reconfiguration; returns an unsubscribe function. */
@@ -842,6 +857,34 @@ export async function registerDelegationCardExecutor(): Promise<void> {
     })
 }
 
+let runtimeActive = false
+
+/**
+ * P9: the Rückkanal timer only runs while delegations are open. delegate()
+ * arms it; the tick that finds nothing open stops it again. No empty polling.
+ */
+export function armDelegationPolling(): boolean {
+    if (!runtimeActive || timer || !current) return Boolean(timer)
+    if (!current.list({ open: true, limit: 1 }).length) return false
+    const service = current
+    timer = setInterval(() => {
+        void service.tick()
+            .catch(error => console.warn(`[Delegation] Takt fehlgeschlagen: ${clip((error as Error)?.message, 120)}`))
+            .finally(() => {
+                if (service.list({ open: true, limit: 1 }).length) return
+                if (timer) clearInterval(timer)
+                timer = null
+            })
+    }, service.config.pollSeconds * 1000)
+    timer.unref?.()
+    return true
+}
+
+/** True while the Rückkanal timer runs (tests, /status). */
+export function isDelegationPolling(): boolean {
+    return timer !== null
+}
+
 /** Starts polling + deadline watch on the Main. Off unless enabled; never on a worker. */
 export async function startDelegationRuntime(autonomy: unknown, options: { nodeOnly: boolean }): Promise<{ started: boolean; reason: string }> {
     stopDelegationRuntime()
@@ -849,14 +892,15 @@ export async function startDelegationRuntime(autonomy: unknown, options: { nodeO
     if (!service.config.enabled) return { started: false, reason: 'autonomy.delegation.enabled=false' }
     if (options.nodeOnly) return { started: false, reason: 'Mesh-Worker: Delegation nur am Main' }
     await registerDelegationCardExecutor()
-    timer = setInterval(() => { void service.tick().catch(error => console.warn(`[Delegation] Takt fehlgeschlagen: ${clip((error as Error)?.message, 120)}`)) }, service.config.pollSeconds * 1000)
-    timer.unref?.()
-    return { started: true, reason: `Rückkanal alle ${service.config.pollSeconds}s${service.config.url ? '' : ' (ohne Agentic-OS-URL nur lokale Unteragenten)'}` }
+    runtimeActive = true
+    const polling = armDelegationPolling()
+    return { started: true, reason: `Rückkanal alle ${service.config.pollSeconds}s, nur solange Delegationen offen sind (jetzt ${polling ? 'aktiv' : 'ruhig'})${service.config.url ? '' : '; ohne Agentic-OS-URL nur lokale Unteragenten'}` }
 }
 
 export function stopDelegationRuntime(): void {
     if (timer) clearInterval(timer)
     timer = null
+    runtimeActive = false
 }
 
 const STATUS_MARK: Record<DelegationStatus, string> = {

@@ -1882,7 +1882,7 @@
     {
       "name": "mesh_delegate",
       "category": "system",
-      "description": "Delegiert eine Aufgabe an einen anderen Nova-Node im Mesh. Der Node bekommt die Aufgabe und arbeitet sie ab.",
+      "description": "Übergibt eine Aufgabe an einen anderen Knoten im Mesh („an Knoten übergeben“); der Knoten arbeitet sie ab. Nicht dasselbe wie die Delegation an Claude, Codex, Hermes oder einen Unteragenten.",
       "parameters": [
         {
           "name": "node_id",

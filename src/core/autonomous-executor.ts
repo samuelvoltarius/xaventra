@@ -6,6 +6,13 @@
  * Interne Namen (Mission*, mission:<id>-Leases, Mesh-Übergabe) bleiben aus
  * Kompatibilitätsgründen.
  *
+ * Delegation (P9): ein Schritt mit `an` (claude, codex, hermes, unteragent)
+ * wird über core/delegation.ts übergeben; der Auftrag wartet, bis die
+ * Delegation abgeschlossen ist (onDelegationSettled). Nur ein verifiziertes
+ * Ergebnis zählt als erledigt, sonst „nicht verifiziert“ wie bei eigenen
+ * Schritten ohne Beleg. Geht die Übergabe nicht, führt Xaventra den Schritt
+ * selbst aus.
+ *
  * Dateien: `.nova-data/auftraege.json` und `.nova-data/auftraege-config.json`
  * (früher missions.json / mission-config.json; beim ersten Start übernommen,
  * die alten Dateien heißen danach `.migriert`).
@@ -47,7 +54,16 @@ export interface MissionStep {
     executionKey?: string
     outcomeRunId?: string
     goalId?: string
+    /** P9: hand this step to another agent instead of running it here. */
+    an?: 'claude' | 'codex' | 'hermes' | 'subagent'
+    /** Optional verifiable criterion for a delegated step (release-tag / ci-gruen). */
+    erwartet?: { art: string; tag?: string; sha?: string; repo?: string }
+    /** Set while the step waits for its delegation. */
+    delegationId?: string
 }
+
+const STEP_TARGETS: Record<string, MissionStep['an']> = { claude: 'claude', codex: 'codex', hermes: 'hermes', unteragent: 'subagent', subagent: 'subagent' }
+const TARGET_LABEL: Record<NonNullable<MissionStep['an']>, string> = { claude: 'Claude', codex: 'Codex', hermes: 'Hermes', subagent: 'einen Unteragenten' }
 
 export interface Mission {
     id: string
@@ -152,6 +168,7 @@ export function initMissionEngine(deps: {
     daemonState = deps.state
 
     migrateLegacyAuftragFiles()
+    void attachDelegationListener()
 
     // Load config from disk
     try {
@@ -239,10 +256,13 @@ REGELN:
 - Jeder Schritt-Befehl muss so formuliert sein, als würde der User Nova darum bitten
 - Schritt 1 sollte immer Vorbereitung/Recherche sein
 - Letzter Schritt sollte Zusammenfassung/Verifikation sein
+- Optional "an": "claude" | "codex" | "hermes" | "unteragent", wenn ein anderer Agent den Schritt besser erledigt (z. B. Code-Änderung an codex, Recherche an einen unteragent); sonst weglassen
+- Optional "erwartet" nur, wenn das Ergebnis prüfbar ist: {"art": "release-tag", "tag": "v1.2.3"} oder {"art": "ci-gruen", "sha": "<40 Hex-Zeichen>"}
 
 Antworte NUR mit einem JSON-Array in folgendem Format:
 [
   {"description": "Was dieser Schritt tut", "command": "Die genaue Anweisung an Nova"},
+  {"description": "…", "command": "…", "an": "codex", "erwartet": {"art": "ci-gruen", "sha": "…"}},
   ...
 ]
 
@@ -261,13 +281,22 @@ Kein Text vor oder nach dem JSON.`
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0])
             if (Array.isArray(parsed) && parsed.length > 0) {
-                return parsed.slice(0, config.maxSteps).map((step: any, i: number) => ({
-                    id: i + 1,
-                    description: step.description || `Schritt ${i + 1}`,
-                    command: step.command || step.description,
-                    status: 'pending' as const,
-                    retries: 0,
-                }))
+                return parsed.slice(0, config.maxSteps).map((step: any, i: number) => {
+                    const an = STEP_TARGETS[String(step?.an || '').toLowerCase()]
+                    const art = String(step?.erwartet?.art || '')
+                    const erwartet = an && (art === 'release-tag' || art === 'ci-gruen')
+                        ? { art, ...(step.erwartet.tag ? { tag: String(step.erwartet.tag).slice(0, 60) } : {}), ...(step.erwartet.sha ? { sha: String(step.erwartet.sha).slice(0, 40) } : {}) }
+                        : undefined
+                    return {
+                        id: i + 1,
+                        description: step.description || `Schritt ${i + 1}`,
+                        command: step.command || step.description,
+                        status: 'pending' as const,
+                        retries: 0,
+                        ...(an ? { an } : {}),
+                        ...(erwartet ? { erwartet } : {}),
+                    }
+                })
             }
         }
     } catch (err) {
@@ -515,10 +544,20 @@ async function executeNextStep(): Promise<void> {
         saveMissions()
         return
     }
+    // P9: a step handed to another agent waits for its delegation (settleAuftragDelegation).
+    if (step.delegationId && step.status === 'active') return
     isExecuting = true
     step.status = 'active'
     step.startedAt = Date.now()
     saveMissions()
+
+    if (step.an && !step.delegationId) {
+        const handed = await handStepToAgent(mission, step)
+        if (handed) {
+            isExecuting = false
+            return
+        }
+    }
 
     console.log(`[Mission] ▶️ Step ${step.id}/${mission.steps.length}: ${step.description}`)
 
@@ -683,6 +722,73 @@ async function executeNextStep(): Promise<void> {
     // Continue with next step after delay
     if (activeMission === mission && mission.status === 'active') {
         setTimeout(() => executeNextStep(), config.delayBetweenSteps)
+    }
+}
+
+/** P9: hands one Auftrag step to Claude/Codex/Hermes/a subagent. False = run it here instead. */
+async function handStepToAgent(mission: Mission, step: MissionStep): Promise<boolean> {
+    const to = step.an!
+    try {
+        const { delegate } = await import('./delegation.js')
+        const result = await delegate({
+            to,
+            auftrag: step.command,
+            kontext: { auftrag: mission.goal.slice(0, 300), schritt: `${step.id}/${mission.steps.length}: ${step.description}` },
+            erwartet: step.erwartet ?? { art: 'auftrag-schritt', text: step.description.slice(0, 300) || `Schritt ${step.id}` },
+            missionId: mission.id,
+        })
+        if (result.ok === false) {
+            mission.progressUpdates.push(`↩️ [${step.id}] Übergabe an ${TARGET_LABEL[to]} nicht möglich (${result.reason}); ich mache den Schritt selbst`)
+            saveMissions()
+            return false
+        }
+        step.delegationId = result.record.id
+        mission.progressUpdates.push(`🤝 [${step.id}/${mission.steps.length}] an ${TARGET_LABEL[to]} übergeben (${result.record.id}${result.record.status === 'wartet-auf-freigabe' ? ', wartet auf deine Freigabe' : ''})`)
+        saveMissions()
+        return true
+    } catch (error) {
+        mission.progressUpdates.push(`↩️ [${step.id}] Übergabe an ${TARGET_LABEL[to]} fehlgeschlagen; ich mache den Schritt selbst`)
+        console.warn(`[Auftrag] Delegation fehlgeschlagen: ${String((error as Error)?.message || error).slice(0, 160)}`)
+        saveMissions()
+        return false
+    }
+}
+
+/** P9: result of a delegated Auftrag step. Only a verified result counts as done. */
+export function settleAuftragDelegation(record: { id: string; missionId?: string; status: string; pruefung?: { ergebnis: string; detail: string } }, info: { verified: boolean }): boolean {
+    const mission = activeMission
+    if (!mission || !record?.missionId || mission.id !== record.missionId) return false
+    const step = mission.steps.find(item => item.delegationId === record.id && item.status === 'active')
+    if (!step) return false
+    step.finishedAt = Date.now()
+    const check = record.pruefung ? `${record.pruefung.ergebnis}: ${record.pruefung.detail}` : record.status
+    step.result = `Delegation ${record.id}: ${check}`.slice(0, 2000)
+    if (info.verified) {
+        step.status = 'done'
+        if (step.goalId) getGoalManager().update(step.goalId, { status: 'completed' }, { ref: `delegation:${record.id}` })
+        mission.progressUpdates.push(`✅ [${step.id}/${mission.steps.length}] ${step.description} (übergeben, verifiziert)`)
+    } else {
+        step.status = 'failed'
+        step.error = `Delegation ${record.status}, nicht verifiziert`
+        if (step.goalId) getGoalManager().update(step.goalId, { status: 'failed' }, { ref: `delegation:${record.id}` })
+        mission.progressUpdates.push(`⚠️ [${step.id}/${mission.steps.length}] ${step.description} — übergeben, nicht verifiziert (${check.slice(0, 120)})`)
+    }
+    if (mission.steps[mission.currentStep] === step) mission.currentStep++
+    saveMissions()
+    if (mission.status === 'active') setTimeout(() => { void executeNextStep() }, config.delayBetweenSteps)
+    return true
+}
+
+let delegationListenerAttached = false
+async function attachDelegationListener(): Promise<void> {
+    if (delegationListenerAttached) return
+    delegationListenerAttached = true
+    try {
+        const { onDelegationSettled } = await import('./delegation.js')
+        onDelegationSettled((record, info) => { settleAuftragDelegation(record, info) })
+    } catch (error) {
+        delegationListenerAttached = false
+        console.warn(`[Auftrag] Delegations-Rückmeldung nicht verdrahtet: ${String((error as Error)?.message || error).slice(0, 120)}`)
     }
 }
 
@@ -905,7 +1011,9 @@ function formatMissionProgress(mission: Mission): string {
 
     const current = mission.steps[mission.currentStep]
     if (current) {
-        msg += `\n_Aktuell: ${current.description}_`
+        msg += current.delegationId && current.status === 'active'
+            ? `\n_Aktuell: ${current.description} — wartet auf ${TARGET_LABEL[current.an || 'subagent']} (${current.delegationId})_`
+            : `\n_Aktuell: ${current.description}_`
     }
 
     return msg
@@ -1035,30 +1143,39 @@ export function acceptMissionHandoff(
 /** Recover the newest durable active checkpoint after this node became Main.
  * Mission-specific lease acquisition prevents two nodes from resuming it. */
 export async function recoverMissionFromMesh(): Promise<boolean> {
+    return (await scanMissionRecovery()).recovered
+}
+
+/** One recovery pass: `waiting` counts checkpoints whose lease is not free yet. */
+async function scanMissionRecovery(): Promise<{ recovered: boolean; waiting: number }> {
     // A paused local mission is already reconstructed state. Re-importing the
     // same checkpoint can restart watchers and duplicate progress entries.
-    if (!shouldRecoverMission(activeMission)) return false
+    if (!shouldRecoverMission(activeMission)) return { recovered: false, waiting: 0 }
     const { listRecoverableMissionCheckpoints, acquireMissionOwnership } = await import('../mesh/mesh-registry.js')
     const candidates = await listRecoverableMissionCheckpoints()
     if (candidates.length) {
         console.log(`[Mission] Recovery scan found ${candidates.length} durable checkpoint(s)`)
     }
+    let waiting = 0
     for (const candidate of candidates) {
         const ownership = await acquireMissionOwnership(candidate.missionId)
         if (!ownership) {
             console.log(`[Mission] Recovery waiting for fence: ${candidate.missionId}`)
+            waiting++
             continue
         }
         if (acceptMissionHandoff(candidate.checkpoint, ownership)) {
             console.log(`[Mission] Recovered ${candidate.missionId} on ${ownership.ownerNode} with epoch ${ownership.leaseEpoch}`)
-            return true
+            return { recovered: true, waiting: 0 }
         }
     }
-    return false
+    return { recovered: false, waiting }
 }
 
 /** Retry durable recovery while the promoted Main waits for the previous
- * mission-specific lease to expire. Both leases must be valid before work. */
+ * mission-specific lease to expire. Both leases must be valid before work.
+ * P9: the 15-s retry only runs while a checkpoint is waiting for its lease;
+ * a scan that finds nothing to recover stops the watcher (no empty polling). */
 export function startMissionRecoveryWatcher(intervalMs = 15_000): void {
     if (missionRecoveryTimer) return
     const recover = async () => {
@@ -1066,12 +1183,18 @@ export function startMissionRecoveryWatcher(intervalMs = 15_000): void {
             stopMissionRecoveryWatcher()
             return
         }
-        if (await recoverMissionFromMesh()) stopMissionRecoveryWatcher()
+        const scan = await scanMissionRecovery()
+        if (scan.recovered || scan.waiting === 0) stopMissionRecoveryWatcher()
     }
-    void recover().catch(() => false)
     missionRecoveryTimer = setInterval(() => { void recover().catch(() => false) }, Math.max(5_000, intervalMs))
     missionRecoveryTimer.unref?.()
-    console.log(`[Mission] Recovery watcher started (every ${Math.max(5_000, intervalMs)}ms)`)
+    void recover().catch(() => false)
+    console.log(`[Mission] Recovery watcher started (every ${Math.max(5_000, intervalMs)}ms while a checkpoint waits for its lease)`)
+}
+
+/** True while the recovery retry timer runs (tests). */
+export function isMissionRecoveryWatching(): boolean {
+    return missionRecoveryTimer !== null
 }
 
 export function stopMissionRecoveryWatcher(): void {

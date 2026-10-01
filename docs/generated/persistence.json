@@ -110,6 +110,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/autonomous-executor-delegation.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/autonomous-executor-fence.test.ts",
       "path": ".nova-data"
     },

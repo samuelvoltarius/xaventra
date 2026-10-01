@@ -1435,7 +1435,7 @@ app.post('/api/mesh/delegate', async (req, res) => {
         if (delegation) {
             res.json({ success: true, taskId: delegation.id })
         } else {
-            res.json({ success: false, error: 'Task delegation failed' })
+            res.json({ success: false, error: 'Nicht an den Knoten übergeben' })
         }
     } catch (err) {
         res.json({ success: false, error: String(err) })

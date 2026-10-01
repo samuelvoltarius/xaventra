@@ -12,6 +12,8 @@
  * Zustände:
  *   geplant ──tick──> in-arbeit ──L2──> wartet-auf-alfred ──Ja──> in-arbeit (genau dieser Schritt, dann weiter)
  *                         │                     └──Nein / Karte abgelaufen──> blockiert (Handoff)
+ *                         ├── Schritt `delegieren` ──> wartet-auf-delegation ──verifiziert──> in-arbeit (weiter)
+ *                         │                                   └──nicht verifiziert / abgelaufen──> Versuch gescheitert
  *                         ├── Kriterium erfüllt ──> abgeschlossen
  *                         ├── L3 / nicht im Vertrag / kein Ausführungsweg ──> blockiert (Handoff)
  *                         └── Versuch gescheitert ──(<3)──> in-arbeit (nächster Tick) ──(3)──> fehlgeschlagen (Handoff)
@@ -21,8 +23,15 @@
  * den wartenden Schritt aus und läuft dann weiter (kein Neustart von vorn).
  *
  * Ausführen nur über registrierte Schritt-Ausführer (Self-Heal-Zyklus,
- * Install-Warteschlange, Sensing approveDevice, Diagnose) — kein freier
- * Befehlsweg. Nur am Main (Fence); auf Workern passiert nichts.
+ * Install-Warteschlange, Sensing approveDevice, Diagnose, Delegation) — kein
+ * freier Befehlsweg. Nur am Main (Fence); auf Workern passiert nichts.
+ *
+ * P9 Delegation: ein Ausführer darf einen Schritt an Claude/Codex/Hermes/einen
+ * Unteragenten übergeben (core/delegation.ts) und meldet dann `delegationId`.
+ * Die Mission wartet (`wartet-auf-delegation`), bis `settleDelegation` mit dem
+ * Ergebnis kommt; nur ein verifiziertes Ergebnis schließt den Schritt.
+ * Wartet eine Mission auf Alfred, meldet `onWaiting` das an die
+ * Auto-Erinnerungen („Mission wartet“).
  */
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -33,7 +42,7 @@ import type { CardExecutor, NewCardInput, ApprovalCard } from './approval-cards.
 import type { CheckOutcome, Responsibility, ResponsibilityManager, ResponsibilitySignals, ThoughtPort } from './responsibilities.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
-export type MissionStatus = 'geplant' | 'in-arbeit' | 'wartet-auf-alfred' | 'blockiert' | 'abgeschlossen' | 'fehlgeschlagen'
+export type MissionStatus = 'geplant' | 'in-arbeit' | 'wartet-auf-alfred' | 'wartet-auf-delegation' | 'blockiert' | 'abgeschlossen' | 'fehlgeschlagen'
 export type StepStatus = 'offen' | 'laeuft' | 'erledigt' | 'fehlgeschlagen' | 'wartet' | 'abgelehnt'
 
 export interface MissionStep {
@@ -49,6 +58,8 @@ export interface MissionStep {
     approvedAt?: string
     cardId?: string
     result?: string
+    /** Set while the step waits for a delegation (core/delegation.ts). */
+    delegationId?: string
 }
 
 export interface Mission {
@@ -80,7 +91,15 @@ export interface StepContext {
     localNodeId: string
     signals: () => Promise<ResponsibilitySignals>
 }
-export interface StepResult { ok: boolean; message: string; toolCalls?: number; costUsd?: number; rolledBack?: boolean }
+export interface StepResult {
+    ok: boolean
+    message: string
+    toolCalls?: number
+    costUsd?: number
+    rolledBack?: boolean
+    /** The step was handed to another agent; the mission waits for settleDelegation(). */
+    delegationId?: string
+}
 export interface StepExecutor { kind: string; run(step: MissionStep, mission: Mission, ctx: StepContext): Promise<StepResult> }
 
 export interface MissionCardPort {
@@ -104,6 +123,8 @@ export interface MissionEngineOptions {
     cooldownMs?: number
     /** Called once a mission ends (abgeschlossen/blockiert/fehlgeschlagen); errors are ignored. */
     onFinish?: (mission: Mission) => void
+    /** Called when a mission starts waiting for Alfred (auto reminder „Mission wartet“); errors are ignored. */
+    onWaiting?: (mission: Mission) => void
 }
 
 export interface MissionEngine {
@@ -115,12 +136,14 @@ export interface MissionEngine {
     approveStep(missionId: string, stepId: string, ctx: { decidedBy: string }): Promise<{ ok: boolean; message: string }>
     rejectStep(missionId: string, stepId: string, ctx: { decidedBy: string }): Promise<{ ok: boolean; message: string }>
     isWaiting(missionId: string, stepId: string): boolean
+    /** A delegation started by a step has settled; only `verified` closes the step. */
+    settleDelegation(record: { id: string; missionId?: string; status: string; pruefung?: { ergebnis: string; detail: string } }, info: { verified: boolean }): Promise<Mission | null>
     /** Test hook: replace the persisted plan (simulates a broken producer). */
     _replaceStepsForTest(missionId: string, steps: MissionStep[]): void
 }
 
 export const MAX_VERSUCHE = 3
-const OPEN: readonly MissionStatus[] = ['geplant', 'in-arbeit', 'wartet-auf-alfred']
+const OPEN: readonly MissionStatus[] = ['geplant', 'in-arbeit', 'wartet-auf-alfred', 'wartet-auf-delegation']
 const TERMINAL: readonly MissionStatus[] = ['blockiert', 'abgeschlossen', 'fehlgeschlagen']
 const KEEP_TERMINAL = 200
 const LOG_LIMIT = 40
@@ -136,6 +159,7 @@ const STEP_TITLES: Record<string, string> = {
     'dienst-neustart': 'Dienst neu starten',
     'install-katalog': 'Aus dem Katalog installieren',
     'geraet-einrichten': 'Gerät einrichten',
+    'delegieren': 'An einen Agenten übergeben',
 }
 
 /** Fixed plan per derivation rule. Never from a model. */
@@ -144,6 +168,11 @@ export function planSteps(responsibility: Responsibility): MissionStep[] {
     const step = (kind: string, extra: Partial<MissionStep> = {}): MissionStep => ({ id: '', kind, titel: STEP_TITLES[kind] || kind, status: 'offen', runs: 0, ...extra })
     const steps: MissionStep[] = [step('diagnose', { node })]
     if (responsibility.regel === 'knoten-gesund' && responsibility.aktionen.includes('self-heal-zyklus')) steps.push(step('self-heal-zyklus', { node }))
+    if (responsibility.regel === 'dienst-laeuft' && responsibility.aktionen.includes('delegieren')) {
+        // P9: before the restart (which has no executor and hands off), a delegated agent may repair it.
+        const ref = responsibility.kriterien[0]?.ref
+        steps.push(step('delegieren', { node, ref, titel: `An einen Agenten übergeben: ${clean(responsibility.titel, 80)} wiederherstellen` }))
+    }
     if (responsibility.regel === 'dienst-laeuft' && responsibility.aktionen.includes('dienst-neustart')) {
         const ref = responsibility.kriterien[0]?.ref
         steps.push(step('dienst-neustart', { node, ref, titel: `Dienst neu starten: ${clean(responsibility.titel.replace(/ läuft$/, ''), 80)}` }))
@@ -272,6 +301,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                 mission.waitingStepId = step.id
                 note(mission, `wartet auf Alfred: ${step.titel}`)
                 save(mission)
+                try { options.onWaiting?.({ ...mission }) } catch { /* reminders never break a mission */ }
                 return mission
             }
             step.status = 'laeuft'
@@ -298,6 +328,15 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                 step.status = 'fehlgeschlagen'
                 note(mission, `${step.titel}: ${result.message}`)
                 return failAttempt(mission, `${step.titel}: ${result.message}`)
+            }
+            if (result.delegationId) {
+                step.status = 'wartet'
+                step.delegationId = clean(result.delegationId, 40)
+                mission.status = 'wartet-auf-delegation'
+                mission.waitingStepId = step.id
+                note(mission, `wartet auf Delegation ${step.delegationId}: ${step.titel}`)
+                save(mission)
+                return mission
             }
             step.status = 'erledigt'
             note(mission, `${step.titel}: ${result.message}`)
@@ -374,7 +413,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
             if (!isMain()) return engine.get(id)
             return withLock(id, async () => {
                 const mission = engine.get(id)
-                if (!mission || TERMINAL.includes(mission.status) || mission.status === 'wartet-auf-alfred') return mission
+                if (!mission || TERMINAL.includes(mission.status) || mission.status === 'wartet-auf-alfred' || mission.status === 'wartet-auf-delegation') return mission
                 if (mission.status === 'geplant') note(mission, 'in Arbeit')
                 mission.status = 'in-arbeit'
                 return runSteps(mission)
@@ -392,6 +431,8 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                     }
                     continue
                 }
+                // Waits for settleDelegation(); the delegation deadline ends the wait.
+                if (mission.status === 'wartet-auf-delegation') continue
                 await engine.advance(mission.id)
                 advanced.push(mission.id)
             }
@@ -440,6 +481,35 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
         isWaiting(missionId, stepId) {
             const mission = engine.get(missionId)
             return Boolean(mission && mission.status === 'wartet-auf-alfred' && mission.waitingStepId === stepId)
+        },
+        async settleDelegation(record, info) {
+            if (!isMain() || !record?.missionId) return null
+            return withLock(record.missionId, async () => {
+                const mission = engine.get(record.missionId!)
+                if (!mission || mission.status !== 'wartet-auf-delegation') return mission
+                const step = mission.steps.find(item => item.id === mission.waitingStepId)
+                if (!step || step.delegationId !== record.id) return mission
+                mission.waitingStepId = undefined
+                mission.status = 'in-arbeit'
+                const check = record.pruefung ? `${record.pruefung.ergebnis}: ${record.pruefung.detail}` : record.status
+                step.result = clean(`Delegation ${record.id}: ${check}`, 300)
+                if (!info.verified) {
+                    step.status = 'fehlgeschlagen'
+                    note(mission, `${step.titel}: Delegation ${record.id} ${record.status}, nicht verifiziert`)
+                    return failAttempt(mission, `${step.titel}: Delegation ${record.status} (${check})`)
+                }
+                step.status = 'erledigt'
+                mission.cursor++
+                note(mission, `${step.titel}: Delegation ${record.id} verifiziert`)
+                save(mission)
+                // Same as after any finished step: measure first, continue only if still violated.
+                const responsibility = options.responsibilities.get(mission.responsibilityId)
+                if (responsibility) {
+                    const measured = options.responsibilities.measure(responsibility, await signals())
+                    if (measured.erfuellt === true) return finish(mission, 'abgeschlossen', measured.ergebnisse.map(item => item.befund).join('; ') || 'Kriterium erfüllt')
+                }
+                return runSteps(mission)
+            })
         },
         _replaceStepsForTest(missionId, steps) {
             const mission = engine.get(missionId)
