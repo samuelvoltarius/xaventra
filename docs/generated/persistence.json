@@ -162,6 +162,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/delegation.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/environment.test.ts",
       "path": ".nova-data"
     },
@@ -727,6 +731,10 @@
     },
     {
       "owner": "src/mesh/visual-mesh-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/planner/auto-reminders.ts",
       "path": ".nova-data"
     },
     {

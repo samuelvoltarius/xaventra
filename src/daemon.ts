@@ -1904,7 +1904,11 @@ async function startDaemon() {
             setSensingConfig(autonomyCfg.sensing, config)
             // 2.81.0: findings go into the shared planner thoughts (cards, /gedanken).
             const { createSensingThoughtSink } = await import('./core/thought-hub.js')
-            setSensingSinks({ thoughtSink: createSensingThoughtSink() })
+            // Phase 6e: events also feed the auto reminders (no-op while autonomy.autoReminders is off).
+            const { createAutoReminderEventSink } = await import('./planner/auto-reminders.js')
+            const { JsonlEventSink } = await import('./sensing/ports.js')
+            const { getNovaDataDir } = await import('./core/data-root.js')
+            setSensingSinks({ thoughtSink: createSensingThoughtSink(), eventSink: createAutoReminderEventSink(new JsonlEventSink(getNovaDataDir())) })
             const sensing = startSensing({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
@@ -1939,6 +1943,27 @@ async function startDaemon() {
             })
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
+        }
+
+        // Phase 6e: Delegation (autonomy.delegation.enabled) and proactive
+        // reminders from sources (autonomy.autoReminders.enabled). Both off by
+        // default, both Main only.
+        try {
+            const nodeOnly = process.env.NOVA_NODE_ONLY === 'true'
+            const { startDelegationRuntime, checkExpectation } = await import('./core/delegation.js')
+            const delegation = await startDelegationRuntime(autonomyCfg, { nodeOnly })
+            if (delegation.started) console.log(`[Nova] ✓ Delegation aktiv (${delegation.reason})`)
+            const { startAutoRemindersRuntime } = await import('./planner/auto-reminders.js')
+            const reminders = await startAutoRemindersRuntime(autonomyCfg, {
+                nodeOnly,
+                releaseCheck: async version => {
+                    const result = await checkExpectation({ art: 'release-tag', tag: version.startsWith('v') ? version : `v${version}` })
+                    return { ok: result.ergebnis === 'verifiziert', detail: `${result.detail} (Signatur prüft der Release-Wächter beim nächsten Takt)` }
+                },
+            })
+            if (reminders.started) console.log(`[Nova] ✓ Auto-Erinnerungen aktiv (${reminders.reason})`)
+        } catch (err) {
+            console.log(`[Nova] ⚠ Delegation/Auto-Erinnerungen nicht verfügbar: ${err}`)
         }
 
         console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)

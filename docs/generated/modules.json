@@ -1468,6 +1468,17 @@
       ]
     },
     {
+      "module": "src/core/delegation.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/deliberative-planner.ts",
       "imports": [
         "./execution-preflight.js"
@@ -4693,6 +4704,21 @@
         "node:child_process",
         "node:fs",
         "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/planner/auto-reminders.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./delivery-port.js",
+        "./planner.js",
+        "./runtime.js",
+        "./thoughts.js",
+        "./time.js",
+        "node:crypto",
+        "node:fs",
         "node:path"
       ]
     },

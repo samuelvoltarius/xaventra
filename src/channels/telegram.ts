@@ -250,6 +250,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'remind', description: '⏰ Erinnerung setzen' },
                 { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)' },
                 { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
+                { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)' },
                 // Session
                 { command: 'clear', description: '🧹 Konversation zurücksetzen' },
                 { command: 'save', description: '💾 Sitzung speichern' },
