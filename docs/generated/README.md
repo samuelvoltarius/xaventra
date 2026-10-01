@@ -4,8 +4,9 @@ Generated from authoritative source. Do not edit by hand.
 
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
-| tools.json | 230 | `f18d48f13e5348d0939cd48175ccd0ba76d156455d7fa9651401eda15e0e9303` |
+| tools.json | 230 | `0b5ec410bca19723c291d9fa9a8c18c3cc46ccb8716444f555af1703e7c7d656` |
 | config.json | 0 | `d37983ff956fe0fe5f7558f505ffd4358d4dfb40449e7e709cdaeda7f79dc039` |
-| persistence.json | 296 | `b07fff2977cb895a3175372f0a063abc6a2f056f854590a641417c7f269b6157` |
-| modules.json | 700 | `0d49328888f2eb6d8772c904e61d1a5c81f7d69001b67a90a4e1517a91661ca3` |
+| persistence.json | 300 | `f1309d9913af0bc3a25232069342f8c4d1ee0dafd9049e4bfead8cd3f6bd8b8e` |
+| modules.json | 709 | `3790b075014623fa46d2f027e17ec38bec25e7a5dbd08b9221c503044fad980e` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
+| install-catalog.json | 7 | `189754f196f27bbac001549698345457e68f79942cc78cff3d5be8a4fc659f33` |

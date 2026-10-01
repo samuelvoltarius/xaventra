@@ -1,5 +1,34 @@
 # Changelog
 
+## [2.80.0] — 2026-10-01
+
+Stufen 2 and 3 of the self-reliance plan, plus the screenshot fallback fix.
+Both new capabilities are off until the owner configures them.
+
+- Screenshot requests: the deterministic fallback now captures whenever no
+  picture was delivered and no desktop_screenshot succeeded, regardless of
+  other tools (live 01.10.2026 introspection before the capture silenced it).
+  An unknown skill pack is a catalog answer, and a failed catalog lookup no
+  longer stops the run; diagnostic reads still stop and escalate.
+- Benchmark runner derives the intent from the scenario, not from the
+  appended fixture path.
+- Stufe 2, install from a catalog with a way back: fixed install catalog
+  (ffmpeg, XFCE workstation, Playwright Chromium, listed Ollama embedding
+  models, node-llama-cpp CUDA on the Spark) with argument arrays, a frozen
+  never-list, code-generated short-lived tickets bound to entry hash, node
+  and client, execution only by the host agent without a shell, package list
+  before/after, signed receipt and `apt-get remove` of only the new packages.
+  Workers get an image proposal, never apt in the container. `/setup apply`
+  and YOLO no longer run free commands. Owner commands `/setup katalog`,
+  `install`, `queue`, `approve`, `rollback`, `allow`, `ask`.
+- Stufe 3, self-healing with evidence and rollback (default off,
+  `autonomy.selfHeal.enabled`): only log rotation into a verified archive,
+  clearing own caches when the disk is ≥ 90 % full, and switching to a known
+  second model endpoint run automatically; service restart, full disk and
+  lost lease are proposals only. Journal per node, cooldowns, global
+  `/selbstheilung aus|an`, recipe off after two failures, `/heilung` status.
+  Workers report to the Main over the mesh, never to the owner directly.
+
 ## [2.79.4] — 2026-10-01
 
 Stufe 1 of the self-reliance plan: Xaventra sees itself correctly and only
