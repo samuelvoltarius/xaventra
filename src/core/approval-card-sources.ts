@@ -196,6 +196,9 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
     const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
     registerThoughtCardExecutor()
+    // Phase 6c: Proxmox kinds (pve-*); each re-checks pool/tag/protection/cap before its single write.
+    const { registerProxmoxCardExecutors } = await import('../infra/proxmox-command.js')
+    registerProxmoxCardExecutors()
 }
 
 // ---------------------------------------------------------------------------

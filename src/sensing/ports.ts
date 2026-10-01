@@ -45,7 +45,7 @@ import { redactSecrets } from '../security/secret-redaction.js'
 export const EVENT_SCHEMA = 'xaventra.sensing.event/1' as const
 export const THOUGHT_SCHEMA = 'xaventra.sensing.thought/1' as const
 
-export type SensingSource = 'printer' | 'homeassistant' | 'mail' | 'system' | 'discovery' | 'accounts' | 'quiet-hours'
+export type SensingSource = 'printer' | 'homeassistant' | 'mail' | 'system' | 'discovery' | 'accounts' | 'quiet-hours' | 'proxmox'
 export type SensingSeverity = 'info' | 'warning' | 'urgent'
 export type Importance = 'niedrig' | 'normal' | 'hoch' | 'dringend'
 export type PermissionLevel = 'selbst' | 'fragen' | 'nie'

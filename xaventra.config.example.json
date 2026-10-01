@@ -154,5 +154,23 @@
         "strictQuality": true,
         "fallbackTimeout": 30000,
         "healthCheckInterval": 30000
+    },
+    "infra": {
+        "proxmox": {
+            "enabled": false,
+            "url": "https://192.0.2.10:8006",
+            "fingerprint": "",
+            "pool": "xaventra",
+            "watch": true,
+            "ramWarnPercent": 90,
+            "limits": { "ramGB": 64, "cores": 16, "diskGB": 1024, "hostRamReserveGB": 16 },
+            "create": {
+                "storage": "local-lvm",
+                "image": "local:iso/noble-server-cloudimg-amd64.img",
+                "ciuser": "nova",
+                "cicustom": "",
+                "sshKeys": []
+            }
+        }
     }
 }

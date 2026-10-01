@@ -20,6 +20,7 @@
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
 | Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` |
+| Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -216,6 +217,9 @@ Owner. Laufende Aufgaben (Live-Statuskarten, Task-Tracker, Mission), Installatio
 
 ### `/gedanken [n]`
 Owner. Die letzten n (Standard 25) Gedanken/Vorschläge inkl. verworfener (Nie-Liste), abgelehnter und abgelaufener — aus Karten, Selbstheilungs-Journal/-Vorschlägen und Installations-Journal.
+
+### `/vms [meine|snapshots <vmid>|snapshot|start|stop|rollback|neu|wegwerf|vergroessern|entfernen|cloudinit|hilfe]`
+Owner. Proxmox-Gäste (nur lesend) mit Markierung der eigenen VM, des Pools `xaventra` und „meiner VMs“ (Tag `xaventra-created`) samt freiem Ressourcen-Deckel. Alle schreibenden Unterbefehle erzeugen nur eine Knopf-Karte (Wirkung `infra`, nie „Immer erlauben“); ausgeführt wird erst nach dem Ja. Standard aus. Details: `docs/PROXMOX.md`.
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

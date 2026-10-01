@@ -16,6 +16,8 @@ import { createPrinterAdapter, type PrinterTarget } from './adapters/printer.js'
 import { createHomeAssistantAdapter, resolveHaConnection } from './adapters/homeassistant.js'
 import { createMailAdapter, resolveMailCredentials } from './adapters/mail.js'
 import { createSystemAdapter } from './adapters/system.js'
+import { createProxmoxAdapter } from './adapters/proxmox.js'
+import { loadProxmoxRuntime, parseProxmoxConfig } from '../infra/proxmox.js'
 import { approveDevice, formatDevices, loadDevices, monitoredDevices, recordCandidates, setDeviceStatus, type Approver } from './device-registry.js'
 import { candidateThoughtText, discoverDevices, realMdnsBrowse, type DiscoveryDeps } from './discovery.js'
 import { accountEvents, detectAccounts, readAuthProfileShapes } from './accounts.js'
@@ -85,6 +87,15 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
     if (a.homeassistant.enabled) bus.register(createHomeAssistantAdapter({ connection: () => resolveHaConnection(a.homeassistant, state.rootConfig), entities: a.homeassistant.entities, intervalMs: a.homeassistant.intervalSec * 1000, timeoutMs: a.homeassistant.timeoutSec * 1000 }))
     if (a.mail.enabled) bus.register(createMailAdapter({ config: a.mail, credentials: () => resolveMailCredentials(a.mail, { env: process.env, authProfiles: loadAuthProfiles() }) }))
     if (a.system.enabled) bus.register(createSystemAdapter({ dataDir: state.dataDir, intervalMs: a.system.intervalSec * 1000, timeoutMs: a.system.timeoutSec * 1000 }))
+    // Phase 6c: Proxmox (read only) when infra.proxmox is on and watch is not false.
+    const pveRaw = state.rootConfig?.infra?.proxmox
+    const pve = parseProxmoxConfig(pveRaw)
+    if (pve.enabled && pve.watch) {
+        bus.register(createProxmoxAdapter({
+            client: async () => { const runtime = await loadProxmoxRuntime({ rawConfig: pveRaw }); return runtime.ok ? runtime.client : null },
+            ramWarnPercent: pve.ramWarnPercent, limits: pve.limits,
+        }))
+    }
     return bus
 }
 

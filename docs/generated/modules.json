@@ -3241,6 +3241,25 @@
       "imports": []
     },
     {
+      "module": "src/infra/proxmox-command.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "./proxmox.js"
+      ]
+    },
+    {
+      "module": "src/infra/proxmox.ts",
+      "imports": [
+        "../config/config-path.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:net",
+        "node:tls"
+      ]
+    },
+    {
       "module": "src/infra/telemetry.ts",
       "imports": [
         "../config/config-path.js",
@@ -5222,6 +5241,13 @@
       ]
     },
     {
+      "module": "src/sensing/adapters/proxmox.ts",
+      "imports": [
+        "../../infra/proxmox.js",
+        "../event-bus.js"
+      ]
+    },
+    {
       "module": "src/sensing/adapters/system.ts",
       "imports": [
         "../event-bus.js",
@@ -5297,10 +5323,12 @@
     {
       "module": "src/sensing/runtime.ts",
       "imports": [
+        "../infra/proxmox.js",
         "./accounts.js",
         "./adapters/homeassistant.js",
         "./adapters/mail.js",
         "./adapters/printer.js",
+        "./adapters/proxmox.js",
         "./adapters/system.js",
         "./config.js",
         "./device-registry.js",

@@ -38,8 +38,8 @@ import { NIE_LISTE } from '../doctor/self-heal.js'
 
 export const CARD_ANSWERS = ['ja', 'nein', 'spaeter', 'immer'] as const
 export type CardAnswer = typeof CARD_ANSWERS[number]
-/** intern = Xaventra's own system; physisch = acts in the room (printer, switch); extern = leaves the house (mail, purchase). */
-export type CardImpact = 'intern' | 'physisch' | 'extern'
+/** intern = Xaventra's own system; infra = VMs on the Proxmox host (Phase 6c); physisch = acts in the room (printer, switch); extern = leaves the house (mail, purchase). */
+export type CardImpact = 'intern' | 'infra' | 'physisch' | 'extern'
 export type CardStatus = 'offen' | 'spaeter' | 'ja' | 'nein' | 'immer' | 'abgelaufen' | 'erledigt'
 
 export interface CardActionRef { kind: string; ref: string }
@@ -146,7 +146,7 @@ const NIE_EFFECTS = new Set(NIE_LISTE.map(item => item.effect))
 const PHYSICAL_KINDS = /drucken|druck|print|schalten|switch|licht|heizung|home-?assistant|ha-aktion|tuer|tür|klima/
 const EXTERNAL_KINDS = /senden|send|mail|nachricht|post|veroeffentlich|veröffentlich|publish|kaufen|kauf|buy|purchase|bestell|order|zahlen|pay/
 
-const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, physisch: 1, extern: 2 }
+const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, infra: 1, physisch: 2, extern: 3 }
 
 function classifyImpact(art: string, kind: string, declared?: CardImpact, executorImpact?: CardImpact): CardImpact {
     let impact: CardImpact = 'intern'
@@ -328,7 +328,7 @@ export function cardKeyboard(card: ApprovalCard): Array<Array<{ text: string; ca
     return rows
 }
 
-const IMPACT_TEXT: Record<CardImpact, string> = { intern: 'intern', physisch: 'physisch — fragt immer', extern: 'nach außen — fragt immer' }
+const IMPACT_TEXT: Record<CardImpact, string> = { intern: 'intern', infra: 'Infrastruktur (VMs) — fragt immer', physisch: 'physisch — fragt immer', extern: 'nach außen — fragt immer' }
 
 /** Plain text (no Markdown) so evidence can never break the message. */
 export function formatCardText(card: ApprovalCard): string {
