@@ -14,7 +14,7 @@ import {
 } from './task-contract.js'
 import { assessExecutionPreflight, type ExecutionPreflightAssessment } from './execution-preflight.js'
 import { deliberateExecution, type DeliberationResult } from './deliberative-planner.js'
-import { resolveAutonomyLevel, type AutonomyDecision } from './autonomy-ladder.js'
+import { evaluatePreflight, type PreflightVerdict } from './action-policy.js'
 import { selectContextPolicy, type ContextPolicy } from './context-policy.js'
 import { InferenceBudget } from './inference-budget.js'
 import { evidenceHash, matchedToolTargets, type VerifiedToolCallEvidence } from './tool-evidence-binding.js'
@@ -28,7 +28,8 @@ export class ExecutionKernel {
     readonly lifecycle = new ActionLifecycle()
     readonly preflight: ExecutionPreflightAssessment
     readonly deliberation: DeliberationResult
-    readonly autonomy: AutonomyDecision
+    /** Policy level of this run (one ladder L0–L3, core/action-policy.ts). */
+    readonly autonomy: PreflightVerdict
     readonly cognition: ContextPolicy
     readonly inference: InferenceBudget
     private readonly worker: FocusedWorker
@@ -49,7 +50,7 @@ export class ExecutionKernel {
         this.intent = plan.intent
         this.preflight = assessExecutionPreflight(taskContext, plan.intent, plan.allowedTools)
         this.deliberation = deliberateExecution(this.preflight)
-        this.autonomy = resolveAutonomyLevel({ preflight: this.preflight })
+        this.autonomy = evaluatePreflight(this.preflight)
         this.contract = contractOrOverrides && 'version' in contractOrOverrides
             ? contractOrOverrides
             : createTaskContract(taskContext, plan.intent, plan.allowedTools, {

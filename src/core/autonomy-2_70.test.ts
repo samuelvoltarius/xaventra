@@ -6,7 +6,7 @@ import { GoalManager } from './goal-manager.js'
 import { BeliefStore } from './belief-store.js'
 import { CausalMemory } from './causal-memory.js'
 import { deliberateExecution } from './deliberative-planner.js'
-import { resolveAutonomyLevel } from './autonomy-ladder.js'
+import { evaluatePreflight } from './action-policy.js'
 import { OperationalEventBus } from './operational-event-bus.js'
 import { PersonalSkillCompiler } from '../learning/personal-skill-compiler.js'
 import { RegressionCaseStore } from '../learning/regression-case-store.js'
@@ -58,9 +58,13 @@ describe('Nova 2.70 closed-loop autonomy', () => {
         expect(deliberateExecution({ ...safePreflight, profile: 'approval_required', impact: 'critical', riskScore: 90 }).selected.id).toBe('approval')
     })
 
-    it('allows trusted workflows only after activation and validated samples', () => {
-        expect(resolveAutonomyLevel({ preflight: safePreflight, skillStatus: 'active', validatedSamples: 3 }).level).toBe('trusted-workflow')
-        expect(resolveAutonomyLevel({ preflight: { ...safePreflight, profile: 'approval_required', impact: 'critical' }, skillStatus: 'active', validatedSamples: 99 }).mayExecute).toBe(false)
+    it('P9: the kernel preflight uses the one action-policy ladder L0–L3 (no second level scheme)', () => {
+        expect(evaluatePreflight({ ...safePreflight, profile: 'observe', impact: 'none' })).toMatchObject({ level: 'L0', decision: 'auto', mayExecute: true, requiresPostValidation: false })
+        expect(evaluatePreflight(safePreflight)).toMatchObject({ level: 'L1', decision: 'auto', mayExecute: true })
+        expect(evaluatePreflight({ ...safePreflight, profile: 'approval_required', impact: 'critical' })).toMatchObject({ level: 'L2', decision: 'ask', mayExecute: false })
+        expect(evaluatePreflight({ ...safePreflight, impact: 'external' })).toMatchObject({ level: 'L2', mayExecute: false })
+        expect(evaluatePreflight({ ...safePreflight, riskScore: 60 })).toMatchObject({ level: 'L2', mayExecute: false })
+        expect(evaluatePreflight({ ...safePreflight, profile: 'blocked' })).toMatchObject({ level: 'L3', decision: 'never', mayExecute: false })
     })
 
     it('matures skills through every evidence gate and degrades on failure', () => {

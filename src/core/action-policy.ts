@@ -707,3 +707,42 @@ export function trustUpgradeProposal(kindName: string, opts: TrustOptions = {}):
         text: `${stats.successes}× in Folge erfolgreich ohne Rückweg (${stats.total} Ausführungen gesamt). Vorschlag: von L2 (fragen) auf L1 (selbst). Umstellen kann nur Alfred im Code; bis dahin frage ich weiter.`,
     }
 }
+
+// ---------------------------------------------------------------------------
+// P9: Ausführungs-Vorprüfung des Kernels (früher core/autonomy-ladder.ts, ein
+// zweites Stufenschema observe/safe-auto/…) — jetzt dieselben Stufen L0–L3.
+// ---------------------------------------------------------------------------
+
+/** Structural subset of core/execution-preflight.ts (no import cycle). */
+export interface PreflightInput {
+    profile: 'observe' | 'safe_auto' | 'approval_required' | 'blocked'
+    impact: 'none' | 'local' | 'mesh' | 'external' | 'critical'
+    reversible: boolean
+    riskScore: number
+}
+export interface PreflightVerdict {
+    level: ActionLevel
+    decision: ActionDecision
+    /** May the kernel execute side effects without an approval? */
+    mayExecute: boolean
+    requiresPostValidation: boolean
+    reasons: string[]
+}
+
+/**
+ * Stufe einer Ausführung aus der Vorprüfung des Kernels — dieselbe Leiter wie
+ * `evaluateAction`: L0 lesen · L1 umkehrbar und risikoarm · L2 fragen · L3 nie.
+ * Nach außen wirkend, Mesh oder kritisch ist nie L1.
+ */
+export function evaluatePreflight(preflight: PreflightInput): PreflightVerdict {
+    const verdict = (level: ActionLevel, reasons: string[]): PreflightVerdict => ({
+        level, decision: decisionFor(level, 'code'), mayExecute: level === 'L0' || level === 'L1', requiresPostValidation: level !== 'L0', reasons,
+    })
+    if (preflight.profile === 'blocked') return verdict('L3', ['Vorprüfung: blockiert'])
+    if (preflight.profile === 'observe') return verdict('L0', ['keine Nebenwirkung'])
+    if (preflight.profile === 'approval_required' || preflight.impact === 'critical') return verdict('L2', ['folgenreich oder nicht umkehrbar → fragen'])
+    if (preflight.reversible && preflight.riskScore <= 45 && (preflight.impact === 'none' || preflight.impact === 'local')) {
+        return verdict('L1', ['umkehrbar, risikoarm, eigener Knoten'])
+    }
+    return verdict('L2', ['Diagnose erlaubt; Änderung braucht stärkere Belege → fragen'])
+}
