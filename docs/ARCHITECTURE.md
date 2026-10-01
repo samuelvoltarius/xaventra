@@ -271,7 +271,7 @@ CronerScheduler (Europe/Vienna)
     ├── Every 5 min   → heartbeat.ts: routine tasks from heartbeat.md
     ├── Every 30 min  → L22-federated-memory: KG sync to Supabase
     ├── Every 30 min  → subconscious-reflector: dream cycle (if 15+ min idle)
-    ├── Every 60 min  → L19-monitoring: URL/service uptime checks
+    ├── Planner job   → Wächter (sys-waechter): targets, Nachtwache probes, forecasts (L19 merged in 2.82.0)
     ├── Every 60 min  → daemon heartbeat: journal summary (if 5+ events)
     └── 02:00 AM      → memory-distiller: nightly journal → diary + Brain episodes
 ```

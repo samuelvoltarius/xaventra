@@ -370,17 +370,9 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ---
 
-### `L19-monitoring` ✅ Wired
+### `L19-monitoring` — merged into the Wächter (2.82.0)
 
-**What it does:** Proactive URL and service monitoring. Checks configured endpoints on schedule. Sends Telegram alerts on downtime with HTTP status, response time, and suggested fixes.
-
-**Key exports:** `getServiceMonitor()`, `addMonitorTarget()`
-
-**Wiring in daemon.ts:**
-- Monitor imported and `start()` called
-- Targets loaded from `xaventra.config.json` monitoring section
-
----
+Removed. Its targets (`monitoring.json`) are migrated once into the Wächter's own list (`watch/targets.json`, file renamed to `monitoring.json.migriert`); `/monitor add|remove|check` edits that list. See `src/watch/`.
 
 ### `L20-self-improvement` 🔧 Autonomous
 
@@ -584,7 +576,7 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 | L16 | business-sense | ✅ | Requirement clarification |
 | L17 | autonomous-learning | ✅ | Never-give-up retry loop |
 | L18 | llm-router | ✅ | Model selection by task |
-| L19 | monitoring | ✅ | URL/service uptime checks |
+| L19 | monitoring | ➜ Wächter | merged into the Wächter (2.82.0) |
 | L20 | self-improvement | 🔧 | Self-rule synthesis |
 | L21 | node-health | ✅ | Cross-node SSH health |
 | L22 | federated-memory | ✅ | Cross-node KG sync |

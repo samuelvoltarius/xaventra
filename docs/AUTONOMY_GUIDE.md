@@ -128,9 +128,13 @@ Config:
 "autonomy": {
   "selfThinkEnabled": true,
   "selfThinkMaxPerHour": 2,
-  "quietHours": { "enabled": true, "start": 23, "end": 7 }
+  "quietHours": { "enabled": true, "start": 22, "end": 7 }
 }
 ```
+
+`autonomy.quietHours` is the one quiet-hours definition (2.82.0) for planner
+thoughts, the autonomy loop, the proactive messenger and sensing; `/quiet`
+changes it for all of them at runtime.
 
 ---
 
@@ -337,9 +341,10 @@ report in the morning and evening.
 
 ```json
 { "autonomy": {
-    "planner":  { "enabled": true, "tickSeconds": 30, "reminders": false, "nightwatch": false },
+    "planner":  { "enabled": true, "tickSeconds": 30, "reminders": false },
     "briefing": { "enabled": true, "morning": "07:30", "evening": "20:00", "timeZone": "Europe/Vienna" },
-    "thoughts": { "quietHours": { "start": 22, "end": 7 }, "dedupeMinutes": 360, "maxPerDay": 10 }
+    "quietHours": { "start": 22, "end": 7 },
+    "thoughts": { "dedupeMinutes": 360, "maxPerDay": 10 }
 } }
 ```
 
@@ -348,10 +353,10 @@ report in the morning and evening.
 | `autonomy.planner.enabled` | `false` | start the planner (also started by `briefing.enabled`) |
 | `autonomy.planner.tickSeconds` | `30` | tick interval (5..600) |
 | `autonomy.planner.reminders` | `false` | `set_reminder` creates planner jobs; pending entries of `reminders.json` are taken over once. Off again: open planner reminders go back to `reminders.json` (Rückweg) |
-| `autonomy.planner.nightwatch` | `false` | the planner job `sys-nachtwache` runs the probes (needs `autonomy.nightwatch.enabled`); findings become thoughts, the autonomy loop stops probing/alarming itself (self-heal still reads the journal) |
+| (Nachtwache) | – | 2.82.0: runs only in the Wächter (planner job `sys-waechter`); an old `sys-nachtwache` job is switched off |
 | `autonomy.briefing.enabled` | `false` | jobs `sys-briefing-morgen` / `sys-briefing-abend` |
 | `autonomy.briefing.morning` / `evening` | `07:30` / `20:00` | local time (`timeZone`); a report more than 3 h late is logged as `verpasst`, a pending one expires after 6 h |
-| `autonomy.thoughts.quietHours` | `22`–`7` | only `dringend` is announced; the rest waits for the next report (or, without report, until the quiet hours end) |
+| `autonomy.quietHours` | `22`–`7` | the one quiet-hours definition (old key `autonomy.thoughts.quietHours` is still read); only `dringend` is announced; the rest waits for the next report (or, without report, until the quiet hours end) |
 | `autonomy.thoughts.dedupeMinutes` | `360` | the same signature is announced once per window |
 | `autonomy.thoughts.maxPerDay` | `10` | daily cap; above it only `dringend`, the rest goes into the report |
 
@@ -733,7 +738,7 @@ Needs the planner (on by default; not with `autonomy.planner.enabled=false`). Fi
   questions/self jobs per local day, the rest waits for the next day.
 - Never mail text: only the sender label (name + domain) and the keyword are kept.
   „Unbeantwortet“ means no reply was seen — the sent folder is not read; Nein closes it.
-- Quiet hours come from `autonomy.thoughts.quietHours`; a reminder that falls due
+- Quiet hours come from `autonomy.quietHours`; a reminder that falls due
   during quiet hours anyway is not sent but goes into the next report.
 - Planner jobs: `auto-erinnerung` (delivers, Main only), `auto-pruefung` (internal),
   system job `sys-auto-erinnerungen` (every 30 min, Main only). Switching the feature

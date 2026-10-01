@@ -110,9 +110,13 @@ loopback-only as well.
   "triggers": {
     "dream-cycle": false
   },
-  "quietHours": { "enabled": true, "start": 23, "end": 7 }
+  "quietHours": { "enabled": true, "start": 22, "end": 7 },
+  "thresholds": { "disk": { "warnPercent": 90, "critPercent": 95, "minFreeGB": 5 }, "memory": { "warnPercent": 90, "critPercent": 95 } }
 }
 ```
+
+- `quietHours`: the one quiet-hours definition for every owner message (planner thoughts, loop, messenger, sensing).
+- `thresholds`: the one disk/RAM threshold definition for L0, L21, node self-check, Nachtwache (unless a check sets its own), self-heal and the Wächter RAM forecast.
 
 `socialCheckIns` and `dream-cycle` are opt-in. Operational events are handled
 separately and may notify only when their producer is trusted or supplies a

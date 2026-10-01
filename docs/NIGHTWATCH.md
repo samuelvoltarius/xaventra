@@ -36,15 +36,16 @@ excerpt (≤ 400 chars), duration and timestamp.
 
 ## Alarm policy
 
-`createNightwatchSource()` returns a function producing the autonomy loop's
-`CheckResult[]`. The loop already implements the policy:
+2.82.0: the Wächter is the only runner (`createNightwatchRunner()`, planner job
+`sys-waechter`). The autonomy loop, the old planner job and the sensing system
+adapter no longer probe or report. Findings become Wächter thoughts:
 
-- `critical` notifies at any hour,
-- `warning` notifies only outside quiet hours (default 23–7),
-- repeated identical findings are deduplicated by fingerprint.
+- one alarm per outage (`critical` = dringend, otherwise wichtig) and one recovery,
+- quiet hours: the one definition `autonomy.quietHours` (default 22–7),
+- disk thresholds default to `autonomy.thresholds.disk` unless a check sets its own.
 
-All green yields a single `info` line without notification. A missing or
-invalid config yields a warning (`Nachtwache läuft nicht: …`), never silence.
+A missing or invalid config yields one warning (`Nachtwache läuft nicht: …`),
+never silence.
 Probes re-run at most every `intervalMinutes` (default 30); concurrent callers
 share one run.
 
