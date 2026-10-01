@@ -5,8 +5,11 @@
  * When Nova needs a tool/package that isn't installed locally, it:
  *   1. Checks all mesh nodes for existing capability
  *   2. Scores each node (power, OS match, already-installed)
- *   3. Either routes the task TO that node, or auto-installs on best node
+ *   3. Routes the task TO a node that already has it
  *   4. Returns a resolved handle: { node, installed, runRemotely }
+ *
+ * Check-only: it never installs. `install` on a query is a manual hint for
+ * the owner; real installs go through the install catalog (src/install/*).
  *
  * Works for: Python packages, npm packages, system binaries, Docker images, etc.
  */
@@ -161,47 +164,6 @@ function scoreNode(node: any, query: CapabilityQuery): number {
 }
 
 // ============================================
-// Try to install locally
-// ============================================
-
-async function installLocal(methods: InstallMethod[]): Promise<boolean> {
-    for (const method of methods) {
-        if (method.platform && method.platform !== process.platform) continue
-        try {
-            console.log(`[CapabilityRouter] 🔧 Trying local install: ${method.command}`)
-            execSync(method.command, { timeout: 180_000, stdio: 'pipe' })
-            console.log(`[CapabilityRouter] ✅ Local install succeeded: ${method.command}`)
-            return true
-        } catch (err) {
-            console.log(`[CapabilityRouter] ⚠️ Local install failed (${method.type}): ${err}`)
-        }
-    }
-    return false
-}
-
-// ============================================
-// Try to install on a remote node
-// ============================================
-
-async function installRemote(ip: string, methods: InstallMethod[], platform = 'linux'): Promise<boolean> {
-    if (!isValidNodeIp(ip)) return false
-    for (const method of methods) {
-        if (method.platform && !platform.includes(method.platform)) continue
-        if (method.type === 'apt' || method.type === 'pip' || method.type === 'pip3' || method.type === 'shell') {
-            try {
-                console.log(`[CapabilityRouter] 🔧 Remote install on ${ip}: ${method.command}`)
-                execFileSync('ssh', sshArgs(ip, 10, method.command), { timeout: 180_000, stdio: 'pipe' })
-                console.log(`[CapabilityRouter] ✅ Remote install succeeded on ${ip}`)
-                return true
-            } catch (err) {
-                console.log(`[CapabilityRouter] ⚠️ Remote install failed on ${ip}: ${err}`)
-            }
-        }
-    }
-    return false
-}
-
-// ============================================
 // Main resolver
 // ============================================
 
@@ -210,7 +172,7 @@ async function installRemote(ip: string, methods: InstallMethod[], platform = 'l
  * - Check locally first
  * - If not available, scan mesh for best node
  * - If found on mesh, return that node for routing
- * - If not found anywhere, try to install on the best node
+ * - If not found anywhere, return an error (no install)
  * - Returns how to proceed
  */
 export async function resolveCapability(query: CapabilityQuery): Promise<CapabilityResolution> {
@@ -259,35 +221,15 @@ export async function resolveCapability(query: CapabilityQuery): Promise<Capabil
         }
     }
 
-    // 5. No node has it — try to install on best node or locally
-    const bestNode = scored[0]?.node
-
-    // Try local install first (if Windows or same OS)
-    const localInstalled = await installLocal(query.install)
-    if (localInstalled) {
-        return { node: null, installed: true, runRemotely: false, sshPrefix: '' }
-    }
-
-    // Try mesh install on best node
-    if (bestNode?.ip) {
-        const remoteInstalled = await installRemote(bestNode.ip, query.install, bestNode.platform || 'linux')
-        if (remoteInstalled) {
-            return {
-                node: { id: bestNode.node_id, ip: bestNode.ip, hostname: bestNode.hostname, platform: bestNode.platform || 'linux' },
-                installed: true,
-                runRemotely: true,
-                sshPrefix: `ssh -o StrictHostKeyChecking=accept-new xaventra@${bestNode.ip}`,
-            }
-        }
-    }
-
-    // 6. Failed entirely
+    // 5. Not available anywhere. This router is check-only: it is reachable as
+    // a governed read-only tool and from mesh callers, so it must never
+    // install. Installs go through the install catalog with owner approval.
     return {
         node: null,
         installed: false,
         runRemotely: false,
         sshPrefix: '',
-        error: `Could not resolve ${query.name} on any node.`,
+        error: `${query.name} ist weder lokal noch auf einem Mesh-Knoten verfügbar. Installation nur über den Install-Katalog mit Owner-Freigabe.`,
     }
 }
 

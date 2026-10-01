@@ -97,7 +97,7 @@ async function handleResolveCapability(params: Record<string, unknown>): Promise
         result.guidance = `${query.name} ist lokal verfügbar. Fahre mit dem Task direkt fort.`
     } else {
         result.error = resolution.error
-        result.guidance = `Capability konnte nicht aufgelöst werden. Manuelle Installation erforderlich.`
+        result.guidance = `Capability ist nirgends verfügbar. Nicht selbst installieren: Installation nur über den Install-Katalog mit Owner-Freigabe.`
     }
 
     return result
@@ -109,8 +109,8 @@ async function handleResolveCapability(params: Record<string, unknown>): Promise
 
 export const capabilityTool = {
     name: 'resolve_capability',
-    description: `Prüft ob eine benötigte Software/Tool verfügbar ist und installiert sie ggf. automatisch auf dem besten verfügbaren Node.
-Nova ruft dies auf wenn sie merkt dass ein Tool fehlt — sie entscheidet selbst wo und wie sie es installiert.
+    description: `Prüft ob eine benötigte Software/Tool lokal oder auf einem Mesh-Node verfügbar ist. Installiert NICHTS.
+Fehlt sie überall, ist eine Installation nur über den Install-Katalog mit Owner-Freigabe möglich.
 Gibt zurück: ob lokal oder remote ausführbar, welcher Node, wie via SSH verbinden.
 Bekannte Capabilities: whisper (STT), ffmpeg, ollama (LLM), yt-dlp, tesseract (OCR), imagemagick, pandoc.`,
     category: 'system' as const,

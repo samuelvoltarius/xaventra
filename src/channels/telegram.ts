@@ -402,59 +402,12 @@ export class TelegramAdapter implements ChannelAdapter {
                 // Cleanup
                 try { unlinkSync(tempPath) } catch { }
             } catch (err) {
-                console.log(`[Nova Telegram] Whisper not available — invoking CapabilityRouter...`)
-                await this.bot.sendMessage(chatId, '🎤 Sprachnachricht empfangen!\n\n⏳ *Wird automatisch aufgelöst — bitte kurz warten...*', { parse_mode: 'Markdown' })
-
-                try {
-                    const { resolveCapability, CAPABILITIES, formatResolution } = await import('../intelligence/capability-router.js')
-                    const query = CAPABILITIES.whisper()
-                    const resolution = await resolveCapability(query)
-
-                    if (resolution.error) {
-                        await this.bot.sendMessage(chatId, `❌ ${formatResolution(query, resolution)}\n\nInstalliere manuell: \`pip3 install openai-whisper\``, { parse_mode: 'Markdown' })
-                    } else if (resolution.runRemotely) {
-                        const { execSync } = await import('node:child_process')
-                        const remoteResult = execSync(
-                            `${resolution.sshPrefix} 'python3 -c "import whisper; m=whisper.load_model(chr(98)+chr(97)+chr(115)+chr(101)); r=m.transcribe(chr(47)+chr(116)+chr(109)+chr(112)+chr(47)+chr(118).join([])); print(r[chr(116)+chr(101)+chr(120)+chr(116)])"; echo done'`,
-                            { timeout: 60_000 }
-                        ).toString().trim()
-                        const incoming: IncomingMessage = {
-                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
-                            to: chatId, content: remoteResult, timestamp: msg.date * 1000, isGroup: false,
-                        }
-                        if (this.messageHandler) {
-                            this.startTyping(chatId)
-                            try {
-                                await (this.messageHandler(incoming) as unknown as Promise<void>)
-                            } catch (err) {
-                                console.error(`[Nova Telegram] Remote-voice messageHandler threw: ${err}`)
-                            } finally {
-                                this.stopTyping(chatId)
-                            }
-                        }
-                        await this.bot.sendMessage(chatId, `${formatResolution(query, resolution)}\n\n_"${remoteResult}"_`, { parse_mode: 'Markdown' })
-                    } else {
-                        const { transcribe } = await import('../voice/voice-input.js')
-                        const result = await transcribe(tempPath, { model: 'whisper-local' })
-                        const incoming: IncomingMessage = {
-                            id: telegramInboundKey(msg), channel: 'telegram', from: userId,
-                            to: chatId, content: result.text, timestamp: msg.date * 1000, isGroup: false,
-                        }
-                        if (this.messageHandler) {
-                            this.startTyping(chatId)
-                            try {
-                                await (this.messageHandler(incoming) as unknown as Promise<void>)
-                            } catch (err) {
-                                console.error(`[Nova Telegram] Local-voice messageHandler threw: ${err}`)
-                            } finally {
-                                this.stopTyping(chatId)
-                            }
-                        }
-                        await this.bot.sendMessage(chatId, `${formatResolution(query, resolution)}\n\n_"${result.text}"_`, { parse_mode: 'Markdown' })
-                    }
-                } catch (capErr) {
-                    await this.bot.sendMessage(chatId, `❌ Transkription fehlgeschlagen: ${capErr}`)
-                }
+                // No capability resolution here: it used to auto-install Whisper
+                // (pip/ssh) and "transcribe" on a remote node without uploading the
+                // voice file. Installs go through the install catalog instead.
+                console.log(`[Nova Telegram] Whisper not available: ${err}`)
+                await this.bot.sendMessage(chatId, '🎤 Sprachnachricht empfangen, aber lokale Spracherkennung (Whisper) ist auf diesem Knoten nicht verfügbar.\n\nBitte als Text schreiben. Whisper kann der Owner über den Install-Katalog freigeben.')
+                try { unlinkSync(tempPath) } catch { }
             }
         } catch (err) {
             console.error(`[Nova Telegram] Voice error: ${err}`)
