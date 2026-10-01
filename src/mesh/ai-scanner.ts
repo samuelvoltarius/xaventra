@@ -18,6 +18,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 import { DiscoveryProbeClient } from './discovery-probe.js'
+import type { MeshNode } from './mesh-registry.js'
 
 
 const execAsync = promisify(exec)
@@ -871,6 +872,41 @@ function sleepingToService(sw: SleepingSoftware): DiscoveredAIService | null {
 }
 
 // ============================================
+// Mesh advertisements (AIScan phase 4)
+// ============================================
+
+/** What mesh nodes say they run. This is the node's own advertisement, not a
+ * probe by this node. */
+export function servicesFromMeshAdvertisements(nodes: Array<Pick<MeshNode, 'node_id' | 'hostname' | 'last_heartbeat' | 'capabilities' | 'software'>>): DiscoveredAIService[] {
+    const found: DiscoveredAIService[] = []
+    for (const node of nodes) {
+        const nodeLabel = node.hostname || node.node_id
+        for (const advertised of node.software?.ai_services || []) {
+            try {
+                const endpointUrl = new URL(advertised.endpoint)
+                found.push({
+                    id: `${advertised.name}@${node.node_id}:${endpointUrl.port}`,
+                    name: advertised.name,
+                    type: advertised.type as AIServiceType,
+                    provider: advertised.name,
+                    host: endpointUrl.hostname,
+                    port: Number(endpointUrl.port),
+                    endpoint: advertised.endpoint,
+                    models: advertised.models || [],
+                    status: advertised.status,
+                    lastSeen: node.last_heartbeat,
+                    sourceNode: nodeLabel,
+                    capabilities: node.capabilities,
+                    // Hotfix 2.80.1: bound to the advertising node, never probe evidence.
+                    metadata: { source: 'mesh-advertised', nodeId: node.node_id },
+                })
+            } catch { /* malformed endpoint */ }
+        }
+    }
+    return found
+}
+
+// ============================================
 // Full Scan
 // ============================================
 
@@ -944,28 +980,9 @@ async function performAIScan(options?: {
                 if (!sw) continue
 
                 const nodeLabel = node.hostname || node.node_id
-                if (sw.ai_services?.length) {
-                    for (const advertised of sw.ai_services) {
-                        try {
-                            const endpointUrl = new URL(advertised.endpoint)
-                            const discovered: DiscoveredAIService = {
-                                id: `${advertised.name}@${node.node_id}:${endpointUrl.port}`,
-                                name: advertised.name,
-                                type: advertised.type as AIServiceType,
-                                provider: advertised.name,
-                                host: endpointUrl.hostname,
-                                port: Number(endpointUrl.port),
-                                endpoint: advertised.endpoint,
-                                models: advertised.models || [],
-                                status: advertised.status,
-                                lastSeen: node.last_heartbeat,
-                                sourceNode: nodeLabel,
-                                capabilities: node.capabilities,
-                            }
-                            const duplicate = allServices.some(service => service.endpoint === discovered.endpoint && service.name === discovered.name)
-                            if (!duplicate) allServices.push(discovered)
-                        } catch { /* malformed endpoint */ }
-                    }
+                for (const discovered of servicesFromMeshAdvertisements([node])) {
+                    const duplicate = allServices.some(service => service.endpoint === discovered.endpoint && service.name === discovered.name)
+                    if (!duplicate) allServices.push(discovered)
                 }
 
                 if (!sw.pip_packages?.length) continue

@@ -293,8 +293,14 @@ export function getMeshPeerStates(): Readonly<Record<string, PeerState>> { retur
 export function peerStateWithCapabilities(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
     const profile = sanitizeNodeProfile((payload as { profile?: unknown } | null)?.profile)
     const selfHeal = sanitizeSelfHealSummary((payload as { selfHeal?: unknown } | null)?.selfHeal)
+    // Hotfix 2.80.1: the 60 s graph snapshot is the peer's view of the whole
+    // mesh, not its own advertisement; it must not replace the runtime list
+    // the peer sent about itself (discovery reads that list).
+    const isSnapshot = Boolean((payload as { snapshot?: unknown } | null)?.snapshot)
+    const ownAdvertisement = previous?.capabilities && !(previous.capabilities as { snapshot?: unknown }).snapshot
+    const capabilities = isSnapshot && ownAdvertisement ? previous!.capabilities : payload
     return {
-        ...previous, nodeId: sourceNode, lastSeen: now, capabilities: payload, publicKeyFingerprint,
+        ...previous, nodeId: sourceNode, lastSeen: now, capabilities, publicKeyFingerprint,
         ...(profile ? { profile: { ...profile, nodeId: sourceNode }, profileSeen: now } : {}),
         ...(selfHeal ? { selfHeal, selfHealSeen: now } : {}),
     }
@@ -428,6 +434,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     }
     if (envelope.kind === 'node.capabilities') {
         const payload = envelope.payload as { snapshot?: any } & CapabilityPayload
+        getCapabilityGraph().setLocalNodeId(getLocalNodeId())
         if (payload.snapshot) getCapabilityGraph().merge(payload.snapshot, envelope.sourceNode)
         else if (Array.isArray(payload.runtimes)) {
             const now = new Date().toISOString()
