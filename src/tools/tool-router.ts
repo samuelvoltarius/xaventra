@@ -174,7 +174,7 @@ const SKILL_PACKS: SkillPack[] = [
         name: 'self-evolution',
         description: 'Neue Tools erstellen, Skills lernen, sich selbst erweitern',
         keywords: ['evolve', 'skill', 'learn', 'tool erstellen', 'neues tool', 'erweit', 'selbst'],
-        tools: ['build_skill', 'create_skill', 'load_skills', 'list_custom_tools', 'nova_capabilities'],
+        tools: ['build_skill', 'create_skill', 'load_skills', 'list_skills', 'nova_capabilities'],
     },
     {
         name: 'git-updates',
@@ -427,10 +427,26 @@ export function getRelevantTools(
         .slice(0, 5)
         .map(candidate => candidate.tool.name)
 
+    // Self-built forge tools (Werkzeug-Schmiede) join when their name or
+    // description words appear in the current instruction.
+    const forgeMatches = allTools
+        .filter(tool => tool.name.startsWith('forge_'))
+        .map(tool => ({
+            tool,
+            score: [...tool.name.slice(6).split('_'), ...String(tool.description || '').replace(/^\[[^\]]*\]\s*/, '').toLowerCase().split(/[^\p{L}\p{N}]+/u)]
+                .filter(token => token.length > 3)
+                .reduce((score, token) => score + (primaryLower.includes(token) ? 1 : 0), 0),
+        }))
+        .filter(candidate => candidate.score > 0)
+        .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))
+        .slice(0, 5)
+        .map(candidate => candidate.tool.name)
+
     const prioritizedNames = [
         ...CORE_TOOLS,
         ...explicitToolNames,
         ...externalMatches,
+        ...forgeMatches,
         ...rankedPacks.flatMap(candidate => candidate.pack.tools),
     ]
     const relevant = [...new Set(prioritizedNames)]

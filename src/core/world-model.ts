@@ -35,8 +35,9 @@ export interface NovaWorldModel {
         uncertainties: string[]
         verifiedOutcomes: string[]
         workflowEpisodes: number
-        proposedSkills: number
+        /** Routine-Skills (learning/routine-skills.ts): eingeschaltet / abgeschaltet. */
         activeSkills: number
+        disabledSkills: number
         managedGoals: { total: number; active: number; blocked: number; completed: number }
         beliefs: number
         disputedBeliefs: number
@@ -66,17 +67,18 @@ export async function buildNovaWorldModel(principalId?: string): Promise<NovaWor
     const personalSummary = principalId && typeof (continuityStore as any).getSummary === 'function'
         ? continuityStore.getSummary(principalId) : undefined
     let workflowEpisodes = 0
-    let proposedSkills = 0
+    let disabledSkills = 0
     let activeSkills = 0
     try {
-        const [{ getWorkflowEpisodeStore }, { getPersonalSkillCompiler }] = await Promise.all([
+        const [{ getWorkflowEpisodeStore }, { getRoutineSkillStore }] = await Promise.all([
             import('../memory/workflow-episode-store.js'),
-            import('../learning/personal-skill-compiler.js'),
+            import('../learning/routine-skills.js'),
         ])
         workflowEpisodes = getWorkflowEpisodeStore().getStats(principalId).successful
-        const skills = getPersonalSkillCompiler().list(principalId)
-        proposedSkills = skills.filter(item => item.status === 'proposed').length
-        activeSkills = skills.filter(item => item.status === 'active').length
+        const skills = (getRoutineSkillStore()?.list() || [])
+            .filter(item => item.origin === 'gelernt' && (!principalId || item.ownerId === principalId))
+        disabledSkills = skills.filter(item => !item.enabled).length
+        activeSkills = skills.filter(item => item.enabled).length
     } catch { /* optional learning projections never block the world model */ }
     const [{ getGoalManager }, { getBeliefStore }] = await Promise.all([
         import('./goal-manager.js'), import('./belief-store.js'),
@@ -185,7 +187,7 @@ export async function buildNovaWorldModel(principalId?: string): Promise<NovaWor
                 uncertainties: personalSummary?.uncertainties || [],
                 verifiedOutcomes: personalSummary?.verifiedOutcomes || [],
                 workflowEpisodes,
-                proposedSkills,
+                disabledSkills,
                 activeSkills,
                 managedGoals,
                 beliefs: beliefs.length,
@@ -221,7 +223,7 @@ export function formatNovaWorldModel(model: NovaWorldModel): string {
         `Outcomes: ${model.outcomes.value.validated}/${model.outcomes.value.total} validiert, Erfolgsrate ${pct(model.outcomes.value.successRate)}, ${model.outcomes.value.running} offen`,
         ...(model.personal.value.principalId ? [
             `Persönlicher Kontext: ${model.personal.value.openGoals.length} offene Ziele, ${model.personal.value.decisions.length} Entscheidungen, ${model.personal.value.preferences.length} Präferenzen, ${model.personal.value.uncertainties.length} offene Klärungen`,
-            `Erlernte Abläufe: ${model.personal.value.workflowEpisodes} validierte Episoden, ${model.personal.value.proposedSkills} Skill-Vorschläge, ${model.personal.value.activeSkills} aktive Skills`,
+            `Erlernte Abläufe: ${model.personal.value.workflowEpisodes} validierte Episoden, ${model.personal.value.activeSkills} aktive Routine-Skills, ${model.personal.value.disabledSkills} abgeschaltet`,
             `Goal Manager: ${model.personal.value.managedGoals.active} aktiv, ${model.personal.value.managedGoals.blocked} blockiert, ${model.personal.value.managedGoals.completed} abgeschlossen`,
             `Beliefs/Kausalität: ${model.personal.value.beliefs} Beliefs (${model.personal.value.disputedBeliefs} ungeklärt), ${model.personal.value.verifiedRuns} verifizierte Abläufe (Outcome-Ledger)`,
         ] : []),

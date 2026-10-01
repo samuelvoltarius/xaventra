@@ -231,50 +231,6 @@ describe('L8 Prisma Guards', async () => {
 })
 
 // ============================================
-// L8 — Meta-Learning System
-// ============================================
-
-describe('L8 Meta-Learning', async () => {
-    const { CAPABILITY_MAP, SOLUTIONS, CapabilityDetector, getMetaLearningSystem } = await import('./L8-meta-learning.js')
-
-    it('CAPABILITY_MAP: has known capabilities', () => {
-        expect(CAPABILITY_MAP.image_generation).toBeDefined()
-        expect(CAPABILITY_MAP.translation).toBeDefined()
-        expect(CAPABILITY_MAP.qr_code).toBeDefined()
-    })
-
-    it('CAPABILITY_MAP: each entry has keywords array', () => {
-        for (const [name, cap] of Object.entries(CAPABILITY_MAP)) {
-            expect(Array.isArray(cap.keywords), `${name}.keywords should be array`).toBe(true)
-            expect(typeof cap.description).toBe('string')
-        }
-    })
-
-    it('SOLUTIONS: has image_generation solution', () => {
-        expect(SOLUTIONS.image_generation).toBeDefined()
-        expect(SOLUTIONS.image_generation.local).toBeDefined()
-    })
-
-    it('CapabilityDetector: creates instance', () => {
-        const detector = new CapabilityDetector([])
-        expect(detector).toBeDefined()
-    })
-
-    it('CapabilityDetector: detect() returns CapabilityCheck', () => {
-        const detector = new CapabilityDetector(['bash', 'read_file', 'write_file'])
-        const check = detector.detect('bild erstellen')
-        expect(typeof check.canDo).toBe('boolean')
-        expect(typeof check.capability).toBe('string')
-    })
-
-    it('getMetaLearningSystem: returns singleton', () => {
-        const a = getMetaLearningSystem(['bash'])
-        const b = getMetaLearningSystem()
-        expect(a).toBe(b)
-    })
-})
-
-// ============================================
 // L9 — Idle Learning
 // ============================================
 
@@ -406,55 +362,6 @@ describe('L15 Security Scanner', async () => {
         const a = getSecurityScanner()
         const b = getSecurityScanner()
         expect(a).toBe(b)
-    })
-})
-
-// ============================================
-// L17 — Autonomous Learning
-// ============================================
-
-describe('L17 Autonomous Learning', async () => {
-    const { rememberSolution, recallSolution, getLearner } = await import('./L17-autonomous-learning.js')
-
-    it('rememberSolution: stores without throwing', () => {
-        expect(() => rememberSolution(
-            'How to parse JSON',
-            'Use JSON.parse() with try/catch',
-            'const data = JSON.parse(str)',
-            { verified: true, toolName: 'unit_test', result: 'passed' },
-        )).not.toThrow()
-    })
-
-    it('recallSolution: returns solution or null', () => {
-        rememberSolution('test problem abc', 'test solution abc', undefined, {
-            verified: true,
-            toolName: 'unit_test',
-            result: 'passed',
-        })
-        const result = recallSolution('test problem abc')
-        // May or may not find it depending on similarity threshold
-        expect(result === null || typeof result.solution === 'string').toBe(true)
-    })
-
-    it('recallSolution: returns null for unknown problem', () => {
-        const result = recallSolution('completely unknown xyz problem 99999')
-        expect(result).toBeNull()
-    })
-
-    it('recallSolution: never reuses global learning for generic follow-ups', () => {
-        expect(recallSolution('warum ?')).toBeNull()
-        expect(recallSolution('ja mach das')).toBeNull()
-    })
-
-    it('getLearner: returns singleton', () => {
-        const a = getLearner()
-        const b = getLearner()
-        expect(a).toBe(b)
-    })
-
-    it('getLearner: instance has recordAttempt method', () => {
-        const learner = getLearner()
-        expect(typeof learner.recordAttempt).toBe('function')
     })
 })
 
@@ -1034,7 +941,6 @@ describe('Extended Layer Module Loading', async () => {
         './L0-tool-autorepair.js',
         './L10-vision.js',
         './L03-core-runtime.js',
-        './L8-meta-learning.js',
         './L8-prisma-guards.js',
         './L8-sub-agent.js',
         './L9-idle-learning.js',
@@ -1043,7 +949,6 @@ describe('Extended Layer Module Loading', async () => {
         './L13-ast-analyzer.js',
         './L15-security-scanner.js',
         './L16-business-sense.js',
-        './L17-autonomous-learning.js',
         './L19-monitoring.js',
         './L21-node-health.js',
         './L22-federated-memory.js',

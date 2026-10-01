@@ -34,7 +34,6 @@ export interface NovaStateStore {
     journal: any
     lanceMemory: any
     knowledgeGraph: any
-    metaLearning: any
     // Per-message context (cleared between messages)
     __userContext: string | null
     __groupContext: string | null
@@ -67,7 +66,6 @@ const _state: NovaStateStore = {
     journal: null,
     lanceMemory: null,
     knowledgeGraph: null,
-    metaLearning: null,
     __userContext: null,
     __groupContext: null,
     __userPermission: null,

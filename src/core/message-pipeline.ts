@@ -975,21 +975,6 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Inject L8 Meta-Learning skills context
-    if (/skill|lern|tool|fÃ¤higkeit|capabilit/i.test(content)) try {
-        const meta = (state as any).metaLearning
-        if (meta) {
-            const skills = meta.getLearnedSkills()
-            if (skills.length > 0) {
-                const skillBlock = skills
-                    .slice(0, 5)
-                    .map((s: any) => `- ${s.name}: ${s.description} (${s.successCount}x erfolgreich)`)
-                    .join('\n')
-                systemPrompt += `\n\n## GELERNTE FÄHIGKEITEN\n${skillBlock}`
-            }
-        }
-    } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
     // Automatic performance recommendations from the trace analyzer. Learned
     // rules are not a separate block any more: owner rules are ENTSCHEIDUNGEN
     // (below), corrections are governed memory (Erinnerungskontext).
@@ -1474,19 +1459,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         }
     } catch (err) { console.debug('[Pipeline] strict mode not available:', err) }
 
-    // ============================================
-    // L8 Meta-Learning: Auto-Capability Detection
-    // ============================================
-    try {
-        const meta = (state as any).metaLearning
-        if (meta && typeof meta.inspectRequest === 'function') {
-            const capability = meta.inspectRequest(content)
-            if (capability && !capability.canDo) {
-                systemPrompt += `\n\n## FEHLENDE FÄHIGKEIT\nDer User fragt nach "${capability.capability}" — diese Fähigkeit ist noch nicht durch ein erfolgreiches Tool-Outcome bestätigt.`
-            }
-        }
-    } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
     if (!state.llm) {
         console.error(`[Nova] LLM nicht verfügbar — versuche Reconnect`)
         // Try to reconnect LLM
@@ -1964,6 +1936,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const failedExecutions = ((result as any).toolExecutions || []).filter((execution: any) => !execution.success)
         // P8 Routine-Skills: Ergebnis des angewendeten Skills zählen und den Lauf
         // für die Wiederholungserkennung beobachten (nur Owner, keine Gruppe).
+        let routineLearned: { counted: boolean; created?: { name: string; steps: Array<{ tool: string }> } } | null = null
         try {
             const { getRoutineSkillStore, finishRoutineSkillRun } = await import('../learning/routine-skills.js')
             const learned = finishRoutineSkillRun(getRoutineSkillStore(), {
@@ -1974,8 +1947,19 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 awaitingApproval: kernelState?.awaitingApproval === true || (result as any).validation?.awaitingApproval === true,
                 steps: (result as any).toolExecutions || [],
             })
+            routineLearned = learned as typeof routineLearned
             if (learned?.counted && learned.created) console.log(`[Skills] Neuer Routine-Skill angelegt: ${learned.created.name} (${learned.created.id})`)
         } catch (err) { console.debug('[Pipeline] routine skill bookkeeping failed:', err) }
+        // P9 Werkzeug-Schmiede: fehlendes Werkzeug, Wiederholung oder Owner-Wunsch → Bau im Hintergrund.
+        try {
+            const { noteForgeNeed } = await import('../tools/skill-builder.js')
+            const need = noteForgeNeed({
+                principalId, permission: principalContext.permission, isGroup: requestIsGroup, systemAuthored: isSystemMessage,
+                request: content, toolExecutions: (result as any).toolExecutions || [],
+                routineSkillCreated: routineLearned?.counted ? routineLearned.created ?? null : null,
+            })
+            if (need.queued) console.log(`[Werkzeuge] Bedarf erkannt (${need.kind}): Bau läuft im Hintergrund`)
+        } catch (err) { console.debug('[Pipeline] forge need hook failed:', err) }
         const { authoritativeDiagnosticResponse, screenshotFailureResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic

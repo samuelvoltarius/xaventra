@@ -62,7 +62,7 @@ describe('Kartenart → Policy-Art', () => {
     })
     it('every known card kind is mapped deliberately: to a known policy kind, to itself, or to null (no double count)', () => {
         const cardKinds = ['install', 'release-promote', 'patch', 'self-heal', 'self-heal-peer', 'gedanke', 'verantwortung', 'mission-schritt', 'delegation',
-            'skill-sandbox', 'ollama-pull', 'vllm-wechsel', 'pve-start', 'pve-herunterfahren', 'pve-snapshot', 'pve-rollback', 'pve-anlegen', 'pve-anpassen', 'pve-entfernen']
+            'ollama-pull', 'vllm-wechsel', 'pve-start', 'pve-herunterfahren', 'pve-snapshot', 'pve-rollback', 'pve-anlegen', 'pve-anpassen', 'pve-entfernen']
         for (const kind of cardKinds) {
             const mapped = policyKindForCard(kind)
             if (mapped === null) expect(Object.prototype.hasOwnProperty.call(KARTEN_POLICY_ARTEN, kind)).toBe(true)

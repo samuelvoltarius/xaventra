@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { getNovaDataDir } from '../core/data-root.js'
 
 // ============================================
 // Types
@@ -37,14 +38,15 @@ export interface PatternSuggestion {
 // Pattern Store
 // ============================================
 
-const PATTERN_FILE = '.nova-data/patterns.json'
+/** Ein Ort: `<runtime>/.nova-data/patterns.json` (P9; früher relativ zum Arbeitsverzeichnis). */
+const PATTERN_FILE = 'patterns.json'
 const AUTOMATION_THRESHOLD = 3
 
 export class PatternStore {
     private patterns: Map<string, Pattern> = new Map()
     private dataDir: string
 
-    constructor(dataDir: string = process.cwd()) {
+    constructor(dataDir: string = getNovaDataDir()) {
         this.dataDir = dataDir
         this.load()
     }
@@ -78,9 +80,8 @@ export class PatternStore {
     }
 
     private save(): void {
-        const dir = join(this.dataDir, '.nova-data')
-        if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true })
+        if (!existsSync(this.dataDir)) {
+            mkdirSync(this.dataDir, { recursive: true })
         }
 
         const data = {

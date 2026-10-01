@@ -337,7 +337,7 @@ private logs. See [SECURITY.md](SECURITY.md) for responsible disclosure.
 | `src/tools/` | typed tool catalog, routing and execution boundaries | `complete-registry.ts`, `tool-router.ts` |
 | `src/validation/` | independent validation of real tool outcomes | `tool-validator.ts` |
 | `src/memory/` | governed facts, retrieval, reusable assets and tombstones | `memory-governance.ts`, `memory-asset-catalog.ts` |
-| `src/learning/` | verified-outcome learning and skill maturation | `learning-coordinator.ts`, `personal-skill-compiler.ts` |
+| `src/learning/` | corrections, routine skills, the one procedure store | `learning-coordinator.ts`, `routine-skills.ts`, `procedure-store.ts` |
 | `src/mesh/` | transports, capabilities, signed jobs, leases and fencing | `mesh-transport-router.ts`, `capability-graph.ts` |
 | `src/doctor/` | diagnosis and evidence-led repair research | `index.ts`, `failure-research-coordinator.ts` |
 | `src/desktop/` | authoritative Core API used by Desktop | `desktop-api.ts` |

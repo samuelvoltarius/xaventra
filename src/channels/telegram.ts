@@ -245,7 +245,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 // Memory & Learning
                 { command: 'memory', description: '💾 Memory-Status' },
                 { command: 'skills', description: '📚 Gelernte Skills' },
-                { command: 'learn', description: '📖 Neues Wissen beibringen' },
+                { command: 'learn', description: '📖 Neues Werkzeug bauen lassen' },
+                { command: 'werkzeuge', description: '🧰 Selbst gebaute Werkzeuge (Owner)' },
                 // Multi-Agent
                 { command: 'bot', description: '🤖 Bot-Team & Instanzen' },
                 { command: 'subagent', description: '🎯 Sub-Agent starten' },

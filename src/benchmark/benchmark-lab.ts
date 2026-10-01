@@ -126,7 +126,7 @@ const extendedTemplates: Record<BenchmarkCategory, Array<[string, string, string
     ],
     memory: [
         ['Natürlicher Recall', 'Erinnere eine Präferenz ohne Memory-Befehl und liefere die Quelle.', ['retrieved fact', 'source', 'workflow episode']],
-        ['User-Wechsel', 'Beweise bei einem Benutzerwechsel, dass keine fremde Erinnerung erscheint.', ['scope evidence', 'personal skill proposal']],
+        ['User-Wechsel', 'Beweise bei einem Benutzerwechsel, dass keine fremde Erinnerung erscheint.', ['scope evidence', 'routine skill']],
         ['Korrektur gewinnt', 'Eine explizite Korrektur muss die alte Aussage superseden.', ['tombstone', 'new fact']],
         ['Gelöschtes bleibt weg', 'Ein replizierter Tombstone darf nach Neustart nicht wieder erscheinen.', ['tombstone evidence']],
     ],

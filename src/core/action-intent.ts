@@ -122,7 +122,7 @@ export function isHistoryOnlyRequest(input: string): boolean {
 
 const NON_FULFILLING_TOOLS = new Set([
     'nova_capabilities', 'find_capability', 'resolve_capability',
-    'health_status', 'nova_introspect', 'list_custom_tools',
+    'health_status', 'nova_introspect', 'list_skills',
     'load_skills', 'load_skill_pack', 'build_skill', 'create_skill',
     'self_setup_status', 'self_setup_plan', 'self_setup_research',
     'research_capability_plan', 'research_all_capabilities',

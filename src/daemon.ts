@@ -935,13 +935,11 @@ async function startDaemon() {
     // ============================================
     try {
         const { createFeedbackCollector } = await import('./learning/feedback.js')
-        const { getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
+        const { getAgentSwarm } = await import('./layers/L7-learning.js')
 
         // Basic feedback collector
         const feedbackCollector = createFeedbackCollector()
 
-        // Advanced learners (corrections live in memory governance)
-        const skillSynthesizer = getSkillSynthesizer()
         const agentSwarm = getAgentSwarm()
 
         // Load persisted feedback
@@ -960,21 +958,15 @@ async function startDaemon() {
         // Combine all learning systems
         state.learning = {
             feedback: feedbackCollector,
-            skills: skillSynthesizer,
             swarm: agentSwarm,
-
-            // Find matching skill for query
-            findSkill: (query: string) => skillSynthesizer.findMatchingSkill(query),
 
             getStats: () => ({
                 feedback: feedbackCollector.getStats(),
-                skills: skillSynthesizer.getStats(),
                 swarm: agentSwarm.getStats(),
             }),
         }
 
-        const sStats = skillSynthesizer.getStats()
-        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${sStats.totalSkills} Skills)`)
+        console.log('[Nova] ✓ Layer 7 (Learning) aktiv (Agent-Schwarm; Korrekturen: Governance, Skills: Routine-Skills)')
 
         // Bind the monitored learning service to L7.
         if (serviceModels.learning) {
@@ -1044,29 +1036,6 @@ async function startDaemon() {
         console.log(`[Nova] ✓ Factory aktiv (auto-decompose: on, max ${5} sub-agents)`)
     } catch (err) {
         console.log(`[Nova] ⚠ Orchestrator/Factory nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
-    // Layer 8 starts once, after the complete tool registry is available.
-    // ============================================
-    if (false) try {
-        const { getMetaLearningSystem } = await import('./layers/L8-meta-learning.js')
-        const toolNames = state.tools ? Object.keys(state.tools) : []
-        const metaLearning = getMetaLearningSystem(toolNames)
-
-            // Attach to state for use in message handling
-            ; (state as any).metaLearning = metaLearning
-
-        const skills = metaLearning.getLearnedSkills()
-        console.log(`[Nova] ✓ Layer 8 (Meta-Learning) aktiv (${skills.length} gelernte Skills)`)
-
-        // Bind the monitored learning service to L8.
-        if (serviceModels.learning) {
-            const { setInternalLLM: setL8LLM } = await import('./layers/L8-meta-learning.js')
-            setL8LLM(serviceModels.learning)
-        }
-    } catch (err) {
-        console.log(`[Nova] ⚠ Meta-Learning nicht verfügbar: ${err}`)
     }
 
     // ============================================
@@ -1638,17 +1607,14 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ L9 Idle Learning nicht verfügbar: ${err}`)
     }
 
-    // Start L8 Meta-Learning
+    // P9 Werkzeug-Schmiede: local learning model only, card executors, active forge_* tools.
     try {
-        const { getMetaLearningSystem, setInternalLLM: setL8LLM } = await import('./layers/L8-meta-learning.js')
-        const toolNames = state.tools?.getAll?.().map((tool: any) => tool.name) || []
-        const meta = getMetaLearningSystem(toolNames)
-            ; (state as any).metaLearning = meta
-        if (serviceModels.learning) setL8LLM(serviceModels.learning)
-        const skills = meta.getLearnedSkills()
-        console.log(`[Nova] ✓ L8 Meta-Learning aktiv (${skills.length} gelernte Skills)`)
+        const { initToolForge } = await import('./tools/skill-builder.js')
+        const forge = await initToolForge({ learningModel: serviceModels.learning ?? null })
+        console.log(`[Nova] ✓ Werkzeug-Schmiede: ${forge.active} aktive Werkzeuge${forge.support.ok ? '' : ` — ${forge.support.reason}`}${serviceModels.learning ? '' : ' (ohne lokales Lern-Modell: kein Selbstbau)'}`)
+        if (forge.legacyToolsIgnored > 0) console.warn(`[Nova] ⚠ ${forge.legacyToolsIgnored} alte .nova-tools/*.json werden nicht mehr geladen (stillgelegt)`)
     } catch (err) {
-        console.log(`[Nova] ⚠ L8 Meta-Learning nicht verfügbar: ${err}`)
+        console.log(`[Nova] ⚠ Werkzeug-Schmiede nicht verfügbar: ${err}`)
     }
 
     // ============================================
@@ -2323,21 +2289,6 @@ async function startDaemon() {
         }
     } catch (err) {
         console.log(`[Nova] ⚠ L16 Business Sense nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
-    // Start L17 Autonomous Learning
-    // ============================================
-    try {
-        const { getLearner, setInternalLLM } = await import('./layers/L17-autonomous-learning.js')
-        const autoLearner = getLearner()
-            ; (state as any).autonomousLearner = autoLearner
-        if (serviceModels.learning) {
-            setInternalLLM(serviceModels.learning)
-        }
-        console.log('[Nova] ✓ L17 Autonomous Learning aktiv')
-    } catch (err) {
-        console.log(`[Nova] ⚠ L17 Autonomous Learning nicht verfügbar: ${err}`)
     }
 
     // ============================================

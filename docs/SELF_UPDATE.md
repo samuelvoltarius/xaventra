@@ -51,7 +51,7 @@ AST security check → PASS
     ↓
 Tool registered in runtime
     ↓
-Skill Distributor → deploy to all mesh nodes
+(no mesh distribution; Werkzeug-Schmiede tools stay on the Main — see TOOL_FORGE.md)
 ```
 
 ### Dead-End Detection

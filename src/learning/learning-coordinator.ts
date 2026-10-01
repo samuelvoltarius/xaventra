@@ -1,9 +1,8 @@
 import { getNovaLearningDir } from '../core/data-root.js'
-import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { createLearningEngine, type LearningEngine } from './engine.js'
+import { getProcedureStore, migrateLegacyProcedures, type ProcedureStore } from './procedure-store.js'
+import { sideEffectsDisabled } from '../core/side-effects.js'
 import { redactSecrets } from '../security/secret-redaction.js'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { TaskValidationReport } from '../core/task-contract.js'
 
 const MEMORY_ELIGIBLE_TOOLS = new Set([
@@ -71,41 +70,21 @@ export interface InvalidatedRunOutcome {
 export class LearningCoordinator {
     private engine: LearningEngine
     private started = false
-    private verifiedProcedureRuns = new Map<string, number>()
-    private readonly procedurePath: string
+    private readonly procedures: () => ProcedureStore
 
-    constructor(engine?: LearningEngine, dataDir = getNovaLearningDir()) {
+    constructor(engine?: LearningEngine, dataDir = getNovaLearningDir(), procedures?: ProcedureStore) {
         this.engine = engine || createLearningEngine({ dataDir })
-        this.procedurePath = join(dataDir, 'verified-procedures.json')
-        this.loadVerifiedProcedures()
-    }
-
-    private loadVerifiedProcedures(): void {
-        try {
-            if (!existsSync(this.procedurePath)) return
-            const parsed = JSON.parse(readFileSync(this.procedurePath, 'utf8')) as {
-                procedures?: Array<[string, number]>
-            }
-            this.verifiedProcedureRuns = new Map(
-                (parsed.procedures || []).filter(([key, runs]) =>
-                    typeof key === 'string' && Number.isFinite(runs) && runs >= 0),
-            )
-        } catch {
-            this.verifiedProcedureRuns.clear()
-        }
-    }
-
-    private persistVerifiedProcedures(): void {
-        atomicWriteJsonSync(this.procedurePath, {
-            version: 1,
-            updatedAt: Date.now(),
-            procedures: [...this.verifiedProcedureRuns.entries()].slice(-2_000),
-        })
+        this.procedures = procedures ? () => procedures : getProcedureStore
     }
 
     async start(): Promise<void> {
         if (this.started) return
         await this.engine.start()
+        // One procedure store (P9): take over the old L17/L8/coordinator files once.
+        // Never in tests/CI: the L8 files live in the real home directory.
+        if (!sideEffectsDisabled()) try { migrateLegacyProcedures({ store: this.procedures() }) } catch (error) {
+            console.warn(`[Learning] Prozedur-Übernahme fehlgeschlagen: ${String(error).slice(0, 160)}`)
+        }
         this.started = true
     }
 
@@ -137,23 +116,10 @@ export class LearningCoordinator {
             outcome.userId,
         )
 
-        // A single non-throwing call is an observation, not a learned skill.
-        // Promote a procedure only after the same tool/parameter shape has
-        // produced verified task evidence twice. A failure resets confidence.
-        const signature = JSON.stringify([outcome.userId ?? null, outcome.toolName, Object.keys(outcome.params).sort()])
-        const runs = outcome.success ? (this.verifiedProcedureRuns.get(signature) || 0) + 1 : 0
-        this.verifiedProcedureRuns.set(signature, runs)
-        this.persistVerifiedProcedures()
-
-        if (outcome.success && runs >= 2) {
-            const { getLearner } = await import('../layers/L17-autonomous-learning.js')
-            getLearner().recordVerifiedOutcome(outcome)
-        }
-
-        if (outcome.success && runs >= 2) {
-            const { getMetaLearningSystem } = await import('../layers/L8-meta-learning.js')
-            getMetaLearningSystem().recordVerifiedOutcome(outcome.toolName, true)
-        }
+        // A single non-throwing call is an observation, not a learned
+        // procedure: the one procedure store remembers a solution only after
+        // the same tool/parameter shape produced verified evidence twice.
+        this.procedures().recordVerifiedOutcome(outcome)
 
         if (outcome.success) {
             const memoryStatement = summarizeVerifiedResult(outcome.toolName, outcome.result)
@@ -208,15 +174,8 @@ export class LearningCoordinator {
             durationMs: outcome.durationMs, costUsd: outcome.costUsd,
         })
         if (!episode) return
-        const { getPersonalSkillCompiler } = await import('./personal-skill-compiler.js')
-        const skillCompiler = getPersonalSkillCompiler()
-        const skill = skillCompiler.observe(episode)
-        // Runtime quality is authoritative after activation. A single failed,
-        // independently validated production outcome removes the trusted skill
-        // from automatic execution until it matures through the gates again.
-        if (skill.status === 'active') {
-            skillCompiler.recordRuntimeOutcome(skill.id, outcome.success, outcome.runId)
-        }
+        // Workflow skills are learned in one place only: learning/routine-skills.ts
+        // (observed by the message pipeline). The episode stays episodic memory.
 
         const { getBeliefStore } = await import('../core/belief-store.js')
         const route = `${outcome.model || 'unknown'}@${outcome.node || 'unknown'}`
@@ -243,14 +202,14 @@ export class LearningCoordinator {
     /** Retract every derived learning projection when a user rejects a run.
      * The immutable Outcome Ledger remains the authority and records why. */
     async invalidateValidatedRun(outcome: InvalidatedRunOutcome): Promise<void> {
-        const [{ getWorkflowEpisodeStore }, { getPersonalSkillCompiler }, { getBeliefStore }, { getSessionContinuityStore }] = await Promise.all([
+        const [{ getWorkflowEpisodeStore }, { getRoutineSkillStore }, { getBeliefStore }, { getSessionContinuityStore }] = await Promise.all([
             import('../memory/workflow-episode-store.js'),
-            import('./personal-skill-compiler.js'),
+            import('./routine-skills.js'),
             import('../core/belief-store.js'),
             import('../memory/session-summarizer.js'),
         ])
         getWorkflowEpisodeStore().retractRun(outcome.runId, outcome.userId, outcome.reason)
-        getPersonalSkillCompiler().retractRun(outcome.runId)
+        getRoutineSkillStore()?.retractRun(outcome.runId)
         getBeliefStore().retractSource(`outcome:${outcome.runId}`)
         getSessionContinuityStore().retractVerifiedOutcome(outcome.userId, outcome.runId, outcome.request)
         try {
@@ -260,10 +219,12 @@ export class LearningCoordinator {
     }
 
     getStats() {
+        const procedures = this.procedures().getStats()
         return {
             ...this.engine.getStats(),
-            verifiedProcedures: this.verifiedProcedureRuns.size,
-            reusableProcedures: [...this.verifiedProcedureRuns.values()].filter(runs => runs >= 2).length,
+            procedures: procedures.procedures,
+            verifiedProcedures: procedures.verifiedProcedures,
+            reusableProcedures: procedures.reusableProcedures,
         }
     }
 }

@@ -7,7 +7,6 @@ import { BeliefStore } from './belief-store.js'
 import { deliberateExecution } from './deliberative-planner.js'
 import { evaluatePreflight } from './action-policy.js'
 import { OperationalEventBus } from './operational-event-bus.js'
-import { PersonalSkillCompiler } from '../learning/personal-skill-compiler.js'
 import { RegressionCaseStore } from '../learning/regression-case-store.js'
 import { FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
 import { findVerifiedSolutionContradictions, hasVerifiedCriticalDream } from '../layers/subconscious-reflector.js'
@@ -55,23 +54,6 @@ describe('Nova 2.70 closed-loop autonomy', () => {
         expect(evaluatePreflight({ ...safePreflight, impact: 'external' })).toMatchObject({ level: 'L2', mayExecute: false })
         expect(evaluatePreflight({ ...safePreflight, riskScore: 60 })).toMatchObject({ level: 'L2', mayExecute: false })
         expect(evaluatePreflight({ ...safePreflight, profile: 'blocked' })).toMatchObject({ level: 'L3', decision: 'never', mayExecute: false })
-    })
-
-    it('matures skills through every evidence gate and degrades on failure', () => {
-        const compiler = new PersonalSkillCompiler(join(root('nova-skills'), 'skills.json'))
-        const episode = (runId: string): WorkflowEpisode => ({
-            id: runId, runId, userId: 'sample', requestSummary: 'Status prüfen', taskType: 'system-state',
-            steps: [{ toolName: 'health_status', parameterKeys: [] }], success: true, durationMs: 10, costUsd: 0,
-            evidenceRef: `outcome:${runId}`, createdAt: new Date().toISOString(),
-        })
-        compiler.observe(episode('1')); compiler.observe(episode('2')); const proposed = compiler.observe(episode('3'))
-        expect(proposed.status).toBe('proposed')
-        expect(compiler.advance(proposed.id, 'sandbox-tested', 'test:sandbox')?.status).toBe('sandbox-tested')
-        expect(compiler.advance(proposed.id, 'benchmark-passed', 'benchmark:100')?.status).toBe('benchmark-passed')
-        expect(compiler.advance(proposed.id, 'canary-tested', 'canary:spark')?.status).toBe('canary-tested')
-        expect(compiler.advance(proposed.id, 'approved', 'user:owner', { operatorApproved: true })?.status).toBe('approved')
-        expect(compiler.advance(proposed.id, 'active', 'user:owner', { operatorApproved: true })?.status).toBe('active')
-        expect(compiler.recordRuntimeOutcome(proposed.id, false, 'failed-run')?.status).toBe('degraded')
     })
 
     it('suppresses unverified generic initiative and accepts trusted operational evidence', () => {

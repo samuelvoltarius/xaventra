@@ -53,13 +53,14 @@ Modify `xaventra.config.json` at runtime.
 save_config({ section: "telegram", values: { enabled: true } })
 ```
 
-### create_tool
-Create an inert, hash-addressed Nova Studio Forge proposal. It is not registered
-or executed until sandbox, benchmark, canary and Owner gates have verified
-evidence.
+### build_skill / create_skill
+Build a tool in the Werkzeug-Schmiede: ESM code, manifest (`net`, `fs`, `wirkung`)
+and test cases as data; `create_skill` lets the local learning model write the
+draft. Runs only in the sandbox; active tools appear as `forge_<name>`. See
+[TOOL_FORGE.md](TOOL_FORGE.md).
 
-### list_custom_tools
-List all self-created tools.
+### list_skills / delete_skill
+List the forge tools with status and counters; `delete_skill` switches one off.
 
 ---
 
@@ -82,8 +83,6 @@ Multi-step goal decomposition. Used for large tasks ("build an app").
 ### mesh_status
 Check all node health, VRAM, loaded models.
 
-### deploy_skill
-Sign and deploy a custom tool to all mesh nodes.
 
 ---
 
@@ -95,9 +94,10 @@ Sign and deploy a custom tool to all mesh nodes.
 | Shell | 2 | run_command, ssh_command |
 | Search | 3 | web_search, google_search, browse_url |
 | Memory | 4 | remember, recall, forget, save_api_key |
-| Config | 3 | save_config, create_tool, list_custom_tools |
+| Config | 1 | save_config |
+| Werkzeug-Schmiede | 4 | build_skill, create_skill, list_skills, delete_skill (+ active `forge_*`) |
 | Vision | 1 | screenshot |
-| Mesh | 2 | mesh_status, deploy_skill |
+| Mesh | 1 | mesh_status |
 | Mission | 1 | start_autonomous_mission |
 
 Plus ~90 specialized tools (PDF, GAEB, Docker, Git, etc.) loaded dynamically.

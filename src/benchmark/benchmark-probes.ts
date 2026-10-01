@@ -16,7 +16,7 @@ import { probeGpuRuntime } from '../doctor/gpu-runtime.js'
 import { diagnoseToolContract } from '../doctor/tool-contract.js'
 import { MemoryGovernanceCoordinator } from '../memory/memory-governance.js'
 import { WorkflowEpisodeStore } from '../memory/workflow-episode-store.js'
-import { PersonalSkillCompiler } from '../learning/personal-skill-compiler.js'
+import { RoutineSkillStore } from '../learning/routine-skills.js'
 import { CapabilityGraph } from '../mesh/capability-graph.js'
 import { createQuorumWitnessServer } from '../mesh/quorum-witness.js'
 import { acquireWitnessQuorumLease, type WitnessQuorumConfig } from '../mesh/witness-quorum.js'
@@ -292,19 +292,23 @@ async function probeMemory(workspace: string): Promise<BenchmarkProbeResult> {
         { projectBackends: false },
     )
     const episodeStore = new WorkflowEpisodeStore(join(workspace, 'workflow-episodes.json'))
-    const skillCompiler = new PersonalSkillCompiler(join(workspace, 'skill-proposals.json'))
+    const routineSkills = new RoutineSkillStore({ dir: join(workspace, 'routine-skills') })
     for (let index = 0; index < 3; index++) {
-        const episode = episodeStore.record({
+        episodeStore.record({
             runId: `benchmark-workflow-${index}`, userId: ownerScope,
             requestSummary: 'Prüfe den bevorzugten Benchmark-Router', taskType: 'system-state',
             steps: [{ toolName: 'health_status', parameterKeys: ['node'] }],
             success: true, durationMs: 1, costUsd: 0,
         })
-        if (episode) skillCompiler.observe(episode)
+        routineSkills.observe({
+            runId: `benchmark-workflow-${index}`, principalId: ownerScope, permission: 'owner',
+            request: 'Prüfe den bevorzugten Benchmark-Router', intentKind: 'system-state',
+            steps: [{ toolName: 'health_status', params: { node: 'benchmark' }, success: true }], success: true,
+        })
     }
     const relevantEpisode = episodeStore.findRelevant(ownerScope, 'bevorzugten Benchmark-Router')[0]
-    const personalProposal = skillCompiler.list(ownerScope)[0]
-    const foreignProposals = skillCompiler.list(foreignScope)
+    const routineSkill = routineSkills.list().find(skill => skill.origin === 'gelernt' && skill.ownerId === ownerScope)
+    const foreignMatch = routineSkills.match(foreignScope, 'Prüfe den bevorzugten Benchmark-Router')
 
     return result('benchmark_memory_probe', {
         'retrieved fact': Boolean(match && match.value === 'Ultramarin'),
@@ -316,7 +320,7 @@ async function probeMemory(workspace: string): Promise<BenchmarkProbeResult> {
         'tombstone evidence': replica.get(corrected!.id)?.status === 'rejected',
         'validator evidence': verifiedOutcome?.status === 'canonical' && candidate?.status === 'candidate',
         'workflow episode': relevantEpisode?.evidenceRef.startsWith('outcome:') === true,
-        'personal skill proposal': personalProposal?.status === 'proposed' && foreignProposals.length === 0,
+        'routine skill': routineSkill?.enabled === true && foreignMatch?.origin !== 'gelernt',
     }, {
             persistedAcrossInstance: Boolean(match),
             correctValue: match?.value === 'Ultramarin',
@@ -328,7 +332,7 @@ async function probeMemory(workspace: string): Promise<BenchmarkProbeResult> {
             unverifiedModelStatus: candidate?.status,
             verifiedOutcomeStatus: verifiedOutcome?.status,
             workflowEpisode: relevantEpisode,
-            personalSkillProposal: personalProposal,
+            routineSkill,
         })
 }
 

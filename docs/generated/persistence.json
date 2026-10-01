@@ -538,10 +538,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/layers/L8-sub-agent.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/layers/layers-bounded-state.test.ts",
       "path": ".nova-data"
     },
@@ -574,7 +570,15 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/learning/engine-corrections-only.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/learning/pattern-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/learning/procedure-store.test.ts",
       "path": ".nova-data"
     },
     {
@@ -742,10 +746,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/mesh/skill-distributor.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/planner/auto-reminders.ts",
       "path": ".nova-data"
     },
@@ -898,6 +898,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/tools/skill-builder.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/tools/ssh-selfheal-approval.test.ts",
       "path": ".nova-data"
     },
@@ -986,6 +990,14 @@
       "path": ".nova-data/fence-highwater.json"
     },
     {
+      "owner": "src/tools/skill-builder.ts",
+      "path": ".nova-data/forge/bedarf.json"
+    },
+    {
+      "owner": "src/tools/skill-builder.ts",
+      "path": ".nova-data/forge/werkzeuge.json"
+    },
+    {
       "owner": "src/core/goal-manager.ts",
       "path": ".nova-data/goals.json"
     },
@@ -998,8 +1010,8 @@
       "path": ".nova-data/instance-id.txt"
     },
     {
-      "owner": "src/layers/L8-sub-agent.ts",
-      "path": ".nova-data/learned-solutions.json"
+      "owner": "src/learning/procedure-store.ts",
+      "path": ".nova-data/learning/procedures.json"
     },
     {
       "owner": "src/core/native-package-builder.test.ts",
@@ -1087,10 +1099,6 @@
     },
     {
       "owner": "src/layers/L0-supervisor.ts",
-      "path": ".nova-data/patterns.json"
-    },
-    {
-      "owner": "src/learning/pattern-store.ts",
       "path": ".nova-data/patterns.json"
     },
     {
@@ -1194,23 +1202,7 @@
       "path": ".nova-learning"
     },
     {
-      "owner": "src/layers/L17-autonomous-learning-legacy.test.ts",
-      "path": ".nova-learning"
-    },
-    {
-      "owner": "src/layers/L17-autonomous-learning.ts",
-      "path": ".nova-learning"
-    },
-    {
       "owner": "src/layers/L18-llm-router.ts",
-      "path": ".nova-learning"
-    },
-    {
-      "owner": "src/layers/L7-learning.ts",
-      "path": ".nova-learning"
-    },
-    {
-      "owner": "src/layers/subconscious-reflector.ts",
       "path": ".nova-learning"
     },
     {
@@ -1222,7 +1214,7 @@
       "path": ".nova-learning"
     },
     {
-      "owner": "src/learning/personal-skill-compiler.ts",
+      "owner": "src/learning/procedure-store.ts",
       "path": ".nova-learning"
     },
     {
@@ -1247,6 +1239,14 @@
     },
     {
       "owner": "src/supervisor/auto-tester.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/tools/skill-builder.test.ts",
+      "path": ".nova-learning"
+    },
+    {
+      "owner": "src/tools/skill-builder.ts",
       "path": ".nova-learning"
     },
     {

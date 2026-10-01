@@ -2,8 +2,7 @@
  * Nova Layer 7 - Advanced Learning System
  * 
  * Features:
- * - Skill synthesis from patterns
- *   (User corrections live in memory governance: memory/correction-memory.ts.)
+ * (User corrections: memory/correction-memory.ts; skills: learning/routine-skills.ts; tools: tools/skill-builder.ts)
  * - Multi-agent swarm coordination
  * - Feedback loop integration
  */
@@ -14,19 +13,6 @@ import { join } from 'node:path'
 // ============================================
 // Types
 // ============================================
-
-export interface LearnedSkill {
-    id: string
-    name: string
-    description: string
-    triggerPatterns: string[]  // Regex patterns that trigger this skill
-    solutionTemplate: string   // How to solve this type of problem
-    successRate: number        // 0-1 based on feedback
-    usageCount: number
-    createdAt: number
-    updatedAt: number
-    source: 'pattern' | 'correction' | 'instruction'
-}
 
 export interface AgentInstance {
     id: string
@@ -47,193 +33,6 @@ export interface SwarmMessage {
     content: string
     data?: unknown
     timestamp: number
-}
-
-// ============================================
-// Skill Synthesis System
-// ============================================
-
-export class SkillSynthesizer {
-    private skills: LearnedSkill[] = []
-    private dataPath: string
-
-    constructor(dataDir: string) {
-        this.dataPath = join(dataDir, 'skills.json')
-        this.load()
-    }
-
-    // Learn a new skill from repeated patterns
-    synthesizeFromPattern(params: {
-        name: string
-        description: string
-        exampleQueries: string[]
-        solutionTemplate: string
-    }): LearnedSkill {
-        // Extract common patterns from example queries
-        const patterns = this.extractPatterns(params.exampleQueries)
-
-        const skill: LearnedSkill = {
-            id: crypto.randomUUID(),
-            name: params.name,
-            description: params.description,
-            triggerPatterns: patterns,
-            solutionTemplate: params.solutionTemplate,
-            successRate: 0.5,  // Start neutral
-            usageCount: 0,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            source: 'pattern',
-        }
-
-        this.skills.push(skill)
-        this.save()
-
-        console.log(`[L7 Skill] Neuer Skill synthetisiert: ${params.name}`)
-        return skill
-    }
-
-    // Find matching skill for a query (regex + optional LLM semantic matching)
-    findMatchingSkill(query: string): LearnedSkill | null {
-        const queryLower = query.toLowerCase()
-
-        // First: try regex matching
-        for (const skill of this.skills) {
-            for (const pattern of skill.triggerPatterns) {
-                try {
-                    if (new RegExp(pattern, 'i').test(queryLower)) {
-                        return skill
-                    }
-                } catch { /* invalid regex */ }
-            }
-        }
-
-        // Second: if no regex match and LLM available, try semantic matching
-        if (internalLlm && this.skills.length > 0) {
-            try {
-                const skillList = this.skills.map((s, i) => `${i}: ${s.name} — ${s.description}`).join('\n')
-                const prompt = `Which skill (if any) best matches this query? Return ONLY the index number, or -1 if none match.\n\nQuery: "${query.slice(0, 200)}"\n\nSkills:\n${skillList}`
-                // Synchronous-ish: fire and cache for next time
-                internalLlm.complete([{ role: 'user', content: prompt }]).then((res: any) => {
-                    const idx = parseInt(res?.content?.trim() || '-1')
-                    if (idx >= 0 && idx < this.skills.length) {
-                        console.log(`[L7] LLM matched skill: ${this.skills[idx].name}`)
-                    }
-                }).catch(() => { })
-            } catch { /* non-critical */ }
-        }
-
-        return null
-    }
-
-    // Learn from conversation history using LLM
-    async learnFromConversation(messages: Array<{ role: string; content: string }>): Promise<void> {
-        if (!internalLlm || messages.length < 4) return
-
-        try {
-            const conversation = messages.slice(-10).map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')
-            const prompt = `Analyze this conversation and extract any recurring patterns that could become reusable skills.\n\nConversation:\n${conversation}\n\nReturn JSON array: [{"name": "skill_name", "description": "what it does", "triggerPatterns": ["regex1"], "solutionTemplate": "how to solve"}]\nIf no patterns found: []`
-
-            const response = await internalLlm.complete([{ role: 'user', content: prompt }])
-            if (!response?.content) return
-
-            const match = response.content.match(/\[[\s\S]*\]/)
-            if (!match) return
-
-            const skills = JSON.parse(match[0]) as Array<{ name: string; description: string; triggerPatterns: string[]; solutionTemplate: string }>
-            for (const s of skills) {
-                if (s.name && s.description && !this.findMatchingSkill(s.name)) {
-                    this.synthesizeFromPattern({
-                        name: s.name,
-                        description: s.description,
-                        exampleQueries: s.triggerPatterns || [],
-                        solutionTemplate: s.solutionTemplate || '',
-                    })
-                }
-            }
-        } catch (err) {
-            console.log(`[L7] learnFromConversation error: ${err}`)
-        }
-    }
-
-    // Record feedback for a skill
-    recordFeedback(skillId: string, wasHelpful: boolean): void {
-        const skill = this.skills.find(s => s.id === skillId)
-        if (skill) {
-            skill.usageCount++
-            // Exponential moving average
-            skill.successRate = skill.successRate * 0.9 + (wasHelpful ? 0.1 : 0)
-            skill.updatedAt = Date.now()
-            this.save()
-        }
-    }
-
-    // Automatically learn from frequent queries
-    learnFromFrequency(queries: Array<{ query: string; response: string; count: number }>): void {
-        for (const { query, response, count } of queries) {
-            if (count >= 5) { // Minimum 5 occurrences
-                const existingSkill = this.findMatchingSkill(query)
-                if (!existingSkill) {
-                    this.synthesizeFromPattern({
-                        name: `Auto: ${query.slice(0, 30)}`,
-                        description: `Automatisch gelernt aus ${count} ähnlichen Anfragen`,
-                        exampleQueries: [query],
-                        solutionTemplate: response,
-                    })
-                }
-            }
-        }
-    }
-
-    private extractPatterns(examples: string[]): string[] {
-        // Simple pattern extraction: find common words
-        const wordCounts = new Map<string, number>()
-
-        for (const example of examples) {
-            const words = example.toLowerCase().split(/\W+/).filter(w => w.length > 3)
-            for (const word of words) {
-                wordCounts.set(word, (wordCounts.get(word) || 0) + 1)
-            }
-        }
-
-        // Words appearing in >50% of examples
-        const threshold = examples.length * 0.5
-        const commonWords = [...wordCounts.entries()]
-            .filter(([, count]) => count >= threshold)
-            .map(([word]) => word)
-
-        if (commonWords.length > 0) {
-            return [commonWords.join('.*')]  // Create regex pattern
-        }
-
-        return examples.map(e => e.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    }
-
-    private load(): void {
-        if (existsSync(this.dataPath)) {
-            try {
-                this.skills = JSON.parse(readFileSync(this.dataPath, 'utf-8'))
-            } catch { /* ignore */ }
-        }
-    }
-
-    private save(): void {
-        const dir = join(this.dataPath, '..')
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        writeFileSync(this.dataPath, JSON.stringify(this.skills, null, 2))
-    }
-
-    getSkills(): LearnedSkill[] {
-        return this.skills
-    }
-
-    getStats() {
-        return {
-            totalSkills: this.skills.length,
-            averageSuccessRate: this.skills.length > 0
-                ? this.skills.reduce((sum, s) => sum + s.successRate, 0) / this.skills.length
-                : 0,
-        }
-    }
 }
 
 // ============================================
@@ -367,16 +166,7 @@ export function getInternalLLM(): any {
 // Global Instances
 // ============================================
 
-let skillSynthesizer: SkillSynthesizer | null = null
 let agentSwarm: AgentSwarm | null = null
-
-export function getSkillSynthesizer(dataDir?: string): SkillSynthesizer {
-    if (!skillSynthesizer) {
-        const dir = dataDir || join(process.cwd(), '.nova-learning')
-        skillSynthesizer = new SkillSynthesizer(dir)
-    }
-    return skillSynthesizer
-}
 
 export function getAgentSwarm(): AgentSwarm {
     if (!agentSwarm) {
@@ -386,9 +176,7 @@ export function getAgentSwarm(): AgentSwarm {
 }
 
 export default {
-    SkillSynthesizer,
     AgentSwarm,
-    getSkillSynthesizer,
     getAgentSwarm,
     setInternalLLM,
     getInternalLLM,

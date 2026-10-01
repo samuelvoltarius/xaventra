@@ -389,7 +389,7 @@ function modulesView() {
 
 function forgeCard(item) {
   const canDecide = item.status === 'proposed'
-  return `<article class="run-card"><div class="card-title"><div><h2>${esc(item.name)}</h2><span class="badge ${item.status === 'active' ? 'good' : item.status === 'rejected' || item.status === 'degraded' ? 'bad' : 'warn'}">${esc(item.status)}</span></div></div><p style="margin-top:12px;color:var(--muted);line-height:1.5">${esc(item.description)}</p><dl class="details"><dt>Hash</dt><dd class="mono">${esc(String(item.codeHash || '').slice(0, 18))}…</dd><dt>Owner</dt><dd>${esc(item.ownerId)}</dd><dt>Dependencies</dt><dd>${esc(item.dependencies?.join(', ') || 'keine')}</dd><dt>Evidence</dt><dd>${item.evidence?.length || 0}</dd><dt>Erstellt</dt><dd>${fmtTime(item.createdAt)}</dd></dl>${item.activationBlockedReason ? `<div class="card" style="margin-top:12px;margin-bottom:0"><p>${esc(item.activationBlockedReason)}</p></div>` : ''}${canDecide ? `<div class="toolbar"><button class="primary" data-forge-action="authorize-sandbox" data-id="${attr(item.id)}">Sandbox freigeben</button><button class="danger-button" data-forge-action="reject" data-id="${attr(item.id)}">Ablehnen</button></div>` : ''}</article>`
+  return `<article class="run-card"><div class="card-title"><div><h2>${esc(item.name)}</h2><span class="badge ${item.status === 'active' ? 'good' : item.status === 'rejected' || item.status === 'degraded' ? 'bad' : 'warn'}">${esc(item.status)}</span></div></div><p style="margin-top:12px;color:var(--muted);line-height:1.5">${esc(item.description)}</p><dl class="details"><dt>Hash</dt><dd class="mono">${esc(String(item.codeHash || '').slice(0, 18))}…</dd><dt>Owner</dt><dd>${esc(item.ownerId)}</dd><dt>Wirkung</dt><dd>${esc(item.manifest?.wirkung || '—')}</dd><dt>Version</dt><dd>${esc(String(item.version || 1))}</dd><dt>Evidence</dt><dd>${item.evidence?.length || 0}</dd><dt>Erstellt</dt><dd>${fmtTime(item.createdAt)}</dd></dl>${item.activationBlockedReason ? `<div class="card" style="margin-top:12px;margin-bottom:0"><p>${esc(item.activationBlockedReason)}</p></div>` : ''}${canDecide ? `<div class="toolbar"><button class="primary" data-forge-action="authorize-sandbox" data-id="${attr(item.id)}">Freigeben</button><button class="danger-button" data-forge-action="reject" data-id="${attr(item.id)}">Ablehnen</button></div>` : ''}</article>`
 }
 
 function enrollmentCard(entry) {
@@ -798,7 +798,7 @@ async function forgeAction(id, action) {
   try {
     await api.post(`/api/desktop/forge/${encodeURIComponent(id)}/${action}`, {})
     await loadBootstrap(); render()
-    toast(action === 'authorize-sandbox' ? 'Sandbox-Prüfung autorisiert; der Skill ist noch nicht aktiv.' : 'Skill-Entwurf abgelehnt.')
+    toast(action === 'authorize-sandbox' ? 'Freigegeben: aktiv wird das Werkzeug nur mit grünen Tests.' : 'Werkzeug abgelehnt.')
   } catch (error) { fail(error) }
 }
 

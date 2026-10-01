@@ -23,7 +23,6 @@ vi.mock('../tools/skill-builder.js', () => skills)
 
 import { handleCommand, type DaemonState } from './slash-commands.js'
 import { answerApprovalCard, createApprovalCard, listApprovalCards } from './approval-cards.js'
-import { createSkillSandboxExecutor, skillCardInput } from './approval-card-sources.js'
 import { registerCardExecutor } from './approval-cards.js'
 
 const state = (): DaemonState => ({
@@ -54,17 +53,3 @@ describe('/patch approve sends the card, never applies', () => {
     })
 })
 
-describe('Skill-Forge card (skill-sandbox)', () => {
-    it('„Ja“ authorizes the sandbox exactly once; a replay does nothing', async () => {
-        const opts = { dataDir: mkdtempSync(join(tmpdir(), 'skill-card-')), ledger: null }
-        registerCardExecutor(createSkillSandboxExecutor())
-        const created = createApprovalCard(skillCardInput({ id: 'sp1', name: 'demo', description: 'd', why: 'w', codeHash: 'a'.repeat(64) }), opts)
-        if (!created.ok) throw new Error(created.reason)
-        expect(created.card.buttons.some(button => button.answer === 'immer')).toBe(false)
-        const token = created.card.buttons.find(button => button.answer === 'ja')!.token
-        expect((await answerApprovalCard(`ac:${token}`, { userId: '111', ownerIds: ['111'] }, opts)).ok).toBe(true)
-        expect((await answerApprovalCard(`ac:${token}`, { userId: '111', ownerIds: ['111'] }, opts)).code).toBe('verbraucht')
-        expect(skills.updateSkillProposalStatus).toHaveBeenCalledTimes(1)
-        expect(skills.updateSkillProposalStatus).toHaveBeenCalledWith('sp1', 'approved', 'nova-self')
-    })
-})

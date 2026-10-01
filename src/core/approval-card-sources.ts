@@ -15,8 +15,8 @@
  * - PATCH_GATE: queued patch proposals -> "Ja" = the one PATCH_GATE chain
  *   (synthesis/patch-gate.ts: owner, single flight, live Main fencing,
  *   NOVA_PATCH_GATE_TOKEN, atomic state; sandbox evidence, signed activation).
- * - Skill-Forge (P9): new skill proposals -> card `skill-sandbox`; "Ja" =
- *   sandbox authorization in skill-builder (its logic stays there).
+ * - Werkzeug-Schmiede (P9): activation cards `werkzeug-*` are registered by
+ *   tools/skill-builder.ts itself.
  *
  * P9 „ein Knopf-Rahmen“: `/patch approve`, `/setup approve` and the Skill-Forge
  * only (re)send these cards (`offerCard`); the old Telegram callbacks
@@ -152,36 +152,6 @@ export function createPatchExecutor(getProposals: () => any[]): CardExecutor {
     }
 }
 
-/**
- * Skill-Forge card (P9): „Ja“ = sandbox authorization of the proposal, „Nein“ =
- * reject. The forge logic itself stays in tools/skill-builder.ts.
- */
-export function createSkillSandboxExecutor(): CardExecutor {
-    const load = async (ref: string) => {
-        const { getSkillProposals, updateSkillProposalStatus } = await import('../tools/skill-builder.js')
-        return { proposal: getSkillProposals(200).find(item => item.id === ref), updateSkillProposalStatus }
-    }
-    return {
-        kind: 'skill-sandbox',
-        impact: 'intern',
-        allowAlways: () => false,
-        async execute(card) {
-            const { proposal, updateSkillProposalStatus } = await load(card.aktion.ref)
-            if (!proposal) return { ok: false, message: `Skill-Vorschlag ${card.aktion.ref} nicht gefunden.` }
-            if (proposal.status !== 'proposed') return { ok: false, message: `Skill-Vorschlag ist bereits ${proposal.status}.` }
-            const updated = updateSkillProposalStatus(proposal.id, 'approved', proposal.ownerId)
-            return updated
-                ? { ok: true, message: `Skill ${proposal.name}: Sandbox freigegeben. Noch nicht aktiv — Sandbox, Benchmark, Canary und die abschließende Owner-Freigabe fehlen.` }
-                : { ok: false, message: `Sandbox-Freigabe für ${proposal.name} fehlgeschlagen.` }
-        },
-        async reject(card) {
-            const { proposal, updateSkillProposalStatus } = await load(card.aktion.ref)
-            if (!proposal || proposal.status !== 'proposed') return { ok: false, message: 'Skill-Vorschlag nicht mehr offen.' }
-            const updated = updateSkillProposalStatus(proposal.id, 'rejected', proposal.ownerId)
-            return { ok: Boolean(updated), message: updated ? `Skill ${proposal.name} abgelehnt.` : 'Ablehnen fehlgeschlagen.' }
-        },
-    }
-}
 
 // ---------------------------------------------------------------------------
 // card builders (one text per source; used by the sync and by offerCard)
@@ -205,14 +175,6 @@ export function patchCardInput(patch: any): NewCardInput {
     }
 }
 
-export function skillCardInput(proposal: { id: string; name: string; description?: string; why?: string; codeHash?: string }): NewCardInput {
-    return {
-        art: 'skill-sandbox', titel: `Skill-Forge: ${short(proposal.name, 80)} in der Sandbox prüfen?`,
-        beleg: `${short(proposal.why || '', 300)}${proposal.codeHash ? ` · Code ${proposal.codeHash.slice(0, 16)}` : ''}`,
-        vorschlag: `${short(proposal.description || '', 300)} — nur Sandbox; aktiv erst nach Benchmark, Canary und abschließender Owner-Freigabe.`,
-        aktion: { kind: 'skill-sandbox', ref: proposal.id }, quelle: 'skill-forge', dedupeKey: `skill-sandbox:${proposal.id}`, ablaufMs: 3 * DAY_MS,
-    }
-}
 
 /**
  * P9 „ein Knopf-Rahmen“: create the card (or find the open one) and have the
@@ -236,7 +198,6 @@ export function registerBuiltinCardExecutors(deps: BuiltinExecutorDeps): void {
     registerCardExecutor(createSelfHealExecutor(deps.selfHealDataDir))
     registerCardExecutor(createPeerSelfHealExecutor())
     registerCardExecutor(createPatchExecutor(deps.patchProposals))
-    registerCardExecutor(createSkillSandboxExecutor())
     builtinsRegistered = true
 }
 

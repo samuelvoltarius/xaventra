@@ -541,7 +541,7 @@
     {
       "name": "build_skill",
       "category": "other",
-      "description": "Erstellt einen reviewbaren Nova-Studio-Forge-Vorschlag. Generierter Code wird nie direkt aktiviert; Sandbox, Benchmark, Canary und Owner-Freigabe sind Pflicht.",
+      "description": "Baut ein neues Werkzeug in der Werkzeug-Schmiede: ESM-Code (export default async function (params, ctx)), Manifest (net-Hosts, fs-Pfade, wirkung lesend|schreibend|extern|physisch) und Testfälle als Daten. Läuft nur in der Sandbox; lesend + Tests grün wird selbst aktiv, sonst Freigabe-Karte.",
       "parameters": [
         {
           "name": "name",
@@ -564,12 +564,17 @@
           "required": true
         },
         {
-          "name": "parameters",
+          "name": "manifest",
           "type": "string",
-          "required": false
+          "required": true
         },
         {
-          "name": "dependencies",
+          "name": "tests",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "parameters",
           "type": "string",
           "required": false
         }
@@ -804,36 +809,9 @@
       ]
     },
     {
-      "name": "create_runtime_tool",
-      "category": "system",
-      "description": "Kompatibilitätsname für einen Nova-Studio-Forge-Vorschlag. Keine direkte Laufzeitregistrierung und keine automatische Dependency-Installation.",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "description",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "code",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "test_input",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
       "name": "create_skill",
       "category": "learning",
-      "description": "Erzeugt einen Skill-Entwurf und legt ihn in Nova Studio Skill Forge ab. Keine direkte Installation oder Aktivierung.",
+      "description": "Lässt das lokale Lern-Modell aus einer Beschreibung ein Werkzeug bauen (Code, Manifest, Tests) und prüft es in der Werkzeug-Schmiede. Kein Cloud-Modell.",
       "parameters": [
         {
           "name": "name",
@@ -849,28 +827,6 @@
           "name": "examples",
           "type": "string",
           "required": false
-        }
-      ]
-    },
-    {
-      "name": "create_tool",
-      "category": "other",
-      "description": "Legt einen reviewbaren Nova-Studio-Forge-Vorschlag an. Das Tool wird nicht direkt registriert oder ausgeführt.",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "description",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "code",
-          "type": "string",
-          "required": true
         }
       ]
     },
@@ -901,7 +857,7 @@
     {
       "name": "delete_skill",
       "category": "learning",
-      "description": "Entfernt ein bereits vorhandenes Legacy-Custom-Tool. Forge-Vorschläge werden über den Reifungsprozess abgelehnt.",
+      "description": "Schaltet ein Werkzeug der Werkzeug-Schmiede ab (nichts wird gelöscht).",
       "parameters": [
         {
           "name": "name",
@@ -1648,45 +1604,6 @@
       ]
     },
     {
-      "name": "learn_workflow_skill",
-      "category": "learning",
-      "description": "Erstellt aus validierten Beispielen ein internes L7-Workflow-Muster. Erzeugt keinen ausführbaren Code.",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "description",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "examples",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "solution",
-          "type": "string",
-          "required": true
-        }
-      ]
-    },
-    {
-      "name": "list_custom_tools",
-      "category": "other",
-      "description": "Listet alle selbst erstellten Tools auf",
-      "parameters": []
-    },
-    {
-      "name": "list_custom_tools",
-      "category": "system",
-      "description": "Zeigt alle Tools die Nova selbst erstellt hat (aus .nova-tools/).",
-      "parameters": []
-    },
-    {
       "name": "list_directory",
       "category": "file",
       "description": "Listet Dateien und Ordner in einem Verzeichnis auf",
@@ -1749,7 +1666,7 @@
     {
       "name": "list_skills",
       "category": "learning",
-      "description": "Zeigt aktive Legacy-Custom-Tools und inerte Nova-Studio-Forge-Vorschläge.",
+      "description": "Zeigt die Werkzeuge der Werkzeug-Schmiede mit Status, Wirkung, Version und Zählern.",
       "parameters": []
     },
     {

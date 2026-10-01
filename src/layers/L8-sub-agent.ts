@@ -33,75 +33,13 @@ class SubAgentManager extends EventEmitter {
     private activeTasks: Map<string, SubAgentTask> = new Map()
     private maxConcurrent: number = 2
 
-    // ============================================
-    // LEARNING CACHE - Remember solutions for errors
-    // ============================================
-    private learnedSolutions: Map<string, string> = new Map()
-    private readonly SOLUTIONS_FILE = '.nova-data/learned-solutions.json'
-
     /**
-     * Load learned solutions from disk
+     * Kein eigener Lösungs-Cache mehr (P9): verifizierte Lösungen liegen nur im
+     * einen Prozedur-Speicher (learning/procedure-store.ts). Die frühere Datei
+     * `.nova-data/learned-solutions.json` wurde nie beschrieben.
      */
-    private loadLearnedSolutions(): void {
-        try {
-            if (existsSync(this.SOLUTIONS_FILE)) {
-                const data = JSON.parse(readFileSync(this.SOLUTIONS_FILE, 'utf-8'))
-                this.learnedSolutions = new Map(Object.entries(data))
-                console.log(`[L8 Learning] Loaded ${this.learnedSolutions.size} learned solutions`)
-            }
-        } catch (err) {
-            console.log(`[L8 Learning] Could not load solutions: ${err}`)
-        }
-    }
-
-    /**
-     * Save learned solutions to disk
-     */
-    private saveLearnedSolutions(): void {
-        try {
-            const dir = '.nova-data'
-            if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-            const data = Object.fromEntries(this.learnedSolutions)
-            writeFileSync(this.SOLUTIONS_FILE, JSON.stringify(data, null, 2))
-            console.log(`[L8 Learning] Saved ${this.learnedSolutions.size} solutions`)
-        } catch (err) {
-            console.log(`[L8 Learning] Could not save solutions: ${err}`)
-        }
-    }
-
-    /**
-     * Normalize error for matching (remove variable parts)
-     */
-    private normalizeError(error: string): string {
-        return error
-            .replace(/['"]/g, '')           // Remove quotes
-            .replace(/\d+/g, 'N')            // Replace numbers
-            .replace(/\s+/g, ' ')            // Normalize whitespace
-            .slice(0, 100)                   // Limit length
-            .toLowerCase()
-            .trim()
-    }
-
-    /**
-     * Learn a solution for an error
-     */
-    learnSolution(error: string, solution: string): void {
-        const key = this.normalizeError(error)
-        this.learnedSolutions.set(key, solution)
-        console.log(`[L8 Learning] 📚 Learned solution for: "${key.slice(0, 50)}"`)
-        this.saveLearnedSolutions()
-    }
-
-    /**
-     * Get a known solution for an error (if we've seen it before)
-     */
-    getKnownSolution(error: string): string | null {
-        const key = this.normalizeError(error)
-        const solution = this.learnedSolutions.get(key)
-        if (solution) {
-            console.log(`[L8 Learning] 💡 Found known solution for: "${key.slice(0, 50)}"`)
-        }
-        return solution || null
+    getKnownSolution(_error: string): string | null {
+        return null
     }
 
     // ============================================
@@ -211,7 +149,6 @@ class SubAgentManager extends EventEmitter {
 
     constructor() {
         super()
-        this.loadLearnedSolutions()
         console.log('[L8 SubAgent] Manager initialized with safety guards')
     }
 

@@ -725,21 +725,19 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             }
         } catch { /* L7 not critical */ }
 
-        // === L17 AUTONOMOUS LEARNING: Check for known solutions ===
+        // === Prozeduren (ein Speicher, learning/procedure-store.ts): bekannte Lösung ===
         let l17KnownSolution: string | null = null
         try {
             if (!backgroundLearningEnabled) throw new Error('isolated learning recall')
-            const { recallSolution } = await import('../layers/L17-autonomous-learning.js')
-            const known = recallSolution(content, userId)
-            if (known) {
+            const { getProcedureStore } = await import('../learning/procedure-store.js')
+            const known = getProcedureStore().recall(content, userId)
+            const block = known ? getProcedureStore().promptBlock(content, userId) : null
+            if (known && block) {
                 l17KnownSolution = known.solution
-                messages.push({
-                    role: 'system',
-                    content: `## 🧠 Bekannte Lösung für ähnliche Aufgabe:\n${known.solution}\n\nNutze diese als Ausgangspunkt, passe sie aber an die aktuelle Anfrage an.`
-                })
-                console.log(`[L17] 💡 Injected known solution: ${known.problem.slice(0, 60)}`)
+                messages.push({ role: 'system', content: block })
+                console.log(`[Prozeduren] Bekannte Lösung geladen: ${known.problem.slice(0, 60)}`)
             }
-        } catch { /* L17 not critical */ }
+        } catch { /* procedures are not critical */ }
 
         // Hard-abort guard: bail before even starting the LLM call if already cancelled
         if (abortSignal?.aborted) {
@@ -1107,13 +1105,6 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         correctionDetector = await import('../core/correction-detector.js')
                     } catch { /* not available */ }
                 }
-
-                // L17: Start learning session for this goal
-                try {
-                    if (!backgroundLearningEnabled) throw new Error('isolated learning session')
-                    const { getLearner } = await import('../layers/L17-autonomous-learning.js')
-                    getLearner().startSession(content.slice(0, 200))
-                } catch { /* L17 not critical */ }
 
                 for (const call of response.toolCalls) {
                     const callId = nextToolEvidenceId(call)

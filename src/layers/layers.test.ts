@@ -352,20 +352,11 @@ describe('L0 Health Monitor', async () => {
 // ============================================
 
 describe('L7 Learning', async () => {
-    const { SkillSynthesizer } = await import('./L7-learning.js')
+    const { getAgentSwarm } = await import('./L7-learning.js')
 
-    it('SkillSynthesizer: creates instance', () => {
-        const synth = new SkillSynthesizer(testPath('nova-test-skills'))
-        expect(synth).toBeDefined()
+    it('getAgentSwarm: returns singleton (corrections: governance, skills: routine skills)', () => {
+        expect(getAgentSwarm()).toBe(getAgentSwarm())
     })
-
-    it('SkillSynthesizer: getStats returns valid structure', () => {
-        const synth = new SkillSynthesizer(testPath('nova-test-skills'))
-        const stats = synth.getStats()
-        expect(typeof stats.totalSkills).toBe('number')
-        expect(typeof stats.averageSuccessRate).toBe('number')
-    })
-
 })
 
 // ============================================

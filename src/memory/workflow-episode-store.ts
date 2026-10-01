@@ -109,7 +109,6 @@ export class WorkflowEpisodeStore {
         const entries = await pullSharedMemory({ scope: SHARED_SCOPE, limit: 500 })
         let imported = 0
         let tombstonesChanged = false
-        const importedEpisodes: WorkflowEpisode[] = []
         for (const entry of entries) {
             if (entry.metadata?.format !== 'nova-workflow-episode-tombstone-v1') continue
             try {
@@ -134,17 +133,12 @@ export class WorkflowEpisodeStore {
                 const expected = createHash('sha256').update(`${episode.userId}\0${episode.runId}`).digest('hex').slice(0, 24)
                 if (episode.id !== expected || episode.evidenceRef !== `outcome:${episode.runId}`) continue
                 this.episodes.push(episode)
-                importedEpisodes.push(episode)
                 imported++
             } catch { /* malformed shared episode is ignored */ }
         }
         if (imported > 0) {
             this.episodes = this.episodes.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-500)
             this.persist()
-            try {
-                const { getPersonalSkillCompiler } = await import('../learning/personal-skill-compiler.js')
-                for (const episode of importedEpisodes) getPersonalSkillCompiler().observe(episode)
-            } catch { /* proposals are a derived projection and can rebuild later */ }
         }
         if (tombstonesChanged && imported === 0) this.persist()
         return imported

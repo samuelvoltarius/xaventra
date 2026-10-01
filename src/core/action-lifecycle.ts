@@ -10,7 +10,7 @@ export interface ActionLifecycleSnapshot {
     failures: string[]
 }
 
-const DISCOVERY = new Set(['nova_capabilities', 'find_capability', 'load_skill_pack', 'list_custom_tools'])
+const DISCOVERY = new Set(['nova_capabilities', 'find_capability', 'load_skill_pack', 'list_skills'])
 const RESOLUTION = new Set(['resolve_capability', 'build_skill', 'create_skill', 'load_skills'])
 
 /** A failed catalog lookup is data for the model, not a reason to stop the

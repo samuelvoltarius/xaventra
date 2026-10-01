@@ -162,7 +162,7 @@ Meine Daten liegen in: \`${cwd}/.nova-data/\`
 | Journal | \`.nova-data/memories/journal/YYYY-MM-DD.md\` | (automatisch) |
 | Knowledge | \`.nova-data/knowledge/\` | \`knowledge_store\` |
 | LanceDB Vektoren | \`.nova-data/lancedb/\` | \`remember\` / \`recall\` |
-| Custom Tools | \`.nova-tools/\` | \`create_tool\` |
+| Werkzeuge (Schmiede) | \`.nova-data/forge/werkzeuge.json\` | \`build_skill\` |
 | Missions | \`.nova-data/missions.json\` | \`start_mission\` |
 | Config | \`xaventra.config.json\` | (manuell) |
 
