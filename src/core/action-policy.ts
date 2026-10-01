@@ -40,6 +40,16 @@
  * Arten und TRUST_NIE_ARTEN (Release, Patch, VM entfernen/stoppen). Ein
  * „Nein“, ein Fehlschlag oder ein Rückweg setzt die Serie zurück und nimmt die
  * Hochstufung zurück; `resetTrust(kind)` („das wieder fragen“) ebenso.
+ *
+ * P9 (eine Erlaubnis-Ablage): `trust.json` ist der EINE Speicher für dauerhafte
+ * Erlaubnisse. Neben der Hochstufung einer ganzen Art (Leiter) hält er
+ * ausdrückliche Owner-Erlaubnisse für ein einzelnes Subjekt
+ * (`grantStanding(art, subjekt)`: Karte „Immer erlauben“, `/setup allow <id>`;
+ * früher `install-policy.json`, wirksam nur im YOLO-Modus). Kartenarten werden
+ * über `policyKindForCard` auf Policy-Arten abgebildet (`install` →
+ * `install-katalog`, `release-promote` → `release-ausrollen`, `patch` →
+ * `patch-anwenden`), damit jedes Karten-Ja die Leiter füttert. Dieselben
+ * Ausschlüsse gelten für beides (`isStandingExcluded`).
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -424,14 +434,18 @@ interface TrustStats {
     resetAt?: string
     resetReason?: string
 }
-interface TrustFile { version: 1; kinds: Record<string, TrustStats> }
+/** Ausdrückliche dauerhafte Owner-Erlaubnis für ein Subjekt einer Art (z. B. install-katalog / ffmpeg). */
+export interface StandingGrant { kind: string; subject: string; grantedAt: string; by: string }
+interface TrustFile { version: 1; kinds: Record<string, TrustStats>; erlaubt?: Record<string, StandingGrant> }
 export interface TrustOptions { dataDir?: string; now?: () => number }
 
 const trustFile = (opts: TrustOptions) => join(opts.dataDir || getNovaDataDir(), 'action-policy', 'trust.json')
 function loadTrust(opts: TrustOptions): TrustFile {
     try {
         const raw = JSON.parse(readFileSync(trustFile(opts), 'utf8'))
-        return raw?.version === 1 && raw.kinds && typeof raw.kinds === 'object' ? raw : { version: 1, kinds: {} }
+        if (!(raw?.version === 1 && raw.kinds && typeof raw.kinds === 'object')) return { version: 1, kinds: {} }
+        if (raw.erlaubt !== undefined && (typeof raw.erlaubt !== 'object' || raw.erlaubt === null || Array.isArray(raw.erlaubt))) delete raw.erlaubt
+        return raw
     } catch { return { version: 1, kinds: {} } }
 }
 function saveTrust(data: TrustFile, opts: TrustOptions): void {
@@ -525,6 +539,96 @@ export function resetTrust(kindName: string, opts: TrustOptions = {}, reason = '
     return { kind: key, wasPromoted }
 }
 
+// ---------------------------------------------------------------------------
+// P9: Kartenart → Policy-Art, dauerhafte Erlaubnisse (eine Ablage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Abbildung Kartenart (`aktion.kind`) → Policy-Art. `null` = das Karten-Ja führt
+ * selbst nichts aus oder die Ausführung zählt schon an anderer Stelle (keine
+ * Doppelzählung). Nicht gelistete Arten heißen gleich (z. B. `pve-start`,
+ * `ollama-pull`). Geprüft gegen alle registrierten Kartenarten
+ * (approval-card-policy-kinds.test.ts).
+ */
+export const KARTEN_POLICY_ARTEN: Readonly<Record<string, string | null>> = Object.freeze({
+    'install': 'install-katalog',
+    'release-promote': 'release-ausrollen',
+    'patch': 'patch-anwenden',
+    // Missionen zählen den Schritt mit dessen eigener Art (missions.ts recordActionOutcome).
+    'mission-schritt': null,
+    // vLLM-Wechsel zählt sein Ergebnis selbst (local-model-control.ts) und ist NUR_EINZELNES_JA.
+    'vllm-wechsel': null,
+    // Ja/Nein wird nur am Vorschlag vermerkt; es gibt keinen Ausführungsweg.
+    'self-heal': null,
+    'self-heal-peer': null,
+    // Annehmen eines Gedankens/einer Verantwortung/Delegation/Skill-Sandbox ist keine Aktion der Leiter.
+    'gedanke': null,
+    'verantwortung': null,
+    'delegation': null,
+    'skill-sandbox': null,
+})
+
+export function policyKindForCard(cardKind: unknown): string | null {
+    const key = normalize(cardKind)
+    if (!KIND_PATTERN.test(key)) return null
+    return Object.prototype.hasOwnProperty.call(KARTEN_POLICY_ARTEN, key) ? KARTEN_POLICY_ARTEN[key] : key
+}
+
+/**
+ * Feste Ausschlüsse für jede dauerhafte Erlaubnis (Karte „Immer erlauben“,
+ * `/setup allow`, Leiter): TRUST_NIE_ARTEN, NUR_EINZELNES_JA, Löschen/
+ * Entfernen/Zurückrollen/Geld, Nie-Liste/L3, physisch, extern.
+ */
+export function isStandingExcluded(kindName: unknown): boolean {
+    const key = normalize(kindName)
+    if (!KIND_PATTERN.test(key) || TRUST_NIE_ARTEN.has(key) || NUR_EINZELNES_JA.has(key) || TRUST_NIE_MUSTER.test(key)) return true
+    if (isNieAktionsart(key) || isPhysischOderExtern(key)) return true
+    const verdict = evaluateAction({ kind: key, origin: 'code' })
+    return verdict.level === 'L3' || verdict.impact !== 'intern'
+}
+
+const SUBJECT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$/
+const grantKey = (kind: string, subject: string) => `${kind}|${subject}`
+
+/** Owner: „Immer erlauben“ für genau dieses Subjekt. Die Ausschlüsse gelten fest. */
+export function grantStanding(kindName: string, subject: string, by: string, opts: TrustOptions = {}): { ok: boolean; message: string } {
+    const key = normalize(kindName)
+    if (isStandingExcluded(key)) return { ok: false, message: `„${key}“ bekommt nie eine dauerhafte Erlaubnis (physisch/extern/Geld/Löschen/Release/Patch/Einzel-Ja).` }
+    if (!SUBJECT_PATTERN.test(String(subject ?? ''))) return { ok: false, message: 'Ungültiges Subjekt für eine dauerhafte Erlaubnis.' }
+    const data = loadTrust(opts)
+    const at = new Date((opts.now || Date.now)()).toISOString()
+    data.erlaubt = { ...(data.erlaubt || {}), [grantKey(key, subject)]: { kind: key, subject, grantedAt: at, by: String(by || 'owner').slice(0, 120) } }
+    saveTrust(data, opts)
+    return { ok: true, message: `${subject}: dauerhaft erlaubt (${key}).` }
+}
+
+/** „Das wieder fragen“ für ein Subjekt. */
+export function revokeStanding(kindName: string, subject: string, opts: TrustOptions = {}): { ok: boolean; message: string; hadGrant: boolean } {
+    const key = normalize(kindName)
+    const data = loadTrust(opts)
+    const hadGrant = Boolean(data.erlaubt?.[grantKey(key, subject)])
+    if (hadGrant) {
+        delete data.erlaubt![grantKey(key, subject)]
+        saveTrust(data, opts)
+    }
+    return { ok: true, message: `${subject}: wird wieder gefragt (${key}).`, hadGrant }
+}
+
+/** Gilt eine dauerhafte Erlaubnis — ausdrücklich für dieses Subjekt oder über die Leiter für die ganze Art? */
+export function hasStanding(kindName: string, subject: string | undefined, opts: TrustOptions = {}): boolean {
+    const key = normalize(kindName)
+    if (isStandingExcluded(key)) return false
+    try {
+        if (subject && loadTrust(opts).erlaubt?.[grantKey(key, subject)]) return true
+        return isTrustPromoted(key, opts)
+    } catch { return false }
+}
+
+/** Alle ausdrücklichen Erlaubnisse (für /arbeit und /setup katalog). */
+export function standingGrants(opts: TrustOptions = {}): StandingGrant[] {
+    return Object.values(loadTrust(opts).erlaubt || {}).filter(grant => !isStandingExcluded(grant.kind))
+}
+
 /** true, wenn diese Art durch die Vertrauensleiter selbst ausgeführt werden darf. */
 export function isTrustPromoted(kindName: string, opts: TrustOptions = {}): boolean {
     const key = normalize(kindName)
@@ -564,9 +668,14 @@ export function evaluateActionWithTrust(request: ActionRequest, options: PolicyO
     if (effects.some(effect => !(L0_EFFECTS.has(effect) || L1_EFFECTS.has(effect) || (L2_EFFECTS.has(effect) && !/^(physisch|extern):/.test(effect))))) return verdict
     if (request?.node && options.localNodeId && normalize(request.node) !== normalize(options.localNodeId)) return verdict
     let promoted = false
-    try { promoted = isTrustPromoted(String(request?.kind || ''), options) } catch { promoted = false }
-    if (!promoted) return verdict
-    return { ...verdict, level: 'L1', decision: 'auto', trusted: true, reason: `${verdict.reason}; Vertrauensleiter: ${TRUST_AUTO_PROMOTE_AFTER}× Ja ohne Rückweg → selbst` }
+    let granted = false
+    try {
+        promoted = isTrustPromoted(String(request?.kind || ''), options)
+        granted = !promoted && typeof request?.target === 'string' && request.target !== '' && hasStanding(String(request.kind), request.target, options)
+    } catch { promoted = false; granted = false }
+    if (!promoted && !granted) return verdict
+    const why = promoted ? `Vertrauensleiter: ${TRUST_AUTO_PROMOTE_AFTER}× Ja ohne Rückweg → selbst` : `dauerhaft erlaubt für ${String(request.target).slice(0, 60)} → selbst`
+    return { ...verdict, level: 'L1', decision: 'auto', trusted: true, reason: `${verdict.reason}; ${why}` }
 }
 
 /** Anzahl erfolgreicher Ausführungen ohne Rückweg in Folge. */

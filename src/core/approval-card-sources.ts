@@ -3,8 +3,11 @@
  *
  * Sources (read on the Main, every minute):
  * - Stufe 2: install queue items `queued` on the host-agent route
- *   -> "Ja" = approveQueuedInstall (signed ticket), "Immer erlauben" =
- *   setApprovalLevel('erlauben') + the same approval.
+ *   -> "Ja" = approveQueuedInstall (signed owner ticket), "Immer erlauben" =
+ *   the same approval plus a standing grant for this catalog entry in the one
+ *   permission store (trust.json, written by answerApprovalCard). Entries with
+ *   a standing permission are installed by `runStandingInstalls` before any
+ *   card is created (signed as 'policy:vertrauensleiter').
  * - Stufe 3: open self-heal proposals (local `self-heal/proposals.json` and
  *   worker reports carried by the signed mesh summary) -> "Ja"/"Nein" only
  *   records the decision on the proposal; there is no restart executor, so
@@ -22,7 +25,7 @@ import {
     cardKeyboard, createApprovalCard, formatCardText, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
     registerCardExecutor, type ApprovalCard, type CardExecutor, type CardStoreOptions,
 } from './approval-cards.js'
-import { approveQueuedInstall, loadInstallQueue, setApprovalLevel, type InstallQueueDeps } from '../install/install-queue.js'
+import { approveQueuedInstall, loadInstallQueue, type InstallQueueDeps } from '../install/install-queue.js'
 import { readHealProposals, sanitizeSelfHealSummary, setHealProposalStatus, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 
 const DAY_MS = 24 * 60 * 60_000
@@ -62,20 +65,18 @@ export function createInstallExecutor(getDeps: () => InstallQueueDeps): CardExec
     return {
         kind: 'install',
         impact: 'intern',
-        // An existing standing permission: catalog level 'erlauben' (takes effect in YOLO mode only).
+        // A standing permission is meaningful per catalog entry (P9: stored in trust.json).
         allowAlways: () => true,
-        async execute(card, answer, ctx) {
+        standingSubject: card => proposal(card)?.catalogId ?? null,
+        async execute(card, _answer, ctx) {
             const deps = getDeps()
             const approver = { permission: 'owner', principalId: ctx.decidedBy, channel: 'telegram' }
-            let note = ''
-            if (answer === 'immer') {
-                const item = proposal(card)
-                if (!item) return { ok: false, message: `Kein Vorschlag ${card.aktion.ref} in der Warteschlange.` }
-                const level = setApprovalLevel(item.catalogId, 'erlauben', approver, deps)
-                note = level.ok ? ` (${item.catalogId}: Stufe erlauben — gilt nur im YOLO-Modus automatisch)` : ` (Stufe nicht geändert: ${level.message})`
-            }
             const result = await approveQueuedInstall(card.aktion.ref, approver, deps)
-            return { ok: result.ok, message: `${result.message}${note}` }
+            // The trust ladder counts the real outcome on the host, not the accepted ticket.
+            const completion = result.ok && result.completion
+                ? result.completion.then(item => ({ ok: item?.status === 'done', rolledBack: item?.status === 'rolled-back' }))
+                : undefined
+            return { ok: result.ok, message: result.message, ...(completion ? { completion } : {}) }
         },
         isStillOpen(card) {
             try { return proposal(card)?.status === 'queued' } catch { return true }
@@ -366,6 +367,11 @@ export async function runApprovalCardTick(): Promise<void> {
         }
         const peerList = await peers()
         maintainApprovalCards()
+        // P9: entries with a standing permission (trust.json) are installed before any card is made.
+        try {
+            const { runStandingInstalls } = await import('../install/install-queue.js')
+            await runStandingInstalls(defaultInstallDeps())
+        } catch (error) { console.warn(`[Knopf-Karten] Dauer-Erlaubnis-Installationen: ${short(error, 160)}`) }
         syncApprovalCardsFromSources({ dataDir: getNovaDataDir(), installDeps: defaultInstallDeps(), patchProposals: () => getPatchProposals(200), peers: () => peerList, nodeId: getLocalNodeId() })
         const { getTelegramAdapter } = await import('../channels/telegram.js')
         const tg = getTelegramAdapter()

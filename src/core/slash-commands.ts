@@ -3826,7 +3826,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
 /setup queue — Warteschlange und Ergebnisse
 /setup approve <iq-id> — Owner-Freigabe: Ticket an den Host-Agenten
 /setup rollback <iq-id> — Rückweg einer abgeschlossenen Installation
-/setup allow|ask <id> — Freigabestufe erlauben (nur YOLO-Pfad) / fragen
+/setup allow|ask <id> — dauerhaft erlauben (ohne Rückfrage installieren, signiert als Vertrauensleiter) / wieder fragen
 
 Freie Befehle werden nie ausgeführt.`
             }

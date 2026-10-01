@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { approveQueuedInstallByTrust, proposeCatalogInstall, type InstallQueueDeps, type InstallTargetNode } from './install-queue.js'
+import { approveQueuedInstallByTrust, loadInstallQueue, proposeCatalogInstall, runStandingInstalls, type InstallQueueDeps, type InstallTargetNode } from './install-queue.js'
+import { grantStanding, revokeStanding } from '../core/action-policy.js'
 
 // The trust ladder may install from the catalog on its own (Alfred 01.10.:
 // selbstständig) — but it signs as what it is, never as the owner, and only
@@ -27,17 +28,41 @@ function setup() {
 describe('Installation über die Vertrauensleiter', () => {
     it('nicht hochgestuft: kein Ticket', async () => {
         const { deps, host, proposal } = setup()
-        const result = await approveQueuedInstallByTrust(proposal.id, deps, { isPromoted: () => false })
+        const result = await approveQueuedInstallByTrust(proposal.id, deps, { isAllowed: () => false })
         expect(result.ok).toBe(false)
         expect(host.execute).not.toHaveBeenCalled()
     })
 
     it('hochgestuft: Ticket signiert als policy:vertrauensleiter, nie als owner', async () => {
         const { deps, host, proposal } = setup()
-        const result = await approveQueuedInstallByTrust(proposal.id, deps, { isPromoted: kind => kind === 'install-katalog' })
+        const result = await approveQueuedInstallByTrust(proposal.id, deps, { isAllowed: kind => kind === 'install-katalog' })
         expect(result.ok).toBe(true)
         expect(host.execute).toHaveBeenCalledTimes(1)
         expect(host.execute.mock.calls[0][0].payload.approvedBy).toBe('policy:vertrauensleiter')
+    })
+
+    it('P9: echte Ablage — Erlaubnis gilt nur für genau diesen Katalog-Eintrag, „fragen“ nimmt sie zurück', async () => {
+        const { deps, host, proposal } = setup()
+        grantStanding('install-katalog', 'playwright-chromium', 'owner:alfred', { dataDir: deps.dataDir })
+        expect((await approveQueuedInstallByTrust(proposal.id, deps)).ok).toBe(false)
+        grantStanding('install-katalog', 'ffmpeg', 'owner:alfred', { dataDir: deps.dataDir })
+        revokeStanding('install-katalog', 'ffmpeg', { dataDir: deps.dataDir })
+        expect((await approveQueuedInstallByTrust(proposal.id, deps)).ok).toBe(false)
+        expect(host.execute).not.toHaveBeenCalled()
+        grantStanding('install-katalog', 'ffmpeg', 'owner:alfred', { dataDir: deps.dataDir })
+        expect((await approveQueuedInstallByTrust(proposal.id, deps)).ok).toBe(true)
+        expect(host.execute.mock.calls[0][0].payload).toMatchObject({ approvedBy: 'policy:vertrauensleiter', approval: 'erlauben' })
+    })
+
+    it('P9: runStandingInstalls installs only entries with standing permission', async () => {
+        const { deps, host } = setup()
+        const other = proposeCatalogInstall('playwright-chromium', spark, deps, 'scan').proposal!
+        grantStanding('install-katalog', 'ffmpeg', 'owner:alfred', { dataDir: deps.dataDir })
+        const results = await runStandingInstalls(deps)
+        expect(results).toHaveLength(1)
+        expect(host.execute).toHaveBeenCalledTimes(1)
+        expect(host.execute.mock.calls[0][0].payload.catalogId).toBe('ffmpeg')
+        expect(loadInstallQueue(deps).find(item => item.id === other.id)?.status).toBe('queued')
     })
 
     it('Missions-Ausführer gibt die Vertrauensleiter nie als Owner aus', () => {

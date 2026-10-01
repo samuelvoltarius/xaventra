@@ -19,6 +19,12 @@
  *   executor can be answered, but "Ja" runs nothing.
  * - Every answer is recorded in the Outcome-Ledger format
  *   (`.nova-data/outcome-ledger/decisions/`, event `approval.recorded`).
+ * - P9: every answer feeds the ONE permission store (`action-policy/trust.json`)
+ *   under the card's policy kind (`policyKindForCard`): an executed „Ja“ counts
+ *   for the trust ladder (after the real outcome, when the executor reports a
+ *   `completion`), „Nein“ resets it, „Immer erlauben“ stores a standing grant
+ *   for the executor's `standingSubject`. The fixed exclusions
+ *   (`isStandingExcluded`) also decide whether „Immer erlauben“ exists at all.
  *
  * API for other modules (e.g. the planner):
  *   registerCardExecutor({ kind, execute, reject?, allowAlways?, isStillOpen?, impact? })
@@ -40,7 +46,10 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
-import { isNieAktionsart, isNurEinzelnesJa, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt } from './action-policy.js'
+import {
+    grantStanding, isNieAktionsart, isNurEinzelnesJa, isStandingExcluded, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt, policyKindForCard,
+    recordActionOutcome, recordOwnerAnswer,
+} from './action-policy.js'
 
 export const CARD_ANSWERS = ['ja', 'nein', 'spaeter', 'immer'] as const
 export type CardAnswer = typeof CARD_ANSWERS[number]
@@ -100,13 +109,20 @@ export interface NewCardInput {
     wichtigkeit?: 'hoch' | 'normal'
 }
 
-export interface CardExecutionResult { ok: boolean; message: string }
+export interface CardExecutionResult {
+    ok: boolean
+    message: string
+    /** The real outcome when the work continues after the answer (e.g. an install on the host); the trust ladder waits for it. */
+    completion?: Promise<{ ok: boolean; rolledBack?: boolean }>
+}
 export interface CardDecisionContext { decidedBy: string; userId: string }
 export interface CardExecutor {
     kind: string
     impact?: CardImpact
-    /** true only where an existing standing-permission switch exists (e.g. install level 'erlauben'). */
+    /** true only where a standing permission is meaningful for this kind (e.g. one catalog entry). */
     allowAlways?: (card: ApprovalCard) => boolean
+    /** P9: what „Immer erlauben“ covers (e.g. the catalog id); stored in trust.json. Default: the action ref. */
+    standingSubject?: (card: ApprovalCard) => string | null | undefined
     execute(card: ApprovalCard, answer: 'ja' | 'immer', ctx: CardDecisionContext): Promise<CardExecutionResult>
     reject?(card: ApprovalCard, ctx: CardDecisionContext): Promise<CardExecutionResult>
     /** false when the underlying proposal was settled elsewhere (e.g. /setup approve). */
@@ -210,6 +226,9 @@ function alwaysAllowed(card: ApprovalCard): boolean {
     if (card.wirkung !== 'intern') return false
     // Fixed in code: some kinds only ever run with a single "Ja" (e.g. vllm-wechsel).
     if (isNurEinzelnesJa(card.aktion?.kind) || isNurEinzelnesJa(card.art)) return false
+    // P9: the same exclusions as the trust ladder, on the card's policy kind.
+    const policyKind = policyKindForCard(card.aktion?.kind)
+    if (!policyKind || isStandingExcluded(policyKind)) return false
     const executor = executors.get(card.aktion.kind)
     try { return executor?.allowAlways?.(card) === true } catch { return false }
 }
@@ -450,12 +469,31 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
     const decided = consume({ status, answer: button.answer, decidedAt, decidedBy })
     const executor = executors.get(card.aktion.kind)
     const ctx: CardDecisionContext = { decidedBy, userId: String(presser.userId).trim() }
+    const policyKind = policyKindForCard(card.aktion.kind)
+    const trustOpts = { dataDir: opts.dataDir, now: opts.now }
+    let standingNote = ''
+    if (button.answer === 'immer' && policyKind) {
+        // P9: the one permission store. The grant is the owner's decision, made before the run.
+        let subject: string | null | undefined
+        try { subject = executor?.standingSubject ? executor.standingSubject(decided) : decided.aktion.ref } catch { subject = null }
+        const grant = subject ? grantStanding(policyKind, subject, decidedBy, trustOpts) : { ok: false, message: 'kein Subjekt' }
+        standingNote = grant.ok ? ` (${grant.message})` : ` (keine dauerhafte Erlaubnis: ${grant.message})`
+    }
     let result: CardExecutionResult
     try {
         if (button.answer === 'nein') result = executor?.reject ? await executor.reject(decided, ctx) : { ok: true, message: 'Abgelehnt.' }
         else result = executor ? await executor.execute(decided, button.answer, ctx) : { ok: false, message: 'Kein Ausführungsweg für diese Aktionsart registriert — nichts ausgeführt.' }
     } catch (error) {
         result = { ok: false, message: `Fehler: ${clean((error as Error)?.message || error, 200)}` }
+    }
+    if (standingNote) result = { ...result, message: `${result.message}${standingNote}` }
+    // P9: every card answer feeds the trust ladder under the policy kind.
+    if (policyKind && executor) {
+        if (button.answer === 'nein') recordOwnerAnswer(policyKind, 'nein', trustOpts)
+        else if (result.completion) {
+            result.completion.then(outcome => recordActionOutcome(policyKind, { ok: outcome?.ok === true, rolledBack: outcome?.rolledBack === true, approvedByOwner: true }, trustOpts),
+                () => recordActionOutcome(policyKind, { ok: false, approvedByOwner: true }, trustOpts))
+        } else recordActionOutcome(policyKind, { ok: result.ok === true, approvedByOwner: true }, trustOpts)
     }
     const final = updateCard(card.id, { result: { ok: result.ok === true, message: clean(result.message, 400) } }, opts) || decided
     noteThought({ quelle: card.quelle, titel: card.titel, status: button.answer === 'nein' ? 'abgelehnt' : 'angenommen', text: final.result?.message }, opts)

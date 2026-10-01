@@ -1306,7 +1306,7 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'self_setup_apply',
-        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Freie Befehle werden nie ausgefuehrt; Katalog-Aktionen landen nur in der Installations-Warteschlange (Installation erst nach "/setup approve" durch den Owner, im YOLO-Modus nur Eintraege mit Stufe erlauben).',
+        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Es braucht den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Ohne Code (auch im YOLO-Modus) landen nur Katalog-Aktionen in der Installations-Warteschlange; installiert wird erst nach dem Ja des Owners auf der Knopf-Karte oder bei dauerhafter Erlaubnis (/setup allow). Freie Befehle werden nie ausgefuehrt.',
         category: 'system',
         parameters: [
             { name: 'action_id', type: 'string', description: 'Action-ID aus self_setup_plan oder "all"', required: true },
@@ -1325,18 +1325,23 @@ export const evolutionTools: NovaTool[] = [
             const token = typeof params.confirm === 'string' ? params.confirm.trim() : ''
             const state = loadSelfSetupState()
             if (!state) return { success: false, message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
-            const needsToken = (id: string) => state.mode !== 'yolo'
-                || state.actions.find(a => a.id === id)?.verification?.kind === 'gpu_backend'
             const refusal = (command: string) => ({
                 success: false,
                 message: `Freigabe fehlt oder ist ungueltig/abgelaufen. Der Owner muss selbst "${command}" senden und dir den Einmal-Code nennen (oder "${command} <code>" direkt senden).`,
             })
+            // P9 (YOLO-Luecke): without the owner's code — YOLO or not — only catalog
+            // actions proceed, and only into the install queue (Knopf-Karte); they are
+            // installed without a card only with a standing permission (trust.json).
             if (actionId === 'all') {
-                if (state.mode === 'yolo') return await applySelfSetupPlan('')
+                if (!token) return await applySelfSetupPlan('')
                 if (!consumeSetupConfirmation(principal, setupPlanTarget(state.generatedAt), token)) return refusal('/setup apply all')
                 return await applySelfSetupPlan(`APPLY_ALL:${state.generatedAt}`)
             }
-            if (!needsToken(actionId)) return await applySelfSetupAction(actionId, '')
+            if (!token) {
+                const action = state.actions.find(a => a.id === actionId)
+                const queueOnly = Boolean(action?.catalogId) && action?.verification?.kind !== 'gpu_backend'
+                return queueOnly ? await applySelfSetupAction(actionId, '') : refusal(`/setup apply ${actionId}`)
+            }
             if (!consumeSetupConfirmation(principal, setupActionTarget(actionId), token)) return refusal(`/setup apply ${actionId}`)
             return await applySelfSetupAction(actionId, `APPLY:${actionId}`)
         },

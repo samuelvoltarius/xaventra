@@ -1,14 +1,18 @@
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { grantStanding, hasStanding, revokeStanding, type TrustOptions } from '../core/action-policy.js'
 import { findCatalogEntry, getInstallCatalog, isCatalogId, type ApprovalLevel, type InstallCatalog, type InstallCatalogEntry } from './install-catalog.js'
 import { issueInstallTicket, TICKET_ID_PATTERN, type SignedInstallTicket } from './install-ticket.js'
 
 // ============================================================================
 // Stufe 2 (S2.2/S2.4): Main-side install queue. Proposals come from the scan,
-// the owner or the model; only the owner (slash command, owner role) turns a
-// queued proposal into a signed ticket. In YOLO mode an entry the owner has
-// lifted to 'erlauben' is ticketed by code ('policy:erlauben'); nothing else.
+// the owner or the model; the owner's „Ja“ on the install card turns a queued
+// proposal into a signed ticket. P9: a standing permission lives in the ONE
+// permission store (action-policy trust.json): the owner's „Immer erlauben“ /
+// `/setup allow <id>` for one catalog entry, or the trust ladder for the whole
+// kind `install-katalog`. Such entries are ticketed by code as
+// 'policy:vertrauensleiter' — never as the owner, and independent of YOLO.
 // Workers never get a ticket: they receive an image-variant suggestion.
 // ============================================================================
 
@@ -107,7 +111,11 @@ function writeJson(path: string, value: unknown): void {
     renameSync(tmp, path)
 }
 const queuePath = (deps: InstallQueueDeps) => join(deps.dataDir, 'install-queue.json')
-const policyPath = (deps: InstallQueueDeps) => join(deps.dataDir, 'install-policy.json')
+/** Pre-P9 second permission store; migrated once into trust.json and renamed. */
+const legacyPolicyPath = (deps: InstallQueueDeps) => join(deps.dataDir, 'install-policy.json')
+/** The permission store sits in the same data directory as the queue. */
+const trustOf = (deps: InstallQueueDeps): TrustOptions => ({ dataDir: deps.dataDir, now: deps.now })
+export const INSTALL_POLICY_KIND = 'install-katalog'
 const journalPath = (deps: InstallQueueDeps) => join(deps.dataDir, 'install-journal.jsonl')
 const nowIso = (deps: InstallQueueDeps) => new Date((deps.now || Date.now)()).toISOString()
 
@@ -136,34 +144,55 @@ function journal(deps: InstallQueueDeps, event: string, data: Record<string, unk
     } catch { /* journal is evidence, never a reason to fail open */ }
 }
 
-export function loadInstallPolicy(deps: InstallQueueDeps): Record<string, ApprovalLevel> {
+/**
+ * P9: the former `install-policy.json` (levels 'erlauben' that only worked in
+ * YOLO mode) moves once into trust.json; the old file is renamed, never read again.
+ */
+export function migrateLegacyInstallPolicy(deps: InstallQueueDeps): number {
+    const path = legacyPolicyPath(deps)
+    if (!existsSync(path)) return 0
+    let moved = 0
     try {
-        const value = JSON.parse(readFileSync(policyPath(deps), 'utf8'))
-        const out: Record<string, ApprovalLevel> = {}
-        for (const [id, level] of Object.entries(value?.levels || {})) if (isCatalogId(id) && (level === 'erlauben' || level === 'fragen')) out[id] = level
-        return out
-    } catch { return {} }
+        const value = JSON.parse(readFileSync(path, 'utf8'))
+        for (const [id, level] of Object.entries(value?.levels || {})) {
+            if (isCatalogId(id) && level === 'erlauben' && grantStanding(INSTALL_POLICY_KIND, id, 'migration:install-policy', trustOf(deps)).ok) moved++
+        }
+    } catch { /* unreadable: nothing granted */ }
+    try { renameSync(path, `${path}.migrated`) } catch { /* next call retries */ }
+    journal(deps, 'policy-migrated', { moved })
+    return moved
 }
 
+/** Standing permission for one catalog entry: owner grant or the trust ladder for the kind. */
+export function hasStandingInstallPermission(catalogId: string, deps: InstallQueueDeps): boolean {
+    migrateLegacyInstallPolicy(deps)
+    return Boolean(findCatalogEntry(catalogId, deps.catalog || getInstallCatalog())) && hasStanding(INSTALL_POLICY_KIND, catalogId, trustOf(deps))
+}
+
+/** Level carried in the ticket: 'erlauben' only with a standing permission from trust.json. */
 export function approvalLevelFor(catalogId: string, deps: InstallQueueDeps): ApprovalLevel {
     const entry = findCatalogEntry(catalogId, deps.catalog || getInstallCatalog())
     if (!entry) return 'fragen'
-    return loadInstallPolicy(deps)[catalogId] || entry.approval
+    return hasStandingInstallPermission(catalogId, deps) ? 'erlauben' : 'fragen'
 }
 
 const isOwner = (approver: InstallApprover) => approver?.permission === 'owner' && approver.viaModel !== true
     && typeof approver.principalId === 'string' && /^[^\s]{1,120}$/.test(approver.principalId)
 
-/** Owner-only: lift an entry to 'erlauben' or set it back to 'fragen'. */
+/** Owner-only: 'erlauben' = standing permission in trust.json; 'fragen' = remove it. */
 export function setApprovalLevel(catalogId: string, level: ApprovalLevel, approver: InstallApprover, deps: InstallQueueDeps): InstallResult {
     if (!isOwner(approver)) return { ok: false, message: 'Nur der Owner kann Freigabestufen ändern.' }
     if (level !== 'erlauben' && level !== 'fragen') return { ok: false, message: 'Stufe muss erlauben oder fragen sein.' }
     if (!findCatalogEntry(catalogId, deps.catalog || getInstallCatalog())) return { ok: false, message: 'Nicht im Installationskatalog (Nie-Liste-Einträge können nie aufgenommen werden).' }
-    const levels = { ...loadInstallPolicy(deps), [catalogId]: level }
-    mkdirSync(deps.dataDir, { recursive: true })
-    writeJson(policyPath(deps), { version: 1, levels })
+    migrateLegacyInstallPolicy(deps)
+    const result = level === 'erlauben'
+        ? grantStanding(INSTALL_POLICY_KIND, catalogId, `owner:${approver.principalId}`, trustOf(deps))
+        : revokeStanding(INSTALL_POLICY_KIND, catalogId, trustOf(deps))
+    if (!result.ok) return { ok: false, message: result.message }
     journal(deps, 'policy', { catalogId, level, by: `owner:${approver.principalId}` })
-    return { ok: true, message: `${catalogId}: Freigabestufe ${level}.` }
+    return { ok: true, message: level === 'erlauben'
+        ? `${catalogId}: dauerhaft erlaubt — wird ab jetzt ohne Rückfrage installiert (signiert als Vertrauensleiter, Rückweg bleibt).`
+        : `${catalogId}: wird wieder gefragt.` }
 }
 
 /** Proposal only. Anyone may propose a catalog id; nothing runs here. */
@@ -189,7 +218,7 @@ export function describeProposal(p: InstallProposal): string {
     switch (p.route.kind) {
         case 'host-agent':
             return p.status === 'queued'
-                ? `${p.id}: ${p.catalogId} auf ${p.nodeId} wartet auf Freigabe. Owner: /setup approve ${p.id}`
+                ? `${p.id}: ${p.catalogId} auf ${p.nodeId} wartet auf Freigabe (Knopf-Karte; /setup approve ${p.id} schickt sie erneut)`
                 : `${p.id}: ${p.catalogId} auf ${p.nodeId} — ${p.status}${p.result?.error ? ` (${p.result.error})` : ''}`
         case 'image':
             return `${p.id}: ${p.catalogId} auf ${p.nodeId} nur über ein neues Image: Variante "${p.route.variant}" (Pakete ${p.route.packages.join(' ')}), Tag-Vorschlag ${p.route.suggestedTag}. Kein apt im laufenden Container.`
@@ -268,40 +297,41 @@ export async function approveQueuedInstall(queueId: unknown, approver: InstallAp
     return dispatch(proposal, ticket, deps, 'install')
 }
 
-/** YOLO path: only entries the owner lifted to 'erlauben'. Everything else stays queued. */
-export async function autoApproveIfAllowed(queueId: string, yolo: boolean, deps: InstallQueueDeps): Promise<InstallResult> {
-    const proposal = loadInstallQueue(deps).find(item => item.id === queueId)
-    if (!proposal) return { ok: false, message: 'Kein Vorschlag.' }
-    if (!yolo || approvalLevelFor(proposal.catalogId, deps) !== 'erlauben') return { ok: false, message: describeProposal(proposal), proposal }
-    if (proposal.route.kind !== 'host-agent' || proposal.status !== 'queued') return { ok: false, message: describeProposal(proposal), proposal }
-    const missing = ticketDepsMissing(deps)
-    if (missing) return { ok: false, message: missing, proposal }
-    const ticket = issueInstallTicket({ nodeId: deps.hostNodeId!, clientId: deps.hostClientId!, catalogId: proposal.catalogId,
-        approval: 'erlauben', approvedBy: 'policy:erlauben' }, deps.ticketPrivateKey!, deps.catalog || getInstallCatalog(), (deps.now || Date.now)())
-    return dispatch(proposal, ticket, deps, 'install')
-}
-
 /**
- * Trust-ladder path (P8, Alfred 01.10.: selbstständig): after three confirmed
- * owner Ja for `install-katalog` the ladder may install catalog entries itself.
+ * Standing-permission path (P8 trust ladder, P9 one store): the owner's
+ * standing grant for this catalog entry or the promoted kind `install-katalog`.
  * It signs as itself (`policy:vertrauensleiter`), never as the owner, and the
- * promotion is re-checked right here at execution time.
+ * permission is re-checked right here at execution time. YOLO plays no role.
  */
 export async function approveQueuedInstallByTrust(queueId: unknown, deps: InstallQueueDeps,
-    trust: { isPromoted?: (kind: string) => boolean | Promise<boolean> } = {}): Promise<InstallResult> {
+    trust: { isAllowed?: (kind: string, catalogId: string) => boolean | Promise<boolean> } = {}): Promise<InstallResult> {
     if (typeof queueId !== 'string' || !QUEUE_ID_PATTERN.test(queueId)) return { ok: false, message: 'Ungültige Warteschlangen-ID.' }
-    const isPromoted = trust.isPromoted ?? (async (kind: string) => {
-        try { return (await import('../core/action-policy.js')).promotedKinds().some(item => item.kind === kind) } catch { return false }
-    })
-    if (!(await isPromoted('install-katalog'))) return { ok: false, message: 'Katalog-Installationen sind nicht (mehr) über die Vertrauensleiter freigegeben — Karte nötig.' }
     const proposal = loadInstallQueue(deps).find(item => item.id === queueId)
     if (!proposal) return { ok: false, message: `Kein Vorschlag ${queueId} in der Warteschlange.` }
+    const isAllowed = trust.isAllowed ?? ((_kind: string, catalogId: string) => hasStandingInstallPermission(catalogId, deps))
+    let allowed = false
+    try { allowed = (await isAllowed(INSTALL_POLICY_KIND, proposal.catalogId)) === true } catch { allowed = false }
+    if (!allowed) return { ok: false, message: `${proposal.catalogId}: keine dauerhafte Erlaubnis (mehr) — Karte nötig.`, proposal }
     if (proposal.route.kind !== 'host-agent' || proposal.status !== 'queued') return { ok: false, message: describeProposal(proposal), proposal }
     const missing = ticketDepsMissing(deps)
     if (missing) return { ok: false, message: missing, proposal }
     const ticket = issueInstallTicket({ nodeId: deps.hostNodeId!, clientId: deps.hostClientId!, catalogId: proposal.catalogId,
         approval: approvalLevelFor(proposal.catalogId, deps), approvedBy: 'policy:vertrauensleiter' }, deps.ticketPrivateKey!, deps.catalog || getInstallCatalog(), (deps.now || Date.now)())
     return dispatch(proposal, ticket, deps, 'install')
+}
+
+/**
+ * Runs every queued host-agent proposal that has a standing permission (card
+ * loop on the Main, before cards are created). Items without permission — or
+ * whose ticket could not be issued — stay queued and get a card.
+ */
+export async function runStandingInstalls(deps: InstallQueueDeps): Promise<InstallResult[]> {
+    const results: InstallResult[] = []
+    for (const item of loadInstallQueue(deps)) {
+        if (item.status !== 'queued' || item.route.kind !== 'host-agent' || !hasStandingInstallPermission(item.catalogId, deps)) continue
+        results.push(await approveQueuedInstallByTrust(item.id, deps))
+    }
+    return results
 }
 
 /** Owner-only rollback of a completed installation; the host executes its own recorded rollback. */
@@ -326,12 +356,11 @@ export function formatInstallQueue(deps: InstallQueueDeps): string {
 
 export function formatInstallCatalog(deps: InstallQueueDeps): string {
     const catalog = deps.catalog || getInstallCatalog()
-    const policy = loadInstallPolicy(deps)
     return [
         `Installationskatalog (Hash ${catalog.hash.slice(0, 12)}…, ${catalog.entries.length} Einträge${catalog.rejected.length ? `, ${catalog.rejected.length} abgelehnt` : ''})`,
-        ...catalog.entries.map(entry => `- ${entry.id}: ${entry.title} | ${entry.sizeMb} MB | Risiko ${entry.risk} | Stufe ${policy[entry.id] || entry.approval} | Ziele ${entry.targets.join(', ')}`),
+        ...catalog.entries.map(entry => `- ${entry.id}: ${entry.title} | ${entry.sizeMb} MB | Risiko ${entry.risk} | Stufe ${approvalLevelFor(entry.id, deps)} | Ziele ${entry.targets.join(', ')}`),
         '',
-        'Vorschlagen: /setup install <id> · Freigeben: /setup approve <iq-…> · Stufe: /setup allow|ask <id> · Rückweg: /setup rollback <iq-…>',
+        'Vorschlagen: /setup install <id> · Freigeben: Knopf-Karte (/setup approve <iq-…> schickt sie erneut) · Dauerhaft: /setup allow|ask <id> · Rückweg: /setup rollback <iq-…>',
     ].join('\n')
 }
 

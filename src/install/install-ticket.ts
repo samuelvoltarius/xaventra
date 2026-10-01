@@ -20,7 +20,8 @@ export interface InstallTicket {
     catalogHash: string
     entryHash: string
     approval: ApprovalLevel
-    /** 'owner:<principal>' after /setup approve, 'policy:erlauben' for an owner-lifted entry in YOLO mode. */
+    /** 'owner:<principal>' after the owner's card „Ja“; 'policy:vertrauensleiter' for a standing permission
+     * (trust.json). 'policy:erlauben' (pre-P9 YOLO path) is no longer issued, only still verified. */
     approvedBy: string
     /** Rollback tickets reference the install ticket whose recorded rollback is executed. */
     installTicketId?: string
