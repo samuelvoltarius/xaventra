@@ -20,6 +20,7 @@ import { execFile } from 'node:child_process'
 import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { debounce, type TargetState } from '../watch/engine.js'
 
 
 // ============================================
@@ -70,7 +71,10 @@ export interface NodeHealthSnapshot {
 
 export interface NodeHealthHistory {
     snapshots: NodeHealthSnapshot[]
-    lastAlert: Record<string, number>  // node name → last alert timestamp
+    /** Legacy (≤2.81: 30-min re-alert cooldown); no longer read. */
+    lastAlert: Record<string, number>
+    /** node name → problem kind → debounce state (watch/engine.ts). */
+    alertState?: Record<string, Record<string, TargetState>>
 }
 
 // ============================================
@@ -82,7 +86,59 @@ const THRESHOLDS = {
     memoryUsedPercent: 90,    // Warn if RAM > 90% used
     temperatureCelsius: 80,   // Warn if temp > 80°C
     cpuLoadPerCore: 2.0,      // Warn if load avg > 2x cores
-    alertCooldownMs: 30 * 60 * 1000,  // Don't re-alert for 30 min
+}
+
+// ============================================
+// Alert transitions (2.82.0): one message when a problem starts, one when it
+// ends — never a repeat every 30 min while it lasts. Same debounce as the
+// Wächter (watch/engine.ts): alarm after ALERT_DEBOUNCE_CHECKS bad checks in
+// a row, recovery once.
+// ============================================
+
+export const ALERT_DEBOUNCE_CHECKS = 2
+/** Registry rows silent for longer than this are decommissioned nodes, not outages. */
+export const MESH_STALE_ROW_MS = 7 * 24 * 60 * 60 * 1000
+
+const PROBLEM_KINDS: ReadonlyArray<[string, string, RegExp]> = [
+    ['erreichbarkeit', 'erreichbar', /^(SSH nicht erreichbar|Erreichbarkeit|Knoten meldet sich nicht)/],
+    ['cpu', 'CPU-Last', /^CPU/],
+    ['ram', 'RAM', /^RAM/],
+    ['platte', 'Speicherplatz', /^Speicherplatz/],
+    ['temperatur', 'Temperatur', /^Temperatur/],
+    ['daemon', 'Daemon', /Daemon/],
+]
+
+export function problemKey(warning: string): string {
+    for (const [key, , pattern] of PROBLEM_KINDS) if (pattern.test(warning)) return key
+    return `sonst:${String(warning).replace(/\d+(?:[.,]\d+)?/g, '#').slice(0, 60)}`
+}
+
+function problemLabel(key: string): string {
+    return PROBLEM_KINDS.find(([kind]) => kind === key)?.[1] || key.replace(/^sonst:/, '')
+}
+
+export function nodeAlertTransitions(
+    previous: Record<string, TargetState> | undefined,
+    snapshot: Pick<NodeHealthSnapshot, 'online' | 'warnings'>,
+    at: string,
+    threshold = ALERT_DEBOUNCE_CHECKS,
+): { state: Record<string, TargetState>; alarms: string[]; recovered: string[] } {
+    const present = new Map<string, string>()
+    for (const warning of snapshot.warnings || []) {
+        const key = problemKey(warning)
+        if (!present.has(key)) present.set(key, warning)
+    }
+    if (!snapshot.online && !present.has('erreichbarkeit')) present.set('erreichbarkeit', 'Knoten meldet sich nicht (offline)')
+    const state: Record<string, TargetState> = {}
+    const alarms: string[] = []
+    const recovered: string[] = []
+    for (const key of new Set([...Object.keys(previous || {}), ...present.keys()])) {
+        const { state: next, event } = debounce(previous?.[key], !present.has(key), threshold, at)
+        if (event === 'alarm') alarms.push(present.get(key)!)
+        if (event === 'erholt') recovered.push(problemLabel(key))
+        if (next.alarmed || next.fails > 0) state[key] = present.has(key) ? { ...next, lastDetail: present.get(key) } : next
+    }
+    return { state, alarms, recovered }
 }
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000  // Every 5 minutes
@@ -328,7 +384,7 @@ class NodeHealthMonitor {
     private nodes: NodeConfig[] = []
     private history: NodeHealthHistory = { snapshots: [], lastAlert: {} }
     private intervalId: ReturnType<typeof setInterval> | null = null
-    private alertCallback: ((message: string) => Promise<void>) | null = null
+    private alertCallback: ((message: string, kind?: 'alarm' | 'erholt') => Promise<void>) | null = null
     private lastSnapshots: Map<string, NodeHealthSnapshot> = new Map()
 
     constructor() {
@@ -466,7 +522,7 @@ class NodeHealthMonitor {
         } catch { /* non-critical */ }
     }
 
-    setAlertCallback(cb: (message: string) => Promise<void>): void {
+    setAlertCallback(cb: (message: string, kind?: 'alarm' | 'erholt') => Promise<void>): void {
         this.alertCallback = cb
     }
 
@@ -528,7 +584,9 @@ class NodeHealthMonitor {
                 coveredHosts.add(n.ip || n.hostname || '')
                 this.lastSnapshots.set(snapshot.name, snapshot)
                 this.history.snapshots.push(snapshot)
-                if (snapshot.warnings.length > 0) await this.handleWarnings(snapshot)
+                const heartbeatAge = Date.now() - Date.parse(String(n.last_heartbeat || ''))
+                // A long-dead registry row is a decommissioned node, not an outage.
+                if (snapshot.online || (Number.isFinite(heartbeatAge) && heartbeatAge < MESH_STALE_ROW_MS)) await this.evaluateAlerts(snapshot)
             }
         } catch (err) {
             console.log(`[L21] Mesh registry read failed: ${err}`)
@@ -563,7 +621,7 @@ class NodeHealthMonitor {
                     results.push(r.value)
                     this.lastSnapshots.set(r.value.name, r.value)
                     this.history.snapshots.push(r.value)
-                    if (r.value.warnings.length > 0) await this.handleWarnings(r.value)
+                    await this.evaluateAlerts(r.value)
                 }
             }
         }
@@ -593,35 +651,37 @@ class NodeHealthMonitor {
         return snapshot
     }
 
-    private async handleWarnings(snapshot: NodeHealthSnapshot): Promise<void> {
-        const lastAlert = this.history.lastAlert[snapshot.name] || 0
-        const cooldownOk = (Date.now() - lastAlert) > THRESHOLDS.alertCooldownMs
+    private async evaluateAlerts(snapshot: NodeHealthSnapshot): Promise<void> {
+        const all = (this.history.alertState ||= {})
+        const { state, alarms, recovered } = nodeAlertTransitions(all[snapshot.name], snapshot, new Date().toISOString())
+        if (Object.keys(state).length > 0) all[snapshot.name] = state
+        else delete all[snapshot.name]
+        if (alarms.length === 0 && recovered.length === 0) return
 
-        const remainingWarnings = snapshot.warnings
-        if (remainingWarnings.length === 0 || !cooldownOk) {
-            if (!cooldownOk && remainingWarnings.length > 0) {
-                console.log(`[L21] ⚠️ ${snapshot.name} has warnings but alert cooldown active`)
-            }
-            return
+        const messages: Array<{ text: string; kind: 'alarm' | 'erholt' }> = []
+        if (alarms.length > 0) {
+            messages.push({
+                kind: 'alarm',
+                text: [
+                    `⚠️ *${snapshot.name}* — Probleme erkannt:`,
+                    '',
+                    ...alarms.map(w => `• ${w}`),
+                    '',
+                    snapshot.temperature ? `🌡️ Temperatur: ${snapshot.temperature}°C` : '',
+                    snapshot.memory ? `💾 RAM: ${snapshot.memory.usedPercent}%` : '',
+                    snapshot.disk ? `💿 Disk: ${snapshot.disk.usedPercent}%` : '',
+                    '_Ich melde mich wieder, wenn es behoben ist._',
+                ].filter(l => l !== '').join('\n'),
+            })
         }
-
-        const warningText = [
-            `⚠️ *${snapshot.name}* — Probleme erkannt:`,
-            '',
-            ...remainingWarnings.map(w => `• ${w}`),
-            '',
-            snapshot.temperature ? `🌡️ Temperatur: ${snapshot.temperature}°C` : '',
-            snapshot.memory ? `💾 RAM: ${snapshot.memory.usedPercent}%` : '',
-            snapshot.disk ? `💿 Disk: ${snapshot.disk.usedPercent}%` : '',
-        ].filter(l => l !== '').join('\n')
-
-        console.log(`[L21] 🚨 Sending alert for ${snapshot.name}: ${remainingWarnings.join(', ')}`)
-        this.history.lastAlert[snapshot.name] = Date.now()
+        if (recovered.length > 0) messages.push({ kind: 'erholt', text: `✅ *${snapshot.name}* — wieder in Ordnung: ${recovered.join(', ')}` })
         this.saveHistory()
 
-        if (this.alertCallback) {
+        for (const message of messages) {
+            console.log(`[L21] ${message.kind === 'alarm' ? '🚨 Alert' : '✅ Erholung'} ${snapshot.name}: ${message.kind === 'alarm' ? alarms.join(', ') : recovered.join(', ')}`)
+            if (!this.alertCallback) continue
             try {
-                await this.alertCallback(warningText)
+                await this.alertCallback(message.text, message.kind)
             } catch (err) {
                 console.log(`[L21] Alert delivery failed: ${err}`)
             }

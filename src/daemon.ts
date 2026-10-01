@@ -2568,9 +2568,10 @@ async function startDaemon() {
 
         // Wire alerts to Telegram proactive messaging (always, R2 NZ-10)
         {
-            nodeHealth.setAlertCallback(async (message: string) => {
+            // One message per transition, one per recovery (2.82.0, L21 nodeAlertTransitions).
+            nodeHealth.setAlertCallback(async (message: string, kind?: 'alarm' | 'erholt') => {
                 try {
-                    await (state as any).sendGovernedProactive?.(message, 'node-health', 'error', 0.98)
+                    await (state as any).sendGovernedProactive?.(message, 'node-health', kind === 'erholt' ? 'info' : 'error', 0.98)
                 } catch {
                     console.log(`[L21] Alert could not be sent: ${message.slice(0, 100)}`)
                 }
@@ -2710,15 +2711,9 @@ async function startDaemon() {
             })
         }
 
-        // Wire L21 node health alerts to insight engine
-        const nodeHealth = (state as any).nodeHealth
-        if (nodeHealth) {
-            const origHealthAlert = nodeHealth.alertCallback
-            nodeHealth.setAlertCallback(async (message: string) => {
-                insightEngine.recordInsight('warning', message.replace(/\*/g, '').slice(0, 200))
-                if (origHealthAlert) await origHealthAlert(message)
-            })
-        }
+        // L21 node alerts are NOT copied into the insight engine (2.82.0): they
+        // already reach Telegram once over the governed path; the copy came back
+        // a second time inside the next chat reply ("PROAKTIVE BEOBACHTUNGEN").
 
         // === FEATURE 5: Wire insight delivery to Telegram (always, R2 NZ-10) ===
         {
