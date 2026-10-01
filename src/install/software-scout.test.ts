@@ -192,11 +192,12 @@ describe('Eignungsprüfung je Knoten (rein)', () => {
 })
 
 describe('Vorschläge: Standard aus, nur Main, entprellt', () => {
-    it('default off: no settings or a non-true value proposes nothing', async () => {
-        expect(parseSoftwareScoutSettings(undefined).enabled).toBe(false)
-        expect(parseSoftwareScoutSettings({ enabled: 'true' }).enabled).toBe(false)
+    it('P8: on at the Main without config, off on a worker; enabled:false proposes nothing', async () => {
+        expect(parseSoftwareScoutSettings(undefined, {} as NodeJS.ProcessEnv).enabled).toBe(true)
+        expect(parseSoftwareScoutSettings(undefined, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv).enabled).toBe(false)
+        expect(parseSoftwareScoutSettings({ enabled: 'false' }, {} as NodeJS.ProcessEnv).enabled).toBe(false)
         const emit = vi.fn()
-        const result = await runSoftwareScoutTick({ isMain: true, now: NOW, nodes: mesh, sink: { emit }, statePath: tmpState() })
+        const result = await runSoftwareScoutTick({ isMain: true, now: NOW, settings: parseSoftwareScoutSettings({ enabled: false }), nodes: mesh, sink: { emit }, statePath: tmpState() })
         expect(result.ran).toBe(false)
         expect(result.reason).toMatch(/^aus/)
         expect(emit).not.toHaveBeenCalled()

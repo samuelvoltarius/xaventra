@@ -112,10 +112,11 @@ afterEach(() => {
 })
 
 describe('Release-Knopf: Standard und Grenzen', () => {
-    it('ist ohne Konfiguration aus und liest dann nichts', async () => {
-        expect(readReleaseButtonSettings({}).enabled).toBe(false)
-        expect(readReleaseButtonSettings({ autonomy: { releaseButton: { enabled: 'true' } } }).enabled).toBe(false)
-        expect(readReleaseButtonSettings({ autonomy: { releaseButton: { enabled: true } } }).enabled).toBe(true)
+    it('P8: ohne Konfiguration am Main an, am Worker aus; mit enabled:false aus und liest dann nichts', async () => {
+        expect(readReleaseButtonSettings({}, {} as NodeJS.ProcessEnv).enabled).toBe(true)
+        expect(readReleaseButtonSettings({}, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv).enabled).toBe(false)
+        expect(readReleaseButtonSettings({ autonomy: { releaseButton: { enabled: false } } }, {} as NodeJS.ProcessEnv).enabled).toBe(false)
+        expect(readReleaseButtonSettings({ autonomy: { releaseButton: { enabled: true } } }, {} as NodeJS.ProcessEnv).enabled).toBe(true)
         enabled = false
         const { result, cards } = await tickCards()
         expect(result.skipped).toMatch(/aus/)

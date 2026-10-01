@@ -24,12 +24,14 @@
  * the repository and workflow names are constants; the token is read from the
  * environment at press time, sent only as Authorization header of that POST,
  * never logged, stored or put into a card/thought. Main only (a worker,
- * `NOVA_NODE_ONLY=true`, does nothing). Off until
- * `autonomy.releaseButton.enabled=true`.
+ * `NOVA_NODE_ONLY=true`, does nothing). P8: on at the Main by default
+ * (`autonomy.releaseButton.enabled=false` = off); without the token a Ja
+ * dispatches nothing and only shows the git command.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
+import { defaultOn } from './autonomy-defaults.js'
 import { getNovaDataDir } from './data-root.js'
 import { compareUpdateVersions, UPDATE_REPOSITORY } from './github-update.js'
 import {
@@ -58,11 +60,11 @@ type Fetch = typeof fetch
 
 export interface ReleaseButtonSettings { enabled: boolean; intervalMinutes: number }
 
-export function readReleaseButtonSettings(config: any): ReleaseButtonSettings {
+export function readReleaseButtonSettings(config: any, env: NodeJS.ProcessEnv = process.env): ReleaseButtonSettings {
     const raw = config?.autonomy?.releaseButton || {}
     const interval = Number(raw.intervalMinutes)
     return {
-        enabled: raw.enabled === true,
+        enabled: defaultOn(raw.enabled, env),
         intervalMinutes: Number.isFinite(interval) ? Math.min(1440, Math.max(10, Math.round(interval))) : 30,
     }
 }
@@ -486,7 +488,7 @@ export function registerReleaseButtonExecutor(deps: ReleaseButtonDeps = producti
 
 /** Main only, off by default. Returns whether the watcher runs. */
 export function startReleaseButton(config: any, env: NodeJS.ProcessEnv = process.env): { started: boolean; reason: string } {
-    currentSettings = readReleaseButtonSettings(config)
+    currentSettings = readReleaseButtonSettings(config, env)
     if (!currentSettings.enabled) return { started: false, reason: 'autonomy.releaseButton.enabled ist aus' }
     if (isWorker(env)) return { started: false, reason: 'Worker' }
     if (timer) return { started: true, reason: 'läuft bereits' }

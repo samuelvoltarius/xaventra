@@ -3,8 +3,10 @@
  *  - Xaventra-Config (`autonomy.sensing.adapters.mail`, `homeassistant` usw.),
  *  - eigener Auth-Speicher `.nova-data/auth.json` (nur provider/type/email).
  * Keine fremden Profile (Thunderbird, Browser, Keychain), kein Auslesen von
- * Tokens/Passwörtern in Ergebnisse oder Logs. Vorschlag „lesend verbinden?“;
- * der OAuth-Login selbst bleibt ein einmaliger Owner-Schritt.
+ * Tokens/Passwörtern in Ergebnisse oder Logs. P8: Konten mit Zugang liest der
+ * (standardmäßig eingeschaltete) Mail-Sensor selbst; fehlt ein Login/Passwort,
+ * bleibt genau EINE Bitte an den Owner (Gedanke, keine Karte, keine
+ * Wiederholung — siehe `claimOwnerAsk`). Zugangsdaten werden nie geraten.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -19,6 +21,8 @@ export interface DetectedAccount {
     /** usable right now by the mail sensor (credentials present + adapter on) */
     connected: boolean
     note: string
+    /** true only when a login/password from the owner is missing (never for an owner-disabled sensor). */
+    needsOwnerLogin: boolean
 }
 
 const GOOGLE = new Set(['google', 'gmail', 'google-gmail'])
@@ -63,9 +67,10 @@ export function detectAccounts(config: SensingConfig, shapes: ReturnType<typeof 
                 id: `acct-gmail-${name}`, kind: 'gmail', label: `Gmail ${maskEmail(shape.email || name)}`,
                 connected: valid && mail.enabled && config.enabled,
                 note: valid ? (mail.enabled ? 'lesend verbunden' : 'Token vorhanden, Mail-Sensor aus') : 'Token abgelaufen oder fehlt: OAuth-Login durch den Owner nötig',
+                needsOwnerLogin: !valid,
             })
         } else if (CALENDAR.has(shape.provider)) {
-            out.push({ id: `acct-cal-${name}`, kind: 'google-calendar', label: `Kalender ${maskEmail(shape.email || name)}`, connected: false, note: 'Kalender-Sensor folgt; Verbindung nur nach OAuth-Login durch den Owner' })
+            out.push({ id: `acct-cal-${name}`, kind: 'google-calendar', label: `Kalender ${maskEmail(shape.email || name)}`, connected: false, note: 'Kalender-Sensor folgt; Verbindung nur nach OAuth-Login durch den Owner', needsOwnerLogin: false })
         }
     }
     if (mail.imap?.host && mail.imap.user) {
@@ -74,22 +79,29 @@ export function detectAccounts(config: SensingConfig, shapes: ReturnType<typeof 
             id: 'acct-imap', kind: 'imap', label: `IMAP ${maskEmail(mail.imap.user)} @ ${mail.imap.host}`,
             connected: hasSecret && mail.enabled && config.enabled,
             note: hasSecret ? (mail.enabled ? 'lesend verbunden (EXAMINE)' : 'Zugang konfiguriert, Mail-Sensor aus') : 'Passwort fehlt: Owner trägt passwordEnv ein',
+            needsOwnerLogin: !hasSecret,
         })
     }
     return out
 }
 
+/**
+ * One owner request per account that lacks a login (P8): a plain thought
+ * without a button. The caller makes sure it is raised only once
+ * (`claimOwnerAsk`). Accounts the owner switched off are never asked about.
+ */
 export function accountEvents(accounts: DetectedAccount[]): RawEvent[] {
-    return accounts.filter(account => !account.connected).map(account => ({
+    return accounts.filter(account => !account.connected && account.needsOwnerLogin).map(account => ({
         kind: 'accounts.found', subject: account.id, severity: 'info' as const,
-        dedupeKey: `account:${account.id}:${account.note}`, dedupeWindowMs: 30 * 24 * 60 * 60_000,
-        summary: `${account.label} gefunden. Lesend verbinden? (${account.note})`,
+        dedupeKey: `account:${account.id}:login`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
+        summary: `${account.label} gefunden; zum Mitlesen fehlt der Zugang (${account.note}).`,
         evidence: { konto: account.label, art: account.kind },
         hint: {
             importance: 'normal' as const,
-            proposal: account.kind === 'imap' ? 'Mail-Sensor lesend einschalten (autonomy.sensing.adapters.mail.enabled)?' : 'Einmaliger OAuth-Login durch den Owner, danach nur lesend.',
-            action: { kind: 'connectAccount' as const, accountId: account.id },
-            title: `${account.label}: lesend verbinden?`,
+            proposal: account.kind === 'imap'
+                ? 'Bitte einmal den Zugang eintragen (passwordEnv in autonomy.sensing.adapters.mail.imap). Danach lese ich selbst mit, nur lesend.'
+                : 'Bitte einmal den OAuth-Login machen. Danach lese ich selbst mit, nur lesend.',
+            title: `${account.label}: brauche einmal deinen Login`,
         },
     }))
 }

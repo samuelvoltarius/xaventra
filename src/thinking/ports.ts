@@ -28,6 +28,7 @@ import { execFile } from 'node:child_process'
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
@@ -256,7 +257,7 @@ export function createDefaultLoadProbe(options: { vllmMetricsUrl?: string; sampl
 }
 
 // ---------------------------------------------------------------------------
-// Einstellungen: autonomy.thinking (alles standardmäßig AUS)
+// Einstellungen: autonomy.thinking (P8: am Main standardmäßig AN, `false` schaltet ab; Worker aus)
 // ---------------------------------------------------------------------------
 
 export type ScoutSourceConfig =
@@ -296,10 +297,10 @@ const plainUrl = (value: unknown): string | undefined => {
     } catch { return undefined }
 }
 
-export function parseThinkingSettings(raw: unknown): ThinkingSettings {
+export function parseThinkingSettings(raw: unknown, env: NodeJS.ProcessEnv = process.env): ThinkingSettings {
     const root = obj(raw)
-    const master = root.enabled === true
-    const part = (key: string) => master && obj(root[key]).enabled === true
+    const master = defaultOn(root.enabled, env)
+    const part = (key: string) => master && defaultOn(obj(root[key]).enabled, env)
     const ideas = obj(root.ideas), scout = obj(root.scout), bug = obj(root.bugFinder), learning = obj(root.learning), load = obj(root.load)
     const sources: ScoutSourceConfig[] = (Array.isArray(scout.sources) ? scout.sources : []).flatMap((item: any): ScoutSourceConfig[] => {
         if (item?.type === 'huggingface') {

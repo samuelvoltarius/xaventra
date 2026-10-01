@@ -16,10 +16,17 @@ vi.mock('../intelligence/autonomy-engine.js', () => ({
     getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }),
 }))
 import { triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
+import { setThinkingConfig } from '../thinking/thinking-runtime.js'
+import { setSoftwareScoutConfig } from '../install/software-scout.js'
 
 const allOff = { health: false, reminders: false, inbound: false, logs: false, uptime: false }
 let dir: string
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'nightwatch-runner-')) })
+beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'nightwatch-runner-'))
+    // P8: thinking and software scout default to on at the Main; this test is only about the Nachtwache.
+    setThinkingConfig({ enabled: false })
+    setSoftwareScoutConfig({ enabled: false })
+})
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 describe('autonomy loop: Nachtwache an den Planer abgegeben', () => {

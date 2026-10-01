@@ -20,7 +20,7 @@
  *   (mail is read-only, inbox only); the owner closes it with Nein.
  * - Jobs are created by code (ids by the planner); the thought hub maps a
  *   button press to `accept`/`decline` of a code-generated plan id only.
- * - Off until `autonomy.autoReminders.enabled=true`; needs the planner; a mesh
+ * - P8: on at the Main by default (`autonomy.autoReminders.enabled=false` = off); needs the planner; a mesh
  *   worker never runs it (planner jobs are mainOnly).
  *
  * File: `<data>/auto-reminders/state.json`.
@@ -29,6 +29,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { cleanText } from './delivery-port.js'
 import type { JobHandler, Planner } from './planner.js'
@@ -86,7 +87,7 @@ const DAY_MS = 24 * 60 * 60_000
 const MAX_PENDING = 200
 const DONE_RETENTION_MS = 60 * DAY_MS
 
-export function parseAutoReminderSettings(autonomy: any, thoughts?: Partial<Pick<ThoughtSettings, 'quietStart' | 'quietEnd' | 'timeZone'>>): AutoReminderSettings {
+export function parseAutoReminderSettings(autonomy: any, thoughts?: Partial<Pick<ThoughtSettings, 'quietStart' | 'quietEnd' | 'timeZone'>>, env: NodeJS.ProcessEnv = process.env): AutoReminderSettings {
     const raw = autonomy?.autoReminders ?? {}
     const int = (value: unknown, fallback: number, min: number, max: number) =>
         Number.isFinite(Number(value)) && Number(value) >= min ? Math.min(max, Math.floor(Number(value))) : fallback
@@ -94,7 +95,7 @@ export function parseAutoReminderSettings(autonomy: any, thoughts?: Partial<Pick
     const hour = (value: unknown, fallback: number) => Number.isInteger(value) && (value as number) >= -1 && (value as number) <= 23 ? value as number : fallback
     const timeZone = typeof thoughts?.timeZone === 'string' && isValidTimeZone(thoughts.timeZone) ? thoughts.timeZone : DEFAULT_TIME_ZONE
     return {
-        enabled: raw.enabled === true,
+        enabled: defaultOn(raw.enabled, env),
         offerDays: int(raw.offerDays, 5, 1, 60),
         invoiceDays: int(raw.invoiceDays, 7, 1, 60),
         missionWaitHours: int(raw.missionWaitHours, 24, 1, 24 * 14),

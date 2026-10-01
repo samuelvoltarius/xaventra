@@ -61,14 +61,15 @@ const reply = (record: { threadId: string }, extra: Record<string, unknown> = {}
 })
 
 describe('Delegation: Standard aus, Worker nichts', () => {
-    it('ohne autonomy.delegation.enabled=true wird nichts gesendet und nichts gespeichert', async () => {
+    it('mit autonomy.delegation.enabled=false wird nichts gesendet und nichts gespeichert (P8: ohne Config am Main an)', async () => {
         const net = fakeNet()
-        const service = createDelegationService({ dataDir: tmp(), config: parseDelegationConfig({}), fetch: net.fetch as any, authority: () => true, isWorker: () => false })
+        const service = createDelegationService({ dataDir: tmp(), config: parseDelegationConfig({ delegation: { enabled: false } }), fetch: net.fetch as any, authority: () => true, isWorker: () => false })
         const result = await service.delegate({ to: 'claude', auftrag: 'Analysiere den Doctor-Befund', erwartet: { art: 'beschreibung', text: 'Ursache benannt' } })
         expect(result.ok).toBe(false)
         expect(net.fetch).not.toHaveBeenCalled()
         expect(service.list()).toHaveLength(0)
-        expect(parseDelegationConfig({}).enabled).toBe(false)
+        expect(parseDelegationConfig({}, {} as NodeJS.ProcessEnv).enabled).toBe(true)
+        expect(parseDelegationConfig({}, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv).enabled).toBe(false)
     })
 
     it('Gegenprobe: eingeschaltet wird der lesende Auftrag sofort gesendet (L1)', async () => {
@@ -324,7 +325,7 @@ describe('/delegiert', () => {
     })
 
     it('ausgeschaltet sagt /delegiert das ehrlich', () => {
-        const service = createDelegationService({ dataDir: tmp(), config: parseDelegationConfig({}), authority: () => true, isWorker: () => false })
+        const service = createDelegationService({ dataDir: tmp(), config: parseDelegationConfig({ delegation: { enabled: false } }), authority: () => true, isWorker: () => false })
         expect(formatDelegiert(service)).toContain('autonomy.delegation.enabled=false')
     })
 })

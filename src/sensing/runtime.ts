@@ -1,7 +1,11 @@
 /**
  * Laufzeit des Wahrnehmens: baut den Bus aus `autonomy.sensing`, startet ihn
- * nur am Main (nie mit NOVA_NODE_ONLY) und nur wenn `enabled=true`, und stellt
- * `/geraete` (Owner) bereit. Ausgabe ausschließlich über den Port (./ports.ts).
+ * nur am Main (nie mit NOVA_NODE_ONLY) und — P8 — ohne Config-Eintrag
+ * (`enabled=false` schaltet ab). Die Geräte-Suche läuft von selbst (kurz nach
+ * dem Start, dann alle `discovery.intervalHours`); Gefundenes wird sofort
+ * lesend überwacht (L0, keine Karte), fehlt ein Zugang, gibt es genau eine
+ * Bitte an den Owner. `/geraete` (Owner) bleibt ein reiner Einblick/Korrektur-
+ * weg. Ausgabe ausschließlich über den Port (./ports.ts).
  *
  * Integration (Claude): `setSensingSinks({ eventSink, thoughtSink })` vor dem
  * Start hängt Gedanken-Speicher/Knopf-Karten an; ohne Aufruf: JSONL-Standard.
@@ -18,8 +22,8 @@ import { createMailAdapter, resolveMailCredentials } from './adapters/mail.js'
 import { createSystemAdapter } from './adapters/system.js'
 import { createProxmoxAdapter } from './adapters/proxmox.js'
 import { loadProxmoxRuntime, parseProxmoxConfig } from '../infra/proxmox.js'
-import { approveDevice, formatDevices, loadDevices, monitoredDevices, recordCandidates, setDeviceStatus, type Approver } from './device-registry.js'
-import { candidateThoughtText, discoverDevices, realMdnsBrowse, type DiscoveryDeps } from './discovery.js'
+import { approveDevice, autoMonitorDevices, claimOwnerAsk, credentialNeed, DEVICE_LABEL, formatDevices, loadDevices, monitoredDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
+import { discoverDevices, realMdnsBrowse, type DiscoveryDeps } from './discovery.js'
 import { accountEvents, detectAccounts, readAuthProfileShapes } from './accounts.js'
 import { learnQuietHours, readOwnerTimestamps } from './quiet-hours.js'
 
@@ -31,11 +35,12 @@ interface RuntimeState {
     bus: SensingBus | null
     sinks: { eventSink?: EventSink; thoughtSink?: ThoughtSink }
     discoveryRunning: boolean
+    timers: Array<ReturnType<typeof setTimeout>>
 }
 
 const state: RuntimeState = {
     raw: undefined, rootConfig: {}, config: parseSensingConfig(undefined),
-    dataDir: join(process.cwd(), '.nova-data'), bus: null, sinks: {}, discoveryRunning: false,
+    dataDir: join(process.cwd(), '.nova-data'), bus: null, sinks: {}, discoveryRunning: false, timers: [],
 }
 
 export function setSensingConfig(raw: unknown, rootConfig: any = {}, dataDir?: string): SensingConfig {
@@ -108,20 +113,59 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
  * Starts sensing when enabled. Mesh workers never start it: they would only
  * duplicate the main's observations, and they never talk to the owner.
  */
-export function startSensing(options: { nodeOnly: boolean; nodeId?: string }): { started: boolean; reason: string } {
+export function startSensing(options: { nodeOnly: boolean; nodeId?: string; autoDiscovery?: boolean; discoveryRunner?: () => Promise<unknown> }): { started: boolean; reason: string } {
     if (!state.config.enabled) return { started: false, reason: 'autonomy.sensing.enabled=false' }
     if (options.nodeOnly) return { started: false, reason: 'Mesh-Worker: Wahrnehmen läuft nur am Main' }
     if (state.bus) return { started: true, reason: 'läuft bereits' }
     state.bus = buildSensingBus({ nodeId: options.nodeId, role: 'main' })
     state.bus.start()
     const active = state.bus.getStatus().map(item => item.id)
-    sensingLog(`gestartet, Adapter: ${active.join(', ') || 'keine'}`)
-    return { started: true, reason: `Adapter: ${active.join(', ') || 'keine'}` }
+    const auto = options.autoDiscovery !== false && state.config.discovery.enabled
+    if (auto) scheduleAutoDiscovery(options.discoveryRunner)
+    sensingLog(`gestartet, Adapter: ${active.join(', ') || 'keine'}${auto ? `, Suche selbst alle ${state.config.discovery.intervalHours} h` : ''}`)
+    return { started: true, reason: `Adapter: ${active.join(', ') || 'keine'}${auto ? ' · Geräte-Suche selbstständig' : ''}` }
+}
+
+/** P8: discovery + account check without any command — shortly after start, then every `intervalHours`. */
+function scheduleAutoDiscovery(runner?: () => Promise<unknown>): void {
+    const run = () => {
+        if (runner) { void runner().catch(() => undefined); return }
+        void runDiscoveryNow().then(text => sensingLog(`Suche (selbst): ${text.split('\n')[0]}`)).catch(error => sensingLog(`Suche (selbst) fehlgeschlagen: ${cleanText(String((error as Error)?.message || error), 160)}`))
+        void proposeAccounts().catch(() => undefined)
+    }
+    const first = setTimeout(run, state.config.discovery.firstRunDelaySec * 1000)
+    first.unref?.()
+    const every = setInterval(run, state.config.discovery.intervalHours * 60 * 60_000)
+    every.unref?.()
+    state.timers.push(first, every)
 }
 
 export function stopSensing(): void {
+    for (const timer of state.timers.splice(0)) { clearTimeout(timer); clearInterval(timer) }
     state.bus?.stop()
     state.bus = null
+}
+
+/** Thought events for devices watched right away / waiting for one owner credential. No action → no card. */
+export function deviceEvents(result: { monitored: DeviceRecord[]; asked: DeviceRecord[] }): RawEvent[] {
+    const month = 30 * 24 * 60 * 60_000
+    const watched: RawEvent[] = result.monitored.map(device => ({
+        kind: 'discovery.device', subject: device.id, severity: 'info' as const, dedupeKey: `device:${device.id}:ueberwacht`, dedupeWindowMs: month,
+        summary: `${DEVICE_LABEL[device.type]} gefunden (${device.host}:${device.port}) und ab jetzt nur lesend überwacht (Fortschritt, fertig, Fehler, pausiert). Abschalten: /geraete aus ${device.id}.`,
+        evidence: { geraet: device.id, typ: device.type, adresse: `${device.host}:${device.port}`, gefunden_ueber: device.via, status: 'eingerichtet (selbst, lesend)' },
+        hint: { importance: 'normal' as const, title: `Gefunden + überwacht: ${DEVICE_LABEL[device.type]} (${device.host})` },
+    }))
+    const asks: RawEvent[] = result.asked.map(device => ({
+        kind: 'discovery.device', subject: device.id, severity: 'info' as const, dedupeKey: `device:${device.id}:zugang`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
+        summary: `${DEVICE_LABEL[device.type]} gefunden (${device.host}:${device.port}). Zum lesenden Überwachen fehlt ${credentialNeed(device.type)}.`,
+        evidence: { geraet: device.id, typ: device.type, adresse: `${device.host}:${device.port}`, gefunden_ueber: device.via, status: 'gefunden, Zugang fehlt' },
+        hint: {
+            importance: 'normal' as const,
+            title: `Gefunden: ${DEVICE_LABEL[device.type]} (${device.host}) — brauche einmal den Zugang`,
+            proposal: `Bitte einmal ${credentialNeed(device.type)} eintragen; danach überwache ich selbst, nur lesend. Ich frage nicht noch einmal.`,
+        },
+    }))
+    return [...watched, ...asks]
 }
 
 function busForPublish(): SensingBus {
@@ -130,7 +174,7 @@ function busForPublish(): SensingBus {
 
 export async function runDiscoveryNow(deps: DiscoveryDeps = {}): Promise<string> {
     const cfg = state.config
-    if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus. Einschalten: autonomy.sensing.enabled=true und autonomy.sensing.discovery.enabled=true.'
+    if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
     if (state.discoveryRunning) return 'Geräte-Suche läuft bereits.'
     state.discoveryRunning = true
     try {
@@ -139,21 +183,17 @@ export async function runDiscoveryNow(deps: DiscoveryDeps = {}): Promise<string>
             maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
         }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ...deps })
         const fresh = recordCandidates(state.dataDir, report.candidates)
-        const events: RawEvent[] = fresh.map(device => {
-            const text = candidateThoughtText(device)
-            return {
-                kind: 'discovery.device', subject: device.id, severity: 'info', dedupeKey: `device:${device.id}`, dedupeWindowMs: 30 * 24 * 60 * 60_000,
-                summary: text.summary,
-                evidence: { geraet: device.id, typ: device.type, adresse: `${device.host}:${device.port}`, gefunden_ueber: device.via },
-                hint: { importance: 'normal', title: text.title, proposal: text.proposal, action: { kind: 'approveDevice', deviceId: device.id } },
-            }
-        })
+        // P8: watching is L0 — found devices are monitored right away, no card.
+        const handled = autoMonitorDevices(state.dataDir)
+        const events = deviceEvents(handled)
         if (events.length) await busForPublish().publish('discovery', events)
+        const watchedIds = new Set(handled.monitored.map(device => device.id))
         return [
             `Suche fertig in ${Math.round(report.durationMs / 100) / 10} s: ${report.scannedHosts} Adressen, ${report.probes} Proben${report.timedOut ? ' (Zeitlimit erreicht)' : ''}.`,
             `Netze: ${report.scope.subnets.join(', ') || 'keine privaten'}${report.scope.hasTailnet ? ' + Tailnet' : ''}.`,
             report.rejected.length ? `Abgelehnt (fremd/öffentlich): ${report.rejected.length}.` : '',
-            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id})`).join('; ')} — einrichten mit /geraete ja <id>.` : 'Keine neuen Geräte.',
+            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id}, ${watchedIds.has(device.id) ? 'überwacht, nur lesend' : 'Zugang fehlt, einmal beim Owner angefragt'})`).join('; ')}.` : 'Keine neuen Geräte.',
+            handled.monitored.some(device => !fresh.some(item => item.id === device.id)) ? `Jetzt überwacht (früher gefunden): ${handled.monitored.filter(device => !fresh.some(item => item.id === device.id)).map(device => device.name).join('; ')}.` : '',
         ].filter(Boolean).join('\n')
     } finally {
         state.discoveryRunning = false
@@ -169,7 +209,8 @@ export function approveSensingDevice(id: string, approver: Approver): { ok: bool
 export async function proposeAccounts(): Promise<string> {
     const accounts = detectAccounts(state.config, readAuthProfileShapes(state.dataDir))
     if (!accounts.length) return 'Keine E-Mail-/Kalender-Konten in eigener Config oder eigenem Auth-Speicher gefunden. (Fremde Profile werden nicht gelesen.)'
-    const events = accountEvents(accounts)
+    // P8: exactly one request per missing login, never repeated (persisted).
+    const events = accountEvents(accounts).filter(event => claimOwnerAsk(state.dataDir, `account:${event.subject}`))
     if (events.length) await busForPublish().publish('accounts', events)
     return ['Konten (nur eigene Quellen):', ...accounts.map(account => `${account.connected ? '✅' : '❔'} ${account.label} — ${account.note}`)].join('\n')
 }

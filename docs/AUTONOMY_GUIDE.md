@@ -4,6 +4,95 @@ Nova's autonomous capabilities — from missions to dreaming.
 
 ---
 
+## Standard: selbstständig (P8, ab 2.82)
+
+Owner-Regel (Alfred, 01.10.2026): „Wir trainieren auf Selbstständigkeit.“ Xaventra
+erkennt selbst, welche Hardware es gibt (auch im Netz), was wo läuft, und handelt —
+ohne dass jemand `/desktop`, `/vms`, `/arbeit`, `/modelle` tippen oder Ja/Nein sagen
+muss. Slash-Befehle sind nur noch **Einblicke** (und Korrekturwege); nichts setzt
+einen Befehl voraus.
+
+**Standardmäßig AN am Main** — eine fehlende Angabe heißt *an*, nur ein ausdrückliches
+`"enabled": false` (oder `"false"`/`"aus"`) schaltet ab. Ein Mesh-Worker
+(`NOVA_NODE_ONLY=true`) bekommt aus einer fehlenden Angabe nie ein Modul und startet
+keine Main-Funktionen (Code: `src/core/autonomy-defaults.ts`, `defaultOn`).
+
+| Modul | Schalter (fehlt = an) |
+|---|---|
+| Planer + Morgen-/Abendbericht | `autonomy.planner.enabled`, `autonomy.briefing.enabled` |
+| Wahrnehmen inkl. Adapter und Geräte-Suche | `autonomy.sensing.enabled`, `…adapters.<x>.enabled`, `…discovery.enabled` |
+| Denken: Ideen-Lauf, Modell-Scout, Bug-Finder, Lernen | `autonomy.thinking.enabled` + Teil-Schalter (GPU-/Nachtfenster-Grenzen bleiben) |
+| Verantwortungen + Missionen | `autonomy.responsibilities.enabled` |
+| Delegation (L1 lesend ohne Karte, L2 mit Karte) | `autonomy.delegation.enabled` (sendet nur mit `delegation.url`/`claudeHandoff.url`) |
+| Auto-Erinnerungen | `autonomy.autoReminders.enabled` |
+| Software-Scout (Vorschläge) | `autonomy.softwareScout.enabled` |
+| Release-Knopf | `autonomy.releaseButton.enabled` — ohne `XAVENTRA_RELEASE_DISPATCH_TOKEN` löst ein Ja nichts aus, die Karte zeigt nur den git-Befehl |
+
+**Bleiben AUS**, bis ausdrücklich `true`: Selbst-Update-Aktivierung
+(`autonomy.selfUpdate`, Fencing), Stufe-3-Selbstheilung (`autonomy.selfHeal`; die von
+Alfred genannte Reihenfolge ns2 → ns1 → Spark gilt erst beim bewussten Einschalten),
+Codex (`codex.enabled`), Nachtwache (braucht die private Proben-Datei). Multi-Router-
+Cloud: in diesem Zweig gibt es keinen eigenen Multi-Router-Schalter; Cloud-Budget
+bleibt 0. Einen Wächter-Schalter `autonomy.watch` gibt es in diesem Zweig nicht.
+
+**Feste Grenzen unverändert:** Nie-Liste (Secrets, Firewall/SSH/sudoers/Tailscale,
+NAS-Neustart, DB-Migration, Kernel/Treiber/CUDA …), Telegram nur am Main, Worker
+starten keine Main-Funktionen. Knopf-Karten bleiben nur für **Geld/Kauf, nach außen
+senden (Mail/Nachricht/Veröffentlichen), physisch (drucken/schalten), Löschen** — und
+für L2-Arten, die (noch) nicht über die Vertrauensleiter selbstständig sind.
+
+### Erkanntes sofort nutzen (ohne Karte)
+
+- Die Geräte-Suche läuft von selbst: `discovery.firstRunDelaySec` (120 s) nach dem
+  Start, danach alle `discovery.intervalHours` (24 h). `/geraete suchen` startet sie
+  nur sofort.
+- Gefundene Geräte, die sich ohne Zugangsdaten nur lesend abfragen lassen
+  (Moonraker/Klipper), werden **sofort lesend überwacht** (Beobachten = L0,
+  `approvedBy: "auto:lesend"`). Ergebnis ist genau ein Gedanke „Gefunden + überwacht“
+  mit Beleg (Adresse, Fundweg) — keine Karte „Überwachen?“ mehr.
+- Braucht ein Gerät einen Schlüssel/Token (OctoPrint, PrusaLink, Home Assistant,
+  Bambu) oder ein Konto einen Login (Gmail-OAuth, IMAP-Passwort), gibt es **genau
+  eine** Bitte an den Owner (Gedanke ohne Knopf, persistiert in
+  `.nova-data/sensing/devices.json` → `ownerAskedAt` bzw.
+  `.nova-data/sensing/owner-asks.json`) — keine Wiederholung. Zugangsdaten werden nie
+  geraten oder ausgelesen.
+- Owner-Entscheidungen bleiben: `/geraete aus <id>` / `nein <id>` werden nie
+  überschrieben.
+- Proxmox-Gäste beobachtet der Proxmox-Adapter (lesend), sobald `infra.proxmox`
+  mit API-Token eingerichtet ist (Token = Owner-Schritt). Mesh-Knoten laufen über den
+  bestehenden Mesh-/Verantwortungs-Pfad (`knoten-gesund`).
+
+### Vertrauensleiter (automatisch)
+
+Nach **3 bestätigten „Ja“** derselben Aktionsart, deren Ausführung ohne Rückweg und
+ohne Fehlschlag lief, stuft Xaventra die Art selbst von L2 (fragen) auf L1 (selbst)
+hoch (`src/core/action-policy.ts`: `recordActionOutcome(…, { approvedByOwner })`,
+`evaluateActionWithTrust`). Persistiert in `.nova-data/action-policy/trust.json`,
+sichtbar in `/arbeit` („Vertrauensleiter: selbst statt fragen“) und im Abendbericht
+(„Selbst übernommen“). Wirksam für Missions-Schritte; der Ausführer bekommt dann
+`trustedBy: "vertrauensleiter:<art>"` statt einer Owner-Freigabe.
+
+- **Nie** für physisch, nach außen, Geld/Kauf, Löschen/Entfernen/Zurückrollen, L3,
+  unbekannte Arten und `release-ausrollen`, `patch-anwenden`, `pve-entfernen`,
+  `pve-rollback`, `pve-herunterfahren`, `vm-stoppen` (infra-destroy).
+- Ein **Nein**, ein **Fehlschlag** oder ein **Rückweg** setzt die Serie auf 0 und nimmt
+  die Hochstufung zurück.
+- „Das wieder fragen“: `resetTrust(kind)` / `askAgainFor(kind)` (exportiert), als
+  Einblick-Korrektur auch `/arbeit fragen <aktionsart>`.
+
+### Weniger Einzelfragen
+
+Eine L2-Karte, die **nicht zeitkritisch** ist (Wirkung intern, noch ≥ 2 h gültig,
+nicht `wichtigkeit: "hoch"`, kein Sicherheits-/Ausfall-Wortlaut), bekommt
+`zustellung: "bericht"` und wartet — solange der Bericht an ist — auf den nächsten
+Morgen-/Abendbericht. Der Bericht listet sie unter „Fragen gesammelt“ und gibt sie
+danach frei; die Knöpfe kommen direkt im Anschluss. **Sofort** bleiben: Sicherheit,
+Ausfall, physisch, nach außen, Infrastruktur, alles mit < 2 h Restzeit und dringende
+Gedanken. Eine gesammelte Karte, die vor dem nächsten Bericht ablaufen würde, wird
+rechtzeitig (2 h vor Ablauf) zugestellt.
+
+---
+
 ## Autonomous Missions
 
 For complex multi-step tasks, Nova uses the Mission Engine:
@@ -242,7 +331,7 @@ the card store, the self-heal journal and proposals, and the install journal.
 
 ## Planer, Gedanken und Morgen-/Abendbericht (Phase 1)
 
-Everything is off by default. One job list for everything time-based
+P8: on at the Main by default (`enabled: false` switches off, see „Standard: selbstständig“). One job list for everything time-based
 (`src/planner/`), a thought list for everything she notices, and a short German
 report in the morning and evening.
 
@@ -322,8 +411,8 @@ cap). Built only from journals on disk, every line redacted, max 5 lines per sec
 
 ## Wahrnehmen und Selbst-Einrichtung (Phase 2)
 
-Everything is off by default. `autonomy.sensing.enabled` is the main switch, every
-adapter and the device search have their own switch:
+P8: on at the Main by default (`enabled: false` switches off). `autonomy.sensing.enabled`
+is the main switch, every adapter and the device search have their own switch:
 
 ```json
 { "autonomy": { "sensing": {
@@ -376,21 +465,22 @@ Every target is re-checked right before connecting (also mDNS answers), public
 addresses are rejected twice (range check + SSRF guard). Fixed ports: Moonraker 7125,
 OctoPrint 80/5000, PrusaLink 80, Bambu 8883 (TCP connect only), Home Assistant 8123;
 identification only via unauthenticated GET paths. Rate limit, concurrency cap and a
-hard deadline. Finds land in `.nova-data/sensing/devices.json` as `gefunden` (not in
-the main config) and as a thought „Gerät X gefunden … überwachen?“ (level `fragen`).
-Monitoring starts only after `approveDevice(id, owner)` — the button card or
-`/geraete ja <id>`. API keys/tokens remain owner steps in the config.
+hard deadline. Finds land in `.nova-data/sensing/devices.json` (not in the main
+config). P8: credential-free devices (Moonraker) are monitored read-only right away
+(`eingerichtet`, `approvedBy: auto:lesend`, thought „Gefunden + überwacht“, no card);
+devices that need a key/token stay `gefunden` with exactly one owner request. API
+keys/tokens remain owner steps in the config. The search runs by itself (see above).
 
 `/geraete` lists devices and adapter status; `/geraete ja|nein|aus <id>` approves,
-rejects or switches off; `/geraete konten` proposes own mail/calendar accounts
-(„lesend verbinden?“); `/geraete ruhe` derives a quiet-hours proposal from the owner's
+rejects or switches off; `/geraete konten` shows own mail/calendar accounts (a
+missing login is asked for once, without a card); `/geraete ruhe` derives a quiet-hours proposal from the owner's
 own message timestamps (`.nova-data/sessions/<owner>.jsonl`, timestamps only). Until a
 proposal is accepted the cautious default applies: 22–7 only urgent, max. 10 per day.
 
 ## Denken (Phase 3): Ideen, Modell-Scout, Bug-Finder, Lernen
 
-Off by default. Nothing runs until `autonomy.thinking.enabled` **and** the part's own
-switch are `true`. Runs as its own autonomy-loop phase after the Doctor, **only on the
+P8: on at the Main by default; `autonomy.thinking.enabled: false` or a part's own
+switch `false` turns it off (GPU and night-window limits stay). Runs as its own autonomy-loop phase after the Doctor, **only on the
 Main** (workers think nothing and send nothing). Code: `src/thinking/`.
 
 ```json
@@ -430,7 +520,7 @@ Ports (documented in `src/thinking/ports.ts`):
 State files: `.nova-data/thinking/ideas-state.json`, `scout-report.json`, `decisions.json`.
 
 
-## Software-Scout (Phase 5b, Vorschläge Standard AUS)
+## Software-Scout (Phase 5b, P8: Vorschläge am Main Standard AN)
 
 "Welche Software/KI kann auf welchem Knoten laufen, und was fehlt im Mesh?" Code:
 `src/install/software-candidates.ts` (Kandidaten-Katalog), `src/install/software-scout.ts`
@@ -543,12 +633,12 @@ Thoughts go through the `ThoughtSink` port (`thought-sink.ts`); the default
 integration; the daemon does not start the watcher yet.
 
 
-## Delegation und proaktive Erinnerungen (Phase 6e, Standard AUS)
+## Delegation und proaktive Erinnerungen (Phase 6e, P8: am Main Standard AN)
 
 ```json
 { "autonomy": {
-    "delegation":    { "enabled": false, "url": null, "fromAgent": "NOVA", "pollSeconds": 120, "defaultFristMinutes": 1440, "maxOpen": 20 },
-    "autoReminders": { "enabled": false, "offerDays": 5, "invoiceDays": 7, "missionWaitHours": 24, "followUpTime": "09:00", "eveningTime": "20:00", "maxPerDay": 5 }
+    "delegation":    { "enabled": true, "url": null, "fromAgent": "NOVA", "pollSeconds": 120, "defaultFristMinutes": 1440, "maxOpen": 20 },
+    "autoReminders": { "enabled": true, "offerDays": 5, "invoiceDays": 7, "missionWaitHours": 24, "followUpTime": "09:00", "eveningTime": "20:00", "maxPerDay": 5 }
 } }
 ```
 
@@ -629,7 +719,7 @@ File: `.nova-data/delegation/delegations.json`.
 
 ### Proaktive Erinnerungen aus Quellen (`src/planner/auto-reminders.ts`)
 
-Needs the planner (`autonomy.planner.enabled=true`). Fixed rules:
+Needs the planner (on by default; not with `autonomy.planner.enabled=false`). Fixed rules:
 
 | Rule | Source | Stufe | Result |
 |------|--------|-------|--------|
@@ -653,11 +743,11 @@ File: `.nova-data/auto-reminders/state.json`.
 
 ---
 
-## Verantwortungen und Missionen (Phase 6b, Standard AUS)
+## Verantwortungen und Missionen (Phase 6b, P8: am Main Standard AN)
 
 Xaventra leitet selbst ab, wofür sie sorgt, und arbeitet innerhalb **einer**
-Aktions-Policy weiter — ohne dass Alfred es ihr sagt. Off until
-`autonomy.responsibilities.enabled=true`; Main only (never with `NOVA_NODE_ONLY`,
+Aktions-Policy weiter — ohne dass Alfred es ihr sagt. P8: on at the Main by default
+(`autonomy.responsibilities.enabled=false` = off); Main only (never with `NOVA_NODE_ONLY`,
 only with the global autonomy authority / Main lease).
 
 ```json

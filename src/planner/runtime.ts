@@ -1,12 +1,13 @@
 /**
- * Planner runtime wiring (daemon). Off until `autonomy.planner.enabled=true`
- * or `autonomy.briefing.enabled=true`. Config (all optional):
+ * Planner runtime wiring (daemon). P8 "Standard: selbststaendig": on at the
+ * Main without any config entry; `autonomy.planner.enabled=false` switches it
+ * off (a mesh worker never starts it). Config (all optional):
  *
- *   autonomy.planner.enabled      false   start the planner
+ *   autonomy.planner.enabled      an      start the planner (false = aus)
  *   autonomy.planner.tickSeconds  30      tick interval
  *   autonomy.planner.reminders    false   set_reminder goes through the planner (else the old reminders.json path)
  *   autonomy.planner.nightwatch   false   the planner runs the Nachtwache (needs autonomy.nightwatch.enabled)
- *   autonomy.briefing.enabled     false   morning/evening report
+ *   autonomy.briefing.enabled     an      morning/evening report (follows the planner; true starts the planner alone)
  *   autonomy.briefing.morning     "07:30"
  *   autonomy.briefing.evening     "20:00"
  *   autonomy.briefing.timeZone    "Europe/Vienna"
@@ -15,6 +16,7 @@
  *   autonomy.thoughts.maxPerDay   10
  */
 
+import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { createBriefingHandler, type BriefingKind } from './briefing.js'
 import { getPlannerDeliveryPort, type DeliveryPort } from './delivery-port.js'
@@ -55,19 +57,22 @@ export const SYSTEM_JOB_IDS = Object.freeze({
     nachtwache: 'sys-nachtwache',
 })
 
-export function parsePlannerSettings(autonomy: any): PlannerSettings {
+export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = process.env): PlannerSettings {
     const planner = autonomy?.planner ?? {}
     const briefing = autonomy?.briefing ?? {}
     const thoughts = autonomy?.thoughts ?? {}
     const hhmm = (value: unknown, fallback: string) => typeof value === 'string' && HHMM_PATTERN.test(value) ? value : fallback
     const timeZone = typeof briefing.timeZone === 'string' && isValidTimeZone(briefing.timeZone) ? briefing.timeZone : DEFAULT_TIME_ZONE
     const tick = Number(planner.tickSeconds)
+    const plannerOn = defaultOn(planner.enabled, env)
+    // Missing briefing switch follows the planner; an explicit true starts the planner for the report alone (old behaviour).
+    const briefingOn = briefing.enabled === undefined ? plannerOn : defaultOn(briefing.enabled, env)
     return {
-        enabled: planner.enabled === true || briefing.enabled === true,
+        enabled: plannerOn || briefingOn,
         tickSeconds: Number.isFinite(tick) && tick >= 5 ? Math.min(600, Math.floor(tick)) : 30,
         reminders: planner.reminders === true,
         nightwatch: planner.nightwatch === true,
-        briefing: { enabled: briefing.enabled === true, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
+        briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
         thoughts: normalizeThoughtSettings({
             quietStart: thoughts.quietHours?.start,
             quietEnd: thoughts.quietHours?.end,
@@ -223,7 +228,13 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     if (!settings.enabled) return null
 
     registerReminders(planner, reminders)
-    const briefingSources = { dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone }
+    const { bundledCards, releaseBundledCards } = await import('../core/approval-cards.js')
+    const { trustChangesSince } = await import('../core/action-policy.js')
+    const briefingSources = {
+        dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone,
+        cards: { bundled: () => bundledCards({ dataDir }), release: () => releaseBundledCards({ dataDir }) },
+        trust: { changesSince: (since: number, until: number) => trustChangesSince(since, until, { dataDir }) },
+    }
     for (const [id, kind, time] of [
         [SYSTEM_JOB_IDS.briefingMorgen, 'morgen', settings.briefing.morning],
         [SYSTEM_JOB_IDS.briefingAbend, 'abend', settings.briefing.evening],

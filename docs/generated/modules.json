@@ -1326,6 +1326,10 @@
       ]
     },
     {
+      "module": "src/core/autonomy-defaults.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/autonomy-ladder.ts",
       "imports": [
         "../learning/personal-skill-compiler.js",
@@ -1509,6 +1513,7 @@
       "imports": [
         "../security/secret-redaction.js",
         "./atomic-storage.js",
+        "./autonomy-defaults.js",
         "./data-root.js",
         "node:crypto",
         "node:fs",
@@ -1995,6 +2000,7 @@
       "imports": [
         "./approval-cards.js",
         "./atomic-storage.js",
+        "./autonomy-defaults.js",
         "./data-root.js",
         "./github-update.js",
         "node:fs",
@@ -2051,6 +2057,8 @@
       "module": "src/core/responsibility-runtime.ts",
       "imports": [
         "../sensing/ports.js",
+        "./action-policy.js",
+        "./autonomy-defaults.js",
         "./data-root.js",
         "./missions.js",
         "./responsibilities.js",
@@ -3471,6 +3479,7 @@
       "module": "src/install/software-scout.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "../core/node-profile.js",
         "./install-catalog.js",
@@ -4902,6 +4911,7 @@
       "module": "src/planner/auto-reminders.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "./delivery-port.js",
         "./planner.js",
@@ -4959,6 +4969,7 @@
     {
       "module": "src/planner/runtime.ts",
       "imports": [
+        "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "./briefing.js",
         "./delivery-port.js",
@@ -5500,7 +5511,9 @@
     },
     {
       "module": "src/sensing/config.ts",
-      "imports": []
+      "imports": [
+        "../core/autonomy-defaults.js"
+      ]
     },
     {
       "module": "src/sensing/device-registry.ts",
@@ -5832,6 +5845,7 @@
       "module": "src/thinking/ports.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "../security/secret-redaction.js",
         "node:child_process",

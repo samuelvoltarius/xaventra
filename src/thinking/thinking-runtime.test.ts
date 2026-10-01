@@ -28,17 +28,23 @@ function deps(dir: string) {
 }
 
 describe('Phase 3 Denken: Laufzeit', () => {
-    it('everything is off by default', async () => {
-        const defaults = parseThinkingSettings(undefined)
-        expect([defaults.enabled, defaults.ideas.enabled, defaults.scout.enabled, defaults.bugFinder.enabled, defaults.learning.enabled]).toEqual([false, false, false, false, false])
-        setThinkingConfig(undefined)
+    it('P8: everything is on at the Main without config, off on a worker; enabled:false switches all off', async () => {
+        const defaults = parseThinkingSettings(undefined, {} as NodeJS.ProcessEnv)
+        expect([defaults.enabled, defaults.ideas.enabled, defaults.scout.enabled, defaults.bugFinder.enabled, defaults.learning.enabled]).toEqual([true, true, true, true, true])
+        const worker = parseThinkingSettings(undefined, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv)
+        expect([worker.enabled, worker.ideas.enabled, worker.scout.enabled, worker.bugFinder.enabled]).toEqual([false, false, false, false])
+        // the GPU/night conditions stay (defaults unchanged)
+        expect(defaults.load.maxGpuUtilPercent).toBe(20)
+        expect(defaults.ideas.maxPerDay).toBe(3)
+        setThinkingConfig({ enabled: false })
         const d = deps(mkdtempSync(join(process.cwd(), 'think-')))
         const result = await runThinkingTick({ isMain: true, now: NIGHT, ...d })
         expect(result.ran).toEqual([])
         expect(d.load.sample).not.toHaveBeenCalled()
         expect(d.ideaInputs).not.toHaveBeenCalled()
-        // a part switched on without the master switch stays off
-        expect(parseThinkingSettings({ ideas: { enabled: true } }).ideas.enabled).toBe(false)
+        // a part switched on while the master switch is off stays off; a part can be switched off alone
+        expect(parseThinkingSettings({ enabled: false, ideas: { enabled: true } }, {} as NodeJS.ProcessEnv).ideas.enabled).toBe(false)
+        expect(parseThinkingSettings({ ideas: { enabled: false } }, {} as NodeJS.ProcessEnv).ideas.enabled).toBe(false)
     })
 
     it('a worker (no Main lease) thinks nothing and sends nothing', async () => {

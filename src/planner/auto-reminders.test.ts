@@ -39,11 +39,13 @@ function mailEvent(stichworte: string, mailText = 'GEHEIMER MAILTEXT mit Preis 1
 }
 
 describe('Auto-Erinnerungen: Standard aus, Worker nichts', () => {
-    it('ohne autonomy.autoReminders.enabled=true startet nichts', async () => {
-        expect(parseAutoReminderSettings({}).enabled).toBe(false)
+    it('P8: ohne Config am Main an, am Worker aus; mit enabled:false startet nichts', async () => {
+        expect(parseAutoReminderSettings({}, undefined, {} as NodeJS.ProcessEnv).enabled).toBe(true)
+        expect(parseAutoReminderSettings({}, undefined, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv).enabled).toBe(false)
+        expect(parseAutoReminderSettings({ autoReminders: { enabled: false } }, undefined, {} as NodeJS.ProcessEnv).enabled).toBe(false)
         const dataDir = tmp()
         const planner = createPlanner({ dataDir, authority: () => true })
-        const started = await startAutoRemindersRuntime({}, { nodeOnly: false, planner: { planner, thoughts: createThoughtStore({ dataDir }), settings: { thoughts: { quietStart: 22, quietEnd: 7, timeZone: 'Europe/Vienna', dedupeMinutes: 360, maxPerDay: 10 } } } as any })
+        const started = await startAutoRemindersRuntime({ autoReminders: { enabled: false } }, { nodeOnly: false, planner: { planner, thoughts: createThoughtStore({ dataDir }), settings: { thoughts: { quietStart: 22, quietEnd: 7, timeZone: 'Europe/Vienna', dedupeMinutes: 360, maxPerDay: 10 } } } as any })
         expect(started.started).toBe(false)
         expect(planner.listJobs()).toHaveLength(0)
     })

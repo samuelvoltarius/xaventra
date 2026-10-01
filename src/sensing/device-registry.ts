@@ -1,12 +1,15 @@
 /**
  * Geräte-Datei der Selbst-Erkennung: `<dataDir>/sensing/devices.json`.
  *
- * Bewusst NICHT die Haupt-Config. Ein gefundenes Gerät steht hier mit
- * `status: "gefunden"` und wird von keinem Adapter überwacht. Erst
- * `approveDevice(id, owner)` — aufgerufen von der Knopf-Karte bzw.
- * `/geraete ja <id>` — setzt `eingerichtet`. `disableDevice` schaltet wieder ab.
- * Zugangsdaten (API-Keys, HA-Token) stehen hier nie; sie bleiben ein
- * Owner-Schritt in der Config.
+ * Bewusst NICHT die Haupt-Config. P8 „Standard: selbstständig“: Beobachten ist
+ * L0. Ein gefundenes Gerät, das sich OHNE Zugangsdaten nur lesend abfragen
+ * lässt (Moonraker/Klipper), wird sofort `eingerichtet` (`autoMonitorDevice`,
+ * approvedBy `auto:lesend`) — keine Karte. Braucht ein Gerät einen
+ * Schlüssel/Token (OctoPrint, PrusaLink, Home Assistant, Bambu), bleibt es
+ * `gefunden` und es gibt genau EINE Bitte an den Owner (`ownerAskedAt`).
+ * Owner-Entscheidungen (`abgelehnt`, `aus`) werden nie überschrieben;
+ * `/geraete ja|nein|aus <id>` bleibt als Einblick/Korrektur.
+ * Zugangsdaten (API-Keys, HA-Token) stehen hier nie und werden nie geraten.
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -30,6 +33,8 @@ export interface DeviceRecord {
     lastSeenAt: string
     approvedAt?: string
     approvedBy?: string
+    /** set once when the owner was asked for an API key/token (never repeated). */
+    ownerAskedAt?: string
     evidence: Evidence
 }
 
@@ -124,13 +129,70 @@ export function setDeviceStatus(dataDir: string, id: string, status: 'abgelehnt'
     return { ok: true, message: status === 'aus' ? `${device.name}: Überwachung aus.` : `${device.name}: abgelehnt, wird nicht mehr vorgeschlagen.` }
 }
 
+/** Types a read-only adapter can watch without any credential. */
+export const AUTO_MONITOR_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['moonraker'])) as ReadonlySet<DeviceType>
+
+/** What the owner would have to provide once (null = nothing, watched right away). */
+export function credentialNeed(type: DeviceType): string | null {
+    if (AUTO_MONITOR_TYPES.has(type)) return null
+    if (type === 'homeassistant') return 'einen Home-Assistant-Token (tokenEnv in autonomy.sensing.adapters.homeassistant, dazu die Entitäten)'
+    if (type === 'bambu') return 'den Zugangscode aus dem Gerät (Bambu)'
+    return `den API-Schlüssel (apiKeyEnv im Eintrag unter autonomy.sensing.adapters.printer.devices, Typ ${type})`
+}
+
+export interface AutoMonitorResult { monitored: DeviceRecord[]; asked: DeviceRecord[] }
+
+/**
+ * P8: found devices are watched right away (L0, read only) — no card. Only
+ * devices in status `gefunden` are touched; owner decisions stay. Devices that
+ * need a credential get exactly one owner request (returned in `asked` once).
+ */
+export function autoMonitorDevices(dataDir: string, nowMs = Date.now()): AutoMonitorResult {
+    const devices = loadDevices(dataDir)
+    const monitored: DeviceRecord[] = []
+    const asked: DeviceRecord[] = []
+    const at = new Date(nowMs).toISOString()
+    for (const device of devices) {
+        if (device.status !== 'gefunden') continue
+        if (AUTO_MONITOR_TYPES.has(device.type)) {
+            device.status = 'eingerichtet'
+            device.approvedAt = at
+            device.approvedBy = 'auto:lesend'
+            monitored.push(device)
+        } else if (!device.ownerAskedAt) {
+            device.ownerAskedAt = at
+            asked.push(device)
+        }
+    }
+    if (monitored.length || asked.length) saveDevices(dataDir, devices)
+    return { monitored, asked }
+}
+
+const ASKS_FILE = (dataDir: string) => join(dataDir, 'sensing', 'owner-asks.json')
+
+/**
+ * true exactly once per key (persisted): the one owner request for a login or
+ * token. Later calls return false, so the request is never repeated.
+ */
+export function claimOwnerAsk(dataDir: string, key: string, nowMs = Date.now()): boolean {
+    const id = cleanText(key, 120)
+    if (!id) return false
+    let asks: Record<string, string> = {}
+    try { if (existsSync(ASKS_FILE(dataDir))) asks = JSON.parse(readFileSync(ASKS_FILE(dataDir), 'utf8'))?.asks || {} } catch { asks = {} }
+    if (asks[id]) return false
+    asks[id] = new Date(nowMs).toISOString()
+    mkdirSync(join(dataDir, 'sensing'), { recursive: true, mode: 0o700 })
+    atomicWriteJsonSync(ASKS_FILE(dataDir), { version: 1, asks })
+    return true
+}
+
 export function monitoredDevices(dataDir: string): DeviceRecord[] {
     return loadDevices(dataDir).filter(item => item.status === 'eingerichtet')
 }
 
 export function formatDevices(devices: DeviceRecord[]): string {
-    if (!devices.length) return 'Keine Geräte bekannt. /geraete suchen startet eine lesende Suche im eigenen Netz.'
+    if (!devices.length) return 'Keine Geräte bekannt. Die lesende Suche im eigenen Netz läuft von selbst (einmal am Tag); /geraete suchen startet sie sofort.'
     const icon: Record<DeviceStatus, string> = { gefunden: '🆕', eingerichtet: '✅', abgelehnt: '🚫', aus: '⏸️' }
     return ['Geräte (nur lesend):', ...devices.map(item =>
-        `${icon[item.status]} ${item.id} · ${item.name} · ${item.host}:${item.port} · ${item.status} (${item.via})`)].join('\n')
+        `${icon[item.status]} ${item.id} · ${item.name} · ${item.host}:${item.port} · ${item.status}${item.approvedBy === 'auto:lesend' ? ' (selbst, lesend)' : ''}${item.status === 'gefunden' && item.ownerAskedAt ? ' (Zugang fehlt)' : ''} (${item.via})`)].join('\n')
 }

@@ -40,7 +40,7 @@
  *   else stays `unverifiziert`. Only `verifiziert` closes a mission step.
  * - Deadline: an open delegation past `fristAt` becomes `abgelaufen` and
  *   leaves a thought.
- * - Off until `autonomy.delegation.enabled=true`. A mesh worker
+ * - P8: on at the Main by default (`autonomy.delegation.enabled=false` = off). A mesh worker
  *   (`NOVA_NODE_ONLY=true`) never delegates and never polls.
  *
  * Files: `<data>/delegation/delegations.json` { version: 1, records }.
@@ -49,6 +49,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
+import { defaultOn } from './autonomy-defaults.js'
 import { getNovaDataDir } from './data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
@@ -288,13 +289,13 @@ function validUrl(value: unknown): string | null {
     } catch { return null }
 }
 
-export function parseDelegationConfig(autonomy: any): DelegationConfig {
+export function parseDelegationConfig(autonomy: any, env: NodeJS.ProcessEnv = process.env): DelegationConfig {
     const raw = autonomy?.delegation ?? {}
     const agentOf = (value: unknown, fallback: string) => typeof value === 'string' && AGENT_ID.test(value) ? value : fallback
     const number = (value: unknown, fallback: number, min: number, max: number) =>
         Number.isFinite(Number(value)) && Number(value) >= min ? Math.min(max, Math.floor(Number(value))) : fallback
     return {
-        enabled: raw.enabled === true,
+        enabled: defaultOn(raw.enabled, env),
         url: validUrl(raw.url ?? autonomy?.claudeHandoff?.url),
         fromAgent: agentOf(raw.fromAgent, 'NOVA'),
         agents: {

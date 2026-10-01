@@ -7,6 +7,29 @@
       "openaiApiKey": "string",
       "tokenFile": "string"
     },
+    "autonomy": {
+      "briefing": {
+        "evening": "string",
+        "morning": "string",
+        "timeZone": "string"
+      },
+      "selfHeal": {
+        "enabled": "boolean"
+      },
+      "selfUpdate": {
+        "enabled": "boolean"
+      },
+      "sensing": {
+        "discovery": {
+          "firstRunDelaySec": "number",
+          "intervalHours": "number",
+          "tailnetHosts": {
+            "type": "array",
+            "items": "unknown"
+          }
+        }
+      }
+    },
     "channels": {
       "discord": {
         "enabled": "boolean",
