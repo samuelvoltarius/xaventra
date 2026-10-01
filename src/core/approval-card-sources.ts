@@ -196,6 +196,9 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
     const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
     registerThoughtCardExecutor()
+    // Phase 6d: Ollama pull (after Ja) and vLLM switch (plan only, executor unwired).
+    const { registerModelControlExecutors } = await import('../routing/local-model-control.js')
+    registerModelControlExecutors(registerCardExecutor)
 }
 
 // ---------------------------------------------------------------------------

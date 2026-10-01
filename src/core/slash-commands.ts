@@ -3593,6 +3593,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             return formatGedanken(await collectGedanken(), limit)
         }
 
+        // Phase 6d: Modell-Register + Multi-Router (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'modelle': {
+            const { handleModelleCommand } = await import('../routing/model-commands.js')
+            return handleModelleCommand(args)
+        }
+
         // Stufe 3: Selbstheilung (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'heilung': {
             const { formatSelfHealOverview } = await import('../doctor/self-heal-runtime.js')

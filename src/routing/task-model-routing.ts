@@ -1,5 +1,6 @@
 import type { ActionIntent } from '../core/action-intent.js'
 import { isConversationalClosure } from '../core/action-intent.js'
+import { hasProvenCapability, measurementFor, requiredCapability, type EndpointKind, type ModelRegistry, type PrivacyClass } from './model-registry.js'
 
 /**
  * CL-20260930-12 — model choice per task instead of one global switch.
@@ -161,7 +162,11 @@ export const TASK_MODEL_RULES: readonly TaskModelRule[] = [
 ]
 
 export function decideTaskModel(input: TaskModelDecisionInput): TaskModelDecision {
-    const cls = classifyTaskModel(input.signals)
+    return decideTaskModelFor(classifyTaskModel(input.signals), input)
+}
+
+/** Same table for an already known classification (used by /modelle per task class). */
+export function decideTaskModelFor(cls: TaskClassification, input: TaskModelDecisionInput): TaskModelDecision {
     const ctx: RuleContext = { cls, input }
     const rule = TASK_MODEL_RULES.find(candidate => candidate.matches(ctx))!
     const blockedBeforeSwitch = ['R1-vision-local', 'R2-private-local', 'R3-light-local', 'R4-non-owner-local'].includes(rule.id)
@@ -239,4 +244,166 @@ export function decideRunnerTaskModel(params: {
         permission: params.permission,
         codexEnabled: params.codexConfig?.enabled === true,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6d — Multi-Router (extends the table above, never replaces it)
+// ---------------------------------------------------------------------------
+//
+// Stage A, hard filters (code only, no model output can loosen them):
+//   - picture / private / memory content → only `lokal` endpoints
+//   - not owner → only `lokal`
+//   - Codex only where R1–R8 would pick Codex (unchanged rules)
+//   - other cloud models only within the daily budget (default 0 € = none);
+//     unknown cost counts as expensive
+//   - the capability the task needs must be proven (probe/ledger/rule)
+// Stage B, scoring among the remaining endpoints that have measurements for
+// this task class (≥ minSamples): success rate, then latency, then cost.
+// Without measurements the R1–R8 decision stands unchanged. Off by default:
+// `routing.multi.enabled=true` switches it on.
+
+export interface MultiRouteSettings {
+    enabled: boolean
+    /** EUR per day for non-Codex cloud models; 0 = no cloud. */
+    cloudDailyBudgetEur: number
+    /** Already spent today (EUR), from the spend log. */
+    cloudSpentTodayEur?: number
+    /** Minimum measured runs per (endpoint, task class) before a measurement counts. */
+    minSamples?: number
+}
+
+export const MULTI_ROUTE_MIN_SAMPLES = 5
+
+/** `routing.multi` from the config. Anything but literal `true` keeps it off. */
+export function readMultiRouteSettings(config: any): MultiRouteSettings {
+    const multi = config?.routing?.multi || {}
+    const budget = Number(multi.cloudDailyBudgetEur)
+    const minSamples = Number(multi.minSamples)
+    return {
+        enabled: multi.enabled === true,
+        cloudDailyBudgetEur: Number.isFinite(budget) && budget > 0 ? budget : 0,
+        minSamples: Number.isInteger(minSamples) && minSamples >= 1 ? minSamples : MULTI_ROUTE_MIN_SAMPLES,
+    }
+}
+
+export type MultiRouteTarget = TaskModelTarget | 'cloud'
+
+export interface MultiRouteCandidate {
+    id: string
+    kind: EndpointKind
+    model: string
+    node?: string
+    privacy: PrivacyClass
+    costEurPerCall: number | null
+    successRate?: number
+    avgLatencyMs?: number
+    samples?: number
+    /** Reason the hard filter removed it; undefined = admissible. */
+    excluded?: string
+}
+
+export interface MultiRouteDecision extends Omit<TaskModelDecision, 'target' | 'rule'> {
+    target: MultiRouteTarget
+    rule: TaskModelRuleId | 'M1-messung'
+    /** false when routing.multi.enabled is off (pure R1–R8). */
+    multi: boolean
+    basis: 'aus' | 'regeln' | 'messung'
+    /** The R1–R8 decision for comparison. */
+    baseline: TaskModelDecision
+    /** Chosen endpoint when the measurement decided; undefined = runner default (as before). */
+    endpoint?: { id: string; kind: EndpointKind; model: string; node?: string; baseUrl?: string; privacy: PrivacyClass; costEurPerCall: number | null }
+    candidates: MultiRouteCandidate[]
+}
+
+const fmtPct = (value: number) => `${Math.round(value * 100)} %`
+
+export function decideMultiRoute(input: TaskModelDecisionInput, registry: ModelRegistry | null | undefined, settings: MultiRouteSettings, classification?: TaskClassification): MultiRouteDecision {
+    const cls = classification || classifyTaskModel(input.signals)
+    const baseline = decideTaskModelFor(cls, input)
+    const asRules = (basis: 'aus' | 'regeln', candidates: MultiRouteCandidate[], extra = ''): MultiRouteDecision => ({
+        ...baseline, multi: basis !== 'aus', basis, baseline, candidates,
+        reason: extra ? `${baseline.reason} ${extra}` : baseline.reason,
+    })
+    if (!settings?.enabled) return asRules('aus', [])
+
+    const owner = input.permission === 'owner'
+    const need = requiredCapability(cls.taskClass)
+    const budget = Math.max(0, Number(settings.cloudDailyBudgetEur) || 0)
+    const spent = Math.max(0, Number(settings.cloudSpentTodayEur) || 0)
+    const minSamples = settings.minSamples && settings.minSamples >= 1 ? settings.minSamples : MULTI_ROUTE_MIN_SAMPLES
+
+    const candidates: MultiRouteCandidate[] = (registry?.endpoints || []).map(ep => {
+        const measured = measurementFor(ep, cls.taskClass)
+        const candidate: MultiRouteCandidate = {
+            id: ep.id, kind: ep.kind, model: ep.model, node: ep.node, privacy: ep.privacy, costEurPerCall: ep.costEurPerCall,
+            ...(measured ? { successRate: measured.successRate, avgLatencyMs: measured.avgLatencyMs, samples: measured.samples } : {}),
+        }
+        const exclude = (reason: string) => ({ ...candidate, excluded: reason })
+        if (ep.health === 'down') return exclude('nicht gesund (Probe/Verfügbarkeit)')
+        if (!hasProvenCapability(ep, need)) return exclude(`Fähigkeit ${need} nicht belegt`)
+        if (ep.privacy === 'cloud') {
+            if (cls.taskClass === 'vision') return exclude('Bild bleibt lokal')
+            if (cls.private) return exclude('Privates (Memory, Kundendaten) bleibt lokal')
+            if (!owner) return exclude('Nicht-Owner: nur lokal')
+            if (ep.kind === 'codex') {
+                if (baseline.target !== 'codex') return exclude(`Codex nur nach Regeltabelle (${baseline.rule})`)
+            } else {
+                if (ep.costEurPerCall === null) return exclude('Kosten unbekannt (gilt als teuer)')
+                if (budget <= 0) return exclude('Tagesbudget 0 € (routing.multi.cloudDailyBudgetEur)')
+                if (spent + ep.costEurPerCall > budget) return exclude(`Tagesbudget erschöpft (${spent.toFixed(2)} von ${budget.toFixed(2)} €)`)
+            }
+        }
+        return candidate
+    })
+
+    const admissible = candidates.filter(item => !item.excluded)
+    // A Codex choice by the table stays as long as Codex itself has no measurement.
+    if (baseline.target === 'codex') {
+        const codex = admissible.find(item => item.kind === 'codex')
+        if (!codex || !(codex.samples && codex.samples >= minSamples)) return asRules('regeln', candidates, '(Codex nach Regeltabelle; keine Codex-Messdaten)')
+    }
+    const measured = admissible.filter(item => (item.samples || 0) >= minSamples && item.successRate !== undefined)
+    if (!measured.length) return asRules('regeln', candidates, '(keine Messdaten; Regeltabelle R1–R8)')
+
+    const costKey = (value: number | null) => value === null ? Number.POSITIVE_INFINITY : value
+    measured.sort((a, b) =>
+        (Math.round((b.successRate || 0) * 100) - Math.round((a.successRate || 0) * 100))
+        || ((a.avgLatencyMs ?? Infinity) - (b.avgLatencyMs ?? Infinity))
+        || (costKey(a.costEurPerCall) - costKey(b.costEurPerCall))
+        || a.id.localeCompare(b.id))
+    const winner = measured[0]
+    const ep = registry!.endpoints.find(item => item.id === winner.id)!
+    const target: MultiRouteTarget = ep.privacy === 'lokal' ? 'local' : ep.kind === 'codex' ? 'codex' : 'cloud'
+    const where = ep.node ? ` auf ${ep.node}` : ''
+    const cost = ep.costEurPerCall === null ? 'unbekannt' : `${ep.costEurPerCall} €`
+    return {
+        ...baseline,
+        target,
+        wouldBe: baseline.wouldBe,
+        rule: 'M1-messung',
+        multi: true,
+        basis: 'messung',
+        baseline,
+        endpoint: { id: ep.id, kind: ep.kind, model: ep.model, node: ep.node, baseUrl: ep.baseUrl, privacy: ep.privacy, costEurPerCall: ep.costEurPerCall },
+        candidates,
+        reason: `${TASK_CLASS_LABELS[cls.taskClass]}: gemessen bestes Modell ${ep.model}${where} (${ep.privacy}) — Erfolgsquote ${fmtPct(winner.successRate || 0)} bei ${winner.samples} Läufen, ${winner.avgLatencyMs} ms, Kosten ${cost}; Regeltabelle wäre ${baseline.rule}.`,
+        notice: target === 'cloud' ? 'Hinweis: Diese Aufgabe läuft über ein Cloud-Modell (bereinigter Auftrag ohne Memory/Verlauf).' : baseline.notice && target !== 'local' ? baseline.notice : undefined,
+    }
+}
+
+/** Runner entry for the multi-router. Role from the request-scoped principal. */
+export function decideRunnerMultiRoute(params: {
+    content: string
+    hasImage: boolean
+    intentKind?: ActionIntent['kind']
+    permission: string | undefined
+    codexConfig?: { enabled?: boolean } | null
+    registry: ModelRegistry | null
+    settings: MultiRouteSettings
+}): MultiRouteDecision {
+    return decideMultiRoute({
+        signals: { content: params.content, hasImage: params.hasImage, intentKind: params.intentKind },
+        permission: params.permission,
+        codexEnabled: params.codexConfig?.enabled === true,
+    }, params.registry, params.settings)
 }

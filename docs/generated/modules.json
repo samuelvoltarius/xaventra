@@ -4976,6 +4976,49 @@
       ]
     },
     {
+      "module": "src/routing/cloud-prompt.ts",
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/routing/local-model-control.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/node-profile.js",
+        "./task-model-routing.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/routing/model-commands.ts",
+      "imports": [
+        "./model-registry.js",
+        "./task-model-routing.js"
+      ]
+    },
+    {
+      "module": "src/routing/model-registry.ts",
+      "imports": [
+        "./task-model-routing.js"
+      ]
+    },
+    {
+      "module": "src/routing/model-runtime.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./cloud-prompt.js",
+        "./task-model-routing.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/routing/outcome-router.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5011,7 +5054,8 @@
     {
       "module": "src/routing/task-model-routing.ts",
       "imports": [
-        "../core/action-intent.js"
+        "../core/action-intent.js",
+        "./model-registry.js"
       ]
     },
     {

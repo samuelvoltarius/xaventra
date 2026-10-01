@@ -480,3 +480,58 @@ images, never stages, activates, restarts or switches anything.
 Thoughts go through the `ThoughtSink` port (`thought-sink.ts`); the default
 `JsonlThoughtSink` appends JSON lines. The approval cards attach to this port during
 integration; the daemon does not start the watcher yet.
+
+## Phase 6d — Multi-Router and model control
+
+Default: **off**. Without `routing.multi.enabled=true` the per-task rule table
+R1–R8 (`src/routing/task-model-routing.ts`) decides exactly as before.
+
+```json
+"routing": { "multi": {
+  "enabled": false,
+  "cloudDailyBudgetEur": 0,
+  "minSamples": 5,
+  "cloudModels": [ { "provider": "anthropic", "model": "<model id>", "costEurPerCall": 0.02 } ],
+  "costs": { "openai": 0.01 }
+} }
+```
+
+- **Model register** (`src/routing/model-registry.ts`): one entry per runtime x node x
+  model — vLLM and Ollama from the capability graph, Codex from `codex`, cloud models
+  from `routing.multi.cloudModels` (listed only when a key is configured; only its
+  presence is checked). Per entry: proven capabilities (capability probe, a validated
+  Outcome-Ledger run of that task class, or the existing rule table for Codex — a model
+  name never counts, "Erkannt ≠ nutzbar"), privacy class (`lokal` only for a local
+  runtime on a known mesh node or a private host, everything else `cloud`), cost per
+  call (0 local; cloud from config; unknown = `null` = expensive), success rate and
+  latency per task class (Outcome-Ledger runs with `modelClass`; the Scout-Prüfsatz
+  counts as general work), health (probe online/offline, Codex availability).
+- **Router** (`decideMultiRoute`, extends the table): stage A hard filters that no model
+  output can loosen — picture/private/memory content only `lokal`; non-owner only
+  `lokal`; Codex only where R1–R8 picks Codex; other cloud models only within the daily
+  budget (0 € = none; unknown cost refused); the needed capability must be proven.
+  Stage B among the remaining endpoints with ≥ `minSamples` measurements for the task
+  class: success rate, then latency, then cost. Without measurements the R1–R8 result
+  stands (a table Codex pick stays until Codex itself has measurements). Decision,
+  reason, basis and every candidate with its exclusion reason go to the Outcome-Ledger
+  (`route.selected`).
+- **Cleaned prompt for cloud** (`src/routing/cloud-prompt.ts`, mandatory): every cloud
+  client (measured cloud choice, and Codex while the multi-router is on) is wrapped so
+  each `complete` call drops all pipeline system messages (USER.md/MEMORY.md, journal,
+  facts, user context) and the conversation history, keeps only the current task plus
+  the current tool loop, scrubs private sections/tags and secrets, and never sends
+  images. Allow-list: one neutral system prompt replaces everything.
+- **Ollama control** (`src/routing/local-model-control.ts`): special models are loaded
+  per task with `/api/generate` + `keep_alive` and unloaded with `keep_alive: 0`, only
+  when the node profile shows enough free memory (reserve 4 GB, 16 GB on the vLLM node)
+  and never on a vLLM node whose memory check is not `ok` (OOM 13.09.). A model missing
+  on the node is never pulled by itself: `/api/pull` is L2 and becomes a Knopf-Karte
+  (`ollama-pull`); only "Ja" pulls.
+- **vLLM switch at the Spark**: plan + card only (`/modelle wechsel <aufgabe> <modell>
+  [minuten]` → "Für Aufgabe X wäre Modell Y besser, Wechsel ~N min, Rückweg
+  automatisch"). The recipe (measure → snapshot → switch → probe → automatic way back)
+  runs through a host-agent port after "Ja"; in this build the production port is
+  unwired, so "Ja" only confirms the plan and no vLLM is touched. `vllm:stoppen` stays
+  on the Nie-Liste; wiring the real switch needs Alfred's decision on that boundary.
+- **`/modelle`** (owner): register with capabilities and their evidence, privacy class,
+  cost, health, measurements and the current choice per task class.

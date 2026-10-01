@@ -305,7 +305,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const [{ decideRunnerTaskModel, codexFallbackNotice }, { currentLlmPermission }] = await Promise.all([
             import('../routing/task-model-routing.js'), import('../llm/llm-principal.js'),
         ])
-        const taskModel = decideRunnerTaskModel({
+        let taskModel = decideRunnerTaskModel({
             content, hasImage: Boolean(image), intentKind: actionIntent.kind,
             permission: currentLlmPermission(), codexConfig,
         })
@@ -317,6 +317,44 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 modelWouldBe: taskModel.wouldBe,
                 reason: `${taskModel.rule}: ${taskModel.reason}`,
             } as any)
+        }
+        // Phase 6d: Multi-Router, only with routing.multi.enabled=true. Off =
+        // the R1–R8 decision above stays exactly as it was.
+        const { readMultiRouteSettings } = await import('../routing/task-model-routing.js')
+        const multiSettings = readMultiRouteSettings((globalThis as any).__novaState?.config)
+        if (multiSettings.enabled && !modelOverride?.model) {
+            try {
+                const [{ decideRunnerMultiRoute }, { collectModelRegistry }, modelRuntime] = await Promise.all([
+                    import('../routing/task-model-routing.js'), import('../routing/model-registry.js'), import('../routing/model-runtime.js'),
+                ])
+                const multiRoute = decideRunnerMultiRoute({
+                    content, hasImage: Boolean(image), intentKind: actionIntent.kind,
+                    permission: currentLlmPermission(), codexConfig,
+                    registry: await collectModelRegistry({ userId }),
+                    settings: { ...multiSettings, cloudSpentTodayEur: modelRuntime.getCloudSpendToday() },
+                })
+                outcomeLedger.recordRoute(kernel.contract.id, {
+                    taskType: actionIntent.kind || 'agent',
+                    modelClass: multiRoute.taskClass,
+                    modelTarget: multiRoute.target,
+                    modelEndpoint: multiRoute.endpoint?.id,
+                    model: multiRoute.endpoint?.model,
+                    node: multiRoute.endpoint?.node,
+                    routerBasis: multiRoute.basis,
+                    reason: `${multiRoute.rule}: ${multiRoute.reason}`,
+                    candidates: multiRoute.candidates,
+                } as any)
+                const applied = await modelRuntime.applyMultiRouteEndpoint(multiRoute)
+                if (applied) {
+                    llmClient = applied.client
+                    codexRoute = 'existing'
+                    // A measured local/cloud choice replaces a table Codex pick.
+                    if (taskModel.target === 'codex') taskModel = { ...taskModel, target: 'local' }
+                    if (applied.notice && onStepUpdate) void Promise.resolve(onStepUpdate(applied.notice)).catch(() => undefined)
+                }
+            } catch (error) {
+                console.warn(`[MultiRouter] ${redactSecrets(String((error as Error)?.message || error))}; Regeltabelle R1–R8 bleibt`)
+            }
         }
         let codexNoticeSent = false
         if (!modelOverride?.model && taskModel.target === 'codex') {
@@ -363,6 +401,11 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             routedMeta = routed
             pendingFallbacks.splice(0).forEach(handleFallback)
             llmClient = routed.client
+            if (multiSettings.enabled && (routed.route === 'codex' || routed.route === 'codex-remote')) {
+                // Phase 6d: Codex is a cloud target — cleaned prompt, no memory/history.
+                const { createCloudSafeClient } = await import('../routing/cloud-prompt.js')
+                llmClient = createCloudSafeClient(llmClient)
+            }
             codexRoute = routed.route
             outcomeLedger.recordRoute(kernel.contract.id, {
                 backend: routed.route === 'codex' ? 'openai-codex-app-server' : routed.route === 'codex-remote' ? 'openai-codex-mesh' : routed.route,
