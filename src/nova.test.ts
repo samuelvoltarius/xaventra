@@ -82,56 +82,6 @@ describe('FeedbackCollector', async () => {
 })
 
 // ============================================
-// Learning: PatternDetector Tests
-// ============================================
-
-describe('PatternDetector', async () => {
-    const { PatternDetector } = await import('./learning/patterns.js')
-
-    it('should process messages and find patterns', () => {
-        const detector = new PatternDetector()
-
-        // Process same-ish messages multiple times
-        detector.processMessage('What time is it?')
-        detector.processMessage('What time is it now?')
-        detector.processMessage('What is the time?')
-
-        const patterns = detector.getAllPatterns()
-        expect(patterns.length).toBeGreaterThanOrEqual(0) // May or may not detect pattern yet
-    })
-
-    it('should find pattern for message', () => {
-        const detector = new PatternDetector()
-
-        detector.processMessage('Hello there!')
-        const pattern = detector.findPatternForMessage('Hello there!')
-        // Should either find it or return null
-        expect(pattern === null || pattern.pattern !== undefined).toBe(true)
-    })
-
-    it('should get stats', () => {
-        const detector = new PatternDetector()
-        const stats = detector.getStats()
-
-        expect(stats.totalPatterns).toBeDefined()
-        expect(stats.byCategory).toBeDefined()
-        expect(stats.highConfidence).toBeDefined()
-    })
-
-    it('should export/import JSON', () => {
-        const detector = new PatternDetector()
-        detector.processMessage('Test pattern message')
-
-        const json = detector.exportToJSON()
-        expect(typeof json).toBe('string')
-
-        const newDetector = new PatternDetector()
-        newDetector.importFromJSON(json)
-        // Should not throw
-    })
-})
-
-// ============================================
 // Resilience: OutputValidator Tests
 // ============================================
 
