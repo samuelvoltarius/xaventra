@@ -199,6 +199,13 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     // Release-Knopf (Phase 6a): refuses every press while autonomy.releaseButton is off.
     const { registerReleaseButtonExecutor } = await import('./release-button.js')
     registerReleaseButtonExecutor()
+
+    // Phase 6b: Verantwortung übernehmen (Ja/Nein) and Missions-Schritt (Ja = genau dieser Schritt).
+    const { getResponsibilityRuntime } = await import('./responsibility-runtime.js')
+    const { createResponsibilityCardExecutor } = await import('./responsibilities.js')
+    const { createMissionCardExecutor } = await import('./missions.js')
+    registerCardExecutor(createResponsibilityCardExecutor(() => getResponsibilityRuntime()?.responsibilities ?? null))
+    registerCardExecutor(createMissionCardExecutor(() => getResponsibilityRuntime()?.missions ?? null))
 }
 
 // ---------------------------------------------------------------------------

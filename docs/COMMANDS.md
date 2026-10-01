@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/delegiert` `/heilung` `/software` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -222,6 +222,9 @@ Owner, nur lesend, immer verfügbar. Je Fähigkeit (STT, TTS, Embeddings, Browse
 
 ### `/delegiert [n]`
 Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Claude/Codex/Hermes/Unteragenten mit Status, Stufe (L1/L2), Erfolgskriterium, Prüfergebnis (verifiziert/nicht erfüllt/unverifiziert), Beleg und Antwort-Auszug (nur Daten). Standard aus: `autonomy.delegation.enabled`. Details: `docs/AUTONOMY_GUIDE.md`.
+
+### `/arbeit [pause <id>|weiter <id>]`
+Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

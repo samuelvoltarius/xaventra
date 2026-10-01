@@ -34,7 +34,7 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
-import { NIE_LISTE } from '../doctor/self-heal.js'
+import { isNieAktionsart, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt } from './action-policy.js'
 
 export const CARD_ANSWERS = ['ja', 'nein', 'spaeter', 'immer'] as const
 export type CardAnswer = typeof CARD_ANSWERS[number]
@@ -128,23 +128,13 @@ const SNOOZE_MS = 4 * 60 * 60_000
 const STORE_LIMIT = 300
 const THOUGHT_LIMIT_BYTES = 512 * 1024
 
-/** Kinds that never get a card (STUFENPLAN „Feste Grenzen“ Nr. 1). */
-const NEVER_KINDS: readonly RegExp[] = [
-    /loesch|lösch|delete|remove-data|wipe/,
-    /secret|token|passw|credential/,
-    /nas-(neustart|restart|shutdown|reboot)|reboot|shutdown/,
-    /db-(migration|migrate|schreiben|write)|migration/,
-    /firewall|sudoers|ssh-(config|aendern)|tailscale/,
-    /kernel|treiber|driver|cuda/,
-    /apt-(upgrade|dist-upgrade)|dist-upgrade|curl-pipe/,
-    /vllm-(stop|stoppen)|fremddienst/,
-    /telegram-nicht-main/,
-]
-const NIE_EFFECTS = new Set(NIE_LISTE.map(item => item.effect))
+/** Kinds that never get a card (STUFENPLAN „Feste Grenzen“ Nr. 1). Phase 6b: the
+ * lists live in the unified action policy (core/action-policy.ts); a card is
+ * refused when ANY of its lists matches (union, never looser than before). */
 
 /** Physical and outward actions: always ask, never "Immer erlauben" (Alfred 23.09.: Konstruieren ist nicht drucken). */
-const PHYSICAL_KINDS = /drucken|druck|print|schalten|switch|licht|heizung|home-?assistant|ha-aktion|tuer|tür|klima/
-const EXTERNAL_KINDS = /senden|send|mail|nachricht|post|veroeffentlich|veröffentlich|publish|kaufen|kauf|buy|purchase|bestell|order|zahlen|pay/
+const PHYSICAL_KINDS = KARTEN_PHYSISCH
+const EXTERNAL_KINDS = KARTEN_EXTERN
 
 const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, physisch: 1, extern: 2 }
 
@@ -161,11 +151,11 @@ function classifyImpact(art: string, kind: string, declared?: CardImpact, execut
 
 function neverListReason(input: Pick<NewCardInput, 'art' | 'aktion' | 'effects'>): string | null {
     for (const effect of input.effects || []) {
-        if (NIE_EFFECTS.has(String(effect))) return `Nie-Liste: ${NIE_LISTE.find(item => item.effect === effect)?.label || effect}`
+        const label = nieEffekt(effect)
+        if (label) return `Nie-Liste: ${label}`
     }
     const text = `${input.art} ${input.aktion?.kind}`.toLowerCase()
-    const hit = NEVER_KINDS.find(pattern => pattern.test(text))
-    return hit ? `Nie-Liste: Aktionsart „${input.aktion?.kind || input.art}“` : null
+    return isNieAktionsart(text) ? `Nie-Liste: Aktionsart „${input.aktion?.kind || input.art}“` : null
 }
 
 // ---------------------------------------------------------------------------

@@ -1240,6 +1240,16 @@
       ]
     },
     {
+      "module": "src/core/action-policy.ts",
+      "imports": [
+        "../install/never-list.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/approval-card-sources.ts",
       "imports": [
         "../doctor/self-heal.js",
@@ -1253,8 +1263,8 @@
     {
       "module": "src/core/approval-cards.ts",
       "imports": [
-        "../doctor/self-heal.js",
         "../security/secret-redaction.js",
+        "./action-policy.js",
         "./atomic-storage.js",
         "./data-root.js",
         "node:crypto",
@@ -1712,6 +1722,19 @@
       ]
     },
     {
+      "module": "src/core/missions.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./action-policy.js",
+        "./approval-cards.js",
+        "./atomic-storage.js",
+        "./responsibilities.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/model-defaults.ts",
       "imports": [
         "../config/config-path.js",
@@ -1999,6 +2022,28 @@
       "module": "src/core/response-contract.ts",
       "imports": [
         "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/core/responsibilities.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./action-policy.js",
+        "./approval-cards.js",
+        "./atomic-storage.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/responsibility-runtime.ts",
+      "imports": [
+        "../sensing/ports.js",
+        "./data-root.js",
+        "./missions.js",
+        "./responsibilities.js",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -3104,6 +3149,7 @@
     {
       "module": "src/doctor/self-heal.ts",
       "imports": [
+        "../core/action-policy.js",
         "../core/atomic-storage.js",
         "../core/autonomy-loop.js",
         "../security/secret-redaction.js",
@@ -5600,9 +5646,9 @@
     {
       "module": "src/thinking/decision-learning.ts",
       "imports": [
+        "../core/action-policy.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
-        "../doctor/self-heal.js",
         "./ports.js",
         "node:fs",
         "node:path"

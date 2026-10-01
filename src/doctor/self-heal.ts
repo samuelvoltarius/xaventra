@@ -30,6 +30,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { CheckResult } from '../core/autonomy-loop.js'
+import { NIE_EFFEKTE, NIE_ZIELE as POLICY_NIE_ZIELE } from '../core/action-policy.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { NightwatchReport } from './nightwatch.js'
@@ -39,48 +40,13 @@ import type { NightwatchReport } from './nightwatch.js'
 // ---------------------------------------------------------------------------
 
 /** STUFENPLAN „Feste Grenzen“ Nr. 1 plus die Ausführungsgrenzen von Stufe 3.
- * Nicht per Config, YOLO oder Owner-Befehl aufhebbar. */
-export const NIE_LISTE: ReadonlyArray<{ effect: string; label: string }> = Object.freeze([
-    { effect: 'nas:neustart', label: 'NAS-Neustart' },
-    { effect: 'nas:shutdown', label: 'NAS-Shutdown' },
-    { effect: 'daten:loeschen', label: 'Löschen von Daten' },
-    { effect: 'backup:loeschen', label: 'Löschen von Backups' },
-    { effect: 'rollback-container:loeschen', label: 'Löschen von Rollback-Containern' },
-    { effect: 'db:migration', label: 'DB-Migration' },
-    { effect: 'db:schreiben', label: 'DB-Änderung (auch bei Lease-Verlust/403)' },
-    { effect: 'telegram:nicht-main', label: 'Telegram-Token/-Kanal auf einem Nicht-Main' },
-    { effect: 'firewall:aendern', label: 'Firewall' },
-    { effect: 'ssh:aendern', label: 'SSH-Konfiguration' },
-    { effect: 'tailscale:aendern', label: 'Tailscale' },
-    { effect: 'sudoers:aendern', label: 'sudoers' },
-    { effect: 'secrets:lesen', label: 'Secrets lesen' },
-    { effect: 'secrets:verschieben', label: 'Secrets verschieben' },
-    { effect: 'secrets:ausgeben', label: 'Secrets ausgeben' },
-    { effect: 'fremddienst:aendern', label: 'fremde Dienste (Mail, purebeing-shop, Hermes)' },
-    { effect: 'vllm:stoppen', label: 'vLLM stoppen' },
-    { effect: 'kernel:aendern', label: 'Kernel' },
-    { effect: 'treiber:aendern', label: 'Treiber' },
-    { effect: 'cuda:aendern', label: 'CUDA' },
-    { effect: 'apt:upgrade', label: 'apt upgrade' },
-    { effect: 'apt:dist-upgrade', label: 'apt dist-upgrade' },
-    { effect: 'curl-pipe-sh', label: 'curl | sh' },
-    // Stufe 3, Alfred 01.10.2026: nur eigener Prozess, kein Shell/SSH/root.
-    { effect: 'shell:ausfuehren', label: 'Shell-Befehl' },
-    { effect: 'ssh:ausfuehren', label: 'SSH-Befehl' },
-    { effect: 'root:werden', label: 'root-Rechte' },
-])
+ * Nicht per Config, YOLO oder Owner-Befehl aufhebbar. Phase 6b: die Liste lebt
+ * in der einheitlichen Aktions-Policy (core/action-policy.ts) und ist hier
+ * unter dem alten Namen weiter exportiert; ebenso die Nie-Ziele. */
+export const NIE_LISTE: ReadonlyArray<{ effect: string; label: string }> = NIE_EFFEKTE
 
 /** Ziele, die ein Rezept nie berühren darf, auch innerhalb des Datenverzeichnisses. */
-const NIE_ZIELE: readonly RegExp[] = [
-    /(^|[\\/])\.env($|\.)/i,
-    /(^|[\\/])auth[^\\/]*\.json$/i,
-    /(^|[\\/])mesh-identity($|[\\/])/i,
-    /\.(key|pem|p12|pfx)$/i,
-    /(secret|credential|passw|token)/i,
-    /(^|[\\/])backups?($|[\\/])/i,
-    /rollback/i,
-    /(^|[\\/])self-heal[\\/]archive($|[\\/])/i,
-]
+const NIE_ZIELE: readonly RegExp[] = POLICY_NIE_ZIELE
 
 export const AUTO_RECIPE_IDS = Object.freeze(['log-rotation', 'cache-leeren', 'endpoint-umschalten'] as const)
 const AUTO_EFFECTS = new Set(['fs:eigene-logs-archivieren', 'fs:eigene-caches-leeren', 'llm:endpoint-umschalten'])
