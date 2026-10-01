@@ -2239,6 +2239,12 @@
       "imports": []
     },
     {
+      "module": "src/core/status-endpoints.ts",
+      "imports": [
+        "../mesh/capability-graph.js"
+      ]
+    },
+    {
       "module": "src/core/strict-mode.ts",
       "imports": [
         "node:fs",
@@ -3840,6 +3846,7 @@
         "../config/config-path.js",
         "../core/health-contract.js",
         "../mesh/node-intelligence.js",
+        "../watch/engine.js",
         "node:child_process",
         "node:fs",
         "node:path"
@@ -4206,6 +4213,7 @@
       "imports": [
         "../config/config-path.js",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },
