@@ -52,7 +52,7 @@ async function main(): Promise<void> {
     console.log('Available modules:')
     console.log('  ✓ Auth: API Key based (OpenAI, Anthropic)')
     console.log('  ✓ LLM:  Local (Ollama/LM Studio) + OpenAI')
-    console.log('  ✓ Memory: src/memory/lancedb.ts')
+    console.log('  ✓ Memory: src/memory/memory-governance.ts (LanceDB/Core Facts/KG als Projektionen)')
     console.log('  ✓ Commands: /help, /model, /factory, /alarm, /config, /memory')
     console.log('')
     console.log('Next: Connect channels (WhatsApp, Telegram)')

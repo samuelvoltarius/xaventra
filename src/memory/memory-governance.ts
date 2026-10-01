@@ -11,6 +11,7 @@ import {
     selectDiverseMemories,
 } from './memory-quality.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { cleanStructure, structuredTriple } from './memory-triple.js'
 
 export type MemoryLifecycle = 'candidate' | 'verified' | 'canonical' | 'superseded' | 'rejected' | 'expired'
 export type MemoryEvidence =
@@ -174,9 +175,19 @@ function topicTokens(value: string): string[] {
         .sort()
 }
 
+/** Relations that may hold several values at once (two projects, two dogs).
+ * A new value is a further fact, not a contradiction of the earlier one. */
+const MULTI_VALUED_PREDICATES = new Set([
+    'arbeitet_an', 'baut', 'projekt', 'nutzt', 'kennt',
+    'hund', 'katze', 'haustier', 'sohn', 'tochter', 'bruder', 'schwester',
+])
+
 function deriveMemoryKey(proposal: MemoryProposal): string {
     const subject = proposal.subject ? normalize(proposal.subject).toLowerCase() : ''
     const predicate = proposal.predicate ? normalize(proposal.predicate).toLowerCase() : ''
+    if (subject && predicate && MULTI_VALUED_PREDICATES.has(predicate)) {
+        return `${proposal.scope}:${proposal.kind}:${subject}:${predicate}:${normalize(proposal.value || '').toLowerCase()}`
+    }
     if (subject && predicate) return `${proposal.scope}:${proposal.kind}:${subject}:${predicate}`
     return `${proposal.scope}:${proposal.kind}:${topicTokens(proposal.content).join(':')}`
 }
@@ -220,6 +231,18 @@ function toProvenance(proposal: MemoryProposal, timestamp: number): MemoryProven
             || proposal.evidence === 'explicit_user_instruction' || proposal.evidence === 'manual'
             || proposal.evidence === 'correction',
     }
+}
+
+/** Node type of a projected value, derived from the relation. */
+function graphValueType(record: Pick<GovernedMemory, 'kind' | 'predicate'>): 'person' | 'project' | 'pet' | 'hardware' | 'concept' | 'place' | 'preference' {
+    const predicate = String(record.predicate || '')
+    if (record.kind === 'preference') return 'preference'
+    if (/^(wohnt_in|lebt_in|stammt_aus|ort|standort|arbeitet_in)$/.test(predicate)) return 'place'
+    if (/^(arbeitet_an|projekt|baut)$/.test(predicate) || record.kind === 'project') return 'project'
+    if (/^(hund|katze|haustier)$/.test(predicate)) return 'pet'
+    if (/^(partner|partnerin|frau|mann|sohn|tochter|bruder|schwester|name)$/.test(predicate)) return 'person'
+    if (/^(server|nas|rechner|computer|laptop|desktop|drucker|geraet|gerät|auto|router|kamera)$/.test(predicate)) return 'hardware'
+    return 'concept'
 }
 
 export class MemoryGovernanceCoordinator {
@@ -310,12 +333,14 @@ export class MemoryGovernanceCoordinator {
         const shortHighSignal = (input.kind === 'identity' && content.length >= 5)
             || (input.evidence === 'explicit_user_instruction' && content.length >= 10)
             || (input.evidence === 'correction' && content.length >= 10)
+            || (Boolean(structuredTriple(input)) && content.length >= 8)
         if (!isDurableMemoryCandidate(content) && !shortHighSignal
             && input.evidence !== 'verified_tool_result' && input.evidence !== 'manual') return null
         if (!content || content.includes('[REDACTED')) return null
 
         this.expireRecords(input.timestamp || Date.now())
-        const proposal = { ...input, content }
+        const structure = cleanStructure(input)
+        const proposal: MemoryProposal = { ...input, content, subject: structure.subject, predicate: structure.predicate, value: structure.value }
         const now = proposal.timestamp || Date.now()
         const hash = fingerprint(content)
         const key = deriveMemoryKey(proposal)
@@ -347,6 +372,11 @@ export class MemoryGovernanceCoordinator {
             if (!knownEvidence) {
                 duplicate.provenance.push(provenance)
                 duplicate.confirmations++
+            }
+            if (!duplicate.subject && proposal.subject && proposal.predicate && proposal.value) {
+                duplicate.subject = proposal.subject
+                duplicate.predicate = proposal.predicate
+                duplicate.value = proposal.value
             }
             duplicate.confidence = Math.max(duplicate.confidence, proposal.confidence)
             duplicate.updatedAt = now
@@ -485,7 +515,7 @@ export class MemoryGovernanceCoordinator {
             try {
                 const graph = await import('./knowledge-graph.js')
                 graph.addNode(record.subject, record.scope.startsWith('user:') ? 'person' : 'other', { governanceId: record.id })
-                graph.addNode(record.value, record.kind === 'preference' ? 'preference' : 'concept', { governanceId: record.id })
+                graph.addNode(record.value, graphValueType(record), { governanceId: record.id })
                 graph.addEdge(record.subject, record.predicate, record.value, record.confidence, `governance:${record.id}`)
                 record.backends.knowledgeGraph = true
             } catch { /* Graph is an optional projection */ }

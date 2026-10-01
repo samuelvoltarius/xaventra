@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GoalManager } from './goal-manager.js'
 import { BeliefStore } from './belief-store.js'
-import { CausalMemory } from './causal-memory.js'
 import { deliberateExecution } from './deliberative-planner.js'
 import { resolveAutonomyLevel } from './autonomy-ladder.js'
 import { OperationalEventBus } from './operational-event-bus.js'
@@ -41,15 +40,6 @@ describe('Nova 2.70 closed-loop autonomy', () => {
         expect(disputed.id).toBe(supported.id)
         expect(disputed.status).toBe('disputed')
         expect(store.unresolved('sample')).toHaveLength(1)
-    })
-
-    it('stores a verified temporal chain with navigable causes and effects', () => {
-        const memory = new CausalMemory(join(root('nova-causal'), 'causal.json'))
-        const events = memory.recordChain({ userId: 'sample', runId: 'run-1', events: [
-            { kind: 'failure', summary: 'vLLM stopped' }, { kind: 'fallback', summary: 'fallback selected' }, { kind: 'latency', summary: 'reply slower' },
-        ] })
-        expect(memory.trace(events[1].id).causes[0].summary).toBe('vLLM stopped')
-        expect(memory.trace(events[1].id).effects[0].summary).toBe('reply slower')
     })
 
     it('selects direct, sandbox or approval plans from risk and reversibility', () => {

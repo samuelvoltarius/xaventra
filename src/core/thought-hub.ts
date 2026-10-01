@@ -200,8 +200,13 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
     const action = load()[thoughtId]
     if (!action) return { ok: true, message: answer === 'ja' ? 'Angenommen.' : 'Verworfen.' }
     if (action.kind === 'thinking') {
-        const { recordDecision } = await import('../thinking/thinking-runtime.js')
-        await recordDecision(action.thoughtKind, answer)
+        // Feedback lives in decisions.ts (one rule system); it never grants a permission.
+        const { getThinkingSettings } = await import('../thinking/thinking-runtime.js')
+        const settings = getThinkingSettings()
+        if (settings.enabled && settings.learning.enabled) {
+            const { recordThoughtAnswer } = await import('./decisions.js')
+            recordThoughtAnswer(action.thoughtKind, answer)
+        }
         return { ok: true, message: answer === 'ja' ? 'Angenommen, ich setze die Idee als Vorschlag um.' : 'Verworfen, ich schlage so etwas seltener vor.' }
     }
     if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)

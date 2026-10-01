@@ -853,17 +853,25 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 'coreRuntime', 'channelRouter', 'metaLearning',
                 'vision', 'astAnalyzer', 'costTracker',
                 'businessSense', 'autonomousLearner',
-                'serviceMonitor', 'selfImprovement',
-                'correctionLearner', 'antiHallucination',
+                'serviceMonitor', 'antiHallucination',
                 'knowledgeGraph', 'journal', 'intelligence',
                 'securityScanner', 'autonomy', 'lanceMemory',
             ]
             const activeLayers = layerKeys.filter(k => (state as any)[k]).length
             const totalLayers = layerKeys.length
 
-            // Learning stats
-            const corrStats = (state as any).correctionLearner?.getStats?.()
-            const selfRules = (state as any).selfImprovement?.getRules?.()?.length || 0
+            // Learning stats: corrections = governed correction memories,
+            // rules = active binding owner decisions (decisions.ts).
+            let correctionCount = 0
+            let decisionCount = 0
+            try {
+                const { countCorrectionMemories } = await import('../memory/correction-memory.js')
+                correctionCount = countCorrectionMemories()
+            } catch { /* governance optional */ }
+            try {
+                const { listDecisions } = await import('./decisions.js')
+                decisionCount = listDecisions().filter(item => item.status === 'aktiv' && item.bindend).length
+            } catch { /* decisions optional */ }
 
             // Monitoring
             const monitorTargets = (state as any).serviceMonitor?.getTargets?.()?.length || 0
@@ -908,8 +916,8 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
   Layers aktiv: ${activeLayers}/${totalLayers}
 
 *Intelligence:*
-  Korrekturen: ${corrStats?.totalCorrections || 0} (${corrStats?.appliedCorrections || 0} angewendet)
-  Self-Rules: ${selfRules}
+  Korrekturen: ${correctionCount} (Memory-Governance)
+  Entscheidungen: ${decisionCount} gültig
   Monitor-Targets: ${monitorTargets}
 
 *Channels:* ${channels.length > 0 ? channels.join(', ') : 'keine'}${watchSection}`
@@ -1142,24 +1150,15 @@ Dann: /llm local`
                 return '🧠 Memory: ❌ nicht aktiviert'
             }
             try {
-                const stats = await state.memory.getStats(from)
-                const localCount = stats.totalEntries || stats.count || 0
-                const vectorCount = stats.vectorStats?.totalEntries || 0
-                let lanceCount = 0
-                try {
-                    const lance = (state as any).lanceMemory
-                    if (lance) {
-                        const lStats = await lance.getStats()
-                        lanceCount = lStats?.totalEntries || 0
-                    }
-                } catch { /* */ }
-                const totalCount = localCount + vectorCount + lanceCount
+                const stats = state.memory.getStats()
+                const lanceCount = await state.memory.getLanceEntries?.()
                 const memText = `🧠 *Memory Status*
 
-📊 Gesamt: ${totalCount} Einträge
-  ├ 💾 Lokal: ${localCount}
-  ├ 🔍 Vektor: ${vectorCount}
-  └ 🗄️ LanceDB: ${lanceCount}
+📊 Aktiv: ${stats.totalEntries} Einträge (Memory-Governance)
+  ├ ✅ Kanonisch: ${stats.canonical}
+  ├ ☑️ Verifiziert: ${stats.verified}
+  ├ 📝 Kandidaten: ${stats.candidate}
+  └ 🗄️ LanceDB-Projektion: ${lanceCount ?? 'nicht geladen'}
 👤 Benutzer: ${from}`
 
                 // Try Telegram buttons
@@ -1168,8 +1167,7 @@ Dann: /llm local`
                     const tg = getTelegramAdapter()
                     if (tg) {
                         await tg.sendWithButtons(from, memText, [
-                            [{ text: '🔄 Refresh', callback_data: 'cmd_memory' }, { text: '🗑️ Clear Memory', callback_data: 'memory_clear' }],
-                            [{ text: '🔍 Suchen', callback_data: 'memory_search' }, { text: '💾 Export', callback_data: 'memory_export' }],
+                            [{ text: '🔄 Refresh', callback_data: 'cmd_memory' }, { text: '🔍 Suchen', callback_data: 'memory_search' }],
                             [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '⬅️ Menü', callback_data: 'cmd_help' }],
                         ])
                         return '__HANDLED__'
@@ -1466,12 +1464,12 @@ Gebaut für Xaventra contributors 🌶️`
         }
 
         // ============================================
-        // Knowledge Graph (arscontexta-inspired)
+        // Knowledge Graph (governed projection, .nova-data/knowledge-graph.json)
         // ============================================
         case 'graph':
         case 'knowledge': {
-            const { getGraphStats } = await import('../intelligence/knowledge-graph.js')
-            return getGraphStats()
+            const { formatGraphStats } = await import('../memory/knowledge-graph.js')
+            return formatGraphStats()
         }
 
         // ============================================
@@ -1708,16 +1706,16 @@ Gebaut für Xaventra contributors 🌶️`
         case 'gelernt': {
             const parts: string[] = ['📊 *Was Nova gelernt hat*\n']
 
-            // L7 - Corrections
+            // Corrections (governed memory) and owner decisions
             try {
-                const { getCorrectionLearner } = await import('../layers/L7-learning.js')
-                const learner = getCorrectionLearner()
-                const stats = learner.getStats()
-                parts.push(`*L7 Korrekturen:*`)
-                parts.push(`• ${stats.totalCorrections} Korrekturen gelernt`)
-                parts.push(`• ${stats.appliedCorrections} erfolgreich angewendet\n`)
+                const { countCorrectionMemories } = await import('../memory/correction-memory.js')
+                const { listDecisions } = await import('./decisions.js')
+                const decisions = listDecisions().filter(item => item.status === 'aktiv' && item.bindend).length
+                parts.push(`*Korrekturen & Entscheidungen:*`)
+                parts.push(`• ${countCorrectionMemories()} Korrekturen gemerkt (Memory-Governance)`)
+                parts.push(`• ${decisions} gültige Entscheidungen (/entscheidungen)\n`)
             } catch {
-                parts.push(`*L7 Korrekturen:* Nicht verfügbar\n`)
+                parts.push(`*Korrekturen & Entscheidungen:* Nicht verfügbar\n`)
             }
 
             // L9 - Idle Learning
@@ -1774,17 +1772,18 @@ Gebaut für Xaventra contributors 🌶️`
             if (!args) return '❓ Bitte erkläre was falsch war.\n\nBeispiel: /korrektur Das Ergebnis sollte in JSON sein, nicht als Text'
 
             try {
-                const learner = (state as any).correctionLearner
-                if (learner) {
-                    learner.recordCorrection({
-                        userId: from,
-                        originalResponse: 'Letzte Aktion (via /korrektur)',
-                        correctedResponse: args,
-                        context: 'Manual correction via /korrektur command',
-                    })
-                    return `✅ *Korrektur gespeichert!*\n\nIch habe mir gemerkt: "${args.slice(0, 100)}"\n\nDiese Korrektur wird bei ähnlichen Anfragen berücksichtigt.`
-                }
-                return '❌ CorrectionLearner nicht aktiv'
+                // One store: governed correction memory in the sender's scope.
+                const { recordUserCorrectionMemory } = await import('../memory/correction-memory.js')
+                const { principalScope } = await import('../users/principal-id.js')
+                const principalId = principalContext?.principalId || from
+                const record = await recordUserCorrectionMemory({
+                    scope: principalScope(principalId),
+                    message: `Korrektur: ${args}`,
+                    channel: principalContext?.channel,
+                    sessionId: `korrektur:${principalId}`,
+                })
+                if (!record) return '❌ Korrektur nicht gespeichert (leer, zu kurz oder enthält ein Geheimnis).'
+                return `✅ *Korrektur gespeichert!*\n\nIch habe mir gemerkt: "${args.slice(0, 100)}"\n\nDiese Korrektur wird bei ähnlichen Anfragen berücksichtigt.`
             } catch {
                 return '❌ Fehler beim Speichern der Korrektur'
             }
@@ -1875,10 +1874,8 @@ Gebaut für Xaventra contributors 🌶️`
             const saved: string[] = []
             try {
                 // Save Memory
-                if (state.memory && state.memory.save) {
-                    await state.memory.save()
-                    saved.push('🧠 Memory')
-                }
+                // Memory governance persists every change immediately.
+                if (state.memory) saved.push('🧠 Memory (Governance, laufend gespeichert)')
                 // Save Learning
                 if (state.learning && state.learning.save) {
                     state.learning.save()
@@ -1889,11 +1886,6 @@ Gebaut für Xaventra contributors 🌶️`
                 if (costTracker && costTracker.saveHistory) {
                     costTracker.saveHistory()
                     saved.push('💰 Cost Tracker')
-                }
-                // Save Self-Improvement Rules
-                const selfImprove = (state as any).selfImprovement
-                if (selfImprove) {
-                    saved.push('🧬 Self-Improvement Rules')
                 }
                 // Save Monitoring Config
                 const monitor = (state as any).serviceMonitor

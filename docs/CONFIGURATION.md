@@ -126,7 +126,6 @@ learning roots:
 
 - `goals.json`: user-scoped goals, dependencies, deadlines and next actions.
 - `beliefs.json`: claims with provenance, confidence, expiry and counterevidence.
-- `causal-memory.json`: verified temporal outcome chains.
 - `operational-events.json`: evidence-gated event initiative and deduplication.
 - `self-doctor/failure-research.json`: Doctor research and PATCH_GATE stages.
 - `regression-cases.json`: quarantined production failures awaiting an isolated

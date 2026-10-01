@@ -272,14 +272,12 @@ export interface ThinkingSettings {
         minImprovementPercent: number; currentModel?: string; maxCandidates: number
     }
     bugFinder: { enabled: boolean; minOccurrences: number; windowDays: number; maxNewCasesPerRun: number }
-    learning: { enabled: boolean; alwaysAllowAfter: number }
+    learning: { enabled: boolean }
     load: { maxGpuUtilPercent: number; vllmMetricsUrl?: string }
 }
 
 /** Feste Obergrenze aus dem Autonomie-Plan (D): höchstens 3 Ideen pro Tag. */
 export const MAX_IDEAS_PER_DAY = 3
-/** Feste Untergrenze aus dem Autonomie-Plan (G): frühestens nach 5× „Ja". */
-export const MIN_YES_FOR_ALWAYS_ALLOW = 5
 
 export const DEFAULT_SCOUT_LICENSES: readonly string[] = Object.freeze([
     'apache-2.0', 'mit', 'bsd-3-clause', 'llama3.1', 'llama3.2', 'llama3.3', 'llama4', 'gemma', 'qwen',
@@ -301,7 +299,7 @@ export function parseThinkingSettings(raw: unknown, env: NodeJS.ProcessEnv = pro
     const root = obj(raw)
     const master = defaultOn(root.enabled, env)
     const part = (key: string) => master && defaultOn(obj(root[key]).enabled, env)
-    const ideas = obj(root.ideas), scout = obj(root.scout), bug = obj(root.bugFinder), learning = obj(root.learning), load = obj(root.load)
+    const ideas = obj(root.ideas), scout = obj(root.scout), bug = obj(root.bugFinder), load = obj(root.load)
     const sources: ScoutSourceConfig[] = (Array.isArray(scout.sources) ? scout.sources : []).flatMap((item: any): ScoutSourceConfig[] => {
         if (item?.type === 'huggingface') {
             const url = item.url === undefined ? undefined : plainUrl(item.url)
@@ -337,7 +335,7 @@ export function parseThinkingSettings(raw: unknown, env: NodeJS.ProcessEnv = pro
             windowDays: num(bug.windowDays, 7, 1, 14),
             maxNewCasesPerRun: num(bug.maxNewCasesPerRun, 3, 1, 10),
         },
-        learning: { enabled: part('learning'), alwaysAllowAfter: num(learning.alwaysAllowAfter, MIN_YES_FOR_ALWAYS_ALLOW, MIN_YES_FOR_ALWAYS_ALLOW, 100) },
+        learning: { enabled: part('learning') },
         load: { maxGpuUtilPercent: num(load.maxGpuUtilPercent, 20, 0, 100), vllmMetricsUrl: load.vllmMetricsUrl === undefined ? undefined : plainUrl(load.vllmMetricsUrl) },
     }
 }

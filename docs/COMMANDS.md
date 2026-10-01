@@ -98,10 +98,10 @@ Zeigt aktive Korrekturen und Instinct-Updates.
 - Durchschnittliche Kosten pro Task
 
 ### `/graph`
-🕸️ **Knowledge Graph** — Zeigt extrahierte Entitäten, Entscheidungen, Tools.
-- Anzahl Nodes, Links, MOCs
-- Node-Typen (entity, decision, tool, project, person)
-- Auto-aktualisiert bei jeder Konversation
+🕸️ **Knowledge Graph** — Zählt den Wissensgraphen (`.nova-data/knowledge-graph.json`).
+- Anzahl Knoten und Kanten, Knoten-Typen (person, place, hardware, project, pet …)
+- Befüllt nur über die Memory-Governance: kanonische Fakten mit Subjekt/Beziehung/Wert
+  (Owner-Aussagen wie „Ich wohne in …“, „Mein Drucker heißt …“, Distiller, `kg_remember`)
 
 ### `/scan <path>`
 📁 **File Index** — Scannt und indexiert ein Verzeichnis.

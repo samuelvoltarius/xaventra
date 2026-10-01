@@ -1371,15 +1371,6 @@
       ]
     },
     {
-      "module": "src/core/causal-memory.ts",
-      "imports": [
-        "./atomic-storage.js",
-        "./data-root.js",
-        "node:crypto",
-        "node:fs"
-      ]
-    },
-    {
       "module": "src/core/channel-gateway.ts",
       "imports": [
         "./daemon-channels.js"
@@ -1541,13 +1532,6 @@
       ]
     },
     {
-      "module": "src/core/document-rag.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/core/environment.ts",
       "imports": [
         "node:child_process",
@@ -1700,15 +1684,6 @@
       "imports": [
         "../config/config-path.js",
         "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/core/memory.ts",
-      "imports": [
-        "./atomic-storage.js",
-        "node:fs",
-        "node:fs/promises",
         "node:path"
       ]
     },
@@ -2409,12 +2384,6 @@
         "../doctor/failure-research-coordinator.js",
         "./outcome-ledger.js",
         "node:crypto"
-      ]
-    },
-    {
-      "module": "src/core/vector-memory.ts",
-      "imports": [
-        "node:fs"
       ]
     },
     {
@@ -3603,13 +3572,6 @@
       ]
     },
     {
-      "module": "src/intelligence/knowledge-graph.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/intelligence/learning-hub.ts",
       "imports": [
         "../config/config-path.js",
@@ -3834,13 +3796,6 @@
       ]
     },
     {
-      "module": "src/layers/L20-self-improvement.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/layers/L21-node-health.ts",
       "imports": [
         "../config/config-path.js",
@@ -3967,6 +3922,7 @@
       "imports": [
         "../config/config-path.js",
         "../memory/memory-quality.js",
+        "../memory/memory-triple.js",
         "../users/principal-id.js",
         "node:fs",
         "node:path"
@@ -4354,13 +4310,6 @@
       ]
     },
     {
-      "module": "src/memory/advanced-rag.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/memory/auto-observer.ts",
       "imports": [
         "../config/config-path.js",
@@ -4377,12 +4326,6 @@
         "../security/secret-redaction.js",
         "node:fs",
         "node:path"
-      ]
-    },
-    {
-      "module": "src/memory/combined-memory.ts",
-      "imports": [
-        "../users/principal-id.js"
       ]
     },
     {
@@ -4422,7 +4365,6 @@
     {
       "module": "src/memory/lancedb-memory.ts",
       "imports": [
-        "../security/secret-redaction.js",
         "./embedding-providers.js",
         "./hybrid-search.js",
         "./query-expansion.js",
@@ -4432,16 +4374,13 @@
       ]
     },
     {
-      "module": "src/memory/lancedb.ts",
+      "module": "src/memory/legacy-memory-migration.ts",
       "imports": [
-        "node:crypto"
-      ]
-    },
-    {
-      "module": "src/memory/local-memory.ts",
-      "imports": [
-        "../core/atomic-storage.js",
-        "./shared-memory.js",
+        "../core/data-root.js",
+        "../users/principal-id.js",
+        "./correction-memory.js",
+        "./memory-governance.js",
+        "./memory-quality.js",
         "node:fs",
         "node:path"
       ]
@@ -4470,11 +4409,19 @@
       ]
     },
     {
+      "module": "src/memory/memory-facade.ts",
+      "imports": [
+        "../users/principal-id.js",
+        "./memory-governance.js"
+      ]
+    },
+    {
       "module": "src/memory/memory-governance.ts",
       "imports": [
         "../core/data-root.js",
         "../security/secret-redaction.js",
         "./memory-quality.js",
+        "./memory-triple.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -4483,6 +4430,12 @@
     {
       "module": "src/memory/memory-quality.ts",
       "imports": []
+    },
+    {
+      "module": "src/memory/memory-triple.ts",
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
     },
     {
       "module": "src/memory/mmr.ts",
@@ -4531,29 +4484,6 @@
       "module": "src/memory/tool-result-pruner.ts",
       "imports": [
         "node:crypto"
-      ]
-    },
-    {
-      "module": "src/memory/user-preferences.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/memory/vector-memory.ts",
-      "imports": [
-        "../core/atomic-storage.js",
-        "./shared-memory.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/memory/vector-store.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
       ]
     },
     {
@@ -4733,14 +4663,6 @@
       ]
     },
     {
-      "module": "src/mesh/mesh-memory-sync.ts",
-      "imports": [
-        "node:crypto",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/mesh/mesh-node-lifecycle.ts",
       "imports": []
     },
@@ -4894,13 +4816,6 @@
     {
       "module": "src/mesh/transport-contracts.ts",
       "imports": []
-    },
-    {
-      "module": "src/mesh/visual-mesh-memory.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
     },
     {
       "module": "src/mesh/witness-checkpoint-transport.ts",
@@ -5852,17 +5767,6 @@
       ]
     },
     {
-      "module": "src/thinking/decision-learning.ts",
-      "imports": [
-        "../core/action-policy.js",
-        "../core/atomic-storage.js",
-        "../core/data-root.js",
-        "./ports.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/thinking/idea-run.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5907,9 +5811,9 @@
     {
       "module": "src/thinking/thinking-runtime.ts",
       "imports": [
+        "../core/decisions.js",
         "../doctor/failure-research-coordinator.js",
         "./bug-finder.js",
-        "./decision-learning.js",
         "./idea-run.js",
         "./model-scout.js",
         "./ports.js",

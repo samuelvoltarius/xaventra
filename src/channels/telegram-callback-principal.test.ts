@@ -124,18 +124,22 @@ describe('memory_clear button requires a role (review open point after INT-1)', 
         await (instance as any).handleFeedback(press(333, 'memory_clear', -500, 'group'))
         expect(clear).not.toHaveBeenCalled()
     })
-    it('lets a user clear the memory of their own private chat', async () => {
+    // Memory governance forgets record by record (tombstones); the button
+    // never bulk-wipes, it points allowed users to /memory review + reject.
+    it('a user in their own private chat gets the forget path, no bulk wipe', async () => {
         mu.roles.set('333', 'user')
         const clear = withMemory()
-        const { instance } = adapter([])
+        const { instance, bot } = adapter([])
         await (instance as any).handleFeedback(press(333, 'memory_clear'))
-        expect(clear).toHaveBeenCalledWith('333')
+        expect(clear).not.toHaveBeenCalled()
+        expect(String((bot.sendMessage.mock.calls.at(-1) as any[])?.[1])).toContain('/memory reject')
     })
-    it('lets the owner clear a group chat memory', async () => {
+    it('the owner in a group gets the forget path, no bulk wipe', async () => {
         mu.roles.set('111', 'owner')
         const clear = withMemory()
-        const { instance } = adapter(['111'])
+        const { instance, bot } = adapter(['111'])
         await (instance as any).handleFeedback(press(111, 'memory_clear', -500, 'group'))
-        expect(clear).toHaveBeenCalledWith('-500')
+        expect(clear).not.toHaveBeenCalled()
+        expect(String((bot.sendMessage.mock.calls.at(-1) as any[])?.[1])).toContain('/memory reject')
     })
 })

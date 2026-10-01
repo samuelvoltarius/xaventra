@@ -143,11 +143,11 @@ npm run typecheck         # tsc --noEmit
 |------|---------|-------|
 | **0 — Core Facts** | `facts.json` | Always injected, ~50 facts |
 | **1 — Session** | In-memory + compressed | Current conversation |
-| **2 — LanceDB** | `.nova-vector-memory/` | Semantic search, recent |
+| **2 — LanceDB** | `.nova-data/lancedb/` | Semantic projection of governed memory |
 | **3 — Journal** | `.nova-data/journal/` | Daily episodic log |
 | **4 — Brain** | Graphiti + Neo4j | Long-term, structured facts |
 
-**LanceDB double-write caution**: LanceDB is used exclusively by `message-pipeline.ts`. Double-writes occur if written elsewhere.
+**One memory writer**: memory governance (`src/memory/memory-governance.ts`, `publish()`) is the only writer of LanceDB, Core Facts and the Knowledge Graph. Sources (auto-observer, distiller, correction memory, `kg_remember`) propose records to governance; never call `lancedb-memory.remember()` or `addNode/addEdge` directly (guarded by `src/memory/memory-single-writer.test.ts`).
 
 ## Important Files
 
@@ -183,8 +183,9 @@ npm run typecheck         # tsc --noEmit
 ## Known Quirks
 
 ### 1. Memory Management
-- **LanceDB** used exclusively by `message-pipeline.ts` — double-writes occur if written elsewhere
-- Vector + Local + LanceDB: triad recall system
+- **LanceDB / Core Facts / KG** are projections written only by memory governance; `state.memory` (`memory-facade.ts`) reads governance + LanceDB
+- Old parallel stores (`.nova-memory`, `.nova-vector-memory`, L7 `corrections.json`, L20 `self-rules.json`, `mesh-memory/`, `causal-memory.json`, `thinking/decisions.json`) are migrated at start and renamed `*.migriert`
+- Rules: owner decisions live in `src/core/decisions.ts` (one prompt block ENTSCHEIDUNGEN); corrections are governed memory (`correction-memory.ts`)
 
 ### 2. Security Layers
 - **CodeGuardian**: real AST analysis (not regex)

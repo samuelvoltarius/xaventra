@@ -510,64 +510,6 @@ describe('L19 Monitoring', async () => {
 })
 
 // ============================================
-// L20 — Self-Improvement Engine
-// ============================================
-
-describe('L20 Self-Improvement', async () => {
-    const { getSelfImprovementEngine } = await import('./L20-self-improvement.js')
-
-    it('getSelfImprovementEngine: returns instance', () => {
-        const engine = getSelfImprovementEngine()
-        expect(engine).toBeDefined()
-    })
-
-    it('getSelfImprovementEngine: returns singleton', () => {
-        const a = getSelfImprovementEngine()
-        const b = getSelfImprovementEngine()
-        expect(a).toBe(b)
-    })
-
-    it('getStats: returns valid structure', () => {
-        const engine = getSelfImprovementEngine()
-        const stats = engine.getStats()
-        expect(typeof stats.totalRules).toBe('number')
-        expect(typeof stats.totalCorrectionsAnalyzed).toBe('number')
-        expect(typeof stats.rulesApplied).toBe('number')
-    })
-
-    it('getRules: returns array', () => {
-        const engine = getSelfImprovementEngine()
-        expect(Array.isArray(engine.getRules())).toBe(true)
-    })
-
-    it('addManualRule: adds a rule', () => {
-        const engine = getSelfImprovementEngine()
-        const before = engine.getRules().length
-        engine.addManualRule('test pattern xyz', 'Always do X for test pattern xyz')
-        expect(engine.getRules().length).toBeGreaterThan(before)
-    })
-
-    it('getRulesForContext: returns array', () => {
-        const engine = getSelfImprovementEngine()
-        const rules = engine.getRulesForContext('some coding question')
-        expect(Array.isArray(rules)).toBe(true)
-    })
-
-    it('buildPromptBlock: returns string or null', () => {
-        const engine = getSelfImprovementEngine()
-        const block = engine.buildPromptBlock('test message')
-        expect(block === null || typeof block === 'string').toBe(true)
-    })
-
-    it('formatStatus: returns non-empty string', () => {
-        const engine = getSelfImprovementEngine()
-        const status = engine.formatStatus()
-        expect(typeof status).toBe('string')
-        expect(status.length).toBeGreaterThan(0)
-    })
-})
-
-// ============================================
 // L24 — Prompt Optimizer
 // ============================================
 
@@ -1133,7 +1075,6 @@ describe('Extended Layer Module Loading', async () => {
         './L16-business-sense.js',
         './L17-autonomous-learning.js',
         './L19-monitoring.js',
-        './L20-self-improvement.js',
         './L21-node-health.js',
         './L22-federated-memory.js',
         './L24-prompt-optimizer.js',

@@ -106,10 +106,6 @@ export interface AgentRunParams {
     systemPrompt?: string
     llm?: any
     tools?: any[]
-    memory?: {
-        recall: (query: string, userId: string, limit: number) => Promise<any[]>
-        store: (entry: any) => Promise<void>
-    }
     /** Called between tool executions to send status updates to the user */
     onStepUpdate?: (status: string) => Promise<void>
     /** Hard abort signal — if fired, the agent loop exits immediately */
@@ -204,7 +200,7 @@ export function sdkTurnLimit(configuredRounds: number, diagnosticContract?: Pick
 }
 
 export async function runNovaAgent(params: AgentRunParams): Promise<AgentResponse> {
-    const { userId, authUserId = userId, channel, content, image, systemPrompt, llm, tools, memory, onStepUpdate, abortSignal, contract, workspaceId, conversationId, modelOverride, preferredNodeIds = [], deniedTools = [], botId } = params
+    const { userId, authUserId = userId, channel, content, image, systemPrompt, llm, tools, onStepUpdate, abortSignal, contract, workspaceId, conversationId, modelOverride, preferredNodeIds = [], deniedTools = [], botId } = params
     const isBenchmarkRun = channel === 'benchmark'
     const isDiagnosticRun = params.diagnostic === true
     const backgroundLearningEnabled = !isBenchmarkRun && !isDiagnosticRun && !sideEffectsDisabled()

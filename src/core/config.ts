@@ -150,9 +150,6 @@ export const NovaConfigSchema = z.object({
     // Memory
     memory: z.object({
         enabled: z.boolean().default(true),
-        dbPath: z.string().default('.nova-memory'),
-        autoRecall: z.boolean().default(true),
-        autoCapture: z.boolean().default(true),
     }).default({}),
 
     // Learning

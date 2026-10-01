@@ -123,15 +123,15 @@ nova-core/
 │   │   ├── journal.ts             # Daily episodic journal
 │   │   ├── lancedb-memory.ts      # Vector memory (LanceDB)
 │   │   ├── auto-observer.ts       # Automatic fact extraction
-│   │   ├── knowledge-graph.ts     # Entity/decision/tool graph
-│   │   └── local-memory.ts        # Keyword-based local memory
+│   │   ├── knowledge-graph.ts     # Governed projection (person/place/device/project)
+│   │   ├── memory-governance.ts   # The one memory authority and writer
+│   │   └── memory-facade.ts       # state.memory: reads governance + LanceDB
 │   │
 │   ├── mesh/                      # Multi-node mesh
 │   │   ├── mesh-hub.ts            # WebSocket hub (master)
 │   │   ├── mesh-client.ts         # WebSocket client (edge)
 │   │   ├── mesh-brain.ts          # Node scanning (Tailscale status)
-│   │   ├── skill-sync.ts          # Cryptographic skill distribution
-│   │   └── visual-mesh-memory.ts  # Cross-node visual memory
+│   │   └── skill-sync.ts          # Cryptographic skill distribution
 │   │
 │   ├── plugins/                   # Plugin SDK
 │   │   └── plugin-sdk.ts          # PluginManager, HookName, executeHook
@@ -215,7 +215,7 @@ User Message (Telegram / WhatsApp / Discord / CLI / REST)
 │                        │  + LanceDB semantic recall
 │                        │  + Journal context (last 3 days)
 │                        │  + L23 Instincts
-│                        │  + L20 Self-rules
+│                        │  + ENTSCHEIDUNGEN (decisions.ts)
 └──────────┬─────────────┘
            │
            ▼
@@ -300,9 +300,9 @@ Memory Governance sits above all five tiers as the lifecycle authority. It valid
 │                                                         │
 │  Tier 2 — Vector Memory (recent, semantic)             │
 │  ┌─────────────────────────────────────────────────┐   │
-│  │  LanceDB: .nova-vector-memory/                 │   │
+│  │  LanceDB: .nova-data/lancedb/ (governance proj.)│   │
 │  │  Embeddings via Ollama / OpenAI                │   │
-│  │  L7-learning: correction + skill records       │   │
+│  │  Written only by memory-governance publish()   │   │
 │  └─────────────────────────────────────────────────┘   │
 │                                                         │
 │  Tier 3 — Episodic Journal (daily)                     │
@@ -506,8 +506,7 @@ Doctor diagnosis is automatic, but `/doctor fix` only queues a proposal. Doctor 
 | Memory Distiller | `CronerScheduler` (02:00 AM) | Nightly |
 | Auto-Observer | `message-pipeline.ts` (post-response) | After every response |
 | Instincts | `message-pipeline.ts` (system prompt) | Before LLM call |
-| Self-Rules (L20) | `message-pipeline.ts` (system prompt) | Before LLM call |
+| Decisions (owner rules) | `message-pipeline.ts` (system prompt, ENTSCHEIDUNGEN) | Before LLM call |
 | Vibe | `message-pipeline.ts` (system prompt) | Before LLM call |
 | **Nova Doctor** | `daemon.ts` (background init) · `/doctor` CLI | On-demand diagnosis |
-| **Document RAG** | `core/document-rag.ts` (LanceDB-backed) | `indexDocument()` / `getDocumentContext()` |
 | **Dream Daily Digest** | `layers/dream-daily-digest.ts` → heartbeat (20:00) | After each dream cycle + nightly send |

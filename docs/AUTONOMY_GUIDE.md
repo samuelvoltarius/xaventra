@@ -827,6 +827,15 @@ Entscheidung + Warum (Beleg) + wer/wann + gültig bis / Widerruf + wovon
 abhängig. Datei: `.nova-data/decisions/decisions.json` (höchstens 400
 Einträge, Texte gekürzt). Kein LanceDB-Schreiben.
 
+Es ist das eine Regelsystem: die früheren L20-Self-Rules sind entfernt (beim
+Start in die Memory-Governance übernommen, `self-rules.json.migriert`), und die
+Rückmeldungen auf Gedanken (Ja/Nein/Später senkt oder hebt die Wichtigkeit
+einer Gedanken-Art) liegen ebenfalls hier, in
+`.nova-data/decisions/gedanken-rueckmeldungen.json` (früher
+`thinking/decisions.json`, beim Start übernommen und `.migriert`). Daraus
+entsteht nie ein „Immer erlauben?“-Vorschlag — Erlaubnisse vergeben nur die
+Knopf-Karten und die Vertrauensleiter.
+
 Quellen — ohne Befehl und ohne Rückfrage angelegt, im Abendbericht unter
 „Neu gemerkt (Entscheidungen)“ genannt:
 

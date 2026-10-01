@@ -44,6 +44,16 @@ deletion are involved.
   but the owner now require the owner's approval; never-list patterns for
   vLLM stop variants; named exception instead of a name trick for removing
   own VMs.
+- One memory, one rule system: memory governance is the only writer of
+  LanceDB, Core Facts and the Knowledge Graph; `/graph` shows that graph and
+  owner statements (home, devices, projects, pets) plus the nightly distiller
+  fill it with checked subject/relation/value. Owner rules live only in the
+  decisions (`/entscheidungen`, one prompt block), corrections are stored
+  once as governed memory. Removed duplicates: L20 self-rules, the L7
+  correction store, the separate thought-answer learner (no more "Immer
+  erlauben?" from it), local/vector/combined memory, mesh-memory-sync,
+  causal-memory, document RAG, visual mesh memory and other dead modules.
+  Old files are migrated at start and kept as `*.migriert`.
 
 ## [2.81.0] — 2026-10-01
 

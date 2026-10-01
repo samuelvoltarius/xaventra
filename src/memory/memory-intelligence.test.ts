@@ -4,11 +4,10 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FeedbackCollector } from '../learning/feedback.js'
 import { LearningCoordinator } from '../learning/learning-coordinator.js'
-import { CorrectionLearner } from '../layers/L7-learning.js'
 import { selectContextPolicy } from '../core/context-policy.js'
 import { MemoryGovernanceCoordinator } from './memory-governance.js'
 import { classifyMemoryQuery, decideMemoryTurn, memoryKindBonus, memoryRelevance, parseNaturalMemoryForget } from './memory-quality.js'
-import { parseCorrectionMemory } from './correction-memory.js'
+import { countCorrectionMemories, parseCorrectionMemory, recordUserCorrectionMemory } from './correction-memory.js'
 import { SessionContinuityStore } from './session-summarizer.js'
 
 const roots: string[] = []
@@ -123,7 +122,7 @@ describe('memory intelligence', () => {
         expect(store.getSessionPrompt('sample', 'Was ist wichtig?')).toContain('automatisch löschen')
     })
 
-    it('keeps learned correction responses and correction rules principal-scoped', () => {
+    it('keeps learned correction responses and correction memories principal-scoped', async () => {
         const feedback = new FeedbackCollector()
         feedback.collectFeedback({
             type: 'correction',
@@ -135,15 +134,11 @@ describe('memory intelligence', () => {
         expect(feedback.getLearnedResponse('Korrektur: Spark ist Main', 'sample')).toBe('Spark ist Main')
         expect(feedback.getLearnedResponse('Korrektur: Spark ist Main', 'sample-two')).toBeUndefined()
 
-        const learner = new CorrectionLearner(tempRoot())
-        learner.recordCorrection({
-            userId: 'sample',
-            originalResponse: 'Pi ist Main',
-            correctedResponse: 'Spark ist Main',
-            context: 'Welcher Node ist Main',
-        })
-        expect(learner.findSimilarCorrections('Welcher Node ist Main', 3, 'sample')).toHaveLength(1)
-        expect(learner.findSimilarCorrections('Welcher Node ist Main', 3, 'sample-two')).toHaveLength(0)
+        const governance = new MemoryGovernanceCoordinator(join(tempRoot(), 'governance'))
+        await recordUserCorrectionMemory({ scope: 'user:sample', message: 'Nicht Pi, sondern Spark ist Main.', priorAssistantResponse: 'Pi ist Main' }, governance)
+        expect(countCorrectionMemories(['user:sample'], governance)).toBe(1)
+        expect(countCorrectionMemories(['user:sample-two'], governance)).toBe(0)
+        expect(governance.getContextForPrompt('user:sample-two', 'Welcher Node ist Main')).toBe('')
     })
 
     it('parses concrete corrections but rejects content-free disagreement', () => {

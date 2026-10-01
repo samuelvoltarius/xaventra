@@ -15,8 +15,7 @@ export interface FullSystemAuditResult {
         coldStorage: { available: boolean; userMdBytes?: number; memoryMdBytes?: number }
         sessionMemory: { available: boolean; hotMessages?: number; hasSummary?: boolean }
         graphRag: { available: boolean; nodes?: number; edges?: number }
-        vectorMemory: { available: boolean; entries?: number; users?: number }
-        documentRag: { available: boolean; documents?: number; chunks?: number; lastIndexedName?: string; lastIndexedAt?: string; lastError?: string }
+        memoryGovernance: { available: boolean; canonical?: number; verified?: number; candidate?: number; lancedbEntries?: number }
         toolHealth: { available: boolean; broken?: number; degraded?: number }
         llm: { available: boolean; provider?: string; model?: string; internalModel?: string }
         channels: { available: boolean; active?: string[] }
@@ -73,16 +72,7 @@ export function formatFullSystemAudit(audit: FullSystemAuditResult): string {
     lines.push(`- Cold Storage: ${l.coldStorage.available ? `aktiv (USER.md ${l.coldStorage.userMdBytes || 0}B, MEMORY.md ${l.coldStorage.memoryMdBytes || 0}B)` : 'nicht verfügbar'}`)
     lines.push(`- Session-Memory: ${l.sessionMemory.available ? `aktiv (${l.sessionMemory.hotMessages || 0} Hot Messages${l.sessionMemory.hasSummary ? ', mit Summary' : ''})` : 'nicht verfügbar'}`)
     lines.push(`- GraphRAG: ${l.graphRag.available ? `aktiv (${l.graphRag.nodes || 0} Nodes, ${l.graphRag.edges || 0} Edges)` : 'nicht verfügbar'}`)
-    lines.push(`- Vector-Memory: ${l.vectorMemory.available ? `aktiv (${l.vectorMemory.entries || 0} Einträge, ${l.vectorMemory.users || 0} User)` : 'nicht verfügbar'}`)
-    if (l.documentRag.available) {
-        let docLine = `- Document-RAG: aktiv (${l.documentRag.documents || 0} Dokumente, ${l.documentRag.chunks || 0} Chunks)`
-        if (l.documentRag.lastIndexedName) docLine += `, letzter Index: ${l.documentRag.lastIndexedName}`
-        if (l.documentRag.lastError) docLine += `, letzter Fehler: ${l.documentRag.lastError.slice(0, 80)}`
-        docLine += ')'
-        lines.push(docLine)
-    } else {
-        lines.push('- Document-RAG: nicht verfügbar')
-    }
+    lines.push(`- Memory-Governance: ${l.memoryGovernance.available ? `aktiv (${l.memoryGovernance.canonical || 0} kanonisch, ${l.memoryGovernance.verified || 0} verifiziert, ${l.memoryGovernance.candidate || 0} Kandidaten; LanceDB ${l.memoryGovernance.lancedbEntries ?? '?'} Einträge)` : 'nicht verfügbar'}`)
     lines.push(`- Tool-Health: ${l.toolHealth.available ? `${l.toolHealth.broken || 0} broken, ${l.toolHealth.degraded || 0} degraded` : 'nicht verfügbar'}`)
     lines.push(`- LLM: ${l.llm.available ? `${l.llm.provider || 'unbekannt'}/${l.llm.model || 'unbekannt'}${l.llm.internalModel ? ` | intern: ${l.llm.internalModel}` : ''}` : 'nicht verfügbar'}`)
     lines.push(`- Channels: ${l.channels.available ? `${l.channels.active?.join(', ') || 'keine aktiven Channels'}` : 'nicht verfügbar'}`)
@@ -122,8 +112,7 @@ export async function runFullSystemAudit(options: FullSystemAuditOptions): Promi
         coldStorage: { available: false },
         sessionMemory: { available: false },
         graphRag: { available: false },
-        vectorMemory: { available: false },
-        documentRag: { available: false },
+        memoryGovernance: { available: false },
         toolHealth: { available: false },
         llm: { available: false },
         channels: { available: false },
@@ -176,27 +165,19 @@ export async function runFullSystemAudit(options: FullSystemAuditOptions): Promi
     }
 
     try {
-        const { getVectorMemory } = await import('../memory/vector-memory.js')
-        const stats = getVectorMemory().getStats()
-        layers.vectorMemory = { available: true, entries: stats.totalEntries, users: stats.userCount }
-        pushExecution(toolExecutions, 'audit_vector_memory', { userId, channel }, layers.vectorMemory, true)
+        const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
+        const stats = getMemoryGovernanceCoordinator().getStats()
+        let lancedbEntries: number | undefined
+        try {
+            const lance = await import('../memory/lancedb-memory.js')
+            lancedbEntries = (await lance.getStats()).totalEntries
+        } catch { /* LanceDB is an optional projection */ }
+        layers.memoryGovernance = { available: true, canonical: stats.canonical, verified: stats.verified, candidate: stats.candidate, lancedbEntries }
+        pushExecution(toolExecutions, 'audit_memory_governance', { userId, channel }, layers.memoryGovernance, true)
     } catch {
-        pushExecution(toolExecutions, 'audit_vector_memory', { userId, channel }, layers.vectorMemory, false)
+        pushExecution(toolExecutions, 'audit_memory_governance', { userId, channel }, layers.memoryGovernance, false)
     }
 
-    try {
-        // document-rag module may not be available in all configurations
-        const docRagModule = await import('../core/document-rag.js').catch(() => null)
-        if (docRagModule?.getDocumentRagStats) {
-            const stats = docRagModule.getDocumentRagStats()
-            layers.documentRag = { available: true, ...stats }
-            pushExecution(toolExecutions, 'audit_document_rag', { userId, channel }, stats, true)
-        } else {
-            pushExecution(toolExecutions, 'audit_document_rag', { userId, channel }, layers.documentRag, false)
-        }
-    } catch {
-        pushExecution(toolExecutions, 'audit_document_rag', { userId, channel }, layers.documentRag, false)
-    }
 
     try {
         const { getToolHealthStatus } = await import('../layers/L15-self-check.js')
