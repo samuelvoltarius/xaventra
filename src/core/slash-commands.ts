@@ -3587,6 +3587,11 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             const { collectJetzt, formatJetzt } = await import('./now-view.js')
             return formatJetzt(await collectJetzt())
         }
+        // Phase 5b Software-Scout: always available, read-only (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'software': {
+            const { formatSoftwareCommand } = await import('../install/software-scout.js')
+            return formatSoftwareCommand()
+        }
         case 'gedanken': {
             const { collectGedanken, formatGedanken } = await import('./now-view.js')
             const limit = Math.min(60, Math.max(5, Number.parseInt(args.trim(), 10) || 25))

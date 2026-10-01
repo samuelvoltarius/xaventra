@@ -19,6 +19,8 @@ export type NodeInstallPath = 'package-manager' | 'host-agent' | 'image' | 'none
 export type SelfCheckStatus = 'ok' | 'warn' | 'crit'
 
 export interface SelfCheckItem { id: string; label: string; status: SelfCheckStatus; detail: string }
+export const NODE_SERVICE_TYPES = ['llm', 'vlm', 'tts', 'stt', 'embeddings', 'image'] as const
+export interface NodeService { name: string; type: typeof NODE_SERVICE_TYPES[number]; status: 'running' | 'installed' | 'stopped' }
 
 export interface NodeProfile {
     schema: 1
@@ -34,6 +36,8 @@ export interface NodeProfile {
     cpus: number
     ramGB: number
     gpu: { name: string | null; backend: string; viaVllm: boolean }
+    /** Local AI services from the AI scanner (Phase 5b). Optional: older peers do not send it. */
+    services?: NodeService[]
     installPath: NodeInstallPath
     tools: string[]
     selfCheck: { status: SelfCheckStatus; checkedAt: string; items: SelfCheckItem[] }
@@ -157,11 +161,15 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
     } catch { /* GPU probe optional */ }
 
     let viaVllm = false
+    let services: NodeService[] = []
     try {
         const { getLocalNodeSnapshot } = await import('../mesh/mesh-registry.js')
         const addresses = localAddresses()
-        viaVllm = (getLocalNodeSnapshot()?.software?.ai_services || [])
+        const advertised = getLocalNodeSnapshot()?.software?.ai_services || []
+        viaVllm = advertised
             .some(service => service.type === 'vllm' && service.status === 'running' && isLoopbackOrLocal(service.endpoint, addresses))
+        // Running services only when they answer on this node; installed/stopped ones are local binaries.
+        services = sanitizeNodeServices(advertised.filter(service => service.status !== 'running' || isLoopbackOrLocal(service.endpoint, addresses)))
     } catch { /* registry optional */ }
 
     let tools: string[] = []
@@ -185,6 +193,7 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         cpus: cpus().length,
         ramGB: Math.round(totalmem() / 1024 ** 3),
         gpu: { name: gpuName, backend, viaVllm },
+        services,
         installPath: installPathFor({ runtime, rootReadOnly, noNewPrivileges, hasApt: tools.includes('apt'), isRoot: process.getuid?.() === 0 }),
         tools,
         selfCheck: runLocalSelfCheck(getNovaDataDir(), now),
@@ -222,6 +231,17 @@ const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback
 const boolOrNull = (value: unknown): boolean | null => typeof value === 'boolean' ? value : null
 const num = (value: unknown): number => Number.isFinite(Number(value)) ? Math.max(0, Math.min(1e6, Number(value))) : 0
 
+export function sanitizeNodeServices(raw: unknown): NodeService[] {
+    if (!Array.isArray(raw)) return []
+    const out = raw.slice(0, 20).flatMap((item: any): NodeService[] => {
+        const type = item?.type === 'vllm' ? 'llm' : item?.type
+        if (!NODE_SERVICE_TYPES.includes(type)) return []
+        return [{ name: str(item?.name, 40), type, status: oneOf(item?.status, ['running', 'installed', 'stopped'] as const, 'stopped') }]
+    })
+    return [...new Map(out.map(item => [`${item.name}|${item.type}|${item.status}`, item])).values()]
+        .sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type) || a.status.localeCompare(b.status))
+}
+
 export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
     if (!raw || typeof raw !== 'object') return null
     const value = raw as Record<string, any>
@@ -236,6 +256,7 @@ export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
         rootReadOnly: boolOrNull(value.rootReadOnly), noNewPrivileges: boolOrNull(value.noNewPrivileges),
         cpus: num(value.cpus), ramGB: num(value.ramGB),
         gpu: { name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true },
+        ...(Array.isArray(value.services) ? { services: sanitizeNodeServices(value.services) } : {}),
         installPath: oneOf(value.installPath, ['package-manager', 'host-agent', 'image', 'none'] as const, 'none'),
         tools: Array.isArray(value.tools) ? value.tools.slice(0, 60).map((tool: unknown) => str(tool, 40)) : [],
         selfCheck: {

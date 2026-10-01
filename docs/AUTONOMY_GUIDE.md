@@ -429,6 +429,66 @@ Ports (documented in `src/thinking/ports.ts`):
 State files: `.nova-data/thinking/ideas-state.json`, `scout-report.json`, `decisions.json`.
 
 
+## Software-Scout (Phase 5b, Vorschläge Standard AUS)
+
+"Welche Software/KI kann auf welchem Knoten laufen, und was fehlt im Mesh?" Code:
+`src/install/software-candidates.ts` (Kandidaten-Katalog), `src/install/software-scout.ts`
+(Eignung, Lücken, `/software`, Lauf), Gedanken-Ausgang in `src/core/thought-hub.ts`.
+
+```json
+{ "autonomy": { "softwareScout": { "enabled": true } } }
+```
+
+- **Kandidaten-Katalog** (im Repo, Teil des Releases, veröffentlicht als
+  `docs/generated/software-candidates.json`, nie aus dem Netz oder vom Modell): je Eintrag
+  `id`, `capability` (`stt` `tts` `vision` `embedding` `browser` `media` `desktop` `llm`),
+  `kind` (`system` | `model` | `runtime`), `platforms`, `arches`, `minRamGB`, `minDiskGB`,
+  `gpu` (`none` | `nvidia`) + `minVramGB`, `heavy`, optional `roles`, `requiresService`
+  (`ollama`), `detect` (Werkzeug-/Dienstnamen aus dem Knotenprofil), `catalogId` (Verweis auf
+  den Stufe-2-Installationskatalog) und `benefit`. Ein Kandidat trägt **keinen Befehl**.
+  Beim Laden abgelehnt (nie repariert): unbekannte Felder (z. B. `install`), Nie-Liste (die
+  `id` und alle `packages` werden wie Paketnamen geprüft: `cuda*`, `nvidia-*`, `openssh*` …),
+  unbekannte `catalogId`, Art/Plattform/Architektur/GPU passt nicht zum Katalogeintrag.
+- **Eignung je Knoten** (reine Funktion `assessCandidate`, Kandidat × Knotenprofil; eigenes
+  Profil + signierte Peer-Profile aus `node.capabilities`, kein SSH): Ergebnis `passt` /
+  `passt-nicht` / `vorhanden` / `installiert` mit Grund. Regeln in dieser Reihenfolge:
+  Fähigkeit läuft schon (Dienst `running` oder Werkzeug) → `vorhanden`; Dienst/Werkzeug
+  des Kandidaten installiert, läuft aber nicht → `installiert`; Plattform, Architektur;
+  **NAS nur Modelle** (kein Systempaket, kein Programm); Rolle; zu wenig RAM; benötigte
+  Laufzeit (Ollama) fehlt; Platte < Bedarf + 10 GB; GPU: NVIDIA nötig, Speicher nur bei
+  Unified Memory (GB10 …) bekannt, diskrete GPU ohne Speicherangabe wird nicht
+  vorgeschlagen; **neben laufendem vLLM nie `heavy`**, sonst nur ohne Engpass (Arbeitsspeicher-
+  Prüfung `ok`, keine wartenden vLLM-Anfragen, GPU < 90 %) und mit freiem Speicher ≥ Bedarf
+  + 8 GB Reserve (STUFENPLAN Grenze 6, OOM 13.09.). Weg: mit `catalogId` entscheidet
+  `planInstallRoute` (Host-Agent nur lokal, Container nur neues Image, NAS nur Daten-Volume);
+  ohne `catalogId` nur „Katalogeintrag nötig" (im Container: nur über ein neues Image;
+  schreibgeschütztes System: nur über den Host-Agenten).
+- **Bester Knoten** je Fähigkeit: vorhandener Katalogweg vor „Katalogeintrag nötig", dann die
+  Reihenfolge im Kandidaten-Katalog (Qualität), dann Knoten mit Host-Agent und viel freiem
+  Speicher; CPU-Lasten eher nicht auf den vLLM-Knoten. GPU-Lasten passen nur dort, wo eine
+  GPU mit genug freiem Speicher ist (Spark).
+- **Lücken**: eine Fähigkeit, die auf keinem frischen Knoten (Herzschlag ≤ 10 min) läuft und
+  für die ein Kandidat passt → Gedanke, Stufe `fragen`, z. B. „Whisper large-v3 (GPU) passt
+  auf xaventra-spark (42 GB frei), auf ns1 keine NVIDIA-GPU, auf ns2 zu wenig RAM (4 GB,
+  nötig 8 GB). Einrichten?". Höchstens 3 je Lauf. Läuft wöchentlich und bei Profiländerung
+  (Stufe-1-Fingerabdruck, frühestens 30 min nach dem letzten Lauf), nur auf dem Main mit
+  Autonomie-Lease; Worker schlagen nichts vor und senden nichts. Entprellt: derselbe
+  Vorschlag (Fähigkeit + Kandidat + Knoten) höchstens einmal je 7 Tage, nach „Nein" 30 Tage
+  nicht. Zustand: `.nova-data/software-scout/state.json`.
+- **Knopf**: Der Gedanke merkt sich nur Kandidaten-ID und Knoten (vom Code, gegen den
+  Kandidaten-Katalog geprüft). „Ja" mit `catalogId` = vorhandener Stufe-2-Weg:
+  `proposeCatalogInstall(..., 'scan')` → Installations-Warteschlange → eigene
+  Installations-Karte → signiertes Ticket an den Host-Agenten (bzw. Image-Vorschlag für
+  Container, Daten-Volume für Modelle). „Ja" ohne `catalogId` = nur Vermerk „Katalogeintrag
+  nötig", es wird nichts installiert. Eine im Gedanken mitgeschickte Katalog-ID wird
+  ignoriert.
+- **`/software`** (Owner, immer verfügbar, nur lesend, auch wenn Vorschläge aus sind): je
+  Fähigkeit „vorhanden wo" / „passt wo" (mit Weg) / „passt nicht" (mit Grund) / „fehlt".
+  „Vorhanden" heißt erkannt, nicht Ende-zu-Ende geprüft (Erkannt ≠ nutzbar).
+- Knotenprofil: neues optionales Feld `services` (lokale KI-Dienste aus dem AI-Scanner:
+  `name`, `type`, `status`), beim Empfang begrenzt (max. 20, bekannte Typen); ältere Peers
+  ohne das Feld bleiben gültig.
+
 ## Selbst-Update vorbereiten (Phase 4, Standard AUS)
 
 ```json

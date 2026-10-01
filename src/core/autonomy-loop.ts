@@ -968,6 +968,8 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     await runDoctorPhase()
     // Phase 3 „Denken": off until autonomy.thinking.enabled; results only as thoughts.
     await runThinkingPhase()
+    // Phase 5b Software-Scout: off until autonomy.softwareScout.enabled; only gap thoughts, never an install.
+    await runSoftwareScoutPhase()
 
     // Phase 4: EXECUTE PENDING GOALS
     // Nova actually works on her own goals — not just reports them
@@ -1084,6 +1086,18 @@ async function runThinkingPhase(): Promise<void> {
         await runThinkingTick({ isMain: config.enabled && hasGlobalAutonomyAuthority() })
     } catch (err) {
         console.debug(`[Autonomy] Denken non-critical error: ${err}`)
+    }
+}
+
+// Phase 5b: weekly and on profile change, only on the Main. Proposals go to
+// the Gedanken-Hub (stage fragen); "Ja" only reaches the Stufe-2 queue.
+async function runSoftwareScoutPhase(): Promise<void> {
+    try {
+        const { runSoftwareScoutTick } = await import('../install/software-scout.js')
+        const result = await runSoftwareScoutTick({ isMain: config.enabled && hasGlobalAutonomyAuthority() })
+        if (result.ran) console.log(`[Autonomy] Software-Scout: ${result.reason}`)
+    } catch (err) {
+        console.debug(`[Autonomy] Software-Scout non-critical error: ${err}`)
     }
 }
 

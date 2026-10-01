@@ -2029,6 +2029,11 @@ async function startDaemon() {
                 setThoughtSink(createThinkingThoughtSink())
                 if (state.llm) setIdeaFormulator(createLlmFormulator({ complete: (messages, options) => (state.llm as any).complete(messages, options) }))
             } catch (err) { console.debug(`[Xaventra] Denken config skipped: ${err}`) }
+            // Phase 5b Software-Scout: proposals off until autonomy.softwareScout.enabled === true (/software always reads).
+            try {
+                const { setSoftwareScoutConfig } = await import('./install/software-scout.js')
+                setSoftwareScoutConfig((config as any).autonomy?.softwareScout)
+            } catch (err) { console.debug(`[Xaventra] Software-Scout config skipped: ${err}`) }
             setDoctorResearchWorker(createResearchWorker(
                 () => getAutonomyStatus().running && getAutonomyStatus().config.enabled && hasGlobalAutonomyAuthority(),
                 state.llm,

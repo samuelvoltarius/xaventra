@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "candidatesHash": "936d8acb96f2527e116862c20cd6675cd82377ed13d40a74730ab312aae47cd1",
+  "entries": [
+    {
+      "id": "stt-whisper-large-v3",
+      "title": "Whisper large-v3 (GPU)",
+      "capability": "stt",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 8,
+      "minDiskGB": 5,
+      "gpu": "nvidia",
+      "minVramGB": 6,
+      "detect": {
+        "services": [
+          "whisper",
+          "faster-whisper",
+          "whisper-server",
+          "faster-whisper-server"
+        ]
+      },
+      "benefit": "Beste lokale Spracherkennung (auch Deutsch) für Sprachnachrichten, ohne Cloud. Braucht GPU-Speicher; neben vLLM nur mit genug freiem Speicher."
+    },
+    {
+      "id": "stt-faster-whisper-small",
+      "title": "faster-whisper small (CPU, int8)",
+      "capability": "stt",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 2,
+      "minDiskGB": 2,
+      "gpu": "none",
+      "detect": {
+        "services": [
+          "whisper",
+          "faster-whisper",
+          "whisper-server",
+          "faster-whisper-server"
+        ]
+      },
+      "benefit": "Lokale Spracherkennung auf der CPU, wenn keine GPU frei ist; langsamer und ungenauer als large-v3."
+    },
+    {
+      "id": "tts-piper",
+      "title": "Piper TTS",
+      "capability": "tts",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 1,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "detect": {
+        "services": [
+          "piper",
+          "piper-tts"
+        ]
+      },
+      "benefit": "Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst."
+    },
+    {
+      "id": "embedding-nomic-embed-text",
+      "title": "nomic-embed-text (Ollama)",
+      "capability": "embedding",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 1,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "catalogId": "ollama-model:nomic-embed-text",
+      "benefit": "Kleines Embedding-Modell für die Gedächtnis-Suche, lokal statt über einen Cloud-Anbieter."
+    },
+    {
+      "id": "embedding-bge-m3",
+      "title": "bge-m3 (Ollama, mehrsprachig)",
+      "capability": "embedding",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 3,
+      "minDiskGB": 2,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "catalogId": "ollama-model:bge-m3",
+      "benefit": "Mehrsprachiges Embedding-Modell (Deutsch/Englisch) für bessere Gedächtnis-Treffer."
+    },
+    {
+      "id": "browser-playwright-chromium",
+      "title": "Playwright-Chromium",
+      "capability": "browser",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 2,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "detect": {
+        "tools": [
+          "playwright_browsers"
+        ]
+      },
+      "catalogId": "playwright-chromium",
+      "benefit": "Browser-Werkzeuge (Webseiten lesen, Screenshots) laufen lokal statt zu scheitern."
+    },
+    {
+      "id": "media-ffmpeg",
+      "title": "ffmpeg",
+      "capability": "media",
+      "kind": "system",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 1,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "detect": {
+        "tools": [
+          "ffmpeg"
+        ]
+      },
+      "catalogId": "ffmpeg",
+      "benefit": "Audio/Video umwandeln (Sprachnachrichten, Videos), Grundlage für STT/TTS-Werkzeuge."
+    },
+    {
+      "id": "vision-qwen2.5vl-3b",
+      "title": "Qwen2.5-VL 3B (Ollama)",
+      "capability": "vision",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 8,
+      "minDiskGB": 4,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "benefit": "Kleines Bildmodell als Rückfall, wenn kein Vision-Pfad Ende-zu-Ende belegt ist (Erkannt ≠ nutzbar)."
+    },
+    {
+      "id": "desktop-xfce",
+      "title": "XFCE-Arbeitsplatz",
+      "capability": "desktop",
+      "kind": "system",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 4,
+      "minDiskGB": 2,
+      "gpu": "none",
+      "roles": [
+        "main"
+      ],
+      "detect": {
+        "tools": [
+          "display"
+        ]
+      },
+      "catalogId": "xfce-workstation",
+      "benefit": "Desktop für Bildschirm-Werkzeuge (desktop_*) auf der Workstation."
+    },
+    {
+      "id": "llm-node-llama-cpp-cuda",
+      "title": "node-llama-cpp mit CUDA (lokale GGUF-Modelle)",
+      "capability": "llm",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "arm64"
+      ],
+      "minRamGB": 16,
+      "minDiskGB": 2,
+      "gpu": "nvidia",
+      "minVramGB": 8,
+      "heavy": true,
+      "catalogId": "node-llama-cpp-cuda",
+      "benefit": "Lokales Sprachmodell auf der GPU als Rückfall, wenn kein vLLM läuft."
+    },
+    {
+      "id": "llm-ollama-qwen2.5-3b",
+      "title": "Qwen2.5 3B (Ollama, CPU)",
+      "capability": "llm",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 6,
+      "minDiskGB": 3,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "benefit": "Kleines Sprachmodell auf der CPU als Notlösung ohne GPU und ohne Cloud."
+    }
+  ],
+  "rejected": []
+}

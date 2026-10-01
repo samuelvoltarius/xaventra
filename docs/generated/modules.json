@@ -3309,6 +3309,27 @@
       ]
     },
     {
+      "module": "src/install/software-candidates.ts",
+      "imports": [
+        "./install-catalog.js",
+        "./never-list.js"
+      ]
+    },
+    {
+      "module": "src/install/software-scout.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/node-profile.js",
+        "./install-catalog.js",
+        "./install-queue.js",
+        "./software-candidates.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/installer/brain-installer.ts",
       "imports": [
         "../config/config-path.js",

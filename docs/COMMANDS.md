@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` `/software` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -216,6 +216,9 @@ Owner. Laufende Aufgaben (Live-Statuskarten, Task-Tracker, Mission), Installatio
 
 ### `/gedanken [n]`
 Owner. Die letzten n (Standard 25) Gedanken/Vorschläge inkl. verworfener (Nie-Liste), abgelehnter und abgelaufener — aus Karten, Selbstheilungs-Journal/-Vorschlägen und Installations-Journal.
+
+### `/software`
+Owner, nur lesend, immer verfügbar. Je Fähigkeit (STT, TTS, Embeddings, Browser, Audio/Video, Vision, Desktop, LLM): vorhanden wo / passt wo (mit Installationsweg) / passt nicht (mit Grund) / fehlt. Vorschläge per Knopf nur mit `autonomy.softwareScout.enabled=true`. Details: `docs/AUTONOMY_GUIDE.md` (Software-Scout).
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

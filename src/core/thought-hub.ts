@@ -1,8 +1,8 @@
 /**
  * Gedanken-Hub (2.81.0 integration): one thought store for every phase.
  *
- * Phase 2 (Wahrnehmen), Phase 3 (Denken) and Phase 4 (Selbst-Update) each
- * produce thoughts through their own port. Here they become planner thoughts
+ * Phase 2 (Wahrnehmen), Phase 3 (Denken), Phase 4 (Selbst-Update) and
+ * Phase 5b (Software-Scout) each produce thoughts through their own port. Here they become planner thoughts
  * (src/planner/thoughts.ts): fixed importance rules, quiet hours, dedupe,
  * daily limit, /gedanken, and — for permission `fragen` — a Knopf-Karte.
  *
@@ -21,6 +21,7 @@ type StoredAction =
     | { kind: 'thinking'; thoughtKind: string }
     | { kind: 'self-update'; action: string }
     | { kind: 'note'; what: string }
+    | { kind: 'software-scout'; candidateId: string; nodeId: string; dedupeKey: string }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,159}$/
 const file = () => getNovaDataDir('thought-actions.json')
@@ -103,6 +104,54 @@ export function createSelfUpdateThoughtSink() {
     }
 }
 
+/**
+ * Phase 5b: a software gap becomes a thought with permission `fragen`. Only
+ * candidate id and node id are remembered (checked against the release's
+ * candidate catalog); the catalog id is looked up again on "Ja", never taken
+ * from the thought.
+ */
+export function createSoftwareScoutThoughtSink() {
+    return {
+        async emit(thought: any): Promise<void> {
+            const { findSoftwareCandidate } = await import('../install/software-candidates.js')
+            const candidate = findSoftwareCandidate(thought?.candidateId)
+            const nodeId = String(thought?.nodeId || '')
+            const { thought: stored } = addThought({
+                source: 'software-scout',
+                title: String(thought?.title || ''),
+                evidence: [thought?.text, ...(Array.isArray(thought?.evidence) ? thought.evidence : [])].filter(Boolean).join(' · '),
+                severity: 'info',
+                kind: 'vorschlag',
+                proposal: thought?.proposal ? String(thought.proposal) : undefined,
+                permission: 'fragen',
+                signature: thought?.dedupeKey ? String(thought.dedupeKey) : undefined,
+                node: nodeId || undefined,
+            })
+            if (candidate && /^[A-Za-z0-9._-]{1,80}$/.test(nodeId)) {
+                remember(stored.id, { kind: 'software-scout', candidateId: candidate.id, nodeId, dedupeKey: String(thought?.dedupeKey || '').slice(0, 200) })
+            }
+        },
+    }
+}
+
+async function answerSoftwareScout(action: Extract<StoredAction, { kind: 'software-scout' }>, answer: 'ja' | 'nein'): Promise<{ ok: boolean; message: string }> {
+    const { recordSoftwareScoutAnswer } = await import('../install/software-scout.js')
+    recordSoftwareScoutAnswer(action.dedupeKey, answer)
+    if (answer === 'nein') return { ok: true, message: 'Verworfen; diesen Software-Vorschlag bringe ich 30 Tage nicht mehr.' }
+    const { findSoftwareCandidate } = await import('../install/software-candidates.js')
+    const candidate = findSoftwareCandidate(action.candidateId)
+    if (!candidate) return { ok: false, message: 'Kandidat steht nicht mehr im Software-Katalog; nichts geändert.' }
+    if (!candidate.catalogId) {
+        return { ok: true, message: `Vermerkt: ${candidate.title} auf ${action.nodeId}. Katalogeintrag nötig — es gibt dafür noch keinen Installationskatalog-Eintrag, also wird nichts installiert.` }
+    }
+    // The existing Stufe-2 path: install queue → install card → signed ticket. No ticket here.
+    const { defaultInstallDeps, proposeCatalogInstall, resolveInstallTarget } = await import('../install/install-queue.js')
+    const target = await resolveInstallTarget(action.nodeId).catch(() => null)
+    if (!target) return { ok: false, message: `Kein Profil für ${action.nodeId}; nichts in die Warteschlange gestellt.` }
+    const result = proposeCatalogInstall(candidate.catalogId, target, defaultInstallDeps(), 'scan')
+    return { ok: result.ok, message: `${result.message}${result.ok && result.proposal?.status === 'queued' ? ' Freigabe kommt als Installations-Karte (signiertes Ticket, mit Rückweg).' : ''}` }
+}
+
 /** Called by the `gedanke` card executor after the owner pressed Ja/Nein. */
 export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'nein', ctx: { userId: string }): Promise<{ ok: boolean; message: string }> {
     const action = load()[thoughtId]
@@ -112,6 +161,7 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
         await recordDecision(action.thoughtKind, answer)
         return { ok: true, message: answer === 'ja' ? 'Angenommen, ich setze die Idee als Vorschlag um.' : 'Verworfen, ich schlage so etwas seltener vor.' }
     }
+    if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)
     if (answer === 'nein') return { ok: true, message: 'Verworfen.' }
     if (action.kind === 'approveDevice') {
         const { approveSensingDevice } = await import('../sensing/runtime.js')
