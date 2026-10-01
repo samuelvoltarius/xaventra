@@ -27,7 +27,7 @@
 
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as nodeModule from 'node:module'
@@ -276,7 +276,9 @@ export async function runInForgeSandbox(request: SandboxRequest): Promise<Sandbo
     if (!support.ok) return { ok: false, error: support.reason, logs, durationMs: 0 }
     if (Buffer.byteLength(String(request.code ?? '')) > MAX_CODE_BYTES) return { ok: false, error: 'Code zu groß', logs, durationMs: 0 }
 
-    const dir = mkdtempSync(join(tmpdir(), 'xv-forge-'))
+    // Real path: on macOS the temp dir is a symlink (/var -> /private/var) and the
+    // permission model checks the resolved path of the entry module.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'xv-forge-')))
     const runnerPath = join(dir, 'runner.mjs')
     const toolPath = join(dir, 'werkzeug.mjs')
     writeFileSync(runnerPath, RUNNER_SOURCE, { mode: 0o600 })

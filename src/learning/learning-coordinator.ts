@@ -1,6 +1,7 @@
 import { getNovaLearningDir } from '../core/data-root.js'
 import { createLearningEngine, type LearningEngine } from './engine.js'
 import { getProcedureStore, migrateLegacyProcedures, type ProcedureStore } from './procedure-store.js'
+import { sideEffectsDisabled } from '../core/side-effects.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { TaskValidationReport } from '../core/task-contract.js'
 
@@ -80,7 +81,8 @@ export class LearningCoordinator {
         if (this.started) return
         await this.engine.start()
         // One procedure store (P9): take over the old L17/L8/coordinator files once.
-        try { migrateLegacyProcedures({ store: this.procedures() }) } catch (error) {
+        // Never in tests/CI: the L8 files live in the real home directory.
+        if (!sideEffectsDisabled()) try { migrateLegacyProcedures({ store: this.procedures() }) } catch (error) {
             console.warn(`[Learning] Prozedur-Übernahme fehlgeschlagen: ${String(error).slice(0, 160)}`)
         }
         this.started = true
