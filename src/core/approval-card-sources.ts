@@ -194,6 +194,8 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     const { getNovaDataDir } = await import('./data-root.js')
     const { getPatchProposals } = await import('../synthesis/self-evolution.js')
     registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
+    const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
+    registerThoughtCardExecutor()
 }
 
 // ---------------------------------------------------------------------------

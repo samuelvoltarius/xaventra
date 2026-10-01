@@ -316,6 +316,11 @@ async function startTelegramOnce(
     // every tick re-checks the authority, workers never start the loop.
     if (process.env.NOVA_NO_SIDE_EFFECTS !== '1') {
         void import('./approval-card-sources.js').then(module => module.startApprovalCardLoop()).catch(() => { /* optional */ })
+        // Planner (CL-09) speaks through this one port: briefings as text,
+        // "fragen" thoughts as Knopf-Karten. Each delivery re-checks authority.
+        void Promise.all([import('../planner/index.js'), import('./planner-card-bridge.js')])
+            .then(([planner, bridge]) => planner.setPlannerDeliveryPort(bridge.createPlannerTelegramPort(adapter as any)))
+            .catch(() => { /* optional */ })
     }
     let retired = false
     let removeTelegramLost: (() => void) | undefined

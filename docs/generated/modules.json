@@ -1887,6 +1887,14 @@
       ]
     },
     {
+      "module": "src/core/planner-card-bridge.ts",
+      "imports": [
+        "../mesh/fence.js",
+        "../planner/index.js",
+        "./approval-cards.js"
+      ]
+    },
+    {
       "module": "src/core/predictive-context.ts",
       "imports": []
     },

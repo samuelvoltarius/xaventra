@@ -101,6 +101,13 @@ export async function collectGedanken(opts: CardStoreOptions & { installDataDir?
     for (const thought of readThoughts(opts, 60)) {
         items.push({ at: thought.at, quelle: thought.quelle, status: thought.status, text: `${thought.titel}${thought.text ? ` — ${thought.text}` : ''}` })
     }
+    // Planner thoughts (one shared view, CL-09 + CL-10).
+    try {
+        const { listThoughts } = await import('../planner/index.js')
+        for (const thought of listThoughts().slice(-40)) {
+            items.push({ at: thought.statusAt || thought.updatedAt, quelle: thought.source, status: thought.status, text: `${thought.title}${thought.proposal ? ` — ${thought.proposal}` : ''}` })
+        }
+    } catch { /* optional */ }
     try {
         for (const entry of readHealJournal(dataDir, 15)) {
             items.push({ at: entry.at, quelle: `selbstheilung/${entry.node}`, status: entry.ergebnis, text: entry.message })
