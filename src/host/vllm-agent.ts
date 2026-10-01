@@ -186,7 +186,9 @@ export function createHostVllmSwitcher(options: VllmHostOptions, launcher: VllmL
             const fd = openSync(files.marker, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o644)
             try {
                 writeSync(fd, `${current}\n`); fsyncSync(fd)
-                if (process.platform !== 'win32') fchownSync(fd, user.uid, user.gid)
+                // Hand the marker to the vLLM user. Only root can chown; the host agent runs as
+                // root in production. Unprivileged (CI, tests) the file stays with the agent user.
+                if (process.platform !== 'win32' && typeof process.getuid === 'function' && process.getuid() === 0) fchownSync(fd, user.uid, user.gid)
             } finally { closeSync(fd) }
             setOwnMarker({ planId: ticket.planId, at: now() })
             return { success: true, operation: 'markieren', nodeId: opt.nodeId, savedTarget: current }
