@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` `/modelle` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/entscheidungen` `/heilung` `/software` `/modelle` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
@@ -223,6 +223,9 @@ Owner, nur lesend, immer verfügbar. Je Fähigkeit (STT, TTS, Embeddings, Browse
 
 ### `/delegiert [n]`
 Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Claude/Codex/Hermes/Unteragenten mit Status, Stufe (L1/L2), Erfolgskriterium, Prüfergebnis (verifiziert/nicht erfüllt/unverifiziert), Beleg und Antwort-Auszug (nur Daten). Standard aus: `autonomy.delegation.enabled`. Details: `docs/AUTONOMY_GUIDE.md`.
+
+### `/entscheidungen [widerruf <id>|gilt <id>|verwerfen <id>]`
+Owner. Kausales Gedächtnis: gültige Entscheidungen mit Warum, wer/wann, gültig bis und Abhängigkeiten; offene Rückfragen bei Widersprüchen (`gilt` = die neue gilt, `verwerfen` = die alte bleibt); Befunde aus Missionen/Delegationen; zuletzt beendete. `widerruf` hebt eine Entscheidung auf. Angelegt wird ohne Befehl aus Owner-Anweisungen und Knopf-Antworten. Details: `docs/AUTONOMY_GUIDE.md` („Kausales Gedächtnis“).
 
 ### `/arbeit [pause <id>|weiter <id>]`
 Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).

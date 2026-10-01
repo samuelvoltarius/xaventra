@@ -3610,6 +3610,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '‚
             return formatDelegiert(undefined, limit)
         }
 
+        // Phase 8: kausales Ged√§chtnis (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'entscheidungen': {
+            const { handleEntscheidungenCommand } = await import('./decisions.js')
+            return handleEntscheidungenCommand(args, principalContext)
+        }
+
         // Phase 6b: Verantwortungen + Missionen (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'arbeit': {
             const { handleArbeitCommand } = await import('./responsibility-runtime.js')

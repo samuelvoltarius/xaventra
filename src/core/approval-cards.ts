@@ -428,6 +428,13 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
     const final = updateCard(card.id, { result: { ok: result.ok === true, message: clean(result.message, 400) } }, opts) || decided
     noteThought({ quelle: card.quelle, titel: card.titel, status: button.answer === 'nein' ? 'abgelehnt' : 'angenommen', text: final.result?.message }, opts)
     await record(final, opts)
+    if (button.answer === 'immer' || button.answer === 'nein') {
+        // Kausales Gedächtnis: the owner's standing answer with the card's evidence as reason (Main only).
+        try {
+            const { recordCardDecision } = await import('./decisions.js')
+            recordCardDecision(final, { dataDir: opts.dataDir, now: opts.now })
+        } catch { /* memory is evidence, never a reason to fail the answer */ }
+    }
     return { ok: true, code: 'ok', message: `${ANSWER_TEXT[button.answer]}: ${final.result?.message || ''}`.trim(), card: final }
 }
 

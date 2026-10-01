@@ -1989,6 +1989,16 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Delegation/Auto-Erinnerungen nicht verfügbar: ${err}`)
         }
 
+        // Phase 8: kausales Gedächtnis. Always on; records only on the Main
+        // (never NOVA_NODE_ONLY), the policy reads its tightening constraints.
+        try {
+            const { startDecisionMemory } = await import('./core/decisions.js')
+            const decisions = await startDecisionMemory({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            console.log(`[Nova] ${decisions.started ? '✓' : '·'} Entscheidungen (${decisions.reason})`)
+        } catch (err) {
+            console.log(`[Nova] ⚠ Entscheidungen nicht verfügbar: ${err}`)
+        }
+
         // Phase 6b: Verantwortungen + Missionen. Off until
         // autonomy.responsibilities.enabled=true; Main only (never NOVA_NODE_ONLY).
         try {

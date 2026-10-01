@@ -267,6 +267,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
                 { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)' },
                 { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)' },
+                { command: 'entscheidungen', description: '🧾 Gemerkte Entscheidungen & Warum (Owner)' },
                 { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)' },
                 { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)' },
                 // Session

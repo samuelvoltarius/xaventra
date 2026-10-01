@@ -74,6 +74,25 @@ export interface PolicyVerdict {
 export interface PolicyOptions {
     /** Eigener Knoten; L1 auf einem anderen Knoten wird L2. */
     localNodeId?: string
+    /** Verschärfungen aus dem kausalen Gedächtnis; Standard: der registrierte Anbieter. */
+    constraints?: readonly DecisionConstraint[]
+}
+
+/**
+ * Bindende Owner-Entscheidung, die eine Aktionsart verschärft
+ * (src/core/decisions.ts). Kann nur anheben: 'fragen' → mindestens L2,
+ * 'nie' → L3. Nie senken.
+ */
+export interface DecisionConstraint { id: string; mode: 'fragen' | 'nie'; arten: readonly string[]; text: string }
+
+let decisionConstraintProvider: (() => readonly DecisionConstraint[]) | null = null
+/** Set once by the daemon (startDecisionMemory); null switches it off. */
+export function setDecisionConstraintProvider(provider: (() => readonly DecisionConstraint[]) | null): void {
+    decisionConstraintProvider = provider
+}
+function constraintsFor(options: PolicyOptions): readonly DecisionConstraint[] {
+    if (Array.isArray(options.constraints)) return options.constraints
+    try { return decisionConstraintProvider?.() ?? [] } catch { return [] }
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +360,13 @@ export function evaluateAction(request: ActionRequest, options: PolicyOptions = 
     // 5. „eigen“ heißt eigener Knoten.
     if (level === 'L1' && request?.node && options.localNodeId && normalize(request.node) !== normalize(options.localNodeId)) {
         raise('L2', `fremder Knoten ${String(request.node).slice(0, 40)} → fragen`)
+    }
+    // 6. Bindende Owner-Entscheidungen verschärfen nur (nie senken).
+    for (const constraint of constraintsFor(options)) {
+        if (!Array.isArray(constraint?.arten) || !constraint.arten.includes(kindName)) continue
+        const why = `Entscheidung ${String(constraint.id).slice(0, 16)}: ${String(constraint.text ?? '').slice(0, 80)}`
+        if (constraint.mode === 'nie') return finish('L3', why, impact, Boolean(entry))
+        if (constraint.mode === 'fragen') raise('L2', why)
     }
     return finish(level, reasons.join('; '), impact, Boolean(entry))
 }

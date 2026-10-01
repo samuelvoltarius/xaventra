@@ -166,6 +166,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/decisions.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/delegation.ts",
       "path": ".nova-data"
     },
