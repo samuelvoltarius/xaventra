@@ -1997,6 +1997,41 @@
       ]
     },
     {
+      "module": "src/core/self-update/activation-plan.ts",
+      "imports": [
+        "../github-update.js",
+        "./release-watch.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/core/self-update/fencing-readiness.ts",
+      "imports": [
+        "../../mesh/leader-election.js",
+        "../github-update.js",
+        "./thought-sink.js"
+      ]
+    },
+    {
+      "module": "src/core/self-update/release-watch.ts",
+      "imports": [
+        "../atomic-storage.js",
+        "../github-update.js",
+        "../update-package.js",
+        "./thought-sink.js",
+        "node:crypto",
+        "node:fs/promises"
+      ]
+    },
+    {
+      "module": "src/core/self-update/thought-sink.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs/promises",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/setup-confirmation.ts",
       "imports": [
         "node:crypto"

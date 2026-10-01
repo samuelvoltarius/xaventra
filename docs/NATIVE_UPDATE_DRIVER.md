@@ -396,3 +396,18 @@ production-facing factory uses independent signed release/application-tree
 verification, not the fixture publisher callback. Complete-candidate publication,
 actual Xaventra update/rollback and production fencing/storage enrollment are
 still open. Isolated rollback is not RC clearance.
+
+
+## Phase 4: watcher, plan and fencing readiness (read-only)
+
+`src/core/self-update/` prepares self-activation without executing it (default off,
+`autonomy.selfUpdate.enabled`, see AUTONOMY_GUIDE). The watcher verifies signed
+releases with `verifyUpstreamManifest` against the pinned publisher key and
+downloads only the manifest, `SHA256SUMS` and the small descriptors; it emits one
+`fragen` thought per release. `buildActivationPlan` turns a verified release plus
+node profiles into the runbook 3.4b/3.5 steps for native Spark and the worker swap
+for containers (workers → NAS → Spark, NAS host never restarted) as hash-bound
+data. `evaluateFencingEnforceReadiness` reports whether enforce would be safe,
+including EXECUTE of the real PostgREST app role on the v5 RPCs. None of this is an
+enrolled updater: host execution, controller enrollment, approval tickets and real
+storage/writer fencing remain the open gates listed above.

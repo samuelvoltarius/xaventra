@@ -169,3 +169,56 @@ Not-Aus), a recipe switches itself off after 2 failed heals (`/selbstheilung an 
 a recipe touching it is rejected at load. With `NOVA_FENCING_MODE=enforce` and no valid
 Main lease nothing acts. Workers never notify the owner; their reports ride the signed
 `node.capabilities` message and the Main forwards each one once.
+
+
+## Selbst-Update vorbereiten (Phase 4, Standard AUS)
+
+```json
+{ "autonomy": { "selfUpdate": {
+    "enabled": false,
+    "intervalMinutes": 360,
+    "channel": "stable",
+    "publisherKeys": { "xaventra-update-20260910": "-----BEGIN PUBLIC KEY-----…" }
+} } }
+```
+
+`src/core/self-update/` only **reads and proposes**; it never downloads programs or
+images, never stages, activates, restarts or switches anything.
+
+- **Update watcher** (`release-watch.ts`, `startSelfUpdateWatch`): every
+  `intervalMinutes` (30–1440) it reads the GitHub release listing, the signed
+  `xaventra-update.json`, `SHA256SUMS` and the small per-architecture descriptors
+  (≤ 64 KiB each, normally < 1 KiB). The manifest is checked with the existing
+  `verifyUpstreamManifest` against the **pinned** publisher key
+  (`xaventra-update-20260910`, SPKI SHA256 `12c93226…f887a`); an enrolled key with
+  another fingerprint is refused before any request. SHA256SUMS must equal the signed
+  inventory, every descriptor must match size, SHA256 and container identity. Only a
+  version above the installed one is eligible (no downgrade); `stable` means tags
+  without `-rc` (the publisher marks every signed preview as a GitHub prerelease).
+  Result: one thought per release id, stage `fragen` — „2.8x verfügbar, geprüft,
+  Änderungen: … Installieren?“ — with proposal `self-update.activate`
+  `{version, releaseId, commit, planHash?}`. Repeated checks and restarts do not
+  repeat it (state `.nova-data/self-update/watch-state.json` chosen by the caller). A
+  rejected release becomes one information thought (`selbst`, no proposal).
+  `enabled` must be literally `true`; otherwise no timer and no network access.
+- **Activation plan** (`activation-plan.ts`, `buildActivationPlan`): data only, built
+  from the verified release and node profiles (`native-spark`, `container-worker`,
+  `container-nas`, `excluded`). Spark follows runbook 3.4b (host re-verification,
+  extraction without starting a container, isolated lifecycle, preflight, stop,
+  read-only freeze, independent copy with source/copy/source hash, unit/link switch,
+  post-probes, receipt) and the 3.5 rollback; containers follow the approved worker
+  swap (digest pull, label check, backup with count/byte comparison — reflink on the
+  NAS —, rollback container `restart=no`, node-only env). Order: workers, then NAS,
+  Spark last; Pi excluded; no step restarts a host, the NAS host never. `planHash`
+  binds a later approval to exactly this plan.
+- **Fencing enforce readiness** (`fencing-readiness.ts`): read-only report whether
+  `NOVA_FENCING_MODE=enforce` would be safe — all four v5 RPCs present, the **real
+  PostgREST app role** may execute them (lesson 30.09.: 403 after v5 granted only
+  `nova_anon`), lease table locked, lease protocol v2, every active node ≥ 2.79.0,
+  receiver high-water marks ≤ the coordinator epoch (unknown = not safe). The probe
+  uses only GET (OpenAPI listing and the STABLE RPCs `nova_fencing_status`,
+  `nova_check_fence`). The result is one thought; nothing is switched.
+
+Thoughts go through the `ThoughtSink` port (`thought-sink.ts`); the default
+`JsonlThoughtSink` appends JSON lines. The approval cards attach to this port during
+integration; the daemon does not start the watcher yet.
