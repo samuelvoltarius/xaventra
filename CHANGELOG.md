@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.81.0] — 2026-10-01
+
+Autonomy phases 1–5: Xaventra shows that she works, asks with buttons,
+plans, perceives, thinks and can be reached through Even G2. Every new
+capability is off until the owner switches it on.
+
+- Knopf-Karten (Telegram): every proposal is a card with Ja / Nein / Später
+  (and "Immer erlauben" only for internal actions with a standing switch).
+  Only the numeric owner can press; one-time code tokens; Nie-Liste actions
+  never get a card; physical and external actions always ask. Install,
+  self-heal and PATCH_GATE proposals arrive as cards.
+- Live status card: one Telegram message per task that updates (⏳ step n/m
+  … ✅), `/jetzt` (what she is doing now) and `/gedanken` (all thoughts,
+  including discarded ones).
+- Planner: one job file for reminders, briefing and nightwatch with run and
+  delivery logs; thoughts with fixed importance rules, quiet hours, dedupe
+  and a daily limit; morning and evening report.
+- Perception (sensing): event bus for 3D printers (Moonraker, OctoPrint,
+  PrusaLink), Home Assistant, read-only mail and Xaventra's own journals;
+  devices are discovered in the own LAN/tailnet only and set up after a
+  button press (`/geraete`); quiet hours are learned from the owner's
+  activity.
+- Thinking: nightly idea run (only when the GPU is measured idle, max three
+  ideas a day with evidence), model scout with a private-free probe set (no
+  automatic switch), bug finder that hands verified faults to Claude, and
+  learning from button answers.
+- Self-update preparation: release watcher verifies signed releases itself
+  and proposes them; activation plan with backup and rollback as data;
+  fencing-enforce readiness check. Nothing activates by itself.
+- One thought hub: findings from sensing, thinking and self-update become
+  planner thoughts; Ja on a card dispatches only actions from a closed list.
+- Even G2: Xaventra as "Hey Even" agent (loopback endpoint, owner token,
+  duplicate-question dedupe, 400-character answers, 24-s budget), HUD feed
+  with status and cards (tap = Ja, double tap = Nein), minimal Even Hub app.
+- Software scout: candidate catalog × node profile shows what fits where and
+  what is missing (`/software`); installs only through the Stufe-2 catalog.
+- Security: `resolve_capability` (declared read-only) no longer installs
+  software; the capability router only checks and routes, and the voice
+  fallback no longer runs a remote shell.
+
 ## [2.80.1] — 2026-10-01
 
 Hotfix for findings from the 2.80.0 rollout (Spark, 01.10.2026) and one
