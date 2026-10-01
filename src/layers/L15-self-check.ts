@@ -13,6 +13,7 @@
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
+import { getIdleLearningManager } from './L9-idle-learning.js'
 import { join } from 'node:path'
 
 // ============================================
@@ -73,7 +74,6 @@ class SelfCheckManager extends EventEmitter {
     private readonly SILENCE_THRESHOLD_MS = 30000       // 30s without response = possible problem
     private readonly SILENCE_WARN_MAX_MS = 5 * 60_000   // Stop warning after 5 min — user is gone
     private readonly MAX_CONSECUTIVE_SILENCES = 3
-    private idleLearningStarted = false
     private notifyCallback?: (message: string) => Promise<void>
     private toolFailures: Map<string, number> = new Map()
     private toolHealth: Map<string, ToolHealthEntry> = new Map()
@@ -110,12 +110,9 @@ class SelfCheckManager extends EventEmitter {
         this.state.lastUserMessageTime = Date.now()
         this.state.waitingForUser = false
         this.updateActivity() // Reset idle timer
-
-        // Auto-start idle learning on first message
-        if (!this.idleLearningStarted) {
-            this.startIdleLearning()
-            this.idleLearningStarted = true
-        }
+        // 2.82.0: no own idle learner here any more — L9 is the one idle
+        // learner (layers/L9-idle-learning.ts), the Learning-Hub sync is
+        // started once by the daemon.
 
         console.log('[L15 SelfCheck] User message received')
     }
@@ -558,73 +555,10 @@ ${check.suggestions.length > 0 ? `\n💡 Vorschläge:\n${check.suggestions.map(s
     }
 
     // ============================================
-    // AUTOMATIC IDLE LEARNING
-    // Nova learns skills when she has nothing to do!
+    // Idle state (2.82.0: no own idle learner — L9 is the one)
     // ============================================
 
-    private idleLearningInterval: NodeJS.Timeout | null = null
     private lastActivityTime: number = Date.now()
-    private readonly IDLE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
-    private isLearningActive = false
-
-    /**
-     * Start automatic idle learning
-     * After 5 minutes of no activity, Nova learns a skill
-     */
-    startIdleLearning(): void {
-        if (this.idleLearningInterval) return
-
-        console.log('[L15 SelfCheck] 🧠 Idle learning enabled (triggers after 5min inactivity)')
-
-        // === START LEARNING HUB SYNC ===
-        // Fetch knowledge from other Nova instances
-        import('../intelligence/learning-hub.js').then(hub => {
-            hub.startLearningSync(30)  // Sync every 30 minutes
-            console.log('[L15 SelfCheck] 🌐 Connected to Nova Learning Hub!')
-        }).catch(() => {
-            console.log('[L15 SelfCheck] (Learning Hub not available)')
-        })
-
-        // Check every 60 seconds if we should learn
-        this.idleLearningInterval = setInterval(async () => {
-            const now = Date.now()
-            const idleTime = now - this.lastActivityTime
-
-            // If idle for 5+ minutes and not already learning
-            if (idleTime >= this.IDLE_THRESHOLD_MS && !this.isLearningActive) {
-                console.log(`[L15 SelfCheck] 📚 Idle for ${Math.round(idleTime / 60000)}min - Zeit zu lernen!`)
-                this.isLearningActive = true
-
-                try {
-                    const { learnDuringIdle, getLearningStats } = await import('../intelligence/proactive-learning.js')
-
-                    // L9 handles user notification - we just do the learning here
-                    // (removed duplicate notification to avoid spam)
-
-                    // Then try to learn from queue
-                    const result = await learnDuringIdle()
-
-                    if (result.learned) {
-                        console.log(`[L15 SelfCheck] ✅ Gelernt: ${result.topic}`)
-                        const stats = getLearningStats()
-                        console.log(`[L15 SelfCheck] 📊 Wissen: ${stats.learnedTopics}/${stats.totalTopics} Topics, ${stats.knowledgeItems} Fakten`)
-                    }
-                } catch (err) {
-                    console.log(`[L15 SelfCheck] Learning failed: ${err}`)
-                } finally {
-                    this.isLearningActive = false
-                }
-            }
-        }, 60000) // Check every minute
-    }
-
-    stopIdleLearning(): void {
-        if (this.idleLearningInterval) {
-            clearInterval(this.idleLearningInterval)
-            this.idleLearningInterval = null
-            console.log('[L15 SelfCheck] Stopped idle learning')
-        }
-    }
 
     // Update activity time when user/response happens
     private updateActivity(): void {
@@ -635,7 +569,8 @@ ${check.suggestions.length > 0 ? `\n💡 Vorschläge:\n${check.suggestions.map(s
         return {
             ...this.state,
             idleMinutes: Math.round((Date.now() - this.lastActivityTime) / 60000),
-            isLearning: this.isLearningActive,
+            // The one idle learner is L9; L15 only reports its state.
+            isLearning: getIdleLearningManager().getStats().isLearning,
         }
     }
 }
