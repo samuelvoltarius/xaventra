@@ -96,6 +96,20 @@ describe('Karten-Ja füttert die Vertrauensleiter', () => {
         expect(trust().kinds['install-katalog'].failed).toBe(1)
     })
 
+    it('infrastructure cards (Proxmox) always ask: their „Ja“ never climbs the ladder', async () => {
+        unregisterCardExecutor('pve-start')
+        registerCardExecutor({ kind: 'pve-start', impact: 'infra', execute: async () => ({ ok: true, message: 'gestartet' }) })
+        for (let i = 0; i < 3; i++) {
+            const created = createApprovalCard({ art: 'proxmox', titel: 'VM starten', beleg: 'b', vorschlag: 'v', aktion: { kind: 'pve-start', ref: `vm${i}` } }, opts)
+            if (!created.ok) throw new Error(created.reason)
+            expect(created.card.wirkung).toBe('infra')
+            await press(created.card, 'ja')
+        }
+        unregisterCardExecutor('pve-start')
+        expect(isTrustPromoted('pve-start', { dataDir })).toBe(false)
+        expect(existsSync(join(dataDir, 'action-policy', 'trust.json')) ? trust().kinds['pve-start'] : undefined).toBeUndefined()
+    })
+
     it('„Nein“ resets the series', async () => {
         await press(installCard('ffmpeg'), 'ja'); await flush()
         await press(installCard('playwright-chromium'), 'nein')

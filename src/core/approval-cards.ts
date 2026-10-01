@@ -487,9 +487,11 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
         result = { ok: false, message: `Fehler: ${clean((error as Error)?.message || error, 200)}` }
     }
     if (standingNote) result = { ...result, message: `${result.message}${standingNote}` }
-    // P9: every card answer feeds the trust ladder under the policy kind.
+    // P9: every card answer feeds the trust ladder under the policy kind. A „Nein“ always
+    // resets; a „Ja“ only counts for internal cards (infra/physical/external always ask).
     if (policyKind && executor) {
         if (button.answer === 'nein') recordOwnerAnswer(policyKind, 'nein', trustOpts)
+        else if (decided.wirkung !== 'intern') { /* never climbs the ladder */ }
         else if (result.completion) {
             result.completion.then(outcome => recordActionOutcome(policyKind, { ok: outcome?.ok === true, rolledBack: outcome?.rolledBack === true, approvedByOwner: true }, trustOpts),
                 () => recordActionOutcome(policyKind, { ok: false, approvedByOwner: true }, trustOpts))

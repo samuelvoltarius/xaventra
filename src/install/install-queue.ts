@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { grantStanding, hasStanding, revokeStanding, type TrustOptions } from '../core/action-policy.js'
+import { getNovaDataDir } from '../core/data-root.js'
 import { findCatalogEntry, getInstallCatalog, isCatalogId, type ApprovalLevel, type InstallCatalog, type InstallCatalogEntry } from './install-catalog.js'
 import { issueInstallTicket, TICKET_ID_PATTERN, type SignedInstallTicket } from './install-ticket.js'
 
@@ -368,7 +369,8 @@ export function formatInstallCatalog(deps: InstallQueueDeps): string {
 // production wiring (lazy, no side effects at import)
 // ----------------------------------------------------------------------------
 
-export function defaultInstallDeps(dataDir = join(process.cwd(), '.nova-data')): InstallQueueDeps {
+/** Production: the same data directory as the card store and trust.json (`getNovaDataDir()`). */
+export function defaultInstallDeps(dataDir = getNovaDataDir()): InstallQueueDeps {
     const deps: InstallQueueDeps = { dataDir }
     const keyFile = process.env.XAVENTRA_INSTALL_TICKET_KEY_FILE
     try { if (keyFile && existsSync(keyFile)) deps.ticketPrivateKey = readFileSync(keyFile, 'utf8') } catch { /* stays unset: approvals refused */ }
