@@ -85,6 +85,21 @@ export function telegramInboundKey(msg: any, updateId: unknown = msg?.[UPDATE_ID
 // Telegram Adapter Class
 // ============================================
 
+/** Hotfix 2.80.1: `ni:<model>:<node>` callback data comes from the client and
+ * is untrusted. The model may contain colons (tags), so the node is the last
+ * segment. Anything outside the allowlist is rejected, never escaped. */
+const INSTALL_MODEL_NAME = /^[a-z0-9][a-z0-9._:/-]{0,100}$/
+const INSTALL_NODE_NAME = /^[a-z0-9][a-z0-9._-]{0,79}$/i
+export function parseNodeInstallCallback(data: string): { model: string; node: string } | null {
+    if (typeof data !== 'string' || !data.startsWith('ni:')) return null
+    const body = data.slice(3)
+    const lastColon = body.lastIndexOf(':')
+    const model = lastColon > 0 ? body.slice(0, lastColon) : body
+    const node = lastColon > 0 ? body.slice(lastColon + 1) : 'local'
+    if (!INSTALL_MODEL_NAME.test(model) || model.includes('..') || !INSTALL_NODE_NAME.test(node)) return null
+    return { model, node }
+}
+
 export class TelegramAdapter implements ChannelAdapter {
     type = 'telegram'
     private bot: any = null
@@ -577,7 +592,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const needsPrincipal = typeof data === 'string'
-            && (/^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_)/.test(data) || data === 'memory_clear')
+            && (/^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_|skill_ok:|skill_no:|ni:)/.test(data) || data === 'memory_clear')
         const principal = needsPrincipal ? await this.resolveCallbackPrincipal(query) : null
         if (needsPrincipal && !principal) {
             try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Zugriff verweigert.' }) } catch { /* ignore */ }
@@ -1016,6 +1031,11 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // ── Skill approval: skill_ok:<id> / skill_no:<id> ────────────────────
         if (data.startsWith('skill_ok:') || data.startsWith('skill_no:')) {
+            // Hotfix 2.80.1: releasing or rejecting a skill is an owner decision.
+            if (principal?.permission !== 'owner') {
+                try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur der Owner darf Skills freigeben.' }) } catch { /* ignore */ }
+                return
+            }
             try {
                 const approve = data.startsWith('skill_ok:')
                 const proposalId = data.slice(9)
@@ -1059,45 +1079,35 @@ export class TelegramAdapter implements ChannelAdapter {
         }
 
         // ── Node-Install: ni:<model>:<node> ──────────────────────────────────
+        // Hotfix 2.80.1: owner-only, strict model allowlist, no shell, local
+        // node only. Remote installation belongs to the mesh catalog, not ssh.
         if (data.startsWith('ni:')) {
+            if (principal?.permission !== 'owner') {
+                try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur der Owner darf Modelle installieren.' }) } catch { /* ignore */ }
+                return
+            }
+            const install = parseNodeInstallCallback(data)
+            if (!install) {
+                try { await this.bot.answerCallbackQuery(query.id, { text: '❌ Ungültiger Modell- oder Knotenname.' }) } catch { /* ignore */ }
+                return
+            }
             try {
+                const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
+                const localNames = new Set(['local', 'localhost', getLocalNodeId().toLowerCase()])
+                if (!localNames.has(install.node.toLowerCase())) {
+                    await this.bot.answerCallbackQuery(query.id, { text: '❌ Nur lokal.' })
+                    await this.bot.sendMessage(chatId, `❌ Remote-Installation auf *${install.node}* wird hier nicht ausgeführt. Modelle auf anderen Knoten installiert der Mesh-Katalog (Stufe 2), nicht ein SSH-Befehl.`, { parse_mode: 'Markdown' })
+                    return
+                }
                 await this.bot.answerCallbackQuery(query.id, { text: '⏳ Installiere…' })
-
-                // Format: ni:<model>:<node>  (model may contain colons — split from right)
-                const withoutPrefix = data.slice(3)
-                const lastColon = withoutPrefix.lastIndexOf(':')
-                const model = lastColon > 0 ? withoutPrefix.slice(0, lastColon) : withoutPrefix
-                const nodeName = lastColon > 0 ? withoutPrefix.slice(lastColon + 1) : 'local'
-
-                await this.bot.sendMessage(chatId, `📥 Installiere \`${model}\` auf *${nodeName}*…`, { parse_mode: 'Markdown' })
-
+                await this.bot.sendMessage(chatId, `📥 Installiere \`${install.model}\` lokal…`, { parse_mode: 'Markdown' })
                 try {
-                    if (nodeName === 'local' || nodeName === 'localhost') {
-                        const { execSync } = await import('child_process')
-                        execSync(`ollama pull ${model}`, { timeout: 300_000, encoding: 'utf-8' })
-                        await this.bot.sendMessage(chatId, `✅ Modell \`${model}\` lokal installiert!`, { parse_mode: 'Markdown' })
-                    } else {
-                        // Remote node via mesh
-                        const { discoverNodes } = await import('../mesh/mesh-registry.js')
-                        const nodes = await discoverNodes()
-                        const node = nodes.find((n: any) =>
-                            n.hostname?.toLowerCase() === nodeName.toLowerCase() ||
-                            n.ip === nodeName ||
-                            n.node_id?.includes(nodeName.toLowerCase())
-                        )
-                        if (!node?.ip) {
-                            await this.bot.sendMessage(chatId, `❌ Node *${nodeName}* nicht gefunden.`, { parse_mode: 'Markdown' })
-                        } else {
-                            const { execSync } = await import('child_process')
-                            const sshUser = node.ssh_user || 'root'
-                            const sshPort = node.ssh_port || 22
-                            execSync(
-                                `ssh -o ConnectTimeout=10 -p ${sshPort} ${sshUser}@${node.ip} "ollama pull ${model}"`,
-                                { timeout: 300_000, encoding: 'utf-8' }
-                            )
-                            await this.bot.sendMessage(chatId, `✅ Modell \`${model}\` auf *${nodeName}* installiert!`, { parse_mode: 'Markdown' })
-                        }
-                    }
+                    const { execFile } = await import('node:child_process')
+                    await new Promise<void>((resolve, reject) => {
+                        execFile('ollama', ['pull', install.model], { timeout: 300_000, encoding: 'utf-8', shell: false, windowsHide: true },
+                            (error: Error | null) => error ? reject(error) : resolve())
+                    })
+                    await this.bot.sendMessage(chatId, `✅ Modell \`${install.model}\` lokal installiert!`, { parse_mode: 'Markdown' })
                 } catch (execErr: any) {
                     await this.bot.sendMessage(chatId, `❌ Installation fehlgeschlagen:\n\`${String(execErr?.message || execErr).slice(0, 300)}\``, { parse_mode: 'Markdown' })
                 }
