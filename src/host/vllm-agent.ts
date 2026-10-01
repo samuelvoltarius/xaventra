@@ -3,6 +3,7 @@ import { closeSync, constants, existsSync, fchownSync, fsyncSync, lstatSync, mkd
 import { join, posix } from 'node:path'
 import { neverListViolation } from '../install/never-list.js'
 import { DEFAULT_VLLM_TARGETS, isAllowedVllmTarget, normalizeVllmTargets, verifyVllmTicket, VLLM_TARGET_PATTERN, type VllmTicket } from '../install/vllm-ticket.js'
+import { claimTicketOnce } from '../install/signed-ticket.js'
 import type { HostDockerEngine } from './docker-agent.js'
 
 // ============================================================================
@@ -165,10 +166,9 @@ export function createHostVllmSwitcher(options: VllmHostOptions, launcher: VllmL
         }
     }
 
-    /** Single use: the ticket id is recorded before any work (exclusive create). */
+    /** Single use: the ticket id is recorded before any work (exclusive create, shared core signed-ticket.ts). */
     function consumeTicket(ticket: VllmTicket): void {
-        const fd = openSync(join(ticketDir, `${ticket.id}.json`), 'wx', 0o600)
-        try { writeSync(fd, JSON.stringify({ ticket, at: now() })); fsyncSync(fd) } finally { closeSync(fd) }
+        claimTicketOnce(join(ticketDir, `${ticket.id}.json`), { ticket, at: now() })
     }
 
     async function action(signed: unknown): Promise<Record<string, unknown>> {
