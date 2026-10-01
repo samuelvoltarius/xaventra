@@ -3304,7 +3304,6 @@ _Deaktivieren: /verbose off_`
                     `Notifications/Stunde: ${status.notificationsThisHour}/${status.config.maxNotificationsPerHour}\n` +
                     `\n*Aktive Checks:*\n` +
                     `${status.config.checks.health ? '✅' : '❌'} System Health\n` +
-                    `${status.config.checks.reminders ? '✅' : '❌'} Erinnerungen\n` +
                     `${status.config.checks.inbound ? '✅' : '❌'} Inbound Folders\n` +
                     `${status.config.checks.logs ? '✅' : '❌'} Error Logs\n` +
                     `${status.config.checks.uptime ? '✅' : '❌'} Uptime\n` +
@@ -3590,13 +3589,18 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             }
         }
 
+        case 'routine':
+        case 'routinen':
         case 'heartbeat': {
-            try {
-                const { handleHeartbeatCommand } = await import('./heartbeat.js')
-                return handleHeartbeatCommand(args)
-            } catch (err) {
-                return `❌ Heartbeat module not available: ${err}`
-            }
+            // P9: heartbeat.md routines are planner jobs now (one scheduler).
+            const { getPlannerRuntime } = await import('../planner/runtime.js')
+            const { handleRoutineCommand, formatRoutines } = await import('../planner/routines.js')
+            const runtime = getPlannerRuntime()
+            const sub = args.trim()
+            const readOnly = !sub || ['status', 'list', 'liste'].includes(sub)
+            if (!readOnly && requestPermission !== 'owner') return '⛔ Routinen ändern darf nur der Owner.'
+            const hint = cmd === 'heartbeat' ? 'ℹ️ /heartbeat heißt jetzt /routine; die Routinen laufen im Planer.\n\n' : ''
+            return hint + (readOnly ? formatRoutines(runtime?.planner ?? null) : handleRoutineCommand(sub, runtime?.planner ?? null, runtime?.settings.briefing.timeZone))
         }
 
         // ─────────────────────────────────────────────────────────────────

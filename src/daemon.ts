@@ -1172,18 +1172,6 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Initialize Heartbeat — Nova's internal Cron ❤️
-    // Runs INDEPENDENTLY of any channel (Telegram, etc.)
-    // ============================================
-    try {
-        const { initHeartbeat } = await import('./core/heartbeat.js')
-        await initHeartbeat()
-        console.log('[Nova] ✓ Heartbeat ❤️ — interner Cron aktiv (unabhängig von Channels)')
-    } catch (err) {
-        console.log(`[Nova] ⚠ Heartbeat: ${err}`)
-    }
-
-    // ============================================
     // Initialize Subconscious Reflector ("Dreaming")
     // ============================================
     try {
@@ -1531,10 +1519,8 @@ async function startDaemon() {
     try {
         const { getProactiveMessenger } = await import('./core/proactive.js')
         const { assessmentFromEvent } = await import('./core/proactive-policy.js')
-        const { getScheduler } = await import('./scheduler/nova-scheduler.js')
 
         const proactive = getProactiveMessenger()
-        const scheduler = getScheduler()
         const proactiveOwner = config.channels?.telegram?.allowFrom?.[0]
         ;(state as any).sendGovernedProactive = async (
             content: string,
@@ -1616,22 +1602,6 @@ async function startDaemon() {
 
         // Deliver deferred messages (quiet hours, budget, channel reconnect).
         setInterval(() => { void proactive.processQueue().catch(() => undefined) }, 60_000).unref?.()
-
-        // Wire scheduler to proactive messenger
-        scheduler.setMessageSender(async (userId, channel, content) => {
-            await proactive.send({
-                userId,
-                channel: channel as any,
-                content,
-                priority: 'normal',
-                type: 'notification',
-                // Per-job dedupe key: different jobs within 30 min are not duplicates (R2 NZ-12).
-                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1, dedupeKey: `scheduler:${userId}:${content}`.slice(0, 200) }),
-            })
-        })
-
-        // Load scheduled jobs from pattern store
-        await scheduler.loadFromPatternStore()
 
         console.log(`[Nova] ✓ Proaktives Messaging aktiv (${proactive.getStats().channels.length} Channels)`)
     } catch (err) {
@@ -1925,6 +1895,7 @@ async function startDaemon() {
         try {
             const { startPlannerRuntime } = await import('./planner/runtime.js')
             await startPlannerRuntime(autonomyCfg, {
+                heartbeatEnabled: (config as any).heartbeat?.enabled !== false,
                 nightwatch: {
                     enabled: nightwatchEnabled,
                     configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
@@ -1933,6 +1904,11 @@ async function startDaemon() {
             })
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
+            // Without the planner, reminders.json + its checker carry reminders (Rückweg).
+            try {
+                const { useLegacyReminderPath } = await import('./tools/reminder-tool.js')
+                await useLegacyReminderPath()
+            } catch { /* reminder tool unavailable */ }
         }
 
         // Phase 6a Release-Knopf: P8 on at the Main by default (false = off);

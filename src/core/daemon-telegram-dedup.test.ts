@@ -20,7 +20,6 @@ vi.mock('../channels/telegram-presentation.js', () => ({
     TelegramPresentationSession: class { async deliver() { return 'ok' } async clearProgress() {} },
 }))
 vi.mock('../tools/reminder-tool.js', () => ({ setReminderNotifyCallback: vi.fn(), setReminderWakeupCallback: vi.fn(), initReminders: vi.fn() }))
-vi.mock('./heartbeat.js', () => ({ setHeartbeatNotifyCallback: vi.fn(), setHeartbeatWakeupCallback: vi.fn() }))
 vi.mock('./runtime-event-log.js', () => ({ logRuntimeEvent: vi.fn() }))
 
 async function startHarness() {

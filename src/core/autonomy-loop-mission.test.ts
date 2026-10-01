@@ -26,7 +26,7 @@ setThinkingConfig({ enabled: false })
 setSoftwareScoutConfig({ enabled: false })
 
 updateAutonomyConfig({ enabled: true, socialCheckIns: false, quietHoursStart: -1,
-    checks: { health: false, reminders: false, inbound: false, logs: false, uptime: false } })
+    checks: { health: false, inbound: false, logs: false, uptime: false } })
 
 afterEach(() => {
     executorState.active = null

@@ -5,7 +5,7 @@
  *
  *   autonomy.planner.enabled      an      start the planner (false = aus)
  *   autonomy.planner.tickSeconds  30      tick interval
- *   autonomy.planner.reminders    false   set_reminder goes through the planner (else the old reminders.json path)
+ *   autonomy.planner.reminders    an      set_reminder goes through the planner (false = Rückweg reminders.json + 30-s checker)
  *   autonomy.planner.nightwatch   false   the planner runs the Nachtwache (needs autonomy.nightwatch.enabled)
  *   autonomy.briefing.enabled     an      morning/evening report (follows the planner; true starts the planner alone)
  *   autonomy.briefing.morning     "07:30"
@@ -14,13 +14,20 @@
  *   autonomy.thoughts.quietHours  { start: 22, end: 7 }   only `dringend` gets through
  *   autonomy.thoughts.dedupeMinutes 360
  *   autonomy.thoughts.maxPerDay   10
+ *
+ * P9 „ein Zeitplaner“: the planner is the only scheduler for time-based work.
+ * At start it takes over reminders.json, heartbeat.md routines and the old
+ * node-cron automation patterns (planner/routines.ts); old files are renamed
+ * to `.migriert`, nothing is deleted.
  */
 
+import { join } from 'node:path'
 import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { createBriefingHandler, type BriefingKind } from './briefing.js'
 import { getPlannerDeliveryPort, type DeliveryPort } from './delivery-port.js'
 import { createPlanner, type Planner, type PlannerJob } from './planner.js'
+import { migrateHeartbeatFile, migrateSchedulerPatterns, registerRoutineHandlers, type AutomationPattern } from './routines.js'
 import { createThoughtStore, normalizeThoughtSettings, type ThoughtSettings, type ThoughtStore } from './thoughts.js'
 import { DEFAULT_TIME_ZONE, HHMM_PATTERN, isValidTimeZone } from './time.js'
 
@@ -49,6 +56,12 @@ export interface PlannerRuntimeOptions {
     port?: DeliveryPort | null
     nodeId?: string
     nightwatch?: { enabled: boolean; configPath: string; journalDir: string; deps?: unknown }
+    /** Where the pre-planner files live (heartbeat.md); default <cwd>/.nova-data. */
+    legacyDir?: string
+    /** `heartbeat.enabled` from the config (false = migrated routines stay off). */
+    heartbeatEnabled?: boolean
+    /** Automated cron patterns to take over; default: the pattern store. */
+    patterns?: () => readonly AutomationPattern[]
 }
 
 export const SYSTEM_JOB_IDS = Object.freeze({
@@ -70,7 +83,7 @@ export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = pro
     return {
         enabled: plannerOn || briefingOn,
         tickSeconds: Number.isFinite(tick) && tick >= 5 ? Math.min(600, Math.floor(tick)) : 30,
-        reminders: planner.reminders === true,
+        reminders: defaultOn(planner.reminders, env),
         nightwatch: planner.nightwatch === true,
         briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
         thoughts: normalizeThoughtSettings({
@@ -224,10 +237,32 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     if (!settings.enabled || !settings.reminders) {
         reminders.setReminderSink(null)
         returnRemindersToLegacy(planner, reminders)
+        await reminders.useLegacyReminderPath()
     }
     if (!settings.enabled) return null
 
     registerReminders(planner, reminders)
+    registerRoutineHandlers(planner, {
+        ownerChatId: () => reminders.getAdminChatId(),
+        wake: (userId, channel, text) => reminders.wakePipeline(userId, channel, text),
+    })
+    try {
+        const routines = migrateHeartbeatFile(planner, {
+            legacyDir: options.legacyDir ?? join(process.cwd(), '.nova-data'),
+            timeZone: settings.briefing.timeZone,
+            enabled: options.heartbeatEnabled,
+        })
+        if (routines.renamed) console.log(`[Planer] ${routines.moved} Routine(n) aus heartbeat.md übernommen (Datei → ${routines.renamed})`)
+    } catch (error) {
+        console.warn('[Planer] heartbeat.md nicht übernommen:', (error as Error)?.message)
+    }
+    try {
+        const patterns = options.patterns ? options.patterns() : (await import('../learning/pattern-store.js')).getPatternStore().getAutomatedPatterns()
+        const automations = migrateSchedulerPatterns(planner, patterns, settings.briefing.timeZone)
+        if (automations.skipped.length) console.warn(`[Planer] Automatik-Muster nicht übernommen (nur tägliche Zeiten „M H * * *“): ${automations.skipped.join(', ')}`)
+    } catch (error) {
+        console.warn('[Planer] Automatik-Muster nicht übernommen:', (error as Error)?.message)
+    }
     const { bundledCards, releaseBundledCards } = await import('../core/approval-cards.js')
     const { trustChangesSince } = await import('../core/action-policy.js')
     const briefingSources = {

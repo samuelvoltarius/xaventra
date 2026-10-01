@@ -12,7 +12,6 @@ vi.mock('../mesh/leader-election.js', () => ({
 vi.mock('./ha-state.js', () => ({ isHaStateAvailable: async () => false, hydrateChannelState: vi.fn() }))
 vi.mock('../channels/telegram.js', () => ({ createTelegramAdapter: mocks.create, connectL15NotifyCallback: vi.fn() }))
 vi.mock('../tools/reminder-tool.js', () => ({ setReminderNotifyCallback: vi.fn(), setReminderWakeupCallback: vi.fn(), initReminders: vi.fn() }))
-vi.mock('./heartbeat.js', () => ({ setHeartbeatNotifyCallback: vi.fn(), setHeartbeatWakeupCallback: vi.fn() }))
 vi.mock('./runtime-event-log.js', () => ({ logRuntimeEvent: vi.fn() }))
 
 import { startTelegram } from './daemon-channels.js'

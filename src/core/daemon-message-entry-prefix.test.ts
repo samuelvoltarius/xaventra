@@ -26,8 +26,8 @@ describe('internal prefixes at the external entry (R2 UEB-25)', () => {
         expect(String(pipeline.mock.calls[0][2])).toBe('[REMINDER] Zahnarzt')
     })
 
-    it('reminder and heartbeat wakeups mark their messages as system-authored', () => {
+    it('the one wakeup path (reminders and planner routines) marks its messages as system-authored', () => {
         const source = readFileSync(fileURLToPath(new URL('./daemon-channels.ts', import.meta.url)), 'utf8')
-        expect(source.match(/\}, undefined, \{ systemAuthored: true \}\)/g)).toHaveLength(2)
+        expect(source.match(/\}, undefined, \{ systemAuthored: true \}\)/g)).toHaveLength(1)
     })
 })
