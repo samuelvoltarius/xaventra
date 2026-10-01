@@ -15,6 +15,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { ownerApprovalRefusal } from './owner-approval.js'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -274,6 +275,10 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'color_temp', type: 'number', description: 'Farbtemperatur in Kelvin (nur für Lichter)', required: false },
         ],
         handler: async (params) => {
+            // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
+            // approval, like printer_print. Reading (hass_status/list/get) stays free.
+            const refusal = await ownerApprovalRefusal(params, 'hass_turn_on', String(params.entity_id ?? ''))
+            if (refusal) return { success: false, error: refusal }
             // R2 T19: only the declared service fields. The runner appends
             // userId/channel/authorizationUserId/requestText to every call;
             // those must never reach Home Assistant (rejected as extra keys,
@@ -295,6 +300,10 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'entity_id', type: 'string', description: 'Entitäts-ID', required: true },
         ],
         handler: async (params) => {
+            // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
+            // approval, like printer_print. Reading (hass_status/list/get) stays free.
+            const refusal = await ownerApprovalRefusal(params, 'hass_turn_off', String(params.entity_id ?? ''))
+            if (refusal) return { success: false, error: refusal }
             const result = await hassTurnOff(params.entity_id as string)
             return { success: true, result }
         },
@@ -307,6 +316,10 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'entity_id', type: 'string', description: 'Entitäts-ID', required: true },
         ],
         handler: async (params) => {
+            // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
+            // approval, like printer_print. Reading (hass_status/list/get) stays free.
+            const refusal = await ownerApprovalRefusal(params, 'hass_toggle', String(params.entity_id ?? ''))
+            if (refusal) return { success: false, error: refusal }
             const result = await hassToggle(params.entity_id as string)
             return { success: true, result }
         },
@@ -322,6 +335,10 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'data', type: 'object', description: 'Optionale Service-Daten als JSON-Objekt', required: false },
         ],
         handler: async (params) => {
+            // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
+            // approval, like printer_print. Reading (hass_status/list/get) stays free.
+            const refusal = await ownerApprovalRefusal(params, 'hass_service', `${String(params.domain ?? '')}.${String(params.service ?? '')}:${String(params.entity_id ?? '')}`)
+            if (refusal) return { success: false, error: refusal }
             const result = await hassCallService(
                 params.domain as string,
                 params.service as string,

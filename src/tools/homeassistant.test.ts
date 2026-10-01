@@ -3,6 +3,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Switching needs the owner's approval (homeassistant-approval.test.ts); this test is about
+// the forwarded fields only, so the approval is granted here.
+vi.mock('./owner-approval.js', () => ({ ownerApprovalRefusal: async () => null }))
+
 let hass: typeof import('./homeassistant.js')
 const fetchMock = vi.fn(async () => new Response('[]', { status: 200 }))
 beforeEach(async () => {
