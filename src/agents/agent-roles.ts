@@ -155,6 +155,17 @@ Kein Risiko ist zu klein. Lieber zu vorsichtig als zu spaet.`,
     },
 }
 
+// P9: the former multi-bot personas live on as roles (one term: Rolle).
+BUILT_IN_ROLES.translator = {
+    id: 'translator',
+    name: 'Übersetzer',
+    emoji: '🌐',
+    description: 'Übersetzt zwischen Sprachen und erklärt kulturelle Nuancen (frühere Bot-Persona)',
+    systemPrompt: 'Du bist ein Übersetzungs-Experte. Du übersetzt zwischen allen Sprachen, erklärst kulturelle Nuancen und antwortest auf Deutsch, wenn nichts anderes verlangt ist.',
+    temperature: 0.2,
+    maxTokens: 1500,
+}
+
 // ============================================
 // Default Team Presets
 // ============================================

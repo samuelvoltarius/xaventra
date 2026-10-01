@@ -1542,18 +1542,6 @@
       ]
     },
     {
-      "name": "kill_bot",
-      "category": "bot",
-      "description": "Stoppt einen Bot",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        }
-      ]
-    },
-    {
       "name": "knowledge_delete",
       "category": "memory",
       "description": "Löscht einen Wissens-Eintrag.",
@@ -1685,12 +1673,6 @@
           "required": true
         }
       ]
-    },
-    {
-      "name": "list_bots",
-      "category": "bot",
-      "description": "Listet alle Bots auf",
-      "parameters": []
     },
     {
       "name": "list_custom_tools",
@@ -3170,28 +3152,6 @@
         },
         {
           "name": "reason",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
-      "name": "spawn_bot",
-      "category": "bot",
-      "description": "Startet einen neuen Bot mit eigener Persona",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "persona",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "channel",
           "type": "string",
           "required": false
         }

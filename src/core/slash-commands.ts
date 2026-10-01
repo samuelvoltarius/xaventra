@@ -229,7 +229,7 @@ export async function handleCommand(
 *Mesh:* /nodes /nodes check /nodes models /nodes recommend /nodes scan /nodes install
 *AI:* /ai scan /ai status /ai route
 *Session:* /clear /save /compact /apikey
-*Bots:* /bots /bot /bot team /swarm
+*Team & Rollen:* /bots /bot team /subagent /swarm
 *Agents:* /agents /subagent /factory
 *Users:* /users /users list /users promote /users block
 *Intelligence:* /roi /graph /scan
@@ -1239,22 +1239,9 @@ Gebaut für Xaventra contributors 🌶️`
         // ============================================
         case 'bots':
         case 'botlist': {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bots = manager.getAllBots()
-
-            if (bots.length === 0) {
-                return `🤖 *Multi-Bot Status*\n\nKeine Bots konfiguriert.\n\nVerwende /bot spawn <name> um einen Bot zu erstellen.`
-            }
-
-            const botList = bots.map(b => {
-                const status = b.status === 'running' ? '🟢' : b.status === 'error' ? '🔴' : '⚪'
-                const users = b.activeUsers.size
-                return `${status} *${b.config.name}* (${b.config.channel})\n   Status: ${b.status} | Messages: ${b.messageCount} | Users: ${users}`
-            }).join('\n\n')
-
-            const stats = manager.getStats()
-            return `🤖 *Multi-Bot Status*\n\n${botList}\n\n📊 Gesamt: ${stats.totalBots} Bots, ${stats.runningBots} aktiv, ${stats.totalMessages} Nachrichten`
+            // P9: there are no separate bot instances any more; personas are roles.
+            const { listRoles, listPresets } = await import('../agents/agent-roles.js')
+            return `🤖 *Rollen (frühere Bot-Personas)*\n\n${listRoles()}\n\n📦 *Teams*\n${listPresets()}\n\nEine Rolle fragen: /subagent <rolle> <frage> · Team: /bot team <frage>`
         }
 
         case 'bot': {
@@ -1346,7 +1333,7 @@ Gebaut für Xaventra contributors 🌶️`
                                 }
                             } catch { }
                         }
-                        const result = await runTeam(teamId, query, onProgress)
+                        const result = await runTeam(teamId, query, onProgress, { userId: principalContext?.principalId || from, authUserId: principalContext?.rawUserId || from })
                         try {
                             const tg = (globalThis as any).__novaState?.channels?.telegram || (globalThis as any).__novaState?.telegram
                             if (tg?.bot && chatId && progressMsgId) {
@@ -1358,65 +1345,11 @@ Gebaut für Xaventra contributors 🌶️`
                 }
             }
 
-            // ==============================
-            // Legacy Bot Instance Commands
-            // ==============================
-            const { getMultiBotManager, BOT_TEMPLATES } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-
-            switch (action?.toLowerCase()) {
-                case 'spawn':
-                case 'create':
-                case 'new': {
-                    const name = botArg || `Nova-${Date.now().toString(36)}`
-                    const template = BOT_TEMPLATES.assistant
-                    const config = manager.createBot({
-                        name,
-                        persona: template.persona,
-                        channel: 'telegram',
-                        channelConfig: {},
-                        enabled: true,
-                        createdBy: from,
-                    })
-                    return `✅ Bot erstellt: *${config.name}*\n\nID: ${config.id}\nChannel: ${config.channel}\n\nVerwende /bot start ${config.name} zum Starten.`
-                }
-                case 'start': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    try {
-                        await manager.startBot(bot.config.id)
-                        return `✅ Bot *${bot.config.name}* gestartet!`
-                    } catch (err) {
-                        return `❌ Start fehlgeschlagen: ${err}`
-                    }
-                }
-                case 'stop':
-                case 'kill': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    await manager.stopBot(bot.config.id)
-                    return `✅ Bot *${bot.config.name}* gestoppt.`
-                }
-                case 'delete':
-                case 'remove': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    manager.deleteBot(bot.config.id)
-                    return `🗑️ Bot *${bot.config.name}* gelöscht.`
-                }
-                case 'status':
-                case 'info': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    const uptime = bot.startedAt ? Math.floor((Date.now() - bot.startedAt) / 1000 / 60) : 0
-                    return `🤖 *${bot.config.name}*\n\nID: ${bot.config.id}\nStatus: ${bot.status}\nChannel: ${bot.config.channel}\nUptime: ${uptime} min\nMessages: ${bot.messageCount}\nActive Users: ${bot.activeUsers.size}\nAllowed Users: ${bot.config.allowedUsers?.length || 'alle'}`
-                }
-                case 'templates': {
-                    return `📋 *Bot Templates*\n\n🔹 assistant - Allgemeiner Assistent\n🔹 coder - Programmier-Experte\n🔹 researcher - Recherche-Spezialist\n🔹 translator - Übersetzungs-Experte`
-                }
-                default:
-                    return `🤖 *Bot & Team*\n\n**Team (Multi-Agent):**\n/bot team <frage> — Agent-Team ausführen\n/bot team new — Neues Team erstellen\n/bot team del — Team löschen\n/bot team list — Alle Teams\n/bot team roles — Rollen\n\n**Bot-Instanzen:**\n/bot spawn <name>\n/bot start/stop/delete <name>\n\n**Sub-Agent:**\n/subagent <rolle> <frage>`
+            // P9: the old bot instances (multi-bot) never had their own channel; personas are roles now.
+            if (action && ['spawn', 'create', 'new', 'start', 'stop', 'kill', 'delete', 'remove', 'status', 'info', 'templates'].includes(action.toLowerCase())) {
+                return 'ℹ️ Eigene Bot-Instanzen gibt es nicht mehr (sie hatten nie einen eigenen Kanal). Personas sind Rollen: /bots zeigt sie, /subagent <rolle> <frage> fragt eine Rolle, /bot team <frage> ein ganzes Team.'
             }
+            return `🤖 *Team & Rollen*\n\n/bot team <frage> — Team ausführen (über den Unteragenten-Orchestrator, max. 6 parallel, Audit-Log)\n/bot team run <team> <frage> — bestimmtes Team\n/bot team new <name> <rollen> <beschreibung> — eigenes Team\n/bot team del <name> · /bot team list · /bot team roles · /bot team presets\n\n/subagent <rolle> <frage> — eine Rolle fragen\n/bots — alle Rollen`
         }
 
         case 'swarm': {
@@ -1497,7 +1430,7 @@ Gebaut für Xaventra contributors 🌶️`
                 return `🤖 **Sub-Agent**\n\nSyntax: /subagent <rolle> <frage>\n\nBeispiel: /subagent coder Analysiere die message-pipeline.ts Architektur\n\n${listRoles()}`
             }
             const { runSubAgent } = await import('../agents/team-coordinator.js')
-            return await runSubAgent(roleId, query)
+            return await runSubAgent(roleId, query, undefined, { userId: principalContext?.principalId || from, authUserId: principalContext?.rawUserId || from })
         }
 
         // ============================================

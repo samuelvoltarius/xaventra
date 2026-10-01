@@ -57,6 +57,7 @@ describe('P9 Delegation: Vorab-Freigabe statt zweiter Karte', () => {
 
 describe('P9 Delegation: Rückkanal fragt nur bei offenen Delegationen', () => {
     let release: (() => void) | null = null
+    const previousRoot = process.env.NOVA_RUNTIME_ROOT
     beforeEach(() => {
         vi.resetModules()
         process.env.NOVA_RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'p9-dlg-runtime-'))
@@ -66,7 +67,7 @@ describe('P9 Delegation: Rückkanal fragt nur bei offenen Delegationen', () => {
         }))
     })
     afterEach(() => {
-        delete process.env.NOVA_RUNTIME_ROOT
+        process.env.NOVA_RUNTIME_ROOT = previousRoot
         vi.doUnmock('./autonomy-authority.js')
         vi.doUnmock('../agents/subagent-orchestrator.js')
         vi.useRealTimers()

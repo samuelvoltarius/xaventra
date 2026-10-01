@@ -948,7 +948,6 @@ async function startDaemon() {
     try {
         const { createFeedbackCollector } = await import('./learning/feedback.js')
         const { getCorrectionLearner, getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
-        const { getMultiBotManager } = await import('./layers/multi-bot.js')
 
         // Basic feedback collector
         const feedbackCollector = createFeedbackCollector()
@@ -957,7 +956,6 @@ async function startDaemon() {
         const correctionLearner = getCorrectionLearner()
         const skillSynthesizer = getSkillSynthesizer()
         const agentSwarm = getAgentSwarm()
-        const botManager = getMultiBotManager()
 
         // One-way, idempotent bridge from legacy L7 corrections into the
         // governed, user-scoped memory authority. Only explicitly parseable
@@ -1001,7 +999,6 @@ async function startDaemon() {
             corrections: correctionLearner,
             skills: skillSynthesizer,
             swarm: agentSwarm,
-            bots: botManager,
 
             // Learn from user correction
             recordCorrection: (userId: string, original: string, corrected: string) => {
@@ -1021,14 +1018,12 @@ async function startDaemon() {
                 corrections: correctionLearner.getStats(),
                 skills: skillSynthesizer.getStats(),
                 swarm: agentSwarm.getStats(),
-                bots: botManager.getStats(),
             }),
         }
 
         const cStats = correctionLearner.getStats()
         const sStats = skillSynthesizer.getStats()
-        const bStats = botManager.getStats()
-        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${cStats.totalCorrections} Korrekturen, ${sStats.totalSkills} Skills, ${bStats.totalBots} Bots)`)
+        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${cStats.totalCorrections} Korrekturen, ${sStats.totalSkills} Skills)`)
 
         // Bind the monitored learning service to L7.
         if (serviceModels.learning) {

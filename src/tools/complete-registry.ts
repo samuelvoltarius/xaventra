@@ -2202,76 +2202,6 @@ export const extensionTools: NovaTool[] = [
 ]
 
 // ============================================
-// Bot Management Tools
-// ============================================
-
-export const botTools: NovaTool[] = [
-    {
-        name: 'spawn_bot',
-        description: 'Startet einen neuen Bot mit eigener Persona',
-        category: 'bot',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Bots', required: true },
-            { name: 'persona', type: 'string', description: 'Persona/System-Prompt', required: false },
-            { name: 'channel', type: 'string', description: 'Kanal (telegram/discord/whatsapp)', required: false },
-        ],
-        handler: async (params) => {
-            const { getMultiBotManager, BOT_TEMPLATES } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-
-            const config = manager.createBot({
-                name: params.name as string,
-                persona: params.persona as string || BOT_TEMPLATES.assistant.persona,
-                channel: (params.channel as 'telegram' | 'discord' | 'whatsapp') || 'telegram',
-                channelConfig: {},
-                enabled: true,
-                createdBy: 'nova',
-            })
-
-            await manager.startBot(config.id)
-            return { success: true, botId: config.id, name: config.name }
-        },
-    },
-    {
-        name: 'list_bots',
-        description: 'Listet alle Bots auf',
-        category: 'bot',
-        parameters: [],
-        handler: async () => {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bots = manager.getAllBots()
-            return {
-                count: bots.length,
-                bots: bots.map(b => ({
-                    id: b.config.id,
-                    name: b.config.name,
-                    status: b.status,
-                    channel: b.config.channel,
-                })),
-            }
-        },
-    },
-    {
-        name: 'kill_bot',
-        description: 'Stoppt einen Bot',
-        category: 'bot',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Bots', required: true },
-        ],
-        handler: async (params) => {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bot = manager.getBotByName(params.name as string)
-            if (!bot) return { error: 'Bot nicht gefunden' }
-
-            await manager.stopBot(bot.config.id)
-            return { success: true, stopped: bot.config.name }
-        },
-    },
-]
-
-// ============================================
 // Media Provider Tools (Wave 1)
 // ============================================
 
@@ -3200,7 +3130,6 @@ export const ALL_TOOLS: NovaTool[] = [
     ...mediaTools,
     ...learningTools,
     ...extensionTools,
-    ...botTools,
     ...selfManagementTools,
     ...mediaProviderTools,
     ...selfModificationTools,

@@ -191,6 +191,7 @@
       "module": "src/agents/team-coordinator.ts",
       "imports": [
         "./agent-roles.js",
+        "./subagent-orchestrator.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -3941,14 +3942,6 @@
         "../config/config-path.js",
         "../memory/memory-quality.js",
         "../users/principal-id.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/layers/multi-bot.ts",
-      "imports": [
-        "./L7-learning.js",
         "node:fs",
         "node:path"
       ]

@@ -550,10 +550,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/layers/layers-cli-dead-paths.test.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/layers/memory-distiller-scope.test.ts",
       "path": ".nova-data"
     },
