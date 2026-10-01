@@ -24,7 +24,7 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EventSink, SensingEvent } from '../sensing/ports.js'
-import { promotedKinds, resetTrust, type PromotedKind } from './action-policy.js'
+import { promotedKinds, resetTrust, standingGrants, type PromotedKind, type StandingGrant } from './action-policy.js'
 import { defaultOn } from './autonomy-defaults.js'
 import { getNovaDataDir } from './data-root.js'
 import { createMissionEngine, planSteps, type Mission, type MissionCardPort, type MissionEngine, type StepExecutor } from './missions.js'
@@ -182,7 +182,7 @@ const MISSION_SECTIONS: Array<[Mission['status'], string]> = [
 ]
 const short = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
-export function formatArbeit(missions: readonly Mission[], responsibilities: readonly Responsibility[], options: { enabled?: boolean; promoted?: readonly PromotedKind[] } = {}): string {
+export function formatArbeit(missions: readonly Mission[], responsibilities: readonly Responsibility[], options: { enabled?: boolean; promoted?: readonly PromotedKind[]; grants?: readonly StandingGrant[] } = {}): string {
     const lines: string[] = []
     if (options.enabled === false) lines.push('Verantwortungen: AUS (autonomy.responsibilities.enabled=false)', '')
     const missionLine = (mission: Mission) => {
@@ -213,6 +213,12 @@ export function formatArbeit(missions: readonly Mission[], responsibilities: rea
     const promoted = options.promoted || []
     lines.push('', `Vertrauensleiter: selbst statt fragen (${promoted.length})`)
     for (const item of promoted) lines.push(`- ${item.kind} · ${item.text} · seit ${item.promotedAt.slice(0, 16).replace('T', ' ')} UTC (${item.confirmedYes}× Ja ohne Rückweg) · zurück: /arbeit fragen ${item.kind}`)
+    // P9: the explicit standing grants live in the same store (trust.json).
+    const grants = options.grants || []
+    if (grants.length) {
+        lines.push('', `Dauerhaft erlaubt (${grants.length})`)
+        for (const grant of grants) lines.push(`- ${grant.kind} · ${grant.subject} · seit ${grant.grantedAt.slice(0, 16).replace('T', ' ')} UTC (${grant.by})${grant.kind === 'install-katalog' ? ` · zurück: /setup ask ${grant.subject}` : ''}`)
+    }
     return lines.join('\n')
 }
 
@@ -538,7 +544,7 @@ export async function handleArbeitCommand(args: string, principal: { permission?
         const noPorts = { thoughts: { add: () => undefined }, cards: { create: () => ({ ok: false as const, reason: 'aus' }) } }
         const manager = createResponsibilityManager({ dataDir, localNodeId: 'lokal', ports: noPorts })
         const engine = createMissionEngine({ dataDir, localNodeId: 'lokal', isMain: () => false, responsibilities: manager, signals: () => collectProductionSignals(), executors: [], ports: noPorts })
-        return formatArbeit(engine.list(), manager.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir }) })
+        return formatArbeit(engine.list(), manager.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir }), grants: standingGrants({ dataDir }) })
     }
     const by = `owner:${principal.principalId || principal.rawUserId || '?'}`
     if (sub === 'pause' || sub === 'weiter') {
@@ -550,5 +556,5 @@ export async function handleArbeitCommand(args: string, principal: { permission?
         return askAgainFor(id)
     }
     if (sub) return 'Nutzung: /arbeit | /arbeit pause <id> | /arbeit weiter <id> | /arbeit fragen <aktionsart>'
-    return formatArbeit(current.missions.list(), current.responsibilities.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir: getNovaDataDir() }) })
+    return formatArbeit(current.missions.list(), current.responsibilities.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir: getNovaDataDir() }), grants: standingGrants({ dataDir: getNovaDataDir() }) })
 }

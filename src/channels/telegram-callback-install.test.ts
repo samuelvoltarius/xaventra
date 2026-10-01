@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Hotfix 2.80.1 (Befund 4): callbacks that install or approve something are
-// owner-only, the model name is allowlisted and nothing runs through a shell.
+// Hotfix 2.80.1 (Befund 4) + P9 „ein Knopf-Rahmen“: approvals run only through
+// Knopf-Karten (`ac:`). The old self-acting callbacks `patch_ok/no`,
+// `skill_ok/no` and `ni:` run nothing for anyone (owner included) and point to
+// a fresh card.
 
 const mu = vi.hoisted(() => ({
     roles: new Map<string, 'owner' | 'admin' | 'user' | 'guest' | 'blocked'>(),
@@ -31,8 +33,11 @@ const skills = vi.hoisted(() => ({
 }))
 vi.mock('../tools/skill-builder.js', () => skills)
 vi.mock('../core/llm-factory.js', () => ({ availableLLMs: [], createLLM: vi.fn() }))
+const patchGate = vi.hoisted(() => ({ approveEvolutionProposal: vi.fn(), getPatchProposals: vi.fn(() => [{ id: 'p1', status: 'queued' }]), applyApprovedDoctorProposal: vi.fn() }))
+vi.mock('../synthesis/self-evolution.js', () => ({ approveEvolutionProposal: patchGate.approveEvolutionProposal, getPatchProposals: patchGate.getPatchProposals }))
+vi.mock('../doctor/safe-fixes.js', () => ({ applyApprovedDoctorProposal: patchGate.applyApprovedDoctorProposal }))
 
-import { TelegramAdapter, parseNodeInstallCallback } from './telegram.js'
+import { TelegramAdapter, retiredApprovalHint } from './telegram.js'
 
 function adapter(allowFrom: string[] = []) {
     const instance = new TelegramAdapter({ token: 'fixture', allowFrom, verifyAuthority: async () => true })
@@ -63,65 +68,38 @@ beforeEach(() => {
 })
 afterEach(() => { delete (globalThis as any).__novaState })
 
-describe('ni: node-install callback (Hotfix 2.80.1, Befund 4)', () => {
-    it('rejects a non-owner and executes nothing', async () => {
-        const { instance, bot } = adapter([])
-        await (instance as any).handleFeedback(press(222, 'ni:llama3.2:local', -500, 'group'))
-        expect(cp.execFile).not.toHaveBeenCalled()
-        expect(anyShell()).toBe(0)
-        expect(bot.answerCallbackQuery.mock.calls.some((call: any[]) => String(call[1]?.text).includes('🔒'))).toBe(true)
+describe('P9: retired approval callbacks run nothing and ask for a fresh card', () => {
+    it.each([
+        'patch_ok:p1', 'patch_no:p1', 'skill_ok:sp1', 'skill_no:sp1', 'ni:llama3.2:local', 'ni:qwen2.5-coder:7b:local', 'ni:x;id:local',
+    ])('%s pressed by the owner: nothing applied, installed or released', async (data) => {
+        process.env.NOVA_PATCH_GATE_TOKEN = 'fixture-gate'
+        try {
+            const { instance, bot } = adapter([])
+            await (instance as any).handleFeedback(press(111, data))
+            expect(patchGate.approveEvolutionProposal).not.toHaveBeenCalled()
+            expect(patchGate.applyApprovedDoctorProposal).not.toHaveBeenCalled()
+            expect(skills.updateSkillProposalStatus).not.toHaveBeenCalled()
+            expect(cp.execFile).not.toHaveBeenCalled()
+            expect(anyShell()).toBe(0)
+            const answer = (bot.answerCallbackQuery.mock.calls as any[]).map(call => call[1]?.text).join(' ')
+            expect(answer).toMatch(/Veralteter Knopf/)
+            expect(answer).toMatch(/neue Karte/)
+            expect(bot.editMessageReplyMarkup).toHaveBeenCalled()
+        } finally { delete process.env.NOVA_PATCH_GATE_TOKEN }
     })
 
-    it('rejects an owner callback with shell metacharacters in the model and executes nothing', async () => {
-        const { instance } = adapter([])
-        await (instance as any).handleFeedback(press(111, 'ni:x;id:local'))
-        await (instance as any).handleFeedback(press(111, 'ni:x$(id):local'))
-        await (instance as any).handleFeedback(press(111, 'ni:x id:local'))
-        expect(cp.execFile).not.toHaveBeenCalled()
-        expect(anyShell()).toBe(0)
-    })
-
-    it('refuses remote installation instead of ssh-ing to the node', async () => {
-        const { instance, bot } = adapter([])
-        await (instance as any).handleFeedback(press(111, 'ni:llama3.2:xaventra-ns2'))
-        expect(cp.execFile).not.toHaveBeenCalled()
-        expect(anyShell()).toBe(0)
-        const texts = bot.sendMessage.mock.calls.map((call: any[]) => String(call[1]))
-        expect(texts.some(text => /Mesh/.test(text))).toBe(true)
-    })
-
-    it('runs a valid owner callback as execFile without a shell, with the exact argument array', async () => {
-        const { instance } = adapter([])
-        await (instance as any).handleFeedback(press(111, 'ni:qwen2.5-coder:7b:local'))
-        expect(cp.execFile).toHaveBeenCalledTimes(1)
-        const [file, args, options] = cp.execFile.mock.calls[0] as any[]
-        expect(file).toBe('ollama')
-        expect(args).toEqual(['pull', 'qwen2.5-coder:7b'])
-        expect(options?.shell).not.toBe(true)
-        expect(anyShell()).toBe(0)
-    })
-
-    it('parses strictly: allowlisted model, node required to be a plain name', () => {
-        expect(parseNodeInstallCallback('ni:llama3.2:local')).toEqual({ model: 'llama3.2', node: 'local' })
-        expect(parseNodeInstallCallback('ni:hf.co/org/model:q4:local')).toEqual({ model: 'hf.co/org/model:q4', node: 'local' })
-        expect(parseNodeInstallCallback('ni:x;id:local')).toBeNull()
-        expect(parseNodeInstallCallback('ni:-rf:local')).toBeNull()
-        expect(parseNodeInstallCallback('ni:llama:lo cal')).toBeNull()
-        expect(parseNodeInstallCallback('ni:')).toBeNull()
-    })
-})
-
-describe('skill_ok / skill_no callbacks are owner-only (Hotfix 2.80.1)', () => {
-    it('does not let a non-owner release a skill to the sandbox', async () => {
+    it('also a non-owner in a group gets only the hint', async () => {
         const { instance } = adapter([])
         await (instance as any).handleFeedback(press(222, 'skill_ok:sp1', -500, 'group'))
-        await (instance as any).handleFeedback(press(222, 'skill_no:sp1', -500, 'group'))
+        await (instance as any).handleFeedback(press(222, 'patch_ok:p1', -500, 'group'))
         expect(skills.updateSkillProposalStatus).not.toHaveBeenCalled()
+        expect(patchGate.approveEvolutionProposal).not.toHaveBeenCalled()
     })
 
-    it('lets the owner release it', async () => {
-        const { instance } = adapter([])
-        await (instance as any).handleFeedback(press(111, 'skill_ok:sp1'))
-        expect(skills.updateSkillProposalStatus).toHaveBeenCalledWith('sp1', 'approved', '111')
+    it('recognises exactly the retired prefixes', () => {
+        expect(retiredApprovalHint('patch_ok:x')).toMatch(/\/patch approve/)
+        expect(retiredApprovalHint('ac:0123456789abcdef')).toBeNull()
+        expect(retiredApprovalHint('cmd_status')).toBeNull()
+        expect(retiredApprovalHint('nix')).toBeNull()
     })
 })

@@ -482,7 +482,7 @@ Download:
 
 All self-evolution code changes require:
 1. Proposal queued to `.nova-data/patch-proposals.json`
-2. `/patch approve <id>` command OR Telegram inline button
+2. The owner's "Ja" on the PATCH_GATE Knopf-Karte (`/patch approve <id>` only (re)sends the card) or the Desktop trust view — one check chain (`src/synthesis/patch-gate.ts`): owner, single flight, live Main fencing, token, atomic state
 3. `NOVA_PATCH_GATE_TOKEN` environment variable set
 4. Sandbox build/tests or config-schema validation must succeed
 

@@ -10,7 +10,7 @@ import { writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
-import { ownerApprovalRefusal } from './owner-approval.js'
+import { approvalDetailOf, ownerApprovalRefusal } from './owner-approval.js'
 
 const SCRIPTS_DIR = join(process.cwd(), '.nova-data', 'scripts')
 const TIMEOUT_MS = 60_000  // 60 seconds max
@@ -69,7 +69,8 @@ export async function executeExecutePython(params: Record<string, unknown>): Pro
 
     // R2 T8: arbitrary code and pip installs without sandbox bypass every
     // run_command guard: owner only, with an explicit owner approval.
-    const refusal = await ownerApprovalRefusal(params, 'execute_python')
+    // The code is bound to exactly this code/file/package set (hash detail).
+    const refusal = await ownerApprovalRefusal(params, 'execute_python', approvalDetailOf({ code: code ?? null, file: filePath ?? null, install: installPackages ?? null }))
     if (refusal) return refusal
 
     const python = findPython()

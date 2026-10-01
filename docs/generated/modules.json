@@ -1249,10 +1249,7 @@
       "imports": [
         "../doctor/self-heal.js",
         "../install/install-queue.js",
-        "./approval-cards.js",
-        "./atomic-storage.js",
-        "node:fs",
-        "node:path"
+        "./approval-cards.js"
       ]
     },
     {
@@ -1324,13 +1321,6 @@
     {
       "module": "src/core/autonomy-defaults.ts",
       "imports": []
-    },
-    {
-      "module": "src/core/autonomy-ladder.ts",
-      "imports": [
-        "../learning/personal-skill-compiler.js",
-        "./execution-preflight.js"
-      ]
     },
     {
       "module": "src/core/autonomy-loop.ts",
@@ -1553,7 +1543,7 @@
         "../infra/telemetry.js",
         "./action-intent.js",
         "./action-lifecycle.js",
-        "./autonomy-ladder.js",
+        "./action-policy.js",
         "./context-policy.js",
         "./deliberative-planner.js",
         "./execution-preflight.js",
@@ -3291,6 +3281,7 @@
         "../install/install-ticket.js",
         "../install/never-list.js",
         "../install/resource-guard.js",
+        "../install/signed-ticket.js",
         "../security/secret-redaction.js",
         "node:child_process",
         "node:crypto",
@@ -3302,6 +3293,7 @@
       "module": "src/host/vllm-agent.ts",
       "imports": [
         "../install/never-list.js",
+        "../install/signed-ticket.js",
         "../install/vllm-ticket.js",
         "./docker-agent.js",
         "node:child_process",
@@ -3418,6 +3410,8 @@
     {
       "module": "src/install/install-queue.ts",
       "imports": [
+        "../core/action-policy.js",
+        "../core/data-root.js",
         "./install-catalog.js",
         "./install-ticket.js",
         "node:crypto",
@@ -3429,7 +3423,7 @@
       "module": "src/install/install-ticket.ts",
       "imports": [
         "./install-catalog.js",
-        "node:crypto"
+        "./signed-ticket.js"
       ]
     },
     {
@@ -3440,6 +3434,15 @@
       "module": "src/install/resource-guard.ts",
       "imports": [
         "./install-catalog.js"
+      ]
+    },
+    {
+      "module": "src/install/signed-ticket.ts",
+      "imports": [
+        "./install-catalog.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -3467,8 +3470,7 @@
     {
       "module": "src/install/vllm-ticket.ts",
       "imports": [
-        "./install-catalog.js",
-        "node:crypto"
+        "./signed-ticket.js"
       ]
     },
     {
@@ -5673,6 +5675,12 @@
       ]
     },
     {
+      "module": "src/synthesis/patch-gate.ts",
+      "imports": [
+        "../mesh/leader-election.js"
+      ]
+    },
+    {
       "module": "src/synthesis/patch-sandbox.ts",
       "imports": [
         "node:child_process",
@@ -5736,6 +5744,13 @@
       "module": "src/test-utils/channel-plugins.ts",
       "imports": [
         "../plugins/registry.js"
+      ]
+    },
+    {
+      "module": "src/test-utils/owner-approval.ts",
+      "imports": [
+        "../core/setup-confirmation.js",
+        "../tools/owner-approval.js"
       ]
     },
     {
@@ -5931,7 +5946,6 @@
         "./skill-synthesis.js",
         "./ssh-tool.js",
         "./tavily-search.js",
-        "./tool-confirmation.js",
         "./tool-result-quality.js",
         "./vision-tool.js",
         "node:fs",
@@ -6084,7 +6098,9 @@
     },
     {
       "module": "src/tools/owner-approval.ts",
-      "imports": []
+      "imports": [
+        "node:crypto"
+      ]
     },
     {
       "module": "src/tools/patch.ts",
@@ -6228,13 +6244,6 @@
     {
       "module": "src/tools/tavily-search.ts",
       "imports": []
-    },
-    {
-      "module": "src/tools/tool-confirmation.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
     },
     {
       "module": "src/tools/tool-policy.ts",

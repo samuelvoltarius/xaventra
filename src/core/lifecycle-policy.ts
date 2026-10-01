@@ -31,7 +31,6 @@ export interface ExecutionPolicyContext {
     authUserId?: string
     channel?: string
     nodeId?: string
-    approvalGranted?: boolean
     workspaceId?: string
 }
 

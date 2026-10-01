@@ -31,7 +31,6 @@ const EXCLUDED_FILES = new Set([
     'tool-scanner.js',
     'tool-router.js',
     'tool-policy.js',
-    'tool-confirmation.js',
     'loop-detection.js',
     'registry.js',
     'executor.js',

@@ -12,8 +12,17 @@ const queue = vi.hoisted(() => ({
     defaultInstallDeps: vi.fn(() => ({ dataDir: 'unused' })),
     formatInstallQueue: vi.fn(() => 'queue'),
     formatInstallCatalog: vi.fn(() => 'catalog'),
+    QUEUE_ID_PATTERN: /^iq-[a-f0-9]{12}$/,
+    describeProposal: vi.fn(() => 'described'),
+    loadInstallQueue: vi.fn(() => [{ id: 'iq-0123456789ab', catalogId: 'ffmpeg', nodeId: 'spark', status: 'queued', route: { kind: 'host-agent' }, source: 'scan', createdAt: '2026-10-01T10:00:00.000Z', updatedAt: '' }]),
 }))
 vi.mock('../install/install-queue.js', () => queue)
+const cards = vi.hoisted(() => ({
+    ensureBuiltinCardExecutors: vi.fn(async () => undefined),
+    installCardInput: vi.fn((item: any) => ({ art: 'install', aktion: { kind: 'install', ref: item.id } })),
+    offerCard: vi.fn((input: any) => ({ ok: true, created: true, card: { id: 'k1' }, message: `card ${input.aktion.ref}` })),
+}))
+vi.mock('./approval-card-sources.js', () => cards)
 
 import { handleCommand, type DaemonState } from './slash-commands.js'
 
@@ -23,7 +32,10 @@ const state = (): DaemonState => ({
 })
 const as = (permission: 'owner' | 'admin' | 'user' | 'guest', id = `${permission}-1`) => ({ channel: 'telegram', rawUserId: id, principalId: id, permission })
 
-beforeEach(() => { for (const fn of Object.values(queue)) fn.mockClear() })
+beforeEach(() => {
+    for (const fn of Object.values(queue)) if (typeof fn === 'function' && 'mockClear' in fn) (fn as any).mockClear()
+    for (const fn of Object.values(cards)) fn.mockClear()
+})
 
 describe('/setup install commands (Stufe 2)', () => {
     it('denies approve, rollback and allow to every non-owner before reaching the queue', async () => {
@@ -37,10 +49,16 @@ describe('/setup install commands (Stufe 2)', () => {
         expect(queue.proposeCatalogInstall).not.toHaveBeenCalled()
     })
 
-    it('passes the server-side owner principal, not message text, as approver', async () => {
+    it('P9: /setup approve only (re)sends the install card — it never issues a ticket itself', async () => {
         const reply = String(await handleCommand('setup', 'approve iq-0123456789ab owner:mallory', 'owner-1', state(), [], as('owner')))
-        expect(reply).toContain('owner:owner-1')
-        expect(queue.approveQueuedInstall).toHaveBeenCalledWith('iq-0123456789ab', expect.objectContaining({ permission: 'owner', principalId: 'owner-1' }), expect.anything())
+        expect(reply).toBe('card iq-0123456789ab')
+        expect(cards.offerCard).toHaveBeenCalledTimes(1)
+        expect(queue.approveQueuedInstall).not.toHaveBeenCalled()
+        expect(String(await handleCommand('setup', 'approve APPROVE:ffmpeg', 'owner-1', state(), [], as('owner')))).toMatch(/Ungültige/)
+        expect(cards.offerCard).toHaveBeenCalledTimes(1)
+    })
+
+    it('passes the server-side owner principal, not message text, for allow/ask', async () => {
         expect(String(await handleCommand('setup', 'allow ffmpeg', 'owner-1', state(), [], as('owner')))).toContain('erlauben by owner-1')
         expect(String(await handleCommand('setup', 'ask ffmpeg', 'owner-1', state(), [], as('owner')))).toContain('fragen by owner-1')
     })

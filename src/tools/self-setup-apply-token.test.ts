@@ -14,7 +14,7 @@ vi.mock('../core/self-setup-orchestrator.js', () => ({
     applySelfSetupPlan: setup.applySelfSetupPlan,
     loadSelfSetupState: () => ({
         mode: setup.mode, generatedAt: '2026-09-29T00:00:00.000Z',
-        actions: [{ id: 'a1' }, { id: 'gpu1', verification: { kind: 'gpu_backend', backend: 'cuda' } }],
+        actions: [{ id: 'a1' }, { id: 'gpu1', catalogId: 'node-llama-cpp-cuda', verification: { kind: 'gpu_backend', backend: 'cuda' } }, { id: 'cat1', catalogId: 'ffmpeg' }],
     }),
     runSelfSetupResearch: vi.fn(), formatSelfSetupPlan: vi.fn(() => 'plan'), formatSelfSetupStatus: vi.fn(() => 'status'), runSelfSetupScan: vi.fn(),
 }))
@@ -81,13 +81,25 @@ describe('self_setup_apply requires the server-issued one-time code (INT-6)', ()
         expect(setup.applySelfSetupPlan).toHaveBeenCalledWith('APPLY_ALL:2026-09-29T00:00:00.000Z')
     })
 
-    it('keeps YOLO mode (except GPU backends, which still need the code)', async () => {
+    it('P9: YOLO no longer applies a non-catalog action without the code (closed gap)', async () => {
         setup.mode = 'yolo'
-        expect(await ownerCall({ action_id: 'a1' })).toMatchObject({ success: true })
-        expect(setup.applySelfSetupAction).toHaveBeenCalledWith('a1', '')
+        expect(await ownerCall({ action_id: 'a1' })).toMatchObject({ success: false })
+        expect(await ownerCall({ action_id: 'gpu1' })).toMatchObject({ success: false })
         expect(await ownerCall({ action_id: 'gpu1', confirm: 'APPLY:gpu1' })).toMatchObject({ success: false })
+        expect(setup.applySelfSetupAction).not.toHaveBeenCalled()
         const token = await issueToken('gpu1')
         expect(await ownerCall({ action_id: 'gpu1', confirm: token })).toMatchObject({ success: true })
         expect(setup.applySelfSetupAction).toHaveBeenLastCalledWith('gpu1', 'APPLY:gpu1')
+    })
+
+    it('P9: without a code a catalog action only goes to the queue path (orchestrator decides: card or standing permission)', async () => {
+        for (const mode of ['yolo', 'confirm']) {
+            setup.mode = mode
+            setup.applySelfSetupAction.mockClear()
+            await ownerCall({ action_id: 'cat1' })
+            expect(setup.applySelfSetupAction).toHaveBeenCalledWith('cat1', '')
+        }
+        await ownerCall({ action_id: 'all' })
+        expect(setup.applySelfSetupPlan).toHaveBeenCalledWith('')
     })
 })

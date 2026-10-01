@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Stufe 2 (S2.4/S2.5 + YOLO): /setup apply never runs a free command anymore.
+// Stufe 2 (S2.4/S2.5): /setup apply never runs a free command anymore.
 // Catalog-backed actions only enter the install queue; a ticket exists only
-// after the owner's /setup approve, or in YOLO mode for entries the owner
-// lifted to 'erlauben'. Workers only get image suggestions.
+// after the owner's card „Ja“, or — P9, independent of YOLO — for entries with a
+// standing permission in the one permission store (trust.json). Without the
+// owner's code nothing else runs, YOLO or not. Workers only get image suggestions.
 
 const childProcess = vi.hoisted(() => ({
     exec: vi.fn(() => { throw new Error('exec must not run') }),
@@ -82,33 +83,57 @@ describe('/setup apply runs no free commands (Stufe 2)', () => {
     })
 })
 
-describe('YOLO only for entries with level erlauben', () => {
-    it('keeps a fragen entry queued in YOLO mode', async () => {
-        writeState('yolo', [ffmpegAction])
-        const result = await applySelfSetupAction('local:ffmpeg', '', { installDeps: deps, target: spark })
-        expect(result.success).toBe(false)
+describe('P9: standing permission from the one store, never YOLO', () => {
+    it('keeps an entry without standing permission queued, YOLO or not', async () => {
+        for (const mode of ['yolo', 'proposal'] as const) {
+            writeState(mode, [ffmpegAction])
+            const result = await applySelfSetupAction('local:ffmpeg', '', { installDeps: deps, target: spark })
+            expect(result.success).toBe(false)
+        }
         expect(host.execute).not.toHaveBeenCalled()
         expect(loadInstallQueue(deps)[0].status).toBe('queued')
     })
 
-    it('tickets an owner-lifted erlauben entry in YOLO mode, signed and bound by code', async () => {
+    it('installs an entry with standing permission without YOLO, signed as policy:vertrauensleiter (never as owner)', async () => {
         expect(setApprovalLevel('ffmpeg', 'erlauben', owner, deps).ok).toBe(true)
-        writeState('yolo', [ffmpegAction])
+        expect(existsSync(join(deps.dataDir, 'install-policy.json'))).toBe(false)
+        expect(JSON.parse(readFileSync(join(deps.dataDir, 'action-policy', 'trust.json'), 'utf8')).erlaubt['install-katalog|ffmpeg'])
+            .toMatchObject({ kind: 'install-katalog', subject: 'ffmpeg', by: 'owner:alfred' })
+        writeState('proposal', [ffmpegAction])
         const result = await applySelfSetupAction('local:ffmpeg', '', { installDeps: deps, target: spark })
         expect(result.success).toBe(true)
         expect(host.execute).toHaveBeenCalledOnce()
         const signed = host.execute.mock.calls[0][0]
         const ticket = verifyInstallTicket(signed, { nodeId: 'spark', clientId: 'xaventra-main', publicKey, catalog: getInstallCatalog() })
-        expect(ticket).toMatchObject({ catalogId: 'ffmpeg', approval: 'erlauben', approvedBy: 'policy:erlauben', operation: 'install' })
+        expect(ticket).toMatchObject({ catalogId: 'ffmpeg', approval: 'erlauben', approvedBy: 'policy:vertrauensleiter', operation: 'install' })
         expect(verify(null, installTicketBytes(ticket), publicKey, Buffer.from(signed.signature, 'base64'))).toBe(true)
         expect(loadInstallQueue(deps)[0]).toMatchObject({ status: 'done', ticketId: ticket.id })
     })
 
-    it('does not auto-run an erlauben entry without YOLO', async () => {
+    it('„fragen“ removes the standing permission again', async () => {
         setApprovalLevel('ffmpeg', 'erlauben', owner, deps)
+        expect(setApprovalLevel('ffmpeg', 'fragen', owner, deps).ok).toBe(true)
         writeState('proposal', [ffmpegAction])
-        await applySelfSetupAction('local:ffmpeg', 'APPLY:local:ffmpeg', { installDeps: deps, target: spark })
+        await applySelfSetupAction('local:ffmpeg', '', { installDeps: deps, target: spark })
         expect(host.execute).not.toHaveBeenCalled()
+    })
+
+    it('migrates a legacy install-policy.json „erlauben“ once into trust.json', async () => {
+        writeFileSync(join(deps.dataDir, 'install-policy.json'), JSON.stringify({ version: 1, levels: { ffmpeg: 'erlauben', 'playwright-chromium': 'fragen' } }))
+        writeState('proposal', [ffmpegAction])
+        const result = await applySelfSetupAction('local:ffmpeg', '', { installDeps: deps, target: spark })
+        expect(result.success).toBe(true)
+        expect(existsSync(join(deps.dataDir, 'install-policy.json'))).toBe(false)
+        expect(existsSync(join(deps.dataDir, 'install-policy.json.migrated'))).toBe(true)
+        const grants = JSON.parse(readFileSync(join(deps.dataDir, 'action-policy', 'trust.json'), 'utf8')).erlaubt
+        expect(Object.keys(grants)).toEqual(['install-katalog|ffmpeg'])
+    })
+
+    it('YOLO without the owner code never applies a config patch (closed gap)', async () => {
+        writeState('yolo', [{ id: 'cfg:x', type: 'config_patch', title: 't', reason: 'r', risk: 'low', patch: { selfSetup: { probe: true } }, configPath: 'selfSetup.probe' }])
+        const result = await applySelfSetupAction('cfg:x', '', { installDeps: deps, target: spark })
+        expect(result.success).toBe(false)
+        expect(result.message).toMatch(/Freigabe/)
     })
 })
 

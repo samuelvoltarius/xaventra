@@ -898,6 +898,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/tools/ssh-selfheal-approval.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/tools/ssh-tool-execution.test.ts",
       "path": ".nova-data"
     },
@@ -907,10 +911,6 @@
     },
     {
       "owner": "src/tools/ssh-tool-hosts.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/tools/tool-confirmation.ts",
       "path": ".nova-data"
     },
     {

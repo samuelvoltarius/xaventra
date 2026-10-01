@@ -140,8 +140,9 @@ const DATA_DIR = join(process.cwd(), '.nova-data')
 const STATE_FILE = join(DATA_DIR, 'setup-state.json')
 const CONFIG_FILE = resolveConfigPath()
 
-/** Stufe 2: YOLO no longer executes anything by itself. It only lets the code
- * ticket catalog entries the owner has lifted to 'erlauben'. */
+/** P9: YOLO has no execution effect anymore. Without the owner's code only catalog
+ * actions enter the queue (YOLO or not); installing without a card needs a
+ * standing permission in the one permission store (trust.json, /setup allow). */
 function isYoloEnabled(config: any): boolean {
     return process.env.NOVA_SELF_SETUP_YOLO === '1'
         || process.env.NOVA_YOLO === '1'
@@ -572,7 +573,7 @@ export function formatSelfSetupStatus(state = loadSelfSetupState()): string {
     if (!state) return 'Kein Self-Setup-State vorhanden. Nutze self_setup_plan oder starte Nova neu.'
     const lines = [
         `Nova Self-Setup (${state.generatedAt})`,
-        `Modus: ${state.mode === 'yolo' ? 'YOLO (Auto-Apply aktiviert)' : 'Plan + Freigabe'}`,
+        `Modus: ${state.mode === 'yolo' ? 'YOLO (ohne Wirkung: dauerhafte Erlaubnisse über /setup allow)' : 'Plan + Freigabe'}`,
         state.summary,
         '',
         `Voice: ${state.voice.ok ? 'ok' : 'unvollstaendig'}${state.voice.warnings.length ? ` (${state.voice.warnings.join('; ')})` : ''}`,
@@ -600,8 +601,8 @@ export function formatSelfSetupPlan(state: SelfSetupState): string {
         state.summary,
         '',
         state.mode === 'yolo'
-            ? 'YOLO aktiv: nur Katalog-Eintraege mit Freigabestufe "erlauben" laufen ohne Einzel-Freigabe. Freie Befehle werden nie ausgefuehrt.'
-            : 'Aktionen werden NICHT automatisch ausgefuehrt. Freie Befehle werden nie ausgefuehrt; Katalog-Eintraege kommen in die Warteschlange und brauchen /setup approve <iq-id> vom Owner.',
+            ? 'YOLO ist gesetzt, wirkt aber nicht mehr: ohne Owner-Code gehen nur Katalog-Eintraege in die Warteschlange; installiert wird nach dem Ja auf der Knopf-Karte oder bei dauerhafter Erlaubnis (/setup allow). Config-Patches brauchen immer den Code. Freie Befehle werden nie ausgefuehrt.'
+            : 'Aktionen werden NICHT automatisch ausgefuehrt. Freie Befehle werden nie ausgefuehrt; Katalog-Eintraege kommen in die Warteschlange und brauchen das Ja des Owners auf der Knopf-Karte (oder eine dauerhafte Erlaubnis per /setup allow).',
         '',
     ]
     if (state.actions.length === 0) {
@@ -636,21 +637,23 @@ export interface ApplySelfSetupOptions {
     target?: InstallTargetNode
 }
 
-async function applyCatalogAction(action: SetupAction, yolo: boolean, options: ApplySelfSetupOptions): Promise<{ success: boolean; message: string }> {
-    const { autoApproveIfAllowed, defaultInstallDeps, proposeCatalogInstall, resolveInstallTarget } = await import('../install/install-queue.js')
+async function applyCatalogAction(action: SetupAction, ownerConfirmed: boolean, options: ApplySelfSetupOptions): Promise<{ success: boolean; message: string }> {
+    const { approveQueuedInstallByTrust, defaultInstallDeps, hasStandingInstallPermission, proposeCatalogInstall, resolveInstallTarget } = await import('../install/install-queue.js')
     const deps = options.installDeps || defaultInstallDeps(DATA_DIR)
     const target = options.target || await resolveInstallTarget(action.nodeId).catch(() => null)
     if (!target) return { success: false, message: `Zielknoten ${action.nodeId || 'lokal'} hat kein bekanntes Profil (/knoten). Nichts ausgefuehrt.` }
-    const proposed = proposeCatalogInstall(action.catalogId, target, deps, yolo ? 'yolo' : 'owner')
+    const proposed = proposeCatalogInstall(action.catalogId, target, deps, ownerConfirmed ? 'owner' : 'model')
     if (!proposed.ok || !proposed.proposal) return { success: false, message: proposed.message }
-    if (yolo) {
-        const auto = await autoApproveIfAllowed(proposed.proposal.id, true, deps)
+    // P9: only a standing permission from the one permission store (owner grant or
+    // trust ladder) installs without a card — signed as the ladder, never as the owner.
+    if (proposed.proposal.status === 'queued' && hasStandingInstallPermission(proposed.proposal.catalogId, deps)) {
+        const auto = await approveQueuedInstallByTrust(proposed.proposal.id, deps)
         if (auto.ok) {
             // Long installs keep running on the host; the queue records the receipt.
             return { success: auto.proposal?.status === 'done' || auto.proposal?.status === 'running', message: auto.message }
         }
     }
-    // Queued or suggested: nothing was installed. Honest result, never "success".
+    // Queued (card follows) or suggested: nothing was installed. Honest result, never "success".
     return { success: false, message: proposed.message }
 }
 
@@ -659,9 +662,12 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
     if (!state) return { success: false, message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
     const action = state.actions.find(a => a.id === actionIdToApply)
     if (!action) return { success: false, message: `Aktion nicht gefunden: ${actionIdToApply}` }
-    // Native runtime changes remain approval-gated even when general YOLO mode is enabled.
-    const alwaysConfirm = action.verification?.kind === 'gpu_backend'
-    if ((state.mode !== 'yolo' || alwaysConfirm) && confirm !== `APPLY:${actionIdToApply}`) {
+    // P9: without the owner's code (YOLO or not) only a catalog action may proceed — into the
+    // install queue (card), installed only with a standing permission. Config patches,
+    // native runtime changes and everything else always need the code.
+    const ownerConfirmed = confirm === `APPLY:${actionIdToApply}`
+    const queueOnly = Boolean(action.catalogId) && action.verification?.kind !== 'gpu_backend'
+    if (!ownerConfirmed && !queueOnly) {
         return { success: false, message: `Freigabe fehlt. Der Owner gibt die Aktion mit /setup apply ${actionIdToApply} frei.` }
     }
 
@@ -683,7 +689,7 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
         return { success: true, message: `Config angewendet: ${action.configPath || action.id}` }
     }
 
-    if (action.catalogId) return applyCatalogAction(action, state.mode === 'yolo' && confirm === '', options)
+    if (action.catalogId) return applyCatalogAction(action, ownerConfirmed, options)
     // Stufe 2: free shell commands (scan hints, research output, old state
     // entries) are never executed, not with an owner code and not in YOLO.
     return {
@@ -695,21 +701,16 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
 export async function applySelfSetupPlan(confirm = ''): Promise<{ success: boolean; applied: string[]; failed: string[]; message: string }> {
     const state = loadSelfSetupState()
     if (!state) return { success: false, applied: [], failed: [], message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
-    if (state.mode !== 'yolo' && confirm !== `APPLY_ALL:${state.generatedAt}`) {
-        return {
-            success: false,
-            applied: [],
-            failed: [],
-            message: 'Freigabe fehlt. Der Owner gibt den Plan mit /setup apply all frei (oder YOLO-Modus).',
-        }
-    }
+    // P9: without the "all" code only catalog actions run (queue + standing permission), YOLO or not.
+    const ownerConfirmed = confirm === `APPLY_ALL:${state.generatedAt}`
 
     const applied: string[] = []
     const failed: string[] = []
     for (const action of state.actions) {
         if (action.applied) continue
+        if (!ownerConfirmed && !action.catalogId) { failed.push(`${action.id}: Freigabe fehlt (/setup apply all)`); continue }
         try {
-            const result = await applySelfSetupAction(action.id, state.mode === 'yolo' ? '' : `APPLY:${action.id}`)
+            const result = await applySelfSetupAction(action.id, ownerConfirmed ? `APPLY:${action.id}` : '')
             if (result.success) applied.push(action.id)
             else failed.push(`${action.id}: ${result.message}`)
         } catch (err) {

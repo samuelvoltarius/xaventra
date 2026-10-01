@@ -3276,12 +3276,15 @@ _Deaktivieren: /verbose off_`
             // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
             if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
             const [toolName, ...rest] = args.trim().split(/\s+/).filter(Boolean)
-            if (!toolName || !/^[a-z][a-z0-9_]{1,63}$/.test(toolName)) {
-                return 'Nutzung: /freigabe <werkzeug> [detail] — gibt einen Einmal-Code aus (5 min, einmal, nur für dich). ' +
-                    'Beispiel: /freigabe execute_python, /freigabe register_llm_provider <name>@<https-url>'
+            const detail = rest.join(' ').trim()
+            // P9: a code is always bound to a concrete detail (file, entity, host or the
+            // `#hash` the refusal names) — a tool-wide code would approve every call.
+            if (!toolName || !/^[a-z][a-z0-9_-]{1,79}$/.test(toolName) || !detail) {
+                return 'Nutzung: /freigabe <werkzeug> <detail> — gibt einen Einmal-Code aus (5 min, einmal, nur für dich, nur für genau dieses Detail). ' +
+                    'Das Detail nennt die Ablehnung des Werkzeugs, z. B. /freigabe printer_start benchy.gcode, /freigabe execute_python #a1b2c3d4e5f6, /freigabe register_llm_provider <name>@<https-url>'
             }
             const { toolApprovalTarget } = await import('../tools/owner-approval.js')
-            const target = toolApprovalTarget(toolName, rest.join(' ').trim() || undefined)
+            const target = toolApprovalTarget(toolName, detail)
             const token = issueSetupConfirmation(setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from), target)
             return `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
 Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
@@ -3686,15 +3689,28 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     return `${result.ok ? '📋' : '❌'} ${result.message}`
                 }
                 case 'approve':
-                case 'freigeben':
+                case 'freigeben': {
+                    // P9 „ein Knopf-Rahmen“: no second approval path — this (re)sends the install
+                    // card; the owner's press there issues the signed ticket.
+                    const queueId = rest2[0]
+                    if (!queueId) return `❌ Usage: /setup ${sub} <iq-id>`
+                    if (principalContext?.permission !== 'owner') return '❌ Freigabe nur durch den Owner.'
+                    const { defaultInstallDeps, describeProposal, loadInstallQueue, QUEUE_ID_PATTERN } = await import('../install/install-queue.js')
+                    if (!QUEUE_ID_PATTERN.test(queueId)) return '❌ Ungültige Warteschlangen-ID.'
+                    const item = loadInstallQueue(defaultInstallDeps()).find(entry => entry.id === queueId)
+                    if (!item) return `❌ Kein Vorschlag ${queueId} in der Warteschlange.`
+                    if (item.status !== 'queued' || item.route.kind !== 'host-agent') return `❌ ${describeProposal(item)}`
+                    const { ensureBuiltinCardExecutors, installCardInput, offerCard } = await import('./approval-card-sources.js')
+                    await ensureBuiltinCardExecutors()
+                    const offered = offerCard(installCardInput(item))
+                    return offered.ok ? offered.message : `❌ ${offered.message}`
+                }
                 case 'rollback': {
                     const queueId = rest2[0]
                     if (!queueId) return `❌ Usage: /setup ${sub} <iq-id>`
-                    const { approveQueuedInstall, defaultInstallDeps, rollbackQueuedInstall } = await import('../install/install-queue.js')
+                    const { defaultInstallDeps, rollbackQueuedInstall } = await import('../install/install-queue.js')
                     const approver = { permission: String(principalContext?.permission || ''), principalId: String(principalContext?.principalId || ''), channel: principalContext?.channel }
-                    const result = sub === 'rollback'
-                        ? await rollbackQueuedInstall(queueId, approver, defaultInstallDeps())
-                        : await approveQueuedInstall(queueId, approver, defaultInstallDeps())
+                    const result = await rollbackQueuedInstall(queueId, approver, defaultInstallDeps())
                     return `${result.ok ? '✅' : '❌'} ${result.message}`
                 }
                 case 'allow':
@@ -3720,9 +3736,9 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
 /setup katalog — Installationskatalog (Stufe 2) mit Größe, Risiko, Freigabestufe
 /setup install <id> [knoten] — Katalog-Eintrag vorschlagen (Worker: nur Image-Vorschlag)
 /setup queue — Warteschlange und Ergebnisse
-/setup approve <iq-id> — Owner-Freigabe: Ticket an den Host-Agenten
+/setup approve <iq-id> — Knopf-Karte (erneut) schicken; das Ja dort schickt das Ticket an den Host-Agenten
 /setup rollback <iq-id> — Rückweg einer abgeschlossenen Installation
-/setup allow|ask <id> — Freigabestufe erlauben (nur YOLO-Pfad) / fragen
+/setup allow|ask <id> — dauerhaft erlauben (ohne Rückfrage installieren, signiert als Vertrauensleiter) / wieder fragen
 
 Freie Befehle werden nie ausgeführt.`
             }
@@ -3763,114 +3779,36 @@ Freie Befehle werden nie ausgeführt.`
 
                     const header = `🧬 **Patch-Vorschläge** (gesamt: ${proposals.length}, ausstehend: ${queued.length})\n\n${lines}`
 
-                    // Send each queued proposal as a button message via Telegram
-                    if (queued.length && from) {
-                        try {
-                            const { getTelegramAdapter } = await import('../channels/telegram.js')
-                            const tg = getTelegramAdapter()
-                            if (tg) {
-                                // Send summary first
-                                await tg.sendWithButtons(from, header, [])
-                                // Then one button row per queued proposal
-                                for (const p of queued) {
-                                    const age = Math.floor((Date.now() - p.createdAt) / 60_000)
-                                    const msgText =
-                                        `🟡 *Ausstehend:* \`${p.id}\`\n` +
-                                        `📁 ${p.file}\n` +
-                                        `💬 ${p.description}\n` +
-                                        (p.reason ? `💡 ${p.reason}\n` : '') +
-                                        `🕐 vor ${age}min`
-                                    await tg.sendWithButtons(from, msgText, [
-                                        [
-                                            { text: '✅ Patch anwenden', callback_data: `patch_ok:${p.id}` },
-                                            { text: '❌ Ablehnen', callback_data: `patch_no:${p.id}` },
-                                        ],
-                                    ])
-                                }
-                                return '__HANDLED__'
-                            }
-                        } catch { /* fallback below */ }
-                    }
-
+                    // P9 „ein Knopf-Rahmen“: open proposals are answered on their Knopf-Karte only.
                     const footer = queued.length
-                        ? `\n\nApprove: /patch approve <id>\nAblehnen: /patch reject <id>`
+                        ? `
+
+Freigeben/Ablehnen über die Knopf-Karte. /patch approve <id> schickt sie (erneut).`
                         : ''
                     return `${header}${footer}`
                 }
 
                 case 'approve': {
+                    // P9: no second approval path — this only (re)sends the PATCH_GATE card. The press
+                    // runs the one check chain (synthesis/patch-gate.ts).
                     const proposalId = rest[0]
                     if (!proposalId) return '❌ Usage: /patch approve <proposalId>'
-
-                    const token = process.env.NOVA_PATCH_GATE_TOKEN
-                    if (!token) return '❌ `NOVA_PATCH_GATE_TOKEN` ist nicht gesetzt. Bitte in .env eintragen.'
-
-                    const proposals = getPatchProposals(200)
-                    const proposal = proposals.find((p: any) => p.id === proposalId)
-                    const patchPermission = requestPermission
-                    if (patchPermission !== 'owner') return 'PATCH_GATE-Freigaben benÃ¶tigen owner.'
+                    if (!process.env.NOVA_PATCH_GATE_TOKEN) return '❌ `NOVA_PATCH_GATE_TOKEN` ist nicht gesetzt. Bitte in .env eintragen.'
+                    const proposal = getPatchProposals(200).find((p: any) => p.id === proposalId)
                     if (!proposal) return `❌ Proposal nicht gefunden: \`${proposalId}\``
                     if (proposal.status !== 'queued') return `⚠️ Proposal ist bereits: ${proposal.status}`
-
-                    try {
-                        if (proposal.kind === 'doctor-config') {
-                            const { applyApprovedDoctorProposal } = await import('../doctor/safe-fixes.js')
-                            const doctorResult = await applyApprovedDoctorProposal(proposal, token)
-                            if (!doctorResult.applied) return `Doctor-Patch fehlgeschlagen: ${doctorResult.message}`
-                            const { readFileSync, writeFileSync } = await import('node:fs')
-                            const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
-                            const all = JSON.parse(readFileSync(pPath, 'utf-8'))
-                            const idx = all.findIndex((p: any) => p.id === proposalId)
-                            if (idx >= 0) { all[idx].status = 'applied'; all[idx].appliedAt = Date.now() }
-                            writeFileSync(pPath, JSON.stringify(all, null, 2))
-                            return `Doctor-Config-Patch angewendet: ${doctorResult.message}. Neustart erforderlich.`
-                        }
-                        const { approveEvolutionProposal } = await import('../synthesis/self-evolution.js')
-                        const result = await approveEvolutionProposal(proposalId, token)
-
-                        if (result.success) {
-                            // Mark as applied in proposals file
-                            try {
-                                const { readFileSync, writeFileSync } = await import('node:fs')
-                                const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
-                                const all = JSON.parse(readFileSync(pPath, 'utf-8'))
-                                const idx = all.findIndex((p: any) => p.id === proposalId)
-                                if (idx >= 0) { all[idx].status = 'applied'; all[idx].appliedAt = Date.now() }
-                                writeFileSync(pPath, JSON.stringify(all, null, 2))
-                            } catch { /* non-critical */ }
-
-                            return `✅ **Patch erfolgreich angewendet!**\n\n` +
-                                `Nachweis: \`${result.attemptId}\`\n` +
-                                `Unabhängige Live-Prüfung bestätigt die Fehlerbehebung.`
-                        } else {
-                            if (result.activationPending) return `⏳ Aktivierung ${result.attemptId}: Abschluss noch nicht verifiziert. Kein erneuter Deploy; /patch status.`
-                            return `❌ **Patch fehlgeschlagen**\n\n${result.error || 'Unbekannter Fehler'}\n` +
-                                (result.rollbackPerformed ? '↩️ Rollback durchgeführt.' : '')
-                        }
-                    } catch (err: any) {
-                        return `❌ Fehler beim Anwenden: ${err?.message || err}`
-                    }
+                    const { ensureBuiltinCardExecutors, offerCard, patchCardInput } = await import('./approval-card-sources.js')
+                    await ensureBuiltinCardExecutors()
+                    const offered = offerCard(patchCardInput(proposal))
+                    return offered.ok ? offered.message : `❌ ${offered.message}`
                 }
 
                 case 'reject': {
                     const proposalId = rest[0]
                     if (!proposalId) return '❌ Usage: /patch reject <proposalId>'
-
-                    try {
-                        const { readFileSync, writeFileSync } = await import('node:fs')
-                        const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
-                        if (!existsSync(pPath)) return '❌ Keine Proposals-Datei gefunden.'
-                        const all = JSON.parse(readFileSync(pPath, 'utf-8'))
-                        const idx = all.findIndex((p: any) => p.id === proposalId)
-                        if (idx < 0) return `❌ Proposal nicht gefunden: \`${proposalId}\``
-                        if (all[idx].status !== 'queued') return `⚠️ Proposal ist bereits: ${all[idx].status}`
-                        all[idx].status = 'rejected'
-                        all[idx].rejectedAt = Date.now()
-                        writeFileSync(pPath, JSON.stringify(all, null, 2))
-                        return `🗑️ Proposal \`${proposalId}\` abgelehnt.`
-                    } catch (err: any) {
-                        return `❌ Fehler: ${err?.message || err}`
-                    }
+                    const { rejectPatchProposal } = await import('../synthesis/patch-gate.js')
+                    const result = await rejectPatchProposal(proposalId, { permission: requestPermission, principalId: String(principalContext?.principalId || from || '') })
+                    return result.ok ? `🗑️ Proposal \`${proposalId}\` abgelehnt.` : `⚠️ ${result.message}`
                 }
 
                 case 'history': {

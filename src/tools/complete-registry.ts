@@ -1105,16 +1105,13 @@ export const memoryTools: NovaTool[] = [
 export const evolutionTools: NovaTool[] = [
     {
         name: 'self_evolve',
-        description: 'Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert. Live-Aktivierung nur für die gebundene Proposal-ID über PATCH_GATE und einen externen Release-Controller; Heilung benötigt unabhängige Live-Evidence.',
+        description: 'Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert (PATCH_GATE-Warteschlange). Anwenden kann nur der Owner per Knopf-Karte; Live-Aktivierung über einen externen Release-Controller, Heilung benötigt unabhängige Live-Evidence.',
         category: 'system',
         parameters: [
             { name: 'file', type: 'string', description: 'Relativer Pfad zur Datei (z.B. src/core/runtime.ts)', required: true },
             { name: 'description', type: 'string', description: 'Was die ï¿½nderung bewirkt', required: true },
             { name: 'search', type: 'string', description: 'Exakter Text der ersetzt werden soll', required: true },
             { name: 'replace', type: 'string', description: 'Neuer Text', required: true },
-            { name: 'apply', type: 'boolean', description: 'Nur true setzen wenn der Patch wirklich angewendet werden soll', required: false },
-            { name: 'approvalToken', type: 'string', description: 'Patch-Gate Token aus signiertem User-Befehl', required: false },
-            { name: 'proposalId', type: 'string', description: 'Exakte bereits geprüfte Proposal-ID; zwingend für apply. Keine direkten Live-Patches.', required: false },
             { name: 'repairProfileId', type: 'string', description: 'Vom Operator registriertes Quell-/Probe-Profil, keine freien Ziele', required: false },
             { name: 'reproductionTest', type: 'string', description: 'Vorhandener unveränderter src/*.test.ts-Regressionsbeleg: muss vorher fehlschlagen und danach bestehen', required: false },
             { name: 'reason', type: 'string', description: 'Warum diese ï¿½nderung', required: false },
@@ -1127,9 +1124,7 @@ export const evolutionTools: NovaTool[] = [
                 search: params.search as string,
                 replace: params.replace as string,
                 reason: params.reason as string | undefined,
-                apply: params.apply === true,
-                approvalToken: params.approvalToken as string | undefined,
-                proposalId: params.proposalId as string | undefined,
+                // P9: no apply/approvalToken from the model — activation only via the PATCH_GATE card.
                 repairProfileId: params.repairProfileId as string | undefined,
                 reproductionTest: params.reproductionTest as string | undefined,
             })
@@ -1220,7 +1215,7 @@ export const evolutionTools: NovaTool[] = [
         handler: async (params) => {
             // R2 T28: third-party skill content ends up in the prompt for good
             // (and npx runs remote code): only on the owner's explicit say-so.
-            const refusal = await ownerApprovalRefusal(params, 'import_skill')
+            const refusal = await ownerApprovalRefusal(params, 'import_skill', String(params.package ?? ''))
             if (refusal) return { success: false, message: refusal }
             const { importSkill } = await import('./skills-import-cli.js')
             return await importSkill(params.package as string)
@@ -1306,7 +1301,7 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'self_setup_apply',
-        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Freie Befehle werden nie ausgefuehrt; Katalog-Aktionen landen nur in der Installations-Warteschlange (Installation erst nach "/setup approve" durch den Owner, im YOLO-Modus nur Eintraege mit Stufe erlauben).',
+        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Es braucht den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Ohne Code (auch im YOLO-Modus) landen nur Katalog-Aktionen in der Installations-Warteschlange; installiert wird erst nach dem Ja des Owners auf der Knopf-Karte oder bei dauerhafter Erlaubnis (/setup allow). Freie Befehle werden nie ausgefuehrt.',
         category: 'system',
         parameters: [
             { name: 'action_id', type: 'string', description: 'Action-ID aus self_setup_plan oder "all"', required: true },
@@ -1325,18 +1320,23 @@ export const evolutionTools: NovaTool[] = [
             const token = typeof params.confirm === 'string' ? params.confirm.trim() : ''
             const state = loadSelfSetupState()
             if (!state) return { success: false, message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
-            const needsToken = (id: string) => state.mode !== 'yolo'
-                || state.actions.find(a => a.id === id)?.verification?.kind === 'gpu_backend'
             const refusal = (command: string) => ({
                 success: false,
                 message: `Freigabe fehlt oder ist ungueltig/abgelaufen. Der Owner muss selbst "${command}" senden und dir den Einmal-Code nennen (oder "${command} <code>" direkt senden).`,
             })
+            // P9 (YOLO-Luecke): without the owner's code — YOLO or not — only catalog
+            // actions proceed, and only into the install queue (Knopf-Karte); they are
+            // installed without a card only with a standing permission (trust.json).
             if (actionId === 'all') {
-                if (state.mode === 'yolo') return await applySelfSetupPlan('')
+                if (!token) return await applySelfSetupPlan('')
                 if (!consumeSetupConfirmation(principal, setupPlanTarget(state.generatedAt), token)) return refusal('/setup apply all')
                 return await applySelfSetupPlan(`APPLY_ALL:${state.generatedAt}`)
             }
-            if (!needsToken(actionId)) return await applySelfSetupAction(actionId, '')
+            if (!token) {
+                const action = state.actions.find(a => a.id === actionId)
+                const queueOnly = Boolean(action?.catalogId) && action?.verification?.kind !== 'gpu_backend'
+                return queueOnly ? await applySelfSetupAction(actionId, '') : refusal(`/setup apply ${actionId}`)
+            }
             if (!consumeSetupConfirmation(principal, setupActionTarget(actionId), token)) return refusal(`/setup apply ${actionId}`)
             return await applySelfSetupAction(actionId, `APPLY:${actionId}`)
         },
@@ -3460,7 +3460,6 @@ export const ALL_TOOLS: NovaTool[] = [
 import { cadGenerateTool } from './cad-tool.js'
 import { printerDiscoveryTool, printerStatusTool, printerSliceTool, printerPrintTool } from './printer-tool.js'
 import { screenCaptureTool, webcamCaptureTool, faceDetectionTool, handGestureTool, screenAnalysisTool } from './vision-tool.js'
-import { toolConfirmationTool } from './tool-confirmation.js'
 import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
 import { desktopInputTool } from './desktop-input-tool.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -3482,7 +3481,6 @@ ALL_TOOLS.push(
     faceDetectionTool as any,
     handGestureTool as any,
     screenAnalysisTool as any,
-    toolConfirmationTool as any,
 )
 
 // ============================================

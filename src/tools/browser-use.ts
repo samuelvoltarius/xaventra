@@ -22,7 +22,7 @@
 import { join } from 'node:path'
 import { mkdirSync, existsSync } from 'node:fs'
 import { BrowserAdapter } from './browser.js'
-import { ownerApprovalRefusal } from './owner-approval.js'
+import { approvalDetailOf, ownerApprovalRefusal } from './owner-approval.js'
 import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 import { getOperatorBrowserManager } from './operator-browser-manager.js'
 
@@ -618,7 +618,7 @@ export const browserUseTools: BrowserTool[] = [
             // and, for non-owners, the workspace boundary) for every path.
             const paths = Array.isArray(params.paths) ? params.paths.map(String) : [String(params.paths ?? '')]
             if (!paths.length || paths.some(path => !path.trim())) return { success: false, error: 'Mindestens ein Dateipfad ist nötig.' }
-            const refusal = await ownerApprovalRefusal(params, 'browser_upload')
+            const refusal = await ownerApprovalRefusal(params, 'browser_upload', approvalDetailOf({ selector: String(params.selector ?? ''), paths }))
             if (refusal) return { success: false, error: refusal }
             const { resolveGuardedFilePath } = await import('./complete-registry.js')
             const resolved: string[] = []

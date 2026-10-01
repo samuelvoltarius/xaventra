@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
 import { createHash, sign } from 'node:crypto'
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, statfsSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, statfsSync } from 'node:fs'
+import { join } from 'node:path'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { APT_GET, canonicalJson, getInstallCatalog, isSafeArgument, PLACEHOLDERS, type InstallCatalog, type InstallCatalogEntry, type PlaceholderName } from '../install/install-catalog.js'
 import { installTicketBytes, TICKET_ID_PATTERN, verifyInstallTicket, type InstallTicket } from '../install/install-ticket.js'
+import { claimTicketOnce, writeDurableJson } from '../install/signed-ticket.js'
 import { neverListViolation, packageNeverListViolation } from '../install/never-list.js'
 import { resourceRefusal } from '../install/resource-guard.js'
 
@@ -104,13 +105,10 @@ export function defaultInstallProbe(executor: InstallExecutor): InstallProbe {
     }
 }
 
+/** Durable state write; the intent record is the ticket's single-use claim (shared core signed-ticket.ts). */
 function writeDurable(path: string, value: unknown, exclusive = false): void {
-    const fd = openSync(path, exclusive ? 'wx' : 'w', 0o600)
-    try { writeFileSync(fd, JSON.stringify(value)); fsyncSync(fd) } finally { closeSync(fd) }
-    if (process.platform !== 'win32') {
-        const directory = openSync(dirname(path), 'r')
-        try { fsyncSync(directory) } finally { closeSync(directory) }
-    }
+    if (exclusive) claimTicketOnce(path, value)
+    else writeDurableJson(path, value)
 }
 
 const stripArch = (name: string) => name.replace(/:[a-z0-9]+$/, '')
