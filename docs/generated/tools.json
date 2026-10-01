@@ -2908,7 +2908,7 @@
     {
       "name": "self_evolve",
       "category": "system",
-      "description": "Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert. Live-Aktivierung nur für die gebundene Proposal-ID über PATCH_GATE und einen externen Release-Controller; Heilung benötigt unabhängige Live-Evidence.",
+      "description": "Erzeugt einen exakten Quellpatch-Vorschlag und prüft ihn isoliert (PATCH_GATE-Warteschlange). Anwenden kann nur der Owner per Knopf-Karte; Live-Aktivierung über einen externen Release-Controller, Heilung benötigt unabhängige Live-Evidence.",
       "parameters": [
         {
           "name": "file",
@@ -2931,21 +2931,6 @@
           "required": true
         },
         {
-          "name": "apply",
-          "type": "boolean",
-          "required": false
-        },
-        {
-          "name": "approvalToken",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "proposalId",
-          "type": "string",
-          "required": false
-        },
-        {
           "name": "repairProfileId",
           "type": "string",
           "required": false
@@ -2965,7 +2950,7 @@
     {
       "name": "self_setup_apply",
       "category": "system",
-      "description": "Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per \"/setup apply <actionId>\" (bzw. \"/setup apply all\") erhaelt und dir nennt; Codes niemals selbst bilden. Freie Befehle werden nie ausgefuehrt; Katalog-Aktionen landen nur in der Installations-Warteschlange (Installation erst nach \"/setup approve\" durch den Owner, im YOLO-Modus nur Eintraege mit Stufe erlauben).",
+      "description": "Fuehrt eine freigegebene Self-Setup-Aktion aus. Es braucht den Einmal-Freigabecode, den der Owner selbst per \"/setup apply <actionId>\" (bzw. \"/setup apply all\") erhaelt und dir nennt; Codes niemals selbst bilden. Ohne Code (auch im YOLO-Modus) landen nur Katalog-Aktionen in der Installations-Warteschlange; installiert wird erst nach dem Ja des Owners auf der Knopf-Karte oder bei dauerhafter Erlaubnis (/setup allow). Freie Befehle werden nie ausgefuehrt.",
       "parameters": [
         {
           "name": "action_id",
@@ -3360,38 +3345,6 @@
         {
           "name": "count",
           "type": "number",
-          "required": false
-        }
-      ]
-    },
-    {
-      "name": "tool_confirm",
-      "category": "system",
-      "description": "Request user confirmation before executing a sensitive tool. Returns confirmation status.",
-      "parameters": [
-        {
-          "name": "toolName",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "action",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "userId",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "toolArgs",
-          "type": "object",
-          "required": false
-        },
-        {
-          "name": "confirmationId",
-          "type": "string",
           "required": false
         }
       ]

@@ -92,8 +92,10 @@ restart/rollback retain a blocked/pending state, not a success report.
 
 ## Operation and recovery
 
-`/patches` shows queued patches. `/patch approve <id>` and Telegram's approval
-button use the same exact-ID boundary, preserving the reproduction oracle.
+`/patches` shows queued patches. `/patch approve <id>` (re)sends the PATCH_GATE
+card; the card press and the Desktop trust view run the one check chain
+(`src/synthesis/patch-gate.ts`) with the same exact-ID boundary, preserving the
+reproduction oracle.
 Direct apply requests without a bound queued proposal are deliberately refused.
 Approval never changes the source checkout. A clean unchanged snapshot and
 complete sandbox evidence are mandatory before dispatch.

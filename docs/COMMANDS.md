@@ -122,7 +122,7 @@ Zeigt aktive Korrekturen und Instinct-Updates.
 
 ## Self-Setup Autopilot *(v2.52+)*
 
-Nova scans herself on startup and proposes actions — no silent installs. All actions require explicit approval or YOLO mode.
+Nova scans herself on startup and proposes actions — no silent installs. Every action needs the owner's one-time code (`/setup apply`) or, for catalog installs, the owner's „Ja“ on the install card or a standing permission (`/setup allow <id>`). YOLO mode no longer changes this (P9).
 
 ### `/setup status`
 Zeigt den letzten gespeicherten Scan-Zustand aus `.nova-data/setup-state.json`:
@@ -153,21 +153,25 @@ Recherchiert eine einzelne Capability. Unterstützte Werte:
 Beispiel: `/setup research stt` → findet aktuelle Whisper-Variante für deine Hardware.
 
 ### `/setup apply <actionId>`
-Führt **eine spezifische Aktion** aus dem Plan aus.
-- Normale Mode: das Eintippen des Commands = Freigabe
-- YOLO-Mode: gleiches Verhalten
-- `config_patch`: schreibt `xaventra.config.json` via Deep-Merge
-- `local_shell`: führt Command aus, gibt Output zurück
-- `remote_shell`: SSH-Command auf Remote-Node
+Gibt einen Einmal-Code aus (5 min, nur für dich); `/setup apply <actionId> <code>` führt die Aktion aus.
+- `config_patch`: schreibt `xaventra.config.json` via Deep-Merge — **immer nur mit Code**, auch im YOLO-Modus
+- Katalog-Aktionen: kommen in die Installations-Warteschlange; installiert wird nach dem Ja auf der Knopf-Karte oder bei dauerhafter Erlaubnis
+- Freie Befehle (`local_shell`/`remote_shell`) werden nie ausgeführt
 
 ### `/setup apply all`
-Führt **alle ausstehenden Aktionen** aus — nur im YOLO-Modus sinnvoll.
+Wie oben für alle Aktionen des Plans (Code für `all`). Ohne Code gehen nur Katalog-Aktionen in die Warteschlange.
+
+### `/setup approve <iq-id>` · `/setup allow|ask <katalog-id>`
+`approve` schickt die Knopf-Karte des Warteschlangen-Eintrags (erneut); das Ja dort stellt das signierte Ticket aus. `allow` legt eine dauerhafte Erlaubnis für genau diesen Katalog-Eintrag in `.nova-data/action-policy/trust.json` ab (ohne Rückfrage installiert, signiert als Vertrauensleiter, Rückweg bleibt); `ask` nimmt sie zurück.
+
+### `/freigabe <werkzeug> <detail>`
+Owner. Einmal-Code für ein Werkzeug mit Außen- oder physischer Wirkung (Drucker, Home Assistant, Python, geschützte Config, MCP-Server mit `requireApproval`, SSH-Selbstheilung …), 5 min, einmal, nur für dich — und nur für genau dieses Detail. Das Detail nennt die Ablehnung des Werkzeugs wörtlich (Dateiname, Entität, `user@host` oder ein `#<hash>` für Code/Argumente). Ein Code ohne Detail wird nicht mehr ausgegeben.
 
 ---
 
 ## Self-Evolution & Patch Management *(v2.51+)*
 
-Nova kann Änderungen an ihrem eigenen Code vorschlagen. Diese werden immer zuerst als Proposals gespeichert — nie autonom angewendet. Freigabe erfolgt explizit via Telegram + `NOVA_PATCH_GATE_TOKEN`.
+Nova kann Änderungen an ihrem eigenen Code vorschlagen. Diese werden immer zuerst als Proposals gespeichert — nie autonom angewendet. Freigabe nur über die PATCH_GATE-Knopf-Karte (oder die Desktop-Vertrauensansicht) mit gesetztem `NOVA_PATCH_GATE_TOKEN` — eine Prüfkette: Owner, Live-Main-Fencing, Token, atomarer Zustand, ein Doppel-Druck wendet nur einmal an.
 
 ### `/patches`
 Zeigt alle Patch-Proposals aus `.nova-data/patch-proposals.json`:
@@ -180,17 +184,16 @@ Zeigt alle Patch-Proposals aus `.nova-data/patch-proposals.json`:
    💡 Robustheit gegen Edge Cases
    🕐 vor 5min
 
-Approve: /patch approve <id>
-Ablehnen: /patch reject <id>
+Freigeben/Ablehnen über die Knopf-Karte. /patch approve <id> schickt sie (erneut).
 ```
 
 ### `/patch list`
 Identisch mit `/patches`.
 
 ### `/patch approve <id>`
-Genehmigt einen Patch und führt ihn aus. Benötigt:
+Schickt die Knopf-Karte dieses Patches (erneut) — angewendet wird erst mit dem Ja dort (P9: kein zweiter Freigabeweg). Benötigt:
 1. `NOVA_PATCH_GATE_TOKEN` in der Umgebung gesetzt
-2. Nur erlaubte Telegram-User (`allowFrom`)
+2. Owner (numerische Telegram-ID in `allowFrom`)
 
 **Pipeline:**
 ```

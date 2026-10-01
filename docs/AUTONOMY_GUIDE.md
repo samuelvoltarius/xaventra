@@ -79,6 +79,20 @@ sichtbar in `/arbeit` („Vertrauensleiter: selbst statt fragen“) und im Abend
   die Hochstufung zurück.
 - „Das wieder fragen“: `resetTrust(kind)` / `askAgainFor(kind)` (exportiert), als
   Einblick-Korrektur auch `/arbeit fragen <aktionsart>`.
+- **Jedes Karten-Ja zählt** (P9): Kartenarten werden auf Policy-Arten abgebildet
+  (`policyKindForCard`: `install` → `install-katalog`, `release-promote` →
+  `release-ausrollen`, `patch` → `patch-anwenden`; `mission-schritt` und
+  `vllm-wechsel` zählen an ihrer eigenen Stelle). Gezählt wird das echte Ergebnis
+  (bei Installationen der Abschluss am Host, nicht das angenommene Ticket).
+- **Eine Erlaubnis-Ablage** (P9): `trust.json` hält neben der Leiter auch die
+  ausdrücklichen dauerhaften Erlaubnisse des Owners für ein Subjekt
+  (`grantStanding`): Karte „Immer erlauben“ und `/setup allow <katalog-id>`.
+  Die frühere `install-policy.json` (wirkte nur im YOLO-Modus) wird einmal
+  übernommen und umbenannt. Dieselben Ausschlüsse gelten (`isStandingExcluded`).
+  Katalog-Einträge mit dauerhafter Erlaubnis installiert der Karten-Durchlauf
+  selbst (`runStandingInstalls`, signiert als `policy:vertrauensleiter`, nie als
+  Owner); `/setup ask <id>` nimmt die Erlaubnis zurück. `/arbeit` zeigt sie unter
+  „Dauerhaft erlaubt“.
 
 ### Weniger Einzelfragen
 
@@ -279,10 +293,18 @@ Fixed rules (code, not config):
   fresh buttons after 4 h (while it is still valid).
 - Nie-Liste actions never become a card; the discarded thought is logged.
 - "Immer erlauben" is never offered for physical or outward actions (print,
-  switch, send, buy …), whatever the caller declares, and only where an
-  existing standing permission exists (today: install catalog level
-  `erlauben`, effective in YOLO mode only). PATCH_GATE and self-heal cards
-  never offer it.
+  switch, send, buy …), whatever the caller declares, nor for the fixed
+  exclusions of the trust ladder (release, patch, removal/rollback, money,
+  single-Ja kinds like `vllm-wechsel`), and only where the executor names a
+  standing subject (today: one install catalog entry). The answer is stored in
+  the one permission store `action-policy/trust.json` (P9) and works without
+  YOLO. PATCH_GATE and self-heal cards never offer it.
+- **One button frame (P9):** approvals run only through these cards.
+  `/patch approve <id>` and `/setup approve <iq-id>` only (re)send the card
+  (`offerCard`); the old self-acting Telegram buttons `patch_ok/no`,
+  `skill_ok/no` and `ni:` run nothing and answer "Veralteter Knopf … bitte neue
+  Karte". Tools gated by the owner use the detail-bound one-time code
+  (`/freigabe <werkzeug> <detail>`), never a card or a context flag.
 - "Ja" runs only through a registered executor that wraps an existing path:
 
 | Card | Source | "Ja" | "Nein" |
@@ -290,7 +312,21 @@ Fixed rules (code, not config):
 | `install` | install queue item `queued` (host-agent route) | `approveQueuedInstall` → signed ticket | nothing runs |
 | `self-heal` | open `self-heal/proposals.json` item (last 24 h) | proposal marked `angenommen` — **no executor exists, nothing is started** | marked `abgelehnt` |
 | `self-heal-peer` | worker proposal via the signed mesh summary | recorded on the Main only | recorded |
-| `patch` | queued `patch-proposals.json` item | existing PATCH_GATE approval (`NOVA_PATCH_GATE_TOKEN`, sandbox evidence, signed activation) | marked `rejected` |
+| `patch` | queued `patch-proposals.json` item | the one PATCH_GATE chain `src/synthesis/patch-gate.ts`: owner, single flight (a double press applies once), live Main fencing, `NOVA_PATCH_GATE_TOKEN`, atomic state; sandbox evidence, signed activation. The Desktop trust view uses the same chain. | marked `rejected` (atomic) |
+| `skill-sandbox` | new Skill-Forge proposal | sandbox authorization (`skill-builder`); still inactive until benchmark, canary and final owner approval | marked `rejected` |
+
+**Where open approvals live (P9 inventory).** One place for the owner's
+answer: the card store `approval-cards/cards.json`. Removed as doubles:
+the `tool_confirm` pending store, `install-policy.json` (now `trust.json`),
+the button state of `patch_ok/skill_ok/ni:` messages and the direct ticket
+path of `/setup approve`. The following stay, because each is the state of
+its own procedure (what to do, how far it got) and the card only references it:
+`install-queue.json`, `patch-proposals.json`, `skill-forge.json`,
+`self-heal/proposals.json`, `model-control/pull-requests.json` and
+`vllm-plans.json`, `missions/responsibility-missions.json`,
+`responsibilities/responsibilities.json`, `delegations.json`, planner thoughts
+plus `thought-actions.json`, `release-button.json` (which candidate was already
+asked) and the in-memory one-time codes (`/freigabe`, `/setup apply`).
 
 - Every answer goes to the Outcome-Ledger format in
   `.nova-data/outcome-ledger/decisions/` (`approval.recorded`, run id
