@@ -310,20 +310,22 @@ function productionExecutors(): StepExecutor[] {
         {
             kind: 'geraet-einrichten',
             async run(step, _mission, ctx) {
-                // P8: an owner Ja, or the owner's standing trust (3× Ja without rollback) for this kind.
-                const by = ctx.approvedBy || ctx.trustedBy
-                if (!by || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Gerät — nichts eingerichtet' }
+                // Read-only devices are already watched automatically (autoMonitorDevices);
+                // what is left needs a credential, so only a real owner Ja sets it up.
+                if (!ctx.approvedBy || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Gerät — nichts eingerichtet' }
                 const { approveSensingDevice } = await import('../sensing/runtime.js')
-                return approveSensingDevice(step.ref, { principalId: by, permission: 'owner' })
+                return approveSensingDevice(step.ref, { principalId: ctx.approvedBy, permission: 'owner' })
             },
         },
         {
             kind: 'install-katalog',
             async run(step, _mission, ctx) {
-                const by = ctx.approvedBy || ctx.trustedBy
-                if (!by || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Warteschlangen-Eintrag — nichts installiert' }
-                const { approveQueuedInstall, defaultInstallDeps } = await import('../install/install-queue.js')
-                const result = await approveQueuedInstall(step.ref, { permission: 'owner', principalId: by, channel: ctx.approvedBy ? 'mission-karte' : 'vertrauensleiter' }, defaultInstallDeps())
+                if (!step.ref || (!ctx.approvedBy && !ctx.trustedBy)) return { ok: false, message: 'ohne Owner-Freigabe oder Warteschlangen-Eintrag — nichts installiert' }
+                const { approveQueuedInstall, approveQueuedInstallByTrust, defaultInstallDeps } = await import('../install/install-queue.js')
+                // Owner Ja → owner ticket; trust ladder → its own signature, promotion re-checked (never "owner").
+                const result = ctx.approvedBy
+                    ? await approveQueuedInstall(step.ref, { permission: 'owner', principalId: ctx.approvedBy, channel: 'mission-karte' }, defaultInstallDeps())
+                    : await approveQueuedInstallByTrust(step.ref, defaultInstallDeps())
                 return { ok: result.ok, message: result.message }
             },
         },

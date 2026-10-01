@@ -47,7 +47,7 @@ export interface IssueInstallTicketInput {
 export function issueInstallTicket(input: IssueInstallTicketInput, privateKey: string, catalog: InstallCatalog, now = Date.now()): SignedInstallTicket {
     const entry = findCatalogEntry(input.catalogId, catalog)
     if (!entry) throw Error('Kein Katalogeintrag: Ticket wird nicht ausgestellt')
-    if (!/^(owner:[^\s]{1,120}|policy:erlauben)$/.test(String(input.approvedBy || ''))) throw Error('Freigabe muss vom Owner oder einer Owner-Stufe stammen')
+    if (!/^(owner:[^\s]{1,120}|policy:erlauben|policy:vertrauensleiter)$/.test(String(input.approvedBy || ''))) throw Error('Freigabe muss vom Owner oder einer Owner-Stufe stammen')
     if (input.approvedBy === 'policy:erlauben' && input.approval !== 'erlauben') throw Error('Automatische Freigabe nur für Stufe erlauben')
     const operation = input.operation || 'install'
     if (operation === 'rollback' && !TICKET_ID_PATTERN.test(String(input.installTicketId || ''))) throw Error('Rückweg braucht die Ticket-ID der Installation')
@@ -89,7 +89,7 @@ export function verifyInstallTicket(signed: unknown, ctx: InstallTicketContext):
     if (!entry) throw Error('Nicht im Katalog')
     if (t.entryHash !== installEntryHash(entry)) throw Error('Katalogeintrag hat sich geändert (Hash)')
     if (!['fragen', 'erlauben'].includes(t.approval)) throw Error('Ungültige Freigabestufe')
-    if (!/^(owner:[^\s]{1,120}|policy:erlauben)$/.test(String(t.approvedBy))) throw Error('Freigabe nicht vom Owner')
+    if (!/^(owner:[^\s]{1,120}|policy:erlauben|policy:vertrauensleiter)$/.test(String(t.approvedBy))) throw Error('Freigabe nicht vom Owner')
     if (t.approvedBy === 'policy:erlauben' && t.approval !== 'erlauben') throw Error('Automatische Freigabe nur für Stufe erlauben')
     return t
 }

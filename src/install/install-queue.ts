@@ -281,6 +281,29 @@ export async function autoApproveIfAllowed(queueId: string, yolo: boolean, deps:
     return dispatch(proposal, ticket, deps, 'install')
 }
 
+/**
+ * Trust-ladder path (P8, Alfred 01.10.: selbstständig): after three confirmed
+ * owner Ja for `install-katalog` the ladder may install catalog entries itself.
+ * It signs as itself (`policy:vertrauensleiter`), never as the owner, and the
+ * promotion is re-checked right here at execution time.
+ */
+export async function approveQueuedInstallByTrust(queueId: unknown, deps: InstallQueueDeps,
+    trust: { isPromoted?: (kind: string) => boolean | Promise<boolean> } = {}): Promise<InstallResult> {
+    if (typeof queueId !== 'string' || !QUEUE_ID_PATTERN.test(queueId)) return { ok: false, message: 'Ungültige Warteschlangen-ID.' }
+    const isPromoted = trust.isPromoted ?? (async (kind: string) => {
+        try { return (await import('../core/action-policy.js')).promotedKinds().some(item => item.kind === kind) } catch { return false }
+    })
+    if (!(await isPromoted('install-katalog'))) return { ok: false, message: 'Katalog-Installationen sind nicht (mehr) über die Vertrauensleiter freigegeben — Karte nötig.' }
+    const proposal = loadInstallQueue(deps).find(item => item.id === queueId)
+    if (!proposal) return { ok: false, message: `Kein Vorschlag ${queueId} in der Warteschlange.` }
+    if (proposal.route.kind !== 'host-agent' || proposal.status !== 'queued') return { ok: false, message: describeProposal(proposal), proposal }
+    const missing = ticketDepsMissing(deps)
+    if (missing) return { ok: false, message: missing, proposal }
+    const ticket = issueInstallTicket({ nodeId: deps.hostNodeId!, clientId: deps.hostClientId!, catalogId: proposal.catalogId,
+        approval: approvalLevelFor(proposal.catalogId, deps), approvedBy: 'policy:vertrauensleiter' }, deps.ticketPrivateKey!, deps.catalog || getInstallCatalog(), (deps.now || Date.now)())
+    return dispatch(proposal, ticket, deps, 'install')
+}
+
 /** Owner-only rollback of a completed installation; the host executes its own recorded rollback. */
 export async function rollbackQueuedInstall(queueId: unknown, approver: InstallApprover, deps: InstallQueueDeps): Promise<InstallResult> {
     if (!isOwner(approver)) return { ok: false, message: 'Rückweg nur durch den Owner.' }
