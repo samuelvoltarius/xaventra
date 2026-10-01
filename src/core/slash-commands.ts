@@ -879,6 +879,16 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 if (cloudModels.length > 0) meshLines.push(`  ☁ Cloud: ${cloudModels.join(' → ')}`)
             } catch { /* mesh info optional */ }
 
+            // Phase 7 Wächter: compact lines, owner only (infrastructure details).
+            let watchSection = ''
+            if (principalContext?.permission === 'owner') {
+                try {
+                    const { watchStatusLines } = await import('../watch/runtime.js')
+                    const lines = watchStatusLines()
+                    if (lines.length) watchSection = `\n\n*Wächter:*\n${lines.map(line => `  ${line.replace(/^Wächter: /, '')}`).join('\n')}`
+                } catch { /* watch optional */ }
+            }
+
             const meshSection = meshLines.length > 0
                 ? `\n*Mesh (${meshLines.filter(l => l.trim().startsWith('★') || l.trim().startsWith('○')).length} Nodes):*\n${meshLines.join('\n')}`
                 : ''
@@ -905,7 +915,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
   Self-Rules: ${selfRules}
   Monitor-Targets: ${monitorTargets}
 
-*Channels:* ${channels.length > 0 ? channels.join(', ') : 'keine'}`
+*Channels:* ${channels.length > 0 ? channels.join(', ') : 'keine'}${watchSection}`
 
             // Try Telegram buttons
             try {
@@ -1913,7 +1923,7 @@ Gebaut für Xaventra contributors 🌶️`
                 '/wave', '/roi', '/cost', '/graph', '/scan',
                 '/project', '/monitor', '/login', '/callback', '/commands',
                 '/reasoning', '/verbose', '/autonomy', '/quiet',
-                '/autonom', '/mission', '/remind', '/task', '/preflight',
+                '/autonom', '/mission', '/remind', '/task', '/preflight', '/waechter',
             ]
             return `📝 *Alle ${cmds.length} Befehle:*\n\n${cmds.join(' • ')}\n\nDetails: /help`
         }
@@ -3618,6 +3628,13 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         case 'selbstheilung': {
             const { handleSelfHealSwitch } = await import('../doctor/self-heal-runtime.js')
             return handleSelfHealSwitch(args)
+        }
+
+        // Phase 7 Wächter: Messverlauf, Erreichbarkeit, Prognosen (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'waechter':
+        case 'wächter': {
+            const { handleWaechterCommand } = await import('../watch/runtime.js')
+            return handleWaechterCommand(principalContext)
         }
 
         // Phase 2 Wahrnehmen: Geräte/Konten/Ruhezeiten (owner only, see COMMAND_MINIMUM_ROLE default)

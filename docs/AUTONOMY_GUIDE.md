@@ -723,3 +723,65 @@ the planner job `sys-verantwortungen` (or a timer without planner) is the fallba
 
 `/arbeit` (owner): In Arbeit / Geplant / Wartet auf Alfred / Blockiert /
 Abgeschlossen (last 5) plus active responsibilities with erfüllt/verletzt.
+
+---
+
+## Wächter (Phase 7, Standard AUS)
+
+Xaventra übernimmt das Infrastruktur-Monitoring, das bisher Prometheus/Grafana
+machte: Messverlauf je Knoten, Erreichbarkeit fremder Geräte, Trends/Prognosen und
+Alarme als Gedanken. Off until `autonomy.watch.enabled=true`. The Main (autonomy
+authority) measures, probes and alarms; workers only send one sample every 5 min
+inside their signed `node.capabilities` envelope. With the switch off nothing is
+measured, sent, probed or stored.
+
+```json
+{ "autonomy": { "watch": {
+    "enabled": true,
+    "intervalMinutes": 5,
+    "retentionDays": 30,
+    "maxMegabytes": 20,
+    "failThreshold": 3,
+    "targets": [
+        { "name": "Webseite", "host": "example.com", "kind": "https" },
+        { "name": "Router", "host": "example.com", "kind": "ping" },
+        { "name": "Drucker", "host": "example.com", "kind": "tcp", "port": 7125 }
+    ],
+    "tls": [ { "name": "Webseite", "host": "example.com", "port": 443 } ],
+    "tlsWarnDays": 21,
+    "backups": [ { "name": "NAS-Backup", "path": "/srv/backup", "maxAgeHours": 26, "pattern": "*.tar.zst" } ]
+} } }
+```
+
+- **Messverlauf** (`src/watch/sample.ts`, `store.ts`): CPU load per core, RAM, disk per
+  mount, temperature (Linux thermal zones, if readable), local AI service states and
+  the own event-loop reaction time. `.nova-data/watch/samples/YYYY-MM-DD.jsonl` (raw,
+  UTC day), finished days are compacted to hourly means (`.h.jsonl`). Retention at most
+  30 days plus a size limit (oldest days first, today never).
+- **Worker samples** (`peer.ts`): stored only when the watch is on, this node is the
+  Main, the sender is a configured `mesh.direct.peers[]` entry **with** `publicKey`
+  (no TOFU node), the sample names the sender itself, the time is plausible and the
+  sender did not deliver one in the last 60 s. The router has verified the signature.
+- **Erreichbarkeit** (`probes.ts`): only the configured targets, devices set up via
+  `/geraete` (TCP to their known port) and — once a Proxmox adapter registers through
+  `setWatchProxmoxSource` — Proxmox guests. One host, one port per target, no ranges,
+  no discovery, hard timeouts. Debounced: alarm after `failThreshold` failures in a
+  row, one alarm per outage, recovery reported once (the alarm thought is closed).
+- **Prognosen** (`trends.ts`): disk full by linear regression over 7 days, reported
+  only when < 14 days (< 3 days = dringend); RAM rising ≥ 1 %-point/day towards 95 %
+  within 14 days; TLS expiry < `tlsWarnDays` (< 7 days or expired = dringend; read
+  every 6 h, certificate not validated for reachability); backup age from mtime only
+  (contents are never opened).
+- **Alarme**: planner thoughts (source `waechter`) — fixed importance rules, quiet
+  hours, dedupe and daily cap of the planner. The suggested action is judged by the
+  action policy: L0/L1 → no card (own-node L1 `self-heal-zyklus` runs once per new
+  alarm, only through the existing self-heal path and only when self-heal is on);
+  L2 (e.g. `dienst-neustart`) → Knopf-Karte, Ja only records the decision where no
+  executor exists; L3 never.
+- Fixed rules: anything that looks like a password manager (Vaultwarden, Bitwarden,
+  KeePass, …) is never taken over; targets with credentials, paths or ranges in the
+  host are refused and listed under „Ausgelassen“ in `/waechter`.
+
+`/waechter` (owner): nodes with latest values, reachability, forecasts, TLS, backups,
+refused entries and the store size. `/status` shows two or three compact lines (owner
+only). Dashboard/G2-HUD: `getWatchOverview()` from `src/watch/runtime.ts` (JSON-safe).

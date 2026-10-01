@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` `/waechter` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -225,6 +225,9 @@ Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Cl
 
 ### `/arbeit [pause <id>|weiter <id>]`
 Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).
+
+### `/waechter`
+Owner, nur lesend. Wächter (Phase 7): letzte Messwerte je Knoten (Last, RAM, Platten, Temperatur, Antwortzeit), Erreichbarkeit der konfigurierten/eingerichteten Ziele, Prognosen (Platte voll, RAM), TLS-Ablauf, Backup-Alter und ausgelassene Einträge. Standard aus: `autonomy.watch.enabled`. Details: `docs/AUTONOMY_GUIDE.md` („Wächter“).
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

@@ -23,6 +23,7 @@ type StoredAction =
     | { kind: 'note'; what: string }
     | { kind: 'software-scout'; candidateId: string; nodeId: string; dedupeKey: string }
     | { kind: 'auto-reminder'; planId: string }
+    | { kind: 'watch'; actionKind: string; node?: string; target?: string }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,159}$/
 const file = () => getNovaDataDir('thought-actions.json')
@@ -44,6 +45,33 @@ function remember(thoughtId: string, action: StoredAction): void {
 export function rememberAutoReminderAction(thoughtId: string, planId: string): void {
     if (!ID.test(String(thoughtId)) || !/^ar-[a-f0-9]{12}$/.test(String(planId))) throw new Error('Ungültige Erinnerungs-Zuordnung')
     remember(thoughtId, { kind: 'auto-reminder', planId })
+}
+
+/**
+ * Wächter (Phase 7): an alarm whose suggested action needs the owner (policy
+ * L2) remembers only the action kind, node and target. On Ja the policy is
+ * evaluated again and only an existing path may run; nothing else.
+ */
+export function rememberWatchAction(thoughtId: string, action: { actionKind: string; node?: string; target?: string }): void {
+    if (!ID.test(String(thoughtId)) || !/^[a-z][a-z0-9-]{1,47}$/.test(String(action?.actionKind))) return
+    const short = (value: unknown) => value === undefined ? undefined : String(value).replace(/[\u0000-\u001f]/g, ' ').slice(0, 80)
+    remember(thoughtId, { kind: 'watch', actionKind: action.actionKind, node: short(action.node), target: short(action.target) })
+}
+
+async function answerWatch(action: Extract<StoredAction, { kind: 'watch' }>, answer: 'ja' | 'nein'): Promise<{ ok: boolean; message: string }> {
+    if (answer === 'nein') return { ok: true, message: 'Verworfen; der Wächter meldet weiter, handelt aber nicht.' }
+    const { evaluateAction } = await import('./action-policy.js')
+    const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
+    const localNodeId = getLocalNodeId()
+    const verdict = evaluateAction({ kind: action.actionKind, node: action.node, target: action.target, origin: 'owner' }, { localNodeId })
+    if (verdict.decision === 'never' || verdict.decision === 'handoff') return { ok: false, message: `Nicht erlaubt (${verdict.level}: ${verdict.reason}); ich führe das nicht aus.` }
+    if (action.actionKind === 'self-heal-zyklus' && (!action.node || action.node === localNodeId)) {
+        const { getSelfHealSettings, runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
+        if (!getSelfHealSettings().enabled) return { ok: false, message: 'Selbstheilung ist aus (autonomy.selfHeal.enabled ist nicht true); nichts ausgeführt.' }
+        const checks = await runSelfHealCycle({ isMain: true })
+        return { ok: true, message: `Selbstheilung gelaufen (${checks.length} Meldungen; nur die freigegebenen Rezepte).` }
+    }
+    return { ok: true, message: `Vermerkt (${action.actionKind}${action.target ? ` für ${action.target}` : ''}${action.node ? ` auf ${action.node}` : ''}). Dafür gibt es keinen freigegebenen Ausführungsweg — bitte selbst erledigen; der Wächter meldet die Erholung.` }
 }
 
 /** Planner sources are `^[a-z][a-z0-9-]{1,31}$`. */
@@ -177,6 +205,7 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
         return { ok: true, message: answer === 'ja' ? 'Angenommen, ich setze die Idee als Vorschlag um.' : 'Verworfen, ich schlage so etwas seltener vor.' }
     }
     if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)
+    if (action.kind === 'watch') return answerWatch(action, answer)
 
     if (action.kind === 'auto-reminder') {
         const { acceptAutoReminderPlan, declineAutoReminderPlan } = await import('../planner/auto-reminders.js')
