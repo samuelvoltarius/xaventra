@@ -1215,7 +1215,6 @@
     {
       "module": "src/core/action-lifecycle.ts",
       "imports": [
-        "../mesh/fence.js",
         "./action-intent.js"
       ]
     },

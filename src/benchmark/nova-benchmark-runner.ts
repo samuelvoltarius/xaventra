@@ -53,7 +53,10 @@ export async function executeNovaBenchmarkScenario(backend: AgentBackend, scenar
     const prompt = scenario.category === 'tools'
         ? `${scenario.prompt} Verwende als Testdatei ausschließlich: ${fixturePath}`
         : scenario.prompt
-    const intent = detectActionIntent(prompt)
+    // The intent comes from the scenario, never from the appended fixture
+    // path: a workspace named like "claude-screenshot-fallback" turned a
+    // tools scenario into a screenshot task that demanded an image.
+    const intent = detectActionIntent(scenario.prompt)
     // Every benchmark scenario has a typed, isolated executing probe. The
     // benchmark contract therefore always requires verified tool evidence and
     // never succeeds or fails merely because the advisory planner happened to

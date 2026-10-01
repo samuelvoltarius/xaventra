@@ -1304,8 +1304,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         if (!verifiedSuccess && verification.reason) {
                             if (!recoveredSuccess) resultStr = `❌ Ergebnis nicht verifiziert: ${verification.reason}. Rohdaten: ${resultStr}`
                         }
-                        // A failed read-only lookup goes back to the model as data;
-                        // only effects and unknown tools stop the governed run.
+                        // A failed catalog lookup goes back to the model as data;
+                        // everything else still stops and escalates.
                         if (!verifiedSuccess && !recoveredSuccess && !readOnlyFailureContinues(call.name)) hasToolErrors = true
                         const effectiveSuccess = verifiedSuccess || recoveredSuccess
                         if (!effectiveSuccess && !policyBlocked) {

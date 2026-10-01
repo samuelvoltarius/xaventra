@@ -4,14 +4,14 @@ import { readOnlyFailureContinues } from '../core/action-lifecycle.js'
 import { isSuccessfulToolResult } from '../tools/tool-result-quality.js'
 import { loadSkillPackTool } from '../tools/tool-router.js'
 
-describe('a failing read-only tool does not stop the run', () => {
-    it('treats discovery and introspection tools as read-only', () => {
-        for (const name of ['load_skill_pack', 'nova_introspect', 'nova_capabilities', 'find_capability', 'list_custom_tools', 'read_file'])
+describe('a failing catalog lookup does not stop the run', () => {
+    it('lets catalog lookups fail softly', () => {
+        for (const name of ['load_skill_pack', 'nova_capabilities', 'find_capability', 'list_custom_tools'])
             expect(readOnlyFailureContinues(name), name).toBe(true)
     })
 
-    it('keeps stopping for effects and unknown tools', () => {
-        for (const name of ['desktop_screenshot', 'run_command', 'write_file', 'build_skill', 'some_new_tool', ''])
+    it('keeps stopping (and escalating to the Doctor) for diagnostic reads, effects and unknown tools', () => {
+        for (const name of ['health_status', 'read_file', 'nova_introspect', 'desktop_screenshot', 'run_command', 'write_file', 'build_skill', 'some_new_tool', ''])
             expect(readOnlyFailureContinues(name), name).toBe(false)
     })
 
