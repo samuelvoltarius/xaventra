@@ -3450,6 +3450,7 @@
       "module": "src/install/install-queue.ts",
       "imports": [
         "../core/action-policy.js",
+        "../core/data-root.js",
         "./install-catalog.js",
         "./install-ticket.js",
         "node:crypto",
