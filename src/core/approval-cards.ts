@@ -562,7 +562,19 @@ export function releaseBundledCards(opts: CardStoreOptions = {}): number {
     return ids.size
 }
 
+/**
+ * P9: an owner command (`/patch approve`, `/setup approve`) asks for this open
+ * card now: due at once (never bundled), and sent again if it was delivered
+ * before. Same tokens — the first press still consumes every copy.
+ */
+export function requestCardRedelivery(cardId: string, opts: CardStoreOptions = {}): ApprovalCard | undefined {
+    const card = loadCards(opts).find(item => item.id === cardId)
+    if (!card || card.status !== 'offen') return undefined
+    return updateCard(cardId, { deliveredAt: undefined, freigegebenAt: iso(nowOf(opts)) }, opts)
+}
+
 /** Remember where a card was delivered (so the press can edit all copies). */
 export function recordCardDelivery(cardId: string, messages: Array<{ chatId: string; messageId: number }>, opts: CardStoreOptions = {}): ApprovalCard | undefined {
-    return updateCard(cardId, { messages: messages.slice(0, 5), deliveredAt: iso(nowOf(opts)) }, opts)
+    const previous = loadCards(opts).find(item => item.id === cardId)?.messages || []
+    return updateCard(cardId, { messages: [...previous, ...messages].slice(-5), deliveredAt: iso(nowOf(opts)) }, opts)
 }

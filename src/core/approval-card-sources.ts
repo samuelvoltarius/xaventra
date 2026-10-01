@@ -12,20 +12,24 @@
  *   worker reports carried by the signed mesh summary) -> "Ja"/"Nein" only
  *   records the decision on the proposal; there is no restart executor, so
  *   nothing is started.
- * - PATCH_GATE: queued patch proposals -> "Ja" = the existing PATCH_GATE
- *   approval (NOVA_PATCH_GATE_TOKEN, sandbox evidence, signed activation).
+ * - PATCH_GATE: queued patch proposals -> "Ja" = the one PATCH_GATE chain
+ *   (synthesis/patch-gate.ts: owner, single flight, live Main fencing,
+ *   NOVA_PATCH_GATE_TOKEN, atomic state; sandbox evidence, signed activation).
+ * - Skill-Forge (P9): new skill proposals -> card `skill-sandbox`; "Ja" =
+ *   sandbox authorization in skill-builder (its logic stays there).
+ *
+ * P9 „ein Knopf-Rahmen“: `/patch approve`, `/setup approve` and the Skill-Forge
+ * only (re)send these cards (`offerCard`); the old Telegram callbacks
+ * `patch_ok/no`, `skill_ok/no` and `ni:` are refused with „bitte neue Karte“.
  *
  * Delivery: only a Main with a live Telegram adapter sends; a worker
  * (`NOVA_NODE_ONLY=true`) never sends — its proposals reach the Main via mesh.
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { atomicWriteJsonSync } from './atomic-storage.js'
 import {
     cardKeyboard, createApprovalCard, formatCardText, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
-    registerCardExecutor, type ApprovalCard, type CardExecutor, type CardStoreOptions,
+    registerCardExecutor, requestCardRedelivery, type ApprovalCard, type CardExecutor, type CardStoreOptions, type NewCardInput,
 } from './approval-cards.js'
-import { approveQueuedInstall, loadInstallQueue, type InstallQueueDeps } from '../install/install-queue.js'
+import { approveQueuedInstall, loadInstallQueue, type InstallProposal, type InstallQueueDeps } from '../install/install-queue.js'
 import { readHealProposals, sanitizeSelfHealSummary, setHealProposalStatus, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 
 const DAY_MS = 24 * 60 * 60_000
@@ -122,8 +126,6 @@ export function createPeerSelfHealExecutor(): CardExecutor {
     }
 }
 
-const patchFile = () => join(process.cwd(), '.nova-data', 'patch-proposals.json')
-
 export function createPatchExecutor(getProposals: () => any[]): CardExecutor {
     const find = (card: ApprovalCard) => getProposals().find((item: any) => item?.id === card.aktion.ref)
     return {
@@ -131,30 +133,18 @@ export function createPatchExecutor(getProposals: () => any[]): CardExecutor {
         impact: 'intern',
         // Code changes never get a standing permission (PATCH_GATE, STUFENPLAN S3.2).
         allowAlways: () => false,
-        async execute(card) {
+        async execute(card, _answer, ctx) {
+            // The owner's press is the approval; the token proves the gate is configured.
             const token = process.env.NOVA_PATCH_GATE_TOKEN
             if (!token) return { ok: false, message: 'NOVA_PATCH_GATE_TOKEN ist nicht gesetzt — Patch nicht angewendet.' }
-            const proposal = find(card)
-            if (!proposal) return { ok: false, message: `Patch-Vorschlag ${card.aktion.ref} nicht gefunden.` }
-            if (proposal.status !== 'queued') return { ok: false, message: `Patch-Vorschlag ist bereits ${proposal.status}.` }
-            if (proposal.kind === 'doctor-config') {
-                const { applyApprovedDoctorProposal } = await import('../doctor/safe-fixes.js')
-                const applied = await applyApprovedDoctorProposal(proposal, token)
-                if (applied.applied) markPatch(card.aktion.ref, { status: 'applied', appliedAt: Date.now() })
-                return { ok: applied.applied, message: applied.applied ? 'Config-Patch angewendet; Neustart und Live-Nachprüfung stehen aus.' : applied.message }
-            }
-            const { approveEvolutionProposal } = await import('../synthesis/self-evolution.js')
-            const result = await approveEvolutionProposal(card.aktion.ref, token)
-            if (result.activationPending) return { ok: true, message: 'Aktivierung noch nicht abschließend verifiziert; /patch status zeigt den signierten Stand.' }
-            return result.success
-                ? { ok: true, message: 'Patch aktiviert; ursprünglicher Fehler unabhängig live nachgeprüft.' }
-                : { ok: false, message: `Patch fehlgeschlagen: ${short(result.error || 'unbekannt', 200)}${result.rollbackPerformed ? ' (Rollback durchgeführt)' : ''}` }
+            const { approvePatchProposal } = await import('../synthesis/patch-gate.js')
+            const result = await approvePatchProposal(card.aktion.ref, { approver: { permission: 'owner', principalId: ctx.decidedBy }, token })
+            return { ok: result.ok, message: result.message }
         },
-        async reject(card) {
-            const proposal = find(card)
-            if (!proposal || proposal.status !== 'queued') return { ok: false, message: 'Patch-Vorschlag nicht mehr offen.' }
-            const ok = markPatch(card.aktion.ref, { status: 'rejected', rejectedAt: Date.now() })
-            return { ok, message: ok ? `Patch ${card.aktion.ref} abgelehnt.` : 'Patch-Vorschlag konnte nicht markiert werden.' }
+        async reject(card, ctx) {
+            const { rejectPatchProposal } = await import('../synthesis/patch-gate.js')
+            const result = await rejectPatchProposal(card.aktion.ref, { permission: 'owner', principalId: ctx.decidedBy })
+            return { ok: result.ok, message: result.message }
         },
         isStillOpen(card) {
             try { const proposal = find(card); return !proposal || proposal.status === 'queued' } catch { return true }
@@ -162,19 +152,80 @@ export function createPatchExecutor(getProposals: () => any[]): CardExecutor {
     }
 }
 
-/** Same file and marking as the existing /patch reject and Telegram patch_no paths. */
-function markPatch(id: string, patch: Record<string, unknown>): boolean {
-    try {
-        const path = patchFile()
-        if (!existsSync(path)) return false
-        const all = JSON.parse(readFileSync(path, 'utf8'))
-        if (!Array.isArray(all)) return false
-        const index = all.findIndex((item: any) => item?.id === id)
-        if (index < 0) return false
-        all[index] = { ...all[index], ...patch }
-        atomicWriteJsonSync(path, all)
-        return true
-    } catch { return false }
+/**
+ * Skill-Forge card (P9): „Ja“ = sandbox authorization of the proposal, „Nein“ =
+ * reject. The forge logic itself stays in tools/skill-builder.ts.
+ */
+export function createSkillSandboxExecutor(): CardExecutor {
+    const load = async (ref: string) => {
+        const { getSkillProposals, updateSkillProposalStatus } = await import('../tools/skill-builder.js')
+        return { proposal: getSkillProposals(200).find(item => item.id === ref), updateSkillProposalStatus }
+    }
+    return {
+        kind: 'skill-sandbox',
+        impact: 'intern',
+        allowAlways: () => false,
+        async execute(card) {
+            const { proposal, updateSkillProposalStatus } = await load(card.aktion.ref)
+            if (!proposal) return { ok: false, message: `Skill-Vorschlag ${card.aktion.ref} nicht gefunden.` }
+            if (proposal.status !== 'proposed') return { ok: false, message: `Skill-Vorschlag ist bereits ${proposal.status}.` }
+            const updated = updateSkillProposalStatus(proposal.id, 'approved', proposal.ownerId)
+            return updated
+                ? { ok: true, message: `Skill ${proposal.name}: Sandbox freigegeben. Noch nicht aktiv — Sandbox, Benchmark, Canary und die abschließende Owner-Freigabe fehlen.` }
+                : { ok: false, message: `Sandbox-Freigabe für ${proposal.name} fehlgeschlagen.` }
+        },
+        async reject(card) {
+            const { proposal, updateSkillProposalStatus } = await load(card.aktion.ref)
+            if (!proposal || proposal.status !== 'proposed') return { ok: false, message: 'Skill-Vorschlag nicht mehr offen.' }
+            const updated = updateSkillProposalStatus(proposal.id, 'rejected', proposal.ownerId)
+            return { ok: Boolean(updated), message: updated ? `Skill ${proposal.name} abgelehnt.` : 'Ablehnen fehlgeschlagen.' }
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// card builders (one text per source; used by the sync and by offerCard)
+// ---------------------------------------------------------------------------
+
+export function installCardInput(item: InstallProposal): NewCardInput {
+    return {
+        art: 'install', titel: `${item.catalogId} auf ${item.nodeId} installieren?`,
+        beleg: `Installationskatalog-Eintrag ${item.catalogId}, Quelle ${item.source}, vorgeschlagen ${item.createdAt.slice(0, 16).replace('T', ' ')} UTC. Ausführung nur über signiertes Ticket an den Host-Agenten, mit Rückweg.`,
+        vorschlag: `Installieren (Warteschlange ${item.id}).`,
+        aktion: { kind: 'install', ref: item.id }, node: item.nodeId, quelle: 'stufe-2', dedupeKey: `install:${item.id}`, ablaufMs: DAY_MS,
+    }
+}
+
+export function patchCardInput(patch: any): NewCardInput {
+    return {
+        art: 'patch', titel: `Patch: ${short(patch.description || patch.file, 140)}`,
+        beleg: `Datei ${short(patch.file, 120)}${patch.reason ? `, Grund: ${short(patch.reason, 200)}` : ''}; Sandbox ${patch.sandbox?.verified ? 'grün' : 'ohne Beleg'}${patch.kind === 'doctor-config' ? ' (Config-Patch)' : ''}.`,
+        vorschlag: 'Über PATCH_GATE anwenden (Token, Sandbox-Belege, signierte Aktivierung).',
+        aktion: { kind: 'patch', ref: patch.id }, quelle: 'patch-gate', dedupeKey: `patch:${patch.id}`, ablaufMs: 3 * DAY_MS,
+    }
+}
+
+export function skillCardInput(proposal: { id: string; name: string; description?: string; why?: string; codeHash?: string }): NewCardInput {
+    return {
+        art: 'skill-sandbox', titel: `Skill-Forge: ${short(proposal.name, 80)} in der Sandbox prüfen?`,
+        beleg: `${short(proposal.why || '', 300)}${proposal.codeHash ? ` · Code ${proposal.codeHash.slice(0, 16)}` : ''}`,
+        vorschlag: `${short(proposal.description || '', 300)} — nur Sandbox; aktiv erst nach Benchmark, Canary und abschließender Owner-Freigabe.`,
+        aktion: { kind: 'skill-sandbox', ref: proposal.id }, quelle: 'skill-forge', dedupeKey: `skill-sandbox:${proposal.id}`, ablaufMs: 3 * DAY_MS,
+    }
+}
+
+/**
+ * P9 „ein Knopf-Rahmen“: create the card (or find the open one) and have the
+ * card loop deliver it now — again, if it was already delivered. Commands like
+ * `/patch approve` and `/setup approve` use this instead of acting themselves.
+ */
+export function offerCard(input: NewCardInput, opts: CardStoreOptions & { deliverNow?: boolean } = {}): { ok: true; card: ApprovalCard; created: boolean; message: string } | { ok: false; message: string } {
+    const result = createApprovalCard(input, opts)
+    if (!result.ok) return { ok: false, message: `Keine Karte möglich: ${(result as { reason: string }).reason}` }
+    // Due now (never waits for the report) and — if already delivered — sent again with the same tokens.
+    if (result.card.status === 'offen') requestCardRedelivery(result.card.id, opts)
+    if (opts.deliverNow !== false) void runApprovalCardTick()
+    return { ok: true, card: result.card, created: result.created, message: `🔘 Karte „${result.card.titel}“ ${result.created ? 'geschickt' : 'erneut geschickt'} — bitte dort Ja oder Nein drücken.` }
 }
 
 let builtinsRegistered = false
@@ -185,6 +236,7 @@ export function registerBuiltinCardExecutors(deps: BuiltinExecutorDeps): void {
     registerCardExecutor(createSelfHealExecutor(deps.selfHealDataDir))
     registerCardExecutor(createPeerSelfHealExecutor())
     registerCardExecutor(createPatchExecutor(deps.patchProposals))
+    registerCardExecutor(createSkillSandboxExecutor())
     builtinsRegistered = true
 }
 
@@ -243,14 +295,8 @@ export function syncApprovalCardsFromSources(deps: CardSourceDeps, opts: CardSto
         const queue = loadInstallQueue(deps.installDeps)
         for (const item of queue) {
             if (item.status !== 'queued' || item.route.kind !== 'host-agent' || !recent(item.createdAt, now, 7 * DAY_MS)) continue
-            const key = `install:${item.id}`
-            if (!fresh(key)) continue
-            add({
-                art: 'install', titel: `${item.catalogId} auf ${item.nodeId} installieren?`,
-                beleg: `Installationskatalog-Eintrag ${item.catalogId}, Quelle ${item.source}, vorgeschlagen ${item.createdAt.slice(0, 16).replace('T', ' ')} UTC. Ausführung nur über signiertes Ticket an den Host-Agenten, mit Rückweg.`,
-                vorschlag: `Installieren (Warteschlange ${item.id}).`,
-                aktion: { kind: 'install', ref: item.id }, node: item.nodeId, quelle: 'stufe-2', dedupeKey: key, ablaufMs: DAY_MS,
-            })
+            if (!fresh(`install:${item.id}`)) continue
+            add(installCardInput(item))
         }
     } catch (error) { console.warn(`[Knopf-Karten] Installations-Warteschlange nicht lesbar: ${short(error, 120)}`) }
 
@@ -292,14 +338,8 @@ export function syncApprovalCardsFromSources(deps: CardSourceDeps, opts: CardSto
     try {
         for (const patch of deps.patchProposals()) {
             if (patch?.status !== 'queued' || typeof patch.id !== 'string' || !recent(patch.createdAt, now, 7 * DAY_MS)) continue
-            const key = `patch:${patch.id}`
-            if (!fresh(key)) continue
-            add({
-                art: 'patch', titel: `Patch: ${short(patch.description || patch.file, 140)}`,
-                beleg: `Datei ${short(patch.file, 120)}${patch.reason ? `, Grund: ${short(patch.reason, 200)}` : ''}; Sandbox ${patch.sandbox?.verified ? 'grün' : 'ohne Beleg'}${patch.kind === 'doctor-config' ? ' (Config-Patch)' : ''}.`,
-                vorschlag: 'Über PATCH_GATE anwenden (Token, Sandbox-Belege, signierte Aktivierung).',
-                aktion: { kind: 'patch', ref: patch.id }, quelle: 'patch-gate', dedupeKey: key, ablaufMs: 3 * DAY_MS,
-            })
+            if (!fresh(`patch:${patch.id}`)) continue
+            add(patchCardInput(patch))
         }
     } catch (error) { console.warn(`[Knopf-Karten] Patch-Vorschläge nicht lesbar: ${short(error, 120)}`) }
 

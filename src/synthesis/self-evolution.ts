@@ -57,7 +57,9 @@ export async function evolve(request: EvolutionRequest): Promise<EvolutionResult
     activeEvolution = `repair-${randomUUID()}`
     const started = Date.now()
     try {
-        if (request.apply) return await approveEvolutionProposal(request.proposalId || '', request.approvalToken || '', request)
+        // P9: activation only through the one PATCH_GATE chain (synthesis/patch-gate.ts: Knopf-Karte
+        // or Desktop) — never from tool parameters the model fills in.
+        if (request.apply) return { success: false, proposalId: request.proposalId, error: 'PATCH_GATE: Anwenden nur über die Knopf-Karte des Owners (/patch approve <id> schickt sie).' }
         const ROOT = getRepairSourceRoot()
         assertPatchSourcePath(ROOT, request.file)
         const original = readFileSync(join(ROOT, request.file), 'utf8')
@@ -159,6 +161,17 @@ export function getEvolutionStats() {
         lastEvolution: history.length ? new Date(history.at(-1)!.timestamp).toISOString() : undefined }
 }
 export function getPatchProposals(limit = 20): any[] { try { return readArray(PROPOSALS).slice(-limit) } catch { return [] } }
+/** Atomic, synchronous status change of one proposal; only when it is still `expectStatus` (if given). */
+export function markPatchProposal(id: string, patch: Record<string, unknown>, expectStatus?: string): boolean {
+    try {
+        const proposals = readArray(PROPOSALS)
+        const index = proposals.findIndex(item => item?.id === id)
+        if (index < 0 || (expectStatus !== undefined && proposals[index].status !== expectStatus)) return false
+        proposals[index] = { ...proposals[index], ...patch }
+        atomicWriteJsonSync(PROPOSALS, proposals)
+        return true
+    } catch { return false }
+}
 export function isEvolutionActive(): boolean { return activeEvolution !== null }
 export function getActiveEvolution(): string | null { return activeEvolution }
 export default { evolve, getEvolutionHistory, getEvolutionStats, getPatchProposals, isEvolutionActive, getActiveEvolution }

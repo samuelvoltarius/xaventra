@@ -85,19 +85,18 @@ export function telegramInboundKey(msg: any, updateId: unknown = msg?.[UPDATE_ID
 // Telegram Adapter Class
 // ============================================
 
-/** Hotfix 2.80.1: `ni:<model>:<node>` callback data comes from the client and
- * is untrusted. The model may contain colons (tags), so the node is the last
- * segment. Anything outside the allowlist is rejected, never escaped. */
-const INSTALL_MODEL_NAME = /^[a-z0-9][a-z0-9._:/-]{0,100}$/
-const INSTALL_NODE_NAME = /^[a-z0-9][a-z0-9._-]{0,79}$/i
-export function parseNodeInstallCallback(data: string): { model: string; node: string } | null {
-    if (typeof data !== 'string' || !data.startsWith('ni:')) return null
-    const body = data.slice(3)
-    const lastColon = body.lastIndexOf(':')
-    const model = lastColon > 0 ? body.slice(0, lastColon) : body
-    const node = lastColon > 0 ? body.slice(lastColon + 1) : 'local'
-    if (!INSTALL_MODEL_NAME.test(model) || model.includes('..') || !INSTALL_NODE_NAME.test(node)) return null
-    return { model, node }
+/**
+ * P9 „ein Knopf-Rahmen“: approvals run only through Knopf-Karten (`ac:`). The
+ * pre-P9 callback buttons that acted on their own — PATCH_GATE `patch_ok/no`,
+ * Skill-Forge `skill_ok/no` and the model install `ni:` — are refused: they run
+ * nothing and point to a fresh card.
+ */
+const RETIRED_APPROVAL_CALLBACK = /^(?:patch_ok|patch_no|skill_ok|skill_no|ni):/
+export function retiredApprovalHint(data: unknown): string | null {
+    if (typeof data !== 'string' || !RETIRED_APPROVAL_CALLBACK.test(data)) return null
+    if (data.startsWith('patch_')) return '⌛ Veralteter Knopf — nichts ausgeführt. Bitte neue Karte: /patch approve <id>.'
+    if (data.startsWith('skill_')) return '⌛ Veralteter Knopf — nichts ausgeführt. Bitte neue Karte (Skill-Forge schickt sie).'
+    return '⌛ Veralteter Knopf — nichts installiert. Modelle zieht eine neue Karte (Modellsteuerung).'
 }
 
 export class TelegramAdapter implements ChannelAdapter {
@@ -560,8 +559,14 @@ export class TelegramAdapter implements ChannelAdapter {
         }
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
+        const retired = retiredApprovalHint(data)
+        if (retired) {
+            try { await this.bot.answerCallbackQuery(query.id, { text: retired, show_alert: true }) } catch { /* ignore */ }
+            try { await this.bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: query.message?.chat?.id, message_id: query.message?.message_id }) } catch { /* message may be too old */ }
+            return
+        }
         const needsPrincipal = typeof data === 'string'
-            && (/^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_|skill_ok:|skill_no:|ni:)/.test(data) || data === 'memory_clear')
+            && (/^(?:cmd_|persona_|learn_|llm_|sw_|switch_|mcfg_)/.test(data) || data === 'memory_clear')
         const principal = needsPrincipal ? await this.resolveCallbackPrincipal(query) : null
         if (needsPrincipal && !principal) {
             try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Zugriff verweigert.' }) } catch { /* ignore */ }
@@ -910,186 +915,6 @@ export class TelegramAdapter implements ChannelAdapter {
                 await this.bot.answerCallbackQuery(query.id, { text: '✅ Updated' })
             } catch (err) {
                 console.log(`[Nova Telegram] Mission config callback error: ${err}`)
-                await this.bot.answerCallbackQuery(query.id, { text: '❌ Fehler' })
-            }
-        }
-
-        // ── Patch approval: patch_ok:<id> / patch_no:<id> ──────────────────────
-        if (data.startsWith('patch_ok:') || data.startsWith('patch_no:')) {
-            try {
-                const { getUserPermission } = await import('../users/multi-user-middleware.js')
-                const callbackUserId = String(query.from?.id || chatId)
-                if (getUserPermission(callbackUserId, 'telegram') !== 'owner') {
-                    await this.bot.answerCallbackQuery(query.id, { text: 'Nur der Owner darf PATCH_GATE freigeben.' })
-                    return
-                }
-                const approve = data.startsWith('patch_ok:')
-                const proposalId = data.slice(approve ? 9 : 9)
-
-                await this.bot.answerCallbackQuery(query.id, { text: approve ? '⏳ Anwenden…' : '🗑️ Ablehnen…' })
-
-                if (approve) {
-                    const token = process.env.NOVA_PATCH_GATE_TOKEN
-                    if (!token) {
-                        await this.bot.sendMessage(chatId, '❌ `NOVA_PATCH_GATE_TOKEN` ist nicht gesetzt.', { parse_mode: 'Markdown' })
-                    } else {
-                        const { getPatchProposals, approveEvolutionProposal } = await import('../synthesis/self-evolution.js')
-                        const proposals = getPatchProposals(200)
-                        const proposal = proposals.find((p: any) => p.id === proposalId)
-                        if (!proposal) {
-                            await this.bot.sendMessage(chatId, `❌ Proposal nicht gefunden: \`${proposalId}\``, { parse_mode: 'Markdown' })
-                        } else if (proposal.status !== 'queued') {
-                            await this.bot.sendMessage(chatId, `⚠️ Bereits: ${proposal.status}`, { parse_mode: 'Markdown' })
-                        } else {
-                            const result = proposal.kind === 'doctor-config'
-                                ? await (async () => {
-                                    const { applyApprovedDoctorProposal } = await import('../doctor/safe-fixes.js')
-                                    const applied = await applyApprovedDoctorProposal(proposal, token)
-                                    return { success: applied.applied, error: applied.applied ? undefined : applied.message,
-                                        branch: 'doctor-config', duration: 0, rollbackPerformed: false }
-                                })()
-                                : await approveEvolutionProposal(proposalId, token)
-                            // Mark status in file
-                            try {
-                                const { readFileSync, writeFileSync } = await import('node:fs')
-                                const { join } = await import('node:path')
-                                const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
-                                const all = JSON.parse(readFileSync(pPath, 'utf-8'))
-                                const idx = all.findIndex((p: any) => p.id === proposalId)
-                                if (idx >= 0 && proposal.kind === 'doctor-config' && result.success) { all[idx].status = 'applied'; all[idx].appliedAt = Date.now() }
-                                writeFileSync(pPath, JSON.stringify(all, null, 2))
-                            } catch { /* non-critical */ }
-                            const msg = 'activationPending' in result && result.activationPending
-                                ? '⏳ Aktivierung noch nicht abschließend verifiziert. Kein erneuter Deploy; /patch status zeigt den signierten Stand.'
-                                : result.success
-                                ? (proposal.kind === 'doctor-config' ? 'Config-Patch angewendet; Neustart und Live-Nachprüfung stehen aus.' : '✅ Patch aktiviert; ursprünglicher Fehler unabhängig live nachgeprüft.')
-                                : `❌ *Patch fehlgeschlagen*\n${result.error || 'Unbekannter Fehler'}${result.rollbackPerformed ? '\n↩️ Rollback durchgeführt.' : ''}`
-                            await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' })
-                        }
-                    }
-                } else {
-                    // Reject
-                    try {
-                        const { readFileSync, writeFileSync, existsSync } = await import('node:fs')
-                        const { join } = await import('node:path')
-                        const pPath = join(process.cwd(), '.nova-data', 'patch-proposals.json')
-                        if (existsSync(pPath)) {
-                            const all = JSON.parse(readFileSync(pPath, 'utf-8'))
-                            const idx = all.findIndex((p: any) => p.id === proposalId)
-                            if (idx >= 0) { all[idx].status = 'rejected'; all[idx].rejectedAt = Date.now() }
-                            writeFileSync(pPath, JSON.stringify(all, null, 2))
-                        }
-                        await this.bot.sendMessage(chatId, `🗑️ Patch \`${proposalId}\` abgelehnt.`, { parse_mode: 'Markdown' })
-                    } catch (err) {
-                        await this.bot.sendMessage(chatId, `❌ Fehler beim Ablehnen: ${err}`)
-                    }
-                }
-
-                // Remove buttons from original message
-                try {
-                    await this.bot.editMessageReplyMarkup(
-                        { inline_keyboard: [] },
-                        { chat_id: chatId, message_id: query.message.message_id }
-                    )
-                } catch { /* message may be too old */ }
-            } catch (err) {
-                console.log(`[Nova Telegram] Patch callback error: ${err}`)
-                await this.bot.answerCallbackQuery(query.id, { text: '❌ Fehler' })
-            }
-        }
-
-        // ── Skill approval: skill_ok:<id> / skill_no:<id> ────────────────────
-        if (data.startsWith('skill_ok:') || data.startsWith('skill_no:')) {
-            // Hotfix 2.80.1: releasing or rejecting a skill is an owner decision.
-            if (principal?.permission !== 'owner') {
-                try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur der Owner darf Skills freigeben.' }) } catch { /* ignore */ }
-                return
-            }
-            try {
-                const approve = data.startsWith('skill_ok:')
-                const proposalId = data.slice(9)
-
-                await this.bot.answerCallbackQuery(query.id, { text: approve ? '🧪 Sandbox freigeben…' : '🗑️ Ablehnen…' })
-
-                const { updateSkillProposalStatus, getSkillProposals } = await import('../tools/skill-builder.js')
-
-                if (approve) {
-                    const proposals = getSkillProposals(200)
-                    const proposal = proposals.find(p => p.id === proposalId)
-                    if (!proposal) {
-                        await this.bot.sendMessage(chatId, `❌ Skill-Proposal nicht gefunden: \`${proposalId}\``, { parse_mode: 'Markdown' })
-                    } else if (proposal.status !== 'proposed') {
-                        await this.bot.sendMessage(chatId, `⚠️ Bereits: ${proposal.status}`, { parse_mode: 'Markdown' })
-                    } else {
-                        const queued = updateSkillProposalStatus(proposalId, 'approved', proposal.ownerId)
-                        const msg = queued
-                            ? `🧪 *Skill \`${proposal.name}\`: Sandbox freigegeben*\n\nNoch nicht aktiv. Nova benötigt verifizierte Sandbox-, Benchmark- und Canary-Ergebnisse sowie die abschließende Owner-Freigabe.`
-                            : `❌ Sandbox-Freigabe fehlgeschlagen für \`${proposal.name}\`.`
-                        await this.bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' })
-                    }
-                } else {
-                    const existing = getSkillProposals(200).find(p => p.id === proposalId)
-                    const proposal = existing ? updateSkillProposalStatus(proposalId, 'rejected', existing.ownerId) : null
-                    const name = proposal?.name || proposalId
-                    await this.bot.sendMessage(chatId, `🗑️ Skill \`${name}\` abgelehnt.`, { parse_mode: 'Markdown' })
-                }
-
-                // Remove buttons
-                try {
-                    await this.bot.editMessageReplyMarkup(
-                        { inline_keyboard: [] },
-                        { chat_id: chatId, message_id: query.message.message_id }
-                    )
-                } catch { /* message may be too old */ }
-            } catch (err) {
-                console.log(`[Nova Telegram] Skill callback error: ${err}`)
-                await this.bot.answerCallbackQuery(query.id, { text: '❌ Fehler' })
-            }
-        }
-
-        // ── Node-Install: ni:<model>:<node> ──────────────────────────────────
-        // Hotfix 2.80.1: owner-only, strict model allowlist, no shell, local
-        // node only. Remote installation belongs to the mesh catalog, not ssh.
-        if (data.startsWith('ni:')) {
-            if (principal?.permission !== 'owner') {
-                try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur der Owner darf Modelle installieren.' }) } catch { /* ignore */ }
-                return
-            }
-            const install = parseNodeInstallCallback(data)
-            if (!install) {
-                try { await this.bot.answerCallbackQuery(query.id, { text: '❌ Ungültiger Modell- oder Knotenname.' }) } catch { /* ignore */ }
-                return
-            }
-            try {
-                const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
-                const localNames = new Set(['local', 'localhost', getLocalNodeId().toLowerCase()])
-                if (!localNames.has(install.node.toLowerCase())) {
-                    await this.bot.answerCallbackQuery(query.id, { text: '❌ Nur lokal.' })
-                    await this.bot.sendMessage(chatId, `❌ Remote-Installation auf *${install.node}* wird hier nicht ausgeführt. Modelle auf anderen Knoten installiert der Mesh-Katalog (Stufe 2), nicht ein SSH-Befehl.`, { parse_mode: 'Markdown' })
-                    return
-                }
-                await this.bot.answerCallbackQuery(query.id, { text: '⏳ Installiere…' })
-                await this.bot.sendMessage(chatId, `📥 Installiere \`${install.model}\` lokal…`, { parse_mode: 'Markdown' })
-                try {
-                    const { execFile } = await import('node:child_process')
-                    await new Promise<void>((resolve, reject) => {
-                        execFile('ollama', ['pull', install.model], { timeout: 300_000, encoding: 'utf-8', shell: false, windowsHide: true },
-                            (error: Error | null) => error ? reject(error) : resolve())
-                    })
-                    await this.bot.sendMessage(chatId, `✅ Modell \`${install.model}\` lokal installiert!`, { parse_mode: 'Markdown' })
-                } catch (execErr: any) {
-                    await this.bot.sendMessage(chatId, `❌ Installation fehlgeschlagen:\n\`${String(execErr?.message || execErr).slice(0, 300)}\``, { parse_mode: 'Markdown' })
-                }
-
-                // Remove buttons
-                try {
-                    await this.bot.editMessageReplyMarkup(
-                        { inline_keyboard: [] },
-                        { chat_id: chatId, message_id: query.message.message_id }
-                    )
-                } catch { /* message may be too old */ }
-            } catch (err) {
-                console.log(`[Nova Telegram] Node-install callback error: ${err}`)
                 await this.bot.answerCallbackQuery(query.id, { text: '❌ Fehler' })
             }
         }

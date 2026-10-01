@@ -153,13 +153,11 @@ export const buildSkillTool: NovaTool = {
                 dependencies: parseArray<string>((params as any).dependencies),
             })
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
-                const chatId = process.env.TELEGRAM_CHAT_ID || process.env.TELEGRAM_ADMIN_CHAT_ID
-                if (tg && chatId) await tg.sendWithButtons(chatId,
-                    `🧪 *Nova Studio · Skill Forge*\n\n📛 \`${proposal.name}\`\n📝 ${proposal.description}\n💡 ${proposal.why}\n🔒 Noch nicht ausführbar · \`${proposal.codeHash.slice(0, 16)}\``,
-                    [[{ text: '🧪 Sandbox freigeben', callback_data: `skill_ok:${proposal.id}` }, { text: '❌ Ablehnen', callback_data: `skill_no:${proposal.id}` }]])
-            } catch { /* optional channel */ }
+                // P9 „ein Knopf-Rahmen“: the owner answers on a Knopf-Karte (`skill-sandbox`); the card
+                // loop on the Main delivers it. The old skill_ok/skill_no buttons are retired.
+                const { offerCard, skillCardInput } = await import('../core/approval-card-sources.js')
+                offerCard(skillCardInput(proposal), { deliverNow: false })
+            } catch { /* the proposal stays listed; the owner can still review it */ }
             return `🧪 Forge-Vorschlag \`${proposal.name}\` gespeichert (${proposal.id}). Noch nicht aktiv: Sandbox, Benchmark, Canary und Owner-Freigabe fehlen.`
         } catch (error) { return `❌ Skill-Vorschlag abgelehnt: ${error instanceof Error ? error.message : String(error)}` }
     },

@@ -43,14 +43,11 @@ describe('actual evolve caller / scripted sandbox receipts', () => {
         finish({ verified: false, output: 'fixture failure' })
         await first
     })
-    it('keeps ownership until the outer approved-attempt promise settles', async () => {
+    it('P9: apply from tool parameters is always refused (only the PATCH_GATE card applies) and touches nothing', async () => {
         vi.stubEnv('NOVA_PATCH_GATE_TOKEN', 'fixture-only-approval')
-        boundary.validate.mockResolvedValue({ verified: true, output: '' })
         try {
-            const first = evolve({ ...request, apply: true, approvalToken: 'fixture-only-approval' })
-            const competing = evolve(request)
-            expect(await competing).toMatchObject({ success: false, error: expect.stringContaining('bereits aktiv') })
-            expect(await first).toMatchObject({ success: false, error: expect.stringContaining('proposalId') })
+            const result = await evolve({ ...request, apply: true, approvalToken: 'fixture-only-approval', proposalId: 'patch_x' })
+            expect(result).toMatchObject({ success: false, error: expect.stringContaining('Knopf-Karte') })
             expect(boundary.validate).not.toHaveBeenCalled()
             expect(boundary.git).not.toHaveBeenCalled()
             expect(isEvolutionActive()).toBe(false)
