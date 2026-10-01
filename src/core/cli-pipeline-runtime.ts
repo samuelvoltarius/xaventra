@@ -29,45 +29,9 @@ function readConfig(): Record<string, any> {
 
 async function createPipelineMemory(): Promise<any> {
     try {
-        const { LocalMemoryManager } = await import('../memory/local-memory.js')
-        const { getVectorMemory } = await import('../memory/vector-memory.js')
-
-        const localMemory = new LocalMemoryManager({
-            dbPath: join(process.cwd(), '.nova-memory'),
-            maxEntriesPerUser: 500,
-        })
-        const vectorMemory = getVectorMemory({
-            dataDir: join(process.cwd(), '.nova-vector-memory'),
-            maxEntriesPerUser: 1000,
-            similarityThreshold: 0.3,
-        })
-        await vectorMemory.initialize()
-
-        return {
-            recall: async (query: string, userId: string, limit: number) => {
-                const vectorResults = await vectorMemory.recall(query, userId, limit)
-                const localResults = await localMemory.recall(query, userId, limit)
-                const seen = new Set<string>()
-                const combined = []
-                for (const r of [...vectorResults, ...localResults]) {
-                    const item: any = r
-                    const key = String(item.content || item.entry?.content || '').slice(0, 80)
-                    if (!seen.has(key)) {
-                        seen.add(key)
-                        combined.push(r)
-                    }
-                }
-                return combined.slice(0, limit)
-            },
-            store: async (entry: any) => {
-                await localMemory.store(entry)
-                await vectorMemory.store(entry)
-            },
-            getStats: () => ({
-                ...localMemory.getStats(),
-                vectorStats: vectorMemory.getStats(),
-            }),
-        }
+        // Same read side as the daemon: governance (+ LanceDB once loaded).
+        const { createMemoryFacade } = await import('../memory/memory-facade.js')
+        return createMemoryFacade({ getLance: () => (runtimeState as any)?.lanceMemory })
     } catch (err) {
         console.warn(`[CLI] Memory nicht verfügbar: ${err}`)
         return null

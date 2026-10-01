@@ -367,15 +367,8 @@ console.log(\`[Worker \${config.workerId}] Starting for user \${config.userId}\`
 
 // Initialize Nova for this user
 async function initWorker() {
-    // Import Nova components
-    const { getVectorMemory } = await import('./memory/vector-memory.js')
+    // Import Nova components (memory: the main process's governance)
     const { getToolRegistry } = await import('./tools/complete-registry.js')
-    
-    // User-specific memory
-    const memory = getVectorMemory({
-        dataDir: join(config.dataDir, 'memory'),
-    })
-    await memory.initialize()
     
     // Tools
     const tools = getToolRegistry()

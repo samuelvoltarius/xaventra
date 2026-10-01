@@ -19,15 +19,21 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDurableMemoryCandidate } from '../memory/memory-quality.js'
+import { structuredTriple } from '../memory/memory-triple.js'
 import { principalScope, resolvePrincipalId } from '../users/principal-id.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Optional Knowledge-Graph structure of one user fact (user → beziehung → wert). */
+export interface DistilledFactTriple { fact: string; predicate: string; value: string }
+
 export interface DistilledMemory {
     date: string
     userFacts: string[]        // Persistent facts about the user(s)
+    /** Structure for some userFacts; governance projects canonical ones into the graph. */
+    factTriples?: DistilledFactTriple[]
     decisions: string[]        // Decisions made or confirmed
     learnings: string[]        // Technical or factual learnings
     openQuestions: string[]    // Unresolved topics / TODOs
@@ -173,7 +179,7 @@ ${journalText}
 
 Antworte NUR mit validem JSON (keine Codeblöcke):
 {
-  "userFacts": ["Dauerhafte Fakten über ${subject} — vollständige Sätze — max 6, lieber weniger und gut"],
+  "userFacts": ["Dauerhafte Fakten über ${subject} — vollständige Sätze — max 6, lieber weniger und gut. Hat ein Fakt eine klare Beziehung (Wohnort, Gerät, Projekt, Haustier, Person), schreib ihn als Objekt {\"satz\": \"…\", \"beziehung\": \"wohnt_in|arbeitet_an|drucker|hund|…\", \"wert\": \"kurzer Name, höchstens 50 Zeichen\"}. Nie Passwörter, Tokens oder Zugangsdaten."],
   "decisions": ["Heute getroffene konkrete Entscheidungen — max 5"],
   "learnings": ["Technische Erkenntnisse die dauerhaft nützlich sind — max 6"],
   "openQuestions": ["Offene TODOs / ungelöste Probleme — max 5"],
@@ -190,9 +196,11 @@ Antworte NUR mit validem JSON (keine Codeblöcke):
         const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
 
         const parsed = JSON.parse(cleaned)
+        const { userFacts, factTriples } = splitUserFacts(parsed.userFacts)
         return {
             date,
-            userFacts:     Array.isArray(parsed.userFacts)     ? parsed.userFacts     : [],
+            userFacts,
+            factTriples,
             decisions:     Array.isArray(parsed.decisions)     ? parsed.decisions     : [],
             learnings:     Array.isArray(parsed.learnings)     ? parsed.learnings     : [],
             openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions : [],
@@ -204,6 +212,23 @@ Antworte NUR mit validem JSON (keine Codeblöcke):
         console.error(`[MemoryDistiller] LLM parse failed: ${e.message}`)
         return null
     }
+}
+
+/** userFacts may be plain sentences or {satz, beziehung, wert} objects. */
+function splitUserFacts(raw: unknown): { userFacts: string[]; factTriples: DistilledFactTriple[] } {
+    const userFacts: string[] = []
+    const factTriples: DistilledFactTriple[] = []
+    for (const item of Array.isArray(raw) ? raw : []) {
+        if (typeof item === 'string') { userFacts.push(item); continue }
+        if (!item || typeof item !== 'object') continue
+        const fact = String((item as any).satz ?? (item as any).fact ?? '').trim()
+        if (!fact) continue
+        userFacts.push(fact)
+        const predicate = String((item as any).beziehung ?? (item as any).predicate ?? '').trim()
+        const value = String((item as any).wert ?? (item as any).value ?? '').trim()
+        if (predicate && value) factTriples.push({ fact, predicate, value })
+    }
+    return { userFacts, factTriples }
 }
 
 // Fallback: rule-based extraction from journal entry
@@ -353,7 +378,7 @@ function readTodaysSessionsByPrincipal(date: string, config: any): PrincipalTran
  * Store distilled facts + learnings into LanceDB for associative recall.
  * Again: only curated content, never raw transcripts.
  */
-async function storeGovernedMemory(memory: DistilledMemory, principalId: string): Promise<number> {
+async function storeGovernedMemory(memory: DistilledMemory, principalId: string, isOwner = false): Promise<number> {
     try {
         const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
         const governance = getMemoryGovernanceCoordinator()
@@ -365,6 +390,10 @@ async function storeGovernedMemory(memory: DistilledMemory, principalId: string)
 
         for (const fact of memory.userFacts) {
             if (!isDurableMemoryCandidate(fact)) continue
+            // Graph structure only in the owner's own context; governance
+            // re-checks length and secrets and projects canonical records only.
+            const triple = isOwner ? memory.factTriples?.find(item => item.fact === fact) : undefined
+            const structure = triple ? structuredTriple({ subject: scope, predicate: triple.predicate, value: triple.value }) : null
             const record = await governance.record({
                 content: fact,
                 kind: 'fact',
@@ -373,6 +402,7 @@ async function storeGovernedMemory(memory: DistilledMemory, principalId: string)
                 evidence: 'distillation',
                 confidence: 0.85,
                 verified: true,
+                ...(structure || {}),
             })
             if (record) stored++
         }
@@ -470,7 +500,7 @@ export async function runDistillation(
         const extracted = await extractWithLLM(llm, input, date, item.displayName)
         const principalMemory = extracted ?? (isOwner && entry ? extractFallback(entry, date) : null)
         if (!principalMemory) continue
-        governedStored += await storeGovernedMemory(principalMemory, item.principalId)
+        governedStored += await storeGovernedMemory(principalMemory, item.principalId, isOwner)
         distilled.push({ principalId: item.principalId, memory: principalMemory })
     }
     if (distilled.length === 0) {

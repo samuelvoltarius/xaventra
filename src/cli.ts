@@ -335,24 +335,17 @@ async function commandChat(): Promise<void> {
     }
 
     // ============================================
-    // Initialize Memory System (Phase 1)
+    // Memory: read-only view of the governed memory (the one authority).
+    // This terminal chat never writes memory; LanceDB/Core Facts/KG are
+    // projections that only memory governance writes.
     // ============================================
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let memoryManager: any = null
+    let memoryGovernance: any = null
+    const cliMemoryScopes = ['user:cli', 'global']
     try {
-        const { MemoryManager } = await import('./memory/lancedb.js')
-        const configPath = resolveConfigPath()
-        const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf-8')) : {}
-
-        if (config.memory?.enabled !== false && (config.auth?.openaiApiKey || process.env.OPENAI_API_KEY)) {
-            memoryManager = new MemoryManager({
-                dbPath: join(process.cwd(), '.nova-memory'),
-                embeddingApiKey: config.auth?.openaiApiKey || process.env.OPENAI_API_KEY || '',
-                autoRecall: true,
-                autoCapture: true,
-            })
-            console.log(c.ok('✓ Memory initialisiert'))
-        }
+        const { getMemoryGovernanceCoordinator } = await import('./memory/memory-governance.js')
+        memoryGovernance = getMemoryGovernanceCoordinator()
+        console.log(c.ok('✓ Memory (Governance) verbunden'))
     } catch (err) {
         console.log(c.dim(`  Memory nicht verfügbar: ${err}`))
     }
@@ -678,7 +671,7 @@ async function commandChat(): Promise<void> {
 
                     // Subsystem status
                     console.log('')
-                    console.log(`  🧠 Memory: ${memoryManager ? c.ok('aktiv') : c.dim('aus')}`)
+                    console.log(`  🧠 Memory: ${memoryGovernance ? c.ok('aktiv') : c.dim('aus')}`)
                     console.log(`  📖 Learning: ${feedbackCollector ? c.ok('aktiv') : c.dim('aus')}`)
                     console.log(`  🔧 Tools: ${toolRegistry ? c.ok(toolRegistry.getAll().length + ' geladen') : c.dim('aus')}`)
                     console.log(`  ⚙️ Runtime: CLI · LLM: ${llm ? c.ok('verbunden') : c.warn('getrennt')}`)
@@ -824,17 +817,17 @@ async function commandChat(): Promise<void> {
 
             if (trimmed === '/memory') {
                 console.log(c.bold('\n🧠 Memory System:'))
-                if (memoryManager) {
+                if (memoryGovernance) {
                     try {
-                        const count = await memoryManager.db?.count() || 0
-                        console.log(`   Einträge: ${count}`)
-                        console.log(`   Pfad: .nova-memory/`)
-                        console.log(c.dim('   Tipp: Sage "Merk dir X" um etwas zu speichern'))
+                        const stats = memoryGovernance.getStats()
+                        console.log(`   Kanonisch: ${stats.canonical} · Verifiziert: ${stats.verified} · Kandidaten: ${stats.candidate}`)
+                        console.log('   Quelle: Memory-Governance (.nova-data/memory/governance)')
+                        console.log(c.dim('   Merken läuft über den Daemon/Pipeline-Chat, nicht über diesen Terminal-Chat'))
                     } catch {
                         console.log(c.dim('   Keine Memories gespeichert'))
                     }
                 } else {
-                    console.log(c.warn('   Memory nicht aktiv (braucht OPENAI_API_KEY für Embeddings)'))
+                    console.log(c.warn('   Memory nicht aktiv'))
                 }
                 console.log()
                 prompt()
@@ -886,7 +879,7 @@ async function commandChat(): Promise<void> {
                     writeFileSync(exportPath, JSON.stringify({
                         exported: new Date().toISOString(),
                         messages: history.slice(1), // Skip system prompt
-                        memoryActive: !!memoryManager,
+                        memoryActive: !!memoryGovernance,
                         learningActive: !!feedbackCollector,
                     }, null, 2))
                     console.log(c.ok(`   ✓ Exportiert: ${exportPath}`))
@@ -914,9 +907,9 @@ async function commandChat(): Promise<void> {
                 try {
                     // Memory Context Injection (Phase 1)
                     let memoryContext = ''
-                    if (memoryManager) {
+                    if (memoryGovernance) {
                         try {
-                            const context = await memoryManager.getContextForPrompt(trimmed)
+                            const context = memoryGovernance.getContextForPrompt(cliMemoryScopes, trimmed)
                             if (context) {
                                 memoryContext = `\n\n[Relevante Erinnerungen:\n${context}]`
                             }
@@ -994,15 +987,6 @@ async function commandChat(): Promise<void> {
                         }
                     }
 
-                    // Memory Auto-Capture (Phase 1)
-                    if (memoryManager) {
-                        try {
-                            await memoryManager.autoCapture([
-                                { role: 'user', content: trimmed },
-                                { role: 'assistant', content: response.content }
-                            ])
-                        } catch { /* Memory not critical */ }
-                    }
                 } catch (err) {
                     // Phase 5: Error Recovery with Retry
                     const errMsg = String(err)

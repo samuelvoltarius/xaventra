@@ -8,7 +8,12 @@ import {
 } from './action-policy.js'
 import { createApprovalCard, registerCardExecutor } from './approval-cards.js'
 import { NIE_LISTE } from '../doctor/self-heal.js'
-import { isNeverKind, isPhysicalOrExternalKind } from '../thinking/decision-learning.js'
+import { isPhysischOderExtern, nieEffekt } from './action-policy.js'
+
+// The former learning-module helpers (thinking/decision-learning.ts) were thin
+// wrappers over the action policy; the policy is the single source now.
+const isNeverKind = (kind: string) => nieEffekt(kind) !== null || isNieAktionsart(kind)
+const isPhysicalOrExternalKind = (kind: string) => isPhysischOderExtern(kind)
 
 // Phase 6b: one action policy for every part. Each guard has a Gegenprobe
 // (take the guard back -> this file turns red), see the branch report.

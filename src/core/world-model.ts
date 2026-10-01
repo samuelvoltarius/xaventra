@@ -40,7 +40,8 @@ export interface NovaWorldModel {
         managedGoals: { total: number; active: number; blocked: number; completed: number }
         beliefs: number
         disputedBeliefs: number
-        causalEvents: number
+        /** Validated, not invalidated outcome-ledger runs of this principal. */
+        verifiedRuns: number
     }>
 }
 
@@ -77,16 +78,18 @@ export async function buildNovaWorldModel(principalId?: string): Promise<NovaWor
         proposedSkills = skills.filter(item => item.status === 'proposed').length
         activeSkills = skills.filter(item => item.status === 'active').length
     } catch { /* optional learning projections never block the world model */ }
-    const [{ getGoalManager }, { getBeliefStore }, { getCausalMemory }] = await Promise.all([
-        import('./goal-manager.js'), import('./belief-store.js'), import('./causal-memory.js'),
+    const [{ getGoalManager }, { getBeliefStore }] = await Promise.all([
+        import('./goal-manager.js'), import('./belief-store.js'),
     ])
     const managedGoals = getGoalManager().getStats(principalId)
     const beliefs = principalId ? getBeliefStore().list(principalId) : []
-    const causal = getCausalMemory().getStats(principalId)
     const runs = getOutcomeLedger().listRuns(500)
         .filter(run => run.channel !== 'benchmark' && !String(run.userId || '').startsWith('benchmark:'))
     const terminal = runs.filter(run => run.status === 'completed' || run.status === 'failed')
     const validated = terminal.filter(run => typeof run.validation?.success === 'boolean')
+    // The ledger is the authority for verified outcomes (the former
+    // causal-memory.json only copied these runs); rejected runs do not count.
+    const verifiedRuns = validated.filter(run => !run.invalidated && (!principalId || run.userId === principalId)).length
     const successful = validated.filter(run => run.status === 'completed' && run.validation?.success === true)
 
     const nodes = meshNodes.map(node => {
@@ -187,7 +190,7 @@ export async function buildNovaWorldModel(principalId?: string): Promise<NovaWor
                 managedGoals,
                 beliefs: beliefs.length,
                 disputedBeliefs: beliefs.filter(item => item.status === 'disputed' || item.status === 'uncertain').length,
-                causalEvents: causal.events,
+                verifiedRuns,
             },
             source: 'user-scoped-session-continuity+validated-workflow-memory',
             verifiedAt: personalSummary?.lastUpdated ? new Date(personalSummary.lastUpdated).toISOString() : generatedAt,
@@ -220,7 +223,7 @@ export function formatNovaWorldModel(model: NovaWorldModel): string {
             `Persönlicher Kontext: ${model.personal.value.openGoals.length} offene Ziele, ${model.personal.value.decisions.length} Entscheidungen, ${model.personal.value.preferences.length} Präferenzen, ${model.personal.value.uncertainties.length} offene Klärungen`,
             `Erlernte Abläufe: ${model.personal.value.workflowEpisodes} validierte Episoden, ${model.personal.value.proposedSkills} Skill-Vorschläge, ${model.personal.value.activeSkills} aktive Skills`,
             `Goal Manager: ${model.personal.value.managedGoals.active} aktiv, ${model.personal.value.managedGoals.blocked} blockiert, ${model.personal.value.managedGoals.completed} abgeschlossen`,
-            `Beliefs/Kausalität: ${model.personal.value.beliefs} Beliefs (${model.personal.value.disputedBeliefs} ungeklärt), ${model.personal.value.causalEvents} verifizierte Ereignisse`,
+            `Beliefs/Kausalität: ${model.personal.value.beliefs} Beliefs (${model.personal.value.disputedBeliefs} ungeklärt), ${model.personal.value.verifiedRuns} verifizierte Abläufe (Outcome-Ledger)`,
         ] : []),
         '',
         'Jede Zahl stammt aus einem kanonischen Store; unbekannte oder abgelaufene Zustände werden nicht erraten.',

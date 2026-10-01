@@ -1,10 +1,13 @@
 /**
  * GraphRAG — JSON-based Knowledge Graph
  *
- * Nova builds and maintains a relationship graph in the background:
- * - Entities (people, projects, tools, pets, hardware)
- * - Relations between entities
- * - Auto-extraction from conversations via internalLlm
+ * Relationship graph (people, places, devices, projects, preferences).
+ *
+ * The graph is a projection: memory governance is its only writer
+ * (`publish()` for canonical records with subject/predicate/value). Nothing
+ * else extracts from conversations into it — sources propose structured
+ * facts to governance (auto-observer, nightly distiller, kg_remember), so
+ * every edge carries a `governance:<id>` source, scope and lifecycle.
  *
  * Persisted to .nova-data/knowledge-graph.json
  */
@@ -63,7 +66,16 @@ function ensureDataDir(): void {
     }
 }
 
+let loaded = false
+
+/** Writers and readers load the persisted graph first; a write before the
+ * first load would otherwise replace the file with only the new nodes. */
+function ensureLoaded(): void {
+    if (!loaded) loadGraph()
+}
+
 function loadGraph(): void {
+    loaded = true
     try {
         if (existsSync(GRAPH_PATH)) {
             let data = readFileSync(GRAPH_PATH, 'utf-8')
@@ -156,6 +168,7 @@ export function addNode(
     type: GraphNode['type'],
     properties: Record<string, string> = {}
 ): GraphNode | null {
+    ensureLoaded()
     if (!isValidLabel(label)) return null
 
     // Cap at 500 nodes to prevent unbounded growth
@@ -188,6 +201,7 @@ export function addNode(
 }
 
 export function getNode(label: string): GraphNode | undefined {
+    ensureLoaded()
     const id = normalizeId(label)
     return graph.nodes.find(n => n.id === id)
 }
@@ -203,6 +217,7 @@ export function addEdge(
     weight: number = 1.0,
     source: string = 'conversation'
 ): GraphEdge {
+    ensureLoaded()
     const fromId = normalizeId(fromLabel)
     const toId = normalizeId(toLabel)
 
@@ -254,6 +269,7 @@ function isGovernanceProjectionActive(source: string, allowedScopes?: readonly s
 }
 
 export function removeGovernanceProjection(governanceId: string): number {
+    ensureLoaded()
     const source = `governance:${governanceId}`
     const beforeEdges = graph.edges.length
     graph.edges = graph.edges.filter(edge => edge.source !== source)
@@ -302,6 +318,7 @@ export function queryRelations(
 }
 
 export function queryByType(type: GraphNode['type']): GraphNode[] {
+    ensureLoaded()
     return graph.nodes.filter(n => {
         if (n.type !== type || !n.properties.governanceId) return false
         const status = getMemoryGovernanceCoordinator().get(n.properties.governanceId)?.status
@@ -314,6 +331,7 @@ export function queryByType(type: GraphNode['type']): GraphNode[] {
  * belongs to one of these scopes are used (principal-bound prompt context).
  */
 export function getContextForPrompt(query: string, allowedScopes?: readonly string[]): string {
+    ensureLoaded()
     const queryLower = query.toLowerCase()
     const activeNodes = graph.nodes.filter(n => {
         const governanceId = n.properties.governanceId
@@ -385,6 +403,7 @@ export function getContextForPrompt(query: string, allowedScopes?: readonly stri
  * Omit only for the owner.
  */
 export function searchGraph(query: string, limit = 6, allowedScopes?: readonly string[]): string {
+    ensureLoaded()
     const tokens = query.toLowerCase()
         .replace(/[^\w\säöüß]/g, ' ')
         .split(/\s+/)
@@ -429,223 +448,11 @@ export function searchGraph(query: string, limit = 6, allowedScopes?: readonly s
 }
 
 // ============================================
-// Auto-Extract from Conversation
-// ============================================
-
-let internalLlm: any = null
-
-export function setInternalLLM(llm: any): void {
-    internalLlm = llm
-}
-
-/**
- * Extract entities and relations from text using internal LLM
- */
-export async function extractFromConversation(text: string, userId = 'user'): Promise<number> {
-    // Fast regex extraction (always runs)
-    let extracted = regexExtract(text, userId)
-
-    // LLM extraction (if available)
-    if (internalLlm) {
-        try {
-            const prompt = `Extract entities and relationships from this text. Return JSON array of objects with: {from, relation, to, fromType, toType}
-Types: person, project, tool, pet, hardware, concept, place, preference
-
-Text: "${text.slice(0, 500)}"
-
-Return ONLY valid JSON array, no explanation. Example:
-[{"from":"Sample","relation":"owns","to":"Nova","fromType":"person","toType":"project"}]`
-
-            const result = await internalLlm.complete(prompt)
-            const responseText = typeof result === 'string' ? result : result?.text || result?.content || ''
-
-            // Try to parse JSON from response
-            const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-            if (jsonMatch) {
-                const relations = JSON.parse(jsonMatch[0]) as Array<{
-                    from: string
-                    relation: string
-                    to: string
-                    fromType?: string
-                    toType?: string
-                }>
-
-                for (const rel of relations) {
-                    if (rel.from && rel.relation && rel.to) {
-                        addNode(rel.from, (rel.fromType as GraphNode['type']) || 'other')
-                        addNode(rel.to, (rel.toType as GraphNode['type']) || 'other')
-                        addEdge(rel.from, rel.relation, rel.to, 0.8, 'llm_extraction')
-                        extracted++
-                    }
-                }
-            }
-        } catch {
-            // LLM extraction failed, regex results still count
-        }
-    }
-
-    return extracted
-}
-
-/**
- * Structured preference/correction extraction — fully LLM-independent.
- * Stores explicit user instructions, corrections, and preferences as preference nodes.
- */
-export function extractPreferencesFromMessage(text: string, userId = 'user'): number {
-    let count = 0
-    const t = text.trim()
-
-    // "nicht X, sondern Y" / "nicht X — sondern Y"
-    const correctionMatch = t.match(/nicht\s+(.{2,40?})\s*[,—–]\s*sondern\s+(.{2,40})/i)
-    if (correctionMatch) {
-        addNode(correctionMatch[2].trim(), 'preference', {
-            source: 'correction',
-            user: userId,
-            rejects: correctionMatch[1].trim(),
-        })
-        addEdge(userId, 'prefers', correctionMatch[2].trim(), 0.95, 'correction')
-        addEdge(userId, 'rejects', correctionMatch[1].trim(), 0.95, 'correction')
-        count += 2
-    }
-
-    // "merke dir / denk daran / remember that X"
-    const rememberMatch = t.match(/(?:merke? dir|denk daran|remember that?)[,:]?\s+(.{5,200})/i)
-    if (rememberMatch) {
-        const topic = rememberMatch[1].trim().slice(0, 80)
-        addNode(topic, 'preference', { source: 'instruction', user: userId })
-        addEdge('Nova', 'must_remember', topic, 1.0, 'instruction')
-        count++
-    }
-
-    // "antworte immer auf Deutsch / English"
-    const langMatch = t.match(/antworte?\s+(?:immer\s+)?(?:auf\s+|in\s+)?(deutsch|englisch|english|german|french|spanish)/i)
-    if (langMatch) {
-        const lang = langMatch[1].toLowerCase()
-        addNode(lang, 'preference', { type: 'language', user: userId })
-        addEdge('Nova', 'language', lang, 1.0, 'instruction')
-        count++
-    }
-
-    // "nova soll X" / "du sollst X" / "bitte immer X"
-    // IMPORTANT: Exclude Nova's own error/fallback messages from being stored as behavior
-    const behaviorMatch = t.match(/(?:nova soll|du sollst|bitte)\s+(?:immer\s+)?(.{5,100})/i)
-    if (behaviorMatch) {
-        const behavior = behaviorMatch[1].trim().slice(0, 80)
-        // Skip if this looks like Nova's own error message (not a user instruction)
-        const isErrorMsg = /versuch\s+es\s+nochmal|schiefgelaufen|entschuldigung/i.test(behavior)
-        if (!isErrorMsg) {
-            addNode(behavior, 'preference', { source: 'instruction', user: userId })
-            addEdge('Nova', 'behavior', behavior, 0.9, 'instruction')
-            count++
-        }
-    }
-
-    // "ich benutze / verwende / nutze X"
-    const usesMatch = t.match(/ich\s+(?:benutze|verwende|nutze|nehme)\s+(.{2,60})/i)
-    if (usesMatch) {
-        const tool = usesMatch[1].trim().split(/\s+/).slice(0, 4).join(' ')
-        if (isValidLabel(tool)) {
-            addNode(tool, 'tool', { user: userId })
-            addEdge(userId, 'uses', tool, 0.8, 'preference')
-            count++
-        }
-    }
-
-    return count
-}
-
-/**
- * Simple regex-based extraction (fallback, always runs)
- */
-function regexExtract(text: string, userId = 'user'): number {
-    let count = 0
-
-    // Preferences and corrections (always LLM-free)
-    count += extractPreferencesFromMessage(text, userId)
-
-    // Pattern: "X heißt Y" / "my name is Y" (only proper names — capitalized)
-    const namePatterns = [
-        /(?:ich heiße|mein name ist|i am|my name is)\s+([A-ZÄÖÜ][a-zäöüß]+)/gi,
-        /(?:das ist|this is)\s+([A-ZÄÖÜ][a-zäöüß]{2,})/g,
-    ]
-    for (const pattern of namePatterns) {
-        let match
-        while ((match = pattern.exec(text)) !== null) {
-            if (isValidLabel(match[1])) {
-                addNode(match[1], 'person')
-                count++
-            }
-        }
-    }
-
-    // Pattern: ownership — only match capitalized subjects to avoid sentence fragments
-    const ownershipPatterns = [
-        /([A-ZÄÖÜ][a-zäöüß]+)\s+(?:hat|besitzt|owns?|has)\s+(?:einen?|eine?|a|an)?\s*([A-ZÄÖÜ][a-zäöüß]+)/g,
-    ]
-    for (const pattern of ownershipPatterns) {
-        let match
-        while ((match = pattern.exec(text)) !== null) {
-            if (isValidLabel(match[1]) && isValidLabel(match[2])) {
-                addEdge(match[1], 'owns', match[2], 0.6, 'regex')
-                count++
-            }
-        }
-    }
-
-    // Pattern: project names (capitalized words after "Projekt"/"project")
-    const projectPattern = /(?:projekt|project)\s+(\w+)/gi
-    let match
-    while ((match = projectPattern.exec(text)) !== null) {
-        addNode(match[1], 'project')
-        count++
-    }
-
-    // Pattern: IP addresses linked to device names
-    const ipDevicePatterns = [
-        /(?:(\w+(?:\s*\d)?)\s+(?:hat|ist|IP|unter|auf|erreichbar|at)\s*(?:die\s+IP\s*)?)\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/gi,
-        /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(?:ist|=|:)\s*(\w+)/gi,
-    ]
-    for (const pattern of ipDevicePatterns) {
-        let m
-        while ((m = pattern.exec(text)) !== null) {
-            const [, a, b] = m
-            if (/\d/.test(a)) {
-                addNode(b, 'hardware', { ip: a })
-                addEdge(b, 'has_ip', a, 0.9, 'regex')
-            } else {
-                addNode(a, 'hardware', { ip: b })
-                addEdge(a, 'has_ip', b, 0.9, 'regex')
-            }
-            count++
-        }
-    }
-
-    // Pattern: SSH connections "ssh user@host"
-    const sshPattern = /ssh\s+(\w+)@(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/gi
-    while ((match = sshPattern.exec(text)) !== null) {
-        addNode(match[2], 'hardware', { ssh_user: match[1] })
-        addEdge(match[1], 'ssh_access', match[2], 0.9, 'regex')
-        count++
-    }
-
-    // Pattern: Hardware names from mesh
-    const hwPattern = /\b(raspberry\s*pi|Pi5?|Jetson|MacMini|MacBook(?:\s*Pro)?|beamer|projector|server|Fernseher)\b/gi
-    while ((match = hwPattern.exec(text)) !== null) {
-        const hw = match[1].replace(/\s+/g, '')
-        if (isValidLabel(hw)) {
-            addNode(hw, 'hardware')
-            count++
-        }
-    }
-
-    return count
-}
-
-// ============================================
 // Stats
 // ============================================
 
 export function getStats(): { nodes: number; edges: number; types: Record<string, number> } {
+    ensureLoaded()
     const types: Record<string, number> = {}
     for (const node of graph.nodes) {
         types[node.type] = (types[node.type] || 0) + 1
@@ -654,7 +461,20 @@ export function getStats(): { nodes: number; edges: number; types: Record<string
 }
 
 export function getFullGraph(): KnowledgeGraph {
+    ensureLoaded()
     return { ...graph }
+}
+
+/** /graph: counts of the governed graph. */
+export function formatGraphStats(): string {
+    const stats = getStats()
+    const types = Object.entries(stats.types).map(([type, count]) => `${type}(${count})`).join(', ')
+    return [
+        '🕸️ Knowledge Graph',
+        `Knoten: ${stats.nodes} · Kanten: ${stats.edges}`,
+        `Typen: ${types || 'keine'}`,
+        'Quelle: Memory-Governance (nur kanonische Fakten mit Subjekt/Beziehung/Wert)',
+    ].join('\n')
 }
 
 // ============================================
@@ -673,8 +493,7 @@ export default {
     queryRelations,
     queryByType,
     getContextForPrompt,
-    extractFromConversation,
-    setInternalLLM,
     getStats,
+    formatGraphStats,
     getFullGraph,
 }

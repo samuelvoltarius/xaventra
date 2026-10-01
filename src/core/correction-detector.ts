@@ -498,10 +498,11 @@ export function processForCorrection(message: string, principalId?: string): Cor
 // ============================================
 
 /**
- * When a correction contains an IP or device info, auto-update:
- * 1. hosts.json (SSH targets)
- * 2. CORE_FACTS.json (always-injected facts)
- * 3. MEMORY.md (long-term memory)
+ * When a correction contains an IP or device info:
+ * 1. hosts.json (SSH targets) is updated directly — the only file written here.
+ * 2. One governed memory record is proposed; Core Facts and the Knowledge
+ *    Graph are projections that memory governance derives from it. Nothing
+ *    writes CORE_FACTS.json or MEMORY.md from this function.
  */
 function autoUpdateFromCorrection(message: string, lastToolCall: LastToolCall): void {
     try {
@@ -533,9 +534,9 @@ function autoUpdateFromCorrection(message: string, lastToolCall: LastToolCall): 
 
         // 2. One governed correction; Core Facts and KG are projections.
         const governed = getMemoryGovernanceCoordinator().propose({
-            content: `${deviceName || 'GerÃ¤t'} erreichbar unter ${newIp}${wasSSH ? ' (SSH)' : ''}`,
+            content: `${deviceName || 'Gerät'} erreichbar unter ${newIp}${wasSSH ? ' (SSH)' : ''}`,
             kind: 'context', scope: 'global', source: 'correction-detector', evidence: 'correction',
-            confidence: 1, verified: true, subject: deviceName || 'GerÃ¤t', predicate: 'ip_address', value: newIp,
+            confidence: 1, verified: true, subject: deviceName || 'Gerät', predicate: 'ip_address', value: newIp,
         })
         if (governed) void getMemoryGovernanceCoordinator().publish(governed.id)
 

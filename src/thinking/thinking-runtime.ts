@@ -15,7 +15,7 @@ import { totalmem } from 'node:os'
 import { resolve } from 'node:path'
 import type { FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
 import { runBugFinder, tracesErrorSource, type ErrorSourcePort } from './bug-finder.js'
-import { DecisionLearner, type DecisionAnswer } from './decision-learning.js'
+import { thoughtImportanceFactor } from '../core/decisions.js'
 import { runIdeaRun, type CostSnapshot, type Formulator, type IdeaCandidate, type IdeaInputs } from './idea-run.js'
 import { fixtureSource, huggingFaceSource, runModelScout, type ModelSource, type ScoutRunner } from './model-scout.js'
 import { buildProbeSet, type ProbeCase } from './probe-set.js'
@@ -29,16 +29,14 @@ let sink: ThoughtSink | null = null
 let schedule: Schedule | null = null
 let scoutRunner: ScoutRunner | undefined
 let formulator: Formulator | undefined
-let learner: DecisionLearner | null = null
 
 /** Einmal vom Daemon mit `autonomy.thinking` aus der Config. */
 export function setThinkingConfig(raw: unknown): void {
     settings = parseThinkingSettings(raw)
-    learner = null
 }
 export function getThinkingSettings(): ThinkingSettings { return settings }
 /** Integration: Gedanken an den Planer/Gedanken-Speicher statt JSONL. */
-export function setThoughtSink(value: ThoughtSink | null): void { sink = value; learner = null }
+export function setThoughtSink(value: ThoughtSink | null): void { sink = value }
 /** Integration: Läufe als Planer-Jobs statt einfacher Intervalle. */
 export function setThinkingSchedule(value: Schedule | null): void { schedule = value }
 /** Integration: Prüf-Runner gegen einen bereits laufenden Endpoint. Ohne Runner testet der Scout nicht. */
@@ -48,21 +46,6 @@ export function setIdeaFormulator(value: Formulator | undefined): void { formula
 
 function defaultSink(): ThoughtSink { return sink ||= new JsonlThoughtSink() }
 function defaultSchedule(): Schedule { return schedule ||= new IntervalSchedule() }
-
-export function getDecisionLearner(): DecisionLearner {
-    if (!learner) {
-        learner = new DecisionLearner({
-            settings, sink: defaultSink(),
-            ledger: { recordApproval: (runId, approval) => { void import('../core/outcome-ledger.js').then(({ getOutcomeLedger }) => getOutcomeLedger().recordApproval(runId, approval)).catch(() => {}) } },
-        })
-    }
-    return learner
-}
-
-/** Öffentliche API für die Knopf-Karten (Phase 1): jede Antwort melden. */
-export async function recordDecision(kind: string, answer: DecisionAnswer, options: { reason?: string } = {}) {
-    return getDecisionLearner().recordDecision(kind, answer, options)
-}
 
 /** Formuliert eine Idee mit dem laufenden Modell; Zahlen und Ziel hängt der Ideen-Lauf selbst an. */
 export function createLlmFormulator(llm: { complete(messages: Array<{ role: string; content: string }>, options?: Record<string, unknown>): Promise<{ content?: string }> }): Formulator {
@@ -125,7 +108,8 @@ export async function runThinkingTick(deps: ThinkingTickDeps): Promise<{ ran: st
     const out = deps.sink || defaultSink()
     const plan = deps.schedule || defaultSchedule()
     const load = deps.load || createDefaultLoadProbe({ vllmMetricsUrl: settings.load.vllmMetricsUrl })
-    const factor = (kind: string) => getDecisionLearner().importanceFactor(kind)
+    // Owner answers (decisions.ts, Rückmeldungen auf Gedanken) weight future thoughts.
+    const factor = (kind: string) => thoughtImportanceFactor(kind)
     const doctor = async () => deps.doctor || (await import('../doctor/failure-research-coordinator.js')).getFailureResearchCoordinator()
     const ran: string[] = []
     const skipped: Record<string, string> = {}

@@ -221,48 +221,18 @@ function saveStats(): void {
     }
 }
 
-function loadVectorMemory(): DashboardState['thoughts'] {
-    // Try all possible memory data directories
-    const dirs = [
-        join(process.cwd(), '.nova-data', 'memory'),
-        join(process.cwd(), '.nova-vector-memory'),
-        join(process.cwd(), '.nova-data'),
-    ]
-
-    for (const dir of dirs) {
-        if (!existsSync(dir)) continue
-
-        const indexFile = join(dir, 'index.json')
-        if (!existsSync(indexFile)) continue
-
-        try {
-            // VectorMemoryStore format: { "userId": MemoryEntry[] }
-            const data = JSON.parse(readFileSync(indexFile, 'utf-8'))
-            const entries: DashboardState['thoughts'] = []
-
-            for (const [userId, userEntries] of Object.entries(data)) {
-                const items = Array.isArray(userEntries) ? userEntries : []
-                for (const e of items.slice(-25) as any[]) {
-                    entries.push({
-                        id: e.id || 'unknown',
-                        content: e.content || e.text || '',
-                        timestamp: e.timestamp || Date.now(),
-                        type: e.role || e.metadata?.tool || 'thought',
-                    })
-                }
-            }
-
-            if (entries.length > 0) {
-                // Sort by timestamp descending, show newest first
-                entries.sort((a, b) => b.timestamp - a.timestamp)
-                return entries.slice(0, 50)
-            }
-        } catch {
-            continue
-        }
+/** Newest active governed memories (the one memory authority). Owner-only data. */
+async function loadGovernedMemory(): Promise<DashboardState['thoughts']> {
+    try {
+        const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
+        return getMemoryGovernanceCoordinator().list()
+            .filter(record => record.status === 'verified' || record.status === 'canonical')
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .slice(0, 50)
+            .map(record => ({ id: record.id, content: record.content, timestamp: record.updatedAt, type: record.kind }))
+    } catch {
+        return []
     }
-
-    return []
 }
 
 function loadLanceDBMemory(): DashboardState['thoughts'] {
@@ -611,8 +581,8 @@ app.use((req, res, next) => {
 
 
 // Full state
-app.get('/api/status', (req, res) => {
-    state.thoughts = [...loadVectorMemory(), ...loadLanceDBMemory()]
+app.get('/api/status', async (req, res) => {
+    state.thoughts = [...await loadGovernedMemory(), ...loadLanceDBMemory()]
     state.l0 = loadL0Stats()
     state.agents = loadAgents()
     state.layers = loadLayers()
@@ -932,9 +902,9 @@ app.get('/api/errors', (req, res) => {
 })
 
 // Memory Browser
-app.get('/api/memory', (req, res) => {
+app.get('/api/memory', async (req, res) => {
     res.json(safeDashboardPayload({
-        vector: loadVectorMemory(),
+        governance: await loadGovernedMemory(),
         lancedb: loadLanceDBMemory(),
     }))
 })

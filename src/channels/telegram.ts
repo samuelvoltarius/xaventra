@@ -854,12 +854,9 @@ export class TelegramAdapter implements ChannelAdapter {
                             if (ownPrivateChat) try { await this.bot.answerCallbackQuery(query.id, { text: '🔒 Nur für Rolle user.' }) } catch { /* ignore */ }
                             return
                         }
-                        if (state.memory) {
-                            await state.memory.clear(chatId!)
-                            await this.bot.sendMessage(chatId, '🗑️ Memory gelöscht!', { parse_mode: 'Markdown' })
-                        } else {
-                            await this.bot.sendMessage(chatId, '❌ Memory nicht aktiviert', { parse_mode: 'Markdown' })
-                        }
+                        // Memory governance forgets record by record (with tombstone);
+                        // there is no bulk wipe behind a button.
+                        await this.bot.sendMessage(chatId, '🗑️ Einzelne Erinnerungen vergessen: /memory review, dann /memory reject <id>.')
                     } else if (action === 'search') {
                         await this.bot.sendMessage(chatId, '🔍 Sende mir einen Suchbegriff und ich durchsuche dein Memory.', { parse_mode: 'Markdown' })
                     } else if (action === 'export') {

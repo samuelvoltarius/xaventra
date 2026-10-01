@@ -473,13 +473,12 @@ class MemoryConsolidator {
                 )
             } catch { /* journal not available */ }
 
-            // Load recent self-rules
+            // Load the owner's active decisions (the one rule system)
             let rules: string[] = []
             try {
-                const { getSelfImprovementEngine } = await import('../layers/L20-self-improvement.js')
-                const engine = getSelfImprovementEngine()
-                rules = engine.getRules().slice(-10).map((r: any) => r.rule)
-            } catch { /* rules not available */ }
+                const { listDecisions } = await import('../core/decisions.js')
+                rules = listDecisions().filter(item => item.status === 'aktiv' && item.bindend).slice(-10).map(item => item.text)
+            } catch { /* decisions not available */ }
 
             if (journalEntries.length === 0 && rules.length === 0) {
                 console.log('[Autonomy] Nothing to consolidate')

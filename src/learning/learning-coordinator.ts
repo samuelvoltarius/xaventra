@@ -218,10 +218,7 @@ export class LearningCoordinator {
             skillCompiler.recordRuntimeOutcome(skill.id, outcome.success, outcome.runId)
         }
 
-        const [{ getBeliefStore }, { getCausalMemory }] = await Promise.all([
-            import('../core/belief-store.js'),
-            import('../core/causal-memory.js'),
-        ])
+        const { getBeliefStore } = await import('../core/belief-store.js')
         const route = `${outcome.model || 'unknown'}@${outcome.node || 'unknown'}`
         getBeliefStore().observe({
             userId: outcome.userId,
@@ -233,15 +230,6 @@ export class LearningCoordinator {
             confidence: 1,
             supports: outcome.success,
             ttlMs: 30 * 24 * 60 * 60_000,
-        })
-        getCausalMemory().recordChain({
-            userId: outcome.userId,
-            runId: outcome.runId,
-            events: [
-                { kind: 'request', summary: `Task type ${outcome.taskType} accepted` },
-                ...outcome.tools.map(tool => ({ kind: 'tool', summary: `${tool.toolName}: ${tool.success ? 'verified' : 'failed'}` })),
-                { kind: 'validation', summary: outcome.success ? 'independent validator accepted outcome' : 'independent validator rejected outcome' },
-            ],
         })
         if (!outcome.success) {
             const { getRegressionCaseStore } = await import('./regression-case-store.js')
@@ -255,17 +243,15 @@ export class LearningCoordinator {
     /** Retract every derived learning projection when a user rejects a run.
      * The immutable Outcome Ledger remains the authority and records why. */
     async invalidateValidatedRun(outcome: InvalidatedRunOutcome): Promise<void> {
-        const [{ getWorkflowEpisodeStore }, { getPersonalSkillCompiler }, { getBeliefStore }, { getCausalMemory }, { getSessionContinuityStore }] = await Promise.all([
+        const [{ getWorkflowEpisodeStore }, { getPersonalSkillCompiler }, { getBeliefStore }, { getSessionContinuityStore }] = await Promise.all([
             import('../memory/workflow-episode-store.js'),
             import('./personal-skill-compiler.js'),
             import('../core/belief-store.js'),
-            import('../core/causal-memory.js'),
             import('../memory/session-summarizer.js'),
         ])
         getWorkflowEpisodeStore().retractRun(outcome.runId, outcome.userId, outcome.reason)
         getPersonalSkillCompiler().retractRun(outcome.runId)
         getBeliefStore().retractSource(`outcome:${outcome.runId}`)
-        getCausalMemory().retractRun(outcome.runId)
         getSessionContinuityStore().retractVerifiedOutcome(outcome.userId, outcome.runId, outcome.request)
         try {
             const { getOutcomeRouter } = await import('../routing/outcome-router.js')

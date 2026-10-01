@@ -158,10 +158,7 @@
         }
     },
     "memory": {
-        "enabled": true,
-        "dbPath": ".nova-memory",
-        "autoRecall": true,
-        "autoCapture": true
+        "enabled": true
     },
     "learning": {
         "enabled": true,

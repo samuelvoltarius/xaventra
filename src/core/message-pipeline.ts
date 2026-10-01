@@ -83,7 +83,6 @@ export async function preloadPipelineModules(): Promise<void> {
         ...minimalModules,
         '../layers/L9-idle-learning.js',
         '../intelligence/roi-dashboard.js',
-        '../layers/L20-self-improvement.js',
         '../intelligence/emotion-tracker.js',
         '../intelligence/user-patterns.js',
         '../intelligence/autonomy-engine.js',
@@ -403,12 +402,6 @@ async function handleMessageInScope(
     const canonicalUser = configAliases[from] || from
     const principalId = resolvePrincipalId((state as any).config, channel, from)
     const principalContext: PrincipalContext = { channel, rawUserId: from, principalId }
-    // Scopes for shared memory recall; evaluated lazily so the role decided by
-    // checkAuth below is used. Unscoped legacy rows are owner-only.
-    const memoryRecallAccess = () => ({
-        scopes: [...compatiblePrincipalScopes(principalContext, canonicalUser), 'global'],
-        includeUnscoped: principalContext.permission === 'owner',
-    })
     let requestUserContext = ''
     let requestGroupContext = ''
     // P8 Routine-Skills: Gruppen lernen nie mit; angewendeter Skill dieses Laufs.
@@ -997,16 +990,13 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Inject L20 Self-Improvement rules (learned from corrections)
+    // Automatic performance recommendations from the trace analyzer. Learned
+    // rules are not a separate block any more: owner rules are ENTSCHEIDUNGEN
+    // (below), corrections are governed memory (Erinnerungskontext).
     try {
-        const { getSelfImprovementEngine } = await import('../layers/L20-self-improvement.js')
-        const selfImprove = getSelfImprovementEngine()
-        const rulesBlock = selfImprove.buildPromptBlock(content, principalId)
-        if (rulesBlock) {
-            systemPrompt += rulesBlock
-            console.log('[Pipeline] L20 self-rules injected')
-        }
-    } catch (err) { console.debug('[Pipeline] L20 not available:', err) }
+        const { buildTraceInsightsBlock } = await import('../learning/trace-analyzer.js')
+        systemPrompt += buildTraceInsightsBlock()
+    } catch (err) { console.debug('[Pipeline] trace insights not available:', err) }
 
     // Kausales Gedächtnis (Phase 8): owner instructions in a direct chat are
     // remembered without a command; matching decisions join the context.
@@ -1263,21 +1253,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Persist the correction before any acknowledgement/early return.
         // Previously the "how would it be correct?" branch returned first and
         // discarded the very feedback Nova was supposed to remember.
+        // Stored once: governed correction memory. An owner rule ("ab jetzt …")
+        // in the same message was already recorded by decisions.ts above; the
+        // outcome ledger only marks the corrected run as rejected.
         if (correctedExchange) {
             try {
-                const learner = (state as any).correctionLearner
                 const lastAssistantMsg = (state as any).lastAssistantMessages?.get(principalId) || ''
-                if (learner) {
-                    learner.recordCorrection({
-                        userId: principalId,
-                        originalResponse: correction.lastToolCall
-                            ? JSON.stringify(correction.lastToolCall.result).slice(0, 300)
-                            : lastAssistantMsg.slice(0, 300),
-                        correctedResponse: content,
-                        context: correction.lastToolCall?.userRequest || content,
-                    })
-                    console.log(`[L7 Learning] Korrektur gespeichert → L20 Regelgenerierung getriggert`)
-                }
                 const { recordUserCorrectionMemory } = await import('../memory/correction-memory.js')
                 await recordUserCorrectionMemory({
                     scope: principalScope(principalId),
@@ -1735,10 +1716,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     llm: llmForCall,
                     tools: executionTools,
                     abortSignal: agentSignal,
-                    memory: state.memory ? {
-                        recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
-                        store: (e: any) => state.memory.store(e),
-                    } : undefined,
                     onStepUpdate: async (status: string) => {
                         if (progress.closed || agentSignal.aborted) return
                         try {
@@ -1856,10 +1833,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 llm: state.llm,
                 tools: executionTools,
                 abortSignal: agentSignal,
-                memory: state.memory ? {
-                    recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
-                    store: (e: any) => state.memory.store(e),
-                } : undefined,
             }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             supervised = superviseResponse(retryResult.content, { attempt })
@@ -1916,10 +1889,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         llm: state.llm,
                         tools: executionTools,
                         abortSignal: agentSignal,
-                        memory: state.memory ? {
-                            recall: (q: string, u: string, l: number) => state.memory.recall(q, u, l, memoryRecallAccess()),
-                            store: (e: any) => state.memory.store(e),
-                        } : undefined,
                     }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
                     const retryExecutedTools = retryResult.toolsExecuted?.length || 0
                     if (retryExecutedTools > 0 || (!detectActionIntent(content).requiresTool && retryResult.content && retryResult.content.trim().length > text.length)) {

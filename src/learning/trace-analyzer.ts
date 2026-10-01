@@ -9,7 +9,8 @@
  * - Overall performance summary
  *
  * Insights are written to .nova-data/trace-insights.json
- * and read by L20 / nova_trace_stats tool.
+ * and read by the message pipeline (buildTraceInsightsBlock) and the
+ * nova_trace_stats tool.
  */
 
 import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs'
@@ -266,6 +267,13 @@ export function loadTraceInsights(): TraceInsights | null {
     } catch {
         return null
     }
+}
+
+/** Prompt block with the automatic performance recommendations (if any). */
+export function buildTraceInsightsBlock(): string {
+    const recommendations = loadTraceInsights()?.recommendations || []
+    if (!Array.isArray(recommendations) || recommendations.length === 0) return ''
+    return `\n\n## PERFORMANCE-ERKENNTNISSE (automatisch)\n${recommendations.slice(0, 8).map(item => `- ${String(item).slice(0, 240)}`).join('\n')}`
 }
 
 // ============================================

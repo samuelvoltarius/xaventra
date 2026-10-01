@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const approve = vi.hoisted(() => vi.fn(() => ({ ok: true, message: 'Gerät wird überwacht.' })))
-const decisions = vi.hoisted(() => vi.fn(async () => undefined))
+const decisions = vi.hoisted(() => vi.fn((..._args: unknown[]) => true))
 vi.mock('../sensing/runtime.js', () => ({ approveSensingDevice: approve }))
-vi.mock('../thinking/thinking-runtime.js', () => ({ recordDecision: decisions }))
+vi.mock('../thinking/thinking-runtime.js', () => ({ getThinkingSettings: () => ({ enabled: true, learning: { enabled: true } }) }))
+vi.mock('./decisions.js', () => ({ recordThoughtAnswer: decisions }))
 
 const { listThoughts } = await import('../planner/index.js')
 const { createSensingThoughtSink, createThinkingThoughtSink, createSelfUpdateThoughtSink, dispatchThoughtAnswer } = await import('./thought-hub.js')

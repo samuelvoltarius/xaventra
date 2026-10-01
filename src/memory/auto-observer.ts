@@ -45,6 +45,19 @@ interface ExtractionPattern {
     type: ExtractedFact['type']
     patterns: RegExp[]
     extractor: (match: RegExpMatchArray, full: string) => string
+    /** Knowledge-Graph structure (user → predicate → value). Used only in the
+     * owner's own context; memory governance validates and projects it. */
+    triple?: (match: RegExpMatchArray) => FactTriple | null
+}
+
+export interface FactTriple { predicate: string; value: string }
+
+/** A short proper name (≤ 50 chars, ≤ 4 words) or nothing. */
+function tripleValue(raw: string | undefined): string | null {
+    const value = String(raw ?? '').replace(/[.!?,;:]+$/, '').replace(/\s+/g, ' ').trim()
+    if (!value || value.length > 50 || value.split(' ').length > 4) return null
+    if (!/^[\p{Lu}\p{N}]/u.test(value)) return null
+    return value
 }
 
 // ============================================
@@ -59,6 +72,33 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
             /(?:merke?|remember|speicher)\s*(?:dir)?:?\s*.*?(?:name|heiße|bin)\s+([A-Z][a-zäöüß]+)/gi,
         ],
         extractor: (match) => `Name: ${match[1].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[1])
+            return value ? { predicate: 'name', value } : null
+        },
+    },
+    {
+        type: 'context',
+        patterns: [
+            /(?:[Ii]ch|[Ww]ir) (?:wohne|lebe|wohnen|leben) in ([A-ZÄÖÜ][\p{L}-]{1,40}(?: [A-ZÄÖÜ][\p{L}-]{1,40})?)/gu,
+            /I live in ([A-Z][\p{L}-]{1,40}(?: [A-Z][\p{L}-]{1,40})?)/gu,
+        ],
+        extractor: (match) => `Wohnort: ${match[1].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[1])
+            return value ? { predicate: 'wohnt_in', value } : null
+        },
+    },
+    {
+        type: 'context',
+        patterns: [
+            /(?:mein|meine|my)\s+(drucker|3d-drucker|server|nas|rechner|computer|laptop|desktop|router|kamera|auto)\s+(?:hei(?:ß|ss)t|is named|is called)\s+([\p{Lu}\p{N}][\p{L}\p{N}._-]{1,40}(?: [\p{Lu}\p{N}][\p{L}\p{N}._-]{0,20})?)/giu,
+        ],
+        extractor: (match) => `Gerät (${match[1].toLowerCase()}): ${match[2].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[2])
+            return value ? { predicate: match[1].toLowerCase().replace(/-/g, '_'), value } : null
+        },
     },
     {
         type: 'preference',
@@ -82,6 +122,10 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
             /(?:merke?|remember|speicher)\s*(?:dir)?:?\s*.*?(?:arbeite|project|baue)\s+(?:an\s+)?(.{3,60})/gi,
         ],
         extractor: (match) => `Project: ${match[1].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[1])
+            return value ? { predicate: 'arbeitet_an', value } : null
+        },
     },
     {
         type: 'skill',
@@ -93,7 +137,7 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
     {
         type: 'context',
         patterns: [
-            /(?:mein|my)\s+(server|nas|rechner|computer|machine|laptop|desktop)\s+(?:ist|is|heißt|named?|läuft|runs)\s+(.{3,60})/gi,
+            /(?:mein|my)\s+(server|nas|rechner|computer|machine|laptop|desktop)\s+(?:ist|is|läuft|runs)\s+(.{3,60})/gi,
             /(?:mein setup|my setup|meine? (?:infrastruktur|umgebung|architektur))\s+(?:ist|besteht|umfasst|hat)\s+(.{5,80})/gi,
         ],
         extractor: (match) => {
@@ -116,6 +160,10 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
             /(?:mein(?:e|er)?|my)\s+(hund|katze|partner|partnerin|frau|mann|sohn|tochter|bruder|schwester)\s+(?:hei(?:ß|ss)t|ist|is named)\s+([A-ZÄÖÜ][\p{L}-]{1,40})/giu,
         ],
         extractor: (match) => `Beziehung: ${match[0].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[2])
+            return value ? { predicate: match[1].toLowerCase(), value } : null
+        },
     },
     {
         type: 'instruction',
@@ -223,11 +271,15 @@ export class AutoObserver {
 
                 while ((match = regex.exec(message)) !== null) {
                     const content = pattern.extractor(match, message)
+                    // Graph structure only from the owner's own statements.
+                    const triple = role === 'user' && options?.permission === 'owner' && pattern.triple
+                        ? pattern.triple(match) : null
 
                     // Skip empty extractions (extractor rejected it)
                     const shortHighSignal = pattern.type === 'name' && content.length >= 5
                         || pattern.type === 'relationship' && content.length >= 12
                         || pattern.type === 'instruction' && content.length >= 10
+                        || Boolean(triple) && content.length >= 8
                     if (!content || (!isDurableMemoryCandidate(content) && !shortHighSignal)) continue
 
                     // Don't store duplicates
@@ -248,7 +300,7 @@ export class AutoObserver {
                     this.governFact(fact, role === 'user'
                         ? (/\b(?:merke|remember|speicher|vergiss(?: das)? nie)\b/i.test(message)
                             ? 'explicit_user_instruction' : 'user_statement')
-                        : 'model_inference')
+                        : 'model_inference', true, triple)
 
                     extracted.push(fact)
                 }
@@ -524,11 +576,10 @@ Bei Unsicherheit oder wenn keine persönlichen Fakten erkennbar sind: []`
     // Helpers
     // ============================================
 
-    private governFact(fact: ExtractedFact, evidence: MemoryEvidence, publish = true): boolean {
+    private governFact(fact: ExtractedFact, evidence: MemoryEvidence, publish = true, triple: FactTriple | null = null): boolean {
         try {
             const governance = getMemoryGovernanceCoordinator()
             const kind = fact.type === 'name' ? 'identity' : fact.type
-            const value = fact.content.replace(/^(?:Name|Preference|Project|Skill|Context):\s*/i, '').trim()
             const record = governance.propose({
                 content: fact.content,
                 kind,
@@ -539,9 +590,9 @@ Bei Unsicherheit oder wenn keine persönlichen Fakten erkennbar sind: []`
                 timestamp: fact.createdAt,
                 sessionId: fact.source,
                 verified: evidence === 'user_statement' || evidence === 'explicit_user_instruction',
-                subject: kind === 'identity' ? `user:${fact.userId}` : undefined,
-                predicate: kind === 'identity' ? 'name' : undefined,
-                value: kind === 'identity' ? value : undefined,
+                subject: triple ? `user:${fact.userId}` : undefined,
+                predicate: triple?.predicate,
+                value: triple?.value,
             })
             if (!record) return false
             fact.governanceId = record.id

@@ -63,7 +63,6 @@ services:
       - NODE_ENV=production
     volumes:
       - ./.nova-data:/app/.nova-data
-      - ./.nova-memory:/app/.nova-memory
       - ./.nova-sessions:/app/.nova-sessions
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]

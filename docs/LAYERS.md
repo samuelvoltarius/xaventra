@@ -164,9 +164,9 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ### `L7-learning` ✅ Wired
 
-**What it does:** Correction learning (records when user corrects Nova and learns the pattern), skill synthesis (creates reusable knowledge from repeated patterns), and multi-agent swarm coordination (shares learned skills across agent instances).
+**What it does:** Skill synthesis (creates reusable knowledge from repeated patterns) and multi-agent swarm coordination (shares learned skills across agent instances). User corrections are not stored here any more: they are governed memory (`src/memory/correction-memory.ts`); owner rules are decisions (`src/core/decisions.ts`).
 
-**Key exports:** `CorrectionLearner`, `SkillSynthesizer`, `getAgentSwarm()`
+**Key exports:** `SkillSynthesizer`, `getAgentSwarm()`
 
 **Wiring in daemon.ts:**
 - Heavy wiring: correction learner + skill synthesizer imported
@@ -382,13 +382,9 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ---
 
-### `L20-self-improvement` 🔧 Autonomous
+### `L20-self-improvement` — entfernt (2.82)
 
-**What it does:** Analyzes accumulated L7 correction records to find recurring error patterns. Generates self-rules (e.g. "never use `rm -rf` without confirmation"). Injects active rules into system prompt at runtime. Rules stored in `.nova-data/self-rules.json`.
-
-**Key exports:** Inferred from `self-rules.json` — rules active in system prompt
-
-**Wiring:** Runs autonomously on a schedule; rules are picked up by system prompt builder.
+Die Self-Rules (`.nova-data/self-rules.json`) waren eine zweite Regel-Ablage neben den Entscheidungen. Sie werden beim Start einmal in die Memory-Governance übernommen (Anweisung im Scope des jeweiligen Nutzers) und die Datei wird `self-rules.json.migriert`. Owner-Regeln führt `src/core/decisions.ts` (ein Prompt-Block ENTSCHEIDUNGEN); die Trace-Empfehlungen liefert `buildTraceInsightsBlock()` aus `src/learning/trace-analyzer.ts`.
 
 ---
 
@@ -585,7 +581,7 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 | L17 | autonomous-learning | ✅ | Never-give-up retry loop |
 | L18 | llm-router | ✅ | Model selection by task |
 | L19 | monitoring | ✅ | URL/service uptime checks |
-| L20 | self-improvement | 🔧 | Self-rule synthesis |
+| L20 | self-improvement | — | entfernt; Regeln → decisions.ts, Korrekturen → Governance |
 | L21 | node-health | ✅ | Cross-node SSH health |
 | L22 | federated-memory | ✅ | Cross-node KG sync |
 | L23 | instincts | ✅ | Behavioral instinct learning |

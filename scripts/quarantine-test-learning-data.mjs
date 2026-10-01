@@ -7,10 +7,6 @@ const quarantine = join(root, '.nova-data', 'quarantine', `learning-test-data-${
 
 const targets = [
     {
-        file: join(root, '.nova-data', 'self-rules.json'),
-        isTest: item => /test pattern xyz|always do x for test/i.test(`${item?.pattern || ''} ${item?.rule || ''}`),
-    },
-    {
         file: join(root, '.nova-data', 'instincts', 'active-instincts.json'),
         isTest: item => /^(test|stark)-trigger$/i.test(String(item?.trigger || '')) || /^(test|stark)-rule/i.test(String(item?.rule || '')),
     },

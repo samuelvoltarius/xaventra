@@ -894,39 +894,27 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Initialize Layer 6 - Memory (Local + Vector)
+    // Initialize Layer 6 - Memory (Governance + LanceDB projection)
     // ============================================
     try {
-        const { LocalMemoryManager } = await import('./memory/local-memory.js')
-        const { getVectorMemory } = await import('./memory/vector-memory.js')
-
-        // Local keyword-based memory
-        const localMemory = new LocalMemoryManager({
-            dbPath: join(process.cwd(), '.nova-memory'),
-            maxEntriesPerUser: 500,
-        })
-
-        // Vector semantic memory
-        const vectorMemory = getVectorMemory({
-            dataDir: join(process.cwd(), '.nova-vector-memory'),
-            maxEntriesPerUser: 1000,
-            similarityThreshold: 0.3,
-        })
-        await vectorMemory.initialize()
-
-        // Combine both memory systems. LanceDB recall is principal-scoped
-        // (INT-3b): callers pass the request's scopes/role; without them only
+        // One memory authority. Old parallel stores (L7 corrections, L20
+        // self-rules, .nova-memory, .nova-vector-memory, mesh-memory pool,
+        // causal-memory) are migrated once; old files become `.migriert`.
+        const { migrateLegacyMemoryStores } = await import('./memory/legacy-memory-migration.js')
+        const migration = await migrateLegacyMemoryStores()
+        if (migration.renamed.length > 0) {
+            console.log(`[Memory] Alte Speicher übernommen: ${migration.corrections} Korrekturen, ${migration.selfRules} Self-Rules, ${migration.localMemory + migration.vectorMemory} Kandidaten; ${migration.renamed.length} Datei(en) → .migriert`)
+        }
+    } catch (err) {
+        console.log(`[Nova] ⚠ Migration alter Gedächtnis-Dateien: ${err}`)
+    }
+    try {
+        // Recall is principal-scoped (INT-3b): without explicit scopes only
         // user:<userId> + global are searched, never unscoped legacy rows.
-        const { createCombinedMemory } = await import('./memory/combined-memory.js')
-        state.memory = createCombinedMemory({
-            local: localMemory,
-            vector: vectorMemory,
-            getLance: () => (state as any).lanceMemory,
-        })
-
-        const stats = localMemory.getStats()
-        const vStats = vectorMemory.getStats()
-        console.log(`[Nova] ✓ Layer 6 (Memory) aktiv (${stats.totalUsers} Users, ${stats.totalEntries}+${vStats.totalEntries} Einträge)`)
+        const { createMemoryFacade } = await import('./memory/memory-facade.js')
+        state.memory = createMemoryFacade({ getLance: () => (state as any).lanceMemory })
+        const stats = state.memory.getStats()
+        console.log(`[Nova] ✓ Layer 6 (Memory) aktiv (Governance: ${stats.canonical} kanonisch, ${stats.verified} verifiziert, ${stats.candidate} Kandidaten)`)
     } catch (err) {
         console.log(`[Nova] ⚠ Memory nicht verfügbar: ${err}`)
     }
@@ -947,40 +935,16 @@ async function startDaemon() {
     // ============================================
     try {
         const { createFeedbackCollector } = await import('./learning/feedback.js')
-        const { getCorrectionLearner, getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
+        const { getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
         const { getMultiBotManager } = await import('./layers/multi-bot.js')
 
         // Basic feedback collector
         const feedbackCollector = createFeedbackCollector()
 
-        // Advanced learners
-        const correctionLearner = getCorrectionLearner()
+        // Advanced learners (corrections live in memory governance)
         const skillSynthesizer = getSkillSynthesizer()
         const agentSwarm = getAgentSwarm()
         const botManager = getMultiBotManager()
-
-        // One-way, idempotent bridge from legacy L7 corrections into the
-        // governed, user-scoped memory authority. Only explicitly parseable
-        // corrections are accepted; duplicate proposals merely add provenance.
-        try {
-            const { recordUserCorrectionMemory } = await import('./memory/correction-memory.js')
-            const { principalScope } = await import('./users/principal-id.js')
-            let migratedCorrections = 0
-            for (const correction of correctionLearner.getRecentCorrections(200)) {
-                const record = await recordUserCorrectionMemory({
-                    scope: principalScope(correction.userId),
-                    message: correction.correctedResponse,
-                    priorAssistantResponse: correction.originalResponse,
-                    sessionId: `legacy-correction:${correction.id}`,
-                })
-                if (record) migratedCorrections++
-            }
-            if (migratedCorrections > 0) {
-                console.log(`[Memory] ${migratedCorrections} legacy corrections reconciled with governance`)
-            }
-        } catch (err) {
-            console.debug(`[Memory] Legacy correction reconciliation skipped: ${err}`)
-        }
 
         // Load persisted feedback
         const feedbackPath = join(process.cwd(), '.nova-learning', 'feedback.json')
@@ -998,37 +962,24 @@ async function startDaemon() {
         // Combine all learning systems
         state.learning = {
             feedback: feedbackCollector,
-            corrections: correctionLearner,
             skills: skillSynthesizer,
             swarm: agentSwarm,
             bots: botManager,
-
-            // Learn from user correction
-            recordCorrection: (userId: string, original: string, corrected: string) => {
-                correctionLearner.recordCorrection({
-                    userId,
-                    originalResponse: original,
-                    correctedResponse: corrected,
-                    context: '',
-                })
-            },
 
             // Find matching skill for query
             findSkill: (query: string) => skillSynthesizer.findMatchingSkill(query),
 
             getStats: () => ({
                 feedback: feedbackCollector.getStats(),
-                corrections: correctionLearner.getStats(),
                 skills: skillSynthesizer.getStats(),
                 swarm: agentSwarm.getStats(),
                 bots: botManager.getStats(),
             }),
         }
 
-        const cStats = correctionLearner.getStats()
         const sStats = skillSynthesizer.getStats()
         const bStats = botManager.getStats()
-        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${cStats.totalCorrections} Korrekturen, ${sStats.totalSkills} Skills, ${bStats.totalBots} Bots)`)
+        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${sStats.totalSkills} Skills, ${bStats.totalBots} Bots)`)
 
         // Bind the monitored learning service to L7.
         if (serviceModels.learning) {
@@ -1253,16 +1204,6 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Initialize Mesh Memory Sync
-    // ============================================
-    try {
-        const { initMeshMemory } = await import('./mesh/mesh-memory-sync.js')
-        await initMeshMemory()
-    } catch (err) {
-        console.log(`[Nova] ⚠ Mesh Memory: ${err}`)
-    }
-
-    // ============================================
     // Initialize Mesh Tool Share
     // ============================================
     try {
@@ -1340,16 +1281,6 @@ async function startDaemon() {
     } catch (err) {
         finishCapabilitiesStartup('failed', String(err).slice(0, 160))
         console.log(`[Nova] ⚠ Capability Orchestrator: ${err}`)
-    }
-
-    // ============================================
-    // Initialize Visual Mesh Memory
-    // ============================================
-    try {
-        const { initVisualMemory } = await import('./mesh/visual-mesh-memory.js')
-        initVisualMemory()
-    } catch (err) {
-        console.log(`[Nova] ⚠ Visual Memory: ${err}`)
     }
 
     // ============================================
@@ -1803,18 +1734,6 @@ async function startDaemon() {
         }
     } catch (err) {
         console.log(`[Nova] ⚠ L9 Idle Learning nicht verfügbar: ${err}`)
-    }
-
-    // Start L7 Correction Learning
-    try {
-        const { getCorrectionLearner, setInternalLLM: setL7LLM } = await import('./layers/L7-learning.js')
-        const learner = getCorrectionLearner()
-            ; (state as any).correctionLearner = learner
-        if (serviceModels.learning) setL7LLM(serviceModels.learning)
-        const stats = learner.getStats()
-        console.log(`[Nova] ✓ L7 Correction Learning aktiv (${stats.totalCorrections} Korrekturen, ${stats.appliedCorrections} angewendet)`)
-    } catch (err) {
-        console.log(`[Nova] ⚠ L7 Learning nicht verfügbar: ${err}`)
     }
 
     // Start L8 Meta-Learning
@@ -2362,9 +2281,7 @@ async function startDaemon() {
     try {
         const knowledgeGraph = await import('./memory/knowledge-graph.js')
         knowledgeGraph.default.initKnowledgeGraph()
-        if (serviceModels.learning) {
-            knowledgeGraph.default.setInternalLLM(serviceModels.learning)
-        }
+        // Filled only through memory governance (canonical subject/predicate/value).
         ; (state as any).knowledgeGraph = knowledgeGraph.default
         const gStats = knowledgeGraph.default.getStats()
         console.log(`[Nova] ✓ GraphRAG aktiv (${gStats.nodes} Nodes, ${gStats.edges} Edges)`)
@@ -2592,20 +2509,6 @@ async function startDaemon() {
         console.log('[Nova] ✓ L22 Federated Memory aktiv (KG/Supabase Sync)')
     } catch (err) {
         console.log(`[Nova] ⚠ L22 Federated Memory nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
-    // Start L20 Self-Improvement Loop
-    // ============================================
-    try {
-        const { getSelfImprovementEngine, setInternalLLM: setL20LLM } = await import('./layers/L20-self-improvement.js')
-        const selfImprove = getSelfImprovementEngine()
-            ; (state as any).selfImprovement = selfImprove
-        if (serviceModels.learning) setL20LLM(serviceModels.learning)
-        selfImprove.start()
-        console.log('[Nova] ✓ L20 Self-Improvement Loop aktiv')
-    } catch (err) {
-        console.log(`[Nova] ⚠ L20 Self-Improvement nicht verfügbar: ${err}`)
     }
 
     // ============================================

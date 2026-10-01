@@ -40,9 +40,16 @@
  * - Größe begrenzt (MAX_ITEMS, Texte gekürzt). Kein LanceDB-Schreiben.
  *
  * Datei: `<data>/decisions/decisions.json` { version: 1, items }.
+ *
+ * Rückmeldungen auf Gedanken (früher thinking/decision-learning.ts,
+ * `<data>/thinking/decisions.json`): Ja/Nein/Später je Gedanken-Art senkt
+ * oder hebt deren künftige Wichtigkeit. Datei:
+ * `<data>/decisions/gedanken-rueckmeldungen.json`. Dieses Modul schlägt nie
+ * „Immer erlauben“ vor und erteilt keine Erlaubnis — das bleibt allein bei
+ * den Knopf-Karten und der Vertrauensleiter.
  */
 import { randomBytes } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
@@ -760,6 +767,107 @@ export function recordDelegationDecision(record: { id: string; to: string; auftr
 }
 
 // ---------------------------------------------------------------------------
+// Rückmeldungen auf Gedanken (früher thinking/decision-learning.ts)
+// ---------------------------------------------------------------------------
+
+export type ThoughtAnswer = 'ja' | 'nein' | 'spaeter'
+export interface ThoughtLedgerPort { recordApproval(runId: string, approval: Record<string, unknown>): void }
+interface ThoughtKindStats { yes: number; no: number; later: number; penalty: number; lastAt: string }
+interface ThoughtFeedbackFile { version: 1; kinds: Record<string, ThoughtKindStats> }
+
+const feedbackFileOf = (opts: DecisionOptions) => join(opts.dataDir || getNovaDataDir(), 'decisions', 'gedanken-rueckmeldungen.json')
+const MAX_THOUGHT_KINDS = 500
+
+export function normalizeThoughtKind(kind: unknown): string {
+    return String(kind || '').toLowerCase().normalize('NFC').trim().replace(/\s+/g, '-').slice(0, 80)
+}
+
+function readThoughtFeedback(opts: DecisionOptions): ThoughtFeedbackFile {
+    try {
+        const raw = JSON.parse(readFileSync(feedbackFileOf(opts), 'utf8'))
+        return raw?.version === 1 && raw.kinds && typeof raw.kinds === 'object' ? raw : { version: 1, kinds: {} }
+    } catch { return { version: 1, kinds: {} } }
+}
+
+function writeThoughtFeedback(data: ThoughtFeedbackFile, opts: DecisionOptions): void {
+    const keys = Object.keys(data.kinds)
+    if (keys.length > MAX_THOUGHT_KINDS) {
+        for (const key of keys.sort((a, b) => data.kinds[a].lastAt.localeCompare(data.kinds[b].lastAt)).slice(0, keys.length - MAX_THOUGHT_KINDS)) delete data.kinds[key]
+    }
+    atomicWriteJsonSync(feedbackFileOf(opts), data)
+}
+
+/** Importance factor 0.2…1 for future thoughts of this kind. */
+export function thoughtImportanceFactor(kind: unknown, opts: DecisionOptions = {}): number {
+    const stats = readThoughtFeedback(opts).kinds[normalizeThoughtKind(kind)]
+    return stats ? Math.max(0.2, 0.75 ** stats.penalty) : 1
+}
+
+function defaultThoughtLedger(): ThoughtLedgerPort {
+    return {
+        recordApproval: (runId, approval) => {
+            void import('./outcome-ledger.js').then(({ getOutcomeLedger }) => getOutcomeLedger().recordApproval(runId, approval)).catch(() => {})
+        },
+    }
+}
+
+/**
+ * The owner answered a thought (Ja/Nein/Später). „Nein“ lowers the future
+ * importance of that kind, „Ja“ raises it slowly again. Every answer also
+ * lands in the outcome ledger. Main only; never grants any permission.
+ */
+export function recordThoughtAnswer(kind: unknown, answer: ThoughtAnswer, opts: DecisionOptions & { ledger?: ThoughtLedgerPort } = {}): boolean {
+    if (!mainOf(opts)) return false
+    if (!['ja', 'nein', 'spaeter'].includes(answer)) return false
+    const key = normalizeThoughtKind(kind)
+    if (!key) return false
+    const data = readThoughtFeedback(opts)
+    const stats = data.kinds[key] || { yes: 0, no: 0, later: 0, penalty: 0, lastAt: isoOf(opts) }
+    if (answer === 'ja') { stats.yes++; stats.penalty = Math.max(0, stats.penalty - 0.25) }
+    else if (answer === 'nein') { stats.no++; stats.penalty = Math.min(20, stats.penalty + 1) }
+    else stats.later++
+    stats.lastAt = isoOf(opts)
+    data.kinds[key] = stats
+    try { writeThoughtFeedback(data, opts) } catch { return false }
+    try {
+        const runId = `decision-${key.replace(/[^a-z0-9_@-]+/g, '-').replace(/^-+/, '').slice(0, 80) || 'art'}`
+        ;(opts.ledger || defaultThoughtLedger()).recordApproval(runId, { kind: key, answer, source: 'knopf' })
+    } catch { /* ledger optional */ }
+    return true
+}
+
+/** One-time move of the old thinking/decisions.json; the old file is kept as `.migriert`. */
+export function migrateThoughtFeedback(opts: DecisionOptions = {}): { migrated: number } {
+    const old = join(opts.dataDir || getNovaDataDir(), 'thinking', 'decisions.json')
+    if (!existsSync(old) || !mainOf(opts)) return { migrated: 0 }
+    let migrated = 0
+    try {
+        const legacy = JSON.parse(readFileSync(old, 'utf8'))
+        const data = readThoughtFeedback(opts)
+        for (const [rawKind, value] of Object.entries<any>(legacy?.kinds || {})) {
+            const key = normalizeThoughtKind(rawKind)
+            if (!key || !value || typeof value !== 'object') continue
+            const current = data.kinds[key] || { yes: 0, no: 0, later: 0, penalty: 0, lastAt: String(value.lastAt || isoOf(opts)) }
+            data.kinds[key] = {
+                yes: current.yes + (Number(value.yes) || 0),
+                no: current.no + (Number(value.no) || 0),
+                later: current.later + (Number(value.later) || 0),
+                penalty: Math.min(20, Math.max(current.penalty, Number(value.penalty) || 0)),
+                lastAt: [current.lastAt, String(value.lastAt || '')].sort().pop() || isoOf(opts),
+            }
+            migrated++
+        }
+        writeThoughtFeedback(data, opts)
+    } catch (error) {
+        console.warn(`[Entscheidungen] thinking/decisions.json nicht lesbar, nur umbenannt: ${String(error).slice(0, 120)}`)
+    }
+    let target = `${old}.migriert`
+    if (existsSync(target)) target = `${old}.migriert-${nowOf(opts)}`
+    renameSync(old, target)
+    return { migrated }
+}
+
+// ---------------------------------------------------------------------------
 // /entscheidungen
 // ---------------------------------------------------------------------------
 
@@ -813,6 +921,10 @@ export async function startDecisionMemory(options: { nodeOnly: boolean }): Promi
     }
     const { hasGlobalAutonomyAuthority } = await import('./autonomy-authority.js')
     mainCheck = () => String(process.env.NOVA_NODE_ONLY || '').toLowerCase() !== 'true' && hasGlobalAutonomyAuthority()
+    try {
+        const { migrated } = migrateThoughtFeedback()
+        if (migrated > 0) console.log(`[Entscheidungen] ${migrated} Gedanken-Rückmeldungen aus thinking/decisions.json übernommen`)
+    } catch (error) { console.warn(`[Entscheidungen] Migration der Gedanken-Rückmeldungen: ${String(error).slice(0, 160)}`) }
     try {
         const { onDelegationSettled } = await import('./delegation.js')
         onDelegationSettled((record, info) => { try { recordDelegationDecision(record, info.verified) } catch { /* never break delegation */ } })

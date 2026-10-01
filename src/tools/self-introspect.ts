@@ -115,11 +115,12 @@ async function inspectSkills(): Promise<string> {
         }
     }
 
-    const rules = safeRead(join(DATA_DIR, 'self-rules.json')) as Array<Record<string, unknown>> | null
-    if (Array.isArray(rules) && rules.length > 0) {
-        lines.push(`\n### Self-Rules (${rules.length})`)
-        for (const r of rules.slice(0, 5)) {
-            lines.push(`- [applied:${r.appliedCount ?? 0}, conf:${r.confidence ?? '?'}] ${r.rule ?? r.description ?? JSON.stringify(r).slice(0, 80)}`)
+    const decisions = safeRead(join(DATA_DIR, 'decisions', 'decisions.json')) as { items?: Array<Record<string, unknown>> } | null
+    const active = (decisions?.items || []).filter(item => item.status === 'aktiv' && item.bindend === true)
+    if (active.length > 0) {
+        lines.push(`\n### Entscheidungen (${active.length} gültig)`)
+        for (const item of active.slice(-5)) {
+            lines.push(`- [${item.id ?? '?'}] ${String(item.text ?? '').slice(0, 120)}`)
         }
     }
 

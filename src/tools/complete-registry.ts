@@ -2115,20 +2115,20 @@ export const learningTools: NovaTool[] = [
         description: 'Lernt aus einer Korrektur des Users',
         category: 'learning',
         parameters: [
-            { name: 'original', type: 'string', description: 'UrsprÃ¼ngliche Antwort', required: true },
+            { name: 'original', type: 'string', description: 'Ursprüngliche Antwort', required: true },
             { name: 'corrected', type: 'string', description: 'Korrigierte Antwort', required: true },
             { name: 'context', type: 'string', description: 'Kontext der Anfrage', required: false },
         ],
         handler: async (params) => {
-            const { getCorrectionLearner } = await import('../layers/L7-learning.js')
-            const learner = getCorrectionLearner()
-            const correction = learner.recordCorrection({
-                userId: 'system',
-                originalResponse: params.original as string,
-                correctedResponse: params.corrected as string,
-                context: params.context as string || '',
+            // One store for corrections: governed memory in the caller's scope.
+            const { recordUserCorrectionMemory } = await import('../memory/correction-memory.js')
+            const { principalScope } = await import('../users/principal-id.js')
+            const record = await recordUserCorrectionMemory({
+                scope: principalScope(String(params.userId || 'system')),
+                message: `Korrektur: ${String(params.corrected || '')}`,
+                priorAssistantResponse: String(params.original || '').slice(0, 300),
             })
-            return { success: true, correctionId: correction.id }
+            return record ? { success: true, correctionId: record.id, status: record.status } : { success: false, error: 'Korrektur nicht gespeichert (leer oder enthält ein Geheimnis)' }
         },
     },
     {

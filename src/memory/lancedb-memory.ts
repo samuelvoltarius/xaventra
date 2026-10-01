@@ -11,7 +11,6 @@ import { join } from 'node:path'
 import { getEmbedding as getMultiProviderEmbedding } from './embedding-providers.js'
 import { hybridRerankResults } from './hybrid-search.js'
 import { expandQueryRuleBased } from './query-expansion.js'
-import { redactSecrets } from '../security/secret-redaction.js'
 
 // ============================================
 // Types
@@ -49,11 +48,6 @@ export function isRecallAllowed(metadata: Record<string, unknown>, access: Recal
     const scope = typeof metadata?.scope === 'string' ? metadata.scope.trim() : ''
     if (!scope) return access.includeUnscoped === true
     return access.scopes.includes(scope)
-}
-
-/** Fail-closed: only explicitly global entries opted in with meshShare leave this node. */
-export function isMeshShareable(metadata: Record<string, unknown> | null | undefined): boolean {
-    return metadata?.scope === 'global' && metadata?.meshShare === true
 }
 
 // ============================================
@@ -201,18 +195,8 @@ export async function remember(
 
         await table.add([entry])
         console.log(`[LanceDB] 📝 Gespeichert: "${content.slice(0, 50)}..."`)
-
-        // Mesh copies carry no scope and cannot be forgotten remotely yet
-        // (mesh-memory-sync has no scope field and no delete/tombstone). So a
-        // private or unscoped entry never leaves this node; only entries that
-        // are explicitly global and marked for sharing are sent, redacted.
-        if (isMeshShareable(metadata)) {
-            try {
-                const { shareMemory } = await import('../mesh/mesh-memory-sync.js')
-                shareMemory(redactSecrets(content), type as any, source, 'global').catch(() => { })
-            } catch { /* mesh not available */ }
-        }
-
+        // LanceDB is a node-local projection. Memory reaches other nodes only
+        // as governance records (L22 federated memory, incl. tombstones).
         return entry.id
     } catch (err) {
         console.error(`[LanceDB] Speichern fehlgeschlagen: ${err}`)
@@ -339,25 +323,8 @@ export async function forget(id: string): Promise<boolean> {
 
     try {
         const safeId = id.replace(/['"\\;]/g, '')
-        // A mesh copy is keyed by its redacted content, so read the row first.
-        let row: { content: string; metadata: Record<string, unknown> } | null = null
-        try {
-            const rows = await table.query().where(`id = '${safeId}'`).limit(1).toArray()
-            if (rows[0]) {
-                let metadata: Record<string, unknown> = {}
-                try { metadata = JSON.parse(String(rows[0].metadata || '{}')) } catch { /* unreadable metadata: not shareable */ }
-                row = { content: String(rows[0].content || ''), metadata }
-            }
-        } catch { /* lookup is best effort; the local delete still happens */ }
         await table.delete(`id = '${safeId}'`)
         console.log(`[LanceDB] 🗑️ Gelöscht: ${safeId}`)
-        // UEB-17: forgetting must also remove the shared/mesh copy.
-        if (row?.content && isMeshShareable(row.metadata)) {
-            try {
-                const { forgetSharedMemory } = await import('../mesh/mesh-memory-sync.js')
-                await forgetSharedMemory({ content: redactSecrets(row.content) }, { broadcast: true })
-            } catch { /* mesh not available */ }
-        }
         return true
     } catch (err) {
         console.error(`[LanceDB] Löschen fehlgeschlagen: ${err}`)
@@ -398,43 +365,6 @@ export async function getStats(): Promise<{
 }
 
 // ============================================
-// Migration Helper
-// ============================================
-
-/**
- * Migriert alte TF-IDF Daten zu LanceDB
- */
-export async function migrateFromVectorMemory(): Promise<number> {
-    const oldPath = join(DATA_DIR, 'vector-memory.json')
-
-    if (!existsSync(oldPath)) {
-        console.log('[LanceDB] Keine alten Daten zum Migrieren')
-        return 0
-    }
-
-    try {
-        const oldData = JSON.parse(readFileSync(oldPath, 'utf-8'))
-        let migrated = 0
-
-        for (const entry of oldData.documents || []) {
-            if (!await exists(entry.content)) {
-                await remember(entry.content, 'fact', 'migration', {
-                    migratedAt: Date.now(),
-                    originalId: entry.id,
-                })
-                migrated++
-            }
-        }
-
-        console.log(`[LanceDB] ✅ ${migrated} Einträge migriert`)
-        return migrated
-    } catch (err) {
-        console.error(`[LanceDB] Migration fehlgeschlagen: ${err}`)
-        return 0
-    }
-}
-
-// ============================================
 // Export
 // ============================================
 
@@ -445,5 +375,4 @@ export default {
     exists,
     forget,
     getStats,
-    migrateFromVectorMemory,
 }

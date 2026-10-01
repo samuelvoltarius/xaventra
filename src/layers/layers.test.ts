@@ -352,45 +352,7 @@ describe('L0 Health Monitor', async () => {
 // ============================================
 
 describe('L7 Learning', async () => {
-    const { CorrectionLearner, SkillSynthesizer, getCorrectionLearner } = await import('./L7-learning.js')
-
-    it('CorrectionLearner: creates instance with temp dir', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-corrections'))
-        expect(learner).toBeDefined()
-    })
-
-    it('CorrectionLearner: records a correction', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-corrections'))
-        const correction = learner.recordCorrection({
-            userId: 'user1',
-            originalResponse: 'Die Hauptstadt von Frankreich ist Lyon.',
-            correctedResponse: 'Die Hauptstadt von Frankreich ist Paris.',
-            context: 'geography question',
-        })
-        expect(correction.id).toBeDefined()
-        expect(correction.userId).toBe('user1')
-        // applied defaults to true (immediately active for findSimilarCorrections)
-        expect(typeof correction.applied).toBe('boolean')
-    })
-
-    it('CorrectionLearner: findSimilarCorrections returns array', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-corrections-2'))
-        learner.recordCorrection({
-            userId: 'user42',
-            originalResponse: 'Wrong geography answer',
-            correctedResponse: 'Right geography answer',
-            context: 'geography test',
-        })
-        const similar = learner.findSimilarCorrections('geography')
-        expect(Array.isArray(similar)).toBe(true)
-    })
-
-    it('CorrectionLearner: getStats returns valid structure', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-corrections-3'))
-        const stats = learner.getStats()
-        expect(typeof stats.totalCorrections).toBe('number')
-        expect(typeof stats.appliedCorrections).toBe('number')
-    })
+    const { SkillSynthesizer } = await import('./L7-learning.js')
 
     it('SkillSynthesizer: creates instance', () => {
         const synth = new SkillSynthesizer(testPath('nova-test-skills'))
@@ -404,11 +366,6 @@ describe('L7 Learning', async () => {
         expect(typeof stats.averageSuccessRate).toBe('number')
     })
 
-    it('getCorrectionLearner: returns singleton', () => {
-        const a = getCorrectionLearner()
-        const b = getCorrectionLearner()
-        expect(a).toBe(b)
-    })
 })
 
 // ============================================
@@ -792,43 +749,3 @@ describe('L6 Core Facts Categories', async () => {
     }
 })
 
-// ============================================
-// L7 Learning — Correction Context Matching
-// ============================================
-
-describe('L7 Learning Correction Context', async () => {
-    const { CorrectionLearner } = await import('./L7-learning.js')
-
-    it('findSimilarCorrections: returns matching corrections', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-ctx'))
-        learner.recordCorrection({
-            userId: 'ctx-test-user',
-            originalResponse: 'Paris is in Germany.',
-            correctedResponse: 'Paris is in France.',
-            context: 'geography capital cities',
-        })
-        const similar = learner.findSimilarCorrections('geography capital')
-        expect(Array.isArray(similar)).toBe(true)
-    })
-
-    it('findSimilarCorrections: returns empty for unrelated context', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-ctx-2'))
-        const similar = learner.findSimilarCorrections('quantum physics xyznonexistent')
-        expect(Array.isArray(similar)).toBe(true)
-    })
-
-    it('markApplied: marks correction as applied (already true by default, stays true)', () => {
-        const learner = new CorrectionLearner(testPath('nova-test-applied'))
-        const c = learner.recordCorrection({
-            userId: 'u1',
-            originalResponse: 'Wrong',
-            correctedResponse: 'Right',
-            context: 'test',
-        })
-        // applied starts as true — markApplied keeps it true
-        expect(() => learner.markApplied(c.id)).not.toThrow()
-        const recent = learner.getRecentCorrections(10)
-        const updated = recent.find(x => x.id === c.id)
-        expect(updated?.applied).toBe(true)
-    })
-})
