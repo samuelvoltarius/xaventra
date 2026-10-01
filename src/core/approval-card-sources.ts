@@ -196,6 +196,12 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
     const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
     registerThoughtCardExecutor()
+    // Phase 6b: Verantwortung übernehmen (Ja/Nein) and Missions-Schritt (Ja = genau dieser Schritt).
+    const { getResponsibilityRuntime } = await import('./responsibility-runtime.js')
+    const { createResponsibilityCardExecutor } = await import('./responsibilities.js')
+    const { createMissionCardExecutor } = await import('./missions.js')
+    registerCardExecutor(createResponsibilityCardExecutor(() => getResponsibilityRuntime()?.responsibilities ?? null))
+    registerCardExecutor(createMissionCardExecutor(() => getResponsibilityRuntime()?.missions ?? null))
 }
 
 // ---------------------------------------------------------------------------

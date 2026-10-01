@@ -90,6 +90,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/action-policy.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/approval-card-sources.ts",
       "path": ".nova-data"
     },
@@ -231,6 +235,10 @@
     },
     {
       "owner": "src/core/predictive-context.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/responsibility-runtime.ts",
       "path": ".nova-data"
     },
     {

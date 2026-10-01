@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` `/arbeit` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -216,6 +216,9 @@ Owner. Laufende Aufgaben (Live-Statuskarten, Task-Tracker, Mission), Installatio
 
 ### `/gedanken [n]`
 Owner. Die letzten n (Standard 25) Gedanken/Vorschläge inkl. verworfener (Nie-Liste), abgelehnter und abgelaufener — aus Karten, Selbstheilungs-Journal/-Vorschlägen und Installations-Journal.
+
+### `/arbeit [pause <id>|weiter <id>]`
+Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

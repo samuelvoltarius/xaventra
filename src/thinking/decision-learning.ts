@@ -16,40 +16,23 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
-import { NIE_LISTE } from '../doctor/self-heal.js'
+import { isNieAktionsart, isPhysischOderExtern, nieEffekt } from '../core/action-policy.js'
 import { newThoughtId, type Thought, type ThoughtSink, type ThinkingSettings } from './ports.js'
 
 export type DecisionAnswer = 'ja' | 'nein' | 'spaeter'
 
-/** Physisch oder nach außen wirkend: fragt IMMER per Knopf (Autonomie-Plan B). */
-const PHYSICAL_OR_EXTERNAL: readonly RegExp[] = Object.freeze([
-    /druck|print|plotter|3d[-_ ]?druck|slice/,                                     // drucken
-    /schalt|switch|toggle|turn[-_]?on|turn[-_]?off|licht|light|steckdose|relais|heiz|klima|ha[:._-]|home[-_]?assistant|garage|tuer|tür|schloss|lock/, // schalten
-    /send|senden|verschick|mail|telegram|whatsapp|sms|nachricht|message|post(en)?\b|reply|antwort|tweet|anruf|call/, // senden
-    /kauf|buy|purchase|bestell|order|zahl|pay|checkout|ueberweis|überweis|transfer|abo|subscribe|trade|handel/,      // kaufen
-])
-
-/** Nie-Liste (Stufe 1–3, fest im Code) — diese Arten bekommen keinen Knopf und kein „Immer". */
-const NEVER_PATTERNS: readonly RegExp[] = Object.freeze([
-    /loesch|lösch|delete|remove|entfern|wipe|purge|\brm\b/,
-    /secret|token|passw|credential|schluessel|schlüssel|private[-_]?key/,
-    /migrat|db[:._-]?(schreib|write)/,
-    /nas[:._-]?(neustart|reboot|shutdown|aus)/, /shutdown|reboot/,
-    /firewall|\bssh\b|ssh[:._-]|tailscale|sudo/,
-    /vllm[:._-]?(stop|kill|aus)/, /kernel|treiber|driver|cuda/, /dist-?upgrade|apt[:._-]?upgrade/,
-])
-const NEVER_EFFECTS = new Set(NIE_LISTE.map(item => item.effect))
+/** Physisch/nach außen und Nie-Liste: Phase 6b bezieht beide Listen aus der
+ * einheitlichen Aktions-Policy (Union der früheren Listen, nur strenger). */
 
 export function normalizeKind(kind: string): string {
     return String(kind || '').toLowerCase().normalize('NFC').trim().replace(/\s+/g, '-').slice(0, 80)
 }
 export function isPhysicalOrExternalKind(kind: string): boolean {
-    const value = normalizeKind(kind)
-    return PHYSICAL_OR_EXTERNAL.some(pattern => pattern.test(value))
+    return isPhysischOderExtern(normalizeKind(kind))
 }
 export function isNeverKind(kind: string): boolean {
     const value = normalizeKind(kind)
-    return NEVER_EFFECTS.has(value) || NEVER_PATTERNS.some(pattern => pattern.test(value))
+    return nieEffekt(value) !== null || isNieAktionsart(value)
 }
 
 interface KindStats { yesStreak: number; yes: number; no: number; later: number; penalty: number; proposedForStreak: boolean; lastAt: string }

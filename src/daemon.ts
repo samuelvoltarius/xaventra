@@ -1904,7 +1904,11 @@ async function startDaemon() {
             setSensingConfig(autonomyCfg.sensing, config)
             // 2.81.0: findings go into the shared planner thoughts (cards, /gedanken).
             const { createSensingThoughtSink } = await import('./core/thought-hub.js')
-            setSensingSinks({ thoughtSink: createSensingThoughtSink() })
+            // Phase 6b: sensing events also trigger a responsibility check (JSONL first, unchanged).
+            const { JsonlEventSink } = await import('./sensing/ports.js')
+            const { createResponsibilityEventSink } = await import('./core/responsibility-runtime.js')
+            // Same directory as the sensing default sink (cwd/.nova-data).
+            setSensingSinks({ thoughtSink: createSensingThoughtSink(), eventSink: createResponsibilityEventSink(new JsonlEventSink(join(process.cwd(), '.nova-data'))) })
             const sensing = startSensing({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
@@ -1939,6 +1943,20 @@ async function startDaemon() {
             })
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
+        }
+
+        // Phase 6b: Verantwortungen + Missionen. Off until
+        // autonomy.responsibilities.enabled=true; Main only (never NOVA_NODE_ONLY).
+        try {
+            const { setResponsibilityConfig, startResponsibilities } = await import('./core/responsibility-runtime.js')
+            setResponsibilityConfig(autonomyCfg, {
+                nightwatchJournalDir: nightwatchEnabled ? resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')) : undefined,
+                ownerSessions: (config.channels?.telegram?.allowFrom || []).map(String).filter((id: string) => /^\d{1,20}$/.test(id)),
+            })
+            const responsibilities = await startResponsibilities({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            if (responsibilities.started) console.log(`[Nova] ✓ Verantwortungen aktiv (${responsibilities.reason})`)
+        } catch (err) {
+            console.log(`[Nova] ⚠ Verantwortungen nicht verfügbar: ${err}`)
         }
 
         console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)

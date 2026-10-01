@@ -3593,6 +3593,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             return formatGedanken(await collectGedanken(), limit)
         }
 
+        // Phase 6b: Verantwortungen + Missionen (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'arbeit': {
+            const { handleArbeitCommand } = await import('./responsibility-runtime.js')
+            return handleArbeitCommand(args, principalContext)
+        }
+
         // Stufe 3: Selbstheilung (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'heilung': {
             const { formatSelfHealOverview } = await import('../doctor/self-heal-runtime.js')

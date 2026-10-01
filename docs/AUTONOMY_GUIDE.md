@@ -480,3 +480,82 @@ images, never stages, activates, restarts or switches anything.
 Thoughts go through the `ThoughtSink` port (`thought-sink.ts`); the default
 `JsonlThoughtSink` appends JSON lines. The approval cards attach to this port during
 integration; the daemon does not start the watcher yet.
+
+---
+
+## Verantwortungen und Missionen (Phase 6b, Standard AUS)
+
+Xaventra leitet selbst ab, wofür sie sorgt, und arbeitet innerhalb **einer**
+Aktions-Policy weiter — ohne dass Alfred es ihr sagt. Off until
+`autonomy.responsibilities.enabled=true`; Main only (never with `NOVA_NODE_ONLY`,
+only with the global autonomy authority / Main lease).
+
+```json
+{ "autonomy": { "responsibilities": {
+    "enabled": true,
+    "intervalMinutes": 15,
+    "budgetMinutes": 120,
+    "maxToolCalls": 20
+} } }
+```
+
+### Einheitliche Aktions-Policy (`src/core/action-policy.ts`)
+
+`evaluateAction({ kind, effects[], target?, node?, argv?, origin })` →
+`{ level, decision, reason, impact }`. The level is computed only here — a `level`
+or `decision` passed by a caller or a model is ignored.
+
+| Level | Meaning | Decision | Examples (kinds / effects) |
+|-------|---------|----------|----------------------------|
+| L0 | read, measure, report | auto | `diagnose`, `lesen`, `melden` |
+| L1 | reversible, own node | auto | `log-rotation`, `cache-leeren`, `endpoint-umschalten`, `self-heal-zyklus` |
+| L2 | consequential | ask (button) | `install-katalog`, `dienst-neustart`, `config-aendern`, `geraet-einrichten`, `modell-wechseln`, `vm-starten/-stoppen/-snapshot`, `drucken`, `schalten`, `mail-senden` |
+| L3 | dangerous | never (owner request: handoff, still nothing runs) | Nie-Liste: delete, firewall/SSH/sudoers, credentials, disable security, NAS restart, DB migration |
+
+Fixed rules: unknown kind or unknown effect → L2 ask; physical and outward kinds are
+at least L2; L1 on a foreign node becomes L2; L3 never gets a button.
+The unified Nie-Liste lives here: effects (formerly `self-heal.ts`, still exported
+there as `NIE_LISTE`), kind patterns of the cards **and** of the learning module
+(union — only stricter, never looser), protected targets, and for commands the argv
+rules of `src/install/never-list.ts`. Trust ladder (prepared): `trustEvidence(kind)`
+counts successful runs without rollback; after 5 an L2→L1 *proposal* thought may
+appear — never automatic, never for physical/outward/L3, and the level stays.
+
+### Verantwortungen (`src/core/responsibilities.ts`)
+
+Derived by fixed rules from existing measurements (no model decides):
+
+| Rule | Source | Responsibility | Actions | Activation |
+|------|--------|----------------|---------|------------|
+| `knoten-gesund` | node profiles (own + mesh) | „Knoten X gesund halten“: self-check not critical, profile ≤ 2 h old | `diagnose`, `melden`, own node also `self-heal-zyklus` | automatic (L0/L1) + thought „Ich kümmere mich ab jetzt um …“ |
+| `dienst-laeuft` | Nachtwache checks | „Dienst Y läuft“: check green | `diagnose`, `dienst-neustart`, `melden` | button (contains L2) |
+| `geraet-ueberwachen` | devices set up in Wahrnehmen | „Gerät Z überwachen“: no open error event | `diagnose`, `melden` | automatic |
+| `release-aktuell` | latest verified release thought | all nodes on that version or newer | `diagnose`, `melden` | automatic |
+| `wiederholte-anfrage` | owner sessions (≥ 3 of the same topic in 14 days) | „X von mir aus im Blick behalten“ | `diagnose`, `melden` | always a proposal (ask) |
+
+[Nein] on a proposal rejects it for good. `/arbeit pause <id>` / `weiter <id>`.
+Stored in `.nova-data/responsibilities/responsibilities.json`.
+
+### Missionen (`src/core/missions.ts`)
+
+A violated active responsibility starts a mission (one open per responsibility,
+24 h pause after blocked/failed) with a contract: done-when = its criteria, may = L0/L1
+automatically, ask = L2 (card `mission-schritt`), never = L3. Steps come from a fixed
+plan per rule (always a diagnosis first). Max 3 attempts (each starts with a fresh
+diagnosis), budget: time, tool calls, cost 0. States: `geplant` → `in-arbeit` →
+`wartet-auf-alfred` → (`Ja`: exactly this step runs, then the mission continues —
+also after a restart) / (`Nein` or card expired: `blockiert`, handoff „bis hier
+gekommen: …; brauche dich für: …“) → `abgeschlossen` | `fehlgeschlagen`. Persisted
+atomically in `.nova-data/missions/missions.json`.
+
+Execution only through registered step executors: `diagnose` (read-only),
+`self-heal-zyklus` (the three self-heal recipes, needs `autonomy.selfHeal.enabled`),
+`install-katalog` (install queue + signed ticket, after Ja), `geraet-einrichten`
+(sensing `approveDevice`, after Ja). There is deliberately **no** executor for service
+restart or release rollout yet: such a step ends as a handoff to Alfred.
+
+Takt: sensing events (warning/urgent, errors, offline) trigger a debounced check;
+the planner job `sys-verantwortungen` (or a timer without planner) is the fallback.
+
+`/arbeit` (owner): In Arbeit / Geplant / Wartet auf Alfred / Blockiert /
+Abgeschlossen (last 5) plus active responsibilities with erfüllt/verletzt.
