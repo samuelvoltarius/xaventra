@@ -166,9 +166,23 @@ export function nieEffekt(effect: unknown): string | null {
     const value = String(effect ?? '')
     return NIE_EFFEKT_SET.has(value) ? NIE_EFFEKTE.find(item => item.effect === value)!.label : null
 }
+/**
+ * Benannte Ausnahmen von den Aktionsarten-Mustern. Nur exakte Arten; jede
+ * Ausnahme ist L2 (Karte, nie „immer“) und prüft ihre eigenen Grenzen bei der
+ * Karte UND bei der Ausführung.
+ * - pve-entfernen: Alfred 01.10.2026 — nur selbst angelegte VMs (Tag
+ *   xaventra-created), gestoppt, protection=0, nie die eigene VM
+ *   (src/infra/proxmox.ts checkAction).
+ */
+export const NIE_AUSNAHMEN: ReadonlySet<string> = Object.freeze(new Set(['pve-entfernen'])) as ReadonlySet<string>
+
 export function isNieAktionsart(text: unknown): boolean {
     const value = normalize(text)
-    return value !== '' && NIE_AKTIONSARTEN.some(pattern => pattern.test(value))
+    if (value === '') return false
+    // Named exceptions are taken out token by token (cards check "<art> <kind>");
+    // everything that remains is still tested against the patterns.
+    const rest = value.split(/\s+/).filter(token => !NIE_AUSNAHMEN.has(token)).join(' ')
+    return rest !== '' && NIE_AKTIONSARTEN.some(pattern => pattern.test(rest))
 }
 export function isNieZiel(target: unknown): boolean {
     const value = String(target ?? '')
@@ -235,6 +249,14 @@ export const AKTIONSARTEN: Readonly<Record<string, KindEntry>> = Object.freeze({
     'vm-starten': kind('L2', 'VM starten'),
     'vm-stoppen': kind('L2', 'VM stoppen'),
     'vm-snapshot': kind('L2', 'VM-Snapshot'),
+    // Phase 6c Proxmox (src/infra/proxmox.ts); Grenzen prüft der Adapter.
+    'pve-start': kind('L2', 'Proxmox-Gast starten'),
+    'pve-herunterfahren': kind('L2', 'Proxmox-Gast sauber herunterfahren'),
+    'pve-snapshot': kind('L2', 'Proxmox-Snapshot'),
+    'pve-rollback': kind('L2', 'Proxmox-Gast auf Snapshot zurückrollen'),
+    'pve-anlegen': kind('L2', 'eigene VM anlegen'),
+    'pve-anpassen': kind('L2', 'eigene VM vergrößern'),
+    'pve-entfernen': kind('L2', 'eigene VM entfernen (nur xaventra-created, gestoppt, ungeschützt)'),
     'mail-senden': kind('L2', 'E-Mail senden', 'extern'),
     'nachricht-senden': kind('L2', 'Nachricht nach außen senden', 'extern'),
     'drucken': kind('L2', 'drucken', 'physisch'),
