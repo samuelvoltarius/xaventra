@@ -3597,6 +3597,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             const limit = Math.min(60, Math.max(5, Number.parseInt(args.trim(), 10) || 25))
             return formatGedanken(await collectGedanken(), limit)
         }
+        // Phase 6e: Delegation an Unteragenten (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'delegiert': {
+            const { formatDelegiert } = await import('./delegation.js')
+            const limit = Math.min(30, Math.max(3, Number.parseInt(args.trim(), 10) || 10))
+            return formatDelegiert(undefined, limit)
+        }
 
         // Stufe 3: Selbstheilung (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'heilung': {

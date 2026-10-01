@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` `/software` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/delegiert` `/heilung` `/software` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -219,6 +219,9 @@ Owner. Die letzten n (Standard 25) Gedanken/Vorschläge inkl. verworfener (Nie-L
 
 ### `/software`
 Owner, nur lesend, immer verfügbar. Je Fähigkeit (STT, TTS, Embeddings, Browser, Audio/Video, Vision, Desktop, LLM): vorhanden wo / passt wo (mit Installationsweg) / passt nicht (mit Grund) / fehlt. Vorschläge per Knopf nur mit `autonomy.softwareScout.enabled=true`. Details: `docs/AUTONOMY_GUIDE.md` (Software-Scout).
+
+### `/delegiert [n]`
+Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Claude/Codex/Hermes/Unteragenten mit Status, Stufe (L1/L2), Erfolgskriterium, Prüfergebnis (verifiziert/nicht erfüllt/unverifiziert), Beleg und Antwort-Auszug (nur Daten). Standard aus: `autonomy.delegation.enabled`. Details: `docs/AUTONOMY_GUIDE.md`.
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

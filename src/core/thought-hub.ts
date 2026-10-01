@@ -22,6 +22,7 @@ type StoredAction =
     | { kind: 'self-update'; action: string }
     | { kind: 'note'; what: string }
     | { kind: 'software-scout'; candidateId: string; nodeId: string; dedupeKey: string }
+    | { kind: 'auto-reminder'; planId: string }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,159}$/
 const file = () => getNovaDataDir('thought-actions.json')
@@ -34,6 +35,15 @@ function remember(thoughtId: string, action: StoredAction): void {
     const keys = Object.keys(all)
     for (const key of keys.slice(0, Math.max(0, keys.length - 1000))) delete all[key]
     atomicWriteJsonSync(file(), all)
+}
+
+/**
+ * Auto-Erinnerungen (Phase 6e): the button of an "Erinnerung planen?" thought
+ * maps to a code-generated plan id; Ja creates the planner job, Nein drops it.
+ */
+export function rememberAutoReminderAction(thoughtId: string, planId: string): void {
+    if (!ID.test(String(thoughtId)) || !/^ar-[a-f0-9]{12}$/.test(String(planId))) throw new Error('Ungültige Erinnerungs-Zuordnung')
+    remember(thoughtId, { kind: 'auto-reminder', planId })
 }
 
 /** Planner sources are `^[a-z][a-z0-9-]{1,31}$`. */
@@ -100,6 +110,11 @@ export function createSelfUpdateThoughtSink() {
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
             })
             if (thought.proposal?.action) remember(stored.id, { kind: 'self-update', action: String(thought.proposal.action).slice(0, 60) })
+            // Phase 6e: an unconfirmed release is re-checked tomorrow (no-op while auto reminders are off).
+            try {
+                const { noteSelfUpdateThought } = await import('../planner/auto-reminders.js')
+                noteSelfUpdateThought(thought)
+            } catch { /* reminders are optional */ }
         },
     }
 }
@@ -162,6 +177,11 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
         return { ok: true, message: answer === 'ja' ? 'Angenommen, ich setze die Idee als Vorschlag um.' : 'Verworfen, ich schlage so etwas seltener vor.' }
     }
     if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)
+
+    if (action.kind === 'auto-reminder') {
+        const { acceptAutoReminderPlan, declineAutoReminderPlan } = await import('../planner/auto-reminders.js')
+        return answer === 'ja' ? acceptAutoReminderPlan(action.planId, `telegram:${ctx.userId}`) : declineAutoReminderPlan(action.planId, `telegram:${ctx.userId}`)
+    }
     if (answer === 'nein') return { ok: true, message: 'Verworfen.' }
     if (action.kind === 'approveDevice') {
         const { approveSensingDevice } = await import('../sensing/runtime.js')
