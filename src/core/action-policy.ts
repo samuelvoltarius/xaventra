@@ -166,10 +166,15 @@ const NIE_ARTEN_LERNEN: readonly RegExp[] = [
     /firewall|\bssh\b|ssh[:._-]|tailscale|sudo/,
     /vllm[:._-]?(stop|kill|aus)/, /kernel|treiber|driver|cuda/, /dist-?upgrade|apt[:._-]?upgrade/,
 ]
+/** vLLM stoppen in jeder Schreibweise (Alfred 01.10.2026: Wechsel ja, „vLLM stoppen ohne
+ * Rückweg“ bleibt Nie-Liste). Trifft z. B. `vllm-wechsel-stoppen`, `vllm:container-stop`,
+ * `vllm-beenden` — nie `vllm-wechsel`. */
+export const VLLM_STOPP_MUSTER = /vllm.*(stop|kill|beend|abschalt|herunterfahr|shutdown|deaktiv)|vllm[:._-]?aus(schalt|\b)/
 /** Phase 6b: zusätzliche gefährliche Arten. */
 const NIE_ARTEN_ZUSATZ: readonly RegExp[] = [
     /sicherheit[-_:]?(aus|abschalt)|security[-_:]?(off|disable)/,
     /zugangsdaten|anmeldedaten/,
+    VLLM_STOPP_MUSTER,
 ]
 /** Union: eine Aktionsart, die irgendeine Liste trifft, ist Nie-Liste. */
 export const NIE_AKTIONSARTEN: readonly RegExp[] = Object.freeze([...NIE_ARTEN_KARTEN, ...NIE_ARTEN_LERNEN, ...NIE_ARTEN_ZUSATZ])
@@ -188,10 +193,21 @@ export const NIE_ZIELE: readonly RegExp[] = Object.freeze([
 
 const normalize = (value: unknown) => String(value ?? '').toLowerCase().normalize('NFC').trim()
 
-/** Label des Nie-Effekts oder null. */
+/** Label des Nie-Effekts oder null. vLLM-Stopp-Varianten zählen wie `vllm:stoppen`. */
 export function nieEffekt(effect: unknown): string | null {
     const value = String(effect ?? '')
-    return NIE_EFFEKT_SET.has(value) ? NIE_EFFEKTE.find(item => item.effect === value)!.label : null
+    if (NIE_EFFEKT_SET.has(value)) return NIE_EFFEKTE.find(item => item.effect === value)!.label
+    return VLLM_STOPP_MUSTER.test(normalize(value)) ? 'vLLM stoppen' : null
+}
+
+/**
+ * Arten, die nur mit einzelnem „Ja“ laufen: nie „Immer erlauben“ auf der Karte
+ * und nie ein Vertrauensleiter-Vorschlag L2 → L1 (Alfred 01.10.2026).
+ * - vllm-wechsel: ~15 min ohne lokales LLM, Rückweg Pflicht.
+ */
+export const NUR_EINZELNES_JA: ReadonlySet<string> = Object.freeze(new Set(['vllm-wechsel'])) as ReadonlySet<string>
+export function isNurEinzelnesJa(kind: unknown): boolean {
+    return NUR_EINZELNES_JA.has(normalize(kind))
 }
 /**
  * Benannte Ausnahmen von den Aktionsarten-Mustern. Nur exakte Arten; jede
@@ -271,6 +287,8 @@ export const AKTIONSARTEN: Readonly<Record<string, KindEntry>> = Object.freeze({
     'config-aendern': kind('L2', 'Konfiguration ändern'),
     'geraet-einrichten': kind('L2', 'Gerät einrichten/überwachen'),
     'modell-wechseln': kind('L2', 'Modell wechseln'),
+    // Phase 8 (Alfred 01.10.2026): Karte, Rückweg automatisch, nie „immer“, nie L1 (NUR_EINZELNES_JA).
+    'vllm-wechsel': kind('L2', 'vLLM-Modell am Spark wechseln (Rückweg automatisch)'),
     'patch-anwenden': kind('L2', 'Patch anwenden'),
     'release-ausrollen': kind('L2', 'Release ausrollen'),
     'vm-starten': kind('L2', 'VM starten'),
@@ -304,6 +322,7 @@ const L1_EFFECTS = new Set(['fs:eigene-logs-archivieren', 'fs:eigene-caches-leer
 const L2_EFFECTS = new Set([
     'paket:installieren', 'dienst:neustart', 'config:aendern', 'geraet:einrichten', 'modell:wechseln', 'patch:anwenden', 'release:ausrollen',
     'vm:starten', 'vm:stoppen', 'vm:snapshot', 'extern:senden', 'physisch:drucken', 'physisch:schalten',
+    'host-agent:vllm-modell-wechseln',
 ])
 
 const RANK: Record<ActionLevel, number> = { L0: 0, L1: 1, L2: 2, L3: 3 }
@@ -564,6 +583,7 @@ export function trustEvidence(kindName: string, opts: TrustOptions = {}): { kind
  */
 export function trustUpgradeProposal(kindName: string, opts: TrustOptions = {}): { kind: string; titel: string; text: string } | null {
     const key = normalize(kindName)
+    if (isNurEinzelnesJa(key)) return null
     const verdict = evaluateAction({ kind: key, origin: 'code' })
     if (verdict.level !== 'L2' || verdict.impact !== 'intern' || !verdict.known) return null
     if (isPhysischOderExtern(key)) return null

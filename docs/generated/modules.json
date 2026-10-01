@@ -3271,6 +3271,7 @@
         "../install/install-catalog.js",
         "./docker-agent.js",
         "./install-agent.js",
+        "./vllm-agent.js",
         "node:fs"
       ]
     },
@@ -3308,6 +3309,7 @@
       "imports": [
         "../security/secret-redaction.js",
         "./install-agent.js",
+        "./vllm-agent.js",
         "node:crypto",
         "node:fs",
         "node:http",
@@ -3331,6 +3333,17 @@
         "../security/secret-redaction.js",
         "node:child_process",
         "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/host/vllm-agent.ts",
+      "imports": [
+        "../install/never-list.js",
+        "../install/vllm-ticket.js",
+        "./docker-agent.js",
+        "node:child_process",
         "node:fs",
         "node:path"
       ]
@@ -3488,6 +3501,13 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/install/vllm-ticket.ts",
+      "imports": [
+        "./install-catalog.js",
+        "node:crypto"
       ]
     },
     {
@@ -4227,6 +4247,7 @@
       "imports": [
         "../core/client-identity.js",
         "../infra/telemetry.js",
+        "../routing/vllm-switch-state.js",
         "./codex-cli-adapter.js",
         "./endpoint-trust.js",
         "./model-fallback.js",
@@ -5213,11 +5234,14 @@
     {
       "module": "src/routing/local-model-control.ts",
       "imports": [
+        "../core/action-policy.js",
         "../core/approval-cards.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
         "../core/node-profile.js",
+        "../install/vllm-ticket.js",
         "./task-model-routing.js",
+        "./vllm-switch.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -5285,6 +5309,18 @@
       "imports": [
         "../core/action-intent.js",
         "./model-registry.js"
+      ]
+    },
+    {
+      "module": "src/routing/vllm-switch-state.ts",
+      "imports": []
+    },
+    {
+      "module": "src/routing/vllm-switch.ts",
+      "imports": [
+        "../install/vllm-ticket.js",
+        "./local-model-control.js",
+        "./vllm-switch-state.js"
       ]
     },
     {

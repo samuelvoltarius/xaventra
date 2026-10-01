@@ -1,6 +1,7 @@
 import { readFileSync, statSync, chmodSync } from 'node:fs'
 import { createDockerHostAgent, hostDockerEngine } from './docker-agent.js'
 import { createHostInstaller } from './install-agent.js'
+import { createHostVllmSwitcher } from './vllm-agent.js'
 import { getInstallCatalog, verifyInstallCatalogSignature } from '../install/install-catalog.js'
 
 const path = process.argv[2]
@@ -28,9 +29,20 @@ if (c.install) {
         paths: i.paths, serviceUser: i.serviceUser, gpuVendor: i.gpuVendor, modelOnly: i.modelOnly === true, diskPath: i.diskPath,
     })
 }
+// Phase 8: vLLM model switch only when the operator configured it explicitly (docs/VLLM_SWITCH.md).
+let vllm
+const engine = hostDockerEngine(c.dockerSocket, c.dockerApiVersion)
+if (c.vllm) {
+    const v = c.vllm
+    if (!v.ticketPublicKeyFile || !v.user) throw Error('vllm.ticketPublicKeyFile and vllm.user required for the vLLM switch')
+    vllm = createHostVllmSwitcher({
+        nodeId: c.nodeId, clientId: c.clientId, stateDir: c.stateDir, ticketPublicKey: readFileSync(v.ticketPublicKeyFile, 'utf8'),
+        user: v.user, script: v.script, targets: v.targets, files: v.files,
+    }, undefined, engine)
+}
 const server = createDockerHostAgent({ ...c, token: readFileSync(c.tokenFile, 'utf8').trim(),
-    approvalPublicKey: c.approvalPublicKeyFile ? readFileSync(c.approvalPublicKeyFile, 'utf8') : undefined }, hostDockerEngine(c.dockerSocket, c.dockerApiVersion), installer)
+    approvalPublicKey: c.approvalPublicKeyFile ? readFileSync(c.approvalPublicKeyFile, 'utf8') : undefined }, engine, installer, vllm)
 // Never unlink an existing socket; a second service must fail rather than steal it.
-server.listen(c.socketPath, () => { if (process.platform !== 'win32') chmodSync(c.socketPath, 0o660); console.log(`Xaventra host agent ready (local authenticated socket${installer ? ', catalog installs enabled' : ''})`) })
+server.listen(c.socketPath, () => { if (process.platform !== 'win32') chmodSync(c.socketPath, 0o660); console.log(`Xaventra host agent ready (local authenticated socket${installer ? ', catalog installs enabled' : ''}${vllm ? ', vLLM switch enabled' : ''})`) })
 server.on('error', () => { console.error('Host agent socket startup failed'); process.exitCode = 1 })
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => server.close(() => process.exit(0)))

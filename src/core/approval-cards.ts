@@ -40,7 +40,7 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
-import { isNieAktionsart, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt } from './action-policy.js'
+import { isNieAktionsart, isNurEinzelnesJa, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt } from './action-policy.js'
 
 export const CARD_ANSWERS = ['ja', 'nein', 'spaeter', 'immer'] as const
 export type CardAnswer = typeof CARD_ANSWERS[number]
@@ -208,6 +208,8 @@ export function getCardExecutor(kind: string): CardExecutor | undefined {
 
 function alwaysAllowed(card: ApprovalCard): boolean {
     if (card.wirkung !== 'intern') return false
+    // Fixed in code: some kinds only ever run with a single "Ja" (e.g. vllm-wechsel).
+    if (isNurEinzelnesJa(card.aktion?.kind) || isNurEinzelnesJa(card.art)) return false
     const executor = executors.get(card.aktion.kind)
     try { return executor?.allowAlways?.(card) === true } catch { return false }
 }

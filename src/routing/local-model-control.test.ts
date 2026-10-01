@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { answerApprovalCard, listApprovalCards, registerCardExecutor, unregisterCardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
 import {
-    UNWIRED_VLLM_EXECUTOR,
+    VLLM_HOST_AGENT_MISSING,
     VLLM_SWITCH_RECIPE,
     createOllamaPullExecutor,
     createVllmSwitchCardExecutor,
@@ -13,12 +13,14 @@ import {
     judgeOllamaLoad,
     nodeMemoryFromProfile,
     planVllmSwitch,
+    proposeVllmSwitch,
     readVllmPlans,
+    resolveProductionVllmRuntime,
     unloadOllamaModel,
     type NodeMemoryView,
     type OllamaPort,
-    type VllmSwitchExecutor,
 } from './local-model-control.js'
+import type { VllmHostStateView, VllmSwitchOutcome, VllmSwitchRuntime } from './vllm-switch.js'
 
 // Phase 6d model control. No network: the Ollama HTTP API and the host agent
 // are ports; tests pass mocks. Pulling a model and switching vLLM are always
@@ -132,75 +134,122 @@ describe('Ollama: pulling a new model is L2 — only via card', () => {
     })
 })
 
-describe('vLLM switch at the Spark: plan + card only, executes nothing without Ja', () => {
+describe('vLLM switch at the Spark: card with automatic way back, never without a single Ja', () => {
     beforeEach(() => unregisterCardExecutor('vllm-wechsel'))
 
-    function mockExecutor(probeOk = true): VllmSwitchExecutor & { calls: string[] } {
-        const calls: string[] = []
-        return {
-            calls,
-            snapshot: vi.fn(async () => { calls.push('snapshot'); return { model: 'current-test' } }),
-            switchModel: vi.fn(async (_plan, model: string) => { calls.push(`switch:${model}`); return true }),
-            probe: vi.fn(async () => { calls.push('probe'); return probeOk }),
-            restore: vi.fn(async (_plan, snapshot: { model: string }) => { calls.push(`restore:${snapshot.model}`); return true }),
+    const HOST_STATE: VllmHostStateView = { success: true, currentTarget: 'flash', maintenance: false, modelIds: { flash: 'qwen-flash', coder: 'qwen-coder' }, switchRunning: false }
+
+    /** Runtime whose host agent and endpoint simulate an instant, healthy switch. */
+    function fakeRuntime(patch: Partial<VllmSwitchRuntime> = {}): VllmSwitchRuntime & { steps: string[] } {
+        const steps: string[] = []
+        let current = 'flash', marker = false, serving = 'qwen-flash', startedAt = '2026-10-01T09:00:00.000Z'
+        let clock = Date.parse('2026-10-01T10:00:00Z')
+        const runtime: VllmSwitchRuntime & { steps: string[] } = {
+            steps, nodeId: 'spark', targets: ['flash', 'coder', 'nano'], baseUrl: 'http://spark.example.com:8000',
+            host: {
+                state: async () => ({ ...HOST_STATE, currentTarget: current, maintenance: marker, container: { name: 'sparkrun_x_solo', startedAt, running: true } }),
+                action: async ticket => {
+                    const t = ticket.payload
+                    steps.push(`${t.operation}:${t.target}`)
+                    if (t.operation === 'markieren') marker = true
+                    if (t.operation === 'freigeben') marker = false
+                    if (t.operation === 'wechseln') { current = t.target; serving = `qwen-${t.target}`; startedAt = new Date(clock).toISOString() }
+                    return { success: true, launchedAt: clock }
+                },
+            },
+            endpoint: { models: async () => [serving], chat: async () => true },
+            issue: input => ({ payload: { id: 'vllm-00000000-0000-0000-0000-000000000000', ...input, nodeId: 'spark', clientId: 'main', issuedAt: clock, expiresAt: clock + 60_000 } as any, signature: 'test' }),
+            busy: async () => null,
+            memory: async () => vllmBusy,
+            notify: () => undefined,
+            now: () => clock,
+            sleep: async ms => { clock += ms },
+            pollMs: 1_000, switchTimeoutMs: 10_000, restoreTimeoutMs: 10_000,
+            ...patch,
         }
+        return runtime
     }
 
-    it('plans with a card text naming task, model, duration and automatic way back', () => {
-        const result = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'better-test', estimatedMinutes: 7, evidence: 'Prüfsatz 18 % besser' }, opts)
+    it('plans only targets from the closed list, with a card naming task, target, duration and the way back', () => {
+        for (const target of ['better-test', 'flash; rm -rf /', '$(reboot)', 'Coder']) {
+            const refused = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: target, evidence: 'x' }, opts)
+            expect(refused.ok, target).toBe(false)
+        }
+        const result = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: 'coder', estimatedMinutes: 15, evidence: 'Prüfsatz 18 % besser', baseUrl: 'http://spark.example.com:8000' }, opts)
         if (!result.ok) throw new Error(result.reason)
         expect(result.card.aktion).toEqual({ kind: 'vllm-wechsel', ref: result.plan.id })
         expect(result.card.vorschlag).toMatch(/Code/)
-        expect(result.card.vorschlag).toMatch(/better-test/)
-        expect(result.card.vorschlag).toMatch(/~7 min/)
+        expect(result.card.vorschlag).toMatch(/coder/)
+        expect(result.card.vorschlag).toMatch(/~15 min ohne lokales LLM/)
         expect(result.card.vorschlag).toMatch(/Rückweg automatisch/)
-        expect(result.plan.status).toBe('geplant')
+        expect(result.card.buttons.map(button => button.answer)).toEqual(['ja', 'nein', 'spaeter'])
+        expect(result.plan).toMatchObject({ status: 'geplant', baseUrl: 'http://spark.example.com:8000' })
         expect(VLLM_SWITCH_RECIPE.steps.map(step => step.id)).toEqual(['messen', 'sichern', 'wechseln', 'pruefen', 'rueckweg'])
         expect(VLLM_SWITCH_RECIPE.via).toBe('host-agent')
     })
 
-    it('refuses to execute without an approved card', async () => {
-        const executor = mockExecutor()
-        const result = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'better-test', estimatedMinutes: 7, evidence: 'x' }, opts)
+    it('no card when live preconditions fail (no host agent, maintenance marker, busy LLM)', async () => {
+        const input = { node: 'spark', taskClass: 'code' as const, targetModel: 'coder', evidence: 'x', baseUrl: 'http://spark.example.com:8000' }
+        const missing = await proposeVllmSwitch(input, { resolveRuntime: async () => ({ refusal: VLLM_HOST_AGENT_MISSING }), cards: opts })
+        expect(missing).toMatchObject({ ok: false })
+        expect((missing as { reason: string }).reason).toMatch(/Host-Agent nicht eingerichtet/)
+        const maintenance = fakeRuntime()
+        maintenance.host = { ...maintenance.host, state: async () => ({ ...HOST_STATE, maintenance: true }) }
+        expect(await proposeVllmSwitch(input, { resolveRuntime: async () => maintenance, cards: opts })).toMatchObject({ ok: false })
+        expect(await proposeVllmSwitch(input, { resolveRuntime: async () => fakeRuntime({ busy: async () => 'Laufende Aufgaben brauchen das LLM: Mission' }), cards: opts })).toMatchObject({ ok: false })
+        expect(listApprovalCards(opts)).toEqual([])
+        const ok = await proposeVllmSwitch(input, { resolveRuntime: async () => fakeRuntime(), cards: opts })
+        expect(ok).toMatchObject({ ok: true })
+        expect((ok as any).plan.currentModel).toBe('flash')
+    })
+
+    it('refuses to execute without a single owner Ja bound to this plan (never "immer")', async () => {
+        const runtime = fakeRuntime()
+        const result = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: 'coder', evidence: 'x', baseUrl: 'http://spark.example.com:8000' }, opts)
         if (!result.ok) throw new Error(result.reason)
-        const refused = await executeVllmSwitch(result.plan.id, { status: 'offen', ref: result.plan.id }, executor, opts)
-        expect(refused.ok).toBe(false)
-        const wrongRef = await executeVllmSwitch(result.plan.id, { status: 'ja', ref: 'other' }, executor, opts)
-        expect(wrongRef.ok).toBe(false)
-        expect(executor.calls).toEqual([])
+        for (const approval of [
+            { status: 'offen', ref: result.plan.id, approvedBy: 'owner:111' },
+            { status: 'immer', ref: result.plan.id, approvedBy: 'owner:111' },
+            { status: 'ja', ref: 'other', approvedBy: 'owner:111' },
+            { status: 'ja', ref: result.plan.id, approvedBy: 'model:qwen' },
+            { status: 'ja', ref: result.plan.id },
+        ]) expect((await executeVllmSwitch(result.plan.id, approval, async () => runtime, opts)).ok).toBe(false)
+        expect(runtime.steps).toEqual([])
+    })
+
+    it('without a configured host agent: honest refusal, no vLLM touched', async () => {
+        registerCardExecutor(createVllmSwitchCardExecutor({ resolveRuntime: async () => ({ refusal: VLLM_HOST_AGENT_MISSING }), dataDir: opts.dataDir }))
+        const plan = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: 'coder', evidence: 'x', baseUrl: 'http://spark.example.com:8000' }, opts)
+        if (!plan.ok) throw new Error(plan.reason)
+        const answer = await press(plan.card.id, 'ja')
+        expect(answer.message).toMatch(/Host-Agent nicht eingerichtet/)
+        expect(readVllmPlans(opts).find(item => item.id === plan.plan.id)?.status).toBe('nicht-ausgefuehrt')
+    })
+
+    it('production resolver refuses honestly when the host agent is not configured', async () => {
+        const saved = { ...process.env }
+        try {
+            for (const key of ['XAVENTRA_VLLM_TICKET_KEY_FILE', 'XAVENTRA_INSTALL_TICKET_KEY_FILE', 'XAVENTRA_HOST_AGENT_SOCKET', 'XAVENTRA_HOST_AGENT_TOKEN_FILE', 'XAVENTRA_HOST_AGENT_NODE_ID', 'XAVENTRA_HOST_AGENT_CLIENT_ID']) delete process.env[key]
+            expect(await resolveProductionVllmRuntime({ id: 'v0123456789ab', node: 'spark', baseUrl: 'http://spark.example.com:8000' })).toEqual({ refusal: VLLM_HOST_AGENT_MISSING })
+        } finally { process.env = saved }
     })
 
     it('Nein runs nothing; Ja runs the recipe through the (mocked) host agent', async () => {
-        const executor = mockExecutor()
-        registerCardExecutor(createVllmSwitchCardExecutor({ executor, dataDir: opts.dataDir }))
-        const no = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'no-test', estimatedMinutes: 5, evidence: 'x' }, opts)
+        const runtime = fakeRuntime()
+        const outcomes: VllmSwitchOutcome[] = []
+        registerCardExecutor(createVllmSwitchCardExecutor({ resolveRuntime: async () => runtime, dataDir: opts.dataDir, onDone: outcome => outcomes.push(outcome) }))
+        const no = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: 'nano', evidence: 'x', baseUrl: 'http://spark.example.com:8000' }, opts)
         if (!no.ok) throw new Error(no.reason)
         await press(no.card.id, 'nein')
-        expect(executor.calls).toEqual([])
+        expect(runtime.steps).toEqual([])
         expect(readVllmPlans(opts).find(plan => plan.id === no.plan.id)?.status).toBe('abgelehnt')
-        const yes = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'better-test', estimatedMinutes: 5, evidence: 'x' }, opts)
+        const yes = planVllmSwitch({ node: 'spark', taskClass: 'code', currentModel: 'flash', targetModel: 'coder', evidence: 'x', baseUrl: 'http://spark.example.com:8000' }, opts)
         if (!yes.ok) throw new Error(yes.reason)
-        await press(yes.card.id, 'ja')
-        expect(executor.calls).toEqual(['snapshot', 'switch:better-test', 'probe'])
-        expect(readVllmPlans(opts).find(plan => plan.id === yes.plan.id)?.status).toBe('ausgefuehrt')
-    })
-
-    it('rolls back automatically when the probe after the switch fails', async () => {
-        const executor = mockExecutor(false)
-        const plan = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'bad-test', estimatedMinutes: 5, evidence: 'x' }, opts)
-        if (!plan.ok) throw new Error(plan.reason)
-        const result = await executeVllmSwitch(plan.plan.id, { status: 'ja', ref: plan.plan.id }, executor, opts)
-        expect(result.ok).toBe(false)
-        expect(executor.calls).toEqual(['snapshot', 'switch:bad-test', 'probe', 'restore:current-test'])
-        expect(readVllmPlans(opts).find(item => item.id === plan.plan.id)?.status).toBe('zurueckgerollt')
-    })
-
-    it('in this build the production executor is unwired: Ja confirms the plan, touches no vLLM', async () => {
-        registerCardExecutor(createVllmSwitchCardExecutor({ executor: UNWIRED_VLLM_EXECUTOR, dataDir: opts.dataDir }))
-        const plan = planVllmSwitch({ node: 'node-a', taskClass: 'code', currentModel: 'current-test', targetModel: 'better-test', estimatedMinutes: 5, evidence: 'x' }, opts)
-        if (!plan.ok) throw new Error(plan.reason)
-        const answer = await press(plan.card.id, 'ja')
-        expect(answer.message).toMatch(/nicht verdrahtet/)
-        expect(readVllmPlans(opts).find(item => item.id === plan.plan.id)?.status).toBe('bestaetigt')
+        const answer = await press(yes.card.id, 'ja')
+        expect(answer.message).toMatch(/gestartet/)
+        await vi.waitFor(() => expect(outcomes).toHaveLength(1))
+        expect(outcomes[0].status).toBe('ausgefuehrt')
+        expect(runtime.steps).toEqual(['markieren:coder', 'wechseln:coder', 'freigeben:coder'])
+        await vi.waitFor(() => expect(readVllmPlans(opts).find(plan => plan.id === yes.plan.id)?.status).toBe('ausgefuehrt'))
     })
 })
