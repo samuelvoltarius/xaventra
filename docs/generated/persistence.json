@@ -934,6 +934,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/watch/runtime.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/ai-scanner.ts",
       "path": ".nova-data/ai-services.json"
     },
@@ -1160,6 +1164,10 @@
     {
       "owner": "src/supervisor/supervisor-autofix-safety.test.ts",
       "path": ".nova-data/users.json"
+    },
+    {
+      "owner": "src/watch/runtime.ts",
+      "path": ".nova-data/watch"
     },
     {
       "owner": "src/cli.ts",

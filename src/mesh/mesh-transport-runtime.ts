@@ -119,6 +119,11 @@ function loadRuntimeConfig(): RuntimeConfig {
     }
 }
 
+/** Wächter: peers that may deliver samples — configured AND with a pinned publicKey. */
+export function watchKnownNodes(peers: readonly MeshPeer[] = loadRuntimeConfig().direct.peers): string[] {
+    return peers.filter(peer => peer.nodeId && String(peer.publicKey || '').trim()).map(peer => peer.nodeId)
+}
+
 export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshTransportRouter {
     if (messageHandler) runtimeMessageHandler = messageHandler
     if (router) return router
@@ -376,6 +381,12 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
                 lastPublishedSelfHeal = { fingerprint, sentAt: Date.now() }
             }
         } catch { /* self-heal summary is optional */ }
+        try {
+            // Wächter: only with autonomy.watch.enabled, only nodes without autonomy authority, every 5 min.
+            const { watchSampleForMesh } = await import('../watch/runtime.js')
+            const sample = await watchSampleForMesh()
+            if (sample) capabilityPayload.watch = sample as unknown as Record<string, unknown>
+        } catch { /* watch sample is optional */ }
         const capability = transport.create('node.capabilities', '*', capabilityPayload)
         await transport.broadcast(capability)
         try {
@@ -466,6 +477,14 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         }
         peerStates[envelope.sourceNode] = peerStateWithCapabilities(peerStates[envelope.sourceNode], envelope.sourceNode, payload, MeshIdentity.fingerprint(envelope.publicKey))
         persistPeerStates()
+        if (payload.watch) {
+            try {
+                // Signature already verified by the router; the watch additionally
+                // requires a configured peer with a pinned key (no TOFU node).
+                const { ingestPeerWatchSample } = await import('../watch/runtime.js')
+                await ingestPeerWatchSample(envelope.sourceNode, payload.watch, watchKnownNodes())
+            } catch { /* watch optional */ }
+        }
         return
     }
     if (envelope.kind === 'run.evidence') {

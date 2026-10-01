@@ -1928,6 +1928,15 @@ async function startDaemon() {
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
 
+        // Phase 7 Wächter: off until autonomy.watch.enabled=true. Main measures,
+        // probes and alarms; workers only send their samples over the signed mesh.
+        try {
+            const { setWatchConfig, startWatch } = await import('./watch/runtime.js')
+            setWatchConfig(autonomyCfg)
+            const watch = await startWatch({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            if (watch.started) console.log(`[Nova] ✓ Wächter aktiv (${watch.reason})`)
+        } catch (err) { console.debug(`[Nova] Wächter skipped: ${err}`) }
+
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
             quietHoursStart: quietEnabled ? (quietCfg.start ?? 23) : -1,

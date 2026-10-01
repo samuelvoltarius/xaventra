@@ -105,6 +105,8 @@ export interface CapabilityPayload {
     profile?: Record<string, unknown>
     /** Stufe 3: bounded self-heal summary (src/doctor/self-heal.ts); the Main forwards notifiable reports once. */
     selfHeal?: Record<string, unknown>
+    /** Wächter (Phase 7): one bounded measurement, at most every 5 min (src/watch/sample.ts). */
+    watch?: Record<string, unknown>
 }
 
 export interface ToolInventoryPayload {

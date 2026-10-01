@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` `/modelle` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` `/modelle` `/waechter` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
@@ -229,6 +229,9 @@ Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockie
 
 ### `/vms [meine|snapshots <vmid>|snapshot|start|stop|rollback|neu|wegwerf|vergroessern|entfernen|cloudinit|hilfe]`
 Owner. Proxmox-Gäste (nur lesend) mit Markierung der eigenen VM, des Pools `xaventra` und „meiner VMs“ (Tag `xaventra-created`) samt freiem Ressourcen-Deckel. Alle schreibenden Unterbefehle erzeugen nur eine Knopf-Karte (Wirkung `infra`, nie „Immer erlauben“); ausgeführt wird erst nach dem Ja. Standard aus. Details: `docs/PROXMOX.md`.
+
+### `/waechter`
+Owner, nur lesend. Wächter (Phase 7): letzte Messwerte je Knoten (Last, RAM, Platten, Temperatur, Antwortzeit), Erreichbarkeit der konfigurierten/eingerichteten Ziele, Prognosen (Platte voll, RAM), TLS-Ablauf, Backup-Alter und ausgelassene Einträge. Standard aus: `autonomy.watch.enabled`. Details: `docs/AUTONOMY_GUIDE.md` („Wächter“).
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

@@ -78,6 +78,11 @@ function printerTargets(): PrinterTarget[] {
     return [...fromConfig, ...approved.filter(device => !fromConfig.some(item => item.id === device.id))]
 }
 
+/** Wächter (Phase 7): only devices the owner set up are watched (TCP reachability). */
+export function listWatchableDevices(): Array<{ name: string; host: string; port: number }> {
+    return monitoredDevices(state.dataDir).map(device => ({ name: device.name, host: device.host, port: device.port }))
+}
+
 /** Builds the bus with every enabled adapter (does not start timers). */
 export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'worker' } = {}): SensingBus {
     const cfg = state.config

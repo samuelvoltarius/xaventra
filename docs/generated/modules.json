@@ -6376,6 +6376,81 @@
       ]
     },
     {
+      "module": "src/watch/engine.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../core/atomic-storage.js",
+        "../planner/thoughts.js",
+        "./probes.js",
+        "./sample.js",
+        "./settings.js",
+        "./store.js",
+        "./trends.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/watch/peer.ts",
+      "imports": [
+        "./sample.js",
+        "./store.js"
+      ]
+    },
+    {
+      "module": "src/watch/probes.ts",
+      "imports": [
+        "./settings.js",
+        "node:child_process",
+        "node:fs",
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:os",
+        "node:path",
+        "node:tls"
+      ]
+    },
+    {
+      "module": "src/watch/runtime.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./engine.js",
+        "./peer.js",
+        "./probes.js",
+        "./sample.js",
+        "./settings.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/watch/sample.ts",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/watch/settings.ts",
+      "imports": []
+    },
+    {
+      "module": "src/watch/store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./sample.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/watch/trends.ts",
+      "imports": [
+        "./sample.js"
+      ]
+    },
+    {
       "module": "src/watchdog.ts",
       "imports": [
         "./config/config-path.js",
