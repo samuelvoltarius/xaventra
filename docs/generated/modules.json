@@ -6028,6 +6028,7 @@
         "./owner-approval.js",
         "./printer-tool.js",
         "./reminder-tool.js",
+        "./scan-now-tool.js",
         "./searxng-search.js",
         "./self-introspect.js",
         "./self-management.js",
@@ -6224,6 +6225,12 @@
       "imports": [
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/scan-now-tool.ts",
+      "imports": [
+        "./complete-registry.js"
       ]
     },
     {

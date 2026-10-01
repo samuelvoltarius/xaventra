@@ -23,6 +23,7 @@ import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
 import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
+import { scanNowTool } from './scan-now-tool.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -3217,6 +3218,7 @@ export const ALL_TOOLS: NovaTool[] = [
     ...browserUseTools,
     ...agentPatternTools,
     ...homeAssistantTools,
+    scanNowTool,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,
