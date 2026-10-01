@@ -638,6 +638,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/capability-graph-probe-phantom.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/capability-graph.ts",
       "path": ".nova-data"
     },

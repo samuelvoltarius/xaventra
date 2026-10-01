@@ -4246,6 +4246,7 @@
       "imports": [
         "../config/config-path.js",
         "./discovery-probe.js",
+        "./mesh-registry.js",
         "node:child_process",
         "node:fs",
         "node:path",
