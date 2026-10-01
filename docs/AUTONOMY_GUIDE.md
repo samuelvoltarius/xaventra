@@ -521,11 +521,16 @@ onDelegationSettled((record, { verified }) => { /* mark a mission step done only
 
 Rules (code, not config):
 
-- **Level:** reading/analysing tasks are L1. As soon as the task asks for changes
-  to systems (deploy/ausrollen, installieren, merge/push/commit, neu starten/stoppen,
-  ändern, löschen, beheben/patchen/implementieren, aktualisieren) it is L2: a card
-  „Auftrag an Claude senden?“, sent only after the owner's Ja, Nein = not sent. The
-  rule can only raise the level. Nie-Liste topics (secrets/passwords, deleting
+- **Level (allowlist):** only clearly read-only work is L1 — the task needs a
+  read-only verb (prüfen, analysieren, untersuchen, lesen, recherchieren, suchen,
+  zusammenfassen, vergleichen, erklären, bewerten, beschreiben, diagnostizieren …) and
+  no change/action/external/physical verb. Everything else is L2: changes to systems
+  (deploy/ausrollen, installieren, merge/push/commit, neu starten/stoppen, ändern,
+  löschen, beheben/patchen/implementieren, aktualisieren), creating/writing/running
+  (erstellen, schreiben, ausführen, starten), sending (senden, Mail, posten), physical
+  or buying (drucken, schalten, kaufen, bestellen, bezahlen) and anything unrecognised.
+  L2 means a card „Auftrag an Claude senden?“, sent only after the owner's Ja, Nein =
+  not sent. `aendert: true` can only raise the level. Nie-Liste topics (secrets/passwords, deleting
   backups/data, NAS restart, DB migration, firewall/SSH/Tailscale, kernel/driver) are
   refused, also as a card. No "Immer erlauben".
 - **Context:** keys naming memory, journal, secrets, auth, sessions, prompts, customers,
