@@ -18,6 +18,12 @@ vi.mock('../intelligence/autonomy-engine.js', () => ({
     getSelfGoalEngine: () => ({ getNextGoal: () => nextGoal.value, completeGoal: () => { }, failGoal: () => { } }),
 }))
 import { setAutonomyThinkCallback, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
+import { setThinkingConfig } from '../thinking/thinking-runtime.js'
+import { setSoftwareScoutConfig } from '../install/software-scout.js'
+
+// P8: thinking and software scout default to on at the Main; this test is about other loop phases.
+setThinkingConfig({ enabled: false })
+setSoftwareScoutConfig({ enabled: false })
 
 updateAutonomyConfig({ enabled: true, socialCheckIns: false, quietHoursStart: -1,
     checks: { health: false, reminders: false, inbound: false, logs: false, uptime: false } })

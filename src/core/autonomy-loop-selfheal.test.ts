@@ -23,6 +23,12 @@ vi.mock('../doctor/self-heal-runtime.js', () => ({
 }))
 
 import { startAutonomyLoop, stopAutonomyLoop, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
+import { setThinkingConfig } from '../thinking/thinking-runtime.js'
+import { setSoftwareScoutConfig } from '../install/software-scout.js'
+
+// P8: thinking and software scout default to on at the Main; this test is about other loop phases.
+setThinkingConfig({ enabled: false })
+setSoftwareScoutConfig({ enabled: false })
 
 const notify = vi.fn(async (_message: string) => { })
 const allOff = { health: false, reminders: false, inbound: false, logs: false, uptime: false }

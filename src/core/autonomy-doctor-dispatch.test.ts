@@ -5,6 +5,12 @@ vi.mock('./validator-failure-escalation.js', () => ({ reconcileValidatorFailures
 vi.mock('./autonomy-authority.js', () => ({ hasGlobalAutonomyAuthority: () => true }))
 vi.mock('../doctor/failure-research-coordinator.js', () => ({ getFailureResearchCoordinator: () => ({ investigateNext: investigate }) }))
 import { setAutonomyThinkCallback, setDoctorResearchWorker, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
+import { setThinkingConfig } from '../thinking/thinking-runtime.js'
+import { setSoftwareScoutConfig } from '../install/software-scout.js'
+
+// P8: thinking and software scout default to on at the Main; this test is about other loop phases.
+setThinkingConfig({ enabled: false })
+setSoftwareScoutConfig({ enabled: false })
 
 describe('Doctor is reachable in the actual autonomy cycle', () => {
     it('dispatches pending investigation even while ordinary self-goals are gated during startup', async () => {
