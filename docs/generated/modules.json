@@ -1975,16 +1975,15 @@
       "imports": [
         "../config/config-path.js",
         "../doctor/gpu-runtime.js",
+        "../install/install-queue.js",
         "../mesh/capability-graph.js",
         "../startup/environment-scanner.js",
         "../voice/voice-setup.js",
         "./config-validator.js",
         "./side-effects.js",
-        "node:child_process",
         "node:fs",
         "node:os",
-        "node:path",
-        "node:util"
+        "node:path"
       ]
     },
     {
@@ -2988,7 +2987,9 @@
     {
       "module": "src/host/agent-main.ts",
       "imports": [
+        "../install/install-catalog.js",
         "./docker-agent.js",
+        "./install-agent.js",
         "node:fs"
       ]
     },
@@ -3025,6 +3026,7 @@
       "module": "src/host/docker-agent.ts",
       "imports": [
         "../security/secret-redaction.js",
+        "./install-agent.js",
         "node:crypto",
         "node:fs",
         "node:http",
@@ -3036,6 +3038,20 @@
       "imports": [
         "node:fs",
         "node:http"
+      ]
+    },
+    {
+      "module": "src/host/install-agent.ts",
+      "imports": [
+        "../install/install-catalog.js",
+        "../install/install-ticket.js",
+        "../install/never-list.js",
+        "../install/resource-guard.js",
+        "../security/secret-redaction.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -3117,6 +3133,40 @@
     {
       "module": "src/infra/trace-verifier.ts",
       "imports": []
+    },
+    {
+      "module": "src/install/install-catalog.ts",
+      "imports": [
+        "./never-list.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/install/install-queue.ts",
+      "imports": [
+        "./install-catalog.js",
+        "./install-ticket.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/install/install-ticket.ts",
+      "imports": [
+        "./install-catalog.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/install/never-list.ts",
+      "imports": []
+    },
+    {
+      "module": "src/install/resource-guard.ts",
+      "imports": [
+        "./install-catalog.js"
+      ]
     },
     {
       "module": "src/installer/brain-installer.ts",

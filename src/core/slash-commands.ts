@@ -3642,15 +3642,69 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     const res = await applySelfSetupAction(actionIdArg, `APPLY:${actionIdArg}`)
                     return `${res.success ? '✅' : '❌'} ${res.message}`
                 }
+                // Stufe 2: signed install catalog. Proposals may come from anywhere;
+                // a ticket only from here (owner role, code-generated queue id).
+                case 'katalog':
+                case 'catalog': {
+                    const { defaultInstallDeps, formatInstallCatalog } = await import('../install/install-queue.js')
+                    return formatInstallCatalog(defaultInstallDeps())
+                }
+                case 'queue':
+                case 'warteschlange': {
+                    const { defaultInstallDeps, formatInstallQueue } = await import('../install/install-queue.js')
+                    return formatInstallQueue(defaultInstallDeps())
+                }
+                case 'install': {
+                    const catalogId = rest2[0]
+                    const nodeArg = rest2[1]
+                    if (!catalogId) return '❌ Usage: /setup install <katalog-id> [knoten]'
+                    if (nodeArg && !/^[A-Za-z0-9._-]{1,80}$/.test(nodeArg)) return '❌ Ungültiger Knoten.'
+                    const { defaultInstallDeps, proposeCatalogInstall, resolveInstallTarget } = await import('../install/install-queue.js')
+                    const target = await resolveInstallTarget(nodeArg).catch(() => null)
+                    if (!target) return `❌ Kein Profil für Knoten ${nodeArg || 'lokal'} (/knoten).`
+                    const result = proposeCatalogInstall(catalogId, target, defaultInstallDeps(), 'owner')
+                    return `${result.ok ? '📋' : '❌'} ${result.message}`
+                }
+                case 'approve':
+                case 'freigeben':
+                case 'rollback': {
+                    const queueId = rest2[0]
+                    if (!queueId) return `❌ Usage: /setup ${sub} <iq-id>`
+                    const { approveQueuedInstall, defaultInstallDeps, rollbackQueuedInstall } = await import('../install/install-queue.js')
+                    const approver = { permission: String(principalContext?.permission || ''), principalId: String(principalContext?.principalId || ''), channel: principalContext?.channel }
+                    const result = sub === 'rollback'
+                        ? await rollbackQueuedInstall(queueId, approver, defaultInstallDeps())
+                        : await approveQueuedInstall(queueId, approver, defaultInstallDeps())
+                    return `${result.ok ? '✅' : '❌'} ${result.message}`
+                }
+                case 'allow':
+                case 'erlauben':
+                case 'ask':
+                case 'fragen': {
+                    const catalogId = rest2[0]
+                    if (!catalogId) return `❌ Usage: /setup ${sub} <katalog-id>`
+                    const { defaultInstallDeps, setApprovalLevel } = await import('../install/install-queue.js')
+                    const approver = { permission: String(principalContext?.permission || ''), principalId: String(principalContext?.principalId || ''), channel: principalContext?.channel }
+                    const result = setApprovalLevel(catalogId, sub === 'allow' || sub === 'erlauben' ? 'erlauben' : 'fragen', approver, defaultInstallDeps())
+                    return `${result.ok ? '✅' : '❌'} ${result.message}`
+                }
                 default:
                     return `🔧 **Nova Self-Setup**
 
 /setup status — Letzten Scan-Zustand anzeigen
 /setup plan — Frischen Scan + Plan generieren
-/setup research — Alle fehlenden Capabilities via Websuche recherchieren
+/setup research — Alle fehlenden Capabilities via Websuche recherchieren (nur Text, nie ausführbar)
 /setup research <cap> — Einzelne Capability recherchieren (stt/tts/llm/embedding/vision/ffmpeg)
-/setup apply <id> — Bestätigungs-Token anfordern, dann /setup apply <id> <token>
-/setup apply all — Bestätigungs-Token für alle Aktionen anfordern, dann /setup apply all <token>`
+/setup apply <id> — Bestätigungs-Token anfordern, dann /setup apply <id> <token> (Config-Patches; Katalog-Aktionen gehen in die Warteschlange)
+/setup apply all — Bestätigungs-Token für alle Aktionen anfordern, dann /setup apply all <token>
+/setup katalog — Installationskatalog (Stufe 2) mit Größe, Risiko, Freigabestufe
+/setup install <id> [knoten] — Katalog-Eintrag vorschlagen (Worker: nur Image-Vorschlag)
+/setup queue — Warteschlange und Ergebnisse
+/setup approve <iq-id> — Owner-Freigabe: Ticket an den Host-Agenten
+/setup rollback <iq-id> — Rückweg einer abgeschlossenen Installation
+/setup allow|ask <id> — Freigabestufe erlauben (nur YOLO-Pfad) / fragen
+
+Freie Befehle werden nie ausgeführt.`
             }
         }
 

@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "catalogHash": "a804b6f2bab5e17c60a19bc3fbe080731758401a79ab0f7ff4746828de58db81",
+  "entries": [
+    {
+      "id": "ffmpeg",
+      "title": "ffmpeg (Audio/Video-Werkzeuge)",
+      "kind": "apt",
+      "targets": [
+        "host-agent",
+        "image"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "packages": [
+        "ffmpeg"
+      ],
+      "prepare": [
+        [
+          "/usr/bin/apt-get",
+          "update"
+        ]
+      ],
+      "install": [
+        "/usr/bin/apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "ffmpeg"
+      ],
+      "verify": [
+        [
+          "/usr/bin/ffmpeg",
+          "-version"
+        ]
+      ],
+      "rollback": {
+        "kind": "apt-remove-new"
+      },
+      "runAs": "root",
+      "sizeMb": 300,
+      "timeoutSec": 900,
+      "risk": "low",
+      "approval": "fragen",
+      "image": {
+        "variant": "ffmpeg",
+        "packages": [
+          "ffmpeg"
+        ]
+      },
+      "entryHash": "863d14831d4e29664f97b6c33c1e7a60111f285862a79ee07c49a22c36627206"
+    },
+    {
+      "id": "node-llama-cpp-cuda",
+      "title": "node-llama-cpp CUDA-Binding (nur Spark, kein CUDA-Toolkit)",
+      "kind": "runtime-addon",
+      "targets": [
+        "host-agent"
+      ],
+      "requires": {
+        "platform": "linux",
+        "arch": "arm64",
+        "gpuVendor": "nvidia"
+      },
+      "install": [
+        "{node}",
+        "{npm}",
+        "install",
+        "--no-save",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--prefix",
+        "{runtime}",
+        "@node-llama-cpp/linux-arm64-cuda@{nodeLlamaCppVersion}"
+      ],
+      "verify": [
+        [
+          "/usr/bin/test",
+          "-d",
+          "{runtime}/node_modules/@node-llama-cpp/linux-arm64-cuda"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "{node}",
+          "{npm}",
+          "uninstall",
+          "--no-save",
+          "--ignore-scripts",
+          "--prefix",
+          "{runtime}",
+          "@node-llama-cpp/linux-arm64-cuda"
+        ]
+      },
+      "runAs": "root",
+      "sizeMb": 600,
+      "timeoutSec": 900,
+      "risk": "high",
+      "approval": "fragen",
+      "entryHash": "c28af63aad5c145a7a424fb79869a8240a0bf73d55e43612371821091f2920f6"
+    },
+    {
+      "id": "ollama-model:bge-m3",
+      "title": "Ollama-Modell bge-m3",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "bge-m3"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "bge-m3"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "bge-m3"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 1250,
+      "timeoutSec": 1800,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "4f58840107c0842737ed94fcab03c20b9730bfdb503ef8ce0a59c071d8af0346"
+    },
+    {
+      "id": "ollama-model:mxbai-embed-large",
+      "title": "Ollama-Modell mxbai-embed-large",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "mxbai-embed-large"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "mxbai-embed-large"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "mxbai-embed-large"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 700,
+      "timeoutSec": 1800,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "3ebc84b477db629b9b9371b4a3cb4e41805f769b01860774ba0a237150df74b2"
+    },
+    {
+      "id": "ollama-model:nomic-embed-text",
+      "title": "Ollama-Modell nomic-embed-text",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "nomic-embed-text"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "nomic-embed-text"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "nomic-embed-text"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 280,
+      "timeoutSec": 1800,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "ff1e8d6a88f3b26a022a0093c01b242cf13f7ae3df00f06b936046ee406d3ded"
+    },
+    {
+      "id": "playwright-chromium",
+      "title": "Playwright-Chromium (Browser-Werkzeug, ohne Systempakete)",
+      "kind": "runtime-addon",
+      "targets": [
+        "host-agent"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "install": [
+        "{node}",
+        "{runtime}/node_modules/playwright/cli.js",
+        "install",
+        "chromium"
+      ],
+      "verify": [
+        [
+          "/usr/bin/test",
+          "-d",
+          "{serviceHome}/.cache/ms-playwright"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "{node}",
+          "{runtime}/node_modules/playwright/cli.js",
+          "uninstall"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 450,
+      "timeoutSec": 900,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "eee3aefd0f66499444d285fb71d0f5213e28007b50af3fa125a147154eea91f4"
+    },
+    {
+      "id": "xfce-workstation",
+      "title": "XFCE-Arbeitsplatz (Desktop für die Workstation)",
+      "kind": "apt",
+      "targets": [
+        "host-agent",
+        "image"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "packages": [
+        "xfce4",
+        "xfce4-terminal",
+        "thunar",
+        "dbus-x11"
+      ],
+      "prepare": [
+        [
+          "/usr/bin/apt-get",
+          "update"
+        ]
+      ],
+      "install": [
+        "/usr/bin/apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "xfce4",
+        "xfce4-terminal",
+        "thunar",
+        "dbus-x11"
+      ],
+      "verify": [
+        [
+          "/usr/bin/test",
+          "-x",
+          "/usr/bin/xfce4-session"
+        ],
+        [
+          "/usr/bin/test",
+          "-x",
+          "/usr/bin/dbus-run-session"
+        ]
+      ],
+      "rollback": {
+        "kind": "apt-remove-new"
+      },
+      "runAs": "root",
+      "sizeMb": 700,
+      "timeoutSec": 1800,
+      "risk": "medium",
+      "approval": "fragen",
+      "image": {
+        "variant": "xfce-workstation",
+        "packages": [
+          "xfce4",
+          "xfce4-terminal",
+          "thunar",
+          "dbus-x11"
+        ]
+      },
+      "entryHash": "a9b96c5993ef286ec7e075cfd8c8fbf6d27ee974720f927ebb08f60226886251"
+    }
+  ],
+  "rejected": []
+}
