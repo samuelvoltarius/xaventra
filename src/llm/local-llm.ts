@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 
@@ -163,7 +164,49 @@ function getConfiguredLocalEndpoints(): Array<{ name: string; baseUrl: string; s
     return endpoints
 }
 
-function getDiscoveryCandidates(): Array<{ name: string; baseUrl: string; source: 'preset' | 'config' | 'env'; nodeName?: string }> {
+type DiscoveryCandidate = { name: string; baseUrl: string; source: 'preset' | 'config' | 'env'; nodeName?: string }
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+
+function ownAddresses(): string[] {
+    try { return Object.values(networkInterfaces()).flatMap(list => (list || []).map(entry => entry.address)) } catch { return [] }
+}
+
+/** host:port identity of an endpoint; any address of this machine counts as localhost. */
+function endpointIdentity(baseUrl: string, localAddresses: ReadonlySet<string>): string {
+    try {
+        const url = new URL(baseUrl)
+        const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+        const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+        return `${LOOPBACK_HOSTS.has(host) || localAddresses.has(host) ? 'localhost' : host}:${port}${url.pathname.replace(/\/+$/, '')}`
+    } catch { return baseUrl.toLowerCase() }
+}
+
+/** True when both URLs reach the same server (own addresses = localhost). */
+export function sameEndpoint(a: string, b: string, localAddresses: readonly string[] = ownAddresses()): boolean {
+    const local = new Set(localAddresses.map(address => address.toLowerCase()))
+    return endpointIdentity(a, local) === endpointIdentity(b, local)
+}
+
+/**
+ * One server, one entry (2.82.0): the built-in preset localhost:8000 and a
+ * config node pointing at this machine's own (e.g. tailnet) address are the
+ * same vLLM. The named config entry wins over the anonymous preset.
+ */
+export function dedupeDiscoveryCandidates<T extends DiscoveryCandidate>(candidates: readonly T[], localAddresses: readonly string[] = ownAddresses()): T[] {
+    const local = new Set(localAddresses.map(address => address.toLowerCase()))
+    const out: T[] = []
+    const index = new Map<string, number>()
+    for (const candidate of candidates) {
+        const key = endpointIdentity(candidate.baseUrl, local)
+        const at = index.get(key)
+        if (at === undefined) { index.set(key, out.length); out.push(candidate); continue }
+        if (out[at].source === 'preset' && candidate.source !== 'preset') out[at] = candidate
+    }
+    return out
+}
+
+function getDiscoveryCandidates(): DiscoveryCandidate[] {
     const candidates: Array<{ name: string; baseUrl: string; source: 'preset' | 'config' | 'env'; nodeName?: string }> = []
 
     for (const [name, preset] of Object.entries(LOCAL_LLM_PRESETS)) {
@@ -178,13 +221,7 @@ function getDiscoveryCandidates(): Array<{ name: string; baseUrl: string; source
 
     candidates.push(...getConfiguredLocalEndpoints())
 
-    const seen = new Set<string>()
-    return candidates.filter((candidate) => {
-        const key = candidate.baseUrl.toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-    })
+    return dedupeDiscoveryCandidates(candidates)
 }
 
 // ============================================

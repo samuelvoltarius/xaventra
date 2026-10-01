@@ -868,30 +868,16 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Monitoring
             const monitorTargets = (state as any).serviceMonitor?.getTargets?.()?.length || 0
 
-            // Build mesh model overview — group by endpoint/node
-            const meshLines: string[] = []
+            // KI-Endpunkte (grouped by host:port) + the real node list from the capability graph (2.82.0)
+            let meshSection = ''
             try {
-                // Group local models by endpoint (node)
-                const nodeMap = new Map<string, { name: string; models: string[] }>()
-                for (const entry of availableLLMs) {
-                    const entryAny = entry as { local?: boolean; endpoint?: string; nodeName?: string; model: string }
-                    if (!entryAny.local || !entryAny.endpoint) continue
-                    const host = entryAny.endpoint.replace(/https?:\/\//, '').replace(/\/.*$/, '')
-                    const nodeName = entryAny.nodeName || host
-                    if (!nodeMap.has(host)) nodeMap.set(host, { name: nodeName, models: [] })
-                    // Skip embedding models
-                    if (!/embed|nomic|bge|mxbai/i.test(entryAny.model)) {
-                        nodeMap.get(host)!.models.push(entryAny.model)
-                    }
-                }
-                for (const [host, info] of nodeMap) {
-                    const isPrimary = info.models.includes(configModel)
-                    const modelList = info.models.slice(0, 3).join(', ') + (info.models.length > 3 ? ` +${info.models.length - 3}` : '')
-                    meshLines.push(`  ${isPrimary ? '★' : '○'} ${info.name} (${host}): ${modelList || '–'}`)
-                }
-                // Cloud fallbacks
-                const cloudModels = availableLLMs.filter(l => !l.local).map(l => l.model).slice(0, 4)
-                if (cloudModels.length > 0) meshLines.push(`  ☁ Cloud: ${cloudModels.join(' → ')}`)
+                let graphNodes: Array<{ id: string; status: 'online' | 'offline' | 'busy' | 'unknown' }> = []
+                try {
+                    const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
+                    graphNodes = getCapabilityGraph().getSnapshot().nodes
+                } catch { /* graph optional */ }
+                const { formatEndpointSection } = await import('./status-endpoints.js')
+                meshSection = formatEndpointSection(availableLLMs, configModel, graphNodes)
             } catch { /* mesh info optional */ }
 
             // Phase 7 Wächter: compact lines, owner only (infrastructure details).
@@ -903,10 +889,6 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                     if (lines.length) watchSection = `\n\n*Wächter:*\n${lines.map(line => `  ${line.replace(/^Wächter: /, '')}`).join('\n')}`
                 } catch { /* watch optional */ }
             }
-
-            const meshSection = meshLines.length > 0
-                ? `\n*Mesh (${meshLines.filter(l => l.trim().startsWith('★') || l.trim().startsWith('○')).length} Nodes):*\n${meshLines.join('\n')}`
-                : ''
 
             const statusText = `*Nova v${NOVA_VERSION} Status*
 

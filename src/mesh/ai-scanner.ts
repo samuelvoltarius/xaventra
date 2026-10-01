@@ -1325,15 +1325,17 @@ async function maybeSwitchToBestMeshModel(): Promise<void> {
 async function syncToAvailableLLMs(): Promise<void> {
     try {
         const { availableLLMs } = await import('../core/llm-factory.js')
+        const { sameEndpoint } = await import('../llm/local-llm.js')
 
         for (const service of discoveredServices) {
             if (service.type !== 'llm' || service.status !== 'running') continue
 
             for (const model of service.models) {
-                // Check if already registered
+                // Check if already registered — localhost and this machine's own
+                // (tailnet) address are the same server (2.82.0).
                 const exists = availableLLMs.some(
                     (l: { model: string; provider: string; endpoint?: string }) =>
-                        l.model === model && l.endpoint === service.endpoint
+                        l.model === model && !!l.endpoint && sameEndpoint(l.endpoint, service.endpoint)
                 )
                 if (!exists) {
                     availableLLMs.push({
