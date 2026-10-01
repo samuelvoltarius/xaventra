@@ -10,15 +10,13 @@ vi.mock('./message-pipeline.js', () => ({ getIdleMinutes: () => 0, getMinutesSin
 vi.mock('./autonomous-executor.js', () => ({ getActiveMission: () => null, getMissionQueue: () => [] }))
 vi.mock('../intelligence/autonomy-engine.js', () => ({ getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }) }))
 vi.mock('./croner-scheduler.js', () => ({ getCronerScheduler: () => ({ schedule: async () => { } }) }))
-vi.mock('../doctor/nightwatch.js', () => ({
-    createNightwatchSource: () => async () => { selfHeal.order.push('nightwatch'); return [] },
-}))
 vi.mock('../doctor/self-heal-runtime.js', () => ({
-    runSelfHealCycle: async (options: { isMain: boolean; nightwatchJournalDir?: string }) => {
-        selfHeal.calls.push(options)
-        selfHeal.order.push('selbstheilung')
+    // 2.82.0: the loop uses the one self-heal trigger like Wächter and missions.
+    triggerSelfHeal: async (options: { isMain: boolean; reason: string; nightwatchJournalDir?: string }) => {
+        selfHeal.calls.push({ isMain: options.isMain, nightwatchJournalDir: options.nightwatchJournalDir })
+        selfHeal.order.push(`selbstheilung:${options.reason}`)
         // Even a notifiable finding must never reach the owner from a worker.
-        return [{ source: 'selbstheilung', severity: 'warning', message: 'Platte fast voll: 95 %', timestamp: Date.now(), requiresNotification: true }]
+        return { ran: true, note: 'gelaufen', checks: [{ source: 'selbstheilung', severity: 'warning', message: 'Platte fast voll: 95 %', timestamp: Date.now(), requiresNotification: true }] }
     },
 }))
 
@@ -48,11 +46,11 @@ beforeEach(() => {
 })
 
 describe('autonomy loop: Selbstheilung as its own phase (Stufe 3)', () => {
-    it('runs after the Nachtwache on the Main and feeds the normal alarm path', async () => {
+    it('runs through the one trigger on the Main and feeds the normal alarm path (no own Nachtwache)', async () => {
         authority.value = true
         updateAutonomyConfig({ enabled: true, quietHoursStart: -1, quietHoursEnd: -1, checks: { ...allOff, nightwatch: true }, nightwatch: { configPath: 'x.json', journalDir: 'nw-journal' } })
         const report = await triggerAutonomyCheck()
-        expect(selfHeal.order).toEqual(['nightwatch', 'selbstheilung'])
+        expect(selfHeal.order).toEqual(['selbstheilung:autonomie-schleife'])
         expect(selfHeal.calls).toEqual([{ isMain: true, nightwatchJournalDir: 'nw-journal' }])
         expect(report.checks.some(check => check.source === 'selbstheilung')).toBe(true)
         expect(notify).toHaveBeenCalledTimes(1)

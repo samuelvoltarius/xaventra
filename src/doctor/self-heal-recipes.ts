@@ -268,6 +268,9 @@ export function createEndpointRecipe(deps: Pick<RecipeDeps, 'endpoints' | 'retry
         async detect(ctx) {
             const controller = deps.endpoints
             if (!controller || !ctx.settings.endpoints) return []
+            // Abgrenzung: vLLM switch/maintenance marker and the LLM failover own the endpoint right now.
+            const hold = await controller.hold?.().catch(() => null)
+            if (hold) return []
             const active = ctx.state.endpointActive
             // Someone else (owner, /model, scanner) switched: not ours to undo.
             if (controller.currentModel() !== entryFor(ctx, active).model) return []

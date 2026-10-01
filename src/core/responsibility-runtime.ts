@@ -352,13 +352,15 @@ function productionExecutors(): StepExecutor[] {
                 return getSelfHealSettings().enabled === true
             },
             async run() {
-                const { getSelfHealSettings, runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
+                const { getSelfHealSettings, triggerSelfHeal } = await import('../doctor/self-heal-runtime.js')
                 if (!getSelfHealSettings().enabled) return { ok: false, message: 'Selbstheilung ist aus (autonomy.selfHeal.enabled ist nicht true)' }
-                const checks = await runSelfHealCycle({ isMain: true, nightwatchJournalDir })
+                // The one self-heal trigger (2.82.0): joins a running cycle, no second one within 5 min.
+                const outcome = await triggerSelfHeal({ isMain: true, reason: 'mission', nightwatchJournalDir })
+                const checks = outcome.checks
                 const { readHealJournal } = await import('../doctor/self-heal.js')
                 const last = readHealJournal(getNovaDataDir(), 3)
                 const rolledBack = last.some(entry => entry.ergebnis === 'zurueckgerollt' || entry.ergebnis === 'rueckweg-gescheitert')
-                return { ok: !rolledBack, rolledBack, message: `Selbstheilung gelaufen (${checks.length} Meldungen${last.length ? `, zuletzt ${last[last.length - 1].recipe}: ${last[last.length - 1].ergebnis}` : ''})` }
+                return { ok: !rolledBack, rolledBack, message: `${outcome.ran ? `Selbstheilung gelaufen (${checks.length} Meldungen` : `Selbstheilung ${outcome.note} (`}${last.length ? `${outcome.ran ? ', ' : ''}zuletzt ${last[last.length - 1].recipe}: ${last[last.length - 1].ergebnis}` : ''})` }
             },
         },
         {

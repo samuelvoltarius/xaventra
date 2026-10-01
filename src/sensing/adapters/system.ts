@@ -1,6 +1,7 @@
 /**
- * Eigene Systeme als Quelle (nur lesend): Nachtwache-Journal, Selbstheilungs-
- * Journal, Install-Journal und Self-Doctor-Findings. Liest nur neue Zeilen seit
+ * Eigene Systeme als Quelle (nur lesend): Selbstheilungs-Journal,
+ * Install-Journal und Self-Doctor-Findings. Das Nachtwache-Journal liest er
+ * nicht mehr (2.82.0): Nachtwache-Befunde meldet allein der Wächter. Liest nur neue Zeilen seit
  * dem letzten Lauf (Byte-Offsets im Adapter-Zustand); beim ersten Lauf wird nur
  * die Ausgangslage gemerkt, keine Altlasten gemeldet.
  */
@@ -37,16 +38,6 @@ export function readNewLines(path: string, offset: number | undefined): { lines:
 }
 
 const parse = (line: string): any => { try { return JSON.parse(line) } catch { return null } }
-
-export function nightwatchEvents(report: any): RawEvent[] {
-    if (!report || !Array.isArray(report.results)) return []
-    return report.results.filter((r: any) => r && r.status === 'fehler').slice(0, 10).map((r: any): RawEvent => ({
-        kind: 'system.nightwatch', subject: String(r.host || r.id || 'nachtwache'), severity: r.severity === 'critical' ? 'urgent' : 'warning',
-        dedupeKey: `nightwatch:${r.id}:${String(report.startedAt || '').slice(0, 13)}`,
-        summary: `Nachtwache: ${r.label || r.id} — ${r.message || 'Fehler'}`,
-        evidence: { pruefung: String(r.id || ''), host: String(r.host || ''), schwere: String(r.severity || '') },
-    }))
-}
 
 export function selfHealEvents(entry: any): RawEvent[] {
     if (!entry || typeof entry.ergebnis !== 'string') return []
@@ -107,7 +98,7 @@ export function doctorEvents(findings: any[], known: Set<string>): RawEvent[] {
         }))
 }
 
-export function createSystemAdapter(options: { dataDir: string; intervalMs: number; timeoutMs: number; nightwatchDir?: string }): SensingAdapter {
+export function createSystemAdapter(options: { dataDir: string; intervalMs: number; timeoutMs: number }): SensingAdapter {
     return {
         id: 'system', source: 'system', intervalMs: options.intervalMs, timeoutMs: options.timeoutMs,
         async poll(ctx: AdapterContext): Promise<RawEvent[]> {
@@ -119,7 +110,6 @@ export function createSystemAdapter(options: { dataDir: string; intervalMs: numb
                 offsets[path] = result.offset
                 for (const line of result.lines) events.push(...map(parse(line)))
             }
-            tail(latestDated(options.nightwatchDir || join(options.dataDir, 'nightwatch')), nightwatchEvents)
             tail(latestDated(join(options.dataDir, 'self-heal', 'journal')), selfHealEvents)
             tail(join(options.dataDir, 'install-journal.jsonl'), installEvents)
             // Keep only offsets of files that still matter (dated files rotate daily).

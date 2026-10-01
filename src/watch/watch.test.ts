@@ -7,7 +7,8 @@ import { createWatchEngine, debounce, resolveWatchTargets, type WatchEngineDeps 
 import { acceptPeerWatchSample } from './peer.js'
 import type { WatchProbeDeps } from './probes.js'
 import type { WatchSample } from './sample.js'
-import { parseWatchSettings } from './settings.js'
+import { parseWatchSettings, type WatchTarget } from './settings.js'
+import { targetFromUrl } from './targets.js'
 import { appendWatchSample, maintainWatchStore, readWatchSamples, samplesDir } from './store.js'
 import { DAY_MS, diskForecasts, forecastToLimit, linearRegression } from './trends.js'
 
@@ -38,7 +39,7 @@ function fakeProbes(clock: { now: number }, overrides: Partial<WatchProbeDeps> =
     return { deps, calls }
 }
 
-function engineFor(options: { autonomy: any; clock: { now: number }; ownUsedPct?: number; probes?: Partial<WatchProbeDeps>; devices?: WatchEngineDeps['devices']; proxmox?: WatchEngineDeps['proxmox']; main?: boolean }) {
+function engineFor(options: { autonomy: any; clock: { now: number }; ownUsedPct?: number; probes?: Partial<WatchProbeDeps>; devices?: WatchEngineDeps['devices']; managedTargets?: WatchEngineDeps['managedTargets']; nightwatch?: WatchEngineDeps['nightwatch']; main?: boolean }) {
     const dataDir = tmp()
     const watchDir = join(dataDir, 'watch')
     const thoughts = createThoughtStore({ dataDir, now: () => options.clock.now })
@@ -52,7 +53,8 @@ function engineFor(options: { autonomy: any; clock: { now: number }; ownUsedPct?
         isMain: () => options.main !== false,
         collect: async () => sample('spark', options.clock.now, options.ownUsedPct ?? 50),
         devices: options.devices ?? (() => []),
-        proxmox: options.proxmox,
+        managedTargets: options.managedTargets,
+        nightwatch: options.nightwatch,
         probes: deps,
         thoughts: { add: input => thoughts.add(input), resolve: id => { resolved.push(id); thoughts.setStatus(id, 'erledigt', 'waechter') } },
         runL1: async action => { l1.push(action.kind); return { ok: true, message: 'ok' } },
@@ -182,7 +184,7 @@ describe('Wächter: Entprellen und Erholung', () => {
 })
 
 describe('Wächter: nur Ziele aus der Liste', () => {
-    it('probes exactly the configured, set-up and Proxmox targets — nothing else, no ranges, no password manager', async () => {
+    it('probes exactly the configured, own (/monitor, migrated L19) and set-up targets — nothing else, no ranges, no password manager', async () => {
         const clock = { now: NOON }
         const { engine, calls } = engineFor({
             autonomy: { watch: { enabled: true, targets: [
@@ -196,13 +198,13 @@ describe('Wächter: nur Ziele aus der Liste', () => {
             ] } },
             clock,
             devices: () => [{ name: 'Drucker', host: 'printer.example.com', port: 7125 }],
-            proxmox: async () => [{ name: 'labor-vm', host: 'labor.example.com' }, { name: 'bitwarden-vm', host: 'bw.example.com' }],
+            managedTargets: () => [targetFromUrl('Labor', 'http://labor.example.com/health') as WatchTarget],
         })
         const result = await engine.tick()
         expect(result.targets).toBe(4)
         expect(calls.sort()).toEqual([
+            'http http://labor.example.com:80/health',
             'http https://example.com:443/',
-            'ping labor.example.com',
             'tcp example.com:22',
             'tcp printer.example.com:7125',
         ])
@@ -213,7 +215,9 @@ describe('Wächter: nur Ziele aus der Liste', () => {
         expect(settings.targets).toEqual([])
         expect(settings.rejected.join(' ')).toMatch(/Passwortmanager wird nie übernommen/)
         expect(settings.rejected.join(' ')).toMatch(/unbekannte Art/)
-        expect(resolveWatchTargets({ ...settings, includeDevices: false }, [{ name: 'x', host: 'printer.example.com', port: 1 }], []).targets).toEqual([])
+        expect(resolveWatchTargets({ ...settings, includeDevices: false }, [{ name: 'x', host: 'printer.example.com', port: 1 }]).targets).toEqual([])
+        // Proxmox guests are not a Wächter target source any more (no double alarm with the Proxmox sensing adapter).
+        expect(parseWatchSettings({ watch: { includeProxmox: true } })).not.toHaveProperty('includeProxmox')
     })
 })
 
@@ -299,7 +303,9 @@ describe('Wächter: aus = nichts läuft', () => {
     it('runtime: default config is off, start refuses, no mesh sample is measured', async () => {
         const runtime = await import('./runtime.js')
         expect(runtime.setWatchConfig(undefined).enabled).toBe(false)
-        expect(await runtime.startWatch({ nodeOnly: false })).toEqual({ started: false, reason: 'autonomy.watch.enabled=false' })
+        const start = await runtime.startWatch({ nodeOnly: false })
+        expect(start.started).toBe(false)
+        expect(start.reason).toMatch(/nichts zu bewachen/)
         expect(await runtime.watchSampleForMesh()).toBeNull()
         expect((await runtime.ingestPeerWatchSample('ns1', sample('ns1', Date.now()), ['ns1'])).accepted).toBe(false)
     })

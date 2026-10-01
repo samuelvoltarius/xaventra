@@ -138,6 +138,8 @@ export function parseSelfHealSettings(raw: unknown): SelfHealSettings {
 // ---------------------------------------------------------------------------
 
 export interface EndpointController {
+    /** Reason why no switch may happen right now (vLLM switch/maintenance, LLM failover), else null. */
+    hold?(): Promise<string | null>
     /** Model the runtime currently uses. */
     currentModel(): string | undefined
     /** True when the endpoint answers (no 5xx, no network error). */

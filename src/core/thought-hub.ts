@@ -66,10 +66,11 @@ async function answerWatch(action: Extract<StoredAction, { kind: 'watch' }>, ans
     const verdict = evaluateAction({ kind: action.actionKind, node: action.node, target: action.target, origin: 'owner' }, { localNodeId })
     if (verdict.decision === 'never' || verdict.decision === 'handoff') return { ok: false, message: `Nicht erlaubt (${verdict.level}: ${verdict.reason}); ich führe das nicht aus.` }
     if (action.actionKind === 'self-heal-zyklus' && (!action.node || action.node === localNodeId)) {
-        const { getSelfHealSettings, runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
+        const { getSelfHealSettings, triggerSelfHeal } = await import('../doctor/self-heal-runtime.js')
         if (!getSelfHealSettings().enabled) return { ok: false, message: 'Selbstheilung ist aus (autonomy.selfHeal.enabled ist nicht true); nichts ausgeführt.' }
-        const checks = await runSelfHealCycle({ isMain: true })
-        return { ok: true, message: `Selbstheilung gelaufen (${checks.length} Meldungen; nur die freigegebenen Rezepte).` }
+        // The one self-heal trigger (2.82.0): joins a running cycle, no second one within 5 min.
+        const outcome = await triggerSelfHeal({ isMain: true, reason: 'owner-ja' })
+        return { ok: true, message: `${outcome.note}; nur die freigegebenen Rezepte.` }
     }
     return { ok: true, message: `Vermerkt (${action.actionKind}${action.target ? ` für ${action.target}` : ''}${action.node ? ` auf ${action.node}` : ''}). Dafür gibt es keinen freigegebenen Ausführungsweg — bitte selbst erledigen; der Wächter meldet die Erholung.` }
 }

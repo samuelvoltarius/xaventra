@@ -6,7 +6,7 @@
  *   autonomy.planner.enabled      an      start the planner (false = aus)
  *   autonomy.planner.tickSeconds  30      tick interval
  *   autonomy.planner.reminders    false   set_reminder goes through the planner (else the old reminders.json path)
- *   autonomy.planner.nightwatch   false   the planner runs the Nachtwache (needs autonomy.nightwatch.enabled)
+ *   (Nachtwache: 2.82.0 runs only in the Wächter, watch/runtime.ts; an old sys-nachtwache job is switched off)
  *   autonomy.briefing.enabled     an      morning/evening report (follows the planner; true starts the planner alone)
  *   autonomy.briefing.morning     "07:30"
  *   autonomy.briefing.evening     "20:00"
@@ -30,7 +30,6 @@ export interface PlannerSettings {
     enabled: boolean
     tickSeconds: number
     reminders: boolean
-    nightwatch: boolean
     briefing: { enabled: boolean; morning: string; evening: string; timeZone: string }
     thoughts: ThoughtSettings
 }
@@ -50,7 +49,6 @@ export interface PlannerRuntimeOptions {
     /** Overrides the globally wired port (tests, special adapters). */
     port?: DeliveryPort | null
     nodeId?: string
-    nightwatch?: { enabled: boolean; configPath: string; journalDir: string; deps?: unknown }
 }
 
 export const SYSTEM_JOB_IDS = Object.freeze({
@@ -74,7 +72,6 @@ export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = pro
         enabled: plannerOn || briefingOn,
         tickSeconds: Number.isFinite(tick) && tick >= 5 ? Math.min(600, Math.floor(tick)) : 30,
         reminders: planner.reminders === true,
-        nightwatch: planner.nightwatch === true,
         briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
         thoughts: normalizeThoughtSettings({
             quietStart: quiet.start,
@@ -169,42 +166,6 @@ function reminderPort(reminders: ReminderModule): DeliveryPort {
     }
 }
 
-async function registerNightwatch(planner: Planner, thoughts: ThoughtStore, options: NonNullable<PlannerRuntimeOptions['nightwatch']>): Promise<number> {
-    const nightwatch = await import('../doctor/nightwatch.js')
-    let intervalMinutes = 30
-    try { intervalMinutes = nightwatch.loadNightwatchConfig(options.configPath).intervalMinutes ?? 30 } catch { /* run reports it */ }
-    planner.register('nachtwache', {
-        async run() {
-            let report: import('../doctor/nightwatch.js').NightwatchReport
-            try {
-                report = await nightwatch.runNightwatch(nightwatch.loadNightwatchConfig(options.configPath), options.deps as any)
-            } catch (error) {
-                const at = new Date().toISOString()
-                report = { startedAt: at, finishedAt: at, results: [], error: String((error as Error)?.message || error).slice(0, 300) }
-            }
-            try { nightwatch.appendNightwatchJournal(options.journalDir, report) } catch (error) {
-                console.warn('[Planer] Nachtwache-Journal nicht schreibbar:', (error as Error)?.message)
-            }
-            if (report.error) {
-                thoughts.add({ source: 'nachtwache', title: 'Nachtwache läuft nicht', evidence: report.error, severity: 'warning', signature: 'nachtwache:lauf' })
-                return { ok: false, summary: `Nachtwache läuft nicht: ${report.error}` }
-            }
-            const failing = report.results.filter(result => result.status !== 'ok')
-            for (const result of failing) {
-                thoughts.add({
-                    source: 'nachtwache',
-                    title: `${result.label} (${result.host})`,
-                    evidence: `${result.status === 'unbekannt' ? 'nicht prüfbar – ' : ''}${result.message} — Beleg: ${JSON.stringify(result.evidence?.command ?? '')} → Exit ${result.evidence?.exitCode ?? '–'}`,
-                    severity: result.severity,
-                    signature: `nachtwache:${result.id}:${result.host}:${result.status}`,
-                })
-            }
-            return { summary: `${report.results.length - failing.length}/${report.results.length} Prüfungen ok` }
-        },
-    })
-    return intervalMinutes
-}
-
 export async function startPlannerRuntime(autonomyConfig: unknown, options: PlannerRuntimeOptions = {}): Promise<PlannerRuntime | null> {
     stopPlannerRuntime()
     const settings = parsePlannerSettings(autonomyConfig)
@@ -251,13 +212,9 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
         })
     }
 
-    const nightwatchOn = settings.nightwatch && options.nightwatch?.enabled === true
-    if (nightwatchOn) {
-        const minutes = await registerNightwatch(planner, thoughts, options.nightwatch!)
-        planner.upsertSystemJob({ id: SYSTEM_JOB_IDS.nachtwache, kind: 'nachtwache', title: 'Nachtwache', schedule: { type: 'intervall', minutes }, mainOnly: true, enabled: true })
-    } else if (planner.getJob(SYSTEM_JOB_IDS.nachtwache)) {
-        planner.setEnabled(SYSTEM_JOB_IDS.nachtwache, false)
-    }
+    // 2.82.0 ein Wächter: the Nachtwache runs only in the Wächter; a job from
+    // an earlier release is switched off, never run twice.
+    if (planner.getJob(SYSTEM_JOB_IDS.nachtwache)?.enabled) planner.setEnabled(SYSTEM_JOB_IDS.nachtwache, false)
 
     if (settings.reminders) {
         reminders.setReminderSink({
@@ -285,6 +242,6 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
         },
     }
     runtime = handle
-    console.log(`[Planer] aktiv (Tick ${settings.tickSeconds}s, Erinnerungen ${settings.reminders ? 'Planer' : 'alter Weg'}, Nachtwache ${nightwatchOn ? 'Planer' : 'Schleife'}, Bericht ${settings.briefing.enabled ? `${settings.briefing.morning}/${settings.briefing.evening}` : 'aus'})`)
+    console.log(`[Planer] aktiv (Tick ${settings.tickSeconds}s, Erinnerungen ${settings.reminders ? 'Planer' : 'alter Weg'}, Bericht ${settings.briefing.enabled ? `${settings.briefing.morning}/${settings.briefing.evening}` : 'aus'})`)
     return handle
 }

@@ -37,17 +37,15 @@ export interface AutonomyConfig {
         inbound: boolean             // Watch inbound folders
         logs: boolean                // Error log scanning
         uptime: boolean              // Process uptime tracking
-        nightwatch?: boolean         // Nachtwache (read-only probes), opt-in
+        /** Nachtwache on: the self-heal phase reads its journal. 2.82.0: the
+         * probes themselves run only in the Wächter (watch/runtime.ts). */
+        nightwatch?: boolean
     }
-    /** Where the Nachtwache reads its private config and writes its journal. */
+    /** Where the Nachtwache writes its journal (read by the self-heal phase). */
     nightwatch?: {
         configPath: string
         journalDir: string
     }
-    /** Phase 1: 'planner' = the planner job runs the probes and raises the
-     * thoughts; the loop then neither probes nor alarms (self-heal still reads
-     * the journal). Default 'loop' (unchanged behaviour). */
-    nightwatchRunner?: 'loop' | 'planner'
 }
 
 export interface CheckResult {
@@ -855,45 +853,19 @@ function buildProactivePrompt(ctx: AutonomyContext): string {
     return parts.join('\n')
 }
 
-// Nachtwache: one source per config/journal pair, so its own rate limit and
-// in-flight sharing survive across cycles.
-let nightwatchSource: { key: string; run: () => Promise<CheckResult[]> } | null = null
-
-async function checkNightwatch(): Promise<CheckResult[]> {
-    if (config.nightwatchRunner === 'planner') return []
-    const paths = config.nightwatch ?? {
-        configPath: join(DATA_DIR, 'nightwatch.json'),
-        journalDir: join(DATA_DIR, 'nightwatch'),
-    }
-    const key = `${paths.configPath} ${paths.journalDir}`
-    try {
-        if (!nightwatchSource || nightwatchSource.key !== key) {
-            const { createNightwatchSource } = await import('../doctor/nightwatch.js')
-            nightwatchSource = { key, run: createNightwatchSource(paths) }
-        }
-        return await nightwatchSource.run()
-    } catch (error) {
-        return [{
-            source: 'nightwatch',
-            severity: 'warning',
-            message: `Nachtwache läuft nicht: ${String((error as Error)?.message || error).slice(0, 300)}`,
-            timestamp: Date.now(),
-            requiresNotification: true,
-        }]
-    }
-}
-
 // Stufe 3: own phase, off until autonomy.selfHeal.enabled=true. Findings come
 // back as CheckResults, so the normal alarm policy (quiet hours, dedupe,
 // governed notifier) applies on the Main; a worker gets nothing back.
 async function runSelfHealPhase(isMain: boolean): Promise<CheckResult[]> {
     try {
-        const { runSelfHealCycle } = await import('../doctor/self-heal-runtime.js')
-        const checks = await runSelfHealCycle({
+        // The one self-heal trigger (single-flight, minimum gap); Wächter and missions use it too.
+        const { triggerSelfHeal } = await import('../doctor/self-heal-runtime.js')
+        const outcome = await triggerSelfHeal({
             isMain,
+            reason: 'autonomie-schleife',
             nightwatchJournalDir: config.checks.nightwatch ? (config.nightwatch?.journalDir ?? join(DATA_DIR, 'nightwatch')) : undefined,
         })
-        return isMain ? checks : []
+        return isMain && outcome.ran ? outcome.checks : []
     } catch (error) {
         console.debug(`[Autonomy] Selbstheilung non-critical error: ${error}`)
         return []
@@ -952,10 +924,8 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     if (config.checks.uptime) {
         checks.push(...await checkUptime())
     }
-    if (config.checks.nightwatch) {
-        checks.push(...await checkNightwatch())
-    }
-    // Stufe 3 (S3.1-S3.5): Selbstheilung as its own phase after the Nachtwache.
+    // Nachtwache: 2.82.0 only the Wächter probes and alarms (one finding = one message).
+    // Stufe 3 (S3.1-S3.5): Selbstheilung as its own phase.
     checks.push(...await runSelfHealPhase(true))
 
     console.log(`[Autonomy] 📋 ${checks.length} checks completed`)

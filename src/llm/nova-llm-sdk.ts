@@ -45,6 +45,10 @@ import { vllmSwitchBlocks, vllmSwitchBusyMessage } from '../routing/vllm-switch-
 // Cloud/remote calls never hang on undici defaults (300 s headers, endless
 // trickling streams): completions and streams get a hard cap.
 const REQUEST_TIMEOUT_MS = 120_000
+
+/** Last model failover of the SDK (ms). Self-heal's endpoint recipe holds still after it (2.82.0). */
+let lastFailoverAt = 0
+export function lastLlmFailoverAt(): number { return lastFailoverAt }
 const STREAM_TIMEOUT_MS = 300_000
 
 export interface ToolCall {
@@ -1246,6 +1250,7 @@ export class NovaLLM {
                     const fallbackModel = getFailoverModel(this.currentConfig.model)
 
                     if (fallbackModel) {
+                        lastFailoverAt = Date.now()
                         console.log(`[NovaLLM] Switching to fallback: ${fallbackModel}`)
                         this.configure({ ...this.currentConfig, model: fallbackModel })
                         return await this.completeObserved(messages, tools, undefined, true)

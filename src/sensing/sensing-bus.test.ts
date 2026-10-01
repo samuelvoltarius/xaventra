@@ -270,16 +270,29 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
 describe('Eigene Systeme, Konten, Ruhezeiten', () => {
     it('System-Adapter meldet nur neue Zeilen (keine Altlasten beim Start)', async () => {
         const dataDir = tmp('sense-sys-')
-        mkdirSync(join(dataDir, 'nightwatch'), { recursive: true })
-        const file = join(dataDir, 'nightwatch', '2026-10-01.jsonl')
-        const report = (status: string) => JSON.stringify({ startedAt: `2026-10-01T0${status === 'fehler' ? 2 : 1}:00:00Z`, results: [{ id: 'vllm', label: 'vLLM', host: 'spark', status, severity: 'critical', message: 'HTTP 503' }] })
-        writeFileSync(file, `${report('fehler')}\n`)
+        mkdirSync(join(dataDir, 'self-heal', 'journal'), { recursive: true })
+        const file = join(dataDir, 'self-heal', 'journal', '2026-10-01.jsonl')
+        const entry = (id: string) => JSON.stringify({ id, recipe: 'logs-rotieren', ergebnis: 'rueckweg-gescheitert', node: 'spark', at: '2026-10-01T02:00:00Z' })
+        writeFileSync(file, `${entry('h1')}\n`)
         const adapter = createSystemAdapter({ dataDir, intervalMs: 1, timeoutMs: 1 })
         const state: Record<string, unknown> = {}
         expect(await adapter.poll({ signal: new AbortController().signal, now: 0, state })).toEqual([])
-        appendFileSync(file, `${report('fehler').replace('02:00', '03:00')}\n`)
+        appendFileSync(file, `${entry('h2')}\n`)
         const events = await adapter.poll({ signal: new AbortController().signal, now: 0, state })
-        expect(events.map(e => [e.kind, e.severity])).toEqual([['system.nightwatch', 'urgent']])
+        expect(events.map(e => [e.kind, e.severity])).toEqual([['system.self-heal', 'urgent']])
+    })
+
+    it('2.82.0 ein Wächter: Nachtwache-Befunde meldet nur der Wächter, nicht der System-Adapter', async () => {
+        const dataDir = tmp('sense-nw-')
+        mkdirSync(join(dataDir, 'nightwatch'), { recursive: true })
+        const file = join(dataDir, 'nightwatch', '2026-10-01.jsonl')
+        const report = (hour: string) => JSON.stringify({ startedAt: `2026-10-01T${hour}:00:00Z`, results: [{ id: 'vllm', label: 'vLLM', host: 'spark', status: 'fehler', severity: 'critical', message: 'HTTP 503' }] })
+        writeFileSync(file, `${report('02')}\n`)
+        const adapter = createSystemAdapter({ dataDir, intervalMs: 1, timeoutMs: 1 })
+        const state: Record<string, unknown> = {}
+        await adapter.poll({ signal: new AbortController().signal, now: 0, state })
+        appendFileSync(file, `${report('03')}\n`)
+        expect(await adapter.poll({ signal: new AbortController().signal, now: 0, state })).toEqual([])
     })
 
     it('Konten nur aus eigenen Quellen, ohne Token in der Ausgabe', () => {

@@ -853,7 +853,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 'coreRuntime', 'channelRouter', 'metaLearning',
                 'vision', 'astAnalyzer', 'costTracker',
                 'businessSense', 'autonomousLearner',
-                'serviceMonitor', 'selfImprovement',
+                'selfImprovement',
                 'correctionLearner', 'antiHallucination',
                 'knowledgeGraph', 'journal', 'intelligence',
                 'securityScanner', 'autonomy', 'lanceMemory',
@@ -865,8 +865,13 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             const corrStats = (state as any).correctionLearner?.getStats?.()
             const selfRules = (state as any).selfImprovement?.getRules?.()?.length || 0
 
-            // Monitoring
-            const monitorTargets = (state as any).serviceMonitor?.getTargets?.()?.length || 0
+            // Monitoring: the Wächter's targets (config + /monitor list), 2.82.0
+            let monitorTargets = 0
+            try {
+                const { getWatchSettings, watchDir } = await import('../watch/runtime.js')
+                const { loadManagedTargets } = await import('../watch/targets.js')
+                monitorTargets = getWatchSettings().targets.length + loadManagedTargets(watchDir()).targets.length
+            } catch { /* watch optional */ }
 
             // KI-Endpunkte (grouped by host:port) + the real node list from the capability graph (2.82.0)
             let meshSection = ''
@@ -910,7 +915,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 *Intelligence:*
   Korrekturen: ${corrStats?.totalCorrections || 0} (${corrStats?.appliedCorrections || 0} angewendet)
   Self-Rules: ${selfRules}
-  Monitor-Targets: ${monitorTargets}
+  Wächter-Ziele: ${monitorTargets}
 
 *Channels:* ${channels.length > 0 ? channels.join(', ') : 'keine'}${watchSection}`
 
@@ -1199,8 +1204,8 @@ L6 Session Summary, Cold Storage, Core Facts • L7 Learning & Tool Learning •
 🔬 *Advanced (L10-L18):*
 L10 Vision • L11 Project Manager • L12 QA & Anti-Hallucination • L13 AST Analyzer • L14 Cost Tracker • L15 Self-Check & Security Scanner • L16 Business Sense • L17 Autonomous Learning • L18 LLM Router (Multi-Model)
 
-📡 *System (L19-L21):*
-L19 Monitoring • L20 Self-Improvement • L21 Node Health
+📡 *System (L20-L21, Wächter):*
+Wächter (Ziele, Nachtwache, Prognosen) • L20 Self-Improvement • L21 Node Health
 
 🧠 *Intelligence (14 Module):*
 Entity Extractor • Intent Router • Task Planner • Tool Chainer • Model Router • Emotion Tracker • Self-Reflection • Proactive Learning & Suggestions • Result Analyzer • User Patterns • Autonomy Engine • Thinking Engine
@@ -1895,11 +1900,6 @@ Gebaut für Xaventra contributors 🌶️`
                 if (selfImprove) {
                     saved.push('🧬 Self-Improvement Rules')
                 }
-                // Save Monitoring Config
-                const monitor = (state as any).serviceMonitor
-                if (monitor) {
-                    saved.push('📡 Monitor Config')
-                }
 
                 if (saved.length === 0) return '⚠️ Nichts zu speichern (keine aktiven Systeme)'
                 return `✅ *Gespeichert!*\n\n${saved.join('\n')}\n\nAlle Daten sind persistiert.`
@@ -2214,41 +2214,50 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
             return null // Unbekannter Befehl -> an LLM weiterleiten
 
         case 'monitor': {
+            // 2.82.0 ein Wächter: /monitor edits the Wächter's own target list
+            // (watch/targets.ts). L19 with its own prober is gone.
+            if (principalContext?.permission !== 'owner') return 'Die Überwachungsliste ist nur für den Owner verfügbar.'
             try {
-                const { getServiceMonitor } = await import('../layers/L19-monitoring.js')
-                const monitor = getServiceMonitor()
-
+                const { refreshWatch, watchDir, handleWaechterCommand } = await import('../watch/runtime.js')
+                const { addManagedTarget, loadManagedTargets, removeManagedTarget } = await import('../watch/targets.js')
                 const [subCmd, ...rest] = (args || '').split(/\s+/)
-
                 switch (subCmd) {
                     case 'add': {
                         const [name, url] = rest
                         if (!name || !url) return '❌ Syntax: /monitor add <name> <url>'
-                        monitor.addTarget(name, url)
-                        return `✅ Monitor-Target "${name}" hinzugefügt: ${url}`
+                        const target = addManagedTarget(watchDir(), name, url)
+                        if (typeof target === 'string') return `❌ Nicht übernommen: ${target}`
+                        const watch = await refreshWatch()
+                        return `✅ Wächter-Ziel "${target.name}" hinzugefügt (${target.kind} ${target.host}${target.port ? `:${target.port}` : ''}${target.path && target.path !== '/' ? target.path : ''}). Wächter: ${watch.reason}`
                     }
                     case 'remove':
                     case 'rm': {
                         const [name] = rest
                         if (!name) return '❌ Syntax: /monitor remove <name>'
-                        const removed = monitor.removeTarget(name)
-                        return removed ? `✅ "${name}" entfernt` : `❌ "${name}" nicht gefunden`
+                        if (!removeManagedTarget(watchDir(), name)) return `❌ "${name}" nicht in der eigenen Liste (Config-Ziele stehen in autonomy.watch.targets)`
+                        await refreshWatch()
+                        return `✅ "${name}" entfernt`
                     }
                     case 'check': {
-                        const results = await monitor.checkAll()
-                        return results.length > 0 ? results.join('\n\n') : '✅ Keine Targets konfiguriert'
+                        const { probeTargets, defaultWatchProbeDeps } = await import('../watch/probes.js')
+                        const { getWatchSettings } = await import('../watch/runtime.js')
+                        const targets = [...getWatchSettings().targets, ...loadManagedTargets(watchDir()).targets]
+                        if (!targets.length) return '✅ Keine Ziele in der Liste'
+                        const results = await probeTargets(targets, defaultWatchProbeDeps, getWatchSettings().timeoutMs)
+                        return results.map(item => `${item.ok ? '✅' : '❌'} ${item.target.name}: ${item.detail}${item.ms !== null ? ` (${item.ms} ms)` : ''}`).join('\n')
                     }
                     case 'start':
-                        monitor.start()
-                        return '✅ Monitoring gestartet'
                     case 'stop':
-                        monitor.stop()
-                        return '⏹️ Monitoring gestoppt'
-                    default:
-                        return monitor.formatStatus()
+                        return 'ℹ️ Die Ziele bewacht der Wächter (/waechter); er läuft, solange Ziele in der Liste stehen oder autonomy.watch.enabled=true ist.'
+                    default: {
+                        const own = loadManagedTargets(watchDir())
+                        const lines = own.targets.map(item => `• ${item.name}: ${item.kind} ${item.host}${item.port ? `:${item.port}` : ''}${item.path && item.path !== '/' ? item.path : ''}`)
+                        const head = `📡 *Wächter-Ziele (eigene Liste)*${own.migratedFrom ? ` — übernommen aus ${own.migratedFrom}` : ''}\n\n${lines.length ? lines.join('\n') : 'Keine eigenen Ziele.'}\n\nHinzufügen: /monitor add <name> <url>\nBeispiel: /monitor add MeinServer https://example.com`
+                        return `${head}\n\n${handleWaechterCommand(principalContext)}`
+                    }
                 }
             } catch (err) {
-                return `❌ Monitoring nicht verfügbar: ${err}`
+                return `❌ Wächter nicht verfügbar: ${err}`
             }
         }
 

@@ -1911,20 +1911,17 @@ async function startDaemon() {
         // probe config (default .nova-data/nightwatch.json, see docs/NIGHTWATCH.md).
         const nightwatchCfg = autonomyCfg.nightwatch || {}
         const nightwatchEnabled = nightwatchCfg.enabled === true
-
-        // Phase 1 Planer (CL-09): with autonomy.planner.nightwatch=true the
-        // planner job owns the Nachtwache probes and alarms (as thoughts).
-        let plannerOwnsNightwatch = false
-        try {
-            const { parsePlannerSettings } = await import('./planner/runtime.js')
-            const plannerSettings = parsePlannerSettings(autonomyCfg)
-            plannerOwnsNightwatch = nightwatchEnabled && plannerSettings.enabled && plannerSettings.nightwatch
-        } catch (err) { console.debug(`[Nova] Planer config skipped: ${err}`) }
+        // 2.82.0 ein Wächter: the Wächter is the only runner of the Nachtwache
+        // probes (before: loop, planner job and sensing adapter each reported).
+        const nightwatchPaths = {
+            configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
+            journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
+        }
 
         // Stufe 3: Selbstheilung stays off until autonomy.selfHeal.enabled=true.
         try {
             const { setSelfHealConfig } = await import('./doctor/self-heal-runtime.js')
-            setSelfHealConfig(autonomyCfg.selfHeal)
+            setSelfHealConfig(autonomyCfg.selfHeal, { nightwatchJournalDir: nightwatchEnabled ? nightwatchPaths.journalDir : undefined })
         } catch (err) { console.debug(`[Nova] Selbstheilung config skipped: ${err}`) }
 
         // Phase 2 Wahrnehmen: P8 on at the Main by default (autonomy.sensing.enabled=false = off); main only.
@@ -1945,27 +1942,12 @@ async function startDaemon() {
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
 
-        // Phase 7 Wächter: off until autonomy.watch.enabled=true. Main measures,
-        // probes and alarms; workers only send their samples over the signed mesh.
-        try {
-            const { setWatchConfig, startWatch } = await import('./watch/runtime.js')
-            setWatchConfig(autonomyCfg)
-            const watch = await startWatch({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
-            if (watch.started) console.log(`[Nova] ✓ Wächter aktiv (${watch.reason})`)
-        } catch (err) { console.debug(`[Nova] Wächter skipped: ${err}`) }
-
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
             maxNotificationsPerHour: autonomyCfg.selfThinkMaxPerHour || 3,
             socialCheckIns: autonomyCfg.socialCheckIns === true,
             checks: { nightwatch: nightwatchEnabled } as any,
-            nightwatchRunner: plannerOwnsNightwatch ? 'planner' : 'loop',
-            ...(nightwatchEnabled ? {
-                nightwatch: {
-                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
-                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
-                },
-            } : {}),
+            ...(nightwatchEnabled ? { nightwatch: nightwatchPaths } : {}),
         })
 
         // Phase 1 Planer: job list, thoughts, morning/evening report. P8: on at
@@ -1973,16 +1955,24 @@ async function startDaemon() {
         // planner reminders back to reminders.json (Rückweg).
         try {
             const { startPlannerRuntime } = await import('./planner/runtime.js')
-            await startPlannerRuntime(autonomyCfg, {
-                nightwatch: {
-                    enabled: nightwatchEnabled,
-                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
-                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
-                },
-            })
+            await startPlannerRuntime(autonomyCfg)
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
         }
+
+        // Phase 7 Wächter — 2.82.0 the one watch: targets (config, /monitor,
+        // migrated L19 list), Nachtwache probes, forecasts. Started AFTER the
+        // planner so it runs as planner job sys-waechter (timer only without
+        // planner). Workers only send their samples over the signed mesh.
+        try {
+            const { legacyMonitorFile, setWatchConfig, startWatch, watchDir } = await import('./watch/runtime.js')
+            const { migrateLegacyMonitorTargets } = await import('./watch/targets.js')
+            const migration = migrateLegacyMonitorTargets({ legacyFile: legacyMonitorFile(), watchDir: watchDir() })
+            if (migration.reason !== 'keine L19-Datei') console.log(`[Xaventra] Wächter: ${migration.reason}${migration.rejected.length ? ` (${migration.rejected.length} nicht übernommen)` : ''}; monitoring.json → monitoring.json.migriert`)
+            setWatchConfig(autonomyCfg, { nightwatch: { enabled: nightwatchEnabled, ...nightwatchPaths } })
+            const watch = await startWatch({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            console.log(`[Xaventra] ${watch.started ? '✓' : '·'} Wächter ${watch.started ? 'aktiv' : 'aus'} (${watch.reason})`)
+        } catch (err) { console.debug(`[Nova] Wächter skipped: ${err}`) }
 
         // Phase 6a Release-Knopf: P8 on at the Main by default (false = off);
         // GitHub read-only until the owner presses Ja; without token nothing is dispatched.
@@ -2028,7 +2018,7 @@ async function startDaemon() {
         try {
             const { setResponsibilityConfig, startResponsibilities } = await import('./core/responsibility-runtime.js')
             setResponsibilityConfig(autonomyCfg, {
-                nightwatchJournalDir: nightwatchEnabled ? resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')) : undefined,
+                nightwatchJournalDir: nightwatchEnabled ? nightwatchPaths.journalDir : undefined,
                 ownerSessions: (config.channels?.telegram?.allowFrom || []).map(String).filter((id: string) => /^\d{1,20}$/.test(id)),
             })
             const responsibilities = await startResponsibilities({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
@@ -2524,45 +2514,8 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ L15 Security Scanner nicht verfügbar: ${err}`)
     }
 
-    // ============================================
-    // Start L19 Service Monitoring
-    // ============================================
-    try {
-        const { getServiceMonitor } = await import('./layers/L19-monitoring.js')
-        const monitor = getServiceMonitor()
-            ; (state as any).serviceMonitor = monitor
-
-        // Wire alerts to the fenced proactive channel. Always wired: the
-        // governed path checks channel and leadership per alert (R2 NZ-10).
-        {
-            monitor.setAlertCallback(async (target, status) => {
-                const msg = status === 'down'
-                    ? `🚨 *ALERT: ${target.name} ist DOWN!*\n\nURL: ${target.url}\nSeit: ${target.downSince ? new Date(target.downSince).toLocaleString('de-DE') : 'jetzt'}\nFehlversuche: ${target.consecutiveFailures}`
-                    : `✅ *RECOVERED: ${target.name} ist wieder ONLINE!*\n\nURL: ${target.url}`
-                try {
-                    const governed = (state as any).sendGovernedProactive
-                    if (typeof governed !== 'function') throw new Error('governed notifier unavailable')
-                    await governed(
-                        msg,
-                        'service-monitor',
-                        status === 'down' ? 'error' : 'info',
-                        0.98,
-                        `service:${target.name}:${status}`,
-                        // Measured by the L19 probe: explicit evidence, otherwise
-                        // the event bus suppresses the alert (R2 NZ-11).
-                        [`health:service:${target.name}`],
-                    )
-                } catch {
-                    console.log(`[L19] Alert could not be sent: ${msg.slice(0, 100)}`)
-                }
-            })
-        }
-
-        monitor.start()
-        console.log('[Nova] ✓ L19 Service Monitoring aktiv')
-    } catch (err) {
-        console.log(`[Nova] ⚠ L19 Monitoring nicht verfügbar: ${err}`)
-    }
+    // L19 Service Monitoring is gone (2.82.0 ein Wächter): its targets were
+    // migrated into the Wächter (watch/targets.ts), /monitor edits that list.
 
     // ============================================
     // Start L21 Cross-Node Health Monitor
@@ -2700,23 +2653,8 @@ async function startDaemon() {
                 consolidation: autonomy.getMemoryConsolidator(),
             }
 
-        // Wire L19 monitoring alerts to insight engine
-        const insightEngine = autonomy.getInsightEngine()
-        const monitor = (state as any).serviceMonitor
-        if (monitor) {
-            const originalCallback = monitor.alertCallback
-            monitor.setAlertCallback(async (target: any, status: string) => {
-                // Forward to insight engine
-                insightEngine.recordInsight(
-                    status === 'down' ? 'warning' : 'observation',
-                    status === 'down'
-                        ? `Service "${target.name}" ist offline seit ${new Date().toLocaleTimeString('de-DE')}`
-                        : `Service "${target.name}" ist wieder online`
-                )
-                // Also call original callback
-                if (originalCallback) await originalCallback(target, status)
-            })
-        }
+        // L19 → Insight forwarding is gone with L19 (2.82.0): service outages are
+        // Wächter thoughts, reported once.
 
         // L21 node alerts are NOT copied into the insight engine (2.82.0): they
         // already reach Telegram once over the governed path; the copy came back

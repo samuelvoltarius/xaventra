@@ -15,10 +15,12 @@ import {
 import { createDefaultRecipes, type DiskUsage } from './self-heal-recipes.js'
 
 let settings: SelfHealSettings = parseSelfHealSettings(undefined)
+let configuredNightwatchJournalDir: string | undefined
 
 /** Called once by the daemon with `autonomy.selfHeal` from the config. */
-export function setSelfHealConfig(raw: unknown): void {
+export function setSelfHealConfig(raw: unknown, options: { nightwatchJournalDir?: string } = {}): void {
     settings = parseSelfHealSettings(raw)
+    configuredNightwatchJournalDir = options.nightwatchJournalDir
 }
 
 export function getSelfHealSettings(): SelfHealSettings {
@@ -39,10 +41,52 @@ export function statfsUsage(path: string): DiskUsage | null {
     }
 }
 
+/** Window after an LLM-SDK failover in which self-heal never switches endpoints. */
+export const FAILOVER_HOLD_MS = 10 * 60_000
+
+/**
+ * Abgrenzung (2.82.0): the endpoint recipe never switches while
+ *   - a vLLM model switch is confirmed or running (vllm-switch plans),
+ *   - the host agent reports the vLLM maintenance marker or a running switch,
+ *   - the LLM SDK did its own failover within the last 10 minutes.
+ * Those paths own the endpoint at that moment; two switchers fight otherwise.
+ */
+export async function endpointSwitchHold(deps: {
+    plans?: () => Array<{ status: string; id: string }>
+    hostState?: () => Promise<{ maintenance?: boolean; switchRunning?: boolean } | null>
+    lastFailoverAt?: () => number
+    now?: () => number
+} = {}): Promise<string | null> {
+    const now = (deps.now ?? Date.now)()
+    try {
+        const plans = deps.plans ? deps.plans() : (await import('../routing/local-model-control.js')).readVllmPlans()
+        const running = plans.find(plan => plan.status === 'bestaetigt' || plan.status === 'laeuft')
+        if (running) return `vLLM-Wechsel ${running.id} läuft (${running.status}) — kein Endpoint-Umschalten`
+    } catch { /* no plans */ }
+    try {
+        const state = deps.hostState ? await deps.hostState() : await defaultHostState()
+        if (state?.maintenance) return 'vLLM-Wartungsmarke gesetzt — kein Endpoint-Umschalten'
+        if (state?.switchRunning) return 'vLLM-Wechsel läuft am Host — kein Endpoint-Umschalten'
+    } catch { /* host agent optional */ }
+    try {
+        const at = deps.lastFailoverAt ? deps.lastFailoverAt() : (await import('../llm/nova-llm-sdk.js')).lastLlmFailoverAt()
+        if (at > 0 && now - at < FAILOVER_HOLD_MS) return `LLM-Failover vor ${Math.round((now - at) / 60_000)} min — der Failover führt, kein Endpoint-Umschalten`
+    } catch { /* sdk optional */ }
+    return null
+}
+
+async function defaultHostState(): Promise<{ maintenance?: boolean; switchRunning?: boolean } | null> {
+    if (!process.env.XAVENTRA_HOST_AGENT_SOCKET) return null
+    const { callHostAgent } = await import('../host/docker-client.js')
+    const state: any = await callHostAgent('/v1/vllm/state', {})
+    return state?.success ? { maintenance: state.maintenance === true, switchRunning: state.switchRunning === true } : null
+}
+
 /** The live runtime: model id + switchModel with an exact endpoint. */
 export function createRuntimeEndpointController(): EndpointController {
     const llm = () => (globalThis as any).__novaState?.llm
     return {
+        hold: () => endpointSwitchHold(),
         currentModel: () => llm()?.modelId,
         async probe(endpoint) {
             try {
@@ -95,7 +139,8 @@ async function runtimeRecipes() {
 let lastGateNote = ''
 
 /**
- * One self-heal phase of the autonomy loop. On the Main the returned checks
+ * One self-heal cycle. Callers outside this module use `triggerSelfHeal`
+ * (one trigger, single-flight, minimum gap). On the Main the returned checks
  * flow into the loop's normal alarm policy (quiet hours, dedupe, governed
  * notifier). A worker (`isMain=false`) or a channel-less node never gets
  * checks back: its reports ride the mesh summary to the Main.
@@ -120,6 +165,42 @@ export async function runSelfHealCycle(options: { isMain: boolean; nightwatchJou
     for (const entry of result.entries) console.log(`[Selbstheilung] ${entry.recipe}: ${entry.ergebnis} (${entry.signature})`)
     return result.checks
 }
+
+/** Minimum gap between two self-heal cycles, whoever asks. */
+export const SELF_HEAL_MIN_GAP_MS = 5 * 60_000
+let healInFlight: { reason: string; run: Promise<CheckResult[]> } | null = null
+let lastHeal: { at: number; reason: string } | null = null
+
+/**
+ * The ONE trigger for a self-heal cycle (2.82.0). Autonomy loop, Wächter-L1,
+ * mission step and an owner Ja all come here: one run at a time (a second
+ * caller joins it) and at most one cycle per 5 minutes, so the same symptom
+ * is never healed twice in parallel from different places.
+ */
+export async function triggerSelfHeal(options: { isMain: boolean; reason: string; nightwatchJournalDir?: string; now?: () => number }): Promise<{ ran: boolean; checks: CheckResult[]; note: string }> {
+    if (!settings.enabled) return { ran: false, checks: [], note: 'Selbstheilung aus (autonomy.selfHeal.enabled ist nicht true)' }
+    const now = (options.now ?? Date.now)()
+    if (healInFlight) {
+        const joined = healInFlight
+        const checks = await joined.run
+        return { ran: true, checks, note: `läuft bereits (Anstoß: ${joined.reason}) — Ergebnis übernommen` }
+    }
+    if (lastHeal && now - lastHeal.at < SELF_HEAL_MIN_GAP_MS) {
+        return { ran: false, checks: [], note: `vor ${Math.max(0, Math.round((now - lastHeal.at) / 60_000))} min gelaufen (Anstoß: ${lastHeal.reason}) — nicht erneut` }
+    }
+    const run = runSelfHealCycle({ isMain: options.isMain, nightwatchJournalDir: options.nightwatchJournalDir ?? configuredNightwatchJournalDir })
+    healInFlight = { reason: options.reason, run }
+    try {
+        const checks = await run
+        lastHeal = { at: now, reason: options.reason }
+        return { ran: true, checks, note: `Selbstheilung gelaufen (${checks.length} Meldungen, Anstoß: ${options.reason})` }
+    } finally {
+        healInFlight = null
+    }
+}
+
+/** Tests only. */
+export function resetSelfHealTrigger(): void { healInFlight = null; lastHeal = null }
 
 /** Summary for the mesh capability payload (worker → Main). */
 export function currentSelfHealMeshSummary(): SelfHealMeshSummary | null {

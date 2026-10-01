@@ -459,57 +459,6 @@ describe('L17 Autonomous Learning', async () => {
 })
 
 // ============================================
-// L19 — Service Monitoring
-// ============================================
-
-describe('L19 Monitoring', async () => {
-    const { getServiceMonitor } = await import('./L19-monitoring.js')
-
-    // Clean up any test targets written to .nova-data/monitoring.json after this suite
-    afterAll(() => {
-        try {
-            const monitor = getServiceMonitor()
-            const targets = monitor.getTargets()
-            for (const t of targets) {
-                if (t.name.startsWith('__vitest') || t.name.startsWith('test')) {
-                    monitor.removeTarget(t.name)
-                }
-            }
-        } catch { /* cleanup best-effort */ }
-    })
-
-    it('getServiceMonitor: returns instance', () => {
-        const monitor = getServiceMonitor()
-        expect(monitor).toBeDefined()
-    })
-
-    it('getServiceMonitor: returns singleton', () => {
-        const a = getServiceMonitor()
-        const b = getServiceMonitor()
-        expect(a).toBe(b)
-    })
-
-    it('ServiceMonitor: addTarget does not throw', () => {
-        // NOTE: getServiceMonitor() persists to .nova-data/monitoring.json
-        // Targets added here are cleaned up in afterEach below
-        const monitor = getServiceMonitor()
-        expect(() => monitor.addTarget('__vitest-probe__', 'http://localhost:9999', 60000)).not.toThrow()
-    })
-
-    it('ServiceMonitor: getTargets returns array', () => {
-        const monitor = getServiceMonitor()
-        const targets = monitor.getTargets()
-        expect(Array.isArray(targets)).toBe(true)
-    })
-
-    it('ServiceMonitor: formatStatus returns string', () => {
-        const monitor = getServiceMonitor()
-        const status = monitor.formatStatus()
-        expect(typeof status).toBe('string')
-    })
-})
-
-// ============================================
 // L20 — Self-Improvement Engine
 // ============================================
 
@@ -1132,7 +1081,6 @@ describe('Extended Layer Module Loading', async () => {
         './L15-security-scanner.js',
         './L16-business-sense.js',
         './L17-autonomous-learning.js',
-        './L19-monitoring.js',
         './L20-self-improvement.js',
         './L21-node-health.js',
         './L22-federated-memory.js',

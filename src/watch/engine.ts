@@ -5,6 +5,9 @@
  *   1. own sample → Messverlauf (workers' samples arrive via the signed mesh)
  *   2. Erreichbarkeit of the resolved target list, entprellt: alarm only after
  *      `failThreshold` failures in a row, recovery is reported once
+ *   2b. Nachtwache-Prüfungen (2.82.0: der Wächter ist ihr einziger Ausführer;
+ *      eigener Takt aus nightwatch.json, Journal bleibt): Alarm einmal je
+ *      Ausfall, Erholung einmal
  *   3. Prognosen (Platte voll, RAM), TLS-Ablauf (alle 6 h), Backup-Alter
  *   4. findings become thoughts (fixed importance rules, quiet hours, dedupe
  *      and daily cap of the planner). The suggested action is judged by the
@@ -16,6 +19,7 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { evaluateAction, type PolicyVerdict } from '../core/action-policy.js'
 import type { NewThought } from '../planner/thoughts.js'
+import type { NightwatchReport } from '../doctor/nightwatch.js'
 import { probeTargets, readBackupAges, readCertificates, type ReachabilityResult, type WatchProbeDeps } from './probes.js'
 import type { WatchSample } from './sample.js'
 import { normalizeWatchTarget, type WatchSettings, type WatchTarget } from './settings.js'
@@ -26,24 +30,23 @@ export const THOUGHT_SOURCE = 'waechter'
 const TLS_INTERVAL_MS = 6 * 60 * 60_000
 
 // ---------------------------------------------------------------------------
-// Ziele: nur Liste + eingerichtete Geräte + Proxmox-Gäste
+// Ziele: Config-Liste + eigene Liste (/monitor, übernommene L19-Ziele) + eingerichtete Geräte
+// (2.82.0: kein Proxmox-Zweig — Gast-Status meldet allein der Proxmox-Sensing-Adapter)
 // ---------------------------------------------------------------------------
 
 export interface DeviceLike { name: string; host: string; port: number }
-export interface ProxmoxGuestLike { name: string; host: string; kind?: string; port?: number }
-/** Read-only adapter interface; registered by a Proxmox module once it exists. */
-export type ProxmoxGuestSource = () => Promise<ProxmoxGuestLike[]>
 
-export function resolveWatchTargets(settings: WatchSettings, devices: readonly DeviceLike[], guests: readonly ProxmoxGuestLike[]): { targets: WatchTarget[]; rejected: string[] } {
+export function resolveWatchTargets(settings: WatchSettings, devices: readonly DeviceLike[], managed: readonly WatchTarget[] = []): { targets: WatchTarget[]; rejected: string[] } {
     const targets = [...settings.targets]
     const rejected: string[] = []
-    const add = (raw: unknown, origin: 'geraet' | 'proxmox') => {
-        const target = normalizeWatchTarget(raw, origin)
-        if (typeof target === 'string') rejected.push(target)
-        else if (!targets.some(existing => existing.id === target.id)) targets.push(target)
+    for (const target of managed.slice(0, 64)) if (!targets.some(existing => existing.id === target.id)) targets.push(target)
+    if (settings.includeDevices) {
+        for (const device of devices.slice(0, 64)) {
+            const target = normalizeWatchTarget({ name: device.name, host: device.host, kind: 'tcp', port: device.port }, 'geraet')
+            if (typeof target === 'string') rejected.push(target)
+            else if (!targets.some(existing => existing.id === target.id)) targets.push(target)
+        }
     }
-    if (settings.includeDevices) for (const device of devices.slice(0, 64)) add({ name: device.name, host: device.host, kind: 'tcp', port: device.port }, 'geraet')
-    if (settings.includeProxmox) for (const guest of guests.slice(0, 64)) add({ name: guest.name, host: guest.host, kind: guest.kind || 'ping', port: guest.port }, 'proxmox')
     return { targets, rejected }
 }
 
@@ -167,9 +170,13 @@ export function reachabilityAlarm(result: ReachabilityResult, state: TargetState
 // Engine
 // ---------------------------------------------------------------------------
 
+export interface NightwatchState { alarmed: boolean; since: string; thoughtId?: string; label: string }
+
 export interface WatchState {
     version: 1
     targets: Record<string, TargetState>
+    /** Nachtwache-Prüfungen, Schlüssel `id@host` (2.82.0). */
+    nightwatch?: Record<string, NightwatchState>
     lastTlsAt?: number
     certs?: Array<{ name: string; host: string; port: number; validTo: number | null; daysLeft: number | null; severity: TrendSeverity | 'unbekannt' }>
 }
@@ -180,6 +187,8 @@ export interface WatchSnapshot {
     forecasts: Array<Forecast & { kind: 'platte' | 'ram' }>
     certs: NonNullable<WatchState['certs']>
     backups: Array<{ name: string; ageHours: number | null; maxAgeHours: number; severity: TrendSeverity }>
+    /** Letzter Nachtwache-Lauf (nur wenn die Nachtwache an ist). */
+    nightwatch?: { at: string; total: number; failing: Array<{ id: string; label: string; host: string; status: string; message: string }>; error?: string }
     rejected: string[]
 }
 
@@ -190,7 +199,10 @@ export interface WatchEngineDeps {
     isMain: () => boolean
     collect: () => Promise<WatchSample>
     devices: () => DeviceLike[]
-    proxmox?: ProxmoxGuestSource
+    /** Targets from /monitor and the migrated L19 list (watch/targets.ts). */
+    managedTargets?: () => WatchTarget[]
+    /** Nachtwache runner: a fresh report when due, else null (doctor/nightwatch.ts). */
+    nightwatch?: () => Promise<NightwatchReport | null>
     probes: WatchProbeDeps
     thoughts: WatchThoughtPort
     runL1?: WatchL1Runner
@@ -213,6 +225,64 @@ export function loadWatchSnapshot(watchDir: string): WatchSnapshot | null {
 function save(watchDir: string, name: string, value: unknown): void {
     if (!existsSync(watchDir)) mkdirSync(watchDir, { recursive: true, mode: 0o700 })
     atomicWriteJsonSync(join(watchDir, name), value)
+}
+
+/**
+ * Nachtwache-Befunde → Wächter-Alarme (2.82.0, ein Wächter): einmal je Ausfall,
+ * die Erholung einmal. Vorher meldeten Planer-Job (`nachtwache:…`),
+ * Wahrnehmen-system-Adapter (`nightwatch:…`) und die Schleife denselben Befund.
+ */
+export async function applyNightwatchReport(
+    report: NightwatchReport,
+    state: WatchState,
+    raise: (alarm: WatchAlarm) => Promise<string>,
+    thoughts: WatchThoughtPort,
+): Promise<{ alarms: number; recovered: number; view: NonNullable<WatchSnapshot['nightwatch']> }> {
+    const known = state.nightwatch ??= {}
+    let alarms = 0, recovered = 0
+    const recover = async (key: string, title: string, evidence: string) => {
+        const previous = known[key]
+        if (previous.thoughtId) thoughts.resolve?.(previous.thoughtId)
+        await raise({ key: `nachtwache-erholt:${key}:${previous.since}`, title, evidence: `${evidence}; gestört seit ${previous.since}`, severity: 'warning' })
+        delete known[key]
+        recovered++
+    }
+    if (report.error) {
+        if (!known.lauf) {
+            const thoughtId = await raise({ key: `nachtwache:lauf:${report.startedAt}`, title: 'Nachtwache läuft nicht', evidence: report.error, severity: 'warning' })
+            known.lauf = { alarmed: true, since: report.startedAt, thoughtId, label: 'Nachtwache' }
+            alarms++
+        }
+        return { alarms, recovered, view: { at: report.startedAt, total: 0, failing: [], error: report.error.slice(0, 300) } }
+    }
+    if (known.lauf) await recover('lauf', 'Nachtwache läuft wieder', `${report.results.length} Prüfungen gelaufen`)
+    const seen = new Set<string>()
+    for (const result of report.results) {
+        const key = `${result.id}@${result.host}`
+        seen.add(key)
+        const failing = result.status !== 'ok'
+        if (failing && !known[key]) {
+            const thoughtId = await raise({
+                key: `nachtwache:${result.id}:${result.host}:${report.startedAt}`,
+                title: `Nachtwache: ${result.label} (${result.host})`,
+                evidence: `${result.status === 'unbekannt' ? 'nicht prüfbar – ' : ''}${result.message} — Beleg: ${JSON.stringify(result.evidence?.command ?? '')} → Exit ${result.evidence?.exitCode ?? '–'}`,
+                severity: result.severity === 'critical' ? 'critical' : 'warning',
+            })
+            known[key] = { alarmed: true, since: report.startedAt, thoughtId, label: result.label }
+            alarms++
+        } else if (!failing && known[key]) {
+            await recover(key, `Nachtwache: ${result.label} (${result.host}) wieder ok`, result.message)
+        }
+    }
+    // A check removed from nightwatch.json: close its open alarm quietly.
+    for (const key of Object.keys(known)) {
+        if (key === 'lauf' || seen.has(key)) continue
+        if (known[key].thoughtId) thoughts.resolve?.(known[key].thoughtId!)
+        delete known[key]
+    }
+    const failing = report.results.filter(result => result.status !== 'ok').slice(0, 20)
+        .map(result => ({ id: result.id, label: result.label, host: result.host, status: result.status, message: String(result.message || '').slice(0, 160) }))
+    return { alarms, recovered, view: { at: report.startedAt, total: report.results.length, failing } }
 }
 
 export function createWatchEngine(deps: WatchEngineDeps) {
@@ -245,11 +315,11 @@ export function createWatchEngine(deps: WatchEngineDeps) {
         try { maintainWatchStore(deps.watchDir, { retentionDays: settings.retentionDays, maxBytes: settings.maxBytes, now }) } catch { /* next tick */ }
 
         // 2. Erreichbarkeit
-        let guests: Awaited<ReturnType<ProxmoxGuestSource>> = []
-        if (settings.includeProxmox && deps.proxmox) { try { guests = await deps.proxmox() } catch { guests = [] } }
         let devices: DeviceLike[] = []
         try { devices = deps.devices() } catch { devices = [] }
-        const { targets, rejected } = resolveWatchTargets(settings, devices, guests)
+        let managed: WatchTarget[] = []
+        try { managed = deps.managedTargets?.() ?? [] } catch { managed = [] }
+        const { targets, rejected } = resolveWatchTargets(settings, devices, managed)
         const results = await probeTargets(targets, deps.probes, settings.timeoutMs)
         const nextTargets: Record<string, TargetState> = {}
         for (const result of results) {
@@ -266,6 +336,19 @@ export function createWatchEngine(deps: WatchEngineDeps) {
             nextTargets[result.target.id] = next
         }
         state.targets = nextTargets
+
+        // 2b. Nachtwache (only when due; its own interval from nightwatch.json)
+        let nightwatchView: WatchSnapshot['nightwatch'] | undefined = loadWatchSnapshot(deps.watchDir)?.nightwatch
+        if (deps.nightwatch) {
+            let report: NightwatchReport | null = null
+            try { report = await deps.nightwatch() } catch { report = null }
+            if (report) {
+                const outcome = await applyNightwatchReport(report, state, raise, deps.thoughts)
+                alarms += outcome.alarms
+                recovered += outcome.recovered
+                nightwatchView = outcome.view
+            }
+        }
 
         // 3. Prognosen
         const samples = readWatchSamples(deps.watchDir, { sinceMs: now - TREND_WINDOW_DAYS * DAY_MS })
@@ -320,6 +403,7 @@ export function createWatchEngine(deps: WatchEngineDeps) {
                 ok: result.ok, ms: result.ms, detail: result.detail, fails: nextTargets[result.target.id]?.fails ?? 0, alarmed: nextTargets[result.target.id]?.alarmed ?? false,
             })),
             forecasts, certs: state.certs ?? [], backups,
+            ...(nightwatchView ? { nightwatch: nightwatchView } : {}),
             rejected: [...settings.rejected, ...rejected],
         }
         save(deps.watchDir, 'snapshot.json', snapshot)
@@ -407,6 +491,11 @@ export function formatWaechter(overview: WatchOverview, principal?: { permission
         if (snap.backups.length) {
             lines.push('', '*Backups*')
             for (const backup of snap.backups) lines.push(`  ${backup.severity === 'ok' ? '✅' : '⚠️'} ${backup.name}: ${backup.ageHours === null ? 'nichts gefunden' : `${Math.round(backup.ageHours)} h alt`} (erlaubt ${backup.maxAgeHours} h)`)
+        }
+        if (snap.nightwatch) {
+            const nw = snap.nightwatch
+            lines.push('', `*Nachtwache* (Stand ${nw.at})${nw.error ? `: läuft nicht — ${nw.error}` : `: ${nw.total - nw.failing.length}/${nw.total} ok`}`)
+            for (const item of nw.failing) lines.push(`  ${item.status === 'unbekannt' ? '❔' : '❌'} ${JSON.stringify(item.label)} auf ${item.host}: ${item.message}`)
         }
         if (snap.rejected.length) lines.push('', `Ausgelassen: ${snap.rejected.slice(0, 8).join('; ')}`)
     }

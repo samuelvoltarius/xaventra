@@ -1,5 +1,8 @@
 /**
- * Wächter (Phase 7) — `autonomy.watch` settings. Standard AUS.
+ * Wächter (Phase 7) — `autonomy.watch` settings. Standard AUS; läuft trotzdem,
+ * sobald es etwas zu bewachen gibt: eigene Ziele (/monitor, übernommene L19-
+ * Ziele) oder die Nachtwache (`autonomy.nightwatch.enabled`). 2.82.0: der
+ * Wächter ist die einzige Ziel- und Messlogik.
  *
  *   autonomy.watch.enabled           false
  *   autonomy.watch.intervalMinutes   5      Takt: Messung, Erreichbarkeit, Prognosen
@@ -12,7 +15,7 @@
  *   autonomy.watch.tlsWarnDays       21
  *   autonomy.watch.backups           []     { name, path, maxAgeHours, pattern? }  (nur mtime)
  *   autonomy.watch.includeDevices    true   eingerichtete Geräte aus /geraete
- *   autonomy.watch.includeProxmox    true   Proxmox-Gäste, falls ein Adapter registriert ist
+ *   (Proxmox-Gäste bewacht der Proxmox-Sensing-Adapter, nicht der Wächter — keine Doppel-Alarme)
  *
  * Feste Regeln (Code, nicht Config): nur konfigurierte oder eingerichtete
  * Ziele, keine Portscans, keine Zugangsdaten in Zielen, und nichts, was nach
@@ -20,7 +23,7 @@
  */
 
 export type WatchTargetKind = 'tcp' | 'http' | 'https' | 'ping'
-export type WatchTargetOrigin = 'config' | 'geraet' | 'proxmox'
+export type WatchTargetOrigin = 'config' | 'geraet' | 'monitor'
 
 export interface WatchTarget {
     id: string
@@ -48,7 +51,6 @@ export interface WatchSettings {
     tlsWarnDays: number
     backups: WatchBackup[]
     includeDevices: boolean
-    includeProxmox: boolean
     /** Entries dropped by the fixed rules, shown in /waechter (never silently ignored). */
     rejected: string[]
 }
@@ -141,7 +143,6 @@ export function parseWatchSettings(autonomy: any): WatchSettings {
         tlsWarnDays: intIn(raw.tlsWarnDays, 21, 1, 365),
         backups,
         includeDevices: raw.includeDevices !== false,
-        includeProxmox: raw.includeProxmox !== false,
         rejected,
     }
 }

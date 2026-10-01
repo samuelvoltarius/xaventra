@@ -255,6 +255,16 @@ describe('Drill: Modell-Endpoint umschalten und zurück (auto)', () => {
         expect(fake.calls).toEqual([endpoints.secondary.endpoint, endpoints.primary.endpoint])
     })
 
+    // 2.82.0 Abgrenzung: vLLM switch/maintenance and the LLM failover own the endpoint.
+    it('never switches while the controller holds (vLLM switch, maintenance marker, LLM failover)', async () => {
+        const fake = fakeController({ [endpoints.primary.endpoint]: false, [endpoints.secondary.endpoint]: true })
+        const held2 = { ...fake.controller, hold: async () => 'vLLM-Wartungsmarke gesetzt — kein Endpoint-Umschalten' }
+        const recipes = createDefaultRecipes({ endpoints: held2, retryDelayMs: 0 }).filter(recipe => recipe.id === 'endpoint-umschalten')
+        const result = await engine(recipes, { endpoints }).run({ gate: held, canNotifyOwner: true })
+        expect(result.entries).toEqual([])
+        expect(fake.calls).toEqual([])
+    })
+
     it('does not switch while the first endpoint answers', async () => {
         const fake = fakeController({ [endpoints.primary.endpoint]: true, [endpoints.secondary.endpoint]: true })
         const recipes = createDefaultRecipes({ endpoints: fake.controller, retryDelayMs: 0 }).filter(recipe => recipe.id === 'endpoint-umschalten')
