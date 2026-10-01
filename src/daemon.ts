@@ -1094,29 +1094,6 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Layer 8 starts once, after the complete tool registry is available.
-    // ============================================
-    if (false) try {
-        const { getMetaLearningSystem } = await import('./layers/L8-meta-learning.js')
-        const toolNames = state.tools ? Object.keys(state.tools) : []
-        const metaLearning = getMetaLearningSystem(toolNames)
-
-            // Attach to state for use in message handling
-            ; (state as any).metaLearning = metaLearning
-
-        const skills = metaLearning.getLearnedSkills()
-        console.log(`[Nova] ✓ Layer 8 (Meta-Learning) aktiv (${skills.length} gelernte Skills)`)
-
-        // Bind the monitored learning service to L8.
-        if (serviceModels.learning) {
-            const { setInternalLLM: setL8LLM } = await import('./layers/L8-meta-learning.js')
-            setL8LLM(serviceModels.learning)
-        }
-    } catch (err) {
-        console.log(`[Nova] ⚠ Meta-Learning nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
     // Initialize Layer 2 - Complete Tool Registry
     // ============================================
     try {
@@ -1810,19 +1787,6 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ L7 Learning nicht verfügbar: ${err}`)
     }
 
-    // Start L8 Meta-Learning
-    try {
-        const { getMetaLearningSystem, setInternalLLM: setL8LLM } = await import('./layers/L8-meta-learning.js')
-        const toolNames = state.tools?.getAll?.().map((tool: any) => tool.name) || []
-        const meta = getMetaLearningSystem(toolNames)
-            ; (state as any).metaLearning = meta
-        if (serviceModels.learning) setL8LLM(serviceModels.learning)
-        const skills = meta.getLearnedSkills()
-        console.log(`[Nova] ✓ L8 Meta-Learning aktiv (${skills.length} gelernte Skills)`)
-    } catch (err) {
-        console.log(`[Nova] ⚠ L8 Meta-Learning nicht verfügbar: ${err}`)
-    }
-
     // ============================================
     // Start L15 Self-Check (Proactive Self-Awareness)
     // ============================================
@@ -2482,21 +2446,6 @@ async function startDaemon() {
         }
     } catch (err) {
         console.log(`[Nova] ⚠ L16 Business Sense nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
-    // Start L17 Autonomous Learning
-    // ============================================
-    try {
-        const { getLearner, setInternalLLM } = await import('./layers/L17-autonomous-learning.js')
-        const autoLearner = getLearner()
-            ; (state as any).autonomousLearner = autoLearner
-        if (serviceModels.learning) {
-            setInternalLLM(serviceModels.learning)
-        }
-        console.log('[Nova] ✓ L17 Autonomous Learning aktiv')
-    } catch (err) {
-        console.log(`[Nova] ⚠ L17 Autonomous Learning nicht verfügbar: ${err}`)
     }
 
     // ============================================

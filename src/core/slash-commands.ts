@@ -247,11 +247,12 @@ export async function handleCommand(
         case 'layers': {
             const coreRuntime = (state as any).coreRuntime
             const channelRouter = (state as any).channelRouter
-            const metaLearning = (state as any).metaLearning
+            const { getProcedureStore } = await import('../learning/procedure-store.js')
+            const procedureStats = getProcedureStore().getStats()
 
             const layerText = `📊 *Nova Layer-Status*
 
-L8 Meta-Learning: ${metaLearning ? '✅ ' + metaLearning.getLearnedSkills().length + ' Skills' : '❌'}
+Prozeduren: ${procedureStats.procedures} verifiziert gemerkt
 L7 Learning & Swarm: ${state.learning ? '✅ aktiv' : '❌'}
 L6 Memory (LanceDB): ${state.memory ? '✅ aktiv' : '❌'}
 L5 LLM Adapters: ${state.llm ? '✅ ' + state.llm.modelId : '❌'}
@@ -680,21 +681,12 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 }
                 if (routineStore) routine = formatRoutineSkills(routineStore.list())
             }
-            const ml = (state as any).metaLearning
-            if (!ml) return routine || '❌ Meta-Learning nicht aktiv'
-
-            const skills = ml.getLearnedSkills()
-            if (skills.length === 0) {
-                const none = `📚 *Gelernte Skills*\n\nNoch keine Skills gelernt.\n\nVerwende /learn <fähigkeit> um eine neue Fähigkeit zu lernen.`
-                return routine ? `${routine}\n\n${none}` : none
-            }
-
-            const skillList = skills.map((s: any) =>
-                `• *${s.name}*\n  Quelle: ${s.source}\n  Genutzt: ${s.successCount}x`
-            ).join('\n\n')
-
-            const learned = `📚 *Gelernte Skills (${skills.length})*\n\n${skillList}`
-            return routine ? `${routine}\n\n${learned}` : learned
+            if (requestPermission !== 'owner') return '📚 Gelernte Abläufe sieht nur der Owner.'
+            // Prozeduren: der eine Speicher für verifizierte Lösungen (learning/procedure-store.ts).
+            const { getProcedureStore } = await import('../learning/procedure-store.js')
+            const procedureStats = getProcedureStore().getStats()
+            const procedures = `📚 *Prozeduren*: ${procedureStats.procedures} verifiziert gemerkt · ${procedureStats.reusableProcedures} wiederverwendbare Formen${procedureStats.legacy ? ` · ${procedureStats.legacy} alte Einträge ohne Beleg (nie genutzt)` : ''}\n🧰 Selbst gebaute Werkzeuge: /werkzeuge`
+            return routine ? `${routine}\n\n${procedures}` : procedures
         }
 
         case 'learn': {
@@ -718,19 +710,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 return learnText
             }
 
-            const ml = (state as any).metaLearning
-            if (!ml) return '❌ Meta-Learning nicht aktiv'
-
-            const capability = args.toLowerCase().replace(/\s+/g, '_')
-            const result = await ml.handleMissingCapability(capability, (msg: string) => {
-                console.log(`[L8] ${msg}`)
-            })
-
-            if (result.success) {
-                return `✅ *Skill gelernt!*\n\n${args}\n\n${result.toolCode ? 'Tool-Code generiert und gespeichert.' : 'Skill aktiviert.'}`
-            } else {
-                return `❌ Konnte Skill nicht lernen: ${result.error}`
-            }
+            return '🧰 Neue Fähigkeiten baut die Werkzeug-Schmiede: /werkzeuge'
         }
 
         // ============================================
@@ -850,9 +830,9 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Active layers count — keys must match actual state keys set in daemon.ts
             const layerKeys = [
                 'llm', 'tools', 'memory', 'resilience', 'learning',
-                'coreRuntime', 'channelRouter', 'metaLearning',
+                'coreRuntime', 'channelRouter',
                 'vision', 'astAnalyzer', 'costTracker',
-                'businessSense', 'autonomousLearner',
+                'businessSense',
                 'serviceMonitor', 'selfImprovement',
                 'correctionLearner', 'antiHallucination',
                 'knowledgeGraph', 'journal', 'intelligence',

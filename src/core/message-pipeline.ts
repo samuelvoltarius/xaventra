@@ -982,21 +982,6 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Inject L8 Meta-Learning skills context
-    if (/skill|lern|tool|fÃ¤higkeit|capabilit/i.test(content)) try {
-        const meta = (state as any).metaLearning
-        if (meta) {
-            const skills = meta.getLearnedSkills()
-            if (skills.length > 0) {
-                const skillBlock = skills
-                    .slice(0, 5)
-                    .map((s: any) => `- ${s.name}: ${s.description} (${s.successCount}x erfolgreich)`)
-                    .join('\n')
-                systemPrompt += `\n\n## GELERNTE FÄHIGKEITEN\n${skillBlock}`
-            }
-        }
-    } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
     // Inject L20 Self-Improvement rules (learned from corrections)
     try {
         const { getSelfImprovementEngine } = await import('../layers/L20-self-improvement.js')
@@ -1492,19 +1477,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             console.log('[Pipeline] 🔒 Strict Implementation Mode aktiv')
         }
     } catch (err) { console.debug('[Pipeline] strict mode not available:', err) }
-
-    // ============================================
-    // L8 Meta-Learning: Auto-Capability Detection
-    // ============================================
-    try {
-        const meta = (state as any).metaLearning
-        if (meta && typeof meta.inspectRequest === 'function') {
-            const capability = meta.inspectRequest(content)
-            if (capability && !capability.canDo) {
-                systemPrompt += `\n\n## FEHLENDE FÄHIGKEIT\nDer User fragt nach "${capability.capability}" — diese Fähigkeit ist noch nicht durch ein erfolgreiches Tool-Outcome bestätigt.`
-            }
-        }
-    } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
     if (!state.llm) {
         console.error(`[Nova] LLM nicht verfügbar — versuche Reconnect`)

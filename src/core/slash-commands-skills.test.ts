@@ -12,7 +12,7 @@ let dir: string
 let store: RoutineSkillStore
 const state: any = {
     running: true, channels: { telegram: null, whatsapp: null, discord: null }, llm: null, internalLlm: null, memory: null,
-    learning: null, tools: null, resilience: null, startTime: Date.now(), config: {}, metaLearning: { getLearnedSkills: () => [] },
+    learning: null, tools: null, resilience: null, startTime: Date.now(), config: {},
 }
 const owner = { channel: 'cli', rawUserId: 'owner-1', principalId: 'owner-1', permission: 'owner' as const }
 const user = { channel: 'cli', rawUserId: 'user-1', principalId: 'user-1', permission: 'user' as const }

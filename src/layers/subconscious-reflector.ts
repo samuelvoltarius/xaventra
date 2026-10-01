@@ -323,11 +323,9 @@ async function reviewSummaries(result: DreamResult): Promise<void> {
 
 async function consolidateKnowledge(result: DreamResult): Promise<void> {
     try {
-        const learningPath = join(process.cwd(), '.nova-learning', 'learned-solutions.json')
-        if (!existsSync(learningPath)) return
-
-        const solutions = JSON.parse(readFileSync(learningPath, 'utf-8'))
-        if (!Array.isArray(solutions)) return
+        const { getProcedureStore } = await import('../learning/procedure-store.js')
+        const solutions = getProcedureStore().list().filter(item => item.verified)
+        if (solutions.length === 0) return
 
         result.contradictions.push(...findVerifiedSolutionContradictions(solutions))
 

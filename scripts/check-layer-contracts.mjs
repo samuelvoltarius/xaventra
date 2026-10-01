@@ -55,14 +55,14 @@ try {
     const result={success:true,content:'fixture evidence'}
     assert.equal(await new ToolAutoRepairEngine().wrapToolHandler('read_file',async () => result)({}),result)
   })
-  const {AutonomousLearner,recallSolution}=await load('layers/L17-autonomous-learning.js')
-  await check('L17 associates sequential results with actual request and principal',() => {
-    const learner=new AutonomousLearner()
-    for (const marker of ['AMBER','COBALT']) learner.recordVerifiedOutcome({toolName:'read_file',request:`Read ${marker} project report`,result:{success:true,content:marker},success:true,verified:true,userId:'alice'})
-    assert.ok(recallSolution('Read AMBER project report','alice').solution.includes('AMBER'))
-    assert.ok(!recallSolution('Read AMBER project report','alice').solution.includes('COBALT'))
-    assert.equal(recallSolution('Read AMBER project report','bob'),null)
-    assert.equal(recallSolution('Read AMBER project report'),null)
+  const {ProcedureStore}=await load('learning/procedure-store.js')
+  await check('Procedure store associates sequential results with actual request and principal',() => {
+    const store=new ProcedureStore(join(runtime,'procedures.json'))
+    for (let round=0;round<2;round++) for (const marker of ['AMBER','COBALT']) store.recordVerifiedOutcome({toolName:'read_file',request:`Read ${marker} project report`,params:{path:marker},result:{success:true,content:marker},success:true,verified:true,userId:'alice'})
+    assert.ok(store.recall('Read AMBER project report','alice').solution.includes('AMBER'))
+    assert.ok(!store.recall('Read AMBER project report','alice').solution.includes('COBALT'))
+    assert.equal(store.recall('Read AMBER project report','bob'),null)
+    assert.equal(store.recall('Read AMBER project report'),null)
   })
   const {default:learning}=await load('layers/L7-tool-learning.js')
   await check('L7 disk reload preserves principal-separated prompts',() => {
