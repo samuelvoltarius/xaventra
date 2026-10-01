@@ -1229,6 +1229,16 @@ export class TelegramAdapter implements ChannelAdapter {
         return typeof sent?.message_id === 'number' ? sent.message_id : null
     }
 
+    /** Phase 5a: a card answered on another channel (Even G2) — update every Telegram copy, no buttons left. */
+    async syncApprovalCardMessages(card: { messages?: Array<{ chatId: string; messageId: number }> }, text: string): Promise<void> {
+        if (!this.bot) return
+        for (const target of (card.messages || []).slice(0, 5)) {
+            try {
+                await this.bot.editMessageText(text, { chat_id: target.chatId, message_id: target.messageId, reply_markup: { inline_keyboard: [] } })
+            } catch { /* message may be too old; the decision is stored anyway */ }
+        }
+    }
+
     /** CL-10: a press on a Knopf-Karte. The callback carries only a code id; the card store decides. */
     private async handleApprovalCardPress(query: any): Promise<void> {
         const answer = async (text: string) => {

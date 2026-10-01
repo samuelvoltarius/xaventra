@@ -1717,6 +1717,19 @@ async function startDaemon() {
     }
 
     // ============================================
+    // Even G2 (Phase 5a): off unless channels.evenG2.enabled=true and
+    // NOVA_EVEN_G2_TOKEN; Main only, loopback only (docs/EVEN_G2.md).
+    // ============================================
+    if (!isNodeOnly) {
+        try {
+            const { startEvenG2FromDaemon } = await import('./channels/even-g2-runtime.js')
+            await startEvenG2FromDaemon(config, handleMessage)
+        } catch (err) {
+            console.warn(`[Nova] Even G2 nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
+        }
+    }
+
+    // ============================================
     // Replay pending messages from last session (queue drain)
     // ============================================
     const pendingReplay = (state as any)._pendingReplayMessages as Array<{ id: string; chatId: string; from: string; content: string; channel: string }> | undefined

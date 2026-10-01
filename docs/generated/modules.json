@@ -529,6 +529,21 @@
       ]
     },
     {
+      "module": "src/channels/even-g2-runtime.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "./even-g2.js"
+      ]
+    },
+    {
+      "module": "src/channels/even-g2.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "node:crypto",
+        "node:http"
+      ]
+    },
+    {
       "module": "src/channels/index.ts",
       "imports": [
         "../core/runtime.js",

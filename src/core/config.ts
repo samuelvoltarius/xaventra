@@ -130,6 +130,14 @@ export const NovaConfigSchema = z.object({
             appToken: z.string().optional(),
         }).default({}),
 
+        // Phase 5a: Even G2 smart glasses. Token only from NOVA_EVEN_G2_TOKEN;
+        // always bound to 127.0.0.1 (there is no host option).
+        evenG2: z.object({
+            enabled: z.boolean().default(false),
+            port: z.number().int().min(1).max(65535).default(18790),
+            allowOrigins: z.array(z.string()).default([]),
+        }).default({}),
+
         voip: z.object({
             enabled: z.boolean().default(false),
             ariUrl: z.string().default('http://localhost:8088/ari'),

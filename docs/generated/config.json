@@ -12,6 +12,14 @@
         "enabled": "boolean",
         "token": "string"
       },
+      "evenG2": {
+        "allowOrigins": {
+          "type": "array",
+          "items": "unknown"
+        },
+        "enabled": "boolean",
+        "port": "number"
+      },
       "slack": {
         "appToken": "string",
         "botToken": "string",

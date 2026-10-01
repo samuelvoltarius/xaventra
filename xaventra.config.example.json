@@ -136,6 +136,11 @@
             "enabled": false,
             "botToken": "",
             "appToken": ""
+        },
+        "evenG2": {
+            "enabled": false,
+            "port": 18790,
+            "allowOrigins": []
         }
     },
     "memory": {
