@@ -23,6 +23,13 @@
   (fixed system time) fails without the fix; candidate CI 36807100740 was red
   only on macOS with exactly this signature (NZ-18/NZ-33 tests).
 
+- Model routing: `claude/model-routing` bef261a (CI 36808011028, 10/10);
+  `src/routing/task-model-routing.test.ts`, `slash-commands-codex-status.test.ts`,
+  `codex-runtime-owner.test.ts` red first (status said "bevorzugt" with
+  enabled=false, non-owner got Codex); six counter-probes red. Before anyone
+  enables Codex: the Codex path still receives the full system prompt
+  (memory, journal) for code tasks; a sanitized prompt is a separate task.
+
 Pending: candidate CI, main CI, signed publication, production activation.
 Live acceptance: Stufe 2 first isolated (WSL: ffmpeg install, rollback,
 package list identical), then Spark with host-agent keys; Stufe 3 drills

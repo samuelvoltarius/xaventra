@@ -12,6 +12,13 @@ Both new capabilities are off until the owner configures them.
   longer stops the run; diagnostic reads still stop and escalate.
 - Benchmark runner derives the intent from the scenario, not from the
   appended fixture path.
+- Model per task (CL-20260930-12): a fixed rule table picks Codex only for
+  code, larger refactors and hard debugging, for the owner, when
+  `codex.enabled` is on and Codex is reachable; images, private content,
+  small talk and non-owners always stay local; quota or outage falls back to
+  local with a notice; decision and reason go to the OutcomeLedger.
+  `/codex status` tells the truth (off / available / chosen for task X; with
+  `enabled=false`: "wäre Codex, aber aus").
 - Self-Doctor: two runs in the same millisecond no longer reopen findings the
   second run resolved (its own previous save was taken for a concurrent
   change; seen on the macOS CI runner).
