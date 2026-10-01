@@ -21,6 +21,7 @@
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
 | Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
+| Desktop | `/desktop` |
 
 ---
 
@@ -225,6 +226,9 @@ Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Cl
 
 ### `/arbeit [pause <id>|weiter <id>]`
 Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).
+
+### `/desktop`
+Owner. Liste der konfigurierten Desktops (Spark-Workstation, Labor-VM …) mit Knöpfen „👁 Ansehen“ / „🖱 Übernehmen“. Ein Knopfdruck schickt in den Privatchat einen Einmal-Link (10 min, einmal einlösbar, nur Tailnet über `tailscale serve`); der Browser braucht kein Passwort, der Gateway meldet sich selbst am VNC-Server an. „Ansehen“ verwirft Tastatur/Maus im Gateway; „Übernehmen“ erlaubt Eingaben und pausiert Xaventras eigenes `desktop_input` auf diesem Desktop bis „↩️ Zurückgeben“ oder Sitzungsende. Standard aus (`desktop.direct.enabled=false`), nie auf Workern. Andere Kanäle zeigen nur die Liste. Details: `docs/DESKTOP_DIRECT.md`.
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

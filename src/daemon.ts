@@ -1730,6 +1730,20 @@ async function startDaemon() {
     }
 
     // ============================================
+    // /desktop – Direktverbindung: off unless desktop.direct.enabled=true;
+    // Main only, own loopback listener behind tailscale serve (docs/DESKTOP_DIRECT.md).
+    // ============================================
+    if (!isNodeOnly && (config as any)?.desktop?.direct?.enabled === true) {
+        try {
+            const { startDesktopDirect } = await import('./desktop-direct/runtime.js')
+            const result = await startDesktopDirect(config)
+            console.log(`[Nova] ${result.started ? '✓' : '⚠'} Desktop-Direkt: ${result.reason}${result.address ? ` (${result.address})` : ''}`)
+        } catch (err) {
+            console.warn(`[Nova] Desktop-Direkt nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
+        }
+    }
+
+    // ============================================
     // Replay pending messages from last session (queue drain)
     // ============================================
     const pendingReplay = (state as any)._pendingReplayMessages as Array<{ id: string; chatId: string; from: string; content: string; channel: string }> | undefined
@@ -2934,6 +2948,12 @@ async function startDaemon() {
             const released = await releaseHeldLeasesForShutdown()
             if (released.length) console.log(`[Nova] ✓ Leases freigegeben: ${released.join(', ')}`)
         } catch { /* non-critical: leases expire on their own */ }
+
+        // /desktop: end every session (releases a paused desktop_input).
+        try {
+            const { stopDesktopDirect } = await import('./desktop-direct/runtime.js')
+            await stopDesktopDirect()
+        } catch { /* non-critical */ }
 
         // Flush AutoObserver facts to disk
         try {

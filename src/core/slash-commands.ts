@@ -3587,6 +3587,23 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             const { collectJetzt, formatJetzt } = await import('./now-view.js')
             return formatJetzt(await collectJetzt())
         }
+        // /desktop â€“ Direktverbindung (owner only, see COMMAND_MINIMUM_ROLE default).
+        // Buttons only in Telegram; links are sent by the button press, never here.
+        case 'desktop': {
+            const desktopDirect = await import('../desktop-direct/runtime.js')
+            if (!desktopDirect.isDesktopDirectActive()) return desktopDirect.DESKTOP_DIRECT_OFF_TEXT
+            const ownerId = String(principalContext?.rawUserId || '').trim()
+            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId)) {
+                const { getTelegramAdapter } = await import('../channels/telegram.js')
+                const tg = getTelegramAdapter()
+                const picker = desktopDirect.desktopPicker(ownerId)
+                if (tg && picker) {
+                    await tg.sendDesktopPicker(from, picker.text, picker.keyboard)
+                    return '__HANDLED__'
+                }
+            }
+            return desktopDirect.desktopOverviewText()
+        }
         // Phase 5b Software-Scout: always available, read-only (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'software': {
             const { formatSoftwareCommand } = await import('../install/software-scout.js')
