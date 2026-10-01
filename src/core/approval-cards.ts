@@ -38,8 +38,8 @@ import { isNieAktionsart, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt } from './ac
 
 export const CARD_ANSWERS = ['ja', 'nein', 'spaeter', 'immer'] as const
 export type CardAnswer = typeof CARD_ANSWERS[number]
-/** intern = Xaventra's own system; physisch = acts in the room (printer, switch); extern = leaves the house (mail, purchase). */
-export type CardImpact = 'intern' | 'physisch' | 'extern'
+/** intern = Xaventra's own system; infra = VMs on the Proxmox host (Phase 6c); physisch = acts in the room (printer, switch); extern = leaves the house (mail, purchase). */
+export type CardImpact = 'intern' | 'infra' | 'physisch' | 'extern'
 export type CardStatus = 'offen' | 'spaeter' | 'ja' | 'nein' | 'immer' | 'abgelaufen' | 'erledigt'
 
 export interface CardActionRef { kind: string; ref: string }
@@ -136,7 +136,7 @@ const THOUGHT_LIMIT_BYTES = 512 * 1024
 const PHYSICAL_KINDS = KARTEN_PHYSISCH
 const EXTERNAL_KINDS = KARTEN_EXTERN
 
-const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, physisch: 1, extern: 2 }
+const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, infra: 1, physisch: 2, extern: 3 }
 
 function classifyImpact(art: string, kind: string, declared?: CardImpact, executorImpact?: CardImpact): CardImpact {
     let impact: CardImpact = 'intern'
@@ -318,7 +318,7 @@ export function cardKeyboard(card: ApprovalCard): Array<Array<{ text: string; ca
     return rows
 }
 
-const IMPACT_TEXT: Record<CardImpact, string> = { intern: 'intern', physisch: 'physisch — fragt immer', extern: 'nach außen — fragt immer' }
+const IMPACT_TEXT: Record<CardImpact, string> = { intern: 'intern', infra: 'Infrastruktur (VMs) — fragt immer', physisch: 'physisch — fragt immer', extern: 'nach außen — fragt immer' }
 
 /** Plain text (no Markdown) so evidence can never break the message. */
 export function formatCardText(card: ApprovalCard): string {

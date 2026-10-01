@@ -17,6 +17,17 @@ import { parse as parsePath } from 'node:path'
 export type NodeRuntimeKind = 'native' | 'container' | 'unknown'
 export type NodeInstallPath = 'package-manager' | 'host-agent' | 'image' | 'none'
 export type SelfCheckStatus = 'ok' | 'warn' | 'crit'
+export type VirtualizationKind = 'kvm' | 'container' | 'none' | 'unknown'
+
+/** Where this node runs. `platform: 'proxmox'` only when the configured Proxmox host found this very guest (MAC match). */
+export interface VirtualizationInfo {
+    kind: VirtualizationKind
+    platform?: 'proxmox'
+    vmid?: number
+    pveNode?: string
+    /** Pool guest tagged xaventra-created/xaventra-lab: Xaventra may be root there (never on Spark/ns1/ns2/NAS). */
+    ownMachine?: boolean
+}
 
 export interface SelfCheckItem { id: string; label: string; status: SelfCheckStatus; detail: string }
 export const NODE_SERVICE_TYPES = ['llm', 'vlm', 'tts', 'stt', 'embeddings', 'image'] as const
@@ -38,6 +49,9 @@ export interface NodeProfile {
     gpu: { name: string | null; backend: string; viaVllm: boolean }
     /** Local AI services from the AI scanner (Phase 5b). Optional: older peers do not send it. */
     services?: NodeService[]
+
+    /** Phase 6c; older peers send no field (read as kind 'unknown'). */
+    virtualization?: VirtualizationInfo
     installPath: NodeInstallPath
     tools: string[]
     selfCheck: { status: SelfCheckStatus; checkedAt: string; items: SelfCheckItem[] }
@@ -52,6 +66,33 @@ export function detectRuntimeKind(input: { platform: string; dockerenv: boolean;
     if (input.platform !== 'linux') return 'native'
     if (input.dockerenv || /\b(docker|containerd|kubepods|libpod)\b/.test(input.cgroup)) return 'container'
     return input.systemdInvocation ? 'native' : 'unknown'
+}
+
+/**
+ * Phase 6c "Wo laufe ich?" — from /sys/class/dmi/id, /sys/hypervisor and the
+ * cpuinfo `hypervisor` flag only (no child process). Another hypervisor or
+ * nothing readable is 'unknown', never a guess.
+ */
+export function detectVirtualization(input: { platform: string; runtime: NodeRuntimeKind; sysVendor: string; productName: string; hypervisorType: string; cpuinfo: string; containerHint: string }): VirtualizationKind {
+    if (input.platform !== 'linux') return 'unknown'
+    if (input.runtime === 'container' || /\b(lxc|docker|podman|systemd-nspawn|container)/i.test(input.containerHint.trim())) return 'container'
+    const vendor = input.sysVendor.trim()
+    const product = input.productName.trim()
+    if (/^QEMU$/i.test(vendor) || /\b(KVM|QEMU)\b/i.test(product)) return 'kvm'
+    const hypervisorFlag = /^flags\s*:.*\bhypervisor\b/m.test(input.cpuinfo)
+    if (hypervisorFlag || input.hypervisorType.trim()) return 'unknown'
+    if (!input.cpuinfo.trim() && !vendor) return 'unknown'
+    return 'none'
+}
+
+/**
+ * root / passwordless sudo is meant ONLY for own Proxmox guests (pool +
+ * tag xaventra-created/xaventra-lab). Spark, ns1, ns2 and the NAS are not
+ * such guests and keep their hardening; nothing here relaxes them.
+ */
+export function privilegedOnOwnMachine(profile: Pick<NodeProfile, 'virtualization'> | null | undefined): boolean {
+    const virt = profile?.virtualization
+    return virt?.platform === 'proxmox' && Number.isInteger(virt.vmid) && virt.ownMachine === true && (virt.kind === 'kvm' || virt.kind === 'container')
 }
 
 /** Per-mount options of "/" from /proc/self/mountinfo. */
@@ -151,6 +192,21 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         systemdInvocation: Boolean(process.env.INVOCATION_ID),
     })
     const rootReadOnly = os === 'linux' ? rootIsReadOnly(readText('/proc/self/mountinfo')) : null
+    const virtualization: VirtualizationInfo = {
+        kind: detectVirtualization({
+            platform: os, runtime, sysVendor: readText('/sys/class/dmi/id/sys_vendor'), productName: readText('/sys/class/dmi/id/product_name'),
+            hypervisorType: readText('/sys/hypervisor/type'), cpuinfo: os === 'linux' ? readText('/proc/cpuinfo').slice(0, 64 * 1024) : '',
+            containerHint: readText('/run/systemd/container'),
+        }),
+    }
+    if (virtualization.kind === 'kvm' || virtualization.kind === 'container') {
+        try {
+            // Read only, bounded; null when infra.proxmox is off or the guest is not found.
+            const { locateSelfOnProxmox, localMacAddresses } = await import('../infra/proxmox.js')
+            const found = await locateSelfOnProxmox(localMacAddresses(networkInterfaces() as any))
+            if (found) Object.assign(virtualization, { platform: 'proxmox', vmid: found.vmid, pveNode: found.node, ownMachine: found.ownMachine })
+        } catch { /* Proxmox optional */ }
+    }
     const noNewPrivileges = os === 'linux' ? noNewPrivilegesFrom(readText('/proc/self/status')) : null
 
     let gpuName: string | null = null, backend = 'cpu'
@@ -194,6 +250,7 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         ramGB: Math.round(totalmem() / 1024 ** 3),
         gpu: { name: gpuName, backend, viaVllm },
         services,
+        virtualization,
         installPath: installPathFor({ runtime, rootReadOnly, noNewPrivileges, hasApt: tools.includes('apt'), isRoot: process.getuid?.() === 0 }),
         tools,
         selfCheck: runLocalSelfCheck(getNovaDataDir(), now),
@@ -283,6 +340,15 @@ export function sanitizeNodeServices(raw: unknown): NodeService[] {
         .sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type) || a.status.localeCompare(b.status))
 }
 
+function sanitizeVirtualization(raw: any): VirtualizationInfo {
+    const kind = oneOf(raw?.kind, ['kvm', 'container', 'none', 'unknown'] as const, 'unknown')
+    if (raw?.platform !== 'proxmox') return { kind }
+    const vmid = Number(raw.vmid)
+    const pveNode = String(raw.pveNode ?? '')
+    if (!Number.isInteger(vmid) || vmid < 100 || vmid > 999_999_999 || !/^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$/.test(pveNode)) return { kind }
+    return { kind, platform: 'proxmox', vmid, pveNode, ownMachine: raw.ownMachine === true }
+}
+
 export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
     if (!raw || typeof raw !== 'object') return null
     const value = raw as Record<string, any>
@@ -298,6 +364,7 @@ export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
         cpus: num(value.cpus), ramGB: num(value.ramGB),
         gpu: { name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true },
         ...(Array.isArray(value.services) ? { services: sanitizeNodeServices(value.services) } : {}),
+        virtualization: sanitizeVirtualization(value.virtualization),
         installPath: oneOf(value.installPath, ['package-manager', 'host-agent', 'image', 'none'] as const, 'none'),
         tools: Array.isArray(value.tools) ? value.tools.slice(0, 60).map((tool: unknown) => str(tool, 40)) : [],
         selfCheck: {
@@ -342,6 +409,9 @@ export function formatNodeOverview(entries: Array<{ profile: NodeProfile | null;
         lines.push('',
             `${stale ? '❔' : STATUS_ICON[profile.selfCheck.status]} *${profile.nodeId}* — ${profile.role === 'main' ? 'Main' : 'Worker'}, ${RUNTIME_LABEL[profile.runtime]}${profile.rootReadOnly ? ', System schreibgeschützt' : ''}, v${profile.version} (${age}${stale ? ', veraltet' : ''})`,
             `  ${profile.cpus} Kerne, ${profile.ramGB} GB RAM, ${gpu}`)
+        const virt = profile.virtualization
+        if (virt?.platform === 'proxmox') lines.push(`  Proxmox-VM ${virt.vmid} auf ${virt.pveNode}${virt.ownMachine ? ' (eigene Maschine)' : ''}`)
+        else if (virt?.kind === 'kvm') lines.push('  läuft in einer KVM-VM (Proxmox-Zuordnung unbekannt)')
         for (const suggestion of suggestionsFor(profile)) lines.push(`  → ${suggestion}`)
     }
     return lines.join('\n')

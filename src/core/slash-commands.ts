@@ -3582,6 +3582,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             return formatAllNodeProfiles()
         }
 
+        // Phase 6c: Proxmox (owner only, see COMMAND_MINIMUM_ROLE default). Writes only create cards.
+        case 'vms': {
+            const { handleVmsCommand } = await import('../infra/proxmox-command.js')
+            return handleVmsCommand(args)
+        }
+
         // Phase 1 Teil A: Sichtbarkeit (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'jetzt': {
             const { collectJetzt, formatJetzt } = await import('./now-view.js')

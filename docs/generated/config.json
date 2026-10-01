@@ -58,6 +58,32 @@
       "type": "array",
       "items": "string"
     },
+    "infra": {
+      "proxmox": {
+        "create": {
+          "cicustom": "string",
+          "ciuser": "string",
+          "image": "string",
+          "sshKeys": {
+            "type": "array",
+            "items": "unknown"
+          },
+          "storage": "string"
+        },
+        "enabled": "boolean",
+        "fingerprint": "string",
+        "limits": {
+          "cores": "number",
+          "diskGB": "number",
+          "hostRamReserveGB": "number",
+          "ramGB": "number"
+        },
+        "pool": "string",
+        "ramWarnPercent": "number",
+        "url": "string",
+        "watch": "boolean"
+      }
+    },
     "learning": {
       "autoLearnThreshold": "number",
       "dataDir": "string",

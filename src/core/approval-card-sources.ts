@@ -210,6 +210,10 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     // Phase 6d: Ollama pull (after Ja) and vLLM switch (plan only, executor unwired).
     const { registerModelControlExecutors } = await import('../routing/local-model-control.js')
     registerModelControlExecutors(registerCardExecutor)
+
+    // Phase 6c: Proxmox kinds (pve-*); each re-checks pool/tag/protection/cap before its single write.
+    const { registerProxmoxCardExecutors } = await import('../infra/proxmox-command.js')
+    registerProxmoxCardExecutors()
 }
 
 // ---------------------------------------------------------------------------
