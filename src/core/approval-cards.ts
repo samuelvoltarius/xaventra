@@ -339,7 +339,8 @@ export function formatCardText(card: ApprovalCard): string {
     return lines.join('\n')
 }
 
-function isOwner(userId: string, ownerIds: readonly string[]): boolean {
+/** Owner = numeric Telegram id listed in allowFrom (usernames never count). Shared with /desktop buttons. */
+export function isCardOwner(userId: string, ownerIds: readonly string[]): boolean {
     const id = String(userId ?? '').trim()
     if (!/^\d{1,20}$/.test(id)) return false
     return ownerIds.some(entry => /^\d{1,20}$/.test(String(entry).trim()) && String(entry).trim() === id)
@@ -375,7 +376,7 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
     const data = String(callbackData ?? '')
     const token = data.startsWith(CALLBACK_PREFIX) ? data.slice(CALLBACK_PREFIX.length) : ''
     if (!TOKEN_PATTERN.test(token)) return { ok: false, code: 'unbekannt', message: 'Unbekannter Knopf.' }
-    if (!isOwner(presser?.userId, presser?.ownerIds || [])) return { ok: false, code: 'kein-owner', message: '🔒 Nur der Owner kann diese Karte beantworten.' }
+    if (!isCardOwner(presser?.userId, presser?.ownerIds || [])) return { ok: false, code: 'kein-owner', message: '🔒 Nur der Owner kann diese Karte beantworten.' }
     const now = nowOf(opts)
     const cards = loadCards(opts)
     const index = cards.findIndex(card => card.buttons.some(button => button.token === token) || card.usedTokens.includes(token))

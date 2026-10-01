@@ -53,6 +53,28 @@
       "host": "string",
       "port": "number"
     },
+    "desktop": {
+      "direct": {
+        "desktops": {
+          "type": "array",
+          "items": {
+            "agentInput": "boolean",
+            "allowControl": "boolean",
+            "id": "string",
+            "label": "string",
+            "target": "string",
+            "vncPasswordFile": "string"
+          }
+        },
+        "enabled": "boolean",
+        "host": "string",
+        "linkTtlMinutes": "number",
+        "novncDir": "string",
+        "port": "number",
+        "publicBaseUrl": "string",
+        "sessionMaxMinutes": "number"
+      }
+    },
     "emoji": "string",
     "fallbackModels": {
       "type": "array",

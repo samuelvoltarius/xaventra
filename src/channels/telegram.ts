@@ -269,6 +269,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)' },
                 { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)' },
                 { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)' },
+                { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)' },
                 // Session
                 { command: 'clear', description: '🧹 Konversation zurücksetzen' },
                 { command: 'save', description: '💾 Sitzung speichern' },
@@ -550,6 +551,10 @@ export class TelegramAdapter implements ChannelAdapter {
         const data = query.data
         if (typeof data === 'string' && data.startsWith('ac:')) {
             await this.handleApprovalCardPress(query)
+            return
+        }
+        if (typeof data === 'string' && data.startsWith('dk:')) {
+            await this.handleDesktopPress(query)
             return
         }
         const chatId = query.message?.chat?.id?.toString()
@@ -1250,6 +1255,51 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 await this.bot.editMessageText(text, { chat_id: target.chatId, message_id: target.messageId, reply_markup: { inline_keyboard: [] } })
             } catch { /* message may be too old; the decision is stored anyway */ }
+        }
+    }
+
+    /** /desktop: picker as plain text (labels can never break Markdown). */
+    async sendDesktopPicker(chatId: string, text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
+        if (!this.bot) return
+        await this.requireLiveAuthority('desktop picker')
+        await this.bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } })
+    }
+
+    /**
+     * /desktop button: same owner rule and single-use tokens as the Knopf-Karten.
+     * The one-time link goes only into the owner's private chat, without link
+     * preview (a preview fetch must never touch the link). It is not logged
+     * and not passed through the message pipeline or memory.
+     */
+    private async handleDesktopPress(query: any): Promise<void> {
+        const answer = async (text: string) => {
+            try { await this.bot.answerCallbackQuery(query.id, { text: String(text).slice(0, 190) }) } catch { /* ignore */ }
+        }
+        try {
+            const userId = String(query.from?.id ?? '')
+            const chatId = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            if (query.message?.chat?.type !== 'private' || chatId !== userId) {
+                await answer('🔒 Desktop-Links gibt es nur im Privatchat mit dem Owner.')
+                return
+            }
+            const { pressDesktopButton, formatLinkMessage } = await import('../desktop-direct/runtime.js')
+            const result = pressDesktopButton(String(query.data), { userId, ownerIds: this.getOwnerChatIds() })
+            await answer(result.ok ? `✓ ${result.message}` : result.message)
+            if (!result.ok) return
+            if (typeof query.message?.message_id === 'number') {
+                try { await this.bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: query.message.message_id }) } catch { /* cosmetic */ }
+            }
+            if (result.code === 'link' && result.link) {
+                await this.requireLiveAuthority('desktop link')
+                await this.bot.sendMessage(chatId, formatLinkMessage(result.link), {
+                    disable_web_page_preview: true,
+                    link_preview_options: { is_disabled: true },
+                    ...(result.link.releaseKeyboard ? { reply_markup: { inline_keyboard: result.link.releaseKeyboard } } : {}),
+                })
+            }
+        } catch (error) {
+            console.warn(`[Nova Telegram] Desktop-Knopf: ${String((error as Error)?.message || error).slice(0, 120)}`)
+            await answer('❌ Fehler — kein Link erstellt.')
         }
     }
 

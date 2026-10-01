@@ -2460,6 +2460,59 @@
       ]
     },
     {
+      "module": "src/desktop-direct/config.ts",
+      "imports": []
+    },
+    {
+      "module": "src/desktop-direct/gateway.ts",
+      "imports": [
+        "../dashboard/access-guard.js",
+        "./config.js",
+        "./rfb.js",
+        "./store.js",
+        "node:crypto",
+        "node:fs",
+        "node:http",
+        "node:module",
+        "node:net",
+        "node:path",
+        "node:stream",
+        "ws"
+      ]
+    },
+    {
+      "module": "src/desktop-direct/pause.ts",
+      "imports": []
+    },
+    {
+      "module": "src/desktop-direct/rfb.ts",
+      "imports": [
+        "./config.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/desktop-direct/runtime.ts",
+      "imports": [
+        "./config.js",
+        "./gateway.js",
+        "./store.js",
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/desktop-direct/store.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/data-root.js",
+        "./config.js",
+        "./pause.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/desktop/bot-profile-store.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5928,6 +5981,7 @@
       "imports": [
         "../core/execution-control.js",
         "../core/lifecycle-policy.js",
+        "../desktop-direct/pause.js",
         "../host/capture-agent.js",
         "../host/desktop-input.js",
         "node:crypto"

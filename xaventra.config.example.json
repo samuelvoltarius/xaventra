@@ -96,6 +96,20 @@
     },
     "name": "Xaventra",
     "dashboard": { "enabled": true, "host": "127.0.0.1", "port": 3011 },
+    "desktop": {
+        "direct": {
+            "enabled": false,
+            "publicBaseUrl": "https://main.example.com",
+            "host": "127.0.0.1",
+            "port": 18793,
+            "linkTtlMinutes": 10,
+            "sessionMaxMinutes": 60,
+            "novncDir": "/usr/share/novnc",
+            "desktops": [
+                { "id": "lab", "label": "Labor-VM", "target": "tcp://127.0.0.1:5901", "vncPasswordFile": "/etc/xaventra/vnc-lab.pass", "agentInput": false, "allowControl": true }
+            ]
+        }
+    },
     "emoji": "✨",
     "version": "0.1.0",
     "provider": "openai",

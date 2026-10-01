@@ -22,6 +22,7 @@
 | Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/heilung` `/software` `/modelle` `/waechter` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
+| Desktop | `/desktop` |
 
 ---
 
@@ -232,6 +233,9 @@ Owner. Proxmox-Gäste (nur lesend) mit Markierung der eigenen VM, des Pools `xav
 
 ### `/waechter`
 Owner, nur lesend. Wächter (Phase 7): letzte Messwerte je Knoten (Last, RAM, Platten, Temperatur, Antwortzeit), Erreichbarkeit der konfigurierten/eingerichteten Ziele, Prognosen (Platte voll, RAM), TLS-Ablauf, Backup-Alter und ausgelassene Einträge. Standard aus: `autonomy.watch.enabled`. Details: `docs/AUTONOMY_GUIDE.md` („Wächter“).
+
+### `/desktop`
+Owner. Liste der konfigurierten Desktops (Spark-Workstation, Labor-VM …) mit Knöpfen „👁 Ansehen“ / „🖱 Übernehmen“. Ein Knopfdruck schickt in den Privatchat einen Einmal-Link (10 min, einmal einlösbar, nur Tailnet über `tailscale serve`); der Browser braucht kein Passwort, der Gateway meldet sich selbst am VNC-Server an. „Ansehen“ verwirft Tastatur/Maus im Gateway; „Übernehmen“ erlaubt Eingaben und pausiert Xaventras eigenes `desktop_input` auf diesem Desktop bis „↩️ Zurückgeben“ oder Sitzungsende. Standard aus (`desktop.direct.enabled=false`), nie auf Workern. Andere Kanäle zeigen nur die Liste. Details: `docs/DESKTOP_DIRECT.md`.
 
 Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 

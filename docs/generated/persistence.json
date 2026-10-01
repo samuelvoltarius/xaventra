@@ -962,6 +962,10 @@
       "path": ".nova-data/codex-auth-index/nova_ns1.json"
     },
     {
+      "owner": "src/desktop-direct/store.ts",
+      "path": ".nova-data/desktop-sessions.jsonl"
+    },
+    {
       "owner": "src/desktop/desktop-api.ts",
       "path": ".nova-data/desktop/captures"
     },
