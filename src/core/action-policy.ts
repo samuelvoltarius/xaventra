@@ -446,7 +446,7 @@ function saveTrust(data: TrustFile, opts: TrustOptions): void {
  */
 export function isTrustEligible(kindName: string): boolean {
     const key = normalize(kindName)
-    if (!KIND_PATTERN.test(key) || TRUST_NIE_ARTEN.has(key) || TRUST_NIE_MUSTER.test(key)) return false
+    if (!KIND_PATTERN.test(key) || TRUST_NIE_ARTEN.has(key) || NUR_EINZELNES_JA.has(key) || TRUST_NIE_MUSTER.test(key)) return false
     const verdict = evaluateAction({ kind: key, origin: 'code' })
     return verdict.known && verdict.level === 'L2' && verdict.impact === 'intern' && !isPhysischOderExtern(key)
 }
