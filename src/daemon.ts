@@ -1897,6 +1897,15 @@ async function startDaemon() {
             setSelfHealConfig(autonomyCfg.selfHeal)
         } catch (err) { console.debug(`[Nova] Selbstheilung config skipped: ${err}`) }
 
+        // Phase 2 Wahrnehmen: off until autonomy.sensing.enabled=true; main only.
+        // Output goes to the sensing port (JSONL by default), never to a channel.
+        try {
+            const { setSensingConfig, startSensing } = await import('./sensing/runtime.js')
+            setSensingConfig(autonomyCfg.sensing, config)
+            const sensing = startSensing({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
+        } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
+
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
             quietHoursStart: quietEnabled ? (quietCfg.start ?? 23) : -1,

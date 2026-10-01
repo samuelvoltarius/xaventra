@@ -3603,6 +3603,13 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             return handleSelfHealSwitch(args)
         }
 
+        // Phase 2 Wahrnehmen: Geräte/Konten/Ruhezeiten (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'geraete':
+        case 'geräte': {
+            const { handleGeraeteCommand } = await import('../sensing/runtime.js')
+            return handleGeraeteCommand(args, principalContext, from)
+        }
+
         case 'setup': {
             const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'
             const rest2 = args.trim().split(/\s+/).slice(1)
