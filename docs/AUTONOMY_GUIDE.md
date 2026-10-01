@@ -239,3 +239,82 @@ at most one edit per 2 s, and finished as `✅ Fertig · n Schritte · s` or
 install queue, open cards, last decisions. **`/gedanken [n]`** (owner): the
 newest thoughts and proposals including discarded/rejected/expired ones, from
 the card store, the self-heal journal and proposals, and the install journal.
+
+## Planer, Gedanken und Morgen-/Abendbericht (Phase 1)
+
+Everything is off by default. One job list for everything time-based
+(`src/planner/`), a thought list for everything she notices, and a short German
+report in the morning and evening.
+
+```json
+{ "autonomy": {
+    "planner":  { "enabled": true, "tickSeconds": 30, "reminders": false, "nightwatch": false },
+    "briefing": { "enabled": true, "morning": "07:30", "evening": "20:00", "timeZone": "Europe/Vienna" },
+    "thoughts": { "quietHours": { "start": 22, "end": 7 }, "dedupeMinutes": 360, "maxPerDay": 10 }
+} }
+```
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `autonomy.planner.enabled` | `false` | start the planner (also started by `briefing.enabled`) |
+| `autonomy.planner.tickSeconds` | `30` | tick interval (5..600) |
+| `autonomy.planner.reminders` | `false` | `set_reminder` creates planner jobs; pending entries of `reminders.json` are taken over once. Off again: open planner reminders go back to `reminders.json` (Rückweg) |
+| `autonomy.planner.nightwatch` | `false` | the planner job `sys-nachtwache` runs the probes (needs `autonomy.nightwatch.enabled`); findings become thoughts, the autonomy loop stops probing/alarming itself (self-heal still reads the journal) |
+| `autonomy.briefing.enabled` | `false` | jobs `sys-briefing-morgen` / `sys-briefing-abend` |
+| `autonomy.briefing.morning` / `evening` | `07:30` / `20:00` | local time (`timeZone`); a report more than 3 h late is logged as `verpasst`, a pending one expires after 6 h |
+| `autonomy.thoughts.quietHours` | `22`–`7` | only `dringend` is announced; the rest waits for the next report (or, without report, until the quiet hours end) |
+| `autonomy.thoughts.dedupeMinutes` | `360` | the same signature is announced once per window |
+| `autonomy.thoughts.maxPerDay` | `10` | daily cap; above it only `dringend`, the rest goes into the report |
+
+**Only the Main delivers.** Delivering jobs (and `mainOnly` jobs such as the
+Nachtwache) run only on the node with the fenced Main lease and never with
+`NOVA_NODE_ONLY=true`. A worker may add thoughts; it never sends them. A second
+process on the same data directory is kept out by `planner/lease.json`.
+
+### Files
+
+| File | Format |
+|------|--------|
+| `.nova-data/planner/jobs.json` | `{ version: 1, jobs: PlannerJob[] }` — `id` (`job-<12 hex>` or `sys-<name>`, always from code), `kind`, `schedule` (`{type:'einmal',at}` / `{type:'taeglich',time,timeZone}` / `{type:'intervall',minutes}`), `delivers`, `mainOnly`, `enabled`, `status` (`aktiv`/`erledigt`/`aufgegeben`), `nextRunAt`, `lastRunAt`, `lastStatus`, `claim` (run in progress), `pending` (message waiting for the port) |
+| `.nova-data/planner/runs.jsonl` | one line per execution: `at, runId, jobId, kind, slot, node, ergebnis (ok/fehler/unterbrochen/verpasst/kein-handler), summary, ms` |
+| `.nova-data/planner/deliveries.jsonl` | one line per delivery attempt: `at, deliveryId, kind, port, status (zugestellt/fence/kein-port/fehler/verfallen/tageslimit), node, jobId, slot, thoughtId, attempt, detail` — `jobId@slot` with `zugestellt` is never sent again |
+| `.nova-data/thoughts/thoughts.json` | `{ version: 1, items: Thought[] }` (max 500, closed ones dropped first) |
+| `.nova-data/thoughts/notify-state.json` | `{ day, sent }` daily counter (local day) |
+
+`Thought`: `id` (`th-<12 hex>`, from code), `source` (`nachtwache`, `install`,
+`idee`, …), `kind` (`ereignis`/`idee`/`vorschlag`), `title`, `evidence` (Beleg,
+redacted), `importance` (`dringend`/`wichtig`/`normal`/`niedrig`), `rule` (the fixed
+rule that set it), `proposal`, `permission` (`selbst`/`fragen`/`nie`), `status`
+(`offen`/`erledigt`/`verworfen`/`wartet-auf-knopf`), `signature`, `seen`, `notice`
+(`keine`/`ausstehend`/`gemeldet`/`zurueckgehalten`/`im-bericht`), `noticeReason`,
+timestamps. Importance rules: `critical` → dringend, `warning` → wichtig,
+proposal with `fragen` → wichtig, idea → niedrig, else normal; only dringend and
+wichtig are announced. A caller can never set importance or ids.
+
+API for the card layer: `listThoughts`, `getThought`, `setThoughtStatus`,
+`addThought` from `src/planner/index.ts`.
+
+### Zustell-Port
+
+The planner never talks to Telegram. The Main wires one port:
+
+```ts
+import { setPlannerDeliveryPort } from './planner/index.js'
+setPlannerDeliveryPort({ name: 'telegram-karten', deliver: async msg => ({ status: 'zugestellt', ref: '<message id>' }) })
+```
+
+`msg` (`PlannerOutgoing`): `id`, `kind` (`briefing`/`gedanke`/`job`), `title`,
+`text` (redacted German), `urgency`, `thoughtId`, `permission` (buttons only for
+`fragen`, never for `nie`), `refs`, `expiresAt`. Throw a `FenceError` without live
+Main authority, return `kein-port` while the channel is down (both: stays pending,
+no attempt counted); a real failure is retried up to 5 times. No port wired = all
+messages stay pending. Reminders keep their own route (the existing reminder
+callbacks), so they work without the port.
+
+### Report
+
+`Morgenbericht` / `Abendbericht` since the last delivered report (max 36 h):
+Erledigt (planner runs, thoughts closed as done) · Selbst repariert
+(`self-heal/journal`) · Installiert (`install-journal.jsonl`) · Wartet auf dich (open
+thoughts with permission `fragen`) · Ideen (max 3) · Zurückgehalten (quiet hours /
+cap). Built only from journals on disk, every line redacted, max 5 lines per section.
