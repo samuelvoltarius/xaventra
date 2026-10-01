@@ -1034,6 +1034,14 @@
       "path": ".nova-data/mesh-update-state.json"
     },
     {
+      "owner": "src/routing/local-model-control.ts",
+      "path": ".nova-data/model-control"
+    },
+    {
+      "owner": "src/routing/model-runtime.ts",
+      "path": ".nova-data/model-control/cloud-spend.json"
+    },
+    {
       "owner": "src/llm/model-perf-db.ts",
       "path": ".nova-data/model-perf.json"
     },
@@ -1128,6 +1136,10 @@
     {
       "owner": "src/thinking/ports.ts",
       "path": ".nova-data/thinking/schedule.json"
+    },
+    {
+      "owner": "src/routing/model-registry.ts",
+      "path": ".nova-data/thinking/scout-report.json"
     },
     {
       "owner": "src/thinking/model-scout.ts",

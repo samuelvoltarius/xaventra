@@ -206,6 +206,10 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     const { createMissionCardExecutor } = await import('./missions.js')
     registerCardExecutor(createResponsibilityCardExecutor(() => getResponsibilityRuntime()?.responsibilities ?? null))
     registerCardExecutor(createMissionCardExecutor(() => getResponsibilityRuntime()?.missions ?? null))
+
+    // Phase 6d: Ollama pull (after Ja) and vLLM switch (plan only, executor unwired).
+    const { registerModelControlExecutors } = await import('../routing/local-model-control.js')
+    registerModelControlExecutors(registerCardExecutor)
 }
 
 // ---------------------------------------------------------------------------

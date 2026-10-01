@@ -267,6 +267,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
                 { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)' },
                 { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)' },
+                { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)' },
                 // Session
                 { command: 'clear', description: '🧹 Konversation zurücksetzen' },
                 { command: 'save', description: '💾 Sitzung speichern' },

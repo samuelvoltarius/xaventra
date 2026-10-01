@@ -194,6 +194,24 @@ export const NovaConfigSchema = z.object({
         fallbackEndpoint: z.string().optional(),
     }).default({}),
 
+    // Phase 6d Multi-Router. Off by default; then R1–R8 applies unchanged.
+    routing: z.object({
+        multi: z.object({
+            enabled: z.boolean().default(false),
+            /** EUR per day for non-Codex cloud models; 0 = no cloud. */
+            cloudDailyBudgetEur: z.number().min(0).default(0),
+            minSamples: z.number().int().min(1).default(5),
+            /** Cloud models to consider (listed only when a key is configured). */
+            cloudModels: z.array(z.object({
+                provider: z.string(),
+                model: z.string(),
+                costEurPerCall: z.number().min(0).optional(),
+            }).passthrough()).default([]),
+            /** EUR per call by endpoint id or kind; unknown = expensive. */
+            costs: z.record(z.string(), z.number().min(0)).default({}),
+        }).passthrough().default({}),
+    }).passthrough().optional(),
+
     performance: z.object({
         preloadProfile: z.enum(['off', 'minimal', 'full']).default('minimal'),
         maxConcurrentRequests: z.number().int().min(1).max(64).default(4),
