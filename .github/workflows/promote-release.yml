@@ -107,20 +107,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-promotion
+    # Pushes with the deploy key (environment secret), not GITHUB_TOKEN: only then
+    # does GitHub start the normal main CI and, after it, the signed release.
     permissions:
-      contents: write
+      contents: read
       actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_sha }}
           fetch-depth: 0
-      - name: Fast-forward main to the verified candidate (no force)
+          ssh-key: ${{ secrets.RELEASE_PROMOTION_DEPLOY_KEY }}
+      - name: Fast-forward main to the verified candidate (no force, deploy key)
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           VERIFIED_MAIN: ${{ needs.verify.outputs.main_sha }}
+          DEPLOY_KEY_PRESENT: ${{ secrets.RELEASE_PROMOTION_DEPLOY_KEY != '' && 'yes' || 'no' }}
         run: |
           set -euo pipefail
+          # No silent fallback to GITHUB_TOKEN (that push would not start main CI).
+          test "$DEPLOY_KEY_PRESENT" = yes || { echo "::error::Environment secret RELEASE_PROMOTION_DEPLOY_KEY fehlt (docs/RELEASE_BUTTON.md)"; exit 1; }
+          case "$(git remote get-url origin)" in git@github.com:*) ;; *) echo "::error::origin ist nicht SSH"; exit 1;; esac
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]] && [[ "$VERIFIED_MAIN" =~ ^[a-f0-9]{40}$ ]]
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
           # Main must not have moved since verification, and the push must be a pure fast-forward.
@@ -136,8 +143,7 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         with:
           script: |
-            // GitHub does not start push workflows for pushes made with GITHUB_TOKEN.
-            // Report the truth instead of pretending main CI and signing will follow.
+            // The deploy-key push starts main CI like a normal push; report the truth.
             const sha = process.env.CANDIDATE_SHA;
             let found = null;
             for (let i = 0; i < 6 && !found; i++) {
@@ -147,6 +153,6 @@ jobs:
             }
             if (found) await core.summary.addRaw(`Main CI run ${found.id} started for ${sha}.\n`).write();
             else {
-              core.warning('Main CI did not start for this push (GITHUB_TOKEN pushes do not trigger workflows). See docs/RELEASE_BUTTON.md "Bekannte Grenze".');
+              core.warning('Main CI did not start within 90 s for this push. See docs/RELEASE_BUTTON.md.');
               await core.summary.addRaw(`Main CI did not start for ${sha}; see docs/RELEASE_BUTTON.md.\n`).write();
             }

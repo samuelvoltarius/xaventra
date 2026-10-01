@@ -46,11 +46,12 @@ Standardmäßig ist der Knopf **aus**.
      Release fehlen. Danach läuft **Gitleaks 8.30.1** (Binary, SHA256 gegen
      die offizielle Checksummen-Datei gepinnt) über `origin/main..<SHA>`.
    - Job `promote` in der Environment **`release-promotion`**
-     (`contents: write` nur hier): Er prüft, dass sich `main` seit `verify`
+     (nirgends `contents: write`): Er prüft, dass sich `main` seit `verify`
      nicht bewegt hat und der Push ein Fast-Forward ist. Dann führt er
      `git push origin "<SHA>:refs/heads/main"` aus, ohne Force, mit dem
-     Workflow-eigenen `GITHUB_TOKEN`, und liest das Ergebnis per `ls-remote`
-     zurück.
+     **Deploy-Key** aus dem Environment-Secret `RELEASE_PROMOTION_DEPLOY_KEY`,
+     und liest das Ergebnis per `ls-remote` zurück. Fehlt der Key, bricht der
+     Job ab (kein stiller Rückfall auf `GITHUB_TOKEN`).
 6. **Rückmeldung**: Xaventra verfolgt den Lauf nur lesend (alle 30 s, höchstens
    45 min) und meldet als Gedanke und als Telegram-Text: *läuft*,
    *erfolgreich* oder *abgebrochen* mit Job- und Schrittname. Es löst dabei
@@ -64,30 +65,14 @@ Worker (`NOVA_NODE_ONLY=true`) tun nichts: Sie lesen nicht, erzeugen keine
 Karte und lösen nichts aus. Ohne Main-/Telegram-Autorität (Fencing) entsteht
 keine Karte.
 
-## Bekannte Grenze: Main-CI nach dem Push
+## Main-CI und Signierung nach dem Push (Entscheidung Alfred 01.10.2026: Variante A)
 
-GitHub startet **keine** `push`-Workflows für Pushes mit `GITHUB_TOKEN`.
-Ausgenommen sind nur `workflow_dispatch` und `repository_dispatch`. Nach einer
-erfolgreichen Promotion steht `main` also auf dem Kandidaten, aber die
-Main-CI und damit `update-release.yml` (Signierung) starten **nicht von
-selbst**. Der Workflow prüft das im letzten Schritt und schreibt eine Warnung
-ins Summary. Xaventra meldet es in der Erfolgsnachricht.
-
-Bis der Owner sich entscheidet, startet erst der nächste normale Push nach
-`main` die Main-CI und die Signierung, zum Beispiel der Evidenz-Commit aus
-Runbook §3.1 Schritt 7. Zur Wahl stehen, beide ohne bestehende Gates
-aufzuweichen:
-
-- **A — Deploy-Key in der geschützten Environment**: Ein Deploy-Key mit
-  Schreibrecht liegt nur als Environment-Secret in `release-promotion`, und der
-  Push-Schritt nutzt ihn statt `GITHUB_TOKEN`. Ein solcher Push löst `push`
-  aus, und Main-CI und Signierung laufen wie heute. Nachteil: Es gibt ein
-  zweites Secret.
-- **B — CI per `workflow_dispatch`**: `ci.yml` bekommt `workflow_dispatch`,
-  und `update-release.yml` akzeptiert eine dispatchte, exakte Main-CI. Das
-  ändert das Release-Gate und braucht deshalb eine eigene Prüfung.
-
-Bis zur Entscheidung bleibt der Workflow bei `GITHUB_TOKEN`, wie vorgegeben.
+GitHub startet für Pushes mit `GITHUB_TOKEN` keine `push`-Workflows. Deshalb
+pusht der Job mit einem **Deploy-Key**, der nur als Secret der geschützten
+Environment `release-promotion` existiert. Ein solcher Push ist ein normales
+`push`-Ereignis: Main-CI und danach `update-release.yml` (Signierung) laufen
+wie bei einem Push von Hand. Die Release-Gates bleiben unverändert. Der letzte
+Schritt meldet, ob die Main-CI innerhalb von 90 s gestartet ist.
 
 ## Einrichtung (macht der Owner; Xaventra und Claude ändern keine GitHub-Einstellungen)
 
@@ -97,7 +82,17 @@ Bis zur Entscheidung bleibt der Workflow bei `GITHUB_TOKEN`, wie vorgegeben.
      `main`. Dann darf nur der `main`-Workflow die Environment nutzen.
    - Optional *Required reviewers*: Owner eintragen. Dann wartet der Push-Job
      zusätzlich auf die Freigabe in GitHub, nachdem `verify` grün war.
-   - Keine Secrets anlegen: Der Workflow braucht nur `GITHUB_TOKEN`.
+   - **Deploy-Key anlegen** (einmalig, auf einem eigenen Rechner):
+     `ssh-keygen -t ed25519 -N "" -C xaventra-release-promotion -f release-promotion`.
+     Den öffentlichen Teil (`release-promotion.pub`) unter Repo → Settings →
+     *Deploy keys* → *Add deploy key* eintragen, Titel
+     `xaventra-release-promotion`, **Allow write access** anhaken. Den
+     privaten Teil (`release-promotion`) als **Environment-Secret**
+     `RELEASE_PROMOTION_DEPLOY_KEY` in `release-promotion` speichern (nicht als
+     Repository-Secret). Danach beide Dateien lokal löschen.
+   - Falls `main` geschützt ist: Der Deploy-Key muss Fast-Forward-Pushes auf
+     `main` dürfen (Branch-Regel/Ruleset: Deploy-Key in der Bypass-Liste,
+     Force-Push bleibt verboten).
    - *Settings → Actions → General → Workflow permissions* darf auf
      „Read repository contents“ bleiben. Der Push-Job fordert `contents: write`
      selbst an.
@@ -138,6 +133,8 @@ Zustand (je SHA: Karte, Gedanke, Auslösung) liegt in
 - **Token entziehen**: Token aus der Dienst-Umgebung entfernen und in GitHub
   widerrufen (Fine-grained tokens → *Revoke*). Danach zeigen Karten nur noch
   den Befehl.
+- **Deploy-Key entziehen**: Repo → Settings → *Deploy keys* → löschen und
+  das Environment-Secret entfernen. Danach bricht der Push-Job ab.
 - **Workflow sperren**: GitHub → Actions → *Promote release candidate* →
   *Disable workflow*. Alternativ die Environment `release-promotion` löschen,
   dann bricht der Push-Job ab.

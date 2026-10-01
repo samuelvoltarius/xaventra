@@ -20,17 +20,10 @@ describe('promote-release.yml (statisch)', () => {
         expect(String(workflow['run-name'])).toContain('inputs.candidate_sha')
     })
 
-    it('hat minimale Berechtigungen: global keine, contents: write nur im Push-Job', () => {
+    it('hat minimale Berechtigungen: global keine, nirgends write (Push nur per Deploy-Key)', () => {
         expect(workflow.permissions).toEqual({})
-        for (const [name, job] of Object.entries(jobs)) {
-            const perms = job.permissions || {}
-            for (const [scope, level] of Object.entries(perms)) {
-                if (level === 'write') expect(`${name}:${scope}`).toBe('promote:contents')
-                else expect(['read', 'none']).toContain(level)
-            }
-            expect(Object.keys(perms).sort()).toEqual(name === 'promote' ? ['actions', 'contents'] : ['actions', 'contents'])
-        }
-        expect(jobs.promote.permissions).toEqual({ contents: 'write', actions: 'read' })
+        for (const job of Object.values(jobs)) expect(Object.values(job.permissions || {}).every(level => level === 'read' || level === 'none')).toBe(true)
+        expect(jobs.promote.permissions).toEqual({ contents: 'read', actions: 'read' })
         expect(jobs.verify.permissions).toEqual({ contents: 'read', actions: 'read' })
     })
 
@@ -48,9 +41,21 @@ describe('promote-release.yml (statisch)', () => {
         expect(steps('verify').some(step => step.with && step.with['persist-credentials'] === false)).toBe(true)
     })
 
-    it('nutzt keine Secrets außer GITHUB_TOKEN', () => {
+    it('einziges Secret ist der Deploy-Key, nur im Push-Job (Environment-Secret)', () => {
         const secrets = [...text.matchAll(/secrets\.([A-Za-z0-9_]+)/g)].map(match => match[1])
-        expect(secrets.every(name => name === 'GITHUB_TOKEN')).toBe(true)
+        expect(secrets.length).toBeGreaterThan(0)
+        expect(secrets.every(name => name === 'RELEASE_PROMOTION_DEPLOY_KEY')).toBe(true)
+        expect(JSON.stringify(jobs.verify)).not.toContain('RELEASE_PROMOTION_DEPLOY_KEY')
+        const checkout = steps('promote').find(step => String(step.uses || '').startsWith('actions/checkout@'))
+        expect(String(checkout?.with?.['ssh-key'])).toContain('secrets.RELEASE_PROMOTION_DEPLOY_KEY')
+    })
+
+    it('kein stiller Rückfall auf GITHUB_TOKEN: fehlt der Key oder ist origin nicht SSH, bricht der Push-Job ab', () => {
+        const push = steps('promote').find(step => /git push/.test(String(step.run || '')))
+        expect(String(push.env?.DEPLOY_KEY_PRESENT)).toContain('secrets.RELEASE_PROMOTION_DEPLOY_KEY')
+        expect(push.run).toContain('test "$DEPLOY_KEY_PRESENT" = yes')
+        expect(push.run).toContain('git@github.com:')
+        expect(push.run.indexOf('test "$DEPLOY_KEY_PRESENT" = yes')).toBeLessThan(push.run.indexOf('git push'))
     })
 
     it('Eingaben gelangen nie direkt in Skripte (nur über env)', () => {

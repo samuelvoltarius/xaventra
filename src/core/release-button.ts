@@ -372,7 +372,7 @@ export async function trackPromotion(deps: ReleaseButtonDeps, sha: string, versi
         const state = loadState(deps.statePath)
         if (run.conclusion === 'success') {
             if (state.dispatched[sha]) { state.dispatched[sha] = { ...state.dispatched[sha], runId: Number(run.id), result: 'erfolgreich' }; saveState(deps.statePath, state) }
-            await report(deps, titel, 'erfolgreich', `Main steht auf ${sha.slice(0, 12)} (Lauf ${run.id}). Main-CI und Signierung laufen nur an, wenn GitHub den Push als Ereignis meldet — siehe docs/RELEASE_BUTTON.md „Bekannte Grenze“.`)
+            await report(deps, titel, 'erfolgreich', `Main steht auf ${sha.slice(0, 12)} (Lauf ${run.id}). Main-CI und Signierung starten wie bei einem normalen Push (Deploy-Key).`)
             return 'erfolgreich'
         }
         const reason = await failureReason(deps, Number(run.id))
