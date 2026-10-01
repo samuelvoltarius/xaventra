@@ -341,7 +341,7 @@ export function createRestartProposalRecipe(): HealRecipe {
             if (isNasNode(ctx.nodeId)) {
                 return { title: 'Eigener Dienst antwortet nicht (NAS)', message: `${labels} hängt. NAS: Neustart ist nicht erlaubt (nur Rezepte ohne Neustart) — bitte selbst prüfen.` }
             }
-            return { title: 'Eigener Dienst antwortet nicht', message: `${labels} hängt laut Nachtwache. Vorschlag: Dienst-Neustart (höchstens 1× je 6 h). Ja-Knopf (CL-10) fehlt noch — ich starte nichts selbst neu, nur Alfred.` }
+            return { title: 'Eigener Dienst antwortet nicht', message: `${labels} hängt laut Nachtwache. Vorschlag: Dienst-Neustart (höchstens 1× je 6 h). Der Ja-Knopf vermerkt nur die Entscheidung — einen Neustart-Ausführer gibt es nicht, ich starte nichts selbst neu, nur Alfred.` }
         },
     }
 }

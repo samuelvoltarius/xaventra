@@ -1107,8 +1107,13 @@
     {
       "module": "src/channels/telegram-presentation.ts",
       "imports": [
-        "../core/types.js"
+        "../core/types.js",
+        "./telegram-status-card.js"
       ]
+    },
+    {
+      "module": "src/channels/telegram-status-card.ts",
+      "imports": []
     },
     {
       "module": "src/channels/telegram-stream.ts",
@@ -1217,6 +1222,29 @@
       "module": "src/core/action-lifecycle.ts",
       "imports": [
         "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/approval-card-sources.ts",
+      "imports": [
+        "../doctor/self-heal.js",
+        "../install/install-queue.js",
+        "./approval-cards.js",
+        "./atomic-storage.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/approval-cards.ts",
+      "imports": [
+        "../doctor/self-heal.js",
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -1786,6 +1814,16 @@
     {
       "module": "src/core/nova-state.ts",
       "imports": []
+    },
+    {
+      "module": "src/core/now-view.ts",
+      "imports": [
+        "../doctor/self-heal.js",
+        "./approval-cards.js",
+        "./data-root.js",
+        "node:fs",
+        "node:path"
+      ]
     },
     {
       "module": "src/core/operational-event-bus.ts",

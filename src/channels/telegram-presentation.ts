@@ -1,4 +1,5 @@
 import type { OutgoingMessage } from '../core/types.js'
+import { LiveStatusCard } from './telegram-status-card.js'
 
 export interface TelegramPresentationAdapter {
     send(msg: OutgoingMessage): Promise<void>
@@ -78,20 +79,49 @@ export function isTelegramProgress(text: string): boolean {
         || /^Ich arbeite noch\b/i.test(value)
 }
 
+export interface TelegramPresentationOptions {
+    /** Live-Statuskarte: keep the progress message and finish it with ✅/❌ instead of deleting it. */
+    statusCard?: boolean
+    /** Throttle for status-card edits (default 2 s). */
+    minEditIntervalMs?: number
+}
+
+/** A final reply that reports a failure turns the status card into ❌. */
+export function isTelegramFailureReply(text: string): boolean {
+    const value = String(text || '').trim()
+    return /^(?:❌|⚠️|🚫)/u.test(value) || /^(?:Die Anfrage wurde abgebrochen|Fehler\b|Abgebrochen\b)/i.test(value)
+}
+
 /** One inbound request owns one visible lifecycle: progress is edited in place,
- * then removed before the final/clarification/error response is delivered. */
+ * then removed before the final/clarification/error response is delivered
+ * (or, in status-card mode, finished with ✅/❌ and kept). */
 export class TelegramPresentationSession {
     private progressMessageId: number | null = null
     private lastProgress = ''
+    private card: LiveStatusCard | null = null
 
     constructor(
         private readonly adapter: TelegramPresentationAdapter,
         private readonly chatId: string,
+        private readonly options: TelegramPresentationOptions = {},
     ) {}
 
     async deliver(raw: string): Promise<'progress' | 'message' | 'empty'> {
         const text = formatTelegramMessage(raw)
         if (!text) return 'empty'
+        if (this.options.statusCard) {
+            if (isTelegramProgress(text)) {
+                this.card ||= new LiveStatusCard({
+                    send: body => this.adapter.sendProgress(this.chatId, body),
+                    edit: (messageId, body) => this.adapter.editMessage(this.chatId, messageId, body),
+                }, { minIntervalMs: this.options.minEditIntervalMs ?? 2_000, chatId: this.chatId })
+                await this.card.update(text)
+                return 'progress'
+            }
+            await this.finishProgress(!isTelegramFailureReply(text))
+            await this.adapter.send({ channel: 'telegram', to: this.chatId, content: text })
+            return 'message'
+        }
         if (isTelegramProgress(text)) {
             if (text === this.lastProgress) return 'progress'
             this.lastProgress = text
@@ -108,7 +138,16 @@ export class TelegramPresentationSession {
         return 'message'
     }
 
+    /** End of the request: status-card mode finishes the card (✅/❌), otherwise the bubble is removed. */
+    async finishProgress(ok: boolean): Promise<void> {
+        if (!this.options.statusCard) return this.clearProgress()
+        const card = this.card
+        if (!card || card.isFinished) return
+        await card.finish(ok)
+    }
+
     async clearProgress(): Promise<void> {
+        if (this.options.statusCard) return this.finishProgress(true)
         if (this.progressMessageId === null) return
         const messageId = this.progressMessageId
         this.progressMessageId = null

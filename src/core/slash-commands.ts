@@ -3582,6 +3582,17 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             return formatAllNodeProfiles()
         }
 
+        // Phase 1 Teil A: Sichtbarkeit (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'jetzt': {
+            const { collectJetzt, formatJetzt } = await import('./now-view.js')
+            return formatJetzt(await collectJetzt())
+        }
+        case 'gedanken': {
+            const { collectGedanken, formatGedanken } = await import('./now-view.js')
+            const limit = Math.min(60, Math.max(5, Number.parseInt(args.trim(), 10) || 25))
+            return formatGedanken(await collectGedanken(), limit)
+        }
+
         // Stufe 3: Selbstheilung (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'heilung': {
             const { formatSelfHealOverview } = await import('../doctor/self-heal-runtime.js')

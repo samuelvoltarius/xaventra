@@ -388,7 +388,8 @@ export function readHealJournal(dataDir: string, limit = 20): HealJournalEntry[]
     return out.reverse()
 }
 
-interface ProposalItem { id: string; at: string; node: string; recipe: string; signature: string; title: string; message: string; befund: Record<string, unknown>; status: 'offen' }
+export type HealProposalStatus = 'offen' | 'angenommen' | 'abgelehnt'
+interface ProposalItem { id: string; at: string; node: string; recipe: string; signature: string; title: string; message: string; befund: Record<string, unknown>; status: HealProposalStatus; decidedAt?: string }
 export function readHealProposals(dataDir: string): ProposalItem[] {
     try {
         const raw = JSON.parse(readFileSync(proposalsFile(dataDir), 'utf8'))
@@ -400,6 +401,20 @@ function queueProposal(dataDir: string, item: ProposalItem): void {
     const items = [...readHealProposals(dataDir), redactDeep(item) as ProposalItem].slice(-200)
     mkdirSync(join(dataDir, 'self-heal'), { recursive: true, mode: 0o700 })
     atomicWriteJsonSync(proposalsFile(dataDir), { version: 1, items })
+}
+
+/**
+ * Owner decision from a button card (CL-10). Only records the decision on an
+ * open proposal; it never executes anything (there is no restart executor).
+ */
+export function setHealProposalStatus(dataDir: string, id: string, status: 'angenommen' | 'abgelehnt', now = Date.now()): boolean {
+    const items = readHealProposals(dataDir)
+    const index = items.findIndex(item => item.id === id)
+    if (index < 0 || items[index].status !== 'offen') return false
+    items[index] = { ...items[index], status, decidedAt: new Date(now).toISOString() }
+    mkdirSync(join(dataDir, 'self-heal'), { recursive: true, mode: 0o700 })
+    atomicWriteJsonSync(proposalsFile(dataDir), { version: 1, items })
+    return true
 }
 
 /** Owner switches: global Not-Aus, or re-enable one recipe after an automatic stop. */

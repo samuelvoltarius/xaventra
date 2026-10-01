@@ -90,6 +90,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/approval-card-sources.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/approval-cards.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/auto-updater-rollout.test.ts",
       "path": ".nova-data"
     },
@@ -207,6 +215,10 @@
     },
     {
       "owner": "src/core/node-profile.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/now-view.ts",
       "path": ".nova-data"
     },
     {
@@ -1000,6 +1012,10 @@
     {
       "owner": "src/core/operational-event-bus.ts",
       "path": ".nova-data/operational-events.json"
+    },
+    {
+      "owner": "src/core/approval-cards.ts",
+      "path": ".nova-data/outcome-ledger/decisions"
     },
     {
       "owner": "src/dev/generate-runtime-catalogs.test.ts",

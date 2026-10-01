@@ -248,6 +248,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'autonom', description: '🚀 Autonomie-Modus' },
                 { command: 'mission', description: '🎯 Mission starten/verwalten' },
                 { command: 'remind', description: '⏰ Erinnerung setzen' },
+                { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)' },
+                { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
                 // Session
                 { command: 'clear', description: '🧹 Konversation zurücksetzen' },
                 { command: 'save', description: '💾 Sitzung speichern' },
@@ -574,6 +576,10 @@ export class TelegramAdapter implements ChannelAdapter {
     private async handleFeedback(query: any): Promise<void> {
         if (!(await this.acceptInbound())) return
         const data = query.data
+        if (typeof data === 'string' && data.startsWith('ac:')) {
+            await this.handleApprovalCardPress(query)
+            return
+        }
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const needsPrincipal = typeof data === 'string'
@@ -1249,6 +1255,55 @@ export class TelegramAdapter implements ChannelAdapter {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: buttons }
             })
+        }
+    }
+
+    /** Numeric allowFrom entries = configured owners (private chat id == user id). Usernames never count. */
+    getOwnerChatIds(): string[] {
+        return (this.config.allowFrom || []).map(entry => String(entry).trim()).filter(entry => /^\d{1,20}$/.test(entry))
+    }
+
+    /** Live Main + Telegram authority for proactive card delivery. */
+    async hasCardAuthority(): Promise<boolean> {
+        return Boolean(this.bot) && !this.disconnecting && await this.hasLiveAuthority()
+    }
+
+    /** Knopf-Karte senden (plain text, code-id keyboard). Returns the message id. */
+    async sendApprovalCard(chatId: string, text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<number | null> {
+        if (!this.bot) return null
+        await this.requireLiveAuthority('approval card')
+        const sent = await this.bot.sendMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } })
+        return typeof sent?.message_id === 'number' ? sent.message_id : null
+    }
+
+    /** CL-10: a press on a Knopf-Karte. The callback carries only a code id; the card store decides. */
+    private async handleApprovalCardPress(query: any): Promise<void> {
+        const answer = async (text: string) => {
+            try { await this.bot.answerCallbackQuery(query.id, { text: String(text).slice(0, 190) }) } catch { /* ignore */ }
+        }
+        try {
+            const { answerApprovalCard, formatCardText } = await import('../core/approval-cards.js')
+            const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
+            await ensureBuiltinCardExecutors()
+            const result = await answerApprovalCard(String(query.data), { userId: String(query.from?.id ?? ''), ownerIds: this.getOwnerChatIds() })
+            await answer(result.ok ? `✓ ${result.message}` : result.message)
+            if (!result.card || result.code === 'kein-owner' || result.code === 'nicht-erlaubt') return
+            if (result.code === 'verbraucht' || result.code === 'unbekannt') return
+            const targets = [...(result.card.messages || [])]
+            const pressedChat = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            const pressedId = query.message?.message_id
+            if (pressedChat && typeof pressedId === 'number' && !targets.some(item => item.chatId === pressedChat && item.messageId === pressedId)) {
+                targets.push({ chatId: pressedChat, messageId: pressedId })
+            }
+            const text = formatCardText(result.card)
+            for (const target of targets) {
+                try {
+                    await this.bot.editMessageText(text, { chat_id: target.chatId, message_id: target.messageId, reply_markup: { inline_keyboard: [] } })
+                } catch { /* message may be too old; the decision is stored anyway */ }
+            }
+        } catch (error) {
+            console.warn(`[Nova Telegram] Knopf-Karte: ${String((error as Error)?.message || error).slice(0, 200)}`)
+            await answer('❌ Fehler — nichts ausgeführt.')
         }
     }
 

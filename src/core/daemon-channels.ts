@@ -235,7 +235,8 @@ async function startTelegramOnce(
 
         inFlight.add(msgId)
         // Store last active chat ID on global state for dynamic resolution
-        const presentation = new TelegramPresentationSession(adapter as any, String(chatId))
+        // Live-Statuskarte: one message per task, edited, finished with ✅/❌.
+        const presentation = new TelegramPresentationSession(adapter as any, String(chatId), { statusCard: true })
         try {
             if (chatId && (globalThis as any).__novaState) {
                 (globalThis as any).__novaState.lastActiveChatId = chatId
@@ -273,7 +274,9 @@ async function startTelegramOnce(
             queue?.markDone(msgId)
             logRuntimeEvent({ event: 'telegram.message.completed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, durationMs: Date.now() - processingStartedAt })
         } catch (err) {
-            await presentation.clearProgress().catch(() => { /* best effort after failure */ })
+            // Status card: ❌ instead of a silent removal (clearProgress would mark ✅).
+            await (typeof presentation.finishProgress === 'function' ? presentation.finishProgress(false) : presentation.clearProgress())
+                .catch(() => { /* best effort after failure */ })
             queue?.incrementRetry(msgId)
             logRuntimeEvent({ event: 'telegram.message.failed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: false, durationMs: Date.now() - processingStartedAt, detail: String(err).slice(0, 500) })
             throw err
@@ -309,6 +312,11 @@ async function startTelegramOnce(
         throw error
     }
     state.channels.telegram = adapter
+    // Knopf-Karten (CL-10): only the Main with live Telegram authority delivers;
+    // every tick re-checks the authority, workers never start the loop.
+    if (process.env.NOVA_NO_SIDE_EFFECTS !== '1') {
+        void import('./approval-card-sources.js').then(module => module.startApprovalCardLoop()).catch(() => { /* optional */ })
+    }
     let retired = false
     let removeTelegramLost: (() => void) | undefined
     let removeMainLost: (() => void) | undefined

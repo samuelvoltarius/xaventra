@@ -19,7 +19,7 @@
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` |
+| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/heilung` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 
 ---
@@ -206,6 +206,18 @@ Markiert einen Proposal als `rejected`. Keine Code-Änderung.
 
 ### `/patch history`
 Zeigt die letzten 10 Evolution-Einträge mit Status + Zeitstempel sowie Gesamtstatistik (total / erfolgreich / fehlgeschlagen).
+
+---
+
+## Sichtbarkeit & Knopf-Karten *(Phase 1)*
+
+### `/jetzt`
+Owner. Laufende Aufgaben (Live-Statuskarten, Task-Tracker, Mission), Installations-Warteschlange, offene Knopf-Karten und die letzten Entscheidungen.
+
+### `/gedanken [n]`
+Owner. Die letzten n (Standard 25) Gedanken/Vorschläge inkl. verworfener (Nie-Liste), abgelehnter und abgelaufener — aus Karten, Selbstheilungs-Journal/-Vorschlägen und Installations-Journal.
+
+Knopf-Karten selbst haben keinen Befehl: Installations-, Heil- und PATCH_GATE-Vorschläge kommen als Telegram-Karte mit [Ja] [Nein] [Später] (und [Immer erlauben], wo es eine bestehende Freigabestufe gibt). Details: `docs/AUTONOMY_GUIDE.md`.
 
 ---
 
