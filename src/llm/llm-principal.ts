@@ -22,3 +22,10 @@ export function mayUseCodex(): boolean {
     const current = scope.getStore()
     return !current || current.permission === 'owner'
 }
+
+/** Role for routing decisions: owner outside any message scope (autonomy,
+ * heartbeat), otherwise the authenticated permission or undefined. */
+export function currentLlmPermission(): string | undefined {
+    const current = scope.getStore()
+    return current ? current.permission : 'owner'
+}
