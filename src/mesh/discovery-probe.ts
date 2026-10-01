@@ -82,6 +82,11 @@ export class DiscoveryProbeClient {
     lastLatency(url: string): number | null { return this.results.get(url)?.ms ?? null }
 
     async probe(url: string, timeoutMs = 3000, options: { maxAgeMs?: number } = {}): Promise<string | null> {
+        // Operator exclusion and backoff are checked first, every time: the shared answer
+        // cache never bypasses them, and their short-circuit is never cached as an answer.
+        const excluded = (process.env.XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS ?? '').split(',').map(v => v.trim()).filter(Boolean)
+        if (excluded.map(discoveryOrigin).includes(discoveryOrigin(new URL(url).origin))) return null
+        if (!this.allowed(this.key(url))) return null
         const maxAge = options.maxAgeMs ?? AI_PROBE_RESULT_MAX_AGE_MS
         const cached = this.results.get(url)
         if (cached && this.now() - cached.at < maxAge) return cached.body

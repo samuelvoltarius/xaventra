@@ -36,6 +36,19 @@ describe('polite service discovery', () => {
         expect(JSON.parse(readFileSync(path, 'utf8')).entries).toEqual({})
     })
 
+    it('2.82.0: the shared answer cache never bypasses an exclusion and never caches the exclusion itself', async () => {
+        const request = vi.fn().mockResolvedValue(new Response('true'))
+        vi.stubGlobal('fetch', request)
+        const client = new DiscoveryProbeClient(file())
+        vi.stubEnv('XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS', 'http://192.0.2.9:8020')
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBeNull()
+        vi.unstubAllEnvs()
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBe('true')
+        vi.stubEnv('XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS', 'http://192.0.2.9:8020')
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBeNull()
+        expect(request).toHaveBeenCalledTimes(1)
+    })
+
     it('excludes exact origins including loopback aliases but not other nodes', async () => {
         vi.stubEnv('XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS', 'http://127.0.0.1:8020')
         const request = vi.fn().mockResolvedValue(new Response('true'))
