@@ -4007,6 +4007,7 @@
       "module": "src/learning/learning-coordinator.ts",
       "imports": [
         "../core/data-root.js",
+        "../core/side-effects.js",
         "../core/task-contract.js",
         "../security/secret-redaction.js",
         "./engine.js",
