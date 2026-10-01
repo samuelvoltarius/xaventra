@@ -9,7 +9,7 @@ const pipelineSource = readFileSync(fileURLToPath(new URL('./message-pipeline.ts
 
 describe('Pipeline-Anbindung der Routine-Skills', () => {
     it('merkt sich, ob die Nachricht aus einer Gruppe kommt', () => {
-        expect(pipelineSource).toMatch(/if \(mu\.isGroupChat\(chatId, from\)\) \{\s*requestIsGroup = true/)
+        expect(pipelineSource).toMatch(/isGroupMessage = mu\.isGroupChat\(chatId, from\) === true\s*if \(isGroupMessage\) \{\s*requestIsGroup = true/)
     })
 
     it('lädt den Skill vor dem Lauf mit Rolle, Gruppe und System-Flag', () => {
