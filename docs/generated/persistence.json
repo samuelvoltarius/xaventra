@@ -782,6 +782,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/thinking/bug-finder.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/tools/cad-tool.test.ts",
       "path": ".nova-data"
     },
@@ -1052,6 +1056,26 @@
     {
       "owner": "src/core/soul.ts",
       "path": ".nova-data/soul.md"
+    },
+    {
+      "owner": "src/thinking/decision-learning.ts",
+      "path": ".nova-data/thinking/decisions.json"
+    },
+    {
+      "owner": "src/thinking/idea-run.ts",
+      "path": ".nova-data/thinking/ideas-state.json"
+    },
+    {
+      "owner": "src/thinking/ports.ts",
+      "path": ".nova-data/thinking/schedule.json"
+    },
+    {
+      "owner": "src/thinking/model-scout.ts",
+      "path": ".nova-data/thinking/scout-report.json"
+    },
+    {
+      "owner": "src/thinking/ports.ts",
+      "path": ".nova-data/thinking/thoughts.jsonl"
     },
     {
       "owner": "src/core/upstream-update-command.ts",
