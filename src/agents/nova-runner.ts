@@ -300,7 +300,26 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             } as any)
         }
         const codexConfig = (globalThis as any).__novaState?.config?.codex
-        if (!modelOverride?.model && codexConfig?.enabled) {
+        // CL-20260930-12: Codex or local is decided per task by a fixed rule
+        // table (task kind, picture/privacy, role, switch), never by the model.
+        const [{ decideRunnerTaskModel, codexFallbackNotice }, { currentLlmPermission }] = await Promise.all([
+            import('../routing/task-model-routing.js'), import('../llm/llm-principal.js'),
+        ])
+        const taskModel = decideRunnerTaskModel({
+            content, hasImage: Boolean(image), intentKind: actionIntent.kind,
+            permission: currentLlmPermission(), codexConfig,
+        })
+        if (!modelOverride?.model) {
+            outcomeLedger.recordRoute(kernel.contract.id, {
+                taskType: actionIntent.kind || 'agent',
+                modelClass: taskModel.taskClass,
+                modelTarget: taskModel.target,
+                modelWouldBe: taskModel.wouldBe,
+                reason: `${taskModel.rule}: ${taskModel.reason}`,
+            } as any)
+        }
+        let codexNoticeSent = false
+        if (!modelOverride?.model && taskModel.target === 'codex') {
             const { createCodexRoutedClient } = await import('../auth/codex-runtime.js')
             type FallbackEvent = { reason: string; route: string }
             let routedMeta: { route?: string; fallback?: { model: string; nodeId: string }; status?: { nodeId: string } } | undefined
@@ -308,6 +327,11 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             const handleFallback = (event: FallbackEvent): void => {
                 const safeReason = redactSecrets(event.reason)
                 console.log(`[Nova Agent] Codex -> ${event.route}: ${safeReason}`)
+                // Fallback to local is never silent for a task routed to Codex.
+                if (onStepUpdate && !codexNoticeSent) {
+                    codexNoticeSent = true
+                    void Promise.resolve(onStepUpdate(codexFallbackNotice(safeReason))).catch(() => undefined)
+                }
                 outcomeLedger.recordRoute(kernel.contract.id, {
                     backend: event.route,
                     model: event.route === 'local-vllm' ? (routedMeta?.fallback?.model || 'local-auto') : (llmClient as any)?.modelId,

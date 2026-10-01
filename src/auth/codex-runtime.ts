@@ -18,6 +18,7 @@ import { getCapabilityGraph, type CapabilityGraphNode, type CapabilityRuntime } 
 import { getLocalNodeId } from '../mesh/mesh-registry.js'
 import { getNovaConfig } from '../core/config.js'
 import { getNovaDataDir } from '../core/data-root.js'
+import { mayUseCodex } from '../llm/llm-principal.js'
 
 export interface CodexRoutingConfig {
     enabled?: boolean
@@ -169,7 +170,9 @@ export async function getCodexDisplayModel(principalId: string): Promise<CodexDi
         nodeId: remoteNodeId || status.nodeId,
         available: status.available || Boolean(remoteNodeId),
         authenticated: status.authenticated || Boolean(remoteNodeId),
-        preferred: (status.authenticated || Boolean(remoteNodeId)) && config?.preferWhenAuthenticated !== false,
+        // Preferred only while the routing switch is on (live 01.10.2026: the
+        // status said "bevorzugt" with codex.enabled=false).
+        preferred: config?.enabled === true && (status.authenticated || Boolean(remoteNodeId)) && config?.preferWhenAuthenticated !== false,
     }
 }
 
@@ -294,7 +297,12 @@ export async function createCodexRoutedClient(params: {
     existingClient?: any
     onFallback?: (reason: string, route: string) => void
 }): Promise<{ client: any; route: 'codex' | 'codex-remote' | 'local-vllm' | 'existing'; status: CodexPublicStatus; fallback?: CodexFallbackTarget }> {
-    const status = await getCodexRuntimeStatus(params.principalId)
+    // L7 (30.09.2026): Codex is the owner's subscription. Non-owners are not
+    // even probed; they get the local route with the reason reported.
+    const ownerOnly = !mayUseCodex()
+    const status: CodexPublicStatus = ownerOnly
+        ? { nodeId: getLocalCodexNodeId(), available: false, authenticated: false, authMode: null, planType: null, checkedAt: new Date().toISOString() }
+        : await getCodexRuntimeStatus(params.principalId)
     const vllm = resolveVllmFallback(params.config)
     let fallback = params.existingClient
     let fallbackRoute: 'local-vllm' | 'existing' = 'existing'
@@ -317,6 +325,10 @@ export async function createCodexRoutedClient(params: {
         fallbackRoute = 'local-vllm'
     }
 
+    if (ownerOnly) {
+        params.onFallback?.('Codex ist nur für den Owner freigegeben', fallbackRoute)
+        return { client: fallback, route: fallbackRoute, status, fallback: vllm || undefined }
+    }
     if (status.authenticated && params.config.preferWhenAuthenticated !== false) {
         const codex = new CodexAppServerLLM(params.principalId, status.nodeId, params.config.model || 'gpt-5.4')
         return {

@@ -411,7 +411,10 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                     let targetProvider = found.provider
 
                     if (targetProvider === 'openai-codex') {
-                        return `✅ *Codex ist verbunden und wird automatisch bevorzugt.*\n\n📍 Modell: \`${found.model}\`\n📦 Provider: \`openai-codex\`\n🖥️ Node: \`${codexDisplay?.nodeId || 'local'}\`\n\nTool-Aufträge laufen weiterhin durch Novas Execution Kernel; bei Codex-Fehlern folgt das lokale vLLM.`
+                        const routing = (state as any).config?.codex?.enabled === true
+                            ? '*Codex ist verbunden und wird für Code, größere Umbauten und schwierige Fehlersuche gewählt.* Smalltalk, Kurzes, Bilder und Privates bleiben lokal.'
+                            : '*Codex ist verbunden, das Routing ist aber aus (codex.enabled=false).* Code-Aufträge: wäre Codex, aber aus – alles läuft lokal.'
+                        return `✅ ${routing}\n\n📍 Modell: \`${found.model}\`\n📦 Provider: \`openai-codex\`\n🖥️ Node: \`${codexDisplay?.nodeId || 'local'}\`\n\nDie Wahl fällt pro Aufgabe nach fester Regel (/codex status); bei Codex-Fehlern folgt das lokale vLLM mit Meldung.`
                     }
 
                     const switched = await state.llm.switchModel(found.model, targetProvider)
@@ -469,7 +472,8 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                 text += '\n'
             }
 
-            if (codexDisplay?.preferred) text += `_Codex ist für diesen User auf ${codexDisplay.nodeId} verbunden und wird automatisch bevorzugt._\n\n`
+            if (codexDisplay?.preferred) text += `_Codex ist für diesen User auf ${codexDisplay.nodeId} verbunden und wird für Code, größere Umbauten und schwierige Fehlersuche gewählt._\n\n`
+            else if (codexDisplay?.available && codexDisplay.authenticated) text += `_Codex ist auf ${codexDisplay.nodeId} angemeldet, das Routing ist aber aus (codex.enabled=false)._\n\n`
             text += `_${visibleLLMs.length} Modelle von ${Object.keys(grouped).length} Providern_\n`
             text += `_Wechseln: /switch <model>_`
 
@@ -1980,10 +1984,15 @@ Gebaut für Xaventra contributors 🌶️`
                     const fallback = route.fallback
                         ? `vLLM \`${route.fallback.model}\` auf \`${route.fallback.hostname || route.fallback.nodeId}\``
                         : 'kein verifizierter Ersatz'
-                    if (route.available) {
-                        return `Codex für deinen Nova-User:\n✅ verfügbar und angemeldet\n🖥️ Aktiver Node: \`${route.activeNodeId}\`\n🛟 Fallback: ${fallback}\n\nCodex wird bevorzugt; bei einem Ausfall wechselt Nova automatisch und meldet den Statuswechsel.`
-                    }
-                    return `Codex für deinen Nova-User:\n❌ auf keinem erreichbaren Node verfügbar\n🛟 Aktiver Ersatz: ${fallback}\n\n${route.localStatus.available ? 'Anmeldung auf diesem Main: /codex login' : 'Codex ist auf diesem Main nicht installiert. Starte den bisherigen Codex-Node oder installiere Codex hier; Nova arbeitet bis dahin automatisch über den Ersatz weiter.'}`
+                    const { describeCodexRouting } = await import('../routing/task-model-routing.js')
+                    return describeCodexRouting({
+                        enabled: (state as any).config?.codex?.enabled === true,
+                        available: route.available,
+                        permission: requestPermission,
+                        activeNodeId: route.activeNodeId,
+                        fallbackLabel: fallback,
+                        localInstalled: route.localStatus.available,
+                    })
                 }
                 if (action === 'login') {
                     if (!mayManageAuth) return '🔒 Nur Owner/Admin dürfen Codex-Login starten.'

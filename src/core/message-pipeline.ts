@@ -1536,7 +1536,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 } catch { /* Codex is optional. */ }
                 lines.push(`Aktives Runtime-Modell: ${provider}/${model}.`)
                 lines.push(codexRoute
-                    ? `Für normale Chats ist deine authentifizierte Codex-Route${codexNode ? ` auf ${codexNode}` : ''} bevorzugt; ${provider}/${model} ist der verifizierte Fallback.`
+                    ? `Für Code, größere Umbauten und schwierige Fehlersuche wird deine authentifizierte Codex-Route${codexNode ? ` auf ${codexNode}` : ''} gewählt; Smalltalk, Kurzes, Bilder und Privates laufen über ${provider}/${model}, das auch der Fallback ist.`
                     : `Codex ist für diesen Benutzer derzeit nicht als bevorzugte Route verfügbar; normale Chats laufen über ${provider}/${model}.`)
             }
             if (asksMeshRuntime) {

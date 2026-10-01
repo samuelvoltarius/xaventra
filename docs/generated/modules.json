@@ -293,6 +293,7 @@
       "imports": [
         "../core/config.js",
         "../core/data-root.js",
+        "../llm/llm-principal.js",
         "../llm/local-llm.js",
         "../llm/nova-llm-sdk.js",
         "../mesh/capability-graph.js",
@@ -4847,6 +4848,12 @@
       "module": "src/routing/session-routing.ts",
       "imports": [
         "node:crypto"
+      ]
+    },
+    {
+      "module": "src/routing/task-model-routing.ts",
+      "imports": [
+        "../core/action-intent.js"
       ]
     },
     {
