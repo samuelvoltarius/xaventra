@@ -5,7 +5,7 @@ export async function callDockerHost(operation: 'list' | 'status' | 'logs' | 'ac
     return callHostAgent(`/v1/docker/${operation}`, data)
 }
 
-const HOST_AGENT_PATHS = ['/v1/docker/list', '/v1/docker/status', '/v1/docker/logs', '/v1/docker/action', '/v1/install/execute', '/v1/install/rollback', '/v1/install/status']
+const HOST_AGENT_PATHS = ['/v1/docker/list', '/v1/docker/status', '/v1/docker/logs', '/v1/docker/action', '/v1/install/execute', '/v1/install/rollback', '/v1/install/status', '/v1/vllm/state', '/v1/vllm/action']
 
 /** Local authenticated host-agent call. Fixed paths only; the body is JSON data, never a command. */
 export async function callHostAgent(path: string, data: object): Promise<any> {

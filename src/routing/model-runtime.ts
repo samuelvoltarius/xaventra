@@ -48,7 +48,7 @@ export async function applyMultiRouteEndpoint(decision: MultiRouteDecision): Pro
     }
     if (endpoint.kind === 'ollama' && endpoint.baseUrl) {
         const [{ ensureOllamaModel, createOllamaHttpPort, nodeMemoryFromProfile }, profile] = await Promise.all([
-            import('./local-model-control.js'), profileFor(endpoint.node),
+            import('./local-model-control.js'), profileForNode(endpoint.node),
         ])
         const ensured = await ensureOllamaModel(
             { node: endpoint.node || 'unbekannt', baseUrl: endpoint.baseUrl, model: endpoint.model, taskClass: decision.taskClass },
@@ -73,7 +73,8 @@ export async function applyMultiRouteEndpoint(decision: MultiRouteDecision): Pro
     return { client, cloud, ...(decision.notice ? { notice: decision.notice } : {}) }
 }
 
-async function profileFor(nodeId: string | undefined): Promise<any> {
+/** Node profile of the local node or a mesh peer (null when unknown). */
+export async function profileForNode(nodeId: string | undefined): Promise<any> {
     try {
         const [{ collectNodeProfile }, { getLocalNodeId }, { getMeshPeerStates }] = await Promise.all([
             import('../core/node-profile.js'), import('../mesh/mesh-registry.js'), import('../mesh/mesh-transport-runtime.js'),

@@ -40,6 +40,7 @@ export interface LLMMessage {
 
 import { normalizeTokenUsage } from './token-usage.js'
 import { envOpenAIKeyFor, isLocalEndpoint } from './endpoint-trust.js'
+import { vllmSwitchBlocks, vllmSwitchBusyMessage } from '../routing/vllm-switch-state.js'
 
 // Cloud/remote calls never hang on undici defaults (300 s headers, endless
 // trickling streams): completions and streams get a hard cap.
@@ -1461,7 +1462,11 @@ class LocalLLMProvider extends LLMProvider {
     ): Promise<LLMResponse> {
         const chatMessages = this._buildChatMessages(messages)
 
-        const discovered = await this.getFailoverCandidates()
+        const allCandidates = await this.getFailoverCandidates()
+        // Phase 8: while a vLLM switch runs, that endpoint is not called (it would
+        // hang for minutes). Other local endpoints stay; never a cloud failover.
+        const discovered = allCandidates.filter(candidate => !vllmSwitchBlocks(candidate.baseUrl))
+        if (allCandidates.length && !discovered.length) throw new Error(vllmSwitchBusyMessage())
         let candidates = discovered.filter(candidate => !isBlacklisted(candidate.model, candidate.baseUrl))
         let recovering = false
         if (!candidates.length) {
@@ -1748,6 +1753,7 @@ class LocalLLMProvider extends LLMProvider {
     }
 
     async *stream(messages: LLMMessage[], tools?: ToolDefinition[]): AsyncGenerator<StreamChunk> {
+        if (vllmSwitchBlocks(this.baseUrl)) throw new Error(vllmSwitchBusyMessage())
         // Use the same message preprocessing as complete() — fixes tool-role handling for vLLM/Qwen
         const chatMessages = this._buildChatMessages(messages)
         const isOllama = this.baseUrl.includes('11434')

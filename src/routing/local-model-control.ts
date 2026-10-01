@@ -7,21 +7,24 @@
  *     whose profile shows enough free memory, never next to a vLLM bottleneck
  *     (OOM 13.09.). A model that is not on the node is never pulled here:
  *     `/api/pull` is L2 and becomes a Knopf-Karte; only "Ja" pulls.
- * (b) vLLM at the Spark: ONLY a plan + card ("Für Aufgabe X wäre Modell Y
- *     besser, Wechsel ~N min, Rückweg automatisch"). The recipe is defined with
- *     snapshot → switch → probe → automatic way back, executed through a
- *     host-agent port after "Ja". In this build the production port is
- *     UNWIRED: no real vLLM control exists here.
+ * (b) vLLM at the Spark: plan + card ("Für Aufgabe X wäre Modell Y besser,
+ *     Wechsel ~15 min, Rückweg automatisch"). After the owner's "Ja" (never
+ *     "immer") the recipe runs through the host agent (src/routing/vllm-switch.ts,
+ *     src/host/vllm-agent.ts) — only when that recipe is configured; otherwise
+ *     an honest refusal "Host-Agent nicht eingerichtet". Alfred 01.10.2026.
  *
  * Network access only through the injected `OllamaPort`; tests pass mocks.
  */
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { createApprovalCard, type ApprovalCard, type CardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
 import type { NodeProfile } from '../core/node-profile.js'
+import { recordActionOutcome } from '../core/action-policy.js'
+import { isAllowedVllmTarget, issueVllmTicket, normalizeVllmTargets } from '../install/vllm-ticket.js'
+import { checkVllmSwitchPreconditions, createVllmHttpProbe, defaultVllmBusyCheck, readVllmTargetsFromConfig, startVllmSwitch, VLLM_SWITCH_MINUTES, type VllmHostClient, type VllmSwitchOutcome, type VllmSwitchRuntime } from './vllm-switch.js'
 import { TASK_CLASS_LABELS, type TaskModelClass } from './task-model-routing.js'
 
 const GIB = 1024 ** 3
@@ -223,52 +226,47 @@ export function createOllamaPullExecutor(deps: { port: OllamaPort; dataDir?: str
 // vLLM switch at the Spark: plan + card + recipe (executor via host agent)
 // ---------------------------------------------------------------------------
 
-export type VllmPlanStatus = 'geplant' | 'bestaetigt' | 'ausgefuehrt' | 'zurueckgerollt' | 'abgelehnt' | 'fehlgeschlagen'
+export type VllmPlanStatus = 'geplant' | 'bestaetigt' | 'laeuft' | 'ausgefuehrt' | 'zurueckgerollt' | 'abgelehnt' | 'nicht-ausgefuehrt' | 'fehlgeschlagen'
 export interface VllmSwitchPlan {
     id: string
     node: string
     taskClass: TaskModelClass
     currentModel: string
+    /** Target name from the closed list (spark-models.sh), never free text. */
     targetModel: string
     estimatedMinutes: number
     evidence: string
     createdAt: string
     status: VllmPlanStatus
+    /** vLLM base URL of the node (probe + "Modellwechsel läuft" hold). */
+    baseUrl?: string
     cardId?: string
+    approvedBy?: string
     result?: string
 }
 
-/** Recipe definition. Effect is not on the Nie-Liste (`vllm:stoppen` stays forbidden as a standalone action);
- * executing it needs the owner's "Ja" and a wired host agent (not in this build). */
+/** Recipe definition (Alfred 01.10.2026: switch allowed as card with automatic way back).
+ * The effect is not on the Nie-Liste; `vllm:stoppen` stays forbidden as a standalone action.
+ * Executed only after the owner's "Ja" (never "immer") through the host agent. */
 export const VLLM_SWITCH_RECIPE = Object.freeze({
     id: 'vllm-modell-wechsel',
     level: 'nach-ja' as const,
     via: 'host-agent' as const,
     effects: Object.freeze(['host-agent:vllm-modell-wechseln']),
     steps: Object.freeze([
-        { id: 'messen', text: 'Last messen: kein Wechsel während Training/Scout/hoher GPU-Last' },
-        { id: 'sichern', text: 'Aktuelles Modell + Startparameter festhalten (Rückweg)' },
-        { id: 'wechseln', text: 'vLLM über den Host-Agenten mit dem Zielmodell starten' },
-        { id: 'pruefen', text: 'Probe: /v1/models listet das Ziel, Prüfanfrage beantwortet' },
-        { id: 'rueckweg', text: 'Probe gescheitert → vorheriges Modell automatisch wieder starten' },
+        { id: 'messen', text: 'Vorbedingungen: keine Wartungsmarke, kein laufender Wechsel, keine LLM-Aufgaben, Speicher nicht kritisch' },
+        { id: 'sichern', text: 'Altes Ziel lesen, Wartungsmarke setzen (Wächter hält still)' },
+        { id: 'wechseln', text: 'spark-models.sh switch <ziel> abgekoppelt über den Host-Agenten (fester argv, Einmal-Ticket)' },
+        { id: 'pruefen', text: 'Bis 15 min: Neustart gesehen, /v1/models listet die erwartete ID, Mini-Chat-Probe beantwortet' },
+        { id: 'rueckweg', text: 'Sonst automatisch switch <alt>, warten bis alt antwortet; scheitert auch das: Marke weg, Wächter übernimmt, dringende Meldung' },
     ]),
 })
 
-export interface VllmSwitchExecutor {
-    snapshot(plan: VllmSwitchPlan): Promise<{ model: string }>
-    switchModel(plan: VllmSwitchPlan, model: string): Promise<boolean>
-    probe(plan: VllmSwitchPlan): Promise<boolean>
-    restore(plan: VllmSwitchPlan, snapshot: { model: string }): Promise<boolean>
-}
+/** Honest refusal when the host-agent recipe is not configured on this node. */
+export const VLLM_HOST_AGENT_MISSING = 'Host-Agent nicht eingerichtet (vLLM-Wechsel am Spark: Ticket-Schlüssel, Host-Agent-Socket und vllm-Abschnitt der Host-Konfiguration nötig, siehe docs/VLLM_SWITCH.md) — kein vLLM-Eingriff.'
 
-class UnwiredError extends Error { constructor() { super('Host-Agent für vLLM-Wechsel in diesem Bau nicht verdrahtet') } }
-/** Production executor of this build: refuses every step, so no vLLM is ever touched. */
-export const UNWIRED_VLLM_EXECUTOR: VllmSwitchExecutor = Object.freeze({
-    async snapshot() { throw new UnwiredError() },
-    async switchModel() { throw new UnwiredError() },
-    async probe() { throw new UnwiredError() },
-    async restore() { throw new UnwiredError() },
-})
+/** Resolves the runtime for one plan, or an honest refusal. */
+export type VllmRuntimeResolver = (plan: Pick<VllmSwitchPlan, 'id' | 'node' | 'baseUrl'>) => Promise<VllmSwitchRuntime | { refusal: string }>
 
 export function readVllmPlans(opts: Pick<CardStoreOptions, 'dataDir'> = {}): VllmSwitchPlan[] {
     return readJsonList<VllmSwitchPlan>(planFile(opts.dataDir))
@@ -282,20 +280,27 @@ function updatePlan(id: string, patch: Partial<VllmSwitchPlan>, dataDir?: string
     return items[index]
 }
 
-export function planVllmSwitch(input: { node: string; taskClass: TaskModelClass; currentModel: string; targetModel: string; estimatedMinutes: number; evidence: string }, opts: CardStoreOptions = {}): { ok: true; plan: VllmSwitchPlan; card: ApprovalCard } | { ok: false; reason: string } {
-    const minutes = Math.max(1, Math.round(Number(input.estimatedMinutes) || 10))
-    if (!input.targetModel || input.targetModel === input.currentModel) return { ok: false, reason: 'Zielmodell fehlt oder ist schon aktiv' }
+export interface VllmPlanInput { node: string; taskClass: TaskModelClass; currentModel: string; targetModel: string; estimatedMinutes?: number; evidence: string; baseUrl?: string; targets?: readonly string[] }
+
+/** Card creation only (no live checks). Target must be on the closed list. */
+export function planVllmSwitch(input: VllmPlanInput, opts: CardStoreOptions = {}): { ok: true; plan: VllmSwitchPlan; card: ApprovalCard } | { ok: false; reason: string } {
+    const targets = normalizeVllmTargets(input.targets)
+    const minutes = Math.max(1, Math.round(Number(input.estimatedMinutes) || VLLM_SWITCH_MINUTES))
+    if (!isAllowedVllmTarget(input.targetModel, targets)) return { ok: false, reason: `Ziel „${String(input.targetModel || '').slice(0, 40)}“ ist nicht auf der Liste (${targets.join(', ')})` }
+    if (input.targetModel === input.currentModel) return { ok: false, reason: 'Zielmodell ist schon aktiv' }
     const plan: VllmSwitchPlan = {
-        id: `v${randomBytes(6).toString('hex')}`, node: input.node, taskClass: input.taskClass, currentModel: input.currentModel,
+        id: `v${randomBytes(6).toString('hex')}`, node: input.node, taskClass: input.taskClass, currentModel: String(input.currentModel || '').slice(0, 80),
         targetModel: input.targetModel, estimatedMinutes: minutes, evidence: String(input.evidence || '').slice(0, 600),
         createdAt: new Date((opts.now || Date.now)()).toISOString(), status: 'geplant',
+        ...(input.baseUrl ? { baseUrl: String(input.baseUrl).slice(0, 200) } : {}),
     }
     const label = TASK_CLASS_LABELS[input.taskClass]
     const card = createApprovalCard({
         art: 'modell-wechsel', titel: `vLLM-Modellwechsel auf ${input.node}: ${input.targetModel}?`,
         beleg: plan.evidence || 'kein Beleg angegeben',
-        vorschlag: `Für Aufgabe ${label} wäre Modell ${input.targetModel} besser als ${input.currentModel}. Wechsel ~${minutes} min, Rückweg automatisch (Probe scheitert → ${input.currentModel} wieder starten).`,
+        vorschlag: `Für Aufgabe ${label} wäre Modell ${input.targetModel} besser als ${plan.currentModel}. Wechsel ~${minutes} min ohne lokales LLM, Rückweg automatisch (Probe scheitert → ${plan.currentModel} wieder starten).`,
         aktion: { kind: 'vllm-wechsel', ref: plan.id }, node: input.node, quelle: 'modellsteuerung',
+        effects: [...VLLM_SWITCH_RECIPE.effects],
         dedupeKey: `vllm-wechsel:${input.node}:${input.targetModel.toLowerCase()}`,
     }, opts)
     if (!card.ok) return { ok: false, reason: (card as { reason: string }).reason }
@@ -304,39 +309,61 @@ export function planVllmSwitch(input: { node: string; taskClass: TaskModelClass;
     return { ok: true, plan: stored, card: card.card }
 }
 
-/** Runs the recipe. Refuses unless the approval is an answered card ("ja"/"immer") bound to this plan. */
-export async function executeVllmSwitch(planId: string, approval: { status: string; ref: string }, executor: VllmSwitchExecutor, opts: Pick<CardStoreOptions, 'dataDir'> = {}): Promise<{ ok: boolean; message: string }> {
-    const plan = readVllmPlans(opts).find(item => item.id === planId)
-    if (!plan) return { ok: false, message: 'Plan unbekannt — nichts ausgeführt.' }
-    if (!(approval?.status === 'ja' || approval?.status === 'immer') || approval.ref !== planId) return { ok: false, message: 'Kein Ja zu genau diesem Plan — nichts ausgeführt.' }
-    if (plan.status !== 'geplant' && plan.status !== 'bestaetigt') return { ok: false, message: `Plan ist ${plan.status} — nichts ausgeführt.` }
-    updatePlan(plan.id, { status: 'bestaetigt' }, opts.dataDir)
-    let snapshot: { model: string }
-    try { snapshot = await executor.snapshot(plan) } catch (error) {
-        const message = String((error as Error)?.message || error)
-        updatePlan(plan.id, { result: message }, opts.dataDir)
-        return { ok: false, message: `Plan bestätigt; ${message} — kein vLLM-Eingriff.` }
-    }
-    try {
-        const switched = await executor.switchModel(plan, plan.targetModel)
-        const healthy = switched && await executor.probe(plan)
-        if (healthy) {
-            updatePlan(plan.id, { status: 'ausgefuehrt', result: `${plan.targetModel} aktiv, Probe bestanden` }, opts.dataDir)
-            return { ok: true, message: `${plan.targetModel} läuft auf ${plan.node}, Probe bestanden.` }
-        }
-    } catch { /* fall through to the way back */ }
-    let restored = false
-    try { restored = await executor.restore(plan, snapshot) } catch { restored = false }
-    updatePlan(plan.id, { status: restored ? 'zurueckgerollt' : 'fehlgeschlagen', result: restored ? `Probe gescheitert, ${snapshot.model} wiederhergestellt` : 'Probe und Rückweg gescheitert' }, opts.dataDir)
-    return { ok: false, message: restored ? `Wechsel gescheitert, Rückweg ausgeführt: ${snapshot.model} läuft wieder.` : 'Wechsel und Rückweg gescheitert — bitte prüfen.' }
+/** Card with live preconditions: no card while the host agent is missing, a marker is set, the LLM is busy … */
+export async function proposeVllmSwitch(input: Omit<VllmPlanInput, 'currentModel' | 'targets'>, deps: { resolveRuntime: VllmRuntimeResolver; cards?: CardStoreOptions }): Promise<{ ok: true; plan: VllmSwitchPlan; card: ApprovalCard } | { ok: false; reason: string }> {
+    const runtime = await deps.resolveRuntime({ id: 'v000000000000', node: input.node, baseUrl: input.baseUrl })
+    if ('refusal' in runtime) return { ok: false, reason: runtime.refusal }
+    if (runtime.nodeId !== input.node) return { ok: false, reason: `Host-Agent gehört zu ${runtime.nodeId}, vLLM-Endpunkt zu ${input.node}` }
+    const pre = await checkVllmSwitchPreconditions(input.targetModel, runtime)
+    if (!pre.ok) return { ok: false, reason: (pre as { reason: string }).reason }
+    return planVllmSwitch({ ...input, currentModel: pre.state.currentTarget || '?', targets: runtime.targets }, deps.cards)
 }
 
-export function createVllmSwitchCardExecutor(deps: { executor: VllmSwitchExecutor; dataDir?: string }): CardExecutor {
+/**
+ * Runs the recipe after the owner's "Ja". Refuses unless the approval is an
+ * answered card with "ja" (never "immer") bound to this plan. Preflight and
+ * marker run before this returns; the switch finishes in `done`.
+ */
+export async function executeVllmSwitch(planId: string, approval: { status: string; ref: string; approvedBy?: string }, resolveRuntime: VllmRuntimeResolver, opts: Pick<CardStoreOptions, 'dataDir'> = {}): Promise<{ ok: boolean; message: string; done?: Promise<VllmSwitchOutcome> }> {
+    const plan = readVllmPlans(opts).find(item => item.id === planId)
+    if (!plan) return { ok: false, message: 'Plan unbekannt — nichts ausgeführt.' }
+    if (approval?.status !== 'ja' || approval.ref !== planId) return { ok: false, message: 'Kein Ja zu genau diesem Plan — nichts ausgeführt (vLLM-Wechsel nie „immer“).' }
+    if (!/^owner:[^\s]{1,120}$/.test(String(approval.approvedBy || ''))) return { ok: false, message: 'Freigabe nicht vom Owner — nichts ausgeführt.' }
+    if (plan.status !== 'geplant' && plan.status !== 'bestaetigt') return { ok: false, message: `Plan ist ${plan.status} — nichts ausgeführt.` }
+    updatePlan(plan.id, { status: 'bestaetigt', approvedBy: approval.approvedBy }, opts.dataDir)
+    let runtime: VllmSwitchRuntime | { refusal: string }
+    try { runtime = await resolveRuntime(plan) } catch (error) { runtime = { refusal: `Host-Agent nicht nutzbar: ${String((error as Error)?.message || error).slice(0, 120)}` } }
+    if ('refusal' in runtime) {
+        updatePlan(plan.id, { status: 'nicht-ausgefuehrt', result: runtime.refusal }, opts.dataDir)
+        return { ok: false, message: runtime.refusal }
+    }
+    const start = await startVllmSwitch({ id: plan.id, node: plan.node, target: plan.targetModel, approvedBy: approval.approvedBy! }, runtime)
+    if (!start.started) {
+        const outcome = (start as { outcome: VllmSwitchOutcome }).outcome
+        updatePlan(plan.id, { status: 'nicht-ausgefuehrt', result: outcome.message }, opts.dataDir)
+        return { ok: false, message: outcome.message }
+    }
+    updatePlan(plan.id, { status: 'laeuft', result: start.message }, opts.dataDir)
+    const done = start.done.then(outcome => {
+        updatePlan(plan.id, { status: outcome.status, result: outcome.message.slice(0, 600) }, opts.dataDir)
+        if (outcome.status !== 'nicht-ausgefuehrt') recordActionOutcome('vllm-wechsel', { ok: outcome.status === 'ausgefuehrt', rolledBack: outcome.status === 'zurueckgerollt' }, { dataDir: opts.dataDir })
+        return outcome
+    })
+    done.catch(() => undefined)
+    return { ok: true, message: start.message, done }
+}
+
+/** Card executor `vllm-wechsel`: no allowAlways — "Immer erlauben" never exists for a vLLM switch. */
+export function createVllmSwitchCardExecutor(deps: { resolveRuntime: VllmRuntimeResolver; dataDir?: string; onDone?: (outcome: VllmSwitchOutcome) => void }): CardExecutor {
     return {
         kind: 'vllm-wechsel',
         impact: 'intern',
-        async execute(card) {
-            return executeVllmSwitch(card.aktion.ref, { status: card.status, ref: card.aktion.ref }, deps.executor, { dataDir: deps.dataDir })
+        async execute(card, answer, ctx) {
+            if (answer !== 'ja') return { ok: false, message: 'vLLM-Wechsel nur mit einzelnem Ja — nichts ausgeführt.' }
+            const userId = String(ctx?.userId || '').trim()
+            const result = await executeVllmSwitch(card.aktion.ref, { status: card.status, ref: card.aktion.ref, approvedBy: userId ? `owner:${userId}` : undefined }, deps.resolveRuntime, { dataDir: deps.dataDir })
+            if (result.done && deps.onDone) result.done.then(deps.onDone, () => undefined)
+            return { ok: result.ok, message: result.message }
         },
         async reject(card) {
             updatePlan(card.aktion.ref, { status: 'abgelehnt' }, deps.dataDir)
@@ -345,8 +372,46 @@ export function createVllmSwitchCardExecutor(deps: { executor: VllmSwitchExecuto
     }
 }
 
-/** Production wiring: real Ollama HTTP port for pulls after "Ja"; vLLM executor unwired. */
+/** Production runtime: only when the host agent and its vLLM recipe are configured; otherwise an honest refusal. */
+export async function resolveProductionVllmRuntime(plan: Pick<VllmSwitchPlan, 'id' | 'node' | 'baseUrl'>): Promise<VllmSwitchRuntime | { refusal: string }> {
+    const env = process.env
+    const keyFile = env.XAVENTRA_VLLM_TICKET_KEY_FILE || env.XAVENTRA_INSTALL_TICKET_KEY_FILE
+    const nodeId = env.XAVENTRA_HOST_AGENT_NODE_ID, clientId = env.XAVENTRA_HOST_AGENT_CLIENT_ID
+    if (!keyFile || !nodeId || !clientId || !env.XAVENTRA_HOST_AGENT_SOCKET || !env.XAVENTRA_HOST_AGENT_TOKEN_FILE || !existsSync(keyFile)) return { refusal: VLLM_HOST_AGENT_MISSING }
+    let privateKey: string
+    try { privateKey = readFileSync(keyFile, 'utf8') } catch { return { refusal: VLLM_HOST_AGENT_MISSING } }
+    const { callHostAgent } = await import('../host/docker-client.js')
+    const host: VllmHostClient = {
+        state: async () => await callHostAgent('/v1/vllm/state', {}),
+        action: async ticket => await callHostAgent('/v1/vllm/action', { ticket }),
+    }
+    const probe: any = await host.state().catch(() => null)
+    if (!probe?.success) {
+        const missing = !probe || probe.unavailable || /unsupported host operation/i.test(String(probe.error || ''))
+        return { refusal: missing ? VLLM_HOST_AGENT_MISSING : `Host-Agent: ${String(probe.error || 'Zustand nicht lesbar').slice(0, 120)}` }
+    }
+    if (!plan.baseUrl) return { refusal: 'vLLM-Endpunkt des Plans unbekannt — kein Wechsel (ohne Probe kein Erfolg prüfbar).' }
+    const config = (globalThis as any).__novaState?.config || {}
+    const targets = readVllmTargetsFromConfig(config)
+    const [{ envOpenAIKeyFor }, { addThought }, { profileForNode }] = await Promise.all([
+        import('../llm/endpoint-trust.js'), import('../planner/index.js'), import('./model-runtime.js'),
+    ])
+    return {
+        nodeId, targets, host, baseUrl: plan.baseUrl,
+        endpoint: createVllmHttpProbe(plan.baseUrl, { apiKey: envOpenAIKeyFor(plan.baseUrl) }),
+        issue: input => issueVllmTicket({ ...input, nodeId, clientId, targets }, privateKey),
+        busy: defaultVllmBusyCheck,
+        memory: async () => nodeMemoryFromProfile(await profileForNode(plan.node)),
+        notify: (level, title, text) => {
+            try {
+                addThought({ source: 'modellsteuerung', title, evidence: text, kind: 'ereignis', severity: level === 'dringend' ? 'critical' : 'warning', node: plan.node, signature: `vllm-wechsel:${plan.id}:${title}` })
+            } catch (error) { console.warn(`[vLLM-Wechsel] Meldung nicht zugestellt: ${String((error as Error)?.message || error).slice(0, 120)}`) }
+        },
+    }
+}
+
+/** Production wiring: real Ollama HTTP port for pulls after "Ja"; vLLM switch through the host agent (or honest refusal). */
 export function registerModelControlExecutors(register: (executor: CardExecutor) => void): void {
     register(createOllamaPullExecutor({ port: createOllamaHttpPort() }))
-    register(createVllmSwitchCardExecutor({ executor: UNWIRED_VLLM_EXECUTOR }))
+    register(createVllmSwitchCardExecutor({ resolveRuntime: resolveProductionVllmRuntime }))
 }

@@ -50,7 +50,7 @@ export function formatModelRegistry(registry: ModelRegistry, settings: MultiRout
         const admissible = decision.candidates.filter(item => !item.excluded).length
         lines.push(`• ${TASK_CLASS_LABELS[taskClass]} → ${settings.enabled ? chosen : `${decision.baseline.target === 'codex' ? 'Codex' : 'lokal'} (${decision.baseline.rule})${decision.endpoint ? ` · mit Multi-Router: ${chosen}` : ''}`} · ${admissible}/${decision.candidates.length} zulässig`)
     }
-    lines.push('', 'vLLM-Wechsel nur als Plan: `/modelle wechsel <aufgabe> <modell> [minuten]` → Knopf-Karte, nichts läuft ohne Ja.')
+    lines.push('', 'vLLM-Wechsel am Spark: `/modelle wechsel <aufgabe> <ziel>` (Ziel aus der festen Liste, z. B. flash, coder) → Knopf-Karte, ~15 min ohne lokales LLM, Rückweg automatisch; nichts läuft ohne Ja.')
     return lines.join('\n')
 }
 
@@ -70,18 +70,18 @@ export async function handleModelleCommand(args: string): Promise<string> {
     const taskClass = CLASS_ALIASES[String(parts[1] || '').toLowerCase()]
     const targetModel = parts[2]
     const minutes = Number.parseInt(parts[3] || '', 10)
-    if (!taskClass || !targetModel) return 'Syntax: /modelle wechsel <code|umbau|fehlersuche|bild|kurz|allgemein> <modell> [minuten]'
+    if (!taskClass || !targetModel) return 'Syntax: /modelle wechsel <code|umbau|fehlersuche|bild|kurz|allgemein> <ziel> [minuten]'
     const vllm = registry.endpoints.find(ep => ep.kind === 'vllm' && ep.privacy === 'lokal')
     if (!vllm) return '❌ Kein lokaler vLLM-Endpunkt im Register — kein Plan.'
     const measured = vllm.measurements.find(item => item.taskClass === taskClass)
-    const { planVllmSwitch } = await import('./local-model-control.js')
-    const result = planVllmSwitch({
-        node: vllm.node || 'spark', taskClass, currentModel: vllm.model, targetModel,
-        estimatedMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 10,
+    const { proposeVllmSwitch, resolveProductionVllmRuntime } = await import('./local-model-control.js')
+    const result = await proposeVllmSwitch({
+        node: vllm.node || 'spark', taskClass, targetModel: targetModel.toLowerCase(), baseUrl: vllm.baseUrl,
+        estimatedMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
         evidence: measured
             ? `Aktuell ${vllm.model}: ${TASK_CLASS_LABELS[taskClass]} ${Math.round(measured.successRate * 100)} % bei ${measured.samples} Läufen (${measured.source}). Wunsch des Owners per /modelle.`
             : `Für ${TASK_CLASS_LABELS[taskClass]} liegen für ${vllm.model} keine Messdaten vor. Wunsch des Owners per /modelle.`,
-    })
+    }, { resolveRuntime: resolveProductionVllmRuntime })
     if (!result.ok) return `❌ Kein Plan: ${(result as { reason: string }).reason}`
-    return `📝 Plan ${result.plan.id} angelegt und als Knopf-Karte eingereiht: ${result.card.vorschlag}\nIn diesem Bau führt „Ja“ nur zur Bestätigung — der Host-Agent für vLLM ist nicht verdrahtet.`
+    return `📝 Plan ${result.plan.id} angelegt und als Knopf-Karte eingereiht: ${result.card.vorschlag}`
 }
