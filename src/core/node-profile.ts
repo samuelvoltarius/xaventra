@@ -222,6 +222,47 @@ export function shouldPublishProfile(fingerprint: string, last: { fingerprint: s
     return !last || last.fingerprint !== fingerprint || now - last.sentAt >= PROFILE_SAFETY_RESEND_MS
 }
 
+// Hotfix 2.80.1 (live 01.10.2026): a Main restarted after its workers held no
+// profile for up to 6 h. Every heartbeat now carries the sender's boot id and
+// the peers whose profile it holds; a node that sees a new boot id, or is not
+// in that list, sends its profile once more. Bounded, never every 30 s.
+export const PROFILE_PEER_RESEND_MIN_MS = 5 * 60_000
+const MAX_PROFILES_HELD = 64
+
+export function heartbeatProfileFields(bootId: string, peers: Record<string, { profile?: unknown } | undefined>): { bootId: string; profilesHeld: string[] } {
+    const profilesHeld = Object.entries(peers)
+        .filter(([nodeId, state]) => nodeId && state?.profile)
+        .map(([nodeId]) => nodeId.slice(0, 80))
+        .slice(0, MAX_PROFILES_HELD)
+    return { bootId, profilesHeld }
+}
+
+/** Peers older than 2.80.1 send neither field and never trigger a resend. */
+export function peerWantsProfile(localNodeId: string, previousBootId: string | undefined, heartbeat: unknown): boolean {
+    const value = (heartbeat && typeof heartbeat === 'object' ? heartbeat : {}) as { bootId?: unknown; profilesHeld?: unknown }
+    const bootId = typeof value.bootId === 'string' ? value.bootId.slice(0, 80) : undefined
+    if (bootId && previousBootId && bootId !== previousBootId) return true
+    if (Array.isArray(value.profilesHeld)) return !value.profilesHeld.slice(0, MAX_PROFILES_HELD).includes(localNodeId)
+    return false
+}
+
+export interface ProfilePublishState {
+    last: { fingerprint: string; sentAt: number } | null
+    /** Set by a peer heartbeat that showed a restart or a missing profile. */
+    resendWanted: boolean
+    lastForcedAt: number | null
+}
+
+export function decideProfilePublish(state: ProfilePublishState, fingerprint: string, now: number): { publish: boolean; next: ProfilePublishState } {
+    if (shouldPublishProfile(fingerprint, state.last, now)) {
+        return { publish: true, next: { last: { fingerprint, sentAt: now }, resendWanted: false, lastForcedAt: state.lastForcedAt } }
+    }
+    if (state.resendWanted && (state.lastForcedAt === null || now - state.lastForcedAt >= PROFILE_PEER_RESEND_MIN_MS)) {
+        return { publish: true, next: { last: { fingerprint, sentAt: now }, resendWanted: false, lastForcedAt: now } }
+    }
+    return { publish: false, next: { ...state, resendWanted: false } }
+}
+
 // ---------------------------------------------------------------------------
 // Receiving side: a peer's profile is signed mesh data, still bounded here
 // ---------------------------------------------------------------------------

@@ -132,6 +132,14 @@ export function capabilityRuntimeTombstoned(
     return deletedAt >= verifiedAt
 }
 
+function meshAdvertisedNodeId(service: DiscoveredAIService): string | undefined {
+    return service.metadata?.source === 'mesh-advertised' && typeof service.metadata.nodeId === 'string' ? service.metadata.nodeId : undefined
+}
+
+function isNetworkEndpoint(endpoint: string): boolean {
+    return /^https?:\/\//i.test(endpoint || '')
+}
+
 function runtimeFromService(service: DiscoveredAIService): CapabilityRuntime {
     return {
         id: service.id,
@@ -142,7 +150,9 @@ function runtimeFromService(service: DiscoveredAIService): CapabilityRuntime {
         models: [...service.models],
         capabilities: [...new Set([service.type, service.provider, ...(service.capabilities || [])])],
         verifiedAt: service.lastSeen,
-        verificationSource: 'probe',
+        // Hotfix 2.80.1: a node's advertisement relayed through the registry is
+        // heartbeat evidence; only this node's own probe counts as 'probe'.
+        verificationSource: meshAdvertisedNodeId(service) ? 'mesh-heartbeat' : 'probe',
         metadata: service.metadata,
     }
 }
@@ -252,6 +262,12 @@ export class CapabilityGraph {
     private snapshot: CapabilityGraphSnapshot
     /** Set by ingest(); this node is the only authority for its own entry. */
     private localNodeId?: string
+
+    /** Hotfix 2.80.1: known before the first ingest, so a peer snapshot that
+     * arrives right after start cannot plant entries on our own node. */
+    setLocalNodeId(nodeId: string | undefined): void {
+        if (nodeId) this.localNodeId = nodeId
+    }
 
     constructor(private readonly file = DEFAULT_FILE) {
         this.snapshot = sanitizeCapabilitySnapshot(this.load())
@@ -409,8 +425,14 @@ export class CapabilityGraph {
             // advertisement: heartbeat-sourced runtimes it no longer lists are
             // dropped instead of kept forever (probe evidence stays).
             const advertised = mesh.software?.ai_services
+            // Hotfix 2.80.1: the same holds for running network runtimes from
+            // an earlier probe the node itself does not list; a current probe
+            // of this scan re-adds its runtime below.
+            const listed = new Set((Array.isArray(advertised) ? advertised : []).map(service => service.endpoint))
             const runtimes = (existing?.runtimes || []).filter(runtime =>
-                !Array.isArray(advertised) || runtime.verificationSource !== 'mesh-heartbeat')
+                !Array.isArray(advertised)
+                || (runtime.verificationSource !== 'mesh-heartbeat'
+                    && !(runtime.status === 'running' && isNetworkEndpoint(runtime.endpoint) && !listed.has(runtime.endpoint))))
             for (const service of mesh.software?.ai_services || []) {
                 const id = `${mesh.node_id}:${service.name}:${service.endpoint}`
                 const runtime: CapabilityRuntime = {
@@ -445,7 +467,24 @@ export class CapabilityGraph {
             }
         }
 
+        const advertisedNow = new Map(meshNodes
+            .filter(mesh => Array.isArray(mesh.software?.ai_services))
+            .map(mesh => [mesh.node_id, new Set(mesh.software!.ai_services!.map(service => service.endpoint))]))
         for (const service of scan?.services || []) {
+            // A relayed advertisement belongs to the advertising node only and
+            // is dropped once that node's current heartbeat no longer lists it.
+            const advertisingNode = meshAdvertisedNodeId(service)
+            if (advertisingNode && advertisedNow.has(advertisingNode) && !advertisedNow.get(advertisingNode)!.has(service.endpoint)) continue
+            if (advertisingNode && byId.has(advertisingNode)) {
+                const node = byId.get(advertisingNode)!
+                const runtime = runtimeFromService(service)
+                const index = node.runtimes.findIndex(item => sameRuntime(item, runtime))
+                if (index >= 0) node.runtimes[index] = runtime
+                else node.runtimes.push(runtime)
+                node.capabilities = [...new Set([...node.capabilities, ...runtime.capabilities])]
+                node.updatedAt = now
+                continue
+            }
             const hintedNode = service.sourceNode && service.sourceNode !== 'local' ? service.sourceNode : undefined
             const isLocalService = service.host === 'localhost' || service.host === '127.0.0.1' || service.sourceNode === 'local'
             const matched = [...byId.values()]
@@ -497,8 +536,13 @@ export class CapabilityGraph {
             // Peers relay our own node back to us from their copy of our old
             // snapshots; accepting it would refresh runtimes we no longer have.
             if (this.localNodeId && incoming.id === this.localNodeId) continue
+            // Hotfix 2.80.1: a peer is a witness for its own node only. Its
+            // probe results about third nodes are hearsay and are not adopted.
+            const witnessed = sourceNode && incoming.id !== sourceNode
+                ? { ...incoming, runtimes: incoming.runtimes.filter(runtime => runtime.verificationSource !== 'probe') }
+                : incoming
             const existing = nodes.get(incoming.id)
-            const merged = existing ? mergeNodeEvidence(existing, incoming) : incoming
+            const merged = existing ? mergeNodeEvidence(existing, witnessed) : witnessed
             nodes.set(incoming.id, {
                 ...merged,
                 runtimes: merged.runtimes.filter(runtime =>

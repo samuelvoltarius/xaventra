@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.80.1] — 2026-10-01
+
+Hotfix for findings from the 2.80.0 rollout (Spark, 01.10.2026) and one
+security fix.
+
+- Security: Telegram buttons that install a model or release a skill now
+  check the pressing user and require the owner role. Model names must match
+  a strict allowlist, a local install runs without a shell, and installing on
+  another node from a button is refused (that belongs to the mesh catalog).
+- Knotenprofil: heartbeats carry a boot id and the list of peers whose
+  profile the sender holds. A node resends its profile once when a peer
+  restarted or does not hold it (retry at most every 5 min), so a Main that
+  restarted after its workers no longer waits up to 6 h. Older peers are
+  unaffected; no 30 s profile broadcast.
+- Node health (L21): a configured node that is also a mesh node is judged by
+  its signed heartbeat and no longer SSH-probed. The Main has no SSH key for
+  mesh workers on purpose; the failed probe raised a false NAS alert.
+- Capability graph: a phantom vLLM on ns2 kept coming back as fresh "probe"
+  evidence. The graph snapshot broadcast no longer replaces a peer's own
+  runtime list, relayed advertisements are bound to their node and stored
+  as heartbeat evidence, a heartbeat that lists its services also drops
+  stale probe runtimes it does not list, and peer snapshots no longer carry
+  probe results about third nodes or about the receiving node itself.
+
 ## [2.80.0] — 2026-10-01
 
 Stufen 2 and 3 of the self-reliance plan, plus the screenshot fallback fix.

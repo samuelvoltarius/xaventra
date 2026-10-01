@@ -18,7 +18,7 @@ import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
 import { checkDelegatedFence } from './fence-highwater.js'
-import { sanitizeNodeProfile, type NodeProfile } from '../core/node-profile.js'
+import { heartbeatProfileFields, peerWantsProfile, sanitizeNodeProfile, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 
 
@@ -68,6 +68,8 @@ export function rememberBounded<K, V>(map: Map<K, V>, key: K, value: V, max: num
 }
 interface PeerState {
     nodeId: string; lastSeen: number; status?: string; uptimeMs?: number
+    /** Hotfix 2.80.1: the peer's process start id, to notice a restart. */
+    bootId?: string
     capabilities?: unknown; tools?: ToolInventoryPayload; publicKeyFingerprint?: string
     /** Kept separately: capability-graph snapshots reuse node.capabilities without a profile. */
     profile?: NodeProfile; profileSeen?: number
@@ -291,10 +293,29 @@ export function getMeshPeerStates(): Readonly<Record<string, PeerState>> { retur
 export function peerStateWithCapabilities(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
     const profile = sanitizeNodeProfile((payload as { profile?: unknown } | null)?.profile)
     const selfHeal = sanitizeSelfHealSummary((payload as { selfHeal?: unknown } | null)?.selfHeal)
+    // Hotfix 2.80.1: the 60 s graph snapshot is the peer's view of the whole
+    // mesh, not its own advertisement; it must not replace the runtime list
+    // the peer sent about itself (discovery reads that list).
+    const isSnapshot = Boolean((payload as { snapshot?: unknown } | null)?.snapshot)
+    const ownAdvertisement = previous?.capabilities && !(previous.capabilities as { snapshot?: unknown }).snapshot
+    const capabilities = isSnapshot && ownAdvertisement ? previous!.capabilities : payload
     return {
-        ...previous, nodeId: sourceNode, lastSeen: now, capabilities: payload, publicKeyFingerprint,
+        ...previous, nodeId: sourceNode, lastSeen: now, capabilities, publicKeyFingerprint,
         ...(profile ? { profile: { ...profile, nodeId: sourceNode }, profileSeen: now } : {}),
         ...(selfHeal ? { selfHeal, selfHealSeen: now } : {}),
+    }
+}
+
+/** node.heartbeat → peer state, bound to the authenticated source node. */
+export function peerStateWithHeartbeat(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
+    const value = (payload && typeof payload === 'object' ? payload : {}) as { status?: unknown; uptimeMs?: unknown; bootId?: unknown }
+    const bootId = typeof value.bootId === 'string' ? value.bootId.replace(/[^\w.:-]/g, '').slice(0, 80) : undefined
+    return {
+        ...previous, nodeId: sourceNode, lastSeen: now,
+        status: typeof value.status === 'string' ? value.status.slice(0, 20) : undefined,
+        uptimeMs: Number.isFinite(Number(value.uptimeMs)) ? Number(value.uptimeMs) : undefined,
+        publicKeyFingerprint,
+        ...(bootId ? { bootId } : {}),
     }
 }
 
@@ -310,13 +331,15 @@ export async function publishMeshEvidence(targetNode: string, runId: string, pay
     return transport.send(targetNode, envelope)
 }
 
-let lastPublishedProfile: { fingerprint: string; sentAt: number } | null = null
+/** Process start id, announced in every heartbeat (Hotfix 2.80.1). */
+const BOOT_ID = randomUUID()
+let profilePublishState: ProfilePublishState = { last: null, resendWanted: false, lastForcedAt: null }
 let lastPublishedSelfHeal: { fingerprint: string; sentAt: number } | null = null
 export function startMeshDataPlane(intervalMs = 30_000): void {
     if (heartbeatTimer) return
     const publish = async () => {
         const transport = router || initMeshTransportRuntime()
-        const heartbeat = transport.create('node.heartbeat', '*', { status: 'online', uptimeMs: Math.round(process.uptime() * 1000) })
+        const heartbeat = transport.create('node.heartbeat', '*', { status: 'online', uptimeMs: Math.round(process.uptime() * 1000), ...heartbeatProfileFields(BOOT_ID, peerStates) })
         await transport.broadcast(heartbeat)
         const localNode = getLocalNodeSnapshot()
         const verifiedAt = localNode?.last_heartbeat || new Date().toISOString()
@@ -336,13 +359,11 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
             })),
         }
         try {
-            const { collectNodeProfile, profileFingerprint, shouldPublishProfile } = await import('../core/node-profile.js')
+            const { collectNodeProfile, profileFingerprint, decideProfilePublish } = await import('../core/node-profile.js')
             const profile = await collectNodeProfile()
-            const fingerprint = profileFingerprint(profile)
-            if (shouldPublishProfile(fingerprint, lastPublishedProfile, Date.now())) {
-                capabilityPayload.profile = profile as unknown as Record<string, unknown>
-                lastPublishedProfile = { fingerprint, sentAt: Date.now() }
-            }
+            const decision = decideProfilePublish(profilePublishState, profileFingerprint(profile), Date.now())
+            profilePublishState = decision.next
+            if (decision.publish) capabilityPayload.profile = profile as unknown as Record<string, unknown>
         } catch { /* profile is optional; capabilities still publish */ }
         try {
             const { currentSelfHealMeshSummary } = await import('../doctor/self-heal-runtime.js')
@@ -383,8 +404,9 @@ export async function stopMeshTransportRuntime(): Promise<void> {
 async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHandler): Promise<void> {
     if (!router) return
     if (envelope.kind === 'node.heartbeat') {
-        const payload = envelope.payload as { status?: string; uptimeMs?: number }
-        peerStates[envelope.sourceNode] = { ...peerStates[envelope.sourceNode], nodeId: envelope.sourceNode, lastSeen: Date.now(), status: payload.status, uptimeMs: payload.uptimeMs, publicKeyFingerprint: MeshIdentity.fingerprint(envelope.publicKey) }
+        const previous = peerStates[envelope.sourceNode]
+        if (peerWantsProfile(getLocalNodeId(), previous?.bootId, envelope.payload)) profilePublishState = { ...profilePublishState, resendWanted: true }
+        peerStates[envelope.sourceNode] = peerStateWithHeartbeat(previous, envelope.sourceNode, envelope.payload, MeshIdentity.fingerprint(envelope.publicKey))
         persistPeerStates(); return
     }
     if (envelope.kind === 'node.tools') {
@@ -412,6 +434,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     }
     if (envelope.kind === 'node.capabilities') {
         const payload = envelope.payload as { snapshot?: any } & CapabilityPayload
+        getCapabilityGraph().setLocalNodeId(getLocalNodeId())
         if (payload.snapshot) getCapabilityGraph().merge(payload.snapshot, envelope.sourceNode)
         else if (Array.isArray(payload.runtimes)) {
             const now = new Date().toISOString()
