@@ -553,6 +553,29 @@ export class RoutineSkillStore {
         this.writeSkill(skill)
         return skill
     }
+
+    /**
+     * Der Owner hat einen Lauf als falsch zurückgewiesen (Outcome-Ledger):
+     * die Beobachtung zählt nicht mehr, und ein gelernter Skill, der auf
+     * diesem Lauf beruht, verliert den Beleg und zählt einen Fehlschlag
+     * (2 in Folge schalten ihn wie sonst aus). true, wenn sich etwas änderte.
+     */
+    retractRun(runId: string): boolean {
+        const id = clip(runId, 80)
+        if (!id) return false
+        let changed = false
+        const items = this.readObservations()
+        const kept = items.filter(item => item.runId !== id)
+        if (kept.length !== items.length) { this.writeObservations(kept); changed = true }
+        for (const skill of this.list()) {
+            if (skill.origin !== 'gelernt' || !skill.evidence.some(item => item.runId === id)) continue
+            skill.evidence = skill.evidence.filter(item => item.runId !== id)
+            this.writeSkill(skill)
+            this.recordOutcome(skill.id, false)
+            changed = true
+        }
+        return changed
+    }
 }
 
 // ---------------------------------------------------------------------------

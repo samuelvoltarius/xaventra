@@ -208,15 +208,8 @@ export class LearningCoordinator {
             durationMs: outcome.durationMs, costUsd: outcome.costUsd,
         })
         if (!episode) return
-        const { getPersonalSkillCompiler } = await import('./personal-skill-compiler.js')
-        const skillCompiler = getPersonalSkillCompiler()
-        const skill = skillCompiler.observe(episode)
-        // Runtime quality is authoritative after activation. A single failed,
-        // independently validated production outcome removes the trusted skill
-        // from automatic execution until it matures through the gates again.
-        if (skill.status === 'active') {
-            skillCompiler.recordRuntimeOutcome(skill.id, outcome.success, outcome.runId)
-        }
+        // Workflow skills are learned in one place only: learning/routine-skills.ts
+        // (observed by the message pipeline). The episode stays episodic memory.
 
         const [{ getBeliefStore }, { getCausalMemory }] = await Promise.all([
             import('../core/belief-store.js'),
@@ -255,15 +248,15 @@ export class LearningCoordinator {
     /** Retract every derived learning projection when a user rejects a run.
      * The immutable Outcome Ledger remains the authority and records why. */
     async invalidateValidatedRun(outcome: InvalidatedRunOutcome): Promise<void> {
-        const [{ getWorkflowEpisodeStore }, { getPersonalSkillCompiler }, { getBeliefStore }, { getCausalMemory }, { getSessionContinuityStore }] = await Promise.all([
+        const [{ getWorkflowEpisodeStore }, { getRoutineSkillStore }, { getBeliefStore }, { getCausalMemory }, { getSessionContinuityStore }] = await Promise.all([
             import('../memory/workflow-episode-store.js'),
-            import('./personal-skill-compiler.js'),
+            import('./routine-skills.js'),
             import('../core/belief-store.js'),
             import('../core/causal-memory.js'),
             import('../memory/session-summarizer.js'),
         ])
         getWorkflowEpisodeStore().retractRun(outcome.runId, outcome.userId, outcome.reason)
-        getPersonalSkillCompiler().retractRun(outcome.runId)
+        getRoutineSkillStore()?.retractRun(outcome.runId)
         getBeliefStore().retractSource(`outcome:${outcome.runId}`)
         getCausalMemory().retractRun(outcome.runId)
         getSessionContinuityStore().retractVerifiedOutcome(outcome.userId, outcome.runId, outcome.request)

@@ -1,12 +1,12 @@
 import type { ExecutionPreflightAssessment } from './execution-preflight.js'
-import type { SkillMaturityStatus } from '../learning/personal-skill-compiler.js'
 
 export type AutonomyLevel = 'observe' | 'diagnose' | 'safe-auto' | 'trusted-workflow' | 'approval-required' | 'blocked'
 export interface AutonomyDecision { level: AutonomyLevel; mayExecute: boolean; requiresPostValidation: boolean; reasons: string[] }
 
 export function resolveAutonomyLevel(input: {
     preflight: ExecutionPreflightAssessment
-    skillStatus?: SkillMaturityStatus
+    /** Routine-Skill-Zustand (learning/routine-skills.ts): nur 'active' zählt. */
+    skillStatus?: 'active' | 'disabled'
     validatedSamples?: number
     withinBudget?: boolean
 }): AutonomyDecision {
