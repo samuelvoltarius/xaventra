@@ -1,0 +1,152 @@
+name: Promote release candidate
+# Release-Knopf (docs/RELEASE_BUTTON.md): Xaventra dispatches this after the
+# owner pressed "Ja". It re-checks the candidate itself and moves main by a
+# pure fast-forward. No force, no overwrite, abort on any deviation.
+run-name: Promote ${{ inputs.version }} (${{ inputs.candidate_sha }})
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex commit of a claude/release-* branch with green candidate CI
+        required: true
+        type: string
+      version:
+        description: Synchronized version of that commit (package.json and desktop/package.json)
+        required: true
+        type: string
+permissions: {}
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      main_sha: ${{ steps.gate.outputs.main_sha }}
+      branch: ${{ steps.gate.outputs.branch }}
+      ci_run: ${{ steps.gate.outputs.ci_run }}
+    steps:
+      - name: Verify candidate (main definition, fast-forward, exact candidate CI, version, tag)
+        id: gate
+        uses: actions/github-script@v7
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const sha = process.env.CANDIDATE_SHA, version = process.env.CANDIDATE_VERSION;
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const MIN_JOBS = 10;
+            if (!/^[a-f0-9]{40}$/.test(sha || '') || !/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/.test(version || '')) throw Error('Exact 40-hex SHA and version required');
+            // Only the protected main workflow definition may promote (branch-edited copies cannot).
+            if (context.ref !== 'refs/heads/main' || context.eventName !== 'workflow_dispatch') throw Error('Promotion must be dispatched from main');
+            const main = (await github.rest.repos.getBranch({ ...context.repo, branch: 'main' })).data.commit.sha;
+            const cmp = (await github.rest.repos.compareCommits({ ...context.repo, base: main, head: sha })).data;
+            if (cmp.status !== 'ahead' || cmp.behind_by !== 0 || !(cmp.ahead_by > 0)) throw Error(`Not a pure fast-forward of main (${cmp.status}, behind ${cmp.behind_by})`);
+            // The candidate must still be the tip of a claude/release-* branch.
+            const refs = (await github.rest.git.listMatchingRefs({ ...context.repo, ref: 'heads/claude/release-' })).data;
+            const tips = refs.filter(r => r.object.type === 'commit' && r.object.sha === sha).map(r => r.ref.replace('refs/heads/', ''));
+            if (tips.length !== 1) throw Error('Candidate is not the tip of exactly one claude/release-* branch');
+            const branch = tips[0];
+            // Exact candidate CI: ci.yml, push event, headSha AND headBranch, newest run, all jobs green.
+            const runs = (await github.rest.actions.listWorkflowRuns({ ...context.repo, workflow_id: 'ci.yml', head_sha: sha, event: 'push', per_page: 50 })).data.workflow_runs
+              .filter(r => r.head_sha === sha && r.head_branch === branch && r.path === '.github/workflows/ci.yml' && r.event === 'push' && r.head_repository.full_name === repo)
+              .sort((a, b) => b.id - a.id);
+            if (!runs.length) throw Error('No exact candidate CI run for this commit and branch');
+            const run = runs[0];
+            if (run.status !== 'completed' || run.conclusion !== 'success') throw Error(`Newest candidate CI run ${run.id} is ${run.status}/${run.conclusion}`);
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, { ...context.repo, run_id: run.id, filter: 'latest', per_page: 100 });
+            if (jobs.length < MIN_JOBS) throw Error(`Candidate CI run ${run.id} has ${jobs.length} jobs, expected at least ${MIN_JOBS}`);
+            for (const job of jobs) if (job.conclusion !== 'success' || job.head_sha !== sha) throw Error(`CI job ${job.name} is ${job.conclusion}`);
+            // Synchronized version, newer than main, tag and release do not exist.
+            const read = async (path, ref) => JSON.parse(Buffer.from((await github.rest.repos.getContent({ ...context.repo, path, ref })).data.content, 'base64'));
+            const corePkg = await read('package.json', sha), desktop = await read('desktop/package.json', sha), mainPkg = await read('package.json', main);
+            if (corePkg.version !== version || desktop.version !== version) throw Error(`Version not synchronized with input (core ${corePkg.version}, desktop ${desktop.version})`);
+            const parts = v => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/.exec(String(v)); if (!m) throw Error(`Invalid version ${v}`); return [+m[1], +m[2], +m[3], m[4] === undefined ? Infinity : +m[4]]; };
+            const compare = (x, y) => { const p = parts(x), q = parts(y); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return p[i] > q[i] ? 1 : -1; return 0; };
+            if (compare(version, mainPkg.version) <= 0) throw Error(`Version ${version} is not newer than main ${mainPkg.version}`);
+            try { await github.rest.git.getRef({ ...context.repo, ref: `tags/v${version}` }); throw Error(`Tag v${version} already exists`); } catch (e) { if (e.status !== 404) throw e; }
+            try { await github.rest.repos.getReleaseByTag({ ...context.repo, tag: `v${version}` }); throw Error(`Release v${version} already exists`); } catch (e) { if (e.status !== 404) throw e; }
+            core.setOutput('main_sha', main); core.setOutput('branch', branch); core.setOutput('ci_run', String(run.id));
+            await core.summary.addRaw(`Candidate ${version} at ${sha} on ${branch}: fast-forward of ${main} (ahead ${cmp.ahead_by}), CI run ${run.id} green (${jobs.length} jobs).\n`).write();
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Local ancestry check against the verified main
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          VERIFIED_MAIN: ${{ steps.gate.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git rev-parse origin/main)" = "$VERIFIED_MAIN"
+          git merge-base --is-ancestor origin/main "$CANDIDATE_SHA"
+      - name: Gitleaks over origin/main..candidate (pinned 8.30.1, checksum verified)
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL --proto '=https' -o gitleaks_8.30.1_linux_x64.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --exit-code 1 --log-opts="origin/main..$CANDIDATE_SHA" .
+  promote:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-promotion
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+      - name: Fast-forward main to the verified candidate (no force)
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          VERIFIED_MAIN: ${{ needs.verify.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]] && [[ "$VERIFIED_MAIN" =~ ^[a-f0-9]{40}$ ]]
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          # Main must not have moved since verification, and the push must be a pure fast-forward.
+          test "$(git rev-parse origin/main)" = "$VERIFIED_MAIN"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$VERIFIED_MAIN" "$CANDIDATE_SHA"
+          git push origin "$CANDIDATE_SHA:refs/heads/main"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$CANDIDATE_SHA"
+          echo "main fast-forwarded from $VERIFIED_MAIN to $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report whether main CI started
+        uses: actions/github-script@v7
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        with:
+          script: |
+            // GitHub does not start push workflows for pushes made with GITHUB_TOKEN.
+            // Report the truth instead of pretending main CI and signing will follow.
+            const sha = process.env.CANDIDATE_SHA;
+            let found = null;
+            for (let i = 0; i < 6 && !found; i++) {
+              if (i) await new Promise(r => setTimeout(r, 15000));
+              const runs = (await github.rest.actions.listWorkflowRuns({ ...context.repo, workflow_id: 'ci.yml', head_sha: sha, branch: 'main', event: 'push', per_page: 5 })).data.workflow_runs;
+              found = runs.find(r => r.head_sha === sha && r.head_branch === 'main') || null;
+            }
+            if (found) await core.summary.addRaw(`Main CI run ${found.id} started for ${sha}.\n`).write();
+            else {
+              core.warning('Main CI did not start for this push (GITHUB_TOKEN pushes do not trigger workflows). See docs/RELEASE_BUTTON.md "Bekannte Grenze".');
+              await core.summary.addRaw(`Main CI did not start for ${sha}; see docs/RELEASE_BUTTON.md.\n`).write();
+            }

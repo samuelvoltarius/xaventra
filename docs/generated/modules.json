@@ -1945,6 +1945,17 @@
       ]
     },
     {
+      "module": "src/core/release-button.ts",
+      "imports": [
+        "./approval-cards.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "./github-update.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/release-tree.ts",
       "imports": [
         "node:crypto"
