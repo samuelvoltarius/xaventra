@@ -1493,6 +1493,18 @@
       ]
     },
     {
+      "module": "src/core/decisions.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./action-policy.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/delegation.ts",
       "imports": [
         "../security/secret-redaction.js",
@@ -4905,6 +4917,7 @@
       "module": "src/planner/briefing.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../core/decisions.js",
         "../doctor/self-heal.js",
         "./delivery-port.js",
         "./planner.js",

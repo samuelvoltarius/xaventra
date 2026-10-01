@@ -730,6 +730,45 @@ the planner job `sys-verantwortungen` (or a timer without planner) is the fallba
 `/arbeit` (owner): In Arbeit / Geplant / Wartet auf Alfred / Blockiert /
 Abgeschlossen (last 5) plus active responsibilities with erfüllt/verletzt.
 
+## Kausales Gedächtnis (Phase 8, immer an, nur Main schreibt)
+
+`src/core/decisions.ts` merkt Entscheidungen dauerhaft und nachvollziehbar:
+Entscheidung + Warum (Beleg) + wer/wann + gültig bis / Widerruf + wovon
+abhängig. Datei: `.nova-data/decisions/decisions.json` (höchstens 400
+Einträge, Texte gekürzt). Kein LanceDB-Schreiben.
+
+Quellen — ohne Befehl und ohne Rückfrage angelegt, im Abendbericht unter
+„Neu gemerkt (Entscheidungen)“ genannt:
+
+| Quelle | Wann | bindend |
+|---|---|---|
+| Owner-Nachricht | Direktchat, Anweisung mit „ab jetzt/ab sofort/künftig/immer/nie/du entscheidest …“, keine Frage; Grund aus „weil/da/denn/Grund:“ | ja |
+| Knopf | „Immer erlauben“ (bis Widerruf) oder „Nein“ (30 Tage), Beleg der Karte als Grund | ja |
+| Mission | Abschluss/Übergabe, verknüpft mit Owner-Entscheidungen zum selben Thema | nein (Befund) |
+| Delegation | Ergebnis mit Xaventras eigener Prüfung als Beleg — nie der Antworttext | nein (Befund) |
+
+Feste Regeln (Code):
+
+- Nur der Owner im Direktchat erzeugt bindende Einträge. Andere Nutzer,
+  Gruppen, Systemnachrichten, Befehle und Webinhalte nie. Worker
+  (`NOVA_NODE_ONLY`, ohne Main-Autorität) schreiben nichts.
+- Keine Secrets: `redactSecrets` plus „Passwort …“-Regel.
+- Nutzen: passende Entscheidungen (gemeinsame Themenwörter) kommen als Block
+  „ENTSCHEIDUNGEN“ in den Kontext der Owner-Anfrage, unpassende nicht.
+  Verschärfende Entscheidungen fließen in die Aktions-Policy („Druck nie ohne
+  Knopf“ → fragen, „nie Cache leeren“ → nie); sie können ein Level nur
+  anheben. Lockernde Entscheidungen wirken nur als Kontext.
+- Feste Grenze: eine Anweisung, die die Nie-Liste aufheben oder Karten für
+  physisch/extern/Geld/Löschen abschalten würde, wird gespeichert, aber als
+  „nicht wirksam: feste Grenze“ markiert.
+- Widerspruch: ausdrücklich („statt“, „nicht mehr“, „ab sofort gilt“) → die
+  neuere gewinnt, die alte wird „ersetzt“. Sonst fragt Xaventra genau einmal;
+  „ja, die neue“ / „nein, die alte“ (binnen 6 h) oder
+  `/entscheidungen gilt|verwerfen <id>` klärt, nach 3 Tagen bleibt die alte.
+- Ablauf („heute“, „bis morgen“, „für 3 Tage“, „bis 15.10.“) → `abgelaufen`.
+  Widerruf („vergiss …“, „… gilt nicht mehr“, `/entscheidungen widerruf <id>`)
+  → `widerrufen`; abhängige Einträge werden zum Prüfen markiert.
+
 ## Phase 6d — Multi-Router and model control
 
 Default: **off**. Without `routing.multi.enabled=true` the per-task rule table

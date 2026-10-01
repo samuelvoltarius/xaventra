@@ -56,6 +56,8 @@ export interface ResponsibilityRuntimeDeps {
     executors: readonly StepExecutor[]
     ports: { thoughts: ThoughtPort; cards: MissionCardPort }
     settings: ResponsibilitySettings
+    /** Kausales Gedächtnis: called when a mission ends. */
+    onMissionFinish?: (mission: Mission) => void
 }
 
 export interface TickResult {
@@ -87,6 +89,7 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
         signals: async () => (lastSignals = await deps.collectSignals()),
         executors: deps.executors, ports: deps.ports,
         budget: { minutes: deps.settings.budgetMinutes, maxToolCalls: deps.settings.maxToolCalls },
+        onFinish: deps.onMissionFinish,
     })
     let running: Promise<TickResult> | null = null
     async function run(reason: string): Promise<TickResult> {
@@ -331,6 +334,7 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
     const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
     const { addThought } = await import('../planner/index.js')
     const { createApprovalCard, listApprovalCards } = await import('./approval-cards.js')
+    const { recordMissionDecision } = await import('./decisions.js')
     runtime = createResponsibilityRuntime({
         dataDir: getNovaDataDir(),
         localNodeId: getLocalNodeId(),
@@ -345,6 +349,7 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
             },
         },
         settings,
+        onMissionFinish: mission => { recordMissionDecision(mission) },
     })
     const tick = (reason: string) => runtime?.tick(reason).catch(error => {
         console.warn('[Verantwortungen] Prüfung fehlgeschlagen:', String((error as Error)?.message || error).slice(0, 200))

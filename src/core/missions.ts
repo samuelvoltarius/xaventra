@@ -96,6 +96,8 @@ export interface MissionEngineOptions {
     budget?: { minutes?: number; maxToolCalls?: number }
     /** No new mission for the same responsibility this long after a blocked/failed one. */
     cooldownMs?: number
+    /** Called once a mission ends (abgeschlossen/blockiert/fehlgeschlagen); errors are ignored. */
+    onFinish?: (mission: Mission) => void
 }
 
 export interface MissionEngine {
@@ -184,6 +186,12 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
     }
 
     function finish(mission: Mission, status: 'blockiert' | 'fehlgeschlagen' | 'abgeschlossen', why: string): Mission {
+        const done = finishInner(mission, status, why)
+        try { options.onFinish?.({ ...done }) } catch { /* the causal memory never breaks a mission */ }
+        return done
+    }
+
+    function finishInner(mission: Mission, status: 'blockiert' | 'fehlgeschlagen' | 'abgeschlossen', why: string): Mission {
         mission.status = status
         mission.waitingStepId = undefined
         if (status === 'abgeschlossen') {

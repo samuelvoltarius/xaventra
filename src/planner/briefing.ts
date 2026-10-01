@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { readHealJournal } from '../doctor/self-heal.js'
+import { decisionsForBriefing } from '../core/decisions.js'
 import { cleanText } from './delivery-port.js'
 import type { JobHandler } from './planner.js'
 import { isOpenThought, type Thought, type ThoughtStore } from './thoughts.js'
@@ -31,7 +32,7 @@ export interface Briefing {
     text: string
     /** Held-back thoughts this briefing reports (marked `im-bericht` after delivery). */
     thoughtIds: string[]
-    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills', number>
+    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills' | 'gemerkt', number>
 }
 
 const MAX_LINES = 5
@@ -114,6 +115,10 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const heldThoughts = thoughts.filter(t => isOpenThought(t) && t.notice === 'zurueckgehalten')
     const held = heldThoughts.map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
 
+    // Kausales Gedächtnis: what was remembered (or ended) without a command.
+    let remembered: string[] = []
+    try { remembered = decisionsForBriefing(since, now, { dataDir: sources.dataDir }) } catch { remembered = [] }
+
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
         ...section('Erledigt', done),
@@ -123,6 +128,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Ideen', ideas),
         ...section('Skills', skills),
         ...section('Zurückgehalten', held),
+        ...section('Neu gemerkt (Entscheidungen)', remembered),
     ]
     const sinceText = formatZoned(since, sources.timeZone)
     const text = body.length === 0
@@ -132,7 +138,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         title,
         text: cleanText(text, 3500),
         thoughtIds: heldThoughts.map(t => t.id),
-        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length },
+        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length },
     }
 }
 

@@ -478,6 +478,8 @@ async function handleMessageInScope(
     // middleware failure (import, init, lookup) is treated like a denial. An
     // exception must never skip the blocked/allowlist check.
     let senderAuthorized = false
+    // null until the middleware decided; only a known direct chat may create decisions.
+    let isGroupMessage: boolean | null = null
     try {
         const mu = await import('../users/multi-user-middleware.js')
         mu.initMultiUser()
@@ -502,7 +504,8 @@ async function handleMessageInScope(
         if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
 
         // 4. Group Chat — track who speaks
-        if (mu.isGroupChat(chatId, from)) {
+        isGroupMessage = mu.isGroupChat(chatId, from) === true
+        if (isGroupMessage) {
             requestIsGroup = true
             mu.trackGroupMessage(chatId, from, canonicalUser)
         }
@@ -1004,6 +1007,16 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
             console.log('[Pipeline] L20 self-rules injected')
         }
     } catch (err) { console.debug('[Pipeline] L20 not available:', err) }
+
+    // Kausales Gedächtnis (Phase 8): owner instructions in a direct chat are
+    // remembered without a command; matching decisions join the context.
+    // Only the owner, never groups or system messages; writes only on the Main.
+    if (principalContext.permission === 'owner' && isGroupMessage === false && !isSystemAuthored) try {
+        const { observeOwnerMessage, buildDecisionContext } = await import('./decisions.js')
+        const observed = observeOwnerMessage({ text: content, permission: principalContext.permission, principalId, channel, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
+        const decisionBlock = buildDecisionContext(content, observed)
+        if (decisionBlock) systemPrompt += decisionBlock
+    } catch (err) { console.debug('[Pipeline] decisions not available:', err) }
 
     // ============================================
     // Known hosts are inventory data, never an authorization grant.
