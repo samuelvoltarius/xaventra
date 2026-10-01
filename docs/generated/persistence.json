@@ -1110,6 +1110,10 @@
       "path": ".nova-data/thinking/thoughts.jsonl"
     },
     {
+      "owner": "src/core/thought-hub.ts",
+      "path": ".nova-data/thought-actions.json"
+    },
+    {
       "owner": "src/core/upstream-update-command.ts",
       "path": ".nova-data/upstream-updates"
     },

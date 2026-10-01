@@ -2182,6 +2182,15 @@
       "imports": []
     },
     {
+      "module": "src/core/thought-hub.ts",
+      "imports": [
+        "../planner/index.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/core/tool-evidence-binding.ts",
       "imports": [
         "node:crypto"

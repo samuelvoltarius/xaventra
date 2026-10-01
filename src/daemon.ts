@@ -1900,8 +1900,11 @@ async function startDaemon() {
         // Phase 2 Wahrnehmen: off until autonomy.sensing.enabled=true; main only.
         // Output goes to the sensing port (JSONL by default), never to a channel.
         try {
-            const { setSensingConfig, startSensing } = await import('./sensing/runtime.js')
+            const { setSensingConfig, startSensing, setSensingSinks } = await import('./sensing/runtime.js')
             setSensingConfig(autonomyCfg.sensing, config)
+            // 2.81.0: findings go into the shared planner thoughts (cards, /gedanken).
+            const { createSensingThoughtSink } = await import('./core/thought-hub.js')
+            setSensingSinks({ thoughtSink: createSensingThoughtSink() })
             const sensing = startSensing({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
@@ -2007,8 +2010,10 @@ async function startDaemon() {
             setClaudeHandoffConfig((config as any).autonomy?.claudeHandoff)
             // Phase 3 „Denken": everything off until autonomy.thinking.enabled + part switch.
             try {
-                const { setThinkingConfig, setIdeaFormulator, createLlmFormulator } = await import('./thinking/thinking-runtime.js')
+                const { setThinkingConfig, setIdeaFormulator, createLlmFormulator, setThoughtSink } = await import('./thinking/thinking-runtime.js')
                 setThinkingConfig((config as any).autonomy?.thinking)
+                const { createThinkingThoughtSink } = await import('./core/thought-hub.js')
+                setThoughtSink(createThinkingThoughtSink())
                 if (state.llm) setIdeaFormulator(createLlmFormulator({ complete: (messages, options) => (state.llm as any).complete(messages, options) }))
             } catch (err) { console.debug(`[Xaventra] Denken config skipped: ${err}`) }
             setDoctorResearchWorker(createResearchWorker(

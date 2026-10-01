@@ -31,11 +31,14 @@ export function registerThoughtCardExecutor(): void {
         impact: 'intern',
         async execute(card, _answer, ctx) {
             const thought = setThoughtStatus(card.aktion.ref, 'erledigt', ctx.decidedBy)
-            return thought ? { ok: true, message: 'Angenommen.' } : { ok: false, message: 'Gedanke nicht mehr vorhanden.' }
+            if (!thought) return { ok: false, message: 'Gedanke nicht mehr vorhanden.' }
+            const { dispatchThoughtAnswer } = await import('./thought-hub.js')
+            return dispatchThoughtAnswer(card.aktion.ref, 'ja', { userId: ctx.userId })
         },
         async reject(card, ctx) {
             setThoughtStatus(card.aktion.ref, 'verworfen', ctx.decidedBy)
-            return { ok: true, message: 'Verworfen.' }
+            const { dispatchThoughtAnswer } = await import('./thought-hub.js')
+            return dispatchThoughtAnswer(card.aktion.ref, 'nein', { userId: ctx.userId })
         },
         isStillOpen(card) {
             const thought = getThought(card.aktion.ref)
