@@ -1433,24 +1433,9 @@ async function startDaemon() {
                 }
             } catch { /* non-critical */ }
 
-            // Dream Daily Digest — send once per day after 20:00 if not yet sent
-            try {
-                const { buildDailyDigest, isDigestSent, markDigestSent } = await import('./layers/dream-daily-digest.js')
-                const hour = new Date().getHours()
-                if (hour >= 20 && !isDigestSent()) {
-                    const digest = buildDailyDigest()
-                    if (digest) {
-                        const governed = (state as any).sendGovernedProactive
-                        const sent = typeof governed === 'function'
-                            ? await governed(digest, 'dream-digest', 'info', 0.95, `dream-digest:${new Date().toISOString().slice(0, 10)}`)
-                            : false
-                        if (sent) {
-                            markDigestSent()
-                            console.log('[Heartbeat] ✅ Daily Digest governed gesendet')
-                        }
-                    }
-                }
-            } catch { /* non-critical */ }
+            // Dream Daily Digest: no longer sent (2.82.0). The planner's evening
+            // briefing is the one daily report; the digest's source was always
+            // dropped by the governed path, so it retried every 5 min after 20:00.
         }
         let periodicHeartbeatRunning = false
         setInterval(() => {

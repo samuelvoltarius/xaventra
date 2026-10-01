@@ -34,11 +34,10 @@ describe('daemon wiring (R2 core-n-z)', () => {
         expect(source).toMatch(/failStaleRuns\(undefined, undefined, \{ keepLiveRuns: true \}\)/)
     })
 
-    it('UEB-5: periodic health/journal/digest work has its own tick and ignores the heartbeat pseudo task', () => {
+    it('UEB-5: periodic health/journal work has its own tick and ignores the heartbeat pseudo task', () => {
         const periodic = block('const runPeriodicHeartbeatWork = async', 4000)
         expect(periodic).toMatch(/runHealthCheck\(\)/)
         expect(periodic).toMatch(/generateDailySummary\(\)/)
-        expect(periodic).toMatch(/buildDailyDigest\(\)/)
         const tick = block('let periodicHeartbeatRunning = false', 1500)
         expect(tick).toMatch(/setInterval\(/)
         expect(tick).toMatch(/runPeriodicHeartbeatWork\(\)/)
@@ -46,6 +45,14 @@ describe('daemon wiring (R2 core-n-z)', () => {
         expect(heartbeat).toMatch(/task\.id === 'heartbeat-tick' \|\| task\.channel === 'heartbeat'\) return/)
         expect(heartbeat.indexOf("'heartbeat-tick'")).toBeLessThan(heartbeat.indexOf('Task fällig'))
         expect(heartbeat).not.toMatch(/runHealthCheck/)
+    })
+
+    it('2.82.0: the Dream digest is no longer sent; the planner evening briefing is the one daily report', () => {
+        const periodic = block('const runPeriodicHeartbeatWork = async', 4000)
+        const end = periodic.indexOf('let periodicHeartbeatRunning')
+        const body = end > 0 ? periodic.slice(0, end) : periodic
+        expect(body).not.toMatch(/buildDailyDigest|dream-daily-digest/)
+        expect(source).not.toMatch(/'dream-digest'/)
     })
 
     it('NZ-24: the active shutdown flushes session summaries and user patterns', () => {
