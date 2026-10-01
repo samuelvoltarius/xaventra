@@ -9,6 +9,7 @@
 
 import { execFile } from 'node:child_process'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { getResourceThresholds } from '../core/resource-thresholds.js'
 
 export type NightwatchStatus = 'ok' | 'fehler' | 'unbekannt'
 export type NightwatchSeverity = 'warning' | 'critical'
@@ -155,7 +156,7 @@ export function parseNightwatchConfig(raw: unknown): NightwatchConfig {
                 break
             case 'disk': {
                 if (!isSafePath(check.mount)) errors.push(`${where}: mount muss ein absoluter Pfad sein`)
-                const warn = check.warnPercent ?? 85, crit = check.critPercent ?? 95
+                const warn = check.warnPercent ?? getResourceThresholds().disk.warnPercent, crit = check.critPercent ?? getResourceThresholds().disk.critPercent
                 if (!isPercent(warn) || !isPercent(crit) || warn > crit) errors.push(`${where}: Schwellen 0–100 und warnPercent ≤ critPercent`)
                 break
             }
@@ -266,7 +267,8 @@ function judge(check: NightwatchCheck, outcome: CommandOutcome, host: Nightwatch
             const match = /^(\d{1,3})%$/.exec(fields[4] || '')
             if (!match) return { status: 'unbekannt', message: 'df-Ausgabe nicht lesbar' }
             const used = Number(match[1])
-            const warn = check.warnPercent ?? 85, crit = check.critPercent ?? 95
+            // Without an explicit per-check value: the one threshold definition (core/resource-thresholds.ts).
+            const warn = check.warnPercent ?? getResourceThresholds().disk.warnPercent, crit = check.critPercent ?? getResourceThresholds().disk.critPercent
             if (used >= crit) return { status: 'fehler', severity: 'critical', message: `Platte ${used} % voll (Grenze ${crit} %)` }
             if (used >= warn) return { status: 'fehler', severity: 'warning', message: `Platte ${used} % voll (Warnung ab ${warn} %)` }
             return { status: 'ok', message: `${used} % belegt` }

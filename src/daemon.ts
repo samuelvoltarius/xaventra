@@ -315,6 +315,11 @@ async function startDaemon() {
     loadPolicy(config as any)
         ; (state as any).config = config  // Store for runtime access (userAliases, etc.)
     setNovaConfig(config as any)  // Publish to getNovaConfig() singleton (used by plugins)
+    // One disk/RAM threshold definition for L0, L21, node-profile, Nachtwache, Wächter (2.82.0).
+    {
+        const { setResourceThresholds } = await import('./core/resource-thresholds.js')
+        setResourceThresholds((config as any).autonomy)
+    }
     try {
         const { resolveRuntimeProfile } = await import('./runtime/runtime-profiles.js')
         const runtimeProfile = resolveRuntimeProfile(config.runtime)

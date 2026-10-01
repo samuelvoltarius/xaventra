@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
 import { join } from 'node:path'
 
 // ============================================
@@ -456,7 +457,7 @@ class SelfCheckManager extends EventEmitter {
                 if (health.memory?.warning) {
                     suggestions.push('RAM-Limit erreicht — Performance degradiert.')
                 }
-                if (health.disk?.usedPercent > 95 || health.memory?.usedPercent > 95) {
+                if (diskLevel(health.disk?.usedPercent) === 'crit' || memoryLevel(health.memory?.usedPercent) === 'crit') {
                     suggestions.push('🛑 SYSTEM-PROBLEM — Tool-Failures sind Symptom, nicht Ursache!')
                 }
                 shouldAct = true

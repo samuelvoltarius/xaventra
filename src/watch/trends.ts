@@ -2,10 +2,11 @@
  * Wächter — Trends und Prognosen. Pure functions, fixed thresholds:
  *
  *   Platte voll   lineare Regression über 7 Tage; gemeldet nur, wenn < 14 Tage
- *   RAM-Trend     Anstieg ≥ 1 %-Punkt/Tag und 95 % in < 14 Tagen
+ *   RAM-Trend     Anstieg ≥ 1 %-Punkt/Tag und memory.critPercent (core/resource-thresholds.ts, Standard 95 %) in < 14 Tagen
  *   TLS           Ablauf < tlsWarnDays (Standard 21); < 7 Tage oder abgelaufen = kritisch
  *   Backup        jüngste Datei älter als maxAgeHours
  */
+import { DEFAULT_RESOURCE_THRESHOLDS, getResourceThresholds } from '../core/resource-thresholds.js'
 import type { WatchSample } from './sample.js'
 
 export const DAY_MS = 24 * 60 * 60_000
@@ -71,17 +72,18 @@ export function diskForecasts(samples: readonly WatchSample[], now: number): For
     return out.sort((a, b) => a.daysLeft - b.daysLeft)
 }
 
-export const RAM_LIMIT_PCT = 95
+/** Default RAM forecast limit = memory crit of the one threshold definition. */
+export const RAM_LIMIT_PCT = DEFAULT_RESOURCE_THRESHOLDS.memory.critPercent
 export const RAM_MIN_SLOPE_PER_DAY = 1
-export function ramForecasts(samples: readonly WatchSample[], now: number): Forecast[] {
+export function ramForecasts(samples: readonly WatchSample[], now: number, limit = getResourceThresholds().memory.critPercent): Forecast[] {
     const series = new Map<string, Array<[number, number]>>()
     for (const sample of samples) series.set(sample.nodeId, [...(series.get(sample.nodeId) ?? []), [Date.parse(sample.at), sample.ramUsedPct]])
     const out: Forecast[] = []
     for (const [nodeId, points] of series) {
         points.sort((a, b) => a[0] - b[0])
-        const result = forecastToLimit(points, RAM_LIMIT_PCT, now)
+        const result = forecastToLimit(points, limit, now)
         if (!result || result.perDay < RAM_MIN_SLOPE_PER_DAY || result.daysLeft >= FORECAST_REPORT_DAYS) continue
-        out.push({ nodeId, subject: 'RAM', limit: RAM_LIMIT_PCT, ...result })
+        out.push({ nodeId, subject: 'RAM', limit, ...result })
     }
     return out
 }
