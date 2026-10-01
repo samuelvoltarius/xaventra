@@ -481,16 +481,6 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ---
 
-### `multi-bot` ✅ Wired
-
-**What it does:** Spawns and manages multiple Nova instances with different personas. Each bot has its own personality, channel configuration, and memory space. Useful for running a "work Nova" and "personal Nova" simultaneously.
-
-**Key exports:** `getMultiBotManager()`, `createBot()`
-
-**Wiring:** Manager imported; bot configurations loaded from `xaventra.config.json`.
-
----
-
 ### `multi-user-workers` ✅ Wired
 
 **What it does:** Worker pool for multi-user load isolation. Creates dedicated worker processes for heavy users to prevent one user's long-running task from blocking others. Manages per-user state isolation.
@@ -593,7 +583,6 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 | — | auto-bug-fix | ✅ | TypeScript build error fix |
 | — | dream-daily-digest | ⚡ | Dream cycle consolidation |
 | — | memory-distiller | ✅ | Nightly knowledge extraction |
-| — | multi-bot | ✅ | Multi-persona management |
 | — | multi-user-workers | ✅ | Per-user worker isolation |
 | — | predictive-provisioning | ✅ | Model pre-warming |
 | — | subconscious-reflector | ✅ | Dreaming + Soul Evolution |

@@ -44,6 +44,15 @@ deletion are involved.
   but the owner now require the owner's approval; never-list patterns for
   vLLM stop variants; named exception instead of a name trick for removing
   own VMs.
+- Cleanup (duplicates): one scheduler — reminders, `heartbeat.md` routines
+  (`/routine`) and cron automations are planner jobs (old files renamed
+  `.migriert`); terms separated — **Auftrag** (`/auftrag`, `/mission` alias)
+  vs. **Mission** (responsibility missions, `/arbeit`); `/wave` and the
+  multi-bot instances removed (personas are roles); one goal store; missions
+  and Aufträge delegate steps to Claude/Codex/Hermes/subagents and "Mission
+  wartet" reminds; `/bot team` runs through the subagent orchestrator;
+  delegation and mission-recovery timers only poll while something is open;
+  dead L0 task heartbeat, old sub-agent manager and legacy safe fixes deleted.
 
 ## [2.81.0] — 2026-10-01
 

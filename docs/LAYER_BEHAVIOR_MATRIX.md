@@ -60,7 +60,6 @@ Test abbreviations (repository-relative, all fixtures isolated):
 | auto-bug-fix.ts | S: exported function/init/stats | E, Auto Bug Fix | Real reproducible defect to sandbox patch, approval and rollback |
 | dream-daily-digest.ts | B: add/build/mark-sent round trip | E, Dream Daily Digest | Real delivery, dedupe, principal isolation and no internal-reasoning leaks |
 | memory-distiller.ts | S: import and model setter/getter | E, Memory Distiller | Actual curated facts, contradiction/correction, isolation and replay |
-| multi-bot.ts | S: templates/list/constructor | E, Multi-Bot Manager | Real selected-specialist team run without duplicate replies |
 | multi-user-workers.ts | S: constructor/stats/singleton | E, Multi-User Workers | Concurrent users, cancellation, bounded queue and no cross-talk |
 | predictive-provisioning.ts | S: usage recording and prediction shape | E, Predictive Provisioning | Useful predictions and authorized install/deploy with rollback |
 | subconscious-reflector.ts | S: init/state/activity | E, Subconscious Reflector | Useful evidence-grounded reflection, notification budget and privacy |

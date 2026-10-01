@@ -10,16 +10,16 @@
 
 | Category | Commands |
 |----------|----------|
-| System | `/help` `/status` `/info` `/layers` `/commands` `/verbose` `/strict` `/heartbeat` |
+| System | `/help` `/status` `/info` `/layers` `/commands` `/verbose` `/strict` `/routine` |
 | LLM | `/models` `/model` `/think` `/ai` |
 | Memory | `/memory` `/skills` `/learn` `/graph` |
-| Intelligence | `/roi` `/scan` `/wave` |
+| Intelligence | `/roi` `/scan` |
 | Self-Setup *(v2.52+)* | `/setup status` `/setup plan` `/setup research` `/setup apply` |
 | Self-Evolution *(v2.51+)* | `/patches` `/patch approve` `/patch reject` `/patch history` |
 | Agents | `/bot team` `/subagent` `/agents` `/swarm` |
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
-| Autonomy | `/autonom` `/mission` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/entscheidungen` `/heilung` `/software` `/modelle` `/waechter` |
+| Autonomy | `/autonom` `/auftrag` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/entscheidungen` `/heilung` `/software` `/modelle` `/waechter` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 | Desktop | `/desktop` |
@@ -109,14 +109,8 @@ Zeigt aktive Korrekturen und Instinct-Updates.
 - `/scan F:\projects` — Indexiert das Verzeichnis
 - Danach: Nova kann Dateien instant finden
 
-### `/wave new <title>`
-🌊 **Wave Pipeline** — Startet eine strukturierte Mission.
-- 6 Phasen: Discover → Discuss → Design → DevOps → Distill → Deliver
-- Jede Phase erzeugt Artefakte die du reviewst
-- `/wave approve` — Phase genehmigen
-- `/wave revise <feedback>` — Phase überarbeiten
-- `/wave status` — Fortschritt anzeigen
-- `/wave list` — Alle Missionen
+`/wave` wurde entfernt (die Phasen-Notizen hatten keinen Erzeuger und führten
+nichts aus). Für ein Ziel in Schritten: `/auftrag`.
 
 ---
 
@@ -335,18 +329,26 @@ Pre-Flight für einen spezifischen Host.
 ### `/autonom`
 Schaltet den Autonomie-Modus ein/aus. Im Autonomie-Modus agiert Nova proaktiv.
 
-### `/mission <beschreibung>`
-Startet eine autonome Mission. Nova plant Schritte und führt sie aus.
-Beispiel: `/mission Update alle Dependencies und fixe Deprecation Warnings`
+### `/auftrag <beschreibung>`
+Startet einen **Auftrag**: Xaventra zerlegt dein Ziel in Schritte und arbeitet
+sie selbstständig ab; jeder Schritt braucht einen unabhängigen Beleg. Ein
+Schritt kann an Claude, Codex, Hermes oder einen Unteragenten übergeben werden
+(Delegation, siehe `/delegiert`); der Auftrag wartet dann auf das geprüfte
+Ergebnis. `/mission` ist der alte Name und funktioniert weiter (mit Hinweis).
+Beispiel: `/auftrag Update alle Dependencies und fixe Deprecation Warnings`
 
-### `/mission status`
-Zeigt den Fortschritt der aktiven Mission.
+Begriffe: **Auftrag** = dein Ziel als Schrittkette. **Mission** = eine
+selbstständige Verantwortungs-Mission (z. B. „Dienst läuft wieder“), siehe
+`/arbeit`.
 
-### `/mission stop`
-Bricht die aktive Mission ab.
+### `/auftrag status`
+Zeigt den Fortschritt des aktiven Auftrags.
 
-### `/mission config`
-Zeigt/ändert Mission-Konfiguration (Max-Steps, Retries, Timeout).
+### `/auftrag stop` · `/auftrag pause` · `/auftrag weiter`
+Bricht ab, pausiert oder setzt fort.
+
+### `/auftrag config`
+Zeigt/ändert die Auftrags-Konfiguration (Max-Schritte, Wiederholungen, Timeout).
 
 ### `/remind <zeit> <nachricht>`
 Setzt eine Erinnerung. Beispiel: `/remind 30min Meeting vorbereiten`
@@ -372,7 +374,10 @@ Setzt einen API-Key (für Gemini etc.).
 ## Admin & Monitoring
 
 ### `/bots`
-Zeigt den Status aller Bot-Instanzen (Nova-Flotte).
+Zeigt die Rollen (frühere Bot-Personas) und Teams. Eigene Bot-Instanzen gibt
+es nicht mehr; eine Rolle fragst du mit `/subagent <rolle> <frage>`, ein Team
+mit `/bot team <frage>` (läuft über den Unteragenten-Orchestrator: höchstens
+6 parallel, Audit-Log `.nova-data/subagent-audit.jsonl`).
 
 ### `/project`
 Zeigt den aktuellen Projekt-Kontext (wenn in einem Projekt).
@@ -386,8 +391,11 @@ Zeigt aktive Tasks mit Progress.
 ### `/log`
 Zeigt das Session-Log der aktuellen Konversation.
 
-### `/heartbeat`
-Status der Heartbeat-Routines (periodische Checks).
+### `/routine`
+Tägliche Routinen im Planer: `/routine` listet, `/routine 08:00 Postfach
+prüfen` legt an, `/routine aus|an|weg <id>` schaltet oder entfernt. Frühere
+`heartbeat.md`-Routinen werden beim Start einmal übernommen (Datei danach
+`heartbeat.md.migriert`). `/heartbeat` ist der alte Name.
 
 ### `/factory`
 Tool Factory Status — zeigt dynamisch erstellte Tools.

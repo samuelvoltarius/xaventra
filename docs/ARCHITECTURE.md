@@ -74,7 +74,6 @@ nova-core/
 │   │   ├── auth.ts                # Authentication & authorization
 │   │   ├── task-tracker.ts        # Task lifecycle management
 │   │   ├── croner-scheduler.ts    # Timezone-aware cron (CronerScheduler)
-│   │   ├── heartbeat.ts           # Heartbeat routine system (heartbeat.md)
 │   │   ├── config.ts              # Config singleton (getNovaConfig/setNovaConfig)
 │   │   └── autonomous-executor.ts
 │   │
@@ -87,7 +86,6 @@ nova-core/
 │   │   ├── progressive-memory.ts  # Engram-style 3-layer recall
 │   │   ├── token-killer.ts        # RTK-style output compression
 │   │   ├── knowledge-graph.ts     # Auto knowledge extraction
-│   │   ├── wave-pipeline.ts       # 6-phase structured missions
 │   │   ├── roi-dashboard.ts       # Cost/value tracking
 │   │   ├── soul-evolution.ts      # Self-evolving identity (SOUL.md)
 │   │   ├── file-index.ts          # OmniSearch-style fast file search
@@ -105,7 +103,6 @@ nova-core/
 │   │   ├── auto-bug-fix.ts        # TypeScript build error auto-fix
 │   │   ├── dream-daily-digest.ts  # Dream cycle consolidation
 │   │   ├── memory-distiller.ts    # Nightly 02:00 AM knowledge distillation
-│   │   ├── multi-bot.ts           # Multi-persona bot management
 │   │   ├── multi-user-workers.ts  # Per-user worker isolation
 │   │   ├── predictive-provisioning.ts
 │   │   ├── subconscious-reflector.ts  # Dreaming module
@@ -268,7 +265,7 @@ These run independent of user messages:
 CronerScheduler (Europe/Vienna)
     │
     ├── Every 5 min   → L0-health-monitor: disk/RAM check
-    ├── Every 5 min   → heartbeat.ts: routine tasks from heartbeat.md
+    ├── Planner tick  → planner jobs: reminders, daily routines (/routine), automations, reports
     ├── Every 30 min  → L22-federated-memory: KG sync to Supabase
     ├── Every 30 min  → subconscious-reflector: dream cycle (if 15+ min idle)
     ├── Every 60 min  → L19-monitoring: URL/service uptime checks
