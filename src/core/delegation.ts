@@ -202,9 +202,24 @@ const NEVER_RULES: readonly RegExp[] = [
     /(?<!\p{L})(kernel|treiber|cuda|dist-upgrade|apt upgrade|curl .{0,40}\|\s*(ba)?sh)/iu,
 ]
 
+/** Creates, writes, moves, sends, prints, switches, buys or runs something → L2 (card). */
+const ACTION_RULES: ReadonlyArray<[RegExp, string]> = [
+    [/(?<!\p{L})(erstell|anleg|leg\w* .{0,40}\ban\b|erzeug|create|schreib|write|verschieb|move\b|kopier|copy\b|umbenenn|rename|setz\w* .{0,30}\bum\b|umsetz|ausführ|führ\w* .{0,40}\baus\b|run\b|execute|starte?\b|mach\w*\b|tu\b|erledig)/iu, 'erstellen/schreiben/ausführen'],
+    [/(?<!\p{L})(send|schick|versend|antwort\w* .{0,30}\ban\b|beantwort|mail\w*\b .{0,30}\ban\b|poste|posten|veröffentlich)/iu, 'senden/nach außen'],
+    [/(?<!\p{L})(druck|print|schalt|einschalt|ausschalt|switch|kauf|bestell|buy|order\b|bezahl|zahl\w*\b|überweis|ueberweis|buch\w*\b)/iu, 'physisch/Kauf'],
+]
+
+/** Clearly read-only intent; required for L1. */
+const READ_ONLY = /(?<!\p{L})(prüf|pruef|check|analys|analyz|untersuch|lies\b|lese\b|recherchier|research|such|find\w* .{0,40}\bheraus\b|fass\w* .{0,60}\bzusammen\b|zusammenfass|summar|vergleich|compare|erklär|erklaer|explain|bewert|beschreib|review|diagnos|investigat|look up|nachschau)/iu
+
+/**
+ * Allowlist, not denylist: only clearly read-only work goes out without a card.
+ * Anything unrecognised, any change/action/external/physical verb → L2.
+ */
 export function classifyDelegationLevel(auftrag: string, declaredChange = false): { stufe: DelegationLevel; grund: string } {
     if (declaredChange) return { stufe: 'L2', grund: 'vom Aufrufer als ändernd erklärt' }
-    for (const [pattern, label] of CHANGE_RULES) if (pattern.test(auftrag)) return { stufe: 'L2', grund: `Regel: ${label}` }
+    for (const [pattern, label] of [...CHANGE_RULES, ...ACTION_RULES]) if (pattern.test(auftrag)) return { stufe: 'L2', grund: `Regel: ${label}` }
+    if (!READ_ONLY.test(auftrag)) return { stufe: 'L2', grund: 'nicht eindeutig lesend' }
     return { stufe: 'L1', grund: 'lesend/analysierend' }
 }
 
