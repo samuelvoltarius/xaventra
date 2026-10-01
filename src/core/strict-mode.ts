@@ -52,7 +52,7 @@ export function toggleStrictMode(user?: string): { enabled: boolean; message: st
     const message = state.enabled
         ? `🔒 *Strict Implementation Mode: AN*
 
-Nova schreibt ab jetzt vollständigen Produktions-Code:
+Xaventra schreibt ab jetzt vollständigen Produktions-Code:
 • Keine // TODO Kommentare
 • Keine "Rest of code here..." Auslassungen
 • Vollständiges Error-Handling
@@ -61,7 +61,7 @@ Nova schreibt ab jetzt vollständigen Produktions-Code:
 _/strict zum Ausschalten_`
         : `🔓 *Strict Implementation Mode: AUS*
 
-Nova ist wieder im normalen Modus — Prototyping und Abkürzungen erlaubt.
+Xaventra ist wieder im normalen Modus — Prototyping und Abkürzungen erlaubt.
 
 _/strict zum Einschalten_`
 

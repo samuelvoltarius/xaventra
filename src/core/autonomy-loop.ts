@@ -283,7 +283,7 @@ async function checkUptime(): Promise<CheckResult[]> {
         results.push({
             source: 'uptime',
             severity: 'info',
-            message: `Nova läuft seit ${uptimeHours}h`,
+            message: `Xaventra läuft seit ${uptimeHours}h`,
             timestamp: Date.now(),
             requiresNotification: false,
         })
@@ -370,7 +370,7 @@ async function act(evaluation: { shouldNotify: boolean; summary: string; importa
         const now = new Date()
         const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 
-        let msg = `🤖 *Nova Autonomy Report* (${timeStr})\n\n`
+        let msg = `🤖 *Xaventra Autonomy Report* (${timeStr})\n\n`
         msg += `${evaluation.summary}\n\n`
 
         for (const check of evaluation.important) {
@@ -1144,7 +1144,7 @@ export async function startAutonomyLoop(notifyFn: (msg: string) => Promise<boole
         await scheduler.schedule(
             'autonomy-loop',
             `*/${config.intervalMinutes} * * * *`,
-            'Nova Autonomy Loop',
+            'Xaventra Autonomy Loop',
             async () => {
                 try {
                     await runAutonomyLoop()

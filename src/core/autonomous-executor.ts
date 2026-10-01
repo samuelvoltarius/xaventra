@@ -839,7 +839,7 @@ Antworte mit GENAU einem der folgenden Formate:
 // ============================================
 
 function formatMissionPlan(mission: Mission): string {
-    let msg = `🎯 *Nova Mission gestartet*\n\n`
+    let msg = `🎯 *Xaventra Mission gestartet*\n\n`
     msg += `*Ziel:* ${mission.goal.slice(0, 200)}\n\n`
     msg += `*Plan (${mission.steps.length} Schritte):*\n`
 
@@ -1107,7 +1107,7 @@ export function formatMissionConfig(): string {
     const c = config
     let msg = `⚙️ *Mission-Konfiguration*\n\n`
     msg += `🔄 *Continuations:* ${c.maxContinuations}\n`
-    msg += `   _Wie oft Nova nach Abschluss weitermacht_\n\n`
+    msg += `   _Wie oft Xaventra nach Abschluss weitermacht_\n\n`
     msg += `📝 *Steps:* ${c.maxSteps}\n`
     msg += `   _Max. Teilaufgaben pro Mission_\n\n`
     msg += `🔁 *Retries:* ${c.maxRetries}\n`

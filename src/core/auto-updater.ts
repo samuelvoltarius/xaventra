@@ -670,7 +670,7 @@ export async function deployUpdateToAllNodes(config: UpdateConfig, notifyFn?: (m
             const release = createSignedReleaseManifest()
             const previousState = loadState()
             updateStatus.currentRelease = release.payload.releaseId
-            notifyFn?.(`📦 Signiertes Nova-Release ${release.payload.releaseId} wird ausgerollt.`)
+            notifyFn?.(`📦 Signiertes Xaventra-Release ${release.payload.releaseId} wird ausgerollt.`)
 
             const receipts: NodeUpdateReceipt[] = []
             const activeDeployment: NonNullable<PersistedUpdateState['activeDeployment']> = {
@@ -804,7 +804,7 @@ export function startUpdateChecker(config: UpdateConfig, notifyFn?: (message: st
                 const interrupted = persisted.activeDeployment!
                 saveState({ activeDeployment: { ...interrupted, phase: 'failed' } })
                 refreshStatusFromState(config)
-                notifyOnce(`release-interrupted:${interrupted.releaseId}`, `⚠️ Nova ${current}: Rollout ${interrupted.releaseId} wurde unterbrochen. Kein automatischer Neustart; /update deploy startet ihn manuell.`, notifyFn)
+                notifyOnce(`release-interrupted:${interrupted.releaseId}`, `⚠️ Xaventra ${current}: Rollout ${interrupted.releaseId} wurde unterbrochen. Kein automatischer Neustart; /update deploy startet ihn manuell.`, notifyFn)
                 return
             }
             const failedReleaseNeedsOperator = (persisted.activeDeployment?.version === current
@@ -818,9 +818,9 @@ export function startUpdateChecker(config: UpdateConfig, notifyFn?: (message: st
                 void deployUpdateToAllNodes(config, notifyFn)
             } else if (failedReleaseNeedsOperator) {
                 const key = failedReleaseNotificationKey(current, persisted.lastRelease, persisted.receipts || [])
-                if (key) notifyOnce(key, `⚠️ Nova ${current}: automatischer Rollout nach Fehlschlag gesperrt. /update deploy startet einen manuellen Retry. Diese Meldung wird für denselben Fehler nicht wiederholt.`, notifyFn)
+                if (key) notifyOnce(key, `⚠️ Xaventra ${current}: automatischer Rollout nach Fehlschlag gesperrt. /update deploy startet einen manuellen Retry. Diese Meldung wird für denselben Fehler nicht wiederholt.`, notifyFn)
             } else {
-                notifyOnce(`release-ready:${current}`, `📦 Nova ${current} ist bereit. /update deploy startet den signierten Mesh-Rollout.`, notifyFn)
+                notifyOnce(`release-ready:${current}`, `📦 Xaventra ${current} ist bereit. /update deploy startet den signierten Mesh-Rollout.`, notifyFn)
             }
         }
     }

@@ -49,7 +49,7 @@ async function markMiniMaxRateLimited(error: unknown): Promise<void> {
         recordRuntimeDoctorFinding({
             key: 'provider-minimax-rate-limit',
             title: 'MiniMax rate limit detected',
-            detail: `MiniMax ist bis ${new Date(minimaxBlockedUntil).toISOString()} gesperrt; Nova verwendet lokale Modelle.`,
+            detail: `MiniMax ist bis ${new Date(minimaxBlockedUntil).toISOString()} gesperrt; Xaventra verwendet lokale Modelle.`,
             category: 'health',
             severity: quotaExhausted ? 'critical' : 'warning',
             recommendation: 'Lokalen Fallback verwenden und MiniMax erst nach Ablauf des Cooldowns erneut prüfen.',

@@ -366,7 +366,7 @@ function computeActions(
             id: actionId('config', 'voice.autoInstallDeps'),
             type: 'config_patch',
             title: 'Voice Auto-Install bewusst auf false setzen',
-            reason: 'Nova arbeitet im Plan+Freigabe-Modus; fehlende Voice-Pakete sollen geplant, nicht beim Boot still installiert werden.',
+            reason: 'Xaventra arbeitet im Plan+Freigabe-Modus; fehlende Voice-Pakete sollen geplant, nicht beim Boot still installiert werden.',
             risk: 'low',
             configPath: 'voice.autoInstallDeps',
             // mergePatch is deep: only the changed key, so later owner edits
@@ -381,7 +381,7 @@ function computeActions(
                 id: actionId('local', 'ffmpeg'),
                 type: 'local_shell',
                 title: 'Optional ffmpeg/ffplay installieren',
-                reason: 'ffplay verbessert Windows-Audio-Playback; Nova kann ohne ffplay per PowerShell-Fallback sprechen.',
+                reason: 'ffplay verbessert Windows-Audio-Playback; Xaventra kann ohne ffplay per PowerShell-Fallback sprechen.',
                 risk: 'medium',
                 ...(platform() === 'linux' ? { catalogId: 'ffmpeg' } : {}),
                 command: platform() === 'win32'
@@ -566,9 +566,9 @@ function mergePatch(base: any, patch: any): any {
 }
 
 export function formatSelfSetupStatus(state = loadSelfSetupState()): string {
-    if (!state) return 'Kein Self-Setup-State vorhanden. Nutze self_setup_plan oder starte Nova neu.'
+    if (!state) return 'Kein Self-Setup-State vorhanden. Nutze self_setup_plan oder starte Xaventra neu.'
     const lines = [
-        `Nova Self-Setup (${state.generatedAt})`,
+        `Xaventra Self-Setup (${state.generatedAt})`,
         `Modus: ${state.mode === 'yolo' ? 'YOLO (Auto-Apply aktiviert)' : 'Plan + Freigabe'}`,
         state.summary,
         '',

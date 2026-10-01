@@ -290,7 +290,7 @@ export function getCapabilities(): string {
     const freeRamGB = (freemem() / 1024 / 1024 / 1024).toFixed(1)
 
     const caps: string[] = [
-        `Nova läuft auf: ${env.os} (${env.arch}) — ${env.hostname}`,
+        `Xaventra läuft auf: ${env.os} (${env.arch}) — ${env.hostname}`,
         `CPU: ${cpuModel} (${cpuCores} Kerne)`,
         `RAM: ${totalRamGB} GB total, ${freeRamGB} GB frei`,
         `Shell: ${env.shell}`,

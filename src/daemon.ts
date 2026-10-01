@@ -2396,7 +2396,7 @@ async function startDaemon() {
             journal.default.setInternalLLM(serviceModels.learning)
         }
         ; (state as any).journal = journal.default
-        journal.default.recordEvent('system', 'Nova gestartet')
+        journal.default.recordEvent('system', 'Xaventra gestartet')
         console.log(`[Nova] ✓ Journal aktiv (Episodisches Gedächtnis)`)
     } catch (err) {
         console.log(`[Nova] ⚠ Journal nicht verfügbar: ${err}`)
@@ -2763,7 +2763,7 @@ async function startDaemon() {
             const dashboardUrl = getDashboardAddress()
 
             const lines = [
-                '✨ *Nova Online!*',
+                '✨ *Xaventra Online!*',
                 '',
                 `📦 Version: \`${(globalThis as any).__novaVersion || 'unknown'}\``,
                 `🤖 Aktives Modell: \`${currentModel}\``,

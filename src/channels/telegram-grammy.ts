@@ -153,23 +153,23 @@ export class GrammyTelegramAdapter {
 
         // Commands
         this.bot.command('start', async (ctx) => {
-            await ctx.reply('👋 Willkommen bei Nova! Wie kann ich dir helfen?')
+            await ctx.reply('👋 Willkommen bei Xaventra! Wie kann ich dir helfen?')
         })
 
         this.bot.command('help', async (ctx) => {
             await ctx.reply(
-                '🤖 *Nova Commands*\n\n' +
+                '🤖 *Xaventra Commands*\n\n' +
                 '/start - Bot starten\n' +
                 '/help - Diese Hilfe\n' +
                 '/status - Bot Status\n' +
                 '/model - Aktuelles Modell\n\n' +
-                'Schreib einfach eine Nachricht um mit Nova zu chatten!',
+                'Schreib einfach eine Nachricht um mit Xaventra zu chatten!',
                 { parse_mode: 'Markdown' }
             )
         })
 
         this.bot.command('status', async (ctx) => {
-            await ctx.reply('✅ Nova ist online und bereit!')
+            await ctx.reply('✅ Xaventra ist online und bereit!')
         })
 
         // Photos/Images

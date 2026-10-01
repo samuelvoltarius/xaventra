@@ -102,7 +102,7 @@ export const BRAIN_COMMANDS: NovaCommand[] = [
                     return [
                         '🧠 **Brain nicht installiert**',
                         '',
-                        'Nova hat noch kein Langzeit-Gedächtnis (Graphiti + Neo4j).',
+                        'Xaventra hat noch kein Langzeit-Gedächtnis (Graphiti + Neo4j).',
                         '',
                         '👉 `/brain install` — jetzt auf einem Tailscale-Node installieren',
                     ].join('\n')

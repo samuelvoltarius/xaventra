@@ -27,7 +27,7 @@ export class RequestGate {
         if (this.active < this.maxConcurrent) return this.execute(task)
         if (this.queue.length >= this.maxQueue) {
             this.rejected++
-            return Promise.reject(new Error('Nova is busy: request queue capacity reached'))
+            return Promise.reject(new Error('Xaventra is busy: request queue capacity reached'))
         }
         return new Promise<T>((resolve, reject) => {
             this.queue.push({ priority, run: task, resolve, reject } as Pending<unknown>)
