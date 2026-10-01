@@ -1,0 +1,328 @@
+/**
+ * Selbst-Erkennung (`/geraete suchen`): nur lesende Suche im eigenen LAN/Tailnet.
+ *
+ * - Ziele nur aus ./net-scope.ts (eigene private Subnetze, max /24, Tailnet nur
+ *   mit eigenem Tailnet-Interface). Jede Adresse — auch aus mDNS — passiert
+ *   `scanTargetAllowed` direkt vor dem Verbindungsaufbau.
+ * - Feste Port-Liste: Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
+ *   Bambu 8883 (nur TCP-Connect, kein MQTT-Login), Home Assistant 8123.
+ * - Erkennung über öffentliche, unauthentifizierte GET-Pfade; keine Logins,
+ *   keine API-Keys, keine Schreibzugriffe.
+ * - Rate-Limit (Verbindungen/s), begrenzte Parallelität, harte Gesamtzeit.
+ * - Funde werden in die Geräte-Datei geschrieben (`gefunden`) und als Gedanke
+ *   „Gerät X gefunden … überwachen?“ mit Stufe `fragen` gemeldet. Eingerichtet
+ *   wird erst über `approveDevice`.
+ */
+
+import { Socket } from 'node:net'
+import { createSocket } from 'node:dgram'
+import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
+import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
+
+export const DISCOVERY_PORTS = Object.freeze([7125, 80, 5000, 8883, 8123])
+
+export interface HttpProbeResult { status: number; server?: string; body: string }
+
+export interface DiscoveryDeps {
+    interfaces?: InterfaceMap
+    tcpProbe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>
+    httpProbe?: (url: string, timeoutMs: number) => Promise<HttpProbeResult | null>
+    mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>>
+    now?: () => number
+    sleep?: (ms: number) => Promise<void>
+}
+
+export interface DiscoveryOptions {
+    deadlineMs: number
+    ratePerSec: number
+    concurrency: number
+    maxHosts: number
+    mdns: boolean
+    tailnetHosts: string[]
+    probeTimeoutMs?: number
+}
+
+export interface DiscoveryReport {
+    candidates: DeviceCandidate[]
+    scannedHosts: number
+    probes: number
+    rejected: Array<{ host: string; reason: string }>
+    truncated: boolean
+    timedOut: boolean
+    durationMs: number
+    scope: { subnets: string[]; hasTailnet: boolean }
+}
+
+// ---------------------------------------------------------------------------
+// Real probes (never used in tests)
+// ---------------------------------------------------------------------------
+
+export function realTcpProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+    return new Promise(resolve => {
+        const socket = new Socket()
+        let done = false
+        const finish = (open: boolean) => { if (done) return; done = true; socket.destroy(); resolve(open) }
+        socket.setTimeout(timeoutMs)
+        socket.once('connect', () => finish(true))
+        socket.once('timeout', () => finish(false))
+        socket.once('error', () => finish(false))
+        socket.connect(port, host)
+    })
+}
+
+export async function realHttpProbe(url: string, timeoutMs: number): Promise<HttpProbeResult | null> {
+    try {
+        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, text/html' } })
+        const text = (await res.text()).slice(0, 8192)
+        return { status: res.status, server: res.headers.get('server') || undefined, body: text }
+    } catch { return null }
+}
+
+// ---------------------------------------------------------------------------
+// Fingerprints (pure)
+// ---------------------------------------------------------------------------
+
+export function identifyHttp(port: number, path: string, result: HttpProbeResult | null): DeviceType | null {
+    if (!result) return null
+    const body = result.body || ''
+    if (port === 7125 && path === '/server/info' && result.status === 200 && /"klippy_(state|connected)"|moonraker/i.test(body)) return 'moonraker'
+    if (port === 8123 && path === '/manifest.json' && result.status === 200 && /"name"\s*:\s*"Home Assistant"/i.test(body)) return 'homeassistant'
+    if ((port === 80 || port === 5000) && path === '/' && /<title>\s*OctoPrint/i.test(body)) return 'octoprint'
+    if (port === 80 && path === '/api/version' && (/prusalink/i.test(body) || /prusalink/i.test(result.server || ''))) return 'prusalink'
+    return null
+}
+
+const HTTP_CHECKS: Record<number, Array<{ path: string }>> = {
+    7125: [{ path: '/server/info' }],
+    8123: [{ path: '/manifest.json' }],
+    5000: [{ path: '/' }],
+    80: [{ path: '/' }, { path: '/api/version' }],
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiter: at most `ratePerSec` connection starts per second, `concurrency`
+// in flight, nothing new after the deadline.
+// ---------------------------------------------------------------------------
+
+export class ProbeLimiter {
+    private nextSlot = 0
+    private inFlight = 0
+    private readonly waiters: Array<() => void> = []
+    maxInFlight = 0
+    started = 0
+    constructor(private readonly ratePerSec: number, private readonly concurrency: number, private readonly deadline: number,
+        private readonly now: () => number, private readonly sleep: (ms: number) => Promise<void>) {}
+
+    expired(): boolean { return this.now() >= this.deadline }
+
+    async run<T>(task: () => Promise<T>): Promise<T | undefined> {
+        if (this.expired()) return undefined
+        if (this.inFlight >= this.concurrency) await new Promise<void>(resolve => this.waiters.push(resolve))
+        this.inFlight++
+        try {
+            const spacing = 1000 / this.ratePerSec
+            const slot = Math.max(this.now(), this.nextSlot)
+            this.nextSlot = slot + spacing
+            const wait = slot - this.now()
+            if (wait > 0) await this.sleep(wait)
+            if (this.expired()) return undefined
+            this.started++
+            this.maxInFlight = Math.max(this.maxInFlight, this.inFlight)
+            return await task()
+        } finally {
+            this.inFlight--
+            this.waiters.shift()?.()
+        }
+    }
+}
+
+const cidrText = (cidr: Cidr) => `${[cidr.base >>> 24, (cidr.base >>> 16) & 255, (cidr.base >>> 8) & 255, cidr.base & 255].join('.')}/${cidr.bits}`
+
+export async function discoverDevices(options: DiscoveryOptions, deps: DiscoveryDeps = {}): Promise<DiscoveryReport> {
+    const now = deps.now || Date.now
+    const sleep = deps.sleep || ((ms: number) => new Promise<void>(resolve => { const t = setTimeout(resolve, ms); t.unref?.() }))
+    const tcpProbe = deps.tcpProbe || realTcpProbe
+    const httpProbe = deps.httpProbe || realHttpProbe
+    const startedAt = now()
+    const deadline = startedAt + options.deadlineMs
+    const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
+    const scope = ownSubnets(deps.interfaces)
+    const plan = scanHosts(scope, options.tailnetHosts, options.maxHosts)
+    const limiter = new ProbeLimiter(options.ratePerSec, options.concurrency, deadline, now, sleep)
+    const candidates: DeviceCandidate[] = []
+    const rejected = [...plan.rejected]
+    const seen = new Set<string>()
+    const add = (candidate: DeviceCandidate) => {
+        const key = `${candidate.type}|${candidate.host}|${candidate.port}`
+        if (seen.has(key)) return
+        seen.add(key)
+        candidates.push(candidate)
+    }
+
+    // mDNS first (cheap, one multicast query); every answer is re-checked.
+    if (options.mdns && deps.mdnsBrowse !== undefined) {
+        try {
+            const found = await deps.mdnsBrowse(Math.min(2000, options.deadlineMs / 4))
+            for (const item of found) {
+                const decision = scanTargetAllowed(item.host, scope)
+                if (!decision.allowed) { rejected.push({ host: item.host, reason: `mDNS: ${decision.reason}` }); continue }
+                add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name, evidence: { quelle: 'mDNS', port: item.port } })
+            }
+        } catch { /* mDNS optional */ }
+    }
+
+    const probeHost = async (host: string): Promise<void> => {
+        for (const port of DISCOVERY_PORTS) {
+            if (limiter.expired()) return
+            // Gate directly before every connect.
+            if (!scanTargetAllowed(host, scope).allowed) return
+            const open = await limiter.run(() => tcpProbe(host, port, probeTimeout))
+            if (!open) continue
+            if (port === 8883) {
+                add({ type: 'bambu', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'MQTT-Port offen, nicht angemeldet' } })
+                continue
+            }
+            for (const check of HTTP_CHECKS[port] || []) {
+                const result = await limiter.run(() => httpProbe(`http://${host}:${port}${check.path}`, probeTimeout))
+                const type = identifyHttp(port, check.path, result ?? null)
+                if (type) {
+                    add({ type, host, port, via: 'http', evidence: { quelle: `GET ${check.path}`, port, http: result?.status ?? null } })
+                    break
+                }
+            }
+        }
+    }
+
+    let index = 0
+    const workers = Array.from({ length: Math.max(1, Math.min(options.concurrency, plan.hosts.length)) }, async () => {
+        while (index < plan.hosts.length && !limiter.expired()) {
+            const host = plan.hosts[index++]
+            await probeHost(host)
+        }
+    })
+    await Promise.all(workers)
+
+    return {
+        candidates,
+        scannedHosts: Math.min(index, plan.hosts.length),
+        probes: limiter.started,
+        rejected,
+        truncated: plan.truncated || index < plan.hosts.length,
+        timedOut: limiter.expired() && index < plan.hosts.length,
+        durationMs: now() - startedAt,
+        scope: { subnets: scope.subnets.map(cidrText), hasTailnet: scope.hasTailnet },
+    }
+}
+
+export function candidateThoughtText(candidate: DeviceCandidate): { title: string; summary: string; proposal: string } {
+    const label = DEVICE_LABEL[candidate.type]
+    const needsKey = candidate.type === 'octoprint' || candidate.type === 'prusalink' || candidate.type === 'homeassistant'
+    const bambu = candidate.type === 'bambu'
+    return {
+        title: `Gerät gefunden: ${label} (${candidate.host})`,
+        summary: `${label} gefunden (${candidate.host}:${candidate.port}, über ${candidate.via === 'mdns' ? 'mDNS' : candidate.via === 'http' ? 'HTTP-Kennung' : 'TCP-Connect'}). Überwachen?`,
+        proposal: bambu
+            ? 'Nur merken: Bambu braucht den Zugangscode aus dem Gerät (Owner-Schritt), bis dahin keine Überwachung.'
+            : needsKey
+                ? 'Lesend überwachen? Den API-Schlüssel trägt der Owner selbst in die Config ein.'
+                : 'Lesend überwachen (Fortschritt, fertig, Fehler, pausiert)?',
+    }
+}
+
+// ---------------------------------------------------------------------------
+// mDNS (legacy unicast query from an ephemeral port, RFC 6762 §6.7)
+// ---------------------------------------------------------------------------
+
+export const MDNS_SERVICES: Readonly<Record<string, DeviceType>> = Object.freeze({
+    '_moonraker._tcp.local': 'moonraker',
+    '_octoprint._tcp.local': 'octoprint',
+    '_home-assistant._tcp.local': 'homeassistant',
+})
+
+function encodeName(name: string): Buffer {
+    const parts = name.split('.').filter(Boolean).map(label => { const b = Buffer.from(label, 'utf8'); return Buffer.concat([Buffer.from([b.length]), b]) })
+    return Buffer.concat([...parts, Buffer.from([0])])
+}
+
+export function buildMdnsQuery(names: string[]): Buffer {
+    const header = Buffer.alloc(12)
+    header.writeUInt16BE(names.length, 4)
+    const questions = names.map(name => Buffer.concat([encodeName(name), Buffer.from([0x00, 0x0c, 0x00, 0x01])]))
+    return Buffer.concat([header, ...questions])
+}
+
+function readName(buf: Buffer, offset: number, depth = 0): { name: string; next: number } {
+    const labels: string[] = []
+    let pos = offset
+    let next = -1
+    while (pos < buf.length) {
+        const len = buf[pos]
+        if (len === 0) { pos++; break }
+        if ((len & 0xc0) === 0xc0) {
+            if (depth > 8 || pos + 1 >= buf.length) throw new Error('mDNS: Zeigerschleife')
+            const pointer = ((len & 0x3f) << 8) | buf[pos + 1]
+            if (next < 0) next = pos + 2
+            const inner = readName(buf, pointer, depth + 1)
+            labels.push(inner.name)
+            pos = -1
+            break
+        }
+        labels.push(buf.toString('utf8', pos + 1, pos + 1 + len))
+        pos += 1 + len
+    }
+    return { name: labels.filter(Boolean).join('.'), next: next >= 0 ? next : pos }
+}
+
+export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string } }
+
+export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
+    if (buf.length < 12) return []
+    const qd = buf.readUInt16BE(4)
+    const total = buf.readUInt16BE(6) + buf.readUInt16BE(8) + buf.readUInt16BE(10)
+    let pos = 12
+    for (let i = 0; i < qd; i++) pos = readName(buf, pos).next + 4
+    const records: MdnsRecord[] = []
+    for (let i = 0; i < total && pos + 10 <= buf.length; i++) {
+        const { name, next } = readName(buf, pos)
+        const type = buf.readUInt16BE(next)
+        const rdlen = buf.readUInt16BE(next + 8)
+        const rd = next + 10
+        if (rd + rdlen > buf.length) break
+        const data: MdnsRecord['data'] = {}
+        if (type === 12) data.ptr = readName(buf, rd).name
+        else if (type === 33 && rdlen >= 7) { data.port = buf.readUInt16BE(rd + 4); data.target = readName(buf, rd + 6).name }
+        else if (type === 1 && rdlen === 4) data.a = [buf[rd], buf[rd + 1], buf[rd + 2], buf[rd + 3]].join('.')
+        records.push({ name, type, data })
+        pos = rd + rdlen
+    }
+    return records
+}
+
+export function mdnsCandidates(records: MdnsRecord[]): Array<{ type: DeviceType; host: string; port: number; name?: string }> {
+    const out: Array<{ type: DeviceType; host: string; port: number; name?: string }> = []
+    const addr = new Map(records.filter(r => r.type === 1 && r.data.a).map(r => [r.name.toLowerCase(), r.data.a!]))
+    for (const ptr of records.filter(r => r.type === 12 && r.data.ptr)) {
+        const type = MDNS_SERVICES[ptr.name.toLowerCase()]
+        if (!type) continue
+        const srv = records.find(r => r.type === 33 && r.name.toLowerCase() === ptr.data.ptr!.toLowerCase())
+        if (!srv?.data.target || !srv.data.port) continue
+        const host = addr.get(srv.data.target.toLowerCase())
+        if (host) out.push({ type, host, port: srv.data.port, name: ptr.data.ptr!.split('.')[0] })
+    }
+    return out
+}
+
+export function realMdnsBrowse(timeoutMs: number): Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>> {
+    return new Promise(resolve => {
+        const socket = createSocket({ type: 'udp4', reuseAddr: true })
+        const records: MdnsRecord[] = []
+        const finish = () => { try { socket.close() } catch { /* closed */ } resolve(mdnsCandidates(records)) }
+        const timer = setTimeout(finish, timeoutMs)
+        timer.unref?.()
+        socket.on('message', message => { try { records.push(...parseMdnsResponse(message)) } catch { /* ignore malformed */ } })
+        socket.on('error', () => { clearTimeout(timer); finish() })
+        socket.bind(0, () => {
+            socket.send(buildMdnsQuery(Object.keys(MDNS_SERVICES)), 5353, '224.0.0.251', error => { if (error) { clearTimeout(timer); finish() } })
+        })
+    })
+}

@@ -5020,6 +5020,141 @@
       ]
     },
     {
+      "module": "src/sensing/accounts.ts",
+      "imports": [
+        "./config.js",
+        "./event-bus.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/adapters/homeassistant.ts",
+      "imports": [
+        "../../tools/homeassistant.js",
+        "../config.js",
+        "../event-bus.js",
+        "./printer.js"
+      ]
+    },
+    {
+      "module": "src/sensing/adapters/imap-readonly.ts",
+      "imports": [
+        "node:crypto",
+        "node:net",
+        "node:stream",
+        "node:tls"
+      ]
+    },
+    {
+      "module": "src/sensing/adapters/mail.ts",
+      "imports": [
+        "../config.js",
+        "../event-bus.js",
+        "./imap-readonly.js",
+        "./printer.js"
+      ]
+    },
+    {
+      "module": "src/sensing/adapters/printer.ts",
+      "imports": [
+        "../../tools/3dprinter.js",
+        "../config.js",
+        "../event-bus.js"
+      ]
+    },
+    {
+      "module": "src/sensing/adapters/system.ts",
+      "imports": [
+        "../event-bus.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/config.ts",
+      "imports": []
+    },
+    {
+      "module": "src/sensing/device-registry.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./ports.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/discovery.ts",
+      "imports": [
+        "./device-registry.js",
+        "./net-scope.js",
+        "node:dgram",
+        "node:net"
+      ]
+    },
+    {
+      "module": "src/sensing/event-bus.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./notify-policy.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/net-scope.ts",
+      "imports": [
+        "../resilience/ssrf-guard.js",
+        "node:net",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/sensing/notify-policy.ts",
+      "imports": [
+        "../core/proactive.js",
+        "./ports.js"
+      ]
+    },
+    {
+      "module": "src/sensing/ports.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/quiet-hours.ts",
+      "imports": [
+        "./notify-policy.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/runtime.ts",
+      "imports": [
+        "./accounts.js",
+        "./adapters/homeassistant.js",
+        "./adapters/mail.js",
+        "./adapters/printer.js",
+        "./adapters/system.js",
+        "./config.js",
+        "./device-registry.js",
+        "./discovery.js",
+        "./event-bus.js",
+        "./ports.js",
+        "./quiet-hours.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/server/rest-api.ts",
       "imports": [
         "node:crypto",
