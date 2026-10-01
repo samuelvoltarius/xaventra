@@ -16,7 +16,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { execFile } from 'node:child_process'
+import { sshNodeRun } from '../mesh/node-ssh.js'
 import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -163,26 +163,13 @@ export function isSafeNodeName(name: string): boolean {
     return typeof name === 'string' && NODE_NAME.test(name) && !name.includes('..')
 }
 
-export function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
-    return new Promise((resolve, reject) => {
-        if (!isSafeSshTarget(host)) {
-            reject(new Error(`SSH target rejected (expected user@host): ${JSON.stringify(String(host).slice(0, 80))}`))
-            return
-        }
-        const args = [
-            '-o', 'StrictHostKeyChecking=accept-new',
-            '-o', 'ConnectTimeout=5',
-            '-o', 'BatchMode=yes',
-            '--', host, command,
-        ]
-        execFile('ssh', args, { timeout: timeoutMs }, (error, stdout) => {
-            if (error) {
-                reject(new Error(`SSH to ${host} failed: ${error.message}`))
-                return
-            }
-            resolve(String(stdout).trim())
-        })
-    })
+/** 2.82.0: through the one SSH runner (mesh/node-ssh.ts) — shared reachability with AIScan and NodeIntelligence. */
+export async function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
+    if (!isSafeSshTarget(host)) throw new Error(`SSH target rejected (expected user@host): ${JSON.stringify(String(host).slice(0, 80))}`)
+    // L21 is the one that measures reachability; the others reuse its result.
+    const outcome = await sshNodeRun(host, command, { timeoutMs, connectTimeoutS: 5, measure: true })
+    if (!outcome.ok) throw new Error(`SSH to ${host} failed: ${outcome.error}`)
+    return outcome.stdout
 }
 
 // ============================================

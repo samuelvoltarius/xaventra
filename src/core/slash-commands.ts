@@ -876,13 +876,15 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // KI-Endpunkte (grouped by host:port) + the real node list from the capability graph (2.82.0)
             let meshSection = ''
             try {
-                let graphNodes: Array<{ id: string; status: 'online' | 'offline' | 'busy' | 'unknown' }> = []
+                // 2.82.0: endpoints and nodes from the capability graph only; cloud models are not nodes.
+                let graphNodes: import('../mesh/capability-graph.js').CapabilityGraphNode[] = []
                 try {
                     const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
                     graphNodes = getCapabilityGraph().getSnapshot().nodes
                 } catch { /* graph optional */ }
                 const { formatEndpointSection } = await import('./status-endpoints.js')
-                meshSection = formatEndpointSection(availableLLMs, configModel, graphNodes)
+                const cloudModels = availableLLMs.filter(entry => !entry.local).map(entry => entry.model)
+                meshSection = formatEndpointSection(graphNodes, configModel, cloudModels)
             } catch { /* mesh info optional */ }
 
             // Phase 7 Wächter: compact lines, owner only (infrastructure details).

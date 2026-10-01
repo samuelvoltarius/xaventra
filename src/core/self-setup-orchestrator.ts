@@ -190,16 +190,13 @@ function actionId(type: string, target: string): string {
 }
 
 async function probeOllama(endpoint: string): Promise<{ online: boolean; latencyMs?: number; models: string[] }> {
-    const start = Date.now()
-    try {
-        const resp = await fetch(`${endpoint.replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(2500) })
-        if (!resp.ok) return { online: false, models: [] }
-        const data = await resp.json() as any
-        const models = Array.isArray(data.models) ? data.models.map((m: any) => String(m.name || m.model)).filter(Boolean) : []
-        return { online: true, latencyMs: Date.now() - start, models }
-    } catch {
-        return { online: false, models: [] }
-    }
+    // The one shared KI-port probe (mesh/discovery-probe.ts, 2.82.0): AIScan's answer is reused.
+    const { probeAiJson } = await import('../mesh/discovery-probe.js')
+    const result = await probeAiJson(endpoint, '/api/tags', 2500)
+    if (!result.ok) return { online: false, models: [] }
+    const data = result.body ?? {}
+    const models = Array.isArray(data.models) ? data.models.map((m: any) => String(m.name || m.model)).filter(Boolean) : []
+    return { online: true, latencyMs: result.ms ?? undefined, models }
 }
 
 function capabilitiesFromNode(node: any, ollamaModels: string[]): string[] {

@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { isIP } from 'node:net'
-import { execFile } from 'node:child_process'
+import { sshNodeRun } from './node-ssh.js'
 
 const INTEL_DIR = join(process.cwd(), '.nova-data', 'node-intel')
 
@@ -77,29 +77,16 @@ export function playbookFileName(name: string): string {
     return `${safe || '_'}.json`
 }
 
-function sshTry(host: string, cmd: string, timeoutMs = 5000): Promise<string | null> {
-    return new Promise(resolve => {
-        if (!isSafeSshTarget(host)) {
-            resolve(null)
-            return
-        }
-        // BatchMode=yes intentionally disables password prompts.
-        // Key-based SSH required for background discovery — add the node's public key
-        // to ~/.ssh/authorized_keys on the target host to enable auto-discovery.
-        // No local shell; unknown host keys are pinned on first use and a changed key is refused.
-        execFile('ssh', ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=4', '-o', 'BatchMode=yes', '--', host, cmd], { timeout: timeoutMs }, (err, stdout) => {
-            if (err) {
-                const msg = err.message || ''
-                // Surface auth failures clearly so they don't look like connectivity issues
-                if (msg.includes('Permission denied') || msg.includes('publickey') || msg.includes('authentication')) {
-                    console.debug(`[NodeIntel] 🔑 ${host}: Key-based SSH required for background discovery (BatchMode=yes — password auth disabled). Add SSH key to authorized_keys on target host.`)
-                }
-                resolve(null)
-            } else {
-                resolve(stdout.trim())
-            }
-        })
-    })
+async function sshTry(host: string, cmd: string, timeoutMs = 5000): Promise<string | null> {
+    // 2.82.0: the one SSH runner (mesh/node-ssh.ts): an unreachable node is skipped
+    // for everyone instead of three timeouts per round; same answers are shared.
+    if (!isSafeSshTarget(host)) return null
+    const outcome = await sshNodeRun(host, cmd, { timeoutMs, connectTimeoutS: 4, cacheMs: 10 * 60_000 })
+    if (outcome.ok) return outcome.stdout
+    if (/Permission denied|publickey|authentication/i.test(outcome.error)) {
+        console.debug(`[NodeIntel] 🔑 ${host}: Key-based SSH required for background discovery (BatchMode=yes — password auth disabled). Add SSH key to authorized_keys on target host.`)
+    }
+    return null
 }
 
 // ============================================

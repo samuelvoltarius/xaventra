@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DiscoveryProbeClient, resetAiProbeClient } from '../mesh/discovery-probe.js'
 import { LocalLLM, selectLocalChatModel } from './local-llm.js'
 
 describe('LocalLLM tool calling', () => {
+    // 2.82.0: model lists go through the one shared KI-port probe; each test starts with a fresh one.
+    beforeEach(() => resetAiProbeClient(new DiscoveryProbeClient(join(mkdtempSync(join(tmpdir(), 'probe-')), 'backoff.json'))))
     afterEach(() => vi.unstubAllGlobals())
 
     it('passes tools to Ollama and returns normalized tool calls', async () => {

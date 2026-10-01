@@ -26,6 +26,11 @@ describe('polite service discovery', () => {
         expect(readFileSync(path, 'utf8')).not.toContain('private shop page')
         now += 5 * 60_000
         expect(await restarted.probe(endpoint)).toBe('true')
+        // 2.82.0: within 30 s the answer is shared (one request for every module) ...
+        expect(await restarted.probe(endpoint)).toBe('true')
+        expect(request).toHaveBeenCalledTimes(2)
+        // ... afterwards the port is asked again.
+        now += 31_000
         expect(await restarted.probe(endpoint)).toBe('true')
         expect(request).toHaveBeenCalledTimes(3)
         expect(JSON.parse(readFileSync(path, 'utf8')).entries).toEqual({})

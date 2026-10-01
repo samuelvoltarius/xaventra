@@ -10,6 +10,7 @@
  */
 
 import { execSync } from 'node:child_process'
+import { locateProgram } from '../startup/environment-scanner.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { platform, homedir, hostname, arch, cpus, totalmem, freemem } from 'node:os'
@@ -97,13 +98,9 @@ function saveCachedEnv(env: NovaEnvironment): void {
 // Tool Detection Helpers
 // ============================================
 
+/** 2.82.0: the one program search is the EnvScanner (startup/environment-scanner.ts). */
 function hasCommand(cmd: string): boolean {
-    try {
-        const os = platform()
-        const checkCmd = os === 'win32' ? `where ${cmd} 2>nul` : `which ${cmd} 2>/dev/null`
-        execSync(checkCmd, { encoding: 'utf-8', timeout: 3000, windowsHide: true, stdio: 'pipe' })
-        return true
-    } catch { return false }
+    return Boolean(locateProgram(cmd))
 }
 
 function getShell(): string {

@@ -21,6 +21,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { fetchModelList } from '../llm/model-list-cache.js'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 
 
@@ -233,9 +234,9 @@ function findBestOpenAI(available: string[], role: ModelRole): string | null {
 
 async function discoverOpenAIModels(apiKey: string): Promise<string[]> {
     try {
-        const resp = await fetch('https://api.openai.com/v1/models', {
+        const resp = await fetchModelList('https://api.openai.com/v1/models', {
             headers: { 'Authorization': `Bearer ${apiKey}` },
-            signal: AbortSignal.timeout(5000),
+            timeoutMs: 5000,
         })
         if (!resp.ok) return []
         const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -290,9 +291,9 @@ async function detectCapabilities(): Promise<void> {
                         let models = p.models || []
                         if (models.length === 0) {
                             try {
-                                const res = await fetch(`${p.baseUrl}/models`, {
+                                const res = await fetchModelList(`${p.baseUrl}/models`, {
                                     headers: { 'Authorization': `Bearer ${p.apiKey}` },
-                                    signal: AbortSignal.timeout(5000),
+                                    timeoutMs: 5000,
                                 })
                                 if (res.ok) {
                                     const data = await res.json() as { data?: Array<{ id: string }> }
@@ -314,15 +315,10 @@ async function detectCapabilities(): Promise<void> {
                 s => s.status === 'running' && (s.provider === 'ollama' || s.name === 'ollama')
             )
             await Promise.all(runningOllamaServices.map(async svc => {
-                const start = Date.now()
-                try {
-                    const res = await fetch(`${svc.endpoint}/api/tags`, {
-                        signal: AbortSignal.timeout(3000),
-                    })
-                    endpointLatency.set(svc.endpoint, res.ok ? Date.now() - start : Infinity)
-                } catch {
-                    endpointLatency.set(svc.endpoint, Infinity)
-                }
+                // The one shared KI-port probe (mesh/discovery-probe.ts, 2.82.0): AIScan's answer is reused.
+                const { probeAiJson } = await import('../mesh/discovery-probe.js')
+                const probe = await probeAiJson(svc.endpoint, '/api/tags', 3000)
+                endpointLatency.set(svc.endpoint, probe.ok ? (probe.ms ?? 0) : Infinity)
                 const lat = endpointLatency.get(svc.endpoint)!
                 if (lat === Infinity) {
                     console.log(`[ModelResolver] ⚠ ${svc.endpoint} dead — excluded from routing`)
@@ -737,9 +733,9 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
     // Test the provider first — quick model list fetch
     let modelsFound: string[] = provider.models || []
     try {
-        const res = await fetch(`${provider.baseUrl}/models`, {
+        const res = await fetchModelList(`${provider.baseUrl}/models`, {
             headers: { 'Authorization': `Bearer ${provider.apiKey}` },
-            signal: AbortSignal.timeout(8000),
+            timeoutMs: 8000,
         })
         if (res.ok) {
             const data = await res.json() as { data?: Array<{ id: string }> }

@@ -16,6 +16,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { fetchModelList } from './model-list-cache.js'
 
 
 // ============================================
@@ -186,10 +187,7 @@ export class ProviderRegistry {
         try {
             const { provider: profile, apiKey } = enabled[0]
             const headers: Record<string, string> = { 'Authorization': profile.authHeader(apiKey) }
-            const res = await fetch(`${profile.baseUrl}/models`, {
-                headers,
-                signal: AbortSignal.timeout(3000),
-            })
+            const res = await fetchModelList(`${profile.baseUrl}/models`, { headers, timeoutMs: 3000 })
             return res.ok
         } catch {
             return false
@@ -220,10 +218,8 @@ export class ProviderRegistry {
                     headers[k] = v
                 }
 
-                const res = await fetch(url, {
-                    headers,
-                    signal: AbortSignal.timeout(5000),
-                })
+                // One shared, cached query per provider list (llm/model-list-cache.ts, 2.82.0).
+                const res = await fetchModelList(url, { headers, timeoutMs: 5000 })
 
                 if (res.ok) {
                     const data = await res.json() as any

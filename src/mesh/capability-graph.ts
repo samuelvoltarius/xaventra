@@ -5,6 +5,7 @@ import type { AIScanResult, DiscoveredAIService } from './ai-scanner.js'
 import type { MeshNode } from './mesh-registry.js'
 import { getAllModelStats } from '../llm/model-perf-db.js'
 import { getOutcomeLedger } from '../core/outcome-ledger.js'
+import { readProbeResults } from '../llm/capability-probe.js'
 
 export interface CapabilityRuntime {
     id: string
@@ -301,22 +302,8 @@ export class CapabilityGraph {
 
     private enrichMeasuredPerformance(nodes: CapabilityGraphNode[]): CapabilityGraphNode[] {
         try {
-            const file = join(process.cwd(), '.nova-data', 'model-capabilities.json')
-            if (!existsSync(file)) return nodes
-            const cache = JSON.parse(readFileSync(file, 'utf8')) as {
-                results?: Record<string, {
-                    model?: string
-                    endpoint?: string
-                    probeTime?: string
-                    online?: boolean
-                    avgLatencyMs?: number
-                    tokensPerSecond?: number
-                    supportsTools?: boolean
-                    supportsVision?: boolean
-                    roles?: string[]
-                }>
-            }
-            const results = Object.values(cache.results || {})
+            // 2.82.0: the one reader of the probe cache (llm/capability-probe.ts).
+            const results = readProbeResults() as Array<{ model?: string; endpoint?: string; probeTime?: string; online?: boolean; avgLatencyMs?: number; tokensPerSecond?: number; supportsTools?: boolean; supportsVision?: boolean; roles?: string[] }>
             const perfByModel = new Map(getAllModelStats().map(item => [item.model, item]))
             const outcomeRuns = getOutcomeLedger().listRuns(500).filter(run =>
                 run.channel !== 'benchmark'

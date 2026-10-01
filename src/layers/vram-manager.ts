@@ -147,14 +147,12 @@ async function detectVRAM(host: string): Promise<number> {
 
     // Priority 2: nvidia-smi (NVIDIA GPUs — Windows + Linux)
     try {
-        const output = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', {
-            timeout: 5000,
-            encoding: 'utf-8',
-        }).trim()
-        const firstGpu = output.split('\n')[0]
-        const separator = firstGpu.lastIndexOf(',')
-        const gpuName = separator >= 0 ? firstGpu.slice(0, separator).trim() : ''
-        const mbTotal = parseInt(separator >= 0 ? firstGpu.slice(separator + 1) : firstGpu)
+        // The one GPU source (doctor/gpu-runtime.ts), read once per process.
+        const { nvidiaStaticInfo } = await import('../doctor/nvidia-smi.js')
+        const nvidia = nvidiaStaticInfo()
+        if (!nvidia) throw new Error('no NVIDIA GPU')
+        const gpuName = nvidia.name
+        const mbTotal = nvidia.memoryTotalMb ?? 0
         if (mbTotal > 0) {
             console.log(`[VRAM] nvidia-smi detected: ${mbTotal}MB (NVIDIA)`)
             return mbTotal * 1e6

@@ -428,6 +428,23 @@ export function modelSupportsTools(modelId: string): boolean {
 }
 
 /**
+ * Every probe result from the cache file (online or not). 2.82.0: the one
+ * reader of `.nova-data/model-capabilities.json` — the file has `results`;
+ * llm-factory read a non-existent `models` key and never saw a probe.
+ */
+export function readProbeResults(): ModelCapabilityProbeResult[] {
+    // Fresh from disk like the former readers (another process or a test may have written it).
+    try {
+        const file = join(process.cwd(), '.nova-data', 'model-capabilities.json')
+        if (existsSync(file)) {
+            const data = JSON.parse(readFileSync(file, 'utf-8')) as ProbeCache
+            if (data && typeof data.results === 'object' && data.results) return Object.values(data.results)
+        }
+    } catch { /* corrupt: fall back to memory */ }
+    return Object.values(loadCache().results)
+}
+
+/**
  * Returns all currently online models from probe cache.
  * Used by model-resolver to prefer known-good endpoints.
  */
