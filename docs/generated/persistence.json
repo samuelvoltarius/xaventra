@@ -718,6 +718,18 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/planner/index.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/planner/reminder-planner.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/planner/runtime.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/process/daemon-control.test.ts",
       "path": ".nova-data"
     },

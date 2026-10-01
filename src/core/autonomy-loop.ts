@@ -42,6 +42,10 @@ export interface AutonomyConfig {
         configPath: string
         journalDir: string
     }
+    /** Phase 1: 'planner' = the planner job runs the probes and raises the
+     * thoughts; the loop then neither probes nor alarms (self-heal still reads
+     * the journal). Default 'loop' (unchanged behaviour). */
+    nightwatchRunner?: 'loop' | 'planner'
 }
 
 export interface CheckResult {
@@ -854,6 +858,7 @@ function buildProactivePrompt(ctx: AutonomyContext): string {
 let nightwatchSource: { key: string; run: () => Promise<CheckResult[]> } | null = null
 
 async function checkNightwatch(): Promise<CheckResult[]> {
+    if (config.nightwatchRunner === 'planner') return []
     const paths = config.nightwatch ?? {
         configPath: join(DATA_DIR, 'nightwatch.json'),
         journalDir: join(DATA_DIR, 'nightwatch'),

@@ -1882,6 +1882,15 @@ async function startDaemon() {
         const nightwatchCfg = autonomyCfg.nightwatch || {}
         const nightwatchEnabled = nightwatchCfg.enabled === true
 
+        // Phase 1 Planer (CL-09): with autonomy.planner.nightwatch=true the
+        // planner job owns the Nachtwache probes and alarms (as thoughts).
+        let plannerOwnsNightwatch = false
+        try {
+            const { parsePlannerSettings } = await import('./planner/runtime.js')
+            const plannerSettings = parsePlannerSettings(autonomyCfg)
+            plannerOwnsNightwatch = nightwatchEnabled && plannerSettings.enabled && plannerSettings.nightwatch
+        } catch (err) { console.debug(`[Nova] Planer config skipped: ${err}`) }
+
         // Stufe 3: Selbstheilung stays off until autonomy.selfHeal.enabled=true.
         try {
             const { setSelfHealConfig } = await import('./doctor/self-heal-runtime.js')
@@ -1895,6 +1904,7 @@ async function startDaemon() {
             maxNotificationsPerHour: autonomyCfg.selfThinkMaxPerHour || 3,
             socialCheckIns: autonomyCfg.socialCheckIns === true,
             checks: { nightwatch: nightwatchEnabled } as any,
+            nightwatchRunner: plannerOwnsNightwatch ? 'planner' : 'loop',
             ...(nightwatchEnabled ? {
                 nightwatch: {
                     configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
@@ -1902,6 +1912,22 @@ async function startDaemon() {
                 },
             } : {}),
         })
+
+        // Phase 1 Planer: job list, thoughts, morning/evening report. Off until
+        // autonomy.planner.enabled / autonomy.briefing.enabled; with both off it
+        // only hands planner reminders back to reminders.json (Rückweg).
+        try {
+            const { startPlannerRuntime } = await import('./planner/runtime.js')
+            await startPlannerRuntime(autonomyCfg, {
+                nightwatch: {
+                    enabled: nightwatchEnabled,
+                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
+                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
+                },
+            })
+        } catch (err) {
+            console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
+        }
 
         console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)
 

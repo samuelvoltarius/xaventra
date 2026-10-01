@@ -4607,6 +4607,74 @@
       ]
     },
     {
+      "module": "src/planner/briefing.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../doctor/self-heal.js",
+        "./delivery-port.js",
+        "./planner.js",
+        "./thoughts.js",
+        "./time.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/planner/delivery-port.ts",
+      "imports": [
+        "../mesh/fence.js",
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/planner/index.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./delivery-port.js",
+        "./planner.js",
+        "./runtime.js",
+        "./thoughts.js"
+      ]
+    },
+    {
+      "module": "src/planner/planner.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./delivery-port.js",
+        "./thoughts.js",
+        "./time.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/planner/runtime.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./briefing.js",
+        "./delivery-port.js",
+        "./planner.js",
+        "./thoughts.js",
+        "./time.js"
+      ]
+    },
+    {
+      "module": "src/planner/thoughts.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./delivery-port.js",
+        "./time.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/planner/time.ts",
+      "imports": []
+    },
+    {
       "module": "src/plugins/discovery.ts",
       "imports": [
         "./manifest.js",
