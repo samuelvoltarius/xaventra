@@ -32,6 +32,9 @@ export interface NodeConfig {
     role?: 'main' | 'edge' | 'cloud'
     runtime?: string
     services?: Record<string, string>
+    /** Set when the entry was derived from a mesh registry node. */
+    meshNodeId?: string
+    tailscaleIp?: string
 }
 
 export interface NodeHealthSnapshot {
@@ -123,6 +126,36 @@ export function sshExec(host: string, command: string, timeoutMs = 10000): Promi
             }
             resolve(String(stdout).trim())
         })
+    })
+}
+
+// ============================================
+// Mesh coverage (Hotfix 2.80.1)
+// ============================================
+
+/** A config node that is also a mesh node reports over the signed mesh
+ * heartbeat (Pass 1). It must not be SSH-probed: the Main deliberately has
+ * no SSH key for mesh workers, so an SSH failure says nothing about them. */
+export function configNodeCoveredByMesh(
+    node: Pick<NodeConfig, 'name' | 'host'> & { meshNodeId?: string; tailscaleIp?: string },
+    meshNodes: Array<{ node_id?: string; hostname?: string; ip?: string }>,
+    updateNodes: Array<{ nodeId?: string; name?: string; host?: string }> = [],
+): boolean {
+    const name = String(node.name || '').trim().toLowerCase()
+    const address = String(node.host || '').split('@').pop()?.split(':')[0]?.toLowerCase() || ''
+    const addresses = new Set([address, String(node.tailscaleIp || '').toLowerCase()].filter(Boolean))
+    const mappedIds = new Set(updateNodes
+        .filter(entry => entry?.nodeId && ((name && String(entry.name || '').toLowerCase() === name) || (entry.host && addresses.has(String(entry.host).toLowerCase()))))
+        .map(entry => String(entry.nodeId)))
+    return meshNodes.some(mesh => {
+        const id = String(mesh.node_id || '').toLowerCase()
+        const host = String(mesh.hostname || '').toLowerCase()
+        if (!id && !host) return false
+        if (node.meshNodeId && id === node.meshNodeId.toLowerCase()) return true
+        if (mappedIds.has(String(mesh.node_id || ''))) return true
+        if (mesh.ip && addresses.has(String(mesh.ip).toLowerCase())) return true
+        if (!name) return false
+        return id === name || host === name || host.split('.')[0] === name || id.endsWith(`-${name}`)
     })
 }
 
@@ -388,6 +421,7 @@ class NodeHealthMonitor {
                         role: (finalConfigMatch?.role || 'edge') as 'edge' | 'main',
                         runtime: finalConfigMatch?.runtime || (n as any).runtime,
                         services: finalConfigMatch?.services,
+                        meshNodeId: n.node_id,
                     }
                 })
                 console.log(`[L21] 🌐 ${remoteNodes.length} remote Nodes aus Mesh-Registry geladen (${meshNodes.length - remoteNodes.length} self/local übersprungen)`)
@@ -439,11 +473,13 @@ class NodeHealthMonitor {
     async checkAllNodes(): Promise<NodeHealthSnapshot[]> {
         const results: NodeHealthSnapshot[] = []
         const coveredHosts = new Set<string>()
+        let meshNodes: Array<{ node_id?: string; hostname?: string; ip?: string }> = []
 
         // ── Pass 1: Nodes that self-register via mesh heartbeat ──
         try {
             const { discoverNodes } = await import('../mesh/mesh-registry.js')
             const allNodes = await discoverNodes()
+            meshNodes = allNodes
             const selfHostname = (await import('node:os')).hostname().toLowerCase()
 
             for (const n of allNodes) {
@@ -500,7 +536,13 @@ class NodeHealthMonitor {
 
         // ── Pass 2: Config nodes not covered by mesh (Pi5, Jetson, Macs without Nova) ──
         // These are SSH-probed directly — Nova discovers their OS/commands herself
+        let updateNodes: Array<{ nodeId?: string; name?: string; host?: string }> = []
+        try {
+            const configPath = resolveConfigPath()
+            if (existsSync(configPath)) updateNodes = JSON.parse(readFileSync(configPath, 'utf-8'))?.mesh?.update?.nodes || []
+        } catch { /* optional mapping */ }
         const sshNodes = this.nodes.filter(n => {
+            if (configNodeCoveredByMesh(n, meshNodes, Array.isArray(updateNodes) ? updateNodes : [])) return false
             if ((n as any).enabled === false) return false       // explicitly disabled
             if (!n.host || !n.host.includes('@')) return false   // needs user@host
             if (n.host === 'localhost' || n.host === '127.0.0.1') return false
