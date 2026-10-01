@@ -1910,7 +1910,7 @@ async function startDaemon() {
             setSelfHealConfig(autonomyCfg.selfHeal)
         } catch (err) { console.debug(`[Nova] Selbstheilung config skipped: ${err}`) }
 
-        // Phase 2 Wahrnehmen: off until autonomy.sensing.enabled=true; main only.
+        // Phase 2 Wahrnehmen: P8 on at the Main by default (autonomy.sensing.enabled=false = off); main only.
         // Output goes to the sensing port (JSONL by default), never to a channel.
         try {
             const { setSensingConfig, startSensing, setSensingSinks } = await import('./sensing/runtime.js')
@@ -1944,9 +1944,9 @@ async function startDaemon() {
             } : {}),
         })
 
-        // Phase 1 Planer: job list, thoughts, morning/evening report. Off until
-        // autonomy.planner.enabled / autonomy.briefing.enabled; with both off it
-        // only hands planner reminders back to reminders.json (Rückweg).
+        // Phase 1 Planer: job list, thoughts, morning/evening report. P8: on at
+        // the Main by default; with autonomy.planner.enabled=false it only hands
+        // planner reminders back to reminders.json (Rückweg).
         try {
             const { startPlannerRuntime } = await import('./planner/runtime.js')
             await startPlannerRuntime(autonomyCfg, {
@@ -1960,8 +1960,8 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
         }
 
-        // Phase 6a Release-Knopf: off until autonomy.releaseButton.enabled=true;
-        // Main only, GitHub read-only until the owner presses Ja on the card.
+        // Phase 6a Release-Knopf: P8 on at the Main by default (false = off);
+        // GitHub read-only until the owner presses Ja; without token nothing is dispatched.
         try {
             const { startReleaseButton } = await import('./core/release-button.js')
             const releaseButton = startReleaseButton(config)
@@ -1969,8 +1969,8 @@ async function startDaemon() {
         } catch (err) { console.debug(`[Nova] Release-Knopf skipped: ${err}`) }
 
         // Phase 6e: Delegation (autonomy.delegation.enabled) and proactive
-        // reminders from sources (autonomy.autoReminders.enabled). Both off by
-        // default, both Main only.
+        // reminders from sources (autonomy.autoReminders.enabled). P8: both on
+        // at the Main by default (false = off), never on a worker.
         try {
             const nodeOnly = process.env.NOVA_NODE_ONLY === 'true'
             const { startDelegationRuntime, checkExpectation } = await import('./core/delegation.js')
@@ -1989,8 +1989,8 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Delegation/Auto-Erinnerungen nicht verfügbar: ${err}`)
         }
 
-        // Phase 6b: Verantwortungen + Missionen. Off until
-        // autonomy.responsibilities.enabled=true; Main only (never NOVA_NODE_ONLY).
+        // Phase 6b: Verantwortungen + Missionen. P8: on at the Main by default
+        // (autonomy.responsibilities.enabled=false = off); never NOVA_NODE_ONLY.
         try {
             const { setResponsibilityConfig, startResponsibilities } = await import('./core/responsibility-runtime.js')
             setResponsibilityConfig(autonomyCfg, {
@@ -2070,7 +2070,7 @@ async function startDaemon() {
             const { hasGlobalAutonomyAuthority } = await import('./core/autonomy-authority.js')
             const { setClaudeHandoffConfig } = await import('./doctor/claude-handoff.js')
             setClaudeHandoffConfig((config as any).autonomy?.claudeHandoff)
-            // Phase 3 „Denken": everything off until autonomy.thinking.enabled + part switch.
+            // Phase 3 „Denken": P8 on at the Main by default (master or part switch false = off; GPU/night limits stay).
             try {
                 const { setThinkingConfig, setIdeaFormulator, createLlmFormulator, setThoughtSink } = await import('./thinking/thinking-runtime.js')
                 setThinkingConfig((config as any).autonomy?.thinking)
@@ -2078,7 +2078,7 @@ async function startDaemon() {
                 setThoughtSink(createThinkingThoughtSink())
                 if (state.llm) setIdeaFormulator(createLlmFormulator({ complete: (messages, options) => (state.llm as any).complete(messages, options) }))
             } catch (err) { console.debug(`[Xaventra] Denken config skipped: ${err}`) }
-            // Phase 5b Software-Scout: proposals off until autonomy.softwareScout.enabled === true (/software always reads).
+            // Phase 5b Software-Scout: P8 proposals on at the Main by default (autonomy.softwareScout.enabled=false = off).
             try {
                 const { setSoftwareScoutConfig } = await import('./install/software-scout.js')
                 setSoftwareScoutConfig((config as any).autonomy?.softwareScout)

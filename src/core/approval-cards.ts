@@ -26,6 +26,12 @@
  *     -> { ok: true, card, created } | { ok: false, reason }
  *   The Main delivers new cards to Telegram (approval-card-sources.ts,
  *   `deliverPendingCards`, runs every minute); callers never send themselves.
+ *   P8 „weniger Einzelfragen“: a card that is not time-critical (internal,
+ *   valid >= 2 h, not `wichtigkeit: 'hoch'`, no security/outage wording) gets
+ *   `zustellung: 'bericht'` and — while the morning/evening report is on —
+ *   waits for the next report, which lists it and releases it
+ *   (`releaseBundledCards`). Physical/outward/infra cards, security and
+ *   outages always go out at once (`zustellung: 'sofort'`).
  *   listApprovalCards({ status?, limit? }) · noteThought({ quelle, titel, status, text? }) · readThoughts()
  */
 import { randomBytes } from 'node:crypto'
@@ -68,7 +74,13 @@ export interface ApprovalCard {
     result?: { ok: boolean; message: string }
     messages: Array<{ chatId: string; messageId: number }>
     deliveredAt?: string
+    /** P8: 'bericht' = bundled into the next morning/evening report; 'sofort' (or missing) = at once. */
+    zustellung?: CardDelivery
+    /** set when a report listed the bundled card; the card loop then delivers it. */
+    freigegebenAt?: string
 }
+
+export type CardDelivery = 'sofort' | 'bericht'
 
 export interface NewCardInput {
     art: string
@@ -84,6 +96,8 @@ export interface NewCardInput {
     node?: string
     quelle?: string
     dedupeKey?: string
+    /** 'hoch' = time-critical, always delivered at once (never bundled). */
+    wichtigkeit?: 'hoch' | 'normal'
 }
 
 export interface CardExecutionResult { ok: boolean; message: string }
@@ -137,6 +151,20 @@ const PHYSICAL_KINDS = KARTEN_PHYSISCH
 const EXTERNAL_KINDS = KARTEN_EXTERN
 
 const IMPACT_RANK: Record<CardImpact, number> = { intern: 0, infra: 1, physisch: 2, extern: 3 }
+
+/** Less than this left → time-critical, never bundled. */
+export const BUNDLE_MIN_REMAINING_MS = 2 * 60 * 60_000
+/** Security and outages always ask at once. */
+const URGENT_TEXT = /sicherheit|security|ausfall|outage|offline|nicht erreichbar|unreachable|\bdown\b|alarm|kritisch|critical|notfall|einbruch|intrusion|angriff|attack|leck|leak/i
+
+/** P8: is this card time-critical (deliver at once) or can it wait for the next report? */
+export function cardDeliveryFor(input: { wirkung: CardImpact; ttlMs: number; wichtigkeit?: 'hoch' | 'normal'; text: string }): CardDelivery {
+    if (input.wirkung !== 'intern') return 'sofort'
+    if (input.wichtigkeit === 'hoch') return 'sofort'
+    if (input.ttlMs < BUNDLE_MIN_REMAINING_MS) return 'sofort'
+    if (URGENT_TEXT.test(input.text)) return 'sofort'
+    return 'bericht'
+}
 
 function classifyImpact(art: string, kind: string, declared?: CardImpact, executorImpact?: CardImpact): CardImpact {
     let impact: CardImpact = 'intern'
@@ -294,7 +322,8 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(dedupeKey ? { dedupeKey } : {}),
         createdAt: iso(now), expiresAt: iso(now + ttl), status: 'offen' as const, usedTokens: [], messages: [],
     }
-    const card: ApprovalCard = { ...base, buttons: issueButtons(base) }
+    const zustellung = cardDeliveryFor({ wirkung, ttlMs: ttl, wichtigkeit: input.wichtigkeit, text: `${art} ${kind} ${base.quelle} ${titel} ${base.beleg}` })
+    const card: ApprovalCard = { ...base, zustellung, buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }
@@ -459,6 +488,30 @@ export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: A
     if (changed) saveCards(cards, opts)
     for (const card of expired) noteThought({ quelle: card.quelle, titel: card.titel, status: 'abgelaufen' }, opts)
     return { expired, resurfaced, settled }
+}
+
+/** P8: open, not yet delivered cards that wait for the next report (still >= 2 h valid). */
+export function bundledCards(opts: CardStoreOptions = {}): ApprovalCard[] {
+    const now = nowOf(opts)
+    return loadCards(opts).filter(card => card.status === 'offen' && !card.deliveredAt && card.zustellung === 'bericht' && !card.freigegebenAt
+        && Date.parse(card.expiresAt) - now >= BUNDLE_MIN_REMAINING_MS)
+}
+
+/** true when the card loop may deliver this card now (bundling only while a report is active). */
+export function isCardDue(card: ApprovalCard, options: { bundleIntoReport?: boolean; now?: number } = {}): boolean {
+    if (!options.bundleIntoReport || card.zustellung !== 'bericht' || card.freigegebenAt) return true
+    // A bundled card that would expire before it could be answered becomes time-critical.
+    return Date.parse(card.expiresAt) - (options.now ?? Date.now()) < BUNDLE_MIN_REMAINING_MS
+}
+
+/** Called after a report listed the bundled cards: the card loop delivers them right after. */
+export function releaseBundledCards(opts: CardStoreOptions = {}): number {
+    const ids = new Set(bundledCards(opts).map(card => card.id))
+    if (!ids.size) return 0
+    const at = iso(nowOf(opts))
+    const cards = loadCards(opts).map(card => ids.has(card.id) ? { ...card, freigegebenAt: at } : card)
+    saveCards(cards, opts)
+    return ids.size
 }
 
 /** Remember where a card was delivered (so the press can edit all copies). */

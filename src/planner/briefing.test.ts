@@ -74,12 +74,12 @@ describe('Morgen-/Abendbericht', () => {
         expect(briefing.text).toMatch(/Nichts Neues/)
     })
 
-    it('ist ohne Config-Schalter aus und läuft mit Schalter genau einmal zur eingestellten Zeit über den Port', async () => {
+    it('ist mit briefing.enabled=false aus (P8: ohne Config an) und läuft mit Schalter genau einmal zur eingestellten Zeit über den Port', async () => {
         const sent: PlannerOutgoing[] = []
         const port: DeliveryPort = { name: 'test-port', deliver: async msg => { sent.push(msg); return { status: 'zugestellt' } } }
         t = Date.parse('2026-10-01T16:00:00.000Z') // 18:00 Vienna
 
-        const off = await startPlannerRuntime({ planner: { enabled: true } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
+        const off = await startPlannerRuntime({ planner: { enabled: true }, briefing: { enabled: false } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
         t = Date.parse('2026-10-01T18:01:00.000Z')
         await off!.planner.tick()
         expect(sent).toHaveLength(0)

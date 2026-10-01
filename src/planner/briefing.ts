@@ -3,6 +3,10 @@
  * repariert (Self-Heal-Journal) / installiert (Install-Journal) / wartet auf
  * dich (offene Gedanken mit Stufe "fragen") / Ideen. Short, German, built
  * only from journals on disk (no model), every line redacted.
+ *
+ * P8: plus „Fragen gesammelt“ (non-time-critical Knopf-Karten bundled into the
+ * report; released after delivery so their buttons follow right away) and
+ * „Selbst übernommen“ (trust-ladder promotions/resets in the window).
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -24,6 +28,10 @@ export interface BriefingSources {
     /** default <dataDir>/install-journal.jsonl */
     installJournalFile?: string
     timeZone: string
+    /** P8: bundled Knopf-Karten (approval-cards.ts). */
+    cards?: { bundled(): Array<{ id: string; art: string; titel: string; vorschlag?: string }>; release(): number }
+    /** P8: trust ladder changes (action-policy.ts). */
+    trust?: { changesSince(since: number, until: number): { promoted: Array<{ kind: string; text: string }>; reset: Array<{ kind: string; reason: string }> } }
 }
 
 export interface Briefing {
@@ -31,7 +39,7 @@ export interface Briefing {
     text: string
     /** Held-back thoughts this briefing reports (marked `im-bericht` after delivery). */
     thoughtIds: string[]
-    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten', number>
+    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'gesammelt' | 'vertrauen', number>
 }
 
 const MAX_LINES = 5
@@ -111,12 +119,29 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const heldThoughts = thoughts.filter(t => isOpenThought(t) && t.notice === 'zurueckgehalten')
     const held = heldThoughts.map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
 
+    // P8: bundled cards (gedanke cards are already listed under „Wartet auf dich“).
+    let bundled: string[] = []
+    try {
+        bundled = (sources.cards?.bundled() || []).filter(card => card.art !== 'gedanke')
+            .map(card => card.vorschlag ? `${card.titel} – ${card.vorschlag}` : card.titel)
+    } catch { bundled = [] }
+    let trustLines: string[] = []
+    try {
+        const changes = sources.trust?.changesSince(since, now)
+        trustLines = [
+            ...(changes?.promoted || []).map(item => `${item.text} (${item.kind}): mache ich ab jetzt selbst – 3× Ja ohne Rückweg. Zurück: „das wieder fragen“ bzw. /arbeit fragen ${item.kind}`),
+            ...(changes?.reset || []).map(item => `${item.kind}: frage ich wieder (${item.reason})`),
+        ]
+    } catch { trustLines = [] }
+
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
         ...section('Erledigt', done),
         ...section('Selbst repariert', repaired),
         ...section('Installiert', installed),
         ...section('Wartet auf dich', waiting),
+        ...section('Fragen gesammelt (Knöpfe folgen gleich)', bundled),
+        ...section('Selbst übernommen', trustLines),
         ...section('Ideen', ideas),
         ...section('Zurückgehalten', held),
     ]
@@ -128,7 +153,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         title,
         text: cleanText(text, 3500),
         thoughtIds: heldThoughts.map(t => t.id),
-        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length },
+        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, gesammelt: bundled.length, vertrauen: trustLines.length },
     }
 }
 
@@ -155,6 +180,8 @@ export function createBriefingHandler(options: { kind: BriefingKind; sources: Br
         },
         afterDelivery(_job, outgoing, ctx) {
             for (const id of outgoing.refs || []) options.sources.thoughts.markNotice(id, 'im-bericht')
+            // P8: the report listed the bundled cards — now their buttons go out.
+            try { options.sources.cards?.release() } catch { /* the card loop retries with the next report */ }
             mkdirSync(join(options.sources.dataDir, 'planner'), { recursive: true, mode: 0o700 })
             atomicWriteJsonSync(stateFile, { lastDeliveredAt: new Date(ctx.now).toISOString() })
         },

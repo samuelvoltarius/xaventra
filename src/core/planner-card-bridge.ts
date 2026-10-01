@@ -63,6 +63,8 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
                     aktion: { kind: 'gedanke', ref: msg.thoughtId },
                     dedupeKey: `gedanke:${msg.thoughtId}`,
                     quelle: thought?.source || 'planer',
+                    // P8: only an urgent thought asks at once; the rest waits for the next report.
+                    wichtigkeit: thought?.importance === 'dringend' || msg.urgency === 'dringend' ? 'hoch' : 'normal',
                 })
                 if (created.ok === false) return { status: 'fehler', detail: 'reason' in created ? created.reason : '' } as DeliveryReceipt
                 setThoughtStatus(msg.thoughtId, 'wartet-auf-knopf', 'karte')

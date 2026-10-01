@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { profileFingerprint, type NodeProfile } from '../core/node-profile.js'
 import { findCatalogEntry, getInstallCatalog, type InstallCatalog } from './install-catalog.js'
@@ -324,9 +325,9 @@ export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_P
 // ---------------------------------------------------------------------------
 
 export interface SoftwareScoutSettings { enabled: boolean }
-export function parseSoftwareScoutSettings(raw: unknown): SoftwareScoutSettings {
+export function parseSoftwareScoutSettings(raw: unknown, env: NodeJS.ProcessEnv = process.env): SoftwareScoutSettings {
     const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
-    return { enabled: value.enabled === true }
+    return { enabled: defaultOn(value.enabled, env) }
 }
 
 let settings: SoftwareScoutSettings = parseSoftwareScoutSettings(undefined)
@@ -384,7 +385,7 @@ export interface SoftwareScoutTickDeps {
 export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise<{ ran: boolean; reason: string; emitted: SoftwareScoutThought[] }> {
     const active = deps.settings || settings
     if (!deps.isMain) return { ran: false, reason: 'kein Main (Worker schlagen nichts vor, senden nichts)', emitted: [] }
-    if (!active.enabled) return { ran: false, reason: 'aus (autonomy.softwareScout.enabled ist nicht true)', emitted: [] }
+    if (!active.enabled) return { ran: false, reason: 'aus (autonomy.softwareScout.enabled=false)', emitted: [] }
     const now = deps.now ?? Date.now()
     const state = loadState(deps.statePath)
     const nodes = await (deps.nodes || (() => collectScoutNodes({ measureLoad: true })))()

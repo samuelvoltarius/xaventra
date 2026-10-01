@@ -32,10 +32,11 @@ function runtime(overrides: Record<string, unknown> = {}) {
 }
 
 describe('responsibility runtime', () => {
-    it('is off by default (autonomy.responsibilities.enabled missing)', async () => {
-        expect(parseResponsibilitySettings(undefined).enabled).toBe(false)
-        expect(parseResponsibilitySettings({ responsibilities: { enabled: 'true' } }).enabled).toBe(false)
-        const { rt, collect } = runtime({ settings: parseResponsibilitySettings({}) })
+    it('P8: on at the Main without config, off on a worker; enabled:false does nothing', async () => {
+        expect(parseResponsibilitySettings(undefined, {} as NodeJS.ProcessEnv).enabled).toBe(true)
+        expect(parseResponsibilitySettings(undefined, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv).enabled).toBe(false)
+        expect(parseResponsibilitySettings({ responsibilities: { enabled: false } }, {} as NodeJS.ProcessEnv).enabled).toBe(false)
+        const { rt, collect } = runtime({ settings: parseResponsibilitySettings({ responsibilities: { enabled: false } }) })
         const result = await rt.tick('test')
         expect(result.active).toBe(false)
         expect(collect).not.toHaveBeenCalled()

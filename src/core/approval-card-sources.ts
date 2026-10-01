@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import {
-    cardKeyboard, createApprovalCard, formatCardText, listApprovalCards, maintainApprovalCards, recordCardDelivery,
+    cardKeyboard, createApprovalCard, formatCardText, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
     registerCardExecutor, type ApprovalCard, type CardExecutor, type CardStoreOptions,
 } from './approval-cards.js'
 import { approveQueuedInstall, loadInstallQueue, setApprovalLevel, type InstallQueueDeps } from '../install/install-queue.js'
@@ -314,9 +314,11 @@ export function isWorkerNode(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /** Sends every open, undelivered card to the owner. Returns the number of delivered cards. */
-export async function deliverPendingCards(sender: CardSender, opts: CardStoreOptions = {}): Promise<number> {
+export async function deliverPendingCards(sender: CardSender, opts: CardStoreOptions & { bundleIntoReport?: boolean } = {}): Promise<number> {
     if (isWorkerNode()) return 0
-    const pending = listApprovalCards({ ...opts, status: 'offen' }).filter(card => !card.deliveredAt)
+    // P8: while the morning/evening report is on, non-time-critical cards wait for it (approval-cards.ts).
+    const now = (opts.now || Date.now)()
+    const pending = listApprovalCards({ ...opts, status: 'offen' }).filter(card => !card.deliveredAt && isCardDue(card, { bundleIntoReport: opts.bundleIntoReport, now }))
     if (!pending.length) return 0
     if (!(await sender.canSend())) return 0
     const chats = sender.ownerChatIds().filter(id => /^\d{1,20}$/.test(id)).slice(0, 3)
@@ -368,11 +370,16 @@ export async function runApprovalCardTick(): Promise<void> {
         const { getTelegramAdapter } = await import('../channels/telegram.js')
         const tg = getTelegramAdapter()
         if (!tg) return
+        let bundleIntoReport = false
+        try {
+            const { getPlannerRuntime } = await import('../planner/runtime.js')
+            bundleIntoReport = getPlannerRuntime()?.settings.briefing.enabled === true
+        } catch { bundleIntoReport = false }
         await deliverPendingCards({
             canSend: () => tg.hasCardAuthority(),
             ownerChatIds: () => tg.getOwnerChatIds(),
             send: (chatId, text, keyboard) => tg.sendApprovalCard(chatId, text, keyboard),
-        })
+        }, { bundleIntoReport })
     } catch (error) {
         console.warn(`[Knopf-Karten] Durchlauf fehlgeschlagen: ${short(error, 200)}`)
     } finally {

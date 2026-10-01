@@ -1,7 +1,7 @@
 /**
  * Phase 6b — Takt und Produktionsverdrahtung für Verantwortungen + Missionen.
  *
- * Standard AUS bis `autonomy.responsibilities.enabled=true`. Nur am Main
+ * P8: am Main standardmäßig AN (`autonomy.responsibilities.enabled=false` schaltet ab). Nur am Main
  * (nie mit NOVA_NODE_ONLY, nur mit globaler Autonomie-Autorität/Fence).
  *
  * Takt: ereignisgetrieben (Wahrnehmen-Bus: Warnungen/Fehler stoßen eine
@@ -9,7 +9,7 @@
  * ein Timer als Rückfall. Jede Prüfung: Messungen sammeln → Verantwortungen
  * ableiten → Kriterien messen → Missionen starten/fortsetzen.
  *
- *   autonomy.responsibilities.enabled          false
+ *   autonomy.responsibilities.enabled          an (false = aus)
  *   autonomy.responsibilities.intervalMinutes  15     Planer-/Timer-Takt (Rückfall)
  *   autonomy.responsibilities.budgetMinutes    120    Zeitbudget je Mission
  *   autonomy.responsibilities.maxToolCalls     20     Tool-Call-Budget je Mission
@@ -18,6 +18,8 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EventSink, SensingEvent } from '../sensing/ports.js'
+import { promotedKinds, resetTrust, type PromotedKind } from './action-policy.js'
+import { defaultOn } from './autonomy-defaults.js'
 import { getNovaDataDir } from './data-root.js'
 import { createMissionEngine, type Mission, type MissionCardPort, type MissionEngine, type StepExecutor } from './missions.js'
 import {
@@ -32,14 +34,14 @@ export interface ResponsibilitySettings {
     ownerSessions: string[]
 }
 
-export function parseResponsibilitySettings(autonomy: any): ResponsibilitySettings {
+export function parseResponsibilitySettings(autonomy: any, env: NodeJS.ProcessEnv = process.env): ResponsibilitySettings {
     const raw = autonomy?.responsibilities ?? {}
     const num = (value: unknown, fallback: number, min: number, max: number) => {
         const n = Number(value)
         return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.floor(n))) : fallback
     }
     return {
-        enabled: raw.enabled === true,
+        enabled: defaultOn(raw.enabled, env),
         intervalMinutes: num(raw.intervalMinutes, 15, 5, 24 * 60),
         budgetMinutes: num(raw.budgetMinutes, 120, 5, 24 * 60),
         maxToolCalls: num(raw.maxToolCalls, 20, 2, 200),
@@ -90,7 +92,7 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
     })
     let running: Promise<TickResult> | null = null
     async function run(reason: string): Promise<TickResult> {
-        if (!deps.settings.enabled) return { active: false, reason: 'aus (autonomy.responsibilities.enabled ist nicht true)' }
+        if (!deps.settings.enabled) return { active: false, reason: 'aus (autonomy.responsibilities.enabled=false)' }
         if (!isMain()) return { active: false, reason: 'kein Main (Worker oder ohne Fence) — nichts geprüft' }
         const signals = await deps.collectSignals()
         lastSignals = signals
@@ -127,9 +129,9 @@ const MISSION_SECTIONS: Array<[Mission['status'], string]> = [
 ]
 const short = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
-export function formatArbeit(missions: readonly Mission[], responsibilities: readonly Responsibility[], options: { enabled?: boolean } = {}): string {
+export function formatArbeit(missions: readonly Mission[], responsibilities: readonly Responsibility[], options: { enabled?: boolean; promoted?: readonly PromotedKind[] } = {}): string {
     const lines: string[] = []
-    if (options.enabled === false) lines.push('Verantwortungen: AUS (autonomy.responsibilities.enabled ist nicht true)', '')
+    if (options.enabled === false) lines.push('Verantwortungen: AUS (autonomy.responsibilities.enabled=false)', '')
     const missionLine = (mission: Mission) => {
         const step = mission.steps.find(item => item.id === mission.waitingStepId) || mission.steps[Math.min(mission.cursor, mission.steps.length - 1)]
         const parts = [`- ${mission.titel} [${mission.id}]`, `Versuch ${Math.min(mission.versuche + 1, mission.maxVersuche)}/${mission.maxVersuche}`]
@@ -155,6 +157,9 @@ export function formatArbeit(missions: readonly Mission[], responsibilities: rea
         lines.push(`- ${item.titel} [${item.id}] · ${state} · ${item.herkunft === 'owner' ? 'von Alfred' : 'selbst abgeleitet'} · bis ${item.maxLevel}`)
     }
     for (const item of proposed.slice(-5)) lines.push(`- (Vorschlag, wartet auf Knopf) ${item.titel} [${item.id}]`)
+    const promoted = options.promoted || []
+    lines.push('', `Vertrauensleiter: selbst statt fragen (${promoted.length})`)
+    for (const item of promoted) lines.push(`- ${item.kind} · ${item.text} · seit ${item.promotedAt.slice(0, 16).replace('T', ' ')} UTC (${item.confirmedYes}× Ja ohne Rückweg) · zurück: /arbeit fragen ${item.kind}`)
     return lines.join('\n')
 }
 
@@ -302,17 +307,20 @@ function productionExecutors(): StepExecutor[] {
         {
             kind: 'geraet-einrichten',
             async run(step, _mission, ctx) {
-                if (!ctx.approvedBy || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Gerät — nichts eingerichtet' }
+                // P8: an owner Ja, or the owner's standing trust (3× Ja without rollback) for this kind.
+                const by = ctx.approvedBy || ctx.trustedBy
+                if (!by || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Gerät — nichts eingerichtet' }
                 const { approveSensingDevice } = await import('../sensing/runtime.js')
-                return approveSensingDevice(step.ref, { principalId: ctx.approvedBy, permission: 'owner' })
+                return approveSensingDevice(step.ref, { principalId: by, permission: 'owner' })
             },
         },
         {
             kind: 'install-katalog',
             async run(step, _mission, ctx) {
-                if (!ctx.approvedBy || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Warteschlangen-Eintrag — nichts installiert' }
+                const by = ctx.approvedBy || ctx.trustedBy
+                if (!by || !step.ref) return { ok: false, message: 'ohne Owner-Freigabe oder Warteschlangen-Eintrag — nichts installiert' }
                 const { approveQueuedInstall, defaultInstallDeps } = await import('../install/install-queue.js')
-                const result = await approveQueuedInstall(step.ref, { permission: 'owner', principalId: ctx.approvedBy, channel: 'mission-karte' }, defaultInstallDeps())
+                const result = await approveQueuedInstall(step.ref, { permission: 'owner', principalId: by, channel: ctx.approvedBy ? 'mission-karte' : 'vertrauensleiter' }, defaultInstallDeps())
                 return { ok: result.ok, message: result.message }
             },
         },
@@ -403,7 +411,13 @@ export function createResponsibilityEventSink(inner: EventSink): EventSink {
     }
 }
 
-/** /arbeit [pause <id>|weiter <id>] — owner only. */
+/** P8: „das wieder fragen“ — takes a trust-ladder promotion back (exported for text commands). */
+export function askAgainFor(kind: string, dataDir: string = getNovaDataDir()): string {
+    const result = resetTrust(kind, { dataDir })
+    return result.wasPromoted ? `Verstanden: „${result.kind}“ frage ich ab jetzt wieder.` : `„${result.kind}“ war nicht hochgestuft; ich frage dort ohnehin.`
+}
+
+/** /arbeit [pause <id>|weiter <id>|fragen <art>] — owner only. */
 export async function handleArbeitCommand(args: string, principal: { permission?: string; principalId?: string; rawUserId?: string } | undefined): Promise<string> {
     if (principal?.permission !== 'owner') return '⛔ /arbeit ist nur für den Owner.'
     const [sub = '', id = ''] = String(args || '').trim().split(/\s+/)
@@ -414,13 +428,17 @@ export async function handleArbeitCommand(args: string, principal: { permission?
         const noPorts = { thoughts: { add: () => undefined }, cards: { create: () => ({ ok: false as const, reason: 'aus' }) } }
         const manager = createResponsibilityManager({ dataDir, localNodeId: 'lokal', ports: noPorts })
         const engine = createMissionEngine({ dataDir, localNodeId: 'lokal', isMain: () => false, responsibilities: manager, signals: () => collectProductionSignals(), executors: [], ports: noPorts })
-        return formatArbeit(engine.list(), manager.list(), { enabled: settings.enabled })
+        return formatArbeit(engine.list(), manager.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir }) })
     }
     const by = `owner:${principal.principalId || principal.rawUserId || '?'}`
     if (sub === 'pause' || sub === 'weiter') {
         if (!/^[A-Za-z0-9_.:@-]{2,120}$/.test(id)) return 'Nutzung: /arbeit pause <id> | /arbeit weiter <id>'
         return current.responsibilities.setPaused(id, sub === 'pause', by).message
     }
-    if (sub) return 'Nutzung: /arbeit | /arbeit pause <id> | /arbeit weiter <id>'
-    return formatArbeit(current.missions.list(), current.responsibilities.list(), { enabled: settings.enabled })
+    if (sub === 'fragen') {
+        if (!/^[a-z][a-z0-9-]{1,47}$/.test(id)) return 'Nutzung: /arbeit fragen <aktionsart>'
+        return askAgainFor(id)
+    }
+    if (sub) return 'Nutzung: /arbeit | /arbeit pause <id> | /arbeit weiter <id> | /arbeit fragen <aktionsart>'
+    return formatArbeit(current.missions.list(), current.responsibilities.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir: getNovaDataDir() }) })
 }

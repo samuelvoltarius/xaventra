@@ -27,7 +27,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { evaluateAction, recordActionOutcome, trustUpgradeProposal, type ActionLevel } from './action-policy.js'
+import { evaluateActionWithTrust, recordActionOutcome, recordOwnerAnswer, trustUpgradeProposal, type ActionLevel } from './action-policy.js'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import type { CardExecutor, NewCardInput, ApprovalCard } from './approval-cards.js'
 import type { CheckOutcome, Responsibility, ResponsibilityManager, ResponsibilitySignals, ThoughtPort } from './responsibilities.js'
@@ -73,7 +73,13 @@ export interface Mission {
     log: Array<{ at: string; text: string }>
 }
 
-export interface StepContext { approvedBy?: string; localNodeId: string; signals: () => Promise<ResponsibilitySignals> }
+export interface StepContext {
+    approvedBy?: string
+    /** P8: set when the trust ladder lets this kind run without a card (audit label, e.g. `vertrauensleiter:install-katalog`). */
+    trustedBy?: string
+    localNodeId: string
+    signals: () => Promise<ResponsibilitySignals>
+}
 export interface StepResult { ok: boolean; message: string; toolCalls?: number; costUsd?: number; rolledBack?: boolean }
 export interface StepExecutor { kind: string; run(step: MissionStep, mission: Mission, ctx: StepContext): Promise<StepResult> }
 
@@ -229,7 +235,8 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
             if (now() > Date.parse(mission.budget.deadlineAt)) return finish(mission, 'fehlgeschlagen', `Zeitbudget (${budgetMinutes} min) aufgebraucht`)
             if (mission.budget.toolCalls >= mission.budget.maxToolCalls) return finish(mission, 'fehlgeschlagen', `Budget (${mission.budget.maxToolCalls} Tool-Calls) aufgebraucht`)
             // The policy decides on every run — an approval never lifts L3.
-            const verdict = evaluateAction({ kind: step.kind, node: step.node, origin: 'mission' }, { localNodeId: options.localNodeId })
+            // P8: a kind promoted by the trust ladder (3× Ja, no rollback) runs as L1 without a card.
+            const verdict = evaluateActionWithTrust({ kind: step.kind, node: step.node, origin: 'mission' }, { localNodeId: options.localNodeId, dataDir: options.dataDir, now })
             step.level = verdict.level
             if (verdict.decision === 'never' || verdict.decision === 'handoff') return finish(mission, 'blockiert', `${step.titel} — ${verdict.reason} (mache ich nie selbst)`)
             if (!responsibility.aktionen.includes(step.kind)) return finish(mission, 'blockiert', `${step.titel} — nicht im Vertrag der Verantwortung`)
@@ -264,7 +271,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
             save(mission)
             let result: StepResult
             try {
-                result = await executor.run(step, mission, { approvedBy: step.approvedBy, localNodeId: options.localNodeId, signals })
+                result = await executor.run(step, mission, { approvedBy: step.approvedBy, trustedBy: verdict.trusted ? `vertrauensleiter:${step.kind}` : undefined, localNodeId: options.localNodeId, signals })
             } catch (error) {
                 result = { ok: false, message: `Fehler: ${clean((error as Error)?.message || error, 200)}` }
             }
@@ -272,7 +279,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
             const cost = Number(result.costUsd) || 0
             mission.budget.kosten += cost
             step.result = clean(result.message, 300)
-            if (verdict.level !== 'L0') recordActionOutcome(step.kind, { ok: result.ok === true, rolledBack: result.rolledBack === true }, { dataDir: options.dataDir, now })
+            if (verdict.level !== 'L0') recordActionOutcome(step.kind, { ok: result.ok === true, rolledBack: result.rolledBack === true, approvedByOwner: verdict.level === 'L2' && Boolean(step.approvedBy) }, { dataDir: options.dataDir, now })
             if (step.kind === 'diagnose') mission.diagnosen.push(clean(`Versuch ${mission.versuche + 1}, Diagnose: ${result.message}`, 300))
             if (cost > mission.budget.maxKosten) {
                 step.status = 'fehlgeschlagen'
@@ -415,6 +422,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                     return null
                 }
                 step.status = 'abgelehnt'
+                recordOwnerAnswer(step.kind, 'nein', { dataDir: options.dataDir, now })
                 note(mission, `Alfred: Nein zu „${step.titel}“ (${clean(ctx.decidedBy, 60)})`)
                 return finish(mission, 'blockiert', `${step.titel} (Alfred hat Nein gesagt)`)
             })

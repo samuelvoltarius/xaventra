@@ -137,21 +137,29 @@ describe('Worker sendet nichts direkt an den Owner', () => {
         runtime.setSensingSinks({})
     })
 
-    it('alles standardmäßig aus', () => {
-        const cfg = parseSensingConfig(undefined)
-        expect(cfg.enabled).toBe(false)
-        expect(cfg.discovery.enabled).toBe(false)
-        expect(Object.values(cfg.adapters).every(adapter => adapter.enabled === false)).toBe(true)
-        runtime.setSensingConfig(undefined, {}, tmp('sense-off-'))
+    it('P8: ohne Config am Main alles an, am Worker alles aus; enabled:false schaltet ab', () => {
+        const main = parseSensingConfig(undefined, {} as NodeJS.ProcessEnv)
+        expect(main.enabled).toBe(true)
+        expect(main.discovery.enabled).toBe(true)
+        expect(Object.values(main.adapters).every(adapter => adapter.enabled === true)).toBe(true)
+        const worker = parseSensingConfig(undefined, { NOVA_NODE_ONLY: 'true' } as NodeJS.ProcessEnv)
+        expect(worker.enabled).toBe(false)
+        expect(worker.discovery.enabled).toBe(false)
+        expect(Object.values(worker.adapters).every(adapter => adapter.enabled === false)).toBe(true)
+        const off = parseSensingConfig({ enabled: false, discovery: { enabled: false }, adapters: { mail: { enabled: false } } }, {} as NodeJS.ProcessEnv)
+        expect([off.enabled, off.discovery.enabled, off.adapters.mail.enabled, off.adapters.printer.enabled]).toEqual([false, false, false, true])
+        runtime.setSensingConfig({ enabled: false }, {}, tmp('sense-off-'))
         expect(runtime.startSensing({ nodeOnly: false })).toMatchObject({ started: false })
     })
 })
 
-describe('Gerät wird ohne approveDevice nie eingerichtet', () => {
-    it('Fund → gefunden + Gedanke „fragen“, keine Überwachung bis zur Owner-Freigabe', async () => {
+describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
+    const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.248', family: 'IPv4', internal: false }] }
+    const owner = { principalId: 'alfred', permission: 'owner' }
+
+    it('Fund → sofort eingerichtet (selbst, lesend) + Gedanke „gefunden + überwacht“ mit Beleg, keine Karte', async () => {
         const dataDir = tmp('sense-dev-')
-        runtime.setSensingConfig({ enabled: true, discovery: { enabled: true, mdns: false, deadlineSec: 5, ratePerSec: 200 }, adapters: { printer: { enabled: true } } }, {}, dataDir)
-        const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.248', family: 'IPv4', internal: false }] }
+        runtime.setSensingConfig({ discovery: { mdns: false, deadlineSec: 5, ratePerSec: 200 } }, {}, dataDir)
         const text = await runtime.runDiscoveryNow({
             interfaces: lan,
             tcpProbe: async (host, port) => host === '192.168.1.21' && port === 7125,
@@ -159,43 +167,103 @@ describe('Gerät wird ohne approveDevice nie eingerichtet', () => {
             mdnsBrowse: undefined,
         })
         expect(text).toContain('Neu gefunden')
+        expect(text).toContain('überwacht, nur lesend')
         const [device] = loadDevices(dataDir)
-        expect(device).toMatchObject({ status: 'gefunden', host: '192.168.1.21', port: 7125, type: 'moonraker' })
-        expect(monitoredDevices(dataDir)).toEqual([])
-        const [thought] = readThoughts(dataDir)
-        expect(thought).toMatchObject({ level: 'fragen', action: { kind: 'approveDevice', deviceId: device.id } })
-        expect(thought.summary).toContain('Überwachen?')
+        expect(device).toMatchObject({ status: 'eingerichtet', approvedBy: 'auto:lesend', host: '192.168.1.21', port: 7125, type: 'moonraker' })
+        expect(monitoredDevices(dataDir).map(d => d.id)).toEqual([device.id])
+        const thoughts = readThoughts(dataDir)
+        expect(thoughts).toHaveLength(1)
+        expect(thoughts[0].level).toBe('selbst')
+        expect(thoughts[0].action).toBeUndefined()
+        expect(thoughts[0].title).toContain('Gefunden + überwacht')
+        expect(thoughts[0].evidence).toMatchObject({ geraet: device.id, adresse: '192.168.1.21:7125' })
 
-        // Der Drucker-Adapter fragt das Gerät vorher nicht ab.
+        // Der Drucker-Adapter fragt das Gerät jetzt (nur lesend) ab — ohne dass jemand „Ja“ gedrückt hat.
         const urls: string[] = []
         vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => { urls.push(String(url)); return new Response('{"result":{"status":{}}}', { status: 200 }) })
-        const bus = runtime.buildSensingBus()
-        await bus.runAllOnce()
-        expect(urls).toEqual([])
-
-        // Nicht-Owner und Modell-Aufrufe ohne Owner werden abgelehnt.
-        expect(approveDevice(dataDir, device.id, { principalId: 'gast', permission: 'user' }).ok).toBe(false)
-        expect(approveDevice(dataDir, device.id, { principalId: '', permission: 'owner' }).ok).toBe(false)
-        await expect(runtime.handleGeraeteCommand(`ja ${device.id}`, { principalId: 'x', permission: 'admin' })).resolves.toContain('nur für den Owner')
-        expect(monitoredDevices(dataDir)).toEqual([])
-
-        // Owner-Freigabe → ab jetzt (nur lesend) überwacht.
-        expect(runtime.approveSensingDevice(device.id, { principalId: 'alfred', permission: 'owner' }).ok).toBe(true)
-        expect(monitoredDevices(dataDir).map(d => d.id)).toEqual([device.id])
         await runtime.buildSensingBus().runAllOnce()
         expect(urls[0]).toMatch(/^http:\/\/192\.168\.1\.21:7125\/printer\/objects\/query/)
 
-        // Wieder abschaltbar, und ein abgelehntes Gerät wird nicht erneut vorgeschlagen.
-        expect(setDeviceStatus(dataDir, device.id, 'aus', { principalId: 'alfred', permission: 'owner' }).ok).toBe(true)
+        // Owner-Korrektur bleibt: aus heißt aus, auch beim nächsten Suchlauf.
+        expect(setDeviceStatus(dataDir, device.id, 'aus', owner).ok).toBe(true)
+        await runtime.runDiscoveryNow({ interfaces: lan, tcpProbe: async (host, port) => host === '192.168.1.21' && port === 7125, httpProbe: async () => ({ status: 200, body: '{"result":{"klippy_state":"ready"}}' }), mdnsBrowse: undefined })
         expect(monitoredDevices(dataDir)).toEqual([])
-        expect(recordCandidates(dataDir, [{ type: 'moonraker', host: '192.168.1.21', port: 7125, via: 'http' }])).toEqual([])
+        expect(loadDevices(dataDir)[0].status).toBe('aus')
+        // Nicht-Owner kann weiterhin nichts einrichten.
+        expect(approveDevice(dataDir, device.id, { principalId: 'gast', permission: 'user' }).ok).toBe(false)
+        await expect(runtime.handleGeraeteCommand(`ja ${device.id}`, { principalId: 'x', permission: 'admin' })).resolves.toContain('nur für den Owner')
     })
 
-    it('Suche ist aus, solange der Schalter aus ist', async () => {
-        runtime.setSensingConfig({ enabled: true }, {}, tmp('sense-dev-off-'))
+    it('Gerät mit nötigem Token → genau EINE Bitte an den Owner (ohne Karte), keine Wiederholung, keine Überwachung ohne Zugang', async () => {
+        const dataDir = tmp('sense-dev-key-')
+        runtime.setSensingConfig({ discovery: { mdns: false, deadlineSec: 5, ratePerSec: 200 } }, {}, dataDir)
+        const deps = {
+            interfaces: lan,
+            tcpProbe: async (host: string, port: number) => host === '192.168.1.22' && port === 8123,
+            httpProbe: async () => ({ status: 200, body: '{"name": "Home Assistant"}' }),
+            mdnsBrowse: undefined,
+        }
+        const text = await runtime.runDiscoveryNow(deps)
+        expect(text).toContain('Zugang fehlt')
+        const [device] = loadDevices(dataDir)
+        expect(device).toMatchObject({ status: 'gefunden', type: 'homeassistant' })
+        expect(device.ownerAskedAt).toBeTruthy()
+        expect(monitoredDevices(dataDir)).toEqual([])
+        const first = readThoughts(dataDir)
+        expect(first).toHaveLength(1)
+        expect(first[0].action).toBeUndefined()
+        expect(first[0].level).toBe('selbst')
+        expect(first[0].title).toContain('brauche einmal den Zugang')
+        expect(first[0].proposal).toContain('Home-Assistant-Token')
+        // Zweiter und dritter Suchlauf: keine weitere Bitte.
+        await runtime.runDiscoveryNow(deps)
+        await runtime.runDiscoveryNow(deps)
+        expect(readThoughts(dataDir)).toHaveLength(1)
+        expect(JSON.stringify(readThoughts(dataDir))).not.toMatch(/token["']?\s*:\s*["'][^"']{8,}/i)
+    })
+
+    it('Gegenprobe Konten: fehlender Login → genau eine Bitte, keine Karte, nie wiederholt', async () => {
+        const dataDir = tmp('sense-acct-ask-')
+        const expired = { version: 1, profiles: { google: { type: 'oauth', provider: 'google', access: 'x', refresh: 'r', expires: Date.now() - 1000, email: 'owner@example.com' } } }
+        writeFileSync(join(dataDir, 'auth.json'), JSON.stringify(expired))
+        runtime.setSensingConfig({}, {}, dataDir)
+        await runtime.proposeAccounts()
+        await runtime.proposeAccounts()
+        const asks = readThoughts(dataDir)
+        expect(asks).toHaveLength(1)
+        expect(asks[0].action).toBeUndefined()
+        expect(asks[0].title).toContain('brauche einmal deinen Login')
+    })
+
+    it('Suche ist aus, solange der Schalter auf false steht', async () => {
+        runtime.setSensingConfig({ discovery: { enabled: false } }, {}, tmp('sense-dev-off-'))
         const probe = vi.fn()
         expect(await runtime.runDiscoveryNow({ tcpProbe: probe })).toContain('ist aus')
         expect(probe).not.toHaveBeenCalled()
+    })
+
+    it('Suche läuft selbst nach dem Start (ohne Befehl), nur am Main', async () => {
+        vi.useFakeTimers()
+        try {
+            const dataDir = tmp('sense-auto-')
+            runtime.setSensingConfig({ adapters: { printer: { enabled: false }, homeassistant: { enabled: false }, mail: { enabled: false }, system: { enabled: false } }, discovery: { firstRunDelaySec: 1, intervalHours: 1, mdns: false, deadlineSec: 1, maxHosts: 1 } }, {}, dataDir)
+            const runner = vi.fn(async () => 'ok')
+            expect(runtime.startSensing({ nodeOnly: true, discoveryRunner: runner })).toMatchObject({ started: false })
+            await vi.advanceTimersByTimeAsync(5_000)
+            expect(runner).not.toHaveBeenCalled()
+            const started = runtime.startSensing({ nodeOnly: false, discoveryRunner: runner })
+            expect(started).toMatchObject({ started: true })
+            expect(started.reason).toContain('Geräte-Suche selbstständig')
+            await vi.advanceTimersByTimeAsync(1_000)
+            expect(runner).toHaveBeenCalledTimes(1)
+            await vi.advanceTimersByTimeAsync(60 * 60_000)
+            expect(runner).toHaveBeenCalledTimes(2)
+            runtime.stopSensing()
+            await vi.advanceTimersByTimeAsync(2 * 60 * 60_000)
+            expect(runner).toHaveBeenCalledTimes(2)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })
 
@@ -219,9 +287,11 @@ describe('Eigene Systeme, Konten, Ruhezeiten', () => {
         // Fake OAuth value built at runtime (no key-like literal in the repo).
         const fakeAccess = ['ya29', 'SEHR', 'GEHEIM'].join('-')
         writeFileSync(join(dataDir, 'auth.json'), JSON.stringify({ version: 1, profiles: { google: { type: 'oauth', provider: 'google', access: fakeAccess, refresh: 'r', expires: Date.now() + 3600_000, email: 'owner@example.com' } } }))
-        const accounts = detectAccounts(parseSensingConfig({ enabled: true }), readAuthProfileShapes(dataDir))
+        const accounts = detectAccounts(parseSensingConfig({ enabled: true, adapters: { mail: { enabled: false } } }), readAuthProfileShapes(dataDir))
         expect(accounts).toHaveLength(1)
-        expect(accounts[0]).toMatchObject({ kind: 'gmail', connected: false })
+        expect(accounts[0]).toMatchObject({ kind: 'gmail', connected: false, needsOwnerLogin: false })
+        // P8: with the (default-on) mail sensor and a valid token the account is read right away.
+        expect(detectAccounts(parseSensingConfig({}, {} as NodeJS.ProcessEnv), readAuthProfileShapes(dataDir))[0]).toMatchObject({ connected: true })
         expect(accounts[0].label).toBe('Gmail own…@example.com')
         expect(JSON.stringify(accounts)).not.toContain('ya29')
     })

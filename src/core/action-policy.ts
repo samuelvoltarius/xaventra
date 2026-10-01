@@ -30,10 +30,16 @@
  * Die bisherigen Module beziehen ihre Listen von hier; keine Liste ist dabei
  * kürzer geworden (Union, nur strenger).
  *
- * Vertrauensleiter (vorbereitet): `trustEvidence(kind)` zählt erfolgreiche
- * Ausführungen ohne Rückweg. `trustUpgradeProposal(kind)` liefert höchstens
- * einen Vorschlag-Text für L2→L1 — nie für physisch/extern/L3 — und ändert
- * selbst nie ein Level.
+ * Vertrauensleiter (P8, automatisch): nach TRUST_AUTO_PROMOTE_AFTER (= 3)
+ * bestätigten „Ja“ derselben Aktionsart, deren Ausführung ohne Rückweg und
+ * ohne Fehlschlag lief, wird die Art von L2 (fragen) auf L1 (selbst)
+ * hochgestuft — persistiert in `<data>/action-policy/trust.json`, sichtbar in
+ * `/arbeit` und im Abendbericht. Wirksam nur über `evaluateActionWithTrust`
+ * (der reine Kern `evaluateAction` bleibt unverändert). Nie für physisch,
+ * extern (inkl. Geld/Kauf), Löschen/Entfernen/Zurückrollen, L3, unbekannte
+ * Arten und TRUST_NIE_ARTEN (Release, Patch, VM entfernen/stoppen). Ein
+ * „Nein“, ein Fehlschlag oder ein Rückweg setzt die Serie zurück und nimmt die
+ * Hochstufung zurück; `resetTrust(kind)` („das wieder fragen“) ebenso.
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -69,6 +75,8 @@ export interface PolicyVerdict {
     impact: ActionImpact
     /** true, wenn die Aktionsart in der festen Tabelle steht. */
     known: boolean
+    /** P8: true, wenn die Vertrauensleiter L2 → L1 gehoben hat (nur `evaluateActionWithTrust`). */
+    trusted?: boolean
 }
 
 export interface PolicyOptions {
@@ -355,7 +363,22 @@ export function maxLevel(levels: readonly ActionLevel[]): ActionLevel {
 // ---------------------------------------------------------------------------
 
 export const TRUST_MIN_SUCCESSES = 5
-interface TrustStats { successes: number; total: number; rolledBack: number; failed: number; lastAt: string; proposedAt?: string }
+/** P8: so many confirmed „Ja“ (each executed without rollback/failure) promote a kind L2 → L1. */
+export const TRUST_AUTO_PROMOTE_AFTER = 3
+/** Never promoted, whatever the history (infra-destroy, release/patch gates). */
+export const TRUST_NIE_ARTEN: ReadonlySet<string> = Object.freeze(new Set([
+    'release-ausrollen', 'patch-anwenden', 'pve-entfernen', 'pve-rollback', 'pve-herunterfahren', 'vm-stoppen',
+])) as ReadonlySet<string>
+/** Deleting/removing/rolling back and money never climb the ladder. */
+const TRUST_NIE_MUSTER = /loesch|lösch|delete|entfern|remove|destroy|wipe|purge|rollback|zurueckroll|zurückroll|geld|kauf|buy|purchase|pay|zahl|bestell|order|ueberweis|überweis/
+interface TrustStats {
+    successes: number; total: number; rolledBack: number; failed: number; lastAt: string; proposedAt?: string
+    /** consecutive owner „Ja“ whose execution succeeded without rollback */
+    confirmedYes?: number
+    promotedAt?: string
+    resetAt?: string
+    resetReason?: string
+}
 interface TrustFile { version: 1; kinds: Record<string, TrustStats> }
 export interface TrustOptions { dataDir?: string; now?: () => number }
 
@@ -372,25 +395,133 @@ function saveTrust(data: TrustFile, opts: TrustOptions): void {
     atomicWriteJsonSync(file, data)
 }
 
-/** Nach jeder echten Ausführung: ok ohne Rückweg zählt, Rückweg/Fehler setzt die Serie zurück. */
-export function recordActionOutcome(kindName: string, outcome: { ok: boolean; rolledBack?: boolean }, opts: TrustOptions = {}): void {
+/**
+ * Darf diese Art überhaupt automatisch hochgestuft werden? Nur bekannte,
+ * interne L2-Arten; nie physisch/extern/Geld/Löschen/L3/TRUST_NIE_ARTEN.
+ */
+export function isTrustEligible(kindName: string): boolean {
+    const key = normalize(kindName)
+    if (!KIND_PATTERN.test(key) || TRUST_NIE_ARTEN.has(key) || TRUST_NIE_MUSTER.test(key)) return false
+    const verdict = evaluateAction({ kind: key, origin: 'code' })
+    return verdict.known && verdict.level === 'L2' && verdict.impact === 'intern' && !isPhysischOderExtern(key)
+}
+
+function demote(stats: TrustStats, at: string, reason: string): void {
+    stats.confirmedYes = 0
+    if (stats.promotedAt) {
+        delete stats.promotedAt
+        stats.resetAt = at
+        stats.resetReason = reason
+    }
+}
+
+/**
+ * Nach jeder echten Ausführung: ok ohne Rückweg zählt, Rückweg/Fehler setzt die
+ * Serie zurück (und nimmt eine Hochstufung zurück). `approvedByOwner`: diese
+ * Ausführung kam von einem „Ja“ des Owners — die Grundlage der Vertrauensleiter.
+ */
+export function recordActionOutcome(kindName: string, outcome: { ok: boolean; rolledBack?: boolean; approvedByOwner?: boolean }, opts: TrustOptions = {}): void {
     const key = normalize(kindName)
     if (!KIND_PATTERN.test(key)) return
     try {
         const data = loadTrust(opts)
         const stats = data.kinds[key] || { successes: 0, total: 0, rolledBack: 0, failed: 0, lastAt: '' }
+        const at = new Date((opts.now || Date.now)()).toISOString()
         stats.total++
-        if (outcome.ok && !outcome.rolledBack) stats.successes++
-        else {
+        if (outcome.ok && !outcome.rolledBack) {
+            stats.successes++
+            if (outcome.approvedByOwner) {
+                stats.confirmedYes = (stats.confirmedYes || 0) + 1
+                if (!stats.promotedAt && stats.confirmedYes >= TRUST_AUTO_PROMOTE_AFTER && isTrustEligible(key)) {
+                    stats.promotedAt = at
+                    delete stats.resetAt
+                    delete stats.resetReason
+                }
+            }
+        } else {
             stats.successes = 0
             delete stats.proposedAt
             if (outcome.rolledBack) stats.rolledBack++
             else stats.failed++
+            demote(stats, at, outcome.rolledBack ? 'Rückweg nötig' : 'Fehlschlag')
         }
-        stats.lastAt = new Date((opts.now || Date.now)()).toISOString()
+        stats.lastAt = at
         data.kinds[key] = stats
         saveTrust(data, opts)
     } catch { /* Vertrauen ist Beleg, nie Grund zum Scheitern */ }
+}
+
+/** Owner-Antwort auf eine Karte dieser Art. „Nein“ setzt die Serie zurück und nimmt eine Hochstufung zurück. */
+export function recordOwnerAnswer(kindName: string, answer: 'ja' | 'nein', opts: TrustOptions = {}): void {
+    const key = normalize(kindName)
+    if (!KIND_PATTERN.test(key) || answer !== 'nein') return
+    try {
+        const data = loadTrust(opts)
+        const stats = data.kinds[key] || { successes: 0, total: 0, rolledBack: 0, failed: 0, lastAt: '' }
+        const at = new Date((opts.now || Date.now)()).toISOString()
+        demote(stats, at, 'Owner: Nein')
+        stats.lastAt = at
+        data.kinds[key] = stats
+        saveTrust(data, opts)
+    } catch { /* Beleg, nie Grund zum Scheitern */ }
+}
+
+/** „Das wieder fragen“: nimmt die Hochstufung zurück und beginnt die Serie neu. */
+export function resetTrust(kindName: string, opts: TrustOptions = {}, reason = 'Owner: wieder fragen'): { kind: string; wasPromoted: boolean } {
+    const key = normalize(kindName)
+    if (!KIND_PATTERN.test(key)) return { kind: key, wasPromoted: false }
+    const data = loadTrust(opts)
+    const stats = data.kinds[key]
+    if (!stats) return { kind: key, wasPromoted: false }
+    const wasPromoted = Boolean(stats.promotedAt)
+    demote(stats, new Date((opts.now || Date.now)()).toISOString(), reason)
+    data.kinds[key] = stats
+    saveTrust(data, opts)
+    return { kind: key, wasPromoted }
+}
+
+/** true, wenn diese Art durch die Vertrauensleiter selbst ausgeführt werden darf. */
+export function isTrustPromoted(kindName: string, opts: TrustOptions = {}): boolean {
+    const key = normalize(kindName)
+    return Boolean(loadTrust(opts).kinds[key]?.promotedAt) && isTrustEligible(key)
+}
+
+export interface PromotedKind { kind: string; text: string; promotedAt: string; confirmedYes: number }
+
+/** Alle hochgestuften Arten (für `/arbeit` und den Abendbericht). */
+export function promotedKinds(opts: TrustOptions = {}): PromotedKind[] {
+    return Object.entries(loadTrust(opts).kinds)
+        .filter(([key, stats]) => stats.promotedAt && isTrustEligible(key))
+        .map(([key, stats]) => ({ kind: key, text: AKTIONSARTEN[key]?.text || key, promotedAt: String(stats.promotedAt), confirmedYes: stats.confirmedYes || 0 }))
+        .sort((a, b) => a.promotedAt.localeCompare(b.promotedAt))
+}
+
+/** Hochstufungen und Rücknahmen in einem Zeitfenster (Abendbericht). */
+export function trustChangesSince(sinceMs: number, untilMs: number, opts: TrustOptions = {}): { promoted: PromotedKind[]; reset: Array<{ kind: string; at: string; reason: string }> } {
+    const inWindow = (at?: string) => { const t = Date.parse(String(at)); return Number.isFinite(t) && t >= sinceMs && t <= untilMs }
+    const data = loadTrust(opts)
+    return {
+        promoted: promotedKinds(opts).filter(item => inWindow(item.promotedAt)),
+        reset: Object.entries(data.kinds).filter(([, stats]) => inWindow(stats.resetAt))
+            .map(([key, stats]) => ({ kind: key, at: String(stats.resetAt), reason: String(stats.resetReason || '') })),
+    }
+}
+
+/**
+ * Der Kern plus Vertrauensleiter: eine hochgestufte Art wird L1 (selbst),
+ * aber nur, wenn der reine Kern L2 intern sagt, keine physischen/externen
+ * Effekte dabei sind und die Aktion auf dem eigenen Knoten wirkt.
+ */
+export function evaluateActionWithTrust(request: ActionRequest, options: PolicyOptions & TrustOptions = {}): PolicyVerdict {
+    const verdict = evaluateAction(request, options)
+    if (verdict.level !== 'L2' || verdict.impact !== 'intern' || verdict.decision !== 'ask') return verdict
+    const effects = Array.isArray(request?.effects) ? request.effects.map(String) : []
+    if (effects.some(effect => !(L0_EFFECTS.has(effect) || L1_EFFECTS.has(effect) || (L2_EFFECTS.has(effect) && !/^(physisch|extern):/.test(effect))))) return verdict
+    if (request?.node && options.localNodeId && normalize(request.node) !== normalize(options.localNodeId)) return verdict
+    let promoted = false
+    try { promoted = isTrustPromoted(String(request?.kind || ''), options) } catch { promoted = false }
+    if (!promoted) return verdict
+    return { ...verdict, level: 'L1', decision: 'auto', trusted: true, reason: `${verdict.reason}; Vertrauensleiter: ${TRUST_AUTO_PROMOTE_AFTER}× Ja ohne Rückweg → selbst` }
 }
 
 /** Anzahl erfolgreicher Ausführungen ohne Rückweg in Folge. */
@@ -412,7 +543,7 @@ export function trustUpgradeProposal(kindName: string, opts: TrustOptions = {}):
     if (isPhysischOderExtern(key)) return null
     const data = loadTrust(opts)
     const stats = data.kinds[key]
-    if (!stats || stats.successes < TRUST_MIN_SUCCESSES || stats.proposedAt) return null
+    if (!stats || stats.successes < TRUST_MIN_SUCCESSES || stats.proposedAt || stats.promotedAt) return null
     stats.proposedAt = new Date((opts.now || Date.now)()).toISOString()
     try { saveTrust(data, opts) } catch { /* nächstes Mal */ }
     return {

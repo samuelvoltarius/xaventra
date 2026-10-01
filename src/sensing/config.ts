@@ -1,21 +1,27 @@
 /**
- * `autonomy.sensing` — every switch defaults to OFF.
+ * `autonomy.sensing` — P8 "Standard: selbststaendig": every switch defaults to
+ * ON at the Main (missing = on, `false` = off) and OFF on a mesh worker.
+ * Adapters without owner credentials (Home Assistant token, mail login,
+ * printer API key) poll nothing. Defaults:
  *
  * {
  *   "autonomy": { "sensing": {
- *     "enabled": false,
+ *     "enabled": true,
  *     "notify": { "quietStart": 22, "quietEnd": 7, "maxPerDay": 10, "timezone": "Europe/Vienna" },
  *     "adapters": {
- *       "printer":       { "enabled": false, "intervalSec": 60,  "timeoutSec": 10, "devices": [] },
- *       "homeassistant": { "enabled": false, "intervalSec": 60,  "timeoutSec": 10, "entities": [] },
- *       "mail":          { "enabled": false, "intervalSec": 300, "timeoutSec": 30, "knownContacts": [] },
- *       "system":        { "enabled": false, "intervalSec": 120, "timeoutSec": 10 }
+ *       "printer":       { "enabled": true, "intervalSec": 60,  "timeoutSec": 10, "devices": [] },
+ *       "homeassistant": { "enabled": true, "intervalSec": 60,  "timeoutSec": 10, "entities": [] },
+ *       "mail":          { "enabled": true, "intervalSec": 300, "timeoutSec": 30, "knownContacts": [] },
+ *       "system":        { "enabled": true, "intervalSec": 120, "timeoutSec": 10 }
  *     },
- *     "discovery": { "enabled": false, "deadlineSec": 60, "ratePerSec": 40, "concurrency": 16,
- *                    "maxHosts": 512, "mdns": true, "tailnetHosts": [] }
+ *     "discovery": { "enabled": true, "deadlineSec": 60, "ratePerSec": 40, "concurrency": 16,
+ *                    "maxHosts": 512, "mdns": true, "tailnetHosts": [],
+ *                    "firstRunDelaySec": 120, "intervalHours": 24 }
  *   } }
  * }
  */
+
+import { defaultOn } from '../core/autonomy-defaults.js'
 
 export interface PrinterDeviceConfig {
     id: string
@@ -48,13 +54,12 @@ export interface SensingConfig {
         mail: MailAdapterConfig
         system: { enabled: boolean; intervalSec: number; timeoutSec: number }
     }
-    discovery: { enabled: boolean; deadlineSec: number; ratePerSec: number; concurrency: number; maxHosts: number; mdns: boolean; tailnetHosts: string[] }
+    discovery: { enabled: boolean; deadlineSec: number; ratePerSec: number; concurrency: number; maxHosts: number; mdns: boolean; tailnetHosts: string[]; firstRunDelaySec: number; intervalHours: number }
 }
 
 export const DEFAULT_KEYWORDS = Object.freeze(['angebot', 'rechnung', 'termin', 'offer', 'quote', 'invoice', 'appointment'])
 
 const obj = (value: unknown): Record<string, any> => (value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {})
-const on = (value: unknown): boolean => value === true
 function num(value: unknown, fallback: number, min: number, max: number): number {
     const n = Number(value)
     if (!Number.isFinite(n)) return fallback
@@ -62,7 +67,8 @@ function num(value: unknown, fallback: number, min: number, max: number): number
 }
 const strings = (value: unknown, max = 200): string[] => (Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()).slice(0, max) : [])
 
-export function parseSensingConfig(raw: unknown): SensingConfig {
+export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = process.env): SensingConfig {
+    const on = (value: unknown): boolean => defaultOn(value, env)
     const root = obj(raw)
     const notify = obj(root.notify)
     const adapters = obj(root.adapters)
@@ -129,6 +135,8 @@ export function parseSensingConfig(raw: unknown): SensingConfig {
             maxHosts: num(discovery.maxHosts, 512, 1, 1024),
             mdns: discovery.mdns !== false,
             tailnetHosts: strings(discovery.tailnetHosts, 64),
+            firstRunDelaySec: num(discovery.firstRunDelaySec, 120, 0, 86_400),
+            intervalHours: num(discovery.intervalHours, 24, 1, 24 * 30),
         },
     }
 }
