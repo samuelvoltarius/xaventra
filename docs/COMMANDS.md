@@ -12,7 +12,7 @@
 |----------|----------|
 | System | `/help` `/status` `/info` `/layers` `/commands` `/verbose` `/strict` `/heartbeat` |
 | LLM | `/models` `/model` `/think` `/ai` |
-| Memory | `/memory` `/skills` `/learn` `/graph` |
+| Memory | `/memory` `/skills` `/learn` `/werkzeuge` `/graph` |
 | Intelligence | `/roi` `/scan` `/wave` |
 | Self-Setup *(v2.52+)* | `/setup status` `/setup plan` `/setup research` `/setup apply` |
 | Self-Evolution *(v2.51+)* | `/patches` `/patch approve` `/patch reject` `/patch history` |
@@ -76,10 +76,16 @@ Aktiviert geschützte Reasoning-Diagnostik. Interne Gedankentokens werden nicht 
 Memory-Status: LanceDB-Einträge, Progressive Memory Stats, Cold Storage.
 
 ### `/skills`
-Zeigt alle gelernten Skills mit Zeitstempel und Source.
+Owner: Routine-Skills (an/aus mit `/skills aus|an <id>`) und die Zahl der gemerkten
+Prozeduren (verifizierte Lösungen).
 
-### `/learn <topic>`
-Bringt Nova neues Wissen bei. Beispiel: `/learn Unsere neue API ist unter api.example.com`
+### `/learn <was>`
+Lässt die Werkzeug-Schmiede ein Werkzeug bauen (wie `/werkzeuge bau <was>`). Nur mit
+lokalem Lern-Modell; kein Cloud-Ersatz.
+
+### `/werkzeuge [<name>|aus <name>|an <name>|bau <was>]`
+Owner: selbst gebaute Werkzeuge mit Status, Wirkung, Version, Tests und Zählern;
+Details, an/aus, bauen. Siehe [TOOL_FORGE.md](TOOL_FORGE.md).
 
 ### `/lernstatus`
 Status des Lernsystems: Letzte Learnings, Success-Rate, Pending.

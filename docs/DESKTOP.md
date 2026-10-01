@@ -168,19 +168,15 @@ because another project demonstrates it.
 
 ### Skill Forge safety contract
 
-All generated-skill entry points (`build_skill`, `create_skill`, `create_tool`
-and `create_runtime_tool`) now create the same inert, hash-addressed Forge
-proposal. The only allowed progression is:
-
-```text
-proposed -> sandbox-authorized -> sandbox-tested -> benchmark-passed
-         -> canary-tested -> approved -> active
-```
-
-Sandbox, benchmark and canary stages require independently verifiable evidence.
-Owner approval cannot skip a stage. Telegram's first approval authorizes only
-the sandbox attempt. Nova does not run arbitrary Ada-SI Python, install proposed
-`pip` packages, expose host secrets or activate generated code directly.
+The Desktop "Skill Forge" shows the one register of the Werkzeug-Schmiede
+(`build_skill`, `create_skill`, `/werkzeuge`). A tool is code + manifest
+(`net`, `fs`, `wirkung`) + test cases as data. It runs only in a sandboxed child
+process (`node --permission`, import allowlist via `module.registerHooks`, no
+code generation from strings). Read-only tools with all tests green activate
+themselves; writing tools need an approval card (the trust ladder may promote
+`werkzeug-schreibend`); external/physical tools need a card and an owner
+approval on every call. "Freigeben" approves exactly the current code hash and
+never skips the tests. Details: [TOOL_FORGE.md](TOOL_FORGE.md).
 
 ## Trust boundaries
 

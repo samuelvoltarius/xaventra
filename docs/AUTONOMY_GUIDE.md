@@ -158,15 +158,23 @@ When idle for 15+ minutes, Nova enters dream state:
 
 ---
 
-## Self-Evolution (L17)
+## Selbst gebaute Werkzeuge (Werkzeug-Schmiede, P9)
 
-Nova can create new tools at runtime:
+Xaventra baut fehlende Werkzeuge selbst — über genau ein Register
+(`src/tools/skill-builder.ts`), Details in [TOOL_FORGE.md](TOOL_FORGE.md):
 
-1. User requests capability
-2. Nova writes JavaScript tool code
-3. Code Guardian + AST security check
-4. Tool registered if safe
-5. Skill Distributor deploys to all mesh nodes
+1. Bedarf: `build_skill`, `create_skill` / `/werkzeuge bau` / `/learn` (lokales
+   Lern-Modell, kein Cloud-Modell) oder der Bedarfs-Hook nach einem Owner-Lauf
+   (fehlendes Werkzeug, Wiederholung, Owner-Wunsch). Worker bauen nichts.
+2. ESM-Code + Manifest (`net`, `fs`, `wirkung`) + Testfälle als Daten.
+3. CodeGuardian (AST) + Modul-Erlaubnisliste, dann alle Tests in der Sandbox
+   (Kindprozess mit `node --permission`, Import-Sperre per `module.registerHooks`).
+4. lesend + Tests grün → selbst aktiv; schreibend → Karte `werkzeug-schreibend`
+   (Vertrauensleiter darf); extern/physisch → Karte und Owner-Freigabe bei jedem Aufruf.
+5. Aktive Werkzeuge heißen `forge_<name>` und laufen nur in der Sandbox; 2 Fehlschläge
+   in Folge → neue Version oder aus.
+
+Nichts wird auf andere Knoten verteilt; der frühere Skill-Distributor ist entfernt.
 
 ### Dead-End Detection
 - Max 20 attempts per task
@@ -1034,3 +1042,42 @@ Pipeline nichts.
 **Sichtbar.** `/skills` (Owner) zeigt zusätzlich die Routine-Skills mit Schritten,
 Zählern und Zustand; `/skills aus <id>` / `/skills an <id>` schaltet. Ein Befehl ist
 nie nötig.
+
+**Zurückgewiesene Läufe.** Weist der Owner einen Lauf als falsch zurück (Outcome-Ledger),
+zählt dessen Beobachtung nicht mehr; ein Skill, der darauf beruht, verliert den Beleg
+und zählt einen Fehlschlag (`RoutineSkillStore.retractRun`).
+
+## Lernen: ein System pro Aufgabe (P9)
+
+Bis 2.82 flossen fünf Skill-Speicher in den Prompt, zwei weitere wurden nur
+geschrieben. Jetzt gibt es je Aufgabe genau eins:
+
+| Aufgabe | System | Datei |
+|---|---|---|
+| Korrekturen („eigentlich ist es …“) | `learning/engine.ts` (nur noch Korrekturen) | `.nova-learning/feedback.json` |
+| Externe Skills (`SKILL.md`) | `core/skills-loader.ts` | `.agents/skills/…` |
+| Wiederkehrende Abläufe | `learning/routine-skills.ts` | `.nova-data/skills/routine/` |
+| Verifizierte Lösungen (Prozeduren) | `learning/procedure-store.ts` | `.nova-data/learning/procedures.json` |
+| Hintergrundwissen | L9 Idle Learning | `.nova-learning/idle-knowledge.json` |
+| Neue Werkzeuge | Werkzeug-Schmiede | `.nova-data/forge/werkzeuge.json` |
+
+Der Prompt bekommt nur noch: Korrekturen, externe SKILL.md, Routine-Skills,
+Prozeduren und L9-Wissen.
+
+**Prozeduren.** Eine Lösung wird erst gemerkt, wenn dieselbe Form (Benutzer, Werkzeug,
+Parameter-Namen) zweimal verifiziert gelang; ein Fehlschlag setzt die Zählung zurück.
+Abruf nur für denselben Benutzer. Ersetzt L17 (`learned-solutions.json`), L8
+(`%USERPROFILE%/.nova/skills`, lag außerhalb von `.nova-data`) und den Zähler des
+Lern-Koordinators (`verified-procedures.json`). Beim Start werden die alten Dateien
+einmal übernommen und als `*.migriert` umbenannt, nie gelöscht; übernommene Einträge
+ohne Beleg (L8-Code, alte L17-Einträge, die die Prüfung nicht bestehen) bleiben
+sichtbar, werden aber nie abgerufen.
+
+**Entfernt.** Muster-/Skill-Erzeugung der LearningEngine (erzeugte z. B. „Skill: ja
+bitte“; alte `skills.json`/`patterns.json` werden als `*.stillgelegt` umbenannt), der
+L7-SkillSynthesizer und das Werkzeug `learn_workflow_skill` (schrieb dieselbe
+`skills.json` in anderem Format), der Personal-Skill-Compiler (zweites Skill-System auf
+denselben Läufen; die Workflow-Episoden bleiben als episodisches Gedächtnis), toter Code
+(`synthesis/generator|pipeline|index`, `mesh/skill-distributor`, `infra/plugins`,
+`learning/teaching`). Der Muster-Speicher für den Planer liegt an einem Ort:
+`<runtime>/.nova-data/patterns.json`.

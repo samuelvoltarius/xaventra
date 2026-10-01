@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+Doppelungen aufgeräumt (P9, Gruppe 3: Skills und Lernen) und eine echte
+Werkzeug-Schmiede:
+
+- Ein System pro Aufgabe: Korrekturen (LearningEngine, nur noch Korrekturen),
+  externe SKILL.md, Routine-Skills, ein Prozedur-Speicher
+  (`.nova-data/learning/procedures.json`, ersetzt L8, L17 und den Zähler des
+  Lern-Koordinators; alte Dateien werden übernommen und `*.migriert`), L9-Wissen.
+- Entfernt: Muster-/Skill-Erzeugung der Engine („Skill: ja bitte“), L7
+  SkillSynthesizer und `learn_workflow_skill` (kaputt), Personal-Skill-Compiler,
+  toter Code (synthesis generator/pipeline/index, skill-distributor,
+  infra/plugins, teaching), der `.nova-tools`-Lader mit `new Function` im Daemon,
+  die Regex-Sandbox `synthesis/sandbox.ts`, `create_tool`/`create_runtime_tool`/
+  `list_custom_tools`.
+- Werkzeug-Schmiede: Code + Manifest + Tests als Daten, Ausführung nur im
+  Kindprozess mit `node --permission`, Import-Sperre per `module.registerHooks`,
+  Netz nur über das geprüfte `ctx.fetch`; lesend + Tests grün → selbst aktiv,
+  schreibend/extern/physisch → Karte; `/werkzeuge`; Bedarfs-Hook; lokales
+  Lern-Modell statt Cloud. Siehe docs/TOOL_FORGE.md.
+
 ## [2.82.0] — 2026-10-01
 
 Responsibility and autonomy by default: on the Main, Xaventra works without

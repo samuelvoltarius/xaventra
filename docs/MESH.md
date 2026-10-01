@@ -98,47 +98,16 @@ emit('mesh:model_loaded', {
 |-------|--------|------------|
 | `mesh:pre_warm` | Predictive | Tell nodes to pre-warm models |
 | `mesh:compute_request` | Provisioner | Request compute from nodes |
-| `mesh:skill_sync` | Skill Dist. | Notify nodes about new skills |
 | `office:person_detected` | Jetson | Camera person detection |
 | `system:health` | Any node | Health status broadcast |
 
 ---
 
-## Skill Distributor (`src/mesh/skill-distributor.ts`)
+## Skill distribution
 
-Sign and deploy custom tools to all mesh nodes automatically.
-
-### Flow
-
-```
-approved Forge artifact → packageSkill()
-    ↓
-native sandbox + benchmark + canary evidence
-    ↓
-Owner approval → sign exact SHA-256 artifact
-    ↓
-tar pipe over SSH → Pi5 + Jetson
-    ↓
-Verify deployment
-```
-
-### Usage
-
-```typescript
-import { deploySkill, deployAllSkills } from './mesh/skill-distributor.js'
-
-// Deploy single skill
-await deploySkill('tapo-camera-analyzer')
-// → Signs → tar+ssh to Pi5 → tar+ssh to Jetson
-
-// Deploy all skills
-await deployAllSkills()
-// → { total: 5, deployed: 4, failed: 1 }
-```
-
-**Security:** Skills that fail the AST security check are **BLOCKED from deployment**.
-
----
+There is none. The former `src/mesh/skill-distributor.ts` was never wired and was
+removed in P9. Self-built tools live only on the Main (Werkzeug-Schmiede,
+[TOOL_FORGE.md](TOOL_FORGE.md)); workers build nothing.
 
 ## VRAM Manager (`src/layers/vram-manager.ts`)
 

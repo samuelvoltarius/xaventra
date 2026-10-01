@@ -13,9 +13,7 @@ npx skills add firebase/agent-skills
     ↓
 .agent/skills/firebase/ ← SKILL.md + scripts + resources
     ↓
-Nova liest SKILL.md → registriert als Nova-Tools
-    ↓
-Skill Distributor → deploy to mesh nodes
+Nova liest SKILL.md → passende Skills als Prompt-Kontext (core/skills-loader.ts)
 ```
 
 ## Integration in Nova
@@ -30,10 +28,10 @@ Skill Distributor → deploy to mesh nodes
 - AST Security Check auf alle Skill-Scripts
 - Registrierung im Smart Tool Router
 
-### Phase 8c: Mesh Skill Sync
-- Imported Skills automatisch an alle Nodes deployen
-- Skill Distributor erkennt `.agent/skills/` Changes
-- Signed packages für Mesh-Security
+### Phase 8c: Mesh Skill Sync — entfällt
+- Es gibt keine Verteilung auf Knoten (der Skill-Distributor war nie verdrahtet und
+  ist seit P9 entfernt). Ausführbare Werkzeuge entstehen nur in der
+  Werkzeug-Schmiede auf dem Main ([TOOL_FORGE.md](TOOL_FORGE.md)).
 
 ## Unterstützte Skills Quellen
 
@@ -62,12 +60,6 @@ Skill Distributor → deploy to mesh nodes
 │  - AST security check               │
 │  - Register in Smart Tool Router    │
 └─────────────┬────────────────────────┘
-              │ broadcast
-┌─────────────▼────────────────────────┐
-│       Skill Distributor (EXISTING)   │
-│  - Sign & deploy to mesh nodes      │
-│  - Version tracking                  │
-└──────────────────────────────────────┘
 ```
 
 ## Sicherheit

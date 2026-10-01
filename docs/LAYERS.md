@@ -164,9 +164,9 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ### `L7-learning` ✅ Wired
 
-**What it does:** Correction learning (records when user corrects Nova and learns the pattern), skill synthesis (creates reusable knowledge from repeated patterns), and multi-agent swarm coordination (shares learned skills across agent instances).
+**What it does:** Correction learning (records when user corrects Nova and learns the pattern) and multi-agent swarm coordination. The former skill synthesis was removed in P9 (one skill system: `learning/routine-skills.ts`).
 
-**Key exports:** `CorrectionLearner`, `SkillSynthesizer`, `getAgentSwarm()`
+**Key exports:** `CorrectionLearner`, `getAgentSwarm()`
 
 **Wiring in daemon.ts:**
 - Heavy wiring: correction learner + skill synthesizer imported
@@ -187,15 +187,11 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ## Layer 8 — Meta-Learning & Safety
 
-### `L8-meta-learning` ✅ Wired
+### `L8-meta-learning` — removed (P9)
 
-**What it does:** Autonomous capability learning loop. When Nova encounters a capability she lacks (can't do X), she: detects the gap → researches solutions via web search → creates a new tool → tests it → saves it. True self-expansion.
-
-**Key exports:** `getMetaLearningSystem()`, `setInternalLLM()`
-
-**Wiring in daemon.ts:**
-- System imported and initialized
-- `setInternalLLM(state.internalLlm)` called for research and tool creation
+Replaced by the one procedure store (`learning/procedure-store.ts`) and the
+Werkzeug-Schmiede (`tools/skill-builder.ts`, [TOOL_FORGE.md](TOOL_FORGE.md)). Old
+`%USERPROFILE%/.nova/skills` files are imported once and renamed `*.migriert`.
 
 ---
 
@@ -345,16 +341,12 @@ Single control plane above the existing stores. Every durable memory has lifecyc
 
 ---
 
-### `L17-autonomous-learning` ✅ Wired
+### `L17-autonomous-learning` — removed (P9)
 
-**What it does:** Never-give-up autonomous learning loop. When a task fails: (1) Analyze WHY, (2) Search for solution via web, (3) Modify approach or create new tool, (4) Retry, (5) SAVE what worked. Persists `LearningSession` records.
-
-**Key exports:** `getLearner()`, `setInternalLLM()`
-
-**Wiring in daemon.ts:**
-- Learner imported and initialized
-- `setInternalLLM(state.internalLlm)` for analysis and research
-- Sessions persisted to `.nova-data/learning-sessions.json`
+Verified solutions now live in the one procedure store
+(`.nova-data/learning/procedures.json`, `learning/procedure-store.ts`): remembered
+after two verified successes of the same shape, recalled per user. The old
+`learned-solutions.json` is imported once and renamed `*.migriert`.
 
 ---
 

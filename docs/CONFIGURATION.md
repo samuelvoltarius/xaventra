@@ -131,8 +131,9 @@ learning roots:
 - `self-doctor/failure-research.json`: Doctor research and PATCH_GATE stages.
 - `regression-cases.json`: quarantined production failures awaiting an isolated
   test and a passing benchmark.
-- `personal-skill-proposals.json`: skill maturity from proposal through sandbox,
-  benchmark, canary, owner approval and active operation.
+- `learning/procedures.json`: the one procedure store (verified solutions, per user).
+- `forge/werkzeuge.json`: self-built tools of the Werkzeug-Schmiede (code, manifest,
+  tests, versions, counters); see [TOOL_FORGE.md](TOOL_FORGE.md).
 
 These files contain governed state and evidence references, never OAuth tokens,
 API keys or raw tool output. Active Outcome routing remains sample-gated and

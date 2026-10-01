@@ -40,7 +40,6 @@ Test abbreviations (repository-relative, all fixtures isolated):
 | L15-security-scanner.ts | S: scanner/report shape | E, L15 Security Scanner | Known vulnerable/safe fixtures, false positives and governed remediation |
 | L15-self-check.ts | B: registry failures remain degraded, no diagnosis-based success reset | T; src/tools/registry-repair-boundary.test.ts | Real health recovery evidence and complete Doctor integration |
 | L16-business-sense.ts | S: request-analysis shape | E, L16 Business Sense | Decision quality, false assumptions and measurable outcomes |
-| L17-autonomous-learning.ts | B: sequential requests keep their own result; user-scoped recall | learning-isolation.test.ts; E | Old session APIs and complete provenance/retraction lifecycle; unscoped data must not be reassigned by guessing |
 | L18-llm-router.ts | B: task classification, vision preference and single-model cases | T, L18 LLM Router | Live per-user/node routing, cumulative failover budgets and validated training samples |
 | L19-monitoring.ts | B: add/list targets | E, L19 Monitoring | Actual outages, recovery, duplicate notifications and authenticated target scope |
 | L20-self-improvement.ts | B: explicit rule/context storage and retrieval | E, L20 Self-Improvement | Independently validated improvements, approval and rollback quality |
@@ -53,7 +52,6 @@ Test abbreviations (repository-relative, all fixtures isolated):
 | L6-session-summary.ts | B: bounded asynchronous model summary and token math | L6-session-summary.test.ts; E | Real long sessions, semantic accuracy and cross-node resume |
 | L7-learning.ts | B: record/find corrections, unrelated control | T, L7 Learning Correction Context | Tenant-safe lifecycle and independently useful synthesized skills |
 | L7-tool-learning.ts | B: scoped examples/corrections, persistence reload and wrong-user rejection | learning-isolation.test.ts; E | Legacy unscoped inventory remains; full forget/retraction across derived stores |
-| L8-meta-learning.ts | S: capability map and solution getters | E, L8 Meta-Learning | Coordinator records tool names while capabilities are keyed separately; outcome mapping and execution proof open |
 | L8-prisma-guards.ts | B: destructive SQL blocked, SELECT allowed, casual confirmation rejected | E, L8 Prisma Guards | Actual database execution and transaction/recovery boundaries |
 | L8-sub-agent.ts | B: both callback signatures and automatic fallback fail closed | L8-repair-authority.test.ts; E | Legacy API cannot express Kernel authority; actual governed research/repair remains unaccepted, not silently removed from scope |
 | L9-idle-learning.ts | S: getters and activity notification | E, L9 Idle Learning | Useful learning from real evidence with budget and user separation |
