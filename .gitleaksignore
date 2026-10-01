@@ -4,3 +4,5 @@
 a056a81523e6f9812e99cf9770e818b4efca2c77:src/memory/lancedb-memory-mesh.test.ts:generic-api-key:57
 7233a1804db3d3d1cae0bb6a448b30a020a0fd6d:src/memory/capabilities-store-scope.test.ts:generic-api-key:74
 7233a1804db3d3d1cae0bb6a448b30a020a0fd6d:src/memory/capabilities-store-scope.test.ts:generic-api-key:75
+048dc5717ae1a7a5c370c069f797c5e1e8742284:src/sensing/sensing-bus.test.ts:generic-api-key:219
+cffae833e43dc4b4b42a51709439fcaa7b793420:src/thinking/thinking-runtime.test.ts:generic-api-key:83

@@ -216,7 +216,9 @@ describe('Eigene Systeme, Konten, Ruhezeiten', () => {
 
     it('Konten nur aus eigenen Quellen, ohne Token in der Ausgabe', () => {
         const dataDir = tmp('sense-acct-')
-        writeFileSync(join(dataDir, 'auth.json'), JSON.stringify({ version: 1, profiles: { google: { type: 'oauth', provider: 'google', access: ['ya29', 'SEHR', 'GEHEIM'].join('-'), refresh: 'r', expires: Date.now() + 3600_000, email: 'owner@example.com' } } }))
+        // Fake OAuth value built at runtime (no key-like literal in the repo).
+        const fakeAccess = ['ya29', 'SEHR', 'GEHEIM'].join('-')
+        writeFileSync(join(dataDir, 'auth.json'), JSON.stringify({ version: 1, profiles: { google: { type: 'oauth', provider: 'google', access: fakeAccess, refresh: 'r', expires: Date.now() + 3600_000, email: 'owner@example.com' } } }))
         const accounts = detectAccounts(parseSensingConfig({ enabled: true }), readAuthProfileShapes(dataDir))
         expect(accounts).toHaveLength(1)
         expect(accounts[0]).toMatchObject({ kind: 'gmail', connected: false })
