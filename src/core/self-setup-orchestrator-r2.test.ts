@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -85,12 +86,26 @@ describe('self-setup mesh host handling (R2 NZ-5)', () => {
 })
 
 describe('self-setup apply does not block the event loop (R2 NZ-16)', () => {
-    it('runs approved commands via async exec', async () => {
+    // Split in Stufe 2 (01.10.2026): the old way ran an approved free command
+    // via async exec. Free commands are no longer executed at all; the
+    // invariant (never execSync on the daemon loop) is kept for both ways.
+    it('old way: an approved free command is no longer executed (neither exec nor execSync)', async () => {
         writeState([{ id: 'local:echo', type: 'local_shell', title: 't', reason: 'r', risk: 'low', command: 'echo ok' }])
         const result = await applySelfSetupAction('local:echo', 'APPLY:local:echo')
-        expect(result.success).toBe(true)
+        expect(result.success).toBe(false)
         expect(childProcess.execSync).not.toHaveBeenCalled()
-        expect(childProcess.exec).toHaveBeenCalledOnce()
+        expect(childProcess.exec).not.toHaveBeenCalled()
+    })
+
+    it('new way: an approved catalog action is only queued in the daemon (no exec, no execSync)', async () => {
+        writeState([{ id: 'local:ffmpeg', type: 'local_shell', title: 't', reason: 'r', risk: 'low', command: 'sudo apt-get install -y ffmpeg', catalogId: 'ffmpeg' }])
+        const result = await applySelfSetupAction('local:ffmpeg', 'APPLY:local:ffmpeg', {
+            installDeps: { dataDir: mkdtempSync(join(tmpdir(), 'r2-install-')) },
+            target: { nodeId: 'spark', installPath: 'host-agent', role: 'main', local: true, platform: 'linux', arch: 'arm64' },
+        })
+        expect(result.message).toContain('/setup approve')
+        expect(childProcess.execSync).not.toHaveBeenCalled()
+        expect(childProcess.exec).not.toHaveBeenCalled()
     })
 })
 

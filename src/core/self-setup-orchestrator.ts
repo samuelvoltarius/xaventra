@@ -1,7 +1,5 @@
-import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { promisify } from 'node:util'
-import { hostname, platform } from 'node:os'
+import { arch, hostname, platform } from 'node:os'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
 import { validateConfig, type ValidationResult } from './config-validator.js'
@@ -11,6 +9,7 @@ import { probeGpuRuntime, type GpuRuntimeBackend, type GpuRuntimeStatus } from '
 import type { CapabilityGraphSnapshot } from '../mesh/capability-graph.js'
 import { capabilityNodeOnline, capabilityRuntimeAvailable } from '../mesh/capability-graph.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import type { InstallQueueDeps, InstallTargetNode } from '../install/install-queue.js'
 
 
 type RiskLevel = 'low' | 'medium' | 'high'
@@ -51,6 +50,11 @@ export interface SetupAction {
     }
     /** Research-Metadaten wenn durch Capability-Researcher angereichert */
     research?: SetupActionResearch
+    /** Stufe 2: the catalog entry that covers this action. Only catalog
+     * entries can ever be installed; `command` is a text hint, never run. */
+    catalogId?: string
+    /** Target node for a catalog action (default: this node). */
+    nodeId?: string
 }
 
 export interface MeshSetupNode {
@@ -128,23 +132,16 @@ export function isExplicitSelfSetupRequest(input: string): boolean {
     return /\b(?:self[- ]?setup|setup(?:-| )?plan|installier\w*|deinstallier\w*|konfigurier\w*|einricht\w*|was fehlt|welche\w* (?:capabilit|fähigkeit)\w* fehl\w*|prüf\w* (?:die )?(?:capabilit|hardware|runtime)|scan\w* (?:die )?(?:hardware|runtime)|ollama|ffmpeg|embedding|vision|whisper|\bstt\b|\btts\b|codex)\b/i.test(text)
 }
 
-const execAsync = promisify(exec)
 // Same host shape as capability-researcher (K2): optional user@, no spaces,
 // quotes, shell metacharacters or a leading "-" (R2 NZ-5).
 const SAFE_SSH_HOST = /^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/
-
-/** Remote actions are only executed in the shape the planner generates:
- * `ssh -- <safe host> '<single-quoted command>'`. Older or tampered state
- * entries are refused instead of being handed to a shell. */
-function isSafeRemoteShellCommand(command: string): boolean {
-    const match = /^ssh -- (\S+) '/.exec(command)
-    return !!match && SAFE_SSH_HOST.test(match[1])
-}
 
 const DATA_DIR = join(process.cwd(), '.nova-data')
 const STATE_FILE = join(DATA_DIR, 'setup-state.json')
 const CONFIG_FILE = resolveConfigPath()
 
+/** Stufe 2: YOLO no longer executes anything by itself. It only lets the code
+ * ticket catalog entries the owner has lifted to 'erlauben'. */
 function isYoloEnabled(config: any): boolean {
     return process.env.NOVA_SELF_SETUP_YOLO === '1'
         || process.env.NOVA_YOLO === '1'
@@ -389,6 +386,7 @@ function computeActions(
                 title: 'Optional ffmpeg/ffplay installieren',
                 reason: 'ffplay verbessert Windows-Audio-Playback; Nova kann ohne ffplay per PowerShell-Fallback sprechen.',
                 risk: 'medium',
+                ...(platform() === 'linux' ? { catalogId: 'ffmpeg' } : {}),
                 command: platform() === 'win32'
                     ? 'winget install --id Gyan.FFmpeg --source winget --accept-package-agreements --accept-source-agreements'
                     : platform() === 'darwin'
@@ -432,6 +430,8 @@ function computeActions(
             // node.host is self-reported by the mesh registry: never put an
             // unvalidated value into a shell command (R2 NZ-5).
             command: node.host && SAFE_SSH_HOST.test(node.host) ? `ssh -- ${node.host} 'ollama pull nomic-embed-text'` : undefined,
+            catalogId: 'ollama-model:nomic-embed-text',
+            nodeId: node.name,
         })
     }
 
@@ -461,6 +461,7 @@ function computeActions(
             risk: 'medium',
             command,
             verification: { kind: 'gpu_backend', backend: targetBackend },
+            ...(targetBackend === 'cuda' && platform() === 'linux' && arch() === 'arm64' ? { catalogId: 'node-llama-cpp-cuda' } : {}),
         })
     }
 
@@ -583,7 +584,7 @@ export function formatSelfSetupStatus(state = loadSelfSetupState()): string {
         ...state.mesh.nodes.map(n => `- ${n.online ? 'online' : 'offline'} ${n.name}: ${n.capabilities.join(', ') || 'keine'}${n.recommendedFor.length ? ` | sinnvoll: ${n.recommendedFor.join(', ')}` : ''}`),
         '',
         `Empfohlene Aktionen: ${state.actions.length}`,
-        ...state.actions.map(a => `- [${a.risk}] ${a.id}: ${a.title}`),
+        ...state.actions.map(a => `- [${a.risk}] ${a.id}: ${a.title}${a.catalogId ? ` (Katalog: ${a.catalogId})` : ''}`),
     ]
     return lines.join('\n')
 }
@@ -599,8 +600,8 @@ export function formatSelfSetupPlan(state: SelfSetupState): string {
         state.summary,
         '',
         state.mode === 'yolo'
-            ? 'YOLO aktiv: self_setup_apply kann ohne Einzel-Confirm ausfuehren.'
-            : 'Aktionen werden NICHT automatisch ausgefuehrt. Freigabe nur durch den Owner: /setup apply <actionId> liefert einen Einmal-Code.',
+            ? 'YOLO aktiv: nur Katalog-Eintraege mit Freigabestufe "erlauben" laufen ohne Einzel-Freigabe. Freie Befehle werden nie ausgefuehrt.'
+            : 'Aktionen werden NICHT automatisch ausgefuehrt. Freie Befehle werden nie ausgefuehrt; Katalog-Eintraege kommen in die Warteschlange und brauchen /setup approve <iq-id> vom Owner.',
         '',
     ]
     if (state.actions.length === 0) {
@@ -613,7 +614,8 @@ export function formatSelfSetupPlan(state: SelfSetupState): string {
             lines.push(`- ${action.id}${applied}`)
             lines.push(`  Risiko: ${action.risk}  Typ: ${action.type}${action.target ? ` (${action.target})` : ''}`)
             lines.push(`  Warum: ${action.reason}`)
-            if (action.command) lines.push(`  Command: ${action.command}`)
+            if (action.catalogId) lines.push(`  Katalog: ${action.catalogId} (installierbar nur ueber Warteschlange + Freigabe)`)
+            if (action.command) lines.push(`  Hinweis (nicht ausfuehrbar): ${action.command}`)
             if (action.configPath) lines.push(`  Config: ${action.configPath}`)
             if (action.research) {
                 const r = action.research
@@ -627,7 +629,32 @@ export function formatSelfSetupPlan(state: SelfSetupState): string {
     return lines.join('\n')
 }
 
-export async function applySelfSetupAction(actionIdToApply: string, confirm: string): Promise<{ success: boolean; message: string }> {
+export interface ApplySelfSetupOptions {
+    /** Tests/owner wiring: install queue dependencies (default: .nova-data + host-agent env). */
+    installDeps?: InstallQueueDeps
+    /** Tests: explicit target instead of the live node profile. */
+    target?: InstallTargetNode
+}
+
+async function applyCatalogAction(action: SetupAction, yolo: boolean, options: ApplySelfSetupOptions): Promise<{ success: boolean; message: string }> {
+    const { autoApproveIfAllowed, defaultInstallDeps, proposeCatalogInstall, resolveInstallTarget } = await import('../install/install-queue.js')
+    const deps = options.installDeps || defaultInstallDeps(DATA_DIR)
+    const target = options.target || await resolveInstallTarget(action.nodeId).catch(() => null)
+    if (!target) return { success: false, message: `Zielknoten ${action.nodeId || 'lokal'} hat kein bekanntes Profil (/knoten). Nichts ausgefuehrt.` }
+    const proposed = proposeCatalogInstall(action.catalogId, target, deps, yolo ? 'yolo' : 'owner')
+    if (!proposed.ok || !proposed.proposal) return { success: false, message: proposed.message }
+    if (yolo) {
+        const auto = await autoApproveIfAllowed(proposed.proposal.id, true, deps)
+        if (auto.ok) {
+            // Long installs keep running on the host; the queue records the receipt.
+            return { success: auto.proposal?.status === 'done' || auto.proposal?.status === 'running', message: auto.message }
+        }
+    }
+    // Queued or suggested: nothing was installed. Honest result, never "success".
+    return { success: false, message: proposed.message }
+}
+
+export async function applySelfSetupAction(actionIdToApply: string, confirm: string, options: ApplySelfSetupOptions = {}): Promise<{ success: boolean; message: string }> {
     const state = loadSelfSetupState()
     if (!state) return { success: false, message: 'Kein Setup-Plan vorhanden. Erst self_setup_plan ausfuehren.' }
     const action = state.actions.find(a => a.id === actionIdToApply)
@@ -656,35 +683,12 @@ export async function applySelfSetupAction(actionIdToApply: string, confirm: str
         return { success: true, message: `Config angewendet: ${action.configPath || action.id}` }
     }
 
-    if (!action.command) return { success: false, message: 'Keine ausfuehrbare Command-Aktion vorhanden.' }
-    if (action.type === 'remote_shell' && !isSafeRemoteShellCommand(action.command)) {
-        return { success: false, message: `Remote-Aktion ${action.id} abgelehnt: Host/Befehl nicht im erwarteten Format. Setup-Plan neu erstellen.` }
-    }
-    try {
-        // Async: a 5-minute install must not block Telegram, REST and the mesh
-        // heartbeat on the daemon event loop (R2 NZ-16). No TTY: output is piped.
-        const { stdout: out } = await execAsync(action.command, {
-            encoding: 'utf-8',
-            timeout: 300_000,
-            windowsHide: true,
-        })
-        if (action.verification?.kind === 'gpu_backend') {
-            const verified = await probeGpuRuntime({ fresh: true })
-            if (!verified.supportedBackends.includes(action.verification.backend)) {
-                const detail = verified.errors[action.verification.backend]
-                return {
-                    success: false,
-                    message: `Aktion lief, aber ${action.verification.backend.toUpperCase()} bestand den Kontroll-Smoke-Test nicht${detail ? `: ${detail}` : '.'} CPU-Fallback bleibt aktiv.`,
-                }
-            }
-        }
-        action.applied = true
-        writeState(state)
-        const snippet = typeof out === 'string' ? out.trim().slice(0, 200) : ''
-        return { success: true, message: `Aktion ausgefuehrt: ${action.id}${snippet ? '\n' + snippet : ''}` }
-    } catch (err: any) {
-        const detail = err?.stderr?.toString?.()?.trim?.() || err?.message || String(err)
-        return { success: false, message: `Fehler bei ${action.id}: ${detail.slice(0, 300)}` }
+    if (action.catalogId) return applyCatalogAction(action, state.mode === 'yolo' && confirm === '', options)
+    // Stufe 2: free shell commands (scan hints, research output, old state
+    // entries) are never executed, not with an owner code and not in YOLO.
+    return {
+        success: false,
+        message: `Freie Befehle sind gesperrt (Stufe 2). ${action.id} ist kein Katalog-Eintrag; Installation nur ueber /setup katalog, /setup install <id> und /setup approve.`,
     }
 }
 

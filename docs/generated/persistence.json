@@ -238,6 +238,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/self-setup-stufe2.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/self-update.test.ts",
       "path": ".nova-data"
     },
@@ -379,6 +383,10 @@
     },
     {
       "owner": "src/infra/auto-update.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/install/install-queue.ts",
       "path": ".nova-data"
     },
     {

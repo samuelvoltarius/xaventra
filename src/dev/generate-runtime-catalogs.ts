@@ -66,8 +66,8 @@ export async function generateRuntimeCatalogs(options: { check?: boolean } = {})
     process.env.NOVA_NO_SIDE_EFFECTS = '1'
     process.env.NOVA_SKIP_MODEL_RESOLVER_INIT = '1'
     const files = walk(join(ROOT, 'src'))
-    const [{ ALL_TOOLS }, { listRuntimeProfiles, listRuntimeBundles }] = await Promise.all([
-        import('../tools/complete-registry.js'), import('../runtime/runtime-profiles.js'),
+    const [{ ALL_TOOLS }, { listRuntimeProfiles, listRuntimeBundles }, { publishedInstallCatalog }] = await Promise.all([
+        import('../tools/complete-registry.js'), import('../runtime/runtime-profiles.js'), import('../install/install-catalog.js'),
     ])
     const toolCatalog = ALL_TOOLS.map(tool => ({
         name: tool.name, category: tool.category, description: tool.description,
@@ -80,6 +80,8 @@ export async function generateRuntimeCatalogs(options: { check?: boolean } = {})
         'persistence.json': stable({ version: 1, entries: persistenceCatalog(files) }),
         'modules.json': stable({ version: 1, modules: moduleGraph(files) }),
         'profiles.json': stable({ version: 1, profiles: listRuntimeProfiles(), bundles: listRuntimeBundles() }),
+        // Stufe 2: the release's installation catalog; catalogHash is what a detached signature covers.
+        'install-catalog.json': stable(publishedInstallCatalog()),
     }
     outputs['README.md'] = `# Xaventra generated runtime catalogs\n\nGenerated from authoritative source. Do not edit by hand.\n\n| Catalog | Entries | SHA-256 |\n|---|---:|---|\n${Object.entries(outputs).filter(([name]) => name.endsWith('.json')).map(([name, content]) => `| ${name} | ${(JSON.parse(content).tools || JSON.parse(content).entries || JSON.parse(content).modules || JSON.parse(content).profiles || []).length} | \`${hash(content)}\` |`).join('\n')}\n`
 

@@ -3,6 +3,7 @@ import { createServer, request } from 'node:http'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { redactSecrets } from '../security/secret-redaction.js'
+import type { HostInstaller } from './install-agent.js'
 
 export interface HostDockerEngine { call(method: string, path: string): Promise<any> }
 export interface DockerPermit {
@@ -56,9 +57,14 @@ export function hostDockerEngine(socketPath = '/var/run/docker.sock', apiVersion
     }) }
 }
 
+const DOCKER_ROUTES = ['/v1/docker/list', '/v1/docker/status', '/v1/docker/logs', '/v1/docker/action']
+const INSTALL_ROUTES = ['/v1/install/execute', '/v1/install/rollback', '/v1/install/status']
+
 /** Operator-side service. Never accepts shell commands, raw API paths, mounts,
- * environment, image names, pulls, create, remove, exec or privilege flags. */
-export function createDockerHostAgent(options: HostAgentOptions, engine: HostDockerEngine) {
+ * environment, image names, pulls, create, remove, exec or privilege flags.
+ * Stufe 2: with an installer, it additionally accepts signed tickets for
+ * catalog ids only (never a command, package name or path from the caller). */
+export function createDockerHostAgent(options: HostAgentOptions, engine: HostDockerEngine, installer?: HostInstaller) {
     const opt = structuredClone(options)
     if (opt.token.length < 32 || !opt.nodeId || !opt.clientId) throw Error('Explicit node/client identity and strong token required')
     if ((opt.allowedContainerIds || []).some(id => !idPattern.test(id))) throw Error('Full container IDs required')
@@ -77,7 +83,8 @@ export function createDockerHostAgent(options: HostAgentOptions, engine: HostDoc
         const reply = (code: number, value: unknown) => { res.statusCode = code; res.end(JSON.stringify(value)) }
         const expected = Buffer.from(`Bearer ${opt.token}`), auth = Buffer.from(String(req.headers.authorization || ''))
         if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) { req.resume(); return reply(401, { success: false, error: 'Host agent authentication required' }) }
-        if (req.method !== 'POST' || !['/v1/docker/list', '/v1/docker/status', '/v1/docker/logs', '/v1/docker/action'].includes(req.url || '')) {
+        const routes = installer ? [...DOCKER_ROUTES, ...INSTALL_ROUTES] : DOCKER_ROUTES
+        if (req.method !== 'POST' || !routes.includes(req.url || '')) {
             req.resume(); return reply(404, { success: false, error: 'Unsupported host operation' })
         }
         let data: any; let locked: string | undefined
@@ -85,8 +92,23 @@ export function createDockerHostAgent(options: HostAgentOptions, engine: HostDoc
             let body = ''; for await (const c of req) { body += c; if (Buffer.byteLength(body) > 16_384) throw Error('Request too large') }
             data = JSON.parse(body || '{}')
             if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('Object required')
-            const fields: Record<string, string[]> = { '/v1/docker/list': ['all'], '/v1/docker/status': ['containerId'], '/v1/docker/logs': ['containerId', 'lines'], '/v1/docker/action': ['permit', 'signature'] }
+            const fields: Record<string, string[]> = { '/v1/docker/list': ['all'], '/v1/docker/status': ['containerId'], '/v1/docker/logs': ['containerId', 'lines'], '/v1/docker/action': ['permit', 'signature'],
+                '/v1/install/execute': ['ticket'], '/v1/install/rollback': ['ticket'], '/v1/install/status': ['ticketId'] }
             if (Object.keys(data).some(k => !fields[req.url!].includes(k))) throw Error('Unknown host parameter')
+            if (installer && INSTALL_ROUTES.includes(req.url!)) {
+                if (req.url === '/v1/install/status') {
+                    const state = installer.status(data.ticketId)
+                    return reply(200, state ? { success: true, nodeId: opt.nodeId, ticketId: data.ticketId, ...state } : { success: false, error: 'Unbekanntes Ticket' })
+                }
+                const ticket = data.ticket
+                const expected = req.url === '/v1/install/rollback' ? 'rollback' : 'install'
+                if (ticket?.payload?.operation !== expected) throw Error('Ticket passt nicht zur Operation')
+                const admission = await installer.admit(ticket)
+                if (admission.replayed) return reply(200, await admission.done)
+                // Long installs run on; the main polls /v1/install/status.
+                admission.done.catch(() => undefined)
+                return reply(202, { success: true, accepted: true, nodeId: opt.nodeId, ticketId: admission.ticketId, phase: 'running' })
+            }
             if (req.url === '/v1/docker/list') {
                 if (data.all !== undefined && typeof data.all !== 'boolean') throw Error('all must be boolean')
                 const rows = await engine.call('GET', `/containers/json?all=${data.all === true ? 1 : 0}`)

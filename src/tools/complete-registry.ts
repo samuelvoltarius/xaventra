@@ -1305,7 +1305,7 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'self_setup_apply',
-        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Im YOLO-Modus nicht (ausser GPU-Backends).',
+        description: 'Fuehrt eine freigegebene Self-Setup-Aktion aus. Im normalen Modus braucht es den Einmal-Freigabecode, den der Owner selbst per "/setup apply <actionId>" (bzw. "/setup apply all") erhaelt und dir nennt; Codes niemals selbst bilden. Freie Befehle werden nie ausgefuehrt; Katalog-Aktionen landen nur in der Installations-Warteschlange (Installation erst nach "/setup approve" durch den Owner, im YOLO-Modus nur Eintraege mit Stufe erlauben).',
         category: 'system',
         parameters: [
             { name: 'action_id', type: 'string', description: 'Action-ID aus self_setup_plan oder "all"', required: true },
