@@ -12,6 +12,9 @@ Both new capabilities are off until the owner configures them.
   longer stops the run; diagnostic reads still stop and escalate.
 - Benchmark runner derives the intent from the scenario, not from the
   appended fixture path.
+- Self-Doctor: two runs in the same millisecond no longer reopen findings the
+  second run resolved (its own previous save was taken for a concurrent
+  change; seen on the macOS CI runner).
 - Stufe 2, install from a catalog with a way back: fixed install catalog
   (ffmpeg, XFCE workstation, Playwright Chromium, listed Ollama embedding
   models, node-llama-cpp CUDA on the Spark) with argument arrays, a frozen

@@ -19,6 +19,10 @@
   rollback, never-list, path boundary, fencing, worker reporting, kill switch,
   cooldown, two failures and proposal-only each reverted turn tests red.
 
+- Self-Doctor same-millisecond race: `src/core/self-doctor-same-ms.test.ts`
+  (fixed system time) fails without the fix; candidate CI 36807100740 was red
+  only on macOS with exactly this signature (NZ-18/NZ-33 tests).
+
 Pending: candidate CI, main CI, signed publication, production activation.
 Live acceptance: Stufe 2 first isolated (WSL: ffmpeg install, rollback,
 package list identical), then Spark with host-agent keys; Stufe 3 drills

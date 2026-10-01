@@ -227,6 +227,10 @@ export function updateDoctorFindingStatus(id: string, status: DoctorStatus): boo
 export async function runSelfDoctor(): Promise<DoctorRunResult> {
     const findings = loadFindings()
     const runStartedAt = nowIso()
+    // What this run loaded. Only entries that differ from it were changed by
+    // someone else meanwhile; the run's own previous save is not (macOS CI
+    // 01.10.2026: two runs in the same millisecond reopened resolved findings).
+    const loadedState = new Map(findings.map(f => [f.id, `${f.updatedAt}|${f.status}`]))
     const generated: DoctorFinding[] = []
     const evaluatedSources = new Set<string>()
 
@@ -640,6 +644,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     // runtime findings that were written in the meantime (R2 NZ-33).
     for (const onDisk of loadFindings()) {
         if (!onDisk?.id || !(String(onDisk.updatedAt || '') >= runStartedAt)) continue
+        if (loadedState.get(onDisk.id) === `${onDisk.updatedAt}|${onDisk.status}`) continue
         const mine = findings.find(f => f.id === onDisk.id)
         if (!mine) findings.push(onDisk)
         else if (!generated.includes(mine) || onDisk.status !== 'open') {
