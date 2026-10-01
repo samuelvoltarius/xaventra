@@ -78,6 +78,13 @@ describe('Auto-Observer liefert Tripel nur im Owner-Kontext', () => {
         ]))
     })
 
+    it('Gegenprobe Owner: Beruf/Beschreibung ist kein Name, kleingeschriebenes kein Wert', async () => {
+        const { governance, observer } = fresh()
+        await observer.observe('42', 'Meine Frau ist Ärztin im Landeskrankenhaus Salzburg.', 'user', 's1', { permission: 'owner' })
+        await observer.observe('42', 'Ich arbeite an einem neuen Feature für die Steuerung.', 'user', 's2', { permission: 'owner' })
+        expect(governance.list({ scope: 'user:42' }).filter(record => record.subject)).toEqual([])
+    })
+
     it('Nicht-Owner: dieselben Sätze werden gemerkt, aber ohne Tripel', async () => {
         const { governance, observer } = fresh()
         await observer.observe('77', 'Ich wohne in Hallein.', 'user', 's1', { permission: 'user' })

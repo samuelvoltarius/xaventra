@@ -161,6 +161,8 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
         ],
         extractor: (match) => `Beziehung: ${match[0].trim()}`,
         triple: (match) => {
+            // Only the naming form ("heißt Bello"); "meine Frau ist Ärztin" is no name.
+            if (!/hei(?:ß|ss)t|is named/i.test(match[0])) return null
             const value = tripleValue(match[2])
             return value ? { predicate: match[1].toLowerCase(), value } : null
         },
