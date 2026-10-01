@@ -1,5 +1,14 @@
 /**
- * Nova Autonomous Executor — Mission Engine
+ * Aufträge (Autonomous Executor). Begriffe (P9): ein „Auftrag“ ist ein vom
+ * Owner gegebenes Ziel, das als Kette von Schritten abgearbeitet wird
+ * (/auftrag, Alias /mission). „Missionen“ sind etwas anderes: die
+ * selbstständigen Verantwortungs-Missionen (core/missions.ts, /arbeit).
+ * Interne Namen (Mission*, mission:<id>-Leases, Mesh-Übergabe) bleiben aus
+ * Kompatibilitätsgründen.
+ *
+ * Dateien: `.nova-data/auftraege.json` und `.nova-data/auftraege-config.json`
+ * (früher missions.json / mission-config.json; beim ersten Start übernommen,
+ * die alten Dateien heißen danach `.migriert`).
  * 
  * Transforms Nova from reactive to proactive:
  * 1. DECOMPOSE: User gives a big goal → LLM breaks into subtasks
@@ -19,6 +28,7 @@ import { createTaskContract, validateTaskCompletion, type TaskContract } from '.
 import { getOutcomeLedger } from './outcome-ledger.js'
 import { getGoalManager } from './goal-manager.js'
 import { assertFenced } from '../mesh/fence.js'
+import { markMigrated } from '../planner/migration-files.js'
 
 // ============================================
 // Types
@@ -78,8 +88,30 @@ export interface MissionConfig {
 // ============================================
 
 const DATA_DIR = join(process.cwd(), '.nova-data')
-const MISSIONS_FILE = join(DATA_DIR, 'missions.json')
-const MISSION_CONFIG_FILE = join(DATA_DIR, 'mission-config.json')
+const MISSIONS_FILE = join(DATA_DIR, 'auftraege.json')
+const MISSION_CONFIG_FILE = join(DATA_DIR, 'auftraege-config.json')
+const LEGACY_FILES: ReadonlyArray<[string, string]> = [
+    [join(DATA_DIR, 'missions.json'), MISSIONS_FILE],
+    [join(DATA_DIR, 'mission-config.json'), MISSION_CONFIG_FILE],
+]
+
+/** P9: takes missions.json / mission-config.json over once (copy, then `.migriert`). */
+export function migrateLegacyAuftragFiles(): number {
+    let moved = 0
+    for (const [legacy, current] of LEGACY_FILES) {
+        if (!existsSync(legacy)) continue
+        try {
+            if (!existsSync(current)) {
+                mkdirSync(DATA_DIR, { recursive: true })
+                writeFileSync(current, readFileSync(legacy))
+            }
+            if (markMigrated(legacy)) moved++
+        } catch (error) {
+            console.warn(`[Auftrag] ${legacy} nicht übernommen: ${(error as Error)?.message}`)
+        }
+    }
+    return moved
+}
 
 const DEFAULT_CONFIG: MissionConfig = {
     maxRetries: 2,
@@ -119,6 +151,8 @@ export function initMissionEngine(deps: {
     llmClient = deps.llm
     daemonState = deps.state
 
+    migrateLegacyAuftragFiles()
+
     // Load config from disk
     try {
         if (existsSync(MISSION_CONFIG_FILE)) {
@@ -153,7 +187,7 @@ export function initMissionEngine(deps: {
                         if (activeMission !== restoringMission || restoringMission.status !== 'active') return
                         if (!ownership) {
                             activeMission.status = 'paused'
-                            activeMission.progressUpdates.push('⏸️ Wiederaufnahme blockiert: keine gültige Mission-Lease')
+                            activeMission.progressUpdates.push('⏸️ Wiederaufnahme blockiert: keine gültige Auftrags-Lease')
                             saveMissions()
                             return
                         }
@@ -196,7 +230,7 @@ async function decomposeMission(goal: string): Promise<MissionStep[]> {
         const response = await llmClient.complete([
             {
                 role: 'system',
-                content: `Du bist Nova's Mission Planner. Zerlege das Ziel in konkrete, ausführbare Sub-Aufgaben.
+                content: `Du bist Xaventras Auftrags-Planer. Zerlege das Ziel in konkrete, ausführbare Sub-Aufgaben.
 
 REGELN:
 - Jeder Schritt muss eine klare, eigenständige Anweisung sein die Nova direkt ausführen kann
@@ -277,7 +311,7 @@ export async function startMission(goal: string, userId: string, channel: string
     if (activeMission && activeMission.status === 'paused') {
         // Never overwrite a paused mission silently: its lease, root goal and
         // history would be lost. The owner decides explicitly.
-        throw new Error(`Eine pausierte Mission existiert noch ("${activeMission.goal.slice(0, 60)}"). Erst /mission resume oder /mission stop.`)
+        throw new Error(`Ein pausierter Auftrag existiert noch ("${activeMission.goal.slice(0, 60)}"). Erst /auftrag weiter oder /auftrag stop.`)
     }
     if (activeMission && activeMission.status === 'active') {
         // Queue the mission instead of erroring
@@ -286,7 +320,7 @@ export async function startMission(goal: string, userId: string, channel: string
         console.log(`[Mission] 📋 Queued: "${goal.slice(0, 60)}..." (${missionQueue.length} in queue)`)
 
         if (notifyUser) {
-            await notifyUser(`📋 *Mission in Warteschlange* (Position ${missionQueue.length})\n\n"${goal.slice(0, 100)}"\n\n_Wird automatisch gestartet wenn die aktuelle Mission fertig ist._`).catch(() => { })
+            await notifyUser(`📋 *Auftrag in Warteschlange* (Position ${missionQueue.length})\n\n"${goal.slice(0, 100)}"\n\n_Wird automatisch gestartet wenn der aktuelle Auftrag fertig ist._`).catch(() => { })
         }
 
         // Return a placeholder for the queued mission
@@ -322,7 +356,7 @@ export async function startMission(goal: string, userId: string, channel: string
         completedIdempotencyKeys: [],
         pendingActions: steps.map(step => step.command),
         compensationActions: [],
-        progressUpdates: [`🚀 Mission gestartet: ${goal.slice(0, 100)}`],
+        progressUpdates: [`🚀 Auftrag gestartet: ${goal.slice(0, 100)}`],
     }
 
     const goalPlan = getGoalManager().createMissionPlan({
@@ -345,11 +379,11 @@ export async function startMission(goal: string, userId: string, channel: string
     try {
         const { acquireMissionOwnership } = await import('../mesh/mesh-registry.js')
         const ownership = await acquireMissionOwnership(mission.id)
-        if (!ownership) throw new Error('keine gültige Mission-Lease')
+        if (!ownership) throw new Error('keine gültige Auftrags-Lease')
         Object.assign(mission, ownership)
     } catch (error) {
         activeMission = null
-        throw new Error(`Mission start fail-closed: ${error}`)
+        throw new Error(`Auftrag-Start fail-closed: ${error}`)
     }
     saveMissions()
     const missionLedger = getOutcomeLedger()
@@ -373,13 +407,13 @@ export async function startMission(goal: string, userId: string, channel: string
 }
 
 export function cancelMission(): string {
-    if (!activeMission) return '❌ Keine aktive Mission.'
+    if (!activeMission) return '❌ Kein aktiver Auftrag.'
 
     activeMission.status = 'cancelled'
     if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'cancelled' })
     activeMission.finishedAt = Date.now()
     activeMission.totalDuration = activeMission.finishedAt - activeMission.createdAt
-    activeMission.progressUpdates.push('🛑 Mission vom Benutzer abgebrochen')
+    activeMission.progressUpdates.push('🛑 Auftrag vom Benutzer abgebrochen')
 
     const cancelledMission = activeMission
     void import('../mesh/leader-election.js').then(({ stopLeaseRenewal }) => stopLeaseRenewal(`mission:${cancelledMission.id}`))
@@ -387,7 +421,7 @@ export function cancelMission(): string {
     void import('../mesh/mesh-registry.js')
         .then(({ publishMissionCheckpoint }) => publishMissionCheckpoint(cancelledMission as any))
         .catch(() => false)
-    const summary = `🛑 Mission abgebrochen: "${activeMission.goal.slice(0, 60)}"\n` +
+    const summary = `🛑 Auftrag abgebrochen: "${activeMission.goal.slice(0, 60)}"\n` +
         `Fortschritt: ${activeMission.steps.filter(s => s.status === 'done').length}/${activeMission.steps.length} Schritte`
     activeMission = null
     isExecuting = false
@@ -396,36 +430,36 @@ export function cancelMission(): string {
 }
 
 export function pauseMission(): string {
-    if (!activeMission) return '❌ Keine aktive Mission.'
+    if (!activeMission) return '❌ Kein aktiver Auftrag.'
     activeMission.status = 'paused'
     if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'blocked' })
-    activeMission.progressUpdates.push('⏸️ Mission pausiert')
+    activeMission.progressUpdates.push('⏸️ Auftrag pausiert')
     saveMissions()
-    return `⏸️ Mission pausiert: "${activeMission.goal.slice(0, 60)}"\nFortsetzen mit: /mission resume`
+    return `⏸️ Auftrag pausiert: "${activeMission.goal.slice(0, 60)}"\nFortsetzen mit: /auftrag weiter`
 }
 
 export function resumeMission(): string {
-    if (!activeMission) return '❌ Keine pausierte Mission.'
-    if (activeMission.status !== 'paused') return '❌ Mission ist nicht pausiert.'
+    if (!activeMission) return '❌ Kein pausierter Auftrag.'
+    if (activeMission.status !== 'paused') return '❌ Der Auftrag ist nicht pausiert.'
     const mission = activeMission
-    mission.progressUpdates.push('⏳ Mission-Fencing wird vor dem Fortsetzen erneuert')
+    mission.progressUpdates.push('⏳ Auftrags-Fencing wird vor dem Fortsetzen erneuert')
     saveMissions()
     setTimeout(async () => {
         const { acquireMissionOwnership } = await import('../mesh/mesh-registry.js')
         const ownership = await acquireMissionOwnership(mission.id)
         if (!ownership || activeMission?.id !== mission.id) {
-            mission.progressUpdates.push('⏸️ Fortsetzen abgelehnt: keine gültige Mission-Lease')
+            mission.progressUpdates.push('⏸️ Fortsetzen abgelehnt: keine gültige Auftrags-Lease')
             saveMissions()
             return
         }
         Object.assign(mission, ownership)
         mission.status = 'active'
         if (mission.rootGoalId) getGoalManager().update(mission.rootGoalId, { status: 'active' })
-        mission.progressUpdates.push('▶️ Mission mit neuer Lease fortgesetzt')
+        mission.progressUpdates.push('▶️ Auftrag mit neuer Lease fortgesetzt')
         saveMissions()
         void executeNextStep()
     }, 0)
-    return `⏳ Mission wird nach erfolgreicher Lease-Prüfung fortgesetzt: "${activeMission.goal.slice(0, 60)}"`
+    return `⏳ Auftrag wird nach erfolgreicher Lease-Prüfung fortgesetzt: "${activeMission.goal.slice(0, 60)}"`
 }
 
 // ============================================
@@ -477,7 +511,7 @@ async function executeNextStep(): Promise<void> {
     if (activeMission !== mission || mission.status !== 'active' || isExecuting) return
     if (!fence || fence.token !== mission.fencingToken || fence.epoch !== mission.leaseEpoch) {
         mission.status = 'paused'
-        mission.progressUpdates.push('⏸️ Ausführung gestoppt: Mission-Fencing ist nicht mehr gültig')
+        mission.progressUpdates.push('⏸️ Ausführung gestoppt: Auftrags-Fencing ist nicht mehr gültig')
         saveMissions()
         return
     }
@@ -505,7 +539,7 @@ async function executeNextStep(): Promise<void> {
         const run = pipelineHandler(
             mission.channel,
             mission.createdBy,
-            `${missionMarker} ${fenceMarker} [MISSION Schritt ${step.id}/${mission.steps.length}] ${step.command}`,
+            `${missionMarker} ${fenceMarker} [AUFTRAG Schritt ${step.id}/${mission.steps.length}] ${step.command}`,
             captureReply,
             daemonState
         )
@@ -584,7 +618,7 @@ async function executeNextStep(): Promise<void> {
                     mission.status = 'paused'
                     if (mission.rootGoalId) getGoalManager().update(mission.rootGoalId, { status: 'blocked' })
                     mission.progressUpdates.push(
-                        `⏱️ [${step.id}] Timeout nach ${Math.round(config.timeoutPerStep / 1000)}s — der Lauf kann noch weiterarbeiten, daher kein Retry. Mission pausiert, fortsetzen mit /mission resume.`
+                        `⏱️ [${step.id}] Timeout nach ${Math.round(config.timeoutPerStep / 1000)}s — der Lauf kann noch weiterarbeiten, daher kein Retry. Auftrag pausiert, fortsetzen mit /auftrag weiter.`
                     )
                 }
                 saveMissions()
@@ -702,7 +736,7 @@ async function completeMission(): Promise<void> {
     const statusIcon = activeMission.status === 'done' ? '🏁' : '❌'
     const statusWord = activeMission.status === 'done' ? 'abgeschlossen' : 'FEHLGESCHLAGEN'
     activeMission.progressUpdates.push(
-        `${statusIcon} Mission ${statusWord}: ${doneCount}/${totalSteps} erfolgreich` +
+        `${statusIcon} Auftrag ${statusWord}: ${doneCount}/${totalSteps} erfolgreich` +
         (failedCount > 0 ? `, ${failedCount} fehlgeschlagen` : '')
     )
 
@@ -737,7 +771,7 @@ async function completeMission(): Promise<void> {
             if (remainingWork) {
                 console.log(`[Mission] 🔄 Goal not fully achieved. Starting continuation ${continuationCount + 1}/3...`)
                 if (notifyUser) {
-                    await notifyUser(`🔄 *Ziel noch nicht vollständig erreicht.* Starte Folge-Mission...\n\n_${remainingWork.slice(0, 200)}_`).catch(() => { })
+                    await notifyUser(`🔄 *Ziel noch nicht vollständig erreicht.* Starte Folge-Auftrag...\n\n_${remainingWork.slice(0, 200)}_`).catch(() => { })
                 }
 
                 // Strip any existing "Fortführung:" prefix nesting from the original goal
@@ -753,7 +787,7 @@ async function completeMission(): Promise<void> {
                 console.log(`[Mission] ✅ Goal fully achieved. No continuation needed.`)
                 // Ask user what's next
                 if (notifyUser) {
-                    await notifyUser(`✅ *Ziel vollständig erreicht!*\n\nWas soll ich als Nächstes tun? Du kannst mir ein neues Ziel geben oder /mission [ziel] nutzen.`).catch(() => { })
+                    await notifyUser(`✅ *Ziel vollständig erreicht!*\n\nWas soll ich als Nächstes tun? Du kannst mir ein neues Ziel geben oder /auftrag [ziel] nutzen.`).catch(() => { })
                 }
 
                 // Check queue for next mission
@@ -779,7 +813,7 @@ async function startNextQueuedMission(): Promise<void> {
 
     console.log(`[Mission] ▶️ Starting queued mission: "${next.goal.slice(0, 60)}..." (${missionQueue.length} remaining)`)
     if (notifyUser) {
-        await notifyUser(`▶️ *Nächste Mission aus Warteschlange:*\n\n"${next.goal.slice(0, 150)}"\n\n_${missionQueue.length} weitere in der Queue._`).catch(() => { })
+        await notifyUser(`▶️ *Nächster Auftrag aus der Warteschlange:*\n\n"${next.goal.slice(0, 150)}"\n\n_${missionQueue.length} weitere in der Queue._`).catch(() => { })
     }
 
     try {
@@ -801,7 +835,7 @@ async function checkGoalCompletion(mission: Mission): Promise<string | null> {
         const response = await llmClient.complete([
             {
                 role: 'system',
-                content: `Du bist Nova's Missions-Evaluator. Prüfe ob ein Ziel WIRKLICH erreicht wurde.
+                content: `Du bist Xaventras Auftrags-Prüfer. Prüfe ob ein Ziel WIRKLICH erreicht wurde.
 
 REGELN:
 - Prüfe ob die erledigten Schritte das Ziel TATSÄCHLICH erfüllen
@@ -839,7 +873,7 @@ Antworte mit GENAU einem der folgenden Formate:
 // ============================================
 
 function formatMissionPlan(mission: Mission): string {
-    let msg = `🎯 *Nova Mission gestartet*\n\n`
+    let msg = `🎯 *Auftrag gestartet*\n\n`
     msg += `*Ziel:* ${mission.goal.slice(0, 200)}\n\n`
     msg += `*Plan (${mission.steps.length} Schritte):*\n`
 
@@ -848,7 +882,7 @@ function formatMissionPlan(mission: Mission): string {
     }
 
     msg += `\n_Ich arbeite jetzt autonom. Fortschritt alle ${config.notifyEveryNSteps} Schritte._\n`
-    msg += `_Stoppen: /mission stop | Pause: /mission pause_`
+    msg += `_Stoppen: /auftrag stop | Pause: /auftrag pause_`
     return msg
 }
 
@@ -860,7 +894,7 @@ function formatMissionProgress(mission: Mission): string {
 
     const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10))
 
-    let msg = `📊 *Mission Progress* [${bar}] ${pct}%\n\n`
+    let msg = `📊 *Auftrag: Fortschritt* [${bar}] ${pct}%\n\n`
     msg += `✅ ${done} | ❌ ${failed} | ⏳ ${total - done - failed} von ${total}\n\n`
 
     // Show last 3 updates
@@ -882,7 +916,7 @@ function formatMissionReport(mission: Mission): string {
     const failed = mission.steps.filter(s => s.status === 'failed').length
     const duration = formatDuration(mission.totalDuration || 0)
 
-    let msg = `🏁 *Mission Abgeschlossen!*\n\n`
+    let msg = `🏁 *Auftrag abgeschlossen!*\n\n`
     msg += `*Ziel:* ${mission.goal.slice(0, 200)}\n`
     msg += `*Ergebnis:* ${done}/${mission.steps.length} erfolgreich`
     if (failed > 0) msg += ` (${failed} fehlgeschlagen)`
@@ -895,7 +929,7 @@ function formatMissionReport(mission: Mission): string {
     }
 
     msg += `\n_Nova hat autonom gearbeitet. Prüfe die Ergebnisse und sag mir ob ich weitermachen soll!_\n`
-    msg += `_Neues Ziel: /mission [ziel] | Status: /mission status_`
+    msg += `_Neues Ziel: /auftrag [ziel] | Status: /auftrag status_`
     return msg
 }
 
@@ -912,13 +946,13 @@ function formatDuration(ms: number): string {
 
 export function getMissionStatus(): string {
     if (!activeMission) {
-        if (missionHistory.length === 0) return '📋 Keine Missionen. Starte eine mit: /mission [ziel]'
+        if (missionHistory.length === 0) return '📋 Keine Aufträge. Starte einen mit: /auftrag [ziel]'
 
         const last = missionHistory[missionHistory.length - 1]
         const icon = last.status === 'done' ? '✅' : last.status === 'cancelled' ? '🛑' : '❌'
-        return `📋 Keine aktive Mission.\n\n` +
+        return `📋 Kein aktiver Auftrag.\n\n` +
             `Letzte: ${icon} "${last.goal.slice(0, 60)}"\n` +
-            `Neue starten: /mission [ziel]`
+            `Neuen starten: /auftrag [ziel]`
     }
 
     let status = formatMissionProgress(activeMission)
@@ -933,9 +967,9 @@ export function getMissionStatus(): string {
 }
 
 export function getMissionHistory(count = 5): string {
-    if (missionHistory.length === 0) return '📋 Keine Mission-Historie.'
+    if (missionHistory.length === 0) return '📋 Keine Auftrags-Historie.'
 
-    let msg = `📋 *Mission-Historie* (letzte ${Math.min(count, missionHistory.length)}):\n\n`
+    let msg = `📋 *Auftrags-Historie* (letzte ${Math.min(count, missionHistory.length)}):\n\n`
     const recent = missionHistory.slice(-count).reverse()
 
     for (const m of recent) {
@@ -1058,7 +1092,7 @@ export function suspendMissionForLeadershipLoss(): void {
     }).catch(() => undefined)
     activeMission.status = 'paused'
     if (activeMission.rootGoalId) getGoalManager().update(activeMission.rootGoalId, { status: 'blocked' })
-    activeMission.progressUpdates.push('⏸️ Mission pausiert: Main-Lease verloren')
+    activeMission.progressUpdates.push('⏸️ Auftrag pausiert: Main-Lease verloren')
     saveMissions()
 }
 
@@ -1105,11 +1139,11 @@ export function getMissionConfig(): MissionConfig {
 
 export function formatMissionConfig(): string {
     const c = config
-    let msg = `⚙️ *Mission-Konfiguration*\n\n`
+    let msg = `⚙️ *Auftrags-Konfiguration*\n\n`
     msg += `🔄 *Continuations:* ${c.maxContinuations}\n`
     msg += `   _Wie oft Nova nach Abschluss weitermacht_\n\n`
     msg += `📝 *Steps:* ${c.maxSteps}\n`
-    msg += `   _Max. Teilaufgaben pro Mission_\n\n`
+    msg += `   _Max. Teilaufgaben pro Auftrag_\n\n`
     msg += `🔁 *Retries:* ${c.maxRetries}\n`
     msg += `   _Wiederholungen bei Fehler pro Step_\n\n`
     msg += `⏱️ *Timeout:* ${Math.round(c.timeoutPerStep / 1000)}s\n`

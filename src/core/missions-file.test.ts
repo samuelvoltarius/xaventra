@@ -1,15 +1,21 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// /wave (wave-pipeline.ts) owns .nova-data/missions/missions.json with its own
-// format. The responsibility missions (missions.ts) must not share that file,
-// otherwise each side reads the other as empty and overwrites it.
-const source = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+// P9: the responsibility missions own missions/responsibility-missions.json;
+// /wave (which used missions/missions.json) is gone; Aufträge have their own
+// auftraege.json. No two features share one file.
+const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url))
+const source = (rel: string) => readFileSync(here(rel), 'utf8')
 
-describe('Missions-Speicher getrennt von /wave', () => {
-    it('missions.ts schreibt nicht in missions/missions.json', () => {
-        expect(source('./missions.ts')).not.toMatch(/join\(options\.dataDir, 'missions', 'missions\.json'\)/)
-        expect(source('../intelligence/wave-pipeline.ts')).toMatch(/'missions\.json'/)
+describe('Missions-, Auftrags- und Wave-Speicher getrennt', () => {
+    it('missions.ts schreibt nur in missions/responsibility-missions.json', () => {
+        expect(source('./missions.ts')).toMatch(/join\(options\.dataDir, 'missions', 'responsibility-missions\.json'\)/)
+        expect(source('./missions.ts')).not.toMatch(/'missions\.json'/)
+    })
+
+    it('/wave ist entfernt; Aufträge schreiben auftraege.json', () => {
+        expect(existsSync(here('../intelligence/wave-pipeline.ts'))).toBe(false)
+        expect(source('./autonomous-executor.ts')).toMatch(/join\(DATA_DIR, 'auftraege\.json'\)/)
     })
 })

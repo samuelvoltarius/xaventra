@@ -20,8 +20,8 @@ function step(id: number) {
 async function seed(status: 'active' | 'paused', handleMessage: (...args: any[]) => Promise<void>) {
     vi.resetModules()
     const dataDir = join(process.cwd(), '.nova-data')
-    writeFileSync(join(dataDir, 'mission-config.json'), JSON.stringify({ timeoutPerStep: 1_000, delayBetweenSteps: 10, notifyEveryNSteps: 99 }))
-    writeFileSync(join(dataDir, 'missions.json'), JSON.stringify({
+    writeFileSync(join(dataDir, 'auftraege-config.json'), JSON.stringify({ timeoutPerStep: 1_000, delayBetweenSteps: 10, notifyEveryNSteps: 99 }))
+    writeFileSync(join(dataDir, 'auftraege.json'), JSON.stringify({
         active: {
             id: `step-${status}`, goal: 'Fixture-Ziel', summary: '', steps: [step(1), step(2), step(3)], currentStep: 0,
             status, createdBy: 'fixture-user', channel: 'internal', createdAt: 1, progressUpdates: [],
@@ -71,7 +71,7 @@ describe('mission step execution', () => {
 
     it('does not silently overwrite a paused mission (R2 A15)', async () => {
         const executor = await seed('paused', vi.fn(async () => { }))
-        await expect(executor.startMission('Anderes Fixture-Ziel', 'fixture-user', 'internal')).rejects.toThrow(/pausierte Mission/)
+        await expect(executor.startMission('Anderes Fixture-Ziel', 'fixture-user', 'internal')).rejects.toThrow(/pausierter Auftrag/)
         expect(executor.getActiveMission()?.id).toBe('step-paused')
         expect(executor.getActiveMission()?.status).toBe('paused')
     })

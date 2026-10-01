@@ -232,11 +232,10 @@ export async function handleCommand(
 *Bots:* /bots /bot /bot team /swarm
 *Agents:* /agents /subagent /factory
 *Users:* /users /users list /users promote /users block
-*Wave:* /wave new /wave approve /wave status
 *Intelligence:* /roi /graph /scan
 *Projekt:* /project
 *Monitor:* /monitor
-*Autonomie:* /autonom /mission /remind
+*Autonomie:* /autonom /auftrag /arbeit /routine /remind
 *Pre-Flight:* /preflight /preflight local /preflight <host>
 *Auth:* /codex status /codex login /codex logout
 *Smart Home:* /hass list /hass on <entity> /hass off <entity> /hass toggle <entity>
@@ -1449,29 +1448,11 @@ Gebaut für Xaventra contributors 🌶️`
         }
 
         // ============================================
-        // Wave Pipeline (nWave-inspired structured missions)
+        // /wave was removed in P9: it only kept phase notes nobody filled in.
+        // Aufträge (/auftrag) plan and run steps; Missionen (/arbeit) look after responsibilities.
         // ============================================
-        case 'wave': {
-            const { createMission, getMissionStatus, approvePhase, revisePhase, listMissions, submitForReview } = await import('../intelligence/wave-pipeline.js')
-            const [subCmd, ...rest] = args.split(' ')
-            switch (subCmd?.toLowerCase()) {
-                case 'new':
-                case 'start':
-                    return createMission(rest.join(' ') || 'Unnamed Mission', rest.join(' '), from).title + ' erstellt!'
-                case 'approve':
-                case 'ok':
-                    return approvePhase(rest[0] || '')
-                case 'revise':
-                    return revisePhase(rest[0] || '', rest.slice(1).join(' '))
-                case 'submit':
-                case 'review':
-                    return submitForReview(rest[0] || '')
-                case 'list':
-                    return listMissions()
-                default:
-                    return getMissionStatus(subCmd)
-            }
-        }
+        case 'wave':
+            return 'ℹ️ /wave gibt es nicht mehr. Für ein Ziel in Schritten: /auftrag <ziel> (mit Prüfung je Schritt). Selbstständige Missionen: /arbeit.'
 
         // ============================================
         // ROI Dashboard (ClawWork-inspired)
@@ -1935,10 +1916,10 @@ Gebaut für Xaventra contributors 🌶️`
                 '/clear', '/apikey', '/save', '/compact',
                 '/bots', '/bot', '/swarm', '/subagent', '/sub',
                 '/users', '/user', '/agents', '/factory', '/doctor',
-                '/wave', '/roi', '/cost', '/graph', '/scan',
+                '/roi', '/cost', '/graph', '/scan',
                 '/project', '/monitor', '/login', '/callback', '/commands',
                 '/reasoning', '/verbose', '/autonomy', '/quiet',
-                '/autonom', '/mission', '/remind', '/task', '/preflight', '/waechter',
+                '/autonom', '/auftrag', '/arbeit', '/routine', '/remind', '/task', '/preflight', '/waechter',
             ]
             return `📝 *Alle ${cmds.length} Befehle:*\n\n${cmds.join(' • ')}\n\nDetails: /help`
         }
@@ -2287,7 +2268,7 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
                         const done = mission.steps.filter(s => s.status === 'done').length
                         const total = mission.steps.length
                         const pct = Math.round((done / total) * 100)
-                        output += '\n\n🎯 *Aktive Mission:*\n' + mission.goal.slice(0, 100) + '\nFortschritt: ' + done + '/' + total + ' (' + pct + '%) | /mission status'
+                        output += '\n\n🎯 *Aktiver Auftrag:*\n' + mission.goal.slice(0, 100) + '\nFortschritt: ' + done + '/' + total + ' (' + pct + '%) | /auftrag status'
                     }
                 } catch { /* */ }
                 // Show scheduled jobs
@@ -3439,10 +3420,15 @@ Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
         }
 
         // ============================================
-        // Autonomous Mission Engine
+        // Aufträge (Autonomous Executor). /mission is the old name.
+        // Missionen = Verantwortungs-Missionen under /arbeit.
         // ============================================
         case 'mission':
         case 'auftrag': {
+            const aliasHint = cmd === 'mission'
+                ? 'ℹ️ /mission heißt jetzt /auftrag. „Missionen“ sind die selbstständigen Verantwortungs-Missionen (/arbeit).\n\n'
+                : ''
+            const answer = await (async (): Promise<string> => {
             try {
                 const { startMission, cancelMission, pauseMission, resumeMission, getMissionStatus, getMissionHistory, formatMissionConfig, updateMissionConfig } = await import('./autonomous-executor.js')
                 const subCmd = args.split(' ')[0]?.toLowerCase() || ''
@@ -3489,12 +3475,14 @@ Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
                         const fullGoal = args.trim()
                         if (!fullGoal) return getMissionStatus()
                         const mission = await startMission(fullGoal, from, 'telegram')
-                        return '🚀 Mission gestartet! ' + mission.steps.length + ' Schritte werden autonom abgearbeitet.\n\nZiel: ' + fullGoal.slice(0, 150) + '\n\nKontrolle: /mission status | /mission stop | /mission pause | /mission config'
+                        return '🚀 Auftrag gestartet! ' + mission.steps.length + ' Schritte werden selbstständig abgearbeitet.\n\nZiel: ' + fullGoal.slice(0, 150) + '\n\nKontrolle: /auftrag status | /auftrag stop | /auftrag pause | /auftrag config'
                     }
                 }
             } catch (err: any) {
-                return '❌ Mission-Fehler: ' + (err?.message || err)
+                return '❌ Auftrag-Fehler: ' + (err?.message || err)
             }
+            })()
+            return aliasHint + answer
         }
 
         // ================================================

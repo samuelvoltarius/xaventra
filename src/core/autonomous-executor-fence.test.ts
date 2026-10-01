@@ -20,8 +20,8 @@ describe('CL-07 mission lease is a sub-lease of nova-main', () => {
         vi.useFakeTimers()
         vi.resetModules()
         const dataDir = join(process.cwd(), '.nova-data')
-        writeFileSync(join(dataDir, 'mission-config.json'), JSON.stringify({ timeoutPerStep: 1_000, delayBetweenSteps: 10, notifyEveryNSteps: 99 }))
-        writeFileSync(join(dataDir, 'missions.json'), JSON.stringify({
+        writeFileSync(join(dataDir, 'auftraege-config.json'), JSON.stringify({ timeoutPerStep: 1_000, delayBetweenSteps: 10, notifyEveryNSteps: 99 }))
+        writeFileSync(join(dataDir, 'auftraege.json'), JSON.stringify({
             active: {
                 id: 'fence-mission', goal: 'Fixture-Ziel', summary: '', currentStep: 0,
                 steps: [{ id: 1, description: 'Schritt 1', command: 'mache 1', status: 'pending', retries: 0 }],

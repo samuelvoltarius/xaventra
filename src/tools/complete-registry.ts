@@ -2846,28 +2846,28 @@ const selfModificationTools: NovaTool[] = [
 ]
 
 // ============================================
-// Mission Tools (LLM can start/manage missions)
+// Auftrags-Tools (P9: „Auftrag“ = Owner-Ziel als Schrittkette; Tool-Namen bleiben)
 // ============================================
 
 export const missionTools: NovaTool[] = [
     {
         name: 'start_mission',
-        description: 'Startet eine autonome Mission. NUTZE DAS wenn du eine komplexe Aufgabe autonom erledigen willst, die mehrere Schritte braucht. Schreibe NICHT nur "Mission gestartet" ï¿½ rufe dieses Tool auf!',
+        description: 'Startet einen Auftrag: ein Ziel, das selbstständig in mehreren Schritten abgearbeitet wird. Nutze das für komplexe Aufgaben mit mehreren Schritten; schreibe nicht nur „Auftrag gestartet“, sondern rufe dieses Tool auf.',
         category: 'system',
         parameters: [
-            { name: 'goal', type: 'string', description: 'Das Ziel der Mission ï¿½ was genau soll erreicht werden?', required: true },
+            { name: 'goal', type: 'string', description: 'Das Ziel des Auftrags: was genau soll erreicht werden?', required: true },
         ],
         async handler(params) {
             const { startMission } = await import('../core/autonomous-executor.js')
             const goal = String(params.goal)
-            if (!goal || goal.length < 5) return '? Bitte ein konkretes Ziel angeben (min. 5 Zeichen).'
+            if (!goal || goal.length < 5) return '❌ Bitte ein konkretes Ziel angeben (mindestens 5 Zeichen).'
             const mission = await startMission(goal, 'nova-self', 'internal')
-            return `?? Mission registriert! ${mission.steps.length} Schritte geplant.\n\nZiel: ${goal.slice(0, 150)}\nSteps: ${mission.steps.map((s: any) => s.description).join(', ')}`
+            return `🚀 Auftrag registriert! ${mission.steps.length} Schritte geplant.\n\nZiel: ${goal.slice(0, 150)}\nSteps: ${mission.steps.map((s: any) => s.description).join(', ')}`
         },
     },
     {
         name: 'mission_status',
-        description: 'Zeigt den aktuellen Status der laufenden Mission. Nutze das BEVOR du sagst ob eine Mission lï¿½uft oder nicht.',
+        description: 'Zeigt den Status des laufenden Auftrags. Nutze das, bevor du sagst, ob ein Auftrag läuft.',
         category: 'system',
         parameters: [],
         async handler() {
@@ -2879,7 +2879,7 @@ export const missionTools: NovaTool[] = [
     },
     {
         name: 'mission_config',
-        description: 'Zeigt oder ï¿½ndert die Mission-Konfiguration (max Continuations, Timeout, Steps, etc.)',
+        description: 'Zeigt oder ändert die Auftrags-Konfiguration (Folge-Aufträge, Timeout, Schritte usw.)',
         category: 'system',
         parameters: [
             { name: 'key', type: 'string', description: 'Setting: continuations, steps, retries, timeout, delay, notify (leer = alle anzeigen)', required: false },
@@ -2890,7 +2890,7 @@ export const missionTools: NovaTool[] = [
             if (!params.key) return formatMissionConfig()
             const key = String(params.key).toLowerCase()
             const val = Number(params.value)
-            if (isNaN(val) || val < 0) return '? Wert muss eine positive Zahl sein.'
+            if (isNaN(val) || val < 0) return '❌ Wert muss eine positive Zahl sein.'
             const keyMap: Record<string, string> = {
                 continuations: 'maxContinuations', cont: 'maxContinuations',
                 steps: 'maxSteps', retries: 'maxRetries',

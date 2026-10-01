@@ -10,9 +10,12 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasGlobalAutonomyAuthority } from '../core/autonomy-authority.js'
+import { getGoalManager, SELF_GOAL_OWNER, type NovaGoal } from '../core/goal-manager.js'
+import { markMigrated } from '../planner/migration-files.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data')
-const GOALS_FILE = join(DATA_DIR, 'self-goals.json')
+/** P9: only read once for the migration into the one goal store (goals.json). */
+const LEGACY_SELF_GOALS_FILE = join(DATA_DIR, 'self-goals.json')
 const INSIGHTS_FILE = join(DATA_DIR, 'insights.json')
 const CONSOLIDATION_FILE = join(DATA_DIR, 'memory-consolidation.json')
 
@@ -24,7 +27,8 @@ function ensureDir(): void {
 // Types
 // ============================================
 
-interface SelfGoal {
+/** View of a self-goal; stored as a NovaGoal (origin 'selbst') in the goal manager. */
+export interface SelfGoal {
     id: string
     goal: string
     reason: string
@@ -74,16 +78,46 @@ interface ConsolidationResult {
 // Storage Helpers
 // ============================================
 
-function loadGoals(): SelfGoal[] {
-    try {
-        if (existsSync(GOALS_FILE)) return JSON.parse(readFileSync(GOALS_FILE, 'utf-8'))
-    } catch { /* fresh */ }
-    return []
+const SELF_GOAL_PRIORITY = 30
+
+function toSelfGoal(goal: NovaGoal): SelfGoal {
+    const status: SelfGoal['status'] = goal.status === 'completed' ? 'done'
+        : goal.status === 'cancelled' || goal.status === 'failed' ? 'skipped' : 'pending'
+    const finished = status !== 'pending'
+    return {
+        id: goal.id, goal: goal.title, reason: goal.reason || '', status,
+        createdAt: Date.parse(goal.createdAt) || 0,
+        ...(finished ? { completedAt: Date.parse(goal.updatedAt) || undefined } : {}),
+        ...(goal.result ? { result: goal.result } : {}),
+    }
 }
 
-function saveGoals(goals: SelfGoal[]): void {
-    ensureDir()
-    writeFileSync(GOALS_FILE, JSON.stringify(goals, null, 2))
+function selfGoals(): SelfGoal[] {
+    return getGoalManager().list(SELF_GOAL_OWNER).filter(goal => goal.origin === 'selbst' || !goal.origin).map(toSelfGoal)
+}
+
+/** P9: self-goals.json → goals.json (once, idempotent by id); the old file becomes `.migriert`. */
+export function migrateLegacySelfGoals(file = LEGACY_SELF_GOALS_FILE, now = Date.now()): number {
+    if (!existsSync(file)) return 0
+    let legacy: SelfGoal[] = []
+    try { legacy = JSON.parse(readFileSync(file, 'utf-8')) } catch { legacy = [] }
+    const manager = getGoalManager()
+    let moved = 0
+    for (const item of Array.isArray(legacy) ? legacy : []) {
+        if (!item || typeof item.goal !== 'string' || !item.goal.trim()) continue
+        const stale = item.status === 'pending' && Number(item.createdAt) < now - 3 * 24 * 60 * 60 * 1000
+        const status = item.status === 'done' ? 'completed' : item.status === 'skipped' || stale ? 'cancelled' : 'active'
+        const id = `selbst-${String(item.id || moved).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)}`
+        manager.create({
+            id, userId: SELF_GOAL_OWNER, title: item.goal.slice(0, 300), dependencies: [], priority: SELF_GOAL_PRIORITY,
+            origin: 'selbst', reason: String(item.reason || '').slice(0, 300), status,
+        })
+        const result = item.result || (stale ? 'beim Übernehmen archiviert: älter als 3 Tage' : '')
+        if (result && !manager.list(SELF_GOAL_OWNER).find(goal => goal.id === id)?.result) manager.update(id, { result })
+        moved++
+    }
+    markMigrated(file)
+    return moved
 }
 
 function loadInsights(): Insight[] {
@@ -115,15 +149,15 @@ function saveConsolidations(results: ConsolidationResult[]): void {
 // ============================================
 
 class SelfGoalEngine {
-    private goals: SelfGoal[] = []
     private llm: any = null
     private intervalId: ReturnType<typeof setInterval> | null = null
 
     constructor() {
-        this.goals = loadGoals()
+        const moved = migrateLegacySelfGoals()
+        if (moved) console.log(`[Autonomy] ${moved} Selbst-Ziel(e) aus self-goals.json in den Ziel-Speicher übernommen`)
         this.sanitizeUnsafeGoals()
         this.archiveStaleGoals()
-        console.log(`[Autonomy] Self-Goals: ${this.goals.filter(g => g.status === 'pending').length} pending`)
+        console.log(`[Autonomy] Self-Goals: ${selfGoals().filter(g => g.status === 'pending').length} pending`)
     }
 
     /**
@@ -135,18 +169,13 @@ class SelfGoalEngine {
         const GOAL_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000 // 3 days
         const cutoff = Date.now() - GOAL_MAX_AGE_MS
         let archived = 0
-        for (const goal of this.goals.filter(g => g.status === 'pending')) {
+        for (const goal of selfGoals().filter(g => g.status === 'pending')) {
             if (goal.createdAt < cutoff) {
-                goal.status = 'skipped'
-                goal.completedAt = Date.now()
-                goal.result = `archived at restart — too old (created ${new Date(goal.createdAt).toISOString()})`
+                this.skipGoal(goal.id, `archived at restart — too old (created ${new Date(goal.createdAt).toISOString()})`, true)
                 archived++
             }
         }
-        if (archived > 0) {
-            saveGoals(this.goals)
-            console.log(`[Autonomy] 🗑️  Archived ${archived} stale pending goal(s) older than 3 days`)
-        }
+        if (archived > 0) console.log(`[Autonomy] 🗑️  Archived ${archived} stale pending goal(s) older than 3 days`)
     }
 
     setLLM(llm: any): void {
@@ -154,18 +183,13 @@ class SelfGoalEngine {
     }
 
     private sanitizeUnsafeGoals(): void {
-        let changed = false
-        for (const goal of this.goals.filter(g => g.status !== 'skipped')) {
+        for (const goal of selfGoals().filter(g => g.status !== 'skipped')) {
             const decision = isSafeSelfGoal(goal.goal, goal.reason)
             if (!decision.safe) {
-                goal.status = 'skipped'
-                goal.completedAt = Date.now()
-                goal.result = decision.reason
-                changed = true
+                this.skipGoal(goal.id, decision.reason || 'Unsafe self-goal', true)
                 console.log(`[Autonomy] Unsafe pending self-goal archived: "${goal.goal}"`)
             }
         }
-        if (changed) saveGoals(this.goals)
     }
 
     /**
@@ -176,14 +200,14 @@ class SelfGoalEngine {
         if (!this.llm) return []
 
         try {
-            // Gather context about what Nova knows
-            const pendingCount = this.goals.filter(g => g.status === 'pending').length
+            const goals = selfGoals()
+            const pendingCount = goals.filter(g => g.status === 'pending').length
             if (pendingCount >= 5) {
                 console.log('[Autonomy] Already 5+ pending goals, skipping generation')
                 return []
             }
 
-            const completedGoals = this.goals
+            const completedGoals = goals
                 .filter(g => g.status === 'done')
                 .slice(-5)
                 .map(g => g.goal)
@@ -191,22 +215,22 @@ class SelfGoalEngine {
             const response = await this.llm.complete([
                 {
                     role: 'system',
-                    content: `Du bist Novas Autonomie-Modul. Du generierst SINNVOLLE Selbst-Ziele, die Nova autonom verfolgen kann.
+                    content: `Du bist Xaventras Autonomie-Modul. Du erzeugst SINNVOLLE Selbst-Ziele, die Xaventra selbstständig verfolgen kann.
 Regeln:
-- Nur sichere Read-only/System-Analyse-Ziele die Nova mit lokalen Tools erreichen kann (Logs lesen, Status prÃ¼fen, Code analysieren, Findings sammeln)
-- Keine Ziele die User-Interaktion brauchen
-- Keine KÃ¤ufe, VerkÃ¤ufe, Zahlungen, Shop-/Business-Abwicklung, Wallets, Bank oder echte externe Aktionen
-- Keine Deploys, Restarts, SSH-Ã„nderungen, Secrets, Logins oder produktiven SystemÃ¤nderungen ohne expliziten User-Befehl
+- Nur sichere Read-only/System-Analyse-Ziele, die mit lokalen Tools erreichbar sind (Logs lesen, Status prüfen, Code analysieren, Befunde sammeln)
+- Keine Ziele, die User-Interaktion brauchen
+- Keine Käufe, Verkäufe, Zahlungen, Shop-/Business-Abwicklung, Wallets, Bank oder echte externe Aktionen
+- Keine Deploys, Restarts, SSH-Änderungen, Secrets, Logins oder produktiven Systemänderungen ohne ausdrücklichen User-Befehl
 - Praktisch und nützlich (System-Checks, Wissensaufbau, Optimierungen)
 - Max 3 neue Ziele pro Runde
 - Format: JSON Array mit {goal, reason}
-- KEINE Ziele die schon erledigt wurden`
+- KEINE Ziele, die schon erledigt wurden`
                 },
                 {
                     role: 'user',
                     content: `Bereits erledigte Ziele: ${completedGoals.join(', ') || 'keine'}
 Aktuell offene Ziele: ${pendingCount}
-Was sind 1-3 sinnvolle nächste Ziele für Nova?
+Was sind 1-3 sinnvolle nächste Ziele?
 Antworte NUR mit einem JSON-Array.`
                 },
             ])
@@ -217,23 +241,18 @@ Antworte NUR mit einem JSON-Array.`
             if (!jsonMatch) return []
 
             const parsed = JSON.parse(jsonMatch[0])
+            const manager = getGoalManager()
             const newGoals: SelfGoal[] = parsed
                 .slice(0, 3)
                 .filter((g: any) => {
                     const decision = isSafeSelfGoal(String(g.goal || ''), String(g.reason || ''))
                     if (!decision.safe) console.log(`[Autonomy] Self-goal rejected: "${String(g.goal || '').slice(0, 80)}" (${decision.reason})`)
-                    return decision.safe
+                    return decision.safe && String(g.goal || '').trim().length > 0
                 })
-                .map((g: any) => ({
-                    id: `goal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                    goal: g.goal,
-                    reason: g.reason || '',
-                    status: 'pending' as const,
-                    createdAt: Date.now(),
-                }))
-
-            this.goals.push(...newGoals)
-            saveGoals(this.goals)
+                .map((g: any) => toSelfGoal(manager.create({
+                    userId: SELF_GOAL_OWNER, title: String(g.goal).slice(0, 300), dependencies: [], priority: SELF_GOAL_PRIORITY,
+                    origin: 'selbst', reason: String(g.reason || '').slice(0, 300),
+                })))
 
             for (const g of newGoals) {
                 console.log(`[Autonomy] 🎯 New self-goal: "${g.goal}" (${g.reason})`)
@@ -257,7 +276,7 @@ Antworte NUR mit einem JSON-Array.`
      * Get next pending goal to work on
      */
     getNextGoal(): SelfGoal | null {
-        for (const goal of this.goals.filter(g => g.status === 'pending')) {
+        for (const goal of selfGoals().filter(g => g.status === 'pending').sort((a, b) => a.createdAt - b.createdAt)) {
             const decision = isSafeSelfGoal(goal.goal, goal.reason)
             if (decision.safe) return goal
             this.skipGoal(goal.id, decision.reason || 'Unsafe self-goal')
@@ -269,25 +288,13 @@ Antworte NUR mit einem JSON-Array.`
      * Mark goal as done
      */
     completeGoal(goalId: string, result: string): void {
-        const goal = this.goals.find(g => g.id === goalId)
-        if (goal) {
-            goal.status = 'done'
-            goal.completedAt = Date.now()
-            goal.result = result
-            saveGoals(this.goals)
-            console.log(`[Autonomy] ✅ Goal completed: "${goal.goal}"`)
-        }
+        const updated = getGoalManager().update(goalId, { status: 'completed', result })
+        if (updated) console.log(`[Autonomy] ✅ Goal completed: "${updated.title}"`)
     }
 
-    skipGoal(goalId: string, reason: string): void {
-        const goal = this.goals.find(g => g.id === goalId)
-        if (goal) {
-            goal.status = 'skipped'
-            goal.completedAt = Date.now()
-            goal.result = reason
-            saveGoals(this.goals)
-            console.log(`[Autonomy] Self-goal skipped: "${goal.goal}" - ${reason}`)
-        }
+    skipGoal(goalId: string, reason: string, quiet = false): void {
+        const updated = getGoalManager().update(goalId, { status: 'cancelled', result: reason })
+        if (updated && !quiet) console.log(`[Autonomy] Self-goal skipped: "${updated.title}" - ${reason}`)
     }
 
     /**
@@ -299,22 +306,24 @@ Antworte NUR mit einem JSON-Array.`
         // Generate initial goals after 5 minutes
         setTimeout(() => {
             this.generateGoals().catch(() => { })
-        }, 5 * 60 * 1000)
+        }, 5 * 60 * 1000).unref?.()
 
         // Then every 2 hours
         this.intervalId = setInterval(() => {
             this.generateGoals().catch(() => { })
         }, 2 * 60 * 60 * 1000)
+        this.intervalId.unref?.()
 
         console.log('[Autonomy] 🎯 Self-Goal engine started')
     }
 
     getStats() {
+        const goals = selfGoals()
         return {
-            total: this.goals.length,
-            pending: this.goals.filter(g => g.status === 'pending').length,
-            done: this.goals.filter(g => g.status === 'done').length,
-            goals: this.goals.slice(-10),
+            total: goals.length,
+            pending: goals.filter(g => g.status === 'pending').length,
+            done: goals.filter(g => g.status === 'done').length,
+            goals: goals.slice(-10),
         }
     }
 }

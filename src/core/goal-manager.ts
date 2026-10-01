@@ -5,6 +5,15 @@ import { getNovaDataDir } from './data-root.js'
 
 export type GoalStatus = 'planned' | 'active' | 'blocked' | 'completed' | 'failed' | 'cancelled'
 
+/**
+ * P9: the one goal store. Owner goals come from Aufträge (autonomous-executor,
+ * one root goal per Auftrag plus one per step); Xaventra's own read-only
+ * self-goals (intelligence/autonomy-engine.ts) live here too, under the
+ * principal SELF_GOAL_OWNER, so they never show up in a user's prompt.
+ */
+export const SELF_GOAL_OWNER = 'xaventra:selbst'
+export type GoalOrigin = 'auftrag' | 'selbst'
+
 export interface NovaGoal {
     id: string
     userId: string
@@ -18,6 +27,12 @@ export interface NovaGoal {
     blockedBy?: 'explicit' | 'dependency'
     nextAction?: string
     sourceMissionId?: string
+    /** Who set the goal: an Auftrag (owner) or Xaventra herself. Missing = auftrag (older entries). */
+    origin?: GoalOrigin
+    /** Why (self-goals: the model's stated reason, already safety-checked). */
+    reason?: string
+    /** Short result text of a finished goal. */
+    result?: string
     outcomeRunIds: string[]
     evidenceRefs: string[]
     progress: number
@@ -76,13 +91,14 @@ export class GoalManager {
         return { root, steps: this.list(input.userId).filter(goal => goal.parentId === root.id) }
     }
 
-    update(id: string, patch: Partial<Pick<NovaGoal, 'status' | 'nextAction' | 'deadline' | 'priority'>>, evidence?: { runId?: string; ref?: string }): NovaGoal | null {
+    update(id: string, patch: Partial<Pick<NovaGoal, 'status' | 'nextAction' | 'deadline' | 'priority' | 'result'>>, evidence?: { runId?: string; ref?: string }): NovaGoal | null {
         const goal = this.goals.find(item => item.id === id)
         if (!goal) return null
         Object.assign(goal, patch)
         if (patch.status === 'blocked') goal.blockedBy = 'explicit'
         else if (patch.status !== undefined) delete goal.blockedBy
         if (patch.priority !== undefined) goal.priority = Math.max(0, Math.min(100, patch.priority))
+        if (patch.result !== undefined) goal.result = String(patch.result).slice(0, 500)
         if (evidence?.runId) goal.outcomeRunIds = [...new Set([...goal.outcomeRunIds, evidence.runId])].slice(-50)
         if (evidence?.ref) goal.evidenceRefs = [...new Set([...goal.evidenceRefs, evidence.ref])].slice(-50)
         goal.progress = patch.status === 'completed' ? 1 : patch.status === 'failed' || patch.status === 'cancelled' ? goal.progress : Math.max(goal.progress, 0.05)

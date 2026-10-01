@@ -16,7 +16,7 @@
  *                         ├── L3 / nicht im Vertrag / kein Ausführungsweg ──> blockiert (Handoff)
  *                         └── Versuch gescheitert ──(<3)──> in-arbeit (nächster Tick) ──(3)──> fehlgeschlagen (Handoff)
  *
- * Persistenz: `<dataDir>/missions/responsibility-missions.json` (atomar; /wave nutzt missions.json). Nach einem Neustart
+ * Persistenz: `<dataDir>/missions/responsibility-missions.json` (atomar; eigene Datei, Aufträge liegen in auftraege.json). Nach einem Neustart
  * steht eine wartende Mission genau dort, wo sie wartete; das „Ja“ führt nur
  * den wartenden Schritt aus und läuft dann weiter (kein Neustart von vorn).
  *
@@ -154,7 +154,7 @@ export function planSteps(responsibility: Responsibility): MissionStep[] {
 export function createMissionEngine(options: MissionEngineOptions): MissionEngine {
     const now = options.now ?? Date.now
     const iso = () => new Date(now()).toISOString()
-    // Own file: /wave (wave-pipeline.ts) owns missions/missions.json with another format.
+    // Own file (P9): Aufträge use auftraege.json, /wave is gone.
     const file = join(options.dataDir, 'missions', 'responsibility-missions.json')
     const executors = new Map(options.executors.map(item => [item.kind, item]))
     const busy = new Set<string>()

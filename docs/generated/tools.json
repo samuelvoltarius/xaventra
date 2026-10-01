@@ -2103,7 +2103,7 @@
     {
       "name": "mission_config",
       "category": "system",
-      "description": "Zeigt oder ï¿½ndert die Mission-Konfiguration (max Continuations, Timeout, Steps, etc.)",
+      "description": "Zeigt oder ändert die Auftrags-Konfiguration (Folge-Aufträge, Timeout, Schritte usw.)",
       "parameters": [
         {
           "name": "key",
@@ -2120,7 +2120,7 @@
     {
       "name": "mission_status",
       "category": "system",
-      "description": "Zeigt den aktuellen Status der laufenden Mission. Nutze das BEVOR du sagst ob eine Mission lï¿½uft oder nicht.",
+      "description": "Zeigt den Status des laufenden Auftrags. Nutze das, bevor du sagst, ob ein Auftrag läuft.",
       "parameters": []
     },
     {
@@ -3298,7 +3298,7 @@
     {
       "name": "start_mission",
       "category": "system",
-      "description": "Startet eine autonome Mission. NUTZE DAS wenn du eine komplexe Aufgabe autonom erledigen willst, die mehrere Schritte braucht. Schreibe NICHT nur \"Mission gestartet\" ï¿½ rufe dieses Tool auf!",
+      "description": "Startet einen Auftrag: ein Ziel, das selbstständig in mehreren Schritten abgearbeitet wird. Nutze das für komplexe Aufgaben mit mehreren Schritten; schreibe nicht nur „Auftrag gestartet“, sondern rufe dieses Tool auf.",
       "parameters": [
         {
           "name": "goal",
