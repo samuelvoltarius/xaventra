@@ -16,7 +16,6 @@
 
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { execSync } from 'node:child_process'
 import { constantTimeTokenEquals } from '../security/token-compare.js'
 import type { DoctorReport, DoctorIssue, ApplyFixResult } from './types.js'
 import { NovaConfigSchema } from '../core/config.js'
@@ -133,121 +132,6 @@ export async function applySafeFixes(report: DoctorReport): Promise<FixRunResult
             ...queued.skipped,
         ],
         requiresRestart: false,
-    }
-}
-
-// Kept temporarily for migration reference; deliberately not exported or reachable.
-async function legacyApplySafeFixes(report: DoctorReport): Promise<FixRunResult> {
-    throw new Error('PATCH_GATE required: direct Doctor mutation is disabled')
-    const safeFixes = report.issues.filter(i => i.fix?.safe === true)
-    const applied: ApplyFixResult[] = []
-    const skipped: string[] = []
-    let requiresRestart = false
-
-    for (const issue of safeFixes) {
-        const fix = issue.fix!
-        const result = await applyOneFix(issue, fix)
-        if (result.applied) {
-            applied.push(result)
-            if (result.requiresRestart) requiresRestart = true
-        } else {
-            skipped.push(`${issue.code}: ${result.message}`)
-        }
-    }
-
-    return { applied, skipped, requiresRestart }
-}
-
-async function applyOneFix(
-    issue: DoctorIssue,
-    fix: NonNullable<DoctorIssue['fix']>,
-): Promise<ApplyFixResult> {
-
-    switch (fix.type) {
-
-        case 'config_patch': {
-            if (!fix.configPath || fix.configValue === undefined) {
-                return { applied: false, message: 'config_patch: configPath oder configValue fehlt' }
-            }
-            return applyConfigPatch(fix.configPath, fix.configValue, issue.code)
-        }
-
-        case 'command': {
-            if (!fix.command) return { applied: false, message: 'command: command fehlt' }
-
-            // Allowlist — only these commands are ever run automatically
-            const SAFE_COMMANDS = [
-                /^npm install$/,
-                /^npm run build$/,
-                /^touch \.env$/,
-                /^cp nova\.config\.example\.json nova\.config\.json$/,
-            ]
-            const isAllowed = SAFE_COMMANDS.some(re => re.test(fix.command!.trim()))
-            if (!isAllowed) {
-                return {
-                    applied: false,
-                    message: `Kommando nicht in Allowlist: ${fix.command}`,
-                }
-            }
-
-            try {
-                execSync(fix.command, { cwd: NOVA_DIR, timeout: 120_000, stdio: 'pipe' })
-                return {
-                    applied: true,
-                    message: `Ausgeführt: ${fix.command}`,
-                    requiresRestart: fix.command.includes('build'),
-                }
-            } catch (err: any) {
-                return {
-                    applied: false,
-                    message: `Fehler bei "${fix.command}": ${err?.message?.slice(0, 100) || err}`,
-                }
-            }
-        }
-
-        default:
-            return { applied: false, message: `Fix-Typ "${fix.type}" wird nicht automatisch angewendet` }
-    }
-}
-
-function applyConfigPatch(dotPath: string, value: unknown, issueCode: string): ApplyFixResult {
-    const configPath = resolveConfigPath(NOVA_DIR)
-
-    if (!existsSync(configPath)) {
-        return { applied: false, message: 'xaventra.config.json nicht gefunden' }
-    }
-
-    let config: Record<string, unknown>
-    try {
-        config = JSON.parse(readFileSync(configPath, 'utf-8'))
-    } catch {
-        return { applied: false, message: 'xaventra.config.json konnte nicht geparst werden' }
-    }
-
-    // Navigate to parent and set value
-    const keys = dotPath.split('.')
-    const lastKey = keys.pop()!
-    let target: any = config
-
-    for (const key of keys) {
-        if (typeof target[key] !== 'object' || target[key] === null) {
-            target[key] = {}
-        }
-        target = target[key]
-    }
-
-    const oldValue = target[lastKey]
-    target[lastKey] = value
-
-    try {
-        writeFileSync(configPath, JSON.stringify(config, null, 4))
-        return {
-            applied: true,
-            message: `${dotPath}: ${JSON.stringify(oldValue)} → ${JSON.stringify(value)}`,
-            requiresRestart: true,
-        }
-    } catch (err: any) {
-        return { applied: false, message: `Schreiben fehlgeschlagen: ${err?.message}` }
     }
 }
 

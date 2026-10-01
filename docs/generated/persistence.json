@@ -110,6 +110,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/autonomous-executor-delegation.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/autonomous-executor-fence.test.ts",
       "path": ".nova-data"
     },
@@ -135,6 +139,10 @@
     },
     {
       "owner": "src/core/batch-processor.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/begriffe-p9.test.ts",
       "path": ".nova-data"
     },
     {
@@ -187,14 +195,6 @@
     },
     {
       "owner": "src/core/full-system-audit.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/core/heartbeat.test.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/core/heartbeat.ts",
       "path": ".nova-data"
     },
     {
@@ -482,10 +482,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/intelligence/wave-pipeline.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/layers/dream-daily-digest.ts",
       "path": ".nova-data"
     },
@@ -547,10 +543,6 @@
     },
     {
       "owner": "src/layers/layers-bounded-state.test.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/layers/layers-cli-dead-paths.test.ts",
       "path": ".nova-data"
     },
     {
@@ -767,6 +759,10 @@
     },
     {
       "owner": "src/planner/reminder-planner.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/planner/routines.test.ts",
       "path": ".nova-data"
     },
     {
@@ -994,10 +990,6 @@
       "path": ".nova-data/goals.json"
     },
     {
-      "owner": "src/layers/L0-supervisor.ts",
-      "path": ".nova-data/HEARTBEAT.md"
-    },
-    {
       "owner": "src/llm/model-discovery.ts",
       "path": ".nova-data/hosts.json"
     },
@@ -1108,10 +1100,6 @@
     {
       "owner": "src/core/auto-updater-rollout.test.ts",
       "path": ".nova-data/release-artifacts"
-    },
-    {
-      "owner": "src/layers/L0-supervisor.ts",
-      "path": ".nova-data/scheduled-tasks.json"
     },
     {
       "owner": "src/doctor/claude-handoff.ts",

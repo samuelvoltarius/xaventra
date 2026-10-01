@@ -1405,7 +1405,7 @@ app.post('/api/mesh/delegate', async (req, res) => {
         if (delegation) {
             res.json({ success: true, taskId: delegation.id })
         } else {
-            res.json({ success: false, error: 'Task delegation failed' })
+            res.json({ success: false, error: 'Nicht an den Knoten übergeben' })
         }
     } catch (err) {
         res.json({ success: false, error: String(err) })
@@ -1859,10 +1859,15 @@ app.post('/api/memory', async (req, res) => {
 // ============================================
 
 app.get('/api/scheduler', async (req, res) => {
+    // P9: one scheduler. Automations and routines are planner jobs.
     try {
-        const { getScheduler } = await import('../scheduler/nova-scheduler.js')
-        const scheduler = getScheduler()
-        res.json({ jobs: scheduler.listJobs() })
+        const { getPlannerRuntime } = await import('../planner/runtime.js')
+        const { AUTOMATION_KIND, ROUTINE_KIND } = await import('../planner/routines.js')
+        const planner = getPlannerRuntime()?.planner
+        const jobs = (planner?.listJobs({ status: 'aktiv' }) || [])
+            .filter(job => job.kind === AUTOMATION_KIND || job.kind === ROUTINE_KIND)
+            .map(job => ({ id: job.id, action: String(job.payload.action || job.payload.task || job.title), cron: String(job.payload.cron || job.payload.time || ''), lastRun: job.lastRunAt ? Date.parse(job.lastRunAt) : undefined, enabled: job.enabled }))
+        res.json({ jobs, ...(planner ? {} : { error: 'Planer aus' }) })
     } catch (err) {
         res.json({ jobs: [], error: String(err) })
     }
@@ -1870,37 +1875,27 @@ app.get('/api/scheduler', async (req, res) => {
 
 app.post('/api/scheduler', async (req, res) => {
     try {
-        const { action, cron, userId } = req.body
+        const { action, cron, userId } = req.body || {}
         if (!action || !cron) {
             res.status(400).json({ error: 'action and cron required' })
             return
         }
-        const { getPatternStore } = await import('../learning/pattern-store.js')
-        const store = getPatternStore()
-        const patternId = `dashboard:dashboard:${action}:${cron}`
-        store.enableAutomation(patternId, cron)
-
-        // Also record the action so the pattern exists
-        store.recordAction(userId || 'dashboard', 'dashboard', action)
-        store.enableAutomation(patternId, cron)
-
-        const { getScheduler } = await import('../scheduler/nova-scheduler.js')
-        const scheduler = getScheduler()
-        const pattern = {
-            id: patternId,
-            userId: userId || 'dashboard',
-            channel: 'dashboard',
-            action,
-            timeHint: undefined,
-            count: 1,
-            firstSeen: Date.now(),
-            lastSeen: Date.now(),
-            automated: true,
-            cronExpression: cron,
+        const { getPlannerRuntime } = await import('../planner/runtime.js')
+        const { addAutomationJob } = await import('../planner/routines.js')
+        const runtime = getPlannerRuntime()
+        if (!runtime) {
+            res.status(409).json({ error: 'Planer aus (autonomy.planner.enabled=false)' })
+            return
         }
-        scheduler.schedulePattern(pattern)
-
-        res.json({ success: true, id: pattern.id })
+        const job = addAutomationJob(runtime.planner, {
+            id: `dashboard:${String(action)}:${String(cron)}`, action: String(action),
+            cronExpression: String(cron), userId: String(userId || ''), channel: 'Telegram',
+        }, runtime.settings.briefing.timeZone)
+        if (!job) {
+            res.status(400).json({ error: 'Nur tägliche Zeiten im Format "M H * * *" und einfache Aktionsnamen' })
+            return
+        }
+        res.json({ success: true, id: job.id })
     } catch (err) {
         res.status(500).json({ error: String(err) })
     }
@@ -1908,10 +1903,16 @@ app.post('/api/scheduler', async (req, res) => {
 
 app.delete('/api/scheduler/:id', async (req, res) => {
     try {
-        const { getScheduler } = await import('../scheduler/nova-scheduler.js')
-        const scheduler = getScheduler()
-        const cancelled = scheduler.cancelJob(req.params.id)
-        res.json({ success: cancelled })
+        const { getPlannerRuntime } = await import('../planner/runtime.js')
+        const { AUTOMATION_KIND, ROUTINE_KIND } = await import('../planner/routines.js')
+        const planner = getPlannerRuntime()?.planner
+        const job = planner?.getJob(req.params.id)
+        if (!planner || !job || (job.kind !== AUTOMATION_KIND && job.kind !== ROUTINE_KIND)) {
+            res.json({ success: false })
+            return
+        }
+        planner.completeJob(job.id, 'im Dashboard entfernt')
+        res.json({ success: true })
     } catch (err) {
         res.status(500).json({ error: String(err) })
     }

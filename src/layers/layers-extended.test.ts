@@ -753,36 +753,6 @@ describe('Predictive Provisioning', async () => {
 })
 
 // ============================================
-// Multi-Bot Manager
-// ============================================
-
-describe('Multi-Bot Manager', async () => {
-    const { MultiBotManager, BOT_TEMPLATES, getMultiBotManager } = await import('./multi-bot.js')
-
-    it('MultiBotManager: creates instance', () => {
-        const mgr = new MultiBotManager(testPath('nova-test-multibots'))
-        expect(mgr).toBeDefined()
-    })
-
-    it('MultiBotManager: getAllBots returns array', () => {
-        const mgr = new MultiBotManager(testPath('nova-test-multibots'))
-        const bots = mgr.getAllBots()
-        expect(Array.isArray(bots)).toBe(true)
-    })
-
-    it('BOT_TEMPLATES: has templates', () => {
-        expect(typeof BOT_TEMPLATES).toBe('object')
-        expect(Object.keys(BOT_TEMPLATES).length).toBeGreaterThan(0)
-    })
-
-    it('getMultiBotManager: returns singleton', () => {
-        const a = getMultiBotManager()
-        const b = getMultiBotManager()
-        expect(a).toBe(b)
-    })
-})
-
-// ============================================
 // L7 — Tool Learning
 // ============================================
 
@@ -1083,7 +1053,6 @@ describe('Extended Layer Module Loading', async () => {
         './auto-bug-fix.js',
         './dream-daily-digest.js',
         './memory-distiller.js',
-        './multi-bot.js',
         './multi-user-workers.js',
         './predictive-provisioning.js',
         './subconscious-reflector.js',

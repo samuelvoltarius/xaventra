@@ -484,78 +484,10 @@ async function startTelegramOnce(
             }
         })
 
-        await initReminders() // Load persisted reminders, fire overdue ones
+        await initReminders() // load only; the planner takes reminders.json over at its start
         console.log('[Nova] ✓ Reminder-Callback registriert (persistent + wakeup)')
     } catch (err) {
         console.log(`[Nova] Reminder-Callback nicht verfügbar: ${err}`)
-    }
-
-    // Wire up Heartbeat Telegram callbacks (scheduler runs independently in startDaemon)
-    try {
-        const { setHeartbeatNotifyCallback, setHeartbeatWakeupCallback } = await import('../core/heartbeat.js')
-
-        setHeartbeatNotifyCallback(async (message) => {
-            if (!(await verifyTelegramAuthority())) {
-                console.log('[Heartbeat] Notify unterdrückt: Node besitzt keine live verifizierte Telegram-Autorität')
-                return
-            }
-            let chatId = config?.allowFrom?.[0]
-                || adapter?.getLastActiveChat?.()
-                || (globalThis as any).__novaState?.lastActiveChatId
-                || (globalThis as any).__novaState?.adminChatId
-            if (!chatId) {
-                console.log('[Heartbeat] ⚠️ Notify: kein chatId')
-                return
-            }
-
-            try {
-                if ((adapter as any)?.bot) {
-                    await (adapter as any).bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(async () => {
-                        await (adapter as any).bot.sendMessage(chatId!, message)
-                    })
-                }
-            } catch { /* non-critical */ }
-        })
-
-        setHeartbeatWakeupCallback(async (userId, channel, content) => {
-            if (!(await verifyTelegramAuthority())) {
-                console.log('[Heartbeat] Wakeup unterdrückt: Node besitzt keine live verifizierte Telegram-Autorität')
-                return
-            }
-            let replyTo = config?.allowFrom?.[0]
-                || adapter?.getLastActiveChat?.()
-                || (globalThis as any).__novaState?.lastActiveChatId
-                || (globalThis as any).__novaState?.adminChatId
-            if (!replyTo) {
-                try {
-                    const { getAdminChatId } = await import('../tools/reminder-tool.js')
-                    replyTo = getAdminChatId()
-                } catch { }
-            }
-            if (!replyTo) {
-                console.log('[Heartbeat] ⚠️ Kein chatId — Warte auf erste Telegram-Nachricht.')
-                return
-            }
-
-            try {
-                await messageHandler('Telegram', userId || 'System', content, async (reply) => {
-                    if (!(await verifyTelegramAuthority())) return
-                    try {
-                        if ((adapter as any)?.bot) {
-                            await (adapter as any).bot.sendMessage(replyTo, reply, { parse_mode: 'Markdown' }).catch(async () => {
-                                await (adapter as any).bot.sendMessage(replyTo!, reply)
-                            })
-                        }
-                    } catch { /* non-critical */ }
-                }, undefined, { systemAuthored: true })
-            } catch (err) {
-                console.error(`[Heartbeat] Wakeup failed: ${err}`)
-            }
-        })
-
-        console.log('[Nova] ✓ Heartbeat Telegram-Callbacks registriert')
-    } catch (err) {
-        console.log(`[Nova] Heartbeat Telegram-Callbacks nicht verfügbar: ${err}`)
     }
 
     // Wire up L15 idle learning notifications

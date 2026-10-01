@@ -23,7 +23,7 @@ import { setSoftwareScoutConfig } from '../install/software-scout.js'
 setThinkingConfig({ enabled: false })
 setSoftwareScoutConfig({ enabled: false })
 
-const allOff = { health: false, reminders: false, inbound: false, logs: false, uptime: false }
+const allOff = { health: false, inbound: false, logs: false, uptime: false }
 let dir: string
 
 beforeEach(() => {

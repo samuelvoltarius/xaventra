@@ -99,12 +99,6 @@ const SKILL_PACKS: SkillPack[] = [
         tools: ['desktop_control', 'desktop_status', 'desktop_workspace'],
     },
     {
-        name: 'bot-management',
-        description: 'Telegram/Discord Multi-Bot spawnen, stoppen, auflisten',
-        keywords: ['bot', 'telegram', 'spawn', 'kill_bot', 'multi-bot', 'bots'],
-        tools: ['spawn_bot', 'kill_bot', 'list_bots'],
-    },
-    {
         name: 'mesh-network',
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
         keywords: ['mesh', 'node', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],

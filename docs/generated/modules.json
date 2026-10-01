@@ -180,12 +180,6 @@
       ]
     },
     {
-      "module": "src/agents/sub-agent.ts",
-      "imports": [
-        "node:events"
-      ]
-    },
-    {
       "module": "src/agents/subagent-orchestrator.ts",
       "imports": [
         "node:crypto",
@@ -197,6 +191,7 @@
       "module": "src/agents/team-coordinator.ts",
       "imports": [
         "./agent-roles.js",
+        "./subagent-orchestrator.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -1310,6 +1305,7 @@
       "module": "src/core/autonomous-executor.ts",
       "imports": [
         "../mesh/fence.js",
+        "../planner/migration-files.js",
         "./action-intent.js",
         "./atomic-storage.js",
         "./goal-manager.js",
@@ -1638,15 +1634,6 @@
     {
       "module": "src/core/health-contract.ts",
       "imports": []
-    },
-    {
-      "module": "src/core/heartbeat.ts",
-      "imports": [
-        "../config/config-path.js",
-        "./atomic-storage.js",
-        "node:fs",
-        "node:path"
-      ]
     },
     {
       "module": "src/core/index.ts",
@@ -3168,7 +3155,6 @@
         "../core/config.js",
         "../security/token-compare.js",
         "./types.js",
-        "node:child_process",
         "node:fs",
         "node:path"
       ]
@@ -3505,6 +3491,8 @@
       "module": "src/intelligence/autonomy-engine.ts",
       "imports": [
         "../core/autonomy-authority.js",
+        "../core/goal-manager.js",
+        "../planner/migration-files.js",
         "node:fs",
         "node:path"
       ]
@@ -3656,13 +3644,6 @@
     },
     {
       "module": "src/intelligence/user-patterns.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/intelligence/wave-pipeline.ts",
       "imports": [
         "node:fs",
         "node:path"
@@ -3924,14 +3905,6 @@
         "../memory/memory-quality.js",
         "../memory/memory-triple.js",
         "../users/principal-id.js",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/layers/multi-bot.ts",
-      "imports": [
-        "./L7-learning.js",
         "node:fs",
         "node:path"
       ]
@@ -4899,6 +4872,12 @@
       ]
     },
     {
+      "module": "src/planner/migration-files.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/planner/planner.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -4911,6 +4890,17 @@
       ]
     },
     {
+      "module": "src/planner/routines.ts",
+      "imports": [
+        "./delivery-port.js",
+        "./migration-files.js",
+        "./planner.js",
+        "./time.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/planner/runtime.ts",
       "imports": [
         "../core/autonomy-defaults.js",
@@ -4918,8 +4908,10 @@
         "./briefing.js",
         "./delivery-port.js",
         "./planner.js",
+        "./routines.js",
         "./thoughts.js",
-        "./time.js"
+        "./time.js",
+        "node:path"
       ]
     },
     {
@@ -5295,15 +5287,6 @@
     {
       "module": "src/runtime/service-runtime.ts",
       "imports": []
-    },
-    {
-      "module": "src/scheduler/nova-scheduler.ts",
-      "imports": [
-        "../learning/pattern-store.js",
-        "node-cron",
-        "node:child_process",
-        "node:path"
-      ]
     },
     {
       "module": "src/security/assurance-cli.ts",
@@ -6135,6 +6118,7 @@
     {
       "module": "src/tools/reminder-tool.ts",
       "imports": [
+        "../planner/migration-files.js",
         "node:fs",
         "node:path"
       ]

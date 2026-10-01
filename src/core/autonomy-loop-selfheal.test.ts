@@ -31,7 +31,7 @@ setThinkingConfig({ enabled: false })
 setSoftwareScoutConfig({ enabled: false })
 
 const notify = vi.fn(async (_message: string) => { })
-const allOff = { health: false, reminders: false, inbound: false, logs: false, uptime: false }
+const allOff = { health: false, inbound: false, logs: false, uptime: false }
 
 beforeAll(async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })

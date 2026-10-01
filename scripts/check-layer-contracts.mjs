@@ -113,7 +113,7 @@ try {
     const manager=new GoalManager(join(runtime,'mission-goals.json'))
     setGoalManager(manager)
     const plan=manager.createMissionPlan({missionId:'fixture-paused',userId:'fixture-user',goal:'Inspect fixture',steps:[{title:'Read',nextAction:'inspect'}]})
-    writeFileSync('.nova-data/missions.json',JSON.stringify({active:{id:'fixture-paused',goal:'Inspect fixture',summary:'',steps:[],currentStep:0,status:'paused',createdBy:'fixture-user',channel:'internal',createdAt:1,progressUpdates:[],rootGoalId:plan.root.id},history:[],queue:[]}))
+    writeFileSync('.nova-data/auftraege.json',JSON.stringify({active:{id:'fixture-paused',goal:'Inspect fixture',summary:'',steps:[],currentStep:0,status:'paused',createdBy:'fixture-user',channel:'internal',createdAt:1,progressUpdates:[],rootGoalId:plan.root.id},history:[],queue:[]}))
     const engine=await load('core/autonomous-executor.js')
     let dispatched=0
     engine.initMissionEngine({handleMessage:async()=>{dispatched++},notifyFn:async()=>{},llm:null,state:{}})

@@ -41,10 +41,8 @@ describe('daemon wiring (R2 core-n-z)', () => {
         const tick = block('let periodicHeartbeatRunning = false', 1500)
         expect(tick).toMatch(/setInterval\(/)
         expect(tick).toMatch(/runPeriodicHeartbeatWork\(\)/)
-        const heartbeat = block('startHeartbeat(async (task) => {', 700)
-        expect(heartbeat).toMatch(/task\.id === 'heartbeat-tick' \|\| task\.channel === 'heartbeat'\) return/)
-        expect(heartbeat.indexOf("'heartbeat-tick'")).toBeLessThan(heartbeat.indexOf('Task fällig'))
-        expect(heartbeat).not.toMatch(/runHealthCheck/)
+        // P9: the dead L0 task heartbeat (scheduled-tasks.json) is gone; only this tick remains.
+        expect(source).not.toMatch(/startHeartbeat\(/)
     })
 
     it('2.82.0: the Dream digest is no longer sent; the planner evening briefing is the one daily report', () => {

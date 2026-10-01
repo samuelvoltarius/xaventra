@@ -27,7 +27,6 @@ vi.mock('../channels/telegram-presentation.js', () => ({
     TelegramPresentationSession: class { async deliver() { return 'ok' } async clearProgress() {} },
 }))
 vi.mock('../tools/reminder-tool.js', () => ({ setReminderNotifyCallback: vi.fn(), setReminderWakeupCallback: vi.fn(), initReminders: vi.fn() }))
-vi.mock('./heartbeat.js', () => ({ setHeartbeatNotifyCallback: vi.fn(), setHeartbeatWakeupCallback: vi.fn() }))
 vi.mock('./runtime-event-log.js', () => ({ logRuntimeEvent: vi.fn() }))
 
 const ENV_KEYS = ['NOVA_DISABLE_LEADER_ELECTION', 'NOVA_MAIN_ELIGIBLE', 'NOVA_MESH_SUPABASE_URL', 'NOVA_MESH_SUPABASE_KEY'] as const

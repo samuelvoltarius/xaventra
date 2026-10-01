@@ -1542,18 +1542,6 @@
       ]
     },
     {
-      "name": "kill_bot",
-      "category": "bot",
-      "description": "Stoppt einen Bot",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        }
-      ]
-    },
-    {
       "name": "knowledge_delete",
       "category": "memory",
       "description": "Löscht einen Wissens-Eintrag.",
@@ -1685,12 +1673,6 @@
           "required": true
         }
       ]
-    },
-    {
-      "name": "list_bots",
-      "category": "bot",
-      "description": "Listet alle Bots auf",
-      "parameters": []
     },
     {
       "name": "list_custom_tools",
@@ -1882,7 +1864,7 @@
     {
       "name": "mesh_delegate",
       "category": "system",
-      "description": "Delegiert eine Aufgabe an einen anderen Nova-Node im Mesh. Der Node bekommt die Aufgabe und arbeitet sie ab.",
+      "description": "Übergibt eine Aufgabe an einen anderen Knoten im Mesh („an Knoten übergeben“); der Knoten arbeitet sie ab. Nicht dasselbe wie die Delegation an Claude, Codex, Hermes oder einen Unteragenten.",
       "parameters": [
         {
           "name": "node_id",
@@ -2103,7 +2085,7 @@
     {
       "name": "mission_config",
       "category": "system",
-      "description": "Zeigt oder ï¿½ndert die Mission-Konfiguration (max Continuations, Timeout, Steps, etc.)",
+      "description": "Zeigt oder ändert die Auftrags-Konfiguration (Folge-Aufträge, Timeout, Schritte usw.)",
       "parameters": [
         {
           "name": "key",
@@ -2120,7 +2102,7 @@
     {
       "name": "mission_status",
       "category": "system",
-      "description": "Zeigt den aktuellen Status der laufenden Mission. Nutze das BEVOR du sagst ob eine Mission lï¿½uft oder nicht.",
+      "description": "Zeigt den Status des laufenden Auftrags. Nutze das, bevor du sagst, ob ein Auftrag läuft.",
       "parameters": []
     },
     {
@@ -3176,28 +3158,6 @@
       ]
     },
     {
-      "name": "spawn_bot",
-      "category": "bot",
-      "description": "Startet einen neuen Bot mit eigener Persona",
-      "parameters": [
-        {
-          "name": "name",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "persona",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "channel",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
       "name": "spawn_subagent",
       "category": "system",
       "description": "Spawnt einen fokussierten Subagenten fÃ¼r eine Teilaufgabe. Ideal fÃ¼r parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und lÃ¤uft mit eigenem Timeout.",
@@ -3298,7 +3258,7 @@
     {
       "name": "start_mission",
       "category": "system",
-      "description": "Startet eine autonome Mission. NUTZE DAS wenn du eine komplexe Aufgabe autonom erledigen willst, die mehrere Schritte braucht. Schreibe NICHT nur \"Mission gestartet\" ï¿½ rufe dieses Tool auf!",
+      "description": "Startet einen Auftrag: ein Ziel, das selbstständig in mehreren Schritten abgearbeitet wird. Nutze das für komplexe Aufgaben mit mehreren Schritten; schreibe nicht nur „Auftrag gestartet“, sondern rufe dieses Tool auf.",
       "parameters": [
         {
           "name": "goal",

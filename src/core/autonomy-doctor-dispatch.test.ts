@@ -15,7 +15,7 @@ setSoftwareScoutConfig({ enabled: false })
 describe('Doctor is reachable in the actual autonomy cycle', () => {
     it('dispatches pending investigation even while ordinary self-goals are gated during startup', async () => {
         updateAutonomyConfig({ enabled: true, socialCheckIns: false,
-            checks: { health: false, reminders: false, inbound: false, logs: false, uptime: false } })
+            checks: { health: false, inbound: false, logs: false, uptime: false } })
         setAutonomyThinkCallback(async () => '')
         const worker = { hasAuthority: () => true, execute: async () => ({ output: '' }), getRun: () => null }
         setDoctorResearchWorker(worker)

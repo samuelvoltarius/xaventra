@@ -14,6 +14,12 @@
  *   autonomy.responsibilities.budgetMinutes    120    Zeitbudget je Mission
  *   autonomy.responsibilities.maxToolCalls     20     Tool-Call-Budget je Mission
  *   autonomy.responsibilities.ownerSessions    []     Session-Namen für „wiederholte Anfragen“ (Standard: Telegram allowFrom)
+ *   autonomy.responsibilities.delegateTo       claude Agent für Missions-Schritt `delegieren` (claude|codex|hermes); nur mit Agentic-OS-URL
+ *
+ * P9: Missionen dürfen einen Schritt an einen Agenten übergeben (delegieren,
+ * nur nach Alfreds Ja auf der Schritt-Karte; geprüft wird mit dem eigenen
+ * Kriterium der Mission). Wartet eine Mission auf Alfred, entsteht nach
+ * `autonomy.autoReminders.missionWaitHours` die Auto-Erinnerung „Mission wartet“.
  */
 import { closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
@@ -32,6 +38,7 @@ export interface ResponsibilitySettings {
     budgetMinutes: number
     maxToolCalls: number
     ownerSessions: string[]
+    delegateTo: 'claude' | 'codex' | 'hermes'
 }
 
 export function parseResponsibilitySettings(autonomy: any, env: NodeJS.ProcessEnv = process.env): ResponsibilitySettings {
@@ -46,6 +53,7 @@ export function parseResponsibilitySettings(autonomy: any, env: NodeJS.ProcessEn
         budgetMinutes: num(raw.budgetMinutes, 120, 5, 24 * 60),
         maxToolCalls: num(raw.maxToolCalls, 20, 2, 200),
         ownerSessions: Array.isArray(raw.ownerSessions) ? raw.ownerSessions.map(String).filter((name: string) => /^[A-Za-z0-9_-]{1,64}$/.test(name)).slice(0, 5) : [],
+        delegateTo: ['claude', 'codex', 'hermes'].includes(String(raw.delegateTo)) ? raw.delegateTo : 'claude',
     }
 }
 
@@ -60,6 +68,8 @@ export interface ResponsibilityRuntimeDeps {
     settings: ResponsibilitySettings
     /** Kausales Gedächtnis: called when a mission ends. */
     onMissionFinish?: (mission: Mission) => void
+    /** Auto reminder „Mission wartet“. */
+    onMissionWaiting?: (mission: Mission) => void
 }
 
 export interface TickResult {
@@ -121,6 +131,7 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
         executors: deps.executors, ports: deps.ports,
         budget: { minutes: deps.settings.budgetMinutes, maxToolCalls: deps.settings.maxToolCalls },
         onFinish: deps.onMissionFinish,
+        onWaiting: deps.onMissionWaiting,
     })
     let running: Promise<TickResult> | null = null
     async function run(reason: string): Promise<TickResult> {
@@ -167,7 +178,7 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
 // ---------------------------------------------------------------------------
 
 const MISSION_SECTIONS: Array<[Mission['status'], string]> = [
-    ['in-arbeit', 'In Arbeit'], ['geplant', 'Geplant'], ['wartet-auf-alfred', 'Wartet auf Alfred'], ['blockiert', 'Blockiert'],
+    ['in-arbeit', 'In Arbeit'], ['geplant', 'Geplant'], ['wartet-auf-alfred', 'Wartet auf Alfred'], ['wartet-auf-delegation', 'Wartet auf Delegation'], ['blockiert', 'Blockiert'],
 ]
 const short = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
@@ -312,8 +323,17 @@ async function collectProductionSignals(): Promise<ResponsibilitySignals> {
             } catch { /* partial line */ }
         }
     }
-    return { now, localNodeId, nodes, nightwatch, devices, release, ownerRequests }
+    let delegation: ResponsibilitySignals['delegation'] = { available: false }
+    try {
+        const { getDelegationService } = await import('./delegation.js')
+        const config = getDelegationService().config
+        delegation = { available: config.enabled && Boolean(config.url) }
+    } catch { /* delegation module optional */ }
+    return { now, localNodeId, nodes, nightwatch, devices, release, ownerRequests, delegation }
 }
+
+/** Delegation criterion: the mission's own responsibility measurement (read-only). */
+export const MISSION_CRITERION_CHECK = 'mission-kriterium'
 
 /** Registered step executors: only existing, fenced paths. No free command path. */
 function productionExecutors(): StepExecutor[] {
@@ -372,6 +392,28 @@ function productionExecutors(): StepExecutor[] {
                 return { ok: result.ok, message: result.message }
             },
         },
+        {
+            // P9: hands the step to Claude/Codex/Hermes. Runs only after Alfred's Ja on the
+            // step card (unknown kind = L2); that Ja is the delegation's approval, so no second card.
+            // Success is Nova's own measurement of the mission criterion, not the agent's word.
+            kind: 'delegieren',
+            async run(step, mission, ctx) {
+                if (!ctx.approvedBy) return { ok: false, message: 'ohne Alfreds Ja wird nichts übergeben' }
+                const { delegate } = await import('./delegation.js')
+                const responsibility = runtime?.responsibilities.get(mission.responsibilityId)
+                const result = await delegate({
+                    to: settings.delegateTo,
+                    auftrag: `Bringe „${responsibility?.titel || mission.titel}“ wieder in Ordnung (Knoten ${step.node || mission.node}). Finde die Ursache, behebe sie und nenne den Beleg.`,
+                    kontext: { anlass: mission.anlass.join('; '), diagnosen: mission.diagnosen.slice(-3).join(' | ') },
+                    erwartet: { art: MISSION_CRITERION_CHECK, text: mission.id },
+                    missionId: mission.id,
+                    aendert: true,
+                    freigabeVon: ctx.approvedBy,
+                })
+                if (result.ok === false) return { ok: false, message: `nicht übergeben: ${result.reason}` }
+                return { ok: true, delegationId: result.record.id, message: `an ${settings.delegateTo} übergeben (${result.record.id})` }
+            },
+        },
         // Bewusst KEIN Ausführer für dienst-neustart / release-ausrollen: dafür gibt es
         // (noch) keinen registrierten, gefencten Weg — die Mission übergibt an Alfred.
     ]
@@ -388,6 +430,8 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
     const { addThought } = await import('../planner/index.js')
     const { createApprovalCard, listApprovalCards } = await import('./approval-cards.js')
     const { recordMissionDecision } = await import('./decisions.js')
+    const { noteMissionWaiting } = await import('../planner/auto-reminders.js')
+    const { onDelegationSettled, registerDelegationVerifier } = await import('./delegation.js')
     runtime = createResponsibilityRuntime({
         dataDir: getNovaDataDir(),
         localNodeId: getLocalNodeId(),
@@ -403,7 +447,19 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
         },
         settings,
         onMissionFinish: mission => { recordMissionDecision(mission) },
+        onMissionWaiting: mission => { noteMissionWaiting({ missionId: mission.id, title: mission.titel, since: mission.updatedAt }) },
     })
+    // P9: delegated mission steps are checked with the mission's own criterion and resume the mission.
+    registerDelegationVerifier(MISSION_CRITERION_CHECK, async expectation => {
+        const mission = runtime?.missions.get(String(expectation.text || ''))
+        const responsibility = mission ? runtime?.responsibilities.get(mission.responsibilityId) : null
+        if (!mission || !responsibility) return { ergebnis: 'unverifiziert', detail: 'Mission oder Verantwortung nicht mehr vorhanden' }
+        const measured = runtime!.responsibilities.measure(responsibility, await collectProductionSignals())
+        const detail = measured.ergebnisse.map(item => item.befund).join('; ') || 'keine Messwerte'
+        return measured.erfuellt === true ? { ergebnis: 'verifiziert', detail } : { ergebnis: measured.erfuellt === false ? 'nicht-erfuellt' : 'unverifiziert', detail }
+    })
+    stopDelegationListener?.()
+    stopDelegationListener = onDelegationSettled((record, info) => runtime?.missions.settleDelegation(record, info).then(() => undefined))
     const tick = (reason: string) => runtime?.tick(reason).catch(error => {
         console.warn('[Verantwortungen] Prüfung fehlgeschlagen:', String((error as Error)?.message || error).slice(0, 200))
         return { active: false, reason: 'fehler' } as TickResult
@@ -432,7 +488,11 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
     return { started: true, reason: `Takt: Ereignisse + ${via} alle ${settings.intervalMinutes} min` }
 }
 
+let stopDelegationListener: (() => void) | null = null
+
 export function stopResponsibilities(): void {
+    stopDelegationListener?.()
+    stopDelegationListener = null
     if (timer) clearInterval(timer)
     if (eventTimer) clearTimeout(eventTimer)
     timer = null

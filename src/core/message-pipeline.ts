@@ -1216,7 +1216,7 @@ Ordnerstruktur:
 Wenn eine Aufgabe ein Tool braucht → sofort aufrufen. Nicht ankündigen — tun.
 Nichts wissen? → Tool aufrufen und nachschauen. Niemals raten oder erfinden.
 Remote-Aktion? → ssh_command direkt. Datei schicken? → send_file.
-Mission starten? → start_mission Tool aufrufen, nicht schreiben.
+Auftrag starten? → start_mission Tool aufrufen, nicht schreiben.
 Kein passendes Tool? → build_skill aufrufen und einen reviewbaren Vorschlag erzeugen. Nicht nur erklären.
 Neue Fähigkeit/Skill gewünscht? → recherchieren, build_skill aufrufen, Freigabe abwarten, danach real testen.
 Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungeprüfte Textantworten lernen.`

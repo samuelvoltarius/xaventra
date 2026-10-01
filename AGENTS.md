@@ -58,8 +58,8 @@ npm run typecheck         # tsc --noEmit
 ### System
 - `/help` — all commands
 - `/status` — system status
-- `/wave new <title>` — start 6-phase mission
-- `/wave status` / `/wave approve` — mission control
+- `/auftrag <ziel>` — Auftrag: goal as a checked chain of steps (`/mission` = old alias)
+- `/arbeit` — responsibility missions (Missionen); `/routine` — daily planner routines
 - `/bot team <preset>` — multi-agent team (default/creative/security/research/fullstack)
 
 ### Self-Setup Autopilot (v2.52+)

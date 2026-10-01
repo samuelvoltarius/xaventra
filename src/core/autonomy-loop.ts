@@ -31,7 +31,6 @@ export interface AutonomyConfig {
     socialCheckIns: boolean          // Greetings/follow-ups are opt-in
     checks: {
         health: boolean              // System health (disk, memory)
-        reminders: boolean           // Pending reminders
         inbound: boolean             // Watch inbound folders
         logs: boolean                // Error log scanning
         uptime: boolean              // Process uptime tracking
@@ -79,7 +78,6 @@ const DEFAULT_CONFIG: AutonomyConfig = {
     socialCheckIns: false,
     checks: {
         health: true,
-        reminders: true,
         inbound: true,
         logs: true,
         uptime: true,
@@ -167,48 +165,6 @@ async function checkSystemHealth(): Promise<CheckResult[]> {
             requiresNotification: false,
         })
     }
-
-    return results
-}
-
-async function checkPendingReminders(): Promise<CheckResult[]> {
-    const results: CheckResult[] = []
-
-    try {
-        const remindersFile = join(DATA_DIR, 'reminders.json')
-        if (existsSync(remindersFile)) {
-            const data = JSON.parse(readFileSync(remindersFile, 'utf-8'))
-            const pending = Array.isArray(data) ? data.filter((r: any) => !r.fired) : []
-            const overdue = pending.filter((r: any) => r.triggerAt <= Date.now())
-
-            if (overdue.length > 0) {
-                results.push({
-                    source: 'reminders',
-                    severity: 'warning',
-                    message: `${overdue.length} überfällige Erinnerung(en)!`,
-                    timestamp: Date.now(),
-                    requiresNotification: true,
-                })
-            }
-
-            if (pending.length > 0) {
-                const next = pending
-                    .filter((r: any) => r.triggerAt > Date.now())
-                    .sort((a: any, b: any) => a.triggerAt - b.triggerAt)[0]
-
-                if (next) {
-                    const minutesUntil = Math.round((next.triggerAt - Date.now()) / 60000)
-                    results.push({
-                        source: 'reminders',
-                        severity: 'info',
-                        message: `Nächste Erinnerung in ${minutesUntil}min: "${next.message}"`,
-                        timestamp: Date.now(),
-                        requiresNotification: false,
-                    })
-                }
-            }
-        }
-    } catch { /* non-critical */ }
 
     return results
 }
@@ -572,7 +528,7 @@ async function updateDailyFlags(triggers: ProactiveTrigger[]): Promise<void> {
 // ============================================
 
 interface ProactiveTrigger {
-    type: 'mission' | 'reminder' | 'morning' | 'evening' | 'follow-up' | 'health' | 'idle-checkin'
+    type: 'mission' | 'morning' | 'evening' | 'follow-up' | 'health' | 'idle-checkin'
     | 'tool-health' | 'user-pattern' | 'unfinished-topic' | 'learning' | 'spontaneous' | 'tool-degraded'
     priority: 'high' | 'medium' | 'low'
     context: string
@@ -609,16 +565,6 @@ async function gatherAutonomyContext(checks: CheckResult[], idleMin: number): Pr
             })
         }
     } catch { /* mission engine not available */ }
-
-    // --- HIGH PRIORITY: Overdue reminders ---
-    const reminderChecks = checks.filter(c => c.source === 'reminders' && c.severity === 'warning')
-    if (reminderChecks.length > 0) {
-        triggers.push({
-            type: 'reminder',
-            priority: 'high',
-            context: `ÜBERFÄLLIGE ERINNERUNGEN:\n${reminderChecks.map(c => `- ${c.message}`).join('\n')}\n→ Informiere den User über die überfälligen Erinnerungen.`,
-        })
-    }
 
     // --- MEDIUM PRIORITY: Morning greeting (07:00-09:00, 1x/day) ---
     if (hour >= 7 && hour < 9 && !flags.morningGreetingSent) {
@@ -944,9 +890,6 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
 
     if (config.checks.health) {
         checks.push(...await checkSystemHealth())
-    }
-    if (config.checks.reminders) {
-        checks.push(...await checkPendingReminders())
     }
     if (config.checks.inbound) {
         checks.push(...await checkInboundFolders())

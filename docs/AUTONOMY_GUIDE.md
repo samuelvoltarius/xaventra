@@ -337,7 +337,7 @@ report in the morning and evening.
 
 ```json
 { "autonomy": {
-    "planner":  { "enabled": true, "tickSeconds": 30, "reminders": false, "nightwatch": false },
+    "planner":  { "enabled": true, "tickSeconds": 30, "reminders": true, "nightwatch": false },
     "briefing": { "enabled": true, "morning": "07:30", "evening": "20:00", "timeZone": "Europe/Vienna" },
     "thoughts": { "quietHours": { "start": 22, "end": 7 }, "dedupeMinutes": 360, "maxPerDay": 10 }
 } }
@@ -347,7 +347,7 @@ report in the morning and evening.
 |-----|---------|--------|
 | `autonomy.planner.enabled` | `false` | start the planner (also started by `briefing.enabled`) |
 | `autonomy.planner.tickSeconds` | `30` | tick interval (5..600) |
-| `autonomy.planner.reminders` | `false` | `set_reminder` creates planner jobs; pending entries of `reminders.json` are taken over once. Off again: open planner reminders go back to `reminders.json` (Rückweg) |
+| `autonomy.planner.reminders` | on (P9) | `set_reminder` creates planner jobs; pending entries of `reminders.json` are taken over once and the file is renamed `reminders.json.migriert`. `false` (or planner off): open planner reminders go back to `reminders.json` and its 30-s checker (Rückweg); the old checker never delivers while the planner owns reminders |
 | `autonomy.planner.nightwatch` | `false` | the planner job `sys-nachtwache` runs the probes (needs `autonomy.nightwatch.enabled`); findings become thoughts, the autonomy loop stops probing/alarming itself (self-heal still reads the journal) |
 | `autonomy.briefing.enabled` | `false` | jobs `sys-briefing-morgen` / `sys-briefing-abend` |
 | `autonomy.briefing.morning` / `evening` | `07:30` / `20:00` | local time (`timeZone`); a report more than 3 h late is logged as `verpasst`, a pending one expires after 6 h |

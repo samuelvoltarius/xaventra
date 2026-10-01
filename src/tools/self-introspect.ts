@@ -72,7 +72,9 @@ async function inspectState(): Promise<string> {
 async function inspectGoals(): Promise<string> {
     const lines: string[] = ['## Nova Goals']
 
-    const goals = safeRead(join(DATA_DIR, 'self-goals.json')) as Array<Record<string, unknown>> | null
+    // P9: one goal store (goals.json); self-goals carry origin 'selbst'.
+    const stored = safeRead(join(DATA_DIR, 'goals.json')) as { goals?: Array<Record<string, unknown>> } | null
+    const goals: Array<Record<string, unknown>> | null = Array.isArray(stored?.goals) ? stored!.goals.map(goal => ({ ...goal, goal: goal.title, description: goal.title })) : null
     if (!Array.isArray(goals) || goals.length === 0) {
         lines.push('No goals found.')
         return lines.join('\n')

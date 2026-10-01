@@ -10,6 +10,13 @@
  * 3. Parallel: Research agent + Coder agent + Analyst agent work simultaneously
  * 4. Captain: aggregates results, resolves conflicts, builds final answer
  * 5. User: gets structured response with contributions from all agents
+ *
+ * P9: every role call (Captain and specialists, also /subagent <rolle>) runs
+ * through the one subagent orchestrator (agents/subagent-orchestrator.ts):
+ * max. 6 parallel, hard timeout, audit log `.nova-data/subagent-audit.jsonl`,
+ * the caller's identity, a read-only tool list. No own LLM path any more.
+ * „Persona“ and „Rolle“ are one thing: the roles in agents/agent-roles.ts
+ * (the old multi-bot personas are roles now).
  */
 
 import { randomUUID } from 'node:crypto'
@@ -22,6 +29,7 @@ import {
     TEAM_PRESETS,
     getRole,
 } from './agent-roles.js'
+import { spawnSubagent } from './subagent-orchestrator.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'teams')
 
@@ -52,6 +60,20 @@ interface TeamRun {
     finalAnswer?: string
     onProgress?: (status: string) => Promise<void>
 }
+
+export interface TeamRunOptions {
+    /** Principal the role subagents act for (memory/session identity). */
+    userId?: string
+    /** Raw channel identity used for authorization. */
+    authUserId?: string
+    /** Per role call; default 90 s. */
+    timeoutMs?: number
+}
+
+/** Read-only tools a team role may use unless the role names its own (risky ones are filtered by the orchestrator). */
+const TEAM_ROLE_TOOLS: readonly string[] = Object.freeze([
+    'web_search', 'browser_search', 'fetch_url', 'read_url', 'read_file', 'list_directory', 'codebase_search', 'calculate', 'get_time', 'get_system_info',
+])
 
 // ============================================
 // State
@@ -127,8 +149,10 @@ export function listTeams(): string {
 export async function runTeam(
     teamIdOrRoles: string | string[],
     query: string,
-    onProgress?: (status: string) => Promise<void>
+    onProgress?: (status: string) => Promise<void>,
+    options: TeamRunOptions = {},
 ): Promise<string> {
+    const callLLM = (role: AgentRole, prompt: string) => runRole(role, prompt, options)
     // Resolve team roles
     let roles: AgentRole[]
     let teamName: string
@@ -329,7 +353,8 @@ Beginne NICHT mit "Als Captain..." — schreib direkt die Antwort.`
 export async function runSubAgent(
     roleId: string,
     query: string,
-    onProgress?: (status: string) => Promise<void>
+    onProgress?: (status: string) => Promise<void>,
+    options: TeamRunOptions = {},
 ): Promise<string> {
     const role = getRole(roleId) || BUILT_IN_ROLES.analyst // Fallback: analyst
     const startTime = Date.now()
@@ -337,7 +362,7 @@ export async function runSubAgent(
     await onProgress?.(`${role.emoji} **${role.name}** gestartet...`)
 
     try {
-        const result = await callLLM(role, query)
+        const result = await runRole(role, query, options)
         const duration = ((Date.now() - startTime) / 1000).toFixed(1)
         return `${role.emoji} **${role.name}** (${duration}s):\n\n${result}`
     } catch (err: any) {
@@ -346,62 +371,29 @@ export async function runSubAgent(
 }
 
 // ============================================
-// LLM Call (uses best available)
+// Role call — always through the subagent orchestrator
 // ============================================
 
-async function callLLM(role: AgentRole, prompt: string): Promise<string> {
-    // Try 1: Use mesh LLM proxy (can route to nodes)
-    try {
-        const { proxyLLMRequest } = await import('../mesh/mesh-llm-proxy.js')
-        const result = await proxyLLMRequest({
-            prompt: `${role.systemPrompt}\n\n---\n\n${prompt}`,
-            model: role.preferredModel,
-            maxTokens: role.maxTokens || 1500,
-            temperature: role.temperature || 0.5,
-            preferLocal: role.preferredNode !== 'master',
-        })
-        if (result && !result.includes('Kein LLM verfuegbar')) return result
-    } catch { }
+function readOnlyRoleTools(role: AgentRole): string[] {
+    const allowed = (role.tools || []).filter(tool => TEAM_ROLE_TOOLS.includes(tool))
+    return allowed.length ? allowed : [...TEAM_ROLE_TOOLS]
+}
 
-    // Try 2: Direct OpenAI API
-    const apiKey = process.env.OPENAI_API_KEY
-    if (apiKey) {
-        try {
-            const model = role.preferredModel || 'auto'
-            const resp = await fetch(
-                ``,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `${role.systemPrompt}\n\n---\n\n${prompt}` }] }],
-                        generationConfig: {
-                            maxOutputTokens: role.maxTokens || 1500,
-                            temperature: role.temperature || 0.5,
-                        },
-                    }),
-                    signal: AbortSignal.timeout(45000),
-                }
-            )
-            if (resp.ok) {
-                const data = await resp.json() as any
-                return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Keine Antwort generiert.'
-            }
-        } catch { }
+async function runRole(role: AgentRole, prompt: string, options: TeamRunOptions): Promise<string> {
+    const result = await spawnSubagent({
+        task: prompt,
+        systemPrompt: role.systemPrompt,
+        // A team answers questions: read-only tools only, even if a role lists more (write/shell stay out).
+        tools: readOnlyRoleTools(role),
+        timeoutMs: options.timeoutMs ?? 90_000,
+        ...(role.preferredModel && role.preferredModel !== 'auto' ? { model: role.preferredModel } : {}),
+        ...(options.userId ? { userId: options.userId } : {}),
+        ...(options.authUserId ? { authUserId: options.authUserId } : {}),
+    })
+    if (result.status !== 'completed' || !result.output.trim()) {
+        throw new Error(result.error || `Unteragent ${result.status}`)
     }
-
-    // Try 3: Nova's own LLM client
-    try {
-        const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
-        const llm = await createNovaLLMClient({})
-        const response = await llm.complete([
-            { role: 'system', content: role.systemPrompt },
-            { role: 'user', content: prompt },
-        ] as any)
-        return response.content || 'Keine Antwort generiert.'
-    } catch { }
-
-    throw new Error('Kein LLM verfuegbar')
+    return result.output
 }
 
 // ============================================

@@ -936,7 +936,6 @@ async function startDaemon() {
     try {
         const { createFeedbackCollector } = await import('./learning/feedback.js')
         const { getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
-        const { getMultiBotManager } = await import('./layers/multi-bot.js')
 
         // Basic feedback collector
         const feedbackCollector = createFeedbackCollector()
@@ -944,7 +943,6 @@ async function startDaemon() {
         // Advanced learners (corrections live in memory governance)
         const skillSynthesizer = getSkillSynthesizer()
         const agentSwarm = getAgentSwarm()
-        const botManager = getMultiBotManager()
 
         // Load persisted feedback
         const feedbackPath = join(process.cwd(), '.nova-learning', 'feedback.json')
@@ -964,7 +962,6 @@ async function startDaemon() {
             feedback: feedbackCollector,
             skills: skillSynthesizer,
             swarm: agentSwarm,
-            bots: botManager,
 
             // Find matching skill for query
             findSkill: (query: string) => skillSynthesizer.findMatchingSkill(query),
@@ -973,13 +970,11 @@ async function startDaemon() {
                 feedback: feedbackCollector.getStats(),
                 skills: skillSynthesizer.getStats(),
                 swarm: agentSwarm.getStats(),
-                bots: botManager.getStats(),
             }),
         }
 
         const sStats = skillSynthesizer.getStats()
-        const bStats = botManager.getStats()
-        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${sStats.totalSkills} Skills, ${bStats.totalBots} Bots)`)
+        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${sStats.totalSkills} Skills)`)
 
         // Bind the monitored learning service to L7.
         if (serviceModels.learning) {
@@ -1120,18 +1115,6 @@ async function startDaemon() {
             isMain ? undefined : `nova-${hostname()}`)
     } catch (err) {
         console.log(`[Nova] ⚠ Mesh Events: ${err}`)
-    }
-
-    // ============================================
-    // Initialize Heartbeat — Nova's internal Cron ❤️
-    // Runs INDEPENDENTLY of any channel (Telegram, etc.)
-    // ============================================
-    try {
-        const { initHeartbeat } = await import('./core/heartbeat.js')
-        await initHeartbeat()
-        console.log('[Nova] ✓ Heartbeat ❤️ — interner Cron aktiv (unabhängig von Channels)')
-    } catch (err) {
-        console.log(`[Nova] ⚠ Heartbeat: ${err}`)
     }
 
     // ============================================
@@ -1302,11 +1285,9 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Initialize HEARTBEAT Scheduler (Layer 0)
+    // Periodic L0 work (health, journal summary, daily digest)
     // ============================================
     try {
-        const { startHeartbeat, getDueTasks } = await import('./layers/L0-supervisor.js')
-
         // Health Monitor — runs with heartbeat
         let healthMonitorReady = false
         try {
@@ -1377,28 +1358,9 @@ async function startDaemon() {
                 .finally(() => { periodicHeartbeatRunning = false })
         }, 5 * 60 * 1000).unref?.()
 
-        startHeartbeat(async (task) => {
-            // The L0 heartbeat may pass a pseudo task on ticks without due
-            // tasks (layers fix R2 L3, id 'heartbeat-tick'). Periodic work
-            // already runs on the tick above, so it is not a "due task".
-            if (task.id === 'heartbeat-tick' || task.channel === 'heartbeat') return
-            console.log(`[L0 Heartbeat] Task fällig: ${task.description}`)
-
-            // Find the channel to send to
-            if (task.channel === 'Telegram' && state.channels.telegram) {
-                try {
-                    await state.channels.telegram.send({ to: task.userId, content: `⏰ Erinnerung: ${task.description}` })
-                    console.log(`[L0 Heartbeat] ✓ Erinnerung gesendet an ${task.userId}`)
-                } catch (err) {
-                    console.error(`[L0 Heartbeat] Fehler: ${err}`)
-                }
-            }
-        }, 5 * 60 * 1000)  // Check every 5 minutes
-
-        const pending = getDueTasks().length
-        console.log(`[Nova] ✓ HEARTBEAT Scheduler aktiv (${pending} fällige Tasks)`)
+        console.log('[Nova] ✓ L0-Takt aktiv (Health, Journal, Tagesbericht alle 5 min)')
     } catch (err) {
-        console.log(`[Nova] ⚠ HEARTBEAT nicht verfügbar: ${err}`)
+        console.log(`[Nova] ⚠ L0-Takt nicht verfügbar: ${err}`)
     }
 
     // Telegram was already started in the fast-path above (right after LLM init).
@@ -1468,12 +1430,8 @@ async function startDaemon() {
     try {
         const { getProactiveMessenger } = await import('./core/proactive.js')
         const { assessmentFromEvent } = await import('./core/proactive-policy.js')
-        const { getSubAgentManager } = await import('./agents/sub-agent.js')
-        const { getScheduler } = await import('./scheduler/nova-scheduler.js')
 
         const proactive = getProactiveMessenger()
-        const subAgentManager = getSubAgentManager()
-        const scheduler = getScheduler()
         const proactiveOwner = config.channels?.telegram?.allowFrom?.[0]
         ;(state as any).sendGovernedProactive = async (
             content: string,
@@ -1555,47 +1513,6 @@ async function startDaemon() {
 
         // Deliver deferred messages (quiet hours, budget, channel reconnect).
         setInterval(() => { void proactive.processQueue().catch(() => undefined) }, 60_000).unref?.()
-
-        // Wire sub-agent events to proactive messenger (auto-report)
-        subAgentManager.on('task-complete', async (event: any) => {
-            console.log(`[Proactive] 📣 Auto-reporting task completion to ${event.config.userId}`)
-            await proactive.send({
-                userId: event.config.userId,
-                channel: event.config.channel as any,
-                content: event.message,
-                priority: 'normal',
-                type: 'notification',
-                assessment: assessmentFromEvent({ source: 'subagent-orchestrator', summary: `Task ${event.config?.taskId || event.taskId || 'unknown'} emitted a completion event`, severity: 'info', confidence: 0.98 }),
-            })
-        })
-
-        subAgentManager.on('task-error', async (event: any) => {
-            console.log(`[Proactive] 🚨 Auto-reporting task error to ${event.config.userId}`)
-            await proactive.send({
-                userId: event.config.userId,
-                channel: event.config.channel as any,
-                content: event.message,
-                priority: 'high',
-                type: 'error',
-                assessment: assessmentFromEvent({ source: 'subagent-orchestrator', summary: `Task ${event.config?.taskId || event.taskId || 'unknown'} emitted an error event`, severity: 'error', confidence: 0.98, actionAvailable: true }),
-            })
-        })
-
-        // Wire scheduler to proactive messenger
-        scheduler.setMessageSender(async (userId, channel, content) => {
-            await proactive.send({
-                userId,
-                channel: channel as any,
-                content,
-                priority: 'normal',
-                type: 'notification',
-                // Per-job dedupe key: different jobs within 30 min are not duplicates (R2 NZ-12).
-                assessment: assessmentFromEvent({ source: 'scheduler', summary: 'A persisted scheduled job reached its due time', severity: 'info', confidence: 1, dedupeKey: `scheduler:${userId}:${content}`.slice(0, 200) }),
-            })
-        })
-
-        // Load scheduled jobs from pattern store
-        await scheduler.loadFromPatternStore()
 
         console.log(`[Nova] ✓ Proaktives Messaging aktiv (${proactive.getStats().channels.length} Channels)`)
     } catch (err) {
@@ -1886,6 +1803,7 @@ async function startDaemon() {
         try {
             const { startPlannerRuntime } = await import('./planner/runtime.js')
             await startPlannerRuntime(autonomyCfg, {
+                heartbeatEnabled: (config as any).heartbeat?.enabled !== false,
                 nightwatch: {
                     enabled: nightwatchEnabled,
                     configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
@@ -1894,6 +1812,11 @@ async function startDaemon() {
             })
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
+            // Without the planner, reminders.json + its checker carry reminders (Rückweg).
+            try {
+                const { useLegacyReminderPath } = await import('./tools/reminder-tool.js')
+                await useLegacyReminderPath()
+            } catch { /* reminder tool unavailable */ }
         }
 
         // Phase 6a Release-Knopf: P8 on at the Main by default (false = off);

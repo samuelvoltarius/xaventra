@@ -19,7 +19,7 @@ import { triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
 import { setThinkingConfig } from '../thinking/thinking-runtime.js'
 import { setSoftwareScoutConfig } from '../install/software-scout.js'
 
-const allOff = { health: false, reminders: false, inbound: false, logs: false, uptime: false }
+const allOff = { health: false, inbound: false, logs: false, uptime: false }
 let dir: string
 beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'nightwatch-runner-'))

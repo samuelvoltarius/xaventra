@@ -54,6 +54,15 @@ deletion are involved.
   erlauben?" from it), local/vector/combined memory, mesh-memory-sync,
   causal-memory, document RAG, visual mesh memory and other dead modules.
   Old files are migrated at start and kept as `*.migriert`.
+- Cleanup (duplicates): one scheduler — reminders, `heartbeat.md` routines
+  (`/routine`) and cron automations are planner jobs (old files renamed
+  `.migriert`); terms separated — **Auftrag** (`/auftrag`, `/mission` alias)
+  vs. **Mission** (responsibility missions, `/arbeit`); `/wave` and the
+  multi-bot instances removed (personas are roles); one goal store; missions
+  and Aufträge delegate steps to Claude/Codex/Hermes/subagents and "Mission
+  wartet" reminds; `/bot team` runs through the subagent orchestrator;
+  delegation and mission-recovery timers only poll while something is open;
+  dead L0 task heartbeat, old sub-agent manager and legacy safe fixes deleted.
 
 ## [2.81.0] — 2026-10-01
 

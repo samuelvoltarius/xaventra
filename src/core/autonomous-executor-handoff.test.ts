@@ -7,7 +7,7 @@ vi.mock('../mesh/mesh-registry.js', () => ({ acquireMissionOwnership: async () =
 
 async function freshExecutor() {
     vi.resetModules()
-    writeFileSync(join(process.cwd(), '.nova-data', 'missions.json'), JSON.stringify({ active: null, history: [], queue: [] }))
+    writeFileSync(join(process.cwd(), '.nova-data', 'auftraege.json'), JSON.stringify({ active: null, history: [], queue: [] }))
     const executor = await import('./autonomous-executor.js')
     executor.initMissionEngine({ handleMessage: vi.fn(async () => { }) as any, notifyFn: async () => { }, llm: null, state: {} })
     return executor

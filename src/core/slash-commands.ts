@@ -229,14 +229,13 @@ export async function handleCommand(
 *Mesh:* /nodes /nodes check /nodes models /nodes recommend /nodes scan /nodes install
 *AI:* /ai scan /ai status /ai route
 *Session:* /clear /save /compact /apikey
-*Bots:* /bots /bot /bot team /swarm
+*Team & Rollen:* /bots /bot team /subagent /swarm
 *Agents:* /agents /subagent /factory
 *Users:* /users /users list /users promote /users block
-*Wave:* /wave new /wave approve /wave status
 *Intelligence:* /roi /graph /scan
 *Projekt:* /project
 *Monitor:* /monitor
-*Autonomie:* /autonom /mission /remind
+*Autonomie:* /autonom /auftrag /arbeit /routine /remind
 *Pre-Flight:* /preflight /preflight local /preflight <host>
 *Auth:* /codex status /codex login /codex logout
 *Smart Home:* /hass list /hass on <entity> /hass off <entity> /hass toggle <entity>
@@ -1220,22 +1219,9 @@ Gebaut für Xaventra contributors 🌶️`
         // ============================================
         case 'bots':
         case 'botlist': {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bots = manager.getAllBots()
-
-            if (bots.length === 0) {
-                return `🤖 *Multi-Bot Status*\n\nKeine Bots konfiguriert.\n\nVerwende /bot spawn <name> um einen Bot zu erstellen.`
-            }
-
-            const botList = bots.map(b => {
-                const status = b.status === 'running' ? '🟢' : b.status === 'error' ? '🔴' : '⚪'
-                const users = b.activeUsers.size
-                return `${status} *${b.config.name}* (${b.config.channel})\n   Status: ${b.status} | Messages: ${b.messageCount} | Users: ${users}`
-            }).join('\n\n')
-
-            const stats = manager.getStats()
-            return `🤖 *Multi-Bot Status*\n\n${botList}\n\n📊 Gesamt: ${stats.totalBots} Bots, ${stats.runningBots} aktiv, ${stats.totalMessages} Nachrichten`
+            // P9: there are no separate bot instances any more; personas are roles.
+            const { listRoles, listPresets } = await import('../agents/agent-roles.js')
+            return `🤖 *Rollen (frühere Bot-Personas)*\n\n${listRoles()}\n\n📦 *Teams*\n${listPresets()}\n\nEine Rolle fragen: /subagent <rolle> <frage> · Team: /bot team <frage>`
         }
 
         case 'bot': {
@@ -1327,7 +1313,7 @@ Gebaut für Xaventra contributors 🌶️`
                                 }
                             } catch { }
                         }
-                        const result = await runTeam(teamId, query, onProgress)
+                        const result = await runTeam(teamId, query, onProgress, { userId: principalContext?.principalId || from, authUserId: principalContext?.rawUserId || from })
                         try {
                             const tg = (globalThis as any).__novaState?.channels?.telegram || (globalThis as any).__novaState?.telegram
                             if (tg?.bot && chatId && progressMsgId) {
@@ -1339,65 +1325,11 @@ Gebaut für Xaventra contributors 🌶️`
                 }
             }
 
-            // ==============================
-            // Legacy Bot Instance Commands
-            // ==============================
-            const { getMultiBotManager, BOT_TEMPLATES } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-
-            switch (action?.toLowerCase()) {
-                case 'spawn':
-                case 'create':
-                case 'new': {
-                    const name = botArg || `Nova-${Date.now().toString(36)}`
-                    const template = BOT_TEMPLATES.assistant
-                    const config = manager.createBot({
-                        name,
-                        persona: template.persona,
-                        channel: 'telegram',
-                        channelConfig: {},
-                        enabled: true,
-                        createdBy: from,
-                    })
-                    return `✅ Bot erstellt: *${config.name}*\n\nID: ${config.id}\nChannel: ${config.channel}\n\nVerwende /bot start ${config.name} zum Starten.`
-                }
-                case 'start': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    try {
-                        await manager.startBot(bot.config.id)
-                        return `✅ Bot *${bot.config.name}* gestartet!`
-                    } catch (err) {
-                        return `❌ Start fehlgeschlagen: ${err}`
-                    }
-                }
-                case 'stop':
-                case 'kill': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    await manager.stopBot(bot.config.id)
-                    return `✅ Bot *${bot.config.name}* gestoppt.`
-                }
-                case 'delete':
-                case 'remove': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    manager.deleteBot(bot.config.id)
-                    return `🗑️ Bot *${bot.config.name}* gelöscht.`
-                }
-                case 'status':
-                case 'info': {
-                    const bot = manager.getBotByName(botArg) || manager.getBot(botArg)
-                    if (!bot) return `❌ Bot "${botArg}" nicht gefunden.`
-                    const uptime = bot.startedAt ? Math.floor((Date.now() - bot.startedAt) / 1000 / 60) : 0
-                    return `🤖 *${bot.config.name}*\n\nID: ${bot.config.id}\nStatus: ${bot.status}\nChannel: ${bot.config.channel}\nUptime: ${uptime} min\nMessages: ${bot.messageCount}\nActive Users: ${bot.activeUsers.size}\nAllowed Users: ${bot.config.allowedUsers?.length || 'alle'}`
-                }
-                case 'templates': {
-                    return `📋 *Bot Templates*\n\n🔹 assistant - Allgemeiner Assistent\n🔹 coder - Programmier-Experte\n🔹 researcher - Recherche-Spezialist\n🔹 translator - Übersetzungs-Experte`
-                }
-                default:
-                    return `🤖 *Bot & Team*\n\n**Team (Multi-Agent):**\n/bot team <frage> — Agent-Team ausführen\n/bot team new — Neues Team erstellen\n/bot team del — Team löschen\n/bot team list — Alle Teams\n/bot team roles — Rollen\n\n**Bot-Instanzen:**\n/bot spawn <name>\n/bot start/stop/delete <name>\n\n**Sub-Agent:**\n/subagent <rolle> <frage>`
+            // P9: the old bot instances (multi-bot) never had their own channel; personas are roles now.
+            if (action && ['spawn', 'create', 'new', 'start', 'stop', 'kill', 'delete', 'remove', 'status', 'info', 'templates'].includes(action.toLowerCase())) {
+                return 'ℹ️ Eigene Bot-Instanzen gibt es nicht mehr (sie hatten nie einen eigenen Kanal). Personas sind Rollen: /bots zeigt sie, /subagent <rolle> <frage> fragt eine Rolle, /bot team <frage> ein ganzes Team.'
             }
+            return `🤖 *Team & Rollen*\n\n/bot team <frage> — Team ausführen (über den Unteragenten-Orchestrator, max. 6 parallel, Audit-Log)\n/bot team run <team> <frage> — bestimmtes Team\n/bot team new <name> <rollen> <beschreibung> — eigenes Team\n/bot team del <name> · /bot team list · /bot team roles · /bot team presets\n\n/subagent <rolle> <frage> — eine Rolle fragen\n/bots — alle Rollen`
         }
 
         case 'swarm': {
@@ -1429,29 +1361,11 @@ Gebaut für Xaventra contributors 🌶️`
         }
 
         // ============================================
-        // Wave Pipeline (nWave-inspired structured missions)
+        // /wave was removed in P9: it only kept phase notes nobody filled in.
+        // Aufträge (/auftrag) plan and run steps; Missionen (/arbeit) look after responsibilities.
         // ============================================
-        case 'wave': {
-            const { createMission, getMissionStatus, approvePhase, revisePhase, listMissions, submitForReview } = await import('../intelligence/wave-pipeline.js')
-            const [subCmd, ...rest] = args.split(' ')
-            switch (subCmd?.toLowerCase()) {
-                case 'new':
-                case 'start':
-                    return createMission(rest.join(' ') || 'Unnamed Mission', rest.join(' '), from).title + ' erstellt!'
-                case 'approve':
-                case 'ok':
-                    return approvePhase(rest[0] || '')
-                case 'revise':
-                    return revisePhase(rest[0] || '', rest.slice(1).join(' '))
-                case 'submit':
-                case 'review':
-                    return submitForReview(rest[0] || '')
-                case 'list':
-                    return listMissions()
-                default:
-                    return getMissionStatus(subCmd)
-            }
-        }
+        case 'wave':
+            return 'ℹ️ /wave gibt es nicht mehr. Für ein Ziel in Schritten: /auftrag <ziel> (mit Prüfung je Schritt). Selbstständige Missionen: /arbeit.'
 
         // ============================================
         // ROI Dashboard (ClawWork-inspired)
@@ -1496,7 +1410,7 @@ Gebaut für Xaventra contributors 🌶️`
                 return `🤖 **Sub-Agent**\n\nSyntax: /subagent <rolle> <frage>\n\nBeispiel: /subagent coder Analysiere die message-pipeline.ts Architektur\n\n${listRoles()}`
             }
             const { runSubAgent } = await import('../agents/team-coordinator.js')
-            return await runSubAgent(roleId, query)
+            return await runSubAgent(roleId, query, undefined, { userId: principalContext?.principalId || from, authUserId: principalContext?.rawUserId || from })
         }
 
         // ============================================
@@ -1909,10 +1823,10 @@ Gebaut für Xaventra contributors 🌶️`
                 '/clear', '/apikey', '/save', '/compact',
                 '/bots', '/bot', '/swarm', '/subagent', '/sub',
                 '/users', '/user', '/agents', '/factory', '/doctor',
-                '/wave', '/roi', '/cost', '/graph', '/scan',
+                '/roi', '/cost', '/graph', '/scan',
                 '/project', '/monitor', '/login', '/callback', '/commands',
                 '/reasoning', '/verbose', '/autonomy', '/quiet',
-                '/autonom', '/mission', '/remind', '/task', '/preflight', '/waechter',
+                '/autonom', '/auftrag', '/arbeit', '/routine', '/remind', '/task', '/preflight', '/waechter',
             ]
             return `📝 *Alle ${cmds.length} Befehle:*\n\n${cmds.join(' • ')}\n\nDetails: /help`
         }
@@ -2261,7 +2175,7 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
                         const done = mission.steps.filter(s => s.status === 'done').length
                         const total = mission.steps.length
                         const pct = Math.round((done / total) * 100)
-                        output += '\n\n🎯 *Aktive Mission:*\n' + mission.goal.slice(0, 100) + '\nFortschritt: ' + done + '/' + total + ' (' + pct + '%) | /mission status'
+                        output += '\n\n🎯 *Aktiver Auftrag:*\n' + mission.goal.slice(0, 100) + '\nFortschritt: ' + done + '/' + total + ' (' + pct + '%) | /auftrag status'
                     }
                 } catch { /* */ }
                 // Show scheduled jobs
@@ -3278,7 +3192,6 @@ _Deaktivieren: /verbose off_`
                     `Notifications/Stunde: ${status.notificationsThisHour}/${status.config.maxNotificationsPerHour}\n` +
                     `\n*Aktive Checks:*\n` +
                     `${status.config.checks.health ? '✅' : '❌'} System Health\n` +
-                    `${status.config.checks.reminders ? '✅' : '❌'} Erinnerungen\n` +
                     `${status.config.checks.inbound ? '✅' : '❌'} Inbound Folders\n` +
                     `${status.config.checks.logs ? '✅' : '❌'} Error Logs\n` +
                     `${status.config.checks.uptime ? '✅' : '❌'} Uptime\n` +
@@ -3414,10 +3327,15 @@ Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
         }
 
         // ============================================
-        // Autonomous Mission Engine
+        // Aufträge (Autonomous Executor). /mission is the old name.
+        // Missionen = Verantwortungs-Missionen under /arbeit.
         // ============================================
         case 'mission':
         case 'auftrag': {
+            const aliasHint = cmd === 'mission'
+                ? 'ℹ️ /mission heißt jetzt /auftrag. „Missionen“ sind die selbstständigen Verantwortungs-Missionen (/arbeit).\n\n'
+                : ''
+            const answer = await (async (): Promise<string> => {
             try {
                 const { startMission, cancelMission, pauseMission, resumeMission, getMissionStatus, getMissionHistory, formatMissionConfig, updateMissionConfig } = await import('./autonomous-executor.js')
                 const subCmd = args.split(' ')[0]?.toLowerCase() || ''
@@ -3464,12 +3382,14 @@ Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
                         const fullGoal = args.trim()
                         if (!fullGoal) return getMissionStatus()
                         const mission = await startMission(fullGoal, from, 'telegram')
-                        return '🚀 Mission gestartet! ' + mission.steps.length + ' Schritte werden autonom abgearbeitet.\n\nZiel: ' + fullGoal.slice(0, 150) + '\n\nKontrolle: /mission status | /mission stop | /mission pause | /mission config'
+                        return '🚀 Auftrag gestartet! ' + mission.steps.length + ' Schritte werden selbstständig abgearbeitet.\n\nZiel: ' + fullGoal.slice(0, 150) + '\n\nKontrolle: /auftrag status | /auftrag stop | /auftrag pause | /auftrag config'
                     }
                 }
             } catch (err: any) {
-                return '❌ Mission-Fehler: ' + (err?.message || err)
+                return '❌ Auftrag-Fehler: ' + (err?.message || err)
             }
+            })()
+            return aliasHint + answer
         }
 
         // ================================================
@@ -3564,13 +3484,18 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             }
         }
 
+        case 'routine':
+        case 'routinen':
         case 'heartbeat': {
-            try {
-                const { handleHeartbeatCommand } = await import('./heartbeat.js')
-                return handleHeartbeatCommand(args)
-            } catch (err) {
-                return `❌ Heartbeat module not available: ${err}`
-            }
+            // P9: heartbeat.md routines are planner jobs now (one scheduler).
+            const { getPlannerRuntime } = await import('../planner/runtime.js')
+            const { handleRoutineCommand, formatRoutines } = await import('../planner/routines.js')
+            const runtime = getPlannerRuntime()
+            const sub = args.trim()
+            const readOnly = !sub || ['status', 'list', 'liste'].includes(sub)
+            if (!readOnly && requestPermission !== 'owner') return '⛔ Routinen ändern darf nur der Owner.'
+            const hint = cmd === 'heartbeat' ? 'ℹ️ /heartbeat heißt jetzt /routine; die Routinen laufen im Planer.\n\n' : ''
+            return hint + (readOnly ? formatRoutines(runtime?.planner ?? null) : handleRoutineCommand(sub, runtime?.planner ?? null, runtime?.settings.briefing.timeZone))
         }
 
         // ─────────────────────────────────────────────────────────────────

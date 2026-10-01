@@ -13,7 +13,7 @@ function seed(status: 'active' | 'paused') {
         steps: [{ title: 'Read', nextAction: 'inspect' }] })
     const mission: Mission = { id: `pause-${status}`, goal: 'Inspect fixture', summary: '', steps: [], currentStep: 0,
         status, createdBy: 'fixture-user', channel: 'internal', createdAt: 1, progressUpdates: [], rootGoalId: plan.root.id }
-    writeFileSync(join(process.cwd(), '.nova-data', 'missions.json'), JSON.stringify({ active: mission, history: [], queue: [] }))
+    writeFileSync(join(process.cwd(), '.nova-data', 'auftraege.json'), JSON.stringify({ active: mission, history: [], queue: [] }))
     const handleMessage = vi.fn(async () => {})
     initMissionEngine({ handleMessage, notifyFn: async () => {}, llm: null, state: {} })
     return { manager, handleMessage }

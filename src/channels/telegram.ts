@@ -255,13 +255,12 @@ export class TelegramAdapter implements ChannelAdapter {
                 // Users
                 { command: 'users', description: '👥 User-Verwaltung' },
                 // Intelligence
-                { command: 'wave', description: '🌊 Wave-Pipeline (Strukturierte Missionen)' },
                 { command: 'roi', description: '📊 ROI Dashboard (Cost/Value)' },
                 { command: 'graph', description: '🕸️ Knowledge Graph' },
                 { command: 'scan', description: '📁 File-Index scannen' },
                 // Autonomy
                 { command: 'autonom', description: '🚀 Autonomie-Modus' },
-                { command: 'mission', description: '🎯 Mission starten/verwalten' },
+                { command: 'auftrag', description: '🎯 Auftrag starten/verwalten' },
                 { command: 'remind', description: '⏰ Erinnerung setzen' },
                 { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)' },
                 { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
@@ -286,7 +285,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 { command: 'verbose', description: '🔊 Verbose-Modus' },
                 { command: 'strict', description: '🔒 Strict-Mode' },
                 { command: 'commands', description: '📝 Alle Befehle auflisten' },
-                { command: 'heartbeat', description: '❤️ Heartbeat routines' },
+                { command: 'routine', description: '❤️ Tägliche Routinen (Planer)' },
                 // Self-Evolution & Self-Setup
                 { command: 'setup', description: '🔧 Self-Setup Scan & Plan anzeigen' },
                 { command: 'patches', description: '🧬 Patch-Vorschläge anzeigen' },
@@ -758,7 +757,7 @@ export class TelegramAdapter implements ChannelAdapter {
 *Agents:* /agents /factory
 *Projekt:* /project
 *Monitor:* /monitor
-*Autonomie:* /autonom /mission /remind
+*Autonomie:* /autonom /auftrag /arbeit /remind
 *Pre-Flight:* /preflight /preflight local /preflight <host>
 *Auth:* /login /callback`
                     await this.bot.sendMessage(chatId, helpText, { parse_mode: 'Markdown' })
@@ -870,7 +869,7 @@ export class TelegramAdapter implements ChannelAdapter {
             }
         }
 
-        // Mission config buttons (from /mission config)
+        // Auftrags-Konfiguration (from /auftrag config)
         if (data?.startsWith('mcfg_')) {
             if (await buttonDenial('mission')) return
             try {

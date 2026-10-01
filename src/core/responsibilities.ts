@@ -91,6 +91,8 @@ export interface ResponsibilitySignals {
     devices: Array<{ id: string; name: string; type: string; status: string; ok?: boolean | null; detail?: string }>
     release: { version: string } | null
     ownerRequests: Array<{ at: number; text: string }>
+    /** P9: an agent can take a mission step (delegation on, Agentic-OS URL set). Missing = no. */
+    delegation?: { available: boolean }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +157,8 @@ export function deriveResponsibilities(signals: ResponsibilitySignals): Candidat
             ziel: 'Nachtwache-Prüfung ist grün',
             kriterien: [{ id: 'nachtwache', typ: 'nachtwache-pruefung', ref: `${result.id}@${result.host}`, text: `Nachtwache „${clean(result.label || result.id, 60)}“ ok` }],
             scope: [result.host],
-            aktionen: ['diagnose', 'dienst-neustart', 'melden'],
+            // P9: with a reachable agent the mission may hand the repair over (after Alfred's Ja) before it hands off.
+            aktionen: signals.delegation?.available ? ['diagnose', 'delegieren', 'dienst-neustart', 'melden'] : ['diagnose', 'dienst-neustart', 'melden'],
             regel: 'dienst-laeuft',
             beleg: `Nachtwache-Prüfung ${result.id} auf ${result.host}`,
         })

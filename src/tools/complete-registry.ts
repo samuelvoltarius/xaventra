@@ -2202,76 +2202,6 @@ export const extensionTools: NovaTool[] = [
 ]
 
 // ============================================
-// Bot Management Tools
-// ============================================
-
-export const botTools: NovaTool[] = [
-    {
-        name: 'spawn_bot',
-        description: 'Startet einen neuen Bot mit eigener Persona',
-        category: 'bot',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Bots', required: true },
-            { name: 'persona', type: 'string', description: 'Persona/System-Prompt', required: false },
-            { name: 'channel', type: 'string', description: 'Kanal (telegram/discord/whatsapp)', required: false },
-        ],
-        handler: async (params) => {
-            const { getMultiBotManager, BOT_TEMPLATES } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-
-            const config = manager.createBot({
-                name: params.name as string,
-                persona: params.persona as string || BOT_TEMPLATES.assistant.persona,
-                channel: (params.channel as 'telegram' | 'discord' | 'whatsapp') || 'telegram',
-                channelConfig: {},
-                enabled: true,
-                createdBy: 'nova',
-            })
-
-            await manager.startBot(config.id)
-            return { success: true, botId: config.id, name: config.name }
-        },
-    },
-    {
-        name: 'list_bots',
-        description: 'Listet alle Bots auf',
-        category: 'bot',
-        parameters: [],
-        handler: async () => {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bots = manager.getAllBots()
-            return {
-                count: bots.length,
-                bots: bots.map(b => ({
-                    id: b.config.id,
-                    name: b.config.name,
-                    status: b.status,
-                    channel: b.config.channel,
-                })),
-            }
-        },
-    },
-    {
-        name: 'kill_bot',
-        description: 'Stoppt einen Bot',
-        category: 'bot',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Bots', required: true },
-        ],
-        handler: async (params) => {
-            const { getMultiBotManager } = await import('../layers/multi-bot.js')
-            const manager = getMultiBotManager()
-            const bot = manager.getBotByName(params.name as string)
-            if (!bot) return { error: 'Bot nicht gefunden' }
-
-            await manager.stopBot(bot.config.id)
-            return { success: true, stopped: bot.config.name }
-        },
-    },
-]
-
-// ============================================
 // Media Provider Tools (Wave 1)
 // ============================================
 
@@ -2846,28 +2776,28 @@ const selfModificationTools: NovaTool[] = [
 ]
 
 // ============================================
-// Mission Tools (LLM can start/manage missions)
+// Auftrags-Tools (P9: „Auftrag“ = Owner-Ziel als Schrittkette; Tool-Namen bleiben)
 // ============================================
 
 export const missionTools: NovaTool[] = [
     {
         name: 'start_mission',
-        description: 'Startet eine autonome Mission. NUTZE DAS wenn du eine komplexe Aufgabe autonom erledigen willst, die mehrere Schritte braucht. Schreibe NICHT nur "Mission gestartet" ï¿½ rufe dieses Tool auf!',
+        description: 'Startet einen Auftrag: ein Ziel, das selbstständig in mehreren Schritten abgearbeitet wird. Nutze das für komplexe Aufgaben mit mehreren Schritten; schreibe nicht nur „Auftrag gestartet“, sondern rufe dieses Tool auf.',
         category: 'system',
         parameters: [
-            { name: 'goal', type: 'string', description: 'Das Ziel der Mission ï¿½ was genau soll erreicht werden?', required: true },
+            { name: 'goal', type: 'string', description: 'Das Ziel des Auftrags: was genau soll erreicht werden?', required: true },
         ],
         async handler(params) {
             const { startMission } = await import('../core/autonomous-executor.js')
             const goal = String(params.goal)
-            if (!goal || goal.length < 5) return '? Bitte ein konkretes Ziel angeben (min. 5 Zeichen).'
+            if (!goal || goal.length < 5) return '❌ Bitte ein konkretes Ziel angeben (mindestens 5 Zeichen).'
             const mission = await startMission(goal, 'nova-self', 'internal')
-            return `?? Mission registriert! ${mission.steps.length} Schritte geplant.\n\nZiel: ${goal.slice(0, 150)}\nSteps: ${mission.steps.map((s: any) => s.description).join(', ')}`
+            return `🚀 Auftrag registriert! ${mission.steps.length} Schritte geplant.\n\nZiel: ${goal.slice(0, 150)}\nSteps: ${mission.steps.map((s: any) => s.description).join(', ')}`
         },
     },
     {
         name: 'mission_status',
-        description: 'Zeigt den aktuellen Status der laufenden Mission. Nutze das BEVOR du sagst ob eine Mission lï¿½uft oder nicht.',
+        description: 'Zeigt den Status des laufenden Auftrags. Nutze das, bevor du sagst, ob ein Auftrag läuft.',
         category: 'system',
         parameters: [],
         async handler() {
@@ -2879,7 +2809,7 @@ export const missionTools: NovaTool[] = [
     },
     {
         name: 'mission_config',
-        description: 'Zeigt oder ï¿½ndert die Mission-Konfiguration (max Continuations, Timeout, Steps, etc.)',
+        description: 'Zeigt oder ändert die Auftrags-Konfiguration (Folge-Aufträge, Timeout, Schritte usw.)',
         category: 'system',
         parameters: [
             { name: 'key', type: 'string', description: 'Setting: continuations, steps, retries, timeout, delay, notify (leer = alle anzeigen)', required: false },
@@ -2890,7 +2820,7 @@ export const missionTools: NovaTool[] = [
             if (!params.key) return formatMissionConfig()
             const key = String(params.key).toLowerCase()
             const val = Number(params.value)
-            if (isNaN(val) || val < 0) return '? Wert muss eine positive Zahl sein.'
+            if (isNaN(val) || val < 0) return '❌ Wert muss eine positive Zahl sein.'
             const keyMap: Record<string, string> = {
                 continuations: 'maxContinuations', cont: 'maxContinuations',
                 steps: 'maxSteps', retries: 'maxRetries',
@@ -2961,7 +2891,7 @@ const meshTools: NovaTool[] = [
     },
     {
         name: 'mesh_delegate',
-        description: 'Delegiert eine Aufgabe an einen anderen Nova-Node im Mesh. Der Node bekommt die Aufgabe und arbeitet sie ab.',
+        description: 'Übergibt eine Aufgabe an einen anderen Knoten im Mesh („an Knoten übergeben“); der Knoten arbeitet sie ab. Nicht dasselbe wie die Delegation an Claude, Codex, Hermes oder einen Unteragenten.',
         category: 'system',
         parameters: [
             { name: 'node_id', type: 'string', description: 'ID des Ziel-Nodes (z.B. nova-a1b2c3d4)', required: true },
@@ -2970,8 +2900,8 @@ const meshTools: NovaTool[] = [
         handler: async (params) => {
             const { delegateTask } = await import('../mesh/mesh-registry.js')
             const result = await delegateTask(String(params.node_id), String(params.task))
-            if (!result) return '? Delegation fehlgeschlagen. Node nicht erreichbar.'
-            return `Task delegiert!\nID: ${result.id}\nAn: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
+            if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
+            return `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
         },
     },
     {
@@ -3200,7 +3130,6 @@ export const ALL_TOOLS: NovaTool[] = [
     ...mediaTools,
     ...learningTools,
     ...extensionTools,
-    ...botTools,
     ...selfManagementTools,
     ...mediaProviderTools,
     ...selfModificationTools,
