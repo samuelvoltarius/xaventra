@@ -352,7 +352,7 @@ describe('L0 Health Monitor', async () => {
 // ============================================
 
 describe('L7 Learning', async () => {
-    const { CorrectionLearner, SkillSynthesizer, getCorrectionLearner } = await import('./L7-learning.js')
+    const { CorrectionLearner, getCorrectionLearner } = await import('./L7-learning.js')
 
     it('CorrectionLearner: creates instance with temp dir', () => {
         const learner = new CorrectionLearner(testPath('nova-test-corrections'))
@@ -390,18 +390,6 @@ describe('L7 Learning', async () => {
         const stats = learner.getStats()
         expect(typeof stats.totalCorrections).toBe('number')
         expect(typeof stats.appliedCorrections).toBe('number')
-    })
-
-    it('SkillSynthesizer: creates instance', () => {
-        const synth = new SkillSynthesizer(testPath('nova-test-skills'))
-        expect(synth).toBeDefined()
-    })
-
-    it('SkillSynthesizer: getStats returns valid structure', () => {
-        const synth = new SkillSynthesizer(testPath('nova-test-skills'))
-        const stats = synth.getStats()
-        expect(typeof stats.totalSkills).toBe('number')
-        expect(typeof stats.averageSuccessRate).toBe('number')
     })
 
     it('getCorrectionLearner: returns singleton', () => {

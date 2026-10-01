@@ -2131,28 +2131,6 @@ export const learningTools: NovaTool[] = [
             return { success: true, correctionId: correction.id }
         },
     },
-    {
-        name: 'learn_workflow_skill',
-        description: 'Erstellt aus validierten Beispielen ein internes L7-Workflow-Muster. Erzeugt keinen ausführbaren Code.',
-        category: 'learning',
-        parameters: [
-            { name: 'name', type: 'string', description: 'Name des Skills', required: true },
-            { name: 'description', type: 'string', description: 'Beschreibung', required: true },
-            { name: 'examples', type: 'string', description: 'Beispiel-Anfragen (kommasepariert)', required: true },
-            { name: 'solution', type: 'string', description: 'LÃ¶sungs-Template', required: true },
-        ],
-        handler: async (params) => {
-            const { getSkillSynthesizer } = await import('../layers/L7-learning.js')
-            const synthesizer = getSkillSynthesizer()
-            const skill = synthesizer.synthesizeFromPattern({
-                name: params.name as string,
-                description: params.description as string,
-                exampleQueries: (params.examples as string).split(',').map(s => s.trim()),
-                solutionTemplate: params.solution as string,
-            })
-            return { success: true, skillId: skill.id, name: skill.name }
-        },
-    },
 ]
 
 // ============================================

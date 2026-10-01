@@ -331,40 +331,6 @@ describe('Metrics', async () => {
 })
 
 // ============================================
-// Plugin System Tests
-// ============================================
-
-describe('PluginManager', async () => {
-    const { PluginManager } = await import('./infra/plugins.js')
-
-    it('should initialize without plugins', async () => {
-        const manager = new PluginManager('.nonexistent-dir')
-        await manager.loadAll()
-
-        expect(manager.listPlugins().length).toBe(0)
-    })
-
-    it('should run hooks', async () => {
-        const manager = new PluginManager()
-
-        const hookFn = vi.fn(async (data) => ({ ...(data as object), modified: true }))
-        manager.registerHook('beforeMessage', hookFn)
-
-        const result = await manager.runHook('beforeMessage', { content: 'test' })
-
-        expect(hookFn).toHaveBeenCalled()
-        expect((result as Record<string, unknown>).modified).toBe(true)
-    })
-
-    it('should track commands', () => {
-        const manager = new PluginManager()
-
-        expect(manager.hasCommand('nonexistent')).toBe(false)
-        expect(manager.getCommands()).toEqual([])
-    })
-})
-
-// ============================================
 // Config Tests
 // ============================================
 

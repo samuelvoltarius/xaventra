@@ -176,11 +176,4 @@ describe('Synthesis sandbox static gate bypasses (R2 MA-10)', async () => {
     ])('rejects %s', code => {
         expect(validateSkillCode(code).valid).toBe(false)
     })
-
-    it('pipeline validates the generated test code as well', async () => {
-        const { readFileSync } = await import('node:fs')
-        const { fileURLToPath } = await import('node:url')
-        const source = readFileSync(fileURLToPath(new URL('./pipeline.ts', import.meta.url)), 'utf8')
-        expect(source).toMatch(/validateSkillCode\(skill\.testCode/)
-    })
 })

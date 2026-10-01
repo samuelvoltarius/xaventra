@@ -947,7 +947,7 @@ async function startDaemon() {
     // ============================================
     try {
         const { createFeedbackCollector } = await import('./learning/feedback.js')
-        const { getCorrectionLearner, getSkillSynthesizer, getAgentSwarm } = await import('./layers/L7-learning.js')
+        const { getCorrectionLearner, getAgentSwarm } = await import('./layers/L7-learning.js')
         const { getMultiBotManager } = await import('./layers/multi-bot.js')
 
         // Basic feedback collector
@@ -955,7 +955,6 @@ async function startDaemon() {
 
         // Advanced learners
         const correctionLearner = getCorrectionLearner()
-        const skillSynthesizer = getSkillSynthesizer()
         const agentSwarm = getAgentSwarm()
         const botManager = getMultiBotManager()
 
@@ -999,7 +998,6 @@ async function startDaemon() {
         state.learning = {
             feedback: feedbackCollector,
             corrections: correctionLearner,
-            skills: skillSynthesizer,
             swarm: agentSwarm,
             bots: botManager,
 
@@ -1013,22 +1011,17 @@ async function startDaemon() {
                 })
             },
 
-            // Find matching skill for query
-            findSkill: (query: string) => skillSynthesizer.findMatchingSkill(query),
-
             getStats: () => ({
                 feedback: feedbackCollector.getStats(),
                 corrections: correctionLearner.getStats(),
-                skills: skillSynthesizer.getStats(),
                 swarm: agentSwarm.getStats(),
                 bots: botManager.getStats(),
             }),
         }
 
         const cStats = correctionLearner.getStats()
-        const sStats = skillSynthesizer.getStats()
         const bStats = botManager.getStats()
-        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${cStats.totalCorrections} Korrekturen, ${sStats.totalSkills} Skills, ${bStats.totalBots} Bots)`)
+        console.log(`[Nova] ✓ Layer 7 (Learning) aktiv (${cStats.totalCorrections} Korrekturen, ${bStats.totalBots} Bots)`)
 
         // Bind the monitored learning service to L7.
         if (serviceModels.learning) {
