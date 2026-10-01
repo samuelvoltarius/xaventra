@@ -316,7 +316,8 @@ callbacks), so they work without the port.
 `Morgenbericht` / `Abendbericht` since the last delivered report (max 36 h):
 Erledigt (planner runs, thoughts closed as done) · Selbst repariert
 (`self-heal/journal`) · Installiert (`install-journal.jsonl`) · Wartet auf dich (open
-thoughts with permission `fragen`) · Ideen (max 3) · Zurückgehalten (quiet hours /
+thoughts with permission `fragen`) · Ideen (max 3) · Skills (Routine-Skills angelegt
+oder deaktiviert, Gedanken mit Quelle `skills`) · Zurückgehalten (quiet hours /
 cap). Built only from journals on disk, every line redacted, max 5 lines per section.
 
 ## Wahrnehmen und Selbst-Einrichtung (Phase 2)
@@ -845,3 +846,62 @@ measured, sent, probed or stored.
 `/waechter` (owner): nodes with latest values, reachability, forecasts, TLS, backups,
 refused entries and the store size. `/status` shows two or three compact lines (owner
 only). Dashboard/G2-HUD: `getWatchOverview()` from `src/watch/runtime.ts` (JSON-safe).
+
+## Routine-Skills: Wiederholung erkennen, Skill selbst bauen (P8)
+
+Owner-Wunsch (Alfred, 01.10.2026): sagt er dreimal am Tag „guck mal bei Home
+Assistant“, legt Xaventra spätestens beim dritten Mal selbst einen Skill an und nutzt
+ihn danach, statt jedes Mal neu zu planen. Ohne Rückfrage; Meldung nur im Abendbericht.
+Code: `src/learning/routine-skills.ts`, Anbindung in `src/core/message-pipeline.ts`.
+
+**Wiederholung erkennen.** Nach jedem Lauf zählt die Pipeline den Lauf, wenn er vom
+Owner im Direktgespräch kam (keine Gruppe, keine Fremden, keine System-Nachricht),
+vom Validator bestätigt wurde und mindestens ein Werkzeug erfolgreich lief. Gleiche
+Absicht heißt: gleiche Aufgabenart (Kernel-Intent) und ähnliche Werkzeugfolge mit
+festen Parametern (Jaccard ≥ 0,67). Ist die Folge identisch, zählt eine andere
+Formulierung mit; weicht sie ab, muss zusätzlich das Thema der Anfrage überlappen.
+Der Wortlaut allein zählt nie. Fenster 7 Tage, Schwelle 3 (Config
+`routineSkills.repeatThreshold`, `routineSkills.windowDays`; `routineSkills.enabled:
+false` schaltet alles ab). Beim n-ten Mal entsteht ein Skill mit Name,
+Auslöser-Beschreibung, Schritten (Werkzeug + feste Parameter), Erfolgsprüfung und
+Herkunft (die Belege: Run-IDs und redigierte Anfragen). Keine Karte; ein Gedanke
+„Neuer Skill … angelegt“ (Quelle `skills`, erledigt) erscheint im Abendbericht.
+
+**Skill nutzen.** Passt eine Owner-Anfrage (Themen-Wörter, Füllwörter und Synonyme
+wie HA/hass/Home Assistant vereinheitlicht) zu einem eingeschalteten Skill, steht sein
+Plan als „Gespeicherter Skill“ zuerst im Prompt. Nach dem Lauf zählt die Pipeline
+Erfolg oder Fehlschlag (Warten auf Freigabe zählt nicht). Nach 2 Fehlschlägen in Folge
+wird der Skill abgeschaltet, Gedanke „Skill … deaktiviert“. Ein automatisch
+abgeschalteter Skill wird nach 3 neuen gleichen erfolgreichen Läufen als neue Version
+wieder gelernt; ein vom Owner abgeschalteter nie.
+
+**Grenzen (Code, nicht Config).**
+- Ein Skill ist nur ein Plan-Hinweis und führt nichts selbst aus. Jeder Schritt läuft
+  wie einzeln durch Werkzeug-Autorisierung, Aktions-Policy und Karten. Die
+  Einstufung kommt aus `evaluateAction`: physische und nach außen wirkende Schritte
+  stehen als „fragt weiter (Karte)“ im Skill und im Prompt.
+- Nie-Liste-Werkzeuge (L3: löschen, Secrets, SSH, Firewall …): ein solcher Lauf wird
+  nicht einmal gezählt.
+- Keine Secrets: Parameter mit Secret-Namen (token, passw, api_key, cookie, session,
+  auth …), Werte, die `redactSecrets` verändert, und lange Token-artige Werte werden
+  nie gespeichert; Anfragen werden redigiert.
+- Gelernt wird nur aus Owner-Anfragen; Skills gelten nur für den Owner, der sie
+  ausgelöst hat.
+
+**Eingebauter Home-Assistant-Skill** (`builtin-home-assistant`, nicht gelernt, rein
+lesend): `hass_status` (erreichbar?) → `hass_list` (Übersicht), Details mit `hass_get`.
+Auswerten: Anzahl Entitäten, nicht verfügbare, schwache Batterien, offene
+Türen/Fenster, eingeschaltete Geräte. Erreichen: URL nur aus `HASS_URL` oder
+`homeassistant.url`, Token nur aus `HASS_TOKEN` oder `homeassistant.token` – nie
+raten, nie ausgeben. „Gucken“ heißt lesen; Schalten (`hass_turn_on/off/toggle/service`)
+gehört nicht zum Skill und bleibt Karte. Die Definition kommt immer aus dem Code;
+auf der Platte liegt nur sein Zustand (an/aus, Zähler).
+
+**Dateien.** `<data>/skills/routine/<id>.json` (ein Skill pro Datei, `version`,
+`history` der letzten 5 Versionen, `enabled`), `<data>/skills/routine-observations.json`
+(gezählte Läufe im Fenster, max 500). In Tests/CI (`sideEffectsDisabled`) schreibt die
+Pipeline nichts.
+
+**Sichtbar.** `/skills` (Owner) zeigt zusätzlich die Routine-Skills mit Schritten,
+Zählern und Zustand; `/skills aus <id>` / `/skills an <id>` schaltet. Ein Befehl ist
+nie nötig.

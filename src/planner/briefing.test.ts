@@ -35,6 +35,21 @@ afterEach(() => {
 })
 
 describe('Morgen-/Abendbericht', () => {
+    it('P8: neue und deaktivierte Skills stehen als eigene Zeilen im Abendbericht', () => {
+        const thoughts = createThoughtStore({ dataDir: dir, now: () => t })
+        const neu = thoughts.add({ source: 'skills', kind: 'ereignis', permission: 'selbst', title: 'Neuer Skill „Routine: wetter salzburg“ angelegt', evidence: '3× gleiche Absicht' }).thought
+        thoughts.setStatus(neu.id, 'erledigt', 'selbst')
+        thoughts.add({ source: 'skills', kind: 'ereignis', permission: 'selbst', title: 'Skill „Routine: drucker“ deaktiviert', evidence: '2 Fehlschläge in Folge' })
+        const briefing = buildBriefing('abend', {
+            dataDir: dir, thoughts, runsFile: join(dir, 'planner', 'runs.jsonl'), timeZone: 'Europe/Vienna',
+        }, Date.parse('2026-10-01T05:30:00.000Z'), t)
+        expect(briefing.text).toContain('Skills:')
+        expect(briefing.text).toContain('Neuer Skill „Routine: wetter salzburg“ angelegt')
+        expect(briefing.text).toContain('Skill „Routine: drucker“ deaktiviert (2 Fehlschläge in Folge)')
+        expect(briefing.text).not.toContain('Erledigt:')
+        expect(briefing.counts.skills).toBe(2)
+    })
+
     it('enthält echte Journal-Einträge, wartende Fragen und Ideen, aber keine Secrets', () => {
         writeHeal('2026-10-01T10:00:00.000Z', 'log-rotation', 'geheilt', `audit.log archiviert (1.2 GB) GITHUB_TOKEN=${SECRET}`)
         writeHeal('2026-09-20T10:00:00.000Z', 'cache-leeren', 'geheilt', 'alt, gehört nicht in den Bericht')

@@ -411,6 +411,9 @@ async function handleMessageInScope(
     })
     let requestUserContext = ''
     let requestGroupContext = ''
+    // P8 Routine-Skills: Gruppen lernen nie mit; angewendeter Skill dieses Laufs.
+    let requestIsGroup = false
+    let routineSkillApplied: string | null = null
 
     console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback)\b/i.test(content.trim())
@@ -500,6 +503,7 @@ async function handleMessageInScope(
 
         // 4. Group Chat — track who speaks
         if (mu.isGroupChat(chatId, from)) {
+            requestIsGroup = true
             mu.trackGroupMessage(chatId, from, canonicalUser)
         }
 
@@ -1342,6 +1346,22 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Observer not critical - continue without it
     }
 
+    // P8 Routine-Skills: passt die Owner-Anfrage zu einem gespeicherten Skill,
+    // steht sein Plan zuerst im Prompt. Er erlaubt nichts zusätzlich: jeder
+    // Schritt läuft weiter durch Autorisierung, Aktions-Policy und Karten.
+    try {
+        const { getRoutineSkillStore, routineSkillHint } = await import('../learning/routine-skills.js')
+        const routineHint = routineSkillHint(getRoutineSkillStore(), {
+            principalId, permission: principalContext.permission, isGroup: requestIsGroup,
+            systemAuthored: isSystemAuthored, request: content,
+        })
+        if (routineHint) {
+            systemPrompt += '\n\n' + routineHint.prompt
+            routineSkillApplied = routineHint.skillId
+            console.log(`[Skills] Routine-Skill geladen: ${routineHint.skillId}`)
+        }
+    } catch (err) { console.debug('[Pipeline] routine skills not available:', err) }
+
     // ============================================
     // L6 Cold Storage: Inject USER.md + MEMORY.md into system prompt
     // ============================================
@@ -1960,6 +1980,20 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             : isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         const successfulExecutions = ((result as any).toolExecutions || []).filter((execution: any) => execution.success)
         const failedExecutions = ((result as any).toolExecutions || []).filter((execution: any) => !execution.success)
+        // P8 Routine-Skills: Ergebnis des angewendeten Skills zählen und den Lauf
+        // für die Wiederholungserkennung beobachten (nur Owner, keine Gruppe).
+        try {
+            const { getRoutineSkillStore, finishRoutineSkillRun } = await import('../learning/routine-skills.js')
+            const learned = finishRoutineSkillRun(getRoutineSkillStore(), {
+                principalId, permission: principalContext.permission, isGroup: requestIsGroup,
+                systemAuthored: isSystemMessage, request: content, appliedSkillId: routineSkillApplied,
+                runId: (result as any).runId, intentKind: kernelState?.kind,
+                success: (result as any).validation?.success === true,
+                awaitingApproval: kernelState?.awaitingApproval === true || (result as any).validation?.awaitingApproval === true,
+                steps: (result as any).toolExecutions || [],
+            })
+            if (learned?.counted && learned.created) console.log(`[Skills] Neuer Routine-Skill angelegt: ${learned.created.name} (${learned.created.id})`)
+        } catch (err) { console.debug('[Pipeline] routine skill bookkeeping failed:', err) }
         const { authoritativeDiagnosticResponse, screenshotFailureResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
