@@ -88,9 +88,20 @@ const EVENT_KIND = /error|fehler|offline|down|failed|nightwatch|paused/i
  * (entfernter Knoten, Selbstheilung aus), endet nur in „Brauche dich“ — eine
  * zweite Telegram-Meldung. Solche Verletzungen werden still als Info-Gedanke
  * notiert (nur Bericht, kein Telegram) und starten keine Mission.
+ *
+ * Gleiches gilt (2.82.0 Aufräumen) für „release-aktuell“ (der Release-Wächter
+ * bzw. Release-Knopf meldet die neue Version schon; ein Ausrollen-Ausführer
+ * existiert nicht) und „dienst-laeuft“ (der Wächter meldet den Ausfall schon;
+ * ein Neustart-Ausführer existiert nicht).
  */
+export const REPORTED_ELSEWHERE: Readonly<Record<string, string>> = Object.freeze({
+    'knoten-gesund': 'L0/L21 melden bereits',
+    'release-aktuell': 'Release-Wächter/Release-Knopf melden bereits',
+    'dienst-laeuft': 'der Wächter meldet bereits',
+})
+
 export async function canActOn(responsibility: Responsibility, executors: readonly StepExecutor[]): Promise<boolean> {
-    if (responsibility.regel !== 'knoten-gesund') return true
+    if (!REPORTED_ELSEWHERE[responsibility.regel]) return true
     for (const step of planSteps(responsibility)) {
         if (step.kind === 'diagnose') continue
         const executor = executors.find(item => item.kind === step.kind)
@@ -134,8 +145,8 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
         for (const outcome of reportOnly) {
             deps.ports.thoughts.add({
                 source: 'verantwortung', kind: 'ereignis', permission: 'selbst', severity: 'info',
-                title: `${outcome.responsibility.titel}: verletzt (Systemalarm meldet bereits)`,
-                evidence: `${outcome.verletzt.map(item => item.befund).join('; ')} — keine Mission: kein Ausführer außer Diagnose (Selbstheilung aus oder entfernter Knoten)`,
+                title: `${outcome.responsibility.titel}: verletzt (${REPORTED_ELSEWHERE[outcome.responsibility.regel] || 'Systemalarm meldet bereits'})`,
+                evidence: `${outcome.verletzt.map(item => item.befund).join('; ')} — keine Mission: kein Ausführer außer Diagnose`,
                 signature: `verantwortung:${outcome.responsibility.id}:nur-melden`,
                 node: outcome.responsibility.scope[0],
             })

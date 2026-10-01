@@ -9,7 +9,8 @@ export interface OperationalEvent {
     observedAt: string; expiresAt: string; dedupeKey: string; actionable: boolean; reason: string
 }
 interface EventFile { version: 1; updatedAt: string; events: OperationalEvent[] }
-const TRUSTED_PRODUCER = /^(?:health-monitor|node-health|codex-continuity|mesh|release|self-doctor|outcome-ledger|user-reminder|heartbeat|tool-health)/
+// 2.82.0: mission-engine = progress of owner-started /mission runs (code-generated).
+const TRUSTED_PRODUCER = /^(?:health-monitor|node-health|codex-continuity|mesh|release|self-doctor|outcome-ledger|user-reminder|heartbeat|tool-health|mission-engine)/
 
 export class OperationalEventBus {
     private events: OperationalEvent[] = []

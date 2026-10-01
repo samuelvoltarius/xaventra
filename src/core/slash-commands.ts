@@ -3307,19 +3307,20 @@ _Deaktivieren: /verbose off_`
                 const argLower = args.trim().toLowerCase()
 
                 if (argLower === 'on' || argLower === 'an') {
-                    updateAutonomyConfig({ quietHoursStart: 23, quietHoursEnd: 7 })
-                    return `🌙 *Quiet Hours: ✅ AKTIVIERT*\n\nNova ist ruhig von *23:00 - 07:00*\nKeine autonomen Nachrichten in dieser Zeit.\n\n_Anpassen: /quiet 22 8_\n_Deaktivieren: /quiet off_`
+                    const { DEFAULT_QUIET_HOURS } = await import('./quiet-hours.js')
+                    updateAutonomyConfig({ quietHoursStart: DEFAULT_QUIET_HOURS.start, quietHoursEnd: DEFAULT_QUIET_HOURS.end })
+                    return `🌙 *Quiet Hours: ✅ AKTIVIERT*\n\nXaventra ist ruhig von *${DEFAULT_QUIET_HOURS.start}:00 - 0${DEFAULT_QUIET_HOURS.end}:00* (gilt für alle Meldungen)\nKeine autonomen Nachrichten in dieser Zeit.\n\n_Anpassen: /quiet 22 8_\n_Deaktivieren: /quiet off_`
                 }
 
                 if (argLower === 'off' || argLower === 'aus') {
                     updateAutonomyConfig({ quietHoursStart: -1, quietHoursEnd: -1 })
-                    return `🌙 *Quiet Hours: ❌ DEAKTIVIERT*\n\nNova kann dich jetzt rund um die Uhr kontaktieren.\n\n_Aktivieren: /quiet on_`
+                    return `🌙 *Quiet Hours: ❌ DEAKTIVIERT*\n\nXaventra kann dich jetzt rund um die Uhr kontaktieren.\n\n_Aktivieren: /quiet on_`
                 }
 
                 if (argLower === 'notfall' || argLower === 'emergency' || argLower === 'critical') {
                     // Quiet hours on, but max notifications set very low (only critical)
                     updateAutonomyConfig({ quietHoursStart: 0, quietHoursEnd: 23, maxNotificationsPerHour: 1 })
-                    return `🚨 *Nur-Notfall Modus: ✅ AKTIVIERT*\n\nNova meldet sich nur bei *kritischen* Problemen (max 1x/Stunde).\n\n_Normal: /quiet off_\n_Quiet Hours: /quiet on_`
+                    return `🚨 *Nur-Notfall Modus: ✅ AKTIVIERT*\n\nXaventra meldet sich nur bei *kritischen* Problemen (max 1x/Stunde).\n\n_Normal: /quiet off_\n_Quiet Hours: /quiet on_`
                 }
 
                 // Parse "22 8" or "22-8" or "22:00 8:00"

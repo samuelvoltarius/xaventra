@@ -11,13 +11,15 @@
  *   autonomy.briefing.morning     "07:30"
  *   autonomy.briefing.evening     "20:00"
  *   autonomy.briefing.timeZone    "Europe/Vienna"
- *   autonomy.thoughts.quietHours  { start: 22, end: 7 }   only `dringend` gets through
+ *   autonomy.quietHours           { start: 22, end: 7 }   the one quiet-hours definition (core/quiet-hours.ts);
+ *                                                        only `dringend` gets through (old key autonomy.thoughts.quietHours still read)
  *   autonomy.thoughts.dedupeMinutes 360
  *   autonomy.thoughts.maxPerDay   10
  */
 
 import { defaultOn } from '../core/autonomy-defaults.js'
 import { getNovaDataDir } from '../core/data-root.js'
+import { onQuietHoursChange, parseQuietHours } from '../core/quiet-hours.js'
 import { createBriefingHandler, type BriefingKind } from './briefing.js'
 import { getPlannerDeliveryPort, type DeliveryPort } from './delivery-port.js'
 import { createPlanner, type Planner, type PlannerJob } from './planner.js'
@@ -65,6 +67,7 @@ export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = pro
     const timeZone = typeof briefing.timeZone === 'string' && isValidTimeZone(briefing.timeZone) ? briefing.timeZone : DEFAULT_TIME_ZONE
     const tick = Number(planner.tickSeconds)
     const plannerOn = defaultOn(planner.enabled, env)
+    const quiet = parseQuietHours(autonomy)
     // Missing briefing switch follows the planner; an explicit true starts the planner for the report alone (old behaviour).
     const briefingOn = briefing.enabled === undefined ? plannerOn : defaultOn(briefing.enabled, env)
     return {
@@ -74,8 +77,8 @@ export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = pro
         nightwatch: planner.nightwatch === true,
         briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
         thoughts: normalizeThoughtSettings({
-            quietStart: thoughts.quietHours?.start,
-            quietEnd: thoughts.quietHours?.end,
+            quietStart: quiet.start,
+            quietEnd: quiet.end,
             timeZone,
             dedupeMinutes: thoughts.dedupeMinutes,
             maxPerDay: thoughts.maxPerDay,
@@ -266,11 +269,17 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     }
 
     if (options.startTimer !== false) planner.start(settings.tickSeconds * 1000)
+    // /autonomy quiet changes the one quiet-hours definition; the thoughts follow it at once.
+    const stopQuietListener = onQuietHoursChange(value => {
+        thoughts.settings.quietStart = value.start
+        thoughts.settings.quietEnd = value.end
+    })
     const handle: PlannerRuntime = {
         planner,
         thoughts,
         settings,
         stop: () => {
+            stopQuietListener()
             planner.stop()
             if (settings.reminders) reminders.setReminderSink(null)
         },

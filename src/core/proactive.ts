@@ -1,16 +1,18 @@
 /**
- * Nova Proactive Messaging System
- * 
- * Enables Nova to send messages without being prompted:
- * - Scheduled alarms/reminders
- * - Error notifications
- * - Automated reports
- * 
- * Works across all channels: Telegram, WhatsApp, Discord
+ * Xaventra Proactive Messaging — only the transport (2.82.0 Aufräumen).
+ *
+ * Alarms and system messages are thoughts (planner: importance rules, one
+ * dedupe, the one quiet-hours definition in core/quiet-hours.ts, daily cap).
+ * This messenger only carries what still goes out directly (sub-agent results,
+ * reminders, and the governed path while the planner is switched off) to the
+ * registered channels, fenced per message. It reads the same quiet hours; the
+ * former helpers sendAlarm/sendReminder/sendError/sendReport were never called
+ * and are gone.
  */
 
-import { assessmentFromEvent, evaluateProactivity, type ProactiveAssessment } from './proactive-policy.js'
+import { evaluateProactivity, type ProactiveAssessment } from './proactive-policy.js'
 import { isFenceError } from '../mesh/fence.js'
+import { getQuietHours, isQuietHourOfDay } from './quiet-hours.js'
 
 // ============================================
 // Types
@@ -51,12 +53,15 @@ export class ProactiveMessenger {
     private budgetDate = new Date().toISOString().slice(0, 10)
     private recent = new Map<string, number>()
     private policy: ProactivePolicy
+    /** Explicit quiet hours from the constructor (tests, benchmarks); otherwise the one definition. */
+    private readonly ownQuietHours: boolean
 
     constructor(policy: Partial<ProactivePolicy> = {}) {
+        this.ownQuietHours = policy.quietHoursStart !== undefined || policy.quietHoursEnd !== undefined
         this.policy = {
             dailyBudget: 20,
-            quietHoursStart: 22,
-            quietHoursEnd: 7,
+            quietHoursStart: getQuietHours().start,
+            quietHoursEnd: getQuietHours().end,
             dedupeWindowMs: 30 * 60 * 1000,
             maxQueueSize: 100,
             ...policy,
@@ -81,9 +86,8 @@ export class ProactiveMessenger {
         if (msg.priority !== 'urgent' && msg.type !== 'alarm') {
             if (this.sentToday >= this.policy.dailyBudget) return 'defer'
             const hour = new Date().getHours()
-            const { quietHoursStart: start, quietHoursEnd: end } = this.policy
-            const quiet = start > end ? hour >= start || hour < end : hour >= start && hour < end
-            if (quiet) return 'defer'
+            const window = this.ownQuietHours ? { start: this.policy.quietHoursStart, end: this.policy.quietHoursEnd } : getQuietHours()
+            if (isQuietHourOfDay(hour, window)) return 'defer'
         }
         return 'ok'
     }
@@ -193,70 +197,6 @@ export class ProactiveMessenger {
             console.log(`[ProactiveMessenger] ❌ Send failed: ${err}`)
             return 'dropped'
         }
-    }
-
-    /**
-     * Send an alarm/wake-up message
-     */
-    async sendAlarm(userId: string, channel: ProactiveMessage['channel'], message?: string): Promise<boolean> {
-        const content = message || `⏰ **Wecker!**\n\nGuten Morgen! Es ist ${new Date().toLocaleTimeString('de-DE')} Uhr.\nZeit aufzustehen! ☀️`
-
-        return this.send({
-            userId,
-            channel,
-            content,
-            priority: 'high',
-            type: 'alarm',
-            assessment: assessmentFromEvent({ source: 'user-alarm', summary: content, severity: 'warning', confidence: 1, dedupeKey: `alarm:${userId}:${content}` }),
-        })
-    }
-
-    /**
-     * Send a reminder
-     */
-    async sendReminder(userId: string, channel: ProactiveMessage['channel'], text: string): Promise<boolean> {
-        const content = `🔔 **Erinnerung**\n\n${text}`
-
-        return this.send({
-            userId,
-            channel,
-            content,
-            priority: 'normal',
-            type: 'reminder',
-            assessment: assessmentFromEvent({ source: 'user-reminder', summary: text, severity: 'info', confidence: 1, dedupeKey: `reminder:${userId}:${text}` }),
-        })
-    }
-
-    /**
-     * Send an error notification
-     */
-    async sendError(userId: string, channel: ProactiveMessage['channel'], error: string, context?: string): Promise<boolean> {
-        const content = `🚨 **Fehler erkannt!**\n\n${error}${context ? `\n\n_Kontext: ${context}_` : ''}\n\n_Automatisch gesendet um ${new Date().toLocaleTimeString('de-DE')}_`
-
-        return this.send({
-            userId,
-            channel,
-            content,
-            priority: 'urgent',
-            type: 'error',
-            assessment: assessmentFromEvent({ source: 'verified-error', summary: `${error}:${context || ''}`, severity: 'error', confidence: 0.9, actionAvailable: true }),
-        })
-    }
-
-    /**
-     * Send a scheduled report
-     */
-    async sendReport(userId: string, channel: ProactiveMessage['channel'], title: string, content: string): Promise<boolean> {
-        const fullContent = `📊 **${title}**\n\n${content}\n\n_Generiert um ${new Date().toLocaleTimeString('de-DE')}_`
-
-        return this.send({
-            userId,
-            channel,
-            content: fullContent,
-            priority: 'low',
-            type: 'report',
-            assessment: assessmentFromEvent({ source: 'scheduled-report', summary: title, severity: 'info', confidence: 0.95, dedupeKey: `report:${userId}:${title}` }),
-        })
     }
 
     /**

@@ -13,6 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasGlobalAutonomyAuthority } from './autonomy-authority.js'
+import { DEFAULT_QUIET_HOURS, getQuietHours, isQuietHourOfDay, setQuietHours } from './quiet-hours.js'
 
 function currentPackageVersion(): string {
     try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.0.0' } catch { return '0.0.0' }
@@ -25,8 +26,9 @@ function currentPackageVersion(): string {
 export interface AutonomyConfig {
     enabled: boolean
     intervalMinutes: number          // How often the loop runs (default: 10)
-    quietHoursStart: number          // Don't disturb after this hour (default: 23)
-    quietHoursEnd: number            // Don't disturb before this hour (default: 7)
+    /** Mirror of the one quiet-hours definition (core/quiet-hours.ts, default 22–7). */
+    quietHoursStart: number
+    quietHoursEnd: number
     maxNotificationsPerHour: number  // Rate limit (default: 3)
     socialCheckIns: boolean          // Greetings/follow-ups are opt-in
     checks: {
@@ -73,8 +75,8 @@ const AUTONOMY_LOG = join(DATA_DIR, 'autonomy-log.json')
 const DEFAULT_CONFIG: AutonomyConfig = {
     enabled: true,
     intervalMinutes: 10,
-    quietHoursStart: 23,
-    quietHoursEnd: 7,
+    quietHoursStart: DEFAULT_QUIET_HOURS.start,
+    quietHoursEnd: DEFAULT_QUIET_HOURS.end,
     maxNotificationsPerHour: 3,
     socialCheckIns: false,
     checks: {
@@ -303,10 +305,8 @@ function evaluate(checks: CheckResult[]): { shouldNotify: boolean; summary: stri
     const now = new Date()
     const hour = now.getHours()
 
-    // Quiet hours check
-    const inQuietHours = config.quietHoursStart > config.quietHoursEnd
-        ? (hour >= config.quietHoursStart || hour < config.quietHoursEnd)
-        : (hour >= config.quietHoursStart && hour < config.quietHoursEnd)
+    // Quiet hours: the one definition (core/quiet-hours.ts)
+    const inQuietHours = isQuietHourOfDay(hour)
 
     // Rate limiting
     if (Date.now() - lastNotificationReset > 3600000) {
@@ -440,14 +440,9 @@ async function trySelfThink(checks: CheckResult[]): Promise<void> {
     // Check quiet hours (but -1 means disabled)
     const now = new Date()
     const hour = now.getHours()
-    if (config.quietHoursStart >= 0) {
-        const inQuietHours = config.quietHoursStart > config.quietHoursEnd
-            ? (hour >= config.quietHoursStart || hour < config.quietHoursEnd)
-            : (hour >= config.quietHoursStart && hour < config.quietHoursEnd)
-        if (inQuietHours) {
-            console.log('[Autonomy] 🧠 Self-think skipped: quiet hours')
-            return
-        }
+    if (isQuietHourOfDay(hour)) {
+        console.log('[Autonomy] 🧠 Self-think skipped: quiet hours')
+        return
     }
 
     // Check idle time and self-think interval
@@ -1160,11 +1155,16 @@ export async function startAutonomyLoop(notifyFn: (msg: string) => Promise<boole
         }
     }
 
+    // An explicit quiet window from the caller sets the one definition for everyone.
+    if (userConfig && (userConfig.quietHoursStart !== undefined || userConfig.quietHoursEnd !== undefined)) {
+        setQuietHours({ start: userConfig.quietHoursStart, end: userConfig.quietHoursEnd })
+    }
     setAutonomyNotifier(notifyFn)
     // thinkFn is set separately via setThinkCallback
     running = true
 
-    console.log(`[Autonomy] 🚀 Starting (interval: ${config.intervalMinutes}min, quiet: ${config.quietHoursStart}:00-${config.quietHoursEnd}:00)`)
+    const quiet = getQuietHours()
+    console.log(`[Autonomy] 🚀 Starting (interval: ${config.intervalMinutes}min, quiet: ${quiet.start < 0 ? 'aus' : `${quiet.start}:00-${quiet.end}:00`})`)
 
     // Try CronerScheduler for reliable scheduling
     try {
@@ -1218,15 +1218,20 @@ export function getAutonomyStatus(): {
     lastReport: AutonomyReport | null
     notificationsThisHour: number
 } {
+    const quiet = getQuietHours()
     return {
         running,
-        config,
+        config: { ...config, quietHoursStart: quiet.start, quietHoursEnd: quiet.end },
         lastReport,
         notificationsThisHour: notificationCount,
     }
 }
 
 export function updateAutonomyConfig(updates: Partial<AutonomyConfig>): void {
+    // /autonomy quiet: one quiet-hours definition for loop, planner thoughts and messenger.
+    if (updates.quietHoursStart !== undefined || updates.quietHoursEnd !== undefined) {
+        setQuietHours({ start: updates.quietHoursStart, end: updates.quietHoursEnd })
+    }
     config = {
         ...config,
         ...updates,

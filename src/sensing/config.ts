@@ -7,7 +7,7 @@
  * {
  *   "autonomy": { "sensing": {
  *     "enabled": true,
- *     "notify": { "quietStart": 22, "quietEnd": 7, "maxPerDay": 10, "timezone": "Europe/Vienna" },
+ *     "notify": { "maxPerDay": 10, "timezone": "Europe/Vienna" },   (quietStart/quietEnd: default = autonomy.quietHours, core/quiet-hours.ts)
  *     "adapters": {
  *       "printer":       { "enabled": true, "intervalSec": 60,  "timeoutSec": 10, "devices": [] },
  *       "homeassistant": { "enabled": true, "intervalSec": 60,  "timeoutSec": 10, "entities": [] },
@@ -22,6 +22,7 @@
  */
 
 import { defaultOn } from '../core/autonomy-defaults.js'
+import { getQuietHours } from '../core/quiet-hours.js'
 
 export interface PrinterDeviceConfig {
     id: string
@@ -98,8 +99,9 @@ export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = proces
     return {
         enabled: on(root.enabled),
         notify: {
-            quietStart: num(notify.quietStart, 22, 0, 23),
-            quietEnd: num(notify.quietEnd, 7, 0, 23),
+            // Default: the one quiet-hours definition (off = 0–0 = never quiet).
+            quietStart: num(notify.quietStart, Math.max(0, getQuietHours().start), 0, 23),
+            quietEnd: num(notify.quietEnd, Math.max(0, getQuietHours().end), 0, 23),
             maxPerDay: num(notify.maxPerDay, 10, 0, 100),
             timezone: typeof notify.timezone === 'string' ? notify.timezone : 'Europe/Vienna',
         },

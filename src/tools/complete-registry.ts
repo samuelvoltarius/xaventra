@@ -862,22 +862,23 @@ export const systemTools: NovaTool[] = [
                 const mode = (params.mode as string || 'on').toLowerCase()
 
                 if (mode === 'on' || mode === 'an') {
-                    updateAutonomyConfig({ quietHoursStart: 23, quietHoursEnd: 7 })
-                    return { success: true, message: 'Quiet Hours aktiviert: 23:00 - 07:00. Keine autonomen Nachrichten in dieser Zeit.' }
+                    const { DEFAULT_QUIET_HOURS } = await import('../core/quiet-hours.js')
+                    updateAutonomyConfig({ quietHoursStart: DEFAULT_QUIET_HOURS.start, quietHoursEnd: DEFAULT_QUIET_HOURS.end })
+                    return { success: true, message: `Quiet Hours aktiviert: ${DEFAULT_QUIET_HOURS.start}:00 - 0${DEFAULT_QUIET_HOURS.end}:00 (gilt für alle Meldungen). Keine autonomen Nachrichten in dieser Zeit.` }
                 }
 
                 if (mode === 'off' || mode === 'aus') {
                     updateAutonomyConfig({ quietHoursStart: -1, quietHoursEnd: -1 })
-                    return { success: true, message: 'Quiet Hours deaktiviert. Nova kann dich rund um die Uhr kontaktieren.' }
+                    return { success: true, message: 'Quiet Hours deaktiviert. Xaventra kann dich rund um die Uhr kontaktieren.' }
                 }
 
                 if (mode === 'emergency' || mode === 'notfall' || mode === 'critical') {
                     updateAutonomyConfig({ quietHoursStart: 0, quietHoursEnd: 23, maxNotificationsPerHour: 1 })
-                    return { success: true, message: 'Nur-Notfall Modus aktiviert. Nova meldet sich nur bei kritischen Problemen (max 1x/Stunde).' }
+                    return { success: true, message: 'Nur-Notfall Modus aktiviert. Xaventra meldet sich nur bei kritischen Problemen (max 1x/Stunde).' }
                 }
 
                 if (mode === 'custom') {
-                    const start = params.start as number ?? 23
+                    const start = params.start as number ?? 22
                     const end = params.end as number ?? 7
                     if (start >= 0 && start <= 23 && end >= 0 && end <= 23) {
                         updateAutonomyConfig({ quietHoursStart: start, quietHoursEnd: end })

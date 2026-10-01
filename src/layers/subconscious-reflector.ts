@@ -224,10 +224,17 @@ async function dreamCycle(): Promise<DreamResult | null> {
     // Persist
     saveDreamResult(result)
 
-    // Add to Daily Digest (replaces per-dream notifications)
+    // Daily digest: collected here and taken into the planner's evening report
+    // as ONE idea thought per day (same signature → updated, not repeated).
+    // The digest's own Telegram dispatch is gone (2.82.0).
     try {
-        const { addToDailyDigest } = await import('./dream-daily-digest.js')
+        const { addToDailyDigest, buildDailyDigest } = await import('./dream-daily-digest.js')
         addToDailyDigest(result)
+        const digest = buildDailyDigest()
+        const governed = (globalThis as any).__novaState?.sendGovernedProactive
+        if (digest && typeof governed === 'function') {
+            await governed(digest, 'dream-digest', 'info', 0.8, `traum-tagesbericht:${new Date().toISOString().slice(0, 10)}`)
+        }
     } catch { /* digest not available */ }
 
     // === Wake-up Call: ONLY on actual problems ===

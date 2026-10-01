@@ -66,7 +66,11 @@ describe('quiet hours defer instead of dropping (R2 NZ-12)', () => {
         const messenger = new ProactiveMessenger({ quietHoursStart: 22, quietHoursEnd: 7 })
         const send = vi.fn(async () => true)
         messenger.registerChannel({ name: 'telegram', isConnected: () => true, send })
-        expect(await messenger.sendAlarm('owner', 'telegram', 'Wecker 06:10')).toBe(true)
+        const content = 'Wecker 06:10'
+        expect(await messenger.send({
+            userId: 'owner', channel: 'telegram', content, priority: 'high', type: 'alarm',
+            assessment: assessmentFromEvent({ source: 'user-alarm', summary: content, severity: 'warning', confidence: 1, dedupeKey: `alarm:owner:${content}` }),
+        })).toBe(true)
         expect(send).toHaveBeenCalledOnce()
     })
 

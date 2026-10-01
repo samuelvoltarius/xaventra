@@ -315,10 +315,13 @@ async function startDaemon() {
     loadPolicy(config as any)
         ; (state as any).config = config  // Store for runtime access (userAliases, etc.)
     setNovaConfig(config as any)  // Publish to getNovaConfig() singleton (used by plugins)
-    // One disk/RAM threshold definition for L0, L21, node-profile, Nachtwache, Wächter (2.82.0).
+    // One disk/RAM threshold definition for L0, L21, node-profile, Nachtwache, Wächter, and one
+    // quiet-hours definition for planner thoughts, autonomy loop, messenger and sensing (2.82.0).
     {
         const { setResourceThresholds } = await import('./core/resource-thresholds.js')
         setResourceThresholds((config as any).autonomy)
+        const { configureQuietHours } = await import('./core/quiet-hours.js')
+        configureQuietHours((config as any).autonomy)
     }
     try {
         const { resolveRuntimeProfile } = await import('./runtime/runtime-profiles.js')
@@ -1549,6 +1552,11 @@ async function startDaemon() {
         const subAgentManager = getSubAgentManager()
         const scheduler = getScheduler()
         const proactiveOwner = config.channels?.telegram?.allowFrom?.[0]
+        // 2.82.0 ein Meldeweg: every system message becomes a planner thought
+        // (one dedupe, one quiet-hours definition, one daily cap); the
+        // ProactiveMessenger only carries it while the planner is switched off.
+        const { parsePlannerSettings } = await import('./planner/runtime.js')
+        const plannerConfigured = parsePlannerSettings((config as any).autonomy).enabled
         ;(state as any).sendGovernedProactive = async (
             content: string,
             source: string,
@@ -1557,38 +1565,36 @@ async function startDaemon() {
             dedupeKey?: string,
             evidenceRefs?: string[],
         ): Promise<boolean> => {
-            if (!proactiveOwner) return false
+            const { notifyOwner } = await import('./core/owner-notify.js')
             const { getOperationalEventBus } = await import('./core/operational-event-bus.js')
-            const event = getOperationalEventBus().ingest({
-                source, summary: content.slice(0, 500), severity, confidence, dedupeKey, evidenceRefs,
-            })
-            if (!event.actionable) {
-                console.log(`[Proactive] Suppressed ${source}: ${event.reason}`)
-                return false
-            }
-            // CL-07: one fenced proactive path. Without a live Main/Telegram
-            // fence a non-Main drops the message (the real Main raises its own);
-            // a Main whose live check hiccups keeps it in the proactive buffer
-            // (the channel sender re-checks and defers on FenceError).
-            try {
-                const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                const live = await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')
-                if (!live) {
+            const { addThought } = await import('./planner/index.js')
+            const result = await notifyOwner({ content, source, severity, confidence, dedupeKey, evidenceRefs }, {
+                ingest: notice => getOperationalEventBus().ingest({
+                    source: notice.source, summary: notice.content.slice(0, 500), severity: notice.severity,
+                    confidence: notice.confidence, dedupeKey: notice.dedupeKey, evidenceRefs: notice.evidenceRefs,
+                }),
+                // CL-07: one fenced path. Without a live Main/Telegram fence a
+                // non-Main records nothing (the real Main raises its own).
+                authority: async () => {
+                    const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
+                    if (await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')) return true
                     const { hasValidFence } = await import('./mesh/fence.js')
-                    if (!hasValidFence(MAIN_SERVICE) || !hasValidFence('telegram')) {
-                        console.log(`[Proactive] Fenced ${source}: no live Main/Telegram authority on this node`)
-                        return false
-                    }
-                }
-            } catch {
-                return false
-            }
-            return proactive.send({
-                userId: String(proactiveOwner), channel: 'telegram', content,
-                priority: severity === 'critical' ? 'urgent' : severity === 'error' ? 'high' : 'normal',
-                type: severity === 'error' || severity === 'critical' ? 'error' : 'notification',
-                assessment: assessmentFromEvent({ source, summary: content.slice(0, 500), severity, confidence, dedupeKey, actionAvailable: severity !== 'info' }),
+                    return hasValidFence(MAIN_SERVICE) && hasValidFence('telegram')
+                },
+                plannerActive: () => plannerConfigured,
+                addThought,
+                transport: async notice => {
+                    if (!proactiveOwner) return false
+                    return proactive.send({
+                        userId: String(proactiveOwner), channel: 'telegram', content: notice.content,
+                        priority: notice.severity === 'critical' ? 'urgent' : notice.severity === 'error' ? 'high' : 'normal',
+                        type: notice.severity === 'error' || notice.severity === 'critical' ? 'error' : 'notification',
+                        assessment: assessmentFromEvent({ source: notice.source, summary: notice.content.slice(0, 500), severity: notice.severity, confidence: notice.confidence, dedupeKey: notice.dedupeKey, actionAvailable: notice.severity !== 'info' }),
+                    })
+                },
+                log: line => console.log(line),
             })
+            return result.route !== 'verworfen'
         }
 
         // Register channels unconditionally (R2 NZ-10): Telegram may connect
@@ -1887,13 +1893,13 @@ async function startDaemon() {
         // Nachtwache); sending the summary too would repeat them. Declining here
         // makes the loop log honestly; the report stays in autonomy-reports.
         const notifyFn = async (_message: string): Promise<boolean> => false
-        // Mission Engine (/mission) progress keeps its previous notifier unchanged.
-        // NOTE (2.82.0, not changed here): 'autonomy-loop' is not a trusted
-        // producer, so the governed path drops these messages as well.
+        // Mission Engine (/mission) progress: its own trusted source 'mission-engine'
+        // (code-generated, owner-started missions). Before 2.82.0 it went out as
+        // 'autonomy-loop', which the governed path always dropped.
         const missionNotifyFn = async (message: string) => {
             const governed = (state as any).sendGovernedProactive
             if (governed) {
-                await governed(message, 'autonomy-loop', 'warning', 0.9)
+                await governed(message, 'mission-engine', 'warning', 0.9)
                 return
             }
             // Fail closed until the fenced proactive path is ready.
@@ -1901,8 +1907,6 @@ async function startDaemon() {
         }
 
         const autonomyCfg = (config as any).autonomy || {}
-        const quietCfg = autonomyCfg.quietHours || {}
-        const quietEnabled = quietCfg.enabled !== false // default: true
         // Nachtwache is opt-in: autonomy.nightwatch.enabled=true plus a private
         // probe config (default .nova-data/nightwatch.json, see docs/NIGHTWATCH.md).
         const nightwatchCfg = autonomyCfg.nightwatch || {}
@@ -1952,8 +1956,6 @@ async function startDaemon() {
 
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
-            quietHoursStart: quietEnabled ? (quietCfg.start ?? 23) : -1,
-            quietHoursEnd: quietEnabled ? (quietCfg.end ?? 7) : -1,
             maxNotificationsPerHour: autonomyCfg.selfThinkMaxPerHour || 3,
             socialCheckIns: autonomyCfg.socialCheckIns === true,
             checks: { nightwatch: nightwatchEnabled } as any,
@@ -2035,7 +2037,11 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Verantwortungen nicht verfügbar: ${err}`)
         }
 
-        console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)
+        {
+            const { getQuietHours } = await import('./core/quiet-hours.js')
+            const quiet = getQuietHours()
+            console.log(`[Xaventra] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Ruhezeit für alle Meldungen: ${quiet.start >= 0 ? `${quiet.start}:00-${quiet.end}:00` : 'AUS'})`)
+        }
 
         // Wire self-thinking callback — Nova can now think autonomously
         try {
@@ -2078,6 +2084,7 @@ async function startDaemon() {
                         return
                     }
                     try {
+                        // Not a trusted producer: lands as an idea thought (/gedanken, Abendbericht), never as a push (2.82.0).
                         const governed = (state as any).sendGovernedProactive
                         if (typeof governed === 'function') {
                             await governed(reply, 'self-thinking', 'info', 0.85)
@@ -2570,7 +2577,8 @@ async function startDaemon() {
             // One message per transition, one per recovery (2.82.0, L21 nodeAlertTransitions).
             nodeHealth.setAlertCallback(async (message: string, kind?: 'alarm' | 'erholt') => {
                 try {
-                    await (state as any).sendGovernedProactive?.(message, 'node-health', kind === 'erholt' ? 'info' : 'error', 0.98)
+                    // Recovery is 'warning' like the Wächter's: one notice when it starts, one when it ends.
+                    await (state as any).sendGovernedProactive?.(message, 'node-health', kind === 'erholt' ? 'warning' : 'error', 0.98)
                 } catch {
                     console.log(`[L21] Alert could not be sent: ${message.slice(0, 100)}`)
                 }
