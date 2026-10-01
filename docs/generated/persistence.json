@@ -1118,6 +1118,10 @@
       "path": ".nova-data/sessions"
     },
     {
+      "owner": "src/learning/routine-skills.ts",
+      "path": ".nova-data/skills"
+    },
+    {
       "owner": "src/install/software-scout.ts",
       "path": ".nova-data/software-scout/state.json"
     },

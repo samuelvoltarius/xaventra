@@ -31,7 +31,7 @@ export interface Briefing {
     text: string
     /** Held-back thoughts this briefing reports (marked `im-bericht` after delivery). */
     thoughtIds: string[]
-    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten', number>
+    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills', number>
 }
 
 const MAX_LINES = 5
@@ -83,7 +83,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     }
     const done = [
         ...[...runCounts].map(([jobKind, count]) => `${KIND_LABELS[jobKind] || jobKind}: ${count}`),
-        ...thoughts.filter(t => t.status === 'erledigt' && inWindow(t.statusAt, since, now)).map(t => t.title),
+        ...thoughts.filter(t => t.status === 'erledigt' && t.source !== 'skills' && inWindow(t.statusAt, since, now)).map(t => t.title),
     ]
 
     // Selbst repariert: Self-Heal-Journal.
@@ -108,6 +108,9 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const waiting = thoughts.filter(t => isOpenThought(t) && t.permission === 'fragen' && t.kind !== 'idee').map(describe)
     const ideas = thoughts.filter(t => isOpenThought(t) && t.kind === 'idee').slice(0, 3)
         .map(t => t.evidence ? `${t.title} (${t.evidence})` : t.title)
+    // P8 Routine-Skills: selbst angelegte und deaktivierte Skills, eigene Zeilen.
+    const skills = thoughts.filter(t => t.source === 'skills' && inWindow(t.createdAt, since, now))
+        .map(t => t.title.includes('deaktiviert') && t.evidence ? `${t.title} (${t.evidence})` : t.title)
     const heldThoughts = thoughts.filter(t => isOpenThought(t) && t.notice === 'zurueckgehalten')
     const held = heldThoughts.map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
 
@@ -118,6 +121,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Installiert', installed),
         ...section('Wartet auf dich', waiting),
         ...section('Ideen', ideas),
+        ...section('Skills', skills),
         ...section('Zurückgehalten', held),
     ]
     const sinceText = formatZoned(since, sources.timeZone)
@@ -128,7 +132,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         title,
         text: cleanText(text, 3500),
         thoughtIds: heldThoughts.map(t => t.id),
-        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length },
+        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length },
     }
 }
 

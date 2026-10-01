@@ -3980,6 +3980,19 @@
       ]
     },
     {
+      "module": "src/learning/routine-skills.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/side-effects.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/learning/skills.ts",
       "imports": [
         "./patterns.js",

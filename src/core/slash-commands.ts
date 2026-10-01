@@ -667,19 +667,34 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
         }
 
         case 'skills': {
+            // P8 Routine-Skills (nur Owner): Übersicht + an/aus. Kein Befehl nötig,
+            // sie lernt und nutzt die Skills selbst.
+            let routine = ''
+            if (requestPermission === 'owner') {
+                const { getRoutineSkillStore, formatRoutineSkills } = await import('../learning/routine-skills.js')
+                const routineStore = getRoutineSkillStore()
+                const [sub, id] = args.trim().split(/\s+/)
+                if (routineStore && (sub === 'aus' || sub === 'an')) {
+                    const changed = id ? routineStore.setEnabled(id, sub === 'an') : null
+                    return changed ? `🧩 Skill \`${changed.id}\` (${changed.name}) ist jetzt ${sub}.` : `❌ Skill nicht gefunden: ${id || '(keine ID)'}`
+                }
+                if (routineStore) routine = formatRoutineSkills(routineStore.list())
+            }
             const ml = (state as any).metaLearning
-            if (!ml) return '❌ Meta-Learning nicht aktiv'
+            if (!ml) return routine || '❌ Meta-Learning nicht aktiv'
 
             const skills = ml.getLearnedSkills()
             if (skills.length === 0) {
-                return `📚 *Gelernte Skills*\n\nNoch keine Skills gelernt.\n\nVerwende /learn <fähigkeit> um eine neue Fähigkeit zu lernen.`
+                const none = `📚 *Gelernte Skills*\n\nNoch keine Skills gelernt.\n\nVerwende /learn <fähigkeit> um eine neue Fähigkeit zu lernen.`
+                return routine ? `${routine}\n\n${none}` : none
             }
 
             const skillList = skills.map((s: any) =>
                 `• *${s.name}*\n  Quelle: ${s.source}\n  Genutzt: ${s.successCount}x`
             ).join('\n\n')
 
-            return `📚 *Gelernte Skills (${skills.length})*\n\n${skillList}`
+            const learned = `📚 *Gelernte Skills (${skills.length})*\n\n${skillList}`
+            return routine ? `${routine}\n\n${learned}` : learned
         }
 
         case 'learn': {
