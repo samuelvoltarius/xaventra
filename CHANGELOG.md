@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.82.0] — 2026-10-01
+
+Responsibility and autonomy by default: on the Main, Xaventra works without
+slash commands and asks only where money, other people, physical effects or
+deletion are involved.
+
+- Autonomous by default: planner, morning/evening report, perception with
+  device discovery, thinking, responsibilities and missions, delegation,
+  auto reminders and the software scout run on the Main without config
+  (`enabled: false` still switches a module off; workers stay off). Found
+  devices are watched read-only right away; where a login is needed she asks
+  exactly once. Non-urgent questions are bundled into the report.
+- Unified action policy L0–L3 for every action; self-derived
+  responsibilities; missions with contract, attempts and budget that continue
+  exactly at the approved step (`/arbeit`).
+- Trust ladder: after three confirmed "Ja" of the same internal kind without
+  rollback she does it herself and reports it; never for physical, external,
+  money, deleting, infrastructure removal, release/patch or the vLLM switch.
+- Routine skills: the third identical owner request creates a skill she uses
+  from then on (`/skills` to look); built-in read-only Home Assistant skill.
+- Causal memory: the owner's decisions with reason, author, validity and
+  dependencies (`/entscheidungen`); decisions can only tighten the policy.
+- Release button: a card dispatches a protected workflow that fast-forwards
+  main after re-checking the exact candidate CI; it pushes with a deploy key
+  held only by the `release-promotion` environment, so main CI and signing
+  run as for a manual push.
+- Proxmox: she knows the VM she runs in, sees all guests read-only and
+  manages her own VMs within a cap (`/vms`); removing only her own stopped,
+  unprotected VMs by card.
+- Model routing: measured multi-router (local first, private content never to
+  the cloud, cleaned cloud prompt), Ollama load/unload with memory reserve,
+  vLLM model switch on the Spark by card with automatic rollback.
+- Delegation to Claude, Codex, Hermes and local subagents with back channel
+  and verification; only clearly read-only tasks go out without a card.
+- Watch: per-node measurement history (30 days), disk/RAM/TLS/backup
+  forecasts, reachability of configured and discovered devices, debounced
+  alarms (`/waechter`).
+- `/desktop`: one-time Tailnet links to view or take over her desktops via
+  noVNC; the VNC password stays on the server, taking over pauses her own
+  desktop input.
+- Security: Home Assistant switching and `send_telegram_message` to anyone
+  but the owner now require the owner's approval; never-list patterns for
+  vLLM stop variants; named exception instead of a name trick for removing
+  own VMs.
+
 ## [2.81.0] — 2026-10-01
 
 Autonomy phases 1–5: Xaventra shows that she works, asks with buttons,

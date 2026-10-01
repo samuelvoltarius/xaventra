@@ -25,9 +25,9 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current candidate: **2.81.0 preview**, based on the 2.80.1 preview.
+Current candidate: **2.82.0 preview**, based on the 2.81.0 preview.
 See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
-[verification record](docs/VERIFICATION_2.81.0.md). The
+[verification record](docs/VERIFICATION_2.82.0.md). The
 [2.78.58 record](docs/VERIFICATION_2.78.58.md) remains the prior baseline.
 Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
@@ -52,12 +52,26 @@ separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
 ## Current state
 
-Xaventra 2.81.0 is a source-preview candidate. Native Windows, Linux and macOS
+**Autonomous by default (2.82.0).** On the Main, Xaventra works without slash
+commands: she discovers her hardware, the devices in her own LAN/tailnet and
+what runs where, watches what she finds, plans, thinks, takes responsibility
+for recurring work and reports in a morning and evening summary. Commands such
+as `/arbeit`, `/vms`, `/desktop`, `/modelle`, `/waechter` or `/skills` are
+optional windows, never a required way to operate her. She learns routine
+skills after the third identical request, remembers the owner's decisions with
+their reason (causal memory), and after three confirmed "Ja" of the same
+internal kind does it herself (trust ladder). Money, sending to others,
+physical actions (printing, switching) and deleting always ask; the fixed
+never-list (secrets, firewall/SSH, NAS restart, DB migration …) cannot be
+lifted.
+
+
+Xaventra 2.82.0 is a source-preview candidate. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.81.0.md) and
+See the [verification record](docs/VERIFICATION_2.82.0.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 The current candidate includes authenticated desktop-capture and Telegram-delivery
