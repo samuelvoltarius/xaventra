@@ -1220,7 +1220,7 @@ export const evolutionTools: NovaTool[] = [
         handler: async (params) => {
             // R2 T28: third-party skill content ends up in the prompt for good
             // (and npx runs remote code): only on the owner's explicit say-so.
-            const refusal = await ownerApprovalRefusal(params, 'import_skill')
+            const refusal = await ownerApprovalRefusal(params, 'import_skill', String(params.package ?? ''))
             if (refusal) return { success: false, message: refusal }
             const { importSkill } = await import('./skills-import-cli.js')
             return await importSkill(params.package as string)
@@ -3531,7 +3531,6 @@ export const ALL_TOOLS: NovaTool[] = [
 import { cadGenerateTool } from './cad-tool.js'
 import { printerDiscoveryTool, printerStatusTool, printerSliceTool, printerPrintTool } from './printer-tool.js'
 import { screenCaptureTool, webcamCaptureTool, faceDetectionTool, handGestureTool, screenAnalysisTool } from './vision-tool.js'
-import { toolConfirmationTool } from './tool-confirmation.js'
 import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
 import { desktopInputTool } from './desktop-input-tool.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -3553,7 +3552,6 @@ ALL_TOOLS.push(
     faceDetectionTool as any,
     handGestureTool as any,
     screenAnalysisTool as any,
-    toolConfirmationTool as any,
 )
 
 // ============================================

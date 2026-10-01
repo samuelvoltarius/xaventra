@@ -230,7 +230,8 @@ export const selfManagementTools = [
         ],
         handler: async (params: Record<string, unknown> = {}) => {
             // R2 T13: a restart is an outage; only on the owner's explicit say-so
-            const refusal = await ownerApprovalRefusal(params, 'nova_restart')
+            // No variable subject: the code is bound to "restart this node".
+            const refusal = await ownerApprovalRefusal(params, 'nova_restart', 'neustart')
             if (refusal) return { success: false, method: 'none', message: refusal }
             const result = await restartNova()
             return result

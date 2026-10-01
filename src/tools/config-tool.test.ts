@@ -8,6 +8,8 @@ vi.mock('../users/multi-user-middleware.js', () => perms)
 
 import { saveConfigTool } from './config-tool.js'
 import { withExecutionPolicyContext } from '../core/lifecycle-policy.js'
+import { ownerApprovalCode } from '../test-utils/owner-approval.js'
+import { approvalDetailOf } from './owner-approval.js'
 
 let dir = ''
 const configFile = () => join(dir, 'xaventra.config.json')
@@ -40,8 +42,9 @@ describe('R2 T1: save_config protects owner, channel and provider settings', () 
         expect(JSON.parse(readFileSync(configFile(), 'utf8')).autonomy.enabled).toBe(true)
     })
     it('allows a protected change with the server-side owner approval', async () => {
-        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true },
-            () => saveConfigTool.handler({ section: 'telegram', values: { allowFrom: ['222'] } })) as any
+        const confirm = ownerApprovalCode('save_config', approvalDetailOf({ section: 'telegram', values: { allowFrom: ['222'] } }))
+        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => saveConfigTool.handler({ section: 'telegram', values: { allowFrom: ['222'] }, confirm })) as any
         expect(result.success).toBe(true)
         expect(JSON.parse(readFileSync(configFile(), 'utf8')).telegram.allowFrom).toEqual(['222'])
     })

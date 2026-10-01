@@ -34,15 +34,30 @@ describe('/freigabe', () => {
         expect(await handleCommand('freigabe', '../etc', 'owner-1', state(), [], principal('owner', 'owner-1'))).toMatch(/^Nutzung/)
     })
 
-    it('issues a code that unlocks exactly this tool once for the owner', async () => {
+    it('P9: refuses a tool-wide code — a detail is mandatory', async () => {
         const reply = await handleCommand('freigabe', 'execute_python', 'owner-1', state(), [], principal('owner', 'owner-1'))
+        expect(reply).toMatch(/^Nutzung/)
+        expect(codeFrom(reply)).toBeUndefined()
+    })
+
+    it('issues a code that unlocks exactly this tool and detail once for the owner', async () => {
+        const reply = await handleCommand('freigabe', 'printer_start benchy.gcode', 'owner-1', state(), [], principal('owner', 'owner-1'))
         const code = codeFrom(reply)
         expect(code).toBeTruthy()
-        const run = (tool: string) => withExecutionPolicyContext({ userId: 'owner-1', authUserId: 'owner-1', channel: 'telegram' },
-            () => ownerApprovalRefusal({ confirm: code }, tool))
+        const run = (tool: string, detail = 'benchy.gcode') => withExecutionPolicyContext({ userId: 'owner-1', authUserId: 'owner-1', channel: 'telegram' },
+            () => ownerApprovalRefusal({ confirm: code }, tool, detail))
+        expect(await run('printer_gcode')).toMatch(/Freigabe/)
+        expect(await run('printer_start', 'other.gcode')).toMatch(/Freigabe/)
+        expect(await run('printer_start')).toBeNull()
         expect(await run('printer_start')).toMatch(/Freigabe/)
-        expect(await run('execute_python')).toBeNull()
-        expect(await run('execute_python')).toMatch(/Freigabe/)
+    })
+
+    it('P9: accepts the hash detail the refusal names (long code, MCP tool names with dashes)', async () => {
+        const reply = await handleCommand('freigabe', 'mcp__home__set-light #0123456789ab', 'owner-1', state(), [], principal('owner', 'owner-1'))
+        const code = codeFrom(reply)
+        expect(code).toBeTruthy()
+        expect(await withExecutionPolicyContext({ userId: 'owner-1', authUserId: 'owner-1', channel: 'telegram' },
+            () => ownerApprovalRefusal({ confirm: code }, 'mcp__home__set-light', '#0123456789ab'))).toBeNull()
     })
 
     it('binds a detail such as name@url into the code', async () => {

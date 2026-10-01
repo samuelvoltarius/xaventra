@@ -84,6 +84,14 @@ function safeName(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'mcp'
 }
 
+/** Nova-side tool name of an MCP tool (also the name in `/freigabe`). */
+export function mcpNovaToolName(serverName: string, toolName: string): string {
+    return `mcp__${safeName(serverName)}__${safeName(toolName)}`
+}
+
+/** Runner-injected identity fields and the approval code never reach the MCP server or the bound detail. */
+const LOCAL_ONLY_ARGS = new Set(['confirm', 'userId', 'channel', 'authorizationUserId', 'requestText'])
+
 function resolveEnv(value: string): string {
     return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, key) => process.env[key] || '')
 }
@@ -238,11 +246,16 @@ export class MCPClient extends EventEmitter {
         const session = this.requireSession(serverName)
         if (!permitted(session.config, toolName)) throw new Error(`MCP tool denied by server policy: ${serverName}/${toolName}`)
         if (!session.state.tools.some(tool => tool.name === toolName)) throw new Error(`MCP tool not advertised: ${serverName}/${toolName}`)
+        let callArgs = args
         if (session.config.requireApproval) {
-            const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-            if (!getExecutionPolicyContext().approvalGranted) throw new Error(`MCP tool requires approval: ${serverName}/${toolName}`)
+            // P9: the owner's one-time code, bound to server, tool and the exact arguments
+            // (hash detail). The former context flag was never set and is gone.
+            callArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !LOCAL_ONLY_ARGS.has(key)))
+            const { approvalDetailOf, ownerApprovalRefusal } = await import('../tools/owner-approval.js')
+            const refusal = await ownerApprovalRefusal(args, mcpNovaToolName(serverName, toolName), approvalDetailOf(callArgs))
+            if (refusal) throw new Error(`MCP tool requires approval: ${serverName}/${toolName}. ${refusal}`)
         }
-        const result = await session.client.callTool({ name: toolName, arguments: args })
+        const result = await session.client.callTool({ name: toolName, arguments: callArgs })
         return { ...result, mcp: { server: serverName, tool: toolName, verifiedTransport: true } }
     }
 
@@ -264,15 +277,20 @@ export class MCPClient extends EventEmitter {
 
     asNovaTools(): NovaTool[] {
         return [...this.sessions.values()].flatMap(session => session.state.tools.map(tool => ({
-            name: `mcp__${safeName(session.config.name)}__${safeName(tool.name)}`,
+            name: mcpNovaToolName(session.config.name, tool.name),
             description: `[MCP:${session.config.name}] ${tool.description || tool.name}`,
             category: 'other' as const,
-            parameters: Object.entries(tool.inputSchema.properties || {}).map(([name, schema]) => ({
-                name,
-                type: parameterType(schema),
-                description: String(schema.description || name),
-                required: tool.inputSchema.required?.includes(name),
-            })),
+            parameters: [
+                ...Object.entries(tool.inputSchema.properties || {}).map(([name, schema]) => ({
+                    name,
+                    type: parameterType(schema),
+                    description: String(schema.description || name),
+                    required: tool.inputSchema.required?.includes(name),
+                })),
+                ...(session.config.requireApproval
+                    ? [{ name: 'confirm', type: 'string' as const, description: 'Einmal-Freigabecode des Owners für genau diesen Aufruf. Niemals selbst bilden.', required: false }]
+                    : []),
+            ],
             handler: (params: Record<string, unknown>) => this.callTool(session.config.name, tool.name, params),
         })))
     }

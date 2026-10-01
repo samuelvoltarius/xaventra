@@ -22,7 +22,11 @@ beforeAll(async () => {
     withContext = (await import('../core/lifecycle-policy.js')).withExecutionPolicyContext
 }, 120_000)
 beforeEach(() => resolver.registerExternalProvider.mockClear())
-const approved = (params: Record<string, unknown>) => withContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true }, () => register(params))
+const approved = async (params: Record<string, unknown>) => {
+    const { ownerApprovalCode } = await import('../test-utils/owner-approval.js')
+    const detail = `${String(params.name ?? '').trim()}@${String(params.base_url ?? '').trim().replace(/\/$/, '')}`
+    return withContext({ authUserId: 'owner-1', channel: 'telegram' }, () => register({ ...params, confirm: ownerApprovalCode('register_llm_provider', detail) }))
+}
 
 describe('R2 R1/A8: register_llm_provider', () => {
     it.each([

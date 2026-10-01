@@ -12,7 +12,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolveConfigPath } from '../config/config-path.js'
 import { atomicWriteFileSync } from '../core/atomic-storage.js'
-import { ownerApprovalRefusal } from './owner-approval.js'
+import { approvalDetailOf, ownerApprovalRefusal } from './owner-approval.js'
 
 /**
  * R2 T1: sections that decide who is owner, where LLM traffic and keys go, or
@@ -98,7 +98,7 @@ export const saveConfigTool = {
         }
 
         if (touchesProtected(sectionKey, values as Record<string, unknown>)) {
-            const refusal = await ownerApprovalRefusal(params, 'save_config')
+            const refusal = await ownerApprovalRefusal(params, 'save_config', approvalDetailOf({ section: sectionKey, values }))
             if (refusal) {
                 return {
                     success: false,

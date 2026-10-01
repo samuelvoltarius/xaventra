@@ -366,6 +366,10 @@ export interface SSHParams {
     port?: number
     password?: string
     userId?: string
+    /** Runner-injected identity and the owner's one-time code (only for the self-healing step). */
+    authorizationUserId?: string
+    channel?: string
+    confirm?: string
 }
 
 export async function executeSSH(params: SSHParams): Promise<{ success?: boolean; error?: string; command: string; output?: string; action?: string }> {
@@ -565,11 +569,19 @@ export async function executeSSH(params: SSHParams): Promise<{ success?: boolean
     // === ALL METHODS FAILED — SELF-HEALING ===
     // Installing packages locally and writing a key into the remote
     // authorized_keys are side effects with external reach: only with an
-    // explicit approval in the server-side execution context (R2 T3).
-    const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-    const selfHealApproved = getExecutionPolicyContext().approvalGranted === true
-    if (password && !selfHealApproved) {
-        console.log('[SSH] ⚠️ All methods failed; self-healing (tool install / key setup) needs explicit approval')
+    // explicit owner approval (R2 T3). P9: the same one-time code as every other
+    // owner-gated tool, bound to this user@host — never a context flag.
+    const selfHealDetail = `selbstheilung:${user || '?'}@${host}`
+    let selfHealApproved = false
+    let selfHealHint = ''
+    if (password) {
+        const { ownerApprovalRefusal } = await import('./owner-approval.js')
+        const refusal = await ownerApprovalRefusal(params as unknown as Record<string, unknown>, 'ssh_command', selfHealDetail)
+        selfHealApproved = refusal === null
+        if (!selfHealApproved) {
+            selfHealHint = ` Selbstheilung nur mit Owner-Freigabe: „/freigabe ssh_command ${selfHealDetail}“.`
+            console.log('[SSH] ⚠️ All methods failed; self-healing (tool install / key setup) needs explicit approval')
+        }
     }
 
     if (password && selfHealApproved) {
@@ -643,7 +655,7 @@ export async function executeSSH(params: SSHParams): Promise<{ success?: boolean
         command: `ssh ${user}@${host}`,
         action: selfHealApproved
             ? `Ich habe ${methods.length} Methoden probiert (${methods.join(', ')}) und versucht fehlende Tools zu installieren. ${errorSummary}`
-            : `Ich habe ${methods.length} Methoden probiert (${methods.join(', ')}). Ohne Freigabe installiere ich nichts und hinterlege keinen SSH-Key. ${errorSummary}`,
+            : `Ich habe ${methods.length} Methoden probiert (${methods.join(', ')}). Ohne Freigabe installiere ich nichts und hinterlege keinen SSH-Key. ${errorSummary}${selfHealHint}`,
     }
 }
 
@@ -707,6 +719,7 @@ export const sshTool = {
         { name: 'user', type: 'string' as const, description: 'SSH User z.B. abc', required: false },
         { name: 'port', type: 'number' as const, description: 'SSH Port z.B. 2223 (default: 22)', required: false },
         { name: 'password', type: 'string' as const, description: 'SSH Passwort', required: false },
+        { name: 'confirm', type: 'string' as const, description: 'Einmal-Freigabecode des Owners nur für die Selbstheilung (Tool-Installation/Key). Niemals selbst bilden.', required: false },
     ],
     handler: async (params: Record<string, unknown>) => {
         return executeSSH({
@@ -715,6 +728,10 @@ export const sshTool = {
             user: params.user as string | undefined,
             port: params.port as number | undefined,
             password: params.password as string | undefined,
+            userId: typeof params.userId === 'string' ? params.userId : undefined,
+            authorizationUserId: typeof params.authorizationUserId === 'string' ? params.authorizationUserId : undefined,
+            channel: typeof params.channel === 'string' ? params.channel : undefined,
+            confirm: typeof params.confirm === 'string' ? params.confirm : undefined,
         })
     },
 }

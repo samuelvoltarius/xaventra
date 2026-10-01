@@ -8,6 +8,8 @@ vi.mock('./operator-browser-manager.js', () => ({ getOperatorBrowserManager: () 
 import { BrowserAdapter, assertBrowserUrlAllowed, safeScreenshotName } from './browser.js'
 import { browserUseTools } from './browser-use.js'
 import { withExecutionPolicyContext } from '../core/lifecycle-policy.js'
+import { ownerApprovalCode } from '../test-utils/owner-approval.js'
+import { approvalDetailOf } from './owner-approval.js'
 
 const tool = (name: string) => browserUseTools.find(entry => entry.name === name)!
 
@@ -53,8 +55,9 @@ describe('R2 T7: browser_upload needs owner approval and never uploads secret fi
         const base = { selector: 'input[type=file]', paths: ['xaventra.config.json'] }
         expect((await upload.handler({ ...base, authorizationUserId: 'owner-1', channel: 'telegram' }) as any).success).toBe(false)
         expect((await upload.handler({ ...base, authorizationUserId: 'admin-1', channel: 'telegram', confirm: 'yes' }) as any).success).toBe(false)
-        const approved = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true },
-            () => upload.handler(base)) as any
+        const confirm = ownerApprovalCode('browser_upload', approvalDetailOf({ selector: base.selector, paths: base.paths }))
+        const approved = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => upload.handler({ ...base, confirm })) as any
         expect(approved.success).toBe(false)
         expect(approved.error).toMatch(/Geschützte Datei/)
         expect(manager.getSession).not.toHaveBeenCalled()

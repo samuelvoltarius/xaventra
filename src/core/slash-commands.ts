@@ -3389,12 +3389,15 @@ _Deaktivieren: /verbose off_`
             // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
             if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
             const [toolName, ...rest] = args.trim().split(/\s+/).filter(Boolean)
-            if (!toolName || !/^[a-z][a-z0-9_]{1,63}$/.test(toolName)) {
-                return 'Nutzung: /freigabe <werkzeug> [detail] — gibt einen Einmal-Code aus (5 min, einmal, nur für dich). ' +
-                    'Beispiel: /freigabe execute_python, /freigabe register_llm_provider <name>@<https-url>'
+            const detail = rest.join(' ').trim()
+            // P9: a code is always bound to a concrete detail (file, entity, host or the
+            // `#hash` the refusal names) — a tool-wide code would approve every call.
+            if (!toolName || !/^[a-z][a-z0-9_-]{1,79}$/.test(toolName) || !detail) {
+                return 'Nutzung: /freigabe <werkzeug> <detail> — gibt einen Einmal-Code aus (5 min, einmal, nur für dich, nur für genau dieses Detail). ' +
+                    'Das Detail nennt die Ablehnung des Werkzeugs, z. B. /freigabe printer_start benchy.gcode, /freigabe execute_python #a1b2c3d4e5f6, /freigabe register_llm_provider <name>@<https-url>'
             }
             const { toolApprovalTarget } = await import('../tools/owner-approval.js')
-            const target = toolApprovalTarget(toolName, rest.join(' ').trim() || undefined)
+            const target = toolApprovalTarget(toolName, detail)
             const token = issueSetupConfirmation(setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from), target)
             return `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
 Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`

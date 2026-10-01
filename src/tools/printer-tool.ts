@@ -354,7 +354,7 @@ export const printerPrintTool = {
         }
 
         // R2 T10: starting a print is a physical action: owner approval
-        const refusal = await ownerApprovalRefusal(params, 'printer_print')
+        const refusal = await ownerApprovalRefusal(params, 'printer_print', gcodeFile)
         if (refusal) return { success: false, error: refusal }
 
         // R2 T9/T18: plain HTTP requests (no shell), status codes checked

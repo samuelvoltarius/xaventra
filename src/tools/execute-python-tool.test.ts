@@ -18,6 +18,8 @@ vi.mock('node:child_process', () => ({
 
 import { executeExecutePython } from './execute-python-tool.js'
 import { withExecutionPolicyContext } from '../core/lifecycle-policy.js'
+import { ownerApprovalCode } from '../test-utils/owner-approval.js'
+import { approvalDetailOf } from './owner-approval.js'
 
 beforeEach(() => { child.spawn.mockClear(); child.exit = { code: 0, signal: null } })
 
@@ -29,9 +31,13 @@ describe('R2 T8: execute_python only with owner approval', () => {
         expect(await executeExecutePython(params)).toMatch(/^❌/)
         expect(child.spawn).not.toHaveBeenCalled()
     })
-    it('runs with the server-side owner approval', async () => {
-        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true },
-            () => executeExecutePython({ code: 'print(1)' }))
+    it('runs with the owner code bound to exactly this code, and a code for other code does not', async () => {
+        const other = ownerApprovalCode('execute_python', approvalDetailOf({ code: 'print(2)', file: null, install: null }))
+        expect(await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => executeExecutePython({ code: 'print(1)', confirm: other }))).toMatch(/^❌/)
+        const confirm = ownerApprovalCode('execute_python', approvalDetailOf({ code: 'print(1)', file: null, install: null }))
+        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => executeExecutePython({ code: 'print(1)', confirm }))
         expect(result).toMatch(/Erfolgreich/)
         expect(child.spawn).toHaveBeenCalledTimes(1)
     })
@@ -40,8 +46,9 @@ describe('R2 T8: execute_python only with owner approval', () => {
 describe('R2 T35: a signal-killed process is not reported as success', () => {
     it('reports failure when the exit code is null', async () => {
         child.exit = { code: null, signal: 'SIGKILL' }
-        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram', approvalGranted: true },
-            () => executeExecutePython({ code: 'print(1)' }))
+        const confirm = ownerApprovalCode('execute_python', approvalDetailOf({ code: 'print(1)', file: null, install: null }))
+        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => executeExecutePython({ code: 'print(1)', confirm }))
         expect(result).not.toMatch(/Erfolgreich/)
         expect(result).toMatch(/SIGKILL/)
     })
