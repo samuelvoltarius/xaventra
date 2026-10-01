@@ -1,0 +1,22 @@
+{
+  "package_id": "dev.xaventra.hud",
+  "edition": "202601",
+  "name": "Xaventra HUD",
+  "version": "0.1.0",
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.12",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Liest den Xaventra-HUD-Feed und sendet Ja/Nein auf Knopf-Karten.",
+      "whitelist": [
+        "https://xaventra.example.ts.net"
+      ]
+    }
+  ],
+  "supported_languages": [
+    "de",
+    "en"
+  ]
+}

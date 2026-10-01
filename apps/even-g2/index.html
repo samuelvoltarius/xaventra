@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Xaventra HUD</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+      label { display: block; margin-top: 12px; font-size: 14px; }
+      input { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 4px; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; }
+      button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 6px; background: #3a7; color: #fff; }
+      #state { margin-top: 16px; font-size: 13px; color: #aaa; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h3>Xaventra HUD</h3>
+    <p>Adresse und Token werden nur auf diesem Telefon gespeichert.</p>
+    <label>Adresse (HTTPS, nur Tailnet)
+      <input id="url" type="url" placeholder="https://xaventra.example.ts.net" autocomplete="off" />
+    </label>
+    <label>Token (NOVA_EVEN_G2_TOKEN)
+      <input id="token" type="password" autocomplete="off" />
+    </label>
+    <button id="save" type="button">Speichern</button>
+    <div id="state"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

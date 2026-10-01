@@ -24,6 +24,7 @@ authoritative source files and required evidence.
 | [Xaventra Desktop](./DESKTOP.md) | Cross-platform app, Studio, specialists, rooms, models and node enrollment |
 | [Self-Update](./SELF_UPDATE.md) | Auto-patching + L24 prompt optimization |
 | [Telegram Bot](./TELEGRAM.md) | Telegram integration + wake-up calls |
+| [Even G2](./EVEN_G2.md) | Smartglasses: „Hey Even“-Agent + HUD-Feed mit Knopf-Karten |
 | [Voice I/O](./VOICE.md) | Speech input/output |
 | [Memory System](./MEMORY.md) | LanceDB + Vector Memory + Mesh Memory Sync |
 | [Autonomy Guide](./AUTONOMY_GUIDE.md) | Missions, self-evolution, dreaming, Vibe Regler |

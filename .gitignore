@@ -112,3 +112,6 @@ project_files.txt
 .nova-test-tmp/
 .nova-tmp-memory-*/
 *.tmp
+
+# Even G2 HUD app: simulator-only defaults
+.env.local
