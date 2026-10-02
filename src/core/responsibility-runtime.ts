@@ -246,6 +246,14 @@ let eventTimer: ReturnType<typeof setTimeout> | null = null
 
 export function getResponsibilityRuntime(): ResponsibilityRuntime | null { return runtime }
 
+/**
+ * 2.83.0 Punkt 5 (nur lesend): gescheiterte Missionen seit `sinceMs` für den
+ * Bug-Finder. Blockierte Missionen (Owner-Nein, fehlender Weg) zählen nie.
+ */
+export function failedMissionsSince(sinceMs: number): Mission[] {
+    try { return (runtime?.missions.list({ status: ['fehlgeschlagen'] }) || []).filter(item => Date.parse(item.updatedAt) >= sinceMs) } catch { return [] }
+}
+
 /** Called once by the daemon with `autonomy` from the config. */
 export function setResponsibilityConfig(autonomy: unknown, options: { nightwatchJournalDir?: string; ownerSessions?: string[] } = {}): ResponsibilitySettings {
     settings = parseResponsibilitySettings(autonomy)

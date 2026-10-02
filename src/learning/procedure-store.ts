@@ -19,6 +19,12 @@
  *   Prüfung nicht bestehen) bleiben sichtbar, werden aber nie abgerufen.
  * - Alte Dateien werden beim Start einmal übernommen und als `*.migriert`
  *   umbenannt, nie gelöscht.
+ * - 2.83.0 (lernen aus Misserfolg, wie die Routine-Skills): Eine Prozedur
+ *   kennt die Läufe, aus denen sie gelernt wurde. Weist der Validator oder
+ *   der Owner einen solchen Lauf zurück, verliert sie den Beleg; ohne Beleg
+ *   wird sie nicht mehr abgerufen. Jeder Lauf mit abgerufener Prozedur meldet
+ *   das Validator-Ergebnis zurück; nach zwei Fehlschlägen in Folge ist sie
+ *   ausgesetzt (bleibt sichtbar, wird nie mehr abgerufen).
  */
 
 import { existsSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
@@ -42,10 +48,24 @@ export interface Procedure {
     source: ProcedureSource
     /** Nur verifizierte Prozeduren werden je abgerufen. */
     verified: boolean
+    /** 2.83.0: Läufe, aus denen sie gelernt wurde (höchstens 10). Altbestand hat keine. */
+    runIds?: string[]
+    /** 2.83.0: Läufe mit abgerufener Prozedur, die der Validator angenommen hat (höchstens 10). */
+    usedRunIds?: string[]
+    /** 2.83.0: Abrufe mit Validator-Ergebnis, davon Fehlschläge, Fehlschläge in Folge. */
+    uses?: number
+    failures?: number
+    consecutiveFailures?: number
+    /** Zeichen der Form (Benutzer, Werkzeug, Parameter-Namen), damit eine Rücknahme die Zählung zurücksetzt. */
+    signature?: string
+    /** Gesetzt, wenn der letzte Beleg zurückgenommen wurde. */
+    retractedAt?: number
 }
 
 export interface VerifiedProcedureOutcome {
     userId?: string
+    /** Lauf (Outcome-Ledger), in dem das Ergebnis entstand. */
+    runId?: string
     toolName: string
     request: string
     params: Record<string, unknown>
@@ -63,6 +83,9 @@ interface ProcedureFile {
 
 const MAX_PROCEDURES = 1_000
 const MAX_SIGNATURES = 2_000
+const MAX_RUN_IDS = 10
+/** Wie die Routine-Skills: zwei Fehlschläge in Folge setzen eine Prozedur aus. */
+export const SUSPEND_AFTER_FAILURES = 2
 const META_ONLY = /^Tool\s+(nova_capabilities|find_capability|resolve_capability|load_skill_pack|build_skill|create_skill):/i
 const STOP_WORDS = new Set([
     'aber', 'also', 'bitte', 'das', 'dann', 'der', 'die', 'ein', 'eine',
@@ -89,9 +112,15 @@ function tokenize(value: string): string[] {
         .filter(token => token.length >= 3 && !STOP_WORDS.has(token))
 }
 
-function usable(entry: Procedure): boolean {
-    return entry.verified === true && isLearnableProblem(entry.problem) && !META_ONLY.test(entry.solution) && isSuccessfulToolResult(entry.solution)
+function suspended(entry: Procedure): boolean {
+    return (entry.consecutiveFailures || 0) >= SUSPEND_AFTER_FAILURES
 }
+
+function usable(entry: Procedure): boolean {
+    return entry.verified === true && !suspended(entry) && isLearnableProblem(entry.problem) && !META_ONLY.test(entry.solution) && isSuccessfulToolResult(entry.solution)
+}
+
+const addRun = (list: string[] | undefined, runId: string) => [...(list || []).filter(item => item !== runId), runId].slice(-MAX_RUN_IDS)
 
 export class ProcedureStore {
     private signatures = new Map<string, number>()
@@ -136,14 +165,14 @@ export class ProcedureStore {
         let remembered = false
         if (outcome.success && runs >= 2) {
             const summary = typeof outcome.result === 'string' ? outcome.result.slice(0, 500) : JSON.stringify(outcome.result ?? null).slice(0, 500)
-            remembered = this.remember(outcome.request, `Tool ${outcome.toolName}: ${summary}`, { toolName: outcome.toolName, result: outcome.result }, outcome.userId, false)
+            remembered = this.remember(outcome.request, `Tool ${outcome.toolName}: ${summary}`, { toolName: outcome.toolName, result: outcome.result }, outcome.userId, false, outcome.runId, signature)
         }
         this.persist()
         return { runs, remembered }
     }
 
     /** Eine verifizierte Lösung merken (nur mit erfüllendem Werkzeug-Beleg). */
-    remember(problem: string, solution: string, evidence: { toolName: string; result: unknown }, userId?: string, persist = true): boolean {
+    remember(problem: string, solution: string, evidence: { toolName: string; result: unknown }, userId?: string, persist = true, runId?: string, signature?: string): boolean {
         if (!isLearnableProblem(problem)) return false
         if (!evidence?.toolName || !toolProvidesActionEvidence(evidence.toolName) || !isSuccessfulToolResult(evidence.result)) return false
         const cleanSolution = redactSecrets(String(solution)).slice(0, 600)
@@ -154,14 +183,72 @@ export class ProcedureStore {
             existing.toolName = evidence.toolName
             existing.verified = true
             existing.source = 'verifiziert'
+            delete existing.retractedAt
+            if (runId) existing.runIds = addRun(existing.runIds, runId)
+            if (signature) existing.signature = signature
         } else {
             this.procedures.push({
                 userId, problem: redactSecrets(problem).slice(0, 300), solution: cleanSolution, toolName: evidence.toolName,
                 learnedAt: Date.now(), successCount: 1, source: 'verifiziert', verified: true,
+                ...(runId ? { runIds: [runId] } : {}), ...(signature ? { signature } : {}),
             })
         }
         if (persist) this.persist()
         return true
+    }
+
+    /**
+     * Ein Lauf wurde zurückgewiesen (Validator oder Owner): Prozeduren, die aus
+     * ihm gelernt wurden, verlieren den Beleg — ohne Beleg nie mehr abgerufen,
+     * die Zählung der Form beginnt neu. Hatte der Lauf eine Prozedur abgerufen
+     * und galt als Erfolg, zählt das jetzt als Fehlschlag. true bei Änderung.
+     */
+    retractRun(runId: string): boolean {
+        const id = String(runId || '').trim()
+        if (!id) return false
+        let changed = false
+        for (const entry of this.procedures) {
+            if (entry.runIds?.includes(id)) {
+                entry.runIds = entry.runIds.filter(item => item !== id)
+                if (entry.runIds.length === 0) {
+                    entry.verified = false
+                    entry.retractedAt = Date.now()
+                    if (entry.signature && this.signatures.has(entry.signature)) this.signatures.set(entry.signature, 0)
+                }
+                changed = true
+            }
+            if (entry.usedRunIds?.includes(id)) {
+                entry.usedRunIds = entry.usedRunIds.filter(item => item !== id)
+                // Der Erfolg zählte schon als Abruf; jetzt wird er ein Fehlschlag.
+                entry.failures = (entry.failures || 0) + 1
+                entry.consecutiveFailures = (entry.consecutiveFailures || 0) + 1
+                changed = true
+            }
+        }
+        if (changed) this.persist()
+        return changed
+    }
+
+    /**
+     * Ergebnis eines Laufs, in dem diese Prozedur abgerufen wurde (Validator).
+     * `problem` ist das der abgerufenen Prozedur. Nur derselbe Benutzer.
+     */
+    recordProcedureOutcome(problem: string, userId: string | undefined, success: boolean, runId?: string): Procedure | null {
+        if (!userId) return null
+        const key = String(problem || '').trim().toLowerCase()
+        const entry = this.procedures.find(item => item.userId === userId && item.problem.trim().toLowerCase() === key)
+        if (!entry) return null
+        entry.uses = (entry.uses || 0) + 1
+        if (success) {
+            entry.consecutiveFailures = 0
+            if (runId) entry.usedRunIds = addRun(entry.usedRunIds, runId)
+        } else {
+            entry.failures = (entry.failures || 0) + 1
+            entry.consecutiveFailures = (entry.consecutiveFailures || 0) + 1
+            if (entry.consecutiveFailures === SUSPEND_AFTER_FAILURES) console.log(`[Prozeduren] ausgesetzt nach ${SUSPEND_AFTER_FAILURES} Fehlschlägen in Folge: ${entry.problem.slice(0, 60)}`)
+        }
+        this.persist()
+        return { ...entry }
     }
 
     /** Bekannte, verifizierte Lösung für eine ähnliche Aufgabe desselben Benutzers. */
@@ -197,12 +284,16 @@ export class ProcedureStore {
         return this.procedures.filter(entry => userId === undefined || entry.userId === userId).map(entry => ({ ...entry }))
     }
 
-    getStats(): { procedures: number; verifiedProcedures: number; reusableProcedures: number; legacy: number } {
+    getStats(): { procedures: number; verifiedProcedures: number; reusableProcedures: number; legacy: number; suspended: number; retracted: number } {
+        const isSuspended = (entry: Procedure) => entry.verified === true && suspended(entry)
+        const isRetracted = (entry: Procedure) => entry.verified !== true && entry.retractedAt !== undefined
         return {
             procedures: this.procedures.filter(usable).length,
             verifiedProcedures: this.signatures.size,
             reusableProcedures: [...this.signatures.values()].filter(runs => runs >= 2).length,
-            legacy: this.procedures.filter(entry => !usable(entry)).length,
+            legacy: this.procedures.filter(entry => !usable(entry) && !isSuspended(entry) && !isRetracted(entry)).length,
+            suspended: this.procedures.filter(isSuspended).length,
+            retracted: this.procedures.filter(isRetracted).length,
         }
     }
 

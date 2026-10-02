@@ -4006,6 +4006,7 @@
         "../core/atomic-storage.js",
         "../core/data-root.js",
         "../security/secret-redaction.js",
+        "../thinking/bug-finder.js",
         "node:crypto",
         "node:fs"
       ]
@@ -5777,7 +5778,9 @@
       "module": "src/thinking/thinking-runtime.ts",
       "imports": [
         "../core/decisions.js",
+        "../core/missions.js",
         "../doctor/failure-research-coordinator.js",
+        "../learning/regression-case-store.js",
         "./bug-finder.js",
         "./idea-run.js",
         "./model-scout.js",

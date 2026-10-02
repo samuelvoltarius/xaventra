@@ -144,7 +144,10 @@ export class LearningCoordinator {
     /** Converts a validator-approved Outcome Ledger run into durable episodic
      * memory. Parameter values and tool outputs are never copied. */
     async recordValidatedRun(outcome: ValidatedRunOutcome): Promise<void> {
-        if (outcome.validated !== true || outcome.tools.length === 0) return
+        if (outcome.validated !== true) return
+        // 2.83.0: Werkzeug-Ergebnisse eines vom Validator abgelehnten Laufs sind keine bekannte Lösung.
+        if (!outcome.success) this.procedures().retractRun(outcome.runId)
+        if (outcome.tools.length === 0) return
         const evidenceRefs = outcome.validation.criteria.flatMap(criterion => criterion.success
             ? criterion.evidence
             : [`validator-rejection:${criterion.criterionId}`])
@@ -210,6 +213,7 @@ export class LearningCoordinator {
         ])
         getWorkflowEpisodeStore().retractRun(outcome.runId, outcome.userId, outcome.reason)
         getRoutineSkillStore()?.retractRun(outcome.runId)
+        this.procedures().retractRun(outcome.runId)
         getBeliefStore().retractSource(`outcome:${outcome.runId}`)
         getSessionContinuityStore().retractVerifiedOutcome(outcome.userId, outcome.runId, outcome.request)
         try {
@@ -225,6 +229,7 @@ export class LearningCoordinator {
             procedures: procedures.procedures,
             verifiedProcedures: procedures.verifiedProcedures,
             reusableProcedures: procedures.reusableProcedures,
+            suspendedProcedures: procedures.suspended,
         }
     }
 }

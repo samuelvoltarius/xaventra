@@ -251,7 +251,7 @@ export async function handleCommand(
 
             const layerText = `📊 *Xaventra Layer-Status*
 
-Prozeduren: ${procedureStats.procedures} verifiziert gemerkt
+Prozeduren: ${procedureStats.procedures} verifiziert gemerkt${procedureStats.suspended ? ` · ${procedureStats.suspended} ausgesetzt` : ''}
 L7 Learning & Swarm: ${state.learning ? '✅ aktiv' : '❌'}
 L6 Memory (LanceDB): ${state.memory ? '✅ aktiv' : '❌'}
 L5 LLM Adapters: ${state.llm ? '✅ ' + state.llm.modelId : '❌'}
@@ -684,7 +684,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Prozeduren: der eine Speicher für verifizierte Lösungen (learning/procedure-store.ts).
             const { getProcedureStore } = await import('../learning/procedure-store.js')
             const procedureStats = getProcedureStore().getStats()
-            const procedures = `📚 *Prozeduren*: ${procedureStats.procedures} verifiziert gemerkt · ${procedureStats.reusableProcedures} wiederverwendbare Formen${procedureStats.legacy ? ` · ${procedureStats.legacy} alte Einträge ohne Beleg (nie genutzt)` : ''}\n🧰 Selbst gebaute Werkzeuge: /werkzeuge`
+            const procedures = `📚 *Prozeduren*: ${procedureStats.procedures} verifiziert gemerkt · ${procedureStats.reusableProcedures} wiederverwendbare Formen${procedureStats.suspended ? ` · ${procedureStats.suspended} ausgesetzt (2 Fehlschläge in Folge)` : ''}${procedureStats.retracted ? ` · ${procedureStats.retracted} zurückgenommen` : ''}${procedureStats.legacy ? ` · ${procedureStats.legacy} alte Einträge ohne Beleg (nie genutzt)` : ''}\n🧰 Selbst gebaute Werkzeuge: /werkzeuge`
             return routine ? `${routine}\n\n${procedures}` : procedures
         }
 

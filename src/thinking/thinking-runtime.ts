@@ -14,7 +14,9 @@
 import { totalmem } from 'node:os'
 import { resolve } from 'node:path'
 import type { FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
-import { runBugFinder, tracesErrorSource, type ErrorSourcePort } from './bug-finder.js'
+import { runBugFinder, tracesErrorSource, type ErrorOccurrence, type ErrorSourcePort } from './bug-finder.js'
+import type { Mission } from '../core/missions.js'
+import { regressionErrorSource } from '../learning/regression-case-store.js'
 import { thoughtImportanceFactor } from '../core/decisions.js'
 import { runIdeaRun, type CostSnapshot, type Formulator, type IdeaCandidate, type IdeaInputs } from './idea-run.js'
 import { fixtureSource, huggingFaceSource, runModelScout, type ModelSource, type ScoutRunner } from './model-scout.js'
@@ -83,6 +85,56 @@ function configuredSources(): ModelSource[] {
         : fixtureSource(resolve(source.path)))
 }
 
+/** Mehrere Quellen für den einen Bug-Finder; eine kaputte Quelle hält die anderen nicht auf. */
+export function combineErrorSources(sources: readonly ErrorSourcePort[]): ErrorSourcePort {
+    return {
+        async collect(sinceMs) {
+            const out: ErrorOccurrence[] = []
+            for (const source of sources) {
+                try { out.push(...await source.collect(sinceMs)) } catch { /* eine Quelle fällt aus, die anderen zählen weiter */ }
+            }
+            return out
+        },
+    }
+}
+
+/**
+ * 2.83.0 Punkt 5: Missionen, die für dieselbe Verantwortung immer wieder
+ * scheitern, werden über den Bug-Finder ein Doctor-Fall. Nur `fehlgeschlagen`;
+ * vom Owner abgelehnte (blockierte) Missionen zählen nie.
+ */
+export function missionErrorSource(list?: (sinceMs: number) => readonly Mission[] | Promise<readonly Mission[]>): ErrorSourcePort {
+    return {
+        async collect(sinceMs) {
+            const items = list ? await list(sinceMs) : (await import('../core/responsibility-runtime.js')).failedMissionsSince(sinceMs)
+            return items
+                .filter(item => item.status === 'fehlgeschlagen' && !/Nein gesagt/i.test(item.grund || ''))
+                .map(item => ({ source: 'mission', subject: `mission:${item.responsibilityId}`, message: item.grund || 'ohne Grund', at: Date.parse(item.updatedAt), ref: `mission:${item.id}` }))
+        },
+    }
+}
+
+/** Die Quellen des einen Bug-Finders: Traces, Owner-Rückmeldungen, gescheiterte Missionen. */
+export function defaultErrorSources(): ErrorSourcePort[] {
+    return [tracesErrorSource(), regressionErrorSource(), missionErrorSource()]
+}
+
+/**
+ * Regressionsfälle hinter einem Bug-Finder-Fall: beim Anlegen „in Arbeit"
+ * (promote), nach dem signierten Repair-Weg (stage `resolved`) erledigt.
+ */
+async function syncRegressionCases(doctor: Pick<FailureResearchCoordinator, 'list'>, created: readonly string[]): Promise<void> {
+    const cases = doctor.list().filter(item => item.evidenceRefs?.some(ref => ref.startsWith('regression:')))
+    if (!cases.length) return
+    const { getRegressionCaseStore } = await import('../learning/regression-case-store.js')
+    const store = getRegressionCaseStore()
+    for (const item of cases) {
+        const ids = item.evidenceRefs.filter(ref => ref.startsWith('regression:')).map(ref => ref.slice('regression:'.length))
+        if (created.includes(item.id)) for (const id of ids) store.promote(id, `test:doctor:${item.id}`)
+        if (item.stage === 'resolved') for (const id of ids) store.resolve(id, `benchmark:doctor:${item.id}`)
+    }
+}
+
 export interface ThinkingTickDeps {
     isMain: boolean
     now?: Date
@@ -91,6 +143,7 @@ export interface ThinkingTickDeps {
     load?: LoadProbe
     ideaInputs?: () => Promise<IdeaInputs> | IdeaInputs
     formulate?: Formulator
+    /** Ersetzt alle Standard-Quellen (Tests/Integration). Ohne: `defaultErrorSources()`. */
     errorSource?: ErrorSourcePort
     doctor?: Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs'>>
     scoutSources?: ModelSource[]
@@ -116,7 +169,9 @@ export async function runThinkingTick(deps: ThinkingTickDeps): Promise<{ ran: st
 
     if (settings.bugFinder.enabled && plan.isDue('bugs', now)) {
         try {
-            const result = await runBugFinder({ settings, source: deps.errorSource || tracesErrorSource(), doctor: await doctor(), sink: out, now, importanceFactor: factor })
+            const coordinator = await doctor()
+            const result = await runBugFinder({ settings, source: deps.errorSource || combineErrorSources(defaultErrorSources()), doctor: coordinator, sink: out, now, importanceFactor: factor })
+            try { await syncRegressionCases(coordinator, result.created) } catch { /* Status der Regressionsfälle ist nur Anzeige */ }
             plan.markRan('bugs', now)
             ran.push('bugs')
             if (result.created.length) console.log(`[Denken] Bug-Finder: ${result.created.length} Doctor-Fall/Fälle angelegt`)

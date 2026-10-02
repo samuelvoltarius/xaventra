@@ -726,14 +726,15 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         } catch { /* L7 not critical */ }
 
         // === Prozeduren (ein Speicher, learning/procedure-store.ts): bekannte Lösung ===
-        let l17KnownSolution: string | null = null
+        // 2.83.0: die abgerufene Prozedur meldet nach der Validierung ihren Nutzen zurück.
+        let recalledProcedure: { problem: string } | null = null
         try {
             if (!backgroundLearningEnabled) throw new Error('isolated learning recall')
             const { getProcedureStore } = await import('../learning/procedure-store.js')
             const known = getProcedureStore().recall(content, userId)
             const block = known ? getProcedureStore().promptBlock(content, userId) : null
             if (known && block) {
-                l17KnownSolution = known.solution
+                recalledProcedure = { problem: known.problem }
                 messages.push({ role: 'system', content: block })
                 console.log(`[Prozeduren] Bekannte Lösung geladen: ${known.problem.slice(0, 60)}`)
             }
@@ -1832,6 +1833,15 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 && kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
                 finalContent = `Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: ${reasons.join('; ') || taskValidation.violations.join('; ') || 'Erfolgsnachweis fehlt.'}`
             }
+        }
+
+        // 2.83.0 Punkt 6: Nutzen der abgerufenen Prozedur messen — das Validator-
+        // Ergebnis geht zurück; zwei Fehlschläge in Folge setzen sie aus.
+        if (recalledProcedure && !taskValidation.awaitingApproval) {
+            try {
+                const { getProcedureStore } = await import('../learning/procedure-store.js')
+                getProcedureStore().recordProcedureOutcome(recalledProcedure.problem, userId, taskValidation.success, kernel.contract.id)
+            } catch { /* procedures are not critical */ }
         }
 
         // Add to history
