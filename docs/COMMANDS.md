@@ -229,7 +229,7 @@ Owner, nur lesend, immer verfügbar. Je Fähigkeit (STT, TTS, Embeddings, Browse
 Owner. Offene und die letzten n (Standard 10) abgeschlossenen Delegationen an Claude/Codex/Hermes/Unteragenten mit Status, Stufe (L1/L2), Erfolgskriterium, Prüfergebnis (verifiziert/nicht erfüllt/unverifiziert), Beleg und Antwort-Auszug (nur Daten). Standard aus: `autonomy.delegation.enabled`. Details: `docs/AUTONOMY_GUIDE.md`.
 
 ### `/entscheidungen [widerruf <id>|gilt <id>|verwerfen <id>]`
-Owner. Kausales Gedächtnis: gültige Entscheidungen mit Warum, wer/wann, gültig bis und Abhängigkeiten; offene Rückfragen bei Widersprüchen (`gilt` = die neue gilt, `verwerfen` = die alte bleibt); Befunde aus Missionen/Delegationen; zuletzt beendete. `widerruf` hebt eine Entscheidung auf. Angelegt wird ohne Befehl aus Owner-Anweisungen und Knopf-Antworten. Details: `docs/AUTONOMY_GUIDE.md` („Kausales Gedächtnis“).
+Owner. Kausales Gedächtnis: gültige Entscheidungen mit Warum, wer/wann, gültig bis und Abhängigkeiten; offene Rückfragen bei Widersprüchen (`gilt` = die neue gilt, `verwerfen` = die alte bleibt); Befunde aus Missionen/Delegationen und Nachmessungen angenommener Ideen; zuletzt beendete. `widerruf` hebt eine Entscheidung auf. Angelegt wird ohne Befehl aus Owner-Anweisungen und Knopf-Antworten. Details: `docs/AUTONOMY_GUIDE.md` („Kausales Gedächtnis“).
 
 ### `/arbeit [pause <id>|weiter <id>]`
 Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).

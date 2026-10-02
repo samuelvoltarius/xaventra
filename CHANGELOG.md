@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+Denk-Vorschläge mit Folgen (2.83.0, Paket C):
+
+- „Ja“ auf eine Idee führt etwas aus: ein Schmiede-Werkzeug bekommt über
+  `reviseTool` eine neue, getestete Version; sonst geht ein lesender
+  Untersuchungsauftrag (L1) über die Delegation an Claude bzw. einen lokalen
+  Unteragenten. „Ja“ auf einen Modell-Scout-Vorschlag legt die vorhandene
+  `vllm-wechsel`-Karte an (eigenes Ja). Die Antwort nennt Delegations- bzw.
+  Plan-ID statt „ich setze das um“.
+- Das Ziel einer angenommenen Idee wird nach 7 Tagen mit derselben Kennzahl
+  nachgemessen: Gedanke „Ziel erreicht/verfehlt/nicht messbar“ und Befund in
+  den Entscheidungen (neue Quelle `messung`, nicht bindend).
+- Owner-„Nein“ wirkt: nach einem Nein nur noch Idee im Bericht (keine Karte,
+  Fragen sind nicht mehr automatisch „wichtig“), nach drei Nein bringt der
+  Ideen-Lauf diese Art nicht mehr. Alarme werden nie gedämpft. Neue
+  Lesefunktion `thoughtAcceptance(seitMs)` für die Lernkurve.
+
 Doppelungen aufgeräumt (P9, Gruppe 3: Skills und Lernen) und eine echte
 Werkzeug-Schmiede:
 

@@ -568,6 +568,40 @@ Ports (documented in `src/thinking/ports.ts`):
 
 State files: `.nova-data/thinking/ideas-state.json`, `scout-report.json`, `decisions.json`.
 
+### Ja auf einen Denk-Vorschlag hat Folgen (2.83.0)
+
+Ein „Ja“ auf eine Idee oder einen Scout-Vorschlag führt etwas aus — nur über
+die vorhandenen Wege (`src/core/thought-hub.ts`, `dispatchThoughtAnswer`):
+
+| Vorschlag | Weg | Stufe |
+|---|---|---|
+| Idee, Subjekt ist ein Schmiede-Werkzeug `forge_*` | `reviseTool`: neue Version, alle Tests, Aktivierung nach Wirkung (TOOL_FORGE.md) | Schmiede-Regeln |
+| Idee, sonst (oder kein lokales Lern-Modell) | `delegate()`: lesender Untersuchungsauftrag „Ursache + Verbesserung mit Test“ an Claude, ohne Agentic-OS-URL an einen lokalen Unteragenten; Subjekt und Zahlen im bereinigten Kontext | L1 (das Ja war die Zustimmung) |
+| Modell-Scout `modell-wechsel` | die vorhandene `vllm-wechsel`-Karte (`proposeLocalVllmSwitch`, derselbe Weg wie `/modelle wechsel`) | eigenes Ja, nie „immer“ |
+
+Die Antwort nennt, was passiert ist (Delegations-ID, Plan-ID) oder warum
+nicht. Nach dem Ja vermerkt der Hub die Idee mit Zahlen in
+`ideas-state.json` (`angenommen`): Kennzahl, vorher, Ziel, Richtung, fällig in
+7 Tagen.
+
+**Nachmessen:** `runIdeaRun` misst fällige Einträge mit derselben Kennzahl
+neu (`measureIdeaTarget`, dieselben Felder wie die Regeln) — vor
+Nachtfenster und GPU-Grenze, weil das nur Traces liest. Ergebnis
+„Ziel erreicht“, „Ziel verfehlt“ oder „nicht messbar“ (zu wenig Aufrufe,
+z. B. `callCount` unter 5) als Gedanke (`messung:<regel>`, nur Bericht) und als
+Befund in den Entscheidungen (Quelle `messung`, nicht bindend). Verfehlt: die
+Idee darf nach `dedupeDays` wiederkommen, mit „letzter Versuch verfehlt“.
+Kein Modell entscheidet über „erreicht“.
+
+**Nein wirkt:** Jedes Nein senkt den Faktor der Art (0,75^Strafe). Unter 1
+wird ein Denk-Vorschlag nur noch Idee im Bericht (`niedrig`, keine Karte;
+Regel `regel:owner-nein-gedaempft` in `planner/thoughts.ts`). Unter 0,45
+(3× Nein ohne Ja dazwischen) bringt der Ideen-Lauf diese Art nicht mehr. Ein
+Ja hebt die Strafe langsam wieder an. Alarme, Wächter und Sicherheitsmeldungen
+werden nie gedämpft; `/gedanken` zeigt weiter alles.
+`thoughtAcceptance(seitMs)` (decisions.ts) liefert Ja/Nein je Art im
+Zeitfenster für die Lernkurve im Abendbericht.
+
 
 ## Software-Scout (Phase 5b, P8: Vorschläge am Main Standard AN)
 
@@ -894,6 +928,7 @@ Quellen — ohne Befehl und ohne Rückfrage angelegt, im Abendbericht unter
 | Knopf | „Immer erlauben“ (bis Widerruf) oder „Nein“ (30 Tage), Beleg der Karte als Grund | ja |
 | Mission | Abschluss/Übergabe, verknüpft mit Owner-Entscheidungen zum selben Thema | nein (Befund) |
 | Delegation | Ergebnis mit Xaventras eigener Prüfung als Beleg — nie der Antworttext | nein (Befund) |
+| Messung | Nachmessung des Ziels einer angenommenen Idee nach 7 Tagen (erreicht/verfehlt/nicht messbar, mit Zahlen) | nein (Befund) |
 
 Feste Regeln (Code):
 

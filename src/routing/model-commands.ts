@@ -59,6 +59,29 @@ const CLASS_ALIASES: Record<string, TaskModelClass> = {
     bilder: 'vision', smalltalk: 'smalltalk', kurz: 'short', short: 'short', allgemein: 'general', general: 'general',
 }
 
+/**
+ * The one way to a vLLM switch card for the local endpoint: `/modelle wechsel`
+ * and an owner Ja on a Modell-Scout proposal (2.83.0, thought-hub.ts) both use
+ * it. It only plans and queues the `vllm-wechsel` card (own Ja, never „immer“);
+ * nothing switches here.
+ */
+export async function proposeLocalVllmSwitch(input: { taskClass: TaskModelClass; targetModel: string; minutes?: number; grund: string; registry?: ModelRegistry }): Promise<{ ok: true; plan: { id: string }; card: { id: string; vorschlag: string } } | { ok: false; reason: string }> {
+    const registry = input.registry ?? await (await import('./model-registry.js')).collectModelRegistry({ config: (globalThis as any).__novaState?.config || {} })
+    const vllm = registry.endpoints.find(ep => ep.kind === 'vllm' && ep.privacy === 'lokal')
+    if (!vllm) return { ok: false, reason: 'Kein lokaler vLLM-Endpunkt im Register' }
+    const measured = vllm.measurements.find(item => item.taskClass === input.taskClass)
+    const { proposeVllmSwitch, resolveProductionVllmRuntime } = await import('./local-model-control.js')
+    const result = await proposeVllmSwitch({
+        node: vllm.node || 'spark', taskClass: input.taskClass, targetModel: String(input.targetModel || '').toLowerCase(), baseUrl: vllm.baseUrl,
+        estimatedMinutes: Number.isFinite(input.minutes) && Number(input.minutes) > 0 ? Number(input.minutes) : 15,
+        evidence: measured
+            ? `Aktuell ${vllm.model}: ${TASK_CLASS_LABELS[input.taskClass]} ${Math.round(measured.successRate * 100)} % bei ${measured.samples} Läufen (${measured.source}). ${input.grund}`
+            : `Für ${TASK_CLASS_LABELS[input.taskClass]} liegen für ${vllm.model} keine Messdaten vor. ${input.grund}`,
+    }, { resolveRuntime: resolveProductionVllmRuntime })
+    if (!result.ok) return { ok: false, reason: (result as { reason: string }).reason }
+    return { ok: true, plan: result.plan, card: result.card }
+}
+
 export async function handleModelleCommand(args: string): Promise<string> {
     const config = (globalThis as any).__novaState?.config || {}
     const [{ collectModelRegistry }, { getCloudSpendToday }] = await Promise.all([import('./model-registry.js'), import('./model-runtime.js')])
@@ -71,17 +94,8 @@ export async function handleModelleCommand(args: string): Promise<string> {
     const targetModel = parts[2]
     const minutes = Number.parseInt(parts[3] || '', 10)
     if (!taskClass || !targetModel) return 'Syntax: /modelle wechsel <code|umbau|fehlersuche|bild|kurz|allgemein> <ziel> [minuten]'
-    const vllm = registry.endpoints.find(ep => ep.kind === 'vllm' && ep.privacy === 'lokal')
-    if (!vllm) return '❌ Kein lokaler vLLM-Endpunkt im Register — kein Plan.'
-    const measured = vllm.measurements.find(item => item.taskClass === taskClass)
-    const { proposeVllmSwitch, resolveProductionVllmRuntime } = await import('./local-model-control.js')
-    const result = await proposeVllmSwitch({
-        node: vllm.node || 'spark', taskClass, targetModel: targetModel.toLowerCase(), baseUrl: vllm.baseUrl,
-        estimatedMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
-        evidence: measured
-            ? `Aktuell ${vllm.model}: ${TASK_CLASS_LABELS[taskClass]} ${Math.round(measured.successRate * 100)} % bei ${measured.samples} Läufen (${measured.source}). Wunsch des Owners per /modelle.`
-            : `Für ${TASK_CLASS_LABELS[taskClass]} liegen für ${vllm.model} keine Messdaten vor. Wunsch des Owners per /modelle.`,
-    }, { resolveRuntime: resolveProductionVllmRuntime })
+    if (!registry.endpoints.some(ep => ep.kind === 'vllm' && ep.privacy === 'lokal')) return '❌ Kein lokaler vLLM-Endpunkt im Register — kein Plan.'
+    const result = await proposeLocalVllmSwitch({ taskClass, targetModel, minutes, grund: 'Wunsch des Owners per /modelle.', registry })
     if (!result.ok) return `❌ Kein Plan: ${(result as { reason: string }).reason}`
     return `📝 Plan ${result.plan.id} angelegt und als Knopf-Karte eingereiht: ${result.card.vorschlag}`
 }
