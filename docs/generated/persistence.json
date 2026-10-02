@@ -454,10 +454,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/intelligence/proactive-learning.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/intelligence/progressive-memory.ts",
       "path": ".nova-data"
     },
@@ -479,6 +475,10 @@
     },
     {
       "owner": "src/layers/dream-daily-digest.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/layers/ein-leerlauf-lerner.test.ts",
       "path": ".nova-data"
     },
     {
@@ -563,6 +563,10 @@
     },
     {
       "owner": "src/learning/engine-corrections-only.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/learning/lernen-ohne-slash.test.ts",
       "path": ".nova-data"
     },
     {
@@ -1028,6 +1032,10 @@
     {
       "owner": "src/learning/procedure-store.ts",
       "path": ".nova-data/learning/procedures.json"
+    },
+    {
+      "owner": "src/layers/L9-idle-learning.ts",
+      "path": ".nova-data/local-knowledge.json"
     },
     {
       "owner": "src/core/native-package-builder.test.ts",

@@ -3625,17 +3625,6 @@
       ]
     },
     {
-      "module": "src/intelligence/proactive-learning.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/intelligence/proactive-suggestions.ts",
-      "imports": []
-    },
-    {
       "module": "src/intelligence/progressive-memory.ts",
       "imports": [
         "node:fs",
@@ -3905,6 +3894,9 @@
     {
       "module": "src/layers/L9-idle-learning.ts",
       "imports": [
+        "../core/data-root.js",
+        "../planner/migration-files.js",
+        "../security/secret-redaction.js",
         "node:fs",
         "node:path"
       ]
@@ -6185,6 +6177,7 @@
     {
       "module": "src/tools/self-introspect.ts",
       "imports": [
+        "../core/data-root.js",
         "node:fs",
         "node:path"
       ]
