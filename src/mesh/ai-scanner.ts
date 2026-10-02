@@ -545,7 +545,9 @@ export async function scanOwnNetworkAIServices(options: OwnNetworkScanOptions, d
 }
 
 /** Own-network settings from `autonomy.sensing.discovery` (same switch and limits as device discovery). */
-export function ownNetworkScanSettings(config: any): (OwnNetworkScanOptions & { enabled: true }) | { enabled: false } {
+export function ownNetworkScanSettings(config: any, env: NodeJS.ProcessEnv = process.env): (OwnNetworkScanOptions & { enabled: true }) | { enabled: false } {
+    // Test/acceptance runs (NOVA_NO_SIDE_EFFECTS=1) never scan a network.
+    if (env.NOVA_NO_SIDE_EFFECTS === '1') return { enabled: false }
     const sensing = parseSensingConfig(config?.autonomy?.sensing)
     if (!sensing.enabled || !sensing.discovery.enabled) return { enabled: false }
     return {

@@ -106,6 +106,7 @@ describe('Scanlauf: Netz-Phase eingebunden, Log nur bei Änderung', () => {
     let bodies: Record<string, string | null> = {}
     beforeEach(() => {
         vi.stubEnv('NOVA_NODE_ONLY', '')
+        vi.stubEnv('NOVA_NO_SIDE_EFFECTS', '')
         bodies = {}
         resetAiProbeClient({
             probe: async (url: string) => bodies[url] ?? null,
@@ -139,6 +140,14 @@ describe('Scanlauf: Netz-Phase eingebunden, Log nur bei Änderung', () => {
         const later = await scanAllAIServices({ forceFresh: true, skipMesh: true, skipBinaryCheck: true, skipRemoteSSH: true, ownNetworkScan })
         expect(ownNetworkScan).toHaveBeenCalledTimes(1)
         expect(later.services.map(service => service.id)).toContain('vllm@192.168.50.40:8000')
+    })
+
+    it('Netz-Phase aus im Test-/Abnahmemodus (NOVA_NO_SIDE_EFFECTS=1): kein Netzscan in CI', async () => {
+        vi.spyOn(console, 'log').mockImplementation(() => undefined)
+        vi.stubEnv('NOVA_NO_SIDE_EFFECTS', '1')
+        const ownNetworkScan = vi.fn(async () => ({ services: [], scannedHosts: 0, probes: 0, rejected: [], timedOut: false, durationMs: 0 }))
+        await scanAllAIServices({ forceFresh: true, skipMesh: true, skipBinaryCheck: true, skipRemoteSSH: true, ownNetwork: true, ownNetworkScan })
+        expect(ownNetworkScan).not.toHaveBeenCalled()
     })
 
     it('Netz-Phase aus, wenn autonomy.sensing.discovery.enabled=false', async () => {
