@@ -296,13 +296,20 @@ export async function collectVms(): Promise<Record<string, unknown>> {
 }
 
 // ---------------------------------------------------------------------------
-// Gedaechtnis: Entscheidungen (kausales Gedaechtnis), Werkzeug-Schmiede
+// Gedaechtnis: Entscheidungen (kausales Gedaechtnis), Werkzeug-Schmiede,
+// Prozeduren (2.86: mit an/aus wie /prozeduren) und Lern-Puls
 // ---------------------------------------------------------------------------
 
-export async function collectGedaechtnis(opts: { dataDir?: string } = {}): Promise<Record<string, unknown>> {
+export async function collectGedaechtnis(opts: { dataDir?: string; principalId?: string } = {}): Promise<Record<string, unknown>> {
     const problems: string[] = []
     const decisions = await attempt('Entscheidungen', async () => (await import('../core/decisions.js')).listDecisions(opts.dataDir ? { dataDir: opts.dataDir } : {}), problems)
     const tools = await attempt('Werkzeug-Schmiede', async () => (await import('../tools/skill-builder.js')).getSkillProposals(200), problems)
+    // Numbering = the owner's /prozeduren list, so the switch hits the same entry.
+    const procedures = opts.principalId ? await attempt('Prozeduren', async () => {
+        const { getProcedureStore, procedureStatus } = await import('../learning/procedure-store.js')
+        return getProcedureStore().list(opts.principalId).map((entry, index) => ({ entry, nr: index + 1, status: procedureStatus(entry) }))
+    }, problems) : []
+    const pulse = await attempt('Lern-Puls', async () => (await import('../learning/learning-flow.js')).learningFlow(), problems)
     return {
         entscheidungen: (decisions || []).slice(-80).reverse().map(item => ({
             id: clean(item.id, 40), text: clean(item.text, 300), warum: clean(item.warum, 300), status: clean(item.status, 20),
@@ -319,6 +326,19 @@ export async function collectGedaechtnis(opts: { dataDir?: string } = {}): Promi
             gesperrt: clean(item.activationBlockedReason || item.disabledReason, 240), karte: item.cardId ? clean(item.cardId, 40) : null,
             createdAt: iso(item.createdAt),
         })),
+        // Problem gekürzt, Werkzeug, Abrufe/ok, Status; nie die gespeicherte Lösung.
+        prozeduren: (procedures || []).map(({ entry, nr, status }) => {
+            const uses = Number(entry.uses) || 0
+            return {
+                nr, problem: clean(entry.problem, 120), werkzeug: clean(entry.toolName, 60), abrufe: uses,
+                ok: Math.max(0, uses - (Number(entry.failures) || 0)), status: clean(status, 60),
+                an: entry.disabledByOwner !== true, gelerntAm: iso(entry.learnedAt),
+            }
+        }),
+        lernPuls: pulse ? {
+            kanaele: pulse.channels.map(item => ({ kanal: item.channel, label: clean(item.label, 40), dieseWoche: item.current, vorwoche: item.previous })),
+            nutzen: pulse.usage.map(item => ({ art: item.kind, label: clean(item.label, 40), abrufe: item.uses, ok: item.ok })),
+        } : null,
         probleme: problems,
     }
 }

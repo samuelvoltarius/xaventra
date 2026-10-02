@@ -2631,7 +2631,7 @@ const selfModificationTools: NovaTool[] = [
             {
                 name: 'type',
                 type: 'string',
-                description: 'Was soll inspiziert werden? state=Laufzustand, goals=Ziele, skills=Skills+Regeln, performance=Metriken, memories=Erinnerungen, prompt=SystemPrompt, tools=Tool-Inventar, full=Alles (Standard)',
+                description: 'Was soll inspiziert werden? state=Laufzustand, goals=Ziele, skills=Gelerntes (Prozeduren, Routine-Skills, Werkzeuge, Lern-Puls, Entscheidungen; für "Was hast du gelernt?"), performance=Metriken, memories=Erinnerungen, prompt=SystemPrompt, tools=Tool-Inventar, full=Alles (Standard)',
                 required: false,
             },
             {
@@ -2645,6 +2645,7 @@ const selfModificationTools: NovaTool[] = [
             return await selfIntrospect(
                 (params.type || 'full') as import('./self-introspect.js').IntrospectType,
                 params.search as string | undefined,
+                { userId: typeof params.userId === 'string' ? params.userId : undefined },
             )
         },
     },

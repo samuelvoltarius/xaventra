@@ -3,6 +3,14 @@
 > Command reference for Nova v2.72. Natural language is the normal control
 > surface; slash commands remain available for explicit audit and operations.
 > Commands work in Telegram (autocomplete), WhatsApp (text), Discord, CLI, and REST API.
+>
+> Telegram autocomplete ("/") and the text `/help` are generated from one list,
+> `COMMAND_MENU` in `src/core/slash-commands.ts` (2.86): owner-relevant entries
+> only, each with a handler (`src/learning/lernen-ohne-slash.test.ts`).
+> "Was hast du gelernt?" needs no command: `nova_introspect` (type `skills`)
+> reads procedures, routine skills, self-built tools, the learning pulse and
+> decisions; the Desktop view **Gedächtnis → Prozeduren** shows the same with
+> an on/off switch per procedure.
 
 ---
 

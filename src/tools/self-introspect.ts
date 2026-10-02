@@ -1,9 +1,18 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { getNovaDataDir } from '../core/data-root.js'
 
 export type IntrospectType = 'state' | 'goals' | 'skills' | 'performance' | 'memories' | 'prompt' | 'tools' | 'full'
 
-const DATA_DIR = join(process.cwd(), '.nova-data')
+export interface IntrospectOptions {
+    /** Runner-injected requester; procedures are shown for this principal only. */
+    userId?: string
+}
+
+/** Data root (NOVA_RUNTIME_ROOT or cwd), resolved per call. */
+function dataDir(...parts: string[]): string {
+    return getNovaDataDir(...parts)
+}
 
 function safeRead(path: string): unknown {
     try {
@@ -50,17 +59,17 @@ async function inspectState(): Promise<string> {
         lines.push(`- Total messages processed: ${gs.totalMessages ?? '?'}`)
     }
 
-    const instanceId = safeReadText(join(DATA_DIR, 'instance-id.txt'))
+    const instanceId = safeReadText(dataDir('instance-id.txt'))
     if (instanceId) lines.push(`- Instance ID: ${instanceId}`)
 
-    const manifest = safeRead(join(DATA_DIR, 'node-manifest.json')) as Record<string, unknown> | null
+    const manifest = safeRead(dataDir('node-manifest.json')) as Record<string, unknown> | null
     if (manifest) {
         lines.push(`- Node: ${manifest.nodeId ?? '?'} (${manifest.role ?? '?'})`)
         lines.push(`- Started: ${manifest.startedAt ?? '?'}`)
         lines.push(`- Channels: ${Array.isArray(manifest.channels) ? manifest.channels.join(', ') : '?'}`)
     }
 
-    const heartbeat = safeRead(join(DATA_DIR, 'heartbeat-log.json')) as Array<Record<string, unknown>> | null
+    const heartbeat = safeRead(dataDir('heartbeat-log.json')) as Array<Record<string, unknown>> | null
     if (Array.isArray(heartbeat) && heartbeat.length > 0) {
         const last = heartbeat[heartbeat.length - 1]
         lines.push(`- Last heartbeat: ${last.ts ?? '?'} (${last.status ?? '?'})`)
@@ -73,7 +82,7 @@ async function inspectGoals(): Promise<string> {
     const lines: string[] = ['## Nova Goals']
 
     // P9: one goal store (goals.json); self-goals carry origin 'selbst'.
-    const stored = safeRead(join(DATA_DIR, 'goals.json')) as { goals?: Array<Record<string, unknown>> } | null
+    const stored = safeRead(dataDir('goals.json')) as { goals?: Array<Record<string, unknown>> } | null
     const goals: Array<Record<string, unknown>> | null = Array.isArray(stored?.goals) ? stored!.goals.map(goal => ({ ...goal, goal: goal.title, description: goal.title })) : null
     if (!Array.isArray(goals) || goals.length === 0) {
         lines.push('No goals found.')
@@ -97,27 +106,61 @@ async function inspectGoals(): Promise<string> {
     return lines.join('\n')
 }
 
-async function inspectSkills(): Promise<string> {
-    const lines: string[] = ['## Nova Skills & Learned Rules']
+/**
+ * 2.86 Punkt 9: "Was hast du gelernt?" from the real, current stores —
+ * procedures, routine skills, self-built tools, the learning pulse and
+ * decisions. The retired skills.json / patterns.json / tool-examples.json
+ * are no longer read (learning/engine.ts RETIRED_FILES).
+ */
+async function inspectSkills(opts: IntrospectOptions = {}): Promise<string> {
+    const lines: string[] = ['## Was ich gelernt habe (aktuelle Speicher)']
+    const missing: string[] = []
 
-    const skills = safeRead(join(DATA_DIR, 'skills', 'skills.json')) as Array<Record<string, unknown>> | null
-    if (Array.isArray(skills) && skills.length > 0) {
-        lines.push(`\n### Skills (${skills.length})`)
-        for (const s of skills.slice(0, 8)) {
-            lines.push(`- ${s.name ?? s.id ?? '?'}: ${String(s.description ?? '').slice(0, 80)}`)
+    try {
+        const { getProcedureStore, procedureStatus } = await import('../learning/procedure-store.js')
+        const store = getProcedureStore()
+        const stats = store.getStats()
+        const entries = store.list(opts.userId)
+        lines.push(`\n### Prozeduren (${stats.procedures} nutzbar${stats.suspended ? `, ${stats.suspended} ausgesetzt/aus` : ''}${stats.retracted ? `, ${stats.retracted} zurückgenommen` : ''})`)
+        if (entries.length === 0) lines.push('- noch keine (entstehen aus zweimal verifizierten Werkzeug-Ergebnissen)')
+        for (const [index, entry] of entries.slice(0, 10).entries()) {
+            const uses = entry.uses || 0
+            const ok = Math.max(0, uses - (entry.failures || 0))
+            lines.push(`${index + 1}. ${entry.problem.slice(0, 80)} · ${entry.toolName || '–'} · ${uses}× (${ok} ok) · ${procedureStatus(entry)}`)
         }
-        if (skills.length > 8) lines.push(`  ... and ${skills.length - 8} more`)
-    }
+        if (entries.length > 10) lines.push(`  … und ${entries.length - 10} weitere`)
+    } catch { missing.push('Prozeduren') }
 
-    const patterns = safeRead(join(DATA_DIR, 'patterns.json')) as Array<Record<string, unknown>> | null
-    if (Array.isArray(patterns) && patterns.length > 0) {
-        lines.push(`\n### Learned Patterns (${patterns.length})`)
-        for (const p of patterns.slice(0, 5)) {
-            lines.push(`- [conf:${p.confidence ?? '?'}] ${p.pattern ?? p.description ?? JSON.stringify(p).slice(0, 80)}`)
+    try {
+        const { getRoutineSkillStore } = await import('../learning/routine-skills.js')
+        const skills = (getRoutineSkillStore()?.list() || []).filter(skill => skill.origin !== 'eingebaut')
+        if (skills.length > 0) {
+            lines.push(`\n### Routine-Skills (${skills.length})`)
+            for (const skill of skills.slice(0, 8)) {
+                lines.push(`- ${skill.name}: ${String(skill.trigger || '').slice(0, 80)} · ${skill.uses}× (${skill.successes} ok) · ${skill.enabled ? 'an' : 'aus'}`)
+            }
         }
-    }
+    } catch { missing.push('Routine-Skills') }
 
-    const decisions = safeRead(join(DATA_DIR, 'decisions', 'decisions.json')) as { items?: Array<Record<string, unknown>> } | null
+    try {
+        const { getSkillProposals } = await import('./skill-builder.js')
+        const tools = getSkillProposals(200).filter(tool => tool.origin !== 'altbestand')
+        if (tools.length > 0) {
+            lines.push(`\n### Selbst gebaute Werkzeuge (${tools.length})`)
+            for (const tool of tools.slice(-8).reverse()) lines.push(`- ${tool.name}: ${String(tool.description || '').slice(0, 80)} · ${tool.status}`)
+        }
+    } catch { missing.push('Werkzeug-Schmiede') }
+
+    try {
+        const { learningFlow, learningFlowLines } = await import('../learning/learning-flow.js')
+        const pulse = learningFlowLines(await learningFlow())
+        if (pulse.length > 0) {
+            lines.push('\n### Lern-Puls')
+            for (const line of pulse) lines.push(`- ${line}`)
+        }
+    } catch { missing.push('Lern-Puls') }
+
+    const decisions = safeRead(dataDir('decisions', 'decisions.json')) as { items?: Array<Record<string, unknown>> } | null
     const active = (decisions?.items || []).filter(item => item.status === 'aktiv' && item.bindend === true)
     if (active.length > 0) {
         lines.push(`\n### Entscheidungen (${active.length} gültig)`)
@@ -126,23 +169,14 @@ async function inspectSkills(): Promise<string> {
         }
     }
 
-    const toolEx = safeRead(join(DATA_DIR, 'tool-examples.json')) as Record<string, unknown> | null
-    if (toolEx && typeof toolEx === 'object') {
-        const toolNames = Object.keys(toolEx)
-        lines.push(`\n### Tool Usage Examples (${toolNames.length} tools tracked)`)
-        for (const t of toolNames.slice(0, 6)) {
-            const examples = toolEx[t] as unknown[]
-            lines.push(`- ${t}: ${Array.isArray(examples) ? examples.length : '?'} examples`)
-        }
-    }
-
+    if (missing.length > 0) lines.push(`\n(nicht lesbar: ${missing.join(', ')})`)
     return lines.join('\n')
 }
 
 async function inspectPerformance(): Promise<string> {
     const lines: string[] = ['## Nova Performance']
 
-    const stats = safeRead(join(DATA_DIR, 'usage-stats.json')) as Record<string, unknown> | null
+    const stats = safeRead(dataDir('usage-stats.json')) as Record<string, unknown> | null
     if (stats) {
         lines.push(`- Total LLM calls: ${stats.totalCalls ?? '?'}`)
         lines.push(`- Total tokens: ${stats.totalTokens ?? '?'}`)
@@ -151,7 +185,7 @@ async function inspectPerformance(): Promise<string> {
         lines.push(`- Cache hit rate: ${stats.cacheHitRate !== undefined ? (Number(stats.cacheHitRate) * 100).toFixed(1) + '%' : '?'}`)
     }
 
-    const toolHealth = safeRead(join(DATA_DIR, 'tool-health.json')) as Record<string, unknown> | null
+    const toolHealth = safeRead(dataDir('tool-health.json')) as Record<string, unknown> | null
     if (toolHealth && typeof toolHealth === 'object') {
         const tools = Object.entries(toolHealth as Record<string, Record<string, unknown>>)
         lines.push(`\n### Tool Health (${tools.length} tools)`)
@@ -166,10 +200,10 @@ async function inspectPerformance(): Promise<string> {
         }
     }
 
-    const dataSizeBytes = dirSize(DATA_DIR)
+    const dataSizeBytes = dirSize(dataDir())
     lines.push(`\n- .nova-data size: ${(dataSizeBytes / 1024 / 1024).toFixed(2)} MB`)
 
-    const lanceStatus = safeRead(join(DATA_DIR, 'lancedb-status.json')) as Record<string, unknown> | null
+    const lanceStatus = safeRead(dataDir('lancedb-status.json')) as Record<string, unknown> | null
     if (lanceStatus) {
         lines.push(`- Vector DB entries: ${lanceStatus.entryCount ?? '?'}`)
         lines.push(`- Vector DB size: ${lanceStatus.sizeMB ? lanceStatus.sizeMB + ' MB' : '?'}`)
@@ -181,7 +215,7 @@ async function inspectPerformance(): Promise<string> {
 async function inspectMemories(): Promise<string> {
     const lines: string[] = ['## Nova Memories']
 
-    const observerDir = join(DATA_DIR, 'observer')
+    const observerDir = dataDir('observer')
     if (existsSync(observerDir)) {
         const files = readdirSync(observerDir).filter(f => f.endsWith('.json'))
         lines.push(`\n### Observer Notes (${files.length} files)`)
@@ -191,7 +225,7 @@ async function inspectMemories(): Promise<string> {
         }
     }
 
-    const insights = safeRead(join(DATA_DIR, 'insights.json')) as Array<Record<string, unknown>> | null
+    const insights = safeRead(dataDir('insights.json')) as Array<Record<string, unknown>> | null
     if (Array.isArray(insights) && insights.length > 0) {
         lines.push(`\n### Insights (${insights.length})`)
         for (const i of insights.slice(0, 5)) {
@@ -199,7 +233,7 @@ async function inspectMemories(): Promise<string> {
         }
     }
 
-    const consolidation = safeRead(join(DATA_DIR, 'memory-consolidation.json')) as Record<string, unknown> | null
+    const consolidation = safeRead(dataDir('memory-consolidation.json')) as Record<string, unknown> | null
     if (consolidation) {
         lines.push(`\n### Memory Consolidation`)
         lines.push(`- Last run: ${consolidation.lastRun ?? '?'}`)
@@ -213,7 +247,7 @@ async function inspectMemories(): Promise<string> {
 async function inspectPrompt(): Promise<string> {
     const lines: string[] = ['## Nova System Prompt Snapshot']
 
-    const snapshot = safeReadText(join(DATA_DIR, 'last-system-prompt.txt'))
+    const snapshot = safeReadText(dataDir('last-system-prompt.txt'))
     if (snapshot) {
         lines.push('(Last cached system prompt)')
         lines.push('')
@@ -223,7 +257,7 @@ async function inspectPrompt(): Promise<string> {
         lines.push('No cached system prompt found.')
         lines.push('The system prompt is built dynamically from:')
         lines.push('- Nova core identity block')
-        lines.push('- L20 self-improvement rules (buildPromptBlock)')
+        lines.push('- Entscheidungen (kausales Gedächtnis) und Prozeduren')
         lines.push('- Admin-Berechtigungen block (for known hosts from hosts.json)')
         lines.push('- Tool descriptions (injected by nova-runner)')
         lines.push('- L7 few-shot tool examples (injected on self-healing retries)')
@@ -279,7 +313,7 @@ async function inspectTools(searchTopic?: string): Promise<string> {
     return lines.join('\n')
 }
 
-export async function selfIntrospect(type: IntrospectType = 'full', extra?: string): Promise<string> {
+export async function selfIntrospect(type: IntrospectType = 'full', extra?: string, opts: IntrospectOptions = {}): Promise<string> {
     const parts: string[] = [`# Nova Self-Introspection — ${type}\n`]
 
     try {
@@ -291,7 +325,7 @@ export async function selfIntrospect(type: IntrospectType = 'full', extra?: stri
                 parts.push(await inspectGoals())
                 break
             case 'skills':
-                parts.push(await inspectSkills())
+                parts.push(await inspectSkills(opts))
                 break
             case 'performance':
                 parts.push(await inspectPerformance())
@@ -310,7 +344,7 @@ export async function selfIntrospect(type: IntrospectType = 'full', extra?: stri
                 parts.push('')
                 parts.push(await inspectGoals())
                 parts.push('')
-                parts.push(await inspectSkills())
+                parts.push(await inspectSkills(opts))
                 parts.push('')
                 parts.push(await inspectPerformance())
                 parts.push('')

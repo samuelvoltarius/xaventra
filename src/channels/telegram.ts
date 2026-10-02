@@ -228,71 +228,9 @@ export class TelegramAdapter implements ChannelAdapter {
         try {
             // Force-clear old commands first (Telegram caches aggressively)
             await this.bot.deleteMyCommands()
-            await this.bot.setMyCommands([
-                // Core
-                { command: 'help', description: '✨ Alle Befehle anzeigen' },
-                { command: 'status', description: '📊 System-Status & Uptime' },
-                { command: 'info', description: 'ℹ️ System-Info & Version' },
-                // AI & Mesh
-                { command: 'ai', description: '🤖 AI Services scannen/anzeigen' },
-                { command: 'nodes', description: '🌐 Mesh-Nodes anzeigen/verwalten' },
-                { command: 'update', description: '📦 Update auf alle Edge-Nodes' },
-                { command: 'preflight', description: '✈️ Pre-Flight Check' },
-                // LLM
-                { command: 'models', description: '🤖 Verfügbare LLM-Modelle' },
-                { command: 'model', description: '🔄 Modell wechseln' },
-                { command: 'think', description: '🧠 Reasoning ein/aus' },
-                // Memory & Learning
-                { command: 'memory', description: '💾 Memory-Status' },
-                { command: 'skills', description: '📚 Gelernte Skills' },
-                { command: 'learn', description: '📖 Neues Werkzeug bauen lassen' },
-                { command: 'werkzeuge', description: '🧰 Selbst gebaute Werkzeuge (Owner)' },
-                // Multi-Agent
-                { command: 'bot', description: '🤖 Bot-Team & Instanzen' },
-                { command: 'subagent', description: '🎯 Sub-Agent starten' },
-                { command: 'agents', description: '🤖 Agent-Status anzeigen' },
-                { command: 'swarm', description: '🐝 Swarm-Status' },
-                // Users
-                { command: 'users', description: '👥 User-Verwaltung' },
-                // Intelligence
-                { command: 'roi', description: '📊 ROI Dashboard (Cost/Value)' },
-                { command: 'graph', description: '🕸️ Knowledge Graph' },
-                { command: 'scan', description: '📁 File-Index scannen' },
-                // Autonomy
-                { command: 'autonom', description: '🚀 Autonomie-Modus' },
-                { command: 'auftrag', description: '🎯 Auftrag starten/verwalten' },
-                { command: 'remind', description: '⏰ Erinnerung setzen' },
-                { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)' },
-                { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)' },
-                { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)' },
-                { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)' },
-                { command: 'entscheidungen', description: '🧾 Gemerkte Entscheidungen & Warum (Owner)' },
-                { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)' },
-                { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)' },
-                { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)' },
-                // Session
-                { command: 'clear', description: '🧹 Konversation zurücksetzen' },
-                { command: 'save', description: '💾 Sitzung speichern' },
-                { command: 'compact', description: '📦 Kontext komprimieren' },
-                // Tools
-                { command: 'task', description: '📋 Aktive Aufgaben' },
-                { command: 'log', description: '📜 Session-Log anzeigen' },
-                { command: 'monitor', description: '📈 System-Monitor' },
-                { command: 'hosts', description: '🖥️ SSH-Hosts verwalten' },
-                { command: 'bots', description: '🤖 Bot-Flotte anzeigen' },
-                // System
-                { command: 'layers', description: '🧠 Layer-Status' },
-                { command: 'verbose', description: '🔊 Verbose-Modus' },
-                { command: 'strict', description: '🔒 Strict-Mode' },
-                { command: 'commands', description: '📝 Alle Befehle auflisten' },
-                { command: 'routine', description: '❤️ Tägliche Routinen (Planer)' },
-                // Self-Evolution & Self-Setup
-                { command: 'setup', description: '🔧 Self-Setup Scan & Plan anzeigen' },
-                { command: 'patches', description: '🧬 Patch-Vorschläge anzeigen' },
-                { command: 'patch', description: '🧬 Patch freigeben / ablehnen' },
-                // Browser
-                { command: 'browser', description: '🌐 Browser-Status & Web-Suche' },
-            ])
+            // 2.86: generated from the one command menu next to the handlers.
+            const { COMMAND_MENU } = await import('../core/slash-commands.js')
+            await this.bot.setMyCommands(COMMAND_MENU.map(({ command, description }) => ({ command, description })))
             console.log('[Nova Telegram] ✓ Slash-Commands registriert')
         } catch (err) {
             console.log(`[Nova Telegram] ⚠ setMyCommands failed: ${err}`)
@@ -754,23 +692,9 @@ export class TelegramAdapter implements ChannelAdapter {
                 }
 
                 if (cmd === 'helptext') {
-                    // Full text help (no buttons)
-                    const helpText = `✨ *Xaventra Befehle*
-
-*System:* /status /layers /model /models /strict /persona /info
-*Reasoning:* /think /reasoning /verbose /debug
-*Tasks:* /task /task history /log
-*Memory:* /memory /skills /learn /lernstatus /korrektur
-*SSH:* /hosts /hosts new /hosts del
-*Mesh:* /nodes /nodes info /nodes sync /nodes restart
-*Session:* /clear /save /compact /apikey
-*Bots:* /bots /bot /swarm
-*Agents:* /agents /factory
-*Projekt:* /project
-*Monitor:* /monitor
-*Autonomie:* /autonom /auftrag /arbeit /remind
-*Pre-Flight:* /preflight /preflight local /preflight <host>
-*Auth:* /login /callback`
+                    // Full text help (no buttons), from the one command menu (2.86)
+                    const { formatCommandMenu } = await import('../core/slash-commands.js')
+                    const helpText = formatCommandMenu()
                     await this.bot.sendMessage(chatId, helpText, { parse_mode: 'Markdown' })
                     await this.bot.answerCallbackQuery(query.id)
                     return
