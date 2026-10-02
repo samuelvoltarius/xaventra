@@ -86,7 +86,8 @@ try {
   app = await electron.launch({ executablePath, args: [`--user-data-dir=${profile}`], cwd: root, env, timeout: 30000 })
   page = await app.firstWindow(); page.setDefaultTimeout(35000)
   await check('packaged client connects to actual Core authority', async () => {
-    await page.locator('#composer').waitFor()
+    await page.locator('.rail').waitFor()
+    await page.locator('.rail [data-section="chat"]').click(); await page.locator('#composer').waitFor()
     const identity = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion() }))
     assert.equal(identity.packaged, true); assert.equal(identity.version, version)
     const bootstrap = await api('/bootstrap'); assert.equal(bootstrap.body.controlPlane.authoritative, true)
@@ -98,7 +99,7 @@ try {
     assert.ok(repairs.body.proposals[0].evidence.rollbackPassed && repairs.body.proposals[0].evidence.recoveryPassed)
     assert.ok(!JSON.stringify(repairs.body).includes('PRIVATE_FIXTURE'))
     assert.equal((await api('/trust/repairs', {}, 'different-user')).status, 401)
-    await page.locator('[data-section="trust"]').click()
+    await page.locator('.rail [data-section="mehr"]').click(); await page.locator('[data-section="trust"]').click()
     await page.locator('.repair-card').filter({ hasText: 'Disposable signed Doctor repair' }).waitFor()
     const card = await page.locator('.repair-card').filter({ hasText: 'Disposable signed Doctor repair' }).innerText()
     assert.ok(card.includes('Rollback') && card.includes('Recovery') && card.includes('bestanden'))
@@ -128,7 +129,7 @@ try {
     const replay = await api('/trust/repairs/patch_desktop_doctor_fixture/approve', { method: 'POST', body: JSON.stringify({ approvalToken: 'desktop-fixture-patch-gate' }) })
     assert.equal(replay.status, 409, 'A terminal repair must not be resubmitted')
     assert.equal(Number(readFileSync(info.activationCountFile, 'utf8')), 1)
-    await page.locator('[data-section="chat"]').click()
+    await page.locator('.rail [data-section="chat"]').click()
   })
   await check('real file tool produces a linked validated Outcome', async () => {
     await page.locator('#composer').fill(`Lies die Datei ${info.allowed} und nenne den Inhalt.`)
@@ -207,11 +208,11 @@ try {
     const resumed = (await api(`/trust/runs/${reply.runId}`)).body
     assert.equal(resumed.tools.length, 0, 'Remembering the prior answer must not repeat the file tool')
     report.restart = { priorPid: pid, restartedPid: info.pid, priorRun, resumedRun: reply.runId }
-    await page.locator('[data-section="trust"]').click()
+    await page.locator('.rail [data-section="mehr"]').click(); await page.locator('[data-section="trust"]').click()
     const receiptCard = page.locator('.repair-card').filter({ hasText: 'Disposable signed Doctor repair' })
     await receiptCard.waitFor()
     assert.ok((await receiptCard.innerText()).includes('unabhängig bestätigt'))
-    await page.locator('[data-section="chat"]').click()
+    await page.locator('.rail [data-section="chat"]').click()
     await page.screenshot({ path: join(root, 'daemon-restarted.jpg'), type: 'jpeg', quality: 85 })
   })
   await check('forbidden file remains denied and cannot become verified completion', async () => {

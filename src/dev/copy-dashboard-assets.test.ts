@@ -2,21 +2,25 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { copyDashboardAssets } from './copy-dashboard-assets.js'
+import { copyDashboardAssets, DASHBOARD_UI_FILES } from './copy-dashboard-assets.js'
 
 describe('copyDashboardAssets', () => {
-    it('copies dashboard assets without relying on a platform shell command', () => {
+    it('copies exactly the shared UI files without a platform shell command and removes old leftovers', () => {
         const root = mkdtempSync(join(tmpdir(), 'nova-dashboard-assets-'))
-        const source = join(root, 'src', 'dashboard', 'public')
-        mkdirSync(join(source, 'nested'), { recursive: true })
-        writeFileSync(join(source, 'index.html'), '<main>Nova</main>')
-        writeFileSync(join(source, 'nested', 'app.js'), 'export const ready = true')
+        const source = join(root, 'desktop', 'renderer')
+        mkdirSync(source, { recursive: true })
+        for (const name of DASHBOARD_UI_FILES) writeFileSync(join(source, name), `/* ${name} */`)
+        writeFileSync(join(source, 'notes.md'), 'not part of the UI')
+        const stale = join(root, 'dist', 'dashboard', 'public')
+        mkdirSync(stale, { recursive: true })
+        writeFileSync(join(stale, 'style.css'), 'old page')
 
         const result = copyDashboardAssets(root)
 
         expect(result.destination).toBe(join(root, 'dist', 'dashboard', 'public'))
-        expect(existsSync(join(result.destination, 'nested', 'app.js'))).toBe(true)
-        expect(readFileSync(join(result.destination, 'index.html'), 'utf8')).toBe('<main>Nova</main>')
+        for (const name of DASHBOARD_UI_FILES) expect(readFileSync(join(result.destination, name), 'utf8')).toBe(`/* ${name} */`)
+        expect(existsSync(join(result.destination, 'notes.md'))).toBe(false)
+        expect(existsSync(join(result.destination, 'style.css'))).toBe(false)
     })
 
     it('fails closed when the authoritative source assets are absent', () => {

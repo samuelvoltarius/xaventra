@@ -2964,7 +2964,7 @@ const desktopControlTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'action', type: 'string', description: 'navigate, open_room, select_model, refresh, focus oder notify', required: true },
-            { name: 'section', type: 'string', description: 'Fuer navigate: chat, bots, nodes, modules, security, trust, memory oder settings', required: false },
+            { name: 'section', type: 'string', description: 'Fuer navigate: heute, chat, arbeit, system, gedaechtnis, mehr, trust, bots, modules, security oder settings', required: false },
             { name: 'room_id', type: 'string', description: 'Fuer open_room: ID des Themenraums', required: false },
             { name: 'model', type: 'string', description: 'Fuer select_model: Modell-ID oder auto', required: false },
             { name: 'message', type: 'string', description: 'Fuer notify: kurze sichtbare Meldung', required: false },

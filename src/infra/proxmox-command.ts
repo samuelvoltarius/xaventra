@@ -47,6 +47,40 @@ async function defaultSelfVmid(): Promise<number | null> {
 // Overview (read only)
 // ---------------------------------------------------------------------------
 
+export interface VmsInventoryView {
+    ok: boolean
+    reason?: string
+    pool?: string
+    usage?: ProxmoxInventory['usage']
+    free?: ProxmoxInventory['free']
+    limits?: ProxmoxInventory['limits']
+    nodes?: Array<{ node: string; status: string; cpu: number; maxcpu: number; mem: number; maxmem: number; uptime: number }>
+    guests?: Array<{ vmid: number; name: string; type: string; node: string; status: string; maxcpu: number; maxmem: number; maxdisk: number; uptime: number; template: boolean; eigene: boolean; selbst: boolean }>
+}
+
+/** Same read path as `/vms` for the Desktop app: typed, no token, no host fingerprint, no write. */
+export async function readVmsInventory(deps: VmsDeps = {}): Promise<VmsInventoryView> {
+    if (isWorker(deps)) return { ok: false, reason: 'Proxmox nur auf dem Main' }
+    const runtime = await runtimeOf(deps)
+    if (runtime.ok === false) return { ok: false, reason: runtime.reason }
+    try {
+        const selfVmid = await selfOf(deps)
+        const inv = await runtime.client.inventory(selfVmid)
+        const mine = new Set(inv.mine.map(guest => guest.vmid))
+        return {
+            ok: true, pool: runtime.config.pool, usage: inv.usage, free: inv.free, limits: inv.limits,
+            nodes: inv.nodes.map(node => ({ node: node.node, status: node.status, cpu: node.cpu, maxcpu: node.maxcpu, mem: node.mem, maxmem: node.maxmem, uptime: node.uptime })),
+            guests: inv.guests.map(guest => ({
+                vmid: guest.vmid, name: guest.name, type: guest.type, node: guest.node, status: guest.status,
+                maxcpu: guest.maxcpu, maxmem: guest.maxmem, maxdisk: guest.maxdisk, uptime: guest.uptime, template: guest.template,
+                eigene: mine.has(guest.vmid), selbst: selfVmid !== null && guest.vmid === selfVmid,
+            })),
+        }
+    } catch (error) {
+        return { ok: false, reason: runtime.client.safe((error as Error)?.message || error) }
+    }
+}
+
 const gb = (bytes: number) => (bytes / 1024 ** 3).toFixed(bytes >= 100 * 1024 ** 3 ? 0 : 1)
 const STATUS_ICON: Record<string, string> = { running: '🟢', stopped: '⚫', paused: '⏸️' }
 

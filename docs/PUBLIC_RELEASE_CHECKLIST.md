@@ -44,8 +44,7 @@ operational requirement; those credentials must never be reused.
 - [ ] Confirm no credential or OAuth migration crosses a node boundary.
 - [ ] Reauthorize legacy privileged users whose grants have no provenance.
 
-Never expose the development REST API without authentication. The legacy
-Next.js dashboard remains an experimental prototype, not an authenticated
-production control plane. See [PUBLIC_EXPORT_REPORT.md](../PUBLIC_EXPORT_REPORT.md)
+Never expose the development REST API without authentication. The browser view
+is the Desktop UI on the dashboard port and needs the Desktop token. See [PUBLIC_EXPORT_REPORT.md](../PUBLIC_EXPORT_REPORT.md)
 for evidence and [the authorization review](AUTHORIZATION_REVIEW_2.77.2.md)
 for the latest permission fix and its validation limits.

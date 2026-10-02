@@ -18,7 +18,7 @@ The execution order is:
    `completeValidated`, after the same run has persisted a successful,
    non-pending Execution Kernel validation. A signed mesh delivery is evidence,
    not completion authority.
-6. The existing dashboard exposes those runs in its **Trust** tab.
+6. The Desktop app and its browser view expose those runs under **Mehr › Belege & Reparaturen**.
 
 ## Enabling the SDK backend
 

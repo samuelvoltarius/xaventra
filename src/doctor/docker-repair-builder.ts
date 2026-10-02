@@ -66,7 +66,7 @@ export function createDockerRepairBuilder(options: { imageId: string; stagingRoo
         validatePatchSnapshot(compiled)
         if (!Object.keys(compiled).length || Object.keys(compiled).some(f => !/^dist\/.+\.(?:[cm]?js|map|json|ts)$/.test(f))) throw Error('Unexpected compiled artifact')
         // Assets are copied as data by trusted code, never by a candidate npm script.
-        for (const [file, bytes] of Object.entries(candidate)) if (file.startsWith('src/dashboard/public/')) compiled[file.replace(/^src\//, 'dist/')] = bytes
+        for (const [file, bytes] of Object.entries(candidate)) if (/^desktop\/renderer\/(?:index\.html|bridge\.js|app\.js|styles\.css)$/.test(file)) compiled[file.replace(/^desktop\/renderer\//, 'dist/dashboard/public/')] = bytes
         compiled['package.json'] = candidate['package.json']
         validatePatchSnapshot(compiled)
         const compiledHash = repairHash(compiled)

@@ -1598,12 +1598,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const TOTAL_TIMEOUT = Number(process.env.NOVA_AGENT_TIMEOUT_MS)
             || (process.env.NOVA_OS_MODE === 'true' ? 2_400_000 : 300_000)
 
-        // Dashboard: signal that Nova is thinking
-        try {
-            const { updateNovaStatus: setStatus } = await import('../dashboard/server.js')
-            setStatus('thinking', content.slice(0, 80))
-        } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
-
         // Task Tracker: start tracking this task. The id lets a concurrent
         // request's completion leave this task alone.
         let trackedTaskId: string | undefined
@@ -1666,10 +1660,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 } catch (err) {
                     console.log(`[Pipeline] Progress heartbeat failed: ${err} `)
                 }
-                try {
-                    const { updateNovaStatus: setStatus } = await import('../dashboard/server.js')
-                    setStatus('thinking', `${lastProgress} (${elapsed}s)`)
-                } catch { /* dashboard optional */ }
             }, 25_000)
             : null
         if (progressTimer?.unref) progressTimer.unref()
@@ -2139,19 +2129,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 // Typed for the optional task id so this compiles before and after it exists.
                 ;(completeTask as (failed?: boolean, taskId?: string) => void)(Boolean((result as any).error) || result.validation?.success !== true, trackedTaskId)
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-            // Dashboard: update stats
-            try {
-                const { updateNovaStatus: setStatus, updateLastMessage: setLastMsg, trackTokens: addTokens } = await import('../dashboard/server.js')
-                setStatus('idle')
-                setLastMsg(finalContent.slice(0, 200))
-                // Rough token estimate: ~4 chars per token for input+output
-                const estInputTokens = Math.round(content.length / 4)
-                const estOutputTokens = Math.round(finalContent.length / 4)
-                const estTokens = estInputTokens + estOutputTokens
-                const estCost = estTokens * 0.000001 // rough estimate
-                addTokens(estTokens, estCost)
-            } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
-
             // L14 CostTracker: Track tokens for /status
             try {
                 const costTracker = (state as any).costTracker
@@ -2276,12 +2253,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 await resilience.trackError(category, errMsg, 'high')
             }
         } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
-        // Dashboard: set back to idle on error
-        try {
-            const { updateNovaStatus: setStatus } = await import('../dashboard/server.js')
-            setStatus('idle')
-        } catch (err) { console.debug('[Pipeline] dashboard not available:', err) }
 
         // A deadline or abort stopped the agent on purpose. Never replace it
         // with an unguarded plain completion (no tools, no evidence, no RBAC).

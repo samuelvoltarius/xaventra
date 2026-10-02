@@ -44,7 +44,9 @@ export interface DesktopStoreOptions {
 
 interface PickerButton { token: string; action: 'open' | 'release'; desktopId: string; mode: DesktopMode; linkHash?: Buffer }
 interface Picker { id: string; ownerId: string; expiresAt: number; buttons: PickerButton[]; used: boolean }
-interface LinkRecord { hash: Buffer; desktopId: string; mode: DesktopMode; ownerId: string; expiresAt: number; redeemed: boolean; revoked: boolean; auditId?: string }
+/** Where the owner asked for the link: Telegram button or the authenticated Desktop app (audit label only). */
+export type DesktopLinkVia = 'telegram' | 'desktop'
+interface LinkRecord { hash: Buffer; desktopId: string; mode: DesktopMode; ownerId: string; via: DesktopLinkVia; expiresAt: number; redeemed: boolean; revoked: boolean; auditId?: string }
 export interface DesktopSession {
     auditId: string
     hash: Buffer
@@ -169,14 +171,14 @@ export class DesktopDirectStore {
     // links
     // -----------------------------------------------------------------------
 
-    issueLink(desktop: DirectDesktop, mode: DesktopMode, ownerId: string): { url: string; expiresAt: number; hash: Buffer } {
+    issueLink(desktop: DirectDesktop, mode: DesktopMode, ownerId: string, via: DesktopLinkVia = 'telegram'): { url: string; expiresAt: number; hash: Buffer } {
         this.sweep()
         const token = newSecret()
         const hash = sha256(token)
         const expiresAt = this.now() + this.config.linkTtlMs
-        this.links.push({ hash, desktopId: desktop.id, mode, ownerId, expiresAt, redeemed: false, revoked: false })
+        this.links.push({ hash, desktopId: desktop.id, mode, ownerId, via, expiresAt, redeemed: false, revoked: false })
         if (this.links.length > MAX_LINKS) this.links = this.links.slice(-MAX_LINKS)
-        this.audit('link-ausgegeben', { by: `telegram:${ownerId}`, desktop: desktop.id, mode: AUDIT_MODE[mode], expiresAt: iso(expiresAt) })
+        this.audit('link-ausgegeben', { by: `${via}:${ownerId}`, desktop: desktop.id, mode: AUDIT_MODE[mode], expiresAt: iso(expiresAt) })
         return { url: `${this.config.publicBaseUrl}/desktop/s/${token}`, expiresAt, hash }
     }
 
@@ -217,7 +219,7 @@ export class DesktopDirectStore {
         link.auditId = session.auditId
         if (link.mode === 'control' && desktop.agentInput) session.release = holdAgentDesktopInput(session.auditId, desktop.id)
         this.sessions.push(session)
-        this.audit('sitzung-start', { session: session.auditId, by: `telegram:${link.ownerId}`, desktop: desktop.id, mode: AUDIT_MODE[link.mode], sourceIp: session.sourceIp, agentInputPaused: Boolean(session.release) })
+        this.audit('sitzung-start', { session: session.auditId, by: `${link.via}:${link.ownerId}`, desktop: desktop.id, mode: AUDIT_MODE[link.mode], sourceIp: session.sourceIp, agentInputPaused: Boolean(session.release) })
         return { code: 'ok', sessionId, session }
     }
 

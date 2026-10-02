@@ -497,16 +497,3 @@ jobs:
             .nova-data/desktop-qa/**/*.jpg
           retention-days: 14
           include-hidden-files: true
-
-  legacy-dashboard:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: dashboard/package-lock.json
-      - run: npm ci --prefix dashboard --ignore-scripts
-      - run: npm audit --prefix dashboard --package-lock-only --audit-level=high
-      - run: npm run --prefix dashboard build

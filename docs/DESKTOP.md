@@ -90,6 +90,19 @@ follow-up. The raw base64 payload is not stored in the command queue and the
 Desktop path does not send the image to Telegram.
 Core retains at most 30 captures and removes captures older than seven days.
 
+## Oberfläche (2.83): ein Fenster zum Mitschauen
+
+Die App öffnet auf **Heute** (was sie tut, offene Knopf-Karten, Berichtsvorschau,
+Gedanken). Weitere Bereiche: **Unterhaltung**, **Arbeit**, **System**,
+**Gedächtnis**; Fachseiten (Belege, Spezialisten, Studio, Abwehr, Knoten
+aufnehmen) liegen unter **Mehr**. Farbschema System/Hell/Dunkel in den
+Einstellungen. Dieselben Dateien liefert der Main im Browser aus
+([DASHBOARD.md](DASHBOARD.md)); die Ansichten brauchen den Owner
+(`NOVA_DESKTOP_API_TOKEN`). Karten werden über `answerApprovalCard` beantwortet,
+Desktops öffnen sich über den Einmal-Link von Desktop-Direkt in einem eigenen
+Fenster. Konzept, Endpunkte und was entfiel: [DESKTOP_REDESIGN.md](DESKTOP_REDESIGN.md).
+Vorschau ohne Core: `node scripts/preview-desktop-ui.mjs` → `http://127.0.0.1:<port>/app/`.
+
 ## Chat and settings
 
 - Messages scroll inside the fixed application shell; the composer remains

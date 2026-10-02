@@ -1,23 +1,11 @@
 /**
- * Dashboard access guard (INT-10).
- *
- * The dashboard has no login. Its only owner guarantee is that it is used from
- * the machine it runs on. The bind host is configurable (dashboard.host), so
- * the guarantee is enforced per request for everything that exposes memory,
- * conversations or configuration: the peer address must be loopback AND the
- * Host header must name a loopback host (defeats DNS rebinding, where a
- * foreign web page reaches 127.0.0.1 under its own host name). WebSocket
- * upgrades additionally reject foreign browser origins (cross-site WebSocket
- * hijacking).
+ * Access guard for the browser path of the one UI (and the Desktop-Direkt
+ * gateway): loopback detection, DNS-rebinding Host check, same-origin check
+ * and the constant-time token comparison. Owner data itself is decided by the
+ * Desktop API (desktop-api.ts, NOVA_DESKTOP_API_TOKEN).
  */
 
 import { timingSafeEqual } from 'node:crypto'
-
-/** Routes that expose memory, conversations, knowledge or configuration. */
-export const DASHBOARD_OWNER_ONLY_PREFIXES: readonly string[] = Object.freeze([
-    '/api/memory', '/api/core-facts', '/api/graph', '/api/journal', '/api/sessions',
-    '/api/chat', '/api/summaries', '/api/config', '/api/logs', '/api/cold-storage',
-])
 
 export function isLoopbackAddress(address: string | undefined | null): boolean {
     const ip = String(address || '').trim().toLowerCase()
@@ -38,19 +26,6 @@ function hostnameOf(value: string | undefined): string {
 export function isLoopbackHostHeader(host: string | undefined): boolean {
     const name = hostnameOf(host)
     return name === 'localhost' || name === '::1' || isLoopbackAddress(name)
-}
-
-export interface DashboardRequestLike {
-    remoteAddress?: string | null
-    host?: string
-    origin?: string
-}
-
-/** Owner-only: loopback peer, loopback Host header, and (if sent) an Origin equal to that Host. */
-export function isDashboardOwnerRequest(request: DashboardRequestLike): boolean {
-    if (!isLoopbackAddress(request.remoteAddress)) return false
-    if (!isLoopbackHostHeader(request.host)) return false
-    return isSameOriginRequest(request.host, request.origin)
 }
 
 /**
@@ -82,23 +57,14 @@ export function isAllowedDashboardHost(host: string | undefined, configuredHosts
     return false
 }
 
-/** Cookie set by `/?token=…`; HttpOnly + SameSite=Strict, so foreign sites never send it. */
-export const DASHBOARD_TOKEN_COOKIE = 'nova_dashboard_token'
-
 type HeaderBag = Record<string, string | string[] | undefined>
 
-/** Token from `Authorization: Bearer`, `x-nova-dashboard-token` or the dashboard cookie. */
+/** Token from `Authorization: Bearer` or `x-nova-dashboard-token` (no cookie: the UI sends it per request). */
 export function dashboardTokenFromHeaders(headers: HeaderBag): string {
     const auth = typeof headers.authorization === 'string' ? headers.authorization.trim() : ''
     if (/^bearer\s+/i.test(auth)) return auth.replace(/^bearer\s+/i, '').trim()
     const header = headers['x-nova-dashboard-token']
     if (typeof header === 'string' && header.trim()) return header.trim()
-    const cookie = typeof headers.cookie === 'string' ? headers.cookie : ''
-    for (const part of cookie.split(';')) {
-        const index = part.indexOf('=')
-        if (index < 0 || part.slice(0, index).trim() !== DASHBOARD_TOKEN_COOKIE) continue
-        try { return decodeURIComponent(part.slice(index + 1).trim()) } catch { return '' }
-    }
     return ''
 }
 
@@ -110,6 +76,3 @@ export function isValidDashboardToken(supplied: unknown, expected: string | unde
     return a.length === b.length && timingSafeEqual(a, b)
 }
 
-export function isDashboardOwnerOnlyPath(path: string): boolean {
-    return DASHBOARD_OWNER_ONLY_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`))
-}

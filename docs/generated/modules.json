@@ -2434,26 +2434,16 @@
       ]
     },
     {
-      "module": "src/dashboard/mesh-update.ts",
-      "imports": []
-    },
-    {
       "module": "src/dashboard/server.ts",
       "imports": [
-        "../config/config-path.js",
-        "../core/atomic-storage.js",
         "../infra/gateway-auth.js",
-        "../security/secret-redaction.js",
         "./access-guard.js",
         "./listener.js",
-        "./mesh-update.js",
         "express",
         "node:fs",
         "node:http",
         "node:path",
-        "node:url",
-        "ws",
-        "zod"
+        "node:url"
       ]
     },
     {
@@ -2544,6 +2534,7 @@
         "./bot-profile-store.js",
         "./desktop-agent-context.js",
         "./desktop-control.js",
+        "./desktop-views.js",
         "./external-agent-registry.js",
         "./model-control.js",
         "./module-catalog.js",
@@ -2560,6 +2551,16 @@
       "imports": [
         "../core/atomic-storage.js",
         "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/desktop-views.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
         "node:fs",
         "node:path"
       ]

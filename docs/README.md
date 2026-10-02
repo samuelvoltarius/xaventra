@@ -20,7 +20,8 @@ authoritative source files and required evidence.
 | [Tools Reference](./TOOLS.md) | Available tools and usage |
 | [Docker Host Access](./HOST_ACCESS.md) | Authenticated inventory, signed lifecycle permits, operator installation and recovery |
 | [Screenshot Delivery](./SCREENSHOT_DELIVERY.md) | Exact capture enrollment, locked-session failures and correlated Telegram acceptance |
-| [Dashboard](./DASHBOARD.md) | Dashboard user guide |
+| [Dashboard](./DASHBOARD.md) | Die Desktop-Oberfläche im Browser |
+| [Desktop-Neugestaltung](./DESKTOP_REDESIGN.md) | Bereiche, Endpunkte, was entfiel |
 | [Xaventra Desktop](./DESKTOP.md) | Cross-platform app, Studio, specialists, rooms, models and node enrollment |
 | [Self-Update](./SELF_UPDATE.md) | Auto-patching + L24 prompt optimization |
 | [Telegram Bot](./TELEGRAM.md) | Telegram integration + wake-up calls |
@@ -54,7 +55,7 @@ completion of the [RC gates](./RELEASE_PLAN.md).
 ## 🚀 Quick Links
 
 - **Start Xaventra**: `npm run xaventra`
-- **Dashboard**: `http://localhost:18789`
+- **Browser**: `http://127.0.0.1:3011/` (dieselbe Oberfläche wie die Desktop-App)
 - **Config**: `xaventra.config.json`
 - **Persona**: `SOUL.md` (editierbar, [LOCKED] Sections geschützt)
 - **Logs**: `.nova-data/`

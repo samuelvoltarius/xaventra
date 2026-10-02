@@ -15,7 +15,7 @@ and independently accepted.
 3. A separate publisher repeats isolated baseline, candidate, rollback and
    recovery checks. A fixed compiler runs non-root, read-only, without network,
    credentials, host directories or a Docker socket inside its container.
-4. Trusted packaging copies compiler output and dashboard assets as data, never
+4. Trusted packaging copies compiler output and the UI assets (`desktop/renderer`) as data, never
    running candidate npm scripts or Dockerfiles. Dependency-image identity,
    lock integrity, image ancestry and output hashes are checked.
 5. Sign the artifact and create a **stopped** candidate with fresh writable

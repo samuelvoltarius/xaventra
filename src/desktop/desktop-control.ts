@@ -5,7 +5,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 
 export type DesktopControlAction = 'navigate' | 'open_room' | 'select_model' | 'refresh' | 'focus' | 'notify'
     | 'capture_screen' | 'workspace_operation'
-export type DesktopSection = 'chat' | 'bots' | 'nodes' | 'modules' | 'security' | 'trust' | 'memory' | 'settings'
+export type DesktopSection = 'heute' | 'chat' | 'arbeit' | 'system' | 'gedaechtnis' | 'mehr' | 'bots' | 'nodes' | 'modules' | 'security' | 'trust' | 'memory' | 'settings'
 
 export interface DesktopControlCommand {
     id: string
@@ -49,7 +49,7 @@ export interface DesktopWorkspaceResult {
 
 export type DesktopControlResult = DesktopCaptureResult | DesktopWorkspaceResult
 
-const SECTIONS = new Set<DesktopSection>(['chat', 'bots', 'nodes', 'modules', 'security', 'trust', 'memory', 'settings'])
+const SECTIONS = new Set<DesktopSection>(['heute', 'chat', 'arbeit', 'system', 'gedaechtnis', 'mehr', 'bots', 'nodes', 'modules', 'security', 'trust', 'memory', 'settings'])
 const ACTIONS = new Set<DesktopControlAction>(['navigate', 'open_room', 'select_model', 'refresh', 'focus', 'notify', 'capture_screen', 'workspace_operation'])
 
 function clean(value: unknown, limit: number): string {

@@ -555,17 +555,32 @@ export function askAgainFor(kind: string, dataDir: string = getNovaDataDir()): s
 }
 
 /** /arbeit [pause <id>|weiter <id>|fragen <art>] — owner only. */
+/** Read-only state behind /arbeit (also used by the Desktop app); persisted data even while off. */
+export function readArbeitState(): { enabled: boolean; missions: Mission[]; responsibilities: Responsibility[]; promoted: PromotedKind[]; grants: StandingGrant[] } {
+    const dataDir = getNovaDataDir()
+    const current = runtime
+    let missions: Mission[]
+    let responsibilities: Responsibility[]
+    if (current) {
+        missions = current.missions.list()
+        responsibilities = current.responsibilities.list()
+    } else {
+        const noPorts = { thoughts: { add: () => undefined }, cards: { create: () => ({ ok: false as const, reason: 'aus' }) } }
+        const manager = createResponsibilityManager({ dataDir, localNodeId: 'lokal', ports: noPorts })
+        const engine = createMissionEngine({ dataDir, localNodeId: 'lokal', isMain: () => false, responsibilities: manager, signals: () => collectProductionSignals(), executors: [], ports: noPorts })
+        missions = engine.list()
+        responsibilities = manager.list()
+    }
+    return { enabled: settings.enabled, missions, responsibilities, promoted: [...promotedKinds({ dataDir })], grants: [...standingGrants({ dataDir })] }
+}
+
 export async function handleArbeitCommand(args: string, principal: { permission?: string; principalId?: string; rawUserId?: string } | undefined): Promise<string> {
     if (principal?.permission !== 'owner') return '⛔ /arbeit ist nur für den Owner.'
     const [sub = '', id = ''] = String(args || '').trim().split(/\s+/)
     const current = runtime
     if (!current) {
-        // Read-only view of what is persisted, even while off.
-        const dataDir = getNovaDataDir()
-        const noPorts = { thoughts: { add: () => undefined }, cards: { create: () => ({ ok: false as const, reason: 'aus' }) } }
-        const manager = createResponsibilityManager({ dataDir, localNodeId: 'lokal', ports: noPorts })
-        const engine = createMissionEngine({ dataDir, localNodeId: 'lokal', isMain: () => false, responsibilities: manager, signals: () => collectProductionSignals(), executors: [], ports: noPorts })
-        return formatArbeit(engine.list(), manager.list(), { enabled: settings.enabled, promoted: promotedKinds({ dataDir }), grants: standingGrants({ dataDir }) })
+        const state = readArbeitState()
+        return formatArbeit(state.missions, state.responsibilities, { enabled: state.enabled, promoted: state.promoted, grants: state.grants })
     }
     const by = `owner:${principal.principalId || principal.rawUserId || '?'}`
     if (sub === 'pause' || sub === 'weiter') {

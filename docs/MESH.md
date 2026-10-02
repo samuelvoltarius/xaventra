@@ -40,7 +40,7 @@ Nova's mesh distributes intelligence across multiple edge devices via Tailscale 
 ┌─────────────────────────────────────────────────────────┐
 │ MASTER (Windows PC)                                     │
 │   ├── WebSocket Server :9090 (Event Hub)               │
-│   ├── HTTP API :18789 (Dashboard + REST)               │
+│   ├── Desktop-API + Oberfläche :3011                  │
 │   ├── All 23 Layers active                             │
 │   ├── Heartbeat: 30s (Supervisor) + 60s (Mesh Registry)│
 │   └── VRAM Manager + Predictive Provisioning           │
