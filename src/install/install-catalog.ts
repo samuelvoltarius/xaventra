@@ -44,9 +44,21 @@ export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlama
 export type PlaceholderName = typeof PLACEHOLDERS[number]
 /** Programs a catalog entry may start. Everything else is refused at load. */
 export const EXECUTABLE_ALLOWLIST: readonly string[] = Object.freeze([APT_GET, OLLAMA, TEST_BIN, '/usr/bin/ffmpeg', '{node}'])
+/**
+ * 2.85 first start: small local chat models, offered by hardware when no local
+ * model exists (never installed without the card). minMemoryGb = total RAM of
+ * the computer that Ollama shares with the system.
+ */
+export const OLLAMA_CHAT_MODELS: Readonly<Record<string, { sizeMb: number; minMemoryGb: number }>> = Object.freeze({
+    'llama3.2': Object.freeze({ sizeMb: 2000, minMemoryGb: 6 }),
+    qwen3: Object.freeze({ sizeMb: 5200, minMemoryGb: 14 }),
+})
 /** ollama-model:<name> only for this fixed list. */
-export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3'])
-const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({ 'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250 })
+export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3', ...Object.keys(OLLAMA_CHAT_MODELS)])
+const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({
+    'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250,
+    ...Object.fromEntries(Object.entries(OLLAMA_CHAT_MODELS).map(([name, model]) => [name, model.sizeMb])),
+})
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}(?::[a-z0-9][a-z0-9._-]{0,60})?$/
 const PACKAGE_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,62}$/

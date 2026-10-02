@@ -4856,6 +4856,25 @@
       ]
     },
     {
+      "module": "src/onboarding/first-start-doctor.ts",
+      "imports": [
+        "../install/install-catalog.js",
+        "../llm/local-llm.js",
+        "./first-start.js",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/onboarding/first-start.ts",
+      "imports": [
+        "../config/config-path.js",
+        "dotenv",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/planner/auto-reminders.ts",
       "imports": [
         "../core/atomic-storage.js",

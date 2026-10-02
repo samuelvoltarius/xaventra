@@ -815,6 +815,14 @@ async function startDaemon() {
     } catch (err) {
         console.log(`[Nova] ⚠ Self-Setup Scan nicht verfügbar: ${err}`)
     }
+    // Erster Start (2.85 Paket B): Doctor + Selbsteinrichtung zuerst, im Hintergrund.
+    // Bericht "was ich getan habe" landet im Ersteinrichtungs-Marker (Desktop-App).
+    if (firstStart) {
+        void import('./onboarding/first-start-doctor.js')
+            .then(({ runAndStoreFirstStartDoctor }) => runAndStoreFirstStartDoctor())
+            .then(report => { if (report) console.log(`[Nova] ✓ Erster Start: ${report.items.length} Schritte geprüft (Bericht in der Desktop-App)`) })
+            .catch(err => console.warn(`[Nova] ⚠ Erster Start: Doctor-Lauf gescheitert: ${err}`))
+    }
 
     // ============================================
     // Initialize Layer 0 - Resilience & Self-Repair
