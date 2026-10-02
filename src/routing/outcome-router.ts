@@ -57,6 +57,16 @@ export interface ValidatedRoutingSampleInput {
     evidenceRefs: string[]
 }
 
+/** 2.83.0 Lernkurve: success per task type, last 7 days against the 7 before. */
+export interface SuccessTrendWindow { samples: number; successes: number }
+export interface SuccessTrend {
+    taskTypes: Array<{ taskType: string; previous: SuccessTrendWindow; current: SuccessTrendWindow }>
+    /** Validated runs the owner later rejected (invalidated), by rejection time. */
+    rejected: { previous: number; current: number }
+}
+const TREND_WINDOW_MS = 7 * 24 * 60 * 60_000
+const TREND_MIN_SAMPLES = 5
+
 interface PersistedRoutingSample {
     version: 1
     runId: string
@@ -189,6 +199,39 @@ export class OutcomeRouter {
         sample.evidenceHash = sampleHash(hashInput)
         this.persistSamples(samples)
         return true
+    }
+
+    /**
+     * Read-only learning curve over all principals (counts only, no text): per
+     * task type the success rate of the last 7 days against the 7 days before,
+     * only task types with at least 5 samples in both windows. A run the owner
+     * later rejected counts as a failure in its validation window.
+     */
+    successTrend(now = Date.now()): SuccessTrend {
+        const windowOf = (at: string | undefined): 'current' | 'previous' | null => {
+            const time = Date.parse(String(at))
+            if (!Number.isFinite(time) || time > now) return null
+            if (time > now - TREND_WINDOW_MS) return 'current'
+            if (time > now - 2 * TREND_WINDOW_MS) return 'previous'
+            return null
+        }
+        const groups = new Map<string, Record<'current' | 'previous', SuccessTrendWindow>>()
+        const rejected = { previous: 0, current: 0 }
+        for (const sample of this.loadSamples()) {
+            const rejectedIn = sample.invalidatedAt ? windowOf(sample.invalidatedAt) : null
+            if (rejectedIn) rejected[rejectedIn]++
+            const window = windowOf(sample.validatedAt)
+            if (!window) continue
+            const group = groups.get(sample.taskType) || { current: { samples: 0, successes: 0 }, previous: { samples: 0, successes: 0 } }
+            group[window].samples++
+            if (sample.success && !sample.invalidatedAt) group[window].successes++
+            groups.set(sample.taskType, group)
+        }
+        const taskTypes = [...groups]
+            .filter(([, group]) => group.current.samples >= TREND_MIN_SAMPLES && group.previous.samples >= TREND_MIN_SAMPLES)
+            .sort((a, b) => (b[1].current.samples + b[1].previous.samples) - (a[1].current.samples + a[1].previous.samples) || a[0].localeCompare(b[0]))
+            .map(([taskType, group]) => ({ taskType, previous: group.previous, current: group.current }))
+        return { taskTypes, rejected }
     }
 
     getTrainingStatus(userId?: string): OutcomeTrainingStatus {

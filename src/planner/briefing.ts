@@ -7,6 +7,10 @@
  * P8: plus „Fragen gesammelt“ (non-time-critical Knopf-Karten bundled into the
  * report; released after delivery so their buttons follow right away) and
  * „Selbst übernommen“ (trust-ladder promotions/resets in the window).
+ *
+ * 2.83.0: „Lernkurve“ (evening only): success rate per task type this week
+ * against last week from the Kernel-validated outcome samples, plus owner
+ * rejections and optional suggestion lines. Counts only, never request text.
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -18,6 +22,7 @@ import { cleanText } from './delivery-port.js'
 import type { JobHandler } from './planner.js'
 import { isOpenThought, type Thought, type ThoughtStore } from './thoughts.js'
 import { formatZoned } from './time.js'
+import type { SuccessTrend, SuccessTrendWindow } from '../routing/outcome-router.js'
 
 export type BriefingKind = 'morgen' | 'abend'
 
@@ -33,6 +38,17 @@ export interface BriefingSources {
     cards?: { bundled(): Array<{ id: string; art: string; titel: string; vorschlag?: string }>; release(): number }
     /** P8: trust ladder changes (action-policy.ts). */
     trust?: { changesSince(since: number, until: number): { promoted: Array<{ kind: string; text: string }>; reset: Array<{ kind: string; reason: string }> } }
+    /** 2.83.0 Lernkurve (only the evening report). */
+    learning?: {
+        /** Outcome router (Kernel-validated samples): this week against last week. */
+        successTrend(now: number): SuccessTrend
+        /**
+         * Optional extra lines about suggestions (accepted/rejected,
+         * suppressed suggestion kinds) from decisions.ts. Each line only when
+         * there is data; without this input the section stays as it is.
+         */
+        suggestionLines?(since: number, until: number): string[]
+    }
 }
 
 export interface Briefing {
@@ -40,7 +56,7 @@ export interface Briefing {
     text: string
     /** Held-back thoughts this briefing reports (marked `im-bericht` after delivery). */
     thoughtIds: string[]
-    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills' | 'gemerkt' | 'gesammelt' | 'vertrauen', number>
+    counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills' | 'gemerkt' | 'gesammelt' | 'vertrauen' | 'lernkurve', number>
 }
 
 const MAX_LINES = 5
@@ -78,6 +94,24 @@ function section(title: string, items: string[]): string[] {
     const shown = items.slice(0, MAX_LINES).map(line)
     if (items.length > MAX_LINES) shown.push(`• … und ${items.length - MAX_LINES} weitere`)
     return ['', `${title}:`, ...shown]
+}
+
+const percent = (window: SuccessTrendWindow) => `${Math.round((window.successes / window.samples) * 100)} %`
+
+/** Lernkurve: at most MAX_LINES; the extra lines are never cut off by the trend. */
+function learningCurve(sources: BriefingSources, since: number, now: number): string[] {
+    if (!sources.learning) return []
+    let trend: SuccessTrend | null = null
+    try { trend = sources.learning.successTrend(now) } catch { trend = null }
+    const extras: string[] = []
+    if (trend && (trend.rejected.current > 0 || trend.rejected.previous > 0)) {
+        extras.push(`Owner-Zurückweisungen: ${trend.rejected.current} (Vorwoche ${trend.rejected.previous})`)
+    }
+    try { extras.push(...(sources.learning.suggestionLines?.(since, now) || []).filter(item => typeof item === 'string' && item.trim())) } catch { /* optional input */ }
+    const shownExtras = extras.slice(0, MAX_LINES - 1)
+    const rates = (trend?.taskTypes || []).slice(0, MAX_LINES - shownExtras.length).map(item =>
+        `${item.taskType} ${percent(item.previous)} → ${percent(item.current)} (Proben ${item.previous.samples}/${item.current.samples})`)
+    return [...rates, ...shownExtras]
 }
 
 export function buildBriefing(kind: BriefingKind, sources: BriefingSources, since: number, now: number): Briefing {
@@ -141,6 +175,8 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ]
     } catch { trustLines = [] }
 
+    const curve = kind === 'abend' ? learningCurve(sources, since, now) : []
+
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
         ...section('Erledigt', done),
@@ -153,6 +189,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Skills', skills),
         ...section('Zurückgehalten', held),
         ...section('Neu gemerkt (Entscheidungen)', remembered),
+        ...section('Lernkurve', curve),
     ]
     const sinceText = formatZoned(since, sources.timeZone)
     const text = body.length === 0
@@ -162,7 +199,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         title,
         text: cleanText(text, 3500),
         thoughtIds: heldThoughts.map(t => t.id),
-        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length, gesammelt: bundled.length, vertrauen: trustLines.length },
+        counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length, gesammelt: bundled.length, vertrauen: trustLines.length, lernkurve: curve.length },
     }
 }
 

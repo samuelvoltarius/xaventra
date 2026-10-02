@@ -229,10 +229,12 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     }
     const { bundledCards, releaseBundledCards } = await import('../core/approval-cards.js')
     const { trustChangesSince } = await import('../core/action-policy.js')
+    const { getOutcomeRouter } = await import('../routing/outcome-router.js')
     const briefingSources = {
         dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone,
         cards: { bundled: () => bundledCards({ dataDir }), release: () => releaseBundledCards({ dataDir }) },
         trust: { changesSince: (since: number, until: number) => trustChangesSince(since, until, { dataDir }) },
+        learning: { successTrend: (now: number) => getOutcomeRouter().successTrend(now) },
     }
     for (const [id, kind, time] of [
         [SYSTEM_JOB_IDS.briefingMorgen, 'morgen', settings.briefing.morning],

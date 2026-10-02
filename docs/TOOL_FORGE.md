@@ -63,6 +63,15 @@ Register. Code: `src/tools/skill-builder.ts` (Register, Bau, Aktivierung, Ausfü
 7. **Fehlschläge** — 2 in Folge: mit lokalem Lern-Modell entsteht eine neue Version
    (alte bleibt in `history`, die letzten 5), die wieder alle Tests bestehen muss;
    sonst wird das Werkzeug abgeschaltet (Gedanke, Warnung).
+8. **Zurück in den Routine-Skill** (2.83.0) — entstand ein **lesendes** Werkzeug aus der
+   Wiederholung eines Routine-Skills, ersetzt es bei der Aktivierung dort den
+   allgemeinen Schritt (`execute_python`, `fetch_url` …) in einer neuen Skill-Version;
+   der Bedarf in `forge/bedarf.json` merkt sich `skillId` und das ersetzte Werkzeug.
+   Die neue Version wird gegen die alte gemessen: 2 Fehlschläge in Folge oder nach
+   5 Läufen eine schlechtere Quote als die alte Version → der Skill geht selbst auf die
+   alte Version zurück (bleibt an; Gedanke „Werkzeug X hat Skill Y nicht verbessert“).
+   Sonst nach 5 Läufen bestätigt (Gedanke „Skill Y nutzt jetzt X“, Abendbericht).
+   Schreibende, externe und physische Werkzeuge ändern den Skill nie automatisch.
 
 ## Die Sandbox
 
