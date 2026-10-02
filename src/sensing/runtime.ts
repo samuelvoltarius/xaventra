@@ -88,6 +88,14 @@ export function listWatchableDevices(): Array<{ name: string; host: string; port
     return monitoredDevices(state.dataDir).map(device => ({ name: device.name, host: device.host, port: device.port }))
 }
 
+/**
+ * Wächter 2.85 (selbst abgeleitete Ziele): every known device with its status.
+ * `abgelehnt`/`aus` are filtered by the Wächter (owner decisions); no credential.
+ */
+export function listDerivableDevices(): Array<{ type: string; name: string; host: string; port: number; status: string }> {
+    return loadDevices(state.dataDir).map(device => ({ type: device.type, name: device.name, host: device.host, port: device.port, status: device.status }))
+}
+
 /** Builds the bus with every enabled adapter (does not start timers). */
 export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'worker' } = {}): SensingBus {
     const cfg = state.config

@@ -303,6 +303,9 @@ describe('Wächter: aus = nichts läuft', () => {
     it('runtime: default config is off, start refuses, no mesh sample is measured', async () => {
         const runtime = await import('./runtime.js')
         expect(runtime.setWatchConfig(undefined).enabled).toBe(false)
+        // 2.85: the test config carries a mesh peer, which is now a self-derived
+        // target; switched off, nothing at all is watched.
+        expect(runtime.setWatchConfig({ watch: { selfDerive: false } }).selfDerive).toBe(false)
         const start = await runtime.startWatch({ nodeOnly: false })
         expect(start.started).toBe(false)
         expect(start.reason).toMatch(/nichts zu bewachen/)

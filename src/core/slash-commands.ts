@@ -853,12 +853,14 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 decisionCount = listDecisions().filter(item => item.status === 'aktiv' && item.bindend).length
             } catch { /* decisions optional */ }
 
-            // Monitoring: the Wächter's targets (config + /monitor list), 2.82.0
+            // Monitoring: the Wächter's real target count (2.85: the targets of the
+            // last round incl. self-derived ones; before the first round config + /monitor)
             let monitorTargets = 0
             try {
-                const { getWatchSettings, watchDir } = await import('../watch/runtime.js')
+                const { getWatchOverview, getWatchSettings, watchDir } = await import('../watch/runtime.js')
                 const { loadManagedTargets } = await import('../watch/targets.js')
-                monitorTargets = getWatchSettings().targets.length + loadManagedTargets(watchDir()).targets.length
+                const { countWatchTargets } = await import('../watch/engine.js')
+                monitorTargets = countWatchTargets(getWatchOverview(), getWatchSettings().targets.length + loadManagedTargets(watchDir()).targets.length)
             } catch { /* watch optional */ }
 
             // KI-Endpunkte (grouped by host:port) + the real node list from the capability graph (2.82.0)
@@ -2111,8 +2113,8 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
             // (watch/targets.ts). L19 with its own prober is gone.
             if (principalContext?.permission !== 'owner') return 'Die Überwachungsliste ist nur für den Owner verfügbar.'
             try {
-                const { refreshWatch, watchDir, handleWaechterCommand } = await import('../watch/runtime.js')
-                const { addManagedTarget, loadManagedTargets, removeManagedTarget } = await import('../watch/targets.js')
+                const { refreshWatch, watchDir, handleWaechterCommand, removeWatchTarget } = await import('../watch/runtime.js')
+                const { addManagedTarget, loadManagedTargets } = await import('../watch/targets.js')
                 const [subCmd, ...rest] = (args || '').split(/\s+/)
                 switch (subCmd) {
                     case 'add': {
@@ -2125,9 +2127,11 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
                     }
                     case 'remove':
                     case 'rm': {
-                        const [name] = rest
+                        // Names of self-derived targets contain spaces ("Knoten xaventra-ns1").
+                        const name = rest.join(' ').trim()
                         if (!name) return '❌ Syntax: /monitor remove <name>'
-                        if (!removeManagedTarget(watchDir(), name)) return `❌ "${name}" nicht in der eigenen Liste (Config-Ziele stehen in autonomy.watch.targets)`
+                        // 2.85: also a self-derived target — it is then never derived again.
+                        if (!(await removeWatchTarget(name))) return `❌ "${name}" weder in der eigenen Liste noch selbst abgeleitet (Config-Ziele stehen in autonomy.watch.targets)`
                         await refreshWatch()
                         return `✅ "${name}" entfernt`
                     }
