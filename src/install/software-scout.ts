@@ -305,15 +305,16 @@ export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_P
         const { candidate, fit } = summary.best
         const elsewhere = [...new Map(summary.misfits.filter(item => item.candidate.id === candidate.id && item.fit.nodeId !== fit.nodeId)
             .map(item => [item.fit.nodeId, item.fit])).values()].slice(0, 2)
-        const where = elsewhere.map(item => `auf ${item.nodeId} ${item.reasons[0]}`).join(', ')
-        const title = `${candidate.title} passt auf ${fit.nodeId}${gb(fit.freeMemGB)}${where ? `, ${where}` : ''}. Einrichten?`
+        // 2.84 (Alfred 02.10.): why other nodes do not fit is evidence only — in the title
+        // "auf X braucht Ollama" read like a plan to install Ollama there.
+        const title = `${candidate.title} auf ${fit.nodeId} einrichten${gb(fit.freeMemGB)}?`
         const proposal = candidate.catalogId
             ? `In die Installations-Warteschlange (Katalog ${candidate.catalogId}, ${ROUTE_LABEL[fit.route]}); Ausführung erst nach der Installations-Karte mit Ticket.`
             : 'Nur vermerken: Katalogeintrag nötig (keine freie Installation).'
         out.push({
             kind: 'software-scout:luecke', capability: summary.capability, candidateId: candidate.id, nodeId: fit.nodeId,
             title, text: `${CAPABILITY_LABEL[summary.capability]} fehlt im Mesh. ${candidate.benefit}`,
-            evidence: [`Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`, ...fit.notes, ...elsewhere.map(item => `${item.nodeId}: ${item.reasons[0]}`)],
+            evidence: [`Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`, ...fit.notes, ...elsewhere.map(item => `nicht auf ${item.nodeId}: ${item.reasons[0]}`)],
             proposal, permission: 'fragen', dedupeKey: `software-scout:${summary.capability}:${candidate.id}:${fit.nodeId}`,
         })
     }

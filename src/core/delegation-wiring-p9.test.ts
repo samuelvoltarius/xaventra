@@ -159,7 +159,7 @@ describe('P9 Missionen delegieren einen Schritt', () => {
     async function waitingForDelegation() {
         const built = build()
         built.responsibilities.sync(signals())
-        await press(cardOf('verantwortung'), 'ja')
+        // 2.84: sync takes the responsibility over without an activation card
         expect(built.responsibilities.get('dienst-laeuft:rest@main-a')!.aktionen).toContain('delegieren')
         serviceUp = false
         built.engine.startForViolations(built.responsibilities.check(signals()))
@@ -200,7 +200,7 @@ describe('P9 Missionen delegieren einen Schritt', () => {
         delegationAvailable = false
         const { responsibilities } = build()
         responsibilities.sync(signals())
-        await press(cardOf('verantwortung'), 'ja')
+        // 2.84: sync takes the responsibility over without an activation card
         expect(responsibilities.get('dienst-laeuft:rest@main-a')!.aktionen).not.toContain('delegieren')
     })
 })

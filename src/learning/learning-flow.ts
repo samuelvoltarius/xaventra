@@ -16,6 +16,7 @@
  *   Routine-Skills und Schmiede wachsen bewusst selten und melden nie „stumm“.
  */
 import type { ErrorOccurrence, ErrorSourcePort } from '../thinking/bug-finder.js'
+import { ownerKernelRun } from '../core/validator-failure-escalation.js'
 
 export type LearningChannel = 'gedaechtnis' | 'vektor' | 'prozeduren' | 'skills' | 'werkzeuge' | 'graph' | 'faelle'
 
@@ -147,16 +148,10 @@ export function learningFlowErrorSource(options: { sources?: LearningFlowSources
 
 const iso = (value: unknown) => Date.parse(String(value ?? ''))
 
-/**
- * Validierte Owner-Läufe aus dem Outcome-Ledger (echter Kanal, Kernel-Vertrag,
- * nicht Autonomie/Benchmark, nicht zurückgewiesen). Gleiche Regel wie
- * `ownerKernelRun` in validator-failure-escalation.ts (dort nicht exportiert).
- */
+/** Validierte Owner-Läufe aus dem Outcome-Ledger — die eine Regel `ownerKernelRun`. */
 function validatedOwnerRunTimes(runs: readonly any[]): number[] {
     return runs
-        .filter(run => !run?.invalidated && run?.userId && run.userId !== 'Nova-Autonomy'
-            && run.channel && run.channel !== 'internal' && run.channel !== 'benchmark'
-            && run.contract?.id === run.runId && run.validation?.validator === 'nova-execution-kernel' && !run.validation?.awaitingApproval)
+        .filter(run => run && ownerKernelRun(run))
         .map(run => iso(run.updatedAt))
         .filter(Number.isFinite)
 }

@@ -149,7 +149,7 @@ describe('Vertrauensleiter in Missionen (Karten-Antworten)', () => {
         runs = []
         const { responsibilities, engine } = build()
         responsibilities.sync(signals())
-        await press(open('verantwortung')!, 'ja')
+        expect(open('verantwortung')).toBeFalsy() // 2.84: no activation card
         for (let i = 0; i < 3; i++) {
             await outage(engine, responsibilities)
             const card = open('mission-schritt')

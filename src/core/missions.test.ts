@@ -70,7 +70,7 @@ beforeEach(() => {
 
 async function activateService(responsibilities: ResponsibilityManager) {
     responsibilities.sync(signals())
-    await press(cardOf('verantwortung'), 'ja')
+    // 2.84: sync takes the responsibility over without an activation card
     expect(responsibilities.get('dienst-laeuft:rest@main-a')!.status).toBe('aktiv')
 }
 

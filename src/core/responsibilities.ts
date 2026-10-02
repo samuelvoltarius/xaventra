@@ -11,13 +11,19 @@
  *   dienst-laeuft        jede Nachtwache-Prüfung → „Dienst Y läuft“
  *   geraet-ueberwachen   jedes eingerichtete Gerät aus dem Wahrnehmen → „Gerät Z überwachen“
  *   release-aktuell      bekannte signierte Version → „aktuelle signierte Version auf allen Knoten“
- *   wiederholte-anfrage  ≥3 gleichartige Owner-Anfragen in 14 Tagen → Vorschlag (Stufe fragen)
+ *   wiederholte-anfrage  ≥3 gleichartige Owner-Anfragen in 14 Tagen → „von mir aus im Blick behalten“
  *
- * Aktivierung: nur L0/L1-Aktionen → sofort aktiv + Gedanke „Ich kümmere mich ab
- * jetzt um …“. Sobald eine L2-Aktion dabei ist (oder die Regel „fragen“
- * verlangt): Knopf-Karte, aktiv erst nach [Ja]. L3-Aktionen werden nie Teil
- * einer Verantwortung. [Nein] lehnt ab; abgelehnte werden nicht neu
- * vorgeschlagen.
+ * Aktivierung (2.84, Alfred 02.10.: weniger Ja/Nein): jede abgeleitete
+ * Verantwortung ist sofort aktiv + Gedanke „Ich kümmere mich ab jetzt um …“.
+ * Die Übernahme selbst ändert nichts; jeder L2-Schritt darin (z. B.
+ * dienst-neustart) fragt die Mission weiterhin einzeln per Knopf-Karte, L3
+ * wird nie Teil einer Verantwortung. Nur ein Kandidat mit `fragen: true`
+ * wird noch als Knopf-Karte vorgeschlagen; [Nein] lehnt ab, abgelehnte werden
+ * nie neu vorgeschlagen oder aktiviert. Ältere Vorschläge (vor 2.84) ohne
+ * `fragen` übernimmt sync von selbst; ihre Karte schließt sich dadurch.
+ *
+ * Nachtwache-Host `local` heißt der eigene Knoten: Titel und Scope nennen ihn
+ * mit seiner Knoten-ID (die ID der Verantwortung bleibt unverändert).
  */
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -128,6 +134,14 @@ function olderThan(version: string, reference: string): boolean | null {
     return false
 }
 
+/** Nightwatch checks address the own node as `local`. */
+function nodeOfHost(host: string, localNodeId: string): string {
+    return host === 'local' && localNodeId ? localNodeId : host
+}
+function serviceTitle(label: string, node: string): string {
+    return `${clean(label, 60)} auf ${clean(node, 40)} läuft`
+}
+
 /** Pure and deterministic: the same signals always give the same candidates. */
 export function deriveResponsibilities(signals: ResponsibilitySignals): Candidate[] {
     const out: Candidate[] = []
@@ -151,12 +165,13 @@ export function deriveResponsibilities(signals: ResponsibilitySignals): Candidat
     }
     for (const result of [...(signals.nightwatch?.results || [])].sort((a, b) => `${a.id}@${a.host}`.localeCompare(`${b.id}@${b.host}`))) {
         if (!result?.id || !result.host) continue
+        const node = nodeOfHost(result.host, signals.localNodeId)
         out.push({
             id: `dienst-laeuft:${ID_SAFE(result.id)}@${ID_SAFE(result.host)}`,
-            titel: `${clean(result.label || result.id, 60)} auf ${clean(result.host, 40)} läuft`,
+            titel: serviceTitle(result.label || result.id, node),
             ziel: 'Nachtwache-Prüfung ist grün',
             kriterien: [{ id: 'nachtwache', typ: 'nachtwache-pruefung', ref: `${result.id}@${result.host}`, text: `Nachtwache „${clean(result.label || result.id, 60)}“ ok` }],
-            scope: [result.host],
+            scope: [node],
             // P9: with a reachable agent the mission may hand the repair over (after Alfred's Ja) before it hands off.
             aktionen: signals.delegation?.available ? ['diagnose', 'delegieren', 'dienst-neustart', 'melden'] : ['diagnose', 'dienst-neustart', 'melden'],
             regel: 'dienst-laeuft',
@@ -202,7 +217,6 @@ export function deriveResponsibilities(signals: ResponsibilitySignals): Candidat
             aktionen: ['diagnose', 'melden'],
             regel: 'wiederholte-anfrage',
             beleg: `${hits.length}× in 14 Tagen danach gefragt`,
-            fragen: true,
         })
     }
     return out
@@ -329,10 +343,32 @@ export function createResponsibilityManager(options: ResponsibilityOptions): Res
             const items = load()
             const aktiviert: Responsibility[] = []
             const vorgeschlagen: Responsibility[] = []
+            const activate = (item: Responsibility, aktionen: string[], level: ActionLevel) => {
+                options.ports.thoughts.add({
+                    source: SOURCE, title: `Ich kümmere mich ab jetzt um: ${item.titel}`, kind: 'ereignis', permission: 'selbst', severity: 'info',
+                    evidence: `${item.beleg}. Ziel: ${item.ziel}. Darf selbst: ${aktionen.filter(kind => levelRank(evaluateAction({ kind, origin: 'verantwortung', node: item.scope[0] }, { localNodeId: options.localNodeId }).level) < levelRank('L2')).join(', ') || 'nichts'} (${levelRank(level) >= levelRank('L2') ? 'L2-Schritte frage ich einzeln per Knopf' : `höchstens ${level}`}).`,
+                    signature: `verantwortung:aktiv:${item.id}`,
+                })
+                aktiviert.push(item)
+            }
             for (const candidate of deriveResponsibilities(signals)) {
-                if (items.some(item => item.id === candidate.id)) continue // known (incl. abgelehnt): never re-proposed
+                const known = items.find(item => item.id === candidate.id)
+                if (known) {
+                    // 2.84: proposals from older versions no longer wait for a Ja (abgelehnt stays abgelehnt).
+                    if (known.status === 'vorgeschlagen' && candidate.fragen !== true) {
+                        const { aktionen, level } = allowedActions(candidate)
+                        const at = iso()
+                        Object.assign(known, {
+                            titel: clean(candidate.titel, 120), scope: candidate.scope, aktionen, maxLevel: level,
+                            status: 'aktiv', activatedAt: at, activatedBy: 'regel:selbst-abgeleitet', updatedAt: at,
+                        })
+                        activate(known, aktionen, level)
+                    }
+                    continue // known (incl. abgelehnt): never re-proposed
+                }
                 const { aktionen, level } = allowedActions(candidate)
-                const needsOwner = candidate.fragen === true || levelRank(level) >= levelRank('L2')
+                // The takeover changes nothing; every L2 step inside still gets its own card (missions.ts).
+                const needsOwner = candidate.fragen === true
                 const at = iso()
                 const item: Responsibility = {
                     id: candidate.id, titel: clean(candidate.titel, 120), ziel: clean(candidate.ziel, 200), kriterien: candidate.kriterien,
@@ -359,11 +395,7 @@ export function createResponsibilityManager(options: ResponsibilityOptions): Res
                     })
                     vorgeschlagen.push(item)
                 } else {
-                    options.ports.thoughts.add({
-                        source: SOURCE, title: `Ich kümmere mich ab jetzt um: ${item.titel}`, kind: 'ereignis', permission: 'selbst', severity: 'info',
-                        evidence: `${item.beleg}. Ziel: ${item.ziel}. Darf selbst: ${aktionen.join(', ')} (höchstens ${level}).`, signature: `verantwortung:aktiv:${item.id}`,
-                    })
-                    aktiviert.push(item)
+                    activate(item, aktionen, level)
                 }
                 items.push(item)
             }

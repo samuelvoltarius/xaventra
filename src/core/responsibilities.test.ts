@@ -68,43 +68,61 @@ describe('self-derived responsibilities (fixed rules)', () => {
         expect(thoughts.some(item => String(item.title).startsWith('Ich kümmere mich ab jetzt um') && item.permission === 'selbst')).toBe(true)
     })
 
-    it('derives "Dienst Y läuft" from Nachtwache checks; it needs L2 and stays a proposal until the owner presses Ja', async () => {
+    it('derives "Dienst Y läuft" from Nachtwache checks and takes it over without a Ja (2.84); the L2 restart still asks per step', async () => {
         manager.sync(signals({
             nightwatch: { finishedAt: new Date(NOW).toISOString(), results: [{ id: 'rest', label: 'REST-API', host: 'main-a', status: 'ok', message: 'ok', severity: 'warning' }] },
         }))
         const service = manager.get('dienst-laeuft:rest@main-a')!
-        expect(service).toMatchObject({ status: 'vorgeschlagen', maxLevel: 'L2', regel: 'dienst-laeuft' })
+        expect(service).toMatchObject({ status: 'aktiv', maxLevel: 'L2', regel: 'dienst-laeuft', activatedBy: 'regel:selbst-abgeleitet' })
         expect(service.aktionen).toContain('dienst-neustart')
-        expect(service.cardId).toBeTruthy()
-        // not active, so a check never reports it
-        expect(manager.check(signals()).map(item => item.responsibility.id)).not.toContain('dienst-laeuft:rest@main-a')
-
+        expect(service.cardId).toBeUndefined()
         const { listApprovalCards } = await import('./approval-cards.js')
-        const card = listApprovalCards({ dataDir }).find(item => item.id === service.cardId)!
-        expect(card).toMatchObject({ art: 'verantwortung', aktion: { kind: 'verantwortung', ref: 'dienst-laeuft:rest@main-a' } })
-        expect(card.buttons.map(button => button.answer)).not.toContain('immer')
-        const answer = await press(card, 'ja')
-        expect(answer.ok).toBe(true)
-        expect(manager.get('dienst-laeuft:rest@main-a')).toMatchObject({ status: 'aktiv', activatedBy: `telegram:${OWNER}` })
+        expect(listApprovalCards({ dataDir }).filter(item => item.aktion.kind === 'verantwortung')).toHaveLength(0)
+        const thought = thoughts.find(item => item.signature === 'verantwortung:aktiv:dienst-laeuft:rest@main-a')!
+        expect(thought).toMatchObject({ permission: 'selbst', kind: 'ereignis' })
+        expect(String(thought.evidence)).toContain('L2-Schritte frage ich einzeln per Knopf')
+        expect(String(thought.evidence)).not.toMatch(/Darf selbst: [^(]*dienst-neustart/)
+        // Gegenprobe: the restart itself stays L2 for the mission (own card per step).
+        const { evaluateAction } = await import('./action-policy.js')
+        expect(evaluateAction({ kind: 'dienst-neustart', origin: 'verantwortung', node: 'main-a' }, { localNodeId: 'main-a' }).level).toBe('L2')
+        expect(manager.check(signals()).map(item => item.responsibility.id)).toContain('dienst-laeuft:rest@main-a')
     })
 
-    it('Nein rejects the proposal and it is not proposed again', async () => {
-        const nightwatch = { finishedAt: new Date(NOW).toISOString(), results: [{ id: 'rest', label: 'REST-API', host: 'main-a', status: 'ok' as const, message: 'ok', severity: 'warning' as const }] }
-        manager.sync(signals({ nightwatch }))
-        const { listApprovalCards } = await import('./approval-cards.js')
-        const card = listApprovalCards({ dataDir }).find(item => item.aktion.kind === 'verantwortung')!
-        await press(card, 'nein')
-        expect(manager.get('dienst-laeuft:rest@main-a')!.status).toBe('abgelehnt')
-        manager.sync(signals({ nightwatch }))
-        expect(listApprovalCards({ dataDir }).filter(item => item.aktion.kind === 'verantwortung').length).toBe(1)
-        expect(manager.get('dienst-laeuft:rest@main-a')!.status).toBe('abgelehnt')
-    })
-
-    it('a responsibility is never activated by sync alone when it carries an L2 action', () => {
-        for (let i = 0; i < 3; i++) manager.sync(signals({
-            nightwatch: { finishedAt: new Date(NOW).toISOString(), results: [{ id: 'db', label: 'Datenbank', host: 'worker-b', status: 'fehler', message: 'down', severity: 'critical' }] },
+    it('Nachtwache host "local" is shown as the own node id in title and scope; the id stays stable', () => {
+        manager.sync(signals({
+            nightwatch: { finishedAt: new Date(NOW).toISOString(), results: [{ id: 'disk-root', label: 'Platte Spark', host: 'local', status: 'ok', message: 'ok', severity: 'warning' }] },
         }))
-        expect(manager.get('dienst-laeuft:db@worker-b')!.status).toBe('vorgeschlagen')
+        const item = manager.get('dienst-laeuft:disk-root@local')!
+        expect(item.titel).toBe('Platte Spark auf main-a läuft')
+        expect(item.scope).toEqual(['main-a'])
+        expect(item.kriterien[0].ref).toBe('disk-root@local')
+        expect(manager.check(signals({
+            nightwatch: { finishedAt: new Date(NOW).toISOString(), results: [{ id: 'disk-root', label: 'Platte Spark', host: 'local', status: 'fehler', message: 'voll', severity: 'warning' }] },
+        }))[0]).toBeDefined()
+    })
+
+    it('a proposal left by an older version is taken over on sync and its card closes; abgelehnt stays abgelehnt', async () => {
+        const { atomicWriteJsonSync } = await import('./atomic-storage.js')
+        const { listApprovalCards, maintainApprovalCards } = await import('./approval-cards.js')
+        const card = createApprovalCard({ art: 'verantwortung', titel: 'Soll ich mich um „Platte Spark auf local läuft“ kümmern?', beleg: 'b', vorschlag: 'v', aktion: { kind: 'verantwortung', ref: 'dienst-laeuft:disk-root@local' }, dedupeKey: 'verantwortung:dienst-laeuft:disk-root@local', quelle: 'verantwortung', node: 'local', ablaufMs: 86_400_000 }, { dataDir, now: () => NOW, ledger: null })
+        expect(card.ok).toBe(true)
+        const base = { ziel: 'Nachtwache-Prüfung ist grün', aktionen: ['diagnose', 'dienst-neustart', 'melden'], maxLevel: 'L2', herkunft: 'selbst-abgeleitet', regel: 'dienst-laeuft', beleg: 'b', createdAt: new Date(NOW).toISOString(), updatedAt: new Date(NOW).toISOString() }
+        atomicWriteJsonSync(join(dataDir, 'responsibilities', 'responsibilities.json'), { version: 1, items: [
+            { ...base, id: 'dienst-laeuft:disk-root@local', titel: 'Platte Spark auf local läuft', kriterien: [{ id: 'nachtwache', typ: 'nachtwache-pruefung', ref: 'disk-root@local', text: 'x' }], scope: ['local'], status: 'vorgeschlagen', cardId: card.ok ? card.card.id : undefined },
+            { ...base, id: 'dienst-laeuft:vllm@local', titel: 'vLLM auf local läuft', kriterien: [{ id: 'nachtwache', typ: 'nachtwache-pruefung', ref: 'vllm@local', text: 'x' }], scope: ['local'], status: 'abgelehnt' },
+        ] })
+        const nightwatch = { finishedAt: new Date(NOW).toISOString(), results: [
+            { id: 'disk-root', label: 'Platte Spark', host: 'local', status: 'ok' as const, message: 'ok' },
+            { id: 'vllm', label: 'vLLM', host: 'local', status: 'ok' as const, message: 'ok' },
+        ] }
+        const result = manager.sync(signals({ nightwatch }))
+        expect(result.aktiviert.map(item => item.id).filter(id => id.startsWith('dienst-laeuft'))).toEqual(['dienst-laeuft:disk-root@local'])
+        expect(manager.get('dienst-laeuft:disk-root@local')).toMatchObject({ status: 'aktiv', titel: 'Platte Spark auf main-a läuft', scope: ['main-a'] })
+        expect(manager.get('dienst-laeuft:vllm@local')!.status).toBe('abgelehnt')
+        maintainApprovalCards({ dataDir, now: () => NOW })
+        expect(listApprovalCards({ dataDir }).find(item => card.ok && item.id === card.card.id)!.status).toBe('erledigt')
+        // idempotent: a second sync announces nothing again
+        expect(manager.sync(signals({ nightwatch })).aktiviert).toHaveLength(0)
     })
 
     it('derives device and release responsibilities', () => {
@@ -117,7 +135,7 @@ describe('self-derived responsibilities (fixed rules)', () => {
         expect(manager.get('release-aktuell')).toMatchObject({ status: 'aktiv', regel: 'release-aktuell' })
     })
 
-    it('repeated owner requests of the same kind (>=3 in 14 days) become a proposal thought (ask), fewer do not', () => {
+    it('repeated owner requests of the same kind (>=3 in 14 days) are taken over on their own (only diagnose/melden), fewer do not', () => {
         const day = 24 * 60 * 60_000
         manager.sync(signals({ ownerRequests: [{ at: NOW - day, text: 'Wie steht der Drucker?' }, { at: NOW - 2 * day, text: 'drucker status bitte' }] }))
         expect(manager.list().filter(item => item.regel === 'wiederholte-anfrage')).toHaveLength(0)
@@ -131,8 +149,9 @@ describe('self-derived responsibilities (fixed rules)', () => {
         ] }))
         const proposed = manager.list().filter(item => item.regel === 'wiederholte-anfrage')
         expect(proposed).toHaveLength(1)
-        expect(proposed[0]).toMatchObject({ status: 'vorgeschlagen', herkunft: 'selbst-abgeleitet' })
-        expect(thoughts.some(item => item.permission === 'fragen' && String(item.title).includes('Drucker'))).toBe(true)
+        expect(proposed[0]).toMatchObject({ status: 'aktiv', herkunft: 'selbst-abgeleitet', maxLevel: 'L0' })
+        expect(thoughts.some(item => item.permission === 'selbst' && String(item.title).includes('Drucker'))).toBe(true)
+        expect(thoughts.some(item => item.permission === 'fragen')).toBe(false)
     })
 
     it('rules are deterministic and never include an L3 action', () => {

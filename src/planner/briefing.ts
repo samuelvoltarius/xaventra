@@ -160,14 +160,18 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     }
 
     const describe = (t: Thought) => t.proposal ? `${t.title} – ${t.proposal}` : t.title
-    const waiting = thoughts.filter(t => isOpenThought(t) && t.permission === 'fragen' && t.kind !== 'idee').map(describe)
+    const waitingThoughts = thoughts.filter(t => isOpenThought(t) && t.permission === 'fragen' && t.kind !== 'idee')
+    const waiting = waitingThoughts.map(describe)
     const ideas = thoughts.filter(t => isOpenThought(t) && t.kind === 'idee').slice(0, 3)
         .map(t => t.evidence ? `${t.title} (${t.evidence})` : t.title)
     // P8 Routine-Skills: selbst angelegte und deaktivierte Skills, eigene Zeilen.
     const skills = thoughts.filter(t => t.source === 'skills' && inWindow(t.createdAt, since, now))
         .map(t => t.title.includes('deaktiviert') && t.evidence ? `${t.title} (${t.evidence})` : t.title)
     const heldThoughts = thoughts.filter(t => isOpenThought(t) && t.notice === 'zurueckgehalten')
-    const held = heldThoughts.map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
+    // 2.84: a held-back thought already listed under „Wartet auf dich“ is not listed a second time
+    // (it is still marked `im-bericht` after delivery).
+    const waitingIds = new Set(waitingThoughts.map(t => t.id))
+    const held = heldThoughts.filter(t => !waitingIds.has(t.id)).map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
 
     // Kausales Gedächtnis: what was remembered (or ended) without a command.
     let remembered: string[] = []

@@ -160,7 +160,11 @@ describe('Eignungsprüfung je Knoten (rein)', () => {
         expect(stt.capability).toBe('stt')
         expect(stt.candidateId).toBe('stt-whisper-large-v3')
         expect(stt.nodeId).toBe('xaventra-spark')
-        expect(stt.title).toBe('Whisper large-v3 (GPU) passt auf xaventra-spark (42 GB frei), auf ns1 keine NVIDIA-GPU, auf ns2 zu wenig RAM (4 GB, nötig 8 GB). Einrichten?')
+        // 2.84: the title names only the target node; why the others do not fit is evidence
+        // (Alfred: "auf X braucht Ollama" read like installing Ollama there).
+        expect(stt.title).toBe('Whisper large-v3 (GPU) auf xaventra-spark einrichten (42 GB frei)?')
+        expect(stt.title).not.toMatch(/ns1|ns2/)
+        expect(stt.evidence).toEqual(expect.arrayContaining(['nicht auf ns1: keine NVIDIA-GPU', 'nicht auf ns2: zu wenig RAM (4 GB, nötig 8 GB)']))
         expect(stt.permission).toBe('fragen')
         expect(stt.proposal).toMatch(/Katalogeintrag nötig/)
         // a catalog-backed gap proposes the Stufe-2 path

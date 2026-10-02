@@ -50,6 +50,23 @@ describe('Morgen-/Abendbericht', () => {
         expect(briefing.counts.skills).toBe(2)
     })
 
+    it('2.84: eine zurückgehaltene Frage steht nur unter „Wartet auf dich“, nicht zusätzlich unter „Zurückgehalten“', () => {
+        const thoughts = createThoughtStore({ dataDir: dir, now: () => t })
+        const frage = thoughts.add({ source: 'scout', kind: 'vorschlag', title: 'Qwen2.5-VL 3B auf xaventra-ns1?', proposal: 'Katalog ollama-model', permission: 'fragen' }).thought
+        thoughts.markNotice(frage.id, 'zurueckgehalten', 'ruhezeit')
+        const ereignis = thoughts.add({ source: 'waechter', kind: 'ereignis', title: 'NAS langsam', permission: 'selbst', severity: 'warning' }).thought
+        thoughts.markNotice(ereignis.id, 'zurueckgehalten', 'ruhezeit')
+        const briefing = buildBriefing('morgen', {
+            dataDir: dir, thoughts, runsFile: join(dir, 'planner', 'runs.jsonl'), timeZone: 'Europe/Vienna',
+        }, Date.parse('2026-10-01T05:30:00.000Z'), t)
+        expect(briefing.text.split('Qwen2.5-VL 3B').length - 1).toBe(1)
+        expect(briefing.text).toContain('Wartet auf dich')
+        expect(briefing.text).toContain('NAS langsam (Ruhezeit)')
+        expect(briefing.counts.zurueckgehalten).toBe(1)
+        // both are still marked as reported after delivery
+        expect(briefing.thoughtIds).toEqual(expect.arrayContaining([frage.id, ereignis.id]))
+    })
+
     it('enthält echte Journal-Einträge, wartende Fragen und Ideen, aber keine Secrets', () => {
         writeHeal('2026-10-01T10:00:00.000Z', 'log-rotation', 'geheilt', `audit.log archiviert (1.2 GB) GITHUB_TOKEN=${SECRET}`)
         writeHeal('2026-09-20T10:00:00.000Z', 'cache-leeren', 'geheilt', 'alt, gehört nicht in den Bericht')
