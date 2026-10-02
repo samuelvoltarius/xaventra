@@ -2425,21 +2425,19 @@ async function startDaemon() {
     // Pre-initialize Intelligence Modules (Faster First Request)
     // ============================================
     try {
-        const [entityExtractor, taskPlanner, toolChainer, selfReflection, proactiveSuggestions] = await Promise.all([
+        const [entityExtractor, taskPlanner, toolChainer, selfReflection] = await Promise.all([
             import('./intelligence/entity-extractor.js'),
             import('./intelligence/task-planner.js'),
             import('./intelligence/tool-chainer.js'),
             import('./intelligence/self-reflection.js'),
-            import('./intelligence/proactive-suggestions.js'),
         ])
             ; (state as any).intelligence = {
                 entityExtractor: entityExtractor.default,
                 taskPlanner: taskPlanner.default,
                 toolChainer: toolChainer.default,
                 selfReflection: selfReflection.default,
-                proactiveSuggestions: proactiveSuggestions.default,
             }
-        console.log('[Nova] ✓ Intelligence Module vorgeladen (5 Module)')
+        console.log('[Nova] ✓ Intelligence Module vorgeladen (4 Module)')
     } catch (err) {
         console.log(`[Nova] ⚠ Intelligence Pre-Load nicht verfügbar: ${err}`)
     }
