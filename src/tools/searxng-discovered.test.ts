@@ -3,6 +3,8 @@
  * gefundene SearXNG-Instanz nutzt die Suchkette automatisch (lokal, kein Key,
  * keine Frage) und vor Cloud-Suchen. Eine gesetzte NOVA_SEARXNG_URL bleibt Vorrang.
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const discovered = vi.hoisted(() => ({ url: null as string | null }))
@@ -51,5 +53,19 @@ describe('Suchkette: SearXNG vor Cloud-Suchen', () => {
         const result = await port.search('xaventra')
         expect(result.tool).toBe('browser_search')
         expect(reg.execute).toHaveBeenCalled()
+    })
+})
+
+describe('2.85 Integration: ein Websuch-Weg', () => {
+    it('der Leerlauf-Lerner fragt SearXNG nicht selbst, sondern nimmt die eine Suchkette (SearXNG vor Cloud)', () => {
+        const l9 = readFileSync(fileURLToPath(new URL('../layers/L9-idle-learning.ts', import.meta.url)), 'utf8')
+        expect(l9).not.toMatch(/searxng-search/)
+        expect(l9).toMatch(/createGovernedWebSearch\(\)\.search\(/)
+    })
+
+    it('genau ein searxng_search-Werkzeug: das mit gesetzter URL bzw. gefundener Instanz (kein fest verdrahteter Host)', () => {
+        const browserUse = readFileSync(fileURLToPath(new URL('./browser-use.ts', import.meta.url)), 'utf8')
+        expect(browserUse).not.toMatch(/name: 'searxng_search'/)
+        expect(browserUse).not.toMatch(/100\.64\.0\.10/)
     })
 })

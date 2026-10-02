@@ -1243,9 +1243,19 @@
         "../core/data-root.js",
         "../core/outcome-ledger.js",
         "../core/validator-failure-escalation.js",
+        "../install/software-demand.js",
         "./connector-catalog.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connection-docks.ts",
+      "imports": [
+        "../llm/llm-connections.js",
+        "../onboarding/connections-port.js",
+        "./connection-demand.js",
+        "./connections-view.js"
       ]
     },
     {
@@ -2641,6 +2651,7 @@
     {
       "module": "src/desktop/desktop-api.ts",
       "imports": [
+        "../connections/connection-docks.js",
         "../connections/connections-api.js",
         "../core/data-root.js",
         "../core/nova-state.js",
@@ -2890,6 +2901,7 @@
         "dotenv/config",
         "node:fs",
         "node:net",
+        "node:os",
         "node:path"
       ]
     },

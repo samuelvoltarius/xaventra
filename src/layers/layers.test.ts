@@ -658,10 +658,11 @@ describe('Layer Module Loading', async () => {
         './L23-instincts.js',
     ]
 
+    // Cold import of the module graph under the full parallel suite: checks loading, not speed.
     for (const modulePath of layerModules) {
         it(`${modulePath}: loads without throwing`, async () => {
             await expect(import(modulePath)).resolves.not.toThrow()
-        })
+        }, 60_000)
     }
 })
 

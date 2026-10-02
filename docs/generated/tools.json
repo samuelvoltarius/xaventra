@@ -2696,33 +2696,6 @@
     {
       "name": "searxng_search",
       "category": "browser",
-      "description": "Sucht im privaten SearXNG-Metasuchmaschinen-Server (aggregiert Google, Bing, DuckDuckGo, Wikipedia u.v.m.). Kein API-Key, kein Rate-Limit, strukturierte JSON-Ergebnisse. BEVORZUGT für Web-Recherche.",
-      "parameters": [
-        {
-          "name": "query",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "count",
-          "type": "number",
-          "required": false
-        },
-        {
-          "name": "language",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "category",
-          "type": "string",
-          "required": false
-        }
-      ]
-    },
-    {
-      "name": "searxng_search",
-      "category": "browser",
       "description": "Durchsucht das Web mit SearXNG (selbst-gehostete, private Suchmaschine). Kein API-Key nötig, nur die URL der Instanz.",
       "parameters": [
         {

@@ -759,7 +759,7 @@ describe('L8 Sub-Agent', async () => {
 describe('Memory Distiller', async () => {
     it('module loads without throwing', async () => {
         await expect(import('./memory-distiller.js')).resolves.not.toThrow()
-    })
+    }, 60_000) // cold import of the whole graph; see COLD_IMPORT_TIMEOUT_MS below
 
     it('exports setDistillerLlm and getDistillerLlm', async () => {
         const mod = await import('./memory-distiller.js')
@@ -801,7 +801,7 @@ describe('Multi-User Workers', async () => {
 describe('VRAM Manager', async () => {
     it('module loads without throwing', async () => {
         await expect(import('./vram-manager.js')).resolves.not.toThrow()
-    })
+    }, 60_000) // cold import of the whole graph; see COLD_IMPORT_TIMEOUT_MS below
 })
 
 // ============================================
@@ -877,7 +877,7 @@ describe('L10 Vision', async () => {
 
     it('module loads without throwing', async () => {
         await expect(import('./L10-vision.js')).resolves.not.toThrow()
-    })
+    }, 60_000) // cold import of the whole graph; see COLD_IMPORT_TIMEOUT_MS below
 })
 
 // ============================================
@@ -913,9 +913,14 @@ describe('Extended Layer Module Loading', async () => {
         './vram-manager.js',
     ]
 
+    // A cold import transforms the module's whole graph first. Under the full suite
+    // (hundreds of files in parallel, CI runners) that alone exceeded the 5 s default
+    // (2.85: memory-distiller, L-modules on the Windows job). This test checks that a
+    // module loads, not how fast: give the cold import a generous, explicit limit.
+    const COLD_IMPORT_TIMEOUT_MS = 60_000
     for (const modulePath of remainingModules) {
         it(`${modulePath}: loads without throwing`, async () => {
             await expect(import(modulePath)).resolves.not.toThrow()
-        })
+        }, COLD_IMPORT_TIMEOUT_MS)
     }
 })

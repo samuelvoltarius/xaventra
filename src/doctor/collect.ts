@@ -12,6 +12,7 @@ import 'dotenv/config'
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as net from 'node:net'
+import { totalmem } from 'node:os'
 import type {
     DoctorReport, DoctorIssue, CheckResult, DoctorFix,
 } from './types.js'
@@ -318,14 +319,12 @@ async function checkProviders(config: Record<string, unknown> | null): Promise<C
                 }
             ))
         } else if (ollamaResult.models?.length === 0) {
+            const pull = await recommendedOllamaPull(Math.round(totalmem() / 1024 ** 3))
             issues.push(issue('OLLAMA_NO_MODELS', 'warning',
                 'Ollama läuft aber keine Modelle geladen',
-                {
-                    type: 'command',
-                    command: 'ollama pull qwen3:7b',
-                    hint: 'Empfehlung: ollama pull qwen3:7b',
-                    safe: false,
-                }
+                pull
+                    ? { type: 'command', command: pull, hint: `Empfehlung (passt zu diesem Rechner): ${pull}`, safe: false }
+                    : { type: 'info', hint: 'Zu wenig Speicher für ein lokales Chat-Modell – einen größeren Rechner aufnehmen oder ein Modell-Konto verbinden.', safe: false }
             ))
         }
         if (ollamaResult.reachable) {
@@ -406,6 +405,16 @@ async function checkProviders(config: Record<string, unknown> | null): Promise<C
 
     const errors = issues.filter(i => i.severity === 'error').length
     return fail('LLM Provider', errors > 0 ? `${errors} Fehler` : 'Warnung', issues)
+}
+
+/**
+ * The one local-model recommendation (2.85 integration): the same choice as the first
+ * start (`chooseFirstStartModel`, signed install catalog), as an `ollama pull` line.
+ */
+export async function recommendedOllamaPull(memoryGb: number): Promise<string | null> {
+    const [{ chooseFirstStartModel }, { ollamaModelRef }] = await Promise.all([import('../onboarding/first-start-doctor.js'), import('../install/install-catalog.js')])
+    const catalogId = chooseFirstStartModel({ memoryGb })
+    return catalogId ? `ollama pull ${ollamaModelRef(catalogId.slice('ollama-model:'.length))}` : null
 }
 
 async function probeOllama(baseUrl: string): Promise<{ reachable: boolean; models?: string[] }> {

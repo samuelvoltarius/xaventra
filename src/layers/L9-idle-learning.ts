@@ -69,16 +69,11 @@ export function redactIdleSearchQuery(text: string): string {
         .slice(0, 120)
 }
 
-/** SearXNG (local, private) when configured, otherwise the governed search chain. */
+/**
+ * The one search chain (software-freshness.ts): a local SearXNG (configured or found by
+ * the KI scanner) first, then the governed cloud searches. No own SearXNG step here.
+ */
 async function idleSearch(query: string): Promise<{ tool: string; hits: IdleHit[] }> {
-    const { getSearXNGUrl, searxngSearch } = await import('../tools/searxng-search.js')
-    const base = getSearXNGUrl()
-    if (base) {
-        const result = await searxngSearch(query, base, { count: 3 })
-        if (!result.error && result.results.length > 0) {
-            return { tool: 'searxng', hits: result.results.map(item => ({ title: item.title, url: item.url, snippet: item.content })) }
-        }
-    }
     const { createGovernedWebSearch } = await import('../install/software-freshness.js')
     return createGovernedWebSearch().search(query)
 }

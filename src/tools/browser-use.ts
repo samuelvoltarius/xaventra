@@ -16,7 +16,7 @@
  *   browser_get_links  — get all links from current page
  *   browser_status     — show current URL, title, session state
  *   browser_close      — close browser session
- *   searxng_search     — SearXNG metasearch (Google+Bing+DDG+Wikipedia) — no API key
+ *   (searxng_search lives in searxng-search.ts: configured URL or the instance the KI scanner found)
  */
 
 import { join } from 'node:path'
@@ -488,89 +488,6 @@ export const browserUseTools: BrowserTool[] = [
                 }
             } catch {
                 return { running: true, url: status.url, note: 'Seite nicht mehr zugänglich.' }
-            }
-        },
-    },
-
-    // ------------------------------------------
-    {
-        name: 'searxng_search',
-        description:
-            'Sucht im privaten SearXNG-Metasuchmaschinen-Server (aggregiert Google, Bing, DuckDuckGo, Wikipedia u.v.m.). ' +
-            'Kein API-Key, kein Rate-Limit, strukturierte JSON-Ergebnisse. BEVORZUGT für Web-Recherche.',
-        category: 'browser',
-        parameters: [
-            { name: 'query', type: 'string', description: 'Suchanfrage', required: true },
-            { name: 'count', type: 'number', description: 'Anzahl Ergebnisse (Standard: 8, max: 20)', required: false },
-            { name: 'language', type: 'string', description: 'Sprache z.B. "de" oder "en" (Standard: auto)', required: false },
-            { name: 'category', type: 'string', description: 'Kategorie: "general", "images", "news", "science", "it" (Standard: general)', required: false },
-        ],
-        handler: async (params: Record<string, unknown>) => {
-            const query = params.query as string
-            const count = Math.min(Number(params.count) || 8, 20)
-            const lang = (params.language as string) || ''
-            const cat = (params.category as string) || 'general'
-
-            try {
-                const searchUrl = new URL('http://100.64.0.10:8088/search')
-                searchUrl.searchParams.set('q', query)
-                searchUrl.searchParams.set('format', 'json')
-                searchUrl.searchParams.set('categories', cat)
-                if (lang) searchUrl.searchParams.set('language', lang)
-
-                const res = await fetch(searchUrl.toString(), {
-                    headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(10_000),
-                })
-
-                if (!res.ok) {
-                    return { error: `SearXNG HTTP ${res.status}`, query }
-                }
-
-                const data = await res.json() as {
-                    results?: Array<{
-                        title: string
-                        url: string
-                        content?: string
-                        score?: number
-                        engine?: string
-                        publishedDate?: string
-                    }>
-                    answers?: string[]
-                    infoboxes?: Array<{ infobox: string; content: string }>
-                }
-
-                const results = (data.results || []).slice(0, count).map(r => ({
-                    title: r.title,
-                    url: r.url,
-                    snippet: (r.content || '').slice(0, 300),
-                    engine: r.engine,
-                    date: r.publishedDate,
-                }))
-
-                const output: Record<string, unknown> = {
-                    query,
-                    resultCount: results.length,
-                    results,
-                }
-
-                if (data.answers?.length) {
-                    output.directAnswer = data.answers[0]
-                }
-                if (data.infoboxes?.length) {
-                    output.infobox = { title: data.infoboxes[0].infobox, content: data.infoboxes[0].content.slice(0, 500) }
-                }
-
-                return output
-            } catch (err: unknown) {
-                // Fallback to DuckDuckGo if SearXNG unreachable
-                console.warn('[SearXNG] Nicht erreichbar — fallback zu DuckDuckGo')
-                try {
-                    const ddgResults = await duckduckgoSearch(query, count)
-                    return { query, resultCount: ddgResults.length, results: ddgResults, source: 'duckduckgo-fallback' }
-                } catch {
-                    return { error: err instanceof Error ? err.message : String(err), query }
-                }
             }
         },
     },
