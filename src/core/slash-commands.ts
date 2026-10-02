@@ -3536,6 +3536,11 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '‚
         }
         // Phase 5b Software-Scout: always available, read-only (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'software': {
+            // 2.85 Paket D: "/software werkzeugkasten" (also from the question "was k√∂nntest du noch installieren?").
+            if (/^(?:werkzeugkasten|kurz)$/i.test(args.trim())) {
+                const { collectToolbox, formatToolboxShort } = await import('../install/toolbox.js')
+                return formatToolboxShort(await collectToolbox())
+            }
             const { formatSoftwareCommand } = await import('../install/software-scout.js')
             return formatSoftwareCommand()
         }

@@ -84,7 +84,7 @@ function compareVersion(a: number[], b: number[]): number {
 }
 
 const CAPABILITY_TERM: Readonly<Record<SoftwareCapability, string>> = Object.freeze({
-    vision: 'vision', embedding: 'embedding', llm: 'llm', stt: 'speech recognition', tts: 'text to speech', browser: 'browser', media: 'media', desktop: 'desktop',
+    vision: 'vision', embedding: 'embedding', llm: 'llm', stt: 'speech recognition', tts: 'text to speech', browser: 'browser', media: 'media', desktop: 'desktop', search: 'search',
 })
 const VISION_MARKERS = ['vl', 'vision', 'vlm', 'ocr']
 
@@ -189,6 +189,11 @@ function readCache(path?: string): CacheFile {
 }
 function writeCache(cache: CacheFile, path?: string): void {
     try { const file = cacheFile(path); mkdirSync(dirname(file), { recursive: true }); atomicWriteJsonSync(file, cache) } catch { /* next run checks again */ }
+}
+
+/** 2.85 Paket D: the cached records only (the Werkzeugkasten never searches on page view). */
+export function readFreshnessCache(path?: string): Record<string, FreshnessRecord> {
+    return { ...readCache(path).entries }
 }
 
 export interface FreshnessOptions { search?: WebSearchPort | null; cachePath?: string; now?: number; catalog: SoftwareCandidateCatalog }

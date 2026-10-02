@@ -29,6 +29,12 @@ describe('natural command routing', () => {
         ['Starte die 100 Benchmarks', 'benchmark', 'run', 'controlled-action'],
         ['Ist der Failover wirklich bereit?', 'failover', '', 'read-only'],
         ['Konsolidiere dein Gedächtnis', 'memory', 'consolidate', 'controlled-action'],
+        // 2.85 Paket D: Werkzeugkasten als normale Frage (kein neuer Slash-Befehl)
+        ['Was könntest du noch installieren?', 'software', 'werkzeugkasten', 'read-only'],
+        ['Was kannst du noch installieren', 'software', 'werkzeugkasten', 'read-only'],
+        ['Welche Programme würden dir helfen?', 'software', 'werkzeugkasten', 'read-only'],
+        ['Welche Software fehlt dir noch?', 'software', 'werkzeugkasten', 'read-only'],
+        ['Zeig mir deinen Werkzeugkasten', 'software', 'werkzeugkasten', 'read-only'],
     ])('maps %s without an LLM call', (input, command, args, risk) => {
         expect(detectDeterministicCommand(input)).toMatchObject({ command, args, risk })
     })

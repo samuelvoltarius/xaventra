@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalogHash": "a804b6f2bab5e17c60a19bc3fbe080731758401a79ab0f7ff4746828de58db81",
+  "catalogHash": "8a795f40b0db7ac955a914c70e4a5324d82d96f38733a3593d99f3e0e8120feb",
   "entries": [
     {
       "id": "ffmpeg",
@@ -138,6 +138,41 @@
       "entryHash": "4f58840107c0842737ed94fcab03c20b9730bfdb503ef8ce0a59c071d8af0346"
     },
     {
+      "id": "ollama-model:gemma4-e2b",
+      "title": "Ollama-Modell gemma4:e2b",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "gemma4:e2b"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "gemma4:e2b"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "gemma4:e2b"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 7500,
+      "timeoutSec": 3600,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "59da328007e3b0fb24f40108a441a9992f21042d3a7cdf7ef712b03ba9c2fb77"
+    },
+    {
       "id": "ollama-model:mxbai-embed-large",
       "title": "Ollama-Modell mxbai-embed-large",
       "kind": "ollama-model",
@@ -244,6 +279,59 @@
       "risk": "low",
       "approval": "fragen",
       "entryHash": "eee3aefd0f66499444d285fb71d0f5213e28007b50af3fa125a147154eea91f4"
+    },
+    {
+      "id": "tesseract-ocr",
+      "title": "Tesseract OCR (Text auf Bildern und Scans lesen, Deutsch + Englisch)",
+      "kind": "apt",
+      "targets": [
+        "host-agent",
+        "image"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "packages": [
+        "tesseract-ocr",
+        "tesseract-ocr-deu"
+      ],
+      "prepare": [
+        [
+          "/usr/bin/apt-get",
+          "update"
+        ]
+      ],
+      "install": [
+        "/usr/bin/apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "tesseract-ocr",
+        "tesseract-ocr-deu"
+      ],
+      "verify": [
+        [
+          "/usr/bin/test",
+          "-x",
+          "/usr/bin/tesseract"
+        ]
+      ],
+      "rollback": {
+        "kind": "apt-remove-new"
+      },
+      "runAs": "root",
+      "sizeMb": 80,
+      "timeoutSec": 900,
+      "risk": "low",
+      "approval": "fragen",
+      "image": {
+        "variant": "tesseract-ocr",
+        "packages": [
+          "tesseract-ocr",
+          "tesseract-ocr-deu"
+        ]
+      },
+      "entryHash": "2c654559b0f9185f4573a26a0f9f030817b8ac87a6c62d3e080411a6b9a659b8"
     },
     {
       "id": "xfce-workstation",

@@ -42,7 +42,7 @@ const mesh = () => [spark(), ns1(), ns2(), nas()]
 const cand = (id: string) => findSoftwareCandidate(id)!
 const tmpState = () => join(mkdtempSync(join(tmpdir(), 'softscout-')), 'state.json')
 // 2.85: a card needs a recorded need — these tests are about fit and routing, so every capability has one.
-const NEED: ReadonlyMap<any, CapabilityDemand> = new Map(['stt', 'tts', 'vision', 'embedding', 'browser', 'media', 'desktop', 'llm']
+const NEED: ReadonlyMap<any, CapabilityDemand> = new Map(['stt', 'tts', 'vision', 'embedding', 'browser', 'media', 'desktop', 'llm', 'search']
     .map(capability => [capability, { capability, count: 1, evidence: ['1× Testbedarf'] } as CapabilityDemand]))
 
 describe('Software-Kandidaten-Katalog (Phase 5b)', () => {
@@ -50,7 +50,7 @@ describe('Software-Kandidaten-Katalog (Phase 5b)', () => {
         const catalog = getSoftwareCandidates()
         expect(catalog.rejected).toEqual([])
         expect(catalog.entries.length).toBe(BUILTIN_SOFTWARE_CANDIDATES.length)
-        expect(new Set(catalog.entries.map(entry => entry.capability))).toEqual(new Set(['stt', 'tts', 'vision', 'embedding', 'browser', 'media', 'desktop', 'llm']))
+        expect(new Set(catalog.entries.map(entry => entry.capability))).toEqual(new Set(['stt', 'tts', 'vision', 'embedding', 'browser', 'media', 'desktop', 'llm', 'search']))
         expect(cand('media-ffmpeg').catalogId).toBe('ffmpeg')
         expect(cand('stt-whisper-large-v3').catalogId).toBeUndefined()
         for (const entry of catalog.entries) expect(entry.benefit.length).toBeGreaterThan(10)

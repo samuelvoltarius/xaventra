@@ -1,7 +1,7 @@
 /**
  * Xaventra im Browser – derselbe Weg wie die Desktop-App.
  *
- * Es gibt EINE Oberfläche: desktop/renderer (index.html, bridge.js, app.js,
+ * Es gibt EINE Oberfläche: desktop/renderer (index.html, bridge.js, app.js, werkzeugkasten.js,
  * styles.css). Electron lädt sie aus dem Paket und spricht über preload/IPC;
  * dieser Server liefert dieselben Dateien über HTTP aus, und bridge.js ersetzt
  * dort die IPC durch fetch mit dem Desktop-Token als Bearer. Daten gibt es
@@ -35,6 +35,7 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'index.html': 'text/html; charset=utf-8',
     'bridge.js': 'text/javascript; charset=utf-8',
     'app.js': 'text/javascript; charset=utf-8',
+    'werkzeugkasten.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
 })
 export function resolveUiDir(base = __dirname): string | null {

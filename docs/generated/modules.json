@@ -2540,6 +2540,7 @@
         "./module-catalog.js",
         "./node-enrollment.js",
         "./topic-room-store.js",
+        "./werkzeugkasten-view.js",
         "express",
         "node:crypto",
         "node:fs",
@@ -2612,6 +2613,13 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/werkzeugkasten-view.ts",
+      "imports": [
+        "../install/toolbox.js",
+        "./desktop-views.js"
       ]
     },
     {
@@ -3521,6 +3529,25 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/install/toolbox-actions.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "./install-catalog.js",
+        "./install-queue.js"
+      ]
+    },
+    {
+      "module": "src/install/toolbox.ts",
+      "imports": [
+        "./install-catalog.js",
+        "./install-queue.js",
+        "./software-candidates.js",
+        "./software-demand.js",
+        "./software-freshness.js",
+        "./software-scout.js"
       ]
     },
     {
