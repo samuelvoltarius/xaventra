@@ -1,5 +1,89 @@
 # Changelog
 
+## [2.84.0] — 2026-10-02
+
+One window, fewer questions, honest learning: the Desktop app and the HTTP
+dashboard are one interface; Xaventra takes over what she derives herself and
+only asks per consequential step; memory, procedures and the model scout learn
+from her own measurements.
+
+Eine Oberfläche (Desktop-Redesign):
+
+- The Desktop app opens on "Heute" (what she is doing, open Knopf-Karten with
+  their buttons, report preview, thoughts), plus Unterhaltung, Arbeit, System
+  and Gedächtnis; specialist pages live under "Mehr". See docs/DESKTOP_REDESIGN.md.
+- The Main serves the same renderer files over HTTP (token in the tab only,
+  data only through /api/desktop). Removed: the old dashboard page with ~70
+  special endpoints and its WebSocket feed, the never-shipped Next.js client and
+  the `legacy-dashboard` CI job.
+
+Doctor und Fälle (Paket A):
+
+- Warm start: no investigations or repair drafts in the first 15 min after start.
+- A failed run without a single tool call is infrastructure, not an attempt
+  (pause, at most 6 such holds, then visible as blocked); `nova_capabilities`
+  is no longer a diagnosis tool.
+- Cases close measured from the last rollout for every case kind; old cases
+  with a matching pattern case are merged into it.
+- A pending handoff is withdrawn when its case closed by measurement
+  (`zurueckgezogen`, a late Ja sends nothing).
+
+Gedächtnis und Lernen (Paket B):
+
+- Embeddings only from own sources (local model registry / proven-local
+  resolver, else hash); private text never goes to a cloud embedding API.
+- One vector space per table, correct LanceDB counts, missing projections are
+  backfilled (200 per run); `/memory` shows the active embedder.
+- Suspended procedures come back after two fresh verified successes; owner
+  command `/prozeduren` (list, an, aus).
+- Lern-Puls: at most two lines in the evening "Lernkurve"; a learning store
+  that stays silent for 7 days despite owner runs becomes a bug-finder case.
+
+Schmiede, Router, Scout (Paket C):
+
+- A tool the model asked for that exists nowhere reaches the forge demand hook;
+  revisions share the daily limit of 3; a "Ja" on a forge idea builds a
+  candidate and the active version keeps running until the candidate is green
+  (write/external/physical tools still need a card).
+- One measuring router: the shadow OutcomeRouter and `NOVA_OUTCOME_ROUTER_MODE`
+  are gone (setting `active` no longer has an effect); measurements count only
+  validated owner runs. An existing shadow log is renamed `*.migriert` once.
+- The model scout measures installed local models only and proposes a switch
+  only for configured vLLM switch targets.
+
+Sauberes Live-Log (Paket D):
+
+- Agents-SDK tracing is disabled globally (no "No API key provided" export
+  attempts, no trace data to OpenAI).
+- The Supabase Learning Hub and the pre-validation "learned capabilities" list
+  are removed; knowledge between nodes only via L22. Nothing is deleted on disk.
+
+Weniger Ja/Nein (Owner-Morgenbericht 02.10.):
+
+- Self-derived responsibilities are taken over on their own; every L2 step
+  inside (e.g. a service restart) still asks with its own card. Proposals left
+  by older versions are taken over, declined ones stay declined.
+- Nachtwache host `local` is named by the own node id.
+- The morning report lists a held-back question once (under "Wartet auf dich").
+- Software-scout titles name only the target node; why other nodes do not fit
+  is evidence.
+
+Software-Scout: Bedarf und Aktualität (Paket E, Owner 02.10.):
+
+- A missing capability becomes a question only with evidence of need from the
+  last 14 days (validated owner runs where a tool of that capability failed, a
+  forge "missing tool" entry, an owner voice message without speech
+  recognition); otherwise at most one quiet idea per capability and week.
+- Model candidates carry `releasedAt`; before proposing one older than 9 months
+  (or not checked for 7 days) the governed web search looks for a newer
+  successor. A newer model not in the catalog becomes an idea ("Katalogeintrag
+  nötig"), the old one is not proposed; without a usable search result nothing
+  is proposed (fail closed).
+- Catalog: Qwen2.5-VL 3B → Gemma 4 E2B, Qwen2.5 3B → Qwen3.5 4B (sources in
+  the commit); embedding models dated.
+
+
+
 ## [2.83.0] — 2026-10-02
 
 Closed learning loops: Xaventra notices what goes wrong, learns from it,
