@@ -23,8 +23,13 @@ export interface FailureResearchCase {
         runId: string; attempts: number; nextAttemptAt: number
         report?: string; reason?: string
         observationHash?: string
-        holdReason?: 'receipt-pending' | 'receipt-mismatch' | 'observation-changed' | 'retry-exhausted' | 'reconciliation-exhausted'
+        holdReason?: 'receipt-pending' | 'receipt-mismatch' | 'observation-changed' | 'retry-exhausted' | 'reconciliation-exhausted' | 'infrastruktur'
         reconciliationChecks?: number
+        /** 2.84.0 Punkt 1: runs that ended at deadline, abort or a model error
+         * without one successful diagnostic call. Not an attempt; bounded. */
+        infraFailures?: number
+        /** Run already counted as infrastructure (reconciliation re-reads it). */
+        infraRunId?: string
     }
 }
 interface ResearchFile { version: 1; updatedAt: string; cases: FailureResearchCase[] }
@@ -39,10 +44,35 @@ export interface ResearchWorker {
 }
 
 // Deliberately no shell, install, config mutation, secret access or message tools.
+// 2.84.0 Punkt 1: no `nova_capabilities`. The tool set is fixed by the
+// contract, so a catalogue lookup cannot widen the run; live it only burned
+// the call budget ("Task tool-call budget exhausted") and a catalogue entry is
+// no finding. `find_capability` stays: "is there an LLM/STT provider" is a
+// real diagnosis for "No LLM endpoints".
 export const RESEARCH_TOOLS = Object.freeze([
-    'health_status', 'nova_introspect', 'nova_capabilities', 'mesh_nodes',
+    'health_status', 'nova_introspect', 'mesh_nodes',
     'nova_trace_stats', 'find_capability',
 ])
+
+/** 2.84.0 Punkt 1: infrastructure is not an attempt, but at most this many per case. */
+export const MAX_INFRA_FAILURES = 6
+/** Pause after an infrastructure failure (cold or busy model). */
+export const INFRA_RETRY_MS = 60 * 60_000
+const INFRA_ERROR = /deadline|time ?out|timed out|abort|exceeded|econn|fetch failed|socket|unavailable|overload|\b50[234]\b|no llm|model|llm/i
+
+/**
+ * A terminal run that ended at a deadline, an abort or a model error without a
+ * single successful diagnostic call. Such a run says nothing about the fault;
+ * it says the model was cold, busy or gone (live: "agent model call exceeded
+ * deadline" right after start). A run with any successful tool, or a rejected
+ * report after tool failures, stays a real attempt.
+ */
+export function isInfrastructureFailure(run: Pick<OutcomeRunView, 'status' | 'tools' | 'finalOutcome'>, thrown = ''): boolean {
+    if (run.status !== 'failed') return false
+    if (run.tools.some(tool => tool.success === true)) return false
+    const reason = `${String(run.finalOutcome?.reason ?? '')} ${String(run.finalOutcome?.error ?? '')} ${thrown}`
+    return run.tools.length === 0 && (INFRA_ERROR.test(reason) || run.finalOutcome?.reason === 'validator-rejected')
+}
 
 /** Identity of an observation for re-investigation. Live 30.09.2026 the case
  * "Success rate is 7.0% across 748 traces" was investigated 35 times, twice
@@ -232,7 +262,9 @@ export class FailureResearchCoordinator {
                 approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
             }
             item.stage = 'researching'
-            item.investigation = { status: 'running', runId, attempts, observationHash: observedRevision, nextAttemptAt: now + 15 * 60_000 }
+            const infraFailures = item.investigation?.infraFailures
+            item.investigation = { status: 'running', runId, attempts, observationHash: observedRevision, nextAttemptAt: now + 15 * 60_000,
+                ...(infraFailures ? { infraFailures } : {}) }
             item.updatedAt = new Date(now).toISOString()
             this.persist()
             const controller = new AbortController()
@@ -249,7 +281,7 @@ export class FailureResearchCoordinator {
                 // that durable result before permitting another investigation.
                 const run = worker.getRun(runId)
                 if (observedRevision === item.observationHash) {
-                    this.finishInvestigation(item, run, '', now)
+                    this.finishInvestigation(item, run, '', now, String((error as Error)?.message || error))
                 } else {
                     item.investigation.status = 'blocked'
                     item.investigation.holdReason = 'observation-changed'
@@ -261,7 +293,7 @@ export class FailureResearchCoordinator {
         } finally { this.processing = false }
     }
 
-    private finishInvestigation(item: FailureResearchCase, run: OutcomeRunView | null, output: string, now: number): void {
+    private finishInvestigation(item: FailureResearchCase, run: OutcomeRunView | null, output: string, now: number, thrown = ''): void {
         const state = item.investigation!
         const matching = run?.runId === state.runId && run.userId === 'Nova-Autonomy'
             && run.channel === 'internal' && !run.invalidated
@@ -290,6 +322,26 @@ export class FailureResearchCoordinator {
             && run.tools.some(tool => tool.success === true
                 && RESEARCH_TOOLS.includes(String(tool.toolName) as any)
                 && validateToolOutcome(String(tool.toolName), tool.result).success)
+        if (!verified && isInfrastructureFailure(run, thrown)) {
+            // 2.84.0 Punkt 1: not an attempt. Counted once per run: the next
+            // cycle re-reads the same receipt before it dispatches again.
+            if (state.infraRunId !== state.runId) {
+                state.infraRunId = state.runId
+                state.infraFailures = (state.infraFailures || 0) + 1
+                state.attempts = Math.max(0, state.attempts - 1)
+                state.nextAttemptAt = now + INFRA_RETRY_MS
+            }
+            const exhausted = (state.infraFailures || 0) >= MAX_INFRA_FAILURES
+            state.status = exhausted ? 'blocked' : 'failed'
+            state.holdReason = 'infrastruktur'
+            state.reason = exhausted
+                ? `Modell ${MAX_INFRA_FAILURES}× nicht erreichbar oder zu langsam (Deadline/Abbruch ohne Diagnose-Aufruf); Fall angehalten, bis sich der Befund ändert.`
+                : 'Infrastruktur: Deadline, Abbruch oder Modellfehler ohne Diagnose-Aufruf; kein Versuch verbraucht, neuer Lauf nach 60 min.'
+            item.evidenceRefs = [...new Set([...item.evidenceRefs, `outcome:${state.runId}`])].slice(-30)
+            item.updatedAt = new Date(now).toISOString()
+            this.persist()
+            return
+        }
         state.status = verified ? 'verified' : state.attempts >= 3 ? 'blocked' : 'failed'
         state.holdReason = !verified && state.attempts >= 3 ? 'retry-exhausted' : undefined
         state.reason = verified ? undefined : state.attempts >= 3

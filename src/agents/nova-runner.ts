@@ -199,6 +199,16 @@ export function sdkTurnLimit(configuredRounds: number, diagnosticContract?: Pick
     return diagnosticContract ? Math.max(roundTurns, diagnosticContract.budget.maxToolCalls + 1) : roundTurns
 }
 
+/** 2.84.0 Punkt 1: per-call timeout of SDK follow-up model calls. A Doctor
+ * diagnostic run gets the primary-call budget (a 12k system prompt plus a
+ * tool result does not fit 30 s on a cold local model), capped by what is
+ * left of its contract; every other run keeps the short follow-up timeout. */
+export function sdkFollowupTimeoutMs(diagnosticContract: Pick<TaskContract, 'budget'> | undefined, startedAt: number, now: number = Date.now()): number {
+    if (!diagnosticContract) return TIMEOUT_FOLLOWUP
+    const left = startedAt + diagnosticContract.budget.timeoutMs - now
+    return Math.max(1, Math.min(TIMEOUT_LLM, left))
+}
+
 export async function runNovaAgent(params: AgentRunParams): Promise<AgentResponse> {
     const { userId, authUserId = userId, channel, content, image, systemPrompt, llm, tools, onStepUpdate, abortSignal, contract, workspaceId, conversationId, modelOverride, preferredNodeIds = [], deniedTools = [], botId } = params
     const isBenchmarkRun = channel === 'benchmark'
@@ -1638,7 +1648,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
                     maxTurns, signal: abortSignal, execute: executeSdkTool,
                     modelOptions: {
-                        client: llmClient, timeoutMs: TIMEOUT_FOLLOWUP,
+                        client: llmClient, timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
                         maxTokens: kernel.cognition.executionBudget.maxOutputTokens,
                         beforeCall: async (sdkMessages, sdkTools) => {
                             if (policyBlocked) throw new ToolAuthorizationError('Run stopped at policy gate')

@@ -4,7 +4,7 @@ const reconcile = vi.hoisted(() => vi.fn(() => 0))
 vi.mock('./validator-failure-escalation.js', () => ({ reconcileValidatorFailures: reconcile }))
 vi.mock('./autonomy-authority.js', () => ({ hasGlobalAutonomyAuthority: () => true }))
 vi.mock('../doctor/failure-research-coordinator.js', () => ({ getFailureResearchCoordinator: () => ({ investigateNext: investigate }) }))
-import { setAutonomyThinkCallback, setDoctorResearchWorker, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
+import { DOCTOR_WARMUP_SECONDS, setAutonomyThinkCallback, setDoctorResearchWorker, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
 import { setThinkingConfig } from '../thinking/thinking-runtime.js'
 import { setSoftwareScoutConfig } from '../install/software-scout.js'
 
@@ -19,7 +19,10 @@ describe('Doctor is reachable in the actual autonomy cycle', () => {
         setAutonomyThinkCallback(async () => '')
         const worker = { hasAuthority: () => true, execute: async () => ({ output: '' }), getRun: () => null }
         setDoctorResearchWorker(worker)
+        // 2.84.0 Punkt 1: investigations start after the warm-up (doctor-warmstart.test.ts).
+        const uptime = vi.spyOn(process, 'uptime').mockReturnValue(DOCTOR_WARMUP_SECONDS)
         await triggerAutonomyCheck()
+        uptime.mockRestore()
         expect(investigate).toHaveBeenCalledExactlyOnceWith(worker)
         expect(reconcile).toHaveBeenCalledOnce()
     })

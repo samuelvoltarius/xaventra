@@ -952,6 +952,12 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
 
 let doctorCaseVerifierRegistered = false
 
+/** 2.84.0 Punkt 1: no Doctor investigation or repair draft before the process
+ * has run this long. Right after start the local model is cold or busy with
+ * the start probes; live the first investigation 5 s after start ended at
+ * "agent model call exceeded deadline". Intake and handoff keep running. */
+export const DOCTOR_WARMUP_SECONDS = 15 * 60
+
 async function runDoctorPhase(): Promise<void> {
     // SELF-DOCTOR
     // Every 6 cycles (~1h at 10min interval) Nova runs a diagnostic on herself.
@@ -973,13 +979,14 @@ async function runDoctorPhase(): Promise<void> {
             const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
             const { reconcileValidatorFailures } = await import('./validator-failure-escalation.js')
             reconcileValidatorFailures()
-            const research = await getFailureResearchCoordinator().investigateNext(doctorResearchWorker)
+            const warm = process.uptime() >= DOCTOR_WARMUP_SECONDS
+            const research = warm ? await getFailureResearchCoordinator().investigateNext(doctorResearchWorker) : null
             if (research) console.log(`[Autonomy] Doctor investigation ${research.id}: ${research.investigation?.status}; repair not applied`)
             const { reconcileRepairActivations } = await import('../synthesis/self-evolution.js')
             const { proposeDoctorRepair, reconcileDoctorRepairs } = await import('../doctor/repair-candidate.js')
             await reconcileRepairActivations()
             reconcileDoctorRepairs(getFailureResearchCoordinator())
-            await proposeDoctorRepair(getFailureResearchCoordinator(), doctorResearchWorker)
+            if (warm) await proposeDoctorRepair(getFailureResearchCoordinator(), doctorResearchWorker)
             // S1.7: verified cases go to Claude as data; after a rollout Nova
             // says whether the finding closed. Outbox always; 2.83.0: delivery
             // only through the one delegation way (L2 card, Rückkanal, own check).
