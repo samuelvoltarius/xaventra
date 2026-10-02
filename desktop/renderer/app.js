@@ -390,7 +390,7 @@ function render() {
   if (state.section === 'start') window.XaventraOnboarding?.bind(onboardingContext())
   if (state.section === 'verbindungen') window.XaventraConnections?.mount(connectionHelpers())
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
-  if (state.section === 'system') void ensureView('vms')
+  if (state.section === 'system') { void ensureView('vms'); void ensureView('staerken') }
   if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')
   if (state.section === 'gedaechtnis' && state.tabs.gedaechtnis === 'wissen') void ensureView('wissen')
   if (state.section === 'chat') {
@@ -410,9 +410,14 @@ function render() {
 const VIEW_PATHS = {
   heute: '/api/desktop/heute', arbeit: '/api/desktop/arbeit', system: '/api/desktop/system',
   gedaechtnis: '/api/desktop/gedaechtnis', vms: '/api/desktop/system/vms', wissen: null, werkzeugkasten: '/api/desktop/werkzeugkasten',
+  staerken: '/api/desktop/system/staerken',
 }
-const VIEW_SECTION = { heute: 'heute', arbeit: 'arbeit', system: 'system', gedaechtnis: 'gedaechtnis', vms: 'system', wissen: 'gedaechtnis', werkzeugkasten: 'werkzeugkasten' }
-const VIEW_MAX_AGE = { heute: 15_000, arbeit: 20_000, system: 30_000, gedaechtnis: 30_000, vms: 120_000, wissen: 30_000, werkzeugkasten: 60_000 }
+const VIEW_SECTION = { heute: 'heute', arbeit: 'arbeit', system: 'system', gedaechtnis: 'gedaechtnis', vms: 'system', wissen: 'gedaechtnis', werkzeugkasten: 'werkzeugkasten', staerken: 'system' }
+const VIEW_MAX_AGE = { heute: 15_000, arbeit: 20_000, system: 30_000, gedaechtnis: 30_000, vms: 120_000, wissen: 30_000, werkzeugkasten: 60_000, staerken: 60_000 }
+// 2.86 Paket J: Karte „Wer kann was am besten“ (staerken.js) auf der Seite System.
+function staerkenHelpers() {
+  return { esc, attr, icon, relTime, viewState, viewErrorBlock, skeletonSection }
+}
 // Was die Werkzeugkasten-Seite (werkzeugkasten.js) von hier braucht.
 function werkzeugkastenHelpers() {
   return { api, esc, attr, icon, toast, fail, render, ensureView, viewState, pageHead, viewErrorBlock, skeletonSection, problemsNote }
@@ -781,6 +786,7 @@ function systemView() {
   return `<div class="page"><div class="page-inner">${head}${problemsNote(data.probleme)}
     ${watch && !watch.an ? '<div class="problem-note">Der Wächter ist ausgeschaltet – Messwerte können veraltet sein.</div>' : ''}
     <section class="section"><div class="section-head"><h2>${icon('server')}Knoten</h2>${watch?.stand ? `<span class="section-note">letzte Runde ${esc(relTime(watch.stand))}</span>` : ''}</div><div class="section-body">${nodeTiles(data)}</div></section>
+    ${window.Knotenstaerken ? window.Knotenstaerken.section(staerkenHelpers()) : ''}
     <div class="grid-2"><div class="stack">
       <section class="section"><div class="section-head"><h2>${icon('activity')}Erreichbarkeit</h2><span class="pill ${failing.length ? 'bad' : 'good'}">${failing.length ? `${failing.length} gestört` : reach.length ? 'alles erreichbar' : 'keine Ziele'}</span></div>
         <div class="rows">${reach.slice(0, 20).map(item => `<div class="row"><div><div class="row-title">${esc(item.name)}</div><div class="row-sub">${esc(item.art)}${item.herkunft === 'selbst' ? ' · selbst erkannt' : ''}${item.ms !== null ? ` · ${fmtNumber(item.ms)} ms` : ''}${!item.ok && item.detail ? ` · ${esc(item.detail)}` : ''}</div></div><div class="row-side"><span class="pill ${item.ok ? 'good' : item.nieErreicht ? '' : 'bad'}">${item.ok ? 'ok' : item.nieErreicht ? 'nie erreicht' : item.alarm ? 'Alarm' : 'gestört'}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Noch nichts zu bewachen.</div></div>'}</div></section>

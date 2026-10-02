@@ -42,6 +42,7 @@ import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
 import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallieren } from './werkzeugkasten-view.js'
+import { collectStaerken } from './staerken-view.js'
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
@@ -551,6 +552,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     view('/api/desktop/arbeit', () => collectArbeit())
     view('/api/desktop/system', () => collectSystem())
     view('/api/desktop/system/vms', () => collectVms())
+    // 2.86 Paket J: "wer kann was am besten" (read-only, from the one strength module).
+    view('/api/desktop/system/staerken', () => collectStaerken())
     app.get('/api/desktop/gedaechtnis', async (req, res) => {
         if (!ownerOnly(req, res)) return
         try { res.setHeader('Cache-Control', 'no-store'); res.json(await collectGedaechtnis({ principalId: desktopExecutionPrincipal(principal(req)) })) } catch (error) { res.status(500).json({ error: safeError(error) }) }

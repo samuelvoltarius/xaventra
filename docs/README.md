@@ -35,6 +35,7 @@ authoritative source files and required evidence.
 | [Troubleshooting](./TROUBLESHOOTING.md) | Common issues & fixes |
 | [Production Operations](./PRODUCTION_OPERATIONS.md) | Node roles, health, rollout, rollback and Telegram recovery |
 | [Signed Mesh Releases](./MESH-RELEASE-UPDATES.md) | Signed artifact rollout and receipts |
+| [Arbeitsdaten mitnehmen](./MESH_WORKDATA.md) | Entwurf 2.86 Paket J: Git-Quelle im Mesh, gepinnter Commit, nichts in die Cloud |
 | [Signed Container Updates](./CONTAINER_UPDATES.md) | Docker-specific controller enrollment, activation and rollback |
 | [Native Update Driver](./NATIVE_UPDATE_DRIVER.md) | Native component evidence, isolated acceptance and unfinished production gates |
 | [Bounded Task Recovery](./TASK_RECOVERY.md) | Candidate routing corrections and recovery without permission expansion |

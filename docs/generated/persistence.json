@@ -774,6 +774,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/node-strengths.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/quorum-witness.ts",
       "path": ".nova-data"
     },

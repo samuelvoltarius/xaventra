@@ -32,6 +32,37 @@ credential fields as well as URL user information and secret query parameters.
 Only public status such as `available` or `authenticated` may be shared. Local
 credentials remain scoped to the user and node that owns them.
 
+## Wer kann was am besten (2.86 Paket J, `src/mesh/node-strengths.ts`)
+
+One module ranks the nodes for a strength — `bilder`, `grosse-modelle`, `llm`,
+`embedding`, `stt`, `tts`, `vision`, `medien`, `speicher`, `rechnen` — and for
+`main` (succession, used by Paket K). Inputs are measured facts only:
+
+- hardware from the signed node profile (`node.capabilities`, bound to the
+  authenticated source node): cores, RAM, GPU and how it is used, data disk;
+- running software from the Capability Graph (scanner + heartbeat runtimes)
+  and the profile (services, tools);
+- success rates from the Outcome-Ledger, validated owner runs only
+  (`ownerKernelRun`), counted from 5 runs.
+
+`rankNodes(fuer, facts)` is pure and deterministic (tie → node id) and gives a
+reason per place; stale (> 10 min), critical or unsuitable nodes are listed with
+their reason. `collectStrengthFacts()` reads the live sources without network.
+
+Changes travel with the existing signed profile (sent on start, on change and
+every 6 h): a new GPU, more RAM, a new service or tool, a new disk. The receiver
+keeps a bounded change list (`.nova-data/mesh-strength-changes.json`); the Main,
+which holds every profile, shows the map in the desktop app (System → „Wer kann
+was am besten“, `/api/desktop/system/staerken`, owner only).
+
+Routing uses the same ranking: `spawn_subagent` with `mesh_node="auto"` (and an
+optional `faehigkeit`) delegates over the signed mesh transport and writes the
+reason into the parent run's ledger (`route.selected` with `meshNode` and
+`meshCapability`). The mesh router, the `mesh_route` tool and the self-setup
+research ("where to install") ask the same module; their former fixed node list,
+ping scoring and own routing tables are gone. Moving work data: see
+[MESH_WORKDATA.md](./MESH_WORKDATA.md) (draft).
+
 ## Architecture
 
 Nova's mesh distributes intelligence across multiple edge devices via Tailscale VPN:

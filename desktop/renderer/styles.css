@@ -458,6 +458,9 @@ html.novaos-standard button { font-size: 16px !important; }
 /* 2.85 Paket D: Werkzeugkasten */
 .tool-summary { display: flex; flex-wrap: wrap; gap: 8px; }
 .tool-tile { gap: 8px; }
+.strength-tile { gap: 6px; }
+.strength-place { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.strength-place .row-sub { flex-basis: 100%; }
 .tool-tile.recommended { border-color: var(--warning); }
 .tool-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .tool-head h3 { font-size: 15px; }

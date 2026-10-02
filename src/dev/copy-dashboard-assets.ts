@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The one UI (desktop/renderer) is the only browser asset set; nothing else is copied. */
-export const DASHBOARD_UI_FILES = Object.freeze(['index.html', 'bridge.js', 'onboarding.js', 'app.js', 'werkzeugkasten.js', 'connections.js', 'styles.css'])
+export const DASHBOARD_UI_FILES = Object.freeze(['index.html', 'bridge.js', 'onboarding.js', 'app.js', 'werkzeugkasten.js', 'connections.js', 'staerken.js', 'styles.css'])
 
 export function copyDashboardAssets(root = process.cwd()): { source: string; destination: string } {
     const source = join(root, 'desktop', 'renderer')

@@ -1859,7 +1859,7 @@
     {
       "name": "mesh_route",
       "category": "mesh",
-      "description": "Zeigt welcher Node am besten fÃ¼r einen bestimmten Task geeignet ist.",
+      "description": "Zeigt, welcher Knoten eine Aufgabe am besten kann (Rangliste mit Begründung aus signierten Knotenprofilen, laufender Software und gemessenen Owner-Läufen). Delegieren: spawn_subagent mit mesh_node=\"auto\".",
       "parameters": [
         {
           "name": "task",
@@ -3081,6 +3081,11 @@
         },
         {
           "name": "mesh_node",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "faehigkeit",
           "type": "string",
           "required": false
         }

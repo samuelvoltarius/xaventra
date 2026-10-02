@@ -1474,6 +1474,7 @@
     {
       "module": "src/core/capability-researcher.ts",
       "imports": [
+        "../mesh/node-strengths.js",
         "./self-setup-orchestrator.js",
         "node:fs",
         "node:os",
@@ -2666,6 +2667,7 @@
         "./model-control.js",
         "./module-catalog.js",
         "./node-enrollment.js",
+        "./staerken-view.js",
         "./topic-room-store.js",
         "./werkzeugkasten-view.js",
         "express",
@@ -2739,6 +2741,13 @@
     {
       "module": "src/desktop/repair-acceptance-fixture.ts",
       "imports": []
+    },
+    {
+      "module": "src/desktop/staerken-view.ts",
+      "imports": [
+        "../mesh/node-strengths.js",
+        "./desktop-views.js"
+      ]
     },
     {
       "module": "src/desktop/topic-room-store.ts",
@@ -4903,8 +4912,7 @@
     {
       "module": "src/mesh/mesh-router.ts",
       "imports": [
-        "node:child_process",
-        "node:net"
+        "./node-strengths.js"
       ]
     },
     {
@@ -4981,6 +4989,13 @@
       ]
     },
     {
+      "module": "src/mesh/node-strengths.ts",
+      "imports": [
+        "../core/node-profile.js",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/mesh/quorum-witness.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5042,6 +5057,13 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/workspace-handoff.ts",
+      "imports": [
+        "node:child_process",
+        "node:net"
       ]
     },
     {
