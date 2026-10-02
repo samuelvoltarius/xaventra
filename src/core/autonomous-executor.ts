@@ -979,7 +979,7 @@ Antworte mit GENAU einem der folgenden Formate:
 // ============================================
 
 function formatMissionPlan(mission: Mission): string {
-    let msg = `🎯 *Auftrag gestartet*\n\n`
+    let msg = `🎯 *Xaventra: Auftrag gestartet*\n\n`
     msg += `*Ziel:* ${mission.goal.slice(0, 200)}\n\n`
     msg += `*Plan (${mission.steps.length} Schritte):*\n`
 

@@ -17,7 +17,7 @@ describe('sichtbarer Markenname', () => {
         expect(src('channels/telegram-grammy.ts')).not.toMatch(/Willkommen bei Nova|\*Nova Commands\*|Nova ist online/)
         expect(src('channels/telegram.ts')).not.toMatch(/✨ \*Nova Befehle\*|⏳ Nova arbeitet/)
         expect(src('daemon.ts')).toContain("'✨ *Xaventra Online!*'")
-        expect(src('core/autonomous-executor.ts')).toContain('🎯 *Xaventra Mission gestartet*')
+        expect(src('core/autonomous-executor.ts')).toContain('🎯 *Xaventra: Auftrag gestartet*')
         expect(src('doctor/format.ts')).toContain('🩺 *Xaventra Doctor*')
         expect(src('layers/dream-daily-digest.ts')).toContain('*Xaventra Tagesbericht*')
     })

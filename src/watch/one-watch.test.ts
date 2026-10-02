@@ -100,7 +100,7 @@ describe('Verdrahtung', () => {
 
     it('der Daemon startet den Wächter nach dem Planer; L19 und der Proxmox-Zweig sind weg', () => {
         const source = daemon()
-        const planner = source.indexOf('await startPlannerRuntime(autonomyCfg)')
+        const planner = source.indexOf('await startPlannerRuntime(autonomyCfg')
         const watch = source.indexOf("await import('./watch/runtime.js')")
         expect(planner).toBeGreaterThan(0)
         expect(watch).toBeGreaterThan(planner)

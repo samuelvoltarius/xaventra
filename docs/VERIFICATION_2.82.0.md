@@ -19,6 +19,17 @@
   worktree-only `repair-publication` case, which is green in CI.
 - Test data uses example.com only.
 
+- Duplication cleanup (owner: "alle Punkte fixen, wirklich alle"), each
+  branch with green CI on its exact head before merge: one message per
+  finding (a04ca39…7d2709d), memory 7e7e988 (36907767750), tasks 85134d1
+  (36909287765), approvals 1a6e7b9 (36909349520), skills/forge c738bf3
+  (36940793983), watch 3849db2 (36942583115). Integration fixes, red tests
+  first: missions file vs /wave (d133ee7), trust ladder signs as itself
+  (89a5e16), quiet hours "-1" (cd84dfb), forge owner code bound to the call,
+  orphan skill-sandbox card removed, L9 drains the proactive-learning queue.
+- Full suite after the last merge: all files green except the local
+  worktree-only `repair-publication` case.
+
 Pending: candidate CI on the release commit, main CI, signed publication,
 production activation, live acceptance (owner presses a real card, the
 evening report shows skills/decisions/trust changes, discovered devices are
