@@ -63,9 +63,10 @@ if (child === '--phase-one') {
     content: contract.goal, contract, llm, tools: [{ name: 'health_status' }], systemPrompt: 'Acceptance fixture.',
   }))
   const store = new escalationModule.ToolFailureEscalationStore(storePath)
-  const { getLearningStats } = await import('../dist/intelligence/proactive-learning.js')
+  // 2.86: L9 is the one idle learner; a tool failure must not feed it a topic.
+  const { getIdleLearningManager } = await import('../dist/layers/L9-idle-learning.js')
   writeJson(join(runtime, 'phase-one.json'), {
-    idleLearningTopics: getLearningStats().totalTopics,
+    idleLearningTopics: getIdleLearningManager().getStats().patterns.length,
     output: result.content, llmCalls, healthCalls, buildSkillCalls,
     records: store.list(), doctorCases: new doctorModule.FailureResearchCoordinator(doctorPath).list(),
     run: ledger.getRun(contract.id),

@@ -1210,3 +1210,13 @@ Agents-SDK ist global aus (eigene Telemetrie ist OTel, unverändert).
 nicht mehr gelesen oder geschrieben und kann bei Bedarf von Hand archiviert
 werden. `supabase.learningUrl`/`learningKey` bleiben gültig, soweit andere
 Module (Shared Memory) sie nutzen; für den Lern-Abgleich wirken sie nicht mehr.
+
+*Ein Leerlauf-Lerner (2.86):* Das zweite Lernmodul (`intelligence/proactive-learning.ts`)
+ist entfernt. Es hängte „Soll ich lernen …?“ an Werkzeugergebnisse und schickte
+SSH- und Autonomie-Fehlertexte (mit Host und Benutzer) als Suchanfrage an Tavily.
+L9 (`layers/L9-idle-learning.ts`) ist der einzige Leerlauf-Lerner: Themen nur aus
+Werkzeugnamen, jede Anfrage redigiert (keine Hosts, IPs, Benutzer, Pfade, Tokens),
+Suche über SearXNG, falls konfiguriert, sonst über die gesteuerte Suchkette — nie
+Tavily direkt, keine Rückfrage im Leerlauf. `.nova-data/local-knowledge.json` wurde
+nie gelesen und wird beim Start einmal als `local-knowledge.json.migriert`
+beiseitegelegt (nicht gelöscht).

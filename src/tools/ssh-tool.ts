@@ -641,14 +641,8 @@ export async function executeSSH(params: SSHParams): Promise<{ success?: boolean
                 ? `SSH-Dienst auf ${host}:${port} läuft nicht`
                 : `SSH fehlgeschlagen: ${lastError.slice(0, 150)}`
 
-    // Queue SSH failure as learning topic so Nova researches fixes during idle
-    try {
-        const { addTopicFromError } = await import('../intelligence/proactive-learning.js')
-        addTopicFromError(
-            `SSH ${errorSummary.slice(0, 80)}`,
-            `Host: ${host}, User: ${user}, Methoden: ${methods.join(', ')}`
-        )
-    } catch { /* non-critical */ }
+    // 2.86: no learning topic from this error text — it carries host and user,
+    // and idle learning searched it on the web (Privates nie in die Cloud).
 
     return {
         error: errorSummary,

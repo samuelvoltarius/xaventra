@@ -89,7 +89,6 @@ nova-core/
 │   │   ├── roi-dashboard.ts       # Cost/value tracking
 │   │   ├── soul-evolution.ts      # Self-evolving identity (SOUL.md)
 │   │   ├── file-index.ts          # OmniSearch-style fast file search
-│   │   ├── proactive-learning.ts  # Post-tool learning prompts
 │   │   └── empathy-engine.ts      # User pattern detection
 │   │
 │   ├── layers/                    # All 44 cognitive layers

@@ -262,12 +262,6 @@ Antworte NUR mit einem JSON-Array.`
         } catch (err) {
             console.log(`[Autonomy] Goal generation failed: ${err}`)
 
-            // Queue error for idle learning so Nova researches the fix
-            try {
-                const { addTopicFromError } = await import('./proactive-learning.js')
-                addTopicFromError(`Autonomy goal generation: ${String(err).slice(0, 80)}`, 'Autonomy Engine')
-            } catch { /* non-critical */ }
-
             return []
         }
     }

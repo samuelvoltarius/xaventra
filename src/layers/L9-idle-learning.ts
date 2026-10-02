@@ -1,15 +1,28 @@
 /**
- * Layer 9 - Idle Background Learning
- * 
+ * Layer 9 - Idle Background Learning — the one idle learner (2.82, 2.86).
+ *
  * When Nova is idle (no messages for 5+ minutes):
- * 1. Analyze what tools/commands user uses most
- * 2. Search for documentation/tutorials on those topics
- * 3. Store learned knowledge for future use
- * 4. Optionally notify user of what was learned
+ * 1. Take the most used tools (by name only)
+ * 2. Search for documentation/tutorials on those tools
+ * 3. Store learned knowledge for future use (injected as "GELERNTES WISSEN")
+ *
+ * 2.86 Punkt 6: the second learner (the former proactive learning module)
+ * is gone. It appended "Soll ich lernen …?" to tool results and sent SSH and
+ * autonomy error texts (host, user) to Tavily. Rules here:
+ * - topics come only from tool names, never from free error text;
+ * - every query is redacted (no hosts, IPs, users, paths, tokens);
+ * - search prefers the local SearXNG when configured, otherwise the governed
+ *   search chain (`createGovernedWebSearch`) — never Tavily directly;
+ * - no question to the owner while idle.
+ * The old `.nova-data/local-knowledge.json` was never read; it is moved aside
+ * once as `.migriert` on start (not deleted).
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { getNovaDataDir, getNovaLearningDir } from '../core/data-root.js'
+import { redactSecrets } from '../security/secret-redaction.js'
+import { markMigrated } from '../planner/migration-files.js'
 
 // ============================================
 // Types
@@ -29,6 +42,47 @@ interface LearnedKnowledge {
     learnedAt: number
 }
 
+interface IdleHit { title?: string; url?: string; snippet?: string }
+
+// ============================================
+// Privacy: redacted queries, local search first
+// ============================================
+
+/**
+ * Removes everything private from an idle search query: secrets, URLs,
+ * user@host and e-mail addresses, IPv4/IPv6 addresses, file paths, host
+ * names and long token-like strings. What remains are plain words.
+ */
+export function redactIdleSearchQuery(text: string): string {
+    return redactSecrets(String(text ?? ''))
+        .replace(/\[REDACTED[^\]]*\]/g, ' ')
+        .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, ' ')
+        .replace(/\S+@\S+/g, ' ')
+        .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, ' ')
+        .replace(/(?:^|\s)\S*[0-9a-f]*:[0-9a-f]*:[0-9a-f:]*\S*/gi, ' ')
+        .replace(/(?:^|\s)(?:[A-Za-z]:)?[\\/]\S*/g, ' ')
+        .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\b/gi, ' ')
+        .replace(/\b[A-Za-z0-9_-]{24,}\b/g, ' ')
+        .replace(/[^\p{L}\p{N}_ .+#-]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120)
+}
+
+/** SearXNG (local, private) when configured, otherwise the governed search chain. */
+async function idleSearch(query: string): Promise<{ tool: string; hits: IdleHit[] }> {
+    const { getSearXNGUrl, searxngSearch } = await import('../tools/searxng-search.js')
+    const base = getSearXNGUrl()
+    if (base) {
+        const result = await searxngSearch(query, base, { count: 3 })
+        if (!result.error && result.results.length > 0) {
+            return { tool: 'searxng', hits: result.results.map(item => ({ title: item.title, url: item.url, snippet: item.content })) }
+        }
+    }
+    const { createGovernedWebSearch } = await import('../install/software-freshness.js')
+    return createGovernedWebSearch().search(query)
+}
+
 // ============================================
 // Idle Learning Manager
 // ============================================
@@ -40,9 +94,8 @@ class IdleLearningManager {
     private isLearning: boolean = false
     private patterns: Map<string, UserPattern> = new Map()
     private knowledge: LearnedKnowledge[] = []
-    private dataPath: string = '.nova-learning/idle-knowledge.json'
+    private dataPath: string = getNovaLearningDir('idle-knowledge.json')
     private intervalId?: NodeJS.Timeout
-    private notifyCallback?: (message: string) => Promise<void>
 
     constructor() {
         this.loadData()
@@ -55,18 +108,15 @@ class IdleLearningManager {
     start(): void {
         if (this.intervalId) return
 
+        // 2.86: the never-read store of the removed second learner is moved aside once.
+        const moved = markMigrated(getNovaDataDir('local-knowledge.json'))
+        if (moved) console.log(`[L9 IdleLearning] local-knowledge.json (nie gelesen) → ${moved}`)
+
         this.intervalId = setInterval(() => {
             this.checkAndLearn()
         }, this.checkIntervalMs)
 
         console.log('[L9 IdleLearning] Idle checker started')
-    }
-
-    /**
-     * Set callback for notifying user during idle
-     */
-    setNotifyCallback(callback: (message: string) => Promise<void>): void {
-        this.notifyCallback = callback
     }
 
     /**
@@ -106,7 +156,7 @@ class IdleLearningManager {
     }
 
     /**
-     * Get topics that would be most useful to learn
+     * Get topics that would be most useful to learn (tool names only)
      */
     private getTopicsToLearn(): string[] {
         const topics: string[] = []
@@ -150,26 +200,10 @@ class IdleLearningManager {
             return
         }
 
-        // One idle learner (2.82.0): also take one topic from the proactive-learning
-        // queue (filled from errors and tool runs; the removed L15 learner drained it).
-        this.isLearning = true
-        try {
-            const { learnDuringIdle } = await import('../intelligence/proactive-learning.js')
-            await learnDuringIdle()
-        } catch { /* proactive learning not available */ } finally { this.isLearning = false }
-
         const topics = this.getTopicsToLearn()
         if (topics.length === 0) {
+            // 2.86: no question to the owner ("Soll ich X recherchieren?") while idle.
             console.log('[L9 IdleLearning] No new topics to learn')
-
-            // Ask user what to learn if we have a notification callback
-            if (this.notifyCallback) {
-                try {
-                    const { generateIdleLearningPrompt } = await import('../intelligence/proactive-learning.js')
-                    const prompt = generateIdleLearningPrompt()
-                    await this.notifyCallback(prompt)
-                } catch { /* proactive learning not available */ }
-            }
             return
         }
 
@@ -191,40 +225,34 @@ class IdleLearningManager {
      * Learn about a specific topic
      */
     private async learnAbout(topic: string): Promise<void> {
-        console.log(`[L9 IdleLearning] Learning about: ${topic}`)
+        const query = redactIdleSearchQuery(topic)
+        if (!query) return
+        console.log(`[L9 IdleLearning] Learning about: ${query}`)
 
         try {
-            // Try to use tavily_search if available
-            const { tavilySearchTool } = await import('../tools/tavily-search.js').catch(() => ({ tavilySearchTool: null }))
+            const { tool, hits } = await idleSearch(query)
 
-            if (!tavilySearchTool) {
-                console.log('[L9 IdleLearning] No search tool available for learning')
-                return
-            }
-
-            const result = await tavilySearchTool.handler({ query: topic, count: 3 }) as any
-
-            if (result?.results?.length > 0) {
+            if (hits.length > 0) {
                 // Extract key information
-                const summary = result.results
+                const summary = hits
                     .slice(0, 2)
-                    .map((r: any) => `• ${r.title}: ${r.content?.slice(0, 100)}...`)
+                    .map(hit => `• ${hit.title || hit.url || 'Treffer'}: ${String(hit.snippet || '').slice(0, 100)}...`)
                     .join('\n')
 
                 const knowledge: LearnedKnowledge = {
-                    topic,
+                    topic: query,
                     summary,
-                    source: result.results[0]?.url || 'web search',
+                    source: hits[0]?.url || tool,
                     learnedAt: Date.now(),
                 }
 
                 this.knowledge.push(knowledge)
                 this.saveData()
 
-                console.log(`[L9 IdleLearning] ✅ Learned about ${topic}`)
+                console.log(`[L9 IdleLearning] ✅ Learned about ${query} (${tool})`)
             }
         } catch (err) {
-            console.log(`[L9 IdleLearning] Failed to learn about ${topic}: ${err}`)
+            console.log(`[L9 IdleLearning] Failed to learn about ${query}: ${err}`)
         }
     }
 
