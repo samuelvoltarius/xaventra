@@ -458,6 +458,12 @@ thoughts with permission `fragen`) · Ideen (max 3) · Skills (Routine-Skills an
 oder deaktiviert, Gedanken mit Quelle `skills`) · Zurückgehalten (quiet hours /
 cap). Built only from journals on disk, every line redacted, max 5 lines per section.
 
+2.83.0 **Lernkurve** (evening report only): per task type the success rate of the
+last 7 days against the 7 days before (`recherche 60 % → 90 %`), from the
+Kernel-validated outcome-router samples; only task types with at least 5 samples in
+both windows, a run the owner later rejected counts as a failure. Plus
+„Owner-Zurückweisungen: N (Vorwoche M)“. Counts only, never request text.
+
 ## Wahrnehmen und Selbst-Einrichtung (Phase 2)
 
 P8: on at the Main by default (`enabled: false` switches off). `autonomy.sensing.enabled`
