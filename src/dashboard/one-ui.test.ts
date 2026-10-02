@@ -53,7 +53,9 @@ describe('dashboard server delivers the one shared UI', () => {
         expect(page.headers['content-security-policy']).toContain("frame-ancestors 'none'")
         expect(page.headers['set-cookie']).toBeUndefined()
         expect(page.body).toContain('bridge.js')
-        for (const name of ['bridge.js', 'app.js', 'styles.css']) {
+        // 2.85 Paket D: the Werkzeugkasten page is its own renderer file.
+        expect(page.body).toContain('werkzeugkasten.js')
+        for (const name of ['bridge.js', 'app.js', 'styles.css', 'werkzeugkasten.js']) {
             const file = await send('GET', `/${name}`)
             expect(file.status, name).toBe(200)
             expect(file.headers['cache-control']).toBe('no-store')

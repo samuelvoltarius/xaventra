@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { join } from 'node:path'
 import { grantStanding, hasStanding, revokeStanding, type TrustOptions } from '../core/action-policy.js'
 import { getNovaDataDir } from '../core/data-root.js'
-import { findCatalogEntry, getInstallCatalog, isCatalogId, type ApprovalLevel, type InstallCatalog, type InstallCatalogEntry } from './install-catalog.js'
+import { findCatalogEntry, getInstallCatalog, isCatalogId, ollamaModelRef, type ApprovalLevel, type InstallCatalog, type InstallCatalogEntry } from './install-catalog.js'
 import { issueInstallTicket, TICKET_ID_PATTERN, type SignedInstallTicket } from './install-ticket.js'
 
 // ============================================================================
@@ -85,7 +85,7 @@ export function planInstallRoute(entry: InstallCatalogEntry | undefined, target:
     if (target.installPath === 'image') {
         if (entry.kind === 'ollama-model') {
             return entry.targets.includes('model-volume')
-                ? { kind: 'model-volume', model: entry.id.slice('ollama-model:'.length), note: 'Modell ins Daten-Volume des Workers (Ollama-Dienst dort). Stufe 2 führt auf Workern nichts aus.' }
+                ? { kind: 'model-volume', model: ollamaModelRef(entry.id.slice('ollama-model:'.length)), note: 'Modell ins Daten-Volume des Workers (Ollama-Dienst dort). Stufe 2 führt auf Workern nichts aus.' }
                 : { kind: 'refused', reason: 'Modell nicht für Daten-Volumes freigegeben.' }
         }
         if (!entry.image || !entry.targets.includes('image')) return { kind: 'refused', reason: 'Für Container-Worker gibt es dafür keine Image-Variante.' }

@@ -47,6 +47,8 @@ const NAV_MAIN = [
 const NAV_BOTTOM = [['mehr', 'Mehr', 'grid'], ['settings', 'Einstellungen', 'settings']]
 // Fachseiten unter „Mehr“: bleiben erreichbar, stehen aber nicht im Weg.
 const MORE_PAGES = {
+  // 2.85 Paket D: eigene Seite in werkzeugkasten.js.
+  werkzeugkasten: { title: 'Werkzeugkasten', icon: 'wrench', text: 'Programme, die Xaventra stärker machen – mit einem Knopf installieren und wieder entfernen.' },
   trust: { title: 'Belege & Reparaturen', icon: 'fileCheck', text: 'Jeder Arbeitslauf mit Werkzeugen, Prüfung und Kosten. Doctor-Reparaturen, die eine PATCH_GATE-Freigabe brauchen.' },
   bots: { title: 'Spezialisten', icon: 'users', text: 'Aufgaben-Profile und angebundene Hermes-/OpenClaw-Agenten. Xaventra zieht sie selbst hinzu.' },
   modules: { title: 'Studio', icon: 'sparkles', text: 'Sprache, Sehen, CAD, Druck, Smart Home: Arbeitsräume für einzelne Fähigkeiten.' },
@@ -346,6 +348,7 @@ function pageFor(section) {
   if (section === 'security') return subPage('security', securityView())
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
+  if (section === 'werkzeugkasten') return subPage('werkzeugkasten', window.Werkzeugkasten ? window.Werkzeugkasten.view(werkzeugkastenHelpers()) : loadingBlock('Werkzeugkasten wird geladen'))
   return settingsView()
 }
 
@@ -362,6 +365,7 @@ function render() {
   if (state.section === 'trust') void loadTrust()
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
+  if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')
   if (state.section === 'gedaechtnis' && state.tabs.gedaechtnis === 'wissen') void ensureView('wissen')
   if (state.section === 'chat') {
     const roomId = state.roomId
@@ -379,10 +383,14 @@ function render() {
 // Daten der Lesesichten: zwischengespeichert, still aktualisiert.
 const VIEW_PATHS = {
   heute: '/api/desktop/heute', arbeit: '/api/desktop/arbeit', system: '/api/desktop/system',
-  gedaechtnis: '/api/desktop/gedaechtnis', vms: '/api/desktop/system/vms', wissen: null,
+  gedaechtnis: '/api/desktop/gedaechtnis', vms: '/api/desktop/system/vms', wissen: null, werkzeugkasten: '/api/desktop/werkzeugkasten',
 }
-const VIEW_SECTION = { heute: 'heute', arbeit: 'arbeit', system: 'system', gedaechtnis: 'gedaechtnis', vms: 'system', wissen: 'gedaechtnis' }
-const VIEW_MAX_AGE = { heute: 15_000, arbeit: 20_000, system: 30_000, gedaechtnis: 30_000, vms: 120_000, wissen: 30_000 }
+const VIEW_SECTION = { heute: 'heute', arbeit: 'arbeit', system: 'system', gedaechtnis: 'gedaechtnis', vms: 'system', wissen: 'gedaechtnis', werkzeugkasten: 'werkzeugkasten' }
+const VIEW_MAX_AGE = { heute: 15_000, arbeit: 20_000, system: 30_000, gedaechtnis: 30_000, vms: 120_000, wissen: 30_000, werkzeugkasten: 60_000 }
+// Was die Werkzeugkasten-Seite (werkzeugkasten.js) von hier braucht.
+function werkzeugkastenHelpers() {
+  return { api, esc, attr, icon, toast, fail, render, ensureView, viewState, pageHead, viewErrorBlock, skeletonSection, problemsNote }
+}
 
 async function fetchView(name) {
   if (name === 'wissen') {
@@ -1159,6 +1167,7 @@ function bind() {
   })
   document.querySelectorAll('[data-enrollment-action]').forEach(node => node.addEventListener('click', () => enrollmentAction(node.dataset.id, node.dataset.enrollmentAction)))
   document.querySelectorAll('[data-memory-equip]').forEach(node => node.addEventListener('click', () => toggleRoomMemoryAsset(node.dataset.memoryEquip, node.dataset.equipped === 'true')))
+  if (state.section === 'werkzeugkasten') window.Werkzeugkasten?.bind(werkzeugkastenHelpers())
 }
 
 function showRepairApproval(proposalId) {

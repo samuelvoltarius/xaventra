@@ -43,6 +43,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
     if (/^(?:wer|was) bist du$/.test(text)) return route('identity', '', 'identity')
     if (/^(?:was kannst du(?: alles)?|welche fähigkeiten hast du|what can you do)$/.test(text)) return route('capabilities', '', 'registered-capabilities')
     if (/^(?:welche rechte habe ich|welche rolle habe ich)$/.test(text)) return route('whoami', '', 'principal-role')
+    // 2.85 Paket D: Werkzeugkasten as a normal question (read-only short list, no new command).
+    if (/^was (?:könntest|koenntest|kannst|solltest|würdest|wuerdest) du (?:dir )?(?:noch|zusätzlich|zusaetzlich) (?:installieren|einrichten)$/.test(text)
+        || /^welche (?:programme|software|werkzeuge|tools) (?:würden|wuerden|könnten|koennten) dir (?:noch )?helfen$/.test(text)
+        || /^welche (?:programme|software|werkzeuge|tools) (?:fehlen|fehlt) dir(?: noch)?$/.test(text)
+        || /^(?:zeig(?:e)?(?: mir)? )?(?:den |deinen )?werkzeugkasten$/.test(text)) return route('software', 'werkzeugkasten', 'toolbox')
 
     const forgetTarget = parseNaturalMemoryForget(input)
     if (forgetTarget) return route('memory', `forget-natural ${forgetTarget}`, 'memory-forget', 'controlled-action')

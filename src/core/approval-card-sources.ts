@@ -17,6 +17,10 @@
  *   NOVA_PATCH_GATE_TOKEN, atomic state; sandbox evidence, signed activation).
  * - Werkzeug-Schmiede (P9): activation cards `werkzeug-*` are registered by
  *   tools/skill-builder.ts itself.
+ * - 2.85 Paket D (Werkzeugkasten): „Entfernen“ offers an `install-rollback`
+ *   card; „Ja“ = rollbackQueuedInstall (owner, signed rollback ticket). It is
+ *   only offered on request (toolbox-actions.ts), never from a sync, and never
+ *   gets „Immer erlauben“ (rollback is excluded from standing permissions).
  *
  * P9 „ein Knopf-Rahmen“: `/patch approve`, `/setup approve` and the Skill-Forge
  * only (re)send these cards (`offerCard`); the old Telegram callbacks
@@ -29,7 +33,7 @@ import {
     cardKeyboard, createApprovalCard, formatCardText, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
     registerCardExecutor, requestCardRedelivery, type ApprovalCard, type CardExecutor, type CardStoreOptions, type NewCardInput,
 } from './approval-cards.js'
-import { approveQueuedInstall, loadInstallQueue, type InstallProposal, type InstallQueueDeps } from '../install/install-queue.js'
+import { approveQueuedInstall, loadInstallQueue, rollbackQueuedInstall, type InstallProposal, type InstallQueueDeps } from '../install/install-queue.js'
 import { readHealProposals, sanitizeSelfHealSummary, setHealProposalStatus, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 
 const DAY_MS = 24 * 60 * 60_000
@@ -84,6 +88,30 @@ export function createInstallExecutor(getDeps: () => InstallQueueDeps): CardExec
         },
         isStillOpen(card) {
             try { return proposal(card)?.status === 'queued' } catch { return true }
+        },
+    }
+}
+
+/** 2.85 Paket D: „Entfernen“ from the Werkzeugkasten — the existing owner rollback, after „Ja“ only. */
+export function createInstallRollbackExecutor(getDeps: () => InstallQueueDeps): CardExecutor {
+    const proposal = (card: ApprovalCard) => loadInstallQueue(getDeps()).find(item => item.id === card.aktion.ref)
+    return {
+        kind: 'install-rollback',
+        impact: 'intern',
+        allowAlways: () => false,
+        async execute(card, _answer, ctx) {
+            const approver = { permission: 'owner', principalId: ctx.decidedBy, channel: 'karte' }
+            const result = await rollbackQueuedInstall(card.aktion.ref, approver, getDeps())
+            const completion = result.ok && result.completion
+                ? result.completion.then(item => ({ ok: item?.status === 'rolled-back' }))
+                : undefined
+            return { ok: result.ok, message: result.message, ...(completion ? { completion } : {}) }
+        },
+        async reject() {
+            return { ok: true, message: 'Bleibt installiert.' }
+        },
+        isStillOpen(card) {
+            try { return proposal(card)?.status === 'done' } catch { return true }
         },
     }
 }
@@ -166,6 +194,16 @@ export function installCardInput(item: InstallProposal): NewCardInput {
     }
 }
 
+/** 2.85 Paket D: card for „Entfernen“ of a finished installation (Werkzeugkasten). */
+export function installRollbackCardInput(item: InstallProposal): NewCardInput {
+    return {
+        art: 'install-rollback', titel: `${item.catalogId} auf ${item.nodeId} wieder entfernen?`,
+        beleg: `Installiert über Warteschlange ${item.id} (Ticket ${item.ticketId || '–'}), abgeschlossen ${item.updatedAt.slice(0, 16).replace('T', ' ')} UTC. Der Host-Agent nimmt genau seinen aufgezeichneten Rückweg.`,
+        vorschlag: `Rückgängig machen (Warteschlange ${item.id}).`,
+        aktion: { kind: 'install-rollback', ref: item.id }, node: item.nodeId, quelle: 'werkzeugkasten', dedupeKey: `install-rollback:${item.id}`, ablaufMs: DAY_MS,
+    }
+}
+
 export function patchCardInput(patch: any): NewCardInput {
     return {
         art: 'patch', titel: `Patch: ${short(patch.description || patch.file, 140)}`,
@@ -195,6 +233,7 @@ let builtinsRegistered = false
 /** Registers install / self-heal / peer / patch executors. Tests pass their own deps. */
 export function registerBuiltinCardExecutors(deps: BuiltinExecutorDeps): void {
     registerCardExecutor(createInstallExecutor(deps.installDeps))
+    registerCardExecutor(createInstallRollbackExecutor(deps.installDeps))
     registerCardExecutor(createSelfHealExecutor(deps.selfHealDataDir))
     registerCardExecutor(createPeerSelfHealExecutor())
     registerCardExecutor(createPatchExecutor(deps.patchProposals))

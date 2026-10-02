@@ -41,6 +41,7 @@ import { resolvePrincipalId } from '../users/principal-id.js'
 import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
+import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallieren } from './werkzeugkasten-view.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -540,6 +541,19 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     view('/api/desktop/system', () => collectSystem())
     view('/api/desktop/system/vms', () => collectVms())
     view('/api/desktop/gedaechtnis', () => collectGedaechtnis())
+    // 2.85 Paket D: Werkzeugkasten. The buttons only create a proposal and offer the
+    // existing card; installing/removing happens after the card's "Ja" (ticket).
+    view('/api/desktop/werkzeugkasten', () => collectWerkzeugkasten())
+    const toolboxAction = (path: string, run: (id: string) => Promise<{ ok: boolean }>, field: 'katalogId' | 'queueId') => app.post(path, async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        try {
+            const result = await run(String(req.body?.[field] ?? '').slice(0, 120))
+            res.setHeader('Cache-Control', 'no-store')
+            res.status(result.ok ? 200 : 409).json(result)
+        } catch (error) { res.status(500).json({ error: safeError(error) }) }
+    })
+    toolboxAction('/api/desktop/werkzeugkasten/installieren', werkzeugkastenInstallieren, 'katalogId')
+    toolboxAction('/api/desktop/werkzeugkasten/entfernen', werkzeugkastenEntfernen, 'queueId')
 
     app.post('/api/desktop/karten/:id/antwort', async (req, res) => {
         if (!ownerOnly(req, res)) return

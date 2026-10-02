@@ -57,6 +57,16 @@ export interface ScoutNode {
     modelOnly?: boolean
     /** Optional measured load (local node): vLLM queue and GPU utilisation. */
     load?: { vllmWaiting?: number; gpuUtilPercent?: number }
+    /**
+     * 2.85 Paket D: capabilities configured on this node outside the profile
+     * (e.g. a SearXNG URL), with a short evidence text. Counts like a present capability.
+     */
+    presence?: Partial<Record<SoftwareCapability, string>>
+}
+
+/** Local configuration that already provides a capability (no network probe). */
+export function localPresence(config: { searxngUrl?: string | null }): Partial<Record<SoftwareCapability, string>> {
+    return config.searxngUrl ? { search: 'SearXNG eingerichtet' } : {}
 }
 
 export type FitStatus = 'passt' | 'passt-nicht' | 'vorhanden' | 'installiert'
@@ -139,7 +149,7 @@ export function assessCandidate(candidate: SoftwareCandidate, node: ScoutNode, o
         ({ candidateId: candidate.id, nodeId: node.nodeId, status, route, reasons, notes, freeMemGB: freeMem, freeDiskGB: freeDisk, score })
     const no = (reason: string) => result('passt-nicht', 'keiner', [reason])
 
-    const present = capabilityPresence(p, candidate.capability)
+    const present = capabilityPresence(p, candidate.capability) || node.presence?.[candidate.capability] || null
     if (present) return result('vorhanden', 'keiner', [`Fähigkeit schon vorhanden: ${present}`])
     const installed = installedOn(candidate, p)
     if (installed) return result('installiert', 'keiner', [`schon installiert: ${installed}`])
@@ -229,7 +239,7 @@ export function analyzeMesh(nodes: readonly ScoutNode[], options: { candidates?:
     const candidates = (options.candidates || getSoftwareCandidates()).entries
     const rated = nodes.filter(node => isFresh(node, now))
     const capabilities = SOFTWARE_CAPABILITIES.map((capability): CapabilitySummary => {
-        const present = rated.flatMap(node => { const evidence = capabilityPresence(node.profile, capability); return evidence ? [{ nodeId: node.nodeId, evidence }] : [] })
+        const present = rated.flatMap(node => { const evidence = capabilityPresence(node.profile, capability) || node.presence?.[capability]; return evidence ? [{ nodeId: node.nodeId, evidence }] : [] })
         const fits: CapabilitySummary['fits'] = []
         const misfits: CapabilitySummary['misfits'] = []
         for (const candidate of candidates.filter(item => item.capability === capability)) {
@@ -519,6 +529,11 @@ export async function collectScoutNodes(options: { measureLoad?: boolean } = {})
     const localId = getLocalNodeId()
     const local = await collectNodeProfile()
     const nodes: ScoutNode[] = [{ nodeId: localId, profile: { ...local, nodeId: localId }, local: true, modelOnly: isModelOnlyNode(localId) }]
+    try {
+        const { getSearXNGUrl } = await import('../tools/searxng-search.js')
+        const presence = localPresence({ searxngUrl: getSearXNGUrl() })
+        if (Object.keys(presence).length) nodes[0].presence = presence
+    } catch { /* optional */ }
     if (options.measureLoad && local.gpu?.viaVllm) {
         // Same measurement as Phase 3 (nvidia-smi, vLLM /metrics). Not measurable = no extra
         // signal; the memory check and the 8 GB reserve still apply, and Stufe 2 measures again.

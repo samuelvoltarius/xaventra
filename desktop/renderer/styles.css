@@ -454,3 +454,16 @@ html.novaos-standard .message-content,
 html.novaos-standard textarea,
 html.novaos-standard input { font-size: 17px !important; line-height: 1.65; }
 html.novaos-standard button { font-size: 16px !important; }
+
+/* 2.85 Paket D: Werkzeugkasten */
+.tool-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-tile { gap: 8px; }
+.tool-tile.recommended { border-color: var(--warning); }
+.tool-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.tool-head h3 { font-size: 15px; }
+.tool-benefit { color: var(--text-2); }
+.tool-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: 12.5px; }
+.tool-tile details { color: var(--muted); font-size: 13px; }
+.tool-tile details summary { cursor: pointer; color: var(--accent); font-weight: 600; width: max-content; }
+.tool-tile details p { margin-top: 6px; overflow-wrap: anywhere; }
+.tool-ask { margin-top: 4px; }

@@ -18,7 +18,8 @@ describe('install catalog (S2.1)', () => {
         const catalog = getInstallCatalog()
         expect(catalog.rejected).toEqual([])
         expect(catalog.entries.map(entry => entry.id)).toEqual([
-            'ffmpeg', 'node-llama-cpp-cuda', 'ollama-model:bge-m3', 'ollama-model:mxbai-embed-large', 'ollama-model:nomic-embed-text', 'playwright-chromium', 'xfce-workstation',
+            'ffmpeg', 'node-llama-cpp-cuda', 'ollama-model:bge-m3', 'ollama-model:gemma4-e2b', 'ollama-model:mxbai-embed-large', 'ollama-model:nomic-embed-text',
+            'playwright-chromium', 'tesseract-ocr', 'xfce-workstation',
         ])
         for (const entry of catalog.entries) {
             expect(Array.isArray(entry.install)).toBe(true)

@@ -45,8 +45,17 @@ export type PlaceholderName = typeof PLACEHOLDERS[number]
 /** Programs a catalog entry may start. Everything else is refused at load. */
 export const EXECUTABLE_ALLOWLIST: readonly string[] = Object.freeze([APT_GET, OLLAMA, TEST_BIN, '/usr/bin/ffmpeg', '{node}'])
 /** ollama-model:<name> only for this fixed list. */
-export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3'])
-const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({ 'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250 })
+export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3', 'gemma4-e2b'])
+const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({ 'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250, 'gemma4-e2b': 7500 })
+/**
+ * 2.85 Paket D: a catalog id carries at most one ':' (`ollama-model:<name>`), so a model
+ * with a tag gets a fixed Ollama reference here. Pull, show and rm use exactly this
+ * reference; the validator refuses any other (checked 02.10.2026: ollama.com/library/gemma4,
+ * tag e2b, text + image, Apache-2.0).
+ */
+const OLLAMA_MODEL_REF: Readonly<Record<string, string>> = Object.freeze({ 'gemma4-e2b': 'gemma4:e2b' })
+/** Ollama reference (name or name:tag) for a catalog model name. */
+export function ollamaModelRef(name: string): string { return OLLAMA_MODEL_REF[name] || name }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}(?::[a-z0-9][a-z0-9._-]{0,60})?$/
 const PACKAGE_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,62}$/
@@ -66,10 +75,11 @@ function aptEntry(id: string, title: string, packages: string[], verify: string[
 }
 
 function ollamaEntry(name: string): InstallCatalogEntry {
+    const ref = ollamaModelRef(name)
     return {
-        id: `ollama-model:${name}`, title: `Ollama-Modell ${name}`, kind: 'ollama-model', targets: ['host-agent', 'model-volume'],
-        install: [OLLAMA, 'pull', name], verify: [[OLLAMA, 'show', name]], rollback: { kind: 'command', argv: [OLLAMA, 'rm', name] },
-        runAs: 'service', sizeMb: OLLAMA_MODEL_SIZE_MB[name], timeoutSec: 1800, risk: 'low', approval: 'fragen',
+        id: `ollama-model:${name}`, title: `Ollama-Modell ${ref}`, kind: 'ollama-model', targets: ['host-agent', 'model-volume'],
+        install: [OLLAMA, 'pull', ref], verify: [[OLLAMA, 'show', ref]], rollback: { kind: 'command', argv: [OLLAMA, 'rm', ref] },
+        runAs: 'service', sizeMb: OLLAMA_MODEL_SIZE_MB[name], timeoutSec: OLLAMA_MODEL_SIZE_MB[name] > 3000 ? 3600 : 1800, risk: 'low', approval: 'fragen',
     }
 }
 
@@ -77,6 +87,10 @@ export const BUILTIN_INSTALL_CATALOG: readonly InstallCatalogEntry[] = Object.fr
     aptEntry('ffmpeg', 'ffmpeg (Audio/Video-Werkzeuge)', ['ffmpeg'], [['/usr/bin/ffmpeg', '-version']], 300, 900, 'low'),
     aptEntry('xfce-workstation', 'XFCE-Arbeitsplatz (Desktop für die Workstation)', XFCE_PACKAGES,
         [[TEST_BIN, '-x', '/usr/bin/xfce4-session'], [TEST_BIN, '-x', '/usr/bin/dbus-run-session']], 700, 1800, 'medium'),
+    // 2.85 Paket D (checked 02.10.2026): Ubuntu noble ships tesseract 5.3.4 and tesseract-ocr-deu
+    // (tesseract-lang 4.1.0) for amd64 + arm64; upstream tesseract and tessdata are Apache-2.0.
+    aptEntry('tesseract-ocr', 'Tesseract OCR (Text auf Bildern und Scans lesen, Deutsch + Englisch)', ['tesseract-ocr', 'tesseract-ocr-deu'],
+        [[TEST_BIN, '-x', '/usr/bin/tesseract']], 80, 900, 'low'),
     {
         id: 'playwright-chromium', title: 'Playwright-Chromium (Browser-Werkzeug, ohne Systempakete)', kind: 'runtime-addon',
         targets: ['host-agent'], requires: { platform: 'linux' },
@@ -175,8 +189,9 @@ export function validateCatalogEntry(raw: unknown): string | null {
     if (e.kind === 'ollama-model') {
         const name = e.id.slice('ollama-model:'.length)
         if (!e.id.startsWith('ollama-model:') || !OLLAMA_MODEL_ALLOWLIST.includes(name)) return 'Modell nicht in der festen Liste'
-        if (!sameArray(e.install, [OLLAMA, 'pull', name]) || e.verify.length !== 1 || !sameArray(e.verify[0], [OLLAMA, 'show', name])
-            || e.rollback.kind !== 'command' || !sameArray(e.rollback.argv, [OLLAMA, 'rm', name])) return 'Modell: Befehl nicht in fester Form'
+        const ref = ollamaModelRef(name)
+        if (!sameArray(e.install, [OLLAMA, 'pull', ref]) || e.verify.length !== 1 || !sameArray(e.verify[0], [OLLAMA, 'show', ref])
+            || e.rollback.kind !== 'command' || !sameArray(e.rollback.argv, [OLLAMA, 'rm', ref])) return 'Modell: Befehl nicht in fester Form'
         if (e.runAs !== 'service' || e.targets.includes('image')) return 'Modell: nur Dienstbenutzer, nie Image'
     } else if (e.id.startsWith('ollama-model:')) return 'ollama-model-id nur für Modelle'
     if (e.image) {
