@@ -84,6 +84,8 @@ export async function generateRuntimeCatalogs(options: { check?: boolean } = {})
         'install-catalog.json': stable(publishedInstallCatalog()),
         // Phase 5b: software-scout candidates (needs per software; installs only via install-catalog ids).
         'software-candidates.json': stable(publishedSoftwareCandidates()),
+        // 2.85 Paket A: checked connector catalog (Stufe 1); catalogHash is what a detached signature covers.
+        'connector-catalog.json': stable((await import('../connections/connector-catalog.js')).publishedConnectorCatalog()),
     }
     outputs['README.md'] = `# Xaventra generated runtime catalogs\n\nGenerated from authoritative source. Do not edit by hand.\n\n| Catalog | Entries | SHA-256 |\n|---|---:|---|\n${Object.entries(outputs).filter(([name]) => name.endsWith('.json')).map(([name, content]) => `| ${name} | ${(JSON.parse(content).tools || JSON.parse(content).entries || JSON.parse(content).modules || JSON.parse(content).profiles || []).length} | \`${hash(content)}\` |`).join('\n')}\n`
 

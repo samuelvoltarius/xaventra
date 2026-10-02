@@ -1222,6 +1222,18 @@
       ]
     },
     {
+      "module": "src/connections/connector-catalog.ts",
+      "imports": [
+        "../install/install-catalog.js",
+        "./connector-icons.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/connections/connector-icons.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/action-intent.ts",
       "imports": [
         "./tool-evidence-binding.js"
