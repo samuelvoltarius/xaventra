@@ -51,8 +51,9 @@ RAM/no swap, two CPUs and bounded temporary filesystems/output/time. Actual
 cgroup values are checked before execution. Containers are force-removed and
 absence checked after every command, including failure. Child deadlines use
 SIGKILL; the engine-side removal also terminates descendants. Operators may
-shorten `XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS` (1000–180000), never exceed
-the fixed three-minute maximum per command. Uncertain cleanup stops
+shorten `XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS` (1000–300000), never exceed
+the fixed five-minute maximum per command; one experiment has a fixed total
+budget of 25 minutes. Uncertain cleanup stops
 verification and requires operator reconciliation. Host process crashes still
 require checking leftover `xaventra-repair-*` containers; do not start a competing
 repair while ownership/cleanup is uncertain.

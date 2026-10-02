@@ -34,6 +34,21 @@ export interface PatchSandboxResult {
     output: string
 }
 export type PatchSnapshot = Record<string, string>
+
+/**
+ * Fixed time limits (code, not config). Four phases each run tsc plus the full
+ * suite with two workers; the grown suite needs more than three minutes per
+ * command in the rollback phase (2.83.0). Operators may only shorten a command.
+ */
+export const REPAIR_SANDBOX_LIMITS = Object.freeze({ commandDefaultMs: 300_000, commandMaxMs: 300_000, commandMinMs: 1000, totalBudgetMs: 1_500_000 })
+
+export function repairSandboxCommandTimeout(value: string | undefined): number {
+    const timeout = Number(value || REPAIR_SANDBOX_LIMITS.commandDefaultMs)
+    if (!Number.isInteger(timeout) || timeout < REPAIR_SANDBOX_LIMITS.commandMinMs || timeout > REPAIR_SANDBOX_LIMITS.commandMaxMs) {
+        throw new Error('Invalid sandbox command timeout')
+    }
+    return timeout
+}
 type Snapshot = PatchSnapshot
 const MAX_BYTES = 64 * 1024 * 1024
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
@@ -212,10 +227,9 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
             throw new Error('Sandbox image OS, volume or lockfile contract mismatch')
         }
         result.imageId = image
-        const commandTimeout = Number(process.env.XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS || 180_000)
-        if (!Number.isInteger(commandTimeout) || commandTimeout < 1000 || commandTimeout > 180_000) throw new Error('Invalid sandbox command timeout')
+        const commandTimeout = repairSandboxCommandTimeout(process.env.XAVENTRA_REPAIR_SANDBOX_COMMAND_TIMEOUT_MS)
         const execute = async (source: Snapshot, command: string[]) => {
-            if (Date.now() - started > 900_000) throw new Error('Sandbox total budget exhausted')
+            if (Date.now() - started > REPAIR_SANDBOX_LIMITS.totalBudgetMs) throw new Error('Sandbox total budget exhausted')
             const name = `xaventra-repair-${randomUUID()}`
             let outcome: Awaited<ReturnType<typeof docker>>
             try {
