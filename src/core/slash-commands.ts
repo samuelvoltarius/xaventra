@@ -684,7 +684,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Prozeduren: der eine Speicher für verifizierte Lösungen (learning/procedure-store.ts).
             const { getProcedureStore } = await import('../learning/procedure-store.js')
             const procedureStats = getProcedureStore().getStats()
-            const procedures = `📚 *Prozeduren*: ${procedureStats.procedures} verifiziert gemerkt · ${procedureStats.reusableProcedures} wiederverwendbare Formen${procedureStats.suspended ? ` · ${procedureStats.suspended} ausgesetzt (2 Fehlschläge in Folge)` : ''}${procedureStats.retracted ? ` · ${procedureStats.retracted} zurückgenommen` : ''}${procedureStats.legacy ? ` · ${procedureStats.legacy} alte Einträge ohne Beleg (nie genutzt)` : ''}\n🧰 Selbst gebaute Werkzeuge: /werkzeuge`
+            const procedures = `📚 *Prozeduren*: ${procedureStats.procedures} verifiziert gemerkt · ${procedureStats.reusableProcedures} wiederverwendbare Formen${procedureStats.suspended ? ` · ${procedureStats.suspended} ausgesetzt (2 Fehlschläge in Folge oder vom Owner aus)` : ''}${procedureStats.retracted ? ` · ${procedureStats.retracted} zurückgenommen` : ''}${procedureStats.legacy ? ` · ${procedureStats.legacy} alte Einträge ohne Beleg (nie genutzt)` : ''}\n📋 Einzeln an/aus: /prozeduren\n🧰 Selbst gebaute Werkzeuge: /werkzeuge`
             return routine ? `${routine}\n\n${procedures}` : procedures
         }
 
@@ -3549,6 +3549,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const { formatDelegiert } = await import('./delegation.js')
             const limit = Math.min(30, Math.max(3, Number.parseInt(args.trim(), 10) || 10))
             return formatDelegiert(undefined, limit)
+        }
+
+        // 2.84 Prozeduren: Einblick und an/aus (owner only, see COMMAND_MINIMUM_ROLE default)
+        case 'prozeduren': {
+            const { handleProzedurenCommand } = await import('../learning/procedure-store.js')
+            return handleProzedurenCommand(args, { principalId: principalContext?.principalId || from, permission: requestPermission })
         }
 
         // P9 Werkzeug-Schmiede: Einblick, an/aus, bauen (owner only, see COMMAND_MINIMUM_ROLE default)
