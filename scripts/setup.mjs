@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { dirname, delimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -29,13 +29,26 @@ export function seedConfiguration(directory = root) {
     config.mesh.coordination.witnesses = []
     config.mcp.servers = []
     config.server = { enabled: false, host: '127.0.0.1', port: 18789 }
+    // 2.85 first start: no cloud provider without a key. The first start finds a
+    // local model itself (Doctor + self-setup) instead of asking for one.
+    config.provider = 'local'
+    config.model = 'auto'
+    config.fallbackModels = []
+    if (config.channels?.telegram) config.channels.telegram.allowFrom = []
     writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    // Only a configuration created here starts in first-start mode; an existing
+    // installation never gets an onboarding marker.
+    const dataDir = join(directory, '.nova-data')
+    mkdirSync(dataDir, { recursive: true })
+    const marker = join(dataDir, 'onboarding.json')
+    if (!existsSync(marker)) writeFileSync(marker,
+      `${JSON.stringify({ version: 1, state: 'pending', seededAt: new Date().toISOString() }, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   }
   // Validate, but never overwrite a user's existing configuration or credentials.
   JSON.parse(readFileSync(configPath, 'utf8'))
   const envPath = join(directory, '.env')
   if (!existsSync(envPath)) writeFileSync(envPath,
-    `# Local credentials; never commit this file.\nNOVA_API_TOKEN=${randomBytes(32).toString('hex')}\nNOVA_TELEGRAM_MODE=disabled\nNOVA_NO_TELEGRAM=true\nNOVA_OTEL_ENABLED=false\n`,
+    `# Local credentials; never commit this file.\nNOVA_API_TOKEN=${randomBytes(32).toString('hex')}\nNOVA_DESKTOP_API_TOKEN=${randomBytes(32).toString('hex')}\nNOVA_TELEGRAM_MODE=disabled\nNOVA_NO_TELEGRAM=true\nNOVA_OTEL_ENABLED=false\n`,
     { flag: 'wx', mode: 0o600 })
   return configPath
 }
@@ -111,8 +124,9 @@ export async function main(args = process.argv.slice(2)) {
   if (args.includes('--desktop')) runNpm(['ci', '--prefix', 'desktop'])
   if (workstationDesktop === 'ask' && planWorkstationDesktop().action === 'install') workstationDesktop = (await askWorkstationDesktop()) ? 'install' : 'skip'
   if (workstationDesktop === 'install') installWorkstationDesktop(planWorkstationDesktop())
-  console.log('Core installed and compiled. Next: npm run cli -- setup, then npm start.')
-  console.log('A reachable LLM is still required. Channels stay disabled until you configure them.')
+  console.log('Core installed and compiled. Next: npm run start:fast, then open the Desktop app.')
+  console.log('The first start sets itself up: it checks this computer, looks for a local model and asks at most three questions in the Desktop app.')
+  console.log('Channels stay disabled until you connect them. The terminal wizard (npm run cli -- setup) remains available.')
   console.log('No service, firewall rule, model download or production deployment was created.')
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
