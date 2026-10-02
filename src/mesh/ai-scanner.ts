@@ -19,6 +19,9 @@ import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 import { getAiProbeClient, type DiscoveryProbeClient } from './discovery-probe.js'
 import type { MeshNode } from './mesh-registry.js'
+import { ownSubnets, scanHosts, scanTargetAllowed, type InterfaceMap } from '../sensing/net-scope.js'
+import { ProbeLimiter, realTcpProbe } from '../sensing/discovery.js'
+import { parseSensingConfig } from '../sensing/config.js'
 
 
 const execAsync = promisify(exec)
@@ -28,7 +31,8 @@ const execFileAsync = promisify(execFile)
 // Types
 // ============================================
 
-export type AIServiceType = 'llm' | 'vlm' | 'tts' | 'stt' | 'embeddings' | 'image'
+/** `search`: local helper services Xaventra can use itself (SearXNG, 2.85 Paket C). */
+export type AIServiceType = 'llm' | 'vlm' | 'tts' | 'stt' | 'embeddings' | 'image' | 'search'
 
 export interface AIServiceProbe {
     name: string
@@ -300,7 +304,28 @@ export const AI_SERVICE_PROBES: AIServiceProbe[] = [
             } catch { return [] }
         },
     },
+
+    // === Local helper services (2.85 Paket C) ===
+    // SearXNG answers its public, unauthenticated `/config` with a JSON
+    // description (engines, categories, instance_name). Docker default 8080,
+    // settings.yml default 8888, common reverse-proxy port 8088.
+    ...[8080, 8888, 8088].map((port): AIServiceProbe => ({
+        name: 'searxng',
+        type: 'search',
+        defaultPort: port,
+        healthEndpoint: '/config',
+        detectFn: isSearxngConfig,
+    })),
 ]
+
+/** True for SearXNG's `/config` JSON. */
+export function isSearxngConfig(body: string): boolean {
+    try {
+        const data = JSON.parse(body)
+        return Boolean(data && typeof data === 'object' && Array.isArray(data.engines) && Array.isArray(data.categories)
+            && ('instance_name' in data || 'safe_search' in data || 'brand' in data))
+    } catch { return false }
+}
 
 // ============================================
 // In-Memory Registry
@@ -310,6 +335,7 @@ let discoveredServices: DiscoveredAIService[] = []
 let lastScanResult: AIScanResult | null = null
 let scanInFlight: Promise<AIScanResult> | null = null
 let scanInterval: ReturnType<typeof setInterval> | null = null
+let firstOwnNetworkTimer: ReturnType<typeof setTimeout> | null = null
 
 const SCAN_RESULTS_FILE = '.nova-data/ai-services.json'
 const DEFAULT_SCAN_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
@@ -399,6 +425,149 @@ export async function scanHost(
 
     await Promise.allSettled(probePromises)
     return found
+}
+
+// ============================================
+// Own network (2.85 Paket C): unknown devices in the own LAN/Tailnet
+// ============================================
+//
+// Phases 1-5 only look at localhost, mesh nodes and configured SSH nodes.
+// This phase finds KI/helper services on other machines of the OWN private
+// networks, with the same limits as the device discovery (src/sensing):
+//   - targets only from net-scope (own private subnets, max /24 each; Tailnet
+//     only with an own Tailnet interface) and `scanTargetAllowed` directly
+//     before every connection (public/foreign addresses are never touched);
+//   - first a plain TCP connect per probe port, then only the unauthenticated
+//     read-only GET paths of the probes above (health/models/config);
+//   - rate limit, bounded parallelism and a hard overall deadline;
+//   - no credentials, no writes, no installation commands.
+// Findings become ordinary scan services (status running, sourceNode = host,
+// metadata.source = 'own-network'): the capability graph and the model
+// registry pick them up; Paket A lists them silently under "Gefunden".
+
+export const OWN_NETWORK_SOURCE = 'own-network'
+/** Hourly, plus once shortly after start (first start of Paket B included). */
+export const OWN_NETWORK_SCAN_INTERVAL_MS = 60 * 60 * 1000
+export const OWN_NETWORK_FIRST_RUN_DELAY_MS = 60 * 1000
+
+export interface OwnNetworkScanOptions {
+    deadlineMs: number
+    ratePerSec: number
+    concurrency: number
+    maxHosts: number
+    tailnetHosts: string[]
+    probeTimeoutMs?: number
+    /** Hosts already covered by phases 1-5 (mesh/config nodes). */
+    skipHosts?: string[]
+}
+
+export interface OwnNetworkScanDeps {
+    interfaces?: InterfaceMap
+    tcpProbe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>
+    /** Unauthenticated GET; body or null. Default: the shared KI probe client. */
+    httpGet?: (url: string, timeoutMs: number) => Promise<string | null>
+    now?: () => number
+    sleep?: (ms: number) => Promise<void>
+    probes?: readonly AIServiceProbe[]
+}
+
+export interface OwnNetworkScanReport {
+    services: DiscoveredAIService[]
+    scannedHosts: number
+    probes: number
+    rejected: Array<{ host: string; reason: string }>
+    timedOut: boolean
+    durationMs: number
+}
+
+export async function scanOwnNetworkAIServices(options: OwnNetworkScanOptions, deps: OwnNetworkScanDeps = {}): Promise<OwnNetworkScanReport> {
+    const now = deps.now || Date.now
+    const sleep = deps.sleep || ((ms: number) => new Promise<void>(resolve => { const timer = setTimeout(resolve, ms); timer.unref?.() }))
+    const tcpProbe = deps.tcpProbe || realTcpProbe
+    const httpGet = deps.httpGet || ((url: string, timeoutMs: number) => getDiscoveryProbeClient().probe(url, timeoutMs))
+    const probes = deps.probes || AI_SERVICE_PROBES
+    const startedAt = now()
+    const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
+    const scope = ownSubnets(deps.interfaces)
+    const skip = new Set([...(options.skipHosts || []), ...scope.own])
+    const plan = scanHosts(scope, options.tailnetHosts || [], options.maxHosts)
+    const hosts = plan.hosts.filter(host => !skip.has(host))
+    const limiter = new ProbeLimiter(options.ratePerSec, options.concurrency, startedAt + options.deadlineMs, now, sleep)
+    const ports = [...new Set(probes.map(probe => probe.defaultPort))]
+    const services: DiscoveredAIService[] = []
+
+    const probeHost = async (host: string): Promise<void> => {
+        const answers = new Map<string, Promise<string | null | undefined>>()
+        const get = (port: number, path: string) => {
+            const url = `http://${host}:${port}${path}`
+            if (!answers.has(url)) answers.set(url, limiter.run(() => httpGet(url, probeTimeout)))
+            return answers.get(url)!
+        }
+        for (const port of ports) {
+            if (limiter.expired()) return
+            // The one gate, directly before every connection.
+            if (!scanTargetAllowed(host, scope).allowed) return
+            const open = await limiter.run(() => tcpProbe(host, port, probeTimeout))
+            if (!open) continue
+            for (const probe of probes.filter(item => item.defaultPort === port)) {
+                if (!scanTargetAllowed(host, scope).allowed) return
+                const body = await get(port, probe.healthEndpoint)
+                if (typeof body !== 'string' || !probe.detectFn(body)) continue
+                let models: string[] = []
+                if (probe.parseModelsFn) {
+                    const modelsPath = probe.modelsEndpoint || probe.healthEndpoint
+                    const modelsBody = modelsPath === probe.healthEndpoint ? body : await get(port, modelsPath)
+                    if (typeof modelsBody === 'string') models = probe.parseModelsFn(modelsBody)
+                }
+                services.push({
+                    id: `${probe.name}@${host}:${port}`, name: probe.name, type: probe.type, provider: probe.name,
+                    host, port, endpoint: `http://${host}:${port}`, models, status: 'running',
+                    lastSeen: new Date(now()).toISOString(), sourceNode: host,
+                    metadata: { source: OWN_NETWORK_SOURCE, datenklasse: 'lokal' },
+                })
+            }
+        }
+    }
+
+    let index = 0
+    const workers = Array.from({ length: Math.max(1, Math.min(options.concurrency, hosts.length)) }, async () => {
+        while (index < hosts.length && !limiter.expired()) await probeHost(hosts[index++])
+    })
+    await Promise.all(workers)
+    return {
+        services,
+        scannedHosts: Math.min(index, hosts.length),
+        probes: limiter.started,
+        rejected: plan.rejected,
+        timedOut: limiter.expired() && index < hosts.length,
+        durationMs: now() - startedAt,
+    }
+}
+
+/** Own-network settings from `autonomy.sensing.discovery` (same switch and limits as device discovery). */
+export function ownNetworkScanSettings(config: any): (OwnNetworkScanOptions & { enabled: true }) | { enabled: false } {
+    const sensing = parseSensingConfig(config?.autonomy?.sensing)
+    if (!sensing.enabled || !sensing.discovery.enabled) return { enabled: false }
+    return {
+        enabled: true,
+        deadlineMs: sensing.discovery.deadlineSec * 1000,
+        ratePerSec: sensing.discovery.ratePerSec,
+        concurrency: sensing.discovery.concurrency,
+        maxHosts: sensing.discovery.maxHosts,
+        tailnetHosts: sensing.discovery.tailnetHosts,
+    }
+}
+
+export function isOwnNetworkScanDue(lastAt: number, now = Date.now(), intervalMs = OWN_NETWORK_SCAN_INTERVAL_MS): boolean {
+    return lastAt === 0 || now - lastAt >= intervalMs
+}
+
+/** A running SearXNG found on this machine or in the own network (localhost first). */
+export function getDiscoveredSearxngUrl(services: readonly DiscoveredAIService[] = discoveredServices): string | null {
+    const found = services.filter(service => service.name === 'searxng' && service.type === 'search' && service.status === 'running')
+    const local = (service: DiscoveredAIService) => service.host === 'localhost' || service.host === '127.0.0.1' || service.sourceNode === 'local'
+    const best = found.find(local) || found[0]
+    return best ? best.endpoint : null
 }
 
 // ============================================
@@ -910,59 +1079,87 @@ export function servicesFromMeshAdvertisements(nodes: Array<Pick<MeshNode, 'node
 // Full Scan
 // ============================================
 
-async function performAIScan(options?: {
+export interface AIScanOptions {
     skipMesh?: boolean
     skipBinaryCheck?: boolean
     forceFresh?: boolean
     skipRemoteSSH?: boolean
     preserveRemoteEvidence?: boolean
-}): Promise<AIScanResult> {
+    /** 2.85: also scan the own LAN/Tailnet (net-scope rules). */
+    ownNetwork?: boolean
+    /** 2.85: print the scan lines only when the found services changed. */
+    logOnlyOnChange?: boolean
+    /** Tests only: replaces the own-network scan. */
+    ownNetworkScan?: (options: OwnNetworkScanOptions) => Promise<OwnNetworkScanReport>
+}
+
+let lastOwnNetworkScanAt = 0
+let lastLoggedSignature = ''
+
+/** What counts as a change for the log: service, status and models. */
+export function servicesSignature(services: readonly DiscoveredAIService[]): string {
+    return services.map(service => `${service.id}|${service.status}|${[...service.models].sort().join(',')}`).sort().join('\n')
+}
+
+function currentConfig(): any {
+    const live = (globalThis as any).__novaState?.config
+    if (live && typeof live === 'object') return live
+    try {
+        const path = resolveConfigPath()
+        return existsSync(path) ? JSON.parse(readFileSync(path, 'utf-8')) : {}
+    } catch { return {} }
+}
+
+async function performAIScan(options?: AIScanOptions): Promise<AIScanResult> {
     const startTime = Date.now()
     const previous = lastScanResult
-    console.log('[AIScan] 🔍 Starting AI service scan...')
+    // 2.85: the periodic refresh logs only when the found services changed.
+    const buffered: string[] = []
+    const log = (line: string): void => { if (options?.logOnlyOnChange) buffered.push(line); else console.log(line) }
+    log('[AIScan] 🔍 Starting AI service scan...')
 
     const allServices: DiscoveredAIService[] = []
 
     // Phase 1: Localhost port scan
-    console.log('[AIScan] 📡 Phase 1: Scanning localhost ports...')
+    log('[AIScan] 📡 Phase 1: Scanning localhost ports...')
     const localServices = await scanHost('localhost')
     allServices.push(...localServices)
     if (localServices.length > 0) {
-        console.log(`[AIScan] ✅ Found ${localServices.length} local services:`)
+        log(`[AIScan] ✅ Found ${localServices.length} local services:`)
         for (const s of localServices) {
-            console.log(`[AIScan]    ${s.type.toUpperCase()} ${s.name} — ${s.models.length} models @ :${s.port}`)
+            log(`[AIScan]    ${s.type.toUpperCase()} ${s.name} — ${s.models.length} models @ :${s.port}`)
         }
     } else {
-        console.log('[AIScan] ⚠️  No running AI services on localhost')
+        log('[AIScan] ⚠️  No running AI services on localhost')
     }
 
     // Phase 2: Binary/systemd scan
     if (!options?.skipBinaryCheck) {
-        console.log('[AIScan] 📦 Phase 2: Checking installed binaries...')
+        log('[AIScan] 📦 Phase 2: Checking installed binaries...')
         // Update discoveredServices with running ones first
         discoveredServices = [...allServices]
         const installed = await scanInstalledBinaries()
         allServices.push(...installed)
         if (installed.length > 0) {
-            console.log(`[AIScan] 📦 Found ${installed.length} installed (not running):`)
+            log(`[AIScan] 📦 Found ${installed.length} installed (not running):`)
             for (const s of installed) {
-                console.log(`[AIScan]    ${s.type.toUpperCase()} ${s.name} — ${s.status}`)
+                log(`[AIScan]    ${s.type.toUpperCase()} ${s.name} — ${s.status}`)
             }
         }
     }
 
     // Phase 3: Mesh node scan
     if (!options?.skipMesh && !options?.skipRemoteSSH) {
-        console.log('[AIScan] 🌐 Phase 3: Scanning mesh nodes...')
+        log('[AIScan] 🌐 Phase 3: Scanning mesh nodes...')
         const meshServices = await scanMeshNodes()
         allServices.push(...meshServices)
         if (meshServices.length > 0) {
             const liveMeshServices = meshServices.filter(service => service.status === 'running')
             const registeredMeshServices = meshServices.filter(service => service.status !== 'running')
-            console.log(`[AIScan] 🌐 Mesh inventory: ${liveMeshServices.length} live, ${registeredMeshServices.length} registered/offline:`)
+            log(`[AIScan] 🌐 Mesh inventory: ${liveMeshServices.length} live, ${registeredMeshServices.length} registered/offline:`)
             for (const s of meshServices) {
                 const state = s.status === 'running' ? 'LIVE' : 'OFFLINE/CACHED'
-                console.log(`[AIScan]    ${state} ${s.type.toUpperCase()} ${s.name} on ${s.sourceNode} — ${s.models.length} models`)
+                log(`[AIScan]    ${state} ${s.type.toUpperCase()} ${s.name} on ${s.sourceNode} — ${s.models.length} models`)
             }
         }
     }
@@ -970,7 +1167,7 @@ async function performAIScan(options?: {
     // Phase 4: "Schlafende Schätze" — read installed AI software from mesh node registrations (via Supabase)
     let allSleeping: SleepingSoftware[] = []
     if (!options?.skipMesh) {
-        console.log('[AIScan] 💤 Phase 4: Reading installed AI software from mesh node data...')
+        log('[AIScan] 💤 Phase 4: Reading installed AI software from mesh node data...')
         try {
             const { discoverNodes } = await import('./mesh-registry.js')
             const nodes = await discoverNodes()
@@ -986,7 +1183,7 @@ async function performAIScan(options?: {
                 }
 
                 if (!sw.pip_packages?.length) continue
-                console.log(`[AIScan] 💤 ${nodeLabel}: ${sw.pip_packages.length} AI packages registered`)
+                log(`[AIScan] 💤 ${nodeLabel}: ${sw.pip_packages.length} AI packages registered`)
 
                 for (const pkg of sw.pip_packages) {
                     const pkgLower = pkg.toLowerCase()
@@ -1018,7 +1215,7 @@ async function performAIScan(options?: {
                 if (node.capabilities) {
                     for (const cap of node.capabilities) {
                         if (['stt', 'tts', 'vision', 'ml-inference', 'inference-runtime'].includes(cap)) {
-                            console.log(`[AIScan] 💤 ${nodeLabel} has capability: ${cap}`)
+                            log(`[AIScan] 💤 ${nodeLabel} has capability: ${cap}`)
                         }
                     }
                 }
@@ -1036,16 +1233,16 @@ async function performAIScan(options?: {
             }
 
             if (allSleeping.length > 0) {
-                console.log(`[AIScan] 💤 Total sleeping: ${allSleeping.length} AI packages across mesh`)
+                log(`[AIScan] 💤 Total sleeping: ${allSleeping.length} AI packages across mesh`)
             }
         } catch (err) {
-            console.log(`[AIScan] 💤 Phase 4 error: ${String(err).slice(0, 300)}`)
+            log(`[AIScan] 💤 Phase 4 error: ${String(err).slice(0, 300)}`)
         }
     }
 
     // Phase 5: SSH-based remote software discovery (for devices WITHOUT Nova daemon)
     if (!options?.skipMesh) {
-        console.log('[AIScan] 🔑 Phase 5: SSH scanning remote devices for installed AI software...')
+        log('[AIScan] 🔑 Phase 5: SSH scanning remote devices for installed AI software...')
         const sshScannedIPs = new Set<string>()
         const sshTargets: Array<{ ip: string; user: string; label: string }> = []
 
@@ -1082,7 +1279,7 @@ async function performAIScan(options?: {
         if (sshTargets.length > 0) {
             const sshResults = await Promise.allSettled(
                 sshTargets.map(async ({ ip, user, label }) => {
-                    console.log(`[AIScan] 🔑 SSH scanning: ${label} (${user}@${ip})`)
+                    log(`[AIScan] 🔑 SSH scanning: ${label} (${user}@${ip})`)
                     const remoteSoftware = await scanRemoteAISoftware(ip, user, label)
                     return { label, software: remoteSoftware }
                 })
@@ -1091,7 +1288,7 @@ async function performAIScan(options?: {
             for (const result of sshResults) {
                 if (result.status === 'fulfilled' && result.value.software.length > 0) {
                     const { label, software } = result.value
-                    console.log(`[AIScan] 🔑 ${label}: ${software.length} AI packages via SSH`)
+                    log(`[AIScan] 🔑 ${label}: ${software.length} AI packages via SSH`)
                     allSleeping.push(...software)
 
                     // Convert to services
@@ -1123,6 +1320,29 @@ async function performAIScan(options?: {
             }
         }
         if (!allSleeping.length && previous.sleepingSoftware?.length) allSleeping = [...previous.sleepingSoftware]
+    }
+
+    // Phase 6 (2.85 Paket C): own LAN/Tailnet, net-scope rules, hourly.
+    const ownNetwork = options?.ownNetwork ? ownNetworkScanSettings(currentConfig()) : { enabled: false as const }
+    if (ownNetwork.enabled) {
+        log('[AIScan] 🏠 Phase 6: Scanning own network (private subnets, rate-limited)...')
+        try {
+            const covered = allServices.filter(service => service.metadata?.source !== OWN_NETWORK_SOURCE).map(service => service.host)
+            const report = await (options?.ownNetworkScan || scanOwnNetworkAIServices)({ ...ownNetwork, skipHosts: covered })
+            for (const service of report.services) {
+                if (!allServices.some(current => current.id === service.id)) allServices.push(service)
+            }
+            log(`[AIScan] 🏠 Own network: ${report.services.length} services on ${report.scannedHosts} hosts (${report.probes} probes${report.timedOut ? ', time limit reached' : ''})`)
+        } catch (err) {
+            log(`[AIScan] 🏠 Own network scan failed: ${String(err).slice(0, 200)}`)
+        }
+    } else if (previous) {
+        // Between the hourly passes, keep what the last own-network pass found.
+        for (const service of previous.services) {
+            if (service.metadata?.source !== OWN_NETWORK_SOURCE) continue
+            if (Date.now() - Date.parse(service.lastSeen) >= OWN_NETWORK_SCAN_INTERVAL_MS * 2) continue
+            if (!allServices.some(current => current.id === service.id)) allServices.push(service)
+        }
     }
 
     // Update global registry
@@ -1182,21 +1402,22 @@ async function performAIScan(options?: {
         stt: allServices.filter(s => s.type === 'stt').length,
         embeddings: allServices.filter(s => s.type === 'embeddings').length,
     }
-    console.log(`[AIScan] ✅ Scan complete in ${result.scanDurationMs}ms — ${summary.running} running, ${summary.installed} installed (LLM:${summary.llm} TTS:${summary.tts} STT:${summary.stt} EMB:${summary.embeddings})`)
+    log(`[AIScan] ✅ Scan complete in ${result.scanDurationMs}ms — ${summary.running} running, ${summary.installed} installed (LLM:${summary.llm} TTS:${summary.tts} STT:${summary.stt} EMB:${summary.embeddings})`)
     if (!options?.skipMesh && !options?.skipRemoteSSH) lastFullScanAt = Date.now()
+    if (ownNetwork.enabled) lastOwnNetworkScanAt = Date.now()
+
+    const signature = servicesSignature(allServices)
+    if (options?.logOnlyOnChange && signature !== lastLoggedSignature) {
+        for (const line of buffered) console.log(line)
+    }
+    lastLoggedSignature = signature
 
     return result
 }
 
 /** One shared scan per process. Boot consumers reuse a recent result instead
  * of probing the same offline SSH nodes several times in parallel. */
-export async function scanAllAIServices(options?: {
-    skipMesh?: boolean
-    skipBinaryCheck?: boolean
-    forceFresh?: boolean
-    skipRemoteSSH?: boolean
-    preserveRemoteEvidence?: boolean
-}): Promise<AIScanResult> {
+export async function scanAllAIServices(options?: AIScanOptions): Promise<AIScanResult> {
     const ageMs = lastScanResult
         ? Date.now() - new Date(lastScanResult.lastScan).getTime()
         : Number.POSITIVE_INFINITY
@@ -1228,6 +1449,14 @@ export function startPeriodicScan(
 
     console.log(`[AIScan] ⏱️  Local refresh every ${Math.round(intervalMs / 60000)}min; full mesh inventory every ${Math.round(fullIntervalMs / 60000)}min`)
 
+    // 2.85 Paket C: the own LAN/Tailnet once shortly after start, then hourly.
+    if (firstOwnNetworkTimer) clearTimeout(firstOwnNetworkTimer)
+    firstOwnNetworkTimer = setTimeout(() => {
+        void scanAllAIServices({ skipMesh: true, skipBinaryCheck: true, skipRemoteSSH: true, preserveRemoteEvidence: true, forceFresh: true, ownNetwork: true, logOnlyOnChange: true })
+            .then(() => syncToAvailableLLMs()).catch(err => console.log(`[AIScan] ⚠️  Own network scan failed: ${err}`))
+    }, OWN_NETWORK_FIRST_RUN_DELAY_MS)
+    firstOwnNetworkTimer.unref?.()
+
     scanInterval = setInterval(async () => {
         try {
             const fullScanDue = isFullInventoryDue(lastFullScanAt, Date.now(), fullIntervalMs)
@@ -1237,6 +1466,8 @@ export function startPeriodicScan(
                 skipRemoteSSH: !fullScanDue,
                 preserveRemoteEvidence: !fullScanDue,
                 forceFresh: true,
+                ownNetwork: isOwnNetworkScanDue(lastOwnNetworkScanAt),
+                logOnlyOnChange: true,
             })
 
             // Integrate discovered local LLMs into availableLLMs
@@ -1251,6 +1482,7 @@ export function startPeriodicScan(
 }
 
 export function stopPeriodicScan(): void {
+    if (firstOwnNetworkTimer) { clearTimeout(firstOwnNetworkTimer); firstOwnNetworkTimer = null }
     if (scanInterval) {
         clearInterval(scanInterval)
         scanInterval = null

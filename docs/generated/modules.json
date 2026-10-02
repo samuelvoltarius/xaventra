@@ -4507,6 +4507,9 @@
       "module": "src/mesh/ai-scanner.ts",
       "imports": [
         "../config/config-path.js",
+        "../sensing/config.js",
+        "../sensing/discovery.js",
+        "../sensing/net-scope.js",
         "./discovery-probe.js",
         "./mesh-registry.js",
         "node:child_process",
@@ -6179,6 +6182,7 @@
       "module": "src/tools/searxng-search.ts",
       "imports": [
         "../config/config-path.js",
+        "../mesh/ai-scanner.js",
         "node:fs"
       ]
     },

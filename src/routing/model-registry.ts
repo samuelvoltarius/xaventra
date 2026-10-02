@@ -86,6 +86,8 @@ export interface RegistryInputs {
     knownNodes?: string[]
     vllm?: Array<{ node?: string; baseUrl: string; models: string[] }>
     ollama?: Array<{ node?: string; baseUrl: string; models: Array<{ name: string; sizeBytes?: number }>; loaded?: string[] }>
+    /** 2.85: other OpenAI-compatible local servers (LM Studio, llama.cpp, KoboldCPP, LocalAI, TabbyAPI). */
+    localOther?: Array<{ node?: string; baseUrl: string; models: string[] }>
     probes?: ProbeInput[]
     codex?: { enabled?: boolean; model?: string; available?: boolean }
     /** Cloud models from `routing.multi.cloudModels`; listed only when a key is present (presence only, never the value). */
@@ -212,6 +214,10 @@ export function buildModelRegistry(inputs: RegistryInputs): ModelRegistry {
             add({ kind: 'ollama', model: model.name, node: runtime.node, baseUrl: runtime.baseUrl, loaded: loaded.has(norm(model.name)), ...(model.sizeBytes ? { sizeBytes: model.sizeBytes } : {}) })
         }
     }
+    for (const runtime of inputs.localOther || []) {
+        sources.add('local')
+        for (const model of runtime.models || []) add({ kind: 'local-other', model, node: runtime.node, baseUrl: runtime.baseUrl })
+    }
     if (inputs.codex?.enabled !== undefined || inputs.codex?.model) {
         sources.add('codex')
         const model = inputs.codex.model || 'codex'
@@ -291,6 +297,20 @@ export function measurementFor(endpoint: Pick<ModelEndpoint, 'measurements'>, ta
 // Runtime collection (read-only; each source optional)
 // ---------------------------------------------------------------------------
 
+/**
+ * Registry kind of a capability-graph runtime. The KI scanner writes
+ * `type: 'llm'` with `name: 'vllm' | 'ollama' | 'lm-studio' | …`; mesh
+ * heartbeats may carry the runtime name as type. Search, speech and image
+ * services are no chat models; `ollama-embeddings` repeats the Ollama list.
+ */
+export function graphRuntimeKind(runtime: { type?: string; name?: string }): 'vllm' | 'ollama' | 'local-other' | null {
+    const type = norm(runtime.type), name = norm(runtime.name)
+    if (type === 'vllm' || name === 'vllm') return 'vllm'
+    if (type === 'ollama' || name === 'ollama') return 'ollama'
+    if (type === 'llm' || type === 'vlm') return 'local-other'
+    return null
+}
+
 const KEY_ENV: Record<string, string[]> = {
     anthropic: ['ANTHROPIC_API_KEY'], openai: ['OPENAI_API_KEY'], gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], google: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
 }
@@ -307,15 +327,16 @@ export function cloudKeyPresent(provider: string, config: any, env: NodeJS.Proce
 export async function collectModelRegistry(options: { config?: any; userId?: string } = {}): Promise<ModelRegistry> {
     const config = options.config ?? (globalThis as any).__novaState?.config ?? {}
     const multi = config?.routing?.multi || {}
-    const inputs: RegistryInputs = { knownNodes: [], vllm: [], ollama: [], probes: [], costs: multi.costs || {} }
+    const inputs: RegistryInputs = { knownNodes: [], vllm: [], ollama: [], localOther: [], probes: [], costs: multi.costs || {} }
     try {
         const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
         for (const node of getCapabilityGraph().getSnapshot().nodes) {
             inputs.knownNodes!.push(node.id)
             for (const runtime of node.runtimes || []) {
                 if (runtime.status !== 'running') continue
-                const type = norm(runtime.type)
+                const type = graphRuntimeKind(runtime)
                 if (type === 'vllm') inputs.vllm!.push({ node: node.id, baseUrl: runtime.endpoint, models: runtime.models || [] })
+                else if (type === 'local-other') inputs.localOther!.push({ node: node.id, baseUrl: runtime.endpoint, models: runtime.models || [] })
                 else if (type === 'ollama') {
                     const loaded = Array.isArray((runtime.metadata as any)?.loaded) ? (runtime.metadata as any).loaded : []
                     inputs.ollama!.push({ node: node.id, baseUrl: runtime.endpoint, models: (runtime.models || []).map(name => ({ name })), loaded })
