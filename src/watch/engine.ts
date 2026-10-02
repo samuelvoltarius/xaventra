@@ -22,7 +22,8 @@ import type { NewThought } from '../planner/thoughts.js'
 import type { NightwatchReport } from '../doctor/nightwatch.js'
 import { probeTargets, readBackupAges, readCertificates, type ReachabilityResult, type WatchProbeDeps } from './probes.js'
 import type { WatchSample } from './sample.js'
-import { normalizeWatchTarget, type WatchSettings, type WatchTarget } from './settings.js'
+import { withoutOwnerDuplicates, type DerivedResult } from './derived.js'
+import { normalizeWatchTarget, type WatchSettings, type WatchTarget, type WatchTlsHost } from './settings.js'
 import { appendWatchSample, maintainWatchStore, readWatchSamples, watchStoreStats } from './store.js'
 import { backupSeverity, certSeverity, DAY_MS, diskForecasts, diskSeverity, ramForecasts, TREND_WINDOW_DAYS, type Forecast, type TrendSeverity } from './trends.js'
 
@@ -31,12 +32,13 @@ const TLS_INTERVAL_MS = 6 * 60 * 60_000
 
 // ---------------------------------------------------------------------------
 // Ziele: Config-Liste + eigene Liste (/monitor, übernommene L19-Ziele) + eingerichtete Geräte
+// + 2.85 selbst abgeleitete Ziele (watch/derived.ts; Owner-Ziele haben Vorrang)
 // (2.82.0: kein Proxmox-Zweig — Gast-Status meldet allein der Proxmox-Sensing-Adapter)
 // ---------------------------------------------------------------------------
 
 export interface DeviceLike { name: string; host: string; port: number }
 
-export function resolveWatchTargets(settings: WatchSettings, devices: readonly DeviceLike[], managed: readonly WatchTarget[] = []): { targets: WatchTarget[]; rejected: string[] } {
+export function resolveWatchTargets(settings: WatchSettings, devices: readonly DeviceLike[], managed: readonly WatchTarget[] = [], derived: readonly WatchTarget[] = []): { targets: WatchTarget[]; rejected: string[] } {
     const targets = [...settings.targets]
     const rejected: string[] = []
     for (const target of managed.slice(0, 64)) if (!targets.some(existing => existing.id === target.id)) targets.push(target)
@@ -47,6 +49,7 @@ export function resolveWatchTargets(settings: WatchSettings, devices: readonly D
             else if (!targets.some(existing => existing.id === target.id)) targets.push(target)
         }
     }
+    targets.push(...withoutOwnerDuplicates(derived, targets))
     return { targets, rejected }
 }
 
@@ -62,6 +65,8 @@ export interface TargetState {
     lastMs?: number | null
     lastDetail?: string
     thoughtId?: string
+    /** 2.85: a self-derived target that failed before it was ever reachable — no alarm, no recovery message. */
+    silent?: boolean
 }
 
 export type DebounceEvent = 'alarm' | 'erholt' | null
@@ -151,6 +156,9 @@ export function reachabilityAlarm(result: ReachabilityResult, state: TargetState
     // One key per outage: the debounce already alarms once per outage, and a
     // new outage after a recovery must not be swallowed by the dedupe window.
     const outage = state.since ?? result.at
+    // 2.85: a self-derived target (nobody set it up) is reported as an event
+    // only — no restart suggestion, so no card.
+    const derived = target.origin === 'selbst'
     if (event === 'erholt') {
         return { key: `erholt:${target.id}:${outage}`, title: `${target.name} wieder erreichbar`, evidence: `${label}: ${result.detail}${result.ms !== null ? `, ${result.ms} ms` : ''}; ausgefallen seit ${state.since ?? '?'}`, severity: 'warning' }
     }
@@ -159,10 +167,10 @@ export function reachabilityAlarm(result: ReachabilityResult, state: TargetState
         title: `${target.name} nicht erreichbar`,
         evidence: `${label}: ${result.detail}; ${threshold}× in Folge seit ${state.since ?? result.at}`,
         severity: 'warning',
-        action: {
+        ...(derived ? {} : { action: {
             kind: 'dienst-neustart', target: target.name,
             text: `${target.name} prüfen/neu starten. Ja vermerkt nur die Freigabe — einen Neustart-Ausführer für fremde Geräte gibt es nicht, ich starte nichts selbst neu.`,
-        },
+        } }),
     }
 }
 
@@ -183,7 +191,8 @@ export interface WatchState {
 
 export interface WatchSnapshot {
     at: string
-    reachability: Array<{ id: string; name: string; kind: string; origin: string; ok: boolean; ms: number | null; detail: string; fails: number; alarmed: boolean }>
+    /** `silent`: self-derived and never reached from here (no alarm, not counted as ok). */
+    reachability: Array<{ id: string; name: string; kind: string; origin: string; ok: boolean; ms: number | null; detail: string; fails: number; alarmed: boolean; silent?: boolean }>
     forecasts: Array<Forecast & { kind: 'platte' | 'ram' }>
     certs: NonNullable<WatchState['certs']>
     backups: Array<{ name: string; ageHours: number | null; maxAgeHours: number; severity: TrendSeverity }>
@@ -201,6 +210,8 @@ export interface WatchEngineDeps {
     devices: () => DeviceLike[]
     /** Targets from /monitor and the migrated L19 list (watch/targets.ts). */
     managedTargets?: () => WatchTarget[]
+    /** 2.85: self-derived targets and TLS hosts (watch/derived.ts). */
+    derivedTargets?: () => DerivedResult | Promise<DerivedResult>
     /** Nachtwache runner: a fresh report when due, else null (doctor/nightwatch.ts). */
     nightwatch?: () => Promise<NightwatchReport | null>
     probes: WatchProbeDeps
@@ -319,15 +330,22 @@ export function createWatchEngine(deps: WatchEngineDeps) {
         try { devices = deps.devices() } catch { devices = [] }
         let managed: WatchTarget[] = []
         try { managed = deps.managedTargets?.() ?? [] } catch { managed = [] }
-        const { targets, rejected } = resolveWatchTargets(settings, devices, managed)
+        let derived: DerivedResult = { targets: [], tls: [] }
+        try { derived = (await deps.derivedTargets?.()) ?? derived } catch { derived = { targets: [], tls: [] } }
+        const { targets, rejected } = resolveWatchTargets(settings, devices, managed, derived.targets)
         const results = await probeTargets(targets, deps.probes, settings.timeoutMs)
         const nextTargets: Record<string, TargetState> = {}
         for (const result of results) {
-            const { state: next, event } = debounce(state.targets[result.target.id], result.ok, settings.failThreshold, result.at)
+            const previous = state.targets[result.target.id]
+            const { state: next, event } = debounce(previous, result.ok, settings.failThreshold, result.at)
             next.lastMs = result.ms
             next.lastDetail = result.detail
-            if (event === 'alarm') { next.thoughtId = await raise(reachabilityAlarm(result, next, 'alarm', settings.failThreshold)); alarms++ }
-            if (event === 'erholt') {
+            // 2.85: a self-derived target that was never reachable from here
+            // stays silent (no guessing about addresses that may be private).
+            if (event === 'alarm' && result.target.origin === 'selbst' && !next.lastOkAt) next.silent = true
+            else if (event === 'alarm') { next.thoughtId = await raise(reachabilityAlarm(result, next, 'alarm', settings.failThreshold)); alarms++ }
+            if (event === 'erholt' && previous?.silent) { /* first contact, nothing to report */ }
+            else if (event === 'erholt') {
                 if (next.thoughtId) deps.thoughts.resolve?.(next.thoughtId)
                 await raise(reachabilityAlarm(result, state.targets[result.target.id] ?? next, 'erholt', settings.failThreshold))
                 next.thoughtId = undefined
@@ -358,10 +376,12 @@ export function createWatchEngine(deps: WatchEngineDeps) {
         ]
         for (const forecast of forecasts) { await raise(forecastAlarm(forecast, forecast.kind, deps.localNodeId)); alarms++ }
 
-        if (settings.tls.length && (!state.lastTlsAt || now - state.lastTlsAt >= TLS_INTERVAL_MS)) {
+        const tlsHosts: WatchTlsHost[] = [...settings.tls]
+        for (const host of derived.tls) if (!tlsHosts.some(item => item.host === host.host && item.port === host.port)) tlsHosts.push(host)
+        if (tlsHosts.length && (!state.lastTlsAt || now - state.lastTlsAt >= TLS_INTERVAL_MS)) {
             state.lastTlsAt = now
             state.certs = []
-            for (const { host, validTo } of await readCertificates(settings.tls, deps.probes, settings.timeoutMs)) {
+            for (const { host, validTo } of await readCertificates(tlsHosts, deps.probes, settings.timeoutMs)) {
                 if (validTo === null) {
                     state.certs.push({ ...host, validTo: null, daysLeft: null, severity: 'unbekannt' })
                     continue
@@ -400,7 +420,9 @@ export function createWatchEngine(deps: WatchEngineDeps) {
             at,
             reachability: results.map(result => ({
                 id: result.target.id, name: result.target.name, kind: result.target.kind, origin: result.target.origin,
-                ok: result.ok, ms: result.ms, detail: result.detail, fails: nextTargets[result.target.id]?.fails ?? 0, alarmed: nextTargets[result.target.id]?.alarmed ?? false,
+                ok: result.ok, ms: result.ms, detail: result.detail, fails: nextTargets[result.target.id]?.fails ?? 0,
+                alarmed: (nextTargets[result.target.id]?.alarmed ?? false) && !nextTargets[result.target.id]?.silent,
+                ...(nextTargets[result.target.id]?.silent ? { silent: true } : {}),
             })),
             forecasts, certs: state.certs ?? [], backups,
             ...(nightwatchView ? { nightwatch: nightwatchView } : {}),
@@ -434,6 +456,35 @@ export interface WatchNodeView {
     tempC: number | null
     responseMs: number | null
     servicesDown: string[]
+    /** 2.85: `messung` = Wächter-Messverlauf, `herzschlag` = Werte aus dem signierten Mesh-Herzschlag (keine eigene Messung). */
+    source: 'messung' | 'herzschlag'
+}
+
+/** A peer as the mesh transport knows it (signed heartbeat/capabilities, mesh-peer-state.json). */
+export interface WatchPeerHeartbeat { nodeId: string; lastSeen: number; hardware?: Record<string, unknown> | null }
+
+const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+
+/**
+ * Werte eines Knotens aus seinem Herzschlag (2.85): RAM, Last je Kern,
+ * Temperatur, Platte (Stand Anmeldung). Keine neue Verbindung — nur was der
+ * Knoten ohnehin alle 30 s signiert sendet. Ohne RAM-Wert: kein Eintrag.
+ */
+export function heartbeatNodeView(peer: WatchPeerHeartbeat, now: number): WatchNodeView | null {
+    const hw = peer.hardware ?? {}
+    const ram = num(hw.ram_used_percent)
+    if (ram === null || !Number.isFinite(peer.lastSeen)) return null
+    const cores = Math.max(1, num(hw.cores) ?? 1)
+    const load = num(hw.cpu_load)
+    const diskTotal = num(hw.disk_gb), diskFree = num(hw.disk_free_gb)
+    const disks = diskTotal && diskTotal > 0 && diskFree !== null
+        ? [{ mount: '/ (beim Start)', usedPct: Math.round(Math.max(0, Math.min(100, (1 - diskFree / diskTotal) * 100)) * 10) / 10, totalGB: diskTotal, freeGB: diskFree }]
+        : []
+    return {
+        nodeId: String(peer.nodeId).slice(0, 80), at: new Date(peer.lastSeen).toISOString(), ageMinutes: Math.max(0, Math.round((now - peer.lastSeen) / 60_000)),
+        cpuLoad: load === null ? null : Math.round(load / cores * 100) / 100, ramUsedPct: Math.max(0, Math.min(100, ram)), disks,
+        tempC: num(hw.temp), responseMs: null, servicesDown: [], source: 'herzschlag',
+    }
 }
 
 export interface WatchOverview {
@@ -444,14 +495,23 @@ export interface WatchOverview {
     store: { days: number; bytes: number; oldest: string | null; retentionDays: number; maxBytes: number }
 }
 
-export function buildWatchOverview(settings: WatchSettings, watchDir: string, now = Date.now()): WatchOverview {
+export function buildWatchOverview(settings: WatchSettings, watchDir: string, now = Date.now(), peers: readonly WatchPeerHeartbeat[] = []): WatchOverview {
     const latest = new Map<string, WatchSample>()
     for (const sample of readWatchSamples(watchDir, { sinceMs: now - DAY_MS })) latest.set(sample.nodeId, sample)
-    const nodes = [...latest.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId)).map(sample => ({
+    const nodes: WatchNodeView[] = [...latest.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId)).map(sample => ({
         nodeId: sample.nodeId, at: sample.at, ageMinutes: Math.max(0, Math.round((now - Date.parse(sample.at)) / 60_000)),
         cpuLoad: sample.cpuLoad, ramUsedPct: sample.ramUsedPct, disks: sample.disks, tempC: sample.tempC, responseMs: sample.responseMs,
         servicesDown: sample.services.filter(service => service.status !== 'running').map(service => service.name),
+        source: 'messung' as const,
     }))
+    // 2.85: nodes without an own sample (watch off on the worker) still show
+    // up with the values of their signed heartbeat (last 24 h).
+    for (const peer of peers) {
+        if (!peer?.nodeId || latest.has(peer.nodeId) || nodes.some(node => node.nodeId === peer.nodeId) || now - peer.lastSeen > DAY_MS) continue
+        const view = heartbeatNodeView(peer, now)
+        if (view) nodes.push(view)
+    }
+    nodes.sort((a, b) => a.nodeId.localeCompare(b.nodeId))
     return {
         enabled: settings.enabled,
         generatedAt: new Date(now).toISOString(),
@@ -459,6 +519,11 @@ export function buildWatchOverview(settings: WatchSettings, watchDir: string, no
         snapshot: loadWatchSnapshot(watchDir),
         store: { ...watchStoreStats(watchDir), retentionDays: settings.retentionDays, maxBytes: settings.maxBytes },
     }
+}
+
+/** The real number of watched targets: the targets of the last round (2.85; was config + /monitor only). */
+export function countWatchTargets(overview: Pick<WatchOverview, 'snapshot'>, beforeFirstRound = 0): number {
+    return overview.snapshot?.reachability.length ?? beforeFirstRound
 }
 
 const pctText = (value: number | null | undefined) => value === null || value === undefined ? '–' : `${Math.round(value)} %`
@@ -470,7 +535,7 @@ export function formatWaechter(overview: WatchOverview, principal?: { permission
     for (const node of overview.nodes) {
         const stale = node.ageMinutes > 15
         const disks = node.disks.map(disk => `${disk.mount} ${pctText(disk.usedPct)} (${disk.freeGB} GB frei)`).join(', ') || '–'
-        lines.push('', `${stale ? '❔' : '•'} *${node.nodeId}* (vor ${node.ageMinutes} min${stale ? ', veraltet' : ''})`,
+        lines.push('', `${stale ? '❔' : '•'} *${node.nodeId}* (vor ${node.ageMinutes} min${stale ? ', veraltet' : ''}${node.source === 'herzschlag' ? ', aus dem Herzschlag' : ''})`,
             `  Last ${node.cpuLoad ?? '–'} je Kern · RAM ${pctText(node.ramUsedPct)} · ${node.tempC !== null ? `${node.tempC} °C · ` : ''}Antwort ${node.responseMs ?? '–'} ms`,
             `  Platten: ${disks}`)
         if (node.servicesDown.length) lines.push(`  Dienste nicht laufend: ${node.servicesDown.join(', ')}`)
@@ -479,7 +544,7 @@ export function formatWaechter(overview: WatchOverview, principal?: { permission
     if (snap) {
         const down = snap.reachability.filter(item => !item.ok)
         lines.push('', `*Erreichbarkeit* (${snap.reachability.length - down.length}/${snap.reachability.length} ok, Stand ${snap.at})`)
-        for (const item of snap.reachability) lines.push(`  ${item.ok ? '✅' : item.alarmed ? '❌' : '⚠️'} ${JSON.stringify(item.name)} ${item.kind}${item.origin !== 'config' ? ` [${item.origin}]` : ''}: ${item.detail}${item.ms !== null ? `, ${item.ms} ms` : ''}${item.fails ? ` (${item.fails}× Fehler)` : ''}`)
+        for (const item of snap.reachability) lines.push(`  ${item.ok ? '✅' : item.silent ? '❔' : item.alarmed ? '❌' : '⚠️'} ${JSON.stringify(item.name)} ${item.kind}${item.origin === 'selbst' ? ' [selbst abgeleitet]' : item.origin !== 'config' ? ` [${item.origin}]` : ''}: ${item.detail}${item.ms !== null ? `, ${item.ms} ms` : ''}${item.fails ? ` (${item.fails}× Fehler${item.silent ? ', von hier nie erreicht' : ''})` : ''}`)
         if (snap.forecasts.length) {
             lines.push('', '*Prognosen*')
             for (const item of snap.forecasts) lines.push(`  ⏳ ${item.nodeId} ${item.subject}: ${item.limit} % in ${fmtDays(item.daysLeft)} (+${item.perDay.toFixed(2)}/Tag)`)
@@ -509,7 +574,8 @@ export function formatWatchStatusLines(overview: WatchOverview): string[] {
     const snap = overview.snapshot
     const down = snap?.reachability.filter(item => item.alarmed).map(item => item.name) ?? []
     const worstDisk = overview.nodes.flatMap(node => node.disks.map(disk => ({ node: node.nodeId, ...disk }))).sort((a, b) => b.usedPct - a.usedPct)[0]
-    const lines = [`Wächter: ${overview.nodes.length} Knoten, ${snap ? `${(snap.reachability.length - down.length)}/${snap.reachability.length} Ziele ok` : 'noch kein Lauf'}${worstDisk ? `, volleste Platte ${worstDisk.node} ${worstDisk.mount} ${pctText(worstDisk.usedPct)}` : ''}`]
+    const notOk = snap?.reachability.filter(item => item.alarmed || item.silent).length ?? 0
+    const lines = [`Wächter: ${overview.nodes.length} Knoten, ${snap ? `${(snap.reachability.length - notOk)}/${snap.reachability.length} Ziele ok` : 'noch kein Lauf'}${worstDisk ? `, volleste Platte ${worstDisk.node} ${worstDisk.mount} ${pctText(worstDisk.usedPct)}` : ''}`]
     if (down.length) lines.push(`  ❌ nicht erreichbar: ${down.slice(0, 5).join(', ')}`)
     const soon = snap?.forecasts.filter(item => item.kind === 'platte') ?? []
     if (soon.length) lines.push(`  ⏳ Platte voll: ${soon.slice(0, 3).map(item => `${item.nodeId} ${item.subject} in ${fmtDays(item.daysLeft)}`).join(', ')}`)

@@ -15,15 +15,18 @@
  *   autonomy.watch.tlsWarnDays       21
  *   autonomy.watch.backups           []     { name, path, maxAgeHours, pattern? }  (nur mtime)
  *   autonomy.watch.includeDevices    true   eingerichtete Geräte aus /geraete
+ *   autonomy.watch.selfDerive        true   2.85: Ziele selbst ableiten (Mesh-Knoten, gefundene
+ *                                           Geräte, laufende KI-Dienste, Proxmox; watch/derived.ts)
  *   (Proxmox-Gäste bewacht der Proxmox-Sensing-Adapter, nicht der Wächter — keine Doppel-Alarme)
  *
- * Feste Regeln (Code, nicht Config): nur konfigurierte oder eingerichtete
- * Ziele, keine Portscans, keine Zugangsdaten in Zielen, und nichts, was nach
+ * Feste Regeln (Code, nicht Config): nur konfigurierte, eingerichtete oder
+ * nach festen Regeln selbst abgeleitete Ziele (watch/derived.ts), keine Portscans, keine Zugangsdaten in Zielen, und nichts, was nach
  * Passwortmanager aussieht (Vaultwarden & Co.), wird übernommen.
  */
 
 export type WatchTargetKind = 'tcp' | 'http' | 'https' | 'ping'
-export type WatchTargetOrigin = 'config' | 'geraet' | 'monitor'
+/** `selbst` = 2.85 selbst abgeleitet (watch/derived.ts); alle anderen kommen vom Owner. */
+export type WatchTargetOrigin = 'config' | 'geraet' | 'monitor' | 'selbst'
 
 export interface WatchTarget {
     id: string
@@ -51,6 +54,8 @@ export interface WatchSettings {
     tlsWarnDays: number
     backups: WatchBackup[]
     includeDevices: boolean
+    /** 2.85: derive targets from what the modules already know (default true). */
+    selfDerive: boolean
     /** Entries dropped by the fixed rules, shown in /waechter (never silently ignored). */
     rejected: string[]
 }
@@ -143,6 +148,7 @@ export function parseWatchSettings(autonomy: any): WatchSettings {
         tlsWarnDays: intIn(raw.tlsWarnDays, 21, 1, 365),
         backups,
         includeDevices: raw.includeDevices !== false,
+        selfDerive: raw.selfDerive !== false,
         rejected,
     }
 }

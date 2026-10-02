@@ -727,7 +727,7 @@ function nodeTiles(data) {
       ${watch ? `<div class="meters">${meter('Arbeitsspeicher', watch.ram)}${disk ? meter(`Platte ${disk.mount}`, disk.belegt) : ''}${watch.cpu !== null && watch.cpu !== undefined ? `<div class="meter"><span>Last</span><div></div><b>${fmtNumber(watch.cpu, 2)}</b></div>` : ''}${watch.tempC ? `<div class="meter"><span>Temperatur</span><div></div><b>${fmtNumber(watch.tempC)} °C</b></div>` : ''}</div>
         ${sparkline(data?.verlauf?.[id], 'ram', 'Arbeitsspeicher')}
         ${watch.dienstAus?.length ? `<div class="problem-note">Dienst aus: ${esc(watch.dienstAus.join(', '))}</div>` : ''}
-        <div class="row-sub">gemessen ${esc(relTime(watch.at))}</div>` : '<div class="row-sub">Noch keine Messwerte vom Wächter.</div>'}
+        <div class="row-sub">${watch.quelle === 'herzschlag' ? 'aus dem Herzschlag' : 'gemessen'} ${esc(relTime(watch.at))}</div>` : '<div class="row-sub">Noch keine Messwerte vom Wächter.</div>'}
     </article>`
   }).join('')}</div>`
 }
@@ -762,7 +762,7 @@ function systemView() {
   if (!data) return `<div class="page"><div class="page-inner">${head}${skeletonSection('Knoten')}</div></div>`
   const watch = data.waechter
   const reach = watch?.erreichbarkeit || []
-  const failing = reach.filter(item => !item.ok)
+  const failing = reach.filter(item => !item.ok && !item.nieErreicht)
   const extras = [
     ...(watch?.prognosen || []).map(item => ({ title: item.art === 'platte' ? 'Platte läuft voll' : 'Arbeitsspeicher steigt', sub: `${item.text}${item.tage !== null ? ` · in etwa ${fmtNumber(item.tage)} Tagen` : ''}`, tone: item.schwere === 'critical' ? 'bad' : 'warn', label: 'Prognose' })),
     ...(watch?.zertifikate || []).filter(item => item.schwere !== 'ok').map(item => ({ title: `Zertifikat ${item.name}`, sub: item.tage === null ? 'Ablauf unbekannt' : `läuft in ${fmtNumber(item.tage)} Tagen ab`, tone: item.schwere === 'critical' ? 'bad' : 'warn', label: 'Zertifikat' })),
@@ -774,7 +774,7 @@ function systemView() {
     <section class="section"><div class="section-head"><h2>${icon('server')}Knoten</h2>${watch?.stand ? `<span class="section-note">letzte Runde ${esc(relTime(watch.stand))}</span>` : ''}</div><div class="section-body">${nodeTiles(data)}</div></section>
     <div class="grid-2"><div class="stack">
       <section class="section"><div class="section-head"><h2>${icon('activity')}Erreichbarkeit</h2><span class="pill ${failing.length ? 'bad' : 'good'}">${failing.length ? `${failing.length} gestört` : reach.length ? 'alles erreichbar' : 'keine Ziele'}</span></div>
-        <div class="rows">${reach.slice(0, 20).map(item => `<div class="row"><div><div class="row-title">${esc(item.name)}</div><div class="row-sub">${esc(item.art)}${item.ms !== null ? ` · ${fmtNumber(item.ms)} ms` : ''}${!item.ok && item.detail ? ` · ${esc(item.detail)}` : ''}</div></div><div class="row-side"><span class="pill ${item.ok ? 'good' : 'bad'}">${item.ok ? 'ok' : item.alarm ? 'Alarm' : 'gestört'}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Keine Ziele konfiguriert.</div></div>'}</div></section>
+        <div class="rows">${reach.slice(0, 20).map(item => `<div class="row"><div><div class="row-title">${esc(item.name)}</div><div class="row-sub">${esc(item.art)}${item.herkunft === 'selbst' ? ' · selbst erkannt' : ''}${item.ms !== null ? ` · ${fmtNumber(item.ms)} ms` : ''}${!item.ok && item.detail ? ` · ${esc(item.detail)}` : ''}</div></div><div class="row-side"><span class="pill ${item.ok ? 'good' : item.nieErreicht ? '' : 'bad'}">${item.ok ? 'ok' : item.nieErreicht ? 'nie erreicht' : item.alarm ? 'Alarm' : 'gestört'}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Noch nichts zu bewachen.</div></div>'}</div></section>
       ${desktopsSection(data)}
     </div><div class="stack">
       <section class="section"><div class="section-head"><h2>${icon('alert')}Vorausschau</h2></div><div class="rows">${extras.map(item => `<div class="row"><div><div class="row-title">${esc(item.title)}</div><div class="row-sub">${esc(item.sub)}</div></div><div class="row-side"><span class="pill ${item.tone}">${esc(item.label)}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Keine Prognose, kein ablaufendes Zertifikat, keine überfällige Sicherung.</div></div>'}</div></section>

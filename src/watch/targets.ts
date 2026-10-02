@@ -6,7 +6,9 @@
  * eine Mess- und Ziellogik, den Wächter:
  *   - Ziele aus der Config: `autonomy.watch.targets` (unverändert)
  *   - Ziele per /monitor add und die übernommenen L19-Ziele:
- *       `<data>/watch/targets.json`  { version: 1, targets: WatchTarget[], rejected: string[], migratedFrom? }
+ *       `<data>/watch/targets.json`  { version: 1, targets: WatchTarget[], rejected: string[], migratedFrom?, removedDerived? }
+ *   - 2.85: `removedDerived` = Ids selbst abgeleiteter Ziele (watch/derived.ts),
+ *     die der Owner entfernt hat — sie werden nie wieder abgeleitet.
  * Die L19-Datei wird einmal übernommen und danach in `monitoring.json.migriert`
  * umbenannt (nichts gelöscht; ein zweiter Lauf übernimmt nichts doppelt).
  * Gleiche Feste Regeln wie die Config-Ziele: keine Zugangsdaten, keine
@@ -17,7 +19,9 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { MAX_TARGETS, normalizeWatchTarget, type WatchTarget } from './settings.js'
 
-export interface ManagedTargets { targets: WatchTarget[]; rejected: string[]; migratedFrom?: string; migratedAt?: string }
+export interface ManagedTargets { targets: WatchTarget[]; rejected: string[]; migratedFrom?: string; migratedAt?: string; removedDerived?: string[] }
+
+const MAX_REMOVED_DERIVED = 128
 
 const file = (watchDir: string) => join(watchDir, 'targets.json')
 
@@ -35,6 +39,7 @@ export function loadManagedTargets(watchDir: string): ManagedTargets {
             rejected: Array.isArray(raw.rejected) ? raw.rejected.map(String).slice(0, 32) : [],
             ...(typeof raw.migratedFrom === 'string' ? { migratedFrom: raw.migratedFrom } : {}),
             ...(typeof raw.migratedAt === 'string' ? { migratedAt: raw.migratedAt } : {}),
+            ...(Array.isArray(raw.removedDerived) ? { removedDerived: raw.removedDerived.map((id: unknown) => String(id).toLowerCase().slice(0, 300)).slice(-MAX_REMOVED_DERIVED) } : {}),
         }
     } catch { return { targets: [], rejected: [] } }
 }
@@ -67,12 +72,23 @@ export function addManagedTarget(watchDir: string, name: string, url: string): W
     return target
 }
 
-export function removeManagedTarget(watchDir: string, name: string): boolean {
+/**
+ * Removes an own target by name. 2.85: a name that is not in the own list but
+ * names a self-derived target (`derived`, e.g. from the last snapshot) is
+ * remembered in `removedDerived`, so it is never derived again.
+ */
+export function removeManagedTarget(watchDir: string, name: string, derived: ReadonlyArray<Pick<WatchTarget, 'id' | 'name' | 'origin'>> = []): boolean {
     const current = loadManagedTargets(watchDir)
     const wanted = String(name || '').trim().toLowerCase()
     const kept = current.targets.filter(item => item.name.toLowerCase() !== wanted)
-    if (kept.length === current.targets.length) return false
-    save(watchDir, { ...current, targets: kept })
+    if (kept.length !== current.targets.length) {
+        save(watchDir, { ...current, targets: kept })
+        return true
+    }
+    const ids = derived.filter(item => item.origin === 'selbst' && item.name.toLowerCase() === wanted).map(item => item.id.toLowerCase())
+    if (!ids.length) return false
+    const removedDerived = [...new Set([...(current.removedDerived ?? []), ...ids])].slice(-MAX_REMOVED_DERIVED)
+    save(watchDir, { ...current, removedDerived })
     return true
 }
 

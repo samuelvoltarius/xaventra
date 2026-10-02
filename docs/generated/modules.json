@@ -6552,12 +6552,21 @@
       ]
     },
     {
+      "module": "src/watch/derived.ts",
+      "imports": [
+        "../infra/proxmox.js",
+        "../mesh/mesh-node-lifecycle.js",
+        "./settings.js"
+      ]
+    },
+    {
       "module": "src/watch/engine.ts",
       "imports": [
         "../core/action-policy.js",
         "../core/atomic-storage.js",
         "../doctor/nightwatch.js",
         "../planner/thoughts.js",
+        "./derived.js",
         "./probes.js",
         "./sample.js",
         "./settings.js",
@@ -6592,12 +6601,14 @@
       "module": "src/watch/runtime.ts",
       "imports": [
         "../core/data-root.js",
+        "./derived.js",
         "./engine.js",
         "./peer.js",
         "./probes.js",
         "./sample.js",
         "./settings.js",
         "./targets.js",
+        "node:fs",
         "node:path"
       ]
     },
