@@ -2,6 +2,8 @@
 
 ## [Unreleased] — Vorschau 2.85.0 (in Arbeit)
 
+> Xaventra erkennt ihre Umgebung, verbindet sich selbstständig mit erlaubten Diensten und baut aus den gefundenen Fähigkeiten einen brauchbaren Werkzeugkasten — ohne Config-Dateien.
+
 Preview of the next version; planned, not released. Goal: a person without any
 technical background installs Xaventra and she connects herself to what is
 around her — no config files, no terminal.
@@ -26,6 +28,12 @@ around her — no config files, no terminal.
 - **Werkzeugkasten:** a page of programs that would make her more capable,
   with a plain-language benefit, where it fits, whether it is needed and
   current, and one "Install" button through the signed install catalog.
+- **Selbst lernen, weniger fragen:** an accepted idea becomes a real, measured
+  job; one place decides who handles a missing capability; solved cases leave
+  their fix behind for the next investigation; no card without a real action
+  behind it; one idle learner whose web searches never carry private details.
+- **Eigenes Embedding-Modell:** a small embedding model runs inside Xaventra
+  (llama.cpp), so semantic memory works on every machine without extra servers.
 
 
 ## [2.84.0] — 2026-10-02

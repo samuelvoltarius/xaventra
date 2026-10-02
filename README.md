@@ -77,7 +77,7 @@ you. Responsibilities she derives herself start without a question; only each
 consequential step asks. Memory embeds only with own models, and the software
 scout proposes something only when it is needed and still current.
 
-**Next version (preview, 2.85.0 in progress).** First start without a
+**Next version (preview, 2.85.0 in progress).** *Xaventra erkennt ihre Umgebung, verbindet sich selbstständig mit erlaubten Diensten und baut aus den gefundenen Fähigkeiten einen brauchbaren Werkzeugkasten — ohne Config-Dateien.* First start without a
 questionnaire, one view to connect services and AI models (found / possible /
 connected, one button, login page instead of config files) and a toolbox page
 of programs she can install. Details: [CHANGELOG → Unreleased](CHANGELOG.md).
