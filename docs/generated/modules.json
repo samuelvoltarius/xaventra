@@ -4770,6 +4770,14 @@
       ]
     },
     {
+      "module": "src/mesh/emergency-release.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/mesh/event-hub.ts",
       "imports": [
         "ws"
@@ -5008,6 +5016,63 @@
         "node:fs",
         "node:http",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/secret-shares.ts",
+      "imports": [
+        "./emergency-release.js",
+        "node:crypto",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/mesh/state-file-mirror.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./state-journal.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/state-journal.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./mesh-identity.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/mesh/succession-ranking.ts",
+      "imports": [
+        "./leader-election.js",
+        "./mesh-registry.js"
+      ]
+    },
+    {
+      "module": "src/mesh/succession-transport.ts",
+      "imports": [
+        "./emergency-release.js",
+        "./secret-shares.js",
+        "./state-journal.js",
+        "./succession.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/mesh/succession.ts",
+      "imports": [
+        "./emergency-release.js",
+        "./leader-election.js",
+        "./quorum-witness.js",
+        "./secret-shares.js",
+        "./state-journal.js",
+        "./succession-ranking.js",
+        "./witness-quorum.js",
+        "node:crypto"
       ]
     },
     {

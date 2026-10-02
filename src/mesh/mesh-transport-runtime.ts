@@ -565,6 +565,12 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         await sendResult(envelope, result)
         return
     }
+    if (envelope.kind === 'succession.request') {
+        const { handleSuccessionRequest } = await import('./succession-transport.js')
+        const outcome = await handleSuccessionRequest(envelope.payload, envelope.sourceNode)
+        await sendResult(envelope, makeResult(envelope.id, outcome.success, outcome.result, outcome.error))
+        return
+    }
     if (envelope.kind === 'codex.status.request') {
         const payload = envelope.payload as CodexStatusRequestPayload
         const cached = processed.get(payload.idempotencyKey)

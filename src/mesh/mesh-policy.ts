@@ -24,6 +24,8 @@ const REQUEST_ROLES: Partial<Record<MeshEnvelopeKind, readonly MeshRole[]>> = {
     'mission.request': ['system', 'owner', 'admin'],
     'codex.status.request': ['system', 'owner', 'admin'],
     'codex.complete.request': ['system', 'owner', 'admin'],
+    // 2.86 Main succession (journal replication, share release): node-to-node only.
+    'succession.request': ['system'],
 }
 
 /** Tools whose arguments name filesystem locations; mesh callers stay inside the workspace. */

@@ -62,6 +62,11 @@ export class MeshIdentity {
         return { ...unsigned, signature }
     }
 
+    /** Detached Ed25519 signature with the node identity (2.86 state journal). */
+    signDetached(data: Buffer): string {
+        return sign(null, data, this.privateKey).toString('base64url')
+    }
+
     static verify(envelope: MeshEnvelope): boolean {
         const { signature, ...unsigned } = envelope
         const hash = createHash('sha256').update(stable(envelope.payload)).digest('hex')

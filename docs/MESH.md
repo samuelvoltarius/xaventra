@@ -17,6 +17,16 @@ Other coordination modes retain the encrypted shared-memory transport. A
 production HA claim still requires independent witness hosts, controlled
 network loss and physical-node takeover evidence.
 
+## Main succession (2.86, not active yet)
+
+Main failover with the complete Main state — ranking-based successor, majority
+lease over one witness per node, signed and encrypted state journal with
+snapshots, safety mode plus owner emergency code without a majority, and k-of-n
+secret shares — is described in [FAILOVER.md](FAILOVER.md). The succession
+uses the `succession.request` envelope kind (role `system` only) on the
+existing mesh channel and stays inactive until it is explicitly wired and
+configured.
+
 ## Capability Graph convergence
 
 The Capability Graph is the canonical shareable inventory of node hardware,

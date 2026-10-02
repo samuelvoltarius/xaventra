@@ -93,6 +93,24 @@ export class QuorumWitnessStore {
         }
     }
 
+    /** Read-only view of the stored lease (live or expired); never mutates. */
+    peek(service: string): WitnessLease | null {
+        const lease = this.state.leases[service]
+        return lease ? { ...lease } : null
+    }
+
+    /**
+     * Voluntary hand-over (2.86 succession): only the current holder of exactly
+     * this term may end it early. The epoch stays, so the next term is higher.
+     */
+    release(input: { service: string; nodeId: string; epoch: number }, now = Date.now()): boolean {
+        const lease = this.state.leases[input.service]
+        if (!lease || lease.holderNodeId !== input.nodeId || lease.epoch !== input.epoch || Date.parse(lease.expiresAt) <= now) return false
+        this.state.leases[input.service] = { ...lease, expiresAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() }
+        atomicWriteJsonSync(this.file, this.state)
+        return true
+    }
+
     private currentLease(service: string, nodeId: string, epoch: number, now = Date.now()): WitnessLease | null {
         const lease = this.state.leases[service]
         return lease && lease.holderNodeId === nodeId && lease.epoch === epoch && Date.parse(lease.expiresAt) > now
@@ -176,7 +194,7 @@ export function createQuorumWitnessServer(options: {
             res.end(JSON.stringify({ ok: true, witnessId: options.witnessId }))
             return
         }
-        if (req.method !== 'POST' || !['/v1/lease/acquire', '/v1/checkpoint/write', '/v1/checkpoint/read'].includes(req.url || '')) {
+        if (req.method !== 'POST' || !['/v1/lease/acquire', '/v1/lease/peek', '/v1/lease/release', '/v1/checkpoint/write', '/v1/checkpoint/read'].includes(req.url || '')) {
             res.writeHead(404).end()
             return
         }
@@ -218,6 +236,11 @@ export function createQuorumWitnessServer(options: {
                     ttlMs: Number(input.ttlMs || 90_000), requestId: String(input.requestId),
                     proposedEpoch: Number(input.proposedEpoch || 0),
                 })
+            } else if (req.url === '/v1/lease/peek') {
+                result = { requestId: input.requestId, lease: store.peek(String(input.service)) }
+            } else if (req.url === '/v1/lease/release') {
+                if (typeof input.epoch !== 'number' || !Number.isSafeInteger(input.epoch)) throw new Error('missing required release epoch')
+                result = { requestId: input.requestId, released: store.release({ service: String(input.service), nodeId: String(input.nodeId), epoch: Number(input.epoch) }) }
             } else if (req.url === '/v1/checkpoint/write') {
                 if (!input.id || typeof input.epoch !== 'number' || !Number.isSafeInteger(input.epoch)) throw new Error('missing required checkpoint fields')
                 result = { requestId: input.requestId, checkpoint: store.writeCheckpoint({

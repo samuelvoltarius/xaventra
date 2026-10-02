@@ -7,6 +7,7 @@ export type MeshEnvelopeKind =
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
     | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
+    | 'succession.request'
 
 export type MeshRole = 'system' | 'owner' | 'admin' | 'worker' | 'observer'
 
@@ -180,6 +181,6 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
     return typeof value === 'string' && new Set<MeshEnvelopeKind>([
         'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools',
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
-        'run.checkpoint', 'run.result', 'run.cancel',
+        'run.checkpoint', 'run.result', 'run.cancel', 'succession.request',
     ]).has(value as MeshEnvelopeKind)
 }

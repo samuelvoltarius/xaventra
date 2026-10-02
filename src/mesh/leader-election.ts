@@ -202,7 +202,8 @@ export async function checkRemoteFence(service: string, epoch: number, holderNod
     }
 }
 
-function nodeStrength(node: any): number {
+/** Deterministic hardware strength; shared by takeover preference and the 2.86 succession ranking. */
+export function nodeStrength(node: any): number {
     const hw = node.hardware || {}
     const caps = new Set<string>(node.capabilities || [])
     let score = 0
