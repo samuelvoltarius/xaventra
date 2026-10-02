@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { createHash, sign } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statfsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { APT_GET, canonicalJson, getInstallCatalog, isSafeArgument, PLACEHOLDERS, type InstallCatalog, type InstallCatalogEntry, type PlaceholderName } from '../install/install-catalog.js'
 import { installTicketBytes, TICKET_ID_PATTERN, verifyInstallTicket, type InstallTicket } from '../install/install-ticket.js'
@@ -154,6 +155,8 @@ export function createHostInstaller(options: HostInstallerOptions, executor: Ins
                 return typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version) ? version : undefined
             } catch { return undefined }
         }
+        // The program this host agent runs from (dist/host/.. /..), unless the operator names one.
+        if (name === 'program') return opt.paths?.program || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
         return opt.paths?.[name]
     }
 

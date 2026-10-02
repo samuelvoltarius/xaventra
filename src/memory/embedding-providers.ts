@@ -2,11 +2,14 @@
  * Embedding für das Gedächtnis — nur aus eigenen Quellen (2.84, Punkt 2).
  *
  * Gedächtnis-Einträge (Owner-Aussagen, Korrekturen) sind privat. Sie werden
- * deshalb nur eingebettet von:
- *   1. `lokal`: ein Ollama-Embedding-Modell auf einem eigenen Knoten — aus dem
+ * deshalb nur eingebettet von (feste Rangfolge, 2.86 Paket G):
+ *   1. `eigen`: das mitgebrachte GGUF-Modell im eigenen Prozess (node-llama-cpp,
+ *      local-embedder.ts) — verlässt nicht einmal den Knoten, hängt an keinem
+ *      anderen Knoten und keinem Dienst.
+ *   2. `lokal`: ein Ollama-Embedding-Modell auf einem eigenen Knoten — aus dem
  *      Modell-Register (Capability-Graph + AIScan-Probes, Privatsphäre `lokal`)
- *      bzw. dem Model-Resolver, nie fest `localhost`.
- *   2. `hash`: deterministischer Notbehelf ohne Netz (schlechtere Suche, aber
+ *      bzw. dem Model-Resolver, nie fest `localhost`. Aufruf über `/api/embed`.
+ *   3. `hash`: deterministischer Notbehelf ohne Netz (schlechtere Suche, aber
  *      ehrlich und privat).
  * `openai`/`openrouter` gibt es nur für ausdrücklich nicht-private Texte und
  * nur mit `memory.embedding.allowCloud === true`. Private Texte (Standard)
@@ -18,12 +21,13 @@
  */
 
 import type { ModelRegistry } from '../routing/model-registry.js'
+import type { InProcessEmbedder } from './local-embedder.js'
 
 // ============================================
 // Types
 // ============================================
 
-export type EmbeddingProvider = 'lokal' | 'openai' | 'openrouter' | 'hash'
+export type EmbeddingProvider = 'eigen' | 'lokal' | 'openai' | 'openrouter' | 'hash'
 
 export interface LocalEmbeddingEndpoint {
     /** Ollama-Basis, z. B. http://<knoten>:11434 */
@@ -52,6 +56,8 @@ export interface EmbedOptions {
     hashDimension?: number
     /** Eigene Einbetter (Tests/Integration). Standard: Register + Resolver. */
     localEndpoints?: () => Promise<LocalEmbeddingEndpoint[]>
+    /** Eigener In-Prozess-Einbetter (Tests/Integration). Standard: local-embedder.ts. */
+    inProcess?: () => Promise<InProcessEmbedder | null>
     timeoutMs?: number
 }
 
@@ -63,8 +69,14 @@ export interface EmbeddingConfig extends EmbedOptions {
 export const DEFAULT_EMBEDDING_CONFIG: EmbeddingConfig = { dimension: 768 }
 
 const HASH_MODEL = 'v1'
-const EMBED_MODEL = /(^|[/:_-])(nomic-embed|mxbai-embed|all-minilm|bge|snowflake-arctic-embed|e5)|embed/i
-const PREFERRED = ['nomic-embed-text', 'mxbai-embed-large', 'bge-m3', 'all-minilm']
+const EMBED_MODEL = /(^|[/:_-])(nomic-embed|mxbai-embed|all-minilm|bge|snowflake-arctic-embed|e5|granite-embedding|paraphrase-multilingual)|embed/i
+/**
+ * Vorrang unter Ollama-Modellen (geprüft 02.10.2026, ollama.com/search?c=embedding):
+ * aktuelle mehrsprachige zuerst — qwen3-embedding (06/2025, 100+ Sprachen),
+ * embeddinggemma (09/2025), nomic-embed-text-v2-moe (04/2025),
+ * snowflake-arctic-embed2, bge-m3 — dann die alten englischen als Rückfall.
+ */
+const PREFERRED = ['qwen3-embedding', 'embeddinggemma', 'nomic-embed-text-v2-moe', 'snowflake-arctic-embed2', 'bge-m3', 'nomic-embed-text', 'mxbai-embed-large', 'all-minilm']
 
 // ============================================
 // Helpers
@@ -147,18 +159,38 @@ export function resetEmbeddingDiscovery(): void { discoveryCache = null }
 // Provider Implementations
 // ============================================
 
+const validVector = (value: unknown): number[] | null =>
+    Array.isArray(value) && value.length > 0 && value.every(Number.isFinite) ? value as number[] : null
+
+/**
+ * Ollama: aktuelle API `/api/embed` (`input`, Antwort `embeddings[0]`);
+ * nur ein alter Server ohne diesen Pfad (404) bekommt `/api/embeddings`.
+ */
 async function embedWithOllama(text: string, endpoint: LocalEmbeddingEndpoint, timeoutMs: number): Promise<number[] | null> {
+    const base = ollamaBase(endpoint.baseUrl)
+    const post = (path: string, body: unknown) => fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+    })
     try {
-        const response = await fetch(`${ollamaBase(endpoint.baseUrl)}/api/embeddings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: endpoint.model, prompt: text.slice(0, 2048) }),
-            signal: AbortSignal.timeout(timeoutMs),
-        })
-        if (!response.ok) return null
-        const data = await response.json() as { embedding?: number[] }
-        return Array.isArray(data.embedding) && data.embedding.length > 0 && data.embedding.every(Number.isFinite) ? data.embedding : null
+        const response = await post('/api/embed', { model: endpoint.model, input: text.slice(0, 8192), truncate: true })
+        if (response.ok) {
+            const data = await response.json() as { embeddings?: number[][] }
+            return validVector(data.embeddings?.[0])
+        }
+        if (response.status !== 404) return null
+        const legacy = await post('/api/embeddings', { model: endpoint.model, prompt: text.slice(0, 2048) })
+        if (!legacy.ok) return null
+        const data = await legacy.json() as { embedding?: number[] }
+        return validVector(data.embedding)
     } catch { return null }
+}
+
+async function defaultInProcess(): Promise<InProcessEmbedder | null> {
+    const { getInProcessEmbedder } = await import('./local-embedder.js')
+    return getInProcessEmbedder()
 }
 
 async function embedWithCloud(provider: 'openai' | 'openrouter', text: string, timeoutMs: number): Promise<{ vector: number[]; model: string } | null> {
@@ -213,6 +245,22 @@ export async function embed(text: string, options: EmbedOptions = {}): Promise<E
         return result
     }
 
+    // 1. Eigenes Modell im Prozess.
+    if (!only || only.provider === 'eigen') {
+        let own: InProcessEmbedder | null = null
+        try { own = await (options.inProcess || defaultInProcess)() } catch { own = null }
+        const model = own ? normalizeModelName(own.model) : ''
+        if (own && (!only || model === only.model)) {
+            let vector: number[] | null = null
+            try { vector = validVector(await own.embed(input)) } catch { vector = null }
+            if (vector && (!only || vector.length === only.dimension)) {
+                return done({ vector, embedder: embedderId('eigen', model, vector.length), provider: 'eigen', model, dimension: vector.length })
+            }
+        }
+        if (only) return null
+    }
+
+    // 2. Eigenes Mesh-Ollama-Modell.
     if (!only || only.provider === 'lokal') {
         let endpoints: LocalEmbeddingEndpoint[] = []
         try { endpoints = await (options.localEndpoints || discoverLocalEmbedders)() } catch { endpoints = [] }

@@ -40,7 +40,9 @@ export interface AppliedRoute { client: any; cloud: boolean; notice?: string }
 /** Client for a measured decision, or null (runner keeps its default client). Codex stays on its own path. */
 export async function applyMultiRouteEndpoint(decision: MultiRouteDecision): Promise<AppliedRoute | null> {
     const endpoint = decision.endpoint
-    if (decision.basis !== 'messung' || !endpoint || decision.target === 'codex') return null
+    // `raum` (2.86 Punkt 10): a room's preferred node — always a local endpoint.
+    if ((decision.basis !== 'messung' && decision.basis !== 'raum') || !endpoint || decision.target === 'codex') return null
+    if (decision.basis === 'raum' && endpoint.privacy !== 'lokal') return null
     const provider = CLIENT_PROVIDER[endpoint.kind]
     if (!provider) {
         console.warn(`[MultiRouter] Kein Client für ${endpoint.kind}; Standardmodell bleibt.`)

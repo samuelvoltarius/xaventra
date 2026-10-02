@@ -37,6 +37,8 @@ export interface EnvironmentMap {
     // ruft browser_*/desktop_* auf und laeuft in Fehler.
     browser?: string
     playwright_browsers?: string
+    /** 2.86: eigenes Embedding-Modell (GGUF) vorhanden — Name des Artefakts. */
+    embedding_gguf?: string
     display?: string
     audio?: string
 }
@@ -229,6 +231,14 @@ async function performEnvironmentScan(): Promise<EnvironmentMap> {
         if (existsSync(pwDir) && readdirSync(pwDir).some(d => /chromium|firefox|webkit/i.test(d))) {
             map.playwright_browsers = pwDir
         }
+    } catch { /* nicht vorhanden */ }
+
+    // Eigenes Embedding-Modell (Paket G): nur Bestand (Datei + Groesse), die
+    // sha256-Pruefung macht der Einbetter vor dem Laden.
+    try {
+        const { findInstalledEmbeddingArtifact } = await import('../memory/embedding-artifacts.js')
+        const artifact = findInstalledEmbeddingArtifact()
+        if (artifact) map.embedding_gguf = artifact.name
     } catch { /* nicht vorhanden */ }
 
     // Grafische Oberflaeche: DISPLAY/WAYLAND oder ein X-Binary

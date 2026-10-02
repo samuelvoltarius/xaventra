@@ -229,7 +229,8 @@ describe('Vorschläge: Standard aus, nur Main, entprellt', () => {
             nodes: () => nodes().map(node => node.local ? node : { ...node, lastSeen: now - 30_000 }) })
         const first = await run(NOW)
         expect(first.ran).toBe(true)
-        expect(first.emitted.map(item => item.capability)).toEqual(['stt', 'tts', 'browser'])
+        // 2.86 (Paket G): the Main without Ollama now has a route for embeddings (own in-process GGUF).
+        expect(first.emitted.map(item => item.capability)).toEqual(['stt', 'tts', 'embedding'])
         expect(emit).toHaveBeenCalledTimes(3)
         expect((await run(NOW + 60 * 60_000)).ran).toBe(false) // nothing changed, not due
         // profile change: runs again, but already proposed gaps stay quiet; a new gap shows up

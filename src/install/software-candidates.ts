@@ -99,6 +99,16 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
         benefit: 'Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst.',
     },
     {
+        // 2.86 (Paket G, checked 02.10.2026): own in-process embedder via node-llama-cpp, no
+        // Ollama needed (the Spark has none). Qwen3-Embedding-0.6B Q8_0, Apache-2.0, 1024 dim.,
+        // multilingual; pinned file + sha256 (memory/embedding-artifacts.ts). First = preferred.
+        id: 'embedding-qwen3-0.6b-gguf', title: 'Eigener Einbetter Qwen3-Embedding-0.6B (im Prozess, CPU)', capability: 'embedding', kind: 'runtime',
+        platforms: [...LINUX], arches: [...BOTH_ARCHES], minRamGB: 2, minDiskGB: 1, gpu: 'none', detect: { tools: ['embedding_gguf'] },
+        catalogId: 'embedding-gguf:qwen3-embedding-0.6b-q8_0', modelRef: 'qwen3-embedding:0.6b', releasedAt: '2025-06',
+        nutzen: 'Findet Erinnerungen dann nach ihrer Bedeutung statt nur nach genauen Wörtern.',
+        benefit: 'Gedächtnis-Suche nach Bedeutung (auch Deutsch) direkt im Xaventra-Prozess, ohne Ollama und ohne Cloud; ersetzt den Hash-Notbehelf.',
+    },
+    {
         id: 'embedding-nomic-embed-text', title: 'nomic-embed-text (Ollama)', capability: 'embedding', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
         minRamGB: 1, minDiskGB: 1, gpu: 'none', requiresService: 'ollama', catalogId: 'ollama-model:nomic-embed-text', modelRef: 'nomic-embed-text:v1.5', releasedAt: '2024-02',
         nutzen: 'Findet dann Erinnerungen schneller wieder, ohne fremden Dienst.',

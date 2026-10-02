@@ -1,5 +1,6 @@
 import { createHash, sign, verify } from 'node:crypto'
 import { neverListViolation, packageNeverListViolation } from './never-list.js'
+import { EMBEDDING_ARTIFACTS, type EmbeddingArtifact } from '../memory/embedding-artifacts.js'
 
 // ============================================================================
 // Stufe 2 (S2.1): installation catalog. Part of the release (compiled into
@@ -40,7 +41,8 @@ export interface InstallCatalogEntry {
 export const APT_GET = '/usr/bin/apt-get'
 export const OLLAMA = '/usr/local/bin/ollama'
 export const TEST_BIN = '/usr/bin/test'
-export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlamaCppVersion'] as const
+/** `program` = installed program root (contains dist/); defaults to the host agent's own program root. */
+export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlamaCppVersion', 'program'] as const
 export type PlaceholderName = typeof PLACEHOLDERS[number]
 /** Programs a catalog entry may start. Everything else is refused at load. */
 export const EXECUTABLE_ALLOWLIST: readonly string[] = Object.freeze([APT_GET, OLLAMA, TEST_BIN, '/usr/bin/ffmpeg', '{node}'])
@@ -98,6 +100,26 @@ function ollamaEntry(name: string): InstallCatalogEntry {
     }
 }
 
+/** Program that fetches exactly one pinned embedding GGUF (fixed URL, size, sha256; atomic, removable). */
+export const EMBEDDING_FETCH_SCRIPT = '{program}/dist/memory/local-embedder-fetch.js'
+/** Target: the main's runtime root (survives program updates), read by memory/embedding-artifacts.ts. */
+export const EMBEDDING_MODEL_DIR = '{runtime}/models/embedding'
+
+/**
+ * 2.86 (Paket G): own in-process embedding model. The command names only the
+ * artifact; URL, size and sha256 are compiled into the program
+ * (memory/embedding-artifacts.ts), verify re-hashes the file, rollback removes it.
+ */
+function embeddingEntry(artifact: EmbeddingArtifact): InstallCatalogEntry {
+    const run = (operation: string) => ['{node}', EMBEDDING_FETCH_SCRIPT, operation, artifact.name, EMBEDDING_MODEL_DIR]
+    return {
+        id: `embedding-gguf:${artifact.name}`, title: `Eigener Einbetter ${artifact.filename.replace(/\.gguf$/, '')} (CPU, sha256-geprüft)`,
+        kind: 'runtime-addon', targets: ['host-agent'], requires: { platform: 'linux' },
+        install: run('install'), verify: [run('verify')], rollback: { kind: 'command', argv: run('remove') },
+        runAs: 'service', sizeMb: Math.ceil(artifact.sizeBytes / 1024 ** 2), timeoutSec: 1800, risk: 'low', approval: 'fragen',
+    }
+}
+
 export const BUILTIN_INSTALL_CATALOG: readonly InstallCatalogEntry[] = Object.freeze([
     aptEntry('ffmpeg', 'ffmpeg (Audio/Video-Werkzeuge)', ['ffmpeg'], [['/usr/bin/ffmpeg', '-version']], 300, 900, 'low'),
     aptEntry('xfce-workstation', 'XFCE-Arbeitsplatz (Desktop für die Workstation)', XFCE_PACKAGES,
@@ -124,6 +146,7 @@ export const BUILTIN_INSTALL_CATALOG: readonly InstallCatalogEntry[] = Object.fr
         rollback: { kind: 'command', argv: ['{node}', '{npm}', 'uninstall', '--no-save', '--ignore-scripts', '--prefix', '{runtime}', '@node-llama-cpp/linux-arm64-cuda'] },
         runAs: 'root', sizeMb: 600, timeoutSec: 900, risk: 'high', approval: 'fragen',
     } as InstallCatalogEntry,
+    ...EMBEDDING_ARTIFACTS.map(embeddingEntry),
 ].map(entry => Object.freeze(entry)))
 
 export interface RejectedCatalogEntry { id: string; reason: string }

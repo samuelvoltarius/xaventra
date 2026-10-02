@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidatesHash": "227e7d160c1cc180ad2ce2b7c9cf0f2af426fa183d9c3e92dd6383485069244d",
+  "candidatesHash": "72a9d53df2fc62d317e031ef186e4b35fcb98a9a5f81e7ce241e616b3f975709",
   "entries": [
     {
       "id": "stt-whisper-large-v3",
@@ -78,6 +78,32 @@
       },
       "nutzen": "Kann dir dann Antworten vorlesen, ganz ohne Internet.",
       "benefit": "Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst."
+    },
+    {
+      "id": "embedding-qwen3-0.6b-gguf",
+      "title": "Eigener Einbetter Qwen3-Embedding-0.6B (im Prozess, CPU)",
+      "capability": "embedding",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 2,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "detect": {
+        "tools": [
+          "embedding_gguf"
+        ]
+      },
+      "catalogId": "embedding-gguf:qwen3-embedding-0.6b-q8_0",
+      "modelRef": "qwen3-embedding:0.6b",
+      "releasedAt": "2025-06",
+      "nutzen": "Findet Erinnerungen dann nach ihrer Bedeutung statt nur nach genauen Wörtern.",
+      "benefit": "Gedächtnis-Suche nach Bedeutung (auch Deutsch) direkt im Xaventra-Prozess, ohne Ollama und ohne Cloud; ersetzt den Hash-Notbehelf."
     },
     {
       "id": "embedding-nomic-embed-text",

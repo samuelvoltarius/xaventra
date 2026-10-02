@@ -304,10 +304,13 @@ export interface MultiRouteCandidate {
 
 export interface MultiRouteDecision extends Omit<TaskModelDecision, 'target' | 'rule'> {
     target: MultiRouteTarget
-    rule: TaskModelRuleId | 'M1-messung'
+    rule: TaskModelRuleId | 'M1-messung' | 'M2-raum'
     /** false when routing.multi.enabled is off (pure R1–R8). */
     multi: boolean
-    basis: 'aus' | 'regeln' | 'messung'
+    /** raum = a desktop room/bot profile prefers nodes (2.86 Punkt 10): node choice, without measurement if none exists. */
+    basis: 'aus' | 'regeln' | 'messung' | 'raum'
+    /** Preferred nodes given but none of them has a healthy, fitting local endpoint: shown to the user. */
+    roomNotice?: string
     /** The R1–R8 decision for comparison. */
     baseline: TaskModelDecision
     /** Chosen endpoint when the measurement decided; undefined = runner default (as before). */
@@ -317,13 +320,60 @@ export interface MultiRouteDecision extends Omit<TaskModelDecision, 'target' | '
 
 const fmtPct = (value: number) => `${Math.round(value * 100)} %`
 
-export function decideMultiRoute(input: TaskModelDecisionInput, registry: ModelRegistry | null | undefined, settings: MultiRouteSettings, classification?: TaskClassification): MultiRouteDecision {
+const cleanNodeIds = (value: unknown): string[] => Array.isArray(value)
+    ? [...new Set(value.map(item => String(item ?? '').trim()).filter(Boolean))].slice(0, 16)
+    : []
+
+export function decideMultiRoute(input: TaskModelDecisionInput, registry: ModelRegistry | null | undefined, settings: MultiRouteSettings, classification?: TaskClassification, preferredNodeIds: string[] = []): MultiRouteDecision {
     const cls = classification || classifyTaskModel(input.signals)
     const baseline = decideTaskModelFor(cls, input)
+    const preferred = cleanNodeIds(preferredNodeIds)
+    let roomNotice: string | undefined
     const asRules = (basis: 'aus' | 'regeln', candidates: MultiRouteCandidate[], extra = ''): MultiRouteDecision => ({
         ...baseline, multi: basis !== 'aus', basis, baseline, candidates,
         reason: extra ? `${baseline.reason} ${extra}` : baseline.reason,
+        ...(roomNotice ? { roomNotice } : {}),
     })
+    // 2.86 Punkt 10: a room/bot profile prefers nodes. Only LOCAL endpoints on those
+    // nodes, healthy and with the proven capability; first preferred node wins
+    // (measured best there if measurements exist). Codex routes stay as they are,
+    // and privacy needs nothing extra: only `lokal` endpoints qualify.
+    if (preferred.length && baseline.target !== 'codex') {
+        const need = requiredCapability(cls.taskClass)
+        const minSamples = settings?.minSamples && settings.minSamples >= 1 ? settings.minSamples : MULTI_ROUTE_MIN_SAMPLES
+        const fitting = (registry?.endpoints || []).filter(ep => ep.privacy === 'lokal' && ep.health !== 'down' && ep.node
+            && preferred.includes(ep.node) && hasProvenCapability(ep, need))
+        if (fitting.length) {
+            const rank = (ep: typeof fitting[number]) => {
+                const measured = measurementFor(ep, cls.taskClass)
+                return measured && measured.samples >= minSamples ? measured : null
+            }
+            fitting.sort((a, b) => (preferred.indexOf(a.node!) - preferred.indexOf(b.node!))
+                || (Math.round(((rank(b)?.successRate) ?? -1) * 100) - Math.round(((rank(a)?.successRate) ?? -1) * 100))
+                || (Number(b.health === 'ok') - Number(a.health === 'ok'))
+                || a.id.localeCompare(b.id))
+            const ep = fitting[0]
+            const measured = rank(ep)
+            const candidates: MultiRouteCandidate[] = (registry?.endpoints || []).map(item => ({
+                id: item.id, kind: item.kind, model: item.model, node: item.node, privacy: item.privacy, costEurPerCall: item.costEurPerCall,
+                ...(fitting.includes(item) ? {} : { excluded: `Raum bevorzugt Knoten ${preferred.join(', ')}` }),
+            }))
+            return {
+                ...baseline,
+                target: 'local',
+                wouldBe: baseline.wouldBe,
+                rule: 'M2-raum',
+                multi: settings?.enabled === true,
+                basis: 'raum',
+                baseline,
+                endpoint: { id: ep.id, kind: ep.kind, model: ep.model, node: ep.node, baseUrl: ep.baseUrl, privacy: ep.privacy, costEurPerCall: ep.costEurPerCall },
+                candidates,
+                reason: `Raum bevorzugt Knoten ${ep.node}: ${ep.model} (lokal)${measured ? `, Erfolgsquote ${fmtPct(measured.successRate)} bei ${measured.samples} Läufen` : ', ohne Messbasis'}; Regeltabelle wäre ${baseline.rule}.`,
+                notice: undefined,
+            }
+        }
+        roomNotice = `Hinweis: Bevorzugter Knoten ${preferred.join(', ')} hat gerade kein passendes lokales Modell — die Aufgabe läuft wie gewohnt.`
+    }
     if (!settings?.enabled) return asRules('aus', [])
 
     const owner = input.permission === 'owner'
@@ -400,10 +450,12 @@ export function decideRunnerMultiRoute(params: {
     codexConfig?: { enabled?: boolean } | null
     registry: ModelRegistry | null
     settings: MultiRouteSettings
+    /** Desktop room / bot profile (2.86 Punkt 10). */
+    preferredNodeIds?: string[]
 }): MultiRouteDecision {
     return decideMultiRoute({
         signals: { content: params.content, hasImage: params.hasImage, intentKind: params.intentKind },
         permission: params.permission,
         codexEnabled: params.codexConfig?.enabled === true,
-    }, params.registry, params.settings)
+    }, params.registry, params.settings, undefined, params.preferredNodeIds || [])
 }

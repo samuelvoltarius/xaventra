@@ -618,6 +618,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/memory/eigener-einbetter-wechsel.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/memory/journal-scope.test.ts",
       "path": ".nova-data"
     },

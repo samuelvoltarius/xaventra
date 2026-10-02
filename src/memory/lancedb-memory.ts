@@ -9,8 +9,9 @@
  *   gesucht wird nur mit diesem Einbetter; antwortet er nicht, scheitert der
  *   Eintrag ehrlich (die Governance trägt ihn später nach) statt still in
  *   einen anderen Vektorraum zu fallen.
- * - Einbetter-Wechsel (Hash -> eigener Einbetter, oder der gebundene ist seit
- *   24 h weg): neue Tabelle, die Governance projiziert begrenzt neu.
+ * - Einbetter-Wechsel (zu einem besseren: Hash -> Mesh-Ollama -> eigenes
+ *   In-Prozess-Modell, 2.86; oder der gebundene ist seit 24 h weg): neue
+ *   Tabelle, die Governance projiziert begrenzt neu.
  * - Zählung über countRows() (mit Filter), nie über eine leere Vektorsuche.
  * - Einbettung nur aus eigenen Quellen (embedding-providers.ts).
  */
@@ -134,7 +135,12 @@ export function tableNameFor(embedder: string): string {
     return `memories_${embedder.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
 }
 
-const PROVIDER_RANK: Record<string, number> = { lokal: 2, openai: 1, openrouter: 1, hash: 0 }
+/**
+ * Feste Rangfolge für den Wechsel (2.86 Paket G): eigenes In-Prozess-Modell >
+ * eigenes Mesh-Ollama-Modell > Cloud (nur nicht-privat) > Hash. Nur ein
+ * höherer Rang wechselt sofort; sonst erst nach 24 h Ausfall.
+ */
+const PROVIDER_RANK: Record<string, number> = { eigen: 3, lokal: 2, openai: 1, openrouter: 1, hash: 0 }
 const rank = (embedder: string) => PROVIDER_RANK[parseEmbedderId(embedder)?.provider || ''] ?? 0
 
 async function openTableIfExists(name: string): Promise<any | null> {
