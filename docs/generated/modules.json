@@ -3986,6 +3986,12 @@
       ]
     },
     {
+      "module": "src/learning/learning-flow.ts",
+      "imports": [
+        "../thinking/bug-finder.js"
+      ]
+    },
+    {
       "module": "src/learning/pattern-store.ts",
       "imports": [
         "../core/data-root.js",
@@ -3999,6 +4005,7 @@
         "../core/action-intent.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/side-effects.js",
         "../security/secret-redaction.js",
         "../tools/tool-result-quality.js",
         "node:fs",
@@ -4312,7 +4319,9 @@
     },
     {
       "module": "src/memory/embedding-providers.ts",
-      "imports": []
+      "imports": [
+        "../routing/model-registry.js"
+      ]
     },
     {
       "module": "src/memory/hybrid-search.ts",
@@ -4340,10 +4349,12 @@
     {
       "module": "src/memory/lancedb-memory.ts",
       "imports": [
+        "../core/side-effects.js",
         "./embedding-providers.js",
         "./hybrid-search.js",
         "./query-expansion.js",
         "@lancedb/lancedb",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]
@@ -5793,6 +5804,7 @@
         "../core/decisions.js",
         "../core/missions.js",
         "../doctor/failure-research-coordinator.js",
+        "../learning/learning-flow.js",
         "../learning/regression-case-store.js",
         "./bug-finder.js",
         "./idea-run.js",
