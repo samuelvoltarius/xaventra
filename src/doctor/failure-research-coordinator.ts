@@ -122,6 +122,22 @@ export class FailureResearchCoordinator {
         this.persist()
     }
 
+    /**
+     * 2.83.0 Punkt 1: the fault is no longer observed (measured by its owner:
+     * Bug-Finder traces, validator runs). Sets `findingOpen = false` with the
+     * measurement as evidence. Never `stage = 'resolved'`: that stays with the
+     * signed Repair-Controller. Closing means "not observed any more", never
+     * "repair confirmed". A recurrence reopens the same case through `ingest`.
+     */
+    closeByMeasurement(id: string, evidenceRef: string, now: Date = new Date()): FailureResearchCase | null {
+        const item = this.cases.find(value => value.id === id)
+        if (!item || !evidenceRef || item.findingOpen === false) return null
+        item.findingOpen = false
+        item.updatedAt = now.toISOString()
+        item.evidenceRefs = [...new Set([...item.evidenceRefs, redactSecrets(String(evidenceRef)).slice(0, 120)])].slice(-30)
+        this.persist(); return structuredClone(item)
+    }
+
     isCurrentObservation(id: string, hash: string): boolean {
         return this.cases.some(c => c.id === id && c.observationHash === hash && c.findingOpen !== false)
     }

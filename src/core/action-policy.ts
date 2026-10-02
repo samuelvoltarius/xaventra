@@ -318,6 +318,9 @@ export const AKTIONSARTEN: Readonly<Record<string, KindEntry>> = Object.freeze({
     'schalten': kind('L2', 'schalten (Home Assistant)', 'physisch'),
     // P9 Werkzeug-Schmiede: Aktivierung selbst gebauter Werkzeuge (lesend = selbst, ohne Art).
     'werkzeug-schreibend': kind('L2', 'selbst gebautes Werkzeug mit schreibender Wirkung aktivieren'),
+    // 2.83.0: verifizierten Doctor-Fall per Delegation an Claude übergeben (doctor/claude-handoff.ts).
+    // Die Leiter zählt nur Übergaben, deren Fall danach gemessen geschlossen ist.
+    'doctor-uebergabe': kind('L2', 'verifizierten Doctor-Fall zur Behebung an Claude übergeben'),
     'werkzeug-extern': kind('L2', 'selbst gebautes Werkzeug mit Wirkung nach außen aktivieren', 'extern'),
     'werkzeug-physisch': kind('L2', 'selbst gebautes Werkzeug mit physischer Wirkung aktivieren', 'physisch'),
     // L3 — gefährlich (zusätzlich zur Nie-Liste ausdrücklich benannt)

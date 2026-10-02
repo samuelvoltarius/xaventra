@@ -70,7 +70,9 @@ hoch (`src/core/action-policy.ts`: `recordActionOutcome(…, { approvedByOwner }
 `evaluateActionWithTrust`). Persistiert in `.nova-data/action-policy/trust.json`,
 sichtbar in `/arbeit` („Vertrauensleiter: selbst statt fragen“) und im Abendbericht
 („Selbst übernommen“). Wirksam für Missions-Schritte; der Ausführer bekommt dann
-`trustedBy: "vertrauensleiter:<art>"` statt einer Owner-Freigabe.
+`trustedBy: "vertrauensleiter:<art>"` statt einer Owner-Freigabe. Seit 2.83.0 auch für
+die Doctor-Übergabe an Claude (`doctor-uebergabe`, siehe Delegation): gezählt wird nur
+ein Ja, dessen Fall danach gemessen geschlossen ist.
 
 - **Nie** für physisch, nach außen, Geld/Kauf, Löschen/Entfernen/Zurückrollen, L3,
   unbekannte Arten und `release-ausrollen`, `patch-anwenden`, `pve-entfernen`,
@@ -555,7 +557,7 @@ Main** (workers think nothing and send nothing). Code: `src/thinking/`.
 |------|------|--------------|--------|
 | Ideen-Lauf | night window, ≤ 1×/day, only if GPU/vLLM measured idle | fixed rules over traces (`analyzeTraces`, same numbers as `nova_trace_stats`), tool latency, error rate, repeated arguments, retries, model success rate, L14 costs; the model only words the text | ≤ 3 ideas/day (hard cap, config can only lower), each with evidence (number before + source) and a measurable target, stage `fragen` |
 | Modell-Scout | weekly | candidates from configured sources (Hugging Face API read-only GET with time limit, or offline fixture; no source = nothing), filter: fits GB10 memory (unknown size = rejected), vLLM-compatible (transformers/safetensors, not GGUF-only), licence allow-list; probe set from Doctor cases + anonymous everyday questions (private content is dropped, numbers masked); comparison only through an injected `ScoutRunner` and only while the GPU is idle | "Modell Z war X % besser" with test report, stage `fragen`. **Never switches by itself**, downloads nothing, starts no model |
-| Bug-Finder | hourly | same fault fingerprint (Stufe-1 `observationFingerprint`) ≥ N times with evidence → one Doctor case in the existing queue; no duplicates (same fingerprint/case id = skipped) | Doctor investigation → on `verified` the existing Claude handoff → after a rollout the existing follow-up check |
+| Bug-Finder | hourly | same fault fingerprint (Stufe-1 `observationFingerprint`) ≥ N times with evidence → one Doctor case in the existing queue; no duplicates (same fingerprint/case id = skipped). 2.83.0: closes its own open case by measurement (`closeByMeasurement`) after 0 occurrences of the fingerprint **and** ≥ N successful calls of the same tool in the window (unused is not healed); a recurrence reopens the same case | Doctor investigation → on `verified` the Claude handoff as one delegation → after a rollout the follow-up check (closed = measured, never "repaired") |
 | Lernen | on every button answer | `recordDecision(kind, answer)` → outcome ledger; after 5× "Ja" in a row (minimum, config can only raise) a thought "Immer erlauben?" — never for printing, switching, sending, buying, never for the never-list; "Nein" lowers future importance of that kind (min. factor 0.2) | thought, stage `fragen` |
 
 Load gate (`LoadProbe`): `nvidia-smi utilization.gpu` (no shell, time limit, 3 samples, max
@@ -766,6 +768,20 @@ Rules (code, not config):
 - **Deadline:** an open delegation past its deadline becomes `abgelaufen` and leaves
   a thought (`wichtig`).
 - Main only: a worker (`NOVA_NODE_ONLY=true`) refuses `delegate()` and never polls.
+
+**Doctor-Übergabe an Claude (2.83.0):** a verified Doctor case goes to Claude only as
+a delegation (`src/doctor/claude-handoff.ts` → `delegate`, `erwartet.art = doctor-fall`,
+`aendert: true`). Being a change task it is L2: one card, not time-critical, bundled into
+the next report. Nova's own check `doctor-fall` is `verifiziert` only when the case is
+closed by measurement (or by the signed Repair-Controller); before the rollout it stays
+`unverifiziert`. The outbox `self-doctor/claude-handoff.json` stays as the protocol with
+the delegation id; without a URL only the outbox works. The trust ladder counts the
+kind `doctor-uebergabe`: an owner „Ja“ whose case then closed by measurement counts;
+„Nein“, an error, an expired or refused delegation or a measured „nicht erfüllt“ resets
+it. After 3× the delegation goes without a card and says so („Freigabe durch die
+Vertrauensleiter … keine Einzel-Freigabe“), never as an owner approval. After a rollout
+nothing is sent again; a measured closing becomes a done thought
+(„… nach Rollout vX behoben (gemessen)“).
 
 **`/delegiert [n]`** (owner): open and the last n finished delegations with status,
 level, criterion, check result, evidence and the (untrusted) answer excerpt.
