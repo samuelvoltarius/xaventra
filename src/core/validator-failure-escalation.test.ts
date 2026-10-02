@@ -6,23 +6,30 @@ import { OutcomeLedger, type OutcomeRunView } from './outcome-ledger.js'
 import { createTaskContract } from './task-contract.js'
 import { detectActionIntent } from './action-intent.js'
 import { FailureResearchCoordinator, RESEARCH_TOOLS } from '../doctor/failure-research-coordinator.js'
-import { reconcileValidatorFailures } from './validator-failure-escalation.js'
+import { reconcileValidatorFailures, VALIDATOR_GROUP_MIN_RUNS } from './validator-failure-escalation.js'
 
 const paths: string[] = []
 afterEach(() => { for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true }) })
 function fixture() {
     const path = mkdtempSync(join(tmpdir(), 'validator-doctor-')); paths.push(path)
     const ledger = new OutcomeLedger(join(path, 'ledger'), false)
-    const contract = createTaskContract('check private URL', detectActionIntent('check private URL'), [], {
-        successCriteria: [{ id: 'target', kind: 'verified_tool', required: true, description: 'private target' }],
-    })
-    ledger.start(contract, { userId: 'private-owner', channel: 'telegram' })
-    ledger.recordValidation(contract.id, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
-        success: false, awaitingApproval: false, criteria: [{ criterionId: 'target', success: false, evidence: [], reason: 'private-url-secret' }], violations: [] })
-    ledger.fail(contract.id, { reason: 'validator-rejected', diagnosticEligible: true })
+    // 2.83.0 Punkt 8: a case needs VALIDATOR_GROUP_MIN_RUNS rejections of the same shape.
+    let contract: ReturnType<typeof createTaskContract> | undefined
+    for (let i = 0; i < VALIDATOR_GROUP_MIN_RUNS; i++) {
+        contract = createTaskContract('check private URL', detectActionIntent('check private URL'), [], {
+            successCriteria: [{ id: 'target', kind: 'verified_tool', required: true, description: 'private target' }],
+        })
+        ledger.start(contract, { userId: 'private-owner', channel: 'telegram' })
+        ledger.recordValidation(contract.id, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
+            success: false, awaitingApproval: false, criteria: [{ criterionId: 'target', success: false, evidence: [], reason: 'private-url-secret' }], violations: [] })
+        ledger.fail(contract.id, { reason: 'validator-rejected', diagnosticEligible: true })
+    }
     const queue = join(path, 'queue.json')
-    return { ledger, queue, doctor: new FailureResearchCoordinator(queue), run: ledger.getRun(contract.id)! }
+    return { ledger, queue, doctor: new FailureResearchCoordinator(queue), run: ledger.getRun(contract!.id)! }
 }
+/** Same shape, distinct principals: enough runs for one case unless the override makes them ineligible. */
+const group = (run: OutcomeRunView, override: Record<string, unknown> = {}) =>
+    Array.from({ length: VALIDATOR_GROUP_MIN_RUNS }, (_, i) => ({ ...run, userId: `owner-${i}`, ...override } as OutcomeRunView))
 
 describe('validator rejection to bounded self-diagnosis', () => {
     it('recovers a committed failure after restart, deduplicates and excludes private input', () => {
@@ -44,7 +51,7 @@ describe('validator rejection to bounded self-diagnosis', () => {
         { finalOutcome: { reason: 'policy-blocked', diagnosticEligible: true } },
     ])('does not enqueue ineligible evidence %j', override => {
         const f = fixture()
-        expect(reconcileValidatorFailures({ listRuns: () => [{ ...f.run, ...override } as OutcomeRunView] }, f.doctor)).toBe(0)
+        expect(reconcileValidatorFailures({ listRuns: () => group(f.run, override) }, f.doctor)).toBe(0)
     })
 
     it('rejects approval waits and uncorrelated validation', () => {
@@ -53,15 +60,17 @@ describe('validator rejection to bounded self-diagnosis', () => {
             { ...f.run.validation!, awaitingApproval: true },
             { ...f.run.validation!, success: true },
             { ...f.run.validation!, criteria: [{ criterionId: 'different', success: false, evidence: [] }] },
-        ]) expect(reconcileValidatorFailures({ listRuns: () => [{ ...f.run, validation }] }, f.doctor)).toBe(0)
+        ]) expect(reconcileValidatorFailures({ listRuns: () => group(f.run, { validation }) }, f.doctor)).toBe(0)
     })
 
-    it('separates principals and bounds intake', () => {
+    it('separates principals per run receipt and bounds intake per shape', () => {
         const f = fixture()
-        const runs = Array.from({ length: 12 }, (_, i) => ({ ...f.run, userId: `owner-${i}` }))
-        expect(reconcileValidatorFailures({ listRuns: () => runs }, f.doctor)).toBe(10)
-        expect(reconcileValidatorFailures({ listRuns: () => runs }, f.doctor)).toBe(2)
-        expect(f.doctor.list()).toHaveLength(12)
+        expect(reconcileValidatorFailures({ listRuns: () => group(f.run) }, f.doctor)).toBe(1)
+        expect(f.doctor.list()[0].evidenceRefs.filter(ref => ref.startsWith('validator-run:'))).toHaveLength(VALIDATOR_GROUP_MIN_RUNS)
+        const shapes = Array.from({ length: 12 }, (_, i) => group(f.run, { events: [{ type: 'route.selected', payload: { taskType: `art-${String.fromCharCode(97 + i)}` } }] })).flat()
+        expect(reconcileValidatorFailures({ listRuns: () => shapes }, f.doctor)).toBe(10)
+        expect(reconcileValidatorFailures({ listRuns: () => shapes }, f.doctor)).toBe(2)
+        expect(f.doctor.list()).toHaveLength(13)
     })
 
     it('uses the existing fenced worker and terminal receipt without replaying the original request', async () => {
