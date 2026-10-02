@@ -233,7 +233,8 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     const { suggestionSummaryLines } = await import('../core/decisions.js')
     const briefingSources = {
         dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone,
-        cards: { bundled: () => bundledCards({ dataDir }), release: () => releaseBundledCards({ dataDir }) },
+        // The planner's clock, not the wall clock: the report lists exactly the cards it releases.
+        cards: { bundled: () => bundledCards({ dataDir, now: options.now }), release: () => releaseBundledCards({ dataDir, now: options.now }) },
         trust: { changesSince: (since: number, until: number) => trustChangesSince(since, until, { dataDir }) },
         learning: {
             successTrend: (now: number) => getOutcomeRouter().successTrend(now),
