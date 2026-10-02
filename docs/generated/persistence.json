@@ -1030,6 +1030,10 @@
       "path": ".nova-data/learning/procedures.json"
     },
     {
+      "owner": "src/llm/llm-connections.ts",
+      "path": ".nova-data/llm-connections.json"
+    },
+    {
       "owner": "src/core/native-package-builder.test.ts",
       "path": ".nova-data/memory.json"
     },

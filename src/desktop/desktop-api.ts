@@ -41,6 +41,7 @@ import { resolvePrincipalId } from '../users/principal-id.js'
 import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
+import { registerLlmConnectionsApi } from './llm-connections-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -274,6 +275,8 @@ function receiveDesktopControlResult(commandId: string, action: string, raw: unk
 
 export function registerDesktopApi(app: Express, resolveMessageHandler: () => MessageHandler | null): void {
     app.use('/api/desktop', requireDesktopAuth)
+    // 2.85 Paket C: KI-Modelle verbinden (status, key, account login) for Paket A/B.
+    registerLlmConnectionsApi(app, { isOwner: isDesktopOwner, executionPrincipal: req => desktopExecutionPrincipal(principal(req)) })
 
     app.get('/api/desktop/bootstrap', async (req, res) => {
         try {

@@ -176,6 +176,14 @@ async function startDaemon() {
         console.warn(`[Nova] Legacy Codex credential cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
     }
 
+    // 2.85 Paket C: API keys connected in the desktop view behave like .env keys
+    // (an existing environment variable always wins). Values are never logged.
+    try {
+        const { applyStoredLlmKeysAtStartup } = await import('./llm/llm-connections.js')
+        const applied = await applyStoredLlmKeysAtStartup()
+        if (applied.length) console.log(`[Nova] Verbundene KI-Anbieter: ${applied.join(', ')}`)
+    } catch { /* optional */ }
+
     // === PID File: Prevent duplicate daemons ===
     const pidFile = join(process.cwd(), '.nova.pid')
     try {

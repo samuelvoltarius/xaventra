@@ -300,7 +300,6 @@
     {
       "module": "src/auth/legacy-codex-migration.ts",
       "imports": [
-        "../core/atomic-storage.js",
         "node:fs",
         "node:path"
       ]
@@ -2536,6 +2535,7 @@
         "./desktop-control.js",
         "./desktop-views.js",
         "./external-agent-registry.js",
+        "./llm-connections-api.js",
         "./model-control.js",
         "./module-catalog.js",
         "./node-enrollment.js",
@@ -2572,6 +2572,13 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/llm-connections-api.ts",
+      "imports": [
+        "../llm/llm-connections.js",
+        "express"
       ]
     },
     {
@@ -4146,6 +4153,16 @@
         "node:child_process",
         "node:fs",
         "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/llm-connections.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs",
         "node:path"
       ]
     },

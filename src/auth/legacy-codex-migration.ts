@@ -1,6 +1,5 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 
 function isLegacyCodexCredential(id: string, credential: any): boolean {
     const provider = String(credential?.provider || '').toLowerCase()
@@ -30,7 +29,13 @@ export function purgeLegacyCodexCredentialCopies(dataDir = join(process.cwd(), '
                 delete profiles[id]
                 removedProfiles++
             }
-            if (removedProfiles > 0) atomicWriteJsonSync(authPath, parsed)
+            if (removedProfiles > 0) {
+                // The store holds API keys: written owner-only (0600) from the first byte.
+                const temporary = `${authPath}.${process.pid}.tmp`
+                writeFileSync(temporary, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 })
+                try { chmodSync(temporary, 0o600) } catch { /* not supported on this filesystem */ }
+                renameSync(temporary, authPath)
+            }
         } catch {
             // Fail closed: do not rewrite a credential store that cannot be parsed.
         }
