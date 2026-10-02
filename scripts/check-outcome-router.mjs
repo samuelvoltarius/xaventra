@@ -62,28 +62,27 @@ if (phase === 'write') {
 }
 
 if (phase === 'read') {
+  // 2.84.0: the store selects no route (the multi-router does); training
+  // eligibility stays principal-scoped and survives the restart.
   const { OutcomeRouter, OutcomeLedger } = await modules()
   const router = new OutcomeRouter(new OutcomeLedger(ledgerDir), join(qaDir, 'reader-decisions.jsonl'), 'active', sampleFile)
-  const candidates = [{ model: 'candidate', node: 'spark', baseScore: 100 }]
-  const baseline = { model: 'configured', node: 'main' }
-  const alice = router.decide('coding', baseline, candidates, { userId: 'alice', channel: 'telegram' })
-  const bob = router.decide('coding', baseline, candidates, { userId: 'bob', channel: 'telegram' })
-  const charlie = router.decide('coding', baseline, candidates, { userId: 'charlie', channel: 'telegram' })
-  const anonymous = router.decide('coding', baseline, candidates)
+  const cell = userId => router.getTrainingStatus(userId).cells.find(item => item.taskType === 'coding' && item.model === 'candidate')
+  const alice = cell('alice'), bob = cell('bob'), charlie = cell('charlie')
   const aggregate = router.getTrainingStatus()
   const result = {
     pid: process.pid,
-    alice: { selected: alice.selected.model, eligible: alice.activationEligible },
-    bob: { selected: bob.selected.model, eligible: bob.activationEligible },
-    charlie: { selected: charlie.selected.model, eligible: charlie.activationEligible },
-    anonymous: { selected: anonymous.selected.model, eligible: anonymous.activationEligible },
-    aggregateActivationClosed: aggregate.cells.every(cell => cell.activationEligible === false),
+    alice: { samples: alice?.samples ?? 0, eligible: alice?.activationEligible === true },
+    bob: { samples: bob?.samples ?? 0, eligible: bob?.activationEligible === true },
+    charlie: { samples: charlie?.samples ?? 0, eligible: charlie?.activationEligible === true },
+    mode: aggregate.mode,
+    noRouting: typeof router.decide !== 'function',
+    aggregateActivationClosed: aggregate.cells.every(item => item.activationEligible === false),
   }
   writeFileSync(join(qaDir, 'read.json'), JSON.stringify(result, null, 2))
-  const passed = result.alice.selected === 'candidate' && result.alice.eligible
-    && result.bob.selected === 'configured' && !result.bob.eligible
-    && result.charlie.selected === 'configured' && !result.charlie.eligible
-    && result.anonymous.selected === 'configured' && !result.anonymous.eligible
+  const passed = result.alice.samples === 20 && result.alice.eligible
+    && result.bob.samples === 0 && !result.bob.eligible
+    && result.charlie.samples === 19 && !result.charlie.eligible
+    && result.mode === 'shadow' && result.noRouting
     && result.aggregateActivationClosed
   process.exit(passed ? 0 : 1)
 }
