@@ -3434,6 +3434,7 @@
     {
       "module": "src/install/install-catalog.ts",
       "imports": [
+        "../memory/embedding-artifacts.js",
         "./never-list.js",
         "node:crypto"
       ]
@@ -4335,9 +4336,21 @@
       ]
     },
     {
+      "module": "src/memory/embedding-artifacts.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:stream",
+        "node:stream/promises",
+        "node:url"
+      ]
+    },
+    {
       "module": "src/memory/embedding-providers.ts",
       "imports": [
-        "../routing/model-registry.js"
+        "../routing/model-registry.js",
+        "./local-embedder.js"
       ]
     },
     {
@@ -4385,6 +4398,21 @@
         "./memory-governance.js",
         "./memory-quality.js",
         "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/local-embedder-fetch.ts",
+      "imports": [
+        "./embedding-artifacts.js",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/local-embedder.ts",
+      "imports": [
+        "./embedding-artifacts.js",
+        "node:os",
         "node:path"
       ]
     },

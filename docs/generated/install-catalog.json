@@ -1,7 +1,47 @@
 {
   "version": 1,
-  "catalogHash": "a804b6f2bab5e17c60a19bc3fbe080731758401a79ab0f7ff4746828de58db81",
+  "catalogHash": "07685a639b1c3f855319158107c21f76bfb0e9b1f21135545e2af17bfe824014",
   "entries": [
+    {
+      "id": "embedding-gguf:qwen3-embedding-0.6b-q8_0",
+      "title": "Eigener Einbetter Qwen3-Embedding-0.6B-Q8_0 (CPU, sha256-geprüft)",
+      "kind": "runtime-addon",
+      "targets": [
+        "host-agent"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "install": [
+        "{node}",
+        "{runtime}/dist/memory/local-embedder-fetch.js",
+        "install",
+        "qwen3-embedding-0.6b-q8_0"
+      ],
+      "verify": [
+        [
+          "{node}",
+          "{runtime}/dist/memory/local-embedder-fetch.js",
+          "verify",
+          "qwen3-embedding-0.6b-q8_0"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "{node}",
+          "{runtime}/dist/memory/local-embedder-fetch.js",
+          "remove",
+          "qwen3-embedding-0.6b-q8_0"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 610,
+      "timeoutSec": 1800,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "b37a2d2361f79aa13b567a0deec7dc3b0688a9bc4ee570775d7f790d678e1582"
+    },
     {
       "id": "ffmpeg",
       "title": "ffmpeg (Audio/Video-Werkzeuge)",

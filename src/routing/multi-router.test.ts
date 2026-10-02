@@ -183,9 +183,10 @@ describe('settings', () => {
 describe('nova-runner wiring', () => {
     const source = readFileSync(new URL('../agents/nova-runner.ts', import.meta.url), 'utf8')
 
-    it('consults the multi-router only when routing.multi.enabled, and records candidates', () => {
+    it('consults the multi-router only when routing.multi.enabled (or a room prefers nodes, 2.86), and records candidates', () => {
         expect(source).toMatch(/readMultiRouteSettings\(/)
-        expect(source).toMatch(/if \(multiSettings\.enabled && !modelOverride\?\.model\)/)
+        expect(source).toMatch(/if \(\(multiSettings\.enabled \|\| preferredNodeIds\.length > 0\) && !modelOverride\?\.model\)/)
+        expect(source).toMatch(/settings: \{ \.\.\.multiSettings, cloudSpentTodayEur: modelRuntime\.getCloudSpendToday\(\) \},\s+preferredNodeIds,/)
         expect(source).toMatch(/candidates: multiRoute\.candidates/)
     })
 

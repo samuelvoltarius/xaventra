@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidatesHash": "e3ae6cd2be0b69db411910d677a3ac92de1b25fa7aec99ac36662513df51f7e0",
+  "candidatesHash": "721991bc2a0811bc4b002294a6517918bdbe3356df1fff7cd58340f148e80d34",
   "entries": [
     {
       "id": "stt-whisper-large-v3",
@@ -75,6 +75,31 @@
         ]
       },
       "benefit": "Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst."
+    },
+    {
+      "id": "embedding-qwen3-0.6b-gguf",
+      "title": "Eigener Einbetter Qwen3-Embedding-0.6B (im Prozess, CPU)",
+      "capability": "embedding",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 2,
+      "minDiskGB": 1,
+      "gpu": "none",
+      "detect": {
+        "tools": [
+          "embedding_gguf"
+        ]
+      },
+      "catalogId": "embedding-gguf:qwen3-embedding-0.6b-q8_0",
+      "modelRef": "qwen3-embedding:0.6b",
+      "releasedAt": "2025-06",
+      "benefit": "Gedächtnis-Suche nach Bedeutung (auch Deutsch) direkt im Xaventra-Prozess, ohne Ollama und ohne Cloud; ersetzt den Hash-Notbehelf."
     },
     {
       "id": "embedding-nomic-embed-text",

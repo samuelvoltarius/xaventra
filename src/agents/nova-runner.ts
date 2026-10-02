@@ -325,10 +325,12 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             } as any)
         }
         // Phase 6d: Multi-Router, only with routing.multi.enabled=true. Off =
-        // the R1–R8 decision above stays exactly as it was.
+        // the R1–R8 decision above stays exactly as it was — unless a desktop
+        // room/bot profile prefers nodes (2.86 Punkt 10): then the same router
+        // restricts to healthy local endpoints on those nodes.
         const { readMultiRouteSettings } = await import('../routing/task-model-routing.js')
         const multiSettings = readMultiRouteSettings((globalThis as any).__novaState?.config)
-        if (multiSettings.enabled && !modelOverride?.model) {
+        if ((multiSettings.enabled || preferredNodeIds.length > 0) && !modelOverride?.model) {
             try {
                 const [{ decideRunnerMultiRoute }, { collectModelRegistry }, modelRuntime] = await Promise.all([
                     import('../routing/task-model-routing.js'), import('../routing/model-registry.js'), import('../routing/model-runtime.js'),
@@ -338,6 +340,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                     permission: currentLlmPermission(), codexConfig,
                     registry: await collectModelRegistry({ userId }),
                     settings: { ...multiSettings, cloudSpentTodayEur: modelRuntime.getCloudSpendToday() },
+                    preferredNodeIds,
                 })
                 outcomeLedger.recordRoute(kernel.contract.id, {
                     taskType: actionIntent.kind || 'agent',
@@ -357,6 +360,8 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                     // A measured local/cloud choice replaces a table Codex pick.
                     if (taskModel.target === 'codex') taskModel = { ...taskModel, target: 'local' }
                     if (applied.notice && onStepUpdate) void Promise.resolve(onStepUpdate(applied.notice)).catch(() => undefined)
+                } else if (multiRoute.roomNotice && onStepUpdate) {
+                    void Promise.resolve(onStepUpdate(multiRoute.roomNotice)).catch(() => undefined)
                 }
             } catch (error) {
                 console.warn(`[MultiRouter] ${redactSecrets(String((error as Error)?.message || error))}; Regeltabelle R1–R8 bleibt`)

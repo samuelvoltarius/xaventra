@@ -7,8 +7,9 @@ import { buildModelRegistry } from '../routing/model-registry.js'
 const calls: string[] = []
 const fetchStub = vi.fn(async (url: string | URL) => {
     calls.push(String(url))
-    if (String(url).includes('/api/embeddings')) {
-        return new Response(JSON.stringify({ embedding: [0.5, 0.5, 0.5, 0.5] }), { status: 200 })
+    // 2.86: aktuelle Ollama-API /api/embed (Antwort `embeddings`).
+    if (String(url).endsWith('/api/embed')) {
+        return new Response(JSON.stringify({ embeddings: [[0.5, 0.5, 0.5, 0.5]] }), { status: 200 })
     }
     return new Response(JSON.stringify({ data: [{ embedding: [1, 2, 3] }] }), { status: 200 })
 })
@@ -56,7 +57,7 @@ describe('Einbettung nur aus eigenen Quellen', () => {
         const result = await embed('privater Eintrag', {
             localEndpoints: async () => [{ baseUrl: 'http://ns.example.com:11434', model: 'nomic-embed-text:latest', node: 'ns' }],
         })
-        expect(calls).toEqual(['http://ns.example.com:11434/api/embeddings'])
+        expect(calls).toEqual(['http://ns.example.com:11434/api/embed'])
         expect(result).toMatchObject({ provider: 'lokal', model: 'nomic-embed-text', dimension: 4, embedder: 'lokal:nomic-embed-text:4' })
     })
 
