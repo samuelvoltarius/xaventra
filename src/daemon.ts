@@ -1892,6 +1892,12 @@ async function startDaemon() {
                 const { createThinkingThoughtSink } = await import('./core/thought-hub.js')
                 setThoughtSink(createThinkingThoughtSink())
                 if (state.llm) setIdeaFormulator(createLlmFormulator({ complete: (messages, options) => (state.llm as any).complete(messages, options) }))
+                // 2.84.0 Punkt 8: the scout measures installed local models (Main only; never loads anything new).
+                const { isAutonomyWorker } = await import('./core/autonomy-defaults.js')
+                if (!isAutonomyWorker()) {
+                    const [{ setScoutRunner }, { createProductionScoutRunner }] = await Promise.all([import('./thinking/thinking-runtime.js'), import('./thinking/scout-runner.js')])
+                    setScoutRunner(await createProductionScoutRunner())
+                }
             } catch (err) { console.debug(`[Xaventra] Denken config skipped: ${err}`) }
             // Phase 5b Software-Scout: P8 proposals on at the Main by default (autonomy.softwareScout.enabled=false = off).
             try {

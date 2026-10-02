@@ -109,7 +109,10 @@ describe('Phase 3 Modell-Scout', () => {
         const switchModel = vi.fn(async () => true)
         ;(globalThis as any).__novaState = { llm: { modelId: 'qwen', switchModel } }
         const sink = new MemoryThoughtSink()
-        const test = runner({ qwen: 0.6, 'org/model-32b': 0.75 })
+        // 2.84.0: measured only when installed; proposed only as a target of the vLLM switch list.
+        const test = Object.assign(runner({ qwen: 0.6, 'org/model-32b': 0.75 }), {
+            inventory: async () => ({ installed: ['qwen', 'org/model-32b'], targets: [{ target: 'm32', modelId: 'org/model-32b' }] }),
+        })
         const result = await runModelScout({
             settings: settings(), load: load(), sink, currentModel: 'qwen', runner: test,
             sources: [listing([candidate({})])], probes: buildProbeSet({ doctorCases: [], taskTypeCounts: { chat: 3 } }),
@@ -118,7 +121,7 @@ describe('Phase 3 Modell-Scout', () => {
         expect(test.calls).toEqual(['qwen', 'org/model-32b'])
         expect(result.proposal?.stufe).toBe('fragen')
         expect(result.proposal?.text).toMatch(/org\/model-32b war 25 % besser als qwen/)
-        expect(result.proposal?.proposal).toMatchObject({ action: 'modell-wechsel', autoExecute: false })
+        expect(result.proposal?.proposal).toMatchObject({ action: 'modell-wechsel', params: { modell: 'm32', von: 'qwen' }, autoExecute: false })
         expect(result.report?.results.map(item => item.model)).toEqual(['qwen', 'org/model-32b'])
         expect(switchModel).not.toHaveBeenCalled()
         expect((globalThis as any).__novaState.llm.modelId).toBe('qwen')
@@ -134,11 +137,13 @@ describe('Phase 3 Modell-Scout', () => {
         expect(busy.reason).toMatch(/GPU|vLLM/)
         expect(busyRunner.calls).toHaveLength(0)
         const small = await runModelScout({
-            settings: settings(), load: load(), sink: new MemoryThoughtSink(), currentModel: 'qwen', runner: runner({ qwen: 0.6, 'org/model-32b': 0.62 }),
+            settings: settings(), load: load(), sink: new MemoryThoughtSink(), currentModel: 'qwen',
+            runner: Object.assign(runner({ qwen: 0.6, 'org/model-32b': 0.62 }), { inventory: async () => ({ installed: ['org/model-32b'], targets: [{ target: 'm32', modelId: 'org/model-32b' }] }) }),
             sources: [listing([candidate({})])], probes: buildProbeSet({ doctorCases: [], taskTypeCounts: {} }),
             reportPath: join(mkdtempSync(join(process.cwd(), 'scout-')), 'r.json'),
         })
         expect(small.proposal).toBeUndefined()
+        expect(small.reason).toMatch(/nur \d+ % besser/)
     })
 
     it('loads candidates from an offline fixture', async () => {
