@@ -139,6 +139,21 @@ describe('listToolbox: Lese-Modell des Werkzeugkastens', () => {
         expect(JSON.stringify(listToolbox(input))).toBe(JSON.stringify(listToolbox(input)))
     })
 
+    it('a configured SearXNG (NOVA_SEARXNG_URL / apis.searxng_url) covers web search: no fit, no scout idea', async () => {
+        const { localPresence, gapThoughts, analyzeMesh } = await import('./software-scout.js')
+        expect(localPresence({ searxngUrl: null })).toEqual({})
+        const presence = localPresence({ searxngUrl: 'http://searx.example.com:8088' })
+        expect(presence).toEqual({ search: 'SearXNG eingerichtet' })
+        const node = { ...main(), presence }
+        const searx = entry(listToolbox(base({ nodes: [node, worker()] })), 'search-searxng')
+        expect(searx.status).toBe('abgedeckt')
+        expect(searx.statusText).toBe('nicht nötig: SearXNG eingerichtet (main-a)')
+        // The scout no longer suggests web search when it is already configured.
+        const ideas = gapThoughts(analyzeMesh([node, worker()], { now: NOW }), 3, {})
+        expect(ideas.some(item => item.capability === 'search')).toBe(false)
+        expect(gapThoughts(analyzeMesh([main(), worker()], { now: NOW }), 3, {}).some(item => item.capability === 'search')).toBe(true)
+    })
+
     it('a stale peer is listed but not rated', () => {
         const toolbox = listToolbox(base({ nodes: [main(), { ...worker(), lastSeen: NOW - 60 * 60_000 }] }))
         expect(toolbox.knoten).toEqual([{ id: 'main-a', bewertet: true }, { id: 'worker-b', bewertet: false }])
