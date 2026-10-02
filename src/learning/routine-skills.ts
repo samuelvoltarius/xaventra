@@ -24,6 +24,12 @@
  *   Beleg-Anfragen werden redigiert.
  * - Nach 2 Fehlschlägen in Folge wird ein Skill deaktiviert (Gedanke). Ein vom
  *   Owner abgeschalteter Skill wird nie automatisch wieder eingeschaltet.
+ * - 2.83.0 Werkzeug-Schmiede: baut die Schmiede aus der Wiederholung eines
+ *   Skills ein lesendes Werkzeug, ersetzt es den allgemeinen Schritt in einer
+ *   neuen Skill-Version (`adoptTool`). Die neue Version wird gegen die alte
+ *   gemessen: 2 Fehlschläge in Folge oder nach 5 Läufen eine schlechtere
+ *   Quote als die alte Version → zurück auf die alte Version (der Skill bleibt
+ *   an); sonst nach 5 Läufen bestätigt (Gedanke für den Abendbericht).
  *
  * Dateien (versionsfähig, abschaltbar):
  *   <data>/skills/routine/<id>.json            ein Skill pro Datei (version, history)
@@ -82,6 +88,25 @@ export interface RoutineSkill {
     updatedAt: string
     lastUsedAt?: string
     history: Array<{ version: number; steps: RoutineSkillStep[]; replacedAt: string }>
+    /** 2.83.0: ein Schmiede-Werkzeug ersetzt einen Schritt; gemessen gegen die alte Version. */
+    adoption?: RoutineSkillAdoption
+}
+
+export interface RoutineSkillAdoption {
+    /** forge_<name> */
+    tool: string
+    /** Ersetztes allgemeines Werkzeug (z. B. execute_python). */
+    from: string
+    fromVersion: number
+    version: number
+    at: string
+    status: 'messung' | 'bestaetigt' | 'zurueckgenommen'
+    /** Ergebnis bis zur Übernahme (alte Version). */
+    before: { successes: number; failures: number }
+    successes: number
+    failures: number
+    consecutiveFailures: number
+    reason?: string
 }
 
 export interface RoutineObservation {
@@ -111,7 +136,7 @@ export type ObserveResult =
     | { counted: false; reason: string }
     | { counted: true; count: number; created?: RoutineSkill }
 
-export interface RoutineSkillEvent { kind: 'neu' | 'deaktiviert'; skill: RoutineSkill; detail: string }
+export interface RoutineSkillEvent { kind: 'neu' | 'deaktiviert' | 'werkzeug' | 'werkzeug-bestaetigt' | 'zurueckgesetzt'; skill: RoutineSkill; detail: string }
 
 export interface RoutineSkillOptions {
     dir?: string
@@ -274,6 +299,11 @@ const DISABLE_AFTER_FAILURES = 2
 function clip(value: unknown, limit: number): string {
     return redactSecrets(String(value ?? '')).replace(/\s+/g, ' ').trim().slice(0, limit)
 }
+
+/** 2.83.0 Werkzeug-Schmiede im Skill: Namen, Rücksprung, Messung. */
+const FORGE_TOOL = /^forge_[a-z][a-z0-9_]{2,40}$/
+const ADOPTION_REVERT_AFTER_FAILURES = 2
+const ADOPTION_MEASURE_RUNS = 5
 
 export class RoutineSkillStore {
     readonly dir: string
@@ -482,7 +512,7 @@ export class RoutineSkillStore {
         const skill: RoutineSkill = {
             ...previous, ...built, version: previous.version + 1,
             enabled: true, disabledReason: undefined, disabledBy: undefined, disabledAt: undefined,
-            consecutiveFailures: 0, updatedAt: this.iso(),
+            consecutiveFailures: 0, updatedAt: this.iso(), adoption: undefined,
             history: [...previous.history, { version: previous.version, steps: previous.steps, replacedAt: this.iso() }].slice(-5),
         }
         this.writeSkill(skill)
@@ -523,6 +553,59 @@ export class RoutineSkillStore {
         return skill
     }
 
+    /**
+     * 2.83.0: ein aktives, lesendes Schmiede-Werkzeug ersetzt den allgemeinen
+     * Schritt `from` in einer neuen Version. Die alte Version bleibt in der
+     * History; die feste Stufe kommt wie immer aus `classifySkillStep`. null,
+     * wenn nichts zu ersetzen ist (kein solcher Schritt, schon übernommen,
+     * Skill aus, eingebaut, Messung läuft oder dasselbe Werkzeug wurde schon
+     * einmal zurückgenommen).
+     */
+    adoptTool(id: string, from: string, to: string): RoutineSkill | null {
+        const skill = this.get(id)
+        const tool = String(to || '').trim()
+        if (!skill || !skill.enabled || skill.origin !== 'gelernt') return null
+        if (!FORGE_TOOL.test(tool) || !skill.steps.some(step => step.tool === from)) return null
+        if (skill.steps.some(step => step.tool === tool) || skill.adoption?.status === 'messung') return null
+        if (skill.adoption?.tool === tool && skill.adoption.status === 'zurueckgenommen') return null
+        const verdict = classifySkillStep(tool)
+        if (verdict.nie) return null
+        const at = this.iso()
+        const steps: RoutineSkillStep[] = []
+        for (const step of skill.steps) {
+            const next = step.tool === from
+                ? { tool, params: {}, level: verdict.level, fragt: verdict.fragt, hinweis: `${verdict.hinweis}; ersetzt ${from} (Werkzeug-Schmiede)` }
+                : step
+            if (steps.at(-1)?.tool === tool && next.tool === tool) continue
+            steps.push(next)
+        }
+        const adopted: RoutineSkill = {
+            ...skill, steps, version: skill.version + 1, readOnly: steps.every(step => step.level === 'L0'),
+            consecutiveFailures: 0, updatedAt: at,
+            history: [...skill.history, { version: skill.version, steps: skill.steps, replacedAt: at }].slice(-5),
+            adoption: {
+                tool, from, fromVersion: skill.version, version: skill.version + 1, at, status: 'messung',
+                before: { successes: skill.successes, failures: skill.failures }, successes: 0, failures: 0, consecutiveFailures: 0,
+            },
+        }
+        this.writeSkill(adopted)
+        this.emit({ kind: 'werkzeug', skill: adopted, detail: `${from} → ${tool} (v${skill.version} → v${adopted.version}); Vergleich mit v${skill.version} läuft` })
+        return adopted
+    }
+
+    /** Neue Version gegen die alte: zurück (Grund) oder bestätigt oder weiter messen. */
+    private judgeAdoption(adoption: RoutineSkillAdoption): { revert?: string; confirm?: string } {
+        if (adoption.consecutiveFailures >= ADOPTION_REVERT_AFTER_FAILURES) return { revert: `${adoption.consecutiveFailures} Fehlschläge in Folge` }
+        const uses = adoption.successes + adoption.failures
+        if (uses < ADOPTION_MEASURE_RUNS) return {}
+        const beforeUses = adoption.before.successes + adoption.before.failures
+        const now = `${adoption.successes}/${uses} ok`
+        if (beforeUses >= ADOPTION_MEASURE_RUNS && adoption.successes / uses < adoption.before.successes / beforeUses) {
+            return { revert: `${now} gegen ${adoption.before.successes}/${beforeUses} mit v${adoption.fromVersion}` }
+        }
+        return { confirm: beforeUses > 0 ? `${now}, vorher ${adoption.before.successes}/${beforeUses}` : now }
+    }
+
     /** Erfolg/Fehlschlag eines Laufs, in dem der Skill genutzt wurde. */
     recordOutcome(id: string, success: boolean): RoutineSkill | null {
         const skill = this.get(id)
@@ -530,6 +613,33 @@ export class RoutineSkillStore {
         if (success) { skill.successes++; skill.consecutiveFailures = 0 }
         else { skill.failures++; skill.consecutiveFailures++ }
         skill.updatedAt = this.iso()
+        const adoption = skill.adoption
+        if (adoption?.status === 'messung' && adoption.version === skill.version) {
+            if (success) { adoption.successes++; adoption.consecutiveFailures = 0 }
+            else { adoption.failures++; adoption.consecutiveFailures++ }
+            const verdict = this.judgeAdoption(adoption)
+            const previous = verdict.revert ? skill.history.find(item => item.version === adoption.fromVersion) : undefined
+            if (verdict.revert && previous) {
+                // Zurück auf die alte Version: eine neue Version mit den alten Schritten, der Skill bleibt an.
+                skill.history = [...skill.history, { version: skill.version, steps: skill.steps, replacedAt: skill.updatedAt }].slice(-5)
+                skill.version += 1
+                skill.steps = previous.steps
+                skill.readOnly = previous.steps.every(step => step.level === 'L0')
+                skill.consecutiveFailures = 0
+                adoption.status = 'zurueckgenommen'
+                adoption.reason = verdict.revert
+                this.writeSkill(skill)
+                this.emit({ kind: 'zurueckgesetzt', skill, detail: `${adoption.tool} hat ${skill.name} nicht verbessert, zurück auf v${adoption.fromVersion} (${verdict.revert})` })
+                return skill
+            }
+            if (verdict.confirm) {
+                adoption.status = 'bestaetigt'
+                adoption.reason = verdict.confirm
+                this.writeSkill(skill)
+                this.emit({ kind: 'werkzeug-bestaetigt', skill, detail: `${skill.name} nutzt jetzt ${adoption.tool} (${verdict.confirm})` })
+                return skill
+            }
+        }
         const disable = !success && skill.enabled && skill.consecutiveFailures >= DISABLE_AFTER_FAILURES
         if (disable) {
             skill.enabled = false
@@ -599,7 +709,11 @@ export function formatRoutineSkills(skills: readonly RoutineSkill[]): string {
     const rows = skills.map(skill => {
         const state = skill.enabled ? '✅ an' : `⏸️ aus (${skill.disabledReason || 'abgeschaltet'})`
         const steps = skill.steps.map(step => `${step.tool}${step.fragt ? ' (fragt)' : ''}`).join(' → ')
-        return `• *${skill.name}* \`${skill.id}\` v${skill.version} · ${skill.origin} · ${state}\n  ${steps}\n  genutzt ${skill.uses}× · ok ${skill.successes} · Fehler ${skill.failures}`
+        const adoption = skill.adoption
+        const forge = !adoption ? '' : adoption.status === 'messung'
+            ? `\n  Werkzeug ${adoption.tool} statt ${adoption.from}: Vergleich läuft (${adoption.successes}/${adoption.successes + adoption.failures} ok)`
+            : `\n  Werkzeug ${adoption.tool}: ${adoption.status === 'bestaetigt' ? 'übernommen' : 'zurückgenommen'} (${adoption.reason || ''})`
+        return `• *${skill.name}* \`${skill.id}\` v${skill.version} · ${skill.origin} · ${state}\n  ${steps}\n  genutzt ${skill.uses}× · ok ${skill.successes} · Fehler ${skill.failures}${forge}`
     })
     return `🧩 *Routine-Skills (${skills.length})*\n\n${rows.join('\n\n')}\n\n/skills aus <id> · /skills an <id>`
 }
@@ -625,17 +739,20 @@ export function setRoutineSkillStore(store: RoutineSkillStore | null): void {
     injected = store !== null
 }
 
-/** Gedanke „Neuer Skill …“ (erledigt, nur Abendbericht) bzw. „… deaktiviert“. */
+/** Gedanke „Neuer Skill …“ (erledigt, nur Abendbericht) bzw. „… deaktiviert“ / Werkzeug übernommen oder zurück. */
 function defaultNotify(event: RoutineSkillEvent): void {
     void import('../planner/index.js').then(({ addThought, setThoughtStatus }) => {
-        const title = event.kind === 'neu'
-            ? `Neuer Skill „${event.skill.name}“ angelegt`
-            : `Skill „${event.skill.name}“ deaktiviert`
+        const adoption = event.skill.adoption
+        const title = event.kind === 'neu' ? `Neuer Skill „${event.skill.name}“ angelegt`
+            : event.kind === 'werkzeug' ? `Skill „${event.skill.name}“ probiert Werkzeug ${adoption?.tool || ''}`
+                : event.kind === 'werkzeug-bestaetigt' ? `Skill „${event.skill.name}“ nutzt jetzt ${adoption?.tool || ''} (${adoption?.reason || ''})`
+                    : event.kind === 'zurueckgesetzt' ? `Werkzeug ${adoption?.tool || ''} hat Skill „${event.skill.name}“ nicht verbessert, zurück auf v${adoption?.fromVersion ?? '?'}`
+                        : `Skill „${event.skill.name}“ deaktiviert`
         const { thought } = addThought({
             source: 'skills', kind: 'ereignis', permission: 'selbst', title,
             evidence: `${event.detail}; Belege: ${event.skill.evidence.map(item => item.runId).join(', ') || 'eingebaut'}`,
         })
-        if (event.kind === 'neu') setThoughtStatus(thought.id, 'erledigt', 'selbst')
+        if (event.kind === 'neu' || event.kind === 'werkzeug' || event.kind === 'werkzeug-bestaetigt') setThoughtStatus(thought.id, 'erledigt', 'selbst')
     }).catch(() => { /* Gedanken sind optional */ })
 }
 

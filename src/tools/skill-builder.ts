@@ -15,6 +15,10 @@
  *   neue Freigabe.
  * - 2 Fehlschläge in Folge → neue Version (lokales Lern-Modell) oder aus.
  * - Worker bauen nichts. Kein Cloud-Modell: nur `serviceModels.learning`.
+ * - 2.83.0: entsteht ein lesendes Werkzeug aus der Wiederholung eines
+ *   Routine-Skills, ersetzt es dort bei der Aktivierung den allgemeinen
+ *   Schritt (`RoutineSkillStore.adoptTool`, gemessen, sonst zurück).
+ *   Schreibend/extern/physisch bleibt der Skill unverändert.
  *
  * Datei: <runtime>/.nova-data/forge/werkzeuge.json (versioniert, mit Zählern).
  */
@@ -29,6 +33,7 @@ import { sideEffectsDisabled } from '../core/side-effects.js'
 import { isAutonomyWorker } from '../core/autonomy-defaults.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { NovaTool } from './complete-registry.js'
+import { getRoutineSkillStore } from '../learning/routine-skills.js'
 import {
     createManifestFetch, createManifestReadFile, FORGE_ALLOWED_MODULES, FORGE_IMPACTS, runInForgeSandbox, sandboxSupport, validateForgeCode,
     type ForgeImpact, type ForgeManifest, type SandboxFetchRequest,
@@ -56,6 +61,8 @@ export interface ForgeVersion { version: number; code: string; codeHash: string;
 export interface ForgeTestReport { at: string; codeHash: string; passed: number; total: number; failures: string[] }
 export interface ForgeCounters { calls: number; successes: number; failures: number; consecutiveFailures: number; lastUsedAt?: string; lastError?: string }
 export interface SkillForgeEvidence { stage: string; evidenceRef: string; verifiedAt: string }
+/** 2.83.0: Routine-Skill, dessen allgemeinen Schritt dieses Werkzeug ersetzen soll. */
+export interface ForgeAdoptTarget { skillId: string; from: string }
 
 export interface SkillProposal {
     id: string
@@ -82,6 +89,7 @@ export interface SkillProposal {
     approvedHash?: string
     cardId?: string
     origin: ForgeOrigin
+    adoptFor?: ForgeAdoptTarget
 }
 
 export interface ForgeDraft {
@@ -94,6 +102,7 @@ export interface ForgeDraft {
     tests: ForgeTestCase[]
     ownerId?: string
     origin?: ForgeOrigin
+    adoptFor?: ForgeAdoptTarget
 }
 
 export interface ForgeModel { complete(messages: Array<{ role: string; content: string }>): Promise<{ content?: string } | null | undefined> }
@@ -294,7 +303,20 @@ export async function validateDraft(draft: ForgeDraft): Promise<Omit<SkillPropos
     return {
         ownerId: clip(draft.ownerId || 'nova-self', 200), name, description, why, code, codeHash: hashOf(code),
         parameters: normalizeParameters(draft.parameters), manifest: manifest!, tests, origin: draft.origin || 'build_skill',
+        ...(adoptTarget(draft.adoptFor) ? { adoptFor: adoptTarget(draft.adoptFor)! } : {}),
     }
+}
+
+function adoptTarget(value: unknown): ForgeAdoptTarget | null {
+    const skillId = String((value as ForgeAdoptTarget | undefined)?.skillId || '')
+    const from = String((value as ForgeAdoptTarget | undefined)?.from || '')
+    return /^[a-z0-9][a-z0-9-]{2,79}$/.test(skillId) && GENERIC_TOOLS.has(from) ? { skillId, from } : null
+}
+
+/** Lesend + aus einem Skill-Bedarf: der Skill nutzt jetzt dieses Werkzeug (gemessen, sonst zurück). */
+function adoptIntoRoutineSkill(proposal: SkillProposal): void {
+    if (proposal.manifest.wirkung !== 'lesend' || !proposal.adoptFor) return
+    try { getRoutineSkillStore()?.adoptTool(proposal.adoptFor.skillId, proposal.adoptFor.from, forgeToolName(proposal)) } catch { /* Skills sind optional */ }
 }
 
 /** Neuen Entwurf ins Register legen (noch nicht getestet, noch nicht aktiv). */
@@ -429,6 +451,7 @@ function activate(id: string, reason: string): SkillProposal | null {
     if (proposal) {
         void registerForgeTool(proposal).catch(() => { /* registry optional in tests */ })
         notify('aktiv', `Werkzeug ${forgeToolName(proposal)} v${proposal.version} aktiv (${proposal.manifest.wirkung}) — ${reason}`, proposal)
+        adoptIntoRoutineSkill(proposal)
     }
     return proposal
 }
@@ -794,7 +817,7 @@ export interface ForgeNeedContext {
     systemAuthored?: boolean
     request: string
     toolExecutions?: ReadonlyArray<{ toolName?: string; success?: boolean; error?: unknown; result?: unknown }>
-    routineSkillCreated?: { name: string; steps: ReadonlyArray<{ tool: string }> } | null
+    routineSkillCreated?: { id?: string; name: string; steps: ReadonlyArray<{ tool: string }> } | null
 }
 
 const OWNER_WISH = /\b(bau|baue|bastel|bastle|erstell|erstelle|schreib|programmier)\w*\b[^.?!\n]{0,40}\b(werkzeug|tool)\b/i
@@ -804,7 +827,7 @@ const GENERIC_TOOLS = new Set(['execute_python', 'run_command', 'shell_exec', 's
 const NEED_WINDOW_MS = 7 * 24 * 60 * 60_000
 const MAX_BUILDS_PER_DAY = 3
 
-export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; detail: string } | null {
+export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; detail: string; adoptFor?: ForgeAdoptTarget } | null {
     if (OWNER_WISH.test(ctx.request || '')) return { kind: 'owner-wunsch', detail: clip(ctx.request, 300) }
     for (const execution of ctx.toolExecutions || []) {
         if (execution?.success !== false) continue
@@ -813,11 +836,14 @@ export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; d
         if (match) return { kind: 'fehlendes-werkzeug', detail: `fehlt: ${match[1]}` }
     }
     const generic = ctx.routineSkillCreated?.steps.find(step => GENERIC_TOOLS.has(step.tool))
-    if (generic) return { kind: 'wiederholung', detail: `Routine „${clip(ctx.routineSkillCreated!.name, 80)}“ nutzt immer wieder ${generic.tool}` }
+    if (generic) {
+        const adoptFor = adoptTarget({ skillId: ctx.routineSkillCreated!.id, from: generic.tool })
+        return { kind: 'wiederholung', detail: `Routine „${clip(ctx.routineSkillCreated!.name, 80)}“ nutzt immer wieder ${generic.tool}`, ...(adoptFor ? { adoptFor } : {}) }
+    }
     return null
 }
 
-interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind; at: string; built: boolean }> }
+interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind; at: string; built: boolean; skillId?: string; from?: string }> }
 const needFile = () => getNovaDataDir('forge', 'bedarf.json')
 function readNeeds(): NeedFile {
     try { const raw = JSON.parse(readFileSync(needFile(), 'utf8')); return raw?.version === 1 && Array.isArray(raw.needs) ? raw : { version: 1, needs: [] } } catch { return { version: 1, needs: [] } }
@@ -841,7 +867,7 @@ export function noteForgeNeed(ctx: ForgeNeedContext, options: { allowInTests?: b
     const today = file.needs.filter(item => item.built && now - Date.parse(item.at) < 24 * 60 * 60_000).length
     if (today >= MAX_BUILDS_PER_DAY) return { queued: false, reason: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, kind: need.kind }
     const canBuild = forgeModel !== null
-    file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild })
+    file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild, ...(need.adoptFor ? { skillId: need.adoptFor.skillId, from: need.adoptFor.from } : {}) })
     atomicWriteJsonSync(needFile(), file)
     if (!canBuild) {
         notify('bedarf', `Werkzeug-Bedarf erkannt (${need.kind}: ${need.detail}), aber kein lokales Lern-Modell — nichts gebaut`)
@@ -849,7 +875,7 @@ export function noteForgeNeed(ctx: ForgeNeedContext, options: { allowInTests?: b
     }
     void (async () => {
         const draft = await generateToolDraft({ request: `${ctx.request}\n(${need.kind}: ${need.detail})`, ownerId: ctx.principalId, origin: need.kind === 'owner-wunsch' ? 'owner' : 'bedarf' })
-        const result = await buildTool({ ...draft, why: draft.why || need.detail })
+        const result = await buildTool({ ...draft, why: draft.why || need.detail, ...(need.adoptFor ? { adoptFor: need.adoptFor } : {}) })
         options.onBuilt?.(result)
         if (!result.proposal || result.proposal.status !== 'active') notify('fehler', `Werkzeug-Bau (${need.kind}): ${result.message}`.slice(0, 300), result.proposal || undefined)
     })().catch(error => {
