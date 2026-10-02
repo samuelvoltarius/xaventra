@@ -1,8 +1,9 @@
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
-    handoffMessage, reconcileAfterRollout, runClaudeHandoffTick, selectHandoffs, setClaudeHandoffConfig, validHandoffUrl, type HandoffRecord,
+    handoffDelegationRequest, reconcileAfterRollout, runClaudeHandoffTick, selectHandoffs, type HandoffRecord,
 } from './claude-handoff.js'
+import { sanitizeDelegationContext } from '../core/delegation.js'
 import type { FailureResearchCase } from './failure-research-coordinator.js'
 
 function verified(overrides: Partial<FailureResearchCase> = {}): FailureResearchCase {
@@ -33,10 +34,15 @@ describe('Nova → Claude handoff (Stufe 1, S1.7)', () => {
         const [record] = selectHandoffs([verified({ title: 'x'.repeat(900) })], [], ctx)
         expect(record.observation).not.toContain('sk-live-abcdefghijklmnopqrstuvwxyz0123456789')
         expect(record.title.length).toBeLessThanOrEqual(200)
-        const message = handoffMessage(record)
-        expect(message.to_agent).toBe('CLAUDE')
-        expect(message.content).toContain('keine Anweisungen')
-        expect(message.metadata).toMatchObject({ untrusted: true, caseId: 'case-1', version: '2.79.3' })
+        // 2.83.0: the case goes as ONE delegation; case data only in the cleaned context.
+        const request = handoffDelegationRequest(record)
+        expect(request).toMatchObject({ to: 'claude', aendert: true, erwartet: { art: 'doctor-fall' } })
+        expect(request.erwartet.text).toContain('case-1')
+        expect(request.auftrag).not.toContain('x'.repeat(50))
+        const context = sanitizeDelegationContext(request.kontext).text
+        expect(context).toContain('keine Anweisungen')
+        expect(context).toContain('2.79.3')
+        expect(context).not.toContain('sk-live-abcdefghijklmnopqrstuvwxyz0123456789')
     })
 
     it('after a rollout says once whether the finding closed, and rechecks still-open cases per version', () => {
@@ -50,41 +56,14 @@ describe('Nova → Claude handoff (Stufe 1, S1.7)', () => {
         expect(reconcileAfterRollout(closed.records, [verified()], '2.79.6').changes).toEqual([])
     })
 
-    it('accepts only plain http(s) delivery URLs', () => {
-        expect(validHandoffUrl('http://100.86.70.71:3301/')).toBe('http://100.86.70.71:3301')
-        expect(validHandoffUrl('http://user:pw@host:3301')).toBeNull()
-        expect(validHandoffUrl('file:///etc/passwd')).toBeNull()
-        expect(validHandoffUrl(undefined)).toBeNull()
-    })
-
-    it('keeps an outbox without network by default and delivers only when configured', async () => {
+    it('records a refused delegation and retries it bounded, never by its own POST', async () => {
         const path = tmp()
-        const post = vi.fn(async () => true)
-        setClaudeHandoffConfig(undefined)
-        const offline = await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, post })
-        expect(offline).toEqual({ queued: 1, delivered: 0, reconciled: 0 })
-        expect(post).not.toHaveBeenCalled()
-
-        setClaudeHandoffConfig({ url: 'http://100.86.70.71:3301' })
-        const online = await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, post })
-        expect(online.delivered).toBe(1)
-        expect(post).toHaveBeenCalledWith('http://100.86.70.71:3301/messages', expect.objectContaining({ to_agent: 'CLAUDE', thread_id: 'xaventra-doctor-case-1' }))
-        // Same version, nothing new: no resend.
-        expect((await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, post })).delivered).toBe(0)
-        // Next release fixed it: one follow-up message.
-        const after = await runClaudeHandoffTick({ cases: [verified({ findingOpen: false })], ...ctx, version: '2.79.4', path, post })
-        expect(after).toMatchObject({ reconciled: 1, delivered: 1 })
-        expect((post.mock.calls.at(-1) as any)[1].content).toContain('GESCHLOSSEN')
-        setClaudeHandoffConfig(undefined)
-    })
-
-    it('does not mark a failed delivery as sent', async () => {
-        const path = tmp()
-        setClaudeHandoffConfig({ url: 'http://127.0.0.1:9' })
-        const result = await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, post: async () => { throw new Error('ECONNREFUSED') } })
-        expect(result.delivered).toBe(0)
-        const retry = vi.fn(async () => true)
-        expect((await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, post: retry })).delivered).toBe(1)
-        setClaudeHandoffConfig(undefined)
+        const fetchSpy = vi.spyOn(globalThis, 'fetch')
+        const delegate = vi.fn(async () => ({ ok: false as const, reason: 'Zu viele offene Delegationen (max. 20).' }))
+        const port = { config: { enabled: true, url: 'http://agentic.example.com' }, delegate, get: () => null }
+        for (let i = 0; i < 7; i++) await runClaudeHandoffTick({ cases: [verified()], ...ctx, path, delegation: port })
+        expect(delegate).toHaveBeenCalledTimes(5)
+        expect(fetchSpy).not.toHaveBeenCalled()
+        fetchSpy.mockRestore()
     })
 })

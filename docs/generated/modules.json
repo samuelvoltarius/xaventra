@@ -2382,6 +2382,7 @@
       "imports": [
         "../doctor/failure-research-coordinator.js",
         "./outcome-ledger.js",
+        "./self-doctor.js",
         "node:crypto"
       ]
     },
@@ -2728,6 +2729,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/delegation.js",
         "../security/secret-redaction.js",
         "./failure-research-coordinator.js",
         "node:crypto",

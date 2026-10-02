@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+Doctor-Kreislauf geschlossen (2.83.0 Paket A):
+
+- Validator-Fehlschläge: ein Doctor-Fall je Fehlerbild (Aufgabenart +
+  Kriterien) statt je Lauf; neuer Fall erst ab 3 Läufen in 7 Tagen, weitere
+  Läufe hängen nur Belege an. Alte Fälle je Lauf bleiben stehen.
+- Nachkontrolle mit Messung: Bug-Finder- und Validator-Fälle schließen sich
+  (`closeByMeasurement`), wenn das Fehlerbild im Fenster nicht mehr vorkam und
+  das Werkzeug bzw. die Aufgabenart oft genug erfolgreich lief. Geschlossen
+  heißt „nicht mehr beobachtet“, nie „repariert bestätigt“; kehrt der Fehler
+  zurück, öffnet sich derselbe Fall. Nach einem Rollout keine falsche
+  „WEITER OFFEN“-Meldung mehr; ein gemessenes Schließen wird ein erledigter
+  Gedanke im Abendbericht.
+- **Verhaltensänderung (Owner):** die Doctor-Übergabe an Claude läuft nur noch
+  über die Delegation (Rückkanal, `/delegiert`, Frist, eigene Prüfung
+  `doctor-fall`). Weil Claude ändert, ist das L2: je Fall eine Karte, gesammelt
+  im Bericht, statt wie bisher ohne Karte. Nach 3× Ja, deren Fall danach
+  gemessen geschlossen war, darf die Vertrauensleiter `doctor-uebergabe`
+  hochstufen; die Delegation nennt dann die Vertrauensleiter als Freigabe, nie
+  den Owner. Nein, Fehler oder Ablauf stufen zurück. Nach einem Rollout geht
+  keine zweite Nachricht mehr an Claude. `autonomy.claudeHandoff.url` wirkt nur
+  noch als Rückfall-URL der Delegation.
+
 Doppelungen aufgeräumt (P9, Gruppe 3: Skills und Lernen) und eine echte
 Werkzeug-Schmiede:
 

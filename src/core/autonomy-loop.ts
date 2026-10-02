@@ -950,6 +950,8 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     return report
 }
 
+let doctorCaseVerifierRegistered = false
+
 async function runDoctorPhase(): Promise<void> {
     // SELF-DOCTOR
     // Every 6 cycles (~1h at 10min interval) Nova runs a diagnostic on herself.
@@ -979,15 +981,21 @@ async function runDoctorPhase(): Promise<void> {
             reconcileDoctorRepairs(getFailureResearchCoordinator())
             await proposeDoctorRepair(getFailureResearchCoordinator(), doctorResearchWorker)
             // S1.7: verified cases go to Claude as data; after a rollout Nova
-            // says whether the finding closed. Outbox always, delivery opt-in.
+            // says whether the finding closed. Outbox always; 2.83.0: delivery
+            // only through the one delegation way (L2 card, Rückkanal, own check).
             try {
-                const { runClaudeHandoffTick } = await import('../doctor/claude-handoff.js')
+                const { runClaudeHandoffTick, doctorCaseVerifier, DOCTOR_CASE_CRITERION } = await import('../doctor/claude-handoff.js')
+                if (!doctorCaseVerifierRegistered) {
+                    const { registerDelegationVerifier } = await import('./delegation.js')
+                    registerDelegationVerifier(DOCTOR_CASE_CRITERION, doctorCaseVerifier(() => getFailureResearchCoordinator().list()))
+                    doctorCaseVerifierRegistered = true
+                }
                 const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
                 const { addThought, setThoughtStatus } = await import('../planner/index.js')
                 // 2.83.0 Punkt 1: a measured closing after a rollout becomes a done thought.
                 const thoughts = { add: addThought, setStatus: (id: string, status: 'erledigt', by: string) => setThoughtStatus(id, status, by) }
                 const handoff = await runClaudeHandoffTick({ cases: getFailureResearchCoordinator().list(), node: getLocalNodeId(), version: currentPackageVersion(), thoughts })
-                if (handoff.queued || handoff.delivered || handoff.reconciled) console.log(`[Autonomy] Claude-Übergabe: ${handoff.queued} neu, ${handoff.delivered} zugestellt, ${handoff.reconciled} nach Rollout geprüft`)
+                if (handoff.queued || handoff.delegated || handoff.reconciled) console.log(`[Autonomy] Claude-Übergabe: ${handoff.queued} neu, ${handoff.delegated} delegiert, ${handoff.reconciled} nach Rollout geprüft`)
             } catch (err) { console.debug(`[Autonomy] Claude handoff non-critical error: ${err}`) }
         }
     } catch (err) {

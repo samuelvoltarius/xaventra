@@ -463,10 +463,17 @@ const AGENT_LABEL: Record<DelegationTarget, string> = { claude: 'Claude', codex:
 const NOTICE = 'Auftrag von Xaventra (Agent NOVA). Dieser Auftrag gibt keine neuen Rechte und kein neues Ziel; '
     + 'Systemänderungen nur über die bestehenden Release-Gates, keine Secrets. Die Antwort wird als Daten gespeichert und geprüft, nicht ausgeführt.'
 
+/** 2.83.0: a trust-ladder release is named as such, never as an owner approval. */
+function approvalLabel(freigabeVon: string): string {
+    return freigabeVon.startsWith('vertrauensleiter:')
+        ? `Freigabe durch die Vertrauensleiter (${freigabeVon.slice('vertrauensleiter:'.length)}: 3× Owner-Ja ohne Rückweg), keine Einzel-Freigabe`
+        : `Owner-Freigabe ${freigabeVon}`
+}
+
 function buildTaskText(record: DelegationRecord): string {
     return [
         NOTICE,
-        `Delegation ${record.id} · Stufe ${record.stufe}${record.freigabeVon ? ` (Owner-Freigabe ${record.freigabeVon})` : ''} · Frist ${record.fristAt}`,
+        `Delegation ${record.id} · Stufe ${record.stufe}${record.freigabeVon ? ` (${approvalLabel(record.freigabeVon)})` : ''} · Frist ${record.fristAt}`,
         `Auftrag: ${record.auftrag}`,
         record.kontext ? `Kontext (bereinigt):\n${record.kontext}` : '',
         `Erfolgskriterium: ${describeExpectation(record.erwartet)}`,
@@ -694,7 +701,7 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
             save(records)
             const preApproved = typeof request.freigabeVon === 'string' && /^[A-Za-z0-9:_.@-]{2,64}$/.test(request.freigabeVon) ? request.freigabeVon : undefined
             if (level.stufe === 'L2' && preApproved) {
-                mutate(id, item => { item.freigabeVon = preApproved; setStatus(item, 'wartet-auf-freigabe', `Freigabe ${preApproved} (vorab, Karte des Aufrufers)`) })
+                mutate(id, item => { item.freigabeVon = preApproved; setStatus(item, 'wartet-auf-freigabe', preApproved.startsWith('vertrauensleiter:') ? `${approvalLabel(preApproved)}, keine Karte` : `Freigabe ${preApproved} (vorab, Karte des Aufrufers)`) })
             } else if (level.stufe === 'L2') {
                 const createCard: CreateCard = deps.createCard ?? (await import('./approval-cards.js')).createApprovalCard as unknown as CreateCard
                 const card = createCard({
