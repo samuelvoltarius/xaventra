@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import type { NodeProfile } from '../core/node-profile.js'
@@ -10,6 +10,7 @@ import {
     analyzeMesh, assessCandidate, formatSoftwareOverview, freeDiskGB, freeMemoryGB, gapThoughts, parseSoftwareScoutSettings,
     PROPOSAL_DEDUPE_MS, recordSoftwareScoutAnswer, runSoftwareScoutTick, type ScoutNode,
 } from './software-scout.js'
+import type { CapabilityDemand } from './software-demand.js'
 
 const NOW = Date.parse('2026-10-01T10:00:00.000Z')
 
@@ -40,6 +41,9 @@ const nas = (over: Parameters<typeof profile>[0] = {}): ScoutNode => ({ nodeId: 
 const mesh = () => [spark(), ns1(), ns2(), nas()]
 const cand = (id: string) => findSoftwareCandidate(id)!
 const tmpState = () => join(mkdtempSync(join(tmpdir(), 'softscout-')), 'state.json')
+// 2.85: a card needs a recorded need — these tests are about fit and routing, so every capability has one.
+const NEED: ReadonlyMap<any, CapabilityDemand> = new Map(['stt', 'tts', 'vision', 'embedding', 'browser', 'media', 'desktop', 'llm']
+    .map(capability => [capability, { capability, count: 1, evidence: ['1× Testbedarf'] } as CapabilityDemand]))
 
 describe('Software-Kandidaten-Katalog (Phase 5b)', () => {
     it('ships valid candidates, each with capability, needs, benefit; catalog ids only where Stufe 2 has an entry', () => {
@@ -150,13 +154,13 @@ describe('Eignungsprüfung je Knoten (rein)', () => {
         const withStt = [spark({ services: [{ name: 'vllm', type: 'llm', status: 'running' }, { name: 'faster-whisper', type: 'stt', status: 'running' }] }), ns1(), ns2(), nas()]
         const analysis = analyzeMesh(withStt, { now: NOW })
         expect(analysis.capabilities.find(item => item.capability === 'stt')!.present).toEqual([{ nodeId: 'xaventra-spark', evidence: 'faster-whisper läuft' }])
-        expect(gapThoughts(analysis, 99).some(thought => thought.capability === 'stt')).toBe(false)
-        expect(gapThoughts(analysis, 99).some(thought => thought.capability === 'media' || thought.capability === 'llm')).toBe(false)
+        expect(gapThoughts(analysis, 99, { demand: NEED }).some(thought => thought.capability === 'stt')).toBe(false)
+        expect(gapThoughts(analysis, 99, { demand: NEED }).some(thought => thought.capability === 'media' || thought.capability === 'llm')).toBe(false)
     })
 
     it('best node per gap: Whisper large on the Spark (GPU), with why not elsewhere', () => {
         const analysis = analyzeMesh(mesh(), { now: NOW })
-        const [stt] = gapThoughts(analysis)
+        const [stt] = gapThoughts(analysis, undefined, { demand: NEED })
         expect(stt.capability).toBe('stt')
         expect(stt.candidateId).toBe('stt-whisper-large-v3')
         expect(stt.nodeId).toBe('xaventra-spark')
@@ -164,11 +168,11 @@ describe('Eignungsprüfung je Knoten (rein)', () => {
         // (Alfred: "auf X braucht Ollama" read like installing Ollama there).
         expect(stt.title).toBe('Whisper large-v3 (GPU) auf xaventra-spark einrichten (42 GB frei)?')
         expect(stt.title).not.toMatch(/ns1|ns2/)
-        expect(stt.evidence).toEqual(expect.arrayContaining(['nicht auf ns1: keine NVIDIA-GPU', 'nicht auf ns2: zu wenig RAM (4 GB, nötig 8 GB)']))
+        expect(stt.evidence).toEqual(expect.arrayContaining(['Bedarf: 1× Testbedarf', 'nicht auf ns1: keine NVIDIA-GPU', 'nicht auf ns2: zu wenig RAM (4 GB, nötig 8 GB)']))
         expect(stt.permission).toBe('fragen')
         expect(stt.proposal).toMatch(/Katalogeintrag nötig/)
         // a catalog-backed gap proposes the Stufe-2 path
-        const browser = gapThoughts(analysis, 99).find(thought => thought.capability === 'browser')!
+        const browser = gapThoughts(analysis, 99, { demand: NEED }).find(thought => thought.capability === 'browser')!
         expect(browser.candidateId).toBe('browser-playwright-chromium')
         expect(browser.proposal).toMatch(/Installations-Warteschlange \(Katalog playwright-chromium/)
     })
@@ -221,6 +225,7 @@ describe('Vorschläge: Standard aus, nur Main, entprellt', () => {
         const emit = vi.fn()
         // peers keep sending heartbeats: lastSeen follows the clock
         const run = (now: number, nodes = mesh) => runSoftwareScoutTick({ isMain: true, now, settings: { enabled: true }, sink: { emit }, statePath,
+            demand: () => NEED, freshness: { search: null, cachePath: join(dirname(statePath), 'aktualitaet.json') },
             nodes: () => nodes().map(node => node.local ? node : { ...node, lastSeen: now - 30_000 }) })
         const first = await run(NOW)
         expect(first.ran).toBe(true)

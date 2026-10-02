@@ -1018,10 +1018,18 @@ export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; d
     return null
 }
 
-interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind | 'neue-version'; at: string; built: boolean; skillId?: string; from?: string }> }
+interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind | 'neue-version'; at: string; built: boolean; skillId?: string; from?: string; missingTool?: string }> }
 const needFile = () => getNovaDataDir('forge', 'bedarf.json')
 function readNeeds(): NeedFile {
     try { const raw = JSON.parse(readFileSync(needFile(), 'utf8')); return raw?.version === 1 && Array.isArray(raw.needs) ? raw : { version: 1, needs: [] } } catch { return { version: 1, needs: [] } }
+}
+/**
+ * 2.85: the names of missing tools of the last needs (no request text) — read by the
+ * Software-Scout as a need signal (`software-demand.ts`), e.g. a missing OCR tool = vision.
+ */
+export function forgeMissingToolNeeds(): Array<{ tool: string; at: string }> {
+    return readNeeds().needs.filter(item => item.kind === 'fehlendes-werkzeug' && typeof item.missingTool === 'string')
+        .map(item => ({ tool: item.missingTool!, at: item.at }))
 }
 const buildsWithinDay = (file: NeedFile, now: number) => file.needs.filter(item => item.built && now - Date.parse(item.at) < DAY_MS).length
 
@@ -1069,7 +1077,8 @@ export function noteForgeNeed(ctx: ForgeNeedContext, options: { allowInTests?: b
     if (file.needs.some(item => item.signature === signature)) return { queued: false, reason: 'Bedarf schon bearbeitet', kind: need.kind }
     if (buildsWithinDay(file, now) >= MAX_BUILDS_PER_DAY) return { queued: false, reason: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, kind: need.kind }
     const canBuild = forgeModel !== null
-    file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild, ...(need.adoptFor ? { skillId: need.adoptFor.skillId, from: need.adoptFor.from } : {}) })
+    const missingTool = need.kind === 'fehlendes-werkzeug' ? /^fehlt: ([A-Za-z0-9_.-]{2,80})$/.exec(need.detail)?.[1] : undefined
+    file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild, ...(missingTool ? { missingTool } : {}), ...(need.adoptFor ? { skillId: need.adoptFor.skillId, from: need.adoptFor.from } : {}) })
     atomicWriteJsonSync(needFile(), file)
     if (!canBuild) {
         notify('bedarf', `Werkzeug-Bedarf erkannt (${need.kind}: ${need.detail}), aber kein lokales Lern-Modell — nichts gebaut`)

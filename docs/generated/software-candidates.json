@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidatesHash": "936d8acb96f2527e116862c20cd6675cd82377ed13d40a74730ab312aae47cd1",
+  "candidatesHash": "e3ae6cd2be0b69db411910d677a3ac92de1b25fa7aec99ac36662513df51f7e0",
   "entries": [
     {
       "id": "stt-whisper-large-v3",
@@ -93,6 +93,8 @@
       "gpu": "none",
       "requiresService": "ollama",
       "catalogId": "ollama-model:nomic-embed-text",
+      "modelRef": "nomic-embed-text:v1.5",
+      "releasedAt": "2024-02",
       "benefit": "Kleines Embedding-Modell für die Gedächtnis-Suche, lokal statt über einen Cloud-Anbieter."
     },
     {
@@ -112,6 +114,8 @@
       "gpu": "none",
       "requiresService": "ollama",
       "catalogId": "ollama-model:bge-m3",
+      "modelRef": "bge-m3:567m",
+      "releasedAt": "2024-01",
       "benefit": "Mehrsprachiges Embedding-Modell (Deutsch/Englisch) für bessere Gedächtnis-Treffer."
     },
     {
@@ -161,8 +165,8 @@
       "benefit": "Audio/Video umwandeln (Sprachnachrichten, Videos), Grundlage für STT/TTS-Werkzeuge."
     },
     {
-      "id": "vision-qwen2.5vl-3b",
-      "title": "Qwen2.5-VL 3B (Ollama)",
+      "id": "vision-gemma4-e2b",
+      "title": "Gemma 4 E2B (Ollama, Bild + Text)",
       "capability": "vision",
       "kind": "model",
       "platforms": [
@@ -172,11 +176,13 @@
         "x64",
         "arm64"
       ],
-      "minRamGB": 8,
-      "minDiskGB": 4,
+      "minRamGB": 10,
+      "minDiskGB": 8,
       "gpu": "none",
       "requiresService": "ollama",
-      "benefit": "Kleines Bildmodell als Rückfall, wenn kein Vision-Pfad Ende-zu-Ende belegt ist (Erkannt ≠ nutzbar)."
+      "modelRef": "gemma4:e2b",
+      "releasedAt": "2026-04",
+      "benefit": "Kleines aktuelles Bildmodell als Rückfall, wenn kein Vision-Pfad Ende-zu-Ende belegt ist (Erkannt ≠ nutzbar)."
     },
     {
       "id": "desktop-xfce",
@@ -224,8 +230,8 @@
       "benefit": "Lokales Sprachmodell auf der GPU als Rückfall, wenn kein vLLM läuft."
     },
     {
-      "id": "llm-ollama-qwen2.5-3b",
-      "title": "Qwen2.5 3B (Ollama, CPU)",
+      "id": "llm-ollama-qwen3.5-4b",
+      "title": "Qwen3.5 4B (Ollama, CPU)",
       "capability": "llm",
       "kind": "model",
       "platforms": [
@@ -235,10 +241,12 @@
         "x64",
         "arm64"
       ],
-      "minRamGB": 6,
-      "minDiskGB": 3,
+      "minRamGB": 8,
+      "minDiskGB": 4,
       "gpu": "none",
       "requiresService": "ollama",
+      "modelRef": "qwen3.5:4b",
+      "releasedAt": "2026-03",
       "benefit": "Kleines Sprachmodell auf der CPU als Notlösung ohne GPU und ohne Cloud."
     }
   ],

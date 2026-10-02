@@ -49,12 +49,25 @@ export interface SoftwareCandidate {
     packages?: string[]
     /** Why this helps Alfred (shown in the proposal). */
     benefit: string
+    /**
+     * 2.85: models only — the Ollama model reference (`name:tag`) the candidate stands for.
+     * Used for the freshness check (family, version, size); never a command.
+     */
+    modelRef?: string
+    /**
+     * 2.85: models only — release month of this model (YYYY-MM), checked by web search when
+     * the catalog was maintained. Older than MODEL_MAX_AGE_MONTHS → a fresh web check is
+     * required before the candidate may become a question (software-freshness.ts).
+     */
+    releasedAt?: string
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9.-]{1,60}$/
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._+-]{0,62}$/
 const ALLOWED_FIELDS = ['id', 'title', 'capability', 'kind', 'platforms', 'arches', 'minRamGB', 'minDiskGB', 'gpu', 'minVramGB', 'heavy', 'roles',
-    'requiresService', 'detect', 'catalogId', 'packages', 'benefit']
+    'requiresService', 'detect', 'catalogId', 'packages', 'benefit', 'modelRef', 'releasedAt']
+const MODEL_REF_PATTERN = /^[a-z0-9][a-z0-9._-]{0,60}:[a-z0-9][a-z0-9._-]{0,40}$/
+const RELEASED_PATTERN = /^20\d\d-(0[1-9]|1[0-2])$/
 const KIND_FOR_CATALOG: Readonly<Record<InstallKind, CandidateKind>> = Object.freeze({ apt: 'system', 'ollama-model': 'model', 'runtime-addon': 'runtime' })
 
 const LINUX = ['linux'] as const
@@ -78,12 +91,12 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
     },
     {
         id: 'embedding-nomic-embed-text', title: 'nomic-embed-text (Ollama)', capability: 'embedding', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
-        minRamGB: 1, minDiskGB: 1, gpu: 'none', requiresService: 'ollama', catalogId: 'ollama-model:nomic-embed-text',
+        minRamGB: 1, minDiskGB: 1, gpu: 'none', requiresService: 'ollama', catalogId: 'ollama-model:nomic-embed-text', modelRef: 'nomic-embed-text:v1.5', releasedAt: '2024-02',
         benefit: 'Kleines Embedding-Modell für die Gedächtnis-Suche, lokal statt über einen Cloud-Anbieter.',
     },
     {
         id: 'embedding-bge-m3', title: 'bge-m3 (Ollama, mehrsprachig)', capability: 'embedding', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
-        minRamGB: 3, minDiskGB: 2, gpu: 'none', requiresService: 'ollama', catalogId: 'ollama-model:bge-m3',
+        minRamGB: 3, minDiskGB: 2, gpu: 'none', requiresService: 'ollama', catalogId: 'ollama-model:bge-m3', modelRef: 'bge-m3:567m', releasedAt: '2024-01',
         benefit: 'Mehrsprachiges Embedding-Modell (Deutsch/Englisch) für bessere Gedächtnis-Treffer.',
     },
     {
@@ -97,9 +110,11 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
         benefit: 'Audio/Video umwandeln (Sprachnachrichten, Videos), Grundlage für STT/TTS-Werkzeuge.',
     },
     {
-        id: 'vision-qwen2.5vl-3b', title: 'Qwen2.5-VL 3B (Ollama)', capability: 'vision', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
-        minRamGB: 8, minDiskGB: 4, gpu: 'none', requiresService: 'ollama',
-        benefit: 'Kleines Bildmodell als Rückfall, wenn kein Vision-Pfad Ende-zu-Ende belegt ist (Erkannt ≠ nutzbar).',
+        // 2.85 (checked 02.10.2026): replaces Qwen2.5-VL 3B (01/2025). Gemma 4 (04/2026) is
+        // multimodal (text + image) in every size; e2b is the small one on Ollama.
+        id: 'vision-gemma4-e2b', title: 'Gemma 4 E2B (Ollama, Bild + Text)', capability: 'vision', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
+        minRamGB: 10, minDiskGB: 8, gpu: 'none', requiresService: 'ollama', modelRef: 'gemma4:e2b', releasedAt: '2026-04',
+        benefit: 'Kleines aktuelles Bildmodell als Rückfall, wenn kein Vision-Pfad Ende-zu-Ende belegt ist (Erkannt ≠ nutzbar).',
     },
     {
         id: 'desktop-xfce', title: 'XFCE-Arbeitsplatz', capability: 'desktop', kind: 'system', platforms: [...LINUX], arches: [...BOTH_ARCHES],
@@ -112,8 +127,9 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
         benefit: 'Lokales Sprachmodell auf der GPU als Rückfall, wenn kein vLLM läuft.',
     },
     {
-        id: 'llm-ollama-qwen2.5-3b', title: 'Qwen2.5 3B (Ollama, CPU)', capability: 'llm', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
-        minRamGB: 6, minDiskGB: 3, gpu: 'none', requiresService: 'ollama',
+        // 2.85 (checked 02.10.2026): replaces Qwen2.5 3B (09/2024). Qwen3.5 small models 03/2026.
+        id: 'llm-ollama-qwen3.5-4b', title: 'Qwen3.5 4B (Ollama, CPU)', capability: 'llm', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
+        minRamGB: 8, minDiskGB: 4, gpu: 'none', requiresService: 'ollama', modelRef: 'qwen3.5:4b', releasedAt: '2026-03',
         benefit: 'Kleines Sprachmodell auf der CPU als Notlösung ohne GPU und ohne Cloud.',
     },
 ].map(entry => Object.freeze(entry as SoftwareCandidate)))
@@ -148,6 +164,9 @@ export function validateSoftwareCandidate(raw: unknown, installCatalog: InstallC
     }
     if (c.packages !== undefined && !isStringList(c.packages, NAME_PATTERN, 20)) return 'ungültige Paketnamen'
     if (typeof c.benefit !== 'string' || !c.benefit.trim() || c.benefit.length > 300) return 'Nutzen-Begründung fehlt'
+    if (c.modelRef !== undefined && (typeof c.modelRef !== 'string' || !MODEL_REF_PATTERN.test(c.modelRef))) return 'ungültige modelRef'
+    if (c.releasedAt !== undefined && (typeof c.releasedAt !== 'string' || !RELEASED_PATTERN.test(c.releasedAt))) return 'ungültiges releasedAt (YYYY-MM)'
+    if (c.kind === 'model' && (!c.modelRef || !c.releasedAt)) return 'Modell-Kandidat braucht modelRef und releasedAt (YYYY-MM)'
     // Never-list: the candidate id and any package it names are treated as package names.
     const never = packageNeverListViolation([c.id, ...(c.packages || [])])
     if (never) return `Nie-Liste (${never.ruleId}: ${never.value})`
