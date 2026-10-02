@@ -19,6 +19,12 @@
  * it is at most a quiet idea per capability and week. A model candidate is proposed only
  * after the freshness check (software-freshness.ts: catalog date + governed web search,
  * fail closed for old models).
+ *
+ * 2.86 (Alfred 02.10.: „einbauen“): Punkt 2 — every run records which capabilities are
+ * missing in the whole mesh (`state.missing`); `classifyNeed` (software-demand.ts) reads it,
+ * so forge and Bug-Finder leave a missing capability to this scout. Punkt 8 — a newer
+ * successor is no longer "Katalogeintrag nötig" for the owner: it is collected for the
+ * weekly Katalogpflege task to Claude (software-freshness.ts), flushed on every tick.
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -30,7 +36,7 @@ import { profileFingerprint, type NodeProfile } from '../core/node-profile.js'
 import { findCatalogEntry, getInstallCatalog, type InstallCatalog } from './install-catalog.js'
 import { isModelOnlyNode, planInstallRoute, type InstallTargetNode } from './install-queue.js'
 import type { CapabilityDemand } from './software-demand.js'
-import { checkFreshness, freshnessVerdict, type WebSearchPort } from './software-freshness.js'
+import { catalogCareNote, checkFreshness, flushCatalogCare, freshnessVerdict, noteCatalogFindings, type CatalogCareDelegate, type WebSearchPort } from './software-freshness.js'
 import {
     CAPABILITY_LABEL, SOFTWARE_CAPABILITIES, getSoftwareCandidates,
     type SoftwareCandidate, type SoftwareCandidateCatalog, type SoftwareCapability,
@@ -377,7 +383,11 @@ export const PROFILE_CHANGE_MIN_GAP_MS = 30 * 60_000
 export const PROPOSAL_DEDUPE_MS = 7 * 24 * 60 * 60_000
 export const REJECT_MUTE_MS = 30 * 24 * 60 * 60_000
 
-interface ScoutState { version: 1; lastRunAt?: number; fingerprint?: string; proposed: Record<string, number>; muted: Record<string, number> }
+interface ScoutState {
+    version: 1; lastRunAt?: number; fingerprint?: string; proposed: Record<string, number>; muted: Record<string, number>
+    /** 2.86 Punkt 2: capability → time of the run that found it missing in the whole mesh (read by `classifyNeed`). */
+    missing?: Record<string, number>
+}
 const statePath = (path?: string) => path || getNovaDataDir('software-scout', 'state.json')
 function loadState(path?: string): ScoutState {
     try {
@@ -385,7 +395,8 @@ function loadState(path?: string): ScoutState {
         if (!existsSync(file)) return { version: 1, proposed: {}, muted: {} }
         const raw = JSON.parse(readFileSync(file, 'utf8'))
         return { version: 1, lastRunAt: Number(raw.lastRunAt) || undefined, fingerprint: typeof raw.fingerprint === 'string' ? raw.fingerprint : undefined,
-            proposed: raw.proposed && typeof raw.proposed === 'object' ? raw.proposed : {}, muted: raw.muted && typeof raw.muted === 'object' ? raw.muted : {} }
+            proposed: raw.proposed && typeof raw.proposed === 'object' ? raw.proposed : {}, muted: raw.muted && typeof raw.muted === 'object' ? raw.muted : {},
+            ...(raw.missing && typeof raw.missing === 'object' && !Array.isArray(raw.missing) ? { missing: raw.missing } : {}) }
     } catch { return { version: 1, proposed: {}, muted: {} } }
 }
 function saveState(state: ScoutState, path?: string, now = Date.now()): void {
@@ -419,6 +430,8 @@ export interface SoftwareScoutTickDeps {
     demand?: () => Promise<CapabilityDemandMap> | CapabilityDemandMap
     /** 2.85: freshness check for model candidates (default: governed web search, cache in .nova-data). `search: null` = no search. */
     freshness?: { search?: WebSearchPort | null; cachePath?: string }
+    /** 2.86 Punkt 8: Katalogpflege (collected model finds → one delegation to Claude per week). `delegate: null` = only collect. */
+    catalogCare?: { path?: string; delegate?: CatalogCareDelegate | null; version?: string }
 }
 
 export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise<{ ran: boolean; reason: string; emitted: SoftwareScoutThought[] }> {
@@ -426,20 +439,31 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
     if (!deps.isMain) return { ran: false, reason: 'kein Main (Worker schlagen nichts vor, senden nichts)', emitted: [] }
     if (!active.enabled) return { ran: false, reason: 'aus (autonomy.softwareScout.enabled=false)', emitted: [] }
     const now = deps.now ?? Date.now()
+    // 2.86 Punkt 8: collected model finds go to Claude at most once a week — checked on every tick.
+    const flushCare = async () => {
+        try { return await flushCatalogCare({ path: deps.catalogCare?.path, delegate: deps.catalogCare?.delegate, version: deps.catalogCare?.version, now }) } catch { return null }
+    }
     const state = loadState(deps.statePath)
     const nodes = await (deps.nodes || (() => collectScoutNodes({ measureLoad: true })))()
     const analysis = analyzeMesh(nodes, { candidates: deps.candidates, installCatalog: deps.installCatalog, now })
     const weekly = !state.lastRunAt || now - state.lastRunAt >= SCOUT_INTERVAL_MS
     const changed = state.fingerprint !== analysis.fingerprint && (!state.lastRunAt || now - state.lastRunAt >= PROFILE_CHANGE_MIN_GAP_MS)
-    if (!weekly && !changed) return { ran: false, reason: 'nicht fällig (wöchentlich oder bei Profiländerung)', emitted: [] }
+    if (!weekly && !changed) {
+        await flushCare()
+        return { ran: false, reason: 'nicht fällig (wöchentlich oder bei Profiländerung)', emitted: [] }
+    }
+    // 2.86 Punkt 2: what is missing in the whole mesh (no running service/tool on any rated node).
+    state.missing = Object.fromEntries(analysis.capabilities.filter(summary => !summary.present.length).map(summary => [summary.capability, now]))
     const sink = deps.sink || await defaultSink()
     const demand = await (deps.demand || (async () => (await import('./software-demand.js')).collectCapabilityDemand(now)))()
     const catalog = deps.candidates || getSoftwareCandidates()
     const search = deps.freshness && 'search' in deps.freshness ? deps.freshness.search ?? null : createGovernedWebSearchLazy()
     const emitted: SoftwareScoutThought[] = []
+    const queue: Array<{ thought: SoftwareScoutThought; careModel?: string }> = []
     let cards = 0
     const due = (key: string) => (state.muted[key] ?? 0) <= now && now - (state.proposed[key] ?? 0) >= PROPOSAL_DEDUPE_MS
     for (let thought of gapThoughts(analysis, Number.POSITIVE_INFINITY, { demand })) {
+        let careModel: string | undefined
         if (thought.permission === 'fragen') {
             if (cards >= MAX_THOUGHTS_PER_RUN || !due(thought.dedupeKey)) continue
             const candidate = catalog.entries.find(entry => entry.id === thought.candidateId)
@@ -449,10 +473,22 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
                 const verdict = freshnessVerdict(candidate, record, now)
                 if (!verdict.allow) thought = softwareIdea(thought.capability, candidate, thought.nodeId, verdict.idea!.title, verdict.idea!.text, [...thought.evidence.filter(item => item.startsWith('Bedarf: ')), ...verdict.evidence])
                 else thought = { ...thought, evidence: [...thought.evidence, ...verdict.evidence] }
+                // 2.86 Punkt 8: a newer successor is a find for the Katalogpflege, not owner work.
+                if (!verdict.allow && record.status === 'nachfolger' && record.successor) {
+                    careModel = record.successor.name
+                    noteCatalogFindings([{ model: careModel, source: 'software-freshness', capability: candidate.capability, url: record.successor.url, at: now,
+                        reason: `neuerer Nachfolger von ${candidate.title} (Katalogstand ${candidate.releasedAt || 'unbekannt'}${record.successor.date ? `, Fund ${record.successor.date}` : ''})` }],
+                    { path: deps.catalogCare?.path, now })
+                }
             }
         }
         if (thought.permission === 'fragen') cards++
         else if (!due(thought.dedupeKey)) continue
+        queue.push({ thought, careModel })
+    }
+    await flushCare()
+    for (const { thought: queued, careModel } of queue) {
+        const thought = careModel ? { ...queued, text: `${queued.text} Stand: ${catalogCareNote(careModel, { path: deps.catalogCare?.path })}.` } : queued
         await sink.emit(thought)
         state.proposed[thought.dedupeKey] = now
         emitted.push(thought)

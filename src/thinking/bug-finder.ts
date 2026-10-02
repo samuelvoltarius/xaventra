@@ -18,12 +18,19 @@
  * Fingerabdruck = `observationFingerprint` aus Stufe 1: Zahlen, Zeiten und
  * IDs sind Messung, kein neuer Fehler. Keine Doppelfälle: gleicher
  * Fingerabdruck oder gleiche Fall-ID in der Warteschlange = übersprungen.
+ *
+ * 2.86 Punkt 2: ein Bedarf, ein Empfänger. Vor dem Anlegen fragt der
+ * Bug-Finder die eine Einordnung (`classifyNeed`, install/software-demand.ts):
+ * fehlt eine Fähigkeit (Software-Scout), eine Verbindung (Verbindungen) oder
+ * ein Werkzeug (Schmiede), ist das kein Code-Fehler und kein Doctor-Fall —
+ * übersprungen mit Grund. Nur `code:*` wird ein Fall.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DoctorFinding } from '../core/self-doctor.js'
 import { observationFingerprint, type FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import type { NeedClassification } from '../install/software-demand.js'
 import { newThoughtId, type ThoughtSink, type ThinkingSettings } from './ports.js'
 
 export interface ErrorOccurrence {
@@ -150,6 +157,8 @@ export interface BugFinderDeps {
     importanceFactor?: (kind: string) => number
     /** 2.84.0 Punkt 3: rollout time of a handed-over case (`rolloutMeasureSince`). Without: 7-day window. */
     measureSince?: (caseId: string) => number | undefined
+    /** 2.86 Punkt 2: the one need classification. Default: `createNeedClassifier()` (scout view of the mesh). */
+    classifyNeed?: (subject: string, message: string) => NeedClassification
 }
 
 /** 2.84.0 Punkt 3: a rollout is measured at least this long before a case closes. */
@@ -165,7 +174,15 @@ export async function runBugFinder(deps: BugFinderDeps): Promise<{ ran: boolean;
     const closed = await closeHealedCases(deps, occurrences, since, now)
     const created: string[] = []
     const skipped: Array<{ fingerprint: string; reason: string }> = []
+    let classify = deps.classifyNeed
+    if (!classify && groups.length) {
+        try { classify = (await import('../install/software-demand.js')).createNeedClassifier({ now: now.getTime() }) } catch { classify = undefined }
+    }
     for (const group of groups) {
+        // 2.86 Punkt 2: a missing capability/connection/tool belongs to its one recipient, not to the Doctor.
+        let need: NeedClassification | undefined
+        try { need = classify?.(group.subject, group.sample) } catch { need = undefined }
+        if (need && need.kind !== 'code') { skipped.push({ fingerprint: group.fingerprint, reason: `${need.reason}, kein Code-Fehler` }); continue }
         const existing = deps.doctor.list().find(item => item.findingId === group.finding.id || item.observationHash === group.fingerprint)
         if (existing) {
             // Geschlossen und danach wieder ≥ N-mal aufgetreten: derselbe Fall geht

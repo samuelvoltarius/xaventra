@@ -157,3 +157,123 @@ export async function collectCapabilityDemand(now = Date.now()): Promise<Map<Sof
     signals.push(...readCapabilityNeedSignals({ now }))
     return summarizeDemand(signals, now)
 }
+
+// ---------------------------------------------------------------------------------------
+// 2.86 Punkt 2 — ein Bedarf, ein Empfänger (Alfred 02.10.: „einbauen“)
+// ---------------------------------------------------------------------------------------
+//
+// One failed tool call used to feed up to four paths that knew nothing of each other
+// (Software-Scout, Werkzeug-Schmiede, Bug-Finder, Ideen-Lauf). `classifyNeed` is the one
+// place that decides; every other path asks it instead of reacting on its own:
+//
+//   faehigkeit:<cap>  → Software-Scout    (a capability is missing in the mesh: install question)
+//   dienst:<name>     → Verbindungen      (2.85 Paket A: a service is not connected)
+//   werkzeug:<name>   → Werkzeug-Schmiede (a tool is missing that sandbox JS can build)
+//   code:<name>       → Bug-Finder        (the tool exists and its capability is there: a fault)
+//
+// Fixed rules, no model, no request text. "Fähigkeit fehlt" needs evidence: either the
+// tool's own error text says so, or the Software-Scout's last run listed the capability as
+// missing in the whole mesh (`readScoutMissingCapabilities`). A capability tool that fails
+// while the capability is present stays a Bug-Finder matter.
+
+export type NeedKind = 'faehigkeit' | 'dienst' | 'werkzeug' | 'code'
+export type NeedRecipient = 'software-scout' | 'verbindungen' | 'schmiede' | 'bug-finder'
+export interface NeedClassification {
+    kind: NeedKind
+    /** Stable key, e.g. `faehigkeit:vision`, `dienst:home-assistant`, `werkzeug:ocr_image`, `code:web_search`. */
+    key: string
+    recipient: NeedRecipient
+    capability?: SoftwareCapability
+    service?: string
+    /** Short German reason for logs and `skipped` entries (no request text). */
+    reason: string
+}
+/** A service rule (2.85 Paket A docks here): returns the service name when the failure means "not connected". */
+export type ServiceNeedRule = (toolName: string, errorText: string) => string | null | undefined
+export interface ClassifyNeedOptions {
+    /** Capabilities missing in the whole mesh (Software-Scout). Without: only the error text proves "fehlt". */
+    missingCapabilities?: ReadonlySet<SoftwareCapability>
+    /** Additional service rules for this call (registered rules always apply). */
+    serviceRules?: readonly ServiceNeedRule[]
+}
+
+const RECIPIENT: Readonly<Record<NeedKind, NeedRecipient>> = Object.freeze({ faehigkeit: 'software-scout', dienst: 'verbindungen', werkzeug: 'schmiede', code: 'bug-finder' })
+const RECIPIENT_LABEL: Readonly<Record<NeedRecipient, string>> = Object.freeze({ 'software-scout': 'Software-Scout', verbindungen: 'Verbindungen', schmiede: 'Werkzeug-Schmiede', 'bug-finder': 'Bug-Finder' })
+
+/** Error texts that state a capability is missing (media-providers.ts, whisper, ffmpeg, playwright …). */
+const MISSING_CAPABILITY_TEXT: ReadonlyArray<[RegExp, SoftwareCapability]> = [
+    [/kein(?:en)? provider f(?:ü|ue)r (?:image|video)|unterst(?:ü|ue)tzt keine (?:bildanalyse|videoanalyse)|kein(?:e|en)? (?:vision|bild)[- ]?(?:modell|model|pfad)|no (?:vision|image) (?:model|provider)|vision (?:model )?(?:not available|unavailable|nicht verf(?:ü|ue)gbar)/i, 'vision'],
+    [/kein(?:en)? provider f(?:ü|ue)r audio|unterst(?:ü|ue)tzt keine audio-transkription|whisper(?:-cli)?(?:\/whisper)? nicht gefunden|whisper not found|kein(?:e|en)? (?:stt|spracherkennung)|no stt\b|speech recognition (?:not available|unavailable)/i, 'stt'],
+    [/kein(?:e|en)? (?:tts|sprachausgabe)|no tts\b|text[- ]to[- ]speech (?:not available|unavailable)/i, 'tts'],
+    [/kein(?:e|en)? (?:embedding|einbett)[- ]?(?:modell|model|er)|no embedding (?:model|provider)/i, 'embedding'],
+    [/ffmpeg(?: ist)? (?:nicht gefunden|not found|nicht installiert|not installed)|spawn ffmpeg enoent/i, 'media'],
+    [/playwright[^.]{0,40}(?:nicht installiert|not installed|executable doesn.?t exist)|chromium[^.]{0,40}(?:nicht gefunden|not found)/i, 'browser'],
+]
+const MISSING_TOOL_TEXT = /Tool nicht gefunden: ?([A-Za-z0-9_.-]{2,80})|unknown tool:? ?([A-Za-z0-9_.-]{2,80})/i
+
+const serviceRules = new Set<ServiceNeedRule>()
+/** 2.85 Paket A (Verbindungen) docks here instead of adding a second need rule. Returns an unregister function. */
+export function registerServiceNeedRule(rule: ServiceNeedRule): () => void {
+    serviceRules.add(rule)
+    return () => { serviceRules.delete(rule) }
+}
+
+const serviceName = (value: unknown) => {
+    const name = String(value || '').toLowerCase().trim()
+    return /^[a-z0-9][a-z0-9._-]{0,60}$/.test(name) ? name : null
+}
+
+/** The one need classification. Pure apart from registered service rules. */
+export function classifyNeed(toolName: unknown, errorText: unknown = '', options: ClassifyNeedOptions = {}): NeedClassification {
+    const tool = String(toolName || '').trim().slice(0, 80) || 'unbekannt'
+    const text = String(errorText ?? '').slice(0, 2_000)
+    const make = (kind: NeedKind, id: string, reason: string, extra: Partial<NeedClassification> = {}): NeedClassification =>
+        ({ kind, key: `${kind}:${id}`, recipient: RECIPIENT[kind], reason, ...extra })
+
+    for (const rule of [...(options.serviceRules || []), ...serviceRules]) {
+        let service: string | null = null
+        try { service = serviceName(rule(tool, text)) } catch { service = null }
+        if (service) return make('dienst', service, `Verbindung fehlt (${service}) → ${RECIPIENT_LABEL.verbindungen}`, { service })
+    }
+    for (const [pattern, capability] of MISSING_CAPABILITY_TEXT) {
+        if (pattern.test(text)) return make('faehigkeit', capability, `Fähigkeit fehlt (${capability}) → ${RECIPIENT_LABEL['software-scout']}`, { capability })
+    }
+    const byName = capabilityForTool(tool)
+    if (byName && options.missingCapabilities?.has(byName)) {
+        return make('faehigkeit', byName, `Fähigkeit fehlt (${byName}) → ${RECIPIENT_LABEL['software-scout']}`, { capability: byName })
+    }
+    const missingTool = MISSING_TOOL_TEXT.exec(text)
+    if (missingTool) {
+        const name = missingTool[1] || missingTool[2] || tool
+        return make('werkzeug', name, `Werkzeug fehlt (${name}) → ${RECIPIENT_LABEL.schmiede}`)
+    }
+    return make('code', tool, `Fehler in ${tool} → ${RECIPIENT_LABEL['bug-finder']}`)
+}
+
+// The Software-Scout's view "fehlt im ganzen Mesh" ------------------------------------
+// Written by the scout on every run into its state file (`missing`: capability → time of
+// the run). Read here so forge and Bug-Finder ask the same place. Older than two demand
+// windows = no statement (then only the error text counts).
+
+export const SCOUT_MISSING_TTL_MS = 2 * DEMAND_WINDOW_MS
+const scoutStatePath = (path?: string) => path || getNovaDataDir('software-scout', 'state.json')
+
+export function readScoutMissingCapabilities(options: { statePath?: string; now?: number } = {}): Set<SoftwareCapability> {
+    const now = options.now ?? Date.now()
+    try {
+        const file = scoutStatePath(options.statePath)
+        if (!existsSync(file)) return new Set()
+        const raw = JSON.parse(readFileSync(file, 'utf8'))
+        const missing = raw?.missing && typeof raw.missing === 'object' && !Array.isArray(raw.missing) ? raw.missing as Record<string, unknown> : {}
+        return new Set(Object.entries(missing)
+            .filter(([capability, at]) => SOFTWARE_CAPABILITIES.includes(capability as SoftwareCapability) && Number.isFinite(Number(at))
+                && Number(at) <= now + 60_000 && now - Number(at) <= SCOUT_MISSING_TTL_MS)
+            .map(([capability]) => capability as SoftwareCapability))
+    } catch { return new Set() }
+}
+
+/** Production: the classification with the scout's current view (read once per factory call). */
+export function createNeedClassifier(options: { statePath?: string; now?: number } = {}): (toolName: unknown, errorText?: unknown) => NeedClassification {
+    const missingCapabilities = readScoutMissingCapabilities(options)
+    return (toolName, errorText) => classifyNeed(toolName, errorText, { missingCapabilities })
+}
