@@ -392,13 +392,26 @@ export function createSelfUpdateThoughtSink() {
  */
 export function createSoftwareScoutThoughtSink() {
     return {
-        async emit(thought: any): Promise<void> {
+        async emit(input: any): Promise<void> {
+            let thought = input
             const { findSoftwareCandidate } = await import('../install/software-candidates.js')
             const candidate = findSoftwareCandidate(thought?.candidateId)
             const nodeId = String(thought?.nodeId || '')
             // 2.85: without a recorded need (or with an outdated/unchecked model) the scout only
             // has a quiet idea — report only, no card, no remembered action, no button.
-            if (thought?.permission !== 'fragen') {
+            // 2.86 Punkt 5 (with package F): a candidate without an installation catalog entry has
+            // no executor ("Katalogeintrag nötig" is work for Claude, not a Ja) — quiet idea, and the
+            // model goes to the weekly catalog care hand-over (software-freshness.ts).
+            const catalogless = thought?.permission === 'fragen' && candidate && !candidate.catalogId
+            if (catalogless) {
+                try {
+                    const { catalogCareNote, noteCatalogFindings } = await import('../install/software-freshness.js')
+                    const model = String(candidate.modelRef || candidate.id).toLowerCase()
+                    noteCatalogFindings([{ model, source: 'software-freshness', reason: `Bedarf ${candidate.capability}: ${candidate.title} ohne Installationskatalog-Eintrag`, capability: candidate.capability, at: Date.now() }])
+                    thought = { ...thought, evidence: [...(Array.isArray(thought?.evidence) ? thought.evidence : []), `${model}: ${catalogCareNote(model)}`] }
+                } catch { /* catalog care optional; the idea stays */ }
+            }
+            if (thought?.permission !== 'fragen' || catalogless) {
                 addThought({
                     source: 'software-scout',
                     title: String(thought?.title || ''),

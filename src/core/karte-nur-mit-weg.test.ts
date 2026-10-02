@@ -97,6 +97,30 @@ describe('Punkt 5: ein fragen-Gedanke wird nur mit Ausführungsweg eine Karte', 
     })
 })
 
+describe('Punkt 5: Software-Scout ohne Installations-Katalog ist keine Frage', () => {
+    it('a candidate without catalog id (gemma4:e2b) becomes a quiet idea and goes to the catalog care for Claude — no card', async () => {
+        const { createSoftwareScoutThoughtSink } = hub
+        const { readCatalogCare } = await import('../install/software-freshness.js')
+        await createSoftwareScoutThoughtSink().emit({ title: 'Vision fehlt: Gemma 4 E2B auf main?', text: 'Bedarf vision', evidence: ['3 Owner-Läufe'], proposal: 'Nur vermerken: Katalogeintrag nötig (keine freie Installation).',
+            permission: 'fragen', candidateId: 'vision-gemma4-e2b', nodeId: 'main', dedupeKey: 'software-scout:vision:vision-gemma4-e2b:main' })
+        const thought = listThoughts({ limit: 500 }).find(item => item.title === 'Vision fehlt: Gemma 4 E2B auf main?')!
+        expect(thought.permission).toBe('selbst')
+        expect(thought.kind).toBe('idee')
+        expect(await hasThoughtAction(thought.id)).toBe(false)
+        expect((await deliver(thought.id)).card).toBeUndefined()
+        expect(readCatalogCare().pending.map(item => item.model)).toContain('gemma4:e2b')
+    })
+
+    it('Gegenprobe: a candidate with a catalog id still asks (install queue is a real path)', async () => {
+        const { createSoftwareScoutThoughtSink } = hub
+        await createSoftwareScoutThoughtSink().emit({ title: 'ffmpeg fehlt auf main?', text: 'Bedarf media', proposal: 'In die Installations-Warteschlange',
+            permission: 'fragen', candidateId: 'media-ffmpeg', nodeId: 'main', dedupeKey: 'software-scout:media:media-ffmpeg:main' })
+        const thought = listThoughts({ limit: 500 }).find(item => item.title === 'ffmpeg fehlt auf main?')!
+        expect(thought.permission).toBe('fragen')
+        expect(await hasThoughtAction(thought.id)).toBe(true)
+    })
+})
+
 describe('Punkt 5: Invariante — jeder Erzeuger von „fragen“ hat einen Ausführungsweg', () => {
     // Each file that sets a thought/hint to `fragen` and the path its Ja takes.
     const ALLOWED: Record<string, string> = {
