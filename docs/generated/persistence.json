@@ -990,6 +990,10 @@
       "path": ".nova-data/fence-highwater.json"
     },
     {
+      "owner": "src/learning/routine-skill-schmiede.test.ts",
+      "path": ".nova-data/forge/bedarf.json"
+    },
+    {
       "owner": "src/tools/skill-builder.ts",
       "path": ".nova-data/forge/bedarf.json"
     },
