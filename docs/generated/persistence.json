@@ -98,6 +98,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/connections/connections-view.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/connections/connector-login.ts",
       "path": ".nova-data"
     },

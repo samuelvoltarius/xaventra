@@ -1048,7 +1048,8 @@ async function runConnectionsPhase(): Promise<void> {
     if (sideEffectsDisabled()) return
     try {
         const { runConnectionDemandTick } = await import('../connections/connection-demand.js')
-        const result = await runConnectionDemandTick({ isMain })
+        const { foundConnectorIds } = await import('../connections/connections-view.js')
+        const result = await runConnectionDemandTick({ isMain, found: () => foundConnectorIds() })
         if (result.emitted.length) console.log(`[Autonomy] Verbindungen: ${result.emitted.length} Vorschlag/Vorschläge aus Bedarf`)
     } catch (err) {
         console.debug(`[Autonomy] Verbindungen non-critical error: ${err}`)

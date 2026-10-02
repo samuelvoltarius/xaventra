@@ -41,6 +41,7 @@ import { resolvePrincipalId } from '../users/principal-id.js'
 import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
+import { registerConnectionsApi } from '../connections/connections-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -540,6 +541,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     view('/api/desktop/system', () => collectSystem())
     view('/api/desktop/system/vms', () => collectVms())
     view('/api/desktop/gedaechtnis', () => collectGedaechtnis())
+    // 2.85 Paket A: Verbindungen (Gefunden / Möglich / Verbunden), owner only.
+    registerConnectionsApi(app, { ownerOnly })
 
     app.post('/api/desktop/karten/:id/antwort', async (req, res) => {
         if (!ownerOnly(req, res)) return

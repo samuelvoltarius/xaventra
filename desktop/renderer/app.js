@@ -43,6 +43,7 @@ const NAV_MAIN = [
   ['arbeit', 'Arbeit', 'briefcase'],
   ['system', 'System', 'server'],
   ['gedaechtnis', 'Gedächtnis', 'brain'],
+  ['verbindungen', 'Verbindungen', 'plug'],
 ]
 const NAV_BOTTOM = [['mehr', 'Mehr', 'grid'], ['settings', 'Einstellungen', 'settings']]
 // Fachseiten unter „Mehr“: bleiben erreichbar, stehen aber nicht im Weg.
@@ -54,10 +55,11 @@ const MORE_PAGES = {
   nodes: { title: 'Knoten aufnehmen', icon: 'plusCircle', text: 'Neue Geräte ins Netz aufnehmen (verifizierter SSH-Fingerabdruck, Owner-Freigabe).' },
 }
 const SECTION_ALIAS = { memory: 'gedaechtnis' }
-const KNOWN_SECTIONS = new Set(['heute', 'chat', 'arbeit', 'system', 'gedaechtnis', 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
+const KNOWN_SECTIONS = new Set(['heute', 'chat', 'arbeit', 'system', 'gedaechtnis', 'verbindungen', 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
 
 // ── Symbole (eine Linienfamilie, 24er Raster) ───────────────
 const ICONS = {
+  plug: '<path d="M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0V8zM12 17v5"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   message: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
@@ -341,6 +343,7 @@ function pageFor(section) {
   if (section === 'system') return systemView()
   if (section === 'gedaechtnis') return gedaechtnisView()
   if (section === 'mehr') return moreView()
+  if (section === 'verbindungen') return window.XaventraConnections ? window.XaventraConnections.view(connectionHelpers()) : loadingBlock('Verbindungen')
   if (section === 'bots') return subPage('bots', botsView())
   if (section === 'modules') return subPage('modules', modulesView())
   if (section === 'security') return subPage('security', securityView())
@@ -360,6 +363,7 @@ function render() {
   const page = document.querySelector('.page')
   if (page && state.pageScroll?.section === state.section) page.scrollTop = state.pageScroll.top
   if (state.section === 'trust') void loadTrust()
+  if (state.section === 'verbindungen') window.XaventraConnections?.mount(connectionHelpers())
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
   if (state.section === 'gedaechtnis' && state.tabs.gedaechtnis === 'wissen') void ensureView('wissen')
@@ -443,6 +447,11 @@ function startRefresh() {
     if (['arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   }, 20_000)
   void ensureView('heute')
+}
+
+// Verbindungen (2.85) lebt in connections.js; es bekommt nur diese Helfer.
+function connectionHelpers() {
+  return { api, esc, attr, icon, toast, fail, errorText, showModal, closeModal, rerender: () => { if (state.section === 'verbindungen') render() } }
 }
 
 function navigate(section) {

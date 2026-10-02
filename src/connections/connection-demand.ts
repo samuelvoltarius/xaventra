@@ -168,7 +168,7 @@ export interface DemandTickDeps {
     forgeNeeds?: () => ReadonlyArray<{ tool: string; at: string }> | Promise<ReadonlyArray<{ tool: string; at: string }>>
     connected?: () => Set<string>
     /** Services found on the network/in own accounts (evidence only; never a reason on its own). */
-    found?: () => string[]
+    found?: () => string[] | Promise<string[]>
     sink?: ConnectionDemandSink
 }
 
@@ -180,7 +180,7 @@ export async function runConnectionDemandTick(deps: DemandTickDeps): Promise<{ e
     const forgeNeeds = deps.forgeNeeds ? await deps.forgeNeeds() : await defaultForgeNeeds()
     const need = connectionDemand({ statePath: deps.statePath, now, runs, forgeNeeds })
     const connected = (deps.connected || defaultConnected)()
-    const found = new Set((deps.found || (() => []))())
+    const found = new Set(await (deps.found || (() => []))())
     const state = readState(deps.statePath)
     const sink = deps.sink || defaultSink()
     const emitted: ConnectionProposal[] = []

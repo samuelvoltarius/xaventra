@@ -1260,6 +1260,30 @@
       ]
     },
     {
+      "module": "src/connections/connections-api.ts",
+      "imports": [
+        "./connect-flow.js",
+        "./connection-store.js",
+        "./connections-view.js",
+        "./icon-cache.js",
+        "./registry-directory.js",
+        "express"
+      ]
+    },
+    {
+      "module": "src/connections/connections-view.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "./connector-login.js",
+        "./icon-cache.js",
+        "./registry-directory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/connections/connector-catalog.ts",
       "imports": [
         "../install/install-catalog.js",
@@ -2617,6 +2641,7 @@
     {
       "module": "src/desktop/desktop-api.ts",
       "imports": [
+        "../connections/connections-api.js",
         "../core/data-root.js",
         "../core/nova-state.js",
         "../core/outcome-ledger.js",
