@@ -105,6 +105,11 @@ function severityFromLabel(value: string): 'critical' | 'warning' | 'info' {
 export function createSensingThoughtSink() {
     return {
         writeThought(thought: any): void {
+            const action = thought.action
+            const approvable = action?.kind === 'approveDevice' && ID.test(String(action.deviceId || ''))
+            // 2.86 Punkt 5: only an approveDevice action has an executor; any other
+            // „fragen“ hint (mail draft, next print) is a report line, never a button.
+            const permission = thought.level === 'nie' ? 'nie' : thought.level === 'fragen' && approvable ? 'fragen' : 'selbst'
             const { thought: stored } = addThought({
                 source: sourceName('wahrnehmen', thought.source),
                 title: String(thought.title || ''),
@@ -112,12 +117,11 @@ export function createSensingThoughtSink() {
                 severity: severityFromLabel(String(thought.importance || '')),
                 kind: thought.action ? 'vorschlag' : 'ereignis',
                 proposal: thought.proposal ? String(thought.proposal) : undefined,
-                permission: thought.level === 'fragen' || thought.level === 'nie' ? thought.level : 'selbst',
+                permission,
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
                 node: thought.origin?.nodeId,
             })
-            const action = thought.action
-            if (action?.kind === 'approveDevice' && ID.test(String(action.deviceId || ''))) remember(stored.id, { kind: 'approveDevice', deviceId: String(action.deviceId) })
+            if (approvable) remember(stored.id, { kind: 'approveDevice', deviceId: String(action.deviceId) })
             else if (action?.kind === 'connectAccount' || action?.kind === 'applyQuietHours') remember(stored.id, { kind: 'note', what: action.kind })
         },
     }
@@ -150,8 +154,9 @@ export function createThinkingThoughtSink() {
     return {
         async emit(thought: any): Promise<void> {
             const evidence = (thought.evidence || []).map((item: any) => `${item.metric}=${item.value}${item.unit || ''} (${item.source})`).join(', ')
-            const asks = thought.stufe === 'fragen'
             const validKind = thought.kind && /^[a-z0-9:_-]{1,80}$/i.test(String(thought.kind))
+            // 2.86 Punkt 5: a question needs a known action (idee-pruefen, modell-wechsel); without one it is an idea.
+            const asks = thought.stufe === 'fragen' && Boolean(validKind) && THINKING_ACTIONS.includes(thought.proposal?.action)
             // 2.83.0: a kind the owner already declined only goes into the report (niedrig, no card).
             const weight = asks && validKind ? await feedbackWeight(String(thought.kind)) : 1
             const dampened = weight < 1
@@ -163,7 +168,7 @@ export function createThinkingThoughtSink() {
                 severity: Number(thought.importance) >= 0.8 ? 'warning' : 'info',
                 kind: asks && !dampened ? 'vorschlag' : 'idee',
                 proposal: thought.proposal?.action ? String(thought.proposal.action) : undefined,
-                permission: thought.stufe === 'fragen' || thought.stufe === 'nie' ? thought.stufe : 'selbst',
+                permission: asks ? 'fragen' : thought.stufe === 'nie' ? 'nie' : 'selbst',
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
                 ...(dampened ? { weight } : {}),
             })
@@ -283,7 +288,9 @@ export function createSelfUpdateThoughtSink() {
                 severity: severityFromLabel(String(thought.importance || '')),
                 kind: thought.proposal ? 'vorschlag' : 'ereignis',
                 proposal: thought.proposal?.action ? String(thought.proposal.action) : undefined,
-                permission: thought.permission === 'fragen' || thought.permission === 'nie' ? thought.permission : 'selbst',
+                // 2.86 Punkt 5: no self-update action has an executor (the host agent is not
+                // wired for it; Claude rolls out), so nothing here asks — report only.
+                permission: thought.permission === 'nie' ? 'nie' : 'selbst',
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
             })
             if (thought.proposal?.action) remember(stored.id, { kind: 'self-update', action: String(thought.proposal.action).slice(0, 60) })
@@ -390,4 +397,36 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
     }
     if (action.kind === 'self-update') return { ok: true, message: 'Vermerkt. Die Aktivierung führt erst der Host-Agent aus, sobald er dafür eingerichtet ist; bis dahin rollt Claude aus.' }
     return { ok: true, message: `Vermerkt (${action.what}); die Ausführung dafür ist noch nicht gebaut.` }
+}
+
+/**
+ * 2.86 Punkt 5: does a Ja on this thought run something? Only then may it
+ * become a Knopf-Karte (planner-card-bridge.ts). Mirrors `dispatchThoughtAnswer`:
+ * no remembered action, a plain note, a self-update (no executor yet), a
+ * thinking thought without action, a software candidate without catalog
+ * entry and a watch action without a released path are all „no“.
+ */
+export async function hasThoughtAction(thoughtId: string): Promise<boolean> {
+    const action = load()[thoughtId]
+    if (!action) return false
+    switch (action.kind) {
+        case 'approveDevice':
+        case 'auto-reminder':
+            return true
+        case 'thinking':
+            return action.action === 'idee-pruefen' || action.action === 'modell-wechsel'
+        case 'software-scout': {
+            try {
+                const { findSoftwareCandidate } = await import('../install/software-candidates.js')
+                return Boolean(findSoftwareCandidate(action.candidateId)?.catalogId)
+            } catch { return false }
+        }
+        case 'watch': {
+            if (action.actionKind !== 'self-heal-zyklus') return false
+            if (!action.node) return true
+            try { return action.node === (await import('../mesh/mesh-registry.js')).getLocalNodeId() } catch { return false }
+        }
+        default:
+            return false
+    }
 }

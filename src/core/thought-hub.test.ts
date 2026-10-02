@@ -48,7 +48,8 @@ describe('Gedanken-Hub: Phase 2/3/4 → Planer-Gedanken → Knopf → Aktion', (
     it('every answer on a thinking idea feeds the learning (ja and nein)', async () => {
         await createThinkingThoughtSink().emit({ id: 'i1', createdAt: new Date().toISOString(), source: 'ideen-lauf', kind: 'idee:werkzeug-langsam', title: 'web_search 3× langsamer', text: 'p95 4,1 s statt 1,3 s', evidence: [{ metric: 'p95', value: 4.1, unit: 's', source: 'traces' }], target: 'p95 < 1,5 s', importance: 0.9, proposal: { action: 'cache-einschalten', autoExecute: false }, stufe: 'fragen', status: 'neu', dedupeKey: 'idee:web_search' } as any)
         const thought = listThoughts().find(item => item.title.includes('web_search'))!
-        expect(thought.permission).toBe('fragen')
+        // 2.86 Punkt 5: an unknown action (cache-einschalten) has no executor → no question, only an idea.
+        expect(thought.permission).toBe('selbst')
         await dispatchThoughtAnswer(thought.id, 'nein', { userId: '1413797900' })
         expect(decisions).toHaveBeenCalledWith('idee:werkzeug-langsam', 'nein')
     })
