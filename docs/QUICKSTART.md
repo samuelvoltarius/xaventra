@@ -5,13 +5,16 @@ You need Node.js 22 or newer, npm, Git and a local or cloud model endpoint.
 ```bash
 git clone https://github.com/samuelvoltarius/xaventra.git
 cd xaventra
-sh install.sh
-npm run cli -- setup
+sh install.sh --desktop
 npm run start:fast
 ```
 
-On native Windows, run `./install.ps1` instead of `sh install.sh`; alternatively
-use `node scripts/setup.mjs` on any supported OS. Set the appropriate API key in
+On Windows, double-click `install.cmd`, then `start.cmd`. No questionnaire is
+needed: the first start seeds safe local-first defaults, runs the Doctor and
+self-setup, and asks at most three questions in the Desktop app (see
+[first start](FIRST_START.md)). The terminal wizard `npm run cli -- setup`
+remains available. Alternatively run `./install.ps1` or
+`node scripts/setup.mjs` on any supported OS. Set the appropriate API key in
 your local `.env` for cloud inference. For local inference, select `local` or
 `ollama` and run a compatible model server. The example has no active Mesh peers
 or channels; no external coordinator is required for one instance.
