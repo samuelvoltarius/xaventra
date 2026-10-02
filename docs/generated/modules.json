@@ -1234,6 +1234,14 @@
       "imports": []
     },
     {
+      "module": "src/connections/connector-policy.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../routing/task-model-routing.js",
+        "./connector-catalog.js"
+      ]
+    },
+    {
       "module": "src/connections/icon-cache.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -4306,6 +4314,7 @@
     {
       "module": "src/mcp/mcp-client.ts",
       "imports": [
+        "../connections/connector-policy.js",
         "../tools/complete-registry.js",
         "@modelcontextprotocol/sdk/client/auth.js",
         "@modelcontextprotocol/sdk/client/index.js",

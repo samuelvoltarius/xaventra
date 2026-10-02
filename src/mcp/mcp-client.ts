@@ -13,7 +13,9 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { NovaTool } from '../tools/complete-registry.js'
+import type { ConnectorBinding, ToolAnnotations } from '../connections/connector-policy.js'
 
 export interface MCPTool {
     name: string
@@ -25,6 +27,8 @@ export interface MCPTool {
         [key: string]: unknown
     }
     outputSchema?: Record<string, unknown>
+    /** MCP tool annotations (hints from the server; mapped by connections/connector-policy.ts). */
+    annotations?: ToolAnnotations
 }
 
 export interface MCPResource {
@@ -55,6 +59,12 @@ export interface MCPServerConfig {
     deniedTools?: string[]
     requireApproval?: boolean
     reconnect?: { maxRetries?: number; initialDelayMs?: number; maxDelayMs?: number }
+    /** 2.85 Paket A: connector manifest binding → every tool goes through the action policy. */
+    connector?: ConnectorBinding
+    /** 2.85: plain HTTP only to a private LAN/Tailnet address (local connectors such as Home Assistant). */
+    allowLanHttp?: boolean
+    /** 2.85: custom fetch (e.g. Home Assistant login: fresh bearer per request). Code only, never from config files. */
+    fetch?: FetchLike
 }
 
 export interface MCPServer {
@@ -78,6 +88,8 @@ interface Session {
     reconnectAttempts: number
     reconnectTimer?: ReturnType<typeof setTimeout>
     closing: boolean
+    /** Connector servers: tools whose calls ask the owner (L2), and refused ones (L3) with the reason. */
+    policy?: { ask: Set<string>; never: Map<string, string> }
 }
 
 function safeName(value: string): string {
@@ -102,11 +114,23 @@ function redactError(error: unknown): string {
         .slice(0, 500)
 }
 
+/** Private LAN/Tailnet hosts (RFC 1918, 100.64/10, link-local names). */
+export function isPrivateLanHost(hostname: string): boolean {
+    const host = hostname.replace(/^\[|\]$/g, '').toLowerCase()
+    if (/\.local$/.test(host) && /^[a-z0-9.-]{1,100}$/.test(host)) return true
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+    if (!m) return false
+    const [a, b] = [Number(m[1]), Number(m[2])]
+    if ([a, b, Number(m[3]), Number(m[4])].some(part => part > 255)) return false
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+}
+
 function assertHttpTarget(config: MCPServerConfig): URL {
     if (!config.url) throw new Error(`MCP server ${config.name}: url is required`)
     const url = new URL(config.url)
     const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
-    if (url.protocol !== 'https:' && !(config.allowInsecureHttp && local)) {
+    const lan = Boolean(config.allowLanHttp && isPrivateLanHost(url.hostname))
+    if (url.protocol !== 'https:' && !(config.allowInsecureHttp && local) && !lan) {
         throw new Error(`MCP server ${config.name}: HTTP transport must use HTTPS (or explicitly allow loopback HTTP)`)
     }
     return url
@@ -197,6 +221,7 @@ export class MCPClient extends EventEmitter {
         const headers = Object.fromEntries(Object.entries(config.headers || {}).map(([key, value]) => [key, resolveEnv(value)]))
         return new StreamableHTTPClientTransport(assertHttpTarget(config), {
             authProvider: this.oauthProviders.get(config.name),
+            ...(config.fetch ? { fetch: config.fetch } : {}),
             requestInit: Object.keys(headers).length ? { headers } : undefined,
             reconnectionOptions: {
                 maxRetries: config.reconnect?.maxRetries ?? 4,
@@ -214,7 +239,21 @@ export class MCPClient extends EventEmitter {
             this.hasCapability(session, 'resources') ? this.collectPages(cursor => session.client.listResources(cursor ? { cursor } : undefined), 'resources') : Promise.resolve([]),
             this.hasCapability(session, 'prompts') ? this.collectPages(cursor => session.client.listPrompts(cursor ? { cursor } : undefined), 'prompts') : Promise.resolve([]),
         ])
-        session.state.tools = (tools as MCPTool[]).filter(tool => permitted(session.config, tool.name))
+        let visible = (tools as MCPTool[]).filter(tool => permitted(session.config, tool.name))
+        if (session.config.connector) {
+            // 2.85: one action policy for every connector tool; hidden tools are never advertised.
+            const { connectorToolVerdict } = await import('../connections/connector-policy.js')
+            const policy = { ask: new Set<string>(), never: new Map<string, string>() }
+            visible = visible.filter(tool => {
+                const result = connectorToolVerdict(tool, session.config.connector!)
+                if (!result.sichtbar) return false
+                if (result.verdict.level === 'L3') policy.never.set(tool.name, result.verdict.reason)
+                else if (result.verdict.decision !== 'auto') policy.ask.add(tool.name)
+                return true
+            })
+            session.policy = policy
+        }
+        session.state.tools = visible
         session.state.resources = resources as MCPResource[]
         session.state.prompts = prompts as MCPPrompt[]
         session.state.connected = true
@@ -247,7 +286,14 @@ export class MCPClient extends EventEmitter {
         if (!permitted(session.config, toolName)) throw new Error(`MCP tool denied by server policy: ${serverName}/${toolName}`)
         if (!session.state.tools.some(tool => tool.name === toolName)) throw new Error(`MCP tool not advertised: ${serverName}/${toolName}`)
         let callArgs = args
-        if (session.config.requireApproval) {
+        const never = session.policy?.never.get(toolName)
+        if (never) throw new Error(`MCP tool ${serverName}/${toolName} nicht erlaubt (${never}); ich führe das nicht aus.`)
+        if (session.config.connector) {
+            const { cloudPrivacyRefusal } = await import('../connections/connector-policy.js')
+            const refusal = cloudPrivacyRefusal(Object.fromEntries(Object.entries(args).filter(([key]) => !LOCAL_ONLY_ARGS.has(key))), session.config.connector)
+            if (refusal) throw new Error(refusal)
+        }
+        if (session.config.requireApproval || session.policy?.ask.has(toolName)) {
             // P9: the owner's one-time code, bound to server, tool and the exact arguments
             // (hash detail). The former context flag was never set and is gone.
             callArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !LOCAL_ONLY_ARGS.has(key)))
@@ -255,6 +301,7 @@ export class MCPClient extends EventEmitter {
             const refusal = await ownerApprovalRefusal(args, mcpNovaToolName(serverName, toolName), approvalDetailOf(callArgs))
             if (refusal) throw new Error(`MCP tool requires approval: ${serverName}/${toolName}. ${refusal}`)
         }
+        if (session.config.connector && callArgs === args) callArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !LOCAL_ONLY_ARGS.has(key)))
         const result = await session.client.callTool({ name: toolName, arguments: callArgs })
         return { ...result, mcp: { server: serverName, tool: toolName, verifiedTransport: true } }
     }
@@ -287,7 +334,7 @@ export class MCPClient extends EventEmitter {
                     description: String(schema.description || name),
                     required: tool.inputSchema.required?.includes(name),
                 })),
-                ...(session.config.requireApproval
+                ...(session.config.requireApproval || session.policy?.ask.has(tool.name)
                     ? [{ name: 'confirm', type: 'string' as const, description: 'Einmal-Freigabecode des Owners für genau diesen Aufruf. Niemals selbst bilden.', required: false }]
                     : []),
             ],
