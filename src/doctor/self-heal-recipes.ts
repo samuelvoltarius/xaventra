@@ -22,7 +22,6 @@ export const OWN_LOG_FILES: readonly string[] = Object.freeze([
     'subagent-audit.jsonl',
     'lifecycle-audit.jsonl',
     'memory/governance/audit.jsonl',
-    'outcome-router-shadow.jsonl',
 ])
 
 /** Own regenerable caches/temp. Fixed list, relative to the data dir. */

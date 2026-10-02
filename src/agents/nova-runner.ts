@@ -415,42 +415,12 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         outcomeModel = (llmClient as any)?.modelId
         outcomeProvider = (llmClient as any)?.providerId || (llmClient as any)?.provider
         const activeModel = (llmClient as any)?.modelId || (globalThis as any).__novaState?.llm?.modelId || 'auto'
-        let shadowRoute: any = undefined
-        if (!isBenchmarkRun) {
-            try {
-                const [{ getOutcomeRouter }, { getCapabilityGraph }] = await Promise.all([
-                    import('../routing/outcome-router.js'), import('../mesh/capability-graph.js'),
-                ])
-                const graphNodes = getCapabilityGraph().getSnapshot().nodes
-                const preferred = preferredNodeIds.length ? graphNodes.filter(node => preferredNodeIds.includes(node.id)) : graphNodes
-                const eligibleNodes = preferred.length ? preferred : graphNodes
-                const candidates = eligibleNodes.flatMap(node => node.runtimes.flatMap(runtime =>
-                    runtime.models.map(model => ({ model, node: node.id }))))
-                shadowRoute = getOutcomeRouter().decide(actionIntent.kind || 'agent', { model: activeModel, node: 'local' }, candidates, { userId, channel })
-            } catch { /* outcome router is telemetry-only in shadow mode */ }
-        }
-        // Active routing is opt-in and remains sample-gated inside OutcomeRouter.
-        // It can select a model only after enough independently validated runs;
-        // Codex/OAuth routes keep their explicit user×node authority.
-        if (!codexRoute && shadowRoute?.mode === 'active' && shadowRoute.activationEligible && shadowRoute.changed) {
-            try {
-                const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
-                llmClient = await createNovaLLMClient({ model: shadowRoute.selected.model, role: 'chat' })
-                outcomeModel = (llmClient as any)?.modelId
-                outcomeProvider = (llmClient as any)?.providerId
-            } catch (error) {
-                console.warn(`[OutcomeRouter] Active recommendation could not be applied; baseline retained: ${error}`)
-            }
-        }
         outcomeLedger.recordRoute(kernel.contract.id, {
             backend: codexRoute || 'nova',
             model: activeModel,
             taskType: actionIntent.kind || 'agent',
             reason: codexRoute ? `native Nova runner via ${codexRoute}` : 'native Nova runner',
-            shadowRecommendation: shadowRoute?.recommended,
-            shadowConfidence: shadowRoute?.confidence,
-            routerMode: shadowRoute?.mode || 'shadow',
-        } as any)
+        })
 
         // === PRIMARY MODEL: Always use what's configured in xaventra.config.json ===
         // No auto-routing based on task type. User sets the model, Nova uses it.

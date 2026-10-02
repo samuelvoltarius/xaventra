@@ -20,7 +20,9 @@ const measure = (model: string, node: string | undefined, taskClass: string, suc
     Array.from({ length: samples }, (_, index) => ({
         runId: `${model}-${taskClass}-${index}`, status: index < successes ? 'completed' : 'failed', model, node,
         startedAt: '2026-10-01T10:00:00.000Z', updatedAt: new Date(Date.parse('2026-10-01T10:00:00.000Z') + ms).toISOString(),
-        validation: index < successes ? { success: true, validator: 'nova-execution-kernel' } : undefined,
+        // 2.84.0: only real owner runs judged by the Execution Kernel are measured.
+        userId: 'owner@example.com', channel: 'telegram', contract: { id: `${model}-${taskClass}-${index}` },
+        validation: { success: index < successes, validator: 'nova-execution-kernel', awaitingApproval: false },
         events: [{ type: 'route.selected', payload: { modelClass: taskClass } }],
     }))
 

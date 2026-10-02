@@ -23,8 +23,6 @@ import {
     type NativeTakeoverAuthority,
 } from '../core/native-tool-takeover.js'
 import { evidenceHash } from '../core/tool-evidence-binding.js'
-import { getOutcomeRouter } from '../routing/outcome-router.js'
-import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { NovaModelProvider } from './nova-model-provider.js'
 import { selectContractTools } from './tool-contract-selection.js'
@@ -247,15 +245,11 @@ export class OpenAIAgentsBackend implements AgentBackend {
             })
         }
         const baseline = { model: input.model || 'auto', node: 'local' }
-        const graphCandidates = getCapabilityGraph().getSnapshot().nodes.flatMap(node => node.runtimes.flatMap(runtime =>
-            runtime.models.map(model => ({ model, node: node.id }))))
-        const shadow = getOutcomeRouter().decide(kernel.intent.kind || 'agent', baseline, graphCandidates, { userId: input.userId, channel: input.channel })
         ledger.recordRoute(input.contract.id, {
             backend: this.name, model: baseline.model, node: baseline.node,
             taskType: kernel.intent.kind || 'agent',
-            reason: 'configured Nova agent backend', shadowRecommendation: shadow.recommended,
-            shadowConfidence: shadow.confidence, routerMode: shadow.mode,
-        } as any)
+            reason: 'configured Nova agent backend',
+        })
 
         const persistProgress = (idempotencyKey: string) => {
             const previous = ledger.loadCheckpoint(input.contract.id)

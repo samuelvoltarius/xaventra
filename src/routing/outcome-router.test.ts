@@ -30,34 +30,15 @@ describe('OutcomeRouter', () => {
         expect(status.cells).toEqual([])
     })
 
-    it('evaluates alternatives without changing the selected route in shadow mode', () => {
-        const { router } = fixture('shadow')
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
-        expect(decision.mode).toBe('shadow')
-        expect(decision.selected.model).toBe('configured')
-        expect(decision.recommended.model).toBe('candidate')
-        expect(decision.activationEligible).toBe(false)
-    })
-
-    it('keeps active routing closed without a principal-scoped sample set', () => {
-        const { router } = fixture('active')
-        for (let index = 0; index < 20; index++) record(router, index)
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }])
-        expect(decision.selected.model).toBe('configured')
-        expect(decision.activationEligible).toBe(false)
-        expect(decision.reasons.join(' ')).toContain('activation gate closed')
-    })
-
-    it('persists and activates only principal-scoped independently evidenced samples', () => {
+    it('keeps training eligibility principal-scoped and only for independently evidenced samples (no routing: 2.84.0)', () => {
         const { dir, ledger, router } = fixture('active')
         for (let index = 0; index < 20; index++) expect(record(router, index)).toBe(true)
         const restarted = new OutcomeRouter(ledger, join(dir, 'decisions-2.jsonl'), 'active', join(dir, 'samples.json'))
-        const alice = restarted.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
-        const bob = restarted.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'bob', channel: 'telegram' })
-        expect(alice.activationEligible).toBe(true)
-        expect(alice.selected.model).toBe('candidate')
-        expect(bob.activationEligible).toBe(false)
-        expect(bob.selected.model).toBe('configured')
+        expect(restarted.getTrainingStatus('alice').cells[0]).toMatchObject({ samples: 20, activationEligible: true })
+        expect(restarted.getTrainingStatus('bob').cells).toEqual([])
+        // Aggregate view is observability only and never eligible; the mode stays shadow.
+        expect(restarted.getTrainingStatus().cells[0]?.activationEligible).toBe(false)
+        expect(restarted.getTrainingStatus('alice').mode).toBe('shadow')
     })
 
     it('rejects benchmark, synthetic and model-response-only samples', () => {
@@ -78,9 +59,7 @@ describe('OutcomeRouter', () => {
             ledger.recordValidation(runId, { validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(), success: true, awaitingApproval: false, criteria: [], violations: [] })
             ledger.completeValidated(runId, { success: true, durationMs: 1 })
         }
-        const decision = router.decide('coding', { model: 'configured', node: 'main' }, [{ model: 'candidate', node: 'spark', baseScore: 100 }], { userId: 'alice', channel: 'telegram' })
-        expect(decision.activationEligible).toBe(false)
-        expect(decision.selected.model).toBe('configured')
+        expect(router.getTrainingStatus('alice').cells).toEqual([])
     })
 
     it('tombstones a rejected sample without affecting another principal', () => {

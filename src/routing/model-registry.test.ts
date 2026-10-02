@@ -66,6 +66,7 @@ describe('model registry (Phase 6d)', () => {
         const runs = [1, 2, 3].map(index => ({
             runId: `r${index}`, status: 'completed', model: 'llava-test', node: NODE_B,
             startedAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:02.000Z',
+            userId: 'owner@example.com', channel: 'telegram', contract: { id: `r${index}` },
             validation: { success: true, validator: 'nova-execution-kernel' },
             events: [{ type: 'route.selected', payload: { modelClass: 'vision' } }],
         }))
@@ -79,7 +80,8 @@ describe('model registry (Phase 6d)', () => {
         const mk = (id: string, status: string, ok: boolean, ms: number, extra: Record<string, unknown> = {}) => ({
             runId: id, status, model: 'qwen-test', node: NODE_A,
             startedAt: '2026-10-01T10:00:00.000Z', updatedAt: new Date(Date.parse('2026-10-01T10:00:00.000Z') + ms).toISOString(),
-            validation: status === 'completed' ? { success: ok, validator: 'nova-execution-kernel' } : undefined,
+            userId: 'owner@example.com', channel: 'telegram', contract: { id },
+            validation: status === 'running' ? undefined : { success: ok, validator: 'nova-execution-kernel' },
             events: [{ type: 'route.selected', payload: { modelClass: 'code' } }], ...extra,
         })
         const cells = measurementsFromLedgerRuns([
