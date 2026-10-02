@@ -454,3 +454,10 @@ html.novaos-standard .message-content,
 html.novaos-standard textarea,
 html.novaos-standard input { font-size: 17px !important; line-height: 1.65; }
 html.novaos-standard button { font-size: 16px !important; }
+
+/* ── Erster Start (onboarding.js) ────────────────────────── */
+.onboarding-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--text-2); }
+.onboarding-pair { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.onboarding-pair > div { flex: 1 1 240px; min-width: 0; }
+.onboarding-pair img { width: 200px; height: 200px; border-radius: var(--radius-sm); background: #fff; padding: 6px; }
+.section-head h2 .badge { margin-right: 2px; }
