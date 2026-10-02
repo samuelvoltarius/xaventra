@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from '
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { fetchModelList } from './model-list-cache.js'
 import { getDefaultModel as centralDefault } from '../core/model-defaults.js'
 
 
@@ -117,9 +118,9 @@ async function discoverCloudModels(): Promise<DiscoveredModel[]> {
         const openaiKey = providers.openai?.apiKey
         if (openaiKey && providers.openai?.enabled !== false) {
             try {
-                const resp = await fetch('https://api.openai.com/v1/models', {
+                const resp = await fetchModelList('https://api.openai.com/v1/models', {
                     headers: { 'Authorization': `Bearer ${openaiKey}` },
-                    signal: AbortSignal.timeout(5000),
+                    timeoutMs: 5000,
                 })
                 if (resp.ok) {
                     const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -145,9 +146,9 @@ async function discoverCloudModels(): Promise<DiscoveredModel[]> {
         const anthropicKey = providers.anthropic?.apiKey
         if (anthropicKey && providers.anthropic?.enabled !== false) {
             try {
-                const resp = await fetch('https://api.anthropic.com/v1/models', {
+                const resp = await fetchModelList('https://api.anthropic.com/v1/models', {
                     headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-                    signal: AbortSignal.timeout(5000),
+                    timeoutMs: 5000,
                 })
                 if (resp.ok) {
                     const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -320,9 +321,9 @@ async function discoverMeshModels(): Promise<DiscoveredModel[]> {
         }>
         if (!Array.isArray(hosts) || hosts.length === 0) return models
 
-        const { exec } = await import('node:child_process')
-        const { promisify } = await import('node:util')
-        const execAsync = promisify(exec)
+        // The one SSH runner (mesh/node-ssh.ts, 2.82.0): validated target, no local shell,
+        // shared reachability with L21/AIScan/NodeIntelligence.
+        const { sshNodeRun } = await import('../mesh/node-ssh.js')
 
         for (const host of hosts) {
             const hostName = host.hostname || host.name || host.host
@@ -331,10 +332,9 @@ async function discoverMeshModels(): Promise<DiscoveredModel[]> {
             if (ip === '127.0.0.1' || ip === 'localhost') continue
 
             try {
-                const { stdout } = await execAsync(
-                    `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 ${user}@${ip} "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'"`,
-                    { timeout: 15000 }
-                )
+                const outcome = await sshNodeRun(`${user}@${ip}`, "curl -s http://localhost:11434/api/tags 2>/dev/null || echo '{}'", { timeoutMs: 15000, connectTimeoutS: 5, cacheMs: 5 * 60_000 })
+                if (!outcome.ok) throw new Error(outcome.error)
+                const stdout = outcome.stdout
                 const data = JSON.parse(stdout.trim()) as { models?: Array<{ name: string }> }
                 if (data.models && data.models.length > 0) {
                     for (const m of data.models) {

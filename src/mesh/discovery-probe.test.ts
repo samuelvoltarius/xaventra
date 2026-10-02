@@ -26,9 +26,27 @@ describe('polite service discovery', () => {
         expect(readFileSync(path, 'utf8')).not.toContain('private shop page')
         now += 5 * 60_000
         expect(await restarted.probe(endpoint)).toBe('true')
+        // 2.82.0: within 30 s the answer is shared (one request for every module) ...
+        expect(await restarted.probe(endpoint)).toBe('true')
+        expect(request).toHaveBeenCalledTimes(2)
+        // ... afterwards the port is asked again.
+        now += 31_000
         expect(await restarted.probe(endpoint)).toBe('true')
         expect(request).toHaveBeenCalledTimes(3)
         expect(JSON.parse(readFileSync(path, 'utf8')).entries).toEqual({})
+    })
+
+    it('2.82.0: the shared answer cache never bypasses an exclusion and never caches the exclusion itself', async () => {
+        const request = vi.fn().mockResolvedValue(new Response('true'))
+        vi.stubGlobal('fetch', request)
+        const client = new DiscoveryProbeClient(file())
+        vi.stubEnv('XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS', 'http://192.0.2.9:8020')
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBeNull()
+        vi.unstubAllEnvs()
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBe('true')
+        vi.stubEnv('XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS', 'http://192.0.2.9:8020')
+        expect(await client.probe('http://192.0.2.9:8020/api/ready')).toBeNull()
+        expect(request).toHaveBeenCalledTimes(1)
     })
 
     it('excludes exact origins including loopback aliases but not other nodes', async () => {

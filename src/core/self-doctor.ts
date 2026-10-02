@@ -443,7 +443,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
                 category: 'mesh',
                 severity: 'warning',
                 source: 'failover-readiness',
-                recommendation: 'Restore the failed readiness gates. Nova remains fail-closed and will not start an unsafe second Main.',
+                recommendation: 'Restore the failed readiness gates. Xaventra remains fail-closed and will not start an unsafe second Main.',
                 evidence: readiness as unknown as Record<string, unknown>,
             }))
         } else {
@@ -505,7 +505,7 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
                 generated.push(upsertFinding(findings, {
                     id: noOnlineModelsId,
                     title: 'No LLM endpoints responding',
-                    detail: 'Capability probe found zero reachable model endpoints. Nova may be unable to process requests.',
+                    detail: 'Capability probe found zero reachable model endpoints. Xaventra may be unable to process requests.',
                     category: 'health',
                     severity: 'critical',
                     source: 'capability-probe',
@@ -570,11 +570,11 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
             generated.push(upsertFinding(findings, {
                 id: stableId(['msg-queue-backlog']),
                 title: 'Message queue backlog is growing',
-                detail: `${queueStats.pending} messages are pending/processing — Nova may be overloaded or stuck.`,
+                detail: `${queueStats.pending} messages are pending/processing — Xaventra may be overloaded or stuck.`,
                 category: 'health',
                 severity: 'warning',
                 source: 'message-queue',
-                recommendation: 'Restart Nova daemon if messages are not draining. Check LLM response latency.',
+                recommendation: 'Restart Xaventra daemon if messages are not draining. Check LLM response latency.',
                 evidence: { queueStats },
             }))
         }
@@ -691,7 +691,7 @@ export interface DoctorInlineStatus {
 export function formatDoctorSummary(result: Omit<DoctorRunResult, 'summary'>, inline: DoctorInlineStatus = {}): string {
     const icon = result.healthy ? '✅' : '⚠️'
     const lines = [
-        `## ${icon} Nova Self-Doctor`,
+        `## ${icon} Xaventra Self-Doctor`,
         `Status: **${result.healthy ? 'Healthy' : 'Attention needed'}**`,
         `Findings: ${result.open} open (${result.generated} updated this run)`,
     ]

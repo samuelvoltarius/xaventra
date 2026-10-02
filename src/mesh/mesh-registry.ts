@@ -18,6 +18,8 @@ import { randomUUID } from 'crypto'
 import { hostname, networkInterfaces, uptime } from 'os'
 import * as nodeOs from 'node:os'
 import { execSync } from 'child_process'
+import { locateProgram } from '../startup/environment-scanner.js'
+import { cachedNvidiaQuery, nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 import {
     isActiveNode,
     isNodeVisibleByDefault,
@@ -397,12 +399,11 @@ function sendHeartbeat(): void {
             ram_used_percent = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100)
             ram_free_gb = Math.round((os.freemem() / (1024 ** 3)) * 10) / 10
         }
-        try {
-            const free = execSync('nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits', {
-                encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 1500,
-            }).trim().split(/\r?\n/)[0]
-            gpu_vram_free_mb = Number.parseInt(free, 10) || undefined
-        } catch { /* unified-memory GPUs may not expose a dedicated VRAM counter */ }
+        // The one GPU source (doctor/gpu-runtime.ts): the last value at once, refreshed
+        // asynchronously in the background — no synchronous nvidia-smi every 60 s (2.82.0).
+        // Unified-memory GPUs may not expose a dedicated VRAM counter ("[N/A]" → undefined).
+        const free = cachedNvidiaQuery(['memory.free'])?.[0]?.[0]
+        gpu_vram_free_mb = free ? Number.parseInt(free, 10) || undefined : undefined
     } catch { /* ignore sensor read errors */ }
 
     let updatedHardware: NodeHardware | undefined
@@ -1489,12 +1490,11 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     let gpuName: string | undefined
     let gpuVramMb: number | undefined
     try {
-        const out = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', {
-            encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000
-        }).trim()
-        const parts = out.split(',')
-        gpuName = parts[0]?.trim()
-        gpuVramMb = parseInt(parts[1]?.trim()) || undefined
+        // The one GPU source (doctor/gpu-runtime.ts), read once per process.
+        const nvidia = nvidiaStaticInfo()
+        if (!nvidia) throw new Error('no NVIDIA GPU')
+        gpuName = nvidia.name
+        gpuVramMb = nvidia.memoryTotalMb ?? undefined
         caps.push('gpu', 'cuda', 'nvidia')
         if (gpuVramMb && gpuVramMb >= 8000) caps.push('gpu-inference')
     } catch {
@@ -1526,6 +1526,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     let ollamaModels: string[] = []
     let embeddingModel: string | undefined
     try {
+        if (!locateProgram('ollama')) throw new Error('ollama not installed')
         ollamaVersion = execSync('ollama --version', {
             encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000
         }).trim().replace(/ollama version /i, '')
@@ -1560,6 +1561,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
 
     let dockerVersion: string | undefined
     try {
+        if (!locateProgram('docker')) throw new Error('docker not installed')
         dockerVersion = execSync('docker --version', {
             encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000
         }).trim().match(/Docker version ([\d.]+)/)?.[1]
@@ -1573,24 +1575,22 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
         })
         cudaVersion = nvcc.match(/release ([\d.]+)/)?.[1]
     } catch {
-        // Try nvidia-smi for CUDA version
-        try {
-            const smi = execSync('nvidia-smi', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 })
-            cudaVersion = smi.match(/CUDA Version: ([\d.]+)/)?.[1]
-        } catch { }
+        // CUDA version from the one GPU source (read once per process)
+        cudaVersion = nvidiaStaticInfo()?.cudaVersion ?? undefined
     }
 
+    // Presence checks: the one program search (EnvScanner, 2.82.0) instead of own spawns.
     let hasFFmpeg = false
-    try { execSync('ffmpeg -version', { stdio: 'pipe', timeout: 3000 }); hasFFmpeg = true; caps.push('ffmpeg', 'media') } catch { }
+    if (locateProgram('ffmpeg')) { hasFFmpeg = true; caps.push('ffmpeg', 'media') }
 
     let hasGit = false
-    try { execSync('git --version', { stdio: 'pipe', timeout: 3000 }); hasGit = true; caps.push('git') } catch { }
+    if (locateProgram('git')) { hasGit = true; caps.push('git') }
 
     // ADB (Android Debug Bridge — for TV/Beamer control)
-    try { execSync('adb version', { stdio: 'pipe', timeout: 3000 }); caps.push('adb') } catch { }
+    if (locateProgram('adb')) caps.push('adb')
 
     // SSH client
-    try { execSync('ssh -V 2>&1', { stdio: 'pipe', timeout: 3000 }); caps.push('ssh') } catch { }
+    if (locateProgram('ssh')) caps.push('ssh')
 
     // Internet connectivity (quick DNS check)
     try { execSync(process.platform === 'win32' ? 'ping -n 1 -w 1000 8.8.8.8' : 'ping -c 1 -W 1 8.8.8.8', { stdio: 'pipe', timeout: 3000 }); caps.push('internet') } catch { }
@@ -1610,7 +1610,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     if (!caps.includes('tts')) {
         // Check binaries
         for (const bin of ttsBinaries) {
-            try { execSync(`which ${bin} 2>/dev/null`, { stdio: 'pipe', timeout: 2000 }); caps.push('tts'); break } catch { }
+            if (locateProgram(bin)) { caps.push('tts'); break }
         }
         // Check Python imports
         if (!caps.includes('tts') && pythonVersion) {
@@ -1622,7 +1622,7 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
 
     if (!caps.includes('stt')) {
         for (const bin of sttBinaries) {
-            try { execSync(`which ${bin} 2>/dev/null`, { stdio: 'pipe', timeout: 2000 }); caps.push('stt'); break } catch { }
+            if (locateProgram(bin)) { caps.push('stt'); break }
         }
         if (!caps.includes('stt') && pythonVersion) {
             for (const mod of sttImports) {

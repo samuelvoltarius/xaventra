@@ -617,8 +617,8 @@ export class TelegramAdapter implements ChannelAdapter {
                     const principalId = resolvePrincipalId((globalThis as any).__novaState?.config, 'telegram', userId || String(chatId))
                     const codex = await getCodexDisplayModel(principalId)
                     const statusText = codex.authenticated
-                        ? `🔐 *OpenAI Codex (OAuth)*\n\n✅ Verbunden für diesen Nova-User\n📍 Modell: \`${codex.model}\`\n🖥️ Node: \`${codex.nodeId}\`\n⚡ Wird automatisch bevorzugt\n\nBei einem Fehler fällt Nova auf das lokale vLLM zurück.`
-                        : `🔐 *OpenAI Codex (OAuth)*\n\n⚪ Nicht für diesen Nova-User verbunden.\nAnmeldung: /codex login`
+                        ? `🔐 *OpenAI Codex (OAuth)*\n\n✅ Verbunden für diesen Xaventra-User\n📍 Modell: \`${codex.model}\`\n🖥️ Node: \`${codex.nodeId}\`\n⚡ Wird automatisch bevorzugt\n\nBei einem Fehler fällt Nova auf das lokale vLLM zurück.`
+                        : `🔐 *OpenAI Codex (OAuth)*\n\n⚪ Nicht für diesen Xaventra-User verbunden.\nAnmeldung: /codex login`
                     await this.bot.editMessageText(statusText, {
                         chat_id: chatId,
                         message_id: query.message.message_id,
@@ -719,7 +719,7 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 const state = (globalThis as any).__novaState
                 if (!state) {
-                    await this.bot.answerCallbackQuery(query.id, { text: '❌ Nova nicht initialisiert' })
+                    await this.bot.answerCallbackQuery(query.id, { text: '❌ Xaventra nicht initialisiert' })
                     return
                 }
 
@@ -750,7 +750,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
                 if (cmd === 'helptext') {
                     // Full text help (no buttons)
-                    const helpText = `✨ *Nova Befehle*
+                    const helpText = `✨ *Xaventra Befehle*
 
 *System:* /status /layers /model /models /strict /persona /info
 *Reasoning:* /think /reasoning /verbose /debug
@@ -1419,7 +1419,7 @@ export class TelegramAdapter implements ChannelAdapter {
     /** Send the single request-scoped progress bubble without notifying the user. */
     async sendProgress(chatId: string, text: string): Promise<number | null> {
         if (!this.bot) return null
-        const clean = this.sanitizeForTelegram(formatTelegramMessage(text)) || '⏳ Nova arbeitet…'
+        const clean = this.sanitizeForTelegram(formatTelegramMessage(text)) || '⏳ Xaventra arbeitet…'
         try {
             const sent = await this.bot.sendMessage(chatId, clean, {
                 parse_mode: 'Markdown',

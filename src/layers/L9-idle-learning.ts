@@ -150,6 +150,14 @@ class IdleLearningManager {
             return
         }
 
+        // One idle learner (2.82.0): also take one topic from the proactive-learning
+        // queue (filled from errors and tool runs; the removed L15 learner drained it).
+        this.isLearning = true
+        try {
+            const { learnDuringIdle } = await import('../intelligence/proactive-learning.js')
+            await learnDuringIdle()
+        } catch { /* proactive learning not available */ } finally { this.isLearning = false }
+
         const topics = this.getTopicsToLearn()
         if (topics.length === 0) {
             console.log('[L9 IdleLearning] No new topics to learn')

@@ -61,7 +61,7 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
         aliases: ['?', 'hilfe'],
         description: 'Shows available commands',
         handler: async () => {
-            const lines = ['📚 **Nova Commands**\n']
+            const lines = ['📚 **Xaventra Commands**\n']
             for (const cmd of BUILTIN_COMMANDS) {
                 lines.push(`• **/${cmd.name}** - ${cmd.description}`)
             }
@@ -71,12 +71,12 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
     {
         name: 'status',
         aliases: ['ping', 'health'],
-        description: 'Shows Nova status',
+        description: 'Shows Xaventra status',
         handler: async () => {
             const uptime = Math.floor(process.uptime())
             const memory = Math.floor(process.memoryUsage().heapUsed / 1024 / 1024)
             const { model } = getCurrentModelInfo()
-            return `✅ **Nova Status**\n• Uptime: ${uptime}s\n• Memory: ${memory}MB\n• Model: ${model}`
+            return `✅ **Xaventra Status**\n• Uptime: ${uptime}s\n• Memory: ${memory}MB\n• Model: ${model}`
         }
     },
     {
@@ -132,7 +132,7 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
     {
         name: 'doctor',
         aliases: ['diagnose', 'debug'],
-        description: 'Diagnose an error with Nova Doctor | /doctor status | /doctor <error>',
+        description: 'Diagnose an error with Xaventra Doctor | /doctor status | /doctor <error>',
         handler: async (args) => {
             try {
                 const { getDoctorInfo } = await import('../llm/llama-engine.js')
@@ -144,14 +144,14 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
                         ? info.models.map(m => `  • ${m}`).join('\n')
                         : '  (keine GGUFs in models/)'
                     return [
-                        '🏥 **Nova Doctor Status**',
+                        '🏥 **Xaventra Doctor Status**',
                         '',
                         `🖥️ RAM: ${info.ramGB} GB | CPU Threads: ${info.cpuThreads}`,
                         `🤖 Aktives Modell: ${info.modelName ?? '—'}`,
                         `📦 Verfügbare Modelle:\n${modelList}`,
                         '',
                         info.available
-                            ? '✅ Nova Doctor ist online'
+                            ? '✅ Xaventra Doctor ist online'
                             : '⚠️ Kein GGUF gefunden — lege Modelle in `models/` ab',
                     ].join('\n')
                 }
@@ -160,7 +160,7 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
                 const errorText = args.join(' ')
                 if (!errorText) {
                     return [
-                        '🏥 **Nova Doctor**',
+                        '🏥 **Xaventra Doctor**',
                         '',
                         'Nutzung:',
                         '  `/doctor <fehlermeldung>` — Fehler diagnostizieren',
@@ -176,7 +176,7 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
                 const confidence = { high: '🟢', medium: '🟡', low: '🔴' }[result.confidence] ?? '❓'
                 const source = result.fromModel ? `🤖 ${info.modelName}` : '📐 Regelbasiert'
                 return [
-                    `🏥 **Nova Doctor** ${confidence} (${source})`,
+                    `🏥 **Xaventra Doctor** ${confidence} (${source})`,
                     '',
                     `**Diagnose:** ${result.diagnosis}`,
                     '',
@@ -185,7 +185,7 @@ export const BUILTIN_COMMANDS: NovaCommand[] = [
                     result.autoApply ? '✅ Sicher für automatische Anwendung' : '⚠️ Bitte manuell prüfen',
                 ].join('\n')
             } catch (e: any) {
-                return `❌ Nova Doctor Fehler: ${e.message}`
+                return `❌ Xaventra Doctor Fehler: ${e.message}`
             }
         }
     },

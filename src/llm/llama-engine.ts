@@ -19,6 +19,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { cpus, totalmem } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import { nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 import { MODEL_REGISTRY, getDoctorModelsDir, getDoctorConfig, selectInstalledModel, verifyDoctorArtifact, isArtifactPresent, type ModelInfo } from './doctor-artifacts.js'
 import type { GbnfJsonSchema } from 'node-llama-cpp'
 
@@ -81,8 +82,9 @@ function detectGpuIdentity(): { gpuVendor: DoctorGpuVendor; gpuName: string | nu
         const output = commandOutput('system_profiler', ['SPDisplaysDataType'])
         return { gpuVendor: 'apple', gpuName: output.match(/Chipset Model:\s*(.+)/)?.[1]?.trim() || 'Apple GPU' }
     }
-    const nvidia = commandOutput('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'])
-    if (nvidia) return { gpuVendor: 'nvidia', gpuName: nvidia.split(/\r?\n/)[0].trim() }
+    // The one GPU source (doctor/nvidia-smi.ts via gpu-runtime), read once per process.
+    const nvidia = nvidiaStaticInfo()
+    if (nvidia) return { gpuVendor: 'nvidia', gpuName: nvidia.name }
 
     const display = process.platform === 'win32'
         ? commandOutput('wmic', ['path', 'win32_VideoController', 'get', 'Name', '/value'])

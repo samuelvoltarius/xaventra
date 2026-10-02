@@ -1718,7 +1718,7 @@ app.post('/api/mesh/login-callback', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Auth tokens saved! Nova kann jetzt Cloud-Models nutzen. Restart empfohlen.',
+            message: 'Auth tokens saved! Xaventra kann jetzt Cloud-Models nutzen. Restart empfohlen.',
         })
     } catch (err) {
         res.json({ success: false, error: String(err) })

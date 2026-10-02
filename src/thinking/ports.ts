@@ -24,7 +24,6 @@
  *   `/metrics` Warteschlange). Nicht messbar = ausgelastet (fail closed):
  *   STUFENPLAN Grenze 6, nie schwere Last neben vLLM (OOM 13.09.).
  */
-import { execFile } from 'node:child_process'
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
@@ -205,16 +204,12 @@ export function judgeLoad(sample: LoadSample, settings: Pick<ThinkingSettings['l
 
 const validUtil = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100
 
-function nvidiaSmiUtil(timeoutMs: number): Promise<number | null> {
-    return new Promise(resolve => {
-        try {
-            execFile('nvidia-smi', ['--query-gpu=utilization.gpu', '--format=csv,noheader,nounits'], { shell: false, timeout: timeoutMs, windowsHide: true, encoding: 'utf8' }, (error, stdout) => {
-                if (error) return resolve(null)
-                const values = String(stdout || '').split(/\r?\n/).map(line => Number(line.trim())).filter(validUtil)
-                resolve(values.length ? Math.max(...values) : null)
-            })
-        } catch { resolve(null) }
-    })
+/** Through the one GPU source (doctor/gpu-runtime.ts, async, shared with every other reader). */
+async function nvidiaSmiUtil(timeoutMs: number): Promise<number | null> {
+    const { queryNvidia } = await import('../doctor/nvidia-smi.js')
+    const rows = await queryNvidia(['utilization.gpu'], { maxAgeMs: 1_000, timeoutMs }).catch(() => null)
+    const values = (rows ?? []).map(row => Number(row[0])).filter(validUtil)
+    return values.length ? Math.max(...values) : null
 }
 
 /**

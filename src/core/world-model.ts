@@ -210,7 +210,7 @@ export function formatNovaWorldModel(model: NovaWorldModel): string {
         ? model.nodes.value.map(node => `- ${node.id}${node.id === main?.nodeId ? ' (Main)' : ''}: ${node.status}, v${node.version}, ${node.tools} Tools${node.gpu ? `, GPU ${node.gpu}` : ''}${node.runtimes.length ? `, AI ${node.runtimes.join('; ')}` : ''}`)
         : ['- Keine aktiven Nodes mit frischer Evidence gefunden.']
     return [
-        `🌍 Nova-Lagebild — ${model.generatedAt}`,
+        `🌍 Xaventra-Lagebild — ${model.generatedAt}`,
         '',
         `Main: ${main ? `${main.hostname || main.nodeId} (Epoch ${main.epoch}, Lease bis ${model.main.expiresAt})` : 'nicht verifiziert'} [${model.main.source}, ${pct(model.main.confidence)}]`,
         `Lokaler Node: ${model.localNode}`,

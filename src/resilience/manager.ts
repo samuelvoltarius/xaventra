@@ -150,7 +150,6 @@ export class ResilienceManager extends EventEmitter {
     private componentHealth: Map<string, ComponentHealth> = new Map()
     private strategies: AutoFixStrategy[]
     private startTime: number
-    private healthCheckInterval?: NodeJS.Timeout
 
     // Circuit breaker state
     private circuitBreakers: Map<string, {
@@ -177,20 +176,13 @@ export class ResilienceManager extends EventEmitter {
     // ============================================
 
     start(): void {
-        console.log('[Nova Resilience] Starting health monitoring...')
-
-        // Health check every 30 seconds
-        this.healthCheckInterval = setInterval(() => {
-            this.emit('health_check', this.getHealthStatus())
-        }, 30000)
-
+        // 2.82.0: no own 30-s timer any more. It only emitted 'health_check'
+        // and nobody listened; health is L0 (local) and L21/Wächter (nodes).
+        console.log('[Xaventra Resilience] Fehlererfassung aktiv (Status auf Abruf über getHealthStatus)')
         this.emit('started')
     }
 
     stop(): void {
-        if (this.healthCheckInterval) {
-            clearInterval(this.healthCheckInterval)
-        }
         this.emit('stopped')
     }
 

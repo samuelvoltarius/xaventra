@@ -11,6 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { platform, arch, totalmem, cpus, hostname } from 'node:os'
 import { execSync } from 'node:child_process'
+import { nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 
 // ============================================
 // Types
@@ -161,15 +162,11 @@ export function detectHardwareDetails(): HardwareDetails {
 
     // Try nvidia-smi for GPU detection (Windows + Linux)
     try {
-        const nvOut = execSync(
-            'nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits',
-            { timeout: 3000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim()
-        if (nvOut) {
-            const parts = nvOut.split(',').map(s => s.trim())
-            gpuModel = parts[0] || null
-            gpuVram = parts[1] ? `${parts[1]} MiB` : null
-        }
+        // The one GPU source (doctor/gpu-runtime.ts), read once per process.
+        const nvidia = nvidiaStaticInfo()
+        if (!nvidia) throw new Error('no NVIDIA GPU')
+        gpuModel = nvidia.name || null
+        gpuVram = nvidia.memoryTotalMb ? `${nvidia.memoryTotalMb} MiB` : null
     } catch {
         // No NVIDIA GPU or nvidia-smi not available
         // Try wmic on Windows as fallback

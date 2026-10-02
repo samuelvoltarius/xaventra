@@ -16,11 +16,12 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { execFile } from 'node:child_process'
+import { sshNodeRun } from '../mesh/node-ssh.js'
 import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { debounce, type TargetState } from '../watch/engine.js'
+import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
 
 
 // ============================================
@@ -81,9 +82,8 @@ export interface NodeHealthHistory {
 // Thresholds
 // ============================================
 
+// Platte/RAM: the one threshold definition (core/resource-thresholds.ts).
 const THRESHOLDS = {
-    diskUsedPercent: 90,      // Warn if disk > 90% used
-    memoryUsedPercent: 90,    // Warn if RAM > 90% used
     temperatureCelsius: 80,   // Warn if temp > 80°C
     cpuLoadPerCore: 2.0,      // Warn if load avg > 2x cores
 }
@@ -163,26 +163,13 @@ export function isSafeNodeName(name: string): boolean {
     return typeof name === 'string' && NODE_NAME.test(name) && !name.includes('..')
 }
 
-export function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
-    return new Promise((resolve, reject) => {
-        if (!isSafeSshTarget(host)) {
-            reject(new Error(`SSH target rejected (expected user@host): ${JSON.stringify(String(host).slice(0, 80))}`))
-            return
-        }
-        const args = [
-            '-o', 'StrictHostKeyChecking=accept-new',
-            '-o', 'ConnectTimeout=5',
-            '-o', 'BatchMode=yes',
-            '--', host, command,
-        ]
-        execFile('ssh', args, { timeout: timeoutMs }, (error, stdout) => {
-            if (error) {
-                reject(new Error(`SSH to ${host} failed: ${error.message}`))
-                return
-            }
-            resolve(String(stdout).trim())
-        })
-    })
+/** 2.82.0: through the one SSH runner (mesh/node-ssh.ts) — shared reachability with AIScan and NodeIntelligence. */
+export async function sshExec(host: string, command: string, timeoutMs = 10000): Promise<string> {
+    if (!isSafeSshTarget(host)) throw new Error(`SSH target rejected (expected user@host): ${JSON.stringify(String(host).slice(0, 80))}`)
+    // L21 is the one that measures reachability; the others reuse its result.
+    const outcome = await sshNodeRun(host, command, { timeoutMs, connectTimeoutS: 5, measure: true })
+    if (!outcome.ok) throw new Error(`SSH to ${host} failed: ${outcome.error}`)
+    return outcome.stdout
 }
 
 // ============================================
@@ -277,7 +264,7 @@ export async function collectNodeHealth(node: NodeConfig): Promise<NodeHealthSna
                     const used = parseInt(parts[2]) || 0
                     const percent = Math.round((used / total) * 100)
                     snapshot.memory = { usedMB: used, totalMB: total, usedPercent: percent }
-                    if (percent > THRESHOLDS.memoryUsedPercent) {
+                    if (memoryLevel(percent) !== 'ok') {
                         snapshot.warnings.push(`RAM kritisch: ${percent}% belegt (${used}MB/${total}MB)`)
                     }
                     break
@@ -290,7 +277,7 @@ export async function collectNodeHealth(node: NodeConfig): Promise<NodeHealthSna
                     const used = parseInt(usedStr) || 0
                     const percent = Math.round((used / total) * 100)
                     snapshot.disk = { usedGB: used, totalGB: total, usedPercent: percent }
-                    if (percent > THRESHOLDS.diskUsedPercent) {
+                    if (diskLevel(percent, total - used) !== 'ok') {
                         snapshot.warnings.push(`Speicherplatz knapp: ${percent}% belegt (${used}G/${total}G)`)
                     }
                     break
@@ -552,7 +539,7 @@ class NodeHealthMonitor {
                 }
 
                 const warnings: string[] = []
-                if (hardware?.ram_used_percent && hardware.ram_used_percent > THRESHOLDS.memoryUsedPercent) {
+                if (hardware?.ram_used_percent && memoryLevel(hardware.ram_used_percent) !== 'ok') {
                     warnings.push(`RAM kritisch: ${hardware.ram_used_percent}% belegt`)
                 }
                 if (hardware?.temp && hardware.temp > THRESHOLDS.temperatureCelsius) {
@@ -561,7 +548,7 @@ class NodeHealthMonitor {
                 if (hardware?.cpu_load && hardware?.cores && hardware.cpu_load > hardware.cores * THRESHOLDS.cpuLoadPerCore) {
                     warnings.push(`CPU-Last hoch: ${hardware.cpu_load.toFixed(1)} (${hardware.cores} Kerne)`)
                 }
-                if (diskPercent > THRESHOLDS.diskUsedPercent) {
+                if (diskPercent > 0 && diskLevel(diskPercent, hardware?.disk_free_gb) !== 'ok') {
                     warnings.push(`Speicherplatz knapp: ${diskPercent}% belegt`)
                 }
 

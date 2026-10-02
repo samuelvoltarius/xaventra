@@ -41,7 +41,7 @@ Test abbreviations (repository-relative, all fixtures isolated):
 | L15-self-check.ts | B: registry failures remain degraded, no diagnosis-based success reset | T; src/tools/registry-repair-boundary.test.ts | Real health recovery evidence and complete Doctor integration |
 | L16-business-sense.ts | S: request-analysis shape | E, L16 Business Sense | Decision quality, false assumptions and measurable outcomes |
 | L18-llm-router.ts | B: task classification, vision preference and single-model cases | T, L18 LLM Router | Live per-user/node routing, cumulative failover budgets and validated training samples |
-| L19-monitoring.ts | B: add/list targets | E, L19 Monitoring | Actual outages, recovery, duplicate notifications and authenticated target scope |
+| watch/targets.ts (was L19-monitoring.ts) | B: L19 migration, /monitor list, one alarm per outage | one-watch.test.ts | Actual outages against live targets |
 | L21-node-health.ts | S: manager/health formatting | E, L21 Node Health | Real partition, fencing and task takeover; not proved by heartbeat formatting |
 | L22-federated-memory.ts | B: canonical configured ID wins over persisted legacy alias | runtime-evidence.test.ts; E | Snapshot cap/pagination, tombstones, principal isolation and full convergence |
 | L23-instincts.ts | B: insert and include strong instincts in prompt | T, L23 Instincts | Outcome quality, scoped provenance and precise decay/retraction |

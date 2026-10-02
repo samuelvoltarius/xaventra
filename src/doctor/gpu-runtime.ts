@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { getDetectedDoctorHardware, type DoctorGpuVendor } from '../llm/llama-engine.js'
+import { nvidiaStaticInfo } from './nvidia-smi.js'
+
+// 2.82.0: the one GPU source. Every module reads NVIDIA data through these
+// (one static read per process, live values async with cache; doctor/nvidia-smi.ts).
+export { cachedNvidiaQuery, nvidiaStaticInfo, queryNvidia, type NvidiaStaticInfo } from './nvidia-smi.js'
 
 export type GpuRuntimeBackend = 'cuda' | 'vulkan' | 'metal'
 
@@ -145,7 +150,7 @@ export async function probeGpuRuntime(options: ProbeGpuRuntimeOptions = {}): Pro
         ? commandWorks('vulkaninfo.exe', ['--summary'])
         : commandWorks('vulkaninfo', ['--summary'])
     const driverDetected = hardware.gpuVendor === 'nvidia'
-        ? commandWorks('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'])
+        ? nvidiaStaticInfo() !== null
         : detected
 
     const status: GpuRuntimeStatus = {

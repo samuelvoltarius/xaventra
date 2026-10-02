@@ -1326,6 +1326,7 @@
       "module": "src/core/autonomy-loop.ts",
       "imports": [
         "./autonomy-authority.js",
+        "./quiet-hours.js",
         "node:fs",
         "node:path"
       ]
@@ -1520,6 +1521,7 @@
     {
       "module": "src/core/environment.ts",
       "imports": [
+        "../startup/environment-scanner.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -1616,6 +1618,7 @@
     {
       "module": "src/core/hardware-role.ts",
       "imports": [
+        "../doctor/nvidia-smi.js",
         "node:child_process",
         "node:fs",
         "node:os"
@@ -1660,6 +1663,8 @@
       "module": "src/core/llm-factory.ts",
       "imports": [
         "../config/config-path.js",
+        "../llm/capability-probe.js",
+        "../llm/model-list-cache.js",
         "node:fs",
         "node:path"
       ]
@@ -1714,7 +1719,7 @@
     {
       "module": "src/core/model-pricing.ts",
       "imports": [
-        "node:child_process",
+        "../doctor/nvidia-smi.js",
         "node:fs",
         "node:path"
       ]
@@ -1723,6 +1728,7 @@
       "module": "src/core/model-resolver.ts",
       "imports": [
         "../config/config-path.js",
+        "../llm/model-list-cache.js",
         "./atomic-storage.js",
         "./side-effects.js",
         "node:fs",
@@ -1817,6 +1823,7 @@
     {
       "module": "src/core/node-profile.ts",
       "imports": [
+        "./resource-thresholds.js",
         "node:fs",
         "node:os",
         "node:path"
@@ -1877,6 +1884,12 @@
       ]
     },
     {
+      "module": "src/core/owner-notify.ts",
+      "imports": [
+        "../planner/thoughts.js"
+      ]
+    },
+    {
       "module": "src/core/paths.ts",
       "imports": [
         "../config/config-path.js",
@@ -1933,11 +1946,16 @@
       "module": "src/core/proactive.ts",
       "imports": [
         "../mesh/fence.js",
-        "./proactive-policy.js"
+        "./proactive-policy.js",
+        "./quiet-hours.js"
       ]
     },
     {
       "module": "src/core/prompt-budget.ts",
+      "imports": []
+    },
+    {
+      "module": "src/core/quiet-hours.ts",
       "imports": []
     },
     {
@@ -1987,6 +2005,10 @@
         "node:async_hooks",
         "node:crypto"
       ]
+    },
+    {
+      "module": "src/core/resource-thresholds.ts",
+      "imports": []
     },
     {
       "module": "src/core/response-contract.ts",
@@ -2786,6 +2808,7 @@
       "module": "src/doctor/gpu-runtime.ts",
       "imports": [
         "../llm/llama-engine.js",
+        "./nvidia-smi.js",
         "node:child_process",
         "node:fs",
         "node:path"
@@ -3000,6 +3023,7 @@
     {
       "module": "src/doctor/nightwatch-checks.ts",
       "imports": [
+        "../core/resource-thresholds.js",
         "../security/secret-redaction.js",
         "node:child_process"
       ]
@@ -3007,11 +3031,16 @@
     {
       "module": "src/doctor/nightwatch.ts",
       "imports": [
-        "../core/autonomy-loop.js",
         "../users/principal-id.js",
         "./nightwatch-checks.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/doctor/nvidia-smi.ts",
+      "imports": [
+        "node:child_process"
       ]
     },
     {
@@ -3176,6 +3205,7 @@
         "../core/action-policy.js",
         "../core/atomic-storage.js",
         "../core/autonomy-loop.js",
+        "../core/resource-thresholds.js",
         "../security/secret-redaction.js",
         "./nightwatch.js",
         "node:crypto",
@@ -3650,6 +3680,7 @@
     {
       "module": "src/layers/L0-health-monitor.ts",
       "imports": [
+        "../core/resource-thresholds.js",
         "node:child_process",
         "node:fs",
         "node:os",
@@ -3739,6 +3770,8 @@
     {
       "module": "src/layers/L15-self-check.ts",
       "imports": [
+        "../core/resource-thresholds.js",
+        "./L9-idle-learning.js",
         "node:events",
         "node:fs",
         "node:path"
@@ -3758,20 +3791,14 @@
       ]
     },
     {
-      "module": "src/layers/L19-monitoring.ts",
-      "imports": [
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/layers/L21-node-health.ts",
       "imports": [
         "../config/config-path.js",
         "../core/health-contract.js",
+        "../core/resource-thresholds.js",
         "../mesh/node-intelligence.js",
+        "../mesh/node-ssh.js",
         "../watch/engine.js",
-        "node:child_process",
         "node:fs",
         "node:path"
       ]
@@ -4083,6 +4110,7 @@
     {
       "module": "src/llm/llama-engine.ts",
       "imports": [
+        "../doctor/nvidia-smi.js",
         "./doctor-artifacts.js",
         "node-llama-cpp",
         "node:child_process",
@@ -4112,6 +4140,7 @@
         "../config/config-path.js",
         "../core/atomic-storage.js",
         "../core/model-defaults.js",
+        "./model-list-cache.js",
         "node:fs",
         "node:path"
       ]
@@ -4121,6 +4150,12 @@
       "imports": [
         "../core/model-defaults.js",
         "./model-discovery.js"
+      ]
+    },
+    {
+      "module": "src/llm/model-list-cache.ts",
+      "imports": [
+        "node:crypto"
       ]
     },
     {
@@ -4174,6 +4209,7 @@
       "module": "src/llm/provider-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "./model-list-cache.js",
         "node:fs",
         "node:path"
       ]
@@ -4466,6 +4502,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/outcome-ledger.js",
+        "../llm/capability-probe.js",
         "../llm/model-perf-db.js",
         "./ai-scanner.js",
         "./mesh-registry.js",
@@ -4612,6 +4649,8 @@
       "module": "src/mesh/mesh-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "../doctor/nvidia-smi.js",
+        "../startup/environment-scanner.js",
         "./mesh-node-lifecycle.js",
         "child_process",
         "crypto",
@@ -4684,7 +4723,7 @@
     {
       "module": "src/mesh/node-intelligence.ts",
       "imports": [
-        "node:child_process",
+        "./node-ssh.js",
         "node:fs",
         "node:net",
         "node:path"
@@ -4698,6 +4737,13 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/node-ssh.ts",
+      "imports": [
+        "node:child_process",
+        "node:net"
       ]
     },
     {
@@ -4856,6 +4902,7 @@
       "imports": [
         "../core/autonomy-defaults.js",
         "../core/data-root.js",
+        "../core/quiet-hours.js",
         "./briefing.js",
         "./delivery-port.js",
         "./planner.js",
@@ -5405,7 +5452,8 @@
     {
       "module": "src/sensing/config.ts",
       "imports": [
-        "../core/autonomy-defaults.js"
+        "../core/autonomy-defaults.js",
+        "../core/quiet-hours.js"
       ]
     },
     {
@@ -5714,7 +5762,6 @@
         "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "../security/secret-redaction.js",
-        "node:child_process",
         "node:fs",
         "node:path"
       ]
@@ -6343,6 +6390,7 @@
       "imports": [
         "../core/action-policy.js",
         "../core/atomic-storage.js",
+        "../doctor/nightwatch.js",
         "../planner/thoughts.js",
         "./probes.js",
         "./sample.js",
@@ -6383,6 +6431,7 @@
         "./probes.js",
         "./sample.js",
         "./settings.js",
+        "./targets.js",
         "node:path"
       ]
     },
@@ -6408,8 +6457,18 @@
       ]
     },
     {
+      "module": "src/watch/targets.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./settings.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/watch/trends.ts",
       "imports": [
+        "../core/resource-thresholds.js",
         "./sample.js"
       ]
     },

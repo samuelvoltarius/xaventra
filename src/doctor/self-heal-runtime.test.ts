@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getCommandMinimumRole } from '../core/slash-commands.js'
 import { peerStateWithCapabilities } from '../mesh/mesh-transport-runtime.js'
 import { getLeaseCoordinatorFailures, noteLeaseUnavailable } from '../mesh/leader-election.js'
-import { formatSelfHealOverview, handleSelfHealSwitch, runSelfHealCycle, setSelfHealConfig } from './self-heal-runtime.js'
+import { readdirSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { endpointSwitchHold, FAILOVER_HOLD_MS, formatSelfHealOverview, handleSelfHealSwitch, resetSelfHealTrigger, runSelfHealCycle, SELF_HEAL_MIN_GAP_MS, setSelfHealConfig, triggerSelfHeal } from './self-heal-runtime.js'
 
 let root: string
 const previousRoot = process.env.NOVA_RUNTIME_ROOT
@@ -17,6 +19,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+    resetSelfHealTrigger()
     setSelfHealConfig(undefined)
     if (previousRoot === undefined) delete process.env.NOVA_RUNTIME_ROOT
     else process.env.NOVA_RUNTIME_ROOT = previousRoot
@@ -48,6 +51,53 @@ describe('Selbstheilung runtime wiring (Stufe 3)', () => {
         expect(handleSelfHealSwitch('an')).toMatch(/aufgehoben/)
         expect(await formatSelfHealOverview()).toMatch(/Selbstheilung: AN/)
         expect(handleSelfHealSwitch('vielleicht')).toMatch(/Nutzung/)
+    })
+
+    // 2.82.0: one trigger for loop, Wächter-L1, mission step and owner Ja.
+    it('triggerSelfHeal: one run at a time, then at most one cycle per 5 minutes', async () => {
+        setSelfHealConfig({ enabled: true, logRotateBytes: 1024 * 1024 })
+        let now = Date.parse('2026-10-01T10:00:00Z')
+        const [a, b] = await Promise.all([
+            triggerSelfHeal({ isMain: false, reason: 'autonomie-schleife', now: () => now }),
+            triggerSelfHeal({ isMain: false, reason: 'waechter', now: () => now }),
+        ])
+        expect(a.ran && b.ran).toBe(true)
+        expect(b.note).toMatch(/läuft bereits \(Anstoß: autonomie-schleife\)/)
+        now += 60_000
+        const soon = await triggerSelfHeal({ isMain: true, reason: 'mission', now: () => now })
+        expect(soon).toMatchObject({ ran: false, checks: [] })
+        expect(soon.note).toMatch(/vor 1 min gelaufen \(Anstoß: autonomie-schleife\)/)
+        now += SELF_HEAL_MIN_GAP_MS
+        expect((await triggerSelfHeal({ isMain: false, reason: 'owner-ja', now: () => now })).ran).toBe(true)
+        setSelfHealConfig({ enabled: false })
+        expect((await triggerSelfHeal({ isMain: true, reason: 'x' })).note).toMatch(/aus/)
+    })
+
+    it('nur self-heal-runtime.ts ruft runSelfHealCycle; alle anderen nehmen triggerSelfHeal', () => {
+        const src = fileURLToPath(new URL('..', import.meta.url))
+        const offenders: string[] = []
+        const walk = (dir: string) => {
+            for (const name of readdirSync(dir)) {
+                const path = join(dir, name)
+                if (statSync(path).isDirectory()) { walk(path); continue }
+                if (!name.endsWith('.ts') || name.endsWith('.test.ts') || name === 'self-heal-runtime.ts') continue
+                if (/runSelfHealCycle\(/.test(readFileSync(path, 'utf8'))) offenders.push(path)
+            }
+        }
+        walk(src)
+        expect(offenders).toEqual([])
+    })
+
+    it('endpointSwitchHold: vLLM-Wechsel, Wartungsmarke und LLM-Failover halten die Umschaltung an', async () => {
+        const now = Date.parse('2026-10-01T10:00:00Z')
+        const free = { plans: () => [], hostState: async () => null, lastFailoverAt: () => 0, now: () => now }
+        expect(await endpointSwitchHold(free)).toBeNull()
+        expect(await endpointSwitchHold({ ...free, plans: () => [{ id: 'v1', status: 'laeuft' }] })).toMatch(/vLLM-Wechsel v1 läuft/)
+        expect(await endpointSwitchHold({ ...free, plans: () => [{ id: 'v1', status: 'ausgefuehrt' }] })).toBeNull()
+        expect(await endpointSwitchHold({ ...free, hostState: async () => ({ maintenance: true }) })).toMatch(/Wartungsmarke/)
+        expect(await endpointSwitchHold({ ...free, hostState: async () => ({ switchRunning: true }) })).toMatch(/Wechsel läuft am Host/)
+        expect(await endpointSwitchHold({ ...free, lastFailoverAt: () => now - 60_000 })).toMatch(/LLM-Failover vor 1 min/)
+        expect(await endpointSwitchHold({ ...free, lastFailoverAt: () => now - FAILOVER_HOLD_MS - 1 })).toBeNull()
     })
 
     it('owner-only commands', () => {

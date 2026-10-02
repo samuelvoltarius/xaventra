@@ -335,7 +335,6 @@ Antworte NUR mit einem JSON-Array.`
 class InsightEngine {
     private insights: Insight[] = []
     private llm: any = null
-    private sendFn: ((userId: string, channel: string, content: string) => Promise<void>) | null = null
 
     constructor() {
         this.insights = loadInsights()
@@ -343,10 +342,6 @@ class InsightEngine {
 
     setLLM(llm: any): void {
         this.llm = llm
-    }
-
-    setSendFunction(fn: (userId: string, channel: string, content: string) => Promise<void>): void {
-        this.sendFn = fn
     }
 
     /**

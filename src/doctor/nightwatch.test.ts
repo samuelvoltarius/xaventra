@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CommandOutcome } from './nightwatch-checks.js'
 import {
-    appendNightwatchJournal, createNightwatchSource, formatNightwatchReport, readLatestNightwatchReport,
-    runNightwatch, toAutonomyCheckResults, type NightwatchReport,
+    appendNightwatchJournal, createNightwatchRunner, formatNightwatchReport, readLatestNightwatchReport,
+    runNightwatch, type NightwatchReport,
 } from './nightwatch.js'
 
 let dir: string
@@ -44,61 +44,31 @@ describe('runNightwatch', () => {
     })
 })
 
-describe('toAutonomyCheckResults', () => {
-    const base = { startedAt: '2026-09-30T01:00:00.000Z', finishedAt: '2026-09-30T01:00:01.000Z' }
-    const result = (status: 'ok' | 'fehler' | 'unbekannt', severity: 'warning' | 'critical' = 'critical') => ({
-        id: 'svc', kind: 'systemd' as const, label: 'Xaventra', host: 'srv', status, severity, message: 'Dienst failed',
-        evidence: { host: 'srv', command: 'systemctl is-active -- x', exitCode: 3, output: 'failed', durationMs: 5, checkedAt: base.startedAt },
-    })
-
-    it('all green is one quiet info line', () => {
-        expect(toAutonomyCheckResults({ ...base, results: [result('ok')] }, 1)).toEqual([
-            { source: 'nightwatch', severity: 'info', message: 'Nachtwache: 1 Prüfungen ok', timestamp: 1, requiresNotification: false },
-        ])
-    })
-
-    it('a failure becomes a notifiable finding with its severity', () => {
-        const [finding] = toAutonomyCheckResults({ ...base, results: [result('ok'), result('fehler', 'critical')] }, 1)
-        expect(finding).toMatchObject({ severity: 'critical', requiresNotification: true, message: 'Xaventra (srv): Dienst failed' })
-    })
-
-    it('unknown is reported, not swallowed', () => {
-        const [finding] = toAutonomyCheckResults({ ...base, results: [result('unbekannt', 'warning')] }, 1)
-        expect(finding).toMatchObject({ severity: 'warning', requiresNotification: true })
-        expect(finding.message).toContain('nicht prüfbar')
-    })
-
-    it('a run error is a warning, never an empty all-clear', () => {
-        const findings = toAutonomyCheckResults({ ...base, results: [], error: 'kaputt' }, 1)
-        expect(findings).toEqual([expect.objectContaining({ severity: 'warning', requiresNotification: true })])
-    })
-})
-
-describe('createNightwatchSource', () => {
-    it('runs at most once per interval and shares an in-flight run', async () => {
+// 2.82.0 ein Wächter: the Wächter is the only runner; it gets the report and
+// raises its own alarms (watch/engine.ts applyNightwatchReport).
+describe('createNightwatchRunner', () => {
+    it('runs at most once per interval, shares an in-flight run and journals every run', async () => {
         let clock = Date.parse('2026-09-30T01:00:00Z')
         const runner = vi.fn(async (_host, argv: readonly string[]) => ok(argv))
-        const source = createNightwatchSource({ configPath: writeConfig(), journalDir: join(dir, 'journal'), deps: { runner, now: () => clock } })
-        const [first, second] = await Promise.all([source(), source()])
+        const run = createNightwatchRunner({ configPath: writeConfig(), journalDir: join(dir, 'journal'), deps: { runner, now: () => clock } })
+        const [first, second] = await Promise.all([run(), run()])
         expect(runner).toHaveBeenCalledTimes(2) // two checks, one run
-        expect(first).toEqual(second)
+        expect([first, second].filter(Boolean)).toHaveLength(1)
         clock += 10 * 60_000
-        await source()
+        expect(await run()).toBeNull()
         expect(runner).toHaveBeenCalledTimes(2)
         clock += 25 * 60_000
-        await source()
+        expect((await run())?.results).toHaveLength(2)
         expect(runner).toHaveBeenCalledTimes(4)
+        expect(readLatestNightwatchReport(join(dir, 'journal'))?.results).toHaveLength(2)
     })
 
-    it('a missing or invalid config produces a visible warning and a journal entry', async () => {
-        const source = createNightwatchSource({ configPath: join(dir, 'missing.json'), journalDir: join(dir, 'journal') })
-        const [finding] = await source()
-        expect(finding).toMatchObject({ source: 'nightwatch', severity: 'warning', requiresNotification: true })
-        expect(finding.message).toMatch(/fehlt/)
+    it('a missing or invalid config is a report with error and a journal entry, never silence', async () => {
+        const run = createNightwatchRunner({ configPath: join(dir, 'missing.json'), journalDir: join(dir, 'journal') })
+        expect((await run())?.error).toMatch(/fehlt/)
         expect(readLatestNightwatchReport(join(dir, 'journal'))?.error).toMatch(/fehlt/)
-
-        const invalid = createNightwatchSource({ configPath: writeConfig({ ...config, checks: [{ id: 'x', kind: 'exec', command: 'reboot' }] }), journalDir: join(dir, 'journal2') })
-        expect((await invalid())[0].message).toMatch(/unbekannte Prüfart/)
+        const invalid = createNightwatchRunner({ configPath: writeConfig({ ...config, checks: [{ id: 'x', kind: 'exec', command: 'reboot' }] }), journalDir: join(dir, 'journal2') })
+        expect((await invalid())?.error).toMatch(/unbekannte Prüfart/)
     })
 })
 

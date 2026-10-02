@@ -242,6 +242,20 @@ export class LocalLLM {
     // ============================================
 
     async checkAvailable(): Promise<boolean> {
+        // Without an API key the one shared KI-port probe answers (mesh/discovery-probe.ts, 2.82.0).
+        if (!this.config.apiKey) {
+            const { probeAiJson } = await import('../mesh/discovery-probe.js')
+            for (const path of ['/api/tags', '/v1/models']) {
+                if ((await probeAiJson(this.config.baseUrl, path, 3000)).ok) {
+                    this.available = true
+                    console.log(`[LocalLLM] ✅ ${path === '/api/tags' ? 'Ollama' : 'OpenAI-compatible API'} available at ${this.config.baseUrl}`)
+                    return true
+                }
+            }
+            this.available = false
+            console.log(`[LocalLLM] ❌ Not available at ${this.config.baseUrl}`)
+            return false
+        }
         // Try Ollama-style endpoint first
         try {
             const ollamaCheck = await fetch(`${this.config.baseUrl}/api/tags`, {
@@ -286,6 +300,14 @@ export class LocalLLM {
 
     async listModels(): Promise<string[]> {
         const discoveryTimeoutMs = Math.max(250, Number(process.env.NOVA_LOCAL_DISCOVERY_TIMEOUT_MS || 1800))
+        // Without an API key the one shared KI-port probe answers (mesh/discovery-probe.ts, 2.82.0).
+        if (!this.config.apiKey) {
+            const { probeAiJson } = await import('../mesh/discovery-probe.js')
+            const tags = await probeAiJson(this.config.baseUrl, '/api/tags', discoveryTimeoutMs)
+            if (tags.ok) return Array.isArray(tags.body?.models) ? tags.body.models.map((m: { name: string }) => m.name) : []
+            const openai = await probeAiJson(this.config.baseUrl, '/v1/models', discoveryTimeoutMs)
+            return openai.ok && Array.isArray(openai.body?.data) ? openai.body.data.map((m: { id: string }) => m.id) : []
+        }
         // Try Ollama endpoint first
         try {
             const response = await fetch(`${this.config.baseUrl}/api/tags`, {

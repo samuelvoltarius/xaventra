@@ -12,6 +12,10 @@ vi.mock('./autonomous-executor.js', () => ({ getActiveMission: () => null, getMi
 vi.mock('../intelligence/autonomy-engine.js', () => ({
     getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }),
 }))
+// A notifiable finding of the loop (2.82.0: the Nachtwache no longer runs in the loop; the self-heal phase does).
+vi.mock('../doctor/self-heal-runtime.js', () => ({
+    triggerSelfHeal: async () => ({ ran: true, note: 'gelaufen', checks: [{ source: 'selbstheilung', severity: 'warning', message: 'Platte fast voll: 95 %', timestamp: 1, requiresNotification: true }] }),
+}))
 import { setAutonomyNotifier, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
 import { setThinkingConfig } from '../thinking/thinking-runtime.js'
 import { setSoftwareScoutConfig } from '../install/software-scout.js'
@@ -35,8 +39,7 @@ describe('autonomy report: honest about not being sent', () => {
         vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 2, 3, 0, 0))
         const notify = vi.fn(async () => false)
         setAutonomyNotifier(notify)
-        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: true },
-            nightwatch: { configPath: join(dir, 'missing.json'), journalDir: join(dir, 'journal') } })
+        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: false } })
         const first = await triggerAutonomyCheck()
         const second = await triggerAutonomyCheck()
         expect(first.checks.some(check => check.requiresNotification)).toBe(true)

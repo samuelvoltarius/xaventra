@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const MAX_ENTRIES = 512
@@ -16,9 +16,19 @@ export function discoveryOrigin(value: string): string {
     return url.origin
 }
 
-/** Only retry metadata is persisted. Response bodies and credentials never enter this cache. */
+/** How long one answer of a KI port is shared between modules (2.82.0). */
+export const AI_PROBE_RESULT_MAX_AGE_MS = 30_000
+
+/**
+ * Only retry metadata is persisted. Response bodies and credentials never enter
+ * the file. 2.82.0: one shared client for every module that asks a KI port
+ * (AIScan, model-resolver latency, local LLM, self-setup): answers are shared
+ * in memory for 30 s and concurrent callers join one request.
+ */
 export class DiscoveryProbeClient {
     private entries = new Map<string, Failure>()
+    private results = new Map<string, { at: number; body: string | null; ms: number | null }>()
+    private inflight = new Map<string, Promise<string | null>>()
     constructor(private file: string, private now = Date.now) {
         try {
             if (existsSync(file) && statSync(file).size <= 256 * 1024) {
@@ -68,7 +78,31 @@ export class DiscoveryProbeClient {
         else this.fail(key, 'mismatch')
     }
 
-    async probe(url: string, timeoutMs = 3000): Promise<string | null> {
+    /** Latency (ms) of the last answered probe of `url`, null when it did not answer. */
+    lastLatency(url: string): number | null { return this.results.get(url)?.ms ?? null }
+
+    async probe(url: string, timeoutMs = 3000, options: { maxAgeMs?: number } = {}): Promise<string | null> {
+        // Operator exclusion and backoff are checked first, every time: the shared answer
+        // cache never bypasses them, and their short-circuit is never cached as an answer.
+        const excluded = (process.env.XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS ?? '').split(',').map(v => v.trim()).filter(Boolean)
+        if (excluded.map(discoveryOrigin).includes(discoveryOrigin(new URL(url).origin))) return null
+        if (!this.allowed(this.key(url))) return null
+        const maxAge = options.maxAgeMs ?? AI_PROBE_RESULT_MAX_AGE_MS
+        const cached = this.results.get(url)
+        if (cached && this.now() - cached.at < maxAge) return cached.body
+        const running = this.inflight.get(url)
+        if (running) return running
+        const started = Date.now()
+        const run = this.probeOnce(url, timeoutMs).then(body => {
+            this.results.set(url, { at: this.now(), body, ms: body === null ? null : Date.now() - started })
+            while (this.results.size > MAX_ENTRIES) this.results.delete(this.results.keys().next().value!)
+            return body
+        }).finally(() => this.inflight.delete(url))
+        this.inflight.set(url, run)
+        return run
+    }
+
+    private async probeOnce(url: string, timeoutMs: number): Promise<string | null> {
         // Re-read local operator policy; neither full inventory nor forceFresh bypasses it.
         // Invalid entries fail this probe closed, rather than silently scanning excluded services.
         const excluded = (process.env.XAVENTRA_AI_SCAN_EXCLUDE_ENDPOINTS ?? '').split(',').map(v => v.trim()).filter(Boolean)
@@ -104,4 +138,35 @@ export class DiscoveryProbeClient {
         } catch { this.fail(key, 'unreachable'); return null }
         finally { clearTimeout(timer) }
     }
+}
+
+let shared: DiscoveryProbeClient | undefined
+/** The one KI-port probe client of this process (backoff file under .nova-data). */
+export function getAiProbeClient(): DiscoveryProbeClient {
+    return shared ??= new DiscoveryProbeClient(join(process.cwd(), '.nova-data', 'ai-probe-backoff.json'))
+}
+/** Tests only. */
+export function resetAiProbeClient(client?: DiscoveryProbeClient): void { shared = client }
+
+/**
+ * Ask a KI port for its JSON list (`/api/tags`, `/v1/models`) through the one
+ * shared client: plain http endpoints share answer, backoff and latency; an
+ * https endpoint (never a scan target) is asked directly. Never throws.
+ */
+export async function probeAiJson(baseUrl: string, path: string, timeoutMs = 3000): Promise<{ ok: boolean; body: any | null; ms: number | null }> {
+    const url = `${String(baseUrl).replace(/\/+$/, '')}${path}`
+    try {
+        if (new URL(url).protocol === 'http:') {
+            const client = getAiProbeClient()
+            const text = await client.probe(url, timeoutMs)
+            if (text === null) return { ok: false, body: null, ms: null }
+            let body: any = null
+            try { body = JSON.parse(text) } catch { body = null }
+            return { ok: true, body, ms: client.lastLatency(url) }
+        }
+        const started = Date.now()
+        const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
+        if (!response.ok) { await response.body?.cancel().catch(() => undefined); return { ok: false, body: null, ms: null } }
+        return { ok: true, body: await response.json().catch(() => null), ms: Date.now() - started }
+    } catch { return { ok: false, body: null, ms: null } }
 }

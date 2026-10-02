@@ -315,6 +315,14 @@ async function startDaemon() {
     loadPolicy(config as any)
         ; (state as any).config = config  // Store for runtime access (userAliases, etc.)
     setNovaConfig(config as any)  // Publish to getNovaConfig() singleton (used by plugins)
+    // One disk/RAM threshold definition for L0, L21, node-profile, Nachtwache, Wächter, and one
+    // quiet-hours definition for planner thoughts, autonomy loop, messenger and sensing (2.82.0).
+    {
+        const { setResourceThresholds } = await import('./core/resource-thresholds.js')
+        setResourceThresholds((config as any).autonomy)
+        const { configureQuietHours } = await import('./core/quiet-hours.js')
+        configureQuietHours((config as any).autonomy)
+    }
     try {
         const { resolveRuntimeProfile } = await import('./runtime/runtime-profiles.js')
         const runtimeProfile = resolveRuntimeProfile(config.runtime)
@@ -1402,6 +1410,11 @@ async function startDaemon() {
 
         const proactive = getProactiveMessenger()
         const proactiveOwner = config.channels?.telegram?.allowFrom?.[0]
+        // 2.82.0 ein Meldeweg: every system message becomes a planner thought
+        // (one dedupe, one quiet-hours definition, one daily cap); the
+        // ProactiveMessenger only carries it while the planner is switched off.
+        const { parsePlannerSettings } = await import('./planner/runtime.js')
+        const plannerConfigured = parsePlannerSettings((config as any).autonomy).enabled
         ;(state as any).sendGovernedProactive = async (
             content: string,
             source: string,
@@ -1410,38 +1423,36 @@ async function startDaemon() {
             dedupeKey?: string,
             evidenceRefs?: string[],
         ): Promise<boolean> => {
-            if (!proactiveOwner) return false
+            const { notifyOwner } = await import('./core/owner-notify.js')
             const { getOperationalEventBus } = await import('./core/operational-event-bus.js')
-            const event = getOperationalEventBus().ingest({
-                source, summary: content.slice(0, 500), severity, confidence, dedupeKey, evidenceRefs,
-            })
-            if (!event.actionable) {
-                console.log(`[Proactive] Suppressed ${source}: ${event.reason}`)
-                return false
-            }
-            // CL-07: one fenced proactive path. Without a live Main/Telegram
-            // fence a non-Main drops the message (the real Main raises its own);
-            // a Main whose live check hiccups keeps it in the proactive buffer
-            // (the channel sender re-checks and defers on FenceError).
-            try {
-                const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                const live = await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')
-                if (!live) {
+            const { addThought } = await import('./planner/index.js')
+            const result = await notifyOwner({ content, source, severity, confidence, dedupeKey, evidenceRefs }, {
+                ingest: notice => getOperationalEventBus().ingest({
+                    source: notice.source, summary: notice.content.slice(0, 500), severity: notice.severity,
+                    confidence: notice.confidence, dedupeKey: notice.dedupeKey, evidenceRefs: notice.evidenceRefs,
+                }),
+                // CL-07: one fenced path. Without a live Main/Telegram fence a
+                // non-Main records nothing (the real Main raises its own).
+                authority: async () => {
+                    const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
+                    if (await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')) return true
                     const { hasValidFence } = await import('./mesh/fence.js')
-                    if (!hasValidFence(MAIN_SERVICE) || !hasValidFence('telegram')) {
-                        console.log(`[Proactive] Fenced ${source}: no live Main/Telegram authority on this node`)
-                        return false
-                    }
-                }
-            } catch {
-                return false
-            }
-            return proactive.send({
-                userId: String(proactiveOwner), channel: 'telegram', content,
-                priority: severity === 'critical' ? 'urgent' : severity === 'error' ? 'high' : 'normal',
-                type: severity === 'error' || severity === 'critical' ? 'error' : 'notification',
-                assessment: assessmentFromEvent({ source, summary: content.slice(0, 500), severity, confidence, dedupeKey, actionAvailable: severity !== 'info' }),
+                    return hasValidFence(MAIN_SERVICE) && hasValidFence('telegram')
+                },
+                plannerActive: () => plannerConfigured,
+                addThought,
+                transport: async notice => {
+                    if (!proactiveOwner) return false
+                    return proactive.send({
+                        userId: String(proactiveOwner), channel: 'telegram', content: notice.content,
+                        priority: notice.severity === 'critical' ? 'urgent' : notice.severity === 'error' ? 'high' : 'normal',
+                        type: notice.severity === 'error' || notice.severity === 'critical' ? 'error' : 'notification',
+                        assessment: assessmentFromEvent({ source: notice.source, summary: notice.content.slice(0, 500), severity: notice.severity, confidence: notice.confidence, dedupeKey: notice.dedupeKey, actionAvailable: notice.severity !== 'info' }),
+                    })
+                },
+                log: line => console.log(line),
             })
+            return result.route !== 'verworfen'
         }
 
         // Register channels unconditionally (R2 NZ-10): Telegram may connect
@@ -1684,13 +1695,13 @@ async function startDaemon() {
         // Nachtwache); sending the summary too would repeat them. Declining here
         // makes the loop log honestly; the report stays in autonomy-reports.
         const notifyFn = async (_message: string): Promise<boolean> => false
-        // Mission Engine (/mission) progress keeps its previous notifier unchanged.
-        // NOTE (2.82.0, not changed here): 'autonomy-loop' is not a trusted
-        // producer, so the governed path drops these messages as well.
+        // Mission Engine (/mission) progress: its own trusted source 'mission-engine'
+        // (code-generated, owner-started missions). Before 2.82.0 it went out as
+        // 'autonomy-loop', which the governed path always dropped.
         const missionNotifyFn = async (message: string) => {
             const governed = (state as any).sendGovernedProactive
             if (governed) {
-                await governed(message, 'autonomy-loop', 'warning', 0.9)
+                await governed(message, 'mission-engine', 'warning', 0.9)
                 return
             }
             // Fail closed until the fenced proactive path is ready.
@@ -1698,26 +1709,21 @@ async function startDaemon() {
         }
 
         const autonomyCfg = (config as any).autonomy || {}
-        const quietCfg = autonomyCfg.quietHours || {}
-        const quietEnabled = quietCfg.enabled !== false // default: true
         // Nachtwache is opt-in: autonomy.nightwatch.enabled=true plus a private
         // probe config (default .nova-data/nightwatch.json, see docs/NIGHTWATCH.md).
         const nightwatchCfg = autonomyCfg.nightwatch || {}
         const nightwatchEnabled = nightwatchCfg.enabled === true
-
-        // Phase 1 Planer (CL-09): with autonomy.planner.nightwatch=true the
-        // planner job owns the Nachtwache probes and alarms (as thoughts).
-        let plannerOwnsNightwatch = false
-        try {
-            const { parsePlannerSettings } = await import('./planner/runtime.js')
-            const plannerSettings = parsePlannerSettings(autonomyCfg)
-            plannerOwnsNightwatch = nightwatchEnabled && plannerSettings.enabled && plannerSettings.nightwatch
-        } catch (err) { console.debug(`[Nova] Planer config skipped: ${err}`) }
+        // 2.82.0 ein Wächter: the Wächter is the only runner of the Nachtwache
+        // probes (before: loop, planner job and sensing adapter each reported).
+        const nightwatchPaths = {
+            configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
+            journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
+        }
 
         // Stufe 3: Selbstheilung stays off until autonomy.selfHeal.enabled=true.
         try {
             const { setSelfHealConfig } = await import('./doctor/self-heal-runtime.js')
-            setSelfHealConfig(autonomyCfg.selfHeal)
+            setSelfHealConfig(autonomyCfg.selfHeal, { nightwatchJournalDir: nightwatchEnabled ? nightwatchPaths.journalDir : undefined })
         } catch (err) { console.debug(`[Nova] Selbstheilung config skipped: ${err}`) }
 
         // Phase 2 Wahrnehmen: P8 on at the Main by default (autonomy.sensing.enabled=false = off); main only.
@@ -1738,29 +1744,12 @@ async function startDaemon() {
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
 
-        // Phase 7 Wächter: off until autonomy.watch.enabled=true. Main measures,
-        // probes and alarms; workers only send their samples over the signed mesh.
-        try {
-            const { setWatchConfig, startWatch } = await import('./watch/runtime.js')
-            setWatchConfig(autonomyCfg)
-            const watch = await startWatch({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
-            if (watch.started) console.log(`[Nova] ✓ Wächter aktiv (${watch.reason})`)
-        } catch (err) { console.debug(`[Nova] Wächter skipped: ${err}`) }
-
         await startAutonomyLoop(notifyFn, {
             intervalMinutes: autonomyCfg.intervalMinutes || 10,
-            quietHoursStart: quietEnabled ? (quietCfg.start ?? 23) : -1,
-            quietHoursEnd: quietEnabled ? (quietCfg.end ?? 7) : -1,
             maxNotificationsPerHour: autonomyCfg.selfThinkMaxPerHour || 3,
             socialCheckIns: autonomyCfg.socialCheckIns === true,
             checks: { nightwatch: nightwatchEnabled } as any,
-            nightwatchRunner: plannerOwnsNightwatch ? 'planner' : 'loop',
-            ...(nightwatchEnabled ? {
-                nightwatch: {
-                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
-                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
-                },
-            } : {}),
+            ...(nightwatchEnabled ? { nightwatch: nightwatchPaths } : {}),
         })
 
         // Phase 1 Planer: job list, thoughts, morning/evening report. P8: on at
@@ -1768,14 +1757,7 @@ async function startDaemon() {
         // planner reminders back to reminders.json (Rückweg).
         try {
             const { startPlannerRuntime } = await import('./planner/runtime.js')
-            await startPlannerRuntime(autonomyCfg, {
-                heartbeatEnabled: (config as any).heartbeat?.enabled !== false,
-                nightwatch: {
-                    enabled: nightwatchEnabled,
-                    configPath: resolve(nightwatchCfg.configPath || join(process.cwd(), '.nova-data', 'nightwatch.json')),
-                    journalDir: resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')),
-                },
-            })
+            await startPlannerRuntime(autonomyCfg, { heartbeatEnabled: (config as any).heartbeat?.enabled !== false })
         } catch (err) {
             console.log(`[Nova] ⚠ Planer nicht verfügbar: ${err}`)
             // Without the planner, reminders.json + its checker carry reminders (Rückweg).
@@ -1785,6 +1767,20 @@ async function startDaemon() {
             } catch { /* reminder tool unavailable */ }
         }
 
+        // Phase 7 Wächter — 2.82.0 the one watch: targets (config, /monitor,
+        // migrated L19 list), Nachtwache probes, forecasts. Started AFTER the
+        // planner so it runs as planner job sys-waechter (timer only without
+        // planner). Workers only send their samples over the signed mesh.
+        try {
+            const { legacyMonitorFile, setWatchConfig, startWatch, watchDir } = await import('./watch/runtime.js')
+            const { migrateLegacyMonitorTargets } = await import('./watch/targets.js')
+            const migration = migrateLegacyMonitorTargets({ legacyFile: legacyMonitorFile(), watchDir: watchDir() })
+            if (migration.reason !== 'keine L19-Datei') console.log(`[Xaventra] Wächter: ${migration.reason}${migration.rejected.length ? ` (${migration.rejected.length} nicht übernommen)` : ''}; monitoring.json → monitoring.json.migriert`)
+            setWatchConfig(autonomyCfg, { nightwatch: { enabled: nightwatchEnabled, ...nightwatchPaths } })
+            const watch = await startWatch({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
+            console.log(`[Xaventra] ${watch.started ? '✓' : '·'} Wächter ${watch.started ? 'aktiv' : 'aus'} (${watch.reason})`)
+        } catch (err) { console.debug(`[Nova] Wächter skipped: ${err}`) }
+
         // Phase 6a Release-Knopf: P8 on at the Main by default (false = off);
         // GitHub read-only until the owner presses Ja; without token nothing is dispatched.
         try {
@@ -1792,6 +1788,24 @@ async function startDaemon() {
             const releaseButton = startReleaseButton(config)
             if (releaseButton.started) console.log(`[Nova] ✓ Release-Knopf aktiv (${releaseButton.reason})`)
         } catch (err) { console.debug(`[Nova] Release-Knopf skipped: ${err}`) }
+
+        // Phase 4 Release-Wächter (autonomy.selfUpdate.enabled, Standard aus): the one
+        // check for new signed releases. It was never started before 2.82.0; the mesh
+        // updater, delegation and auto reminders now defer to / ask through it.
+        try {
+            const { readSelfUpdateSettings, startSelfUpdateWatch } = await import('./core/self-update/release-watch.js')
+            const selfUpdate = readSelfUpdateSettings(config)
+            if (selfUpdate.enabled && process.env.NOVA_NODE_ONLY !== 'true') {
+                const { createSelfUpdateThoughtSink } = await import('./core/thought-hub.js')
+                const { installedUpdateVersion } = await import('./core/github-update.js')
+                const { getNovaDataDir } = await import('./core/data-root.js')
+                const watch = startSelfUpdateWatch({
+                    settings: selfUpdate, currentVersion: installedUpdateVersion(),
+                    sink: createSelfUpdateThoughtSink(), statePath: getNovaDataDir('self-update', 'release-watch.json'),
+                })
+                if (watch) console.log(`[Xaventra] ✓ Release-Wächter aktiv (alle ${selfUpdate.intervalMinutes} min, Kanal ${selfUpdate.channel})`)
+            }
+        } catch (err) { console.debug(`[Xaventra] Release-Wächter skipped: ${err}`) }
 
         // Phase 6e: Delegation (autonomy.delegation.enabled) and proactive
         // reminders from sources (autonomy.autoReminders.enabled). P8: both on
@@ -1829,7 +1843,7 @@ async function startDaemon() {
         try {
             const { setResponsibilityConfig, startResponsibilities } = await import('./core/responsibility-runtime.js')
             setResponsibilityConfig(autonomyCfg, {
-                nightwatchJournalDir: nightwatchEnabled ? resolve(nightwatchCfg.journalDir || join(process.cwd(), '.nova-data', 'nightwatch')) : undefined,
+                nightwatchJournalDir: nightwatchEnabled ? nightwatchPaths.journalDir : undefined,
                 ownerSessions: (config.channels?.telegram?.allowFrom || []).map(String).filter((id: string) => /^\d{1,20}$/.test(id)),
             })
             const responsibilities = await startResponsibilities({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
@@ -1838,7 +1852,11 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Verantwortungen nicht verfügbar: ${err}`)
         }
 
-        console.log(`[Nova] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Quiet Hours: ${quietEnabled ? `${quietCfg.start ?? 23}:00-${quietCfg.end ?? 7}:00` : 'AUS'})`)
+        {
+            const { getQuietHours } = await import('./core/quiet-hours.js')
+            const quiet = getQuietHours()
+            console.log(`[Xaventra] ✓ Autonomy Loop aktiv (alle ${autonomyCfg.intervalMinutes || 10}min, Ruhezeit für alle Meldungen: ${quiet.start >= 0 ? `${quiet.start}:00-${quiet.end}:00` : 'AUS'})`)
+        }
 
         // Wire self-thinking callback — Nova can now think autonomously
         try {
@@ -1881,6 +1899,7 @@ async function startDaemon() {
                         return
                     }
                     try {
+                        // Not a trusted producer: lands as an idea thought (/gedanken, Abendbericht), never as a push (2.82.0).
                         const governed = (state as any).sendGovernedProactive
                         if (typeof governed === 'function') {
                             await governed(reply, 'self-thinking', 'info', 0.85)
@@ -2182,7 +2201,7 @@ async function startDaemon() {
             journal.default.setInternalLLM(serviceModels.learning)
         }
         ; (state as any).journal = journal.default
-        journal.default.recordEvent('system', 'Nova gestartet')
+        journal.default.recordEvent('system', 'Xaventra gestartet')
         console.log(`[Nova] ✓ Journal aktiv (Episodisches Gedächtnis)`)
     } catch (err) {
         console.log(`[Nova] ⚠ Journal nicht verfügbar: ${err}`)
@@ -2303,45 +2322,8 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ L15 Security Scanner nicht verfügbar: ${err}`)
     }
 
-    // ============================================
-    // Start L19 Service Monitoring
-    // ============================================
-    try {
-        const { getServiceMonitor } = await import('./layers/L19-monitoring.js')
-        const monitor = getServiceMonitor()
-            ; (state as any).serviceMonitor = monitor
-
-        // Wire alerts to the fenced proactive channel. Always wired: the
-        // governed path checks channel and leadership per alert (R2 NZ-10).
-        {
-            monitor.setAlertCallback(async (target, status) => {
-                const msg = status === 'down'
-                    ? `🚨 *ALERT: ${target.name} ist DOWN!*\n\nURL: ${target.url}\nSeit: ${target.downSince ? new Date(target.downSince).toLocaleString('de-DE') : 'jetzt'}\nFehlversuche: ${target.consecutiveFailures}`
-                    : `✅ *RECOVERED: ${target.name} ist wieder ONLINE!*\n\nURL: ${target.url}`
-                try {
-                    const governed = (state as any).sendGovernedProactive
-                    if (typeof governed !== 'function') throw new Error('governed notifier unavailable')
-                    await governed(
-                        msg,
-                        'service-monitor',
-                        status === 'down' ? 'error' : 'info',
-                        0.98,
-                        `service:${target.name}:${status}`,
-                        // Measured by the L19 probe: explicit evidence, otherwise
-                        // the event bus suppresses the alert (R2 NZ-11).
-                        [`health:service:${target.name}`],
-                    )
-                } catch {
-                    console.log(`[L19] Alert could not be sent: ${msg.slice(0, 100)}`)
-                }
-            })
-        }
-
-        monitor.start()
-        console.log('[Nova] ✓ L19 Service Monitoring aktiv')
-    } catch (err) {
-        console.log(`[Nova] ⚠ L19 Monitoring nicht verfügbar: ${err}`)
-    }
+    // L19 Service Monitoring is gone (2.82.0 ein Wächter): its targets were
+    // migrated into the Wächter (watch/targets.ts), /monitor edits that list.
 
     // ============================================
     // Start L21 Cross-Node Health Monitor
@@ -2356,7 +2338,8 @@ async function startDaemon() {
             // One message per transition, one per recovery (2.82.0, L21 nodeAlertTransitions).
             nodeHealth.setAlertCallback(async (message: string, kind?: 'alarm' | 'erholt') => {
                 try {
-                    await (state as any).sendGovernedProactive?.(message, 'node-health', kind === 'erholt' ? 'info' : 'error', 0.98)
+                    // Recovery is 'warning' like the Wächter's: one notice when it starts, one when it ends.
+                    await (state as any).sendGovernedProactive?.(message, 'node-health', kind === 'erholt' ? 'warning' : 'error', 0.98)
                 } catch {
                     console.log(`[L21] Alert could not be sent: ${message.slice(0, 100)}`)
                 }
@@ -2464,23 +2447,8 @@ async function startDaemon() {
                 consolidation: autonomy.getMemoryConsolidator(),
             }
 
-        // Wire L19 monitoring alerts to insight engine
-        const insightEngine = autonomy.getInsightEngine()
-        const monitor = (state as any).serviceMonitor
-        if (monitor) {
-            const originalCallback = monitor.alertCallback
-            monitor.setAlertCallback(async (target: any, status: string) => {
-                // Forward to insight engine
-                insightEngine.recordInsight(
-                    status === 'down' ? 'warning' : 'observation',
-                    status === 'down'
-                        ? `Service "${target.name}" ist offline seit ${new Date().toLocaleTimeString('de-DE')}`
-                        : `Service "${target.name}" ist wieder online`
-                )
-                // Also call original callback
-                if (originalCallback) await originalCallback(target, status)
-            })
-        }
+        // L19 → Insight forwarding is gone with L19 (2.82.0): service outages are
+        // Wächter thoughts, reported once.
 
         // L21 node alerts are NOT copied into the insight engine (2.82.0): they
         // already reach Telegram once over the governed path; the copy came back
@@ -2571,7 +2539,7 @@ async function startDaemon() {
             const dashboardUrl = getDashboardAddress()
 
             const lines = [
-                '✨ *Nova Online!*',
+                '✨ *Xaventra Online!*',
                 '',
                 `📦 Version: \`${(globalThis as any).__novaVersion || 'unknown'}\``,
                 `🤖 Aktives Modell: \`${currentModel}\``,

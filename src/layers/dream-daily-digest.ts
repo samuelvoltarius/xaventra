@@ -101,7 +101,7 @@ export function buildDailyDigest(): string | null {
     const worstRT = rtScores.length > 0 ? Math.min(...rtScores) : -1
 
     const lines = [
-        `*Nova Tagesbericht* (${currentDigest.date})`,
+        `*Xaventra Tagesbericht* (${currentDigest.date})`,
         `${totalDreams} Traumzyklen, ${totalDuration}ms Gesamtdauer`,
         '',
     ]

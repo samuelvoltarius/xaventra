@@ -1264,7 +1264,7 @@ export function formatMissionConfig(): string {
     const c = config
     let msg = `⚙️ *Auftrags-Konfiguration*\n\n`
     msg += `🔄 *Continuations:* ${c.maxContinuations}\n`
-    msg += `   _Wie oft Nova nach Abschluss weitermacht_\n\n`
+    msg += `   _Wie oft Xaventra nach Abschluss weitermacht_\n\n`
     msg += `📝 *Steps:* ${c.maxSteps}\n`
     msg += `   _Max. Teilaufgaben pro Auftrag_\n\n`
     msg += `🔁 *Retries:* ${c.maxRetries}\n`

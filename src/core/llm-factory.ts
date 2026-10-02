@@ -7,6 +7,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { fetchModelList } from '../llm/model-list-cache.js'
+import { readProbeResults } from '../llm/capability-probe.js'
 
 
 // ============================================
@@ -47,7 +49,7 @@ async function markMiniMaxRateLimited(error: unknown): Promise<void> {
         recordRuntimeDoctorFinding({
             key: 'provider-minimax-rate-limit',
             title: 'MiniMax rate limit detected',
-            detail: `MiniMax ist bis ${new Date(minimaxBlockedUntil).toISOString()} gesperrt; Nova verwendet lokale Modelle.`,
+            detail: `MiniMax ist bis ${new Date(minimaxBlockedUntil).toISOString()} gesperrt; Xaventra verwendet lokale Modelle.`,
             category: 'health',
             severity: quotaExhausted ? 'critical' : 'warning',
             recommendation: 'Lokalen Fallback verwenden und MiniMax erst nach Ablauf des Cooldowns erneut prüfen.',
@@ -135,21 +137,19 @@ function rankedRuntimeLocalLLMs(entries: LLMEntry[], requiresTools: boolean): LL
         .map(entry => [`${entry.endpoint}|${entry.model}`, entry]))
     const health = new Map<string, { online?: boolean; supportsTools?: boolean; avgLatencyMs?: number; probeTime?: string }>()
     try {
-        const path = join(process.cwd(), '.nova-data', 'model-capabilities.json')
-        if (existsSync(path)) {
-            const parsed = JSON.parse(readFileSync(path, 'utf-8'))
-            for (const capability of Object.values(parsed.models || {}) as any[]) {
-                if (!capability?.endpoint || !capability?.model || !isChatModel(capability.model)) continue
-                const key = `${capability.endpoint}|${capability.model}`
-                health.set(key, capability)
-                if (capability.online) {
-                    merged.set(key, {
-                        provider: capability.endpoint.includes(':11434') ? 'ollama' : 'local',
-                        model: capability.model,
-                        local: true,
-                        endpoint: capability.endpoint,
-                    })
-                }
+        // 2.82.0 schema fix: the probe cache has `results` (not `models`); read it through
+        // the probe module itself so the format has one reader.
+        for (const capability of readProbeResults() as any[]) {
+            if (!capability?.endpoint || !capability?.model || !isChatModel(capability.model)) continue
+            const key = `${capability.endpoint}|${capability.model}`
+            health.set(key, capability)
+            if (capability.online) {
+                merged.set(key, {
+                    provider: capability.endpoint.includes(':11434') ? 'ollama' : 'local',
+                    model: capability.model,
+                    local: true,
+                    endpoint: capability.endpoint,
+                })
             }
         }
     } catch { /* capability cache is optional */ }
@@ -216,9 +216,9 @@ export async function detectAvailableLLMs(): Promise<void> {
             const openaiKey = providers.openai?.apiKey || apis.openai_key
             if (openaiKey && (providers.openai?.enabled !== false)) {
                 try {
-                    const resp = await fetch('https://api.openai.com/v1/models', {
+                    const resp = await fetchModelList('https://api.openai.com/v1/models', {
                         headers: { 'Authorization': `Bearer ${openaiKey}` },
-                        signal: AbortSignal.timeout(5000),
+                        timeoutMs: 5000,
                     })
                     if (resp.ok) {
                         const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -283,12 +283,12 @@ export async function detectAvailableLLMs(): Promise<void> {
             const anthropicKey = providers.anthropic?.apiKey || apis.anthropic_key
             if (anthropicKey && (providers.anthropic?.enabled !== false)) {
                 try {
-                    const resp = await fetch('https://api.anthropic.com/v1/models', {
+                    const resp = await fetchModelList('https://api.anthropic.com/v1/models', {
                         headers: {
                             'x-api-key': anthropicKey,
                             'anthropic-version': '2023-06-01',
                         },
-                        signal: AbortSignal.timeout(5000),
+                        timeoutMs: 5000,
                     })
                     if (resp.ok) {
                         const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -312,9 +312,9 @@ export async function detectAvailableLLMs(): Promise<void> {
             const openrouterKey = providers.openrouter?.apiKey || apis.openrouter_key
             if (openrouterKey && (providers.openrouter?.enabled !== false)) {
                 try {
-                    const resp = await fetch('https://openrouter.ai/api/v1/models', {
+                    const resp = await fetchModelList('https://openrouter.ai/api/v1/models', {
                         headers: { 'Authorization': `Bearer ${openrouterKey}` },
-                        signal: AbortSignal.timeout(5000),
+                        timeoutMs: 5000,
                     })
                     if (resp.ok) {
                         const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -337,9 +337,9 @@ export async function detectAvailableLLMs(): Promise<void> {
             const groqKey = providers.groq?.apiKey || apis.groq_key
             if (groqKey && (providers.groq?.enabled !== false)) {
                 try {
-                    const resp = await fetch('https://api.groq.com/openai/v1/models', {
+                    const resp = await fetchModelList('https://api.groq.com/openai/v1/models', {
                         headers: { 'Authorization': `Bearer ${groqKey}` },
-                        signal: AbortSignal.timeout(5000),
+                        timeoutMs: 5000,
                     })
                     if (resp.ok) {
                         const data = await resp.json() as { data?: Array<{ id: string }> }
@@ -361,9 +361,9 @@ export async function detectAvailableLLMs(): Promise<void> {
                     let models = ext.models || []
                     if (models.length === 0) {
                         try {
-                            const resp = await fetch(`${ext.baseUrl}/models`, {
+                            const resp = await fetchModelList(`${ext.baseUrl}/models`, {
                                 headers: { 'Authorization': `Bearer ${ext.apiKey}` },
-                                signal: AbortSignal.timeout(5000),
+                                timeoutMs: 5000,
                             })
                             if (resp.ok) {
                                 const data = await resp.json() as { data?: Array<{ id: string }> }

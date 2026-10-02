@@ -191,16 +191,13 @@ function actionId(type: string, target: string): string {
 }
 
 async function probeOllama(endpoint: string): Promise<{ online: boolean; latencyMs?: number; models: string[] }> {
-    const start = Date.now()
-    try {
-        const resp = await fetch(`${endpoint.replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(2500) })
-        if (!resp.ok) return { online: false, models: [] }
-        const data = await resp.json() as any
-        const models = Array.isArray(data.models) ? data.models.map((m: any) => String(m.name || m.model)).filter(Boolean) : []
-        return { online: true, latencyMs: Date.now() - start, models }
-    } catch {
-        return { online: false, models: [] }
-    }
+    // The one shared KI-port probe (mesh/discovery-probe.ts, 2.82.0): AIScan's answer is reused.
+    const { probeAiJson } = await import('../mesh/discovery-probe.js')
+    const result = await probeAiJson(endpoint, '/api/tags', 2500)
+    if (!result.ok) return { online: false, models: [] }
+    const data = result.body ?? {}
+    const models = Array.isArray(data.models) ? data.models.map((m: any) => String(m.name || m.model)).filter(Boolean) : []
+    return { online: true, latencyMs: result.ms ?? undefined, models }
 }
 
 function capabilitiesFromNode(node: any, ollamaModels: string[]): string[] {
@@ -370,7 +367,7 @@ function computeActions(
             id: actionId('config', 'voice.autoInstallDeps'),
             type: 'config_patch',
             title: 'Voice Auto-Install bewusst auf false setzen',
-            reason: 'Nova arbeitet im Plan+Freigabe-Modus; fehlende Voice-Pakete sollen geplant, nicht beim Boot still installiert werden.',
+            reason: 'Xaventra arbeitet im Plan+Freigabe-Modus; fehlende Voice-Pakete sollen geplant, nicht beim Boot still installiert werden.',
             risk: 'low',
             configPath: 'voice.autoInstallDeps',
             // mergePatch is deep: only the changed key, so later owner edits
@@ -385,7 +382,7 @@ function computeActions(
                 id: actionId('local', 'ffmpeg'),
                 type: 'local_shell',
                 title: 'Optional ffmpeg/ffplay installieren',
-                reason: 'ffplay verbessert Windows-Audio-Playback; Nova kann ohne ffplay per PowerShell-Fallback sprechen.',
+                reason: 'ffplay verbessert Windows-Audio-Playback; Xaventra kann ohne ffplay per PowerShell-Fallback sprechen.',
                 risk: 'medium',
                 ...(platform() === 'linux' ? { catalogId: 'ffmpeg' } : {}),
                 command: platform() === 'win32'
@@ -570,9 +567,9 @@ function mergePatch(base: any, patch: any): any {
 }
 
 export function formatSelfSetupStatus(state = loadSelfSetupState()): string {
-    if (!state) return 'Kein Self-Setup-State vorhanden. Nutze self_setup_plan oder starte Nova neu.'
+    if (!state) return 'Kein Self-Setup-State vorhanden. Nutze self_setup_plan oder starte Xaventra neu.'
     const lines = [
-        `Nova Self-Setup (${state.generatedAt})`,
+        `Xaventra Self-Setup (${state.generatedAt})`,
         `Modus: ${state.mode === 'yolo' ? 'YOLO (ohne Wirkung: dauerhafte Erlaubnisse über /setup allow)' : 'Plan + Freigabe'}`,
         state.summary,
         '',

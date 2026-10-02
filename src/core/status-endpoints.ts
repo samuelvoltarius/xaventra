@@ -1,36 +1,39 @@
 /**
- * /status: KI-Endpunkte and Knoten (2.82.0).
+ * /status: KI-Endpunkte and Knoten — 2.82.0 vollständig aus dem capability-graph.
  *
- * The endpoint list groups the local entries of `availableLLMs` by host:port.
- * It used to be headed "Mesh (N Nodes)" although it lists endpoints, so the
- * Spark appeared twice and ns2/NAS (no LLM endpoint) not at all. The node line
- * comes from the capability graph, the one inventory of mesh nodes.
+ * Before, the endpoint list grouped the local entries of `availableLLMs` by
+ * host:port (a second inventory next to the graph; the Spark appeared twice
+ * as localhost and Tailscale IP, ns2/NAS were missing). Now both lines come
+ * from the one inventory, `getCapabilityGraph().getSnapshot().nodes`: each
+ * node's running runtimes with endpoint and models, and the node list. Only
+ * cloud models (not nodes) still come from the configured provider list.
  */
 import type { CapabilityGraphNode } from '../mesh/capability-graph.js'
 
-export interface StatusLLMEntry { provider: string; model: string; local: boolean; endpoint?: string; nodeName?: string }
+type StatusNode = Pick<CapabilityGraphNode, 'id' | 'status'> & { runtimes?: CapabilityGraphNode['runtimes'] }
 
-export function formatEndpointSection(entries: readonly StatusLLMEntry[], configModel: string, graphNodes: ReadonlyArray<Pick<CapabilityGraphNode, 'id' | 'status'>>): string {
+const isEmbedding = (model: string) => /embed|nomic|bge|mxbai/i.test(model)
+const hostPort = (endpoint: string) => String(endpoint || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+
+export function formatEndpointSection(graphNodes: readonly StatusNode[], configModel: string, cloudModels: readonly string[] = []): string {
+    const nodes = graphNodes.filter(node => node?.id)
     const endpointLines: string[] = []
-    const byHost = new Map<string, { name: string; models: string[] }>()
-    for (const entry of entries) {
-        if (!entry.local || !entry.endpoint) continue
-        const host = entry.endpoint.replace(/https?:\/\//, '').replace(/\/.*$/, '')
-        if (!byHost.has(host)) byHost.set(host, { name: entry.nodeName || host, models: [] })
-        // Skip embedding models
-        if (!/embed|nomic|bge|mxbai/i.test(entry.model)) byHost.get(host)!.models.push(entry.model)
+    let endpoints = 0
+    for (const node of nodes) {
+        for (const runtime of node.runtimes ?? []) {
+            if (runtime.status !== 'running' || !runtime.endpoint) continue
+            endpoints++
+            const models = (runtime.models ?? []).filter(model => !isEmbedding(model))
+            const isPrimary = models.includes(configModel)
+            const modelList = models.slice(0, 3).join(', ') + (models.length > 3 ? ` +${models.length - 3}` : '')
+            endpointLines.push(`  ${isPrimary ? '★' : '○'} ${node.id} ${runtime.type} (${hostPort(runtime.endpoint)}): ${modelList || '–'}`)
+        }
     }
-    for (const [host, info] of byHost) {
-        const isPrimary = info.models.includes(configModel)
-        const modelList = info.models.slice(0, 3).join(', ') + (info.models.length > 3 ? ` +${info.models.length - 3}` : '')
-        endpointLines.push(`  ${isPrimary ? '★' : '○'} ${info.name} (${host}): ${modelList || '–'}`)
-    }
-    const cloudModels = entries.filter(entry => !entry.local).map(entry => entry.model).slice(0, 4)
-    if (cloudModels.length > 0) endpointLines.push(`  ☁ Cloud: ${cloudModels.join(' → ')}`)
+    const cloud = [...new Set(cloudModels)].slice(0, 4)
+    if (cloud.length > 0) endpointLines.push(`  ☁ Cloud: ${cloud.join(' → ')}`)
 
     const parts: string[] = []
-    if (endpointLines.length > 0) parts.push(`\n*KI-Endpunkte (${byHost.size}):*\n${endpointLines.join('\n')}`)
-    const nodes = graphNodes.filter(node => node?.id)
+    if (endpointLines.length > 0) parts.push(`\n*KI-Endpunkte (${endpoints}):*\n${endpointLines.join('\n')}`)
     if (nodes.length > 0) parts.push(`\n*Knoten (${nodes.length}):* ${nodes.map(node => node.status === 'offline' ? `${node.id} (offline)` : node.id).join(', ')}`)
     return parts.join('')
 }

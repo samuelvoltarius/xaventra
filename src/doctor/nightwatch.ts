@@ -1,15 +1,15 @@
 /**
- * Nachtwache — runs the read-only probes from `nightwatch-checks.ts`, keeps a
- * durable journal and hands findings to the autonomy loop as `CheckResult`s.
+ * Nachtwache — runs the read-only probes from `nightwatch-checks.ts` and keeps
+ * a durable journal (self-heal and the responsibilities read it).
  *
- * Alarm policy is not re-implemented here: the autonomy loop already notifies
- * `critical` at any hour, `warning` only outside quiet hours, and dedupes by
- * fingerprint. The watch only has to classify honestly.
+ * 2.82.0 (ein Wächter): the Wächter is the only runner. Before, the autonomy
+ * loop, a planner job and the sensing system adapter each turned the same
+ * finding into a message. The Wächter turns findings into its alarms (one per
+ * outage, one recovery); this module only probes and classifies honestly.
  */
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { CheckResult } from '../core/autonomy-loop.js'
 import type { PrincipalContext } from '../users/principal-id.js'
 import { parseNightwatchConfig, runCheck, type NightwatchConfig, type NightwatchResult, type ProbeDeps } from './nightwatch-checks.js'
 
@@ -23,7 +23,6 @@ export interface NightwatchReport {
 
 const DEFAULT_INTERVAL_MINUTES = 30
 const MAX_PARALLEL = 4
-const SOURCE = 'nightwatch'
 
 export function loadNightwatchConfig(path: string): NightwatchConfig {
     if (!existsSync(path)) throw new Error(`Nachtwache-Konfiguration fehlt: ${path}`)
@@ -45,25 +44,6 @@ export async function runNightwatch(config: NightwatchConfig, deps: ProbeDeps = 
     }
     await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, config.checks.length) }, worker))
     return { startedAt, finishedAt: new Date(now()).toISOString(), results }
-}
-
-/** Maps a report to autonomy-loop results. All green yields one quiet info
- * line; every non-ok check becomes its own notifiable finding. */
-export function toAutonomyCheckResults(report: NightwatchReport, nowMs = Date.now()): CheckResult[] {
-    if (report.error) {
-        return [{ source: SOURCE, severity: 'warning', message: `Nachtwache läuft nicht: ${report.error}`, timestamp: nowMs, requiresNotification: true }]
-    }
-    const failing = report.results.filter(result => result.status !== 'ok')
-    if (failing.length === 0) {
-        return [{ source: SOURCE, severity: 'info', message: `Nachtwache: ${report.results.length} Prüfungen ok`, timestamp: nowMs, requiresNotification: false }]
-    }
-    return failing.map(result => ({
-        source: SOURCE,
-        severity: result.severity,
-        message: `${result.label} (${result.host}): ${result.status === 'unbekannt' ? 'nicht prüfbar – ' : ''}${result.message}`,
-        timestamp: nowMs,
-        requiresNotification: true,
-    }))
 }
 
 function journalFile(dir: string, iso: string): string {
@@ -100,12 +80,13 @@ export interface NightwatchSourceOptions {
     deps?: ProbeDeps
 }
 
-/** Returns a check function for the autonomy loop. It re-runs the probes at
- * most every `intervalMinutes`, shares one in-flight run between callers and
- * turns an unusable config into a visible warning instead of silence. */
-export function createNightwatchSource(options: NightwatchSourceOptions): () => Promise<CheckResult[]> {
+/** Runner for the Wächter: probes at most every `intervalMinutes` (from the
+ * config), shares one in-flight run, journals every run and turns an unusable
+ * config into a report with `error` instead of silence. Returns null when no
+ * run is due. */
+export function createNightwatchRunner(options: NightwatchSourceOptions): () => Promise<NightwatchReport | null> {
     const now = options.deps?.now ?? Date.now
-    let last: { at: number; report: NightwatchReport } | null = null
+    let lastAt: number | null = null
     let inFlight: Promise<NightwatchReport> | null = null
 
     const runOnce = async (): Promise<NightwatchReport> => {
@@ -123,16 +104,14 @@ export function createNightwatchSource(options: NightwatchSourceOptions): () => 
     }
 
     return async () => {
+        if (inFlight) { await inFlight; return null }
         let intervalMs = DEFAULT_INTERVAL_MINUTES * 60_000
         try { intervalMs = (loadNightwatchConfig(options.configPath).intervalMinutes ?? DEFAULT_INTERVAL_MINUTES) * 60_000 } catch { /* runOnce reports it */ }
-        if (!last || now() - last.at >= intervalMs) {
-            if (!inFlight) {
-                inFlight = runOnce().finally(() => { inFlight = null })
-            }
-            const report = await inFlight
-            last = { at: now(), report }
-        }
-        return toAutonomyCheckResults(last.report, now())
+        if (lastAt !== null && now() - lastAt < intervalMs) return null
+        inFlight = runOnce().finally(() => { inFlight = null })
+        const report = await inFlight
+        lastAt = now()
+        return report
     }
 }
 

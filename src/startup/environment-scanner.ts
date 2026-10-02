@@ -5,7 +5,7 @@
  * at startup and stores their paths for reliable tool execution.
  */
 
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -86,6 +86,34 @@ function findBinary(names: string[], commonPaths: string[] = []): string | undef
 
     return undefined
 }
+
+const PROGRAM_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/
+const programCache = new Map<string, { at: number; path?: string }>()
+
+/**
+ * The one program search (2.82.0 Aufräumen „Inventar“): environment.ts,
+ * mesh-registry and AIScan asked `which`/`where` themselves. Now every presence
+ * check goes through here — same lookup, results shared for 5 minutes, no
+ * shell (`execFileSync`), only plain program names.
+ */
+export function locateProgram(name: string, commonPaths: string[] = []): string | undefined {
+    if (!PROGRAM_NAME.test(String(name))) return undefined
+    const key = `${name}\u0000${commonPaths.join('|')}`
+    const cached = programCache.get(key)
+    if (cached && Date.now() - cached.at < ENVIRONMENT_CACHE_TTL_MS) return cached.path
+    let found: string | undefined
+    try {
+        const out = execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+        const first = String(out).split(/\r?\n/)[0].trim()
+        if (first && existsSync(first)) found = first
+    } catch { /* not in PATH */ }
+    if (!found) found = commonPaths.find(path => existsSync(path))
+    programCache.set(key, { at: Date.now(), path: found })
+    return found
+}
+
+/** Tests only. */
+export function resetProgramCache(): void { programCache.clear() }
 
 /**
  * Scan system for available binaries

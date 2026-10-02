@@ -200,7 +200,7 @@ export async function handleCommand(
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
                 if (tg) {
-                    await tg.sendWithButtons(from, '✨ *Nova* — Was möchtest du tun?', [
+                    await tg.sendWithButtons(from, '✨ *Xaventra* — Was möchtest du tun?', [
                         [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '🧠 Layers', callback_data: 'cmd_layers' }],
                         [{ text: '🤖 Modell wechseln', callback_data: 'cmd_models' }, { text: '🎭 Persona', callback_data: 'cmd_persona' }],
                         [{ text: '💾 Memory', callback_data: 'cmd_memory' }, { text: '📚 Skills', callback_data: 'cmd_skills' }],
@@ -219,7 +219,7 @@ export async function handleCommand(
             } catch { /* non-Telegram */ }
 
             // Fallback: text-only help
-            return `✨ *Nova Befehle*
+            return `✨ *Xaventra Befehle*
 
 *System:* /status /layers /model /models /strict /persona /info
 *Reasoning:* /think /reasoning /verbose /debug
@@ -249,7 +249,7 @@ export async function handleCommand(
             const { getProcedureStore } = await import('../learning/procedure-store.js')
             const procedureStats = getProcedureStore().getStats()
 
-            const layerText = `📊 *Nova Layer-Status*
+            const layerText = `📊 *Xaventra Layer-Status*
 
 Prozeduren: ${procedureStats.procedures} verifiziert gemerkt
 L7 Learning & Swarm: ${state.learning ? '✅ aktiv' : '❌'}
@@ -286,7 +286,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             ))
             const nodes: { name: string, host: string }[] = config.nodes || []
 
-            const progress: string[] = ['🚀 *Nova Deploy gestartet...*', '']
+            const progress: string[] = ['🚀 *Xaventra Deploy gestartet...*', '']
 
             // Step 1: Build
             try {
@@ -329,7 +329,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                 resolveConfigPath(), 'utf-8'
             ))
             const nodes: { name: string, host: string }[] = config.nodes || []
-            const results: string[] = ['🔄 *Nova Rollback...*', '']
+            const results: string[] = ['🔄 *Xaventra Rollback...*', '']
 
             for (const node of nodes) {
                 try {
@@ -450,7 +450,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
             const activeModel = state.llm?.modelId || 'unknown'
             const activeProvider = state.llm?.provider || 'unknown'
 
-            let text = `🤖 *Nova — Verfügbare Modelle*\n\n`
+            let text = `🤖 *Xaventra — Verfügbare Modelle*\n\n`
             text += `*Aktiv:* \`${activeProvider}/${activeModel}\`\n\n`
 
             const labels: Record<string, string> = {
@@ -591,7 +591,7 @@ Aktuell: **${current.toUpperCase()}**
 Optionen:
 /think on - Denke immer vor Antworten
 /think off - Kein explizites Denken
-/think auto - Nova entscheidet selbst (Standard)
+/think auto - Xaventra entscheidet selbst (Standard)
 
 _Bei ON sieht der User mehr durchdachte Antworten.
 <thinking> Tags werden NICHT angezeigt._`
@@ -690,7 +690,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 
         case 'learn': {
             if (!args) {
-                const learnText = `📚 *Nova Learning*\n\nIch kann neue Skills lernen!\n\nBeispiel: \`/learn qr_code\`\n/learn screenshot\n/learn pdf_parse\n\nOder wähle eine Kategorie:`
+                const learnText = `📚 *Xaventra Learning*\n\nIch kann neue Skills lernen!\n\nBeispiel: \`/learn qr_code\`\n/learn screenshot\n/learn pdf_parse\n\nOder wähle eine Kategorie:`
 
                 // Try Telegram buttons
                 try {
@@ -766,7 +766,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 if (stats) costLine = `\n💰 Heute: ${stats.totalRequests || 0} Requests, ${stats.totalTokens || 0} Tokens`
             } catch { /* ok */ }
 
-            return `🔍 *Nova Self-Check*
+            return `🔍 *Xaventra Self-Check*
 
 🤖 Modell: ${provider}/${model}
 ⏱️ Uptime: ${uptimeStr}
@@ -833,8 +833,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 'llm', 'tools', 'memory', 'resilience', 'learning',
                 'coreRuntime', 'channelRouter',
                 'vision', 'astAnalyzer', 'costTracker',
-                'businessSense',
-                'serviceMonitor', 'antiHallucination',
+                'businessSense', 'antiHallucination',
                 'knowledgeGraph', 'journal', 'intelligence',
                 'securityScanner', 'autonomy', 'lanceMemory',
             ]
@@ -854,19 +853,26 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 decisionCount = listDecisions().filter(item => item.status === 'aktiv' && item.bindend).length
             } catch { /* decisions optional */ }
 
-            // Monitoring
-            const monitorTargets = (state as any).serviceMonitor?.getTargets?.()?.length || 0
+            // Monitoring: the Wächter's targets (config + /monitor list), 2.82.0
+            let monitorTargets = 0
+            try {
+                const { getWatchSettings, watchDir } = await import('../watch/runtime.js')
+                const { loadManagedTargets } = await import('../watch/targets.js')
+                monitorTargets = getWatchSettings().targets.length + loadManagedTargets(watchDir()).targets.length
+            } catch { /* watch optional */ }
 
             // KI-Endpunkte (grouped by host:port) + the real node list from the capability graph (2.82.0)
             let meshSection = ''
             try {
-                let graphNodes: Array<{ id: string; status: 'online' | 'offline' | 'busy' | 'unknown' }> = []
+                // 2.82.0: endpoints and nodes from the capability graph only; cloud models are not nodes.
+                let graphNodes: import('../mesh/capability-graph.js').CapabilityGraphNode[] = []
                 try {
                     const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
                     graphNodes = getCapabilityGraph().getSnapshot().nodes
                 } catch { /* graph optional */ }
                 const { formatEndpointSection } = await import('./status-endpoints.js')
-                meshSection = formatEndpointSection(availableLLMs, configModel, graphNodes)
+                const cloudModels = availableLLMs.filter(entry => !entry.local).map(entry => entry.model)
+                meshSection = formatEndpointSection(graphNodes, configModel, cloudModels)
             } catch { /* mesh info optional */ }
 
             // Phase 7 Wächter: compact lines, owner only (infrastructure details).
@@ -879,7 +885,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                 } catch { /* watch optional */ }
             }
 
-            const statusText = `*Nova v${NOVA_VERSION} Status*
+            const statusText = `*Xaventra v${NOVA_VERSION} Status*
 
 *Runtime:*
   Model: ${configModel}
@@ -899,7 +905,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 *Intelligence:*
   Korrekturen: ${correctionCount} (Memory-Governance)
   Entscheidungen: ${decisionCount} gültig
-  Monitor-Targets: ${monitorTargets}
+  Wächter-Ziele: ${monitorTargets}
 
 *Channels:* ${channels.length > 0 ? channels.join(', ') : 'keine'}${watchSection}`
 
@@ -1162,7 +1168,7 @@ Dann: /llm local`
         }
 
         case 'info':
-            return `✨ *Nova v${NOVA_VERSION}*
+            return `✨ *Xaventra v${NOVA_VERSION}*
 _Autonomer, selbstlernender KI-Assistent — 21-Layer-Architektur_
 _356 TypeScript-Dateien • ~102k Zeilen • 32 Tools_
 
@@ -1178,8 +1184,8 @@ L6 Session Summary, Cold Storage, Core Facts • L7 Learning & Tool Learning •
 🔬 *Advanced (L10-L18):*
 L10 Vision • L11 Project Manager • L12 QA & Anti-Hallucination • L13 AST Analyzer • L14 Cost Tracker • L15 Self-Check & Security Scanner • L16 Business Sense • L17 Autonomous Learning • L18 LLM Router (Multi-Model)
 
-📡 *System (L19-L21):*
-L19 Monitoring • L20 Self-Improvement • L21 Node Health
+📡 *System (L20-L21, Wächter):*
+Wächter (Ziele, Nachtwache, Prognosen) • L20 Self-Improvement • L21 Node Health
 
 🧠 *Intelligence (14 Module):*
 Entity Extractor • Intent Router • Task Planner • Tool Chainer • Model Router • Emotion Tracker • Self-Reflection • Proactive Learning & Suggestions • Result Analyzer • User Patterns • Autonomy Engine • Thinking Engine
@@ -1600,7 +1606,7 @@ Gebaut für Xaventra contributors 🌶️`
 
         case 'learned':
         case 'gelernt': {
-            const parts: string[] = ['📊 *Was Nova gelernt hat*\n']
+            const parts: string[] = ['📊 *Was Xaventra gelernt hat*\n']
 
             // Corrections (governed memory) and owner decisions
             try {
@@ -1783,11 +1789,6 @@ Gebaut für Xaventra contributors 🌶️`
                     costTracker.saveHistory()
                     saved.push('💰 Cost Tracker')
                 }
-                // Save Monitoring Config
-                const monitor = (state as any).serviceMonitor
-                if (monitor) {
-                    saved.push('📡 Monitor Config')
-                }
 
                 if (saved.length === 0) return '⚠️ Nichts zu speichern (keine aktiven Systeme)'
                 return `✅ *Gespeichert!*\n\n${saved.join('\n')}\n\nAlle Daten sind persistiert.`
@@ -1906,7 +1907,7 @@ Gebaut für Xaventra contributors 🌶️`
                 if (action === 'logout') {
                     if (!mayManageAuth) return '🔒 Nur Owner/Admin dürfen Codex-Logout ausführen.'
                     await runtime.endCodexRuntimeLogin(principalId)
-                    return '✅ Codex wurde für deinen Nova-User auf diesem Node abgemeldet. Nova nutzt nun das lokale vLLM.'
+                    return '✅ Codex wurde für deinen Xaventra-User auf diesem Node abgemeldet. Xaventra nutzt nun das lokale vLLM.'
                 }
                 return 'Syntax: /codex status | /codex login [device|browser] | /codex logout'
             } catch (error) {
@@ -1985,7 +1986,7 @@ ${url}
 4. Sende die URL hier:
    \`/callback <die kopierte URL>\`
 
-⏳ Nach dem Login nutzt Nova automatisch OpenAI.`
+⏳ Nach dem Login nutzt Xaventra automatisch OpenAI.`
                 } catch (err) {
                     return `❌ OpenAI Login fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`
                 }
@@ -2102,41 +2103,50 @@ Wenn Antworten trotzdem 401/429 melden: /login openai neu starten.`
             return null // Unbekannter Befehl -> an LLM weiterleiten
 
         case 'monitor': {
+            // 2.82.0 ein Wächter: /monitor edits the Wächter's own target list
+            // (watch/targets.ts). L19 with its own prober is gone.
+            if (principalContext?.permission !== 'owner') return 'Die Überwachungsliste ist nur für den Owner verfügbar.'
             try {
-                const { getServiceMonitor } = await import('../layers/L19-monitoring.js')
-                const monitor = getServiceMonitor()
-
+                const { refreshWatch, watchDir, handleWaechterCommand } = await import('../watch/runtime.js')
+                const { addManagedTarget, loadManagedTargets, removeManagedTarget } = await import('../watch/targets.js')
                 const [subCmd, ...rest] = (args || '').split(/\s+/)
-
                 switch (subCmd) {
                     case 'add': {
                         const [name, url] = rest
                         if (!name || !url) return '❌ Syntax: /monitor add <name> <url>'
-                        monitor.addTarget(name, url)
-                        return `✅ Monitor-Target "${name}" hinzugefügt: ${url}`
+                        const target = addManagedTarget(watchDir(), name, url)
+                        if (typeof target === 'string') return `❌ Nicht übernommen: ${target}`
+                        const watch = await refreshWatch()
+                        return `✅ Wächter-Ziel "${target.name}" hinzugefügt (${target.kind} ${target.host}${target.port ? `:${target.port}` : ''}${target.path && target.path !== '/' ? target.path : ''}). Wächter: ${watch.reason}`
                     }
                     case 'remove':
                     case 'rm': {
                         const [name] = rest
                         if (!name) return '❌ Syntax: /monitor remove <name>'
-                        const removed = monitor.removeTarget(name)
-                        return removed ? `✅ "${name}" entfernt` : `❌ "${name}" nicht gefunden`
+                        if (!removeManagedTarget(watchDir(), name)) return `❌ "${name}" nicht in der eigenen Liste (Config-Ziele stehen in autonomy.watch.targets)`
+                        await refreshWatch()
+                        return `✅ "${name}" entfernt`
                     }
                     case 'check': {
-                        const results = await monitor.checkAll()
-                        return results.length > 0 ? results.join('\n\n') : '✅ Keine Targets konfiguriert'
+                        const { probeTargets, defaultWatchProbeDeps } = await import('../watch/probes.js')
+                        const { getWatchSettings } = await import('../watch/runtime.js')
+                        const targets = [...getWatchSettings().targets, ...loadManagedTargets(watchDir()).targets]
+                        if (!targets.length) return '✅ Keine Ziele in der Liste'
+                        const results = await probeTargets(targets, defaultWatchProbeDeps, getWatchSettings().timeoutMs)
+                        return results.map(item => `${item.ok ? '✅' : '❌'} ${item.target.name}: ${item.detail}${item.ms !== null ? ` (${item.ms} ms)` : ''}`).join('\n')
                     }
                     case 'start':
-                        monitor.start()
-                        return '✅ Monitoring gestartet'
                     case 'stop':
-                        monitor.stop()
-                        return '⏹️ Monitoring gestoppt'
-                    default:
-                        return monitor.formatStatus()
+                        return 'ℹ️ Die Ziele bewacht der Wächter (/waechter); er läuft, solange Ziele in der Liste stehen oder autonomy.watch.enabled=true ist.'
+                    default: {
+                        const own = loadManagedTargets(watchDir())
+                        const lines = own.targets.map(item => `• ${item.name}: ${item.kind} ${item.host}${item.port ? `:${item.port}` : ''}${item.path && item.path !== '/' ? item.path : ''}`)
+                        const head = `📡 *Wächter-Ziele (eigene Liste)*${own.migratedFrom ? ` — übernommen aus ${own.migratedFrom}` : ''}\n\n${lines.length ? lines.join('\n') : 'Keine eigenen Ziele.'}\n\nHinzufügen: /monitor add <name> <url>\nBeispiel: /monitor add MeinServer https://example.com`
+                        return `${head}\n\n${handleWaechterCommand(principalContext)}`
+                    }
                 }
             } catch (err) {
-                return `❌ Monitoring nicht verfügbar: ${err}`
+                return `❌ Wächter nicht verfügbar: ${err}`
             }
         }
 
@@ -2332,7 +2342,7 @@ Prüfe: SSH-Key vorhanden? Port offen? User korrekt?`
                         const target = sub[1]
                         if (!target) return `❌ Syntax: /nodes install <name oder ip>
 
-Installiert Nova auf einem Remote-Node via SSH.
+Installiert Xaventra auf einem Remote-Node via SSH.
 Voraussetzung: SSH-Zugang mit Key-Auth.`
 
                         const nodes = await mesh.discoverNodes()
@@ -2375,10 +2385,10 @@ Voraussetzung: SSH-Zugang mit Key-Auth.`
                             }
 
                             // Step 2: Clone/update Nova
-                            steps.push('📥 Nova-Core clonen/updaten...')
+                            steps.push('📥 Xaventra-Core clonen/updaten...')
                             try {
                                 execSync(`ssh -p ${sshPort} ${sshTarget} "if [ -d /opt/nova-core ]; then cd /opt/nova-core && git pull; else git clone https://github.com/samuelvoltarius/xaventra.git /opt/nova-core; fi"`, { timeout: 60000, encoding: 'utf-8' })
-                                steps.push('✅ Nova-Core Repository bereit')
+                                steps.push('✅ Xaventra-Core Repository bereit')
                             } catch {
                                 steps.push('⚠ Git clone/pull fehlgeschlagen — Repository manuell prüfen')
                             }
@@ -2535,7 +2545,7 @@ Führt vorher automatisch Pre-Flight Checks durch.`
                             } catch { /* config copy optional */ }
 
                             // Step 5: Start daemon
-                            steps.push('\n🚀 Starte Nova Daemon...')
+                            steps.push('\n🚀 Starte Xaventra Daemon...')
                             try {
                                 execSync(
                                     `ssh -o ConnectTimeout=5 -p ${sshPort} ${sshUser}@${node.ip} "cd ~/nova-core && setsid bash -c 'NOVA_NODE_ONLY=true npx tsx src/daemon.ts > /tmp/nova-node.log 2>&1' &"`,
@@ -2547,7 +2557,7 @@ Führt vorher automatisch Pre-Flight Checks durch.`
                                     `ssh -o ConnectTimeout=5 -p ${sshPort} ${sshUser}@${node.ip} "sleep 4 && tail -5 ~/nova-core/nova.log"`,
                                     { timeout: 15000, encoding: 'utf-8' }
                                 ).trim()
-                                steps.push('✅ Nova gestartet')
+                                steps.push('✅ Xaventra gestartet')
                                 steps.push(`\n📋 Log:\n\`\`\`\n${log.slice(0, 400)}\n\`\`\``)
                             } catch (err: any) {
                                 steps.push(`❌ Start fehlgeschlagen: ${err.message?.slice(0, 150)}`)
@@ -2573,7 +2583,7 @@ Prüft einen neuen Host auf:
   • OS & Hardware (RAM, GPU, CPU)
   • Installierte AI-Tools (Ollama, vLLM, Whisper...)
   • Bereits laufende Modelle
-  • Nova-Daemon Präsenz
+  • Xaventra-Daemon Präsenz
   • Hardware-passende Modell-Empfehlungen`
 
                         const checkUser = sub[2] || 'xaventra'
@@ -2703,7 +2713,7 @@ Lösung:
                             }
 
                             // Nova status
-                            steps.push(`\n🤖 **Nova Daemon:** ${novaStatus === 'RUNNING' ? '✅ läuft' : '❌ nicht aktiv'}`)
+                            steps.push(`\n🤖 **Xaventra Daemon:** ${novaStatus === 'RUNNING' ? '✅ läuft' : '❌ nicht aktiv'}`)
 
                             // Model recommendations
                             const { getRecommendations, formatRecommendations, hardwareFromMeshNode } = await import('../mesh/model-recommender.js')
@@ -2735,7 +2745,7 @@ Lösung:
                             if (novaStatus !== 'RUNNING') {
                                 const nodeName = rawHost.replace(/[.@]/g, '-')
                                 steps.push(`• Node registrieren: \`/nodes add ${nodeName} ${rawHost} ${checkUser} ${checkPort}\``)
-                                steps.push(`• Nova installieren: \`/nodes install ${nodeName}\``)
+                                steps.push(`• Xaventra installieren: \`/nodes install ${nodeName}\``)
                             } else {
                                 steps.push(`• Node zur Mesh hinzufügen: \`/nodes add ${rawHost.replace(/[.@]/g, '-')} ${rawHost} ${checkUser} ${checkPort}\``)
                             }
@@ -2934,10 +2944,10 @@ Lösung:
                     }
 
                     default:
-                        return `🌐 *Nova Mesh — Befehle*
+                        return `🌐 *Xaventra Mesh — Befehle*
 
 *Discovery:*
-\`/nodes\` — Aktive und kürzlich erreichbare Nova-Nodes
+\`/nodes\` — Aktive und kürzlich erreichbare Xaventra-Nodes
 \`/nodes all\` — Historische, retired und tombstoned Nodes
 \`/nodes services\` — Relay, Witness, Transporte und AI-Runtimes
 \`/nodes check <ip> [user] [port]\` — Neuen Host prüfen + AI-Tools entdecken
@@ -2950,7 +2960,7 @@ Lösung:
 \`/nodes retire <name>\` — Node außer Betrieb nehmen
 \`/nodes tombstone <name> [ersetzt-durch]\` — Doppelte Identität sperren
 \`/nodes pair <name>\` — SSH-Verbindung testen
-\`/nodes install <name>\` — Nova auf Remote-Node installieren
+\`/nodes install <name>\` — Xaventra auf Remote-Node installieren
 \`/nodes sync <name>\` — Code + Config kopieren + Restart
 \`/nodes restart <name>\` — Daemon neustarten
 
@@ -3063,7 +3073,7 @@ Nutze /hosts new um einen hinzuzufügen:
 
                         return `📡 *Bekannte Hosts (${db.hosts.length})*
 
-🏠 Nova läuft auf: *${localName}* (${osPlatform()}) — IPs: ${localIPs.join(', ') || 'keine'}
+🏠 Xaventra läuft auf: *${localName}* (${osPlatform()}) — IPs: ${localIPs.join(', ') || 'keine'}
 
 ${hostLines}
 
@@ -3165,7 +3175,7 @@ _Deaktivieren: /verbose off_`
                     ? new Date(status.lastReport.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
                     : 'Noch kein Check'
 
-                return `🤖 *Nova Autonomy Status*\n\n` +
+                return `🤖 *Xaventra Autonomy Status*\n\n` +
                     `Status: ${running}\n` +
                     `Aktiviert: ${enabled}\n` +
                     `Intervall: ${status.config.intervalMinutes} Minuten\n` +
@@ -3194,19 +3204,20 @@ _Deaktivieren: /verbose off_`
                 const argLower = args.trim().toLowerCase()
 
                 if (argLower === 'on' || argLower === 'an') {
-                    updateAutonomyConfig({ quietHoursStart: 23, quietHoursEnd: 7 })
-                    return `🌙 *Quiet Hours: ✅ AKTIVIERT*\n\nNova ist ruhig von *23:00 - 07:00*\nKeine autonomen Nachrichten in dieser Zeit.\n\n_Anpassen: /quiet 22 8_\n_Deaktivieren: /quiet off_`
+                    const { DEFAULT_QUIET_HOURS } = await import('./quiet-hours.js')
+                    updateAutonomyConfig({ quietHoursStart: DEFAULT_QUIET_HOURS.start, quietHoursEnd: DEFAULT_QUIET_HOURS.end })
+                    return `🌙 *Quiet Hours: ✅ AKTIVIERT*\n\nXaventra ist ruhig von *${DEFAULT_QUIET_HOURS.start}:00 - 0${DEFAULT_QUIET_HOURS.end}:00* (gilt für alle Meldungen)\nKeine autonomen Nachrichten in dieser Zeit.\n\n_Anpassen: /quiet 22 8_\n_Deaktivieren: /quiet off_`
                 }
 
                 if (argLower === 'off' || argLower === 'aus') {
                     updateAutonomyConfig({ quietHoursStart: -1, quietHoursEnd: -1 })
-                    return `🌙 *Quiet Hours: ❌ DEAKTIVIERT*\n\nNova kann dich jetzt rund um die Uhr kontaktieren.\n\n_Aktivieren: /quiet on_`
+                    return `🌙 *Quiet Hours: ❌ DEAKTIVIERT*\n\nXaventra kann dich jetzt rund um die Uhr kontaktieren.\n\n_Aktivieren: /quiet on_`
                 }
 
                 if (argLower === 'notfall' || argLower === 'emergency' || argLower === 'critical') {
                     // Quiet hours on, but max notifications set very low (only critical)
                     updateAutonomyConfig({ quietHoursStart: 0, quietHoursEnd: 23, maxNotificationsPerHour: 1 })
-                    return `🚨 *Nur-Notfall Modus: ✅ AKTIVIERT*\n\nNova meldet sich nur bei *kritischen* Problemen (max 1x/Stunde).\n\n_Normal: /quiet off_\n_Quiet Hours: /quiet on_`
+                    return `🚨 *Nur-Notfall Modus: ✅ AKTIVIERT*\n\nXaventra meldet sich nur bei *kritischen* Problemen (max 1x/Stunde).\n\n_Normal: /quiet off_\n_Quiet Hours: /quiet on_`
                 }
 
                 // Parse "22 8" or "22-8" or "22:00 8:00"
@@ -3713,7 +3724,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                     return `${result.ok ? '✅' : '❌'} ${result.message}`
                 }
                 default:
-                    return `🔧 **Nova Self-Setup**
+                    return `🔧 **Xaventra Self-Setup**
 
 /setup status — Letzten Scan-Zustand anzeigen
 /setup plan — Frischen Scan + Plan generieren
@@ -3820,7 +3831,7 @@ Freigeben/Ablehnen über die Knopf-Karte. /patch approve <id> schickt sie (erneu
                 }
 
                 default:
-                    return `🧬 **Nova Patch-Verwaltung**
+                    return `🧬 **Xaventra Patch-Verwaltung**
 
 /patches — Ausstehende Vorschläge anzeigen
 /patch list — Alle Vorschläge
@@ -3892,7 +3903,7 @@ Freigeben/Ablehnen über die Knopf-Karte. /patch approve <id> schickt sie (erneu
 /browser search <query> — Web-Suche via DuckDuckGo
 /browser close — Browser schließen
 
-Nova kann den Browser auch direkt nutzen:
+Xaventra kann den Browser auch direkt nutzen:
 • browser_open(url) — Seite öffnen
 • browser_search(query) — Suchen
 • browser_click(selector) — Klicken

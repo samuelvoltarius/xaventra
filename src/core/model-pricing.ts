@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { cachedNvidiaQuery } from '../doctor/nvidia-smi.js'
 
 export interface ModelPrice {
     inputUsdPerMillion: number
@@ -101,16 +101,14 @@ function localPowerWatts(explicit?: number): { watts: number; source: string } {
         return { watts: 0, source: 'unpriced local runtime' }
     }
     if (!lastPowerSample || Date.now() - lastPowerSample.at > POWER_SAMPLE_TTL_MS) {
-        let watts = 0
-        try {
-            const measured = spawnSync('nvidia-smi', [
-                '--query-gpu=power.draw', '--format=csv,noheader,nounits',
-            ], { encoding: 'utf8', timeout: 2_000, windowsHide: true })
-            watts = measured.status === 0 ? parseNvidiaPowerDraw(measured.stdout) : 0
-        } catch { /* non-NVIDIA and restricted nodes remain explicitly unpriced */ }
-        lastPowerSample = { watts, at: Date.now() }
+        // The one GPU source (doctor/gpu-runtime.ts): last value at once, refresh in the
+        // background — never a blocking child process on an agent run (2.82.0).
+        let rows: string[][] | null = null
+        try { rows = cachedNvidiaQuery(['power.draw'], POWER_SAMPLE_TTL_MS) } catch { rows = null }
+        // No reading yet (refresh runs in the background): ask again next time instead of pinning 0 W.
+        if (rows) lastPowerSample = { watts: parseNvidiaPowerDraw(rows.map(row => row.join(',')).join('\n')), at: Date.now() }
     }
-    if (lastPowerSample.watts > 0) return { watts: lastPowerSample.watts, source: 'measured local GPU power via nvidia-smi' }
+    if (lastPowerSample && lastPowerSample.watts > 0) return { watts: lastPowerSample.watts, source: 'measured local GPU power via nvidia-smi' }
     return { watts: 0, source: 'unpriced local runtime' }
 }
 

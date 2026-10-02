@@ -22,7 +22,7 @@ export function formatReportCompact(report: DoctorReport): string {
     const healthLabel = summary.healthy ? 'Alles OK' : summary.errors > 0 ? `${summary.errors} Fehler` : `${summary.warnings} Warnung(en)`
 
     const lines: string[] = [
-        `🩺 *Nova Doctor* — ${healthIcon} ${healthLabel}`,
+        `🩺 *Xaventra Doctor* — ${healthIcon} ${healthLabel}`,
         ``,
     ]
 

@@ -92,6 +92,22 @@ describe('responsibility runtime', () => {
         expect(thoughts.some(item => item.signature === 'verantwortung:knoten-gesund:worker-b:nur-melden' && item.severity === 'info')).toBe(true)
     })
 
+    // 2.82.0 Aufräumen: „release-aktuell“ hat keinen Ausrollen-Ausführer; der
+    // Release-Wächter/Release-Knopf meldet die neue Version schon. Keine Mission,
+    // die nur mit „Brauche dich“ endet.
+    it('release-aktuell without a rollout executor starts no mission and never says Brauche dich', async () => {
+        const behind = (): ResponsibilitySignals => ({ ...signals('ok'), release: { version: '2.83.0' } })
+        const { rt, thoughts } = runtime({ collectSignals: vi.fn(async () => behind()) })
+        for (let i = 0; i < 3; i++) await rt.tick('test')
+        expect(rt.responsibilities.get('release-aktuell')?.status).toBe('aktiv')
+        expect(rt.missions.list()).toHaveLength(0)
+        expect(thoughts.filter(item => /Brauche dich/.test(String(item.title)))).toEqual([])
+        const quiet = thoughts.filter(item => item.signature === 'verantwortung:release-aktuell:nur-melden')
+        expect(quiet.length).toBeGreaterThan(0)
+        expect(quiet[0].title).toMatch(/Release-Wächter\/Release-Knopf melden bereits/)
+        expect(quiet.every(item => item.severity === 'info')).toBe(true)
+    })
+
     it('/arbeit shows missions by state and active responsibilities with fulfilled/violated', async () => {
         const { rt } = runtime()
         await rt.tick('test')

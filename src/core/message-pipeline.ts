@@ -1510,7 +1510,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const provider = state.llm?.provider || 'auto'
             const lines: string[] = []
             if (asksNovaIdentity) lines.push((await import('./self-description.js')).XAVENTRA_IDENTITY)
-            if (asksNovaVersion) lines.push(`Nova läuft hier auf v${version}.`)
+            if (asksNovaVersion) lines.push(`Xaventra läuft hier auf v${version}.`)
             if (asksModel) {
                 let codexRoute = false
                 let codexNode = ''

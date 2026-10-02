@@ -353,14 +353,13 @@ export function describeExpectation(expectation: Expectation): string {
 
 const GITHUB_HEADERS = { Accept: 'application/vnd.github+json', 'User-Agent': 'xaventra-delegation' }
 
+// 2.82.0: the one release lookup lives with the Release-Wächter (self-update/release-watch.ts).
 const releaseTagVerifier: Verifier = async (expectation, { fetch }) => {
-    const repo = expectation.repo || DEFAULT_REPO
-    const response = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(String(expectation.tag))}`, { method: 'GET', headers: GITHUB_HEADERS, redirect: 'error' })
-    if (response.status === 404) return { ergebnis: 'nicht-erfuellt', detail: `Release ${expectation.tag} gibt es nicht (GitHub 404)` }
-    if (!response.ok) return { ergebnis: 'unverifiziert', detail: `GitHub HTTP ${response.status}` }
-    const body = await response.json()
-    if (body?.draft === true) return { ergebnis: 'nicht-erfuellt', detail: `Release ${expectation.tag} ist nur ein Entwurf` }
-    return { ergebnis: 'verifiziert', detail: `Release ${expectation.tag} existiert${body?.published_at ? ` (veröffentlicht ${String(body.published_at).slice(0, 16)})` : ''}` }
+    const { lookupReleaseTag } = await import('./self-update/release-watch.js')
+    const result = await lookupReleaseTag(String(expectation.tag), { repo: expectation.repo || DEFAULT_REPO, fetcher: fetch as any })
+    if (result.state === 'fehlt' || result.state === 'entwurf') return { ergebnis: 'nicht-erfuellt', detail: result.detail }
+    if (result.state === 'unbekannt') return { ergebnis: 'unverifiziert', detail: result.detail }
+    return { ergebnis: 'verifiziert', detail: result.detail }
 }
 
 const ciGreenVerifier: Verifier = async (expectation, { fetch }) => {
@@ -381,13 +380,16 @@ const builtinVerifiers: Record<string, Verifier> = { 'release-tag': releaseTagVe
 const registeredVerifiers = new Map<string, Verifier>()
 
 /** Runs the read-only check for a criterion outside a delegation (e.g. the release re-check of the auto reminders). */
+/** One stable default fetch, so the shared release lookup cache is reused between checks (2.82.0). */
+const defaultVerifierFetch: FetchLike = (url, init) => fetch(url, init as any) as any
+
 export async function checkExpectation(raw: Expectation, fetchImpl?: FetchLike): Promise<{ ergebnis: VerificationResult; detail: string }> {
     const expectation = normalizeExpectation(raw)
     if (!expectation) return { ergebnis: 'unverifiziert', detail: 'ungültiges Kriterium' }
     const verifier = builtinVerifiers[expectation.art] ?? registeredVerifiers.get(expectation.art)
     if (!verifier) return { ergebnis: 'unverifiziert', detail: `keine lesende Prüfung für „${expectation.art}“` }
     try {
-        return await verifier(expectation, { fetch: fetchImpl ?? ((url, init) => fetch(url, init as any) as any) })
+        return await verifier(expectation, { fetch: fetchImpl ?? defaultVerifierFetch })
     } catch (error) {
         return { ergebnis: 'unverifiziert', detail: `Prüfung nicht möglich: ${clip((error as Error)?.message, 120)}` }
     }

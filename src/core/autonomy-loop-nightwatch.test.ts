@@ -34,43 +34,16 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
 })
 
-describe('autonomy loop: Nachtwache as check source', () => {
-    it('stays off unless the flag is set', async () => {
-        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: false },
-            nightwatch: { configPath: join(dir, 'missing.json'), journalDir: join(dir, 'journal') } })
+// 2.82.0 ein Wächter: the Nachtwache runs only in the Wächter (watch/runtime.ts).
+// The loop neither probes nor journals nor reports it — with the flag on or off.
+describe('autonomy loop: keine eigene Nachtwache mehr', () => {
+    it.each([false, true])('probt nicht und meldet nichts (nightwatch=%s)', async flag => {
+        const configPath = join(dir, 'nightwatch.json')
+        writeFileSync(configPath, JSON.stringify({ version: 1, intervalMinutes: 30, hosts: {}, checks: [{ id: 'dead', label: 'Toter Dienst', kind: 'http', url: 'http://127.0.0.1:9/health', timeoutMs: 2000 }] }))
+        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: flag },
+            nightwatch: { configPath, journalDir: join(dir, `journal-${flag}`) } })
         const report = await triggerAutonomyCheck()
         expect(report.checks.filter(check => check.source === 'nightwatch')).toEqual([])
-        expect(() => readdirSync(join(dir, 'journal'))).toThrow()
+        expect(() => readdirSync(join(dir, `journal-${flag}`))).toThrow()
     })
-
-    it('reports a missing config as a visible warning, never as silence', async () => {
-        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: true },
-            nightwatch: { configPath: join(dir, 'missing.json'), journalDir: join(dir, 'journal-missing') } })
-        const report = await triggerAutonomyCheck()
-        const watch = report.checks.filter(check => check.source === 'nightwatch')
-        expect(watch).toHaveLength(1)
-        expect(watch[0]).toMatchObject({ severity: 'warning', requiresNotification: true })
-        expect(watch[0].message).toMatch(/Nachtwache läuft nicht/)
-        expect(readdirSync(join(dir, 'journal-missing')).some(name => name.endsWith('.jsonl'))).toBe(true)
-    })
-
-    it('turns a failing probe into a notifiable finding and journals the run', async () => {
-        const configPath = join(dir, 'nightwatch.json')
-        // Port 9 on loopback is closed: the http probe observes "down" without any network beyond 127.0.0.1.
-        writeFileSync(configPath, JSON.stringify({
-            version: 1,
-            intervalMinutes: 30,
-            hosts: {},
-            checks: [{ id: 'dead', label: 'Toter Dienst', kind: 'http', url: 'http://127.0.0.1:9/health', timeoutMs: 2000 }],
-        }))
-        updateAutonomyConfig({ enabled: true, quietHoursStart: -1, checks: { ...allOff, nightwatch: true },
-            nightwatch: { configPath, journalDir: join(dir, 'journal-probe') } })
-        const report = await triggerAutonomyCheck()
-        const watch = report.checks.filter(check => check.source === 'nightwatch')
-        expect(watch).toHaveLength(1)
-        expect(watch[0].requiresNotification).toBe(true)
-        expect(watch[0].severity).not.toBe('info')
-        expect(watch[0].message).toMatch(/Toter Dienst/)
-        expect(readdirSync(join(dir, 'journal-probe')).some(name => name.endsWith('.jsonl'))).toBe(true)
-    }, 15_000)
 })

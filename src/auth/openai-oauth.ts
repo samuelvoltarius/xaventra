@@ -217,7 +217,7 @@ export async function loginOpenAI(callbacks: OAuthCallbacks): Promise<void> {
 
                     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
                     res.end(`<html><body>
-                        <h1>✅ Nova erfolgreich mit OpenAI verbunden!</h1>
+                        <h1>✅ Xaventra erfolgreich mit OpenAI verbunden!</h1>
                         <p>Account: ${tokens.accountId || 'N/A'}</p>
                         <p>API Key: ${tokens.apiKey ? '✅ erhalten' : '⚠️ nur access_token'}</p>
                         <p>Du kannst dieses Fenster schließen.</p>

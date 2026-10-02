@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 const selfHeal = vi.hoisted(() => ({ enabled: false, runs: 0 }))
 vi.mock('../doctor/self-heal-runtime.js', () => ({
     getSelfHealSettings: () => ({ enabled: selfHeal.enabled }),
-    runSelfHealCycle: async () => { selfHeal.runs++; return [] },
+    // 2.82.0: an owner Ja goes through the one self-heal trigger as well.
+    triggerSelfHeal: async () => { selfHeal.runs++; return { ran: true, checks: [], note: 'Selbstheilung gelaufen' } },
 }))
 vi.mock('../mesh/mesh-registry.js', () => ({ getLocalNodeId: () => 'spark' }))
 

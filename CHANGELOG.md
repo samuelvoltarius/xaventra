@@ -23,6 +23,27 @@ Werkzeug-Schmiede:
 
 ## [2.82.0] — 2026-10-01
 
+### Aufräumen: Doppelungen (one of each)
+
+- One reporting path: every alarm/notice is a planner thought (one dedupe, one
+  daily cap); the proactive messenger is transport only. One quiet-hours
+  definition `autonomy.quietHours` (22–7). Mission progress, self-thinking and
+  the dream digest no longer vanish silently (untrusted = idea, report only).
+- One Wächter: L19 targets migrated (`monitoring.json.migriert`), `/monitor`
+  edits the Wächter list, the Nachtwache runs only in the Wächter, the Wächter
+  starts after the planner as job `sys-waechter`, no Proxmox branch.
+- One self-heal trigger (single-flight, 5 min gap); the endpoint switch holds
+  still during a vLLM switch/maintenance marker and after an LLM failover.
+- One disk/RAM threshold definition `autonomy.thresholds`.
+- One idle learner (L9); L15 no longer starts its own.
+- Inventory: one cached query per model list, one KI-port probe client, one
+  SSH runner, one GPU source (no synchronous nvidia-smi in the heartbeat), one
+  program search; `/status` from the capability graph; probe-cache schema bug
+  (`models` vs `results`) fixed.
+- Card protocol renamed to `karten-protokoll.jsonl`; release checks bundled on
+  the Release-Wächter (now started when `autonomy.selfUpdate.enabled`);
+  visible texts say Xaventra.
+
 Responsibility and autonomy by default: on the Main, Xaventra works without
 slash commands and asks only where money, other people, physical effects or
 deletion are involved.

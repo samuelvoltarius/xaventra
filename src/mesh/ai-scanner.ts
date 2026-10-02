@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
-import { DiscoveryProbeClient } from './discovery-probe.js'
+import { getAiProbeClient, type DiscoveryProbeClient } from './discovery-probe.js'
 import type { MeshNode } from './mesh-registry.js'
 
 
@@ -328,9 +328,9 @@ export function isFullInventoryDue(
 // Port Scanner
 // ============================================
 
-let discoveryProbeClient: DiscoveryProbeClient | undefined
+// One shared KI-port probe client with result cache (mesh/discovery-probe.ts, 2.82.0).
 function getDiscoveryProbeClient(): DiscoveryProbeClient {
-    return discoveryProbeClient ??= new DiscoveryProbeClient(join(process.cwd(), '.nova-data', 'ai-probe-backoff.json'))
+    return getAiProbeClient()
 }
 
 async function probeEndpoint(
@@ -407,17 +407,15 @@ export async function scanHost(
 
 async function scanInstalledBinaries(): Promise<DiscoveredAIService[]> {
     const found: DiscoveredAIService[] = []
-    const isWindows = process.platform === 'win32'
 
     for (const probe of AI_SERVICE_PROBES) {
         if (!probe.binaries || probe.binaries.length === 0) continue
 
         for (const binary of probe.binaries) {
             try {
-                const cmd = isWindows
-                    ? `where ${binary} 2>nul`
-                    : `which ${binary} 2>/dev/null`
-                const { stdout } = await execAsync(cmd, { timeout: 3000 })
+                // The one program search (EnvScanner, 2.82.0) instead of an own which/where.
+                const { locateProgram } = await import('../startup/environment-scanner.js')
+                const stdout = locateProgram(binary) ?? ''
 
                 if (stdout.trim()) {
                     // Check if it's already running (skip if we found it in port scan)
@@ -783,10 +781,12 @@ async function scanRemoteAISoftware(
             `echo ===SNAP===; snap list 2>/dev/null; ` +
             `echo ===END===`
 
-        const { stdout } = await execFileAsync('ssh', [
-            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-            `${user}@${host}`, remoteCommand,
-        ], { timeout: 30000, maxBuffer: 5 * 1024 * 1024 })
+        // The one SSH runner (mesh/node-ssh.ts, 2.82.0): an unreachable node L21 already
+        // found is skipped; the full inventory runs at most every 30 min anyway.
+        const { sshNodeRun } = await import('./node-ssh.js')
+        const outcome = await sshNodeRun(`${user}@${host}`, remoteCommand, { timeoutMs: 30000, maxBuffer: 5 * 1024 * 1024, connectTimeoutS: 5, cacheMs: 25 * 60_000 })
+        if (!outcome.ok) throw new Error(outcome.error)
+        const stdout = outcome.stdout
 
         // Parse sections — robust against quoting artifacts
         const sections: Record<string, string> = {}

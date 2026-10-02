@@ -206,10 +206,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/core/llm-factory.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/core/message-pipeline.ts",
       "path": ".nova-data"
     },
@@ -498,10 +494,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/layers/L19-monitoring.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/layers/L21-node-health.ts",
       "path": ".nova-data"
     },
@@ -690,7 +682,15 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/discovery-probe.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/fence-highwater.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/inventory-one-source.test.ts",
       "path": ".nova-data"
     },
     {
@@ -1120,6 +1120,10 @@
     {
       "owner": "src/doctor/failure-research-coordinator.ts",
       "path": ".nova-data/self-doctor/failure-research.json"
+    },
+    {
+      "owner": "src/daemon.ts",
+      "path": ".nova-data/self-update/release-watch.json"
     },
     {
       "owner": "src/memory/session-summarizer.ts",

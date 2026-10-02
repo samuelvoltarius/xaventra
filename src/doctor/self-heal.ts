@@ -32,6 +32,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { CheckResult } from '../core/autonomy-loop.js'
 import { NIE_EFFEKTE, NIE_ZIELE as POLICY_NIE_ZIELE } from '../core/action-policy.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { getResourceThresholds } from '../core/resource-thresholds.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { NightwatchReport } from './nightwatch.js'
 
@@ -121,7 +122,8 @@ export function parseSelfHealSettings(raw: unknown): SelfHealSettings {
     const settings: SelfHealSettings = {
         enabled: input.enabled === true,
         logRotateBytes: Number.isFinite(bytes) ? Math.min(100 * 1024 * MIB, Math.max(MIB, Math.floor(bytes))) : 512 * MIB,
-        diskPercent: Number.isFinite(percent) ? Math.min(99, Math.max(50, Math.floor(percent))) : 90,
+        // Without own value: disk warn of the one threshold definition (core/resource-thresholds.ts).
+        diskPercent: Number.isFinite(percent) ? Math.min(99, Math.max(50, Math.floor(percent))) : Math.floor(getResourceThresholds().disk.warnPercent),
     }
     if (Array.isArray(input.endpoints) && input.endpoints.length === 2) {
         const primary = parseEndpoint(input.endpoints[0])
@@ -136,6 +138,8 @@ export function parseSelfHealSettings(raw: unknown): SelfHealSettings {
 // ---------------------------------------------------------------------------
 
 export interface EndpointController {
+    /** Reason why no switch may happen right now (vLLM switch/maintenance, LLM failover), else null. */
+    hold?(): Promise<string | null>
     /** Model the runtime currently uses. */
     currentModel(): string | undefined
     /** True when the endpoint answers (no 5xx, no network error). */

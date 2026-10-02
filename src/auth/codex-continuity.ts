@@ -43,7 +43,7 @@ function fallbackText(probe: CodexContinuityProbe): string {
     try { endpointHost = new URL(probe.fallback.endpoint).hostname }
     catch { /* retain the verified graph identity */ }
     const node = probe.fallback.hostname || endpointHost || probe.fallback.nodeId
-    return `Nova nutzt automatisch vLLM \`${probe.fallback.model}\` auf \`${node}\`.`
+    return `Xaventra nutzt automatisch vLLM \`${probe.fallback.model}\` auf \`${node}\`.`
 }
 
 export function decideCodexContinuityNotice(
@@ -74,11 +74,11 @@ export function decideCodexContinuityNotice(
         : 'Codex ist auf keinem erreichbaren Node für diesen Benutzer verfügbar.'
     const login = probe.localStatus.available
         ? `Für Codex auf \`${probe.localStatus.nodeId}\`: \`/codex login\`.`
-        : 'Für Codex: Sage „Installiere Codex auf dem aktuellen Main“; Nova führt den Auftrag durch den Execution Kernel aus. Danach `/codex login`. Bis dahin bleibt vLLM aktiv.'
+        : 'Für Codex: Sage „Installiere Codex auf dem aktuellen Main“; Xaventra führt den Auftrag durch den Execution Kernel aus. Danach `/codex login`. Bis dahin bleibt vLLM aktiv.'
     return {
         severity: 'warning',
         dedupeKey: `codex:unavailable:${affected || 'mesh'}:${probe.fallback?.nodeId || 'none'}:${probe.fallback?.model || 'none'}`,
-        content: `⚠️ ${cause}\n\n${fallbackText(probe)}\n\n${login}\nDie OAuth-Anmeldung bleibt ausschließlich User × Node; Nova kopiert keine Tokens ins Mesh.`,
+        content: `⚠️ ${cause}\n\n${fallbackText(probe)}\n\n${login}\nDie OAuth-Anmeldung bleibt ausschließlich User × Node; Xaventra kopiert keine Tokens ins Mesh.`,
     }
 }
 
@@ -182,7 +182,7 @@ export async function reportCodexRuntimeFallback(event: {
         ? `vLLM \`${event.fallbackModel || 'auto'}\` auf \`${event.fallbackNodeId || 'dem besten verfügbaren Node'}\``
         : `den Provider \`${event.fallbackRoute}\``
     return send(
-        `⚠️ Codex auf \`${failed}\` ist während eines Auftrags ausgefallen. Nova arbeitet automatisch über ${fallback} weiter.\n\nFür Codex: Node prüfen und dort \`/codex login\` ausführen. Die Anmeldung bleibt User × Node.`,
+        `⚠️ Codex auf \`${failed}\` ist während eines Auftrags ausgefallen. Xaventra arbeitet automatisch über ${fallback} weiter.\n\nFür Codex: Node prüfen und dort \`/codex login\` ausführen. Die Anmeldung bleibt User × Node.`,
         'codex-continuity',
         'warning',
         0.99,

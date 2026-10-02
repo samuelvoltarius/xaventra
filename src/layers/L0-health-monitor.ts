@@ -14,6 +14,7 @@ import { execSync } from 'node:child_process'
 import { existsSync, statSync, readdirSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { totalmem, freemem } from 'node:os'
+import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
 
 // ============================================
 // Types
@@ -47,10 +48,8 @@ export interface HealthStatus {
 // Configuration
 // ============================================
 
+// Platte/RAM: the one threshold definition (core/resource-thresholds.ts).
 const THRESHOLDS = {
-    diskFreeMinMB: 5 * 1024,
-    diskUsedMaxPercent: 92,
-    memoryMaxPercent: 95,
     novaOperationalMaxMB: 750,
     novaDataHardMaxMB: 4 * 1024,
 }
@@ -232,15 +231,14 @@ export function runHealthCheck(): HealthStatus {
 
     // Disk space
     const disk = getDiskSpace()
-    const diskWarning = disk.freeGB >= 0
-        && (disk.freeGB * 1024 < THRESHOLDS.diskFreeMinMB || disk.usedPercent >= THRESHOLDS.diskUsedMaxPercent)
+    const diskWarning = disk.freeGB >= 0 && diskLevel(disk.usedPercent, disk.freeGB) !== 'ok'
     if (diskWarning) {
         warnings.push(`⚠️ Disk Space kritisch: ${disk.freeGB}GB frei, ${disk.usedPercent}% belegt`)
     }
 
     // Memory
     const memory = getMemoryUsage()
-    const memoryWarning = memory.usedPercent >= 0 && memory.usedPercent > THRESHOLDS.memoryMaxPercent
+    const memoryWarning = memory.usedPercent >= 0 && memoryLevel(memory.usedPercent) !== 'ok'
     if (memoryWarning) {
         warnings.push(`⚠️ Memory hoch: ${memory.usedPercent}% belegt (${memory.usedMB}MB / ${memory.totalMB}MB)`)
     }

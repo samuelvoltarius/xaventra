@@ -177,7 +177,7 @@ export async function runLoginCLI(): Promise<void> {
     switch (provider.toLowerCase()) {
         case 'local':
         case 'openai-oauth':
-            callbacks.onError('Legacy OAuth ist deaktiviert. Starte Nova und nutze /codex login; so bleibt die Anmeldung User x Node isoliert.')
+            callbacks.onError('Legacy OAuth ist deaktiviert. Starte Xaventra und nutze /codex login; so bleibt die Anmeldung User x Node isoliert.')
             break
             console.log('Provider: OpenAI Codex OAuth\n')
             console.log('Du wirst zu auth.openai.com weitergeleitet.\n')

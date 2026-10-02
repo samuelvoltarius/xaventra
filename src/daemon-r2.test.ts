@@ -26,7 +26,6 @@ describe('daemon wiring (R2 core-n-z)', () => {
     })
 
     it('NZ-11: measured alerts pass health evidence refs', () => {
-        expect(block("'service-monitor',", 400)).toMatch(/\[`health:service:\$\{target\.name\}`\]/)
         expect(block("'startup-health',", 300)).toMatch(/\['health:startup'\]/)
     })
 
