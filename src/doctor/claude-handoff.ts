@@ -196,6 +196,8 @@ export interface HandoffDelegationPort {
     readonly config: { enabled: boolean; url: string | null }
     delegate(request: DelegationRequest): Promise<{ ok: true; record: DelegationRecord } | { ok: false; reason: string }>
     get(id: string): DelegationRecord | null
+    /** 2.84.0 Punkt 7: withdraw a delegation still waiting for the owner's Ja. */
+    withdraw?(id: string, grund: string): { ok: boolean; message?: string }
 }
 
 /** Trust ladder store location (tests); default the data root. */
@@ -216,11 +218,52 @@ function noteMeasuredClosing(thoughts: HandoffThoughtPort | undefined, record: H
     } catch { /* thoughts are visibility, never a reason to fail */ }
 }
 
+/**
+ * 2.84.0 Punkt 7: a case closed by measurement before its handoff left the
+ * house is not sent any more. A waiting delegation (L2 card) is withdrawn, a
+ * queued record without one is closed; neither counts for the trust ladder
+ * (`trustCounted`, neither Ja nor Nein). Something already sent stays with the
+ * Rückkanal. A recurrence reopens the same case and makes a new record
+ * (`observationHash`).
+ */
+function withdrawClosedCases(records: HandoffRecord[], byCase: ReadonlyMap<string, FailureResearchCase>, delegation: HandoffDelegationPort, thoughts?: HandoffThoughtPort): void {
+    for (const [index, record] of records.entries()) {
+        if (record.trustCounted || record.state === 'declined' || record.state === 'sent') continue
+        const item = byCase.get(record.caseId)
+        if (!item || !(item.findingOpen === false || item.stage === 'resolved')) continue
+        const current = record.delegationId ? delegation.get(record.delegationId) : null
+        if (current?.sentAt) continue
+        if (current && current.status !== 'wartet-auf-freigabe' && current.status !== 'zurueckgezogen') continue
+        if (current?.status === 'wartet-auf-freigabe') {
+            const result = delegation.withdraw?.(current.id, 'Fall gemessen geschlossen')
+            if (!result?.ok) continue
+        }
+        if (record.state !== 'queued' && !current) continue
+        const wasClosed = record.state === 'closed'
+        records[index] = { ...record, state: 'closed', trustCounted: true, lastError: undefined }
+        if (!wasClosed) noteWithdrawn(thoughts, record, item)
+    }
+}
+
+function noteWithdrawn(thoughts: HandoffThoughtPort | undefined, record: HandoffRecord, item: FailureResearchCase): void {
+    if (!thoughts) return
+    try {
+        const measurement = item.evidenceRefs.filter(ref => ref.startsWith('messung:') || ref.startsWith('repair-controller:')).at(-1)
+        const added = thoughts.add({
+            source: 'bug-finder', kind: 'ereignis', severity: 'info', signature: `doctor-handoff-withdrawn:${record.id}`,
+            title: `Übergabe zurückgezogen: Fehler nicht mehr beobachtet („${clip(record.title, 80)}“)`,
+            evidence: `Fall ${record.caseId}${record.delegationId ? `, Delegation ${record.delegationId}` : ''} nicht an Claude gesendet. ${measurement ? `Beleg: ${measurement}` : 'Fall geschlossen'}. Heißt: nicht mehr beobachtet, nicht „repariert bestätigt“.`,
+        }) as { thought?: { id?: string } } | undefined
+        const id = added?.thought?.id
+        if (id && thoughts.setStatus) thoughts.setStatus(id, 'erledigt', 'messung')
+    } catch { /* thoughts are visibility, never a reason to fail */ }
+}
+
 async function defaultDelegationPort(): Promise<HandoffDelegationPort> {
     const { delegate, getDelegationService } = await import('../core/delegation.js')
     const service = getDelegationService()
     // Module-level delegate() also arms the Rückkanal polling.
-    return { config: service.config, delegate: request => delegate(request), get: id => service.get(id) }
+    return { config: service.config, delegate: request => delegate(request), get: id => service.get(id), withdraw: (id, grund) => service.withdraw(id, grund) }
 }
 
 /**
@@ -244,6 +287,9 @@ async function followDelegations(records: HandoffRecord[], delegation: HandoffDe
                 // Alfred said Nein on the card: final, and the ladder starts again.
                 next = { ...next, state: 'declined', lastError: clip(current.fehler || 'abgelehnt', 200), trustCounted: true }
                 policy.recordOwnerAnswer(DOCTOR_HANDOFF_KIND, 'nein', trust)
+            } else if (current.status === 'zurueckgezogen') {
+                // 2.84.0 Punkt 7: withdrawn before sending — final, no new attempt, no ladder.
+                next = { ...next, state: 'closed', trustCounted: true }
             } else if (current.status === 'fehler' || current.status === 'abgelaufen') {
                 // Never left the house: a bounded new attempt next tick.
                 next = { ...next, delegationId: undefined, lastError: clip(current.fehler || current.status, 200) }
@@ -279,8 +325,9 @@ export async function runClaudeHandoffTick(input: {
 
     let delegated = 0
     const delegation = input.delegation || await defaultDelegationPort()
+    if (delegation.config.enabled && delegation.config.url) await followDelegations(records, delegation, trust)
+    withdrawClosedCases(records, byCase, delegation, input.thoughts)
     if (delegation.config.enabled && delegation.config.url) {
-        await followDelegations(records, delegation, trust)
         const { evaluateActionWithTrust } = await import('../core/action-policy.js')
         // queued: a new case without a delegation yet; one each, bounded per tick.
         const due = records.filter(record => record.state === 'queued' && !record.delegationId && (record.attempts || 0) < MAX_DELEGATION_ATTEMPTS)

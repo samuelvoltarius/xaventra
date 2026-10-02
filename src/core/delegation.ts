@@ -62,7 +62,8 @@ import { redactSecrets } from '../security/secret-redaction.js'
 // ---------------------------------------------------------------------------
 
 export type DelegationTarget = 'claude' | 'codex' | 'hermes' | 'subagent'
-export type DelegationStatus = 'wartet-auf-freigabe' | 'gesendet' | 'angenommen' | 'fertig' | 'abgelaufen' | 'abgelehnt' | 'fehler'
+/** 2.84.0 Punkt 7: `zurueckgezogen` = withdrawn by Xaventra before sending (end state, not open). */
+export type DelegationStatus = 'wartet-auf-freigabe' | 'gesendet' | 'angenommen' | 'fertig' | 'abgelaufen' | 'abgelehnt' | 'fehler' | 'zurueckgezogen'
 export type DelegationLevel = 'L1' | 'L2'
 export type VerificationResult = 'verifiziert' | 'nicht-erfuellt' | 'unverifiziert'
 
@@ -449,6 +450,11 @@ export interface DelegationService {
     delegate(request: DelegationRequest): Promise<{ ok: true; record: DelegationRecord } | { ok: false; reason: string }>
     approve(id: string, by: string): Promise<{ ok: boolean; message: string }>
     reject(id: string, by: string): Promise<{ ok: boolean; message: string }>
+    /** 2.84.0 Punkt 7: withdraw a delegation that still waits for the owner's Ja
+     * (its reason gone, e.g. the Doctor case closed by measurement). Only from
+     * `wartet-auf-freigabe`; nothing was sent, so no answer and no ladder. The
+     * card closes as done through `isStillOpen` on the next maintenance. */
+    withdraw(id: string, grund: string): { ok: boolean; message: string }
     poll(): Promise<{ applied: number; ignored: number }>
     tick(): Promise<{ applied: number; ignored: number; expired: number; skipped?: string }>
     get(id: string): DelegationRecord | null
@@ -750,6 +756,15 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
             await settle(updated)
             return { ok: true, message: `Auftrag ${id} nicht gesendet.` }
         },
+        withdraw(id, grund) {
+            const updated = mutate(id, record => {
+                if (record.status !== 'wartet-auf-freigabe') return null
+                record.fehler = clip(grund, 200)
+                setStatus(record, 'zurueckgezogen', grund)
+                return { ...record }
+            })
+            return updated ? { ok: true, message: `Auftrag ${id} zurückgezogen: ${clip(grund, 120)}` } : { ok: false, message: 'Delegation wartet nicht (mehr) auf Freigabe.' }
+        },
         async poll() {
             const result = { applied: 0, ignored: 0 }
             if (!config.enabled || !config.url || isWorker()) return result
@@ -913,7 +928,7 @@ export function stopDelegationRuntime(): void {
 }
 
 const STATUS_MARK: Record<DelegationStatus, string> = {
-    'wartet-auf-freigabe': '🔘', gesendet: '📤', angenommen: '🛠️', fertig: '✅', abgelaufen: '⌛', abgelehnt: '🚫', fehler: '❌',
+    'wartet-auf-freigabe': '🔘', gesendet: '📤', angenommen: '🛠️', fertig: '✅', abgelaufen: '⌛', abgelehnt: '🚫', fehler: '❌', zurueckgezogen: '↩️',
 }
 
 /** `/delegiert` (owner): open and finished delegations with status and evidence. */
