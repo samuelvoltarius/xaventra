@@ -24,7 +24,12 @@
  *   der Owner einen solchen Lauf zurück, verliert sie den Beleg; ohne Beleg
  *   wird sie nicht mehr abgerufen. Jeder Lauf mit abgerufener Prozedur meldet
  *   das Validator-Ergebnis zurück; nach zwei Fehlschlägen in Folge ist sie
- *   ausgesetzt (bleibt sichtbar, wird nie mehr abgerufen).
+ *   ausgesetzt (bleibt sichtbar, wird nicht mehr abgerufen).
+ * - 2.84 (Punkt 9): Ein neuer Beleg — zwei frische verifizierte Erfolge
+ *   derselben Form nach der Aussetzung — hebt sie wieder auf (Gedanke
+ *   „Prozedur wieder aktiv“). Der Owner schaltet mit /prozeduren an|aus;
+ *   „an“ hebt nur die Aussetzung auf (ohne Beleg bleibt sie aus), „aus“
+ *   wirkt stärker als jeder Beleg und hebt nur der Owner wieder auf.
  */
 
 import { existsSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
@@ -34,6 +39,7 @@ import { getNovaDataDir, getNovaLearningDir } from '../core/data-root.js'
 import { toolProvidesActionEvidence } from '../core/action-intent.js'
 import { isSuccessfulToolResult } from '../tools/tool-result-quality.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { sideEffectsDisabled } from '../core/side-effects.js'
 
 export type ProcedureSource = 'verifiziert' | 'migriert-l17' | 'migriert-l8'
 
@@ -60,6 +66,21 @@ export interface Procedure {
     signature?: string
     /** Gesetzt, wenn der letzte Beleg zurückgenommen wurde. */
     retractedAt?: number
+    /** 2.84: vom Owner abgeschaltet (/prozeduren aus) — stärker als jeder Beleg. */
+    disabledByOwner?: boolean
+    disabledByOwnerAt?: number
+}
+
+/** 2.84: Ereignis für den Gedanken-Speicher (Abendbericht). */
+export interface ProcedureEvent {
+    kind: 'wieder-aktiv'
+    procedure: Procedure
+    detail: string
+}
+
+export interface ProcedureStoreOptions {
+    /** Standard: Gedanke im Planer (ohne Seiteneffekte in Tests). */
+    notify?: (event: ProcedureEvent) => void
 }
 
 export interface VerifiedProcedureOutcome {
@@ -117,17 +138,46 @@ function suspended(entry: Procedure): boolean {
 }
 
 function usable(entry: Procedure): boolean {
-    return entry.verified === true && !suspended(entry) && isLearnableProblem(entry.problem) && !META_ONLY.test(entry.solution) && isSuccessfulToolResult(entry.solution)
+    return entry.verified === true && !suspended(entry) && entry.disabledByOwner !== true && isLearnableProblem(entry.problem) && !META_ONLY.test(entry.solution) && isSuccessfulToolResult(entry.solution)
 }
 
 const addRun = (list: string[] | undefined, runId: string) => [...(list || []).filter(item => item !== runId), runId].slice(-MAX_RUN_IDS)
 
+/** Gedanke „Prozedur wieder aktiv (neuer Beleg)“ — erledigt, nur Abendbericht. */
+function defaultNotify(event: ProcedureEvent): void {
+    if (sideEffectsDisabled()) return
+    void import('../planner/index.js').then(({ addThought, setThoughtStatus }) => {
+        const { thought } = addThought({
+            source: 'prozeduren', kind: 'ereignis', permission: 'selbst',
+            title: `Prozedur wieder aktiv (neuer Beleg): ${event.procedure.problem.slice(0, 80)}`,
+            evidence: event.detail,
+        })
+        setThoughtStatus(thought.id, 'erledigt', 'selbst')
+    }).catch(() => { /* Gedanken sind optional */ })
+}
+
 export class ProcedureStore {
     private signatures = new Map<string, number>()
     private procedures: Procedure[] = []
+    private readonly notify: (event: ProcedureEvent) => void
 
-    constructor(readonly path: string = defaultProcedurePath()) {
+    constructor(readonly path: string = defaultProcedurePath(), options: ProcedureStoreOptions = {}) {
+        this.notify = options.notify ?? defaultNotify
         this.load()
+    }
+
+    /**
+     * Ein Fehlschlag mit abgerufener Prozedur. Wird sie dadurch ausgesetzt,
+     * beginnt die Zählung ihrer Form neu: Zurück kommt sie nur mit zwei
+     * frischen verifizierten Erfolgen (neuer Beleg) oder per Owner.
+     */
+    private countFailure(entry: Procedure): void {
+        entry.failures = (entry.failures || 0) + 1
+        entry.consecutiveFailures = (entry.consecutiveFailures || 0) + 1
+        if (entry.consecutiveFailures === SUSPEND_AFTER_FAILURES) {
+            console.log(`[Prozeduren] ausgesetzt nach ${SUSPEND_AFTER_FAILURES} Fehlschlägen in Folge: ${entry.problem.slice(0, 60)}`)
+            if (entry.signature && this.signatures.has(entry.signature)) this.signatures.set(entry.signature, 0)
+        }
     }
 
     private load(): void {
@@ -178,6 +228,8 @@ export class ProcedureStore {
         const cleanSolution = redactSecrets(String(solution)).slice(0, 600)
         const existing = this.procedures.find(item => item.userId === userId && item.problem.toLowerCase() === problem.toLowerCase())
         if (existing) {
+            // 2.84: frischer Beleg (zweimal verifiziert über recordVerifiedOutcome) hebt die Aussetzung auf.
+            const revived = signature !== undefined && existing.verified === true && suspended(existing)
             existing.successCount++
             existing.solution = cleanSolution
             existing.toolName = evidence.toolName
@@ -186,6 +238,10 @@ export class ProcedureStore {
             delete existing.retractedAt
             if (runId) existing.runIds = addRun(existing.runIds, runId)
             if (signature) existing.signature = signature
+            if (revived) {
+                existing.consecutiveFailures = 0
+                this.notify({ kind: 'wieder-aktiv', procedure: { ...existing }, detail: `neuer Beleg: Lauf ${runId || 'ohne ID'} (zweimal verifiziert)${existing.disabledByOwner ? '; bleibt aus, bis der Owner sie einschaltet' : ''}` })
+            }
         } else {
             this.procedures.push({
                 userId, problem: redactSecrets(problem).slice(0, 300), solution: cleanSolution, toolName: evidence.toolName,
@@ -220,8 +276,7 @@ export class ProcedureStore {
             if (entry.usedRunIds?.includes(id)) {
                 entry.usedRunIds = entry.usedRunIds.filter(item => item !== id)
                 // Der Erfolg zählte schon als Abruf; jetzt wird er ein Fehlschlag.
-                entry.failures = (entry.failures || 0) + 1
-                entry.consecutiveFailures = (entry.consecutiveFailures || 0) + 1
+                this.countFailure(entry)
                 changed = true
             }
         }
@@ -243,9 +298,7 @@ export class ProcedureStore {
             entry.consecutiveFailures = 0
             if (runId) entry.usedRunIds = addRun(entry.usedRunIds, runId)
         } else {
-            entry.failures = (entry.failures || 0) + 1
-            entry.consecutiveFailures = (entry.consecutiveFailures || 0) + 1
-            if (entry.consecutiveFailures === SUSPEND_AFTER_FAILURES) console.log(`[Prozeduren] ausgesetzt nach ${SUSPEND_AFTER_FAILURES} Fehlschlägen in Folge: ${entry.problem.slice(0, 60)}`)
+            this.countFailure(entry)
         }
         this.persist()
         return { ...entry }
@@ -284,8 +337,29 @@ export class ProcedureStore {
         return this.procedures.filter(entry => userId === undefined || entry.userId === userId).map(entry => ({ ...entry }))
     }
 
+    /**
+     * 2.84 Owner-Schalter (/prozeduren an|aus <nr>; Nummer wie in der Liste
+     * des Owners). „an“ hebt Aussetzung und Owner-Aus auf, setzt aber nie
+     * `verified`: ohne Beleg bleibt eine zurückgenommene Prozedur aus.
+     */
+    setOwnerSwitch(userId: string, index: number, on: boolean): { procedure: Procedure; recallable: boolean } | null {
+        const mine = this.procedures.filter(entry => entry.userId === userId)
+        const entry = Number.isInteger(index) && index >= 1 ? mine[index - 1] : undefined
+        if (!entry) return null
+        if (on) {
+            entry.consecutiveFailures = 0
+            delete entry.disabledByOwner
+            delete entry.disabledByOwnerAt
+        } else {
+            entry.disabledByOwner = true
+            entry.disabledByOwnerAt = Date.now()
+        }
+        this.persist()
+        return { procedure: { ...entry }, recallable: usable(entry) }
+    }
+
     getStats(): { procedures: number; verifiedProcedures: number; reusableProcedures: number; legacy: number; suspended: number; retracted: number } {
-        const isSuspended = (entry: Procedure) => entry.verified === true && suspended(entry)
+        const isSuspended = (entry: Procedure) => entry.verified === true && (suspended(entry) || entry.disabledByOwner === true)
         const isRetracted = (entry: Procedure) => entry.verified !== true && entry.retractedAt !== undefined
         return {
             procedures: this.procedures.filter(usable).length,
@@ -383,6 +457,40 @@ export function migrateLegacyProcedures(options: { store?: ProcedureStore; learn
         console.log(`[Prozeduren] übernommen: ${result.l17} aus L17, ${result.l8} aus L8, ${result.signatures} Zähler`)
     }
     return result
+}
+
+// ---------------------------------------------------------------------------
+// /prozeduren (Owner): Einblick und an/aus
+// ---------------------------------------------------------------------------
+
+export function procedureStatus(entry: Procedure): string {
+    if (entry.disabledByOwner) return 'aus (Owner)'
+    if (entry.verified !== true) return entry.retractedAt !== undefined ? 'ohne Beleg (zurückgenommen)' : 'ohne Beleg (Altbestand)'
+    if (suspended(entry)) return `ausgesetzt (${entry.consecutiveFailures} Fehlschläge in Folge)`
+    return usable(entry) ? 'aktiv' : 'nicht abrufbar'
+}
+
+export async function handleProzedurenCommand(args: string, ctx: { principalId: string; permission?: string }, store: ProcedureStore = getProcedureStore()): Promise<string> {
+    if (ctx.permission !== 'owner') return '🔒 Prozeduren sieht und schaltet nur der Owner.'
+    const [sub, nr] = String(args || '').trim().split(/\s+/).filter(Boolean)
+    if (sub === 'an' || sub === 'aus') {
+        const changed = store.setOwnerSwitch(ctx.principalId, Number.parseInt(nr || '', 10), sub === 'an')
+        if (!changed) return `❌ Prozedur ${nr || '(keine Nummer)'} nicht gefunden. Liste: /prozeduren`
+        const title = changed.procedure.problem.slice(0, 80)
+        if (sub === 'aus') return `⏸️ Prozedur ${nr} ist aus (bleibt aus, bis du sie einschaltest): ${title}`
+        return changed.recallable
+            ? `▶️ Prozedur ${nr} ist wieder an: ${title}`
+            : `⚠️ Prozedur ${nr}: Sperre aufgehoben, aber ${procedureStatus(changed.procedure)} — sie wird erst mit einem neuen verifizierten Beleg wieder genutzt.`
+    }
+    const mine = store.list(ctx.principalId)
+    if (mine.length === 0) return '📚 Noch keine Prozeduren gelernt (entstehen aus zweimal verifizierten Werkzeug-Ergebnissen).'
+    const lines = mine.slice(0, 30).map((entry, index) => {
+        const uses = entry.uses || 0
+        const ok = uses - (entry.failures || 0)
+        return `${index + 1}. ${entry.problem.slice(0, 60)} · ${entry.toolName || '–'} · ${uses}× (${Math.max(0, ok)} ok) · ${procedureStatus(entry)}`
+    })
+    if (mine.length > 30) lines.push(`… und ${mine.length - 30} weitere`)
+    return `📚 *Prozeduren* (${mine.length})\n${lines.join('\n')}\n\n/prozeduren an <nr> · /prozeduren aus <nr>`
 }
 
 let singleton: ProcedureStore | null = null

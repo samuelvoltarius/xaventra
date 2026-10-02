@@ -83,6 +83,8 @@ export interface GovernedMemory {
     supersededBy?: string
     backends: {
         lancedbId?: string
+        /** 2.84: LanceDB-Tabelle (= Einbetter) der Projektion; fehlt bei Altbestand (`memories`). */
+        lancedbTable?: string
         coreFact?: boolean
         knowledgeGraph?: boolean
     }
@@ -105,6 +107,42 @@ export interface ReplicationMergeOptions {
      * this so a replication test cannot mutate canonical memory backends.
      */
     projectBackends?: boolean
+}
+
+/** 2.84 Punkt 2: Nachtragen fehlender bzw. veralteter LanceDB-Projektionen. */
+export interface ProjectionBackfillReport {
+    projected: number
+    failed: number
+    /** Danach noch offen (über der Grenze je Lauf oder gescheitert). */
+    pending: number
+    activeTable?: string
+}
+
+export interface ProjectionStatus {
+    /** verified/canonical ohne LanceDB-Projektion. */
+    missing: number
+    /** projiziert, aber in einer früheren Tabelle (anderer Einbetter). */
+    stale: number
+    activeTable?: string
+}
+
+/** Höchstens so viele Projektionen je Wartungslauf (rein lokal). */
+export const PROJECTION_BACKFILL_LIMIT = 200
+const PROJECTION_BACKFILL_INTERVAL_MS = 24 * 60 * 60_000
+/** Vor 2.84 lag jede Projektion in dieser einen Tabelle. */
+const LEGACY_LANCEDB_TABLE = 'memories'
+
+type LanceModule = typeof import('./lancedb-memory.js')
+
+/** Fehlt die Projektion, oder liegt sie in einer früheren Tabelle (anderer Einbetter)? */
+function needsProjection(record: GovernedMemory, activeTable: string | undefined): boolean {
+    if (!record.backends.lancedbId) return true
+    return Boolean(activeTable) && (record.backends.lancedbTable || LEGACY_LANCEDB_TABLE) !== activeTable
+}
+
+/** Aktive LanceDB-Tabelle, ohne die Datenbank zu öffnen (undefined vor der Initialisierung). */
+function activeLanceTable(lance: Partial<LanceModule>): string | undefined {
+    try { return lance.getActiveProjection?.()?.table || undefined } catch { return undefined }
 }
 
 export interface MemoryMaintenanceReport {
@@ -473,22 +511,10 @@ export class MemoryGovernanceCoordinator {
         if (process.env.NOVA_NO_SIDE_EFFECTS === '1' || process.env.NOVA_TEST_MODE === '1') return record
         const latest = record.provenance.at(-1)
 
-        if (!record.backends.lancedbId) {
-            try {
-                const lance = await import('./lancedb-memory.js')
-                const type = record.kind === 'learning' ? 'learning' : 'fact'
-                const lanceId = await lance.remember(record.content, type, `governance:${latest?.source || 'unknown'}`, {
-                    governanceId: record.id,
-                    governanceStatus: record.status,
-                    scope: record.scope,
-                    evidence: latest?.evidence,
-                    confidence: record.confidence,
-                    expiresAt: record.expiresAt,
-                    provenance: record.provenance,
-                })
-                if (lanceId) record.backends.lancedbId = lanceId
-            } catch { /* LanceDB remains an optional backend */ }
-        }
+        try {
+            const lance = await import('./lancedb-memory.js')
+            await this.projectToLance(record, lance)
+        } catch { /* LanceDB remains an optional backend */ }
 
         if (record.status === 'canonical' && record.kind !== 'operational' && !record.backends.coreFact) {
             try {
@@ -524,6 +550,108 @@ export class MemoryGovernanceCoordinator {
         this.persist()
         this.audit('published', record, { backends: record.backends })
         return record
+    }
+
+    private projectable(record: GovernedMemory, now = Date.now()): boolean {
+        return (record.status === 'verified' || record.status === 'canonical') && this.isRecallable(record.id, now)
+    }
+
+    /**
+     * Projiziert einen Eintrag in die aktive LanceDB-Tabelle (nur wenn er dort
+     * fehlt oder noch in einer früheren Tabelle liegt). Die alte Zeile wird
+     * nach dem Erfolg entfernt — nie zwei Vektorräume für einen Eintrag.
+     */
+    private async projectToLance(record: GovernedMemory, lance: Partial<LanceModule>): Promise<'projected' | 'unchanged' | 'failed'> {
+        if (!lance.remember) return 'failed'
+        if (!needsProjection(record, activeLanceTable(lance))) return 'unchanged'
+        const latest = record.provenance.at(-1)
+        const type = record.kind === 'learning' ? 'learning' : 'fact'
+        const lanceId = await lance.remember(record.content, type, `governance:${latest?.source || 'unknown'}`, {
+            governanceId: record.id,
+            governanceStatus: record.status,
+            scope: record.scope,
+            evidence: latest?.evidence,
+            confidence: record.confidence,
+            expiresAt: record.expiresAt,
+            provenance: record.provenance,
+        }, { timestamp: record.createdAt })
+        if (!lanceId) return 'failed'
+        const previous = record.backends.lancedbId ? { id: record.backends.lancedbId, table: record.backends.lancedbTable || LEGACY_LANCEDB_TABLE } : null
+        const activeTable = activeLanceTable(lance)
+        record.backends.lancedbId = lanceId
+        if (activeTable) record.backends.lancedbTable = activeTable
+        if (previous && previous.table !== activeTable) {
+            try { await lance.forget?.(previous.id, previous.table) } catch { /* alte Tabelle wird nicht mehr gelesen */ }
+        }
+        return 'projected'
+    }
+
+    /** Wie viele aktive Einträge keine (aktuelle) LanceDB-Projektion haben. */
+    async projectionStatus(now = Date.now()): Promise<ProjectionStatus> {
+        let activeTable: string | undefined
+        try { activeTable = activeLanceTable(await import('./lancedb-memory.js')) } catch { activeTable = undefined }
+        let missing = 0
+        let stale = 0
+        for (const record of this.store.records) {
+            if (!this.projectable(record, now)) continue
+            if (!record.backends.lancedbId) missing++
+            else if (needsProjection(record, activeTable)) stale++
+        }
+        return { missing, stale, ...(activeTable ? { activeTable } : {}) }
+    }
+
+    /**
+     * 2.84 Punkt 2: verified/canonical-Einträge ohne (aktuelle) Projektion
+     * erneut projizieren — höchstens `limit` je Lauf, rein lokal.
+     */
+    async backfillProjections(options: { limit?: number; now?: number } = {}): Promise<ProjectionBackfillReport> {
+        if (process.env.NOVA_NO_SIDE_EFFECTS === '1' || process.env.NOVA_TEST_MODE === '1') return { projected: 0, failed: 0, pending: 0 }
+        const limit = Math.max(1, Math.min(PROJECTION_BACKFILL_LIMIT, Math.floor(options.limit ?? PROJECTION_BACKFILL_LIMIT)))
+        const now = options.now ?? Date.now()
+        const lance = await import('./lancedb-memory.js')
+        try { await lance.ensureInitialized?.() } catch { /* remember() meldet den Fehler */ }
+        const activeTable = activeLanceTable(lance)
+        const due = this.store.records
+            .filter(record => this.projectable(record, now) && needsProjection(record, activeTable))
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+        let projected = 0
+        let failed = 0
+        for (const record of due.slice(0, limit)) {
+            let result: 'projected' | 'unchanged' | 'failed' = 'failed'
+            try { result = await this.projectToLance(record, lance) } catch { result = 'failed' }
+            if (result === 'projected') { projected++; this.audit('projected', record, { backends: record.backends }) }
+            else if (result === 'failed') failed++
+        }
+        if (projected > 0) this.persist()
+        return { projected, failed, pending: due.length - projected, ...(activeTable ? { activeTable } : {}) }
+    }
+
+    /**
+     * Wartungslauf (Start + einmal täglich im Self-Doctor-Takt): Einbetter
+     * abgleichen, dann nachtragen. Blieb beim letzten Lauf etwas über der
+     * Grenze offen, läuft der nächste Takt weiter. null, wenn nicht fällig.
+     */
+    async maybeBackfillProjections(options: { force?: boolean; now?: number } = {}): Promise<ProjectionBackfillReport | null> {
+        if (process.env.NOVA_NO_SIDE_EFFECTS === '1' || process.env.NOVA_TEST_MODE === '1') return null
+        const now = options.now ?? Date.now()
+        const gateFile = join(this.dir, 'projection-backfill.json')
+        let gate: { lastRunAt?: number; pending?: number } = {}
+        try { gate = JSON.parse(readFileSync(gateFile, 'utf-8')) } catch { gate = {} }
+        const due = options.force || !gate.lastRunAt || now - gate.lastRunAt >= PROJECTION_BACKFILL_INTERVAL_MS || (gate.pending || 0) > 0
+        if (!due) return null
+        try {
+            const lance = await import('./lancedb-memory.js')
+            await lance.reconcileEmbedder?.(now)
+        } catch { /* Abgleich optional; nachgetragen wird mit dem gebundenen Einbetter */ }
+        const report = await this.backfillProjections({ now })
+        // Nur Rest über der Grenze treibt den nächsten Takt; antwortet der
+        // Einbetter nicht, wartet der nächste Versuch einen Tag.
+        const carry = report.failed > 0 ? 0 : report.pending
+        try {
+            if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true })
+            writeFileSync(gateFile, JSON.stringify({ lastRunAt: now, pending: carry, projected: report.projected, failed: report.failed }))
+        } catch { /* Takt-Datei ist nur Buchhaltung */ }
+        return report
     }
 
     adoptLegacy(
@@ -618,7 +746,7 @@ export class MemoryGovernanceCoordinator {
         if (record.backends.lancedbId) {
             try {
                 const lance = await import('./lancedb-memory.js')
-                await lance.forget(record.backends.lancedbId)
+                await lance.forget(record.backends.lancedbId, record.backends.lancedbTable || LEGACY_LANCEDB_TABLE)
             } catch { /* optional projection */ }
         }
         if (record.backends.coreFact) {

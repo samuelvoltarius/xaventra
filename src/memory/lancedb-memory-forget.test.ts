@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,10 +26,16 @@ vi.mock('@lancedb/lancedb', () => {
     }
     return { default: { connect: async () => ({ tableNames: async () => ['memories'], openTable: async () => table }) } }
 })
-vi.mock('./embedding-providers.js', () => ({ getEmbedding: async () => [0.1, 0.2, 0.3] }))
+vi.mock('./embedding-providers.js', () => ({
+    embed: async () => ({ vector: [0.1, 0.2, 0.3], embedder: 'test:fest:3', provider: 'hash', model: 'fest', dimension: 3 }),
+    parseEmbedderId: (id: string) => { const m = /^([a-z]+):(.+):(\d+)$/.exec(id || ''); return m ? { provider: m[1], model: m[2], dimension: Number(m[3]) } : null },
+    resetEmbeddingDiscovery: () => undefined,
+}))
 
 const sandbox = join(process.cwd(), '.nova-test-tmp', `lance-forget-${randomUUID()}`)
-mkdirSync(sandbox, { recursive: true })
+mkdirSync(join(sandbox, '.nova-data'), { recursive: true })
+// Die Tabelle `memories` gehört genau einem Einbetter (2.84).
+writeFileSync(join(sandbox, '.nova-data', 'lancedb-status.json'), JSON.stringify({ table: 'memories', embedder: 'test:fest:3', dimension: 3 }))
 const cwd = vi.spyOn(process, 'cwd').mockReturnValue(sandbox)
 afterAll(() => cwd.mockRestore())
 

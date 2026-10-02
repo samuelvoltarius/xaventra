@@ -17,6 +17,7 @@ import type { FailureResearchCoordinator } from '../doctor/failure-research-coor
 import { runBugFinder, tracesErrorSource, type ErrorOccurrence, type ErrorSourcePort } from './bug-finder.js'
 import type { Mission } from '../core/missions.js'
 import { regressionErrorSource } from '../learning/regression-case-store.js'
+import { learningFlowErrorSource } from '../learning/learning-flow.js'
 import { thoughtImportanceFactor } from '../core/decisions.js'
 import { runIdeaRun, type CostSnapshot, type Formulator, type IdeaCandidate, type IdeaInputs } from './idea-run.js'
 import { fixtureSource, huggingFaceSource, runModelScout, type ModelSource, type ScoutRunner } from './model-scout.js'
@@ -141,9 +142,9 @@ export function missionErrorSource(
     }
 }
 
-/** Die Quellen des einen Bug-Finders: Traces, Owner-Rückmeldungen, gescheiterte Missionen. */
+/** Die Quellen des einen Bug-Finders: Traces, Owner-Rückmeldungen, gescheiterte Missionen, stumme Lernspeicher (2.84). */
 export function defaultErrorSources(): ErrorSourcePort[] {
-    return [tracesErrorSource(), regressionErrorSource(), missionErrorSource()]
+    return [tracesErrorSource(), regressionErrorSource(), missionErrorSource(), learningFlowErrorSource()]
 }
 
 /**

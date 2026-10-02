@@ -634,7 +634,19 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/memory/lancedb-memory-forget.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/lancedb-memory-scope.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/memory/lancedb-memory.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/memory/lancedb-zaehlung.test.ts",
       "path": ".nova-data"
     },
     {
