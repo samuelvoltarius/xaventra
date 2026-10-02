@@ -7,7 +7,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { getNovaDataDir } from '../core/data-root.js'
+import { readScoutMissingCapabilities } from '../install/software-demand.js'
 import { runIdeaRun } from './idea-run.js'
 import { MemoryThoughtSink, parseThinkingSettings } from './ports.js'
 
@@ -23,12 +23,13 @@ function insights(tools: any[]) {
     } as any
 }
 
-async function run() {
+async function run(statePath?: string) {
     const sink = new MemoryThoughtSink()
     const result = await runIdeaRun({
         settings: parseThinkingSettings({ enabled: true, ideas: { enabled: true } }),
         load: { async sample() { return IDLE } }, sink,
         inputs: async () => ({ insights: insights([{ name: 'analyze_image', errorRate: 0.6 }, { name: 'web_search', errorRate: 0.5 }]) }),
+        ...(statePath ? { missingCapabilities: () => readScoutMissingCapabilities({ statePath }) } : {}),
         now: NIGHT, statePath: join(mkdtempSync(join(process.cwd(), 'idee-bedarf-')), 's.json'),
     })
     return result.ideas.map(item => String(item.dedupeKey))
@@ -42,10 +43,10 @@ describe('Ideen-Lauf: Fähigkeitswerkzeuge gehen an den Software-Scout, nicht in
     })
 
     it('vision recorded missing by the scout → no werkzeug-fehler idea for analyze_image; web_search stays', async () => {
-        const file = getNovaDataDir('software-scout', 'state.json')
+        const file = join(mkdtempSync(join(process.cwd(), 'scout-state-')), 'state.json')
         mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, JSON.stringify({ missing: { vision: Date.now() } }))
-        const keys = await run()
+        const keys = await run(file)
         expect(keys).not.toContain('werkzeug-fehler:analyze_image')
         expect(keys).toContain('werkzeug-fehler:web_search')
     })
