@@ -143,7 +143,7 @@ describe('Websuche: nur Fähigkeit/Familie/Hardwareklasse hinein, nur Name/Datum
 })
 
 describe('Vor dem Vorschlag: Aktualitätsprüfung, fail closed', () => {
-    it('old candidate + newer successor found → no card; idea "Neuer Kandidat … Katalogeintrag nötig"; cached 7 days', async () => {
+    it('old candidate + newer successor found → no card; idea "Neuer Kandidat … an Claude zur Katalogpflege" (2.86 Punkt 8); cached 7 days', async () => {
         const cachePath = tmp('aktualitaet.json')
         const search = port(async () => ({ tool: 'browser_search', hits: [hit('https://ollama.com/library/qwen3-vl', 'qwen3-vl', 'Released October 2025 · 2b 4b 8b')] }))
         const first = await tick({ candidates: oldCatalog(), search, cachePath })
@@ -151,7 +151,8 @@ describe('Vor dem Vorschlag: Aktualitätsprüfung, fail closed', () => {
         const idea = first.emitted.find(item => item.capability === 'vision')!
         expect(idea.permission).toBe('selbst')
         expect(idea.title).toMatch(/Neuer Kandidat qwen3-vl/)
-        expect(idea.title).toMatch(/Katalogeintrag nötig/)
+        expect(idea.title).toMatch(/an Claude zur Katalogpflege/)
+        expect(idea.title).not.toMatch(/Katalogeintrag nötig/)
         expect(idea.evidence.join(' ')).toMatch(/https:\/\/ollama\.com\/library\/qwen3-vl/)
         expect(search.search).toHaveBeenCalledWith('ollama vision model qwen newer than qwen2.5vl cpu')
         expect(existsSync(cachePath)).toBe(true)

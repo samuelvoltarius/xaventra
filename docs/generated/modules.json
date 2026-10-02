@@ -5768,6 +5768,7 @@
       "imports": [
         "../core/self-doctor.js",
         "../doctor/failure-research-coordinator.js",
+        "../install/software-demand.js",
         "../security/secret-redaction.js",
         "./ports.js",
         "node:fs",
@@ -5791,6 +5792,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../install/software-freshness.js",
         "../security/secret-redaction.js",
         "./ports.js",
         "./probe-set.js",
@@ -6217,6 +6219,7 @@
         "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "../core/side-effects.js",
+        "../install/software-demand.js",
         "../learning/routine-skills.js",
         "../security/secret-redaction.js",
         "./complete-registry.js",
