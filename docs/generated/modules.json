@@ -1234,6 +1234,27 @@
       "imports": []
     },
     {
+      "module": "src/connections/icon-cache.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/registry-directory.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./connector-catalog.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/action-intent.ts",
       "imports": [
         "./tool-evidence-binding.js"

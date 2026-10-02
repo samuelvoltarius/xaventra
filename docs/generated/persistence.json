@@ -978,6 +978,14 @@
       "path": ".nova-data/codex-auth-index/nova_ns1.json"
     },
     {
+      "owner": "src/connections/icon-cache.ts",
+      "path": ".nova-data/connections/icons"
+    },
+    {
+      "owner": "src/connections/registry-directory.ts",
+      "path": ".nova-data/connections/registry-cache.json"
+    },
+    {
       "owner": "src/desktop-direct/store.ts",
       "path": ".nova-data/desktop-sessions.jsonl"
     },
