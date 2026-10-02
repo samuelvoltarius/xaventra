@@ -426,6 +426,11 @@ export class TelegramAdapter implements ChannelAdapter {
                 // (pip/ssh) and "transcribe" on a remote node without uploading the
                 // voice file. Installs go through the install catalog instead.
                 console.log(`[Nova Telegram] Whisper not available: ${err}`)
+                // 2.85: an owner voice message without speech recognition is a recorded need
+                // for the Software-Scout (capability + time only, no content, no user id).
+                if (this.getOwnerChatIds().includes(userId)) {
+                    try { (await import('../install/software-demand.js')).recordCapabilityNeed('stt', 'sprachnachricht-ohne-stt') } catch { /* optional */ }
+                }
                 await this.bot.sendMessage(chatId, '🎤 Sprachnachricht empfangen, aber lokale Spracherkennung (Whisper) ist auf diesem Knoten nicht verfügbar.\n\nBitte als Text schreiben. Whisper kann der Owner über den Install-Katalog freigeben.')
                 try { unlinkSync(tempPath) } catch { }
             }

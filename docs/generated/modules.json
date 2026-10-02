@@ -3484,6 +3484,29 @@
       ]
     },
     {
+      "module": "src/install/software-demand.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/outcome-ledger.js",
+        "../core/validator-failure-escalation.js",
+        "./software-candidates.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/install/software-freshness.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./software-candidates.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/install/software-scout.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -3493,6 +3516,8 @@
         "./install-catalog.js",
         "./install-queue.js",
         "./software-candidates.js",
+        "./software-demand.js",
+        "./software-freshness.js",
         "node:crypto",
         "node:fs",
         "node:path"

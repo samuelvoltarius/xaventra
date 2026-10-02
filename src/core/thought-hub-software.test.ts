@@ -69,6 +69,20 @@ describe('Software-Scout → Gedanke → Knopf → nur Stufe-2-Weg', () => {
         expect(queue.proposeCatalogInstall).not.toHaveBeenCalled()
     })
 
+    it('2.85: a scout idea (no recorded need / outdated model) is a quiet idea: no card, no action behind it', async () => {
+        queue.proposeCatalogInstall.mockClear()
+        await createSoftwareScoutThoughtSink().emit(gap({
+            kind: 'software-scout:idee', capability: 'vision', candidateId: 'media-ffmpeg', permission: 'selbst', dedupeKey: 'software-scout:idee:vision',
+            title: 'Könnte Bilderkennung (Vision) (X auf xaventra-ns1), bisher kein Bedarf gesehen', proposal: 'Nur zur Kenntnis — keine Karte, keine Installation.',
+        }))
+        const thought = listThoughts().find(item => item.title.startsWith('Könnte Bilderkennung'))!
+        expect(thought.kind).toBe('idee')
+        expect(thought.permission).toBe('selbst')
+        expect(thought.importance).toBe('niedrig')
+        await dispatchThoughtAnswer(thought.id, 'ja', OWNER)
+        expect(queue.proposeCatalogInstall).not.toHaveBeenCalled()
+    })
+
     it('Nein queues nothing', async () => {
         queue.proposeCatalogInstall.mockClear()
         await createSoftwareScoutThoughtSink().emit(gap({ candidateId: 'browser-playwright-chromium', title: 'Playwright passt. Einrichten?', dedupeKey: 'software-scout:browser:browser-playwright-chromium:xaventra-spark' }))

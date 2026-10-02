@@ -308,6 +308,21 @@ export function createSoftwareScoutThoughtSink() {
             const { findSoftwareCandidate } = await import('../install/software-candidates.js')
             const candidate = findSoftwareCandidate(thought?.candidateId)
             const nodeId = String(thought?.nodeId || '')
+            // 2.85: without a recorded need (or with an outdated/unchecked model) the scout only
+            // has a quiet idea — report only, no card, no remembered action, no button.
+            if (thought?.permission !== 'fragen') {
+                addThought({
+                    source: 'software-scout',
+                    title: String(thought?.title || ''),
+                    evidence: [thought?.text, ...(Array.isArray(thought?.evidence) ? thought.evidence : [])].filter(Boolean).join(' · '),
+                    severity: 'info',
+                    kind: 'idee',
+                    permission: 'selbst',
+                    signature: thought?.dedupeKey ? String(thought.dedupeKey) : undefined,
+                    node: /^[A-Za-z0-9._-]{1,80}$/.test(nodeId) ? nodeId : undefined,
+                })
+                return
+            }
             const { thought: stored } = addThought({
                 source: 'software-scout',
                 title: String(thought?.title || ''),

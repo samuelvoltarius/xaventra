@@ -12,6 +12,13 @@
  * existing Stufe-2 path (install queue → install card → signed ticket); a
  * candidate without a catalog id is only noted ("Katalogeintrag nötig").
  * This module installs, downloads and sends nothing.
+ *
+ * 2.85 (Alfred 02.10.): "nicht nur ‚viel RAM da, drück ich was rein‘" and "vor allem ein
+ * uralt Modell". A gap is a question only with a recorded need (software-demand.ts:
+ * failed validated owner runs, forge need, channel signal — last 14 days); without need
+ * it is at most a quiet idea per capability and week. A model candidate is proposed only
+ * after the freshness check (software-freshness.ts: catalog date + governed web search,
+ * fail closed for old models).
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -22,6 +29,8 @@ import { getNovaDataDir } from '../core/data-root.js'
 import { profileFingerprint, type NodeProfile } from '../core/node-profile.js'
 import { findCatalogEntry, getInstallCatalog, type InstallCatalog } from './install-catalog.js'
 import { isModelOnlyNode, planInstallRoute, type InstallTargetNode } from './install-queue.js'
+import type { CapabilityDemand } from './software-demand.js'
+import { checkFreshness, freshnessVerdict, type WebSearchPort } from './software-freshness.js'
 import {
     CAPABILITY_LABEL, SOFTWARE_CAPABILITIES, getSoftwareCandidates,
     type SoftwareCandidate, type SoftwareCandidateCatalog, type SoftwareCapability,
@@ -134,7 +143,7 @@ export function assessCandidate(candidate: SoftwareCandidate, node: ScoutNode, o
     if (node.modelOnly && candidate.kind !== 'model') return no('NAS: nur Modelle ins Daten-Volume, keine Systempakete oder Programme')
     if (candidate.roles && !candidate.roles.includes(p.role)) return no(`nur für ${candidate.roles.map(role => role === 'main' ? 'den Main' : 'Worker').join('/')}`)
     if (p.ramGB < candidate.minRamGB) return no(`zu wenig RAM (${p.ramGB} GB, nötig ${candidate.minRamGB} GB)`)
-    if (candidate.requiresService === 'ollama' && !services(p).some(item => item.name === 'ollama')) return no('braucht Ollama (auf dem Knoten nicht gefunden)')
+    if (candidate.requiresService === 'ollama' && !services(p).some(item => item.name === 'ollama')) return no('kein Ollama auf dem Knoten (wird dafür nicht installiert)')
 
     const notes: string[] = []
     if (freeDisk === null) notes.push('freie Platte unbekannt (prüft die Installation)')
@@ -283,7 +292,8 @@ export function formatSoftwareOverview(analysis: MeshSoftwareAnalysis, options: 
 // ---------------------------------------------------------------------------
 
 export interface SoftwareScoutThought {
-    kind: 'software-scout:luecke'
+    /** luecke = question with a need (card); idee = quiet idea, report only. */
+    kind: 'software-scout:luecke' | 'software-scout:idee'
     capability: SoftwareCapability
     candidateId: string
     nodeId: string
@@ -291,18 +301,42 @@ export interface SoftwareScoutThought {
     text: string
     evidence: string[]
     proposal: string
-    permission: 'fragen'
+    permission: 'fragen' | 'selbst'
     dedupeKey: string
+}
+
+export type CapabilityDemandMap = ReadonlyMap<SoftwareCapability, CapabilityDemand>
+
+/** One quiet idea per capability (the dedupe key has no candidate or node: max one per week). */
+export function softwareIdea(capability: SoftwareCapability, candidate: SoftwareCandidate, nodeId: string, title: string, text: string, evidence: string[]): SoftwareScoutThought {
+    return {
+        kind: 'software-scout:idee', capability, candidateId: candidate.id, nodeId, title, text, evidence,
+        proposal: 'Nur zur Kenntnis — keine Karte, keine Installation.', permission: 'selbst', dedupeKey: `software-scout:idee:${capability}`,
+    }
 }
 
 export const MAX_THOUGHTS_PER_RUN = 3
 
-export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_PER_RUN): SoftwareScoutThought[] {
+/**
+ * Cards (permission `fragen`) only for gaps with a recorded need; without need a quiet
+ * idea. `max` limits the cards; ideas are not counted (one per capability at most).
+ */
+export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_PER_RUN, options: { demand?: CapabilityDemandMap } = {}): SoftwareScoutThought[] {
     const out: SoftwareScoutThought[] = []
+    let cards = 0
     for (const summary of analysis.capabilities) {
-        if (out.length >= max) break
         if (summary.present.length || !summary.best) continue
         const { candidate, fit } = summary.best
+        const need = options.demand?.get(summary.capability)
+        if (!need || need.count < 1) {
+            out.push(softwareIdea(summary.capability, candidate, fit.nodeId,
+                `Könnte ${CAPABILITY_LABEL[summary.capability]} (${candidate.title} auf ${fit.nodeId}), bisher kein Bedarf gesehen`,
+                `${CAPABILITY_LABEL[summary.capability]} fehlt im Mesh, aber in den letzten 14 Tagen ist kein Owner-Lauf daran gescheitert und kein Bedarf gemeldet. Platz allein ist kein Grund.`,
+                [`Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`]))
+            continue
+        }
+        if (cards >= max) continue
+        cards++
         const elsewhere = [...new Map(summary.misfits.filter(item => item.candidate.id === candidate.id && item.fit.nodeId !== fit.nodeId)
             .map(item => [item.fit.nodeId, item.fit])).values()].slice(0, 2)
         // 2.84 (Alfred 02.10.): why other nodes do not fit is evidence only — in the title
@@ -314,7 +348,7 @@ export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_P
         out.push({
             kind: 'software-scout:luecke', capability: summary.capability, candidateId: candidate.id, nodeId: fit.nodeId,
             title, text: `${CAPABILITY_LABEL[summary.capability]} fehlt im Mesh. ${candidate.benefit}`,
-            evidence: [`Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`, ...fit.notes, ...elsewhere.map(item => `nicht auf ${item.nodeId}: ${item.reasons[0]}`)],
+            evidence: [...need.evidence.map(item => `Bedarf: ${item}`), `Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`, ...fit.notes, ...elsewhere.map(item => `nicht auf ${item.nodeId}: ${item.reasons[0]}`)],
             proposal, permission: 'fragen', dedupeKey: `software-scout:${summary.capability}:${candidate.id}:${fit.nodeId}`,
         })
     }
@@ -381,6 +415,10 @@ export interface SoftwareScoutTickDeps {
     statePath?: string
     candidates?: SoftwareCandidateCatalog
     installCatalog?: InstallCatalog
+    /** 2.85: recorded need per capability (default: ledger + forge + channel signals). */
+    demand?: () => Promise<CapabilityDemandMap> | CapabilityDemandMap
+    /** 2.85: freshness check for model candidates (default: governed web search, cache in .nova-data). `search: null` = no search. */
+    freshness?: { search?: WebSearchPort | null; cachePath?: string }
 }
 
 export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise<{ ran: boolean; reason: string; emitted: SoftwareScoutThought[] }> {
@@ -395,11 +433,26 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
     const changed = state.fingerprint !== analysis.fingerprint && (!state.lastRunAt || now - state.lastRunAt >= PROFILE_CHANGE_MIN_GAP_MS)
     if (!weekly && !changed) return { ran: false, reason: 'nicht fällig (wöchentlich oder bei Profiländerung)', emitted: [] }
     const sink = deps.sink || await defaultSink()
+    const demand = await (deps.demand || (async () => (await import('./software-demand.js')).collectCapabilityDemand(now)))()
+    const catalog = deps.candidates || getSoftwareCandidates()
+    const search = deps.freshness && 'search' in deps.freshness ? deps.freshness.search ?? null : createGovernedWebSearchLazy()
     const emitted: SoftwareScoutThought[] = []
-    for (const thought of gapThoughts(analysis, Number.POSITIVE_INFINITY)) {
-        if (emitted.length >= MAX_THOUGHTS_PER_RUN) break
-        if ((state.muted[thought.dedupeKey] ?? 0) > now) continue
-        if (now - (state.proposed[thought.dedupeKey] ?? 0) < PROPOSAL_DEDUPE_MS) continue
+    let cards = 0
+    const due = (key: string) => (state.muted[key] ?? 0) <= now && now - (state.proposed[key] ?? 0) >= PROPOSAL_DEDUPE_MS
+    for (let thought of gapThoughts(analysis, Number.POSITIVE_INFINITY, { demand })) {
+        if (thought.permission === 'fragen') {
+            if (cards >= MAX_THOUGHTS_PER_RUN || !due(thought.dedupeKey)) continue
+            const candidate = catalog.entries.find(entry => entry.id === thought.candidateId)
+            if (candidate?.kind === 'model') {
+                // Aktualität: catalog date + governed web search before any model becomes a question.
+                const record = await checkFreshness(candidate, { search, cachePath: deps.freshness?.cachePath, now, catalog })
+                const verdict = freshnessVerdict(candidate, record, now)
+                if (!verdict.allow) thought = softwareIdea(thought.capability, candidate, thought.nodeId, verdict.idea!.title, verdict.idea!.text, [...thought.evidence.filter(item => item.startsWith('Bedarf: ')), ...verdict.evidence])
+                else thought = { ...thought, evidence: [...thought.evidence, ...verdict.evidence] }
+            }
+        }
+        if (thought.permission === 'fragen') cards++
+        else if (!due(thought.dedupeKey)) continue
         await sink.emit(thought)
         state.proposed[thought.dedupeKey] = now
         emitted.push(thought)
@@ -408,6 +461,10 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
     state.fingerprint = analysis.fingerprint
     try { saveState(state, deps.statePath, now) } catch { /* next run */ }
     return { ran: true, reason: `${emitted.length} Vorschlag/Vorschläge (${weekly ? 'wöchentlich' : 'Profiländerung'})`, emitted }
+}
+
+function createGovernedWebSearchLazy(): WebSearchPort {
+    return { async search(query) { const { createGovernedWebSearch } = await import('./software-freshness.js'); return createGovernedWebSearch().search(query) } }
 }
 
 async function defaultSink(): Promise<SoftwareScoutSink> {
