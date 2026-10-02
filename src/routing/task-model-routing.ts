@@ -304,11 +304,11 @@ export interface MultiRouteCandidate {
 
 export interface MultiRouteDecision extends Omit<TaskModelDecision, 'target' | 'rule'> {
     target: MultiRouteTarget
-    rule: TaskModelRuleId | 'M1-messung' | 'M2-raum'
+    rule: TaskModelRuleId | 'M1-messung' | 'M2-raum' | 'M2-lokal-ausfall'
     /** false when routing.multi.enabled is off (pure R1–R8). */
     multi: boolean
-    /** raum = a desktop room/bot profile prefers nodes (2.86 Punkt 10): node choice, without measurement if none exists. */
-    basis: 'aus' | 'regeln' | 'messung' | 'raum'
+    /** raum = a desktop room/bot profile prefers nodes (2.86 Punkt 10); 2.85 'ausfall' = every local model is down, a connected cloud model is the fallback. */
+    basis: 'aus' | 'regeln' | 'messung' | 'raum' | 'ausfall'
     /** Preferred nodes given but none of them has a healthy, fitting local endpoint: shown to the user. */
     roomNotice?: string
     /** The R1–R8 decision for comparison. */
@@ -407,6 +407,25 @@ export function decideMultiRoute(input: TaskModelDecisionInput, registry: ModelR
     })
 
     const admissible = candidates.filter(item => !item.excluded)
+    // 2.85 Paket C: local first — cloud as a fallback only when every local model is
+    // down. The stage-A filters above (picture, private, owner, budget, cost,
+    // proven capability) apply unchanged; Codex keeps its own fallback path.
+    const localUp = (registry?.endpoints || []).some(ep => ep.privacy === 'lokal' && ep.health !== 'down')
+    if (!localUp && baseline.target !== 'codex') {
+        const costKey = (value: number | null) => value === null ? Number.POSITIVE_INFINITY : value
+        const fallback = admissible
+            .filter(item => item.privacy === 'cloud' && item.kind !== 'codex')
+            .sort((a, b) => ((b.successRate ?? -1) - (a.successRate ?? -1)) || (costKey(a.costEurPerCall) - costKey(b.costEurPerCall)) || a.id.localeCompare(b.id))[0]
+        const ep = fallback && registry!.endpoints.find(item => item.id === fallback.id)
+        if (ep) {
+            return {
+                ...baseline, target: 'cloud', wouldBe: baseline.wouldBe, rule: 'M2-lokal-ausfall', multi: true, basis: 'ausfall', baseline, candidates,
+                endpoint: { id: ep.id, kind: ep.kind, model: ep.model, node: ep.node, baseUrl: ep.baseUrl, privacy: ep.privacy, costEurPerCall: ep.costEurPerCall },
+                reason: `${TASK_CLASS_LABELS[cls.taskClass]}: kein lokales Modell erreichbar — Rückfall auf ${ep.model} (cloud, nicht-privat, Kosten ${ep.costEurPerCall ?? 'unbekannt'} €).`,
+                notice: `Hinweis: Das lokale Modell ist gerade nicht erreichbar – ich nutze als Rückfall ${ep.model} (Cloud, bereinigter Auftrag ohne Memory/Verlauf).`,
+            }
+        }
+    }
     // A Codex choice by the table stays as long as Codex itself has no measurement.
     if (baseline.target === 'codex') {
         const codex = admissible.find(item => item.kind === 'codex')

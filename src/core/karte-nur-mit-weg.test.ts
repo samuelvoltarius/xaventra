@@ -98,17 +98,26 @@ describe('Punkt 5: ein fragen-Gedanke wird nur mit Ausführungsweg eine Karte', 
 })
 
 describe('Punkt 5: Software-Scout ohne Installations-Katalog ist keine Frage', () => {
-    it('a candidate without catalog id (gemma4:e2b) becomes a quiet idea and goes to the catalog care for Claude — no card', async () => {
+    it('a candidate without catalog id (Piper, no install path) becomes a quiet idea — no card', async () => {
+        // 2.85 integration: gemma4:e2b got a catalog entry in package D (real install path → it may ask);
+        // Piper has none (no apt package), so its Ja would do nothing.
         const { createSoftwareScoutThoughtSink } = hub
-        const { readCatalogCare } = await import('../install/software-freshness.js')
-        await createSoftwareScoutThoughtSink().emit({ title: 'Vision fehlt: Gemma 4 E2B auf main?', text: 'Bedarf vision', evidence: ['3 Owner-Läufe'], proposal: 'Nur vermerken: Katalogeintrag nötig (keine freie Installation).',
-            permission: 'fragen', candidateId: 'vision-gemma4-e2b', nodeId: 'main', dedupeKey: 'software-scout:vision:vision-gemma4-e2b:main' })
-        const thought = listThoughts({ limit: 500 }).find(item => item.title === 'Vision fehlt: Gemma 4 E2B auf main?')!
+        await createSoftwareScoutThoughtSink().emit({ title: 'Sprachausgabe fehlt: Piper auf main?', text: 'Bedarf tts', evidence: ['3 Owner-Läufe'], proposal: 'Nur vermerken: Katalogeintrag nötig (keine freie Installation).',
+            permission: 'fragen', candidateId: 'tts-piper', nodeId: 'main', dedupeKey: 'software-scout:tts:tts-piper:main' })
+        const thought = listThoughts({ limit: 500 }).find(item => item.title === 'Sprachausgabe fehlt: Piper auf main?')!
         expect(thought.permission).toBe('selbst')
         expect(thought.kind).toBe('idee')
         expect(await hasThoughtAction(thought.id)).toBe(false)
         expect((await deliver(thought.id)).card).toBeUndefined()
-        expect(readCatalogCare().pending.map(item => item.model)).toContain('gemma4:e2b')
+    })
+
+    it('Gegenprobe: gemma4:e2b now has a catalog entry (package D), so its proposal is a real path and asks', async () => {
+        const { createSoftwareScoutThoughtSink } = hub
+        await createSoftwareScoutThoughtSink().emit({ title: 'Vision fehlt: Gemma 4 E2B auf main?', text: 'Bedarf vision', proposal: 'In die Installations-Warteschlange',
+            permission: 'fragen', candidateId: 'vision-gemma4-e2b', nodeId: 'main', dedupeKey: 'software-scout:vision:vision-gemma4-e2b:main' })
+        const thought = listThoughts({ limit: 500 }).find(item => item.title === 'Vision fehlt: Gemma 4 E2B auf main?')!
+        expect(thought.permission).toBe('fragen')
+        expect(await hasThoughtAction(thought.id)).toBe(true)
     })
 
     it('Gegenprobe: a candidate with a catalog id still asks (install queue is a real path)', async () => {

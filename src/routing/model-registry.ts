@@ -86,6 +86,8 @@ export interface RegistryInputs {
     knownNodes?: string[]
     vllm?: Array<{ node?: string; baseUrl: string; models: string[] }>
     ollama?: Array<{ node?: string; baseUrl: string; models: Array<{ name: string; sizeBytes?: number }>; loaded?: string[] }>
+    /** 2.85: other OpenAI-compatible local servers (LM Studio, llama.cpp, KoboldCPP, LocalAI, TabbyAPI). */
+    localOther?: Array<{ node?: string; baseUrl: string; models: string[] }>
     probes?: ProbeInput[]
     codex?: { enabled?: boolean; model?: string; available?: boolean }
     /** Cloud models from `routing.multi.cloudModels`; listed only when a key is present (presence only, never the value). */
@@ -212,6 +214,10 @@ export function buildModelRegistry(inputs: RegistryInputs): ModelRegistry {
             add({ kind: 'ollama', model: model.name, node: runtime.node, baseUrl: runtime.baseUrl, loaded: loaded.has(norm(model.name)), ...(model.sizeBytes ? { sizeBytes: model.sizeBytes } : {}) })
         }
     }
+    for (const runtime of inputs.localOther || []) {
+        sources.add('local')
+        for (const model of runtime.models || []) add({ kind: 'local-other', model, node: runtime.node, baseUrl: runtime.baseUrl })
+    }
     if (inputs.codex?.enabled !== undefined || inputs.codex?.model) {
         sources.add('codex')
         const model = inputs.codex.model || 'codex'
@@ -291,6 +297,13 @@ export function measurementFor(endpoint: Pick<ModelEndpoint, 'measurements'>, ta
 // Runtime collection (read-only; each source optional)
 // ---------------------------------------------------------------------------
 
+/**
+ * Registry kind of a capability-graph runtime. The KI scanner writes
+ * `type: 'llm'` with `name: 'vllm' | 'ollama' | 'lm-studio' | …`; mesh
+ * heartbeats may carry the runtime name as type. Search, speech and image
+ * services are no chat models; `ollama-embeddings` repeats the Ollama list.
+ */
+
 const KEY_ENV: Record<string, string[]> = {
     anthropic: ['ANTHROPIC_API_KEY'], openai: ['OPENAI_API_KEY'], gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], google: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
 }
@@ -307,10 +320,15 @@ export function cloudKeyPresent(provider: string, config: any, env: NodeJS.Proce
 const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|::1|0\.0\.0\.0)$/i
 
 /** Ollama or vLLM? AIScan reports both as `type: 'llm'` with the product as name/capability (2.86 fix). */
-export function graphRuntimeKind(runtime: { type?: string; name?: string; capabilities?: string[] }): 'ollama' | 'vllm' | null {
+const LOCAL_OTHER_LLM_SERVERS = new Set(['lm-studio', 'lmstudio', 'llama-cpp', 'llamacpp', 'llama.cpp', 'koboldcpp', 'localai', 'tabbyapi'])
+
+export function graphRuntimeKind(runtime: { type?: string; name?: string; capabilities?: string[] }): 'ollama' | 'vllm' | 'local-other' | null {
     const tags = [runtime.type, runtime.name, ...(runtime.capabilities || [])].map(norm)
-    if (tags.includes('ollama')) return 'ollama'
     if (tags.includes('vllm')) return 'vllm'
+    if (tags.includes('ollama')) return 'ollama'
+    // 2.85 C: other OpenAI-compatible local LLM servers the scanner reports by name. Only known
+    // chat servers: image/speech services (ComfyUI, Whisper …) are never a chat endpoint.
+    if (tags.some(tag => LOCAL_OTHER_LLM_SERVERS.has(tag))) return 'local-other'
     return null
 }
 
@@ -333,7 +351,7 @@ export function graphRuntimeEndpoint(endpoint: string, node: { id: string; host?
 export async function collectModelRegistry(options: { config?: any; userId?: string } = {}): Promise<ModelRegistry> {
     const config = options.config ?? (globalThis as any).__novaState?.config ?? {}
     const multi = config?.routing?.multi || {}
-    const inputs: RegistryInputs = { knownNodes: [], vllm: [], ollama: [], probes: [], costs: multi.costs || {} }
+    const inputs: RegistryInputs = { knownNodes: [], vllm: [], ollama: [], localOther: [], probes: [], costs: multi.costs || {} }
     try {
         const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
         let localNodeId: string | undefined
@@ -347,6 +365,7 @@ export async function collectModelRegistry(options: { config?: any; userId?: str
                 const baseUrl = graphRuntimeEndpoint(runtime.endpoint, node, localNodeId)
                 if (!baseUrl) continue
                 if (kind === 'vllm') inputs.vllm!.push({ node: node.id, baseUrl, models: runtime.models || [] })
+                else if (kind === 'local-other') inputs.localOther!.push({ node: node.id, baseUrl, models: runtime.models || [] })
                 else {
                     const loaded = Array.isArray((runtime.metadata as any)?.loaded) ? (runtime.metadata as any).loaded : []
                     inputs.ollama!.push({ node: node.id, baseUrl, models: (runtime.models || []).map(name => ({ name })), loaded })

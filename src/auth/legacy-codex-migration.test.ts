@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { purgeLegacyCodexCredentialCopies } from './legacy-codex-migration.js'
@@ -31,5 +31,21 @@ describe('legacy Codex credential migration', () => {
         expect(persisted.profiles['openai-codex']).toBeUndefined()
         expect(persisted.profiles.openai.key).toBe('sk-kept')
         expect(persisted.profiles.anthropic.key).toBe('kept')
+    })
+
+    // 2.85 Paket C: verified LLM API keys live in auth.json; the purge rewrite kept
+    // the default file mode (0644 under the usual umask) instead of 0600.
+    it.skipIf(process.platform === 'win32')('rewrites auth.json owner-only (0600)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'nova-codex-migration-'))
+        dirs.push(root)
+        const data = join(root, '.nova-data')
+        mkdirSync(data)
+        writeFileSync(join(data, 'auth.json'), JSON.stringify({ version: 1, profiles: {
+            'openai-codex': { type: 'oauth', provider: 'openai-codex', access: 'a', refresh: 'r', expires: 1 },
+            'llm-key:mistral': { type: 'api_key', provider: 'mistral', key: 'kept' },
+        } }), { mode: 0o600 })
+        expect(purgeLegacyCodexCredentialCopies(data).removedProfiles).toBe(1)
+        expect(statSync(join(data, 'auth.json')).mode & 0o777).toBe(0o600)
+        expect(JSON.parse(readFileSync(join(data, 'auth.json'), 'utf8')).profiles['llm-key:mistral'].key).toBe('kept')
     })
 })

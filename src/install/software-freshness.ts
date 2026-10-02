@@ -210,7 +210,7 @@ export async function checkFreshness(candidate: SoftwareCandidate, options: Fres
     try {
         const result = await options.search.search(query)
         const hits = extractModelHits(Array.isArray(result?.hits) ? result.hits : [])
-        const tool = SEARCH_CHAIN.includes(result?.tool as any) ? result.tool : 'websuche'
+        const tool = SEARCH_CHAIN.includes(result?.tool as any) || result?.tool === 'searxng_search' ? result.tool : 'websuche'
         if (!hits.length) record = { status: 'fehler', checkedAt: now, query, tool, reason: 'keine verwertbaren Treffer (Ollama/Hugging Face)' }
         else {
             const successor = findSuccessor(candidate, hits, options.catalog)
@@ -256,9 +256,30 @@ export function freshnessVerdict(candidate: SoftwareCandidate, record: Freshness
 
 interface RegistryLike { get(name: string): unknown; execute(name: string, params: Record<string, unknown>): Promise<unknown> }
 
-export function createGovernedWebSearch(options: { registry?: RegistryLike } = {}): WebSearchPort {
+/** 2.85 Paket C: a local SearXNG (configured or found by the KI scanner) is asked before the cloud searches. */
+export interface SearxngPort {
+    url(): string | null
+    search(query: string, baseUrl: string): Promise<{ results: Array<{ url?: string; title?: string; content?: string }>; error?: string }>
+}
+
+async function defaultSearxngPort(): Promise<SearxngPort> {
+    const { getSearXNGUrl, searxngSearch } = await import('../tools/searxng-search.js')
+    return { url: getSearXNGUrl, search: (query, baseUrl) => searxngSearch(query, baseUrl, { count: 8 }) }
+}
+
+export function createGovernedWebSearch(options: { registry?: RegistryLike; searxng?: SearxngPort } = {}): WebSearchPort {
     return {
         async search(query: string) {
+            try {
+                const searxng = options.searxng || await defaultSearxngPort()
+                const baseUrl = searxng.url()
+                if (baseUrl) {
+                    const found = await searxng.search(query, baseUrl)
+                    const hits = (found?.error ? [] : found?.results || []).filter(item => typeof item?.url === 'string' && item.url).slice(0, 20)
+                        .map(item => ({ url: item.url, title: item.title || undefined, snippet: item.content || undefined }))
+                    if (hits.length) return { tool: 'searxng_search', hits }
+                }
+            } catch { /* SearXNG optional: the chain below stays */ }
             const registry: RegistryLike = options.registry || (await import('../tools/complete-registry.js')).getToolRegistry()
             for (const tool of SEARCH_CHAIN) {
                 if (!registry.get(tool)) continue

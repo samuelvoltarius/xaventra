@@ -65,6 +65,15 @@ const stopDaemon = async () => {
     cli.once('exit', code => { clearTimeout(timer); resolve(code) }); cli.once('error', error => { clearTimeout(timer); reject(error) })
   })
   assert.equal(code, 0, 'Authenticated, instance-scoped daemon shutdown failed')
+  // The CLI confirms the exit through process liveness; on Windows this parent's
+  // 'exit' event can arrive a moment later. Wait for it (bounded) instead of racing it;
+  // a daemon that really keeps running still fails here.
+  if (child.exitCode === null && child.signalCode === null) {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Daemon still running after an acknowledged stop')), 10000)
+      child.once('exit', () => { clearTimeout(timer); resolve() })
+    })
+  }
   assert.equal(child.exitCode, 0); assert.equal(child.signalCode, null)
 }
 // Requests as another principal carry no owner token, so they must be refused

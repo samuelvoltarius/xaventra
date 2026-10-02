@@ -43,6 +43,7 @@ import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
 import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallieren } from './werkzeugkasten-view.js'
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
+import { registerLlmConnectionsApi } from './llm-connections-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -278,6 +279,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     // 2.85 first start: the one route before auth (one-time owner-token takeover by the local app).
     registerOnboardingClaim(app, { isDirectLoopbackClient })
     app.use('/api/desktop', requireDesktopAuth)
+    // 2.85 Paket C: KI-Modelle verbinden (status, key, account login) for Paket A/B.
+    registerLlmConnectionsApi(app, { isOwner: isDesktopOwner, executionPrincipal: req => desktopExecutionPrincipal(principal(req)) })
 
     app.get('/api/desktop/bootstrap', async (req, res) => {
         try {

@@ -5,6 +5,11 @@ import { createNovaLLMClient } from '../llm/nova-llm-sdk.js'
 import { LocalLLM } from '../llm/local-llm.js'
 import * as fallback from '../llm/model-fallback.js'
 
+// 2.85: local fallback targets come only from what the KI scanner sees running.
+vi.mock('../mesh/ai-scanner.js', () => ({
+    getLastScanResult: () => ({ lastScan: '2026-10-02T00:00:00Z', scanDurationMs: 1, services: [] }),
+    getRunningServices: () => [{ name: 'vllm', type: 'llm', status: 'running', endpoint: 'http://127.0.0.1:19992', models: ['fallback-model'] }],
+}))
 vi.mock('../llm/nova-llm-sdk.js', () => ({
     createNovaLLMClient: vi.fn(async config => ({ getCurrentConfig: () => config, configure: vi.fn(), complete: vi.fn(async () => ({ content: 'observed' })) })),
 }))

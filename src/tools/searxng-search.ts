@@ -1,6 +1,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getDiscoveredSearxngUrl } from '../mesh/ai-scanner.js'
 /**
  * SearXNG Search — Self-Hosted Privacy-Friendly Search
  *
@@ -150,7 +151,9 @@ export function getSearXNGUrl(): string | null {
         }
     } catch { /* ignore */ }
 
-    return null
+    // 3. 2.85 Paket C: a SearXNG the KI scanner found on this machine or in the
+    //    own network (local, no key, private) — used without asking.
+    try { return getDiscoveredSearxngUrl() } catch { return null }
 }
 
 // ============================================

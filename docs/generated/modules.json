@@ -300,7 +300,6 @@
     {
       "module": "src/auth/legacy-codex-migration.ts",
       "imports": [
-        "../core/atomic-storage.js",
         "node:fs",
         "node:path"
       ]
@@ -2538,6 +2537,7 @@
         "./desktop-control.js",
         "./desktop-views.js",
         "./external-agent-registry.js",
+        "./llm-connections-api.js",
         "./model-control.js",
         "./module-catalog.js",
         "./node-enrollment.js",
@@ -2575,6 +2575,13 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/llm-connections-api.ts",
+      "imports": [
+        "../llm/llm-connections.js",
+        "express"
       ]
     },
     {
@@ -4175,6 +4182,16 @@
       ]
     },
     {
+      "module": "src/llm/llm-connections.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/llm/llm-principal.ts",
       "imports": [
         "node:async_hooks"
@@ -4559,6 +4576,9 @@
       "module": "src/mesh/ai-scanner.ts",
       "imports": [
         "../config/config-path.js",
+        "../sensing/config.js",
+        "../sensing/discovery.js",
+        "../sensing/net-scope.js",
         "./discovery-probe.js",
         "./mesh-registry.js",
         "node:child_process",
@@ -6289,6 +6309,7 @@
       "module": "src/tools/searxng-search.ts",
       "imports": [
         "../config/config-path.js",
+        "../mesh/ai-scanner.js",
         "node:fs"
       ]
     },
