@@ -11,6 +11,7 @@ import { createDraftStream, type DraftStream } from './telegram-stream.js'
 import { mayRetryTelegramPolling, telegramConflictRetryDelay } from './telegram-polling-guard.js'
 import { formatTelegramMessage } from './telegram-presentation.js'
 import type { PrincipalContext } from '../users/principal-id.js'
+import { claimTelegramPairing, isTelegramPairingMessage } from '../onboarding/telegram-pairing.js'
 
 // ============================================
 // Types
@@ -1192,6 +1193,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
     private persistInboundSync(msg: any): void {
         if (!this.config.persistInbound || !msg?.chat) return
+        // A one-time pairing code is never queued for the pipeline (2.85 first start).
+        if (isTelegramPairingMessage(msg)) return
         if (!this.passesInboundPolicy(msg, false)) return
         const content = msg.text || msg.caption || (msg.photo?.length ? 'Was zeigt dieses Bild?' : '')
         if (!content) return
@@ -1242,6 +1245,18 @@ export class TelegramAdapter implements ChannelAdapter {
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
         const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        // 2.85 first start: "/start <one-time code>" from the desktop pairing link binds
+        // the sender as owner. Checked before the allowlist; never reaches the pipeline.
+        if (authorized && !isGroup && isTelegramPairingMessage(msg)) {
+            const pairing = claimTelegramPairing(msg.text, { id: userId, username: msg.from?.username, isGroup })
+            if (pairing.handled) {
+                if (pairing.ok && !(this.config.allowFrom || []).includes(pairing.userId)) {
+                    this.config.allowFrom = [...(this.config.allowFrom || []), pairing.userId]
+                }
+                await this.bot.sendMessage(chatId, pairing.reply)
+                return
+            }
+        }
         if (!this.passesInboundPolicy(msg, true)) return
 
         // Handle text or caption

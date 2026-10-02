@@ -1134,6 +1134,7 @@
         "../core/outbound-content-guard.js",
         "../core/runtime.js",
         "../core/types.js",
+        "../onboarding/telegram-pairing.js",
         "../users/principal-id.js",
         "./telegram-polling-guard.js",
         "./telegram-presentation.js",
@@ -2524,6 +2525,7 @@
         "../memory/memory-governance.js",
         "../mesh/leader-election.js",
         "../mesh/mesh-registry.js",
+        "../onboarding/onboarding-api.js",
         "../security/blue-team.js",
         "../security/red-team.js",
         "../security/secret-redaction.js",
@@ -4856,6 +4858,17 @@
       ]
     },
     {
+      "module": "src/onboarding/connections-port.ts",
+      "imports": []
+    },
+    {
+      "module": "src/onboarding/env-file.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/onboarding/first-start-doctor.ts",
       "imports": [
         "../install/install-catalog.js",
@@ -4869,6 +4882,32 @@
       "imports": [
         "../config/config-path.js",
         "dotenv",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/onboarding/onboarding-api.ts",
+      "imports": [
+        "../config/config-path.js",
+        "../core/data-root.js",
+        "./connections-port.js",
+        "./env-file.js",
+        "./first-start.js",
+        "./telegram-pairing.js",
+        "express",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/onboarding/telegram-pairing.ts",
+      "imports": [
+        "../config/config-path.js",
+        "../core/data-root.js",
+        "./first-start.js",
         "node:crypto",
         "node:fs",
         "node:path"

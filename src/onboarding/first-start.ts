@@ -40,6 +40,8 @@ export interface TelegramOnboardingState {
     pairedAt?: string
     /** Display only (Telegram @username or "verbunden"); the id lives in the config allowFrom. */
     pairedWith?: string
+    /** Public @username of the bot (from getMe), for the t.me link. Never the token. */
+    botUsername?: string
 }
 export interface OnboardingState {
     version: 1
