@@ -200,6 +200,7 @@ export class MCPClient extends EventEmitter {
             return this.snapshot(session.state)
         } catch (error) {
             session.state.lastError = redactError(error)
+            if (/UnauthorizedError|\b401\b|invalid_grant|unauthori[sz]ed/i.test(`${(error as any)?.name || ''} ${session.state.lastError}`)) this.emit('authFailure', { server: config.name })
             this.sessions.delete(config.name)
             await transport.close().catch(() => undefined)
             throw new Error(`MCP ${config.name} connection failed: ${session.state.lastError}`)
@@ -302,7 +303,14 @@ export class MCPClient extends EventEmitter {
             if (refusal) throw new Error(`MCP tool requires approval: ${serverName}/${toolName}. ${refusal}`)
         }
         if (session.config.connector && callArgs === args) callArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !LOCAL_ONLY_ARGS.has(key)))
-        const result = await session.client.callTool({ name: toolName, arguments: callArgs })
+        let result: any
+        try {
+            result = await session.client.callTool({ name: toolName, arguments: callArgs })
+        } catch (error) {
+            // 2.85: an expired login is reported once per failure; the connection layer asks the owner exactly once.
+            if (/UnauthorizedError|\b401\b|invalid_grant|unauthori[sz]ed/i.test(`${(error as any)?.name || ''} ${(error as any)?.message || error}`)) this.emit('authFailure', { server: serverName })
+            throw new Error(redactError(error))
+        }
         return { ...result, mcp: { server: serverName, tool: toolName, verifiedTransport: true } }
     }
 

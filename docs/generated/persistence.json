@@ -90,6 +90,18 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/connections/connect-flow.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connection-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connector-login.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/action-policy.ts",
       "path": ".nova-data"
     },

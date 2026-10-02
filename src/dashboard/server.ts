@@ -106,6 +106,17 @@ registerDesktopApi(app, () => novaMessageHandler)
 
 app.use('/api', (_req, res) => { res.status(404).json({ error: 'Unknown API route' }) })
 
+// 2.85 Paket A: browser return of a connection login (OAuth / Home Assistant). Not under /api:
+// the browser arrives here from the service; the single-use `state` is the proof, never a token.
+app.get('/verbindungen/rueckkehr', async (req, res) => {
+    try {
+        const { handleLoginReturn } = await import('../connections/login-return.js')
+        const page = await handleLoginReturn(req.query as Record<string, unknown>)
+        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+        res.status(page.status).type('text/html; charset=utf-8').send(page.html)
+    } catch { res.status(500).type('text/plain; charset=utf-8').send('Anmeldung konnte nicht abgeschlossen werden.') }
+})
+
 // The one UI. An old bookmark with ?token= never leaves the token in the
 // address bar: redirect to the bare page (the token is typed into the UI).
 app.get(['/', '/index.html', ...Object.keys(UI_FILES).map(name => `/${name}`)], (req, res) => {

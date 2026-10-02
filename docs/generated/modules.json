@@ -1222,6 +1222,32 @@
       ]
     },
     {
+      "module": "src/connections/connect-flow.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "./connector-login.js",
+        "./registry-directory.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connection-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connector-catalog.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/connections/connector-catalog.ts",
       "imports": [
         "../install/install-catalog.js",
@@ -1232,6 +1258,21 @@
     {
       "module": "src/connections/connector-icons.ts",
       "imports": []
+    },
+    {
+      "module": "src/connections/connector-login.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "@modelcontextprotocol/sdk/client/auth.js",
+        "@modelcontextprotocol/sdk/shared/auth.js",
+        "@modelcontextprotocol/sdk/shared/transport.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
     },
     {
       "module": "src/connections/connector-policy.ts",
@@ -1249,6 +1290,12 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/login-return.ts",
+      "imports": [
+        "./connect-flow.js"
       ]
     },
     {
@@ -4327,6 +4374,8 @@
     {
       "module": "src/mcp/mcp-runtime.ts",
       "imports": [
+        "../connections/connection-store.js",
+        "../connections/connector-login.js",
         "../core/config.js",
         "../tools/complete-registry.js",
         "./mcp-client.js"

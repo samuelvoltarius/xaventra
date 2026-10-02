@@ -38,6 +38,7 @@ type StoredAction =
     | { kind: 'software-scout'; candidateId: string; nodeId: string; dedupeKey: string }
     | { kind: 'auto-reminder'; planId: string }
     | { kind: 'watch'; actionKind: string; node?: string; target?: string }
+    | { kind: 'verbindung'; action: 'connect' | 'login'; connectorId?: string; connectionId?: string }
 
 type ThinkingAction = 'idee-pruefen' | 'modell-wechsel'
 const THINKING_ACTIONS: readonly ThinkingAction[] = ['idee-pruefen', 'modell-wechsel']
@@ -90,6 +91,40 @@ async function answerWatch(action: Extract<StoredAction, { kind: 'watch' }>, ans
         return { ok: true, message: `${outcome.note}; nur die freigegebenen Rezepte.` }
     }
     return { ok: true, message: `Vermerkt (${action.actionKind}${action.target ? ` für ${action.target}` : ''}${action.node ? ` auf ${action.node}` : ''}). Dafür gibt es keinen freigegebenen Ausführungsweg — bitte selbst erledigen; der Wächter meldet die Erholung.` }
+}
+
+/**
+ * 2.85 Paket A: connection thoughts. `connect` = a recorded need for a missing
+ * connection (the Ja is the approval of the config change, like the
+ * „Verbinden“ card); `login` = an expired login (exactly one request; Ja opens
+ * the login). Only the connector/connection id is remembered.
+ */
+export function createConnectionThought(input: { kind: 'connect' | 'login'; connectorId?: string; connectionId?: string; title: string; text: string; proposal: string; dedupeKey: string; evidence?: string[] }): void {
+    const connectorId = input.connectorId && /^[a-zA-Z0-9][a-zA-Z0-9./_-]{1,120}$/.test(input.connectorId) ? input.connectorId : undefined
+    const connectionId = input.connectionId && /^c-[a-z0-9][a-z0-9-]{1,60}$/.test(input.connectionId) ? input.connectionId : undefined
+    if (input.kind === 'connect' ? !connectorId : !connectionId) return
+    const { thought } = addThought({
+        source: 'verbindungen',
+        title: plain(input.title, 160),
+        evidence: [input.text, ...(input.evidence || [])].map(item => plain(item, 300)).filter(Boolean).join(' · '),
+        severity: 'info',
+        kind: 'vorschlag',
+        proposal: plain(input.proposal, 200),
+        permission: 'fragen',
+        signature: plain(input.dedupeKey, 200),
+    })
+    remember(thought.id, { kind: 'verbindung', action: input.kind, ...(connectorId ? { connectorId } : {}), ...(connectionId ? { connectionId } : {}) })
+}
+
+async function answerConnection(action: Extract<StoredAction, { kind: 'verbindung' }>, answer: 'ja' | 'nein', ctx: { userId: string }): Promise<{ ok: boolean; message: string }> {
+    const flow = await import('../connections/connect-flow.js')
+    if (action.action === 'login') {
+        if (answer === 'nein') return { ok: true, message: 'Gut, ich nutze die Verbindung erst nach einer neuen Anmeldung wieder.' }
+        const result = await flow.beginLogin(String(action.connectionId || ''))
+        return { ok: result.ok, message: result.url ? `Bitte hier anmelden (gilt 15 Minuten): ${result.url}` : result.message }
+    }
+    if (answer === 'nein') return { ok: true, message: 'Nicht verbunden.' }
+    return flow.connectFromApproval(String(action.connectorId || ''), `telegram:${ctx.userId}`)
 }
 
 /** Planner sources are `^[a-z][a-z0-9-]{1,31}$`. */
@@ -378,6 +413,7 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
     }
     if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)
     if (action.kind === 'watch') return answerWatch(action, answer)
+    if (action.kind === 'verbindung') return answerConnection(action, answer, ctx)
 
     if (action.kind === 'auto-reminder') {
         const { acceptAutoReminderPlan, declineAutoReminderPlan } = await import('../planner/auto-reminders.js')
