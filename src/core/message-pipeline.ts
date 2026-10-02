@@ -990,6 +990,11 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
         const decisionBlock = buildDecisionContext(content, observed)
         if (decisionBlock) systemPrompt += decisionBlock
     } catch (err) { console.debug('[Pipeline] decisions not available:', err) }
+    // 2.85 Paket A: an owner request about a service that is not connected is a recorded need
+    // (connector + time only, never the text). Three in 14 days → one „verbinden?“ question.
+    if (principalContext.permission === 'owner' && isGroupMessage === false && !isSystemAuthored) try {
+        (await import('../connections/connection-demand.js')).noteOwnerRequest(content)
+    } catch { /* a missing signal only means: no question */ }
 
     // ============================================
     // Known hosts are inventory data, never an authorization grant.

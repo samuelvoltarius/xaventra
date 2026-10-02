@@ -990,6 +990,14 @@
       "path": ".nova-data/codex-auth-index/nova_ns1.json"
     },
     {
+      "owner": "src/connections/connection-demand.ts",
+      "path": ".nova-data/connections/bedarf.json"
+    },
+    {
+      "owner": "src/connections/connection-demand.ts",
+      "path": ".nova-data/connections/connections.json"
+    },
+    {
       "owner": "src/connections/icon-cache.ts",
       "path": ".nova-data/connections/icons"
     },

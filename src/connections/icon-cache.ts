@@ -34,6 +34,8 @@ function readIndex(dir: string): Record<string, { hash: string; type: string }> 
 }
 
 async function defaultFetch(url: string): Promise<IconFetchResponse> {
+    const { sideEffectsDisabled } = await import('../core/side-effects.js')
+    if (sideEffectsDisabled()) throw new Error('Netzabruf in Tests/CI aus')
     const { fetchWithSsrfGuard } = await import('../resilience/ssrf-guard.js')
     const res = await fetchWithSsrfGuard(url, { headers: { Accept: 'image/png, image/jpeg, image/webp' }, signal: AbortSignal.timeout(5_000) })
     const declared = Number(res.headers.get('content-length') || 0)

@@ -132,6 +132,8 @@ export function directoryDue(cache: DirectoryCache, now = Date.now()): boolean {
 }
 
 async function defaultFetch(url: string): Promise<DirectoryFetchResponse> {
+    const { sideEffectsDisabled } = await import('../core/side-effects.js')
+    if (sideEffectsDisabled()) throw new Error('Netzabruf in Tests/CI aus')
     const { fetchWithSsrfGuard } = await import('../resilience/ssrf-guard.js')
     const res = await fetchWithSsrfGuard(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) })
     return { ok: res.ok, status: res.status, json: async () => JSON.parse((await res.text()).slice(0, 2_000_000)) }

@@ -123,7 +123,9 @@ async function answerConnection(action: Extract<StoredAction, { kind: 'verbindun
         const result = await flow.beginLogin(String(action.connectionId || ''))
         return { ok: result.ok, message: result.url ? `Bitte hier anmelden (gilt 15 Minuten): ${result.url}` : result.message }
     }
-    if (answer === 'nein') return { ok: true, message: 'Nicht verbunden.' }
+    const { recordConnectionAnswer } = await import('../connections/connection-demand.js')
+    recordConnectionAnswer(String(action.connectorId || ''), answer)
+    if (answer === 'nein') return { ok: true, message: 'Nicht verbunden; diesen Vorschlag bringe ich 30 Tage nicht mehr.' }
     return flow.connectFromApproval(String(action.connectorId || ''), `telegram:${ctx.userId}`)
 }
 

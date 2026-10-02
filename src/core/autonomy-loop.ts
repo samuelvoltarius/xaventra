@@ -885,6 +885,7 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     await runThinkingPhase()
     // Phase 5b Software-Scout: off until autonomy.softwareScout.enabled; only gap thoughts, never an install.
     await runSoftwareScoutPhase()
+    await runConnectionsPhase()
 
     // Phase 4: EXECUTE PENDING GOALS
     // Nova actually works on her own goals — not just reports them
@@ -1033,6 +1034,31 @@ async function runSoftwareScoutPhase(): Promise<void> {
         if (result.ran) console.log(`[Autonomy] Software-Scout: ${result.reason}`)
     } catch (err) {
         console.debug(`[Autonomy] Software-Scout non-critical error: ${err}`)
+    }
+}
+
+// 2.85 Paket A: Verbindungen — need rule (a failed owner request or 3 requests in
+// 14 days → one question) and the daily refresh of the community directory cache.
+// Only on the Main; proposals go to the Gedanken-Hub (stage fragen).
+async function runConnectionsPhase(): Promise<void> {
+    const isMain = config.enabled && hasGlobalAutonomyAuthority()
+    if (!isMain) return
+    // Network (registry) and ledger scans never run in smoke tests/CI.
+    const { sideEffectsDisabled } = await import('./side-effects.js')
+    if (sideEffectsDisabled()) return
+    try {
+        const { runConnectionDemandTick } = await import('../connections/connection-demand.js')
+        const result = await runConnectionDemandTick({ isMain })
+        if (result.emitted.length) console.log(`[Autonomy] Verbindungen: ${result.emitted.length} Vorschlag/Vorschläge aus Bedarf`)
+    } catch (err) {
+        console.debug(`[Autonomy] Verbindungen non-critical error: ${err}`)
+    }
+    try {
+        const { refreshDirectoryIfDue } = await import('../connections/registry-directory.js')
+        const refreshed = await refreshDirectoryIfDue({ isMain })
+        if (refreshed?.ok) console.log(`[Autonomy] MCP-Verzeichnis: ${refreshed.entries} Einträge (${refreshed.complete ? 'vollständig' : 'Teil'})`)
+    } catch (err) {
+        console.debug(`[Autonomy] MCP-Verzeichnis non-critical error: ${err}`)
     }
 }
 

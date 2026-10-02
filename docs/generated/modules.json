@@ -1237,6 +1237,18 @@
       ]
     },
     {
+      "module": "src/connections/connection-demand.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/outcome-ledger.js",
+        "../core/validator-failure-escalation.js",
+        "./connector-catalog.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/connections/connection-store.ts",
       "imports": [
         "../core/atomic-storage.js",
