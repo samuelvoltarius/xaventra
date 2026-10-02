@@ -25,9 +25,9 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current candidate: **2.82.0 preview**, based on the 2.81.0 preview.
+Current candidate: **2.83.0 preview**, based on the 2.82.0 preview.
 See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
-[verification record](docs/VERIFICATION_2.82.0.md). The
+[verification record](docs/VERIFICATION_2.83.0.md). The
 [2.78.58 record](docs/VERIFICATION_2.78.58.md) remains the prior baseline.
 Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
@@ -65,13 +65,19 @@ physical actions (printing, switching) and deleting always ask; the fixed
 never-list (secrets, firewall/SSH, NAS restart, DB migration …) cannot be
 lifted.
 
+**Closed learning loops (2.83.0).** A fault becomes one case per pattern, is
+handed to Claude through the one delegation path and closes only when it is
+measurably gone. A "Ja" on an idea starts real work and is measured again after
+seven days; three "Nein" stop that kind of suggestion. Rejected results retract
+what she learned from them, and the evening report shows her learning curve.
 
-Xaventra 2.82.0 is a source-preview candidate. Native Windows, Linux and macOS
+
+Xaventra 2.83.0 is a source-preview candidate. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
 systems. A configured LLM is required; optional browser, GPU and Desktop
 dependencies have their own install steps. Signed Desktop binaries and live
 multi-node channel takeover remain separate release gates, not implied promises.
-See the [verification record](docs/VERIFICATION_2.82.0.md) and
+See the [verification record](docs/VERIFICATION_2.83.0.md) and
 [platform guide](docs/PLATFORMS.md) before distributing a deployment.
 
 The current candidate includes authenticated desktop-capture and Telegram-delivery

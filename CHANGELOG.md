@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [2.83.0] — 2026-10-02
+
+Closed learning loops: Xaventra notices what goes wrong, learns from it,
+checks whether her own changes helped and stops repeating what the owner
+declined.
 
 Doctor-Kreislauf geschlossen (2.83.0 Paket A):
 
@@ -58,6 +62,40 @@ Werkzeug-Schmiede:
   Netz nur über das geprüfte `ctx.fetch`; lesend + Tests grün → selbst aktiv,
   schreibend/extern/physisch → Karte; `/werkzeuge`; Bedarfs-Hook; lokales
   Lern-Modell statt Cloud. Siehe docs/TOOL_FORGE.md.
+
+Lernen aus Misserfolg (Paket B):
+
+- The bug finder also hears owner rejections (regression cases are promoted
+  and resolved, never with request text) and repeatedly failing missions;
+  missions the owner declined never count.
+- Learned procedures remember the runs they came from: an owner rejection
+  retracts the evidence, two failures in a row suspend a procedure, and the
+  benefit of a recalled procedure is measured after validation.
+
+Lernkurve und Werkzeuge (Paket D):
+
+- Evening report section "Lernkurve": success rate per task type this week vs.
+  last week (validated runs only), owner rejections, and accepted/declined
+  suggestions with the kinds three Nein now suppress.
+- A read-only tool built by the Werkzeug-Schmiede replaces the matching step
+  of a routine skill; after 5 runs the change is confirmed, two failures or a
+  worse result roll the skill back automatically.
+- Repair sandbox: 300 s per command, 1,500 s in total (the grown suite hit the
+  old 180-s limit in main CI).
+
+Laufzeit (Paket E, from the 2.82.0 rollout):
+
+- Learning/repair runtimes find the configured local vLLM provider, so the
+  Werkzeug-Schmiede can build tools on the Spark; the internal LLM is local or
+  none, never a cloud fallback.
+- vLLM nodes: memory warnings use available memory, swap growth and OOM kills
+  instead of the GPU reservation that keeps used RAM near 92 %.
+- System prompt: blocks get priorities; decisions, routine-skill hint, user
+  context and rights are never cut, background blocks shrink first.
+
+Integration: the combined bug-finder source passes measured successes through
+(otherwise no case would ever close).
+
 
 ## [2.82.0] — 2026-10-01
 
