@@ -125,9 +125,13 @@ export class NovaAgentsModel implements Model {
         response ||= await complete(messages)
         const responses = [response]
         const offered = new Set(tools.map(tool => tool.name))
-        const outsideContract = () => (response!.toolCalls || []).some(call => !offered.has(call.name))
+        const outsideNames = () => [...new Set((response!.toolCalls || []).map(call => String(call.name || '')).filter(name => !offered.has(name)))]
+        const outsideContract = () => outsideNames().length > 0
+        // 2.84.0: the error names the requested tools (bounded, name characters
+        // only) so the forge can see a missing tool; nothing is executed.
+        const named = () => outsideNames().map(name => name.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80)).filter(Boolean).slice(0, 5).join(', ')
         if (outsideContract()) {
-            if (this.correctionUsed || !tools.length) throw new Error('Model requested a tool outside the offered contract')
+            if (this.correctionUsed || !tools.length) throw new Error(`Model requested a tool outside the offered contract: ${named()}`)
             this.correctionUsed = true
             // Reject the entire unexecuted batch. No registry fallback, shell
             // grant, tool error text or model-generated command enters authority.
@@ -136,7 +140,7 @@ export class NovaAgentsModel implements Model {
                 content: 'The previous proposed tool batch was not executed because it contained a tool absent from this turn. Replan using ONLY the function tools supplied with this request. For a URL use an available HTTP/search tool. Do not invent tools or expand permissions. Return the requested results after tool execution.',
             }])
             responses.push(response)
-            if (outsideContract()) throw new Error('Model repeated a tool outside the offered contract after one correction')
+            if (outsideContract()) throw new Error(`Model repeated a tool outside the offered contract after one correction: ${named()}`)
         }
         if (request.signal?.aborted) throw new Error('AbortError: agent model call cancelled')
 

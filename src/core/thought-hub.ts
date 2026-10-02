@@ -193,7 +193,7 @@ type ForgeRef = { id: string; name: string }
 export interface ThoughtActionPorts {
     delegate: DelegationModule['delegate']
     delegationUrl(): Promise<string | null> | string | null
-    forge: { find(ref: string): ForgeRef | null | Promise<ForgeRef | null>; canBuild(): boolean | Promise<boolean>; revise(id: string, beleg: string): Promise<{ message: string }> }
+    forge: { find(ref: string): ForgeRef | null | Promise<ForgeRef | null>; canBuild(): boolean | Promise<boolean>; revise(id: string, beleg: string): Promise<{ message: string }>; buildsLeftToday?(): number | Promise<number> }
     proposeModelSwitch(input: { taskClass: 'general'; targetModel: string; grund: string }): Promise<{ ok: true; plan: { id: string }; card: { id: string; vorschlag: string } } | { ok: false; reason: string }>
 }
 
@@ -207,7 +207,9 @@ const defaultPorts: ThoughtActionPorts = {
             return tool ? { id: tool.id, name: tool.name } : null
         },
         canBuild: async () => (await import('../tools/skill-builder.js')).hasForgeModel(),
-        revise: async (id, beleg) => (await import('../tools/skill-builder.js')).reviseTool(id, beleg),
+        // 2.84.0: an idea's Ja is an improvement — a candidate; the active version stays until it passes.
+        revise: async (id, beleg) => (await import('../tools/skill-builder.js')).reviseTool(id, beleg, { mode: 'verbesserung' }),
+        buildsLeftToday: async () => (await import('../tools/skill-builder.js')).forgeBuildsLeftToday(),
     },
     proposeModelSwitch: async input => (await import('../routing/model-commands.js')).proposeLocalVllmSwitch(input),
 }
@@ -242,8 +244,11 @@ async function answerIdea(action: Extract<StoredAction, { kind: 'thinking' }>): 
     const forge = /^forge_[a-z0-9_]{1,60}$/i.test(subjekt) ? await port.forge.find(subjekt) : null
     if (forge && await port.forge.canBuild()) {
         // The forge's own path: new version, all tests, activation by impact; it reports the result itself.
+        // Over the shared daily limit it is put off until tomorrow (revise records that itself).
+        const left = port.forge.buildsLeftToday ? await port.forge.buildsLeftToday() : 1
         void port.forge.revise(forge.id, `Owner-Ja auf Idee ${regel}: ${beleg}`).catch(() => undefined)
-        return { ok: true, message: `Angenommen: die Schmiede baut eine neue Version von ${subjekt} und prüft sie mit allen Tests; das Ergebnis meldet sie selbst. ${measured}` }
+        if (left <= 0) return { ok: true, message: `Angenommen: Tageslimit für Werkzeug-Bauten erreicht — die Schmiede baut die neue Version von ${subjekt} morgen; die aktive Version bleibt. ${measured}` }
+        return { ok: true, message: `Angenommen: die Schmiede baut eine neue Version von ${subjekt} und prüft sie mit allen Tests; die aktive Version bleibt, bis die neue besteht. Das Ergebnis meldet sie selbst. ${measured}` }
     }
     const lead = forge ? `Für ${subjekt} gibt es kein lokales Lern-Modell — nichts gebaut, stattdessen untersuchen. ` : ''
     const to = (await port.delegationUrl()) ? 'claude' : 'subagent'

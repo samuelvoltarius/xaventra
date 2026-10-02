@@ -14,6 +14,12 @@
  * - Eine Freigabe gilt nur für genau diesen Code (sha256); neue Version =
  *   neue Freigabe.
  * - 2 Fehlschläge in Folge → neue Version (lokales Lern-Modell) oder aus.
+ * - 2.84.0: Eine Verbesserung (Owner-Ja auf eine Schmiede-Idee) baut einen
+ *   Kandidaten; die aktive Version bleibt aktiv, bis er alle Tests besteht
+ *   (schreibend/extern/physisch: bis zur Karte). Jede neue Version zählt ins
+ *   selbe Tageslimit wie Bedarfs-Bauten; darüber wird sie auf morgen gelegt.
+ * - 2.84.0: Fordert das Modell ein Werkzeug an, das in keinem Register steht,
+ *   wird daraus Bedarf „fehlendes Werkzeug“ (`missingToolFailures`).
  * - Worker bauen nichts. Kein Cloud-Modell: nur `serviceModels.learning`.
  * - 2.83.0: entsteht ein lesendes Werkzeug aus der Wiederholung eines
  *   Routine-Skills, ersetzt es dort bei der Aktivierung den allgemeinen
@@ -63,6 +69,12 @@ export interface ForgeCounters { calls: number; successes: number; failures: num
 export interface SkillForgeEvidence { stage: string; evidenceRef: string; verifiedAt: string }
 /** 2.83.0: Routine-Skill, dessen allgemeinen Schritt dieses Werkzeug ersetzen soll. */
 export interface ForgeAdoptTarget { skillId: string; from: string }
+/** 2.84.0: Art einer neuen Version — Verbesserung (Kandidat) oder Reparatur nach Fehlschlägen. */
+export type ForgeRevisionMode = 'verbesserung' | 'reparatur'
+/** 2.84.0: neue Version, die neben der aktiven auf die Owner-Karte wartet. */
+export interface ForgeCandidate { code: string; codeHash: string; manifest: ForgeManifest; tests: ForgeTestCase[]; parameters: ForgeParameter[]; lastTest: ForgeTestReport; reason: string; cardId?: string; createdAt: string }
+/** 2.84.0: neue Version, die wegen des Tageslimits später gebaut wird. */
+export interface ForgePendingRevision { mode: ForgeRevisionMode; reason: string; notBefore: string }
 
 export interface SkillProposal {
     id: string
@@ -90,6 +102,8 @@ export interface SkillProposal {
     cardId?: string
     origin: ForgeOrigin
     adoptFor?: ForgeAdoptTarget
+    candidate?: ForgeCandidate
+    pendingRevision?: ForgePendingRevision
 }
 
 export interface ForgeDraft {
@@ -377,29 +391,37 @@ function fixtureFetch(test: ForgeTestCase) {
     }
 }
 
-/** Alle Testfälle des aktuellen Codes in der Sandbox laufen lassen. */
-export async function testSkillProposal(id: string): Promise<{ proposal: SkillProposal | null; report: ForgeTestReport }> {
-    const proposal = getForgeTool(id)
-    const report: ForgeTestReport = { at: nowIso(), codeHash: proposal?.codeHash || '', passed: 0, total: proposal?.tests.length || 0, failures: [] }
-    if (!proposal) return { proposal: null, report: { ...report, failures: ['unbekanntes Werkzeug'] } }
+/** Testfälle eines Codes (aktiv oder Kandidat) in der Sandbox laufen lassen. */
+async function runForgeTests(subject: Pick<SkillProposal, 'code' | 'codeHash' | 'manifest' | 'tests'>): Promise<ForgeTestReport> {
+    const report: ForgeTestReport = { at: nowIso(), codeHash: subject.codeHash, passed: 0, total: subject.tests.length, failures: [] }
     const support = sandboxSupport()
     if (!support.ok) {
         report.failures.push(support.reason)
-    } else {
-        for (const test of proposal.tests) {
-            const result = await runInForgeSandbox({
-                code: proposal.code, params: test.params, manifest: proposal.manifest, timeoutMs: 10_000,
-                fetchHandler: fixtureFetch(test),
-                readFileHandler: async path => {
-                    if (test.files && Object.prototype.hasOwnProperty.call(test.files, path)) return test.files[path]
-                    throw new Error(`kein Testdatensatz für Datei ${path}`)
-                },
-            })
-            const failure = expectationFailure(test.expect, result)
-            if (failure) report.failures.push(`${test.name}: ${failure}`)
-            else report.passed++
-        }
+        return report
     }
+    for (const test of subject.tests) {
+        const result = await runInForgeSandbox({
+            code: subject.code, params: test.params, manifest: subject.manifest, timeoutMs: 10_000,
+            fetchHandler: fixtureFetch(test),
+            readFileHandler: async path => {
+                if (test.files && Object.prototype.hasOwnProperty.call(test.files, path)) return test.files[path]
+                throw new Error(`kein Testdatensatz für Datei ${path}`)
+            },
+        })
+        const failure = expectationFailure(test.expect, result)
+        if (failure) report.failures.push(`${test.name}: ${failure}`)
+        else report.passed++
+    }
+    return report
+}
+
+const allGreen = (report: ForgeTestReport) => report.total > 0 && report.passed === report.total
+
+/** Alle Testfälle des aktuellen Codes in der Sandbox laufen lassen. */
+export async function testSkillProposal(id: string): Promise<{ proposal: SkillProposal | null; report: ForgeTestReport }> {
+    const proposal = getForgeTool(id)
+    if (!proposal) return { proposal: null, report: { at: nowIso(), codeHash: '', passed: 0, total: 0, failures: ['unbekanntes Werkzeug'] } }
+    const report = await runForgeTests(proposal)
     const updated = mutate(id, item => {
         item.lastTest = report
         if (report.total > 0 && report.passed === report.total && report.codeHash === item.codeHash) {
@@ -603,11 +625,12 @@ function parseDraft(text: string): Record<string, unknown> {
     return JSON.parse(match[0])
 }
 
-export async function generateToolDraft(input: { request: string; nameHint?: string; ownerId?: string; origin?: ForgeOrigin; previous?: SkillProposal; error?: string }): Promise<ForgeDraft> {
+export async function generateToolDraft(input: { request: string; nameHint?: string; ownerId?: string; origin?: ForgeOrigin; previous?: SkillProposal; error?: string; mode?: ForgeRevisionMode }): Promise<ForgeDraft> {
     if (!forgeModel) throw new Error('Kein lokales Lern-Modell (serviceModels.learning) erreichbar — Werkzeug wird nicht gebaut.')
     const previous = input.previous
+    const why = input.mode === 'verbesserung' ? `Es soll besser werden. Anlass: ${clip(input.error, 400)}` : `Es scheiterte zweimal: ${clip(input.error, 400)}`
     const user = previous
-        ? `Überarbeite das Werkzeug "${previous.name}" (Version ${previous.version}). Es scheiterte zweimal: ${clip(input.error, 400)}\nBisheriger Code:\n${previous.code}\nManifest: ${JSON.stringify(previous.manifest)}\nTests: ${JSON.stringify(previous.tests).slice(0, 4_000)}\nBehalte den Namen "${previous.name}".`
+        ? `Überarbeite das Werkzeug "${previous.name}" (Version ${previous.version}). ${why}\nBisheriger Code:\n${previous.code}\nManifest: ${JSON.stringify(previous.manifest)}\nTests: ${JSON.stringify(previous.tests).slice(0, 4_000)}\nBehalte den Namen "${previous.name}".`
         : `Aufgabe: ${clip(input.request, 1_000)}${input.nameHint ? `\nName-Vorschlag: ${clip(input.nameHint, 60)}` : ''}`
     const response = await forgeModel.complete([{ role: 'system', content: GENERATOR_SYSTEM }, { role: 'user', content: user }])
     const raw = parseDraft(String(response?.content || ''))
@@ -624,10 +647,35 @@ export async function generateToolDraft(input: { request: string; nameHint?: str
     }
 }
 
-/** Neue Version desselben Werkzeugs (nach 2 Fehlschlägen). Freigaben gelten nicht weiter. */
-export async function reviseTool(id: string, error: string): Promise<BuildResult> {
+export interface ReviseOptions {
+    /** `verbesserung` (Standard, Owner-Ja auf eine Idee): Kandidat, nichts wird abgeschaltet. `reparatur`: nach 2 Fehlschlägen in Folge. */
+    mode?: ForgeRevisionMode
+    now?: () => number
+}
+
+/**
+ * Neue Version desselben Werkzeugs. Freigaben gelten nicht weiter.
+ * - Tageslimit: zählt mit den Bedarfs-Bauten (`bedarf.json`); darüber wird
+ *   die Version auf morgen gelegt, nichts abgeschaltet.
+ * - Verbesserung: die aktive Version bleibt, bis der Kandidat alle Tests
+ *   besteht (und, falls nötig, die Owner-Karte). Scheitert er, wird er verworfen.
+ * - Reparatur: nur dieser Weg darf abschalten (Entwurf oder Tests gescheitert).
+ */
+export async function reviseTool(id: string, error: string, options: ReviseOptions = {}): Promise<BuildResult> {
+    const mode: ForgeRevisionMode = options.mode || 'verbesserung'
+    const now = (options.now || Date.now)()
     const proposal = getForgeTool(id)
     if (!proposal) return { proposal: null, message: 'unbekanntes Werkzeug' }
+    if (mode === 'verbesserung' && (proposal.status === 'disabled' || proposal.status === 'rejected')) {
+        return { proposal, message: `${forgeToolName(proposal)} ist aus (${proposal.status}) — keine neue Version` }
+    }
+    if (forgeModel && !reserveBuild(`neue-version:${proposal.id}:${now}`, 'neue-version', now)) {
+        const deferred = mutate(id, item => { item.pendingRevision = { mode, reason: clip(error, 300), notBefore: new Date(now + DAY_MS).toISOString() } })
+        notify('bedarf', `Werkzeug ${forgeToolName(proposal)}: Tageslimit ${MAX_BUILDS_PER_DAY} Bauten erreicht — neue Version morgen (v${proposal.version} bleibt ${proposal.status === 'degraded' ? 'pausiert' : proposal.status})`, deferred || proposal)
+        return { proposal: deferred, message: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht — neue Version morgen` }
+    }
+    if (proposal.pendingRevision) mutate(id, item => { item.pendingRevision = undefined })
+    if (mode === 'verbesserung') return reviseAsCandidate(proposal, error)
     let draft: ForgeDraft
     let checked: Awaited<ReturnType<typeof validateDraft>>
     try {
@@ -660,6 +708,98 @@ export async function reviseTool(id: string, error: string): Promise<BuildResult
     const decided = await decideActivation(id)
     if (decided) notify('neue-version', `Werkzeug ${forgeToolName(decided)} v${decided.version} gebaut (${decided.status})`, decided)
     return { proposal: decided, message: `neue Version v${decided?.version}` }
+}
+
+function promoteCandidate(item: SkillProposal, candidate: ForgeCandidate): void {
+    item.history = [...item.history, { version: item.version, code: item.code, codeHash: item.codeHash, manifest: item.manifest, tests: item.tests, parameters: item.parameters, replacedAt: nowIso(), reason: candidate.reason }].slice(-MAX_HISTORY)
+    item.version += 1
+    item.code = candidate.code
+    item.codeHash = candidate.codeHash
+    item.manifest = candidate.manifest
+    item.tests = candidate.tests
+    item.parameters = candidate.parameters
+    item.lastTest = candidate.lastTest
+    item.candidate = undefined
+    item.cardId = undefined
+    item.status = 'tested'
+    item.activationBlockedReason = undefined
+    item.counters.consecutiveFailures = 0
+    evidence(item, 'neue-version', `sha256:${candidate.codeHash}`)
+    evidence(item, 'tested', `sandbox:${candidate.lastTest.passed}/${candidate.lastTest.total}:${candidate.codeHash.slice(0, 16)}`)
+}
+
+function discardCandidate(proposal: SkillProposal, why: string): BuildResult {
+    const kept = mutate(proposal.id, item => { item.candidate = undefined; evidence(item, 'kandidat-verworfen', why) })
+    notify('fehler', `Werkzeug ${forgeToolName(proposal)}: neue Version verworfen (${clip(why, 160)}) — v${proposal.version} bleibt ${proposal.status}`, kept || proposal)
+    return { proposal: kept, message: `neue Version verworfen: ${clip(why, 200)}` }
+}
+
+/** Verbesserung: Kandidat bauen und testen; die aktive Version bleibt, bis er besteht. */
+async function reviseAsCandidate(proposal: SkillProposal, reason: string): Promise<BuildResult> {
+    let checked: Awaited<ReturnType<typeof validateDraft>>
+    try {
+        const draft = await generateToolDraft({ request: proposal.description, previous: proposal, error: reason, mode: 'verbesserung' })
+        checked = await validateDraft({ ...draft, name: proposal.name, ownerId: proposal.ownerId, origin: proposal.origin })
+    } catch (failure) {
+        return discardCandidate(proposal, `Entwurf: ${clip((failure as Error)?.message || failure, 200)}`)
+    }
+    if (checked.codeHash === proposal.codeHash) return discardCandidate(proposal, 'Entwurf unverändert')
+    const lastTest = await runForgeTests(checked)
+    if (!allGreen(lastTest)) return discardCandidate(proposal, `Tests ${lastTest.passed}/${lastTest.total}: ${lastTest.failures.slice(0, 2).join(' | ')}`)
+    const candidate: ForgeCandidate = {
+        code: checked.code, codeHash: checked.codeHash, manifest: checked.manifest, tests: checked.tests, parameters: checked.parameters,
+        lastTest, reason: clip(reason, 200), createdAt: nowIso(),
+    }
+    const impact = checked.manifest.wirkung
+    const trusted = impact === 'schreibend' && (() => {
+        const verdict = evaluateActionWithTrust({ kind: 'werkzeug-schreibend', origin: 'code' })
+        return verdict.decision === 'auto' && verdict.trusted
+    })()
+    // Without a working version there is nothing to keep running: the candidate takes over directly.
+    if (impact === 'lesend' || trusted || proposal.status !== 'active') {
+        mutate(proposal.id, item => promoteCandidate(item, candidate))
+        const decided = await decideActivation(proposal.id)
+        if (decided) notify('neue-version', `Werkzeug ${forgeToolName(decided)} v${decided.version} gebaut (${decided.status})`, decided)
+        return { proposal: decided, message: `neue Version v${decided?.version}` }
+    }
+    // Writing/external/physical: the active version keeps running until the owner approves exactly this code.
+    const waiting = await requestCandidateApproval(proposal, candidate, cardKindFor(impact)!)
+    if (waiting) notify('freigabe', `Werkzeug ${forgeToolName(waiting)}: neue Version wartet auf Freigabe (${impact}); v${waiting.version} bleibt aktiv`, waiting)
+    return { proposal: waiting, message: `neue Version wartet auf Freigabe — v${proposal.version} bleibt aktiv` }
+}
+
+async function requestCandidateApproval(proposal: SkillProposal, candidate: ForgeCandidate, kind: CardKind): Promise<SkillProposal | null> {
+    await registerForgeCardExecutors()
+    const { createApprovalCard } = await import('../core/approval-cards.js')
+    const created = createApprovalCard({
+        art: kind,
+        titel: `Neue Version von ${forgeToolName(proposal)} aktivieren?`,
+        beleg: `v${proposal.version + 1} (aktiv bleibt v${proposal.version}) · Wirkung ${candidate.manifest.wirkung} · Hosts: ${candidate.manifest.net.join(', ') || 'keine'} · Dateien: ${candidate.manifest.fs.join(', ') || 'keine'} · Tests ${candidate.lastTest.passed}/${candidate.lastTest.total} grün · sha ${candidate.codeHash.slice(0, 12)}`,
+        vorschlag: `${proposal.description} — Anlass: ${candidate.reason}`,
+        aktion: { kind, ref: proposal.id },
+        wirkung: candidate.manifest.wirkung === 'extern' ? 'extern' : candidate.manifest.wirkung === 'physisch' ? 'physisch' : 'intern',
+        quelle: 'werkzeuge',
+        dedupeKey: `werkzeug:${proposal.id}:${candidate.codeHash.slice(0, 16)}`,
+    })
+    if (!created.ok) return discardCandidate(proposal, `keine Karte möglich: ${(created as { reason?: string }).reason}`).proposal
+    return mutate(proposal.id, item => { item.candidate = { ...candidate, cardId: created.card.id } })
+}
+
+/** Owner gibt die wartende neue Version frei: sie ersetzt die aktive. */
+function approveCandidate(id: string, by: string): SkillProposal | null {
+    const before = getForgeTool(id)
+    if (!before?.candidate) return null
+    const candidate = before.candidate
+    mutate(id, item => {
+        promoteCandidate(item, candidate)
+        item.approvedHash = item.codeHash
+        evidence(item, 'owner-freigabe', `owner:${clip(by, 80)}`)
+    })
+    const active = activate(id, `Owner-Freigabe neue Version (${clip(by, 40)})`)
+    if (active && active.manifest.wirkung === 'schreibend') {
+        try { recordActionOutcome('werkzeug-schreibend', { ok: true, approvedByOwner: true }) } catch { /* trust ladder optional */ }
+    }
+    return active
 }
 
 // ---------------------------------------------------------------------------
@@ -695,7 +835,7 @@ async function handleRepeatedFailure(proposal: SkillProposal): Promise<void> {
     await unregisterForgeTool(proposal).catch(() => undefined)
     if (forgeModel && !isAutonomyWorker()) {
         mutate(proposal.id, item => { item.status = 'degraded'; item.activationBlockedReason = `${DISABLE_AFTER_FAILURES} Fehlschläge in Folge — neue Version wird gebaut` })
-        void reviseTool(proposal.id, proposal.counters.lastError || 'Fehlschlag').catch(() => undefined)
+        void reviseTool(proposal.id, proposal.counters.lastError || 'Fehlschlag', { mode: 'reparatur' }).catch(() => undefined)
         return
     }
     const off = mutate(proposal.id, item => { item.status = 'disabled'; item.disabledReason = `${DISABLE_AFTER_FAILURES} Fehlschläge in Folge (kein Lern-Modell für eine neue Version)` })
@@ -786,6 +926,12 @@ export async function registerForgeCardExecutors(): Promise<void> {
             kind, impact,
             async execute(card, _answer, ctx) {
                 const proposal = getForgeTool(card.aktion.ref)
+                if (proposal?.candidate?.cardId === card.id) {
+                    const promoted = approveCandidate(card.aktion.ref, ctx.decidedBy)
+                    return promoted?.status === 'active'
+                        ? { ok: true, message: `Werkzeug ${forgeToolName(promoted)} v${promoted.version} aktiv (neue Version)` }
+                        : { ok: false, message: `Neue Version nicht aktiviert (${promoted?.status || 'unbekannt'})` }
+                }
                 if (!proposal || proposal.cardId !== card.id) return { ok: false, message: 'Werkzeug hat sich inzwischen geändert — keine Aktivierung' }
                 const active = approveSkillProposal(card.aktion.ref, ctx.decidedBy)
                 return active?.status === 'active'
@@ -793,11 +939,18 @@ export async function registerForgeCardExecutors(): Promise<void> {
                     : { ok: false, message: `Werkzeug nicht aktiviert (${active?.status || 'unbekannt'})` }
             },
             async reject(card, ctx) {
+                const current = getForgeTool(card.aktion.ref)
+                if (current?.candidate?.cardId === card.id) {
+                    // Rejecting a new version never switches off the working one.
+                    const kept = mutate(current.id, item => { item.candidate = undefined; evidence(item, 'kandidat-abgelehnt', `owner:${clip(ctx.decidedBy, 80)}`) })
+                    return { ok: true, message: `Neue Version von ${forgeToolName(current)} abgelehnt — v${kept?.version ?? current.version} bleibt aktiv` }
+                }
                 const rejected = rejectSkillProposal(card.aktion.ref, ctx.decidedBy)
                 return { ok: Boolean(rejected), message: rejected ? `Werkzeug ${forgeToolName(rejected)} abgelehnt` : 'Werkzeug nicht gefunden' }
             },
             isStillOpen(card) {
                 const proposal = getForgeTool(card.aktion.ref)
+                if (proposal?.candidate?.cardId === card.id) return proposal.status === 'active'
                 return Boolean(proposal && proposal.status === 'awaiting-approval' && proposal.cardId === card.id)
             },
         })
@@ -825,7 +978,29 @@ const MISSING_TOOL = /Tool nicht gefunden: ([A-Za-z0-9_.-]{2,80})/
 /** Allgemeine Werkzeuge, deren wiederholte Nutzung ein eigenes Werkzeug lohnt. */
 const GENERIC_TOOLS = new Set(['execute_python', 'run_command', 'shell_exec', 'system_executor', 'fetch_url', 'read_url', 'http_request', 'web_fetch'])
 const NEED_WINDOW_MS = 7 * 24 * 60 * 60_000
+const DAY_MS = 24 * 60 * 60_000
+/** Ein Limit für alle Bauten: Bedarf, Owner-Wunsch und neue Versionen (`reviseTool`). */
 const MAX_BUILDS_PER_DAY = 3
+const OUTSIDE_CONTRACT = /outside the offered contract(?: after one correction)?: ([A-Za-z0-9_.,\s-]+)/
+
+export interface MissingToolFailure { callId: string; toolName: string; params: Record<string, unknown>; result: string; success: false; timestamp: number }
+
+/**
+ * 2.84.0: Hat das Modell-Gate einen Lauf gestoppt, weil das Modell ein nicht
+ * angebotenes Werkzeug wollte, wird jedes davon, das in KEINEM Register
+ * steht, ein fehlgeschlagener Eintrag „Tool nicht gefunden: x“. Ein
+ * vorhandenes, nur nicht angebotenes Werkzeug ist kein Bedarf.
+ */
+export function missingToolFailures(error: unknown, isKnown: (name: string) => boolean, now = Date.now()): MissingToolFailure[] {
+    const err = error as { message?: unknown; cause?: { message?: unknown } } | null | undefined
+    const text = `${String(err?.message ?? error ?? '')} ${String(err?.cause?.message ?? '')}`
+    const match = text.match(OUTSIDE_CONTRACT)
+    if (!match) return []
+    const names = [...new Set(match[1].split(',').map(name => name.trim()).filter(name => /^[A-Za-z][A-Za-z0-9_.-]{1,79}$/.test(name)))]
+    return names.filter(name => { try { return !isKnown(name) } catch { return false } }).slice(0, 5).map(name => ({
+        callId: `fehlt:${name}`, toolName: name, params: {}, result: `Tool nicht gefunden: ${name}`, success: false, timestamp: now,
+    }))
+}
 
 export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; detail: string; adoptFor?: ForgeAdoptTarget } | null {
     if (OWNER_WISH.test(ctx.request || '')) return { kind: 'owner-wunsch', detail: clip(ctx.request, 300) }
@@ -843,10 +1018,35 @@ export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; d
     return null
 }
 
-interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind; at: string; built: boolean; skillId?: string; from?: string }> }
+interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind | 'neue-version'; at: string; built: boolean; skillId?: string; from?: string }> }
 const needFile = () => getNovaDataDir('forge', 'bedarf.json')
 function readNeeds(): NeedFile {
     try { const raw = JSON.parse(readFileSync(needFile(), 'utf8')); return raw?.version === 1 && Array.isArray(raw.needs) ? raw : { version: 1, needs: [] } } catch { return { version: 1, needs: [] } }
+}
+const buildsWithinDay = (file: NeedFile, now: number) => file.needs.filter(item => item.built && now - Date.parse(item.at) < DAY_MS).length
+
+/** Wie viele Bauten (Bedarf + neue Versionen) heute noch gehen. */
+export function forgeBuildsLeftToday(now = Date.now()): number {
+    return Math.max(0, MAX_BUILDS_PER_DAY - buildsWithinDay(readNeeds(), now))
+}
+
+/** Einen Bau im gemeinsamen Tageslimit vermerken; false = Limit erreicht. */
+function reserveBuild(signature: string, kind: 'neue-version', now: number): boolean {
+    const file = readNeeds()
+    file.needs = file.needs.filter(item => now - Date.parse(item.at) < NEED_WINDOW_MS)
+    if (buildsWithinDay(file, now) >= MAX_BUILDS_PER_DAY) return false
+    file.needs.push({ signature, kind, at: new Date(now).toISOString(), built: true })
+    atomicWriteJsonSync(needFile(), file)
+    return true
+}
+
+/** Eine auf morgen gelegte neue Version nachholen (ruhige Owner-Runde, Limit frei). */
+function resumeDeferredRevision(now: number): void {
+    if (!forgeModel || forgeBuildsLeftToday(now) <= 0) return
+    const due = readAll().find(item => item.pendingRevision && Date.parse(item.pendingRevision.notBefore) <= now && item.status !== 'rejected' && item.status !== 'disabled')
+    if (!due?.pendingRevision) return
+    const { mode, reason } = due.pendingRevision
+    void reviseTool(due.id, reason, { mode, now: () => now }).catch(() => undefined)
 }
 
 /**
@@ -858,14 +1058,16 @@ export function noteForgeNeed(ctx: ForgeNeedContext, options: { allowInTests?: b
     if (isAutonomyWorker()) return { queued: false, reason: 'Worker bauen nichts' }
     if (sideEffectsDisabled() && !options.allowInTests) return { queued: false, reason: 'Nebenwirkungen aus' }
     const need = detectForgeNeed(ctx)
-    if (!need) return { queued: false, reason: 'kein Bedarf' }
     const now = (options.now || Date.now)()
+    if (!need) {
+        resumeDeferredRevision(now)
+        return { queued: false, reason: 'kein Bedarf' }
+    }
     const signature = createHash('sha256').update(`${ctx.principalId}\0${need.kind}\0${need.detail.toLowerCase()}`).digest('hex').slice(0, 24)
     const file = readNeeds()
     file.needs = file.needs.filter(item => now - Date.parse(item.at) < NEED_WINDOW_MS)
     if (file.needs.some(item => item.signature === signature)) return { queued: false, reason: 'Bedarf schon bearbeitet', kind: need.kind }
-    const today = file.needs.filter(item => item.built && now - Date.parse(item.at) < 24 * 60 * 60_000).length
-    if (today >= MAX_BUILDS_PER_DAY) return { queued: false, reason: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, kind: need.kind }
+    if (buildsWithinDay(file, now) >= MAX_BUILDS_PER_DAY) return { queued: false, reason: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, kind: need.kind }
     const canBuild = forgeModel !== null
     file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild, ...(need.adoptFor ? { skillId: need.adoptFor.skillId, from: need.adoptFor.from } : {}) })
     atomicWriteJsonSync(needFile(), file)

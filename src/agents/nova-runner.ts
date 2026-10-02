@@ -1013,6 +1013,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // previous message is not a new screenshot (live 30.09.: third copy).
         const runScreenshots: string[] = []
         const toolExecutions: NonNullable<AgentResponse['toolExecutions']> = []
+        // 2.84.0 Punkt 4: tools the model asked for that exist in no registry.
+        // Reported to the forge's need hook only — never ledger evidence.
+        const missingTools: NonNullable<AgentResponse['toolExecutions']> = []
         let toolEvidenceSequence = 0
         const nextToolEvidenceId = (call: { id?: string; name: string }) =>
             String(call.id || `${kernel.contract.id}:tool:${++toolEvidenceSequence}:${call.name}`)
@@ -1671,6 +1674,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 if (!policyBlocked && !failureEscalationContent) {
                     finalContent = incompleteToolResponse(toolExecutions.filter(item => item.success).map(item => item.result))
                 }
+                try {
+                    const { missingToolFailures } = await import('../tools/skill-builder.js')
+                    const known = new Set(getToolRegistry().getAll().map(tool => tool.name))
+                    missingTools.push(...missingToolFailures(error, name => known.has(name)))
+                } catch { /* the forge need hook is optional */ }
                 console.warn('[Xaventra Agent] SDK loop stopped safely:', String(error))
             }
         }
@@ -1900,7 +1908,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             sessionId,
             screenshotPath,
             screenshotDelivered: !!screenshotPath && deliveredScreenshots.has(screenshotPath),
-            toolExecutions,
+            toolExecutions: missingTools.length ? [...toolExecutions, ...missingTools] : toolExecutions,
             actionState: {
                 requiresTool: actionIntent.requiresTool,
                 kind: actionIntent.kind,
