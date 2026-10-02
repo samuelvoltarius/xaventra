@@ -115,8 +115,23 @@ export function combineErrorSources(sources: readonly ErrorSourcePort[]): ErrorS
  * scheitern, werden über den Bug-Finder ein Doctor-Fall. Nur `fehlgeschlagen`;
  * vom Owner abgelehnte (blockierte) Missionen zählen nie.
  */
-export function missionErrorSource(list?: (sinceMs: number) => readonly Mission[] | Promise<readonly Mission[]>): ErrorSourcePort {
+export function missionErrorSource(
+    list?: (sinceMs: number) => readonly Mission[] | Promise<readonly Mission[]>,
+    completed?: (sinceMs: number) => readonly Mission[] | Promise<readonly Mission[]>,
+): ErrorSourcePort {
     return {
+        /** 2.84.0 Punkt 3: missions of the same responsibility finished `abgeschlossen` since `sinceMs`. */
+        async successes(sinceMs) {
+            const items = completed ? await completed(sinceMs)
+                : ((await import('../core/responsibility-runtime.js')).getResponsibilityRuntime()?.missions.list({ status: ['abgeschlossen'] }) || [])
+            const out: Record<string, number> = {}
+            for (const item of items) {
+                if (item.status !== 'abgeschlossen' || !((Date.parse(item.updatedAt) || 0) >= sinceMs)) continue
+                const subject = `mission:${item.responsibilityId}`
+                out[subject] = (out[subject] || 0) + 1
+            }
+            return out
+        },
         async collect(sinceMs) {
             const items = list ? await list(sinceMs) : (await import('../core/responsibility-runtime.js')).failedMissionsSince(sinceMs)
             return items
@@ -144,6 +159,9 @@ async function syncRegressionCases(doctor: Pick<FailureResearchCoordinator, 'lis
         const ids = item.evidenceRefs.filter(ref => ref.startsWith('regression:')).map(ref => ref.slice('regression:'.length))
         if (created.includes(item.id)) for (const id of ids) store.promote(id, `test:doctor:${item.id}`)
         if (item.stage === 'resolved') for (const id of ids) store.resolve(id, `benchmark:doctor:${item.id}`)
+        // 2.84.0 Punkt 3: a case closed by measurement settles its regression cases too.
+        const measurement = item.findingOpen === false ? item.evidenceRefs.filter(ref => ref.startsWith('messung:')).at(-1) : undefined
+        if (measurement) for (const id of ids) store.resolve(id, `messung:doctor:${item.id}`)
     }
 }
 
@@ -157,6 +175,8 @@ export interface ThinkingTickDeps {
     formulate?: Formulator
     /** Ersetzt alle Standard-Quellen (Tests/Integration). Ohne: `defaultErrorSources()`. */
     errorSource?: ErrorSourcePort
+    /** 2.84.0 Punkt 3: Rollout je Fall. Ohne: aus der Übergabe-Outbox (`rolloutMeasureSince`). */
+    measureSince?: (caseId: string) => number | undefined
     doctor?: Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs'>>
     scoutSources?: ModelSource[]
     scoutRunner?: ScoutRunner
@@ -182,7 +202,8 @@ export async function runThinkingTick(deps: ThinkingTickDeps): Promise<{ ran: st
     if (settings.bugFinder.enabled && plan.isDue('bugs', now)) {
         try {
             const coordinator = await doctor()
-            const result = await runBugFinder({ settings, source: deps.errorSource || combineErrorSources(defaultErrorSources()), doctor: coordinator, sink: out, now, importanceFactor: factor })
+            const measureSince = deps.measureSince || (await import('../doctor/claude-handoff.js')).rolloutMeasureSince()
+            const result = await runBugFinder({ settings, source: deps.errorSource || combineErrorSources(defaultErrorSources()), doctor: coordinator, sink: out, now, importanceFactor: factor, measureSince })
             try { await syncRegressionCases(coordinator, result.created) } catch { /* Status der Regressionsfälle ist nur Anzeige */ }
             plan.markRan('bugs', now)
             ran.push('bugs')

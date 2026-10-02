@@ -52,6 +52,9 @@ export interface HandoffRecord {
     attempts?: number
     /** Version in which the finding was seen closed, or still open. */
     checkedInVersion?: string
+    /** 2.84.0 Punkt 3: when this node first ran the version in `checkedInVersion`.
+     * Bug-Finder and validator measure from here, not 7 days after the last fault. */
+    rolloutAt?: string
     lastError?: string
     /** 2.83.0: the one delegation that carries this handoff to Claude. */
     delegationId?: string
@@ -97,7 +100,7 @@ export function selectHandoffs(cases: readonly FailureResearchCase[], existing: 
  * or the signed Repair-Controller. A still-open record keeps being measured in
  * the same version and changes once more when the measurement closes it.
  */
-export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: readonly FailureResearchCase[], currentVersion: string): { records: HandoffRecord[]; changes: HandoffRecord[] } {
+export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: readonly FailureResearchCase[], currentVersion: string, now: Date = new Date()): { records: HandoffRecord[]; changes: HandoffRecord[] } {
     const byCase = new Map(cases.map(item => [item.id, item]))
     const changes: HandoffRecord[] = []
     const next = records.map(record => {
@@ -107,7 +110,9 @@ export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: 
         const closed = !item || item.findingOpen === false || item.stage === 'resolved'
         // Checked in this version already: only the measured closing is news.
         if (record.checkedInVersion === currentVersion && !(closed && record.state === 'still-open')) return record
-        const updated: HandoffRecord = { ...record, state: closed ? 'closed' : 'still-open', checkedInVersion: currentVersion }
+        // First sight of this version = the rollout the measurement starts from.
+        const rolloutAt = record.checkedInVersion === currentVersion && record.rolloutAt ? record.rolloutAt : now.toISOString()
+        const updated: HandoffRecord = { ...record, state: closed ? 'closed' : 'still-open', checkedInVersion: currentVersion, rolloutAt }
         changes.push(updated)
         return updated
     })
@@ -160,6 +165,21 @@ export function doctorCaseVerifier(cases: () => readonly FailureResearchCase[]):
 function outboxPath(): string { return getNovaDataDir('self-doctor', 'claude-handoff.json') }
 function load(path: string): HandoffRecord[] {
     try { return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as HandoffFile).records || [] : [] } catch { return [] }
+}
+
+/**
+ * 2.84.0 Punkt 3: the port `measureSince(caseId)` for Bug-Finder and validator
+ * escalation. Latest rollout seen for a handed-over case (ms), or undefined
+ * when the case was never handed over or no new version ran since: then the
+ * 7-day window stays. Reads the outbox once per call of this factory.
+ */
+export function rolloutMeasureSince(path: string = outboxPath()): (caseId: string) => number | undefined {
+    const latest = new Map<string, number>()
+    for (const record of load(path)) {
+        const at = Date.parse(record.rolloutAt || '')
+        if (Number.isFinite(at) && at > (latest.get(record.caseId) ?? -Infinity)) latest.set(record.caseId, at)
+    }
+    return caseId => latest.get(caseId)
 }
 function save(path: string, records: HandoffRecord[]): void {
     atomicWriteJsonSync(path, { version: 1, records: records.slice(-500) } satisfies HandoffFile)
@@ -252,7 +272,7 @@ export async function runClaudeHandoffTick(input: {
     const before = JSON.stringify(records)
     const fresh = selectHandoffs(input.cases, records, { node: input.node, version: input.version, now })
     records = [...records, ...fresh]
-    const reconciled = reconcileAfterRollout(records, input.cases, input.version)
+    const reconciled = reconcileAfterRollout(records, input.cases, input.version, now)
     records = reconciled.records
     const byCase = new Map(input.cases.map(item => [item.id, item]))
     for (const change of reconciled.changes) if (change.state === 'closed') noteMeasuredClosing(input.thoughts, change, byCase.get(change.caseId))

@@ -978,7 +978,9 @@ async function runDoctorPhase(): Promise<void> {
         if (doctorResearchWorker && config.enabled && hasGlobalAutonomyAuthority()) {
             const { getFailureResearchCoordinator } = await import('../doctor/failure-research-coordinator.js')
             const { reconcileValidatorFailures } = await import('./validator-failure-escalation.js')
-            reconcileValidatorFailures()
+            // 2.84.0 Punkt 3: handed-over shape cases are measured from their rollout.
+            const { rolloutMeasureSince } = await import('../doctor/claude-handoff.js')
+            reconcileValidatorFailures(undefined, undefined, undefined, rolloutMeasureSince())
             const warm = process.uptime() >= DOCTOR_WARMUP_SECONDS
             const research = warm ? await getFailureResearchCoordinator().investigateNext(doctorResearchWorker) : null
             if (research) console.log(`[Autonomy] Doctor investigation ${research.id}: ${research.investigation?.status}; repair not applied`)

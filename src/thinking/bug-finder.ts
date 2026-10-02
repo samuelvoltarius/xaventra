@@ -148,7 +148,12 @@ export interface BugFinderDeps {
     sink: ThoughtSink
     now?: Date
     importanceFactor?: (kind: string) => number
+    /** 2.84.0 Punkt 3: rollout time of a handed-over case (`rolloutMeasureSince`). Without: 7-day window. */
+    measureSince?: (caseId: string) => number | undefined
 }
+
+/** 2.84.0 Punkt 3: a rollout is measured at least this long before a case closes. */
+export const MIN_MEASURE_AFTER_ROLLOUT_MS = 24 * 60 * 60_000
 
 export async function runBugFinder(deps: BugFinderDeps): Promise<{ ran: boolean; created: string[]; closed: string[]; skipped: Array<{ fingerprint: string; reason: string }> }> {
     const cfg = deps.settings.bugFinder
@@ -203,16 +208,32 @@ async function closeHealedCases(deps: BugFinderDeps, occurrences: readonly Error
     if (!deps.doctor.closeByMeasurement || !deps.source.successes) return []
     const open = deps.doctor.list().filter(item => item.findingId.startsWith('bug-finder-') && item.findingOpen !== false && item.title.startsWith(CASE_TITLE_PREFIX))
     if (!open.length) return []
-    const seen = new Set(groupRecurring(occurrences, 1, cfg.windowDays).map(group => group.fingerprint))
-    let successes: Record<string, number> = {}
-    try { successes = (await deps.source.successes(since)) || {} } catch { return [] }
+    // 2.84.0 Punkt 3: a handed-over case is measured from its rollout (at
+    // least 24 h), not 7 days after its last fault. Cached per start time.
+    const seenFrom = new Map<number, Set<string>>()
+    const okFrom = new Map<number, Record<string, number> | null>()
+    const seen = (from: number) => seenFrom.get(from) || seenFrom.set(from,
+        new Set(groupRecurring(occurrences.filter(item => item.at >= from), 1, cfg.windowDays).map(group => group.fingerprint))).get(from)!
+    const successes = async (from: number) => {
+        if (!okFrom.has(from)) {
+            try { okFrom.set(from, (await deps.source.successes!(from)) || {}) } catch { okFrom.set(from, null) }
+        }
+        return okFrom.get(from)
+    }
     const closed: string[] = []
     for (const item of open) {
-        if (item.observationHash && seen.has(item.observationHash)) continue
+        let rollout: number | undefined
+        try { rollout = deps.measureSince?.(item.id) } catch { rollout = undefined }
+        const fromRollout = typeof rollout === 'number' && Number.isFinite(rollout)
+        if (fromRollout && now.getTime() - rollout! < MIN_MEASURE_AFTER_ROLLOUT_MS) continue
+        const from = fromRollout ? Math.max(since, rollout!) : since
+        if (item.observationHash && seen(from).has(item.observationHash)) continue
+        const counts = await successes(from)
+        if (!counts) continue
         const subject = item.title.slice(CASE_TITLE_PREFIX.length)
-        const ok = Number(successes[subject]) || 0
+        const ok = Number(counts[subject]) || 0
         if (ok < cfg.minOccurrences) continue
-        const result = deps.doctor.closeByMeasurement(item.id, `messung:${subject}:0-fehler:${ok}-ok:${cfg.windowDays}d`, now)
+        const result = deps.doctor.closeByMeasurement(item.id, `messung:${subject}:0-fehler:${ok}-ok:${fromRollout ? 'seit-rollout' : `${cfg.windowDays}d`}`, now)
         if (result) closed.push(item.id)
     }
     return closed
