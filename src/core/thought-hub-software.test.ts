@@ -42,13 +42,15 @@ describe('Software-Scout → Gedanke → Knopf → nur Stufe-2-Weg', () => {
         expect(result.message).toMatch(/Installations-Karte/)
     })
 
-    it('Ja without a catalog id installs nothing, only notes "Katalogeintrag nötig"', async () => {
+    // 2.86 Punkt 5: without a catalog id there is no question at all (quiet idea + catalog care for Claude).
+    it('without a catalog id there is no question: a quiet idea, and a stray Ja installs nothing', async () => {
         queue.proposeCatalogInstall.mockClear()
         queue.resolveInstallTarget.mockClear()
         await createSoftwareScoutThoughtSink().emit(gap({ capability: 'stt', candidateId: 'stt-whisper-large-v3', title: 'Whisper large-v3 (GPU) passt auf xaventra-spark. Einrichten?', dedupeKey: 'software-scout:stt:stt-whisper-large-v3:xaventra-spark' }))
         const thought = listThoughts().find(item => item.title.startsWith('Whisper large-v3'))!
-        const result = await dispatchThoughtAnswer(thought.id, 'ja', OWNER)
-        expect(result.message).toMatch(/Katalogeintrag nötig/)
+        expect(thought.permission).toBe('selbst')
+        expect(thought.kind).toBe('idee')
+        await dispatchThoughtAnswer(thought.id, 'ja', OWNER)
         expect(queue.proposeCatalogInstall).not.toHaveBeenCalled()
         expect(queue.resolveInstallTarget).not.toHaveBeenCalled()
     })

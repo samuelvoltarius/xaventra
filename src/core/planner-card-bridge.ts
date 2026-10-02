@@ -4,7 +4,9 @@
  * - The planner's single delivery port is wired to Telegram here (Main only,
  *   live Main + Telegram authority per delivery; otherwise FenceError, so the
  *   planner keeps the message pending).
- * - A thought with permission `fragen` becomes a Knopf-Karte (kind `gedanke`);
+ * - A thought with permission `fragen` becomes a Knopf-Karte (kind `gedanke`)
+ *   only when the thought hub knows an executor for it (2.86 Punkt 5:
+ *   `hasThoughtAction`); without one it goes out as plain text;
  *   the card loop sends it, the card store decides on the press (owner only,
  *   one-time code tokens). Ja closes the thought as `erledigt`, Nein as
  *   `verworfen`. A `nie` thought never gets a card.
@@ -52,7 +54,12 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
         name: 'telegram-karten',
         async deliver(msg: PlannerOutgoing): Promise<DeliveryReceipt> {
             if (!(await target.hasCardAuthority())) throw new FenceError('telegram', 'no live Main/Telegram authority', 'planner-delivery')
-            if (msg.thoughtId && msg.permission === 'fragen') {
+            // 2.86 Punkt 5: a question only becomes a card when its Ja runs something;
+            // otherwise it goes out as plain text below (and stays in /gedanken and the report).
+            const answerable = msg.thoughtId && msg.permission === 'fragen'
+                ? await import('./thought-hub.js').then(hub => hub.hasThoughtAction(msg.thoughtId!)).catch(() => false)
+                : false
+            if (msg.thoughtId && answerable) {
                 registerThoughtCardExecutor()
                 const thought = getThought(msg.thoughtId)
                 const created = createApprovalCard({

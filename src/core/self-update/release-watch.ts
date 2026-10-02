@@ -165,9 +165,11 @@ export function createUpdateProposal(release: VerifiedRelease, plan?: ProposalPl
     const arches = release.artifacts.map(a => a.arch).sort().join('/')
     const text = `${release.version} verfügbar, geprüft (Signatur ${release.publisherKeyId}, SHA256SUMS, Deskriptoren ${arches}). `
         + `Änderungen: ${release.notes || 'keine Release-Notizen'} (Commit ${release.commit.slice(0, 12)}, siehe CHANGELOG [${release.version}]). `
-        + `${plan ? `Plan: ${plan.summary}. ` : ''}Installieren?`
+        + `${plan ? `Plan: ${plan.summary}. ` : ''}Verfügbar; rollt Claude aus.`
+    // 2.86 Punkt 5: no executor activates a release yet (host agent not wired for it),
+    // so the proposal is a report entry, not a card whose Ja does nothing.
     return makeThought({
-        source: 'self-update', kind: 'update-proposal', importance: 'normal', permission: 'fragen',
+        source: 'self-update', kind: 'update-proposal', importance: 'normal', permission: 'selbst',
         title: `Xaventra ${release.version} verfügbar`, text,
         evidence: [
             `release ${release.tag}`, `releaseId ${release.releaseId}`, `commit ${release.commit}`,

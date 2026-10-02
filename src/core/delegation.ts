@@ -380,6 +380,15 @@ const ciGreenVerifier: Verifier = async (expectation, { fetch }) => {
 const builtinVerifiers: Record<string, Verifier> = { 'release-tag': releaseTagVerifier, 'ci-gruen': ciGreenVerifier }
 const registeredVerifiers = new Map<string, Verifier>()
 
+/**
+ * 2.86 Punkt 1: how a finished but not (yet) verified result is reported.
+ * `messung`: the proof is a later measurement (idea target) — an info line
+ * „wartet auf Messung“, no warning. `bericht`: a read-only investigation
+ * whose result is data for the report — an idea line, no warning.
+ */
+export type PendingReport = 'warnung' | 'messung' | 'bericht'
+const pendingReports = new Map<string, PendingReport>()
+
 /** Runs the read-only check for a criterion outside a delegation (e.g. the release re-check of the auto reminders). */
 /** One stable default fetch, so the shared release lookup cache is reused between checks (2.82.0). */
 const defaultVerifierFetch: FetchLike = (url, init) => fetch(url, init as any) as any
@@ -397,9 +406,11 @@ export async function checkExpectation(raw: Expectation, fetchImpl?: FetchLike):
 }
 
 /** Missions and other modules may add their own READ-ONLY checks per criterion type. */
-export function registerDelegationVerifier(art: string, verifier: Verifier): void {
+export function registerDelegationVerifier(art: string, verifier: Verifier, options: { offen?: PendingReport } = {}): void {
     if (!/^[a-z][a-z0-9-]{1,30}$/.test(art) || builtinVerifiers[art]) throw new Error(`Ungültige oder feste Prüfart: ${art}`)
     registeredVerifiers.set(art, verifier)
+    if (options.offen && options.offen !== 'warnung') pendingReports.set(art, options.offen)
+    else pendingReports.delete(art)
 }
 
 // ---------------------------------------------------------------------------
@@ -554,9 +565,14 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
         const short = record.auftrag.slice(0, 80)
         if (record.status === 'fertig') {
             const check = record.pruefung ? `Prüfung: ${record.pruefung.ergebnis} — ${record.pruefung.detail}` : 'Prüfung: keine'
+            const pending = !verified && record.pruefung?.ergebnis !== 'nicht-erfuellt' ? pendingReports.get(record.erwartet.art) : undefined
             thought(verified
                 ? { source: 'delegation', title: `Delegation an ${who} erledigt (geprüft)`, evidence: `${short} · ${check} · Antwort liegt als Daten in /delegiert`, severity: 'info', signature: `delegation:${record.id}:fertig` }
-                : { source: 'delegation', title: `Delegation an ${who}: Ergebnis ${record.pruefung?.ergebnis === 'nicht-erfuellt' ? 'nicht erfüllt' : 'unverifiziert'}`, evidence: `${short} · ${check}`, severity: 'warning', signature: `delegation:${record.id}:fertig` })
+                : pending === 'messung'
+                    ? { source: 'delegation', kind: 'ereignis', title: `Delegation an ${who}: fertig gemeldet, wartet auf Messung`, evidence: `${short} · ${check}`, severity: 'info', signature: `delegation:${record.id}:fertig` }
+                    : pending === 'bericht'
+                        ? { source: 'delegation', kind: 'idee', title: `Untersuchung durch ${who} liegt vor`, evidence: `${short} · Ergebnis als Daten bei ${record.id} (nicht ausgeführt)`, severity: 'info', signature: `delegation:${record.id}:fertig` }
+                        : { source: 'delegation', title: `Delegation an ${who}: Ergebnis ${record.pruefung?.ergebnis === 'nicht-erfuellt' ? 'nicht erfüllt' : 'unverifiziert'}`, evidence: `${short} · ${check}`, severity: 'warning', signature: `delegation:${record.id}:fertig` })
         } else if (record.status === 'abgelaufen') {
             thought({ source: 'delegation', title: `Delegation an ${who} abgelaufen`, evidence: `${short} · Frist ${record.fristAt} ohne fertiges Ergebnis`, severity: 'warning', signature: `delegation:${record.id}:abgelaufen` })
         } else if (record.status === 'abgelehnt' || record.status === 'fehler') {

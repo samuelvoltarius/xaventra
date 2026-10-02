@@ -389,9 +389,12 @@ export function createResponsibilityManager(options: ResponsibilityOptions): Res
                         ablaufMs: 3 * 24 * 60 * 60_000,
                     })
                     if (created.ok) item.cardId = created.card.id
+                    // 2.86 Punkt 5: one question = one card. The card above is the question;
+                    // this thought is only the report line (a second `fragen` thought became a
+                    // second card whose Ja did nothing).
                     options.ports.thoughts.add({
-                        source: SOURCE, title: `Vorschlag: ${item.titel}`, kind: 'vorschlag', permission: 'fragen', severity: 'info',
-                        evidence: `${item.beleg}. ${item.ziel}.`, proposal: 'Verantwortung übernehmen?', signature: `verantwortung:vorschlag:${item.id}`,
+                        source: SOURCE, title: `Vorschlag: ${item.titel}`, kind: 'ereignis', permission: 'selbst', severity: 'info',
+                        evidence: `${item.beleg}. ${item.ziel}. Frage per Karte „verantwortung“.`, signature: `verantwortung:vorschlag:${item.id}`,
                     })
                     vorgeschlagen.push(item)
                 } else {

@@ -72,7 +72,11 @@ sichtbar in `/arbeit` („Vertrauensleiter: selbst statt fragen“) und im Abend
 („Selbst übernommen“). Wirksam für Missions-Schritte; der Ausführer bekommt dann
 `trustedBy: "vertrauensleiter:<art>"` statt einer Owner-Freigabe. Seit 2.83.0 auch für
 die Doctor-Übergabe an Claude (`doctor-uebergabe`, siehe Delegation): gezählt wird nur
-ein Ja, dessen Fall danach gemessen geschlossen ist.
+ein Ja, dessen Fall danach gemessen geschlossen ist. Seit 2.86.0 ebenso für die Umsetzung
+angenommener Ideen (`idee-umsetzung`): das Ja auf eine Idee startet einen Umsetzungsauftrag
+an Claude (Kriterium `idee-ziel`, dieselbe Kennzahl wird nachgemessen); gezählt wird nur ein
+Ja, dessen Ziel danach gemessen erreicht ist. „Nein“, „verfehlt“ oder eine gescheiterte
+Umsetzung stufen zurück. Ohne Agentic-OS-URL bleibt es eine lesende Untersuchung.
 
 - **Nie** für physisch, nach außen, Geld/Kauf, Löschen/Entfernen/Zurückrollen, L3,
   unbekannte Arten und `release-ausrollen`, `patch-anwenden`, `pve-entfernen`,

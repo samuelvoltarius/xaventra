@@ -83,7 +83,7 @@ describe('self-update release watch (read-only, signed releases only)', () => {
         expect(PINNED_PUBLISHER_SPKI_SHA256).toBe('12c9322618387537b605f9241619a87e48c8cc9f0df6a7bdc5f44438f2af887a')
     })
 
-    it('a valid signed release yields exactly one debounced proposal (stage "fragen")', async () => {
+    it('a valid signed release yields exactly one debounced proposal (report only, 2.86 Punkt 5)', async () => {
         const f = fixture(), root = await mkdtemp(join(tmpdir(), 'xaventra-thoughts-')); roots.push(root)
         const sink = new JsonlThoughtSink(join(root, 'thoughts.jsonl'))
         const w = await watch(f, sink)
@@ -96,9 +96,9 @@ describe('self-update release watch (read-only, signed releases only)', () => {
         const lines = (await readFile(join(root, 'thoughts.jsonl'), 'utf8')).trim().split('\n').map(l => JSON.parse(l))
         expect(lines).toHaveLength(1)
         const t = lines[0] as Thought
-        expect(t).toMatchObject({ kind: 'update-proposal', permission: 'fragen', source: 'self-update' })
+        expect(t).toMatchObject({ kind: 'update-proposal', permission: 'selbst', source: 'self-update' })
         expect(t.text).toContain('2.81.0 verfügbar, geprüft')
-        expect(t.text).toContain('Installieren?')
+        expect(t.text).toContain('rollt Claude aus')
         expect(t.text).toContain('Änderungen:')
         expect(t.text).not.toContain('\u0007')
         expect(t.proposal).toMatchObject({ action: 'self-update.activate', params: { version: '2.81.0', commit: f.commit } })
