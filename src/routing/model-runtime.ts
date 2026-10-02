@@ -37,10 +37,14 @@ const CLIENT_PROVIDER: Record<string, 'claude' | 'openai' | 'local'> = {
 
 export interface AppliedRoute { client: any; cloud: boolean; notice?: string }
 
-/** Client for a measured decision, or null (runner keeps its default client). Codex stays on its own path. */
+/** 2.85: one notice per local outage; reset as soon as a decision is not an outage fallback. */
+let outageNoticeSent = false
+
+/** Client for a measured decision or a local-outage fallback, or null (runner keeps its default client). Codex stays on its own path. */
 export async function applyMultiRouteEndpoint(decision: MultiRouteDecision): Promise<AppliedRoute | null> {
     const endpoint = decision.endpoint
-    if (decision.basis !== 'messung' || !endpoint || decision.target === 'codex') return null
+    if (decision.basis !== 'ausfall') outageNoticeSent = false
+    if ((decision.basis !== 'messung' && decision.basis !== 'ausfall') || !endpoint || decision.target === 'codex') return null
     const provider = CLIENT_PROVIDER[endpoint.kind]
     if (!provider) {
         console.warn(`[MultiRouter] Kein Client für ${endpoint.kind}; Standardmodell bleibt.`)
@@ -70,7 +74,12 @@ export async function applyMultiRouteEndpoint(decision: MultiRouteDecision): Pro
         client = createCloudSafeClient(client)
         recordCloudSpend(endpoint.costEurPerCall ?? 0)
     }
-    return { client, cloud, ...(decision.notice ? { notice: decision.notice } : {}) }
+    let notice = decision.notice
+    if (decision.basis === 'ausfall') {
+        if (outageNoticeSent) notice = undefined
+        else outageNoticeSent = true
+    }
+    return { client, cloud, ...(notice ? { notice } : {}) }
 }
 
 /** Node profile of the local node or a mesh peer (null when unknown). */
