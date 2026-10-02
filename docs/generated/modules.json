@@ -2008,7 +2008,9 @@
     },
     {
       "module": "src/core/resource-thresholds.ts",
-      "imports": []
+      "imports": [
+        "node:fs"
+      ]
     },
     {
       "module": "src/core/response-contract.ts",
@@ -5238,6 +5240,12 @@
         "../install/vllm-ticket.js",
         "./local-model-control.js",
         "./vllm-switch-state.js"
+      ]
+    },
+    {
+      "module": "src/runtime/autonomous-endpoint.ts",
+      "imports": [
+        "../llm/endpoint-trust.js"
       ]
     },
     {

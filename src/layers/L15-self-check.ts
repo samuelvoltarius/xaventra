@@ -12,7 +12,7 @@
 
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
+import { diskLevel } from '../core/resource-thresholds.js'
 import { getIdleLearningManager } from './L9-idle-learning.js'
 import { join } from 'node:path'
 
@@ -454,7 +454,7 @@ class SelfCheckManager extends EventEmitter {
                 if (health.memory?.warning) {
                     suggestions.push('RAM-Limit erreicht — Performance degradiert.')
                 }
-                if (diskLevel(health.disk?.usedPercent) === 'crit' || memoryLevel(health.memory?.usedPercent) === 'crit') {
+                if (diskLevel(health.disk?.usedPercent) === 'crit' || health.memory?.level === 'crit') {
                     suggestions.push('🛑 SYSTEM-PROBLEM — Tool-Failures sind Symptom, nicht Ursache!')
                 }
                 shouldAct = true
