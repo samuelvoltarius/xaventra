@@ -2133,7 +2133,9 @@ async function startDaemon() {
         await lanceMemory.default.ensureInitialized()
             ; (state as any).lanceMemory = lanceMemory.default
         const stats = await lanceMemory.default.getStats()
-        console.log(`[Nova] ✓ L6 LanceDB Memory aktiv (${stats.totalEntries} Einträge)`)
+        console.log(stats.error
+            ? `[Nova] ⚠ L6 LanceDB Memory aktiv, Zählung gescheitert: ${stats.error}`
+            : `[Nova] ✓ L6 LanceDB Memory aktiv (${stats.totalEntries} Einträge, Einbetter ${stats.embedder || 'unbekannt'})`)
     } catch (err) {
         console.log(`[Nova] ⚠ L6 LanceDB Memory nicht verfügbar: ${err}`)
     }

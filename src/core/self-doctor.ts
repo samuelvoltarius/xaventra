@@ -310,6 +310,28 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
             const resolved = resolveFinding(findings, findingId, 'Automatically resolved: governed memory has no stale candidates, active conflicts, or orphaned projections.')
             if (resolved) await syncFinding(resolved)
         }
+
+        // 2.84 Punkt 2: einmal täglich fehlende LanceDB-Projektionen nachtragen
+        // (Einbetter abgleichen, höchstens 200 je Lauf), Rest als Befund (info).
+        await governance.maybeBackfillProjections()
+        const projection = await governance.projectionStatus()
+        const projectionFindingId = stableId(['memory-projection-missing'])
+        const unprojected = projection.missing + projection.stale
+        if (unprojected > 0) {
+            generated.push(upsertFinding(findings, {
+                id: projectionFindingId,
+                title: `${unprojected} Gedächtnis-Einträge ohne Projektion`,
+                detail: `${projection.missing} ohne LanceDB-Projektion, ${projection.stale} noch in einer früheren Tabelle (Einbetter gewechselt). Der tägliche Wartungslauf trägt sie nach (höchstens 200 je Lauf, nur eigener Einbetter).`,
+                category: 'memory',
+                severity: 'info',
+                source: 'memory-governance',
+                recommendation: 'Nichts zu tun, solange die Zahl sinkt. Bleibt sie stehen: eigenen Einbetter prüfen (/memory zeigt ihn).',
+                evidence: { ...projection },
+            }))
+        } else {
+            const resolved = resolveFinding(findings, projectionFindingId, 'Automatisch erledigt: alle aktiven Gedächtnis-Einträge sind projiziert.')
+            if (resolved) await syncFinding(resolved)
+        }
     } catch (err) {
         generated.push(upsertFinding(findings, {
             id: stableId(['memory-governance-unavailable']),

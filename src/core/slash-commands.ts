@@ -1139,13 +1139,17 @@ Dann: /llm local`
             try {
                 const stats = state.memory.getStats()
                 const lanceCount = await state.memory.getLanceEntries?.()
+                // 2.84: der eine Einbetter der Projektion (nur eigene Quellen, nie Cloud).
+                let embedder = 'nicht geladen'
+                try { embedder = (await import('../memory/lancedb-memory.js')).getActiveProjection()?.embedder || embedder } catch { /* LanceDB optional */ }
                 const memText = `🧠 *Memory Status*
 
 📊 Aktiv: ${stats.totalEntries} Einträge (Memory-Governance)
   ├ ✅ Kanonisch: ${stats.canonical}
   ├ ☑️ Verifiziert: ${stats.verified}
   ├ 📝 Kandidaten: ${stats.candidate}
-  └ 🗄️ LanceDB-Projektion: ${lanceCount ?? 'nicht geladen'}
+  ├ 🗄️ LanceDB-Projektion: ${lanceCount ?? 'nicht geladen'}
+  └ 📐 Einbetter: ${embedder}
 👤 Benutzer: ${from}`
 
                 // Try Telegram buttons
