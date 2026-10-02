@@ -97,6 +97,13 @@ export function freeDiskGB(profile: NodeProfile): number | null {
 }
 
 const services = (profile: NodeProfile) => Array.isArray(profile.services) ? profile.services : []
+/** 2.85: one truth for Ollama on a node (from the KI scanner): läuft / installiert, aber aus / fehlt. */
+export function ollamaState(profile: NodeProfile): 'laeuft' | 'aus' | 'fehlt' {
+    const ollama = services(profile).filter(item => item.name === 'ollama')
+    if (ollama.some(item => item.status === 'running')) return 'laeuft'
+    return ollama.length ? 'aus' : 'fehlt'
+}
+
 const hasNvidia = (profile: NodeProfile) => /nvidia/i.test(String(profile.gpu?.name || ''))
 const isUnified = (profile: NodeProfile) => UNIFIED_GPU.test(String(profile.gpu?.name || ''))
 
@@ -143,7 +150,12 @@ export function assessCandidate(candidate: SoftwareCandidate, node: ScoutNode, o
     if (node.modelOnly && candidate.kind !== 'model') return no('NAS: nur Modelle ins Daten-Volume, keine Systempakete oder Programme')
     if (candidate.roles && !candidate.roles.includes(p.role)) return no(`nur für ${candidate.roles.map(role => role === 'main' ? 'den Main' : 'Worker').join('/')}`)
     if (p.ramGB < candidate.minRamGB) return no(`zu wenig RAM (${p.ramGB} GB, nötig ${candidate.minRamGB} GB)`)
-    if (candidate.requiresService === 'ollama' && !services(p).some(item => item.name === 'ollama')) return no('kein Ollama auf dem Knoten (wird dafür nicht installiert)')
+    if (candidate.requiresService === 'ollama') {
+        // Nova never starts or installs Ollama by itself; a stopped one stays a quiet finding.
+        const ollama = ollamaState(p)
+        if (ollama === 'fehlt') return no('kein Ollama auf dem Knoten (wird dafür nicht installiert)')
+        if (ollama === 'aus') return no('Ollama installiert, aber aus (wird nicht von selbst gestartet)')
+    }
 
     const notes: string[] = []
     if (freeDisk === null) notes.push('freie Platte unbekannt (prüft die Installation)')
@@ -482,7 +494,7 @@ export async function collectScoutNodes(options: { measureLoad?: boolean } = {})
     const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
     const localId = getLocalNodeId()
     const local = await collectNodeProfile()
-    const nodes: ScoutNode[] = [{ nodeId: localId, profile: { ...local, nodeId: localId }, local: true, modelOnly: isModelOnlyNode(localId) }]
+    const nodes: ScoutNode[] = [{ nodeId: localId, profile: { ...local, nodeId: localId, services: await ownServicesFromScanner(local.services) }, local: true, modelOnly: isModelOnlyNode(localId) }]
     if (options.measureLoad && local.gpu?.viaVllm) {
         // Same measurement as Phase 3 (nvidia-smi, vLLM /metrics). Not measurable = no extra
         // signal; the memory check and the 8 GB reserve still apply, and Stufe 2 measures again.
@@ -498,6 +510,24 @@ export async function collectScoutNodes(options: { measureLoad?: boolean } = {})
         nodes.push({ nodeId: peer.nodeId, profile: peer.profile, local: false, lastSeen: peer.lastSeen, modelOnly: isModelOnlyNode(peer.nodeId) })
     }
     return nodes.sort((a, b) => Number(b.local) - Number(a.local) || a.nodeId.localeCompare(b.nodeId))
+}
+
+/**
+ * 2.85: the KI scanner is the one source for this node's services (running /
+ * installed / stopped). Its local findings replace the profile's entries of the
+ * same name; LAN devices found by the scanner are not this node.
+ */
+export async function ownServicesFromScanner(profileServices: NodeProfile['services']): Promise<NodeProfile['services']> {
+    try {
+        const scanner = await import('../mesh/ai-scanner.js')
+        if (!scanner.getLastScanResult()) return profileServices
+        const { sanitizeNodeServices } = await import('../core/node-profile.js')
+        const own = scanner.getDiscoveredServices().filter(service =>
+            service.sourceNode === 'local' || service.host === 'localhost' || service.host === '127.0.0.1')
+        const scanned = sanitizeNodeServices(own.map(service => ({ name: service.name, type: service.type, status: service.status })))
+        const names = new Set(scanned.map(item => item.name))
+        return sanitizeNodeServices([...(profileServices || []).filter(item => !names.has(item.name)), ...scanned])
+    } catch { return profileServices }
 }
 
 /** /software: always available, read-only. */

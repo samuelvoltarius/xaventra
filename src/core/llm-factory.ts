@@ -1090,15 +1090,22 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                 }
             }
 
-            const { runWithModelFallback, getDefaultFallbacks } = await import('../llm/model-fallback.js')
+            const { runWithModelFallback, getDefaultFallbacks, localFallbackCandidates } = await import('../llm/model-fallback.js')
             const fallbackEntry = minimaxAdapter || activeProvider === 'minimax'
                 ? { provider: 'local', model: 'auto' }
                 : { provider: activeProvider, model: activeModelId }
+            // 2.85: fallback targets only from what the KI scanner sees RUNNING (with its models);
+            // installed-but-stopped runtimes and guessed names are never tried.
+            let runningServices: Array<{ name?: string; type?: string; status: string; endpoint: string; models: string[] }> = []
+            try {
+                const scanner = await import('../mesh/ai-scanner.js')
+                runningServices = scanner.getLastScanResult() ? scanner.getRunningServices() : []
+            } catch { runningServices = [] }
 
             return runWithModelFallback({
                 provider: fallbackEntry.provider,
                 model: fallbackEntry.model,
-                fallbacks: getDefaultFallbacks(),
+                fallbacks: getDefaultFallbacks(runningServices),
                 run: async (_provider, fallbackModel) => {
                     // Use primary LLM if same model, otherwise create new client for fallback
                     let activeLLM = llm
@@ -1126,17 +1133,15 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     const bSlow = isSlowBig(b.model) ? 1 : 0
                                     return aSlow - bSlow
                                 })
-                            const candidates = fallbackModel !== 'auto'
-                                ? [localEntries.find(l => l.model === fallbackModel), ...localEntries].filter(Boolean)
-                                : localEntries
-                            if (candidates.length === 0) throw new Error('Kein lokales LLM im Mesh entdeckt')
+                            const candidates = localFallbackCandidates(localEntries, fallbackModel, runningServices)
+                            if (candidates.length === 0) throw new Error(fallbackModel === 'auto' ? 'Kein laufendes lokales LLM entdeckt' : `${fallbackModel} läuft auf keinem erreichbaren Endpunkt`)
                             const failedEndpoints = new Set<string>()
                             let lastLocalError: unknown = new Error('Kein lokales LLM erreichbar')
                             for (const discovered of candidates.slice(0, 4) as LLMEntry[]) {
                                 if (!discovered.endpoint || failedEndpoints.has(discovered.endpoint)) continue
                                 const localLLM = createLocalLLM({
                                     baseUrl: discovered.endpoint,
-                                    model: fallbackModel === 'auto' ? discovered.model : fallbackModel,
+                                    model: discovered.model,
                                     name: discovered.nodeName || discovered.provider || 'LocalLLM',
                                     // Large local models need longer to ingest Nova's
                                     // full system/context prompt even with thinking

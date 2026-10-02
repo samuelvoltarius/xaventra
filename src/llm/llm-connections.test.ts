@@ -189,6 +189,13 @@ describe('Eine Liste: gefunden / möglich / verbunden', () => {
         expect(local[2]).toMatchObject({ kategorie: 'suche', title: 'SearXNG im eigenen Netz (192.168.50.30)' })
     })
 
+    it('installiert, aber aus: stiller Fund, nicht nutzbar, wird nicht von selbst gestartet', () => {
+        const installed = [{ id: 'ollama@local:installed', name: 'ollama', type: 'llm', endpoint: 'http://localhost:11434', models: [], status: 'installed', sourceNode: 'local', host: 'localhost' }]
+        const [entry] = buildLlmConnectionList({ services: installed }, null, {}, {}).filter(item => item.status === 'gefunden')
+        expect(entry).toMatchObject({ id: 'lokal:ollama@http://localhost:11434', title: 'Ollama auf diesem Rechner — installiert, aber aus', nutzbar: false, datenklasse: 'lokal' })
+        expect(entry.wirkung).toMatch(/nicht von selbst gestartet/)
+    })
+
     it('Cloud: möglich bis verbunden; Maske nur auf Wunsch; Codex-Login zählt als verbunden für OpenAI', () => {
         const box = sandbox()
         box.store.setApiKey('llm-key:anthropic', 'anthropic', KEY)

@@ -256,11 +256,64 @@ function buildSeedFallbacks(): ModelCandidate[] {
     }
 }
 
+/** A service as the KI scanner reports it (src/mesh/ai-scanner.ts). */
+export interface RunningServiceLike { name?: string; type?: string; status: string; endpoint: string; models: string[] }
+
+const LOOPBACK_HOST = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+function endpointKey(endpoint: string | undefined): string {
+    try {
+        const url = new URL(String(endpoint || ''))
+        const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+        return `${LOOPBACK_HOST.has(host) ? 'localhost' : host}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`
+    } catch { return '' }
+}
+
+/** Models that are really served right now: running services only, never "installed". */
+function runningModels(running: readonly RunningServiceLike[]): Set<string> {
+    return new Set(running.filter(service => service.status === 'running').flatMap(service => service.models || []))
+}
+
+/**
+ * 2.85 (live Spark 01.10.): local fallback targets only where a RUNNING,
+ * reachable endpoint really serves that model. A fallback model name is never
+ * forced onto another endpoint; an installed-but-stopped runtime is never a
+ * target. `auto` = every runtime entry whose model its running endpoint lists.
+ */
+export function localFallbackCandidates<T extends { model: string; endpoint?: string }>(entries: readonly T[], fallbackModel: string, running: readonly RunningServiceLike[]): T[] {
+    const served = new Map<string, Set<string>>()
+    for (const service of running) {
+        if (service.status !== 'running') continue
+        const key = endpointKey(service.endpoint)
+        if (!key) continue
+        const models = served.get(key) || new Set<string>()
+        for (const model of service.models || []) models.add(model)
+        served.set(key, models)
+    }
+    return entries.filter(entry => {
+        if (fallbackModel !== 'auto' && entry.model !== fallbackModel) return false
+        return Boolean(served.get(endpointKey(entry.endpoint))?.has(entry.model))
+    })
+}
+
 /**
  * Get fallback models — prefers dynamically discovered models,
  * falls back to static seed list if no discovery cache exists.
+ *
+ * With `running` (the KI scanner's current services) only models a running
+ * endpoint serves are kept, plus `auto`; without a scan (empty list) only
+ * `auto` — never a cached or guessed model name.
  */
-export function getDefaultFallbacks(): ModelCandidate[] {
+export function getDefaultFallbacks(running?: readonly RunningServiceLike[]): ModelCandidate[] {
+    if (running) {
+        const served = runningModels(running)
+        let chain: ModelCandidate[] = []
+        try { chain = buildFallbackChain().filter(entry => LOCAL_FALLBACK_PROVIDERS.has(String(entry.provider).toLowerCase())) } catch { chain = [] }
+        const kept = chain.filter(entry => served.has(entry.model))
+            .map(entry => ({ provider: 'local', model: entry.model }))
+            .filter((entry, index, all) => all.findIndex(other => other.model === entry.model) === index)
+            .slice(0, MAX_DYNAMIC_FALLBACKS)
+        return [...kept, { provider: 'local', model: 'auto' }]
+    }
     try {
         // Local first: discovered cloud models (OpenAI/Anthropic) are never
         // automatic fallbacks — cloud needs an explicit configuration. Mesh

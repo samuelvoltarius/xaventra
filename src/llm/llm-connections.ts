@@ -420,8 +420,21 @@ export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike |
     const list: LlmConnection[] = []
     const seen = new Set<string>()
     for (const service of inputs.services || []) {
-        if (service.status !== 'running') continue
         const search = service.type === 'search'
+        if (service.status !== 'running') {
+            // Installed but stopped: a quiet finding. Xaventra never starts or installs it by itself.
+            if (!['llm', 'vlm'].includes(service.type) || service.sourceNode !== 'local' && service.host !== 'localhost') continue
+            const key = `${service.name}@${service.endpoint}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            list.push({
+                id: `lokal:${key}`, kategorie: 'ki-modelle', title: `${RUNTIME_TITLE[service.name] || service.name} auf diesem Rechner — installiert, aber aus`,
+                status: 'gefunden', datenklasse: 'lokal', nutzbar: false,
+                wirkung: 'Installiert, läuft aber nicht — wird nicht von selbst gestartet; erst nach dem Start nutzbar.',
+                endpoint: service.endpoint, node: service.sourceNode, modelle: [],
+            })
+            continue
+        }
         if (!search && !['llm', 'vlm', 'embeddings'].includes(service.type)) continue
         if (service.name === 'ollama-embeddings') continue
         const key = `${service.name}@${service.endpoint}`
