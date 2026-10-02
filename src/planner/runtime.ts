@@ -239,6 +239,11 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
             successTrend: (now: number) => getOutcomeRouter().successTrend(now),
             // Package C counts Ja/Nein per suggestion kind (decisions.ts); D shows it here.
             suggestionLines: (since: number) => suggestionSummaryLines(since),
+            // 2.84 Lern-Puls: Zufluss je Lernspeicher und Nutzen (learning/learning-flow.ts).
+            flowLines: async (now: number) => {
+                const { learningFlow, learningFlowLines } = await import('../learning/learning-flow.js')
+                return learningFlowLines(await learningFlow(now))
+            },
         },
     }
     for (const [id, kind, time] of [

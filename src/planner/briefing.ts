@@ -11,6 +11,11 @@
  * 2.83.0: „Lernkurve“ (evening only): success rate per task type this week
  * against last week from the Kernel-validated outcome samples, plus owner
  * rejections and optional suggestion lines. Counts only, never request text.
+ *
+ * 2.84 Lern-Puls (learning/learning-flow.ts): at most 2 more lines in the same
+ * section — new entries per learning store this week vs. last week and how
+ * often learned things were used. The job resolves them asynchronously (the
+ * LanceDB count is async) before the report is built.
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -48,6 +53,8 @@ export interface BriefingSources {
          * there is data; without this input the section stays as it is.
          */
         suggestionLines?(since: number, until: number): string[]
+        /** 2.84 Lern-Puls: at most 2 lines (learning-flow.ts). Async in the job, resolved before buildBriefing. */
+        flowLines?(now: number): string[] | Promise<string[]>
     }
 }
 
@@ -98,12 +105,17 @@ function section(title: string, items: string[]): string[] {
 
 const percent = (window: SuccessTrendWindow) => `${Math.round((window.successes / window.samples) * 100)} %`
 
-/** Lernkurve: at most MAX_LINES; the extra lines are never cut off by the trend. */
+/** Lernkurve: at most MAX_LINES; the Lern-Puls and extra lines are never cut off by the trend. */
 function learningCurve(sources: BriefingSources, since: number, now: number): string[] {
     if (!sources.learning) return []
     let trend: SuccessTrend | null = null
     try { trend = sources.learning.successTrend(now) } catch { trend = null }
-    const extras: string[] = []
+    let flow: string[] = []
+    try {
+        const lines = sources.learning.flowLines?.(now)
+        if (Array.isArray(lines)) flow = lines.filter(item => typeof item === 'string' && item.trim()).slice(0, 2)
+    } catch { /* optional input */ }
+    const extras: string[] = [...flow]
     if (trend && (trend.rejected.current > 0 || trend.rejected.previous > 0)) {
         extras.push(`Owner-Zurückweisungen: ${trend.rejected.current} (Vorwoche ${trend.rejected.previous})`)
     }
@@ -217,7 +229,14 @@ export function createBriefingHandler(options: { kind: BriefingKind; sources: Br
         async run(_job, ctx) {
             const floor = ctx.now - 36 * 3_600_000
             const since = Math.max(lastDelivered() ?? ctx.now - 24 * 3_600_000, floor)
-            const briefing = buildBriefing(options.kind, options.sources, since, ctx.now)
+            // Lern-Puls (evening only): resolve the async counts first, then build synchronously.
+            let sources = options.sources
+            if (options.kind === 'abend' && sources.learning?.flowLines) {
+                let flow: string[] = []
+                try { flow = await sources.learning.flowLines(ctx.now) } catch { flow = [] }
+                sources = { ...sources, learning: { ...sources.learning, flowLines: () => flow } }
+            }
+            const briefing = buildBriefing(options.kind, sources, since, ctx.now)
             const c = briefing.counts
             return {
                 summary: `${briefing.title}: erledigt ${c.erledigt}, repariert ${c.repariert}, installiert ${c.installiert}, wartet ${c.wartet}, Ideen ${c.ideen}`,

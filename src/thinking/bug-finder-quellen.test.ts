@@ -96,8 +96,8 @@ describe('Bug-Finder-Quellen (2.83.0 Punkt 5)', () => {
         expect(doctor2.list()).toHaveLength(0)
     })
 
-    it('Standard-Quellen: Traces, Owner-Rückmeldungen und Missionen; ohne Laufzeit liefert der Missions-Getter nichts', async () => {
-        expect(defaultErrorSources()).toHaveLength(3)
+    it('Standard-Quellen: Traces, Owner-Rückmeldungen, Missionen und (2.84) stumme Lernspeicher; ohne Laufzeit liefert der Missions-Getter nichts', async () => {
+        expect(defaultErrorSources()).toHaveLength(4)
         expect(failedMissionsSince(0)).toEqual([])
         const combined = combineErrorSources([
             { collect: () => [{ source: 'a', subject: 'x', message: 'm', at: 1, ref: 'r' }] },
