@@ -986,3 +986,19 @@ export async function startDecisionMemory(options: { nodeOnly: boolean }): Promi
 
 /** Test hook. */
 export function _setDecisionMainCheckForTest(check: (() => boolean) | null): void { mainCheck = check; constraintCache = null }
+
+/**
+ * One line for the evening report (2.83.0, package D "Lernkurve"): accepted and
+ * declined suggestions in the window, plus the kinds the owner's Nein now
+ * suppresses. Read only.
+ */
+export function suggestionSummaryLines(sinceMs: number, opts: DecisionOptions = {}): string[] {
+    const counts = thoughtAcceptance(sinceMs, opts)
+    let ja = 0, nein = 0
+    for (const value of Object.values(counts)) { ja += value.ja; nein += value.nein }
+    if (ja + nein === 0) return []
+    const suppressed = Object.keys(counts).filter(kind => thoughtImportanceFactor(kind, opts) < THOUGHT_SUPPRESS_BELOW).sort()
+    const lines = [`Vorschläge: ${ja} angenommen, ${nein} abgelehnt`]
+    if (suppressed.length) lines.push(`Kommt nicht mehr (3× Nein): ${suppressed.slice(0, 5).join(', ')}`)
+    return lines
+}

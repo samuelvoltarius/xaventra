@@ -95,6 +95,18 @@ export function combineErrorSources(sources: readonly ErrorSourcePort[]): ErrorS
             }
             return out
         },
+        // Package A closes cases by measured successes; a combined source must
+        // pass them through or no bug-finder case ever closes.
+        async successes(sinceMs) {
+            const total: Record<string, number> = {}
+            for (const source of sources) {
+                if (!source.successes) continue
+                try {
+                    for (const [subject, count] of Object.entries((await source.successes(sinceMs)) || {})) total[subject] = (total[subject] || 0) + (Number(count) || 0)
+                } catch { /* eine Quelle fällt aus, die anderen zählen weiter */ }
+            }
+            return total
+        },
     }
 }
 
