@@ -3978,6 +3978,7 @@
     {
       "module": "src/learning/learning-flow.ts",
       "imports": [
+        "../core/validator-failure-escalation.js",
         "../thinking/bug-finder.js"
       ]
     },
