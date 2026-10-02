@@ -314,11 +314,7 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/dashboard/dashboard-token.test.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/dashboard/server.ts",
+      "owner": "src/dashboard/one-ui.test.ts",
       "path": ".nova-data"
     },
     {
@@ -327,6 +323,10 @@
     },
     {
       "owner": "src/desktop/desktop-control.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/desktop/desktop-views.ts",
       "path": ".nova-data"
     },
     {
@@ -1280,14 +1280,6 @@
     {
       "owner": "src/memory/legacy-memory-migration.ts",
       "path": ".nova-memory"
-    },
-    {
-      "owner": "src/dashboard/dashboard-token.test.ts",
-      "path": ".nova-sessions"
-    },
-    {
-      "owner": "src/dashboard/server.ts",
-      "path": ".nova-sessions"
     },
     {
       "owner": "src/memory/legacy-memory-migration.test.ts",

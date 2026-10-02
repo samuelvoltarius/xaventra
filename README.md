@@ -16,7 +16,7 @@ typed tools through one governed kernel, records real evidence, validates the
 outcome independently and can resume from durable checkpoints.
 
 This repository contains the complete TypeScript Core runtime, the Electron
-Desktop client, the browser dashboard, the optional infrastructure profiles and
+Desktop client (also served to the browser), the optional infrastructure profiles and
 the validation suites. It is intended both for people who want to run one
 self-hosted assistant and for contributors building a resilient agent platform.
 
@@ -342,8 +342,7 @@ private logs. See [SECURITY.md](SECURITY.md) for responsible disclosure.
 | `src/doctor/` | diagnosis and evidence-led repair research | `index.ts`, `failure-research-coordinator.ts` |
 | `src/desktop/` | authoritative Core API used by Desktop | `desktop-api.ts` |
 | `desktop/` | Electron operator client and Nova Studio UI | `main.cjs`, `renderer/` |
-| `src/dashboard/` | browser Trust and operator dashboard | `public/` |
-| `dashboard/` | experimental legacy gateway client; not the Core Control Plane | its local README and limitations |
+| `src/dashboard/` | serves the one UI (`desktop/renderer`) in the browser; data only via `/api/desktop` | [docs/DASHBOARD.md](docs/DASHBOARD.md) |
 | `src/benchmark/` | isolated evidence-based scenarios and comparisons | `benchmark-cli.ts` |
 | `infra/` | optional observability, memory and coordination services | service-specific README files |
 | `deploy/` | deployment profiles and signed release support | profile definitions |

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+Xaventra Desktop neu gestaltet – eine Oberfläche für App und Browser:
+
+- Bereiche **Heute** (was sie tut, offene Knopf-Karten mit ihren Knöpfen,
+  Vorschau des Morgen-/Abendberichts, Gedanken), **Unterhaltung**, **Arbeit**
+  (Missionen, Aufträge, Delegationen, Verantwortungen, Geplant), **System**
+  (Knoten mit 24-h-Verlauf, Erreichbarkeit, Vorausschau, Nachtwache, Desktops,
+  VMs, Modelle), **Gedächtnis** (Entscheidungen, Werkzeuge, Wissen); Fachseiten
+  unter **Mehr**. Hell/Dunkel, Systemschrift, ruhige Farben.
+- Neue Owner-Lese-Endpunkte `/api/desktop/{heute,arbeit,system,system/vms,gedaechtnis}`
+  über die vorhandenen Module; Karten-Antwort `POST /api/desktop/karten/:id/antwort`
+  nur über `answerApprovalCard` (Einmal-Token, Owner aus `allowFrom`);
+  Desktop-Direkt-Link `POST /api/desktop/direct/:id/link` – den Link sieht nur
+  der Hauptprozess, der ihn in einem isolierten Fenster öffnet.
+- Der Main liefert dieselbe Oberfläche im Browser aus (`bridge.js` statt IPC,
+  Token nur im Tab). Entfernt: die alte Dashboard-Seite `src/dashboard/public`
+  mit ~70 Sonder-Endpunkten und WebSocket-Feed, der Next.js-Client `dashboard/`
+  samt CI-Job `legacy-dashboard`. Siehe docs/DESKTOP_REDESIGN.md.
+
 Doppelungen aufgeräumt (P9, Gruppe 3: Skills und Lernen) und eine echte
 Werkzeug-Schmiede:
 

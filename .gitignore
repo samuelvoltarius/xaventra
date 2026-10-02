@@ -74,9 +74,6 @@ test_voice.mp3
 voice_fix.mp3
 
 # Dashboard
-dashboard/node_modules/
-dashboard/.next/
-dashboard/out/
 
 # Memory
 .lancedb/

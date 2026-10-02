@@ -376,8 +376,8 @@ ${c.cyan}Nächste Schritte:${c.reset}
   1. Nova starten:
      ${c.bright}npm run dev${c.reset}
 
-  2. Dashboard starten (separates Terminal):
-     ${c.bright}npm run dashboard:dev${c.reset}
+  2. Im Browser ansehen (dieselbe Oberfläche wie die Desktop-App):
+     ${c.bright}http://127.0.0.1:3011/${c.reset}
 
   3. Bei WhatsApp: QR-Code mit dem Handy scannen
 

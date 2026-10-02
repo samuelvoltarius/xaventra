@@ -70,13 +70,11 @@ malformed config is treated as restricted, not as open.
 }
 ```
 
-The dashboard has no login. Memory, conversations, knowledge graph, journal,
-config and logs (`/api/memory*`, `/api/chat*`, `/api/sessions*`,
-`/api/core-facts`, `/api/graph`, `/api/journal`, `/api/summaries*`,
-`/api/config`, `/api/logs`, `/api/cold-storage`) and the live WebSocket feed
-are served only to requests from the same machine (loopback peer, loopback
-`Host`/`Origin`), even if `host` is set to a non-loopback address. Writes are
-loopback-only as well.
+The dashboard port serves the same UI as the Desktop app (`desktop/renderer`,
+see [DASHBOARD.md](DASHBOARD.md)). Its only data API is `/api/desktop/*`; every
+API request needs a token, unknown `Host` names (DNS rebinding) and foreign
+`Origin`s are refused, and owner views require `NOVA_DESKTOP_API_TOKEN`. Keep
+`host` on loopback or the Tailnet address; never bind it publicly.
 
 ### Telemetry (OpenTelemetry)
 
