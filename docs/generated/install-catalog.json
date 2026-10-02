@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalogHash": "8a795f40b0db7ac955a914c70e4a5324d82d96f38733a3593d99f3e0e8120feb",
+  "catalogHash": "21449cd481700587f2177670d4cb8a496c5284c1eb43619e03dfe121dbe9bb47",
   "entries": [
     {
       "id": "ffmpeg",
@@ -241,6 +241,111 @@
       "risk": "low",
       "approval": "fragen",
       "entryHash": "ff1e8d6a88f3b26a022a0093c01b242cf13f7ae3df00f06b936046ee406d3ded"
+    },
+    {
+      "id": "ollama-model:qwen3.5-2b",
+      "title": "Ollama-Modell qwen3.5:2b",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "qwen3.5:2b"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "qwen3.5:2b"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "qwen3.5:2b"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 2700,
+      "timeoutSec": 1800,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "fc148e0e9f12201ddb951b51a43dca8dadad4bc4b64b4e91abe8d5cea9f86f70"
+    },
+    {
+      "id": "ollama-model:qwen3.5-4b",
+      "title": "Ollama-Modell qwen3.5:4b",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "qwen3.5:4b"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "qwen3.5:4b"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "qwen3.5:4b"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 3400,
+      "timeoutSec": 3600,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "4a3a01c0b7e3d9dca114a21c05d23a35ce1a2f8cee61be921d6e34f7d8a54401"
+    },
+    {
+      "id": "ollama-model:qwen3.5-9b",
+      "title": "Ollama-Modell qwen3.5:9b",
+      "kind": "ollama-model",
+      "targets": [
+        "host-agent",
+        "model-volume"
+      ],
+      "install": [
+        "/usr/local/bin/ollama",
+        "pull",
+        "qwen3.5:9b"
+      ],
+      "verify": [
+        [
+          "/usr/local/bin/ollama",
+          "show",
+          "qwen3.5:9b"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "/usr/local/bin/ollama",
+          "rm",
+          "qwen3.5:9b"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 6600,
+      "timeoutSec": 3600,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "c1e5e023a75878f5c2309ae6e7269a4b55ebd90f9d7d53a6a980e005acc00573"
     },
     {
       "id": "playwright-chromium",

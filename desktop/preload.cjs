@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('novaDesktop', Object.freeze({
   window: Object.freeze({
     focus: () => ipcRenderer.invoke('nova:window:focus'),
   }),
+  onboarding: Object.freeze({
+    claim: () => ipcRenderer.invoke('nova:onboarding:claim'),
+  }),
   desktop: Object.freeze({
     capture: () => ipcRenderer.invoke('nova:desktop:capture'),
   }),

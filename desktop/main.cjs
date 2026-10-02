@@ -244,7 +244,32 @@ function sendHttpRequest({ url, method, headers, body, signal }) {
 
 // One-time Desktop-Direkt links are secrets: only the main process requests
 // them and loads them into its own viewer window; the renderer never sees one.
-const MAIN_ONLY_API = /^\/api\/desktop\/direct(?:\/|$|\?)/
+const MAIN_ONLY_API = /^\/api\/desktop\/(?:direct|onboarding\/claim)(?:\/|$|\?)/
+
+// 2.85 first start: a fresh local Core lets this app take over its owner token
+// once. Only the main process asks, only towards a loopback Core, only without a
+// stored token; the token goes straight into encrypted storage, never to the renderer.
+async function claimFirstStartToken() {
+  const config = readConfig()
+  if (config.encryptedToken || String(process.env.XAVENTRA_DESKTOP_API_TOKEN || '').trim()) return { claimed: false }
+  const host = new URL(config.endpoint).hostname
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) return { claimed: false }
+  let data
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    data = await sendHttpRequest({
+      url: `${config.endpoint}/api/desktop/onboarding/claim`, method: 'POST',
+      headers: { Accept: 'application/json', 'X-Nova-Desktop-Client': config.clientId },
+      signal: controller.signal,
+    })
+  } catch { return { claimed: false } } finally { clearTimeout(timeout) }
+  let token = ''
+  try { token = data.status === 200 ? String(JSON.parse(data.text)?.token || '') : '' } catch { token = '' }
+  if (!/^[A-Za-z0-9._~+\/=-]{16,512}$/.test(token)) return { claimed: false }
+  writeConfig({ token })
+  return { claimed: true }
+}
 
 async function apiRequest(_event, input) {
   const method = String(input?.method || 'GET').toUpperCase()
@@ -407,6 +432,7 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('nova:config:set', (_event, input) => writeConfig(input || {}))
   ipcMain.handle('nova:api', apiRequest)
+  ipcMain.handle('nova:onboarding:claim', () => claimFirstStartToken())
   ipcMain.handle('nova:desktop:capture', capturePrimaryDisplay)
   ipcMain.handle('nova:desktop-direct:open', openDesktopDirect)
   ipcMain.handle('nova:workspace:select', selectWorkspace)

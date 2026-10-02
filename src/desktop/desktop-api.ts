@@ -42,6 +42,7 @@ import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
 import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
 import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallieren } from './werkzeugkasten-view.js'
+import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -274,6 +275,8 @@ function receiveDesktopControlResult(commandId: string, action: string, raw: unk
 }
 
 export function registerDesktopApi(app: Express, resolveMessageHandler: () => MessageHandler | null): void {
+    // 2.85 first start: the one route before auth (one-time owner-token takeover by the local app).
+    registerOnboardingClaim(app, { isDirectLoopbackClient })
     app.use('/api/desktop', requireDesktopAuth)
 
     app.get('/api/desktop/bootstrap', async (req, res) => {
@@ -303,6 +306,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                 // 'standard' = keine Befehle, keine Pfade, keine Rohdaten, keine
                 // Auswahlfragen. 'experte' = alles sichtbar.
                 novaos: novaOsBedienmodus(),
+                // 2.85 first start: null for existing installations.
+                onboarding: onboardingBootstrap(),
             })
         } catch (error) { res.status(500).json({ error: safeError(error) }) }
     })
@@ -536,6 +541,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
         if (!ownerOnly(req, res)) return
         try { res.setHeader('Cache-Control', 'no-store'); res.json(await collect()) } catch (error) { res.status(500).json({ error: safeError(error) }) }
     })
+    // 2.85 first start: at most three questions (src/onboarding/onboarding-api.ts).
+    registerOnboardingRoutes(app, { ownerOnly, deps: { telegramRunning: () => Boolean((getNovaState() as any)?.channels?.telegram) } })
     view('/api/desktop/heute', () => collectHeute())
     view('/api/desktop/arbeit', () => collectArbeit())
     view('/api/desktop/system', () => collectSystem())

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidatesHash": "26315bf99baf81b2c8223e075e96c11a0cae1831f33d6c4d8b51fba5e095dd8d",
+  "candidatesHash": "227e7d160c1cc180ad2ce2b7c9cf0f2af426fa183d9c3e92dd6383485069244d",
   "entries": [
     {
       "id": "stt-whisper-large-v3",
@@ -299,8 +299,53 @@
       "requiresService": "ollama",
       "modelRef": "qwen3.5:4b",
       "releasedAt": "2026-03",
+      "catalogId": "ollama-model:qwen3.5-4b",
       "nutzen": "Kann dann notfalls auch ohne Grafikkarte und ohne Internet antworten.",
       "benefit": "Kleines Sprachmodell auf der CPU als Notlösung ohne GPU und ohne Cloud."
+    },
+    {
+      "id": "llm-ollama-qwen3.5-2b",
+      "title": "Qwen3.5 2B (Ollama, kleine Rechner)",
+      "capability": "llm",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 6,
+      "minDiskGB": 3,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "modelRef": "qwen3.5:2b",
+      "releasedAt": "2026-03",
+      "catalogId": "ollama-model:qwen3.5-2b",
+      "nutzen": "Kann dann auch auf kleinen Rechnern ohne Internet einfache Fragen beantworten.",
+      "benefit": "Sehr kleines lokales Sprachmodell für Rechner mit 6 bis 8 GB Arbeitsspeicher."
+    },
+    {
+      "id": "llm-ollama-qwen3.5-9b",
+      "title": "Qwen3.5 9B (Ollama)",
+      "capability": "llm",
+      "kind": "model",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 16,
+      "minDiskGB": 8,
+      "gpu": "none",
+      "requiresService": "ollama",
+      "modelRef": "qwen3.5:9b",
+      "releasedAt": "2026-03",
+      "catalogId": "ollama-model:qwen3.5-9b",
+      "nutzen": "Kann dann ohne Internet gut antworten, auch auf Fragen zu Bildern.",
+      "benefit": "Mittleres lokales Sprachmodell mit Bildverständnis für Rechner mit mindestens 16 GB Arbeitsspeicher."
     },
     {
       "id": "search-searxng",

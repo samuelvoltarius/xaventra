@@ -13,6 +13,7 @@ authoritative source files and required evidence.
 | [Development](./DEVELOPMENT.md) | Clean-clone setup, source ownership, change recipes and definition of done |
 | [Commercialization](./COMMERCIALIZATION.md) | Licensing models, SBOM and commercial release gates |
 | [Quick Start](./QUICKSTART.md) | Get a local Xaventra instance running |
+| [First Start](./FIRST_START.md) | Install by double-click, first start without a questionnaire, Telegram pairing |
 | [Architecture](./ARCHITECTURE.md) | Execution Kernel, service modules, Mesh and trust boundaries |
 | [Security](./SECURITY.md) | 5-layer security model (AST, SSRF, Red-Team) |
 | [Mesh Network](./MESH.md) | WebSocket events, skill sync, auto-provisioning |

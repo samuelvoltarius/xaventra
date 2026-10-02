@@ -54,6 +54,7 @@ const MORE_PAGES = {
   modules: { title: 'Studio', icon: 'sparkles', text: 'Sprache, Sehen, CAD, Druck, Smart Home: Arbeitsräume für einzelne Fähigkeiten.' },
   security: { title: 'Abwehr', icon: 'shield', text: 'Blue-Team-Vorfälle und der lokale Selbsttest gegen Xaventras eigene Schutzschichten.' },
   nodes: { title: 'Knoten aufnehmen', icon: 'plusCircle', text: 'Neue Geräte ins Netz aufnehmen (verifizierter SSH-Fingerabdruck, Owner-Freigabe).' },
+  start: { title: 'Erster Start', icon: 'sparkles', text: 'Was Xaventra beim Einrichten selbst getan hat; Name, Telegram koppeln, gefundene Dienste.' },
 }
 const SECTION_ALIAS = { memory: 'gedaechtnis' }
 const KNOWN_SECTIONS = new Set(['heute', 'chat', 'arbeit', 'system', 'gedaechtnis', 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
@@ -286,12 +287,22 @@ async function init() {
   for (let retry = 0; retry < 5 && isCurrent(); retry++) {
     try {
       if (!await loadBootstrap(isCurrent) || !isCurrent()) return
+      // A fresh installation opens on its first-start page once.
+      if (state.bootstrap?.onboarding?.pending && !state.onboardingShown) { state.onboardingShown = true; state.section = 'start' }
       render()
       startControlPolling()
       startRefresh()
       return
     } catch (error) {
       if (!isCurrent()) return
+      // Fresh local installation: the app takes over the owner token once (main process only).
+      if (!state.claimTried && await window.XaventraOnboarding?.tryClaim(error, state.connection)) {
+        state.claimTried = true
+        state.connection = await window.novaDesktop.config.get()
+        retry--
+        continue
+      }
+      state.claimTried = true
       renderConnectionError(error, retry < 4)
       if (retry === 4) return
       await new Promise(r => setTimeout(r, 2000))
@@ -349,7 +360,17 @@ function pageFor(section) {
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
   if (section === 'werkzeugkasten') return subPage('werkzeugkasten', window.Werkzeugkasten ? window.Werkzeugkasten.view(werkzeugkastenHelpers()) : loadingBlock('Werkzeugkasten wird geladen'))
+  if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
   return settingsView()
+}
+
+// Erster Start (2.85): eigene Datei onboarding.js; hier nur die Hilfsfunktionen.
+function onboardingContext() {
+  return {
+    api, esc, attr, icon, toast, fail, errorText, navigate,
+    isActive: () => state.section === 'start',
+    rerender: () => { if (state.section === 'start' && !document.querySelector('.modal')) render() },
+  }
 }
 
 function render() {
@@ -363,6 +384,7 @@ function render() {
   const page = document.querySelector('.page')
   if (page && state.pageScroll?.section === state.section) page.scrollTop = state.pageScroll.top
   if (state.section === 'trust') void loadTrust()
+  if (state.section === 'start') window.XaventraOnboarding?.bind(onboardingContext())
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
   if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')

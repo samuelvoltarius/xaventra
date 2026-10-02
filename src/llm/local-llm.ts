@@ -73,7 +73,7 @@ export interface LocalLLMDiscovery {
     nodeName?: string
 }
 
-const NON_CHAT_MODEL_PATTERN = /(?:^|[-_/])(embed|embedding|rerank|whisper|transcri|tts|speech|vision-encoder)(?:[-_/]|$)/i
+export const NON_CHAT_MODEL_PATTERN = /(?:^|[-_/])(embed|embedding|rerank|whisper|transcri|tts|speech|vision-encoder)(?:[-_/]|$)/i
 
 export function selectLocalChatModel(models: string[], requestedModel = 'auto'): string | null {
     const available = models.map(model => model.trim()).filter(Boolean)

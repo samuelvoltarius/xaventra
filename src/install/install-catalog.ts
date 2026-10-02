@@ -44,16 +44,31 @@ export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlama
 export type PlaceholderName = typeof PLACEHOLDERS[number]
 /** Programs a catalog entry may start. Everything else is refused at load. */
 export const EXECUTABLE_ALLOWLIST: readonly string[] = Object.freeze([APT_GET, OLLAMA, TEST_BIN, '/usr/bin/ffmpeg', '{node}'])
+/**
+ * 2.85 first start: small local chat models, offered by hardware when no local
+ * model exists (never installed without the card). minMemoryGb = total RAM of
+ * the computer that Ollama shares with the system.
+ */
+export const OLLAMA_CHAT_MODELS: Readonly<Record<string, { sizeMb: number; minMemoryGb: number }>> = Object.freeze({
+    // 2.85 integration (checked 02.10.2026, ollama.com/library/qwen3.5/tags): Qwen3.5 03/2026,
+    // 4b 3.4 GB, 9b 6.6 GB, text + image, 256K context. Replaces llama3.2 (09/2024) / qwen3 (04/2025).
+    'qwen3.5-2b': Object.freeze({ sizeMb: 2700, minMemoryGb: 6 }),
+    'qwen3.5-4b': Object.freeze({ sizeMb: 3400, minMemoryGb: 8 }),
+    'qwen3.5-9b': Object.freeze({ sizeMb: 6600, minMemoryGb: 16 }),
+})
 /** ollama-model:<name> only for this fixed list. */
-export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3', 'gemma4-e2b'])
-const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({ 'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250, 'gemma4-e2b': 7500 })
+export const OLLAMA_MODEL_ALLOWLIST: readonly string[] = Object.freeze(['nomic-embed-text', 'mxbai-embed-large', 'bge-m3', 'gemma4-e2b', ...Object.keys(OLLAMA_CHAT_MODELS)])
+const OLLAMA_MODEL_SIZE_MB: Readonly<Record<string, number>> = Object.freeze({
+    'nomic-embed-text': 280, 'mxbai-embed-large': 700, 'bge-m3': 1250, 'gemma4-e2b': 7500,
+    ...Object.fromEntries(Object.entries(OLLAMA_CHAT_MODELS).map(([name, model]) => [name, model.sizeMb])),
+})
 /**
  * 2.85 Paket D: a catalog id carries at most one ':' (`ollama-model:<name>`), so a model
  * with a tag gets a fixed Ollama reference here. Pull, show and rm use exactly this
  * reference; the validator refuses any other (checked 02.10.2026: ollama.com/library/gemma4,
  * tag e2b, text + image, Apache-2.0).
  */
-const OLLAMA_MODEL_REF: Readonly<Record<string, string>> = Object.freeze({ 'gemma4-e2b': 'gemma4:e2b' })
+const OLLAMA_MODEL_REF: Readonly<Record<string, string>> = Object.freeze({ 'gemma4-e2b': 'gemma4:e2b', 'qwen3.5-2b': 'qwen3.5:2b', 'qwen3.5-4b': 'qwen3.5:4b', 'qwen3.5-9b': 'qwen3.5:9b' })
 /** Ollama reference (name or name:tag) for a catalog model name. */
 export function ollamaModelRef(name: string): string { return OLLAMA_MODEL_REF[name] || name }
 

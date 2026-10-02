@@ -286,6 +286,22 @@ async function startDaemon() {
         console.warn(`[Nova] Gateway auth init skipped: ${err}`)
     }
 
+    // === Erster Start (2.85 Paket B) ===
+    // Without any configuration the daemon seeds the installer's safe defaults
+    // (local model first, no channels, no peers, loopback only) and starts in
+    // first-start mode instead of exiting. An existing configuration is never touched.
+    let firstStart = false
+    try {
+        const { ensureFirstStartConfig } = await import('./onboarding/first-start.js')
+        const seeded = await ensureFirstStartConfig()
+        firstStart = seeded.firstStart
+        if (seeded.seeded) console.log(`[Nova] Erster Start: sichere Grundkonfiguration angelegt (${seeded.configPath}). Die Einrichtung läuft in der Desktop-App.`)
+        else if (firstStart) console.log('[Nova] Erster Start: Einrichtung noch nicht abgeschlossen (Desktop-App).')
+    } catch (err) {
+        console.warn(`[Nova] Erster Start: Grundkonfiguration nicht angelegt: ${err}`)
+    }
+    ;(state as any).firstStart = firstStart
+
     // === Config Validation ===
     try {
         const { validateConfig } = await import('./core/config-validator.js')
@@ -306,7 +322,8 @@ async function startDaemon() {
     // Load config
     const configPath = resolveConfigPath()
     if (!existsSync(configPath)) {
-        console.error('[Nova] ❌ Keine Konfiguration gefunden. Führe npm run setup aus.')
+        // Only reached when first-start seeding failed (e.g. example config missing).
+        console.error('[Nova] ❌ Keine Konfiguration gefunden und keine Grundkonfiguration anlegbar. Führe node scripts/setup.mjs --configure-only aus.')
         process.exit(1)
     }
 
@@ -797,6 +814,14 @@ async function startDaemon() {
         console.log(`[Nova] ✓ Self-Setup Scan: ${setup.summary} (${setup.mode})`)
     } catch (err) {
         console.log(`[Nova] ⚠ Self-Setup Scan nicht verfügbar: ${err}`)
+    }
+    // Erster Start (2.85 Paket B): Doctor + Selbsteinrichtung zuerst, im Hintergrund.
+    // Bericht "was ich getan habe" landet im Ersteinrichtungs-Marker (Desktop-App).
+    if (firstStart) {
+        void import('./onboarding/first-start-doctor.js')
+            .then(({ runAndStoreFirstStartDoctor }) => runAndStoreFirstStartDoctor())
+            .then(report => { if (report) console.log(`[Nova] ✓ Erster Start: ${report.items.length} Schritte geprüft (Bericht in der Desktop-App)`) })
+            .catch(err => console.warn(`[Nova] ⚠ Erster Start: Doctor-Lauf gescheitert: ${err}`))
     }
 
     // ============================================

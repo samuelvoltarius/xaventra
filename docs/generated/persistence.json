@@ -762,6 +762,22 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/onboarding/first-start.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/onboarding/first-start.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/onboarding/telegram-pairing.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/onboarding/telegram-pairing.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/planner/auto-reminders.ts",
       "path": ".nova-data"
     },

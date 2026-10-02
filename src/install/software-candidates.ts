@@ -159,9 +159,23 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
     {
         // 2.85 (checked 02.10.2026): replaces Qwen2.5 3B (09/2024). Qwen3.5 small models 03/2026.
         id: 'llm-ollama-qwen3.5-4b', title: 'Qwen3.5 4B (Ollama, CPU)', capability: 'llm', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
-        minRamGB: 8, minDiskGB: 4, gpu: 'none', requiresService: 'ollama', modelRef: 'qwen3.5:4b', releasedAt: '2026-03',
+        minRamGB: 8, minDiskGB: 4, gpu: 'none', requiresService: 'ollama', modelRef: 'qwen3.5:4b', releasedAt: '2026-03', catalogId: 'ollama-model:qwen3.5-4b',
         nutzen: 'Kann dann notfalls auch ohne Grafikkarte und ohne Internet antworten.',
         benefit: 'Kleines Sprachmodell auf der CPU als Notlösung ohne GPU und ohne Cloud.',
+    },
+    {
+        // 2.85 integration (checked 02.10.2026, ollama.com/library/qwen3.5/tags: 2b 2.7 GB, 03/2026).
+        id: 'llm-ollama-qwen3.5-2b', title: 'Qwen3.5 2B (Ollama, kleine Rechner)', capability: 'llm', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
+        minRamGB: 6, minDiskGB: 3, gpu: 'none', requiresService: 'ollama', modelRef: 'qwen3.5:2b', releasedAt: '2026-03', catalogId: 'ollama-model:qwen3.5-2b',
+        nutzen: 'Kann dann auch auf kleinen Rechnern ohne Internet einfache Fragen beantworten.',
+        benefit: 'Sehr kleines lokales Sprachmodell für Rechner mit 6 bis 8 GB Arbeitsspeicher.',
+    },
+    {
+        // 2.85 integration (checked 02.10.2026, ollama.com/library/qwen3.5/tags: 9b 6.6 GB, 03/2026).
+        id: 'llm-ollama-qwen3.5-9b', title: 'Qwen3.5 9B (Ollama)', capability: 'llm', kind: 'model', platforms: [...LINUX], arches: [...BOTH_ARCHES],
+        minRamGB: 16, minDiskGB: 8, gpu: 'none', requiresService: 'ollama', modelRef: 'qwen3.5:9b', releasedAt: '2026-03', catalogId: 'ollama-model:qwen3.5-9b',
+        nutzen: 'Kann dann ohne Internet gut antworten, auch auf Fragen zu Bildern.',
+        benefit: 'Mittleres lokales Sprachmodell mit Bildverständnis für Rechner mit mindestens 16 GB Arbeitsspeicher.',
     },
     {
         // 2.85 Paket D (checked 02.10.2026): github.com/searxng/searxng, AGPL-3.0, offizielles Container-Image.

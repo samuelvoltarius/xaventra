@@ -194,3 +194,39 @@ test('dot segments can never leave the Desktop API', async t => {
     await assert.rejects(handlers.get('nova:api')(null, { path }), /not allowed/, path)
   assert.deepEqual(seen, [])
 })
+
+// 2.85 first start: the main process takes over the seeded owner token once and
+// stores it encrypted; the renderer can neither call the claim route nor see the token.
+test('first start: owner token is claimed by the main process only and stored encrypted', async t => {
+  const seeded = ['seeded-owner-', 'token-for-test-0123456789'].join('')
+  const seen = []
+  const server = createServer((request, response) => {
+    seen.push({ url: request.url, method: request.method, authorization: request.headers.authorization || '' })
+    response.setHeader('content-type', 'application/json')
+    if (request.url === '/api/desktop/onboarding/claim' && request.method === 'POST') return void response.end(JSON.stringify({ token: seeded }))
+    response.end(JSON.stringify({ ok: true }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const { handlers, root } = harness(t)
+  const port = server.address().port
+  handlers.get('nova:config:set')(null, { endpoint: `http://127.0.0.1:${port}` })
+  await assert.rejects(handlers.get('nova:api')(null, { method: 'POST', path: '/api/desktop/onboarding/claim' }), /Hauptprozess/)
+  const claimed = await handlers.get('nova:onboarding:claim')()
+  assert.equal(claimed.claimed, true)
+  assert.deepEqual(Object.keys(claimed), ['claimed'])
+  assert.equal(JSON.stringify(claimed).includes(seeded), false)
+  assert.equal(handlers.get('nova:config:get')().hasToken, true)
+  assert.equal(readFileSync(join(root, 'connection.json'), 'utf8').includes(seeded), false)
+  await handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' })
+  assert.equal(seen.at(-1).authorization, `Bearer ${seeded}`)
+  // With a stored token nothing is claimed again.
+  assert.equal((await handlers.get('nova:onboarding:claim')()).claimed, false)
+  assert.equal(seen.filter(item => item.url === '/api/desktop/onboarding/claim').length, 1)
+})
+
+test('first start: no claim towards a remote Core', async t => {
+  const { handlers } = harness(t)
+  handlers.get('nova:config:set')(null, { endpoint: 'https://core.example.com' })
+  assert.equal((await handlers.get('nova:onboarding:claim')()).claimed, false)
+})

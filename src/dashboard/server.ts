@@ -36,6 +36,7 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'bridge.js': 'text/javascript; charset=utf-8',
     'app.js': 'text/javascript; charset=utf-8',
     'werkzeugkasten.js': 'text/javascript; charset=utf-8',
+    'onboarding.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
 })
 export function resolveUiDir(base = __dirname): string | null {
