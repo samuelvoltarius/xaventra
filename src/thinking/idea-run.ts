@@ -460,6 +460,12 @@ export interface IdeaRunDeps {
     importanceFactor?: (kind: string) => number
     /** Befund der Nachmessung (Standard: decisions.ts, Quelle `messung`). */
     recordMeasurement?: (result: IdeaMeasurementResult) => void | Promise<void>
+    /**
+     * 2.86 Punkt 2 (Paket F): Fähigkeiten, die der Software-Scout als fehlend führt
+     * (Standard: `readScoutMissingCapabilities`). Ein scheiterndes Werkzeug dieser
+     * Fähigkeit ist kein `werkzeug-fehler`, sondern ein Bedarf beim Scout.
+     */
+    missingCapabilities?: () => ReadonlySet<string> | Promise<ReadonlySet<string>>
     /** 2.86 Punkt 1: Ergebnis einer umgesetzten Idee für die Vertrauensleiter (Standard: action-policy.ts). */
     recordTrust?: (outcome: { ok: boolean; approvedByOwner: boolean }) => void | Promise<void>
     now?: Date
@@ -519,6 +525,15 @@ async function measureDueIdeas(deps: IdeaRunDeps, statePath: string, now: Date):
     return { results, inputs }
 }
 
+async function scoutCapabilityGap(deps: IdeaRunDeps): Promise<(tool: string) => boolean> {
+    try {
+        const demand = await import('../install/software-demand.js')
+        const missing = deps.missingCapabilities ? await deps.missingCapabilities() : demand.readScoutMissingCapabilities()
+        if (!missing.size) return () => false
+        return tool => { const capability = demand.capabilityForTool(tool); return Boolean(capability && missing.has(capability)) }
+    } catch { return () => false }
+}
+
 export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; reason: string; ideas: Thought[]; measured?: IdeaMeasurementResult[] }> {
     const now = deps.now || new Date()
     const cfg = deps.settings.ideas
@@ -541,8 +556,11 @@ export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; rea
     const dedupeMs = cfg.dedupeDays * 24 * 60 * 60_000
     // Owner hat diese Art dreimal abgelehnt (ohne Ja dazwischen): nicht mehr vorschlagen (2.83.0, Punkt 10).
     const suppressed = (item: IdeaCandidate) => deps.importanceFactor ? deps.importanceFactor(`idee:${item.rule}`) < THOUGHT_SUPPRESS_BELOW : false
+    // Ein Bedarf, ein Empfänger: fehlt die Fähigkeit (Scout-Befund), geht der Fehler an den Scout.
+    const capabilityGap = await scoutCapabilityGap(deps)
     const candidates = (deps.rules || findIdeaCandidates)(withBaseline)
         .filter(hasEvidence)
+        .filter(item => !(item.rule === 'werkzeug-fehler' && capabilityGap(item.subject)))
         .filter(item => !state.angenommen?.[item.key])
         .filter(item => !suppressed(item))
         .filter(item => { const last = state.proposed[item.key]; return !last || now.getTime() - Date.parse(last) >= dedupeMs })
