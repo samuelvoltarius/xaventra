@@ -19,7 +19,7 @@ import type { Mission } from '../core/missions.js'
 import { regressionErrorSource } from '../learning/regression-case-store.js'
 import { learningFlowErrorSource } from '../learning/learning-flow.js'
 import { thoughtImportanceFactor } from '../core/decisions.js'
-import { runIdeaRun, type CostSnapshot, type Formulator, type IdeaCandidate, type IdeaInputs } from './idea-run.js'
+import { runIdeaRun, wireIdeaImplementation, type CostSnapshot, type Formulator, type IdeaCandidate, type IdeaInputs } from './idea-run.js'
 import { fixtureSource, huggingFaceSource, runModelScout, type ModelSource, type ScoutRunner } from './model-scout.js'
 import { buildProbeSet, type ProbeCase } from './probe-set.js'
 import {
@@ -70,6 +70,15 @@ async function defaultIdeaInputs(): Promise<IdeaInputs> {
         costs = { todayCents: Number(today.totalCost) || 0, byProvider: Object.fromEntries(Object.entries(today.byProvider || {}).map(([key, value]) => [key, Number(value.cost) || 0])) }
     } catch { costs = null }
     return { insights: analyzeTraces(7), costs }
+}
+
+/**
+ * 2.86 Punkt 1: Prüfer `idee-ziel` (dieselbe Kennzahl wie die Idee) und der
+ * Listener auf das Ende der Umsetzungs-Delegation. Einmal je Takt bzw. vor dem
+ * ersten Umsetzungsauftrag; idempotent.
+ */
+export async function ensureIdeaImplementationWiring(inputs?: () => Promise<IdeaInputs> | IdeaInputs): Promise<void> {
+    await wireIdeaImplementation({ inputs: inputs || defaultIdeaInputs })
 }
 
 async function defaultMemoryBudgetBytes(): Promise<number> {
@@ -212,6 +221,9 @@ export async function runThinkingTick(deps: ThinkingTickDeps): Promise<{ ran: st
         } catch (error) { skipped.bugs = String((error as Error)?.message || error).slice(0, 160); plan.defer('bugs', now, 60 * 60_000) }
     }
 
+    if (settings.ideas.enabled) {
+        try { await ensureIdeaImplementationWiring(deps.ideaInputs) } catch { /* Prüfer optional; Umsetzung bleibt dann unverifiziert */ }
+    }
     if (settings.ideas.enabled && plan.isDue('ideas', now)) {
         try {
             const result = await runIdeaRun({ settings, load, sink: out, inputs: deps.ideaInputs || defaultIdeaInputs, formulate: deps.formulate || formulator,

@@ -46,8 +46,10 @@ configureDelegation({ delegation: { enabled: true, url: 'https://agentic.example
 })
 afterAll(() => { stopDelegationRuntime(); _setThoughtActionPortsForTest(null) })
 
-describe('Punkt 3: Ja auf eine Idee übergibt die Untersuchung (Delegation, L1)', () => {
-    it('Ja on „werkzeug-fehler:web_search" delegates exactly once, read-only (L1), and names the delegation id', async () => {
+describe('Punkt 3: Ja auf eine Idee übergibt die Arbeit (Delegation)', () => {
+    // 2.86 Punkt 1: with an Agentic-OS URL the Ja starts an implementation task (idee-ziel,
+    // L2 approved by that Ja) instead of a read-only investigation; see src/thinking/idee-umsetzung.test.ts.
+    it('Ja on „werkzeug-fehler:web_search" delegates exactly once and names the delegation id', async () => {
         const thought = await ideaThought({ name: 'web_search', errorRate: 0.4 }, 'web_search scheitert')
         const before = getDelegationService().list({ limit: 50 }).length
         const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1001' })
@@ -55,9 +57,10 @@ describe('Punkt 3: Ja auf eine Idee übergibt die Untersuchung (Delegation, L1)'
         expect(records.length).toBe(before + 1)
         const record = records.find(item => result.message.includes(item.id))!
         expect(record).toBeTruthy()
-        expect(record.stufe).toBe('L1')
+        expect(record.stufe).toBe('L2')
+        expect(record.freigabeVon).toBe('owner:1001')
         expect(record.to).toBe('claude')
-        expect(record.erwartet.art).toBe('beschreibung')
+        expect(record.erwartet.art).toBe('idee-ziel')
         expect(record.kontext).toContain('web_search')
         expect(posts.filter(item => item.body?.metadata?.delegationId === record.id)).toHaveLength(1)
         expect(result.ok).toBe(true)

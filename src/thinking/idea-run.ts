@@ -192,7 +192,27 @@ export function hasEvidence(candidate: IdeaCandidate): boolean {
 }
 
 /** Eine vom Owner angenommene Idee, deren Ziel nach `IDEA_MEASURE_DAYS` nachgemessen wird. */
-export interface AcceptedIdea extends IdeaMeasure { regel: string; subjekt: string; angenommenAm: string; faelligAm: string }
+export interface AcceptedIdea extends IdeaMeasure {
+    regel: string; subjekt: string; angenommenAm: string; faelligAm: string
+    /** 2.86 Punkt 1: der Umsetzungsauftrag an Claude (Delegation `idee-ziel`). */
+    delegationId?: string
+    /** Wer die Umsetzung freigab: das Ja auf die Idee oder die Vertrauensleiter. */
+    freigabe?: 'owner' | 'vertrauensleiter'
+    /** Umsetzung läuft: gemessen wird erst, wenn Claude fertig meldet (die Uhr startet dann neu). */
+    wartetAufUmsetzung?: boolean
+    /** Claude meldete fertig; ab hier läuft die Nachmessung. */
+    umgesetztAm?: string
+    /** Die Umsetzung kam nicht zustande (abgelehnt, Fehler, Frist) — gemessen wird trotzdem, ohne Leiter. */
+    umsetzungGescheitert?: string
+}
+
+/** 2.86 Punkt 1: Prüfart der Umsetzungs-Delegation und Art der Vertrauensleiter. */
+export const IDEA_TARGET_CRITERION = 'idee-ziel'
+export const IDEA_IMPLEMENTATION_KIND = 'idee-umsetzung'
+/** Lesende Untersuchung einer Idee (ohne Agentic-OS-URL bzw. ohne messbares Ziel). */
+export const IDEA_INVESTIGATION_CRITERION = 'idee-untersuchung'
+/** Ohne Rückmeldung wird spätestens so lange nach dem Ja trotzdem gemessen. */
+const IDEA_IMPLEMENTATION_MAX_WAIT_MS = 21 * 24 * 60 * 60_000
 
 interface IdeaState {
     version: 1
@@ -203,6 +223,8 @@ interface IdeaState {
     angenommen?: Record<string, AcceptedIdea>
     /** 2.83.0: Schlüssel → Zeitpunkt der verfehlten Nachmessung (Hinweis beim nächsten Vorschlag). */
     verfehlt?: Record<string, string>
+    /** 2.86 Punkt 1: letzte Nachmessung je Schlüssel (für die Prüfung der Umsetzungs-Delegation). */
+    gemessen?: Record<string, { ergebnis: IdeaVerdict; at: string; delegationId?: string }>
 }
 
 export const IDEA_MEASURE_DAYS = 7
@@ -213,15 +235,16 @@ function loadState(path: string): IdeaState {
     try {
         if (existsSync(path)) {
             const value = JSON.parse(readFileSync(path, 'utf8'))
-            return { version: 1, days: value.days || {}, proposed: value.proposed || {}, baseline: value.baseline, angenommen: value.angenommen || {}, verfehlt: value.verfehlt || {} }
+            return { version: 1, days: value.days || {}, proposed: value.proposed || {}, baseline: value.baseline, angenommen: value.angenommen || {}, verfehlt: value.verfehlt || {}, gemessen: value.gemessen || {} }
         }
     } catch { /* frisch */ }
-    return { version: 1, days: {}, proposed: {}, angenommen: {}, verfehlt: {} }
+    return { version: 1, days: {}, proposed: {}, angenommen: {}, verfehlt: {}, gemessen: {} }
 }
 function saveState(path: string, state: IdeaState): void {
     const days = Object.fromEntries(Object.entries(state.days).sort().slice(-30))
+    const gemessen = Object.fromEntries(Object.entries(state.gemessen || {}).sort((a, b) => a[1].at.localeCompare(b[1].at)).slice(-MAX_ACCEPTED))
     mkdirSync(dirname(path), { recursive: true })
-    atomicWriteJsonSync(path, { ...state, days })
+    atomicWriteJsonSync(path, { ...state, days, gemessen })
 }
 
 const finite = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
@@ -250,6 +273,104 @@ export function noteIdeaAccepted(input: { key: string; regel: string; subjekt: s
 /** Lesend: angenommene Ideen, deren Ziel noch nachgemessen wird (/gedanken, Tests). */
 export function listAcceptedIdeas(opts: { statePath?: string } = {}): Record<string, AcceptedIdea> {
     return { ...(loadState(opts.statePath || getNovaDataDir('thinking', 'ideas-state.json')).angenommen || {}) }
+}
+
+const ideasPath = (statePath?: string) => statePath || getNovaDataDir('thinking', 'ideas-state.json')
+
+function updateAccepted(key: string, statePath: string | undefined, change: (entry: AcceptedIdea) => AcceptedIdea | null): AcceptedIdea | null {
+    const path = ideasPath(statePath)
+    const state = loadState(path)
+    const entry = state.angenommen?.[key]
+    if (!entry) return null
+    const next = change({ ...entry })
+    if (!next) return null
+    saveState(path, { ...state, angenommen: { ...(state.angenommen || {}), [key]: next } })
+    return next
+}
+
+/**
+ * 2.86 Punkt 1: das Ja hat einen Umsetzungsauftrag an Claude ausgelöst. Bis
+ * Claude fertig meldet, wird nicht nachgemessen (sonst misst die Nachmessung
+ * einen unveränderten Zustand).
+ */
+export function noteIdeaDelegated(key: string, input: { delegationId: string; freigabe: 'owner' | 'vertrauensleiter' }, opts: { statePath?: string } = {}): AcceptedIdea | null {
+    if (!/^dlg-[a-f0-9]{12}$/.test(String(input?.delegationId))) return null
+    return updateAccepted(key, opts.statePath, entry => ({
+        ...entry, delegationId: input.delegationId, freigabe: input.freigabe === 'vertrauensleiter' ? 'vertrauensleiter' : 'owner', wartetAufUmsetzung: true,
+    }))
+}
+
+/**
+ * 2.86 Punkt 1: die Umsetzungs-Delegation ist abgeschlossen. Fertig: die Uhr
+ * der Nachmessung startet jetzt (bei schon gemessen erreichtem Ziel sofort
+ * fällig). Sonst wird gemessen wie ohne Umsetzung; die Leiter stuft zurück.
+ */
+export function noteIdeaImplementation(key: string, outcome: { delegationId: string; status: string; verified: boolean }, opts: { statePath?: string; now?: Date } = {}): AcceptedIdea | null {
+    const now = opts.now || new Date()
+    return updateAccepted(key, opts.statePath, entry => {
+        if (entry.delegationId !== outcome.delegationId) return null
+        if (outcome.status === 'fertig') {
+            const due = outcome.verified ? now : new Date(now.getTime() + IDEA_MEASURE_DAYS * 24 * 60 * 60_000)
+            return { ...entry, wartetAufUmsetzung: false, umgesetztAm: now.toISOString(), faelligAm: due.toISOString() }
+        }
+        return { ...entry, wartetAufUmsetzung: false, umsetzungGescheitert: String(outcome.status).slice(0, 40) }
+    })
+}
+
+/**
+ * 2.86 Punkt 1: lesende Prüfung für `erwartet.art = 'idee-ziel'` (Text =
+ * Ideen-Schlüssel). Verifiziert nur, wenn dieselbe Kennzahl das Ziel jetzt
+ * erreicht oder die Nachmessung es schon ergab. Claudes Wort zählt nicht.
+ */
+export function ideaTargetVerifier(opts: { inputs: () => Promise<IdeaInputs> | IdeaInputs; statePath?: string }) {
+    return async (expectation: { text?: string }): Promise<{ ergebnis: 'verifiziert' | 'nicht-erfuellt' | 'unverifiziert'; detail: string }> => {
+        const key = String(expectation?.text || '').trim()
+        if (!KEY.test(key)) return { ergebnis: 'unverifiziert', detail: 'kein Ideen-Schlüssel im Kriterium' }
+        const state = loadState(ideasPath(opts.statePath))
+        const entry = state.angenommen?.[key]
+        const gemessen = state.gemessen?.[key]
+        if (!entry) {
+            if (gemessen?.ergebnis === 'erreicht') return { ergebnis: 'verifiziert', detail: `Nachmessung ${gemessen.at.slice(0, 10)}: Ziel erreicht` }
+            if (gemessen?.ergebnis === 'verfehlt') return { ergebnis: 'nicht-erfuellt', detail: `Nachmessung ${gemessen.at.slice(0, 10)}: Ziel verfehlt` }
+            return { ergebnis: 'unverifiziert', detail: 'Idee nicht (mehr) vermerkt' }
+        }
+        let measured: IdeaMeasurement
+        try { measured = measureIdeaTarget(entry.regel, entry.subjekt, await opts.inputs()) } catch { measured = { value: null, reason: 'Messung nicht möglich' } }
+        const unit = entry.einheit ? ` ${entry.einheit}` : ''
+        const goal = `Ziel ${entry.richtung === 'ueber' ? 'über' : 'unter'} ${entry.ziel}${unit}`
+        if (judgeIdeaTarget(entry, measured) === 'erreicht') return { ergebnis: 'verifiziert', detail: `${entry.metrik} jetzt ${measured.value}${unit}, ${goal}` }
+        const now = measured.value === null ? `nicht messbar (${measured.reason || 'zu wenig Daten'})` : `jetzt ${measured.value}${unit}`
+        return { ergebnis: 'unverifiziert', detail: `wartet auf Messung: ${entry.metrik} ${now}, ${goal}; Nachmessung ${IDEA_MEASURE_DAYS} Tage nach der Umsetzung` }
+    }
+}
+
+let wiring: { inputs: () => Promise<IdeaInputs> | IdeaInputs; statePath?: string } | null = null
+let listenerAttached = false
+
+/**
+ * 2.86 Punkt 1: Prüfer `idee-ziel` und der eine Listener auf das Ende der
+ * Umsetzungs-Delegation. Idempotent; die zuletzt übergebenen Eingaben gelten.
+ */
+export async function wireIdeaImplementation(opts: { inputs: () => Promise<IdeaInputs> | IdeaInputs; statePath?: string }): Promise<void> {
+    wiring = opts
+    const { onDelegationSettled, registerDelegationVerifier } = await import('../core/delegation.js')
+    const verifier = ideaTargetVerifier({ inputs: () => (wiring || opts).inputs(), statePath: opts.statePath })
+    registerDelegationVerifier(IDEA_TARGET_CRITERION, expectation => verifier(expectation), { offen: 'messung' })
+    // Without an Agentic-OS URL only a read-only investigation is possible: its result is
+    // data for the report (an idea line), not an unverified warning.
+    registerDelegationVerifier(IDEA_INVESTIGATION_CRITERION, async () => ({ ergebnis: 'unverifiziert', detail: 'Untersuchung, keine Umsetzung — Ergebnis als Idee im Bericht' }), { offen: 'bericht' })
+    if (listenerAttached) return
+    listenerAttached = true
+    onDelegationSettled(async (record, info) => {
+        if (record.erwartet?.art !== IDEA_TARGET_CRITERION) return
+        const entry = noteIdeaImplementation(String(record.erwartet.text || ''), { delegationId: record.id, status: record.status, verified: info.verified }, { statePath: wiring?.statePath })
+        if (!entry || record.status === 'fertig') return
+        // Claude lehnte ab, Fehler oder Frist: die Umsetzung kam nicht zustande → Leiter zurück.
+        try {
+            const { recordActionOutcome } = await import('../core/action-policy.js')
+            recordActionOutcome(IDEA_IMPLEMENTATION_KIND, { ok: false, approvedByOwner: entry.freigabe !== 'vertrauensleiter' })
+        } catch { /* Leiter ist Buchhaltung, nie Grund zum Scheitern */ }
+    })
 }
 
 export interface IdeaMeasurement { value: number | null; reason?: string }
@@ -293,6 +414,13 @@ export function judgeIdeaTarget(entry: Pick<IdeaMeasure, 'richtung' | 'ziel'>, m
 export interface IdeaMeasurementResult {
     key: string; regel: string; subjekt: string; metrik: string; ergebnis: IdeaVerdict; richtung: IdeaDirection
     vorher: number; ziel: number; jetzt: number | null; einheit?: string; grund?: string
+    /** 2.86 Punkt 1: die Umsetzungs-Delegation, falls Claude umgesetzt hat. */
+    delegationId?: string
+}
+
+async function defaultRecordTrust(outcome: { ok: boolean; approvedByOwner: boolean }): Promise<void> {
+    const { recordActionOutcome } = await import('../core/action-policy.js')
+    recordActionOutcome(IDEA_IMPLEMENTATION_KIND, outcome)
 }
 
 async function defaultRecordMeasurement(result: IdeaMeasurementResult): Promise<void> {
@@ -332,17 +460,22 @@ export interface IdeaRunDeps {
     importanceFactor?: (kind: string) => number
     /** Befund der Nachmessung (Standard: decisions.ts, Quelle `messung`). */
     recordMeasurement?: (result: IdeaMeasurementResult) => void | Promise<void>
+    /** 2.86 Punkt 1: Ergebnis einer umgesetzten Idee für die Vertrauensleiter (Standard: action-policy.ts). */
+    recordTrust?: (outcome: { ok: boolean; approvedByOwner: boolean }) => void | Promise<void>
     now?: Date
     statePath?: string
 }
 
 /** Fällige angenommene Ideen nachmessen (vor Nachtfenster und GPU-Grenze: billig, keine GPU). */
 async function measureDueIdeas(deps: IdeaRunDeps, statePath: string, now: Date): Promise<{ results: IdeaMeasurementResult[]; inputs?: IdeaInputs }> {
-    const due = Object.entries(loadState(statePath).angenommen || {}).filter(([, entry]) => Date.parse(entry.faelligAm) <= now.getTime())
+    // 2.86 Punkt 1: eine laufende Umsetzung wird erst nach Claudes „fertig“ gemessen (höchstens 21 Tage gewartet).
+    const waiting = (entry: AcceptedIdea) => entry.wartetAufUmsetzung === true && now.getTime() - Date.parse(entry.angenommenAm) < IDEA_IMPLEMENTATION_MAX_WAIT_MS
+    const due = Object.entries(loadState(statePath).angenommen || {}).filter(([, entry]) => Date.parse(entry.faelligAm) <= now.getTime() && !waiting(entry))
     if (!due.length) return { results: [] }
     const inputs = await deps.inputs()
     const state = loadState(statePath)
     const results: IdeaMeasurementResult[] = []
+    const ladder: Array<{ ok: boolean; approvedByOwner: boolean }> = []
     for (const [key] of due) {
         const entry = state.angenommen?.[key]
         if (!entry) continue
@@ -351,11 +484,21 @@ async function measureDueIdeas(deps: IdeaRunDeps, statePath: string, now: Date):
         results.push({
             key, regel: entry.regel, subjekt: entry.subjekt, metrik: entry.metrik, ergebnis, richtung: entry.richtung, vorher: entry.vorher, ziel: entry.ziel,
             jetzt: measured.value, ...(entry.einheit ? { einheit: entry.einheit } : {}), ...(measured.reason ? { grund: measured.reason } : {}),
+            ...(entry.delegationId ? { delegationId: entry.delegationId } : {}),
         })
         delete state.angenommen![key]
+        state.gemessen = { ...(state.gemessen || {}), [key]: { ergebnis, at: now.toISOString(), ...(entry.delegationId ? { delegationId: entry.delegationId } : {}) } }
         if (ergebnis === 'verfehlt') state.verfehlt = { ...(state.verfehlt || {}), [key]: now.toISOString() }
+        // 2.86 Punkt 1: nur eine tatsächlich umgesetzte Idee zählt für die Vertrauensleiter;
+        // „nicht messbar“ zählt weder hoch noch runter.
+        if (entry.delegationId && entry.umgesetztAm && !entry.umsetzungGescheitert && ergebnis !== 'nicht-messbar') {
+            ladder.push({ ok: ergebnis === 'erreicht', approvedByOwner: entry.freigabe !== 'vertrauensleiter' })
+        }
     }
     saveState(statePath, state)
+    for (const outcome of ladder) {
+        try { await (deps.recordTrust || defaultRecordTrust)(outcome) } catch { /* Leiter ist Buchhaltung */ }
+    }
     for (const result of results) {
         const unit = result.einheit ? ` ${result.einheit}` : ''
         const jetzt = result.jetzt === null ? `nicht messbar (${result.grund || 'zu wenig Daten'})` : `${result.jetzt}${unit}`

@@ -321,6 +321,9 @@ export const AKTIONSARTEN: Readonly<Record<string, KindEntry>> = Object.freeze({
     // 2.83.0: verifizierten Doctor-Fall per Delegation an Claude übergeben (doctor/claude-handoff.ts).
     // Die Leiter zählt nur Übergaben, deren Fall danach gemessen geschlossen ist.
     'doctor-uebergabe': kind('L2', 'verifizierten Doctor-Fall zur Behebung an Claude übergeben'),
+    // 2.86 Punkt 1: angenommene Idee per Delegation von Claude umsetzen lassen (thinking/idea-run.ts).
+    // Die Leiter zählt nur Umsetzungen, deren Ziel danach gemessen erreicht ist.
+    'idee-umsetzung': kind('L2', 'angenommene Idee von Claude umsetzen lassen (Ziel wird nachgemessen)'),
     'werkzeug-extern': kind('L2', 'selbst gebautes Werkzeug mit Wirkung nach außen aktivieren', 'extern'),
     'werkzeug-physisch': kind('L2', 'selbst gebautes Werkzeug mit physischer Wirkung aktivieren', 'physisch'),
     // L3 — gefährlich (zusätzlich zur Nie-Liste ausdrücklich benannt)
