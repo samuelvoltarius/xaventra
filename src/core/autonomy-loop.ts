@@ -983,7 +983,10 @@ async function runDoctorPhase(): Promise<void> {
             try {
                 const { runClaudeHandoffTick } = await import('../doctor/claude-handoff.js')
                 const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
-                const handoff = await runClaudeHandoffTick({ cases: getFailureResearchCoordinator().list(), node: getLocalNodeId(), version: currentPackageVersion() })
+                const { addThought, setThoughtStatus } = await import('../planner/index.js')
+                // 2.83.0 Punkt 1: a measured closing after a rollout becomes a done thought.
+                const thoughts = { add: addThought, setStatus: (id: string, status: 'erledigt', by: string) => setThoughtStatus(id, status, by) }
+                const handoff = await runClaudeHandoffTick({ cases: getFailureResearchCoordinator().list(), node: getLocalNodeId(), version: currentPackageVersion(), thoughts })
                 if (handoff.queued || handoff.delivered || handoff.reconciled) console.log(`[Autonomy] Claude-Übergabe: ${handoff.queued} neu, ${handoff.delivered} zugestellt, ${handoff.reconciled} nach Rollout geprüft`)
             } catch (err) { console.debug(`[Autonomy] Claude handoff non-critical error: ${err}`) }
         }

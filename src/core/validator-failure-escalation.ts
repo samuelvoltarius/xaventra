@@ -11,7 +11,7 @@ export const VALIDATOR_GROUP_WINDOW_DAYS = 7
 const CHECKED_KINDS = ['response_present', 'response_constraints', 'verified_tool', 'artifact_present', 'test_passed']
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
-type DoctorPort = Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs'>>
+type DoctorPort = Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs' | 'closeByMeasurement'>>
 
 /** Task type of a run as chosen by the router (`route.selected`), never request text. */
 export function validatorTaskType(run: Pick<OutcomeRunView, 'events'>): string {
@@ -21,15 +21,25 @@ export function validatorTaskType(run: Pick<OutcomeRunView, 'events'>): string {
 
 interface Rejection { runRef: string; legacyId: string; taskType: string; failedKinds: string[]; at: number }
 
+/** A real owner run judged by the Execution Kernel (not internal, benchmark or autonomy). */
+function ownerKernelRun(run: OutcomeRunView): boolean {
+    return !run.invalidated && Boolean(run.userId) && run.userId !== 'Nova-Autonomy'
+        && Boolean(run.channel) && run.channel !== 'internal' && run.channel !== 'benchmark'
+        && run.contract?.id === run.runId
+        && run.validation?.validator === 'nova-execution-kernel' && !run.validation.awaitingApproval
+}
+
+/** Punkt 1: a validated success of a real owner run (counts as "the task type works again"). */
+function validatedSuccess(run: OutcomeRunView): boolean {
+    return run.status === 'completed' && ownerKernelRun(run) && run.validation?.success === true
+}
+
 /** Committed, diagnosable Kernel rejection of a real owner run; null otherwise. */
 function rejectionOf(run: OutcomeRunView): Rejection | null {
-    if (run.status !== 'failed' || run.invalidated || !run.userId || run.userId === 'Nova-Autonomy'
-        || !run.channel || run.channel === 'internal' || run.channel === 'benchmark'
-        || run.contract?.id !== run.runId
+    if (run.status !== 'failed' || !ownerKernelRun(run)
         || run.finalOutcome?.reason !== 'validator-rejected'
         || run.finalOutcome?.diagnosticEligible !== true
-        || run.validation?.validator !== 'nova-execution-kernel'
-        || run.validation.success || run.validation.awaitingApproval) return null
+        || run.validation!.success) return null
     const failedKinds = [...new Set(run.contract.successCriteria
         .filter(criterion => criterion.required && run.validation!.criteria.some(result =>
             result.criterionId === criterion.id && !result.success))
@@ -70,18 +80,26 @@ export function reconcileValidatorFailures(
     const legacy = new Set(cases.map(item => item.findingId))
     const cutoff = now - VALIDATOR_GROUP_WINDOW_DAYS * 24 * 60 * 60_000
     const groups = new Map<string, Rejection[]>()
+    const successes = new Map<string, number>()
     for (const run of ledger.listRuns(200)) {
+        if (validatedSuccess(run) && (Date.parse(run.updatedAt) || 0) >= cutoff) {
+            const taskType = validatorTaskType(run)
+            successes.set(taskType, (successes.get(taskType) || 0) + 1)
+            continue
+        }
         const rejection = rejectionOf(run)
         if (!rejection || rejection.at < cutoff || legacy.has(rejection.legacyId)) continue
         const key = JSON.stringify([rejection.taskType, rejection.failedKinds])
         groups.set(key, [...(groups.get(key) || []), rejection])
     }
+    const seen = new Set<string>()
     let added = 0
     for (const items of groups.values()) {
         const { taskType, failedKinds } = items[0]
         const latest = new Date(Math.max(...items.map(item => item.at))).toISOString()
         const finding = validatorShapeFinding(taskType, failedKinds, items.length, latest)
         const hash = observationFingerprint(finding)
+        seen.add(hash)
         const existing = cases.find(item => item.findingId === finding.id || (item.observationHash === hash && item.findingId.startsWith('validator-failure-')))
         const refs = items.map(item => item.runRef)
         if (existing && existing.findingOpen !== false) {
@@ -98,5 +116,24 @@ export function reconcileValidatorFailures(
         doctor.addEvidenceRefs?.(item.id, relevant.map(entry => entry.runRef))
         added++
     }
+    closeHealedShapes(doctor, seen, successes, now)
     return added
+}
+
+/**
+ * 2.83.0 Punkt 1: an open shape case closes when its shape was not rejected in
+ * the window and the same task type passed the Kernel validator at least
+ * VALIDATOR_GROUP_MIN_RUNS times. "Closed" = no longer observed, never
+ * "repaired"; legacy per-run cases (no task type in the text) stay open.
+ */
+function closeHealedShapes(doctor: DoctorPort, seen: ReadonlySet<string>, successes: ReadonlyMap<string, number>, now: number): void {
+    if (!doctor.closeByMeasurement) return
+    for (const item of doctor.list()) {
+        if (item.findingOpen === false || !item.findingId.startsWith('validator-failure-')) continue
+        if (item.observationHash && seen.has(item.observationHash)) continue
+        const taskType = /Aufgabenart: ([a-z0-9_-]+);/.exec(item.hypothesis)?.[1]
+        const ok = taskType ? successes.get(taskType) || 0 : 0
+        if (!taskType || ok < VALIDATOR_GROUP_MIN_RUNS) continue
+        doctor.closeByMeasurement(item.id, `messung:validator:${taskType}:${ok}-ok:0-abgelehnt:${VALIDATOR_GROUP_WINDOW_DAYS}d`, new Date(now))
+    }
 }

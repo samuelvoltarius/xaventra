@@ -63,16 +63,23 @@ export function selectHandoffs(cases: readonly FailureResearchCase[], existing: 
         }))
 }
 
-/** Pure: after a rollout (other version), say once per handoff whether the finding closed. */
+/**
+ * Pure: after a rollout (other version), say once per handoff whether the
+ * finding closed. 2.83.0 Punkt 1: "closed" comes from a measurement
+ * (`closeByMeasurement`: fault no longer observed with enough successful use)
+ * or the signed Repair-Controller. A still-open record keeps being measured in
+ * the same version and changes once more when the measurement closes it.
+ */
 export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: readonly FailureResearchCase[], currentVersion: string): { records: HandoffRecord[]; changes: HandoffRecord[] } {
     const byCase = new Map(cases.map(item => [item.id, item]))
     const changes: HandoffRecord[] = []
     const next = records.map(record => {
-        // closed is final; queued (outbox only), sent and still-open are
-        // checked once per new version.
-        if (record.state === 'closed' || record.version === currentVersion || record.checkedInVersion === currentVersion) return record
+        // closed is final; nothing to say before a rollout.
+        if (record.state === 'closed' || record.version === currentVersion) return record
         const item = byCase.get(record.caseId)
         const closed = !item || item.findingOpen === false || item.stage === 'resolved'
+        // Checked in this version already: only the measured closing is news.
+        if (record.checkedInVersion === currentVersion && !(closed && record.state === 'still-open')) return record
         const updated: HandoffRecord = { ...record, state: closed ? 'closed' : 'still-open', checkedInVersion: currentVersion }
         changes.push(updated)
         return updated
@@ -122,9 +129,31 @@ function save(path: string, records: HandoffRecord[]): void {
     atomicWriteJsonSync(path, { version: 1, records: records.slice(-500) } satisfies HandoffFile)
 }
 
+/** Planner thought store (only what the tick needs). Without a port no thought is written. */
+export interface HandoffThoughtPort {
+    add(input: { source: string; title: string; kind?: 'ereignis'; evidence?: string; severity?: 'info'; signature?: string }): { thought?: { id: string } } | unknown
+    setStatus?(id: string, status: 'erledigt', by: string): unknown
+}
+
+/** Punkt 1: a measured closing after a rollout is reported as a done thought („Erledigt“ in the evening report). */
+function noteMeasuredClosing(thoughts: HandoffThoughtPort | undefined, record: HandoffRecord, item: FailureResearchCase | undefined): void {
+    if (!thoughts) return
+    try {
+        const measurement = item?.evidenceRefs.filter(ref => ref.startsWith('messung:') || ref.startsWith('repair-controller:')).at(-1)
+        const added = thoughts.add({
+            source: 'bug-finder', kind: 'ereignis', severity: 'info', signature: `doctor-handoff-closed:${record.id}`,
+            title: `Fehler „${clip(record.title, 80)}“ nach Rollout v${clip(record.checkedInVersion, 30).replace(/^v/, '')} behoben (gemessen)`,
+            evidence: `Fall ${record.caseId}, übergeben in v${record.version.replace(/^v/, '')}. ${measurement ? `Beleg: ${measurement}` : 'Fall nicht mehr in der Warteschlange'}. Heißt: nicht mehr beobachtet, nicht „repariert bestätigt“.`,
+        }) as { thought?: { id?: string } } | undefined
+        const id = added?.thought?.id
+        if (id && thoughts.setStatus) thoughts.setStatus(id, 'erledigt', 'messung')
+    } catch { /* thoughts are visibility, never a reason to fail */ }
+}
+
 export async function runClaudeHandoffTick(input: {
     cases: readonly FailureResearchCase[]; node: string; version: string; now?: Date; path?: string
     post?: (url: string, body: unknown) => Promise<boolean>
+    thoughts?: HandoffThoughtPort
 }): Promise<{ queued: number; delivered: number; reconciled: number }> {
     const path = input.path || outboxPath()
     const now = input.now || new Date()
@@ -133,6 +162,8 @@ export async function runClaudeHandoffTick(input: {
     records = [...records, ...fresh]
     const reconciled = reconcileAfterRollout(records, input.cases, input.version)
     records = reconciled.records
+    const byCase = new Map(input.cases.map(item => [item.id, item]))
+    for (const change of reconciled.changes) if (change.state === 'closed') noteMeasuredClosing(input.thoughts, change, byCase.get(change.caseId))
     let delivered = 0
     const url = validHandoffUrl(config.url)
     if (url) {

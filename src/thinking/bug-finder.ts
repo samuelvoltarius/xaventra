@@ -9,6 +9,12 @@
  * Nachkontrolle (`reconcileAfterRollout`). Dieses Modul schreibt keinen Code,
  * sendet nichts und übergibt nichts selbst.
  *
+ * 2.83.0 Punkt 1: Nachkontrolle mit Messung. Einen offenen eigenen Fall
+ * schließt der Bug-Finder (`closeByMeasurement`), wenn im Fenster 0 Vorkommen
+ * seines Fingerabdrucks und mindestens `minOccurrences` erfolgreiche Aufrufe
+ * desselben Werkzeugs aus derselben Quelle gezählt wurden. Nicht genutzt heißt
+ * nicht geheilt; „geschlossen“ heißt „nicht mehr beobachtet“, nie „repariert“.
+ *
  * Fingerabdruck = `observationFingerprint` aus Stufe 1: Zahlen, Zeiten und
  * IDs sind Messung, kein neuer Fehler. Keine Doppelfälle: gleicher
  * Fingerabdruck oder gleiche Fall-ID in der Warteschlange = übersprungen.
@@ -32,7 +38,11 @@ export interface ErrorOccurrence {
 
 export interface ErrorSourcePort {
     collect(sinceMs: number): Promise<ErrorOccurrence[]> | ErrorOccurrence[]
+    /** Erfolgreiche Aufrufe je Subjekt seit `sinceMs` (dieselbe Quelle). Ohne: kein Schließen. */
+    successes?(sinceMs: number): Promise<Record<string, number>> | Record<string, number>
 }
+
+const CASE_TITLE_PREFIX = 'Wiederkehrender Fehler: '
 
 export interface RecurringGroup {
     fingerprint: string
@@ -54,7 +64,7 @@ const shape = (value: string) => value.replace(/[0-9a-f]{12,}/gi, '<id>').replac
 
 function findingFor(subject: string, source: string, sample: string, count: number, windowDays: number, at: string): DoctorFinding {
     return {
-        id: '', title: `Wiederkehrender Fehler: ${subject}`,
+        id: '', title: `${CASE_TITLE_PREFIX}${subject}`,
         detail: `${count} Vorkommen in ${windowDays} Tagen. Fehlerbild: ${sample}`,
         category: 'tools', severity: 'warning', source: 'bug-finder', status: 'open',
         recommendation: 'Mit nur lesenden Diagnose-Werkzeugen Ursache belegen. Code-Änderungen nur über Claude-Übergabe, Sandbox, Regression und PATCH_GATE.',
@@ -89,30 +99,43 @@ export function groupRecurring(occurrences: readonly ErrorOccurrence[], minOccur
     return out.sort((a, b) => b.count - a.count)
 }
 
-/** Standard-Quelle: fehlgeschlagene Werkzeugaufrufe aus den Trace-Dateien (ohne Nachrichtentexte). */
+/** Standard-Quelle: Werkzeugaufrufe aus den Trace-Dateien (ohne Nachrichtentexte). */
 export function tracesErrorSource(dir = join(process.cwd(), '.nova-data', 'traces')): ErrorSourcePort {
+    const each = (sinceMs: number, visit: (trace: any, call: any, ref: string) => boolean | void) => {
+        if (!existsSync(dir)) return
+        const files = readdirSync(dir).filter(name => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)).sort().slice(-14)
+        for (const file of files) {
+            let lineNo = 0
+            for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
+                lineNo++
+                if (!line.trim()) continue
+                try {
+                    const trace = JSON.parse(line)
+                    if (!(Number(trace.timestamp) >= sinceMs)) continue
+                    for (const call of Array.isArray(trace.toolCalls) ? trace.toolCalls : []) {
+                        if (visit(trace, call, `traces/${file}:${lineNo}`) === false) return
+                    }
+                } catch { /* kaputte Zeile */ }
+            }
+        }
+    }
     return {
         collect(sinceMs) {
             const out: ErrorOccurrence[] = []
-            if (!existsSync(dir)) return out
-            const files = readdirSync(dir).filter(name => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)).sort().slice(-14)
-            for (const file of files) {
-                let lineNo = 0
-                for (const line of readFileSync(join(dir, file), 'utf8').split('\n')) {
-                    lineNo++
-                    if (!line.trim()) continue
-                    try {
-                        const trace = JSON.parse(line)
-                        const at = Number(trace.timestamp)
-                        if (!(at >= sinceMs)) continue
-                        for (const call of Array.isArray(trace.toolCalls) ? trace.toolCalls : []) {
-                            if (call?.success !== false) continue
-                            out.push({ source: 'trace', subject: String(call.name || 'unbekannt'), message: String(call.errorMessage || trace.errorType || 'Fehler ohne Meldung'), at, ref: `traces/${file}:${lineNo}` })
-                        }
-                        if (out.length > 20_000) return out
-                    } catch { /* kaputte Zeile */ }
-                }
-            }
+            each(sinceMs, (trace, call, ref) => {
+                if (call?.success !== false) return
+                out.push({ source: 'trace', subject: String(call.name || 'unbekannt'), message: String(call.errorMessage || trace.errorType || 'Fehler ohne Meldung'), at: Number(trace.timestamp), ref })
+                return out.length <= 20_000
+            })
+            return out
+        },
+        successes(sinceMs) {
+            const out: Record<string, number> = {}
+            each(sinceMs, (_trace, call) => {
+                if (call?.success !== true) return
+                const name = String(call.name || 'unbekannt')
+                out[name] = (out[name] || 0) + 1
+            })
             return out
         },
     }
@@ -121,19 +144,20 @@ export function tracesErrorSource(dir = join(process.cwd(), '.nova-data', 'trace
 export interface BugFinderDeps {
     settings: ThinkingSettings
     source: ErrorSourcePort
-    doctor: Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs'>>
+    doctor: Pick<FailureResearchCoordinator, 'list' | 'ingest'> & Partial<Pick<FailureResearchCoordinator, 'addEvidenceRefs' | 'closeByMeasurement'>>
     sink: ThoughtSink
     now?: Date
     importanceFactor?: (kind: string) => number
 }
 
-export async function runBugFinder(deps: BugFinderDeps): Promise<{ ran: boolean; created: string[]; skipped: Array<{ fingerprint: string; reason: string }> }> {
+export async function runBugFinder(deps: BugFinderDeps): Promise<{ ran: boolean; created: string[]; closed: string[]; skipped: Array<{ fingerprint: string; reason: string }> }> {
     const cfg = deps.settings.bugFinder
-    if (!deps.settings.enabled || !cfg.enabled) return { ran: false, created: [], skipped: [] }
+    if (!deps.settings.enabled || !cfg.enabled) return { ran: false, created: [], closed: [], skipped: [] }
     const now = deps.now || new Date()
     const since = now.getTime() - cfg.windowDays * 24 * 60 * 60_000
     const occurrences = (await deps.source.collect(since)).filter(item => item.at >= since && item.at <= now.getTime() + 60_000)
     const groups = groupRecurring(occurrences, cfg.minOccurrences, cfg.windowDays)
+    const closed = await closeHealedCases(deps, occurrences, since, now)
     const created: string[] = []
     const skipped: Array<{ fingerprint: string; reason: string }> = []
     for (const group of groups) {
@@ -167,5 +191,29 @@ export async function runBugFinder(deps: BugFinderDeps): Promise<{ ran: boolean;
             importance: Math.min(1, 0.4 + group.count / 50) * factor, stufe: 'selbst', status: 'info', dedupeKey: `bug-finder:${group.fingerprint}`,
         })
     }
-    return { ran: true, created, skipped }
+    return { ran: true, created, closed, skipped }
+}
+
+/**
+ * Punkt 1: eigene offene Fälle schließen, deren Fehlerbild im Fenster nicht
+ * mehr vorkam und deren Werkzeug in derselben Zeit oft genug erfolgreich lief.
+ */
+async function closeHealedCases(deps: BugFinderDeps, occurrences: readonly ErrorOccurrence[], since: number, now: Date): Promise<string[]> {
+    const cfg = deps.settings.bugFinder
+    if (!deps.doctor.closeByMeasurement || !deps.source.successes) return []
+    const open = deps.doctor.list().filter(item => item.findingId.startsWith('bug-finder-') && item.findingOpen !== false && item.title.startsWith(CASE_TITLE_PREFIX))
+    if (!open.length) return []
+    const seen = new Set(groupRecurring(occurrences, 1, cfg.windowDays).map(group => group.fingerprint))
+    let successes: Record<string, number> = {}
+    try { successes = (await deps.source.successes(since)) || {} } catch { return [] }
+    const closed: string[] = []
+    for (const item of open) {
+        if (item.observationHash && seen.has(item.observationHash)) continue
+        const subject = item.title.slice(CASE_TITLE_PREFIX.length)
+        const ok = Number(successes[subject]) || 0
+        if (ok < cfg.minOccurrences) continue
+        const result = deps.doctor.closeByMeasurement(item.id, `messung:${subject}:0-fehler:${ok}-ok:${cfg.windowDays}d`, now)
+        if (result) closed.push(item.id)
+    }
+    return closed
 }
