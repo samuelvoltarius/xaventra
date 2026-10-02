@@ -3321,7 +3321,8 @@
         "node:child_process",
         "node:crypto",
         "node:fs",
-        "node:path"
+        "node:path",
+        "node:url"
       ]
     },
     {
@@ -4338,12 +4339,12 @@
     {
       "module": "src/memory/embedding-artifacts.ts",
       "imports": [
+        "../core/data-root.js",
         "node:crypto",
         "node:fs",
         "node:path",
         "node:stream",
-        "node:stream/promises",
-        "node:url"
+        "node:stream/promises"
       ]
     },
     {

@@ -165,9 +165,9 @@ describe('Bezug nur über fest eingetragene Datei mit sha256', () => {
         expect(getInstallCatalog().rejected).toEqual([])
         expect(entry).toMatchObject({
             kind: 'runtime-addon', targets: ['host-agent'], runAs: 'service', approval: 'fragen',
-            install: ['{node}', '{runtime}/dist/memory/local-embedder-fetch.js', 'install', MODEL],
-            verify: [['{node}', '{runtime}/dist/memory/local-embedder-fetch.js', 'verify', MODEL]],
-            rollback: { kind: 'command', argv: ['{node}', '{runtime}/dist/memory/local-embedder-fetch.js', 'remove', MODEL] },
+            install: ['{node}', '{program}/dist/memory/local-embedder-fetch.js', 'install', MODEL, '{runtime}/models/embedding'],
+            verify: [['{node}', '{program}/dist/memory/local-embedder-fetch.js', 'verify', MODEL, '{runtime}/models/embedding']],
+            rollback: { kind: 'command', argv: ['{node}', '{program}/dist/memory/local-embedder-fetch.js', 'remove', MODEL, '{runtime}/models/embedding'] },
         })
         const { getSoftwareCandidates } = await import('../install/software-candidates.js')
         const candidates = getSoftwareCandidates()

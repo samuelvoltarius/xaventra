@@ -23,10 +23,10 @@
  */
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, isAbsolute, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { getRuntimeRoot } from '../core/data-root.js'
 
 export interface EmbeddingArtifact {
     /** Katalog-Name (`embedding-gguf:<name>`) und Modellteil der Einbetter-ID. */
@@ -69,19 +69,20 @@ export function findEmbeddingArtifact(name: unknown, artifacts: readonly Embeddi
     return typeof name === 'string' ? artifacts.find(item => item.name === name) : undefined
 }
 
-/** Programm-Wurzel (dist/memory/.. /.. bzw. src/memory/../..). */
-function appRoot(): string {
-    return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-}
-
 /**
- * Ordner der eigenen Embedding-Modelle: `<Programm>/models/embedding`
- * (dort legt auch das Katalog-Programm ab), überschreibbar mit
- * `XAVENTRA_EMBEDDING_MODEL_DIR`.
+ * Ordner der eigenen Embedding-Modelle: `<Laufzeit-Wurzel>/models/embedding`
+ * (NOVA_RUNTIME_ROOT bzw. Arbeitsordner — wie `.nova-data`, überlebt also
+ * Programm-Updates; der Katalog schreibt nach `{runtime}/models/embedding`),
+ * überschreibbar mit `XAVENTRA_EMBEDDING_MODEL_DIR`.
  */
 export function embeddingModelsDir(): string {
     const override = String(process.env.XAVENTRA_EMBEDDING_MODEL_DIR || '').trim()
-    return override || join(appRoot(), 'models', 'embedding')
+    return override || join(getRuntimeRoot(), 'models', 'embedding')
+}
+
+/** Ziel-Ordner aus dem Katalog: absolut, ohne `..`. */
+export function isSafeModelDir(dir: unknown): dir is string {
+    return typeof dir === 'string' && dir.length > 1 && dir.length < 400 && isAbsolute(dir) && !dir.split(/[\\/]/).includes('..')
 }
 
 /** Billige Bestandsaufnahme (Datei da, Größe stimmt) — kein Integritätsbeleg. */

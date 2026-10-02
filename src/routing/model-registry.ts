@@ -304,21 +304,52 @@ export function cloudKeyPresent(provider: string, config: any, env: NodeJS.Proce
     return Boolean(field && config?.auth?.[field])
 }
 
+const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|::1|0\.0\.0\.0)$/i
+
+/** Ollama or vLLM? AIScan reports both as `type: 'llm'` with the product as name/capability (2.86 fix). */
+export function graphRuntimeKind(runtime: { type?: string; name?: string; capabilities?: string[] }): 'ollama' | 'vllm' | null {
+    const tags = [runtime.type, runtime.name, ...(runtime.capabilities || [])].map(norm)
+    if (tags.includes('ollama')) return 'ollama'
+    if (tags.includes('vllm')) return 'vllm'
+    return null
+}
+
+/**
+ * Address of a runtime as seen from THIS node. A node advertises its own
+ * service as `localhost`; for another node that means the node's own host.
+ * Without a known, non-loopback host the endpoint is not guessed (null).
+ */
+export function graphRuntimeEndpoint(endpoint: string, node: { id: string; host?: string }, localNodeId?: string): string | null {
+    let url: URL
+    try { url = new URL(endpoint) } catch { return null }
+    const host = url.hostname.replace(/^\[|\]$/g, '')
+    if (!LOOPBACK.test(host) || (localNodeId && node.id === localNodeId)) return endpoint
+    const nodeHost = String(node.host || '').trim()
+    if (!nodeHost || LOOPBACK.test(nodeHost) || !/^[A-Za-z0-9.:-]+$/.test(nodeHost)) return null
+    url.hostname = nodeHost.includes(':') ? `[${nodeHost}]` : nodeHost
+    return url.toString().replace(/\/$/, endpoint.endsWith('/') ? '/' : '')
+}
+
 export async function collectModelRegistry(options: { config?: any; userId?: string } = {}): Promise<ModelRegistry> {
     const config = options.config ?? (globalThis as any).__novaState?.config ?? {}
     const multi = config?.routing?.multi || {}
     const inputs: RegistryInputs = { knownNodes: [], vllm: [], ollama: [], probes: [], costs: multi.costs || {} }
     try {
         const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
+        let localNodeId: string | undefined
+        try { localNodeId = (await import('../mesh/mesh-registry.js')).getLocalNodeId() } catch { localNodeId = undefined }
         for (const node of getCapabilityGraph().getSnapshot().nodes) {
             inputs.knownNodes!.push(node.id)
             for (const runtime of node.runtimes || []) {
                 if (runtime.status !== 'running') continue
-                const type = norm(runtime.type)
-                if (type === 'vllm') inputs.vllm!.push({ node: node.id, baseUrl: runtime.endpoint, models: runtime.models || [] })
-                else if (type === 'ollama') {
+                const kind = graphRuntimeKind(runtime)
+                if (!kind) continue
+                const baseUrl = graphRuntimeEndpoint(runtime.endpoint, node, localNodeId)
+                if (!baseUrl) continue
+                if (kind === 'vllm') inputs.vllm!.push({ node: node.id, baseUrl, models: runtime.models || [] })
+                else {
                     const loaded = Array.isArray((runtime.metadata as any)?.loaded) ? (runtime.metadata as any).loaded : []
-                    inputs.ollama!.push({ node: node.id, baseUrl: runtime.endpoint, models: (runtime.models || []).map(name => ({ name })), loaded })
+                    inputs.ollama!.push({ node: node.id, baseUrl, models: (runtime.models || []).map(name => ({ name })), loaded })
                 }
             }
         }

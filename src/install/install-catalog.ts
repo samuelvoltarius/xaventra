@@ -41,7 +41,8 @@ export interface InstallCatalogEntry {
 export const APT_GET = '/usr/bin/apt-get'
 export const OLLAMA = '/usr/local/bin/ollama'
 export const TEST_BIN = '/usr/bin/test'
-export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlamaCppVersion'] as const
+/** `program` = installed program root (contains dist/); defaults to the host agent's own program root. */
+export const PLACEHOLDERS = ['node', 'npm', 'runtime', 'serviceHome', 'nodeLlamaCppVersion', 'program'] as const
 export type PlaceholderName = typeof PLACEHOLDERS[number]
 /** Programs a catalog entry may start. Everything else is refused at load. */
 export const EXECUTABLE_ALLOWLIST: readonly string[] = Object.freeze([APT_GET, OLLAMA, TEST_BIN, '/usr/bin/ffmpeg', '{node}'])
@@ -75,7 +76,9 @@ function ollamaEntry(name: string): InstallCatalogEntry {
 }
 
 /** Program that fetches exactly one pinned embedding GGUF (fixed URL, size, sha256; atomic, removable). */
-export const EMBEDDING_FETCH_SCRIPT = '{runtime}/dist/memory/local-embedder-fetch.js'
+export const EMBEDDING_FETCH_SCRIPT = '{program}/dist/memory/local-embedder-fetch.js'
+/** Target: the main's runtime root (survives program updates), read by memory/embedding-artifacts.ts. */
+export const EMBEDDING_MODEL_DIR = '{runtime}/models/embedding'
 
 /**
  * 2.86 (Paket G): own in-process embedding model. The command names only the
@@ -83,7 +86,7 @@ export const EMBEDDING_FETCH_SCRIPT = '{runtime}/dist/memory/local-embedder-fetc
  * (memory/embedding-artifacts.ts), verify re-hashes the file, rollback removes it.
  */
 function embeddingEntry(artifact: EmbeddingArtifact): InstallCatalogEntry {
-    const run = (operation: string) => ['{node}', EMBEDDING_FETCH_SCRIPT, operation, artifact.name]
+    const run = (operation: string) => ['{node}', EMBEDDING_FETCH_SCRIPT, operation, artifact.name, EMBEDDING_MODEL_DIR]
     return {
         id: `embedding-gguf:${artifact.name}`, title: `Eigener Einbetter ${artifact.filename.replace(/\.gguf$/, '')} (CPU, sha256-geprüft)`,
         kind: 'runtime-addon', targets: ['host-agent'], requires: { platform: 'linux' },

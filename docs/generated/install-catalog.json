@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalogHash": "07685a639b1c3f855319158107c21f76bfb0e9b1f21135545e2af17bfe824014",
+  "catalogHash": "e3152e2ef3ee1cfc775806819c6854720b7e7999ab5fb472594b460740ae9e16",
   "entries": [
     {
       "id": "embedding-gguf:qwen3-embedding-0.6b-q8_0",
@@ -14,25 +14,28 @@
       },
       "install": [
         "{node}",
-        "{runtime}/dist/memory/local-embedder-fetch.js",
+        "{program}/dist/memory/local-embedder-fetch.js",
         "install",
-        "qwen3-embedding-0.6b-q8_0"
+        "qwen3-embedding-0.6b-q8_0",
+        "{runtime}/models/embedding"
       ],
       "verify": [
         [
           "{node}",
-          "{runtime}/dist/memory/local-embedder-fetch.js",
+          "{program}/dist/memory/local-embedder-fetch.js",
           "verify",
-          "qwen3-embedding-0.6b-q8_0"
+          "qwen3-embedding-0.6b-q8_0",
+          "{runtime}/models/embedding"
         ]
       ],
       "rollback": {
         "kind": "command",
         "argv": [
           "{node}",
-          "{runtime}/dist/memory/local-embedder-fetch.js",
+          "{program}/dist/memory/local-embedder-fetch.js",
           "remove",
-          "qwen3-embedding-0.6b-q8_0"
+          "qwen3-embedding-0.6b-q8_0",
+          "{runtime}/models/embedding"
         ]
       },
       "runAs": "service",
@@ -40,7 +43,7 @@
       "timeoutSec": 1800,
       "risk": "low",
       "approval": "fragen",
-      "entryHash": "b37a2d2361f79aa13b567a0deec7dc3b0688a9bc4ee570775d7f790d678e1582"
+      "entryHash": "107c5b73b0400493a53b5cfe64a6869ca21abda391615057e2f3c39472ac1e13"
     },
     {
       "id": "ffmpeg",

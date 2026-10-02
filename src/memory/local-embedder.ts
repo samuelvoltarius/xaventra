@@ -2,7 +2,9 @@
  * Eigener Einbetter im Prozess (2.86, Paket G) über node-llama-cpp.
  *
  * Lädt die fest eingetragene GGUF-Datei (embedding-artifacts.ts) erst nach
- * voller sha256-Prüfung. Standard ist die CPU (`gpu: false`, nie Kompilieren):
+ * voller sha256-Prüfung. Standard ist die CPU (`gpu: false`, `build: 'never'`;
+ * das CPU-Prebuilt `@node-llama-cpp/<os>-<arch>` liegt jedem Release bei, die
+ * GPU-Varianten nicht — native-optional-prune.ts):
  * läuft auf jeder Maschine und nimmt am Spark dem vLLM keinen GPU-Speicher.
  * `XAVENTRA_EMBEDDING_GPU=1` erlaubt die GPU, `XAVENTRA_EMBEDDING_INPROCESS=0`
  * schaltet den eigenen Einbetter ab. Ohne Modelldatei wird node-llama-cpp gar
@@ -32,6 +34,7 @@ export interface LoadEmbedderOptions {
 
 /** Qwen3-Embedding erwartet das Ende-Token `<|endoftext|>` am Schluss (Pooling `last`). */
 const END_OF_TEXT = '<|endoftext|>'
+const reportedFailures = new Set<string>()
 
 function normalize(vector: readonly number[]): number[] | null {
     if (!vector?.length || !vector.every(Number.isFinite)) return null
@@ -84,7 +87,11 @@ export async function loadInProcessEmbedder(options: LoadEmbedderOptions = {}): 
             },
         }
     } catch (error) {
-        console.warn(`[Embeddings] Eigener Einbetter ${artifact.name} nicht nutzbar: ${String((error as Error)?.message || error).slice(0, 200)}`)
+        // Einmal je Prozess melden; der nächste Rang (Mesh-Ollama, sonst Hash) übernimmt.
+        if (!reportedFailures.has(artifact.name)) {
+            reportedFailures.add(artifact.name)
+            console.warn(`[Embeddings] Eigener Einbetter ${artifact.name} nicht nutzbar (${String((error as Error)?.message || error).slice(0, 200)}); nächster Rang übernimmt (Mesh-Ollama, sonst Hash). Kein Kompilieren am Zielrechner.`)
+        }
         if (llama) await llama.dispose().catch(() => undefined)
         return null
     }
