@@ -3,27 +3,32 @@ import { existsSync, readFileSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaLearningDir } from '../core/data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import type { ErrorOccurrence, ErrorSourcePort } from '../thinking/bug-finder.js'
 
 export interface LearnedRegressionCase {
     id: string; userId: string; taskType: string; failureClass: string; redactedRequest: string
     sourceRunIds: string[]; occurrences: number; status: 'quarantined' | 'promoted' | 'resolved'; updatedAt: string
+    /** 2.83.0: Zeitpunkte der Vorkommen (ms, höchstens 20) — für den Bug-Finder. Altbestand hat keine. */
+    times?: number[]
 }
 interface RegressionFile { version: 1; updatedAt: string; cases: LearnedRegressionCase[] }
 
 export class RegressionCaseStore {
     private cases: LearnedRegressionCase[] = []
-    constructor(private readonly path = getNovaLearningDir('regression-cases.json')) {
+    constructor(private readonly path = getNovaLearningDir('regression-cases.json'), private readonly now: () => number = () => Date.now()) {
         try { if (existsSync(path)) this.cases = (JSON.parse(readFileSync(path, 'utf8')) as RegressionFile).cases || [] } catch { this.cases = [] }
     }
     record(input: { userId: string; taskType: string; request: string; runId: string; failureClass: string }): LearnedRegressionCase {
         const redactedRequest = redactSecrets(input.request).replace(/\s+/g, ' ').trim().slice(0, 500)
         const id = createHash('sha256').update(`${input.userId}\0${input.taskType}\0${input.failureClass}\0${redactedRequest}`).digest('hex').slice(0, 24)
+        const at = this.now()
         let item = this.cases.find(value => value.id === id)
         if (!item) {
-            item = { id, userId: input.userId, taskType: input.taskType, failureClass: input.failureClass, redactedRequest, sourceRunIds: [], occurrences: 0, status: 'quarantined', updatedAt: new Date().toISOString() }
+            item = { id, userId: input.userId, taskType: input.taskType, failureClass: input.failureClass, redactedRequest, sourceRunIds: [], occurrences: 0, status: 'quarantined', updatedAt: new Date(at).toISOString() }
             this.cases.push(item)
         }
-        item.occurrences++; item.sourceRunIds = [...new Set([...item.sourceRunIds, input.runId])].slice(-20); item.updatedAt = new Date().toISOString()
+        item.occurrences++; item.sourceRunIds = [...new Set([...item.sourceRunIds, input.runId])].slice(-20); item.updatedAt = new Date(at).toISOString()
+        item.times = [...(item.times || []), at].slice(-20)
         this.persist(); return structuredClone(item)
     }
     list(userId?: string) { return this.cases.filter(item => !userId || item.userId === userId).map(item => structuredClone(item)) }
@@ -43,6 +48,30 @@ export class RegressionCaseStore {
     }
     private persist() { atomicWriteJsonSync(this.path, { version: 1, updatedAt: new Date().toISOString(), cases: this.cases.slice(-2_000) } satisfies RegressionFile) }
 }
+/**
+ * 2.83.0 Punkt 5: Owner-Zurückweisungen als weitere Quelle des einen
+ * Bug-Finders. Je Vorkommen nur Aufgabenart und Fehlerklasse — nie der
+ * (redigierte) Anfragetext, damit nichts Privates in Doctor-Fälle oder die
+ * Claude-Übergabe gerät. Validator-Ablehnungen (`validator-rejected:*`)
+ * laufen schon über die Validator-Eskalation und kommen hier nicht doppelt.
+ */
+export function regressionErrorSource(store?: RegressionCaseStore): ErrorSourcePort {
+    return {
+        collect(sinceMs) {
+            const out: ErrorOccurrence[] = []
+            for (const item of (store || getRegressionCaseStore()).list()) {
+                if (item.failureClass.startsWith('validator-rejected')) continue
+                const times = item.times?.length ? item.times : [Date.parse(item.updatedAt)]
+                for (const at of times) {
+                    if (!(at >= sinceMs)) continue
+                    out.push({ source: 'owner-rueckmeldung', subject: `aufgabe:${item.taskType}`, message: item.failureClass, at, ref: `regression:${item.id}` })
+                }
+            }
+            return out
+        },
+    }
+}
+
 let singleton: RegressionCaseStore | null = null
 export function getRegressionCaseStore(): RegressionCaseStore { return singleton ||= new RegressionCaseStore() }
 export function setRegressionCaseStore(value: RegressionCaseStore): void { singleton = value }
