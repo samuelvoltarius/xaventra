@@ -1188,3 +1188,19 @@ denselben Läufen; die Workflow-Episoden bleiben als episodisches Gedächtnis), 
 (`synthesis/generator|pipeline|index`, `mesh/skill-distributor`, `infra/plugins`,
 `learning/teaching`). Der Muster-Speicher für den Planer liegt an einem Ort:
 `<runtime>/.nova-data/patterns.json`.
+
+**Entfernt in 2.84.0.** Die Erfolgsliste „Deine gelernten Fähigkeiten“ im Prompt
+(`memory/capabilities-store.ts`): Sie lernte aus jedem nicht geworfenen
+Werkzeugaufruf vor der Validierung; verifizierte Lösungen kommen nur aus den
+Prozeduren. Vom selben Speicher bleibt das Negativ-Gedächtnis („auf dieser Maschine
+nicht verfügbar“, `.nova-learning/unavailable.json`). Der Supabase-Learning-Hub
+(`intelligence/learning-hub.ts`, 30-Minuten-Sync, Fremdeinträge im Prompt) ist
+ebenfalls weg; Wissen zwischen Knoten geht nur über L22. Das Tracing des
+Agents-SDK ist global aus (eigene Telemetrie ist OTel, unverändert).
+
+*Migration:* Nichts wird gelöscht. `.nova-learning/capabilities.json` und
+`.nova-data/local-knowledge.json` bleiben liegen; die Supabase-Tabelle
+`nova_learnings` (`sql/learning-hub-migration.sql`, `supabase-setup.sql`) wird
+nicht mehr gelesen oder geschrieben und kann bei Bedarf von Hand archiviert
+werden. `supabase.learningUrl`/`learningKey` bleiben gültig, soweit andere
+Module (Shared Memory) sie nutzen; für den Lern-Abgleich wirken sie nicht mehr.

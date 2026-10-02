@@ -1926,24 +1926,6 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ Autonomy Loop nicht verfügbar: ${err}`)
     }
 
-    // Start Learning Hub immediately (fetch shared knowledge from other Novas)
-    try {
-        const { startLearningSync, fetchSharedKnowledge } = await import('./intelligence/learning-hub.js')
-
-        // Fetch immediately on startup
-        const knowledge = await fetchSharedKnowledge()
-        if (knowledge.size > 0) {
-            console.log(`[Nova] ✓ Learning Hub: ${knowledge.size} Topics vom Kollektiv geladen`)
-        } else {
-            console.log('[Nova] ✓ Learning Hub: Verbunden (noch keine Topics im Kollektiv)')
-        }
-
-        // Start background sync every 30 min
-        startLearningSync(30)
-    } catch (err) {
-        console.log(`[Nova] ⚠ Learning Hub nicht verfügbar: ${err}`)
-    }
-
     // Register in Nova Mesh Network (auto-discovery)
     try {
         const { registerNode, startTaskPoller } = await import('./mesh/mesh-registry.js')
