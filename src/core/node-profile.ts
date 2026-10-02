@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, networkInterfaces, platform, totalmem } from 'node:os'
 import { parse as parsePath } from 'node:path'
-import { diskLevel, memoryLevel } from './resource-thresholds.js'
+import { assessLocalMemory, diskLevel, markVllmNode } from './resource-thresholds.js'
 
 export type NodeRuntimeKind = 'native' | 'container' | 'unknown'
 export type NodeInstallPath = 'package-manager' | 'host-agent' | 'image' | 'none'
@@ -156,7 +156,9 @@ export function runLocalSelfCheck(dataDir: string, now = new Date()): NodeProfil
         if (data.detail !== items[0].detail) items.push(data)
     }
     const memoryFree = Math.round(freemem() / Math.max(1, totalmem()) * 100)
-    items.push({ id: 'memory', label: 'Arbeitsspeicher', status: memoryLevel(100 - memoryFree), detail: `${memoryFree} % frei` })
+    // vLLM-aware (reserved GPU unified memory is no finding); read-only, does not move L0's previous sample.
+    const memory = assessLocalMemory({ usedPercent: 100 - memoryFree, totalMB: Math.round(totalmem() / 1024 ** 2) }, { remember: false })
+    items.push({ id: 'memory', label: 'Arbeitsspeicher', status: memory.level, detail: memory.reason ? `${memoryFree} % frei, ${memory.reason}` : `${memoryFree} % frei` })
     const cores = Math.max(1, cpus().length)
     const load = platform() === 'win32' ? null : loadavg()[0] / cores
     if (load !== null) items.push({ id: 'load', label: 'Last', status: load > 4 ? 'crit' : load > 2 ? 'warn' : 'ok', detail: `${load.toFixed(2)} je Kern` })
@@ -226,6 +228,8 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         const advertised = getLocalNodeSnapshot()?.software?.ai_services || []
         viaVllm = advertised
             .some(service => service.type === 'vllm' && service.status === 'running' && isLoopbackOrLocal(service.endpoint, addresses))
+        // The RAM threshold treats this node as a vLLM node (reserved unified memory).
+        if (viaVllm) markVllmNode(true)
         // Running services only when they answer on this node; installed/stopped ones are local binaries.
         services = sanitizeNodeServices(advertised.filter(service => service.status !== 'running' || isLoopbackOrLocal(service.endpoint, addresses)))
     } catch { /* registry optional */ }

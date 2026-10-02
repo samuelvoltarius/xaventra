@@ -14,7 +14,7 @@ import { execSync } from 'node:child_process'
 import { existsSync, statSync, readdirSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { totalmem, freemem } from 'node:os'
-import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
+import { assessLocalMemory, diskLevel } from '../core/resource-thresholds.js'
 
 // ============================================
 // Types
@@ -33,6 +33,8 @@ export interface HealthStatus {
         totalMB: number
         usedPercent: number
         warning: boolean
+        /** vLLM-aware level (core/resource-thresholds assessLocalMemory). */
+        level?: 'ok' | 'warn' | 'crit'
     }
     novaData: {
         sizeMB: number
@@ -238,9 +240,16 @@ export function runHealthCheck(): HealthStatus {
 
     // Memory
     const memory = getMemoryUsage()
-    const memoryWarning = memory.usedPercent >= 0 && memoryLevel(memory.usedPercent) !== 'ok'
+    // vLLM nodes reserve GPU unified memory permanently; there the percent is
+    // no danger signal (available reserve, swap growth, OOM kills are).
+    const memoryAssessment = memory.usedPercent >= 0
+        ? assessLocalMemory({ usedPercent: memory.usedPercent, totalMB: memory.totalMB })
+        : { level: 'ok' as const, reason: '', vllmNode: false }
+    const memoryWarning = memoryAssessment.level !== 'ok'
     if (memoryWarning) {
-        warnings.push(`⚠️ Memory hoch: ${memory.usedPercent}% belegt (${memory.usedMB}MB / ${memory.totalMB}MB)`)
+        warnings.push(memoryAssessment.vllmNode
+            ? `⚠️ Memory knapp: ${memoryAssessment.reason}`
+            : `⚠️ Memory hoch: ${memory.usedPercent}% belegt (${memory.usedMB}MB / ${memory.totalMB}MB)`)
     }
 
     // .nova-data size
@@ -253,7 +262,7 @@ export function runHealthCheck(): HealthStatus {
     const status: HealthStatus = {
         timestamp: Date.now(),
         disk: { ...disk, warning: diskWarning },
-        memory: { ...memory, warning: memoryWarning },
+        memory: { ...memory, warning: memoryWarning, level: memoryAssessment.level },
         novaData,
         healthy: warnings.length === 0,
         warnings,

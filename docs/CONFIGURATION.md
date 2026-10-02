@@ -116,7 +116,7 @@ loopback-only as well.
 ```
 
 - `quietHours`: the one quiet-hours definition for every owner message (planner thoughts, loop, messenger, sensing).
-- `thresholds`: the one disk/RAM threshold definition for L0, L21, node self-check, Nachtwache (unless a check sets its own), self-heal and the Wächter RAM forecast.
+- `thresholds`: the one disk/RAM threshold definition for L0, L21, node self-check, Nachtwache (unless a check sets its own), self-heal and the Wächter RAM forecast. On a vLLM node (detected from the node profile or a running vLLM process; force with `memory.vllmNode`) the RAM percentage is no finding, because vLLM reserves GPU unified memory permanently: a warning needs available memory below `memory.vllmMinAvailableMB` (default 4096, critical below half), swap growing by `memory.vllmSwapGrowthMB` (default 1024) between checks, or an OOM kill (critical on every node).
 
 `socialCheckIns` and `dream-cycle` are opt-in. Operational events are handled
 separately and may notify only when their producer is trusted or supplies a

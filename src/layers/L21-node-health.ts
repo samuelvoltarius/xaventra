@@ -21,7 +21,7 @@ import { NodeIntelligence } from '../mesh/node-intelligence.js'
 import { probeHttpService, summarizeReachability, type ServiceProbe } from '../core/health-contract.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { debounce, type TargetState } from '../watch/engine.js'
-import { diskLevel, memoryLevel } from '../core/resource-thresholds.js'
+import { assessMemory, diskLevel, memoryLevel } from '../core/resource-thresholds.js'
 
 
 // ============================================
@@ -539,8 +539,18 @@ class NodeHealthMonitor {
                 }
 
                 const warnings: string[] = []
-                if (hardware?.ram_used_percent && memoryLevel(hardware.ram_used_percent) !== 'ok') {
-                    warnings.push(`RAM kritisch: ${hardware.ram_used_percent}% belegt`)
+                if (hardware?.ram_used_percent) {
+                    // A node advertising a running vLLM keeps GPU unified memory reserved;
+                    // there only the available reserve counts (core/resource-thresholds.ts).
+                    const vllmNode = ((n as any).software?.ai_services || []).some((service: any) => service?.type === 'vllm' && service?.status === 'running')
+                    const memory = assessMemory({
+                        usedPercent: hardware.ram_used_percent,
+                        totalMB: hardware.ram_gb ? hardware.ram_gb * 1024 : null,
+                        availableMB: typeof hardware.ram_free_gb === 'number' ? hardware.ram_free_gb * 1024 : null,
+                    }, { vllmNode })
+                    if (memory.level !== 'ok') {
+                        warnings.push(vllmNode ? `RAM knapp: ${memory.reason}` : `RAM kritisch: ${hardware.ram_used_percent}% belegt`)
+                    }
                 }
                 if (hardware?.temp && hardware.temp > THRESHOLDS.temperatureCelsius) {
                     warnings.push(`Temperatur hoch: ${hardware.temp}°C`)

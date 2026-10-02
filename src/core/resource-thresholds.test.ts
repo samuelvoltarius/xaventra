@@ -19,7 +19,7 @@ afterEach(() => { setResourceThresholds(undefined) })
 
 describe('eine Schwellen-Definition (Platte/RAM)', () => {
     it('defaults: Platte 90/95 % und 5 GB frei, RAM 90/95 %', () => {
-        expect(parseResourceThresholds(undefined)).toEqual({ disk: { warnPercent: 90, critPercent: 95, minFreeGB: 5 }, memory: { warnPercent: 90, critPercent: 95 } })
+        expect(parseResourceThresholds(undefined)).toEqual({ disk: { warnPercent: 90, critPercent: 95, minFreeGB: 5 }, memory: { warnPercent: 90, critPercent: 95, vllmMinAvailableMB: 4096, vllmSwapGrowthMB: 1024, vllmNode: null } })
         expect(diskLevel(89, 100)).toBe('ok')
         expect(diskLevel(90, 100)).toBe('warn')
         expect(diskLevel(95, 100)).toBe('crit')
@@ -32,7 +32,7 @@ describe('eine Schwellen-Definition (Platte/RAM)', () => {
     it('config autonomy.thresholds overrides; warn never above crit; garbage falls back', () => {
         const t = setResourceThresholds({ thresholds: { disk: { warnPercent: 80, critPercent: 88, minFreeGB: 0 }, memory: { warnPercent: 99, critPercent: 97 } } })
         expect(t.disk).toEqual({ warnPercent: 80, critPercent: 88, minFreeGB: 0 })
-        expect(t.memory).toEqual({ warnPercent: 97, critPercent: 97 })
+        expect(t.memory).toEqual({ warnPercent: 97, critPercent: 97, vllmMinAvailableMB: 4096, vllmSwapGrowthMB: 1024, vllmNode: null })
         expect(getResourceThresholds()).toBe(t)
         expect(parseResourceThresholds({ disk: { warnPercent: 'x', critPercent: 400 } }).disk).toEqual(DEFAULT_RESOURCE_THRESHOLDS.disk)
     })
