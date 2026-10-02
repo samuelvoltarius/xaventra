@@ -53,6 +53,8 @@ export interface NodeProfile {
 
     /** Phase 6c; older peers send no field (read as kind 'unknown'). */
     virtualization?: VirtualizationInfo
+    /** 2.86 Paket J: the data disk (where .nova-data lives). Older peers send none. */
+    disk?: { totalGB: number; freeGB: number }
     installPath: NodeInstallPath
     tools: string[]
     selfCheck: { status: SelfCheckStatus; checkedAt: string; items: SelfCheckItem[] }
@@ -145,6 +147,17 @@ function diskItem(id: string, label: string, path: string): SelfCheckItem {
     } catch (error) {
         return { id, label, status: 'warn', detail: `nicht prüfbar: ${String((error as Error)?.message || error).slice(0, 80)}` }
     }
+}
+
+/** 2.86 Paket J: size of the disk holding `path` (statfs, read-only); null when unreadable. */
+export function localDiskFacts(path: string): { totalGB: number; freeGB: number } | null {
+    try {
+        const stats = statfsSync(path)
+        const total = Number(stats.blocks) * Number(stats.bsize)
+        const free = Number(stats.bavail) * Number(stats.bsize)
+        if (!Number.isFinite(total) || total <= 0) return null
+        return { totalGB: Math.round(total / 1024 ** 3), freeGB: Math.max(0, Math.round(free / 1024 ** 3)) }
+    } catch { return null }
 }
 
 /** Local, read-only self-check. No network, no child process. */
@@ -257,6 +270,7 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         gpu: { name: gpuName, backend, viaVllm },
         services,
         virtualization,
+        ...(() => { const disk = localDiskFacts(getNovaDataDir()); return disk ? { disk } : {} })(),
         installPath: installPathFor({ runtime, rootReadOnly, noNewPrivileges, hasApt: tools.includes('apt'), isRoot: process.getuid?.() === 0 }),
         tools,
         selfCheck: runLocalSelfCheck(getNovaDataDir(), now),
@@ -273,8 +287,10 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
 /** What counts as a change: static facts and each check's status. Free GB,
  * load and timestamps drift constantly and would resend every 30 s. */
 export function profileFingerprint(profile: NodeProfile): string {
-    const { collectedAt: _collected, selfCheck, ...facts } = profile
-    return JSON.stringify([facts, selfCheck.status, selfCheck.items.map(item => [item.id, item.status])])
+    // 2.86 Paket J: a new/bigger disk is a change, the drifting free space is not
+    // (it reaches the Main with the 6 h safety copy and the self-check status).
+    const { collectedAt: _collected, selfCheck, disk, ...facts } = profile
+    return JSON.stringify([facts, selfCheck.status, selfCheck.items.map(item => [item.id, item.status]), disk ? disk.totalGB : null])
 }
 
 /** Liveness comes from the 30 s heartbeat. The profile goes out on start, on
@@ -355,6 +371,12 @@ function sanitizeVirtualization(raw: any): VirtualizationInfo {
     return { kind, platform: 'proxmox', vmid, pveNode, ownMachine: raw.ownMachine === true }
 }
 
+function sanitizeDisk(raw: any): { totalGB: number; freeGB: number } | null {
+    const total = Number(raw?.totalGB), free = Number(raw?.freeGB)
+    if (!Number.isFinite(total) || total <= 0 || total > 1e7 || !Number.isFinite(free) || free < 0) return null
+    return { totalGB: Math.round(total), freeGB: Math.round(Math.min(free, total)) }
+}
+
 export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
     if (!raw || typeof raw !== 'object') return null
     const value = raw as Record<string, any>
@@ -371,6 +393,7 @@ export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
         gpu: { name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true },
         ...(Array.isArray(value.services) ? { services: sanitizeNodeServices(value.services) } : {}),
         virtualization: sanitizeVirtualization(value.virtualization),
+        ...(sanitizeDisk(value.disk) ? { disk: sanitizeDisk(value.disk)! } : {}),
         installPath: oneOf(value.installPath, ['package-manager', 'host-agent', 'image', 'none'] as const, 'none'),
         tools: Array.isArray(value.tools) ? value.tools.slice(0, 60).map((tool: unknown) => str(tool, 40)) : [],
         selfCheck: {
