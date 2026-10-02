@@ -47,7 +47,7 @@ export async function proposeDoctorRepair(coordinator: FailureResearchCoordinato
         const baseContract: TaskContract = {
             id: runId, version: 1, goal: content, createdAt: new Date().toISOString(), expectedArtifacts: [], requiredTests: [],
             successCriteria: [{ id: 'diagnostic-evidence', kind: 'verified_tool', required: true, description: 'Verified current diagnostic result' }],
-            allowedChanges: { readOnly: true, allowedPaths: [file, oracleFile], allowedTools: ['health_status', 'nova_capabilities', 'read_file'].filter(t => !worker.allowedTools || worker.allowedTools.includes(t)), externalSideEffects: false },
+            allowedChanges: { readOnly: true, allowedPaths: [file, oracleFile], allowedTools: ['health_status', 'read_file'].filter(t => !worker.allowedTools || worker.allowedTools.includes(t)), externalSideEffects: false },
             budget: { timeoutMs: 90_000, maxToolCalls: 3, maxOutputTokens: 3_000 }, approvalPolicy: { mode: 'all_changes', patchGateRequired: true },
         }
         let patch: any

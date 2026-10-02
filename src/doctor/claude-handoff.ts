@@ -52,6 +52,9 @@ export interface HandoffRecord {
     attempts?: number
     /** Version in which the finding was seen closed, or still open. */
     checkedInVersion?: string
+    /** 2.84.0 Punkt 3: when this node first ran the version in `checkedInVersion`.
+     * Bug-Finder and validator measure from here, not 7 days after the last fault. */
+    rolloutAt?: string
     lastError?: string
     /** 2.83.0: the one delegation that carries this handoff to Claude. */
     delegationId?: string
@@ -97,7 +100,7 @@ export function selectHandoffs(cases: readonly FailureResearchCase[], existing: 
  * or the signed Repair-Controller. A still-open record keeps being measured in
  * the same version and changes once more when the measurement closes it.
  */
-export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: readonly FailureResearchCase[], currentVersion: string): { records: HandoffRecord[]; changes: HandoffRecord[] } {
+export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: readonly FailureResearchCase[], currentVersion: string, now: Date = new Date()): { records: HandoffRecord[]; changes: HandoffRecord[] } {
     const byCase = new Map(cases.map(item => [item.id, item]))
     const changes: HandoffRecord[] = []
     const next = records.map(record => {
@@ -107,7 +110,9 @@ export function reconcileAfterRollout(records: readonly HandoffRecord[], cases: 
         const closed = !item || item.findingOpen === false || item.stage === 'resolved'
         // Checked in this version already: only the measured closing is news.
         if (record.checkedInVersion === currentVersion && !(closed && record.state === 'still-open')) return record
-        const updated: HandoffRecord = { ...record, state: closed ? 'closed' : 'still-open', checkedInVersion: currentVersion }
+        // First sight of this version = the rollout the measurement starts from.
+        const rolloutAt = record.checkedInVersion === currentVersion && record.rolloutAt ? record.rolloutAt : now.toISOString()
+        const updated: HandoffRecord = { ...record, state: closed ? 'closed' : 'still-open', checkedInVersion: currentVersion, rolloutAt }
         changes.push(updated)
         return updated
     })
@@ -161,6 +166,21 @@ function outboxPath(): string { return getNovaDataDir('self-doctor', 'claude-han
 function load(path: string): HandoffRecord[] {
     try { return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as HandoffFile).records || [] : [] } catch { return [] }
 }
+
+/**
+ * 2.84.0 Punkt 3: the port `measureSince(caseId)` for Bug-Finder and validator
+ * escalation. Latest rollout seen for a handed-over case (ms), or undefined
+ * when the case was never handed over or no new version ran since: then the
+ * 7-day window stays. Reads the outbox once per call of this factory.
+ */
+export function rolloutMeasureSince(path: string = outboxPath()): (caseId: string) => number | undefined {
+    const latest = new Map<string, number>()
+    for (const record of load(path)) {
+        const at = Date.parse(record.rolloutAt || '')
+        if (Number.isFinite(at) && at > (latest.get(record.caseId) ?? -Infinity)) latest.set(record.caseId, at)
+    }
+    return caseId => latest.get(caseId)
+}
 function save(path: string, records: HandoffRecord[]): void {
     atomicWriteJsonSync(path, { version: 1, records: records.slice(-500) } satisfies HandoffFile)
 }
@@ -176,6 +196,8 @@ export interface HandoffDelegationPort {
     readonly config: { enabled: boolean; url: string | null }
     delegate(request: DelegationRequest): Promise<{ ok: true; record: DelegationRecord } | { ok: false; reason: string }>
     get(id: string): DelegationRecord | null
+    /** 2.84.0 Punkt 7: withdraw a delegation still waiting for the owner's Ja. */
+    withdraw?(id: string, grund: string): { ok: boolean; message?: string }
 }
 
 /** Trust ladder store location (tests); default the data root. */
@@ -196,11 +218,52 @@ function noteMeasuredClosing(thoughts: HandoffThoughtPort | undefined, record: H
     } catch { /* thoughts are visibility, never a reason to fail */ }
 }
 
+/**
+ * 2.84.0 Punkt 7: a case closed by measurement before its handoff left the
+ * house is not sent any more. A waiting delegation (L2 card) is withdrawn, a
+ * queued record without one is closed; neither counts for the trust ladder
+ * (`trustCounted`, neither Ja nor Nein). Something already sent stays with the
+ * Rückkanal. A recurrence reopens the same case and makes a new record
+ * (`observationHash`).
+ */
+function withdrawClosedCases(records: HandoffRecord[], byCase: ReadonlyMap<string, FailureResearchCase>, delegation: HandoffDelegationPort, thoughts?: HandoffThoughtPort): void {
+    for (const [index, record] of records.entries()) {
+        if (record.trustCounted || record.state === 'declined' || record.state === 'sent') continue
+        const item = byCase.get(record.caseId)
+        if (!item || !(item.findingOpen === false || item.stage === 'resolved')) continue
+        const current = record.delegationId ? delegation.get(record.delegationId) : null
+        if (current?.sentAt) continue
+        if (current && current.status !== 'wartet-auf-freigabe' && current.status !== 'zurueckgezogen') continue
+        if (current?.status === 'wartet-auf-freigabe') {
+            const result = delegation.withdraw?.(current.id, 'Fall gemessen geschlossen')
+            if (!result?.ok) continue
+        }
+        if (record.state !== 'queued' && !current) continue
+        const wasClosed = record.state === 'closed'
+        records[index] = { ...record, state: 'closed', trustCounted: true, lastError: undefined }
+        if (!wasClosed) noteWithdrawn(thoughts, record, item)
+    }
+}
+
+function noteWithdrawn(thoughts: HandoffThoughtPort | undefined, record: HandoffRecord, item: FailureResearchCase): void {
+    if (!thoughts) return
+    try {
+        const measurement = item.evidenceRefs.filter(ref => ref.startsWith('messung:') || ref.startsWith('repair-controller:')).at(-1)
+        const added = thoughts.add({
+            source: 'bug-finder', kind: 'ereignis', severity: 'info', signature: `doctor-handoff-withdrawn:${record.id}`,
+            title: `Übergabe zurückgezogen: Fehler nicht mehr beobachtet („${clip(record.title, 80)}“)`,
+            evidence: `Fall ${record.caseId}${record.delegationId ? `, Delegation ${record.delegationId}` : ''} nicht an Claude gesendet. ${measurement ? `Beleg: ${measurement}` : 'Fall geschlossen'}. Heißt: nicht mehr beobachtet, nicht „repariert bestätigt“.`,
+        }) as { thought?: { id?: string } } | undefined
+        const id = added?.thought?.id
+        if (id && thoughts.setStatus) thoughts.setStatus(id, 'erledigt', 'messung')
+    } catch { /* thoughts are visibility, never a reason to fail */ }
+}
+
 async function defaultDelegationPort(): Promise<HandoffDelegationPort> {
     const { delegate, getDelegationService } = await import('../core/delegation.js')
     const service = getDelegationService()
     // Module-level delegate() also arms the Rückkanal polling.
-    return { config: service.config, delegate: request => delegate(request), get: id => service.get(id) }
+    return { config: service.config, delegate: request => delegate(request), get: id => service.get(id), withdraw: (id, grund) => service.withdraw(id, grund) }
 }
 
 /**
@@ -224,6 +287,9 @@ async function followDelegations(records: HandoffRecord[], delegation: HandoffDe
                 // Alfred said Nein on the card: final, and the ladder starts again.
                 next = { ...next, state: 'declined', lastError: clip(current.fehler || 'abgelehnt', 200), trustCounted: true }
                 policy.recordOwnerAnswer(DOCTOR_HANDOFF_KIND, 'nein', trust)
+            } else if (current.status === 'zurueckgezogen') {
+                // 2.84.0 Punkt 7: withdrawn before sending — final, no new attempt, no ladder.
+                next = { ...next, state: 'closed', trustCounted: true }
             } else if (current.status === 'fehler' || current.status === 'abgelaufen') {
                 // Never left the house: a bounded new attempt next tick.
                 next = { ...next, delegationId: undefined, lastError: clip(current.fehler || current.status, 200) }
@@ -252,15 +318,16 @@ export async function runClaudeHandoffTick(input: {
     const before = JSON.stringify(records)
     const fresh = selectHandoffs(input.cases, records, { node: input.node, version: input.version, now })
     records = [...records, ...fresh]
-    const reconciled = reconcileAfterRollout(records, input.cases, input.version)
+    const reconciled = reconcileAfterRollout(records, input.cases, input.version, now)
     records = reconciled.records
     const byCase = new Map(input.cases.map(item => [item.id, item]))
     for (const change of reconciled.changes) if (change.state === 'closed') noteMeasuredClosing(input.thoughts, change, byCase.get(change.caseId))
 
     let delegated = 0
     const delegation = input.delegation || await defaultDelegationPort()
+    if (delegation.config.enabled && delegation.config.url) await followDelegations(records, delegation, trust)
+    withdrawClosedCases(records, byCase, delegation, input.thoughts)
     if (delegation.config.enabled && delegation.config.url) {
-        await followDelegations(records, delegation, trust)
         const { evaluateActionWithTrust } = await import('../core/action-policy.js')
         // queued: a new case without a delegation yet; one each, bounded per tick.
         const due = records.filter(record => record.state === 'queued' && !record.delegationId && (record.attempts || 0) < MAX_DELEGATION_ATTEMPTS)

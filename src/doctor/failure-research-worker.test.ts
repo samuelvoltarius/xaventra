@@ -167,6 +167,8 @@ describe('persistent Doctor investigation dispatch', () => {
         const f = fixture()
         f.execute.mockImplementation(async input => {
             f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            // 2.84.0: a diagnostic call was made (and failed) — a real attempt, not infrastructure.
+            f.ledger.recordTool(input.contract.id, { toolName: 'health_status', success: false, error: 'denied' })
             f.ledger.fail(input.contract.id, { success: false, error: 'diagnostic provider unavailable' })
             throw new Error('reply lost after failed outcome commit')
         })
@@ -222,6 +224,8 @@ describe('persistent Doctor investigation dispatch', () => {
         const f = fixture()
         f.execute.mockImplementation(async input => {
             f.ledger.start(input.contract, { userId: 'Nova-Autonomy', channel: 'internal' })
+            // 2.84.0: a diagnostic call was made (and failed) — a real attempt, not infrastructure.
+            f.ledger.recordTool(input.contract.id, { toolName: 'health_status', success: false, error: 'denied' })
             f.ledger.fail(input.contract.id, { success: false, error: 'model unavailable' })
             throw new Error('model unavailable')
         })

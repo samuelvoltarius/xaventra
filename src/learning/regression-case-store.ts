@@ -4,6 +4,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaLearningDir } from '../core/data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { ErrorOccurrence, ErrorSourcePort } from '../thinking/bug-finder.js'
+import type { OutcomeLedger } from '../core/outcome-ledger.js'
 
 export interface LearnedRegressionCase {
     id: string; userId: string; taskType: string; failureClass: string; redactedRequest: string
@@ -37,9 +38,10 @@ export class RegressionCaseStore {
         if (!item || item.status !== 'quarantined' || !evidenceRef.startsWith('test:')) return null
         item.status = 'promoted'; item.updatedAt = new Date().toISOString(); this.persist(); return structuredClone(item)
     }
+    /** Resolved by a benchmark or (2.84.0 Punkt 3) by the measured closing of its Doctor case. */
     resolve(id: string, evidenceRef: string): LearnedRegressionCase | null {
         const item = this.cases.find(value => value.id === id)
-        if (!item || item.status !== 'promoted' || !evidenceRef.startsWith('benchmark:')) return null
+        if (!item || item.status !== 'promoted' || !(evidenceRef.startsWith('benchmark:') || evidenceRef.startsWith('messung:'))) return null
         item.status = 'resolved'; item.updatedAt = new Date().toISOString(); this.persist(); return structuredClone(item)
     }
     toTestSpec(id: string) {
@@ -55,8 +57,25 @@ export class RegressionCaseStore {
  * Claude-Übergabe gerät. Validator-Ablehnungen (`validator-rejected:*`)
  * laufen schon über die Validator-Eskalation und kommen hier nicht doppelt.
  */
-export function regressionErrorSource(store?: RegressionCaseStore): ErrorSourcePort {
+export function regressionErrorSource(store?: RegressionCaseStore, ledger?: Pick<OutcomeLedger, 'listRuns'>): ErrorSourcePort {
     return {
+        /**
+         * 2.84.0 Punkt 3: `aufgabe:<taskType>` = validated, not rejected owner
+         * runs of the same task type. The one definition of a counting success
+         * is the validator escalation's (`validatedSuccess`). Imported lazily:
+         * the Outcome Ledger itself records into this store.
+         */
+        async successes(sinceMs) {
+            const { validatedSuccess, validatorTaskType } = await import('../core/validator-failure-escalation.js')
+            const runs = (ledger || (await import('../core/outcome-ledger.js')).getOutcomeLedger()).listRuns(500)
+            const out: Record<string, number> = {}
+            for (const run of runs) {
+                if (!validatedSuccess(run) || !((Date.parse(run.updatedAt) || 0) >= sinceMs)) continue
+                const subject = `aufgabe:${validatorTaskType(run)}`
+                out[subject] = (out[subject] || 0) + 1
+            }
+            return out
+        },
         collect(sinceMs) {
             const out: ErrorOccurrence[] = []
             for (const item of (store || getRegressionCaseStore()).list()) {

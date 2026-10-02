@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { getOutcomeLedger, type OutcomeLedger, type OutcomeRunView } from './outcome-ledger.js'
 import type { DoctorFinding } from './self-doctor.js'
 import { getFailureResearchCoordinator, observationFingerprint, type FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
+import { MIN_MEASURE_AFTER_ROLLOUT_MS } from '../thinking/bug-finder.js'
 
 /** 2.83.0 Punkt 8: a Doctor case needs this many rejected runs of the same shape … */
 export const VALIDATOR_GROUP_MIN_RUNS = 3
@@ -29,8 +30,9 @@ function ownerKernelRun(run: OutcomeRunView): boolean {
         && run.validation?.validator === 'nova-execution-kernel' && !run.validation.awaitingApproval
 }
 
-/** Punkt 1: a validated success of a real owner run (counts as "the task type works again"). */
-function validatedSuccess(run: OutcomeRunView): boolean {
+/** Punkt 1: a validated success of a real owner run (counts as "the task type works again").
+ * 2.84.0 Punkt 3: exported as the one definition, also for `aufgabe:` cases. */
+export function validatedSuccess(run: OutcomeRunView): boolean {
     return run.status === 'completed' && ownerKernelRun(run) && run.validation?.success === true
 }
 
@@ -67,39 +69,44 @@ export function validatorShapeFinding(taskType: string, failedKinds: readonly st
 /** Reconcile committed Kernel failures into the existing durable Doctor queue.
  * 2.83.0 Punkt 8: one case per failure shape, not per run. An open case of the
  * same shape only receives the new run references; a new case needs
- * VALIDATOR_GROUP_MIN_RUNS rejections in VALIDATOR_GROUP_WINDOW_DAYS. Legacy
- * per-run cases stay and keep their runs. A crash after run.failed is
- * recovered by the next authorized autonomy cycle.
+ * VALIDATOR_GROUP_MIN_RUNS rejections in VALIDATOR_GROUP_WINDOW_DAYS.
+ * 2.84.0 Punkt 3: legacy per-run cases (before 2.83) whose shape has a case
+ * are merged into it and closed; a handed-over shape case is measured from
+ * its rollout (`measureSince`). A crash after run.failed is recovered by the
+ * next authorized autonomy cycle.
  */
 export function reconcileValidatorFailures(
     ledger: Pick<OutcomeLedger, 'listRuns'> = getOutcomeLedger(),
     doctor: DoctorPort = getFailureResearchCoordinator(),
     now: number = Date.now(),
+    measureSince?: (caseId: string) => number | undefined,
 ): number {
     const cases = doctor.list()
     const legacy = new Set(cases.map(item => item.findingId))
     const cutoff = now - VALIDATOR_GROUP_WINDOW_DAYS * 24 * 60 * 60_000
     const groups = new Map<string, Rejection[]>()
-    const successes = new Map<string, number>()
-    for (const run of ledger.listRuns(200)) {
-        if (validatedSuccess(run) && (Date.parse(run.updatedAt) || 0) >= cutoff) {
-            const taskType = validatorTaskType(run)
-            successes.set(taskType, (successes.get(taskType) || 0) + 1)
+    const successes: Array<{ taskType: string; at: number }> = []
+    const rejectedAt = new Map<string, number[]>()
+    const runs = ledger.listRuns(200)
+    for (const run of runs) {
+        if (validatedSuccess(run)) {
+            successes.push({ taskType: validatorTaskType(run), at: Date.parse(run.updatedAt) || 0 })
             continue
         }
         const rejection = rejectionOf(run)
-        if (!rejection || rejection.at < cutoff || legacy.has(rejection.legacyId)) continue
+        if (!rejection || legacy.has(rejection.legacyId)) continue
         const key = JSON.stringify([rejection.taskType, rejection.failedKinds])
+        const hash = observationFingerprint(validatorShapeFinding(rejection.taskType, rejection.failedKinds, 0, ''))
+        rejectedAt.set(hash, [...(rejectedAt.get(hash) || []), rejection.at])
+        if (rejection.at < cutoff) continue
         groups.set(key, [...(groups.get(key) || []), rejection])
     }
-    const seen = new Set<string>()
     let added = 0
     for (const items of groups.values()) {
         const { taskType, failedKinds } = items[0]
         const latest = new Date(Math.max(...items.map(item => item.at))).toISOString()
         const finding = validatorShapeFinding(taskType, failedKinds, items.length, latest)
         const hash = observationFingerprint(finding)
-        seen.add(hash)
         const existing = cases.find(item => item.findingId === finding.id || (item.observationHash === hash && item.findingId.startsWith('validator-failure-')))
         const refs = items.map(item => item.runRef)
         if (existing && existing.findingOpen !== false) {
@@ -116,24 +123,62 @@ export function reconcileValidatorFailures(
         doctor.addEvidenceRefs?.(item.id, relevant.map(entry => entry.runRef))
         added++
     }
-    closeHealedShapes(doctor, seen, successes, now)
+    mergeLegacyCases(ledger, doctor, runs)
+    closeHealedShapes(doctor, rejectedAt, successes, now, cutoff, measureSince)
     return added
+}
+
+/**
+ * 2.84.0 Punkt 3: a legacy case (one per run, before 2.83) never closed and was
+ * investigated and handed over again and again. Recompute its shape from the
+ * ledger; when a shape case exists, the legacy case closes as merged and its
+ * run becomes evidence of the shape case. Without a shape case it stays.
+ */
+function mergeLegacyCases(ledger: Pick<OutcomeLedger, 'listRuns'>, doctor: DoctorPort, recent: readonly OutcomeRunView[]): void {
+    if (!doctor.closeByMeasurement) return
+    const cases = doctor.list()
+    const open = new Map(cases
+        .filter(item => item.findingOpen !== false && item.findingId.startsWith('validator-failure-') && !/Aufgabenart: /.test(item.hypothesis))
+        .map(item => [item.findingId, item]))
+    if (!open.size) return
+    // Legacy runs can be older than the recent window: read deeper, once.
+    const runs = recent.length >= 200 ? ledger.listRuns(2_000) : recent
+    for (const run of runs) {
+        const rejection = rejectionOf(run)
+        const old = rejection && open.get(rejection.legacyId)
+        if (!rejection || !old) continue
+        const finding = validatorShapeFinding(rejection.taskType, rejection.failedKinds, 0, '')
+        const hash = observationFingerprint(finding)
+        const shape = cases.find(item => item.id !== old.id && (item.findingId === finding.id || (item.observationHash === hash && item.findingId.startsWith('validator-failure-'))))
+        if (!shape) continue
+        doctor.addEvidenceRefs?.(shape.id, [rejection.runRef])
+        doctor.closeByMeasurement(old.id, `zusammengefuehrt:${shape.id}`)
+        open.delete(rejection.legacyId)
+    }
 }
 
 /**
  * 2.83.0 Punkt 1: an open shape case closes when its shape was not rejected in
  * the window and the same task type passed the Kernel validator at least
- * VALIDATOR_GROUP_MIN_RUNS times. "Closed" = no longer observed, never
- * "repaired"; legacy per-run cases (no task type in the text) stay open.
+ * VALIDATOR_GROUP_MIN_RUNS times. 2.84.0 Punkt 3: a handed-over case is
+ * measured from its rollout instead (at least 24 h after it). "Closed" = no
+ * longer observed, never "repaired"; legacy cases close only by merging.
  */
-function closeHealedShapes(doctor: DoctorPort, seen: ReadonlySet<string>, successes: ReadonlyMap<string, number>, now: number): void {
+function closeHealedShapes(doctor: DoctorPort, rejectedAt: ReadonlyMap<string, readonly number[]>, successes: ReadonlyArray<{ taskType: string; at: number }>,
+    now: number, cutoff: number, measureSince?: (caseId: string) => number | undefined): void {
     if (!doctor.closeByMeasurement) return
     for (const item of doctor.list()) {
         if (item.findingOpen === false || !item.findingId.startsWith('validator-failure-')) continue
-        if (item.observationHash && seen.has(item.observationHash)) continue
         const taskType = /Aufgabenart: ([a-z0-9_-]+);/.exec(item.hypothesis)?.[1]
-        const ok = taskType ? successes.get(taskType) || 0 : 0
-        if (!taskType || ok < VALIDATOR_GROUP_MIN_RUNS) continue
-        doctor.closeByMeasurement(item.id, `messung:validator:${taskType}:${ok}-ok:0-abgelehnt:${VALIDATOR_GROUP_WINDOW_DAYS}d`, new Date(now))
+        if (!taskType) continue
+        let rollout: number | undefined
+        try { rollout = measureSince?.(item.id) } catch { rollout = undefined }
+        const fromRollout = typeof rollout === 'number' && Number.isFinite(rollout)
+        if (fromRollout && now - rollout! < MIN_MEASURE_AFTER_ROLLOUT_MS) continue
+        const from = fromRollout ? Math.max(cutoff, rollout!) : cutoff
+        if (item.observationHash && (rejectedAt.get(item.observationHash) || []).some(at => at >= from)) continue
+        const ok = successes.filter(entry => entry.taskType === taskType && entry.at >= from).length
+        if (ok < VALIDATOR_GROUP_MIN_RUNS) continue
+        doctor.closeByMeasurement(item.id, `messung:validator:${taskType}:${ok}-ok:0-abgelehnt:${fromRollout ? 'seit-rollout' : `${VALIDATOR_GROUP_WINDOW_DAYS}d`}`, new Date(now))
     }
 }
