@@ -40,6 +40,7 @@ import { isAutonomyWorker } from '../core/autonomy-defaults.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { NovaTool } from './complete-registry.js'
 import { getRoutineSkillStore } from '../learning/routine-skills.js'
+import { classifyNeed, readScoutMissingCapabilities } from '../install/software-demand.js'
 import {
     createManifestFetch, createManifestReadFile, FORGE_ALLOWED_MODULES, FORGE_IMPACTS, runInForgeSandbox, sandboxSupport, validateForgeCode,
     type ForgeImpact, type ForgeManifest, type SandboxFetchRequest,
@@ -1018,7 +1019,8 @@ export function detectForgeNeed(ctx: ForgeNeedContext): { kind: ForgeNeedKind; d
     return null
 }
 
-interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind | 'neue-version'; at: string; built: boolean; skillId?: string; from?: string; missingTool?: string }> }
+/** `grund`: 2.86 Punkt 2 — why the need went to another recipient (e.g. "Fähigkeit fehlt (vision) → Software-Scout"). */
+interface NeedFile { version: 1; needs: Array<{ signature: string; kind: ForgeNeedKind | 'neue-version'; at: string; built: boolean; skillId?: string; from?: string; missingTool?: string; grund?: string }> }
 const needFile = () => getNovaDataDir('forge', 'bedarf.json')
 function readNeeds(): NeedFile {
     try { const raw = JSON.parse(readFileSync(needFile(), 'utf8')); return raw?.version === 1 && Array.isArray(raw.needs) ? raw : { version: 1, needs: [] } } catch { return { version: 1, needs: [] } }
@@ -1075,9 +1077,20 @@ export function noteForgeNeed(ctx: ForgeNeedContext, options: { allowInTests?: b
     const file = readNeeds()
     file.needs = file.needs.filter(item => now - Date.parse(item.at) < NEED_WINDOW_MS)
     if (file.needs.some(item => item.signature === signature)) return { queued: false, reason: 'Bedarf schon bearbeitet', kind: need.kind }
+    const missingTool = need.kind === 'fehlendes-werkzeug' ? /^fehlt: ([A-Za-z0-9_.-]{2,80})$/.exec(need.detail)?.[1] : undefined
+    // 2.86 Punkt 2: one need, one recipient. A missing tool whose capability is missing in the
+    // mesh (Software-Scout) or whose service is not connected is no forge build: recorded (the
+    // scout counts it as need), not built, not counted against the daily limit.
+    if (missingTool) {
+        const routed = classifyNeed(missingTool, `Tool nicht gefunden: ${missingTool}`, { missingCapabilities: readScoutMissingCapabilities({ now }) })
+        if (routed.kind !== 'werkzeug') {
+            file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: false, missingTool, grund: routed.reason })
+            atomicWriteJsonSync(needFile(), file)
+            return { queued: false, reason: routed.reason, kind: need.kind }
+        }
+    }
     if (buildsWithinDay(file, now) >= MAX_BUILDS_PER_DAY) return { queued: false, reason: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, kind: need.kind }
     const canBuild = forgeModel !== null
-    const missingTool = need.kind === 'fehlendes-werkzeug' ? /^fehlt: ([A-Za-z0-9_.-]{2,80})$/.exec(need.detail)?.[1] : undefined
     file.needs.push({ signature, kind: need.kind, at: new Date(now).toISOString(), built: canBuild, ...(missingTool ? { missingTool } : {}), ...(need.adoptFor ? { skillId: need.adoptFor.skillId, from: need.adoptFor.from } : {}) })
     atomicWriteJsonSync(needFile(), file)
     if (!canBuild) {

@@ -92,7 +92,9 @@ describe('Punkt 8: der Scout misst installierte Modelle', () => {
         const idea = sink.thoughts.find(item => item.text.includes('org/neu-8b'))
         expect(idea?.stufe).toBe('selbst')
         expect(idea?.proposal).toBeUndefined()
-        expect(idea?.text).toMatch(/Zielliste/)
+        // 2.86 Punkt 8: keine Config-Arbeit für den Owner mehr, sondern Katalogpflege durch Claude.
+        expect(idea?.text).toMatch(/Katalogpflege/)
+        expect(idea?.text).not.toMatch(/routing\.vllm\.targets/)
         expect(sink.thoughts.filter(item => item.kind === 'modell-wechsel').every(item => !item.text.includes('org/neu-8b'))).toBe(true)
     })
 

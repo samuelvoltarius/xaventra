@@ -21,12 +21,18 @@
  *    (`routing.vllm.targets`; der Vorschlag nennt den Zielnamen). Sonst Idee.
  *    Kein automatischer Wechsel: dieses Modul hat keinen Zugriff auf die
  *    Modell-Umschaltung.
+ * 6. 2.86 Punkt 8: Ein Fund endet nicht mehr als Config-Arbeit für den Owner
+ *    („auf die Zielliste setzen“). Nicht installierte passende Kandidaten und
+ *    gemessene Sieger ohne Wechselziel werden für die Katalogpflege gesammelt
+ *    (install/software-freshness.ts) und höchstens einmal pro Woche gebündelt
+ *    über die vorhandene Delegation an Claude gegeben.
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import type { CatalogFinding } from '../install/software-freshness.js'
 import type { ProbeCase } from './probe-set.js'
 import { judgeLoad, newThoughtId, type LoadProbe, type Thought, type ThoughtSink, type ThinkingSettings } from './ports.js'
 
@@ -195,7 +201,12 @@ export interface ModelScoutDeps {
     reportPath?: string
     now?: Date
     importanceFactor?: (kind: string) => number
+    /** 2.86 Punkt 8: where model finds go (default: the Katalogpflege collection in software-freshness.ts). */
+    catalogCare?: { note(findings: CatalogFinding[]): void | Promise<void> }
 }
+
+/** How many not-installed candidates of one run go to the Katalogpflege (the best-ranked first). */
+const MAX_CARE_FINDS_PER_RUN = 5
 
 export interface ModelScoutResult {
     ran: boolean
@@ -242,8 +253,16 @@ export async function runModelScout(deps: ModelScoutDeps): Promise<ModelScoutRes
     const installed = [...new Map((inventory.installed || []).filter(model => model && (!current || !sameModel(model, current))).map(model => [model.toLowerCase(), model])).values()]
     const targetOf = (model: string) => (inventory.targets || []).find(item => sameModel(item.target, model) || (item.modelId ? sameModel(item.modelId, model) : false))
     const ideas: Array<{ model: string; reason: string }> = deps.runner
-        ? fit.filter(item => !installed.some(model => sameModel(model, item.id))).map(item => ({ model: item.id, reason: 'passt, nicht installiert; zum Testen auf die Zielliste setzen' }))
+        ? fit.filter(item => !installed.some(model => sameModel(model, item.id))).map(item => ({ model: item.id, reason: 'passt, nicht installiert; geht gesammelt an Claude zur Katalogpflege' }))
         : []
+    // 2.86 Punkt 8: finds are collected for Claude's weekly Katalogpflege task, never owner config work.
+    const noteCare = async (findings: CatalogFinding[]) => {
+        if (!findings.length) return
+        try {
+            if (deps.catalogCare) await deps.catalogCare.note(findings)
+            else (await import('../install/software-freshness.js')).noteCatalogFindings(findings, { now: now.getTime() })
+        } catch { /* a lost find comes back next week */ }
+    }
     const report: ScoutReport = {
         createdAt: now.toISOString(), currentModel: current,
         probes: { total: deps.probes.length, doctor: deps.probes.filter(item => item.origin === 'doctor').length, alltag: deps.probes.filter(item => item.origin === 'alltag').length },
@@ -258,10 +277,12 @@ export async function runModelScout(deps: ModelScoutDeps): Promise<ModelScoutRes
     const factor = deps.importanceFactor ? deps.importanceFactor('modell-scout') : 1
     // Pure Hugging Face candidates are an idea in the report — never measured, never a card.
     if (ideas.length) {
+        await noteCare(ideas.slice(0, MAX_CARE_FINDS_PER_RUN).map(item => ({ model: item.model, source: 'modell-scout' as const, reason: 'passt (Speicher, vLLM, Lizenz), nicht installiert', at: now.getTime(),
+            url: `https://huggingface.co/${item.model}` })))
         await deps.sink.emit({
             id: newThoughtId('modell-scout', now), createdAt: now.toISOString(), source: 'modell-scout', kind: 'modell-scout:kandidaten',
             title: `${ideas.length} Modell-Kandidat(en) passen, nicht installiert`,
-            text: `Passend (Speicher, vLLM, Lizenz), aber nicht installiert: ${ideas.slice(0, 5).map(item => item.model).join(', ')}. Zum Testen auf die Zielliste (routing.vllm.targets) setzen; gemessen wird nur Installiertes.`,
+            text: `Passend (Speicher, vLLM, Lizenz), aber nicht installiert: ${ideas.slice(0, 5).map(item => item.model).join(', ')}. Geht gesammelt an Claude zur Katalogpflege (Katalogeintrag bzw. vLLM-Ziel prüfen, höchstens ein Auftrag pro Woche); gemessen wird nur Installiertes.`,
             evidence: [{ metric: 'passende Kandidaten', value: ideas.length, source: deps.sources.map(item => item.name).join(', ') }],
             importance: 0.2 * factor, stufe: 'selbst', status: 'info', dedupeKey: `modell-scout:kandidaten:${ideas.map(item => item.model).sort().join(',')}`,
         })
@@ -301,12 +322,14 @@ export async function runModelScout(deps: ModelScoutDeps): Promise<ModelScoutRes
     const target = targetOf(best.model)
     if (!target) {
         // Better, but no switch target: an idea, never a card whose Ja could only fail.
-        const reason = `${best.gain} % besser gemessen, aber kein Ziel der vLLM-Wechselliste`
+        const reason = `${best.gain} % besser gemessen, aber kein Ziel der vLLM-Wechselliste — geht an Claude zur Katalogpflege`
         ideas.push({ model: best.model, reason })
+        await noteCare([{ model: best.model, source: 'modell-scout', at: now.getTime(),
+            reason: `${best.gain} % besser als ${current} gemessen (${best.passed}/${best.total} gegen ${baseline.passed}/${baseline.total} Prüffälle), kein Ziel der vLLM-Wechselliste` }])
         await deps.sink.emit({
             id: newThoughtId('modell-scout', now), createdAt: now.toISOString(), source: 'modell-scout', kind: 'modell-scout:idee',
             title: `${best.model} war ${best.gain} % besser (kein Wechselziel)`,
-            text: `${best.model} war ${best.gain} % besser als ${current} (${best.passed}/${best.total} gegen ${baseline.passed}/${baseline.total} Prüffälle). Es steht nicht auf der vLLM-Wechselliste (routing.vllm.targets) — kein Wechselvorschlag.`,
+            text: `${best.model} war ${best.gain} % besser als ${current} (${best.passed}/${best.total} gegen ${baseline.passed}/${baseline.total} Prüffälle). Es steht nicht auf der vLLM-Wechselliste — geht gesammelt an Claude zur Katalogpflege (vLLM-Ziel prüfen), kein Wechselvorschlag.`,
             evidence: [
                 { metric: `Trefferquote ${current}`, value: Math.round(baseline.score * 1000) / 10, unit: '%', source: 'Scout-Prüfsatz' },
                 { metric: `Trefferquote ${best.model}`, value: Math.round(best.score * 1000) / 10, unit: '%', source: 'Scout-Prüfsatz' },

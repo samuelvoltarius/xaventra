@@ -1162,6 +1162,14 @@
       "path": ".nova-data/software-scout/bedarf-signale.json"
     },
     {
+      "owner": "src/install/software-freshness.ts",
+      "path": ".nova-data/software-scout/katalogpflege.json"
+    },
+    {
+      "owner": "src/install/software-demand.ts",
+      "path": ".nova-data/software-scout/state.json"
+    },
+    {
       "owner": "src/install/software-scout.ts",
       "path": ".nova-data/software-scout/state.json"
     },
