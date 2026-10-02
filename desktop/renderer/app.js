@@ -785,11 +785,12 @@ const DECISION_STATUS = { aktiv: ['good', 'gilt'], rueckfrage: ['warn', 'Rückfr
 const FORGE_STATUS = { proposed: ['info', 'Entwurf'], tested: ['info', 'getestet'], 'awaiting-approval': ['warn', 'wartet auf Freigabe'], active: ['good', 'aktiv'], degraded: ['bad', 'gestört'], disabled: ['', 'aus'], rejected: ['', 'abgelehnt'] }
 function gedaechtnisView() {
   const { data, error } = viewState('gedaechtnis')
-  const head = pageHead('Gedächtnis', 'Was sie sich merkt', 'Entscheidungen, die sie aus deinen Worten und Antworten abgeleitet hat, die Werkzeuge, die sie sich selbst gebaut hat, und kuratiertes Wissen.', 'gedaechtnis')
+  const head = pageHead('Gedächtnis', 'Was sie sich merkt', 'Entscheidungen, die sie aus deinen Worten und Antworten abgeleitet hat, gelernte Prozeduren, die Werkzeuge, die sie sich selbst gebaut hat, und kuratiertes Wissen.', 'gedaechtnis')
   const tab = state.tabs.gedaechtnis
   const decisions = data?.entscheidungen || []
   const tools = data?.werkzeuge || []
-  const tabs = [['entscheidungen', 'Entscheidungen', decisions.filter(item => item.status === 'aktiv').length], ['werkzeuge', 'Werkzeuge', tools.filter(item => item.status === 'active').length], ['wissen', 'Wissen', 0]]
+  const procedures = data?.prozeduren || []
+  const tabs = [['entscheidungen', 'Entscheidungen', decisions.filter(item => item.status === 'aktiv').length], ['prozeduren', 'Prozeduren', procedures.filter(item => item.status === 'aktiv').length], ['werkzeuge', 'Werkzeuge', tools.filter(item => item.status === 'active').length], ['wissen', 'Wissen', 0]]
   const nav = `<nav class="tabs" aria-label="Gedächtnis">${tabs.map(([id, label, count]) => `<button class="tab ${tab === id ? 'active' : ''}" data-tab="gedaechtnis:${id}" ${tab === id ? 'aria-current="true"' : ''}>${esc(label)}${count ? `<span class="count">${count}</span>` : ''}</button>`).join('')}</nav>`
   if (tab === 'wissen') return `<div class="page"><div class="page-inner">${head}${nav}${wissenBody()}</div></div>`
   if (error && !data) return `<div class="page"><div class="page-inner">${head}${nav}${viewErrorBlock(error)}</div></div>`
@@ -802,6 +803,14 @@ function gedaechtnisView() {
         <div class="row-side">${item.bindend ? '<span class="pill info">bindend</span>' : ''}<span class="pill ${tone}">${esc(label)}</span></div></div>`
     }).join('')}</div></section><p class="section-note">Ändern oder zurücknehmen: sag es ihr in der Unterhaltung („das gilt nicht mehr“).</p>`
       : `<div class="section"><div class="section-body"><div class="empty-note">Noch keine Entscheidungen gemerkt.</div></div></div>`
+  } else if (tab === 'prozeduren') {
+    // 2.86: Prozeduren mit an/aus (dieselbe Funktion wie /prozeduren) und der Lern-Puls.
+    const pulse = data.lernPuls
+    const pulseRows = [...(pulse?.kanaele || []).filter(item => item.dieseWoche || item.vorwoche).map(item => `<div class="row"><div><div class="row-title">${esc(item.label)}</div><div class="row-sub">diese Woche ${fmtNumber(item.dieseWoche)} · Vorwoche ${fmtNumber(item.vorwoche)}</div></div></div>`),
+      ...(pulse?.nutzen || []).map(item => `<div class="row"><div><div class="row-title">${esc(item.label)} im Einsatz</div><div class="row-sub">${fmtNumber(item.abrufe)} Abrufe · ${fmtNumber(item.ok)} ok</div></div></div>`)]
+    body = `<section class="section"><div class="section-head"><h2>Prozeduren</h2><span class="section-note">entstehen aus zweimal verifizierten Werkzeug-Ergebnissen</span></div>${procedures.length ? `<div class="rows">${procedures.map(item => `<div class="row"><div><div class="row-title">${esc(item.problem)}</div><div class="row-sub">${esc(item.werkzeug || '–')} · ${fmtNumber(item.abrufe)} Abrufe (${fmtNumber(item.ok)} ok)${item.gelerntAm ? ` · gelernt ${esc(fmtTime(item.gelerntAm))}` : ''}</div></div>
+        <div class="row-side"><span class="pill ${item.status === 'aktiv' ? 'good' : ''}">${esc(item.status)}</span><button class="${item.an ? 'ghost' : 'secondary'}" data-procedure-nr="${attr(item.nr)}" data-procedure-an="${item.an ? 'false' : 'true'}">${item.an ? 'Ausschalten' : 'Einschalten'}</button></div></div>`).join('')}</div>` : '<div class="section-body"><div class="empty-note">Noch keine Prozeduren gelernt.</div></div>'}</section>
+      <section class="section"><div class="section-head"><h2>Lern-Puls</h2><span class="section-note">neue Einträge je Lernspeicher</span></div><div class="rows">${pulseRows.join('') || '<div class="row"><div class="row-sub">Diese und letzte Woche nichts Neues gelernt.</div></div>'}</div></section>`
   } else {
     body = tools.length ? `<div class="tiles">${tools.map(item => {
       const [tone, label] = FORGE_STATUS[item.status] || ['', item.status]
@@ -1140,6 +1149,7 @@ function bind() {
   document.querySelector('[data-action="run-red-team"]')?.addEventListener('click', runRedTeam)
   document.querySelectorAll('[data-launch-module]').forEach(node => node.addEventListener('click', () => launchModule(node.dataset.launchModule)))
   document.querySelectorAll('[data-forge-action]').forEach(node => node.addEventListener('click', () => forgeAction(node.dataset.id, node.dataset.forgeAction)))
+  document.querySelectorAll('[data-procedure-nr]').forEach(node => node.addEventListener('click', () => procedureSwitch(node.dataset.procedureNr, node.dataset.procedureAn === 'true')))
   document.querySelectorAll('[data-toggle-bot]').forEach(node => node.addEventListener('click', () => { const id = node.dataset.toggleBot; state.selectedBots.has(id) ? state.selectedBots.delete(id) : state.selectedBots.add(id); render() }))
   document.querySelectorAll('[data-toggle-node]').forEach(node => node.addEventListener('click', () => { const id = node.dataset.toggleNode; state.selectedNodes.has(id) ? state.selectedNodes.delete(id) : state.selectedNodes.add(id); render() }))
   document.querySelector('[data-action="toggle-experts"]')?.addEventListener('click', () => { state.expertPanel = !state.expertPanel; render() })
@@ -1380,6 +1390,14 @@ async function forgeAction(id, action) {
     await api.post(`/api/desktop/forge/${encodeURIComponent(id)}/${action}`, {})
     await ensureView('gedaechtnis', { force: true }); render()
     toast(action === 'authorize-sandbox' ? 'Freigegeben: aktiv wird das Werkzeug nur mit grünen Tests.' : 'Werkzeug abgelehnt.')
+  } catch (error) { fail(error) }
+}
+
+async function procedureSwitch(nr, an) {
+  try {
+    const result = await api.post(`/api/desktop/prozeduren/${encodeURIComponent(nr)}`, { an })
+    await ensureView('gedaechtnis', { force: true }); render()
+    toast(result?.message || (an ? 'Prozedur eingeschaltet.' : 'Prozedur ausgeschaltet.'))
   } catch (error) { fail(error) }
 }
 

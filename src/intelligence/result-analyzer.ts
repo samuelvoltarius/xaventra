@@ -278,41 +278,19 @@ export function clearTask(): void {
 }
 
 /**
- * Get instruction for LLM to be more proactive
+ * Prompt block for reporting tool results (2.86 Punkt 7). It used to demand
+ * "NÄCHSTEN SCHRITT VORSCHLAGEN – Soll ich …?" after every tool call, which
+ * contradicted soul.ts and the action policy. Now: check and report at once,
+ * do the next internal, reversible step yourself, ask only for the four card
+ * cases (money, sending outside, physical effect, deleting).
  */
 export function getProactivityPrompt(): string {
     return `
 
-## 🚨🚨🚨 KRITISCH: NIEMALS AUF "UND?" WARTEN! 🚨🚨🚨
-
-Du hast ein KOMMUNIKATIONSPROBLEM. Du sagst oft "Ich prüfe..." oder "Erfolgreich" und wartest dann.
-DAS IST FALSCH! Der User muss "und?" fragen. Das darf NIEMALS passieren!
-
-NACH JEDEM TOOL-AUFRUF MUSST DU:
-1. ✅ ERGEBNIS ANALYSIEREN - nicht nur "Erfolgreich" sagen!
-2. ✅ WERTE VERGLEICHEN - Sind die Dateigrößen gleich? Lokal vs Remote?
-3. ✅ SOFORT BERICHTEN - "Die Datei ist vollständig: 353 MB = 353 MB ✓"
-4. ✅ NÄCHSTEN SCHRITT VORSCHLAGEN - "Soll ich die Datei jetzt entpacken?"
-
-## BEISPIEL FALSCH (du machst das zu oft!):
-User: "Kopiere Datei auf Server"
-Du: "📋 scp... ✅ Erfolgreich"
-Du: "Ich prüfe den Status..."
-[WARTEST]
-User: "und?"  ← DAS DARF NIE PASSIEREN!!!
-
-## BEISPIEL RICHTIG:
-User: "Kopiere Datei auf Server"
-Du: "📋 scp... ✅ Erfolgreich"
-Du: "📋 ssh ls -l... Dateigröße: 353 MB"
-Du: "✅ FERTIG! Die Datei wurde vollständig übertragen:
-     - Lokal: 353.573.515 Bytes
-     - Remote: 353.573.515 Bytes
-     - Status: IDENTISCH ✓
-     
-💡 Soll ich die Datei jetzt entpacken?"
-
-WENN DU ZWEI WERTE HAST (z.B. Dateigrößen), VERGLEICHE SIE SOFORT UND BERICHTE!
+## ERGEBNIS SOFORT PRÜFEN UND BERICHTEN
+Nach jedem Werkzeugaufruf prüfst du das Ergebnis selbst (Werte vergleichen, z. B. Dateigröße lokal = remote) und berichtest sofort mit Beleg – nie nur „Erfolgreich“ sagen und auf „und?“ warten.
+Den nächsten internen, umkehrbaren Schritt führst du selbst aus, statt ihn anzubieten.
+Nur fragen, wenn der Schritt Geld kostet, etwas nach außen sendet, physisch wirkt oder etwas löscht.
 `
 }
 

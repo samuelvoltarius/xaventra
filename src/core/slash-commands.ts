@@ -93,6 +93,65 @@ export async function formatAllNodeProfiles(now = Date.now()): Promise<string> {
     return formatNodeOverview([{ nodeId: localId, profile: { ...local, nodeId: localId }, local: true }, ...peers], now)
 }
 
+/**
+ * 2.86 Punkt 9: the one command menu. Telegram's "/" suggestions
+ * (setMyCommands) and the text help are generated from this list instead of
+ * hand-typed copies. Only owner-relevant entries; every entry has a handler
+ * below (slash-command-menu.test.ts). Slash commands are a shortcut, not the
+ * way to operate Xaventra — asking in plain words gives the same answers.
+ */
+export interface CommandMenuEntry { command: string; description: string; gruppe: string }
+export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
+    // Überblick
+    { command: 'help', description: '✨ Befehle anzeigen', gruppe: 'Überblick' },
+    { command: 'status', description: '📊 System-Status & Uptime', gruppe: 'Überblick' },
+    { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)', gruppe: 'Überblick' },
+    { command: 'arbeit', description: '🗂️ Verantwortungen & Missionen (Owner)', gruppe: 'Überblick' },
+    { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)', gruppe: 'Überblick' },
+    // Gelerntes
+    { command: 'gelernt', description: '🎓 Was ich gelernt habe', gruppe: 'Gelerntes' },
+    { command: 'prozeduren', description: '📚 Gelernte Prozeduren, einzeln an/aus (Owner)', gruppe: 'Gelerntes' },
+    { command: 'werkzeuge', description: '🧰 Selbst gebaute Werkzeuge (Owner)', gruppe: 'Gelerntes' },
+    { command: 'entscheidungen', description: '🧾 Gemerkte Entscheidungen & Warum (Owner)', gruppe: 'Gelerntes' },
+    { command: 'memory', description: '💾 Memory-Status', gruppe: 'Gelerntes' },
+    // Aufträge
+    { command: 'auftrag', description: '🎯 Auftrag starten/verwalten', gruppe: 'Aufträge' },
+    { command: 'routine', description: '❤️ Tägliche Routinen (Planer)', gruppe: 'Aufträge' },
+    { command: 'delegiert', description: '🤝 Delegierte Aufträge & Belege (Owner)', gruppe: 'Aufträge' },
+    { command: 'autonom', description: '🚀 Autonomie-Modus', gruppe: 'Aufträge' },
+    // Wahrnehmen
+    { command: 'waechter', description: '🛡️ Wächter: Messwerte & Erreichbarkeit (Owner)', gruppe: 'Wahrnehmen' },
+    { command: 'geraete', description: '📱 Geräte, Konten, Ruhezeiten (Owner)', gruppe: 'Wahrnehmen' },
+    { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)', gruppe: 'Wahrnehmen' },
+    { command: 'nodes', description: '🌐 Mesh-Nodes anzeigen/verwalten', gruppe: 'Wahrnehmen' },
+    { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)', gruppe: 'Wahrnehmen' },
+    // System
+    { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)', gruppe: 'System' },
+    { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)', gruppe: 'System' },
+    { command: 'model', description: '🔄 Modell wechseln', gruppe: 'System' },
+    { command: 'doctor', description: '🩺 Doctor: Fälle & Diagnose (Owner)', gruppe: 'System' },
+    { command: 'patches', description: '🧬 Patch-Vorschläge anzeigen', gruppe: 'System' },
+    { command: 'setup', description: '🔧 Self-Setup Scan & Plan anzeigen', gruppe: 'System' },
+    { command: 'update', description: '📦 Update auf alle Edge-Nodes', gruppe: 'System' },
+    { command: 'preflight', description: '✈️ Pre-Flight Check', gruppe: 'System' },
+    // Sitzung
+    { command: 'clear', description: '🧹 Konversation zurücksetzen', gruppe: 'Sitzung' },
+    { command: 'save', description: '💾 Sitzung speichern', gruppe: 'Sitzung' },
+    { command: 'compact', description: '📦 Kontext komprimieren', gruppe: 'Sitzung' },
+    { command: 'think', description: '🧠 Reasoning ein/aus', gruppe: 'Sitzung' },
+    // Verwaltung
+    { command: 'hosts', description: '🖥️ SSH-Hosts verwalten', gruppe: 'Verwaltung' },
+    { command: 'users', description: '👥 User-Verwaltung', gruppe: 'Verwaltung' },
+    { command: 'browser', description: '🌐 Browser-Status & Web-Suche', gruppe: 'Verwaltung' },
+].map(entry => Object.freeze(entry)))
+
+/** Text help from the one menu: one line per group. */
+export function formatCommandMenu(menu: ReadonlyArray<CommandMenuEntry> = COMMAND_MENU): string {
+    const groups = new Map<string, string[]>()
+    for (const entry of menu) groups.set(entry.gruppe, [...(groups.get(entry.gruppe) || []), `/${entry.command}`])
+    return `✨ *Xaventra Befehle*\n\n${[...groups].map(([gruppe, commands]) => `*${gruppe}:* ${commands.join(' ')}`).join('\n')}\n\nAlles geht auch ohne Befehl: frag einfach (z. B. „Was hast du gelernt?“).`
+}
+
 export function getCommandMinimumRole(cmd: string): CommandRole {
     const key = String(cmd || '').trim().toLowerCase()
     return Object.prototype.hasOwnProperty.call(COMMAND_MINIMUM_ROLE, key) ? COMMAND_MINIMUM_ROLE[key] : 'owner'
@@ -218,29 +277,8 @@ export async function handleCommand(
                 }
             } catch { /* non-Telegram */ }
 
-            // Fallback: text-only help
-            return `✨ *Xaventra Befehle*
-
-*System:* /status /layers /model /models /strict /persona /info
-*Reasoning:* /think /reasoning /verbose /debug
-*Tasks:* /task /task history /log
-*Memory:* /memory /skills /learn /lernstatus /korrektur
-*SSH:* /hosts /hosts new /hosts del
-*Mesh:* /nodes /nodes check /nodes models /nodes recommend /nodes scan /nodes install
-*AI:* /ai scan /ai status /ai route
-*Session:* /clear /save /compact /apikey
-*Team & Rollen:* /bots /bot team /subagent /swarm
-*Agents:* /agents /subagent /factory
-*Users:* /users /users list /users promote /users block
-*Intelligence:* /roi /graph /scan
-*Projekt:* /project
-*Monitor:* /monitor
-*Autonomie:* /autonom /auftrag /arbeit /routine /remind
-*Pre-Flight:* /preflight /preflight local /preflight <host>
-*Auth:* /codex status /codex login /codex logout
-*Smart Home:* /hass list /hass on <entity> /hass off <entity> /hass toggle <entity>
-*3D Drucker:* /printer status /printer files /printer start <file> /printer pause /printer gcode <cmd>
-*Replan:* /replan /replan history`
+            // Fallback: text-only help from the one menu (2.86)
+            return formatCommandMenu()
         }
 
         case 'layers': {

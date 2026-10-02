@@ -56,7 +56,8 @@ describe('Learning Hub über Supabase ist entfernt (L22 ist der eine Weg zwische
 
     it('das Modul gibt es nicht mehr, und kein Start-Code lädt es', () => {
         expect(existsSync(join(srcDir, 'intelligence', 'learning-hub.ts'))).toBe(false)
-        for (const file of ['daemon.ts', 'intelligence/proactive-learning.ts', 'memory/capabilities-store.ts']) {
+        // 2.86: the proactive learning module is gone too (one idle learner, L9).
+        for (const file of ['daemon.ts', 'memory/capabilities-store.ts']) {
             expect(readFileSync(join(srcDir, file), 'utf-8')).not.toMatch(/learning-hub/)
         }
     })
@@ -69,15 +70,6 @@ describe('Learning Hub über Supabase ist entfernt (L22 ist der eine Weg zwische
         expect(warnSpy.mock.calls.flat().join(' ')).not.toMatch(/No Supabase config/)
         // Die Erfolgsliste lernte vor der Validierung; sie wird nicht mehr geschrieben.
         expect(existsSync(join(learningDir(), 'capabilities.json'))).toBe(false)
-    })
-
-    it('proaktives Lernen schaut nur lokal nach und geht nicht ins Netz', async () => {
-        const learning = await import('../intelligence/proactive-learning.js')
-        learning.storeKnowledge('example.com Ausfall', ['lokal gelernt'])
-        expect(await learning.checkIfAlreadyLearned('example.com ausfall')).toEqual(['lokal gelernt'])
-        expect(await learning.checkIfAlreadyLearned('etwas ganz anderes')).toBeNull()
-        expect(fetchSpy).not.toHaveBeenCalled()
-        expect(warnSpy.mock.calls.flat().join(' ')).not.toMatch(/No Supabase config/)
     })
 })
 

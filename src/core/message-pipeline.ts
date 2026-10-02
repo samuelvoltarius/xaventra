@@ -1102,14 +1102,6 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Proactive Suggestions: encourage follow-up actions
-    if (contextPolicy.mode === 'deep') try {
-        const intelligence = (state as any).intelligence
-        if (intelligence?.proactiveSuggestions) {
-            systemPrompt += intelligence.proactiveSuggestions.getProactivePrompt()
-        }
-    } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
     // ============================================
     // Intelligence Upgrade — Emotion + Patterns + Hardware
     // ============================================

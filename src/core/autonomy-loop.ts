@@ -673,26 +673,6 @@ async function gatherAutonomyContext(checks: CheckResult[], idleMin: number): Pr
         } catch { /* topics not available */ }
     }
 
-    // --- LOW PRIORITY: Learning — share something Nova learned ---
-    if (flags.learningSharedCount < 2 && idleMin >= 10 && hour >= 9 && hour < 21) {
-        try {
-            const { getLearningStats } = await import('../intelligence/proactive-learning.js')
-            const stats = getLearningStats()
-            if (stats && stats.learnedTopics > 0) {
-                // Only share if Nova actually learned something recently
-                const { getRecentlyLearned } = await import('../intelligence/proactive-learning.js')
-                const recent = getRecentlyLearned?.()
-                if (recent && recent.topic) {
-                    triggers.push({
-                        type: 'learning',
-                        priority: 'low',
-                        context: `NEUES WISSEN: Ich habe kürzlich etwas über "${recent.topic}" gelernt (${stats.learnedTopics} Topics insgesamt, ${stats.knowledgeItems} Fakten).\n→ Teile dem User beiläufig mit was du Neues gelernt hast. Mache es interessant und relevant. Maximal 2-3 Sätze. Kein Zwang — nur wenn es passt.`,
-                    })
-                }
-            }
-        } catch { /* learning not available */ }
-    }
-
     // --- LOW PRIORITY: Spontaneous Thought — always-on low-priority trigger ---
     // This ensures Nova is NEVER completely silent for extended periods
     const timeSinceLastSpontaneous = Date.now() - (flags.lastSpontaneousTime || 0)

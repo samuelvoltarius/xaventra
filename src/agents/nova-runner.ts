@@ -1445,17 +1445,6 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             timestamp: Date.now(),
                         })
                         logRuntimeEvent({ event: effectiveSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: effectiveSuccess })
-
-                        // Proactive Learning: Ask if user wants Nova to learn from this
-                        try {
-                            if (!backgroundLearningEnabled) throw new Error('isolated proactive learning')
-                            const { generatePostToolLearningPrompt, queueLearningRequest } = await import('../intelligence/proactive-learning.js')
-                            const learningPrompt = generatePostToolLearningPrompt(call.name, effectiveSuccess)
-                            if (learningPrompt) {
-                                toolResults.push(learningPrompt)
-                                queueLearningRequest(call.name, effectiveSuccess ? 'success' : 'failure', userId, channel, resultStr.slice(0, 500))
-                            }
-                        } catch { /* learning module not available */ }
                     } catch (err) {
                         _traceRecorder.toolEnd(_traceId, false, 0, String(err).slice(0, 200))
                         if (err instanceof ToolAuthorizationError) {

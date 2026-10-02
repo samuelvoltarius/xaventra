@@ -475,31 +475,6 @@ class SelfCheckManager extends EventEmitter {
     }
 
     /**
-     * Generate proactive suggestion based on context
-     */
-    generateProactiveSuggestion(context?: string): string | null {
-        const suggestions = [
-            'Soll ich dir bei etwas anderem helfen?',
-            'Kann ich noch etwas für dich tun?',
-            'Brauchst du Hilfe bei einem anderen Thema?',
-        ]
-
-        // Context-specific suggestions
-        if (context?.includes('error') || context?.includes('fehler')) {
-            return 'Soll ich alternative Lösungsansätze vorschlagen?'
-        }
-        if (context?.includes('ssh') || context?.includes('server')) {
-            return 'Soll ich den Verbindungsstatus prüfen oder etwas anderes auf dem Server machen?'
-        }
-        if (context?.includes('file') || context?.includes('datei')) {
-            return 'Soll ich die Datei öffnen, bearbeiten oder etwas anderes damit machen?'
-        }
-
-        // Random generic suggestion
-        return suggestions[Math.floor(Math.random() * suggestions.length)]
-    }
-
-    /**
      * Get prompt injection for LLM to be more proactive
      */
     getSelfCheckPrompt(): string {

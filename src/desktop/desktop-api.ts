@@ -540,7 +540,21 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     view('/api/desktop/arbeit', () => collectArbeit())
     view('/api/desktop/system', () => collectSystem())
     view('/api/desktop/system/vms', () => collectVms())
-    view('/api/desktop/gedaechtnis', () => collectGedaechtnis())
+    app.get('/api/desktop/gedaechtnis', async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        try { res.setHeader('Cache-Control', 'no-store'); res.json(await collectGedaechtnis({ principalId: desktopExecutionPrincipal(principal(req)) })) } catch (error) { res.status(500).json({ error: safeError(error) }) }
+    })
+    // 2.86: Prozedur an/aus — dieselbe Funktion wie /prozeduren an|aus <nr>.
+    app.post('/api/desktop/prozeduren/:nr', async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        const nr = Number.parseInt(String(req.params.nr || ''), 10)
+        if (!Number.isInteger(nr) || nr < 1 || typeof req.body?.an !== 'boolean') return void res.status(400).json({ error: 'Nummer und an (true/false) erforderlich' })
+        try {
+            const { handleProzedurenCommand } = await import('../learning/procedure-store.js')
+            const message = await handleProzedurenCommand(`${req.body.an ? 'an' : 'aus'} ${nr}`, { principalId: desktopExecutionPrincipal(principal(req)), permission: 'owner' })
+            res.status(message.startsWith('❌') ? 404 : 200).json({ message })
+        } catch (error) { res.status(500).json({ error: safeError(error) }) }
+    })
     // 2.85 Paket D: Werkzeugkasten. The buttons only create a proposal and offer the
     // existing card; installing/removing happens after the card's "Ja" (ticket).
     view('/api/desktop/werkzeugkasten', () => collectWerkzeugkasten())
