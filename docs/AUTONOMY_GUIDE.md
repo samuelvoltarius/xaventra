@@ -572,7 +572,13 @@ Ports (documented in `src/thinking/ports.ts`):
   `.nova-data/thinking/schedule.json`), polled once per autonomy cycle. Replace with
   `setThinkingSchedule` (planner jobs).
 - `ScoutRunner` (`setScoutRunner`) and idea `Formulator` (`setIdeaFormulator`; the daemon
-  wires the running model) are optional.
+  wires the running model). Since 2.84.0 the daemon wires `scout-runner.ts` at the Main:
+  it measures only **installed local** models from the model registry (an installed but
+  unloaded Ollama model is loaded with the memory reserve and unloaded afterwards; nothing
+  is downloaded, cloud is never measured). A `modell-wechsel` proposal is made only for a
+  target of `routing.vllm.targets` (the proposal names the target); a better model that is
+  no switch target, and every pure Hugging Face candidate, stays an idea in the report.
+  Results land in `scout-report.json` and thereby in the registry measurements.
 
 State files: `.nova-data/thinking/ideas-state.json`, `scout-report.json`, `decisions.json`.
 

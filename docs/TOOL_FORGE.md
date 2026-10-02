@@ -16,6 +16,13 @@ Register. Code: `src/tools/skill-builder.ts` (Register, Bau, Aktivierung, Ausfü
      fehlendes Werkzeug (`Tool nicht gefunden: x`) oder Wiederholung (ein neuer
      Routine-Skill nutzt immer wieder ein allgemeines Werkzeug wie `execute_python`
      oder `fetch_url`). Höchstens 3 Bauten pro Tag, gleicher Bedarf nur einmal in 7 Tagen.
+     Seit 2.84.0 kommt „fehlendes Werkzeug“ wirklich an: stoppt das Modell-Gate einen
+     Lauf, weil das Modell ein nicht angebotenes Werkzeug wollte, wird jedes davon,
+     das in **keinem** Register steht, ein Fehleintrag `Tool nicht gefunden: x` (nur für
+     den Hook, nicht im Ledger). Ein vorhandenes, nur nicht angebotenes Werkzeug ist
+     kein Bedarf. Neue Versionen (`reviseTool`) zählen ins selbe Tageslimit; darüber
+     wird die Version auf morgen gelegt (Gedanke „neue Version morgen“) und in einer
+     ruhigen Owner-Runde nachgeholt — abgeschaltet wird dabei nichts.
    - **Worker bauen nichts** (`NOVA_NODE_ONLY=true`).
 2. **Entwurf** — ESM-JavaScript:
 
@@ -62,7 +69,13 @@ Register. Code: `src/tools/skill-builder.ts` (Register, Bau, Aktivierung, Ausfü
    Sandbox-Kind. Zähler: Aufrufe, Erfolge, Fehler, Fehler in Folge.
 7. **Fehlschläge** — 2 in Folge: mit lokalem Lern-Modell entsteht eine neue Version
    (alte bleibt in `history`, die letzten 5), die wieder alle Tests bestehen muss;
-   sonst wird das Werkzeug abgeschaltet (Gedanke, Warnung).
+   sonst wird das Werkzeug abgeschaltet (Gedanke, Warnung). Nur dieser Weg darf
+   abschalten.
+   **Verbesserung** (2.84.0, Owner-„Ja“ auf eine Schmiede-Idee): die neue Version ist
+   ein **Kandidat**. Die aktive Version bleibt aktiv, bis der Kandidat alle Tests
+   besteht — lesend ersetzt er sie dann selbst; schreibend/extern/physisch erst nach
+   der Karte (Ablehnen verwirft nur den Kandidaten). Scheitert der Entwurf oder ein
+   Test, wird nur der Kandidat verworfen (Gedanke „neue Version verworfen“).
 8. **Zurück in den Routine-Skill** (2.83.0) — entstand ein **lesendes** Werkzeug aus der
    Wiederholung eines Routine-Skills, ersetzt es bei der Aktivierung dort den
    allgemeinen Schritt (`execute_python`, `fetch_url` …) in einer neuen Skill-Version;
