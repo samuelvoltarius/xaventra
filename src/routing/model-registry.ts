@@ -16,6 +16,8 @@
  * reads the live sources read-only; it never probes, loads or pulls.
  */
 import type { TaskModelClass } from './task-model-routing.js'
+import type { OutcomeRunView } from '../core/outcome-ledger.js'
+import { ownerKernelRun } from '../core/validator-failure-escalation.js'
 
 export type PrivacyClass = 'lokal' | 'cloud'
 export type EndpointKind = 'vllm' | 'ollama' | 'local-other' | 'codex' | 'anthropic' | 'openai' | 'gemini' | 'cloud-other'
@@ -71,7 +73,11 @@ export interface LedgerRunLike {
     startedAt: string
     updatedAt: string
     invalidated?: boolean
-    validation?: { success?: boolean; validator?: string }
+    /** 2.84.0: who and where — only real owner runs are measured (`ownerKernelRun`). */
+    userId?: string
+    channel?: string
+    contract?: { id?: string }
+    validation?: { success?: boolean; validator?: string; awaitingApproval?: boolean }
     events?: Array<{ type: string; payload?: Record<string, unknown> }>
 }
 
@@ -129,12 +135,18 @@ const sameModel = (a?: string, b?: string) => {
     return Boolean(left) && (left === right || left.split('/').pop() === right.split('/').pop())
 }
 
-/** Per-task-class success/latency from Outcome-Ledger runs whose route recorded a task class. */
+/**
+ * Per-task-class success/latency from Outcome-Ledger runs whose route recorded
+ * a task class. 2.84.0: only real owner runs judged by the Execution Kernel
+ * count (one rule with the validator bug finder) — Doctor investigations,
+ * autonomy, internal, benchmark and sub-agent runs never shape a model's rate.
+ */
 export function measurementsFromLedgerRuns(runs: readonly LedgerRunLike[]): Array<{ model: string; node?: string; measurement: TaskMeasurement }> {
     const groups = new Map<string, { model: string; node?: string; taskClass: TaskModelClass; ok: number; total: number; ms: number }>()
     for (const run of runs || []) {
         if (!run || run.invalidated || !run.model) continue
         if (run.status !== 'completed' && run.status !== 'failed') continue
+        if (!ownerKernelRun(run as unknown as OutcomeRunView)) continue
         const routed = [...(run.events || [])].reverse().find(event => event?.type === 'route.selected' && typeof event.payload?.modelClass === 'string')
         const taskClass = routed?.payload?.modelClass as TaskModelClass | undefined
         if (!taskClass || !TASK_CLASSES.includes(taskClass)) continue

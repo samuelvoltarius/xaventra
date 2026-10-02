@@ -22,8 +22,9 @@ export function validatorTaskType(run: Pick<OutcomeRunView, 'events'>): string {
 
 interface Rejection { runRef: string; legacyId: string; taskType: string; failedKinds: string[]; at: number }
 
-/** A real owner run judged by the Execution Kernel (not internal, benchmark or autonomy). */
-function ownerKernelRun(run: OutcomeRunView): boolean {
+/** A real owner run judged by the Execution Kernel (not internal, benchmark or autonomy).
+ * 2.84.0: the one rule for a counting run — also the multi-router's measurement basis (model-registry). */
+export function ownerKernelRun(run: OutcomeRunView): boolean {
     return !run.invalidated && Boolean(run.userId) && run.userId !== 'Nova-Autonomy'
         && Boolean(run.channel) && run.channel !== 'internal' && run.channel !== 'benchmark'
         && run.contract?.id === run.runId

@@ -105,6 +105,16 @@ describe('Punkt 3: Ja auf eine Idee übergibt die Untersuchung (Delegation, L1)'
         expect(result.message).toMatch(/kein lokales Lern-Modell/)
         _setThoughtActionPortsForTest(null)
     })
+
+    it('2.84.0: over the shared daily build limit the answer says „morgen“ and the active version stays', async () => {
+        const revise = vi.fn(async () => ({ proposal: null, message: 'Tageslimit' }))
+        _setThoughtActionPortsForTest({ forge: { find: () => ({ id: 'sp-3', name: 'notiz' }), canBuild: () => true, revise, buildsLeftToday: () => 0 } })
+        const thought = await ideaThought({ name: 'forge_notiz', errorRate: 0.5 }, 'forge_notiz scheitert')
+        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1001' })
+        expect(revise).toHaveBeenCalledTimes(1)
+        expect(result.message).toMatch(/Tageslimit.*morgen.*aktive Version bleibt/)
+        _setThoughtActionPortsForTest(null)
+    })
 })
 
 describe('Punkt 3: Ja auf den Modell-Scout erzeugt die vorhandene vllm-wechsel-Karte (eigenes Ja)', () => {

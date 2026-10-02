@@ -12,12 +12,13 @@ hosts; it can only be enabled explicitly for loopback development with
 OAuth implementations are injected locally by node. Tokens and OAuth provider
 state must never be placed in `xaventra.config.json`, Memory, Supabase or Mesh.
 
-Outcome routing remains shadow-only unless `NOVA_OUTCOME_ROUTER_MODE=active`.
-Active mode still requires enough independently validated production samples
-for the requesting principal. Benchmark, fixture, synthetic, model-response-only
-and other users' outcomes never make a route eligible. Optional
-`NOVA_OUTCOME_ROUTER_ACTIVE_TASKS` limits activation to comma-separated task
-types and `NOVA_OUTCOME_ROUTER_CANARY_PERCENT` sets a deterministic canary.
+Model routing by measurement has one path: the multi-router
+(`routing.multi.enabled`, off by default; R1–R8 rule table otherwise). Its
+success rates come only from real owner runs judged by the Execution Kernel —
+Doctor, autonomy, internal, benchmark and other non-owner runs never count.
+Since 2.84.0 there is no separate shadow outcome router and no
+`NOVA_OUTCOME_ROUTER_MODE`; the validated samples remain the learning curve
+and the desktop training status.
 
 `NOVA_BLUE_TEAM_LOG_ROOTS` may add comma-separated, explicitly authorized roots
 for defensive log triage. The default roots are the Nova workspace,

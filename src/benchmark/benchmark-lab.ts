@@ -26,7 +26,7 @@ const templates: Record<BenchmarkCategory, Array<[string, string, string[]]>> = 
         ['Modell-Fähigkeiten', 'Ordne den Modellen auf Node {n} ihre Fähigkeiten zu.', ['model metadata']],
     ],
     routing: [
-        ['Code routen', 'Wähle für Codeanalyse das nach Outcomes beste Modell.', ['shadow decision', 'historical outcomes']],
+        ['Code routen', 'Wähle für Codeanalyse das nach Outcomes beste Modell.', ['cold start', 'historical outcomes']],
         ['Doctor routen', 'Wähle ein schnelles lokales Modell für eine Doctor-Diagnose.', ['route evidence']],
         ['Kostenroute', 'Wähle bei gleicher Qualität die günstigere Route.', ['cost comparison']],
         ['Failover-Route', 'Ersetze eine ausgefallene Modellroute.', ['health evidence']],
@@ -109,7 +109,7 @@ const extendedTemplates: Record<BenchmarkCategory, Array<[string, string, string
     routing: [
         ['Tool-Erfolgsroute', 'Bevorzuge eine Route mit verifizierter Tool-Erfolgsquote.', ['historical outcomes', 'route evidence']],
         ['Durchsatzroute', 'Nutze gemessenen Token-Durchsatz als Routing-Signal.', ['latency samples', 'route evidence']],
-        ['Cold-Start-Schutz', 'Behalte die Baseline, solange eine neue Route zu wenige Samples hat.', ['shadow decision']],
+        ['Cold-Start-Schutz', 'Behalte die Baseline, solange eine neue Route zu wenige Samples hat.', ['cold start']],
         ['Node-Modell-Paar', 'Bewerte Modell und Node gemeinsam statt nur den Modellnamen.', ['historical outcomes', 'route evidence']],
     ],
     tools: [

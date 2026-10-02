@@ -20,7 +20,8 @@ import { RoutineSkillStore } from '../learning/routine-skills.js'
 import { CapabilityGraph } from '../mesh/capability-graph.js'
 import { createQuorumWitnessServer } from '../mesh/quorum-witness.js'
 import { acquireWitnessQuorumLease, type WitnessQuorumConfig } from '../mesh/witness-quorum.js'
-import { OutcomeRouter } from '../routing/outcome-router.js'
+import { buildModelRegistry } from '../routing/model-registry.js'
+import { decideMultiRoute } from '../routing/task-model-routing.js'
 import type { BenchmarkScenario } from './benchmark-lab.js'
 
 export interface BenchmarkProbeResult {
@@ -93,42 +94,57 @@ async function probeDiscovery(workspace: string): Promise<BenchmarkProbeResult> 
     }, { node, staleRemoved, tombstones: pruned.tombstones })
 }
 
-async function probeRouting(workspace: string): Promise<BenchmarkProbeResult> {
-    const ledger = new OutcomeLedger(join(workspace, 'routing-ledger'), false)
-    const router = new OutcomeRouter(ledger, join(workspace, 'routing-decisions.jsonl'), 'shadow', join(workspace, 'routing-samples.json'))
-    let benchmarkRejected = true
-    for (let index = 0; index < 20; index++) {
-        const runId = `routing-${index}`
-        ledger.recordRoute(runId, { model: 'qwen-code', node: 'spark', taskType: 'coding' })
-        ledger.recordCost(runId, { usd: 0.0002, durationMs: 250, provider: 'vllm', model: 'qwen-code', estimated: true })
-        ledger.recordValidation(runId, {
-            validator: 'nova-execution-kernel', validatedAt: new Date().toISOString(),
-            success: true, awaitingApproval: false, criteria: [], violations: [],
-        })
-        ledger.completeValidated(runId, { durationMs: 250 })
-        benchmarkRejected = router.recordValidatedSample({
-            runId, userId: `benchmark:routing-${index}`, channel: 'benchmark', taskType: 'coding',
-            model: 'qwen-code', node: 'spark', success: true, durationMs: 250, costUsd: 0.0002,
-            validatedAt: new Date().toISOString(), validationSource: 'nova-execution-kernel',
-            evidenceRefs: [`tool-call:routing-${index}:fixture`],
-        }) === false && benchmarkRejected
+/**
+ * 2.84.0: probes the ONE measuring router (multi-router + model registry) in
+ * isolation: fixtures only, no ledger or production state is touched.
+ */
+async function probeRouting(_workspace: string): Promise<BenchmarkProbeResult> {
+    const started = Date.parse('2026-10-01T10:00:00.000Z')
+    const run = (index: number, who: { userId: string; channel: string }, model: string, node: string, success: boolean, ms: number) => ({
+        runId: `routing-${who.channel}-${model}-${index}`, status: success ? 'completed' : 'failed', model, node,
+        startedAt: new Date(started).toISOString(), updatedAt: new Date(started + ms).toISOString(),
+        userId: who.userId, channel: who.channel, contract: { id: `routing-${who.channel}-${model}-${index}` },
+        validation: { success, validator: 'nova-execution-kernel', awaitingApproval: false },
+        events: [{ type: 'route.selected', payload: { modelClass: 'code', taskType: 'coding' } }],
+    })
+    const owner = { userId: 'owner@example.com', channel: 'telegram' }
+    const benchmark = { userId: 'benchmark:routing', channel: 'benchmark' }
+    const inputs = {
+        knownNodes: ['spark', 'vision-node', 'old-node'],
+        vllm: [
+            { node: 'spark', baseUrl: 'http://127.0.0.1:8000/v1', models: ['qwen-code'] },
+            { node: 'vision-node', baseUrl: 'http://127.0.0.1:8001/v1', models: ['vision'] },
+            { node: 'old-node', baseUrl: 'http://127.0.0.1:8002/v1', models: ['old-code'] },
+        ],
+        probes: [
+            { model: 'qwen-code', endpoint: 'http://127.0.0.1:8000/v1', online: true, roles: ['chat', 'code'] },
+            { model: 'vision', endpoint: 'http://127.0.0.1:8001/v1', online: true, roles: ['chat'], supportsVision: true },
+            { model: 'old-code', endpoint: 'http://127.0.0.1:8002/v1', online: false, roles: ['chat', 'code'] },
+        ],
     }
-    const decision = router.decide('coding',
-        { model: 'baseline', node: 'main', estimatedCostUsd: 0.02 },
-        [
-            { model: 'qwen-code', node: 'spark', toolset: ['code'], baseScore: 100, estimatedCostUsd: 0.0002 },
-            { model: 'vision', node: 'vision-node', toolset: ['vision'], baseScore: 10, estimatedCostUsd: 0.01 },
-        ], { userId: 'benchmark:routing', channel: 'benchmark' })
-    const reasons = decision.reasons.join(' ')
+    const settings = { enabled: true, cloudDailyBudgetEur: 0, minSamples: 5 }
+    const code = (content: string) => ({ signals: { content, hasImage: false }, permission: 'owner', codexEnabled: false })
+    const coldStart = decideMultiRoute(code('Analysiere diese Funktion: function f() { return 1 }'), buildModelRegistry(inputs), settings)
+    const ledgerRuns = [
+        ...Array.from({ length: 6 }, (_, index) => run(index, owner, 'qwen-code', 'spark', true, 400)),
+        // Benchmark runs never count: here they would make qwen-code look broken.
+        ...Array.from({ length: 20 }, (_, index) => run(index, benchmark, 'qwen-code', 'spark', false, 9_000)),
+    ]
+    const registry = buildModelRegistry({ ...inputs, ledgerRuns })
+    const measured = decideMultiRoute(code('Analysiere diese Funktion: function f() { return 1 }'), registry, settings)
+    const vision = decideMultiRoute({ signals: { content: 'Was ist auf dem Bild?', hasImage: true }, permission: 'owner', codexEnabled: false }, registry, settings)
+    const winner = measured.candidates.find(item => item.id === measured.endpoint?.id)
+    const old = measured.candidates.find(item => item.model === 'old-code')
     return result('benchmark_outcome_router_probe', {
-        'shadow decision': decision.mode === 'shadow' && decision.selected.model === 'baseline',
-        'historical outcomes': benchmarkRejected && reasons.includes('validated samples=0/'),
-        'route evidence': decision.recommended.model === 'qwen-code',
-        'cost comparison': reasons.includes('average cost=$0.0002'),
-        'health evidence': decision.evaluatedAt.length > 0,
-        'capability match': decision.recommended.toolset?.includes('code') === true,
-        'latency samples': benchmarkRejected && reasons.includes('validated samples=0/'),
-    }, { decision, benchmarkRejected, note: 'isolated benchmark outcomes were deliberately rejected as production routing samples' })
+        'cold start': coldStart.basis === 'regeln' && !coldStart.endpoint,
+        'historical outcomes': measured.basis === 'messung' && winner?.samples === 6 && winner?.successRate === 1,
+        'route evidence': measured.endpoint?.model === 'qwen-code' && measured.rule === 'M1-messung',
+        'cost comparison': winner?.costEurPerCall === 0 && measured.reason.includes('Kosten'),
+        'health evidence': Boolean(old?.excluded?.includes('nicht gesund')),
+        'capability match': vision.candidates.some(item => item.model === 'vision' && !item.excluded)
+            && vision.candidates.some(item => item.model === 'qwen-code' && Boolean(item.excluded)),
+        'latency samples': winner?.avgLatencyMs === 400,
+    }, { decision: { basis: measured.basis, rule: measured.rule, endpoint: measured.endpoint, reason: measured.reason }, note: 'benchmark runs are excluded from the measurement (ownerKernelRun)' })
 }
 
 async function probeTools(workspace: string, targetPath?: string): Promise<BenchmarkProbeResult> {

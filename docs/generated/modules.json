@@ -143,8 +143,6 @@
         "../core/native-tool-takeover.js",
         "../core/outcome-ledger.js",
         "../core/tool-evidence-binding.js",
-        "../mesh/capability-graph.js",
-        "../routing/outcome-router.js",
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/tool-policy.js",
@@ -399,7 +397,8 @@
         "../mesh/capability-graph.js",
         "../mesh/quorum-witness.js",
         "../mesh/witness-quorum.js",
-        "../routing/outcome-router.js",
+        "../routing/model-registry.js",
+        "../routing/task-model-routing.js",
         "./benchmark-lab.js",
         "node:crypto",
         "node:fs",
@@ -5190,6 +5189,8 @@
     {
       "module": "src/routing/model-registry.ts",
       "imports": [
+        "../core/outcome-ledger.js",
+        "../core/validator-failure-escalation.js",
         "./task-model-routing.js"
       ]
     },
@@ -5209,11 +5210,8 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
-        "../core/outcome-ledger.js",
-        "../mesh/capability-graph.js",
         "node:crypto",
-        "node:fs",
-        "node:path"
+        "node:fs"
       ]
     },
     {
@@ -5798,6 +5796,15 @@
       "imports": [
         "../doctor/failure-research-coordinator.js",
         "../security/secret-redaction.js"
+      ]
+    },
+    {
+      "module": "src/thinking/scout-runner.ts",
+      "imports": [
+        "../routing/local-model-control.js",
+        "../routing/model-registry.js",
+        "./model-scout.js",
+        "./probe-set.js"
       ]
     },
     {
