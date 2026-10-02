@@ -72,14 +72,6 @@ export interface MeshSnapshot {
     scannedAt: number
     nodes: NodeProfile[]
     summary: string             // Human-readable overview Nova can state
-    routingTable: RoutingEntry[] // "for task X → use node Y because Z"
-}
-
-export interface RoutingEntry {
-    task: string
-    bestNode: string
-    reason: string
-    fallback?: string
 }
 
 // ============================================
@@ -383,42 +375,18 @@ export class MeshBrain {
 
         await Promise.allSettled(scanPromises)
 
-        // 4. Build routing table
-        const routingTable = this.buildRoutingTable(profiles)
+        // 4. Build summary. "Wer kann was am besten" comes from the one strength
+        //    module (node-strengths.ts, rankNodes) — 2.86 Paket J; no second routing table here.
+        const summary = this.buildSummary(profiles)
 
-        // 5. Build summary
-        const summary = this.buildSummary(profiles, routingTable)
-
-        this.snapshot = { scannedAt: Date.now(), nodes: profiles, summary, routingTable }
+        this.snapshot = { scannedAt: Date.now(), nodes: profiles, summary }
         this.save()
 
-        console.log(`[MeshBrain] 🏁 Scan abgeschlossen: ${profiles.length} Nodes, ${routingTable.length} Routing-Einträge`)
+        console.log(`[MeshBrain] 🏁 Scan abgeschlossen: ${profiles.length} Nodes`)
         return this.snapshot
     }
 
-    private buildRoutingTable(nodes: NodeProfile[]): RoutingEntry[] {
-        const online = nodes.filter(n => n.online)
-        const entries: RoutingEntry[] = []
-
-        const best = (task: string, filter: (n: NodeProfile) => boolean, reason: (n: NodeProfile) => string): void => {
-            const candidates = online.filter(filter).sort((a, b) => b.maxModelSizeB - a.maxModelSizeB)
-            if (candidates.length > 0) {
-                entries.push({ task, bestNode: candidates[0].name, reason: reason(candidates[0]), fallback: candidates[1]?.name })
-            }
-        }
-
-        best('large-llm', n => n.maxModelSizeB >= 30, n => `${n.name} hat ${n.playbook.hardware.ram_gb}GB ${n.playbook.hardware.memory_type || 'RAM'} — kann ${n.maxModelSize} lokal`)
-        best('fast-llm', n => n.maxModelSizeB >= 7 && n.inferenceSpeed === 'fast', n => `${n.name} — ${n.maxModelSize} bei ${n.inferenceSpeed} Speed`)
-        best('embedding', n => n.bestFor.includes('embedding') || n.bestFor.includes('embedding-gpu'), n => `${n.name} hat Ollama + passendes Modell`)
-        best('image-generation', n => n.bestFor.includes('image-generation'), n => `${n.name} hat ${n.playbook.hardware.gpu} ${n.playbook.hardware.gpu_vram_gb}GB VRAM`)
-        best('stt-voice', n => n.bestFor.includes('stt') || n.bestFor.includes('voice-local'), n => `${n.name} hat Whisper/faster-whisper`)
-        best('media-convert', n => n.bestFor.includes('media-convert'), n => `${n.name} hat ffmpeg`)
-        best('cuda-inference', n => n.bestFor.includes('cuda-inference'), n => `${n.name} hat CUDA GPU`)
-
-        return entries
-    }
-
-    private buildSummary(nodes: NodeProfile[], routing: RoutingEntry[]): string {
+    private buildSummary(nodes: NodeProfile[]): string {
         const online = nodes.filter(n => n.online)
         const offline = nodes.filter(n => !n.online)
         const lines: string[] = []
@@ -451,12 +419,7 @@ export class MeshBrain {
             }
         }
 
-        lines.push('\nOptimales Routing:')
-        for (const r of routing.slice(0, 5)) {
-            // Always show reason + fallback
-            const fb = r.fallback ? ` | Fallback: ${r.fallback}` : ''
-            lines.push(`  ${r.task} → ${r.bestNode} (${r.reason})${fb}`)
-        }
+        lines.push('\nWer kann was am besten: mesh_route (Rangliste aus signierten Knotenprofilen und gemessenen Läufen).')
 
         return lines.join('\n')
     }
@@ -492,13 +455,6 @@ export class MeshBrain {
     async explain(configNodes: Array<{ name: string, host: string }>): Promise<string> {
         const snap = this.load() || await this.scan(configNodes)
         return snap.summary
-    }
-
-    /**
-     * Best node for a given task type
-     */
-    getBestNodeFor(task: string): RoutingEntry | null {
-        return this.snapshot?.routingTable.find(r => r.task === task) || null
     }
 
     /**

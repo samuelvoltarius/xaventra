@@ -1,51 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// MI-2: the node IP comes from the shared nova_mesh_nodes table. Latency
-// measurement must never build a shell string from it.
+// MI-2: node addresses come from the shared registry and are untrusted. The
+// former latency probe pinged them (via execFile, after a host check). Since
+// 2.86 Paket J the router ranks nodes from signed facts only and pings
+// nothing, so a registry-controlled address can never reach a process.
 
-const childProcess = vi.hoisted(() => ({
-    exec: vi.fn((_cmd: string, _options: unknown, callback: (error: Error | null) => void) => callback(null)),
-    execFile: vi.fn((_file: string, _args: string[], _options: unknown, callback: (error: Error | null) => void) => callback(null)),
-}))
+const childProcess = vi.hoisted(() => ({ exec: vi.fn(), execFile: vi.fn(), execSync: vi.fn(), spawn: vi.fn() }))
 vi.mock('node:child_process', () => childProcess)
 vi.mock('./mesh-registry.js', () => ({
+    getLocalNodeId: () => 'main-x',
     getAvailableNodes: async () => [
         { node_id: 'evil', hostname: 'evil', ip: '1.1.1.1;touch /tmp/pwned', capabilities: ['chat'], status: 'online' },
         { node_id: 'evil2', hostname: 'evil2', ip: '$(id)', capabilities: ['chat'], status: 'online' },
-        { node_id: 'flag', hostname: 'flag', ip: '-f', capabilities: ['chat'], status: 'online' },
-        { node_id: 'good', hostname: 'good', ip: '100.64.1.23', capabilities: ['chat'], status: 'online' },
     ],
 }))
 
-describe('MI-2 mesh-router latency probe', () => {
-    beforeEach(() => {
-        childProcess.exec.mockClear()
-        childProcess.execFile.mockClear()
-    })
+describe('MI-2 mesh-router without a latency probe', () => {
+    beforeEach(() => { for (const fn of Object.values(childProcess)) fn.mockClear() })
 
-    it('never passes registry-controlled addresses through a shell', async () => {
-        const { scoreAllNodes } = await import('./mesh-router.js')
-        await scoreAllNodes('llm_query')
-        for (const call of childProcess.exec.mock.calls) {
-            expect(String(call[0])).not.toMatch(/touch|\$\(id\)|-f$/)
+    it('never starts a process for routing, whatever the registry contains', async () => {
+        const { routeTask } = await import('./mesh-router.js')
+        const facts = { now: Date.now(), measurements: [], nodes: [] }
+        for (const text of ['Konvertiere das Video nach mp4', 'Erzeuge ein Bild', 'Führe das Python-Script aus', 'Wie geht es dir?']) {
+            await routeTask(text, false, facts)
         }
-        const pinged = childProcess.execFile.mock.calls.map(call => call[1] as string[])
-        expect(childProcess.execFile.mock.calls.every(call => call[0] === 'ping')).toBe(true)
-        const hosts = pinged.map(args => args[args.length - 1])
-        expect(hosts).toContain('100.64.1.23')
-        expect(hosts).not.toContain('1.1.1.1;touch /tmp/pwned')
-        expect(hosts).not.toContain('$(id)')
-        expect(hosts).not.toContain('-f')
+        for (const fn of Object.values(childProcess)) expect(fn).not.toHaveBeenCalled()
     })
 
-    it('accepts only literal IPs and plain hostnames', async () => {
-        const { isSafePingHost } = await import('./mesh-router.js')
-        expect(isSafePingHost('192.168.1.10')).toBe(true)
-        expect(isSafePingHost('fd7a:115c:a1e0::1')).toBe(true)
-        expect(isSafePingHost('spark-node.tailnet.ts.net')).toBe(true)
-        expect(isSafePingHost('1.1.1.1;curl x|sh')).toBe(false)
-        expect(isSafePingHost('-c 1000')).toBe(false)
-        expect(isSafePingHost('a b')).toBe(false)
-        expect(isSafePingHost('')).toBe(false)
+    it('no ping helpers are exported any more', async () => {
+        const router = await import('./mesh-router.js') as Record<string, unknown>
+        expect(router.measureLatency).toBeUndefined()
+        expect(router.isSafePingHost).toBeUndefined()
     })
 })

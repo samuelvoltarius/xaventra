@@ -311,6 +311,19 @@ export function peerStateWithCapabilities(previous: PeerState | undefined, sourc
     }
 }
 
+/** 2.86 Paket J: the same update plus what changed in the peer's strengths
+ * (new GPU, RAM, service, tool, disk). The change list is kept next to the
+ * peer state; the node that holds the profiles (the Main) shows it on its map. */
+export async function peerCapabilitiesWithChanges(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): Promise<{ state: PeerState; changes: string[] }> {
+    const state = peerStateWithCapabilities(previous, sourceNode, payload, publicKeyFingerprint, now)
+    if (!state.profile || state.profileSeen !== now) return { state, changes: [] }
+    try {
+        const { recordStrengthChanges } = await import('./node-strengths.js')
+        const entry = await recordStrengthChanges(sourceNode, previous?.profile, state.profile, new Date(now))
+        return { state, changes: entry?.changes || [] }
+    } catch { return { state, changes: [] } }
+}
+
 /** node.heartbeat → peer state, bound to the authenticated source node. */
 export function peerStateWithHeartbeat(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
     const value = (payload && typeof payload === 'object' ? payload : {}) as { status?: unknown; uptimeMs?: unknown; bootId?: unknown }
@@ -475,7 +488,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 tombstones: [],
             }, envelope.sourceNode)
         }
-        peerStates[envelope.sourceNode] = peerStateWithCapabilities(peerStates[envelope.sourceNode], envelope.sourceNode, payload, MeshIdentity.fingerprint(envelope.publicKey))
+        peerStates[envelope.sourceNode] = (await peerCapabilitiesWithChanges(peerStates[envelope.sourceNode], envelope.sourceNode, payload, MeshIdentity.fingerprint(envelope.publicKey))).state
         persistPeerStates()
         if (payload.watch) {
             try {

@@ -51,6 +51,8 @@ function writeAuditLog(entry: {
     toolsUsed: string[]
     durationMs: number
     error?: string
+    /** 2.86 Paket J: why mesh_node="auto" chose this place. */
+    placement?: string
 }): void {
     try {
         const dir = join(process.cwd(), '.nova-data')
@@ -74,8 +76,11 @@ export interface SubagentTask {
     tools?: string[]
     /** Max execution time in ms (default: 60s) */
     timeoutMs?: number
-    /** Run on a specific mesh node name (e.g. "MacMini") */
+    /** Run on a specific mesh node name (e.g. "MacMini"), or "auto": the node that is best
+     * at the task (2.86 Paket J, rankNodes from signed facts). */
     meshNode?: string
+    /** Strength for meshNode="auto" (bilder, grosse-modelle, llm, …); otherwise read from the task text. */
+    capability?: string
     /** System prompt override for this subagent */
     systemPrompt?: string
     /** Model to use (defaults to auto) */
@@ -372,6 +377,54 @@ async function runMeshSubagent(
 }
 
 // ============================================
+// Placement by strength (2.86 Paket J)
+// ============================================
+
+export interface MeshPlacement {
+    /** Node to delegate to; undefined = run on this node. */
+    meshNode?: string
+    /** The chosen node, also when it is this one. */
+    nodeId?: string
+    capability?: string
+    local: boolean
+    reason: string
+}
+
+/**
+ * meshNode="auto": pick the node that is best at the task with the one
+ * strength module. Only a known strength is used (explicit `capability`, else
+ * the task text); without one, or without a fitting node, the task stays here.
+ * Delegation itself is unchanged: the signed mesh transport.
+ */
+export async function resolveMeshPlacement(task: Pick<SubagentTask, 'task' | 'meshNode' | 'capability'>, facts?: import('../mesh/node-strengths.js').StrengthFacts): Promise<MeshPlacement> {
+    const strengths = await import('../mesh/node-strengths.js')
+    const { detectMeshTaskType, TASK_STRENGTH } = await import('../mesh/mesh-router.js')
+    const explicit = String(task.capability || '').trim().toLowerCase()
+    const capability = (strengths.STRENGTH_CAPABILITIES as readonly string[]).includes(explicit)
+        ? explicit as import('../mesh/node-strengths.js').StrengthCapability
+        : explicit ? null : TASK_STRENGTH[detectMeshTaskType(task.task)]
+    if (!capability) return { local: true, reason: explicit ? `Fähigkeit "${explicit.slice(0, 40)}" unbekannt — läuft lokal` : 'keine Fähigkeit erkannt — läuft lokal' }
+    const current = facts || await strengths.collectStrengthFacts()
+    const ranking = strengths.rankNodes(capability, current)
+    const best = ranking.ranked[0]
+    const reason = strengths.rankingReason(ranking)
+    if (!best) return { local: true, capability, reason: `${reason} — läuft lokal` }
+    const local = current.nodes.some(node => node.local && node.nodeId === best.nodeId)
+    return { meshNode: local ? undefined : best.nodeId, nodeId: best.nodeId, capability, local, reason }
+}
+
+/** The reason goes into the parent run's ledger (route.selected), never into `node`. */
+async function recordPlacement(placement: MeshPlacement): Promise<void> {
+    try {
+        const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+        const runId = getExecutionPolicyContext().runId
+        if (!runId || !placement.capability || !placement.nodeId) return
+        const { getOutcomeLedger } = await import('../core/outcome-ledger.js')
+        getOutcomeLedger().recordRoute(runId, { meshNode: placement.nodeId, meshCapability: placement.capability, reason: `Platzierung: ${placement.reason}` })
+    } catch { /* the ledger is evidence, never a precondition for running */ }
+}
+
+// ============================================
 // Public API
 // ============================================
 
@@ -387,6 +440,13 @@ export async function spawnSubagent(task: SubagentTask, options: { signal?: Abor
         return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: task.meshNode ? 'mesh' : 'local', error: 'Subagent interrupted' }
     }
     const abortSignal = { cancelled: false }
+    // 2.86 Paket J: meshNode="auto" → the node that is best at it (reason in the ledger).
+    let placement: MeshPlacement | undefined
+    if (String(task.meshNode || '').trim().toLowerCase() === 'auto') {
+        placement = await resolveMeshPlacement(task).catch((error): MeshPlacement => ({ local: true, reason: `Platzierung nicht möglich (${String(error).slice(0, 80)}) — läuft lokal` }))
+        await recordPlacement(placement)
+        task = { ...task, meshNode: placement.meshNode }
+    }
     // Hard abort: fires after timeout and cancels any in-flight fetch inside nova-runner
     const hardAbort = new AbortController()
 
@@ -500,6 +560,7 @@ export async function spawnSubagent(task: SubagentTask, options: { signal?: Abor
         status: result.status, mode: result.mode,
         meshNode: result.meshNode, toolsUsed: result.toolsUsed,
         durationMs: result.durationMs, error: result.error,
+        ...(placement ? { placement: placement.reason } : {}),
     })
 
     console.log(`[SubagentOrch] ✅ Subagent ${id} finished: ${result.status} in ${result.durationMs}ms`)
@@ -518,7 +579,7 @@ export async function spawnParallel(tasks: SubagentTask[]): Promise<SubagentResu
  * Returns a combined summary once all are done.
  */
 export async function spawnSubagentsParallel(
-    tasks: Array<{ task: string; tools?: string[] | string; timeout_seconds?: number; mesh_node?: string }>,
+    tasks: Array<{ task: string; tools?: string[] | string; timeout_seconds?: number; mesh_node?: string; faehigkeit?: string }>,
     /** Authorized parent identity, set by the caller from the server-side
      * execution context. Never taken from the (model-supplied) task specs. */
     parent?: { userId?: string; authUserId?: string },
@@ -531,6 +592,7 @@ export async function spawnSubagentsParallel(
         tools: normalizeToolList(t.tools),
         timeoutMs: (t.timeout_seconds || 60) * 1000,
         meshNode: t.mesh_node,
+        ...(t.faehigkeit ? { capability: String(t.faehigkeit) } : {}),
         ...(parent?.userId ? { userId: parent.userId } : {}),
         ...(parent?.authUserId ? { authUserId: parent.authUserId } : {}),
     })))

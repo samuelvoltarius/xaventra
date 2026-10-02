@@ -193,7 +193,9 @@ export class OutcomeLedger {
         this.append(runId, 'plan.recorded', plan)
     }
 
-    recordRoute(runId: string, route: { backend?: string; model?: string; node?: string; reason?: string; taskType?: string; toolset?: string[] }): void {
+    /** `meshNode`/`meshCapability` (2.86 Paket J): where a delegated part ran and why; deliberately not `node`,
+     * which stays the placement of the run's own model. */
+    recordRoute(runId: string, route: { backend?: string; model?: string; node?: string; reason?: string; taskType?: string; toolset?: string[]; meshNode?: string; meshCapability?: string }): void {
         this.append(runId, 'route.selected', route)
     }
 

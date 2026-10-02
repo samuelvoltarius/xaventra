@@ -15,6 +15,7 @@
  * Static fallbacks are used when web search is unavailable.
  */
 
+import { rankNodes, type StrengthCapability, type StrengthNodeFacts } from '../mesh/node-strengths.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
@@ -365,46 +366,47 @@ function parseResearchJson(output: string): { recommended: CapabilityCandidate; 
 // Node selection for capability
 // ============================================
 
-function scoreNodeForCapability(capability: string, node: MeshSetupNode): number {
-    let score = 0
-    const apple = isAppleSilicon(node.hardware)
-    const cuda = hasNvidiaCuda(node.hardware)
-    const caps = node.capabilities
+// 2.86 Paket J: "where to install" uses the one strength module (rankNodes,
+// suitability by hardware) instead of an own score formula.
+const RESEARCH_STRENGTH: Record<string, StrengthCapability> = {
+    stt: 'stt', whisper: 'stt', tts: 'tts', piper: 'tts', llm: 'grosse-modelle', embedding: 'embedding',
+    vision: 'vision', image: 'bilder', bilder: 'bilder', ffmpeg: 'medien', media: 'medien',
+}
 
-    switch (capability) {
-        case 'stt': case 'tts': case 'whisper':
-            if (apple) score += 10
-            if (cuda) score += 8
-            break
-        case 'llm':
-            if (apple) score += 10
-            if (cuda) score += 9
-            break
-        case 'embedding':
-            // Any capable node, prefer low latency
-            score += caps.includes('ollama') ? 5 : 0
-            break
-        case 'vision':
-            if (cuda) score += 10
-            if (apple) score += 8
-            break
+const numberOf = (record: Record<string, unknown>, ...keys: string[]): number => {
+    for (const key of keys) { const value = Number(record[key]); if (Number.isFinite(value) && value > 0) return value }
+    return 0
+}
+
+/** MeshSetupNode (self-setup scan) → the strength module's facts. */
+export function setupNodeStrengthFacts(node: MeshSetupNode, now = Date.now()): StrengthNodeFacts {
+    const hw = (node.hardware || {}) as Record<string, unknown>
+    const vramMb = numberOf(hw, 'gpu_vram_mb', 'gpuVramMb')
+    const disk = numberOf(hw, 'disk_free_gb', 'diskFreeGb')
+    const gpuName = typeof hw.gpu === 'string' ? hw.gpu : typeof hw.gpuName === 'string' ? hw.gpuName : null
+    return {
+        nodeId: node.name,
+        local: node.host === 'localhost' || node.name === hostname(),
+        lastSeen: node.online ? now : undefined,
+        hardware: {
+            cpus: numberOf(hw, 'cores', 'cpus', 'cpu_cores'), ramGB: numberOf(hw, 'ram_gb', 'ramGB', 'ram'),
+            gpuName, gpuBackend: hasNvidiaCuda(hw) ? 'cuda' : isAppleSilicon(hw) ? 'metal' : 'cpu', viaVllm: false,
+            ...(vramMb ? { gpuVramGB: Math.round(vramMb / 1024) } : {}),
+            ...(isAppleSilicon(hw) ? { unifiedMemory: true } : {}),
+            ...(disk ? { diskFreeGB: Math.round(disk) } : {}),
+        },
+        runtimes: node.ollamaModels.length ? [{ name: 'ollama', type: 'llm', models: [...node.ollamaModels], running: true }] : [],
+        tools: [...node.capabilities],
     }
-
-    // Prefer reachable/low-latency nodes
-    if (node.latencyMs !== undefined) score += Math.max(0, 5 - node.latencyMs / 200)
-    // Slight preference for local node
-    if (node.name === hostname() || node.host === 'localhost') score += 2
-
-    return score
 }
 
 export function selectBestNodeForCapability(capability: string, nodes: MeshSetupNode[]): MeshSetupNode | null {
     const online = nodes.filter(n => n.online)
     if (!online.length) return nodes[0] ?? null  // fallback to first even if offline
-
-    return online
-        .map(n => ({ node: n, score: scoreNodeForCapability(capability, n) }))
-        .sort((a, b) => b.score - a.score)[0]?.node ?? null
+    const now = Date.now()
+    const ranking = rankNodes(RESEARCH_STRENGTH[capability] || 'rechnen', { nodes: online.map(node => setupNodeStrengthFacts(node, now)), measurements: [], now }, { nurHardware: true })
+    const best = ranking.ranked[0]?.nodeId
+    return online.find(node => node.name === best) ?? [...online].sort((a, b) => a.name.localeCompare(b.name))[0] ?? null
 }
 
 // ============================================

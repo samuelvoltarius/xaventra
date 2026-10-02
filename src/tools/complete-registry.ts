@@ -1947,26 +1947,28 @@ export const meshBrainTools: NovaTool[] = [
     },
     {
         name: 'mesh_route',
-        description: 'Zeigt welcher Node am besten fÃ¼r einen bestimmten Task geeignet ist.',
+        description: 'Zeigt, welcher Knoten eine Aufgabe am besten kann (Rangliste mit Begründung aus signierten Knotenprofilen, laufender Software und gemessenen Owner-Läufen). Delegieren: spawn_subagent mit mesh_node="auto".',
         category: 'mesh',
         parameters: [
-            { name: 'task', type: 'string', description: 'Task-Typ: large-llm, fast-llm, embedding, image-generation, stt-voice, media-convert, cuda-inference', required: true },
+            { name: 'task', type: 'string', description: 'Fähigkeit: bilder, grosse-modelle, llm, embedding, stt, tts, vision, medien, speicher, rechnen oder main (alte Namen wie large-llm, image-generation gelten weiter)', required: true },
         ],
         handler: async (params) => {
-            const { getMeshBrain } = await import('../mesh/mesh-brain.js')
-            const brain = getMeshBrain()
-            const snap = brain.load()
-            if (!snap) return 'Kein Mesh-Scan. Bitte mesh_scan ausfÃ¼hren.'
-            const route = brain.getBestNodeFor(params.task as string)
-            if (!route) return `Kein Node gefunden fÃ¼r Task: ${params.task}`
-            const lines = [
-                `Task: ${route.task}`,
-                `â†’ Bester Node: ${route.bestNode}`,
-                `   Grund: ${route.reason}`,
-            ]
-            if (route.fallback) lines.push(`   Fallback: ${route.fallback} (wenn ${route.bestNode} nicht verfÃ¼gbar)`)
-            else lines.push(`   Fallback: keiner verfÃ¼gbar`)
-            return lines.join('\n')
+            const { collectStrengthFacts, rankNodes } = await import('../mesh/node-strengths.js')
+            const aliases: Record<string, string> = {
+                'large-llm': 'grosse-modelle', 'fast-llm': 'llm', 'image-generation': 'bilder', 'stt-voice': 'stt',
+                'media-convert': 'medien', 'cuda-inference': 'grosse-modelle',
+            }
+            const raw = String(params.task || '').trim().toLowerCase()
+            try {
+                const ranking = rankNodes((aliases[raw] || raw) as any, await collectStrengthFacts())
+                const lines = [`${ranking.label}:`]
+                for (const entry of ranking.ranked.slice(0, 5)) lines.push(`${entry.place}. ${entry.nodeId} — ${entry.reasons.join('; ')}`)
+                if (!ranking.ranked.length) lines.push('Kein geeigneter Knoten.')
+                for (const item of ranking.excluded.slice(0, 5)) lines.push(`   nicht geeignet: ${item.nodeId} (${item.reason})`)
+                return lines.join('\n')
+            } catch (error) {
+                return String((error as Error)?.message || error)
+            }
         },
     },
 ]
@@ -3133,7 +3135,8 @@ export const ALL_TOOLS: NovaTool[] = [
             { name: 'task', type: 'string', description: 'Was soll der Subagent tun? Klare, fokussierte Aufgabenbeschreibung.', required: true },
             { name: 'tools', type: 'string', description: 'Kommagetrennte Tool-Namen (optional). Standard: alle sicheren Tools.', required: false },
             { name: 'timeout_seconds', type: 'number', description: 'Timeout in Sekunden (Standard: 60)', required: false },
-            { name: 'mesh_node', type: 'string', description: 'Optional: Name des Mesh-Nodes (z.B. "MacMini") fÃ¼r Remote-Delegation', required: false },
+            { name: 'mesh_node', type: 'string', description: 'Optional: Knoten-ID für Remote-Delegation über den signierten Mesh-Weg, oder "auto": der Knoten, der die Aufgabe am besten kann (Begründung im Ledger).', required: false },
+            { name: 'faehigkeit', type: 'string', description: 'Optional bei mesh_node="auto": bilder, grosse-modelle, llm, embedding, stt, tts, vision, medien, speicher, rechnen. Ohne Angabe aus der Aufgabe erkannt.', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
@@ -3144,6 +3147,7 @@ export const ALL_TOOLS: NovaTool[] = [
                     tools,
                     timeoutMs: (Number(params.timeout_seconds) || 60) * 1000,
                     meshNode: params.mesh_node ? String(params.mesh_node) : undefined,
+                    ...(params.faehigkeit ? { capability: String(params.faehigkeit) } : {}),
                     ...(await subagentParentIdentity(params)),
                 })
                 if (result.status === 'completed') {
@@ -3182,7 +3186,7 @@ export const ALL_TOOLS: NovaTool[] = [
             {
                 name: 'tasks',
                 type: 'object',
-                description: 'Array von Task-Objekten: [{task: string, tools?: string, timeout_seconds?: number, mesh_node?: string}, ...]',
+                description: 'Array von Task-Objekten: [{task: string, tools?: string, timeout_seconds?: number, mesh_node?: string (Knoten-ID oder "auto"), faehigkeit?: string}, ...]',
                 required: true,
             },
         ],

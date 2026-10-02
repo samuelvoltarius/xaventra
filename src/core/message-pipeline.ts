@@ -1139,19 +1139,13 @@ Du läufst auf: ${hwSummary}
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Mesh Router: inject node awareness so Nova knows about available compute nodes
+    // Mesh Router: where this task runs best (2.86 Paket J: strengths from signed facts, no ssh)
     if (contextPolicy.mesh) try {
-        const { getRoutingDiagnostics, detectMeshTaskType, routeTask } = await import('../mesh/mesh-router.js')
+        const { detectMeshTaskType, routeTask, meshRoutingPromptBlock } = await import('../mesh/mesh-router.js')
         const taskType = detectMeshTaskType(content)
         if (taskType !== 'general') {
             const decision = await routeTask(content)
-            systemPrompt += `\n\n## 🌐 MESH ROUTING (automatisch erkannt)
-Aufgabentyp: **${taskType}**
-Empfohlener Node: **${decision.nodeName}** (${decision.host})
-Grund: ${decision.reason}
-Lokal: ${decision.isLocal ? 'JA' : 'NEIN — nutze ssh_command an ${decision.host}'}
-
-WICHTIG: Wenn die Aufgabe zu einem anderen Node geroutet wird, nutze ssh_command mit dem Host des empfohlenen Nodes.`
+            systemPrompt += `\n\n${meshRoutingPromptBlock(decision)}`
         }
     } catch (err) { console.debug('[Pipeline] mesh router not available:', err) }
 
