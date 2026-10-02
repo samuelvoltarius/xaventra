@@ -519,51 +519,6 @@ async function startDaemon() {
         } catch { /* Non-critical */ }
     })()
 
-    // ============================================
-    // Internal LLM (Local, for autonomous tasks) — sync
-    // ============================================
-    try {
-        const internalModel = config.internalModel || 'auto'
-        if (internalModel === 'auto') {
-            console.log('[Nova] ✓ Internal LLM: Cloud (auto)')
-            state.internalLlm = state.llm
-        } else {
-            const { createOllamaLLM } = await import('./llm/custom.js')
-            const testRes = await fetch('http://localhost:11434/api/tags').catch(() => null)
-            if (testRes?.ok) {
-                const payload: any = await testRes.json().catch(() => ({ models: [] }))
-                const installed = (payload.models || [])
-                    .map((model: any) => String(model?.name || model?.model || ''))
-                    .filter(Boolean)
-                const normalize = (name: string) => name.replace(/:latest$/i, '').toLowerCase()
-                const configured = installed.find((name: string) => normalize(name) === normalize(internalModel))
-
-                if (configured) {
-                    state.internalLlm = createOllamaLLM('http://localhost:11434', configured)
-                    console.log(`[Nova] ✓ Internal LLM: ${configured} via Ollama (lokal, autonom)`)
-                } else {
-                    // A reachable Ollama server does not imply that the configured
-                    // model exists. Prefer another explicitly configured fallback
-                    // that is actually installed; otherwise use the cloud client.
-                    const fallback = undefined
-                    if (fallback) {
-                        state.internalLlm = createOllamaLLM('http://localhost:11434', fallback)
-                        console.log(`[Nova] ⚠ Internal Model ${internalModel} fehlt — nutze installiertes ${fallback}`)
-                    } else {
-                        state.internalLlm = null
-                        console.log(`[Nova] ⚠ Internal Model ${internalModel} nicht installiert — Cloud Fallback`)
-                    }
-                }
-            } else {
-                console.log('[Nova] ⚠ Ollama nicht erreichbar - Internal LLM nutzt Cloud Fallback')
-                state.internalLlm = state.llm
-            }
-        }
-    } catch {
-        console.log('[Nova] ⚠ Internal LLM nicht verfügbar - Fallback auf Cloud LLM')
-        state.internalLlm = state.llm
-    }
-
     // Independent model runtimes: separate health, timeout and budget domains.
     // They may initially share a provider endpoint, but never share lifecycle
     // state or silently fall back into the main agent.
@@ -579,51 +534,25 @@ async function startDaemon() {
     // both roles use the same Ollama daemon/model, they no longer share a
     // mutable client instance or the main agent's failover chain.
     const createAutonomousClient = async (requested: string) => {
-        const normalize = (name: string) => name.replace(/:latest$/i, '').toLowerCase()
-        const vllmNode = ((config as any).nodes || []).find((node: any) => node?.services?.vllm)
-        const vllmBase = String(vllmNode?.services?.vllm || '').replace(/\/$/, '')
-        if (vllmBase) {
-            const response = await fetch(`${vllmBase}/v1/models`, {
-                signal: AbortSignal.timeout(3_000),
-            }).catch(() => null)
-            if (response?.ok) {
-                const payload: any = await response.json().catch(() => ({ data: [] }))
-                const models = (payload.data || []).map((entry: any) => String(entry?.id || '')).filter(Boolean)
-                const selected = requested !== 'auto'
-                    ? models.find((name: string) => normalize(name) === normalize(requested))
-                    : models.find((name: string) => /qwen/i.test(name)) || models[0]
-                if (selected) {
-                    const { createLocalLLM } = await import('./llm/local-llm.js')
-                    return {
-                        // Autonomous runtimes need native function/tool calling;
-                        // CustomLLM's legacy signature treats the tools argument
-                        // as options and silently drops tool definitions.
-                        client: createLocalLLM({ baseUrl: vllmBase, model: selected, name: 'Nova autonomous vLLM', requestTimeoutMs: 45_000 }),
-                        model: selected,
-                        provider: 'vllm',
-                    }
-                }
-            }
+        // Search order and local-only rule live in runtime/autonomous-endpoint
+        // (nodes vLLM -> configured local provider -> Ollama). Live 2.82.0 the
+        // Spark ran vLLM only via providers.local and both runtimes were offline.
+        const { resolveAutonomousEndpoint } = await import('./runtime/autonomous-endpoint.js')
+        const endpoint = await resolveAutonomousEndpoint(config, requested)
+        if (!endpoint) return null
+        if (endpoint.provider === 'ollama') {
+            const { createOllamaLLM } = await import('./llm/custom.js')
+            return { client: createOllamaLLM(endpoint.baseUrl, endpoint.model), model: endpoint.model, provider: 'ollama' }
         }
-        const response = await fetch('http://localhost:11434/api/tags', {
-            signal: AbortSignal.timeout(2_000),
-        }).catch(() => null)
-        if (!response?.ok) return null
-        const payload: any = await response.json().catch(() => ({ models: [] }))
-        const installed = (payload.models || [])
-            .map((entry: any) => String(entry?.name || entry?.model || ''))
-            .filter(Boolean)
-        const internal = String((config as any).internalModel || '')
-        const preferred = requested !== 'auto' ? requested : (internal !== 'auto' ? internal : '')
-        // Never replace an explicitly configured autonomous model with an
-        // arbitrary larger installed model. Presence in /api/tags does not
-        // prove that it can serve Nova's real prompt within the role deadline.
-        const selected = preferred
-            ? installed.find((name: string) => normalize(name) === normalize(preferred))
-            : null
-        if (!selected) return null
-        const { createOllamaLLM } = await import('./llm/custom.js')
-        return { client: createOllamaLLM('http://localhost:11434', selected), model: selected, provider: 'ollama' }
+        const { createLocalLLM } = await import('./llm/local-llm.js')
+        return {
+            // Autonomous runtimes need native function/tool calling;
+            // CustomLLM's legacy signature treats the tools argument
+            // as options and silently drops tool definitions.
+            client: createLocalLLM({ baseUrl: endpoint.baseUrl, model: endpoint.model, apiKey: endpoint.apiKey, name: 'Nova autonomous vLLM', requestTimeoutMs: 45_000 }),
+            model: endpoint.model,
+            provider: endpoint.provider,
+        }
     }
     const learningRequested = String((config as any).learningModel || 'auto')
     const repairRequested = String((config as any).repairModel || 'auto')
@@ -638,6 +567,40 @@ async function startDaemon() {
         serviceRuntime.register({ role: 'repair', model: repairRuntime.model, provider: repairRuntime.provider, timeoutMs: 30_000, dailyTokenBudget: 100_000, localOnly: true }, repairRuntime.client)
     } else {
         console.log('[Nova] ⚠ Repair Runtime offline — kein eigenes lokales Modell erreichbar')
+    }
+    // ============================================
+    // Internal LLM (legacy state.internalLlm) — never the cloud main client.
+    // Autonomous consumers use serviceModels below; state.internalLlm is only
+    // reported (full-system-audit). Up to 2.82.0 "auto" pointed at state.llm
+    // and was logged as "Internal LLM: Cloud (auto)".
+    // ============================================
+    try {
+        const { resolveInternalLlmPlan } = await import('./runtime/autonomous-endpoint.js')
+        const plan = resolveInternalLlmPlan((config as any).internalModel, learningRuntime)
+        if (plan.kind === 'local-runtime') {
+            state.internalLlm = serviceRuntime.getClient('learning')
+            console.log(`[Nova] ✓ Internal LLM: ${plan.label} — Privates bleibt lokal`)
+        } else if (plan.kind === 'ollama') {
+            const testRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2_000) }).catch(() => null)
+            const payload: any = testRes?.ok ? await testRes.json().catch(() => ({ models: [] })) : { models: [] }
+            const installed = (payload.models || []).map((model: any) => String(model?.name || model?.model || '')).filter(Boolean)
+            const normalize = (name: string) => name.replace(/:latest$/i, '').toLowerCase()
+            const configured = installed.find((name: string) => normalize(name) === normalize(plan.model))
+            if (configured) {
+                const { createOllamaLLM } = await import('./llm/custom.js')
+                state.internalLlm = createOllamaLLM('http://localhost:11434', configured)
+                console.log(`[Nova] ✓ Internal LLM: ${configured} via Ollama (lokal, autonom)`)
+            } else {
+                state.internalLlm = null
+                console.log(`[Nova] ⚠ Internal Model ${plan.model} nicht erreichbar — kein internes LLM (kein Cloud-Fallback)`)
+            }
+        } else {
+            state.internalLlm = null
+            console.log('[Nova] ℹ Internal LLM: keins — kein lokales Modell erreichbar (kein Cloud-Fallback für Privates)')
+        }
+    } catch {
+        state.internalLlm = null
+        console.log('[Nova] ⚠ Internal LLM nicht verfügbar — kein Cloud-Fallback')
     }
     ;(state as any).serviceRuntime = serviceRuntime
     // Central responsibility boundary for autonomous consumers. Production
