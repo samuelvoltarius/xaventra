@@ -5741,6 +5741,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/decisions.js",
         "../learning/trace-analyzer.js",
         "./ports.js",
         "node:fs",

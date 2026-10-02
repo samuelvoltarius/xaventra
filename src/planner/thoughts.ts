@@ -66,6 +66,12 @@ export interface NewThought {
     /** Dedupe key; default source + normalized title (digits ignored). */
     signature?: string
     node?: string
+    /**
+     * Owner-feedback weight 0…1 of this thought kind (decisions.ts,
+     * thoughtImportanceFactor). Only thinking producers pass it; below 1 a
+     * question or idea is not announced. Alarms never carry a weight.
+     */
+    weight?: number
 }
 
 export interface ThoughtSettings {
@@ -95,9 +101,16 @@ export function isOpenThought(thought: Pick<Thought, 'status'>): boolean {
     return OPEN.has(thought.status)
 }
 
-/** Fixed rules. The model may phrase a proposal, it never sets importance. */
-export function rateImportance(input: { severity?: ThoughtSeverity; kind: ThoughtKind; permission: ThoughtPermission }): { importance: ThoughtImportance; rule: string } {
+/**
+ * Fixed rules. The model may phrase a proposal, it never sets importance.
+ * A question is not automatically „wichtig“ (2.83.0): when the owner already
+ * said Nein to this kind (weight < 1), an idea or proposal drops to `niedrig`
+ * — report only, no notice, no card. Critical stays urgent; events (alarms,
+ * watch) are never dampened.
+ */
+export function rateImportance(input: { severity?: ThoughtSeverity; kind: ThoughtKind; permission: ThoughtPermission; weight?: number }): { importance: ThoughtImportance; rule: string } {
     if (input.severity === 'critical') return { importance: 'dringend', rule: 'regel:kritisch' }
+    if (input.kind !== 'ereignis' && typeof input.weight === 'number' && Number.isFinite(input.weight) && input.weight < 1) return { importance: 'niedrig', rule: 'regel:owner-nein-gedaempft' }
     if (input.severity === 'warning') return { importance: 'wichtig', rule: 'regel:warnung' }
     if (input.kind === 'vorschlag' && input.permission === 'fragen') return { importance: 'wichtig', rule: 'regel:braucht-freigabe' }
     if (input.kind === 'idee') return { importance: 'niedrig', rule: 'regel:idee-nur-bericht' }
@@ -189,7 +202,8 @@ export function createThoughtStore(options: { dataDir: string; now?: () => numbe
                 ? input.permission as ThoughtPermission
                 : kind === 'vorschlag' ? 'fragen' : 'selbst'
             const severity = SEVERITIES.includes(input.severity as ThoughtSeverity) ? input.severity : undefined
-            const { importance, rule } = rateImportance({ severity, kind, permission })
+            const weight = typeof input.weight === 'number' && Number.isFinite(input.weight) ? Math.max(0, Math.min(1, input.weight)) : undefined
+            const { importance, rule } = rateImportance({ severity, kind, permission, weight })
             const evidence = cleanText(input.evidence ?? '', 600)
             const proposal = input.proposal ? cleanText(input.proposal, 300) : undefined
             const signatureBase = input.signature ? String(input.signature) : `${source}|${title.toLowerCase().replace(/\d+/g, '#')}`

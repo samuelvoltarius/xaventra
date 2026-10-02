@@ -10,6 +10,20 @@
  * of known kinds (approveDevice, thinking decision, self-update). Anything
  * else a producer might attach is dropped. A button press dispatches only
  * these known actions; there is no generic "run this" path.
+ *
+ * 2.83.0 — Denk-Vorschläge mit Folgen:
+ * - „Ja“ auf eine Idee (`idee-pruefen`) löst echte Arbeit über die vorhandenen
+ *   Wege aus: ist das Subjekt ein Schmiede-Werkzeug (`forge_*`), baut die
+ *   Schmiede eine neue Version mit allen Tests (`reviseTool`); sonst geht ein
+ *   lesender Untersuchungsauftrag (L1) über `delegation.ts` an Claude bzw.
+ *   ohne Agentic-OS-URL an einen lokalen Unteragenten. Das Ziel wird in
+ *   `ideas-state.json` vermerkt und nach 7 Tagen nachgemessen (idea-run.ts).
+ * - „Ja“ auf einen Modell-Scout-Vorschlag (`modell-wechsel`) legt nur die
+ *   vorhandene `vllm-wechsel`-Karte an — der Wechsel braucht sein eigenes Ja.
+ * - Die Antwort nennt, was tatsächlich passiert ist (Delegations-ID, Plan-ID)
+ *   oder warum nichts passiert ist. Kein Versprechen ohne Ausführung.
+ * - Hat der Owner diese Art schon abgelehnt (Faktor < 1, decisions.ts), wird
+ *   ein Denk-Vorschlag nur noch Idee im Bericht: niedrig, keine Karte.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { atomicWriteJsonSync } from './atomic-storage.js'
@@ -18,12 +32,15 @@ import { addThought } from '../planner/index.js'
 
 type StoredAction =
     | { kind: 'approveDevice'; deviceId: string }
-    | { kind: 'thinking'; thoughtKind: string }
+    | { kind: 'thinking'; thoughtKind: string; action?: ThinkingAction; params?: Record<string, string | number>; key?: string; beleg?: string; ziel?: string }
     | { kind: 'self-update'; action: string }
     | { kind: 'note'; what: string }
     | { kind: 'software-scout'; candidateId: string; nodeId: string; dedupeKey: string }
     | { kind: 'auto-reminder'; planId: string }
     | { kind: 'watch'; actionKind: string; node?: string; target?: string }
+
+type ThinkingAction = 'idee-pruefen' | 'modell-wechsel'
+const THINKING_ACTIONS: readonly ThinkingAction[] = ['idee-pruefen', 'modell-wechsel']
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,159}$/
 const file = () => getNovaDataDir('thought-actions.json')
@@ -106,23 +123,149 @@ export function createSensingThoughtSink() {
     }
 }
 
+const plain = (value: unknown, max: number) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max)
+
+/** Only short scalar params under plain keys survive (regel, subjekt, metrik, vorher, ziel, richtung, einheit, modell, von). */
+function cleanParams(raw: unknown): Record<string, string | number> | undefined {
+    if (!raw || typeof raw !== 'object') return undefined
+    const out: Record<string, string | number> = {}
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>).slice(0, 12)) {
+        if (!/^[a-z]{2,20}$/.test(key)) continue
+        if (typeof value === 'number' && Number.isFinite(value)) out[key] = value
+        else if (typeof value === 'string' && value.trim()) out[key] = plain(value, 120)
+    }
+    return Object.keys(out).length ? out : undefined
+}
+
+/** Owner feedback on this thought kind (decisions.ts); 1 when unknown or unavailable. */
+async function feedbackWeight(kind: string): Promise<number> {
+    try {
+        const { thoughtImportanceFactor } = await import('./decisions.js')
+        const factor = thoughtImportanceFactor(kind)
+        return Number.isFinite(factor) ? factor : 1
+    } catch { return 1 }
+}
+
 export function createThinkingThoughtSink() {
     return {
         async emit(thought: any): Promise<void> {
             const evidence = (thought.evidence || []).map((item: any) => `${item.metric}=${item.value}${item.unit || ''} (${item.source})`).join(', ')
+            const asks = thought.stufe === 'fragen'
+            const validKind = thought.kind && /^[a-z0-9:_-]{1,80}$/i.test(String(thought.kind))
+            // 2.83.0: a kind the owner already declined only goes into the report (niedrig, no card).
+            const weight = asks && validKind ? await feedbackWeight(String(thought.kind)) : 1
+            const dampened = weight < 1
             const { thought: stored } = addThought({
                 source: sourceName('denken', thought.source),
                 title: String(thought.title || ''),
-                evidence: [thought.text, evidence, thought.target ? `Ziel: ${thought.target}` : ''].filter(Boolean).join(' · '),
+                evidence: [thought.text, evidence, thought.target ? `Ziel: ${thought.target}` : '',
+                    dampened ? `nur Bericht: du hast diese Art schon abgelehnt (Faktor ${Math.round(weight * 100) / 100})` : ''].filter(Boolean).join(' · '),
                 severity: Number(thought.importance) >= 0.8 ? 'warning' : 'info',
-                kind: thought.stufe === 'fragen' ? 'vorschlag' : 'idee',
+                kind: asks && !dampened ? 'vorschlag' : 'idee',
                 proposal: thought.proposal?.action ? String(thought.proposal.action) : undefined,
                 permission: thought.stufe === 'fragen' || thought.stufe === 'nie' ? thought.stufe : 'selbst',
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
+                ...(dampened ? { weight } : {}),
             })
-            if (thought.kind && /^[a-z0-9:_-]{1,80}$/i.test(String(thought.kind))) remember(stored.id, { kind: 'thinking', thoughtKind: String(thought.kind) })
+            if (validKind) {
+                const action = THINKING_ACTIONS.includes(thought.proposal?.action) ? thought.proposal.action as ThinkingAction : undefined
+                remember(stored.id, {
+                    kind: 'thinking', thoughtKind: String(thought.kind),
+                    ...(action ? {
+                        action,
+                        ...(cleanParams(thought.proposal?.params) ? { params: cleanParams(thought.proposal?.params) } : {}),
+                        ...(thought.dedupeKey ? { key: plain(thought.dedupeKey, 200) } : {}),
+                        ...(evidence ? { beleg: plain(evidence, 400) } : {}),
+                        ...(thought.target ? { ziel: plain(thought.target, 300) } : {}),
+                    } : {}),
+                })
+            }
         },
     }
+}
+
+// ---------------------------------------------------------------------------
+// 2.83.0: Ja auf einen Denk-Vorschlag → vorhandene Wege
+// ---------------------------------------------------------------------------
+
+type DelegationModule = typeof import('./delegation.js')
+type ForgeRef = { id: string; name: string }
+export interface ThoughtActionPorts {
+    delegate: DelegationModule['delegate']
+    delegationUrl(): Promise<string | null> | string | null
+    forge: { find(ref: string): ForgeRef | null | Promise<ForgeRef | null>; canBuild(): boolean | Promise<boolean>; revise(id: string, beleg: string): Promise<{ message: string }> }
+    proposeModelSwitch(input: { taskClass: 'general'; targetModel: string; grund: string }): Promise<{ ok: true; plan: { id: string }; card: { id: string; vorschlag: string } } | { ok: false; reason: string }>
+}
+
+const defaultPorts: ThoughtActionPorts = {
+    delegate: async request => (await import('./delegation.js')).delegate(request),
+    delegationUrl: async () => (await import('./delegation.js')).getDelegationService().config.url,
+    forge: {
+        find: async ref => {
+            const { getForgeTool } = await import('../tools/skill-builder.js')
+            const tool = getForgeTool(ref)
+            return tool ? { id: tool.id, name: tool.name } : null
+        },
+        canBuild: async () => (await import('../tools/skill-builder.js')).hasForgeModel(),
+        revise: async (id, beleg) => (await import('../tools/skill-builder.js')).reviseTool(id, beleg),
+    },
+    proposeModelSwitch: async input => (await import('../routing/model-commands.js')).proposeLocalVllmSwitch(input),
+}
+let portOverrides: Partial<ThoughtActionPorts> | null = null
+const ports = (): ThoughtActionPorts => ({ ...defaultPorts, ...(portOverrides || {}) })
+
+/** Test hook: replace single ports (delegation, forge, model switch); null restores the real ones. */
+export function _setThoughtActionPortsForTest(overrides: Partial<ThoughtActionPorts> | null): void { portOverrides = overrides }
+
+const AGENT_LABEL: Record<string, string> = { claude: 'Claude', subagent: 'einen lokalen Unteragenten' }
+
+async function noteAccepted(action: Extract<StoredAction, { kind: 'thinking' }>): Promise<string> {
+    const p = action.params || {}
+    if (!action.key || typeof p.vorher !== 'number' || typeof p.ziel !== 'number') return 'Ziel ohne Zahl — keine Nachmessung.'
+    try {
+        const { noteIdeaAccepted } = await import('../thinking/idea-run.js')
+        const entry = noteIdeaAccepted({
+            key: action.key, regel: String(p.regel || ''), subjekt: String(p.subjekt || ''), metrik: String(p.metrik || ''),
+            vorher: p.vorher, ziel: p.ziel, richtung: p.richtung === 'ueber' ? 'ueber' : 'unter', ...(p.einheit ? { einheit: String(p.einheit) } : {}),
+        })
+        return entry ? `Ziel wird am ${entry.faelligAm.slice(0, 10)} nachgemessen.` : 'Ziel nicht vermerkt — keine Nachmessung.'
+    } catch { return 'Ziel nicht vermerkt — keine Nachmessung.' }
+}
+
+async function answerIdea(action: Extract<StoredAction, { kind: 'thinking' }>): Promise<{ ok: boolean; message: string }> {
+    const p = action.params || {}
+    const regel = String(p.regel || action.thoughtKind.replace(/^idee:/, ''))
+    const subjekt = String(p.subjekt || '')
+    const beleg = action.beleg || 'ohne Beleg'
+    const measured = await noteAccepted(action)
+    const port = ports()
+    const forge = /^forge_[a-z0-9_]{1,60}$/i.test(subjekt) ? await port.forge.find(subjekt) : null
+    if (forge && await port.forge.canBuild()) {
+        // The forge's own path: new version, all tests, activation by impact; it reports the result itself.
+        void port.forge.revise(forge.id, `Owner-Ja auf Idee ${regel}: ${beleg}`).catch(() => undefined)
+        return { ok: true, message: `Angenommen: die Schmiede baut eine neue Version von ${subjekt} und prüft sie mit allen Tests; das Ergebnis meldet sie selbst. ${measured}` }
+    }
+    const lead = forge ? `Für ${subjekt} gibt es kein lokales Lern-Modell — nichts gebaut, stattdessen untersuchen. ` : ''
+    const to = (await port.delegationUrl()) ? 'claude' : 'subagent'
+    // Read-only by wording (L1): the Ja was the consent. Subject and numbers go in the (cleaned) context.
+    const result = await port.delegate({
+        to,
+        auftrag: `Untersuche die Ursache dieser Auffälligkeit (Regel ${regel}) und beschreibe eine Verbesserung mit einem Test, der sie belegt. Werkzeug bzw. Modell und Messwerte stehen im Kontext.`,
+        kontext: { regel, subjekt, beleg, ...(action.ziel ? { ziel: action.ziel } : {}) },
+        erwartet: { art: 'beschreibung', text: 'Ursache und Verbesserung mit Test beschrieben' },
+    })
+    if (!result.ok) return { ok: false, message: `${lead}Angenommen, aber nicht übergeben: ${(result as { reason: string }).reason} ${measured}`.trim() }
+    const record = result.record
+    const state = record.status === 'wartet-auf-freigabe' ? 'wartet auf deine Freigabe-Karte' : `übergeben, Stufe ${record.stufe}`
+    return { ok: true, message: `${lead}Angenommen: Untersuchung an ${AGENT_LABEL[record.to] || record.to} ${state} (${record.id}, /delegiert). ${measured}` }
+}
+
+async function answerModelSwitch(action: Extract<StoredAction, { kind: 'thinking' }>, thoughtId: string): Promise<{ ok: boolean; message: string }> {
+    const modell = String(action.params?.modell || '')
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(modell)) return { ok: false, message: 'Kein Wechselplan: Modellname fehlt oder ist ungültig. Nichts gewechselt.' }
+    const result = await ports().proposeModelSwitch({ taskClass: 'general', targetModel: modell, grund: `Modell-Scout: ${action.beleg || 'Prüfsatz'}; Owner-Ja auf Vorschlag ${thoughtId}.` })
+    if (!result.ok) return { ok: false, message: `Kein Wechselplan: ${(result as { reason: string }).reason}. Nichts gewechselt.` }
+    return { ok: true, message: `Wechselkarte erstellt (Plan ${result.plan.id}): ${result.card.vorschlag} Gewechselt wird erst nach deinem Ja auf dieser Karte.` }
 }
 
 export function createSelfUpdateThoughtSink() {
@@ -208,7 +351,10 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
             const { recordThoughtAnswer } = await import('./decisions.js')
             recordThoughtAnswer(action.thoughtKind, answer)
         }
-        return { ok: true, message: answer === 'ja' ? 'Angenommen, ich setze die Idee als Vorschlag um.' : 'Verworfen, ich schlage so etwas seltener vor.' }
+        if (answer === 'nein') return { ok: true, message: 'Verworfen, ich schlage so etwas seltener vor.' }
+        if (action.action === 'idee-pruefen') return answerIdea(action)
+        if (action.action === 'modell-wechsel') return answerModelSwitch(action, thoughtId)
+        return { ok: true, message: 'Angenommen und vermerkt; für diesen Gedanken gibt es keinen Ausführungsweg.' }
     }
     if (action.kind === 'software-scout') return answerSoftwareScout(action, answer)
     if (action.kind === 'watch') return answerWatch(action, answer)

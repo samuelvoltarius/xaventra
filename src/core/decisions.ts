@@ -16,6 +16,8 @@
  *                    der Karte als Grund → bindend
  *   mission          Abschluss/Übergabe einer Mission → Befund (nicht bindend)
  *   delegation       geprüftes Ergebnis einer Delegation → Befund (nicht bindend)
+ *   messung          Nachmessung des Ziels einer angenommenen Idee (2.83.0,
+ *                    idea-run.ts) → Befund (nicht bindend)
  *   befehl           /entscheidungen (Widerruf, Klärung)
  *
  * Feste Regeln (Code, nicht Config):
@@ -43,7 +45,11 @@
  *
  * Rückmeldungen auf Gedanken (früher thinking/decision-learning.ts,
  * `<data>/thinking/decisions.json`): Ja/Nein/Später je Gedanken-Art senkt
- * oder hebt deren künftige Wichtigkeit. Datei:
+ * oder hebt deren künftige Wichtigkeit. Ab 3× Nein ohne Ja dazwischen (Faktor
+ * unter `THOUGHT_SUPPRESS_BELOW`) bringt der Ideen-Lauf diese Art nicht mehr;
+ * darunter wird ein Denk-Vorschlag nur noch Idee im Bericht (2.83.0).
+ * `thoughtAcceptance(seitMs)` zählt Ja/Nein je Art im Zeitfenster (Lernkurve
+ * im Abendbericht). Datei:
  * `<data>/decisions/gedanken-rueckmeldungen.json`. Dieses Modul schlägt nie
  * „Immer erlauben“ vor und erteilt keine Erlaubnis — das bleibt allein bei
  * den Knopf-Karten und der Vertrauensleiter.
@@ -61,7 +67,7 @@ import { redactSecrets } from '../security/secret-redaction.js'
 // ---------------------------------------------------------------------------
 
 export type DecisionStatus = 'aktiv' | 'rueckfrage' | 'ersetzt' | 'widerrufen' | 'abgelaufen' | 'verworfen'
-export type DecisionSourceKind = 'owner-nachricht' | 'knopf' | 'mission' | 'delegation' | 'befehl'
+export type DecisionSourceKind = 'owner-nachricht' | 'knopf' | 'mission' | 'delegation' | 'befehl' | 'messung'
 export type DecisionPolarity = 'pos' | 'neg' | 'nur'
 export type DecisionEffect = 'strenger' | 'lockernd' | 'neutral'
 
@@ -766,13 +772,37 @@ export function recordDelegationDecision(record: { id: string; to: string; auftr
     }, opts)
 }
 
+/** Re-measured target of an accepted idea (2.83.0) — a finding, never binding. Only numbers, no model verdict. */
+export function recordMeasurementDecision(measurement: {
+    key: string; regel: string; subjekt: string; ergebnis: 'erreicht' | 'verfehlt' | 'nicht-messbar'
+    metrik: string; vorher: number; ziel: number; jetzt: number | null; einheit?: string; grund?: string
+}, opts: DecisionOptions = {}): Decision | null {
+    const unit = measurement.einheit ? ` ${measurement.einheit}` : ''
+    const label = measurement.ergebnis === 'erreicht' ? 'Ziel erreicht' : measurement.ergebnis === 'verfehlt' ? 'Ziel verfehlt' : 'nicht messbar'
+    const jetzt = measurement.jetzt === null ? (measurement.grund || 'keine Messung') : `${measurement.jetzt}${unit}`
+    return recordDecision({
+        text: `Idee ${measurement.regel} ${measurement.subjekt}: ${label}`,
+        warum: `Nachmessung ${measurement.metrik}: vorher ${measurement.vorher}${unit}, Ziel ${measurement.ziel}${unit}, jetzt ${jetzt}`,
+        quelle: { art: 'messung', von: 'xaventra', ref: measurement.key },
+        bindend: false,
+        themen: topicTokens(`${measurement.regel} ${measurement.subjekt}`),
+    }, opts)
+}
+
 // ---------------------------------------------------------------------------
 // Rückmeldungen auf Gedanken (früher thinking/decision-learning.ts)
 // ---------------------------------------------------------------------------
 
 export type ThoughtAnswer = 'ja' | 'nein' | 'spaeter'
 export interface ThoughtLedgerPort { recordApproval(runId: string, approval: Record<string, unknown>): void }
-interface ThoughtKindStats { yes: number; no: number; later: number; penalty: number; lastAt: string }
+interface ThoughtAnswerEvent { at: string; a: ThoughtAnswer }
+interface ThoughtKindStats { yes: number; no: number; later: number; penalty: number; lastAt: string; events?: ThoughtAnswerEvent[] }
+/**
+ * Below this factor (3× Nein without a Ja in between: 0.75³ ≈ 0.42) the idea
+ * run no longer proposes this kind. Only thinking kinds; never alarms.
+ */
+export const THOUGHT_SUPPRESS_BELOW = 0.45
+const MAX_THOUGHT_EVENTS = 50
 interface ThoughtFeedbackFile { version: 1; kinds: Record<string, ThoughtKindStats> }
 
 const feedbackFileOf = (opts: DecisionOptions) => join(opts.dataDir || getNovaDataDir(), 'decisions', 'gedanken-rueckmeldungen.json')
@@ -827,6 +857,7 @@ export function recordThoughtAnswer(kind: unknown, answer: ThoughtAnswer, opts: 
     else if (answer === 'nein') { stats.no++; stats.penalty = Math.min(20, stats.penalty + 1) }
     else stats.later++
     stats.lastAt = isoOf(opts)
+    stats.events = [...(Array.isArray(stats.events) ? stats.events : []), { at: stats.lastAt, a: answer }].slice(-MAX_THOUGHT_EVENTS)
     data.kinds[key] = stats
     try { writeThoughtFeedback(data, opts) } catch { return false }
     try {
@@ -834,6 +865,27 @@ export function recordThoughtAnswer(kind: unknown, answer: ThoughtAnswer, opts: 
         ;(opts.ledger || defaultThoughtLedger()).recordApproval(runId, { kind: key, answer, source: 'knopf' })
     } catch { /* ledger optional */ }
     return true
+}
+
+/**
+ * Read-only (2.83.0, for the Lernkurve in the evening report): owner Ja/Nein
+ * per thought kind since `sinceMs` (epoch ms). Kinds without Ja or Nein in the
+ * window are left out; „Später" counts as neither. Answers recorded before
+ * 2.83.0 carry no time and are not counted.
+ */
+export function thoughtAcceptance(sinceMs: number, opts: DecisionOptions = {}): Record<string, { ja: number; nein: number }> {
+    const out: Record<string, { ja: number; nein: number }> = {}
+    for (const [kind, stats] of Object.entries(readThoughtFeedback(opts).kinds)) {
+        let ja = 0, nein = 0
+        for (const event of Array.isArray(stats?.events) ? stats.events : []) {
+            const t = Date.parse(String(event?.at))
+            if (!Number.isFinite(t) || t < sinceMs) continue
+            if (event.a === 'ja') ja++
+            else if (event.a === 'nein') nein++
+        }
+        if (ja || nein) out[kind] = { ja, nein }
+    }
+    return out
 }
 
 /** One-time move of the old thinking/decisions.json; the old file is kept as `.migriert`. */
@@ -884,7 +936,7 @@ export function formatDecisions(opts: DecisionOptions = {}, limit = 15): string 
         for (const item of pending) lines.push(`- [${item.id}] ${item.text} — widerspricht ${item.konfliktMit} · /entscheidungen gilt ${item.id} | /entscheidungen verwerfen ${item.id}`)
     }
     if (findings.length) {
-        lines.push('', 'Befunde (Missionen/Delegationen, nicht bindend):')
+        lines.push('', 'Befunde (Missionen/Delegationen/Messungen, nicht bindend):')
         for (const item of findings.slice(-5)) lines.push(`- ${formatDecisionLine(item)}`)
     }
     if (ended.length) {

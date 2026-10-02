@@ -11,12 +11,26 @@
  * Auswahl und Erlaubnisstufe setzt der Code. Höchstens 3 Ideen pro Tag
  * (`MAX_IDEAS_PER_DAY`, per Config nur senkbar). Ausgang nur über den
  * ThoughtSink, Stufe `fragen` — umgesetzt wird nichts.
+ *
+ * 2.83.0:
+ * - Jede Idee trägt ihr Ziel auch als Zahl (`measure`: Kennzahl, vorher, Ziel,
+ *   Richtung) in `proposal.params`. Sagt der Owner Ja, vermerkt der
+ *   Gedanken-Hub sie in `ideas-state.json` (`noteIdeaAccepted`).
+ * - Nach 7 Tagen misst `runIdeaRun` dieselbe Kennzahl neu (`measureIdeaTarget`,
+ *   dieselben Felder wie die Regeln), noch vor Nachtfenster und GPU-Grenze —
+ *   das ist billig und braucht keine GPU. Ergebnis „erreicht“, „verfehlt“ oder
+ *   „nicht messbar“ (zu wenig Aufrufe) als Gedanke und als Befund (Quelle
+ *   `messung`) in den Entscheidungen. Verfehlt: dieselbe Idee darf nach
+ *   `dedupeDays` wiederkommen, mit Hinweis.
+ * - Hat der Owner diese Art dreimal abgelehnt (Faktor unter
+ *   `THOUGHT_SUPPRESS_BELOW`), schlägt der Lauf sie nicht mehr vor.
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { TraceInsights } from '../learning/trace-analyzer.js'
+import { THOUGHT_SUPPRESS_BELOW } from '../core/decisions.js'
 import {
     MAX_IDEAS_PER_DAY, judgeLoad, localDay, newThoughtId,
     type LoadProbe, type Thought, type ThoughtEvidence, type ThoughtSink, type ThinkingSettings,
@@ -26,6 +40,10 @@ export interface IdeaBaseline { at: string; tools: Record<string, number> }
 export interface CostSnapshot { todayCents: number; byProvider: Record<string, number> }
 export interface IdeaInputs { insights: TraceInsights; baseline?: IdeaBaseline | null; costs?: CostSnapshot | null }
 
+/** Das Ziel als Zahl: dieselbe Kennzahl wird nach 7 Tagen neu gemessen. */
+export type IdeaDirection = 'unter' | 'ueber'
+export interface IdeaMeasure { metrik: string; vorher: number; ziel: number; richtung: IdeaDirection; einheit?: string }
+
 export interface IdeaCandidate {
     key: string
     rule: string
@@ -34,6 +52,7 @@ export interface IdeaCandidate {
     evidence: ThoughtEvidence[]
     target: string
     severity: number
+    measure?: IdeaMeasure
 }
 
 export type Formulator = (candidate: IdeaCandidate) => Promise<string>
@@ -74,6 +93,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
                 ],
                 target: `Ø-Latenz von ${tool.name} unter ${round(tool.avgLatencyMs / 2)} ms in den nächsten 7 Tagen`,
                 severity: tool.avgLatencyMs / t.slowAvgMs,
+                measure: { metrik: 'avgLatencyMs', vorher: tool.avgLatencyMs, ziel: round(tool.avgLatencyMs / 2), richtung: 'unter', einheit: 'ms' },
             })
         }
         const before = inputs.baseline?.tools?.[tool.name]
@@ -87,6 +107,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
                 ],
                 target: `Ø-Latenz von ${tool.name} wieder unter ${round(before * 1.2)} ms`,
                 severity: tool.avgLatencyMs / before / t.slowerFactor,
+                measure: { metrik: 'avgLatencyMs', vorher: tool.avgLatencyMs, ziel: round(before * 1.2), richtung: 'unter', einheit: 'ms' },
             })
         }
         if (tool.errorRate >= t.failingRate) {
@@ -99,6 +120,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
                 ],
                 target: `Fehlerrate von ${tool.name} unter ${round(tool.errorRate * 50, 1)} % in den nächsten 7 Tagen`,
                 severity: tool.errorRate / t.failingRate,
+                measure: { metrik: 'errorRate', vorher: round(tool.errorRate * 100, 1), ziel: round(tool.errorRate * 50, 1), richtung: 'unter', einheit: '%' },
             })
         }
         if (tool.cacheCandidates >= t.cacheRepeats) {
@@ -111,6 +133,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
                 ],
                 target: `mindestens 30 % weniger echte Aufrufe von ${tool.name} (unter ${round(tool.callCount * 0.7)} in 7 Tagen)`,
                 severity: tool.cacheCandidates / t.cacheRepeats,
+                measure: { metrik: 'callCount', vorher: tool.callCount, ziel: round(tool.callCount * 0.7), richtung: 'unter' },
             })
         }
     }
@@ -123,6 +146,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
             evidence: [{ metric: 'Self-Healing-Retries pro Anfrage', value: retries, source: window }],
             target: `unter ${round(Math.min(t.retriesPerRequest, retries / 2), 2)} Wiederholungen pro Anfrage`,
             severity: retries / t.retriesPerRequest,
+            measure: { metrik: 'avgSelfHealingRetries', vorher: retries, ziel: round(Math.min(t.retriesPerRequest, retries / 2), 2), richtung: 'unter' },
         })
     }
 
@@ -137,6 +161,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
                 ],
                 target: `Erfolgsrate von ${model.modelId} über ${round(Math.min(95, model.successRate * 100 + 10))} %`,
                 severity: (t.modelSuccessRate - model.successRate) / 0.1,
+                measure: { metrik: 'successRate', vorher: round(model.successRate * 100, 1), ziel: round(Math.min(95, model.successRate * 100 + 10)), richtung: 'ueber', einheit: '%' },
             })
         }
     }
@@ -153,6 +178,7 @@ export function findIdeaCandidates(inputs: IdeaInputs): IdeaCandidate[] {
             ],
             target: `Tageskosten unter ${round(t.costCentsPerDay / 200, 2)} USD`,
             severity: costs.todayCents / t.costCentsPerDay,
+            measure: { metrik: 'Tageskosten', vorher: round(costs.todayCents / 100, 2), ziel: round(t.costCentsPerDay / 200, 2), richtung: 'unter', einheit: 'USD' },
         })
     }
     return out.sort((a, b) => b.severity - a.severity)
@@ -165,17 +191,126 @@ export function hasEvidence(candidate: IdeaCandidate): boolean {
         && /\d/.test(candidate.target || '')
 }
 
-interface IdeaState { version: 1; days: Record<string, number>; proposed: Record<string, string>; baseline?: IdeaBaseline }
+/** Eine vom Owner angenommene Idee, deren Ziel nach `IDEA_MEASURE_DAYS` nachgemessen wird. */
+export interface AcceptedIdea extends IdeaMeasure { regel: string; subjekt: string; angenommenAm: string; faelligAm: string }
+
+interface IdeaState {
+    version: 1
+    days: Record<string, number>
+    proposed: Record<string, string>
+    baseline?: IdeaBaseline
+    /** 2.83.0: Schlüssel → angenommene Idee mit Zahlen und Fälligkeit. */
+    angenommen?: Record<string, AcceptedIdea>
+    /** 2.83.0: Schlüssel → Zeitpunkt der verfehlten Nachmessung (Hinweis beim nächsten Vorschlag). */
+    verfehlt?: Record<string, string>
+}
+
+export const IDEA_MEASURE_DAYS = 7
+const MAX_ACCEPTED = 50
+const KEY = /^[a-z][a-z0-9-]{1,40}:[^\s]{1,120}$/u
 
 function loadState(path: string): IdeaState {
-    try { if (existsSync(path)) { const value = JSON.parse(readFileSync(path, 'utf8')); return { version: 1, days: value.days || {}, proposed: value.proposed || {}, baseline: value.baseline } } } catch { /* frisch */ }
-    return { version: 1, days: {}, proposed: {} }
+    try {
+        if (existsSync(path)) {
+            const value = JSON.parse(readFileSync(path, 'utf8'))
+            return { version: 1, days: value.days || {}, proposed: value.proposed || {}, baseline: value.baseline, angenommen: value.angenommen || {}, verfehlt: value.verfehlt || {} }
+        }
+    } catch { /* frisch */ }
+    return { version: 1, days: {}, proposed: {}, angenommen: {}, verfehlt: {} }
 }
 function saveState(path: string, state: IdeaState): void {
     const days = Object.fromEntries(Object.entries(state.days).sort().slice(-30))
     mkdirSync(dirname(path), { recursive: true })
     atomicWriteJsonSync(path, { ...state, days })
 }
+
+const finite = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
+
+/**
+ * Vom Gedanken-Hub beim „Ja“ auf eine Idee (2.83.0, Punkt 4): Zahlen und
+ * Fälligkeit in `ideas-state.json` vermerken. Keine neue Datei.
+ */
+export function noteIdeaAccepted(input: { key: string; regel: string; subjekt: string } & IdeaMeasure, opts: { now?: Date; statePath?: string } = {}): AcceptedIdea | null {
+    const key = String(input?.key || '')
+    if (!KEY.test(key) || !finite(input.vorher) || !finite(input.ziel) || (input.richtung !== 'unter' && input.richtung !== 'ueber')) return null
+    const now = opts.now || new Date()
+    const path = opts.statePath || getNovaDataDir('thinking', 'ideas-state.json')
+    const state = loadState(path)
+    const entry: AcceptedIdea = {
+        regel: String(input.regel).slice(0, 40), subjekt: String(input.subjekt).slice(0, 120), metrik: String(input.metrik).slice(0, 40),
+        vorher: input.vorher, ziel: input.ziel, richtung: input.richtung, ...(input.einheit ? { einheit: String(input.einheit).slice(0, 10) } : {}),
+        angenommenAm: now.toISOString(), faelligAm: new Date(now.getTime() + IDEA_MEASURE_DAYS * 24 * 60 * 60_000).toISOString(),
+    }
+    const accepted = { ...(state.angenommen || {}), [key]: entry }
+    for (const old of Object.keys(accepted).sort((a, b) => accepted[a].angenommenAm.localeCompare(accepted[b].angenommenAm)).slice(0, Math.max(0, Object.keys(accepted).length - MAX_ACCEPTED))) delete accepted[old]
+    saveState(path, { ...state, angenommen: accepted })
+    return entry
+}
+
+/** Lesend: angenommene Ideen, deren Ziel noch nachgemessen wird (/gedanken, Tests). */
+export function listAcceptedIdeas(opts: { statePath?: string } = {}): Record<string, AcceptedIdea> {
+    return { ...(loadState(opts.statePath || getNovaDataDir('thinking', 'ideas-state.json')).angenommen || {}) }
+}
+
+export interface IdeaMeasurement { value: number | null; reason?: string }
+
+/** Rein: dieselbe Kennzahl wie die Regel, aus denselben Feldern. Zu wenig Daten → `value: null`. */
+export function measureIdeaTarget(rule: string, subject: string, inputs: IdeaInputs): IdeaMeasurement {
+    const t = IDEA_THRESHOLDS
+    if (rule === 'kosten') {
+        const costs = inputs?.costs
+        return costs && finite(costs.todayCents) ? { value: round(costs.todayCents / 100, 2) } : { value: null, reason: 'keine Kostendaten' }
+    }
+    const insights = inputs?.insights
+    if (!insights || !(insights.tracesAnalyzed > 0)) return { value: null, reason: 'keine Traces' }
+    if (rule === 'selbstheilung-wiederholungen') {
+        return insights.tracesAnalyzed >= t.minTracesForRetries
+            ? { value: insights.overall?.avgSelfHealingRetries ?? 0 }
+            : { value: null, reason: `nur ${insights.tracesAnalyzed} Läufe (mindestens ${t.minTracesForRetries})` }
+    }
+    if (rule === 'modell-erfolg') {
+        const model = (insights.models || []).find(item => item.modelId === subject)
+        return model && model.callCount >= t.modelMinCalls
+            ? { value: round(model.successRate * 100, 1) }
+            : { value: null, reason: `${subject}: ${model?.callCount ?? 0} Aufrufe (mindestens ${t.modelMinCalls})` }
+    }
+    const tool = (insights.tools || []).find(item => item.name === subject)
+    if (!tool || !(tool.callCount >= t.minCalls)) return { value: null, reason: `${subject}: ${tool?.callCount ?? 0} Aufrufe (mindestens ${t.minCalls})` }
+    if (rule === 'werkzeug-langsam' || rule === 'werkzeug-langsamer') return { value: tool.avgLatencyMs }
+    if (rule === 'werkzeug-fehler') return { value: round(tool.errorRate * 100, 1) }
+    if (rule === 'werkzeug-cache') return { value: tool.callCount }
+    return { value: null, reason: `unbekannte Regel ${rule}` }
+}
+
+export type IdeaVerdict = 'erreicht' | 'verfehlt' | 'nicht-messbar'
+
+/** Rein: Zahl gegen Ziel. Kein Modell entscheidet. */
+export function judgeIdeaTarget(entry: Pick<IdeaMeasure, 'richtung' | 'ziel'>, measured: IdeaMeasurement): IdeaVerdict {
+    if (measured.value === null || !finite(measured.value)) return 'nicht-messbar'
+    return (entry.richtung === 'ueber' ? measured.value > entry.ziel : measured.value < entry.ziel) ? 'erreicht' : 'verfehlt'
+}
+
+export interface IdeaMeasurementResult {
+    key: string; regel: string; subjekt: string; metrik: string; ergebnis: IdeaVerdict; richtung: IdeaDirection
+    vorher: number; ziel: number; jetzt: number | null; einheit?: string; grund?: string
+}
+
+async function defaultRecordMeasurement(result: IdeaMeasurementResult): Promise<void> {
+    const { recordMeasurementDecision } = await import('../core/decisions.js')
+    recordMeasurementDecision(result)
+}
+
+function withoutMeasure(candidate: IdeaCandidate): IdeaCandidate {
+    const { measure: _measure, ...rest } = candidate
+    return rest
+}
+
+function measureParams(measure?: IdeaMeasure): Record<string, string | number> {
+    if (!measure) return {}
+    return { metrik: measure.metrik, vorher: measure.vorher, ziel: measure.ziel, richtung: measure.richtung, ...(measure.einheit ? { einheit: measure.einheit } : {}) }
+}
+
+const VERDICT_LABEL: Record<IdeaVerdict, string> = { erreicht: 'Ziel erreicht', verfehlt: 'Ziel verfehlt', 'nicht-messbar': 'nicht messbar' }
 
 export function inNightWindow(now: Date, startHour: number, endHour: number): boolean {
     const hour = now.getHours()
@@ -195,30 +330,78 @@ export interface IdeaRunDeps {
     /** Regeln austauschbar (Tests, später weitere Quellen); Belegpflicht gilt trotzdem. */
     rules?: (inputs: IdeaInputs) => IdeaCandidate[]
     importanceFactor?: (kind: string) => number
+    /** Befund der Nachmessung (Standard: decisions.ts, Quelle `messung`). */
+    recordMeasurement?: (result: IdeaMeasurementResult) => void | Promise<void>
     now?: Date
     statePath?: string
 }
 
-export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; reason: string; ideas: Thought[] }> {
+/** Fällige angenommene Ideen nachmessen (vor Nachtfenster und GPU-Grenze: billig, keine GPU). */
+async function measureDueIdeas(deps: IdeaRunDeps, statePath: string, now: Date): Promise<{ results: IdeaMeasurementResult[]; inputs?: IdeaInputs }> {
+    const due = Object.entries(loadState(statePath).angenommen || {}).filter(([, entry]) => Date.parse(entry.faelligAm) <= now.getTime())
+    if (!due.length) return { results: [] }
+    const inputs = await deps.inputs()
+    const state = loadState(statePath)
+    const results: IdeaMeasurementResult[] = []
+    for (const [key] of due) {
+        const entry = state.angenommen?.[key]
+        if (!entry) continue
+        const measured = measureIdeaTarget(entry.regel, entry.subjekt, inputs)
+        const ergebnis = judgeIdeaTarget(entry, measured)
+        results.push({
+            key, regel: entry.regel, subjekt: entry.subjekt, metrik: entry.metrik, ergebnis, richtung: entry.richtung, vorher: entry.vorher, ziel: entry.ziel,
+            jetzt: measured.value, ...(entry.einheit ? { einheit: entry.einheit } : {}), ...(measured.reason ? { grund: measured.reason } : {}),
+        })
+        delete state.angenommen![key]
+        if (ergebnis === 'verfehlt') state.verfehlt = { ...(state.verfehlt || {}), [key]: now.toISOString() }
+    }
+    saveState(statePath, state)
+    for (const result of results) {
+        const unit = result.einheit ? ` ${result.einheit}` : ''
+        const jetzt = result.jetzt === null ? `nicht messbar (${result.grund || 'zu wenig Daten'})` : `${result.jetzt}${unit}`
+        const thought: Thought = {
+            id: newThoughtId('ideen-lauf', now), createdAt: now.toISOString(), source: 'ideen-lauf', kind: `messung:${result.regel}`,
+            title: `Idee ${result.regel} ${result.subjekt}: ${VERDICT_LABEL[result.ergebnis]}${result.jetzt === null ? '' : ` (vorher ${result.vorher}${unit}, jetzt ${result.jetzt}${unit})`}`,
+            text: [`Nachmessung nach ${IDEA_MEASURE_DAYS} Tagen: ${result.metrik} vorher ${result.vorher}${unit}, Ziel ${result.richtung === 'ueber' ? 'über' : 'unter'} ${result.ziel}${unit}, jetzt ${jetzt}.`,
+                result.ergebnis === 'verfehlt' ? `Die Idee darf nach ${deps.settings.ideas.dedupeDays} Tagen wiederkommen (Hinweis: letzter Versuch verfehlt).` : ''].filter(Boolean).join('\n'),
+            evidence: [
+                { metric: `${result.metrik} vorher`, value: result.vorher, ...(result.einheit ? { unit: result.einheit } : {}), source: 'Ideen-Lauf bei Annahme' },
+                ...(result.jetzt === null ? [] : [{ metric: `${result.metrik} jetzt`, value: result.jetzt, ...(result.einheit ? { unit: result.einheit } : {}), source: `traces ${IDEA_MEASURE_DAYS} Tage` }]),
+            ],
+            importance: 0.3, stufe: 'selbst', status: 'info', dedupeKey: `messung:${result.key}:${now.toISOString().slice(0, 10)}`,
+        }
+        try { await deps.sink.emit(thought) } catch { /* Gedanke optional */ }
+        try { await (deps.recordMeasurement || defaultRecordMeasurement)(result) } catch { /* Befund optional */ }
+    }
+    return { results, inputs }
+}
+
+export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; reason: string; ideas: Thought[]; measured?: IdeaMeasurementResult[] }> {
     const now = deps.now || new Date()
     const cfg = deps.settings.ideas
     if (!deps.settings.enabled || !cfg.enabled) return { ran: false, reason: 'aus', ideas: [] }
-    if (!inNightWindow(now, cfg.nightStartHour, cfg.nightEndHour)) return { ran: false, reason: `außerhalb Nachtfenster ${cfg.nightStartHour}–${cfg.nightEndHour} Uhr`, ideas: [] }
     const statePath = deps.statePath || getNovaDataDir('thinking', 'ideas-state.json')
+    const { results: measured, inputs: measuredInputs } = await measureDueIdeas(deps, statePath, now)
+    const extra = measured.length ? { measured } : {}
+    if (!inNightWindow(now, cfg.nightStartHour, cfg.nightEndHour)) return { ran: false, reason: `außerhalb Nachtfenster ${cfg.nightStartHour}–${cfg.nightEndHour} Uhr`, ideas: [], ...extra }
     const state = loadState(statePath)
     const day = localDay(now)
     const limit = Math.min(MAX_IDEAS_PER_DAY, cfg.maxPerDay)
     const remaining = limit - (state.days[day] || 0)
-    if (remaining <= 0) return { ran: false, reason: `Tagesgrenze erreicht (${limit} Ideen)`, ideas: [] }
+    if (remaining <= 0) return { ran: false, reason: `Tagesgrenze erreicht (${limit} Ideen)`, ideas: [], ...extra }
 
     const load = judgeLoad(await deps.load.sample(), deps.settings.load)
-    if (!load.idle) return { ran: false, reason: load.reason, ideas: [] }
+    if (!load.idle) return { ran: false, reason: load.reason, ideas: [], ...extra }
 
-    const inputs = await deps.inputs()
+    const inputs = measuredInputs || await deps.inputs()
     const withBaseline: IdeaInputs = { ...inputs, baseline: inputs.baseline ?? state.baseline ?? null }
     const dedupeMs = cfg.dedupeDays * 24 * 60 * 60_000
+    // Owner hat diese Art dreimal abgelehnt (ohne Ja dazwischen): nicht mehr vorschlagen (2.83.0, Punkt 10).
+    const suppressed = (item: IdeaCandidate) => deps.importanceFactor ? deps.importanceFactor(`idee:${item.rule}`) < THOUGHT_SUPPRESS_BELOW : false
     const candidates = (deps.rules || findIdeaCandidates)(withBaseline)
         .filter(hasEvidence)
+        .filter(item => !state.angenommen?.[item.key])
+        .filter(item => !suppressed(item))
         .filter(item => { const last = state.proposed[item.key]; return !last || now.getTime() - Date.parse(last) >= dedupeMs })
         .slice(0, remaining)
 
@@ -228,7 +411,8 @@ export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; rea
         if (deps.formulate) {
             try {
                 worded = String(await Promise.race([
-                    deps.formulate(structuredClone(candidate)),
+                    // Das Modell bekommt dieselben Felder wie bisher; das Ziel als Zahl bleibt beim Code.
+                    deps.formulate(structuredClone(withoutMeasure(candidate))),
                     new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000).unref?.()),
                 ]) || '').trim().slice(0, 600)
             } catch { worded = '' }
@@ -239,21 +423,25 @@ export async function runIdeaRun(deps: IdeaRunDeps): Promise<{ ran: boolean; rea
             id: newThoughtId('ideen-lauf', now), createdAt: now.toISOString(), source: 'ideen-lauf', kind,
             title: candidate.title,
             // Belege und Ziel hängt der Code an — der Modelltext kann sie nicht ersetzen.
-            text: [worded || `${candidate.title}.`, `Beleg: ${evidenceLine(candidate.evidence)}`, `Ziel: ${candidate.target}`].join('\n'),
+            text: [worded || `${candidate.title}.`, `Beleg: ${evidenceLine(candidate.evidence)}`, `Ziel: ${candidate.target}`,
+                state.verfehlt?.[candidate.key] ? `Hinweis: letzter Versuch verfehlt (Nachmessung ${state.verfehlt[candidate.key].slice(0, 10)}).` : ''].filter(Boolean).join('\n'),
             evidence: structuredClone(candidate.evidence), target: candidate.target,
             importance: Math.min(1, 0.3 + 0.2 * candidate.severity) * factor,
-            proposal: { action: 'idee-pruefen', params: { regel: candidate.rule, subjekt: candidate.subject }, autoExecute: false },
+            // Alles, was der Gedanken-Hub beim „Ja“ braucht: Regel, Subjekt und das Ziel als Zahl.
+            proposal: { action: 'idee-pruefen', params: { regel: candidate.rule, subjekt: candidate.subject, ...measureParams(candidate.measure) }, autoExecute: false },
             stufe: 'fragen', status: 'neu', dedupeKey: candidate.key,
         }
         await deps.sink.emit(thought)
         ideas.push(thought)
         state.proposed[candidate.key] = now.toISOString()
         state.days[day] = (state.days[day] || 0) + 1
+        if (state.verfehlt?.[candidate.key]) delete state.verfehlt[candidate.key]
     }
     const baselineAgeMs = state.baseline ? now.getTime() - Date.parse(state.baseline.at) : Infinity
     if (!(baselineAgeMs < 7 * 24 * 60 * 60_000) && inputs.insights?.tools?.length) {
         state.baseline = { at: day, tools: Object.fromEntries(inputs.insights.tools.filter(tool => tool.callCount >= IDEA_THRESHOLDS.minCalls).map(tool => [tool.name, tool.avgLatencyMs])) }
     }
-    saveState(statePath, state)
-    return { ran: true, reason: ideas.length ? `${ideas.length} Idee(n)` : 'keine belegte Idee', ideas }
+    // Ein „Ja“ während des Laufs (Gedanken-Hub) bleibt erhalten: angenommen frisch von der Platte.
+    saveState(statePath, { ...state, angenommen: loadState(statePath).angenommen })
+    return { ran: true, reason: ideas.length ? `${ideas.length} Idee(n)` : 'keine belegte Idee', ideas, ...extra }
 }
