@@ -3593,15 +3593,6 @@
       ]
     },
     {
-      "module": "src/intelligence/learning-hub.ts",
-      "imports": [
-        "../config/config-path.js",
-        "node:crypto",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
       "module": "src/intelligence/model-router.ts",
       "imports": [
         "../config/config-path.js",
@@ -3611,7 +3602,6 @@
     {
       "module": "src/intelligence/proactive-learning.ts",
       "imports": [
-        "./learning-hub.js",
         "node:fs",
         "node:path"
       ]

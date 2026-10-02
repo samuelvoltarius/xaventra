@@ -1,3 +1,6 @@
+-- STILLGELEGT seit Xaventra 2.84.0: Der Learning Hub ist entfernt, diese Tabelle
+-- wird nicht mehr gelesen oder geschrieben. Daten bleiben unangetastet;
+-- Wissen zwischen Knoten geht nur ueber L22 (siehe docs/AUTONOMY_GUIDE.md).
 -- Nova Distributed Learning Hub
 -- Run this SQL in your Supabase SQL Editor
 

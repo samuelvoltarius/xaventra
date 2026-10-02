@@ -6,10 +6,11 @@
  * - After failures: "Soll ich lernen wie man das Problem löst?"
  * - When idle: "Was soll ich für dich recherchieren?"
  * 
- * Learned knowledge is shared via Supabase Learning Hub.
+ * Learned knowledge stays local (.nova-data/local-knowledge.json). The
+ * Supabase Learning Hub was removed in 2.84.0: knowledge between nodes goes
+ * only through L22 (federated memory over the mesh).
  */
 
-import { shareKnowledge, fetchSharedKnowledge } from './learning-hub.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -96,14 +97,12 @@ export function generatePostToolLearningPrompt(
 }
 
 // ============================================
-// Check if similar knowledge exists in Hub
+// Check if similar knowledge exists locally
 // ============================================
 
 export async function checkIfAlreadyLearned(topic: string): Promise<string[] | null> {
-    const sharedKnowledge = await fetchSharedKnowledge()
-
     // Search for similar topics
-    for (const [existingTopic, facts] of sharedKnowledge.entries()) {
+    for (const [existingTopic, facts] of localKnowledge.entries()) {
         if (existingTopic.toLowerCase().includes(topic.toLowerCase()) ||
             topic.toLowerCase().includes(existingTopic.toLowerCase())) {
             console.log(`[ProactiveLearning] Found existing knowledge: ${existingTopic}`)
@@ -210,20 +209,21 @@ export async function processLearningResponse(
 }
 
 // ============================================
-// Execute learning and share with Hub
+// Execute learning and keep it locally
 // ============================================
 
-export async function executeAndShareLearning(
+export async function executeAndStoreLearning(
     topic: string,
     facts: string[]
 ): Promise<boolean> {
     if (facts.length === 0) {
-        console.log('[ProactiveLearning] No facts to share')
+        console.log('[ProactiveLearning] No facts to store')
         return false
     }
 
-    console.log(`[ProactiveLearning] Sharing ${facts.length} facts about: ${topic}`)
-    return await shareKnowledge(topic, facts)
+    console.log(`[ProactiveLearning] Storing ${facts.length} facts about: ${topic}`)
+    storeKnowledge(topic, facts)
+    return true
 }
 
 // ============================================
@@ -273,11 +273,11 @@ export async function learnDuringIdle(): Promise<{ learned: boolean; topic?: str
 
     console.log(`[ProactiveLearning] Idle learning: ${next.topic}`)
 
-    // Check if already learned by collective
+    // Check if already learned locally
     const existing = await checkIfAlreadyLearned(next.topic)
     if (existing) {
-        console.log(`[ProactiveLearning] Already learned by collective: ${next.topic}`)
-        return { learned: true, topic: `${next.topic} (von Kollektiv)` }
+        console.log(`[ProactiveLearning] Already learned: ${next.topic}`)
+        return { learned: true, topic: next.topic }
     }
 
     // Actually learn about the topic via web search
@@ -311,8 +311,7 @@ export async function learnDuringIdle(): Promise<{ learned: boolean; topic?: str
             .map((s: string) => s.slice(0, 500))
 
         if (facts.length > 0) {
-            // Share with collective
-            await shareKnowledge(next.topic, facts)
+            storeKnowledge(next.topic, facts)
             console.log(`[ProactiveLearning] ✅ Learned ${facts.length} facts about: ${next.topic}`)
             return { learned: true, topic: next.topic }
         }
@@ -355,7 +354,7 @@ export default {
     getNextLearningTopic,
     generateIdleLearningPrompt,
     processLearningResponse,
-    executeAndShareLearning,
+    executeAndStoreLearning,
     shouldAskToLearn,
     hasKnowledgeAbout,
     storeKnowledge,

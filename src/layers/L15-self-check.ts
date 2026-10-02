@@ -111,8 +111,8 @@ class SelfCheckManager extends EventEmitter {
         this.state.waitingForUser = false
         this.updateActivity() // Reset idle timer
         // 2.82.0: no own idle learner here any more — L9 is the one idle
-        // learner (layers/L9-idle-learning.ts), the Learning-Hub sync is
-        // started once by the daemon.
+        // learner (layers/L9-idle-learning.ts). The Learning-Hub sync was
+        // removed in 2.84.0 (L22 is the one path between nodes).
 
         console.log('[L15 SelfCheck] User message received')
     }

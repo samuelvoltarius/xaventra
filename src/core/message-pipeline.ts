@@ -815,11 +815,9 @@ async function handleMessageInScope(
         } catch { /* keine Modusdatei — dann neutral */ }
     }
 
-    // Gelernte Faehigkeiten + Negativ-Gedaechtnis. capabilities-store war bisher
-    // komplett abgehaengt (weder recordCapability noch getCapabilitiesPrompt
-    // wurden je aufgerufen), obwohl der Kommentar dort "INJECTED into every
-    // prompt" verspricht. Damit behaelt Nova ueber Laeufe hinweg, was auf dieser
-    // Maschine geht und was nicht.
+    // Negativ-Gedaechtnis: was auf dieser Maschine nicht geht. Die Erfolgsliste
+    // ("gelernte Faehigkeiten", lernte vor der Validierung) ist seit 2.84.0 weg;
+    // verifizierte Loesungen kommen nur noch aus den Prozeduren.
     try {
         const { getCapabilitiesPrompt } = await import('../memory/capabilities-store.js')
         // Command details are owner-only; typed so it compiles before and after

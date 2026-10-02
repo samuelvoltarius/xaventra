@@ -450,10 +450,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/intelligence/learning-hub.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/intelligence/model-router.ts",
       "path": ".nova-data"
     },
@@ -1200,6 +1196,10 @@
     {
       "owner": "src/watch/runtime.ts",
       "path": ".nova-data/watch"
+    },
+    {
+      "owner": "src/agents/log-und-cloudwege.test.ts",
+      "path": ".nova-learning"
     },
     {
       "owner": "src/cli.ts",

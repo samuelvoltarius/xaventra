@@ -5,6 +5,8 @@
 -- ============================================
 
 -- 1. Main table: Shared learnings between Nova instances
+-- STILLGELEGT seit Xaventra 2.84.0: Learning Hub entfernt; nova_learnings wird nicht
+-- mehr gelesen oder geschrieben. Daten bleiben; Wissen zwischen Knoten nur ueber L22.
 CREATE TABLE IF NOT EXISTS nova_learnings (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     topic TEXT NOT NULL,

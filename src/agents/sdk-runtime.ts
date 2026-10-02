@@ -1,5 +1,14 @@
-import { Runner, type ModelProvider, type AgentInputItem } from '@openai/agents'
+import { Runner, setTracingDisabled, type ModelProvider, type AgentInputItem } from '@openai/agents'
 import type { LLMMessage } from '../llm/nova-llm-sdk.js'
+
+// Xaventra configures no export for SDK traces; its own telemetry is OTel
+// (infra/telemetry.ts) and does not use the SDK trace provider. `tracingDisabled`
+// on the Runner only skips spans per run: the SDK still opens a trace on the
+// global provider, and the OpenAI exporter registered on import of
+// '@openai/agents' then logs "No API key provided for OpenAI tracing exporter"
+// (or, with OPENAI_API_KEY set, ships trace data to OpenAI). Switch the global
+// provider off once, on load, before any run can start.
+setTracingDisabled(true)
 
 /** Shared application-owned SDK runtime. Traces never leave the host implicitly. */
 export function createSdkRunner(modelProvider: ModelProvider): Runner {
