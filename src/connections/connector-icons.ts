@@ -17,4 +17,7 @@ export const BUILTIN_CONNECTOR_ICONS: Readonly<Record<string, string>> = Object.
     'github.svg': monogram('GH', '#24292f'),
     'proxmox.svg': monogram('PX', '#d9631e'),
     'dateien.svg': monogram('Da', '#5a6b7b'),
+    'n8n.svg': monogram('n8', '#ea4b71'),
+    'paperless.svg': monogram('Pa', '#17541f'),
+    'immich.svg': monogram('Im', '#4250af'),
 })

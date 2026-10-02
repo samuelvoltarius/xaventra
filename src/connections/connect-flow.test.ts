@@ -6,7 +6,7 @@ import { answerApprovalCard, listApprovalCards } from '../core/approval-cards.js
 import { BUILTIN_CONNECTORS, loadConnectorCatalog, type ConnectorManifest } from './connector-catalog.js'
 import { getConnection, loadConnections, readConnectionSecrets, connectionSecretsPath } from './connection-store.js'
 import {
-    allowConnectionTool, beginLogin, completeLoginAndConnect, connectAndTest, disconnectConnection, requestConnect, type ConnectDeps, type ConnectionGateway,
+    allowConnectionTool, beginLogin, completeLoginAndConnect, connectAndTest, disconnectConnection, requestConnect, submitAccess, type ConnectDeps, type ConnectionGateway,
 } from './connect-flow.js'
 import { haBearerFetch, startLogin } from './connector-login.js'
 
@@ -212,6 +212,31 @@ describe('Verbinden = eine Karte (2.85 Paket A, Punkt 4)', () => {
         expect(getConnection(id, { dataDir: dir })!.status).toBe('getrennt')
         expect(readConnectionSecrets(id, { dataDir: dir })).toEqual({})
         expect(deps.gateway.disconnected).toEqual([id])
+    })
+
+    it('found self-hosted service (n8n): address from the discovery, owner enters only the token, Bearer only in the runtime config', async () => {
+        const dir = tmp()
+        const deps = depsFor(dir, { foundServices: (type: string) => type === 'n8n' ? ['http://n8n.example.com:5678'] : [] })
+        const request = await requestConnect({ connectorId: 'n8n' }, deps)
+        expect((request as any).card.beleg).toContain('http://n8n.example.com:5678')
+        const answer = await pressJa(dir, (request as any).card.id)
+        expect(answer.message).toMatch(/Zugang in „Verbindungen“ eintragen/)
+        const record = loadConnections({ dataDir: dir })[0]
+        expect(record).toMatchObject({ status: 'wartet-auf-zugang', basis: 'http://n8n.example.com:5678', transport: { art: 'http', url: 'http://n8n.example.com:5678/mcp-server/http' } })
+        expect((await submitAccess(record.id, {}, deps)).ok).toBe(false)
+        const done = await submitAccess(record.id, { N8N_MCP_TOKEN: 'n8n-token-secret-123' }, deps)
+        expect(done.ok).toBe(true)
+        expect(readFileSync(join(dir, 'connections', 'connections.json'), 'utf8')).not.toContain('n8n-token-secret-123')
+        const { connectionServerConfig } = await import('../mcp/mcp-runtime.js')
+        const config = await connectionServerConfig(getConnection(record.id, { dataDir: dir })!, deps)
+        expect(config).toMatchObject({ transport: 'http', url: 'http://n8n.example.com:5678/mcp-server/http', allowLanHttp: true, headers: { Authorization: 'Bearer n8n-token-secret-123' } })
+        // Paperless: the found address fills PAPERLESS_URL, the token is the only owner input.
+        const dir2 = tmp()
+        const deps2 = depsFor(dir2, { foundServices: (type: string) => type === 'paperless' ? ['http://paperless.example.com:8000'] : [] })
+        await pressJa(dir2, ((await requestConnect({ connectorId: 'paperless' }, deps2)) as any).card.id)
+        const paperless = loadConnections({ dataDir: dir2 })[0]
+        expect((await submitAccess(paperless.id, { PAPERLESS_TOKEN: 'pl-token' }, deps2)).ok).toBe(true)
+        expect(readConnectionSecrets(paperless.id, { dataDir: dir2 }).zugang).toEqual({ PAPERLESS_URL: 'http://paperless.example.com:8000', PAPERLESS_TOKEN: 'pl-token' })
     })
 
     it('community: only over an https remote, never from a package; tools are allowed one by one', async () => {

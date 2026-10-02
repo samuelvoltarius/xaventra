@@ -11,4 +11,4 @@ Generated from authoritative source. Do not edit by hand.
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
 | install-catalog.json | 7 | `189754f196f27bbac001549698345457e68f79942cc78cff3d5be8a4fc659f33` |
 | software-candidates.json | 11 | `9131d6f177abdfe27ac143dc3f742bf345088710a5d218e59fbf396dfbaf68d2` |
-| connector-catalog.json | 6 | `226beba6d2257aff3f0d526c27ccc3a11ce6c52241ebeae13582ce403251dba7` |
+| connector-catalog.json | 9 | `c3840fd2385d8a61b65394adf2a05478d5fc4325e0c8a2a8fa12440c3e6d8016` |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalogHash": "98e6fd4d55f4e72f9258fd2908d9cc37b6cfb6ae88d2eec619b7dde56a7c4ddc",
+  "catalogHash": "7a86e1d2e11f2979179067e196e493626c1d27a9079126adb99ab75c337416fb",
   "entries": [
     {
       "name": "dateien",
@@ -250,6 +250,154 @@
         ]
       },
       "entryHash": "b6af6e0637f911ac257d46b3bc254e783116cd0ef6f2955c76832a601c46a59d"
+    },
+    {
+      "name": "immich",
+      "title": "Immich",
+      "kategorie": "dateien",
+      "wirkung": "kann dann Fotos und Alben suchen",
+      "icon_url": "xaventra:icons/immich.svg",
+      "icon_hash": "413ddf00f0c07319534c1785dfa3cf04ac541249430f2fa857ec34bead72dc4b",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "IMMICH_BASE_URL",
+          "label": "Immich-Adresse",
+          "geheim": false
+        },
+        {
+          "env": "IMMICH_API_KEY",
+          "label": "API-Schlüssel aus Immich (Kontoeinstellungen)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "stdio",
+        "command": "uvx",
+        "args": [
+          "immich-photo-manager==2.0.11"
+        ]
+      },
+      "capabilities": {
+        "search_photos": "lesen",
+        "list_albums": "lesen"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/drolosoft/immich-photo-manager",
+        "registry_id": "io.github.drolosoft/immich-photo-manager",
+        "version": "2.0.11"
+      },
+      "findet": {
+        "geraet": "immich"
+      },
+      "bedarf": {
+        "woerter": [
+          "foto",
+          "fotos",
+          "album",
+          "immich"
+        ]
+      },
+      "entryHash": "821ed020bc83b53d72548f9f985700b4fe8cf1250a87db24cc2ac82069e34f1d"
+    },
+    {
+      "name": "n8n",
+      "title": "n8n",
+      "kategorie": "entwicklung",
+      "wirkung": "kann dann Automationen finden und – nach deinem Ja – starten",
+      "icon_url": "xaventra:icons/n8n.svg",
+      "icon_hash": "6c958781e087747341e9f7a273c7d8212b507bd79a80ef08f966c7992e7e694c",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "N8N_MCP_TOKEN",
+          "label": "MCP-Token aus n8n (Einstellungen → MCP)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "http",
+        "url": "{basis}/mcp-server/http"
+      },
+      "capabilities": {
+        "search_workflows": "lesen",
+        "get_workflow_details": "lesen",
+        "execute_workflow": "schreiben"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://docs.n8n.io/connect/connect-to-n8n-mcp-server"
+      },
+      "findet": {
+        "geraet": "n8n"
+      },
+      "bedarf": {
+        "woerter": [
+          "n8n",
+          "automation",
+          "automatisierung"
+        ]
+      },
+      "entryHash": "380518079314b3728ae0f54f0b0f27d034576e4b6f7ead5395809ed602701938"
+    },
+    {
+      "name": "paperless",
+      "title": "Paperless-ngx",
+      "kategorie": "dateien",
+      "wirkung": "kann dann Dokumente suchen und lesen",
+      "icon_url": "xaventra:icons/paperless.svg",
+      "icon_hash": "61373d106ad018c718f29e3fd99736d02c97b8152d56627f647fbfcdf3d0515f",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "PAPERLESS_URL",
+          "label": "Paperless-Adresse",
+          "geheim": false
+        },
+        {
+          "env": "PAPERLESS_TOKEN",
+          "label": "API-Token aus Paperless (Profil → API-Auth-Token)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-paperless-ngx@0.1.1"
+        ],
+        "env": {
+          "PAPERLESS_READ_ONLY": "true"
+        }
+      },
+      "capabilities": {
+        "search_documents": "lesen",
+        "get_document": "lesen"
+      },
+      "standard_capability": "lesen",
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/tobee89/mcp-paperless-ngx",
+        "registry_id": "io.github.tobee89/mcp-paperless-ngx",
+        "version": "0.1.1"
+      },
+      "findet": {
+        "geraet": "paperless"
+      },
+      "bedarf": {
+        "woerter": [
+          "dokument",
+          "dokumente",
+          "rechnung",
+          "paperless"
+        ]
+      },
+      "entryHash": "58cb2e79d519cf925988e014234b2e554f82e446bbb02cd8fae0b506d652cd79"
     },
     {
       "name": "proxmox",

@@ -105,6 +105,12 @@ const DEVICE_TITLE: Record<string, { title: string; wirkung: string; kategorie: 
     octoprint: { title: 'Drucker (OctoPrint)', wirkung: 'wird über „Geräte“ lesend überwacht', kategorie: 'geraete' },
     prusalink: { title: 'Drucker (PrusaLink)', wirkung: 'wird über „Geräte“ lesend überwacht', kategorie: 'geraete' },
     bambu: { title: 'Drucker (Bambu)', wirkung: 'wird über „Geräte“ gemerkt', kategorie: 'geraete' },
+    // 2.85: self-hosted services found by the discovery (connect through the catalog where one exists).
+    n8n: { title: 'n8n', wirkung: 'kann dann Automationen finden und – nach deinem Ja – starten', kategorie: 'entwicklung' },
+    paperless: { title: 'Paperless-ngx', wirkung: 'kann dann Dokumente suchen und lesen', kategorie: 'dateien' },
+    immich: { title: 'Immich', wirkung: 'kann dann Fotos und Alben suchen', kategorie: 'dateien' },
+    jellyfin: { title: 'Jellyfin', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'weitere' },
+    nextcloud: { title: 'Nextcloud', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'dateien' },
 }
 
 function defaultDevices(dataDir: string) {
@@ -163,7 +169,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     for (const device of (deps.devices || (() => defaultDevices(dataDir)))()) {
         const known = DEVICE_TITLE[String(device?.type)]
         if (!known || device.status === 'abgelehnt' || typeof device.host !== 'string') continue
-        const connectorId = device.type === 'homeassistant' ? 'home-assistant' : undefined
+        const connectorId = catalog.entries.find(entry => entry.findet?.geraet === device.type)?.name
         gefunden.push({
             id: `geraet:${device.type}:${device.host}:${device.port}`, title: known.title, kategorie: known.kategorie, wirkung: known.wirkung,
             fund: `im Netz ${device.host}:${device.port}`, ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : {}),

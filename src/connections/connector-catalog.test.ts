@@ -13,7 +13,7 @@ describe('connector catalog (2.85 Paket A, Stufe 1)', () => {
     it('ships the checked start entries, all valid, all with the plan fields', () => {
         const catalog = getConnectorCatalog()
         expect(catalog.rejected).toEqual([])
-        expect(catalog.entries.map(entry => entry.name)).toEqual(['dateien', 'github', 'gmail', 'google-calendar', 'home-assistant', 'proxmox'])
+        expect(catalog.entries.map(entry => entry.name)).toEqual(['dateien', 'github', 'gmail', 'google-calendar', 'home-assistant', 'immich', 'n8n', 'paperless', 'proxmox'])
         for (const entry of catalog.entries) {
             expect(entry.trust).toBe('geprueft')
             expect(['lokal', 'cloud']).toContain(entry.datenklasse)
@@ -26,6 +26,10 @@ describe('connector catalog (2.85 Paket A, Stufe 1)', () => {
         }
         expect(findConnector('google-calendar')).toMatchObject({ datenklasse: 'cloud', auth_typ: 'oauth', kategorie: 'kalender' })
         expect(findConnector('home-assistant')).toMatchObject({ datenklasse: 'lokal', auth_typ: 'ha-login', findet: { geraet: 'homeassistant' } })
+        // 2.85 Ergänzung: self-hosted services found by the discovery connect through the same flow.
+        expect(findConnector('n8n')).toMatchObject({ datenklasse: 'lokal', auth_typ: 'token', transport: { art: 'http', url: '{basis}/mcp-server/http' }, findet: { geraet: 'n8n' } })
+        expect(findConnector('paperless')).toMatchObject({ transport: { art: 'stdio', command: 'npx', env: { PAPERLESS_READ_ONLY: 'true' } }, findet: { geraet: 'paperless' } })
+        expect(findConnector('immich')).toMatchObject({ transport: { art: 'stdio', command: 'uvx' }, findet: { geraet: 'immich' } })
     })
 
     it('rejects unknown fields, wrong enums, non-https remotes, unpinned packages and shell metacharacters', () => {

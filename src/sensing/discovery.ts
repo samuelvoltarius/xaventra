@@ -5,7 +5,9 @@
  *   mit eigenem Tailnet-Interface). Jede Adresse — auch aus mDNS — passiert
  *   `scanTargetAllowed` direkt vor dem Verbindungsaufbau.
  * - Feste Port-Liste: Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
- *   Bambu 8883 (nur TCP-Connect, kein MQTT-Login), Home Assistant 8123.
+ *   Bambu 8883 (nur TCP-Connect, kein MQTT-Login), Home Assistant 8123;
+ *   2.85: n8n 5678, Paperless-ngx 8000, Immich 2283, Jellyfin 8096,
+ *   Nextcloud 80 (/status.php) — still gemeldet, nur unter „Verbindungen“.
  * - Erkennung über öffentliche, unauthentifizierte GET-Pfade; keine Logins,
  *   keine API-Keys, keine Schreibzugriffe.
  * - Rate-Limit (Verbindungen/s), begrenzte Parallelität, harte Gesamtzeit.
@@ -19,7 +21,7 @@ import { createSocket } from 'node:dgram'
 import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 
-export const DISCOVERY_PORTS = Object.freeze([7125, 80, 5000, 8883, 8123])
+export const DISCOVERY_PORTS = Object.freeze([7125, 80, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
 
 export interface HttpProbeResult { status: number; server?: string; body: string }
 
@@ -89,6 +91,13 @@ export function identifyHttp(port: number, path: string, result: HttpProbeResult
     if (port === 8123 && path === '/manifest.json' && result.status === 200 && /"name"\s*:\s*"Home Assistant"/i.test(body)) return 'homeassistant'
     if ((port === 80 || port === 5000) && path === '/' && /<title>\s*OctoPrint/i.test(body)) return 'octoprint'
     if (port === 80 && path === '/api/version' && (/prusalink/i.test(body) || /prusalink/i.test(result.server || ''))) return 'prusalink'
+    // 2.85: self-hosted services, public unauthenticated markers only.
+    if (result.status !== 200) return null
+    if (port === 5678 && path === '/' && /<title>[^<]*n8n/i.test(body)) return 'n8n'
+    if (port === 8000 && path === '/accounts/login/' && /<title>[^<]*Paperless-ngx/i.test(body)) return 'paperless'
+    if (port === 2283 && (path === '/api/server/ping' || path === '/api/server-info/ping') && /"res"\s*:\s*"pong"/.test(body)) return 'immich'
+    if (port === 8096 && path === '/System/Info/Public' && /"ProductName"\s*:\s*"Jellyfin Server"/.test(body)) return 'jellyfin'
+    if (port === 80 && path === '/status.php' && /"productname"\s*:\s*"Nextcloud"/i.test(body)) return 'nextcloud'
     return null
 }
 
@@ -96,7 +105,11 @@ const HTTP_CHECKS: Record<number, Array<{ path: string }>> = {
     7125: [{ path: '/server/info' }],
     8123: [{ path: '/manifest.json' }],
     5000: [{ path: '/' }],
-    80: [{ path: '/' }, { path: '/api/version' }],
+    80: [{ path: '/' }, { path: '/api/version' }, { path: '/status.php' }],
+    5678: [{ path: '/' }],
+    8000: [{ path: '/accounts/login/' }],
+    2283: [{ path: '/api/server/ping' }, { path: '/api/server-info/ping' }],
+    8096: [{ path: '/System/Info/Public' }],
 }
 
 // ---------------------------------------------------------------------------

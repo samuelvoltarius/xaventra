@@ -42,6 +42,14 @@ describe('Verbindungen: Gefunden / Möglich / Verbunden (2.85 Paket A, Punkt 6)'
         expect(view.verbunden[0].darf.sonst).toMatch(/Privates geht nie in die Cloud/)
     })
 
+    it('self-hosted services found by the discovery appear under Gefunden, with a connector where the catalog has one', async () => {
+        const view = await collectConnections(deps(tmp(), { devices: () => [
+            { type: 'n8n', host: '192.168.1.40', port: 5678, status: 'gefunden' }, { type: 'jellyfin', host: '192.168.1.41', port: 8096, status: 'gefunden' },
+        ] }))
+        expect(view.gefunden.find(item => item.title === 'n8n')).toMatchObject({ connectorId: 'n8n', fund: 'im Netz 192.168.1.40:5678', datenklasse: 'lokal' })
+        expect(view.gefunden.find(item => item.title === 'Jellyfin')!.connectorId).toBeUndefined()
+    })
+
     it('other packages dock their finds (KI-Modelle, Suche/Hilfsdienste) without scanning here', async () => {
         registerConnectionSource({ id: 'ki-test', list: () => [{ id: 'ollama', title: 'Ollama (lokal)', kategorie: 'ki-modelle', wirkung: '3 Modelle', fund: 'im Netz 192.168.1.30:11434', verbunden: false }] })
         const view = await collectConnections(deps(tmp()))

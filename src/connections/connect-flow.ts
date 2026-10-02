@@ -52,6 +52,8 @@ export interface ConnectDeps extends LoginDeps {
     directoryCachePath?: string
     /** Found Home Assistant instances (default: sensing device file). */
     foundHomeAssistant?: () => string[]
+    /** 2.85: found base addresses of a device type (n8n, paperless, immich …); default: sensing device file. */
+    foundServices?: (type: string) => string[]
 }
 
 interface ConnectRequest { id: string; connectorId: string; community: boolean; basis?: string; ordner?: string; createdAt: number; quelle: string }
@@ -85,15 +87,24 @@ export function cleanOrdner(value: unknown): string | null {
     return path.replace(/[\\/]+$/, '')
 }
 
-function defaultFoundHomeAssistant(): string[] {
+function defaultFoundServices(type: string): string[] {
     try {
         // Device file of the self-discovery (sensing): only owner-network addresses.
         const file = join(getNovaDataDir(), 'sensing', 'devices.json')
         const raw = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
         return (Array.isArray(raw?.devices) ? raw.devices : [])
-            .filter((device: any) => device?.type === 'homeassistant' && device.status !== 'abgelehnt' && typeof device.host === 'string')
-            .map((device: any) => cleanBasis(`http://${device.host}:${Number(device.port) || 8123}`)).filter(Boolean) as string[]
+            .filter((device: any) => device?.type === type && device.status !== 'abgelehnt' && typeof device.host === 'string' && Number(device.port) > 0)
+            .map((device: any) => cleanBasis(`http://${device.host}:${Number(device.port)}`)).filter(Boolean) as string[]
     } catch { return [] }
+}
+const defaultFoundHomeAssistant = () => defaultFoundServices('homeassistant')
+
+/** Base address of a found service for this connector. */
+function foundBasis(manifest: ConnectorManifest, deps: ConnectDeps): string | undefined {
+    const type = manifest.findet?.geraet
+    if (!type) return undefined
+    if (type === 'homeassistant') return (deps.foundHomeAssistant || defaultFoundHomeAssistant)()[0]
+    return (deps.foundServices || defaultFoundServices)(type)[0]
 }
 
 function rightsSummary(manifest: Pick<ConnectorManifest, 'capabilities'>): string {
@@ -117,9 +128,9 @@ export async function requestConnect(input: { connectorId: string; basis?: strin
     if (existing && existing.status === 'verbunden') return { ok: false, message: `${existing.title} ist schon verbunden.` }
     let basis: string | undefined
     let ordner: string | undefined
-    if (manifest?.transport.art === 'http' && manifest.transport.url.startsWith('{basis}')) {
-        basis = (input.basis ? cleanBasis(input.basis) : (deps.foundHomeAssistant || defaultFoundHomeAssistant)()[0]) || undefined
-        if (!basis) return { ok: false, message: `Für ${manifest.title} fehlt die Adresse (z. B. http://192.168.1.10:8123) — ich habe keinen gefunden.` }
+    if (manifest) basis = (input.basis ? cleanBasis(input.basis) : foundBasis(manifest, deps)) || undefined
+    if (manifest?.transport.art === 'http' && manifest.transport.url.startsWith('{basis}') && !basis) {
+        return { ok: false, message: `Für ${manifest.title} fehlt die Adresse (z. B. http://192.168.1.10:8123) — ich habe keine gefunden.` }
     }
     if (manifest?.transport.art === 'stdio' && manifest.transport.args.includes('{ordner}')) {
         ordner = cleanOrdner(input.ordner) || undefined
@@ -190,10 +201,9 @@ export async function connectFromApproval(connectorId: string, approvedBy: strin
     if (!manifest) return { ok: false, message: 'Diesen Dienst gibt es nicht im geprüften Katalog — nichts eingerichtet.' }
     const existing = getConnection(connectionIdFor(manifest.name), deps)
     if (existing?.status === 'verbunden') return { ok: true, message: `${manifest.title} ist schon verbunden.` }
-    let basis: string | undefined
-    if (manifest.transport.art === 'http' && manifest.transport.url.startsWith('{basis}')) {
-        basis = (deps.foundHomeAssistant || defaultFoundHomeAssistant)()[0]
-        if (!basis) return { ok: false, message: `${manifest.title}: keine Adresse gefunden — bitte in „Verbindungen“ mit Adresse verbinden.` }
+    const basis = foundBasis(manifest, deps)
+    if (manifest.transport.art === 'http' && manifest.transport.url.startsWith('{basis}') && !basis) {
+        return { ok: false, message: `${manifest.title}: keine Adresse gefunden — bitte in „Verbindungen“ mit Adresse verbinden.` }
     }
     if (manifest.transport.art === 'stdio' && manifest.transport.args.includes('{ordner}')) {
         return { ok: false, message: `${manifest.title}: bitte in „Verbindungen“ den Ordner wählen.` }
@@ -249,7 +259,8 @@ export async function submitAccess(connectionId: string, values: Record<string, 
     const fields = manifest?.zugang || []
     const clean: Record<string, string> = {}
     for (const field of fields) {
-        const value = String(values?.[field.env] ?? '').trim()
+        // An address the discovery already found is taken as is (the owner only enters the secret).
+        const value = String(values?.[field.env] ?? '').trim() || (!field.geheim && /_URL$|_HOST$/.test(field.env) && record.basis ? record.basis : '')
         if (!value || value.length > 300 || /[\u0000-\u001f]/.test(value)) return { ok: false, message: `${field.label} fehlt oder ist ungültig.` }
         clean[field.env] = value
     }

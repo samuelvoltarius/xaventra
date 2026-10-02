@@ -33,6 +33,10 @@ export const KATEGORIE_LABEL: Readonly<Record<ConnectorKategorie, string>> = Obj
 })
 export const CONNECTOR_CAPABILITIES: readonly ConnectorCapability[] = Object.freeze(['lesen', 'schreiben', 'senden', 'schalten', 'loeschen'])
 
+/** Device types of the self-discovery (src/sensing/device-registry.ts) that map to a connector. */
+export type FoundServiceType = 'homeassistant' | 'n8n' | 'paperless' | 'immich'
+const FOUND_SERVICE_TYPES: readonly FoundServiceType[] = ['homeassistant', 'n8n', 'paperless', 'immich']
+
 export type ConnectorTransport =
     | { art: 'http'; url: string }
     | { art: 'stdio'; command: 'npx' | 'uvx'; args: string[]; env?: Record<string, string> }
@@ -61,7 +65,7 @@ export interface ConnectorManifest {
     trust: 'geprueft'
     quelle: { url: string; registry_id?: string; version?: string }
     /** Discovery mapping (src/sensing): which found device/account means "this service is here". */
-    findet?: { geraet?: 'homeassistant'; konto?: 'gmail' | 'google-calendar' }
+    findet?: { geraet?: FoundServiceType; konto?: 'gmail' | 'google-calendar' }
     /** Need signals (connection-demand.ts): failing tool names (prefix) and request words. */
     bedarf?: { werkzeuge?: string[]; woerter?: string[] }
 }
@@ -140,13 +144,13 @@ export function validateConnectorManifest(raw: unknown): string | null {
     if (e.quelle.version !== undefined && !/^\d+\.\d+\.\d+$/.test(e.quelle.version)) return 'quelle: version ungültig'
     if (e.findet !== undefined) {
         if (Object.keys(e.findet).some(key => !['geraet', 'konto'].includes(key))) return 'findet: unbekanntes Feld'
-        if (e.findet.geraet !== undefined && e.findet.geraet !== 'homeassistant') return 'findet: unbekanntes Gerät'
+        if (e.findet.geraet !== undefined && !FOUND_SERVICE_TYPES.includes(e.findet.geraet)) return 'findet: unbekanntes Gerät'
         if (e.findet.konto !== undefined && !['gmail', 'google-calendar'].includes(e.findet.konto)) return 'findet: unbekanntes Konto'
     }
     if (e.bedarf !== undefined) {
         if (Object.keys(e.bedarf).some(key => !['werkzeuge', 'woerter'].includes(key))) return 'bedarf: unbekanntes Feld'
         if ((e.bedarf.werkzeuge || []).some(item => !/^[a-z][a-z0-9_]{1,40}$/.test(String(item)))) return 'bedarf: Werkzeug ungültig'
-        if ((e.bedarf.woerter || []).some(item => !/^[a-zäöüß]{2,30}$/.test(String(item)))) return 'bedarf: Wort ungültig'
+        if ((e.bedarf.woerter || []).some(item => !/^[a-zäöüß][a-zäöüß0-9]{1,29}$/.test(String(item)))) return 'bedarf: Wort ungültig'
     }
     return null
 }
@@ -159,6 +163,9 @@ const ICON_HASH: Readonly<Record<string, string>> = Object.freeze({
     'github.svg': '623b9c60ae16e27d1e8762116afc7761c1c3fdb59d570410fa5531aca6e45700',
     'proxmox.svg': 'af0827f30c21e569c8d90bf7d1d322b561f9cae3b5235e2af7f942b297f29c8f',
     'dateien.svg': '1da3e1114564e202400e18a883079d4e732a3d937731de20d5d7f5494728a3ab',
+    'n8n.svg': '6c958781e087747341e9f7a273c7d8212b507bd79a80ef08f966c7992e7e694c',
+    'paperless.svg': '61373d106ad018c718f29e3fd99736d02c97b8152d56627f647fbfcdf3d0515f',
+    'immich.svg': '413ddf00f0c07319534c1785dfa3cf04ac541249430f2fa857ec34bead72dc4b',
 })
 
 /**
@@ -262,6 +269,53 @@ export const BUILTIN_CONNECTORS: readonly ConnectorManifest[] = Object.freeze([
         datenklasse: 'lokal', trust: 'geprueft',
         quelle: { url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem' },
         bedarf: { woerter: ['nas', 'freigabe', 'ordner'] },
+    },
+    {
+        // n8n's own instance-level MCP server (must be switched on in n8n: Settings → Instance-level MCP);
+        // personal MCP access token as Bearer. Workflows can be executed/edited → those tools ask.
+        name: 'n8n', title: 'n8n', kategorie: 'entwicklung', wirkung: 'kann dann Automationen finden und – nach deinem Ja – starten',
+        ...icon('n8n.svg'), auth_typ: 'token',
+        zugang: [{ env: 'N8N_MCP_TOKEN', label: 'MCP-Token aus n8n (Einstellungen → MCP)', geheim: true }],
+        transport: { art: 'http', url: '{basis}/mcp-server/http' },
+        capabilities: { search_workflows: 'lesen', get_workflow_details: 'lesen', execute_workflow: 'schreiben' },
+        datenklasse: 'lokal', trust: 'geprueft',
+        quelle: { url: 'https://docs.n8n.io/connect/connect-to-n8n-mcp-server' },
+        findet: { geraet: 'n8n' },
+        bedarf: { woerter: ['n8n', 'automation', 'automatisierung'] },
+    },
+    {
+        // Community server from the official registry (io.github.tobee89/mcp-paperless-ngx 0.1.1),
+        // started read-only (PAPERLESS_READ_ONLY=true, fixed here).
+        name: 'paperless', title: 'Paperless-ngx', kategorie: 'dateien', wirkung: 'kann dann Dokumente suchen und lesen',
+        ...icon('paperless.svg'), auth_typ: 'token',
+        zugang: [
+            { env: 'PAPERLESS_URL', label: 'Paperless-Adresse', geheim: false },
+            { env: 'PAPERLESS_TOKEN', label: 'API-Token aus Paperless (Profil → API-Auth-Token)', geheim: true },
+        ],
+        transport: { art: 'stdio', command: 'npx', args: ['-y', 'mcp-paperless-ngx@0.1.1'], env: { PAPERLESS_READ_ONLY: 'true' } },
+        capabilities: { search_documents: 'lesen', get_document: 'lesen' },
+        // Valid only because the server runs with PAPERLESS_READ_ONLY=true; names that write still ask.
+        standard_capability: 'lesen',
+        datenklasse: 'lokal', trust: 'geprueft',
+        quelle: { url: 'https://github.com/tobee89/mcp-paperless-ngx', registry_id: 'io.github.tobee89/mcp-paperless-ngx', version: '0.1.1' },
+        findet: { geraet: 'paperless' },
+        bedarf: { woerter: ['dokument', 'dokumente', 'rechnung', 'paperless'] },
+    },
+    {
+        // Community server from the official registry (io.github.drolosoft/immich-photo-manager 2.0.11).
+        // No read-only switch documented → no standard capability: unknown tools ask.
+        name: 'immich', title: 'Immich', kategorie: 'dateien', wirkung: 'kann dann Fotos und Alben suchen',
+        ...icon('immich.svg'), auth_typ: 'token',
+        zugang: [
+            { env: 'IMMICH_BASE_URL', label: 'Immich-Adresse', geheim: false },
+            { env: 'IMMICH_API_KEY', label: 'API-Schlüssel aus Immich (Kontoeinstellungen)', geheim: true },
+        ],
+        transport: { art: 'stdio', command: 'uvx', args: ['immich-photo-manager==2.0.11'] },
+        capabilities: { search_photos: 'lesen', list_albums: 'lesen' },
+        datenklasse: 'lokal', trust: 'geprueft',
+        quelle: { url: 'https://github.com/drolosoft/immich-photo-manager', registry_id: 'io.github.drolosoft/immich-photo-manager', version: '2.0.11' },
+        findet: { geraet: 'immich' },
+        bedarf: { woerter: ['foto', 'fotos', 'album', 'immich'] },
     },
 ] satisfies ConnectorManifest[])
 

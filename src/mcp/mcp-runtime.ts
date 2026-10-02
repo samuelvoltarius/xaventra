@@ -97,7 +97,14 @@ export async function connectionServerConfig(record: ConnectionRecord, deps: Log
     const connector = bindingOf(record)
     if (record.transport.art === 'http') {
         const config: MCPServerConfig = { name, transport: 'http', url: record.transport.url, allowLanHttp: record.datenklasse === 'lokal', connector }
-        if (record.auth === 'ha-login') {
+        if (record.auth === 'token') {
+            // e.g. n8n: the owner-entered access token (0600 file) as Bearer header, never in config files.
+            const { readConnectionSecrets } = await import('../connections/connection-store.js')
+            const { findConnector } = await import('../connections/connector-catalog.js')
+            const field = findConnector(record.connectorId)?.zugang?.find(item => item.geheim)
+            const token = field ? readConnectionSecrets(record.id, deps).zugang?.[field.env] : undefined
+            if (token) config.headers = { Authorization: `Bearer ${token}` }
+        } else if (record.auth === 'ha-login') {
             const { haBearerFetch } = await import('../connections/connector-login.js')
             config.fetch = haBearerFetch(record.id, deps)
         } else if (record.auth === 'oauth') {

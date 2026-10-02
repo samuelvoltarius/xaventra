@@ -63,6 +63,16 @@ describe('Bedarfsregel für Verbindungen (2.85 Paket A, Punkt 5 — wie Scout 2.
         expect(readFileSync(base.statePath, 'utf8')).not.toMatch(/Termin|Licht/)
     })
 
+    it('a self-hosted service is proposed from words only when it was found on the network', async () => {
+        const dir = tmp()
+        const statePath = join(dir, 'bedarf.json')
+        const emit = vi.fn()
+        for (const day of [3, 2, 1]) noteOwnerRequest('Kannst du eine Automatisierung bauen?', { statePath, now: NOW - day * DAY, connected: () => new Set() })
+        expect((await runConnectionDemandTick({ statePath, isMain: true, now: NOW, runs: () => [], found: () => [], connected: () => new Set(), sink: { emit } })).emitted).toEqual([])
+        const found = await runConnectionDemandTick({ statePath, isMain: true, now: NOW, runs: () => [], found: async () => ['n8n'], connected: () => new Set(), sink: { emit } })
+        expect(found.emitted.map(item => item.connectorId)).toEqual(['n8n'])
+    })
+
     it('connected services and declined proposals stay quiet; workers never propose', async () => {
         const dir = tmp()
         const statePath = join(dir, 'bedarf.json')

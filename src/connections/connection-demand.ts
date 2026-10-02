@@ -189,6 +189,9 @@ export async function runConnectionDemandTick(deps: DemandTickDeps): Promise<{ e
         if (!(item.failures >= 1 || item.requests >= REQUESTS_FOR_PROPOSAL)) continue
         if ((state.muted[id] ?? 0) > now || now - (state.proposed[id] ?? 0) < PROPOSAL_DEDUPE_MS) continue
         const manifest = manifests().find(entry => entry.name === id)!
+        // A self-hosted service is only proposed from words when it was actually found here
+        // (a failed owner request is enough on its own).
+        if (manifest.findet?.geraet && !item.failures && !found.has(id)) continue
         const proposal: ConnectionProposal = {
             kind: 'connect', connectorId: id, title: `${manifest.title} verbinden?`,
             text: `Damit ${manifest.wirkung.replace(/^kann dann /, 'kann ich dann ')}.`,
