@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased] — Vorschau 2.85.0 (in Arbeit)
+
+Preview of the next version; planned, not released. Goal: a person without any
+technical background installs Xaventra and she connects herself to what is
+around her — no config files, no terminal.
+
+- **Erster Start ohne Fragebogen:** after installing, Xaventra starts with safe
+  defaults, the doctor runs first, detects hardware and local models and fixes
+  what it can. At most three questions in the app: name, pair Telegram by QR
+  code, connect found services. Setup problems become cases she follows up.
+- **Verbindungen zu Diensten (MCP):** one view with "Gefunden / Möglich /
+  Verbunden". A reviewed connector catalog with logos (Home Assistant, calendar,
+  mail, code hosting, files …) plus the official MCP registry as a clearly
+  marked, unreviewed second tier. Connecting is one button and a normal login
+  page; reading works right away, sending/switching/deleting always asks;
+  private content never goes to cloud connectors. Cards only when a request
+  actually needs the missing connection.
+- **KI-Modelle verbinden:** local model servers (Ollama, LM Studio, llama.cpp,
+  vLLM …) and helpers such as speech recognition, speech output or a SearXNG
+  search are found in the own network automatically; cloud models by API key
+  (checked immediately, stored safely) or by account login where the provider
+  officially allows it. Local first, cloud only as fallback for non-private
+  content.
+- **Werkzeugkasten:** a page of programs that would make her more capable,
+  with a plain-language benefit, where it fits, whether it is needed and
+  current, and one "Install" button through the signed install catalog.
+
+
 ## [2.84.0] — 2026-10-02
 
 One window, fewer questions, honest learning: the Desktop app and the HTTP

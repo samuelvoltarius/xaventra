@@ -77,6 +77,11 @@ you. Responsibilities she derives herself start without a question; only each
 consequential step asks. Memory embeds only with own models, and the software
 scout proposes something only when it is needed and still current.
 
+**Next version (preview, 2.85.0 in progress).** First start without a
+questionnaire, one view to connect services and AI models (found / possible /
+connected, one button, login page instead of config files) and a toolbox page
+of programs she can install. Details: [CHANGELOG → Unreleased](CHANGELOG.md).
+
 
 Xaventra 2.84.0 is a source-preview candidate. Native Windows, Linux and macOS
 setup entry points share one installer, and CI exercises the Core on all three
