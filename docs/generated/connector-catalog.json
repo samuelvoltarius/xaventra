@@ -1,0 +1,472 @@
+{
+  "version": 1,
+  "catalogHash": "7a86e1d2e11f2979179067e196e493626c1d27a9079126adb99ab75c337416fb",
+  "entries": [
+    {
+      "name": "dateien",
+      "title": "Dateien / NAS-Ordner",
+      "kategorie": "dateien",
+      "wirkung": "kann dann in einem freigegebenen Ordner lesen und suchen",
+      "icon_url": "xaventra:icons/dateien.svg",
+      "icon_hash": "1da3e1114564e202400e18a883079d4e732a3d937731de20d5d7f5494728a3ab",
+      "auth_typ": "keiner",
+      "transport": {
+        "art": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem@2026.8.31",
+          "{ordner}"
+        ]
+      },
+      "capabilities": {
+        "read_text_file": "lesen",
+        "read_media_file": "lesen",
+        "read_multiple_files": "lesen",
+        "list_directory": "lesen",
+        "list_directory_with_sizes": "lesen",
+        "directory_tree": "lesen",
+        "search_files": "lesen",
+        "get_file_info": "lesen",
+        "list_allowed_directories": "lesen",
+        "create_directory": "schreiben",
+        "write_file": "schreiben",
+        "edit_file": "schreiben",
+        "move_file": "schreiben"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+      },
+      "bedarf": {
+        "woerter": [
+          "nas",
+          "freigabe",
+          "ordner"
+        ]
+      },
+      "entryHash": "113b93c113e6487d52dc402b215e1dd9b147ef2f7ef841a190cf7a5600502bde"
+    },
+    {
+      "name": "github",
+      "title": "GitHub",
+      "kategorie": "entwicklung",
+      "wirkung": "kann dann Repositories, Issues und Pull Requests lesen",
+      "icon_url": "xaventra:icons/github.svg",
+      "icon_hash": "623b9c60ae16e27d1e8762116afc7761c1c3fdb59d570410fa5531aca6e45700",
+      "auth_typ": "oauth",
+      "scopes": [
+        "repo",
+        "read:org"
+      ],
+      "transport": {
+        "art": "http",
+        "url": "https://api.githubcopilot.com/mcp/"
+      },
+      "capabilities": {
+        "get_me": "lesen",
+        "search_repositories": "lesen",
+        "get_file_contents": "lesen",
+        "list_issues": "lesen",
+        "get_issue": "lesen",
+        "list_pull_requests": "lesen",
+        "get_pull_request": "lesen",
+        "search_code": "lesen",
+        "create_issue": "schreiben",
+        "update_issue": "schreiben",
+        "create_pull_request": "schreiben",
+        "merge_pull_request": "schreiben",
+        "add_issue_comment": "senden",
+        "create_or_update_file": "schreiben",
+        "push_files": "schreiben",
+        "delete_file": "loeschen"
+      },
+      "datenklasse": "cloud",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/github/github-mcp-server",
+        "registry_id": "io.github.github/github-mcp-server",
+        "version": "1.13.0"
+      },
+      "bedarf": {
+        "werkzeuge": [
+          "github_",
+          "gh_"
+        ],
+        "woerter": [
+          "github",
+          "issue",
+          "issues"
+        ]
+      },
+      "entryHash": "e8164ebe4558127728eca486d49273466fa16a6074966c79ac8c7531d4a19e16"
+    },
+    {
+      "name": "gmail",
+      "title": "Gmail",
+      "kategorie": "kommunikation",
+      "wirkung": "kann dann Mails lesen, suchen und Entwürfe anlegen (senden nie)",
+      "icon_url": "xaventra:icons/gmail.svg",
+      "icon_hash": "a3d1817c55cba11d2b18cc9d4b8748523856b747bff7a21076cacd2f91751c44",
+      "auth_typ": "oauth",
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose"
+      ],
+      "transport": {
+        "art": "http",
+        "url": "https://gmailmcp.googleapis.com/mcp/v1"
+      },
+      "capabilities": {
+        "list_drafts": "lesen",
+        "get_thread": "lesen",
+        "get_message": "lesen",
+        "search_threads": "lesen",
+        "list_labels": "lesen",
+        "create_draft": "schreiben",
+        "label_thread": "schreiben",
+        "unlabel_thread": "schreiben",
+        "label_message": "schreiben",
+        "unlabel_message": "schreiben"
+      },
+      "datenklasse": "cloud",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
+      },
+      "findet": {
+        "konto": "gmail"
+      },
+      "bedarf": {
+        "werkzeuge": [
+          "gmail_",
+          "mail_"
+        ],
+        "woerter": [
+          "mail",
+          "mails",
+          "postfach",
+          "posteingang"
+        ]
+      },
+      "entryHash": "959e4e031d0fe47b7d2c7728c27c9cc32d21bc3ef775cd1ce99acb274ed7caeb"
+    },
+    {
+      "name": "google-calendar",
+      "title": "Google Kalender",
+      "kategorie": "kalender",
+      "wirkung": "kann dann Termine lesen und freie Zeiten finden",
+      "icon_url": "xaventra:icons/google-calendar.svg",
+      "icon_hash": "8bb4427315c5d3ea72db8601dbcae1b407c7d5c48b5dff6a72153548849648c4",
+      "auth_typ": "oauth",
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+        "https://www.googleapis.com/auth/calendar.events.freebusy",
+        "https://www.googleapis.com/auth/calendar.events.readonly"
+      ],
+      "transport": {
+        "art": "http",
+        "url": "https://calendarmcp.googleapis.com/mcp/v1"
+      },
+      "capabilities": {
+        "list_events": "lesen",
+        "get_event": "lesen",
+        "list_calendars": "lesen",
+        "suggest_time": "lesen",
+        "create_event": "schreiben",
+        "update_event": "schreiben",
+        "delete_event": "loeschen",
+        "respond_to_event": "senden"
+      },
+      "datenklasse": "cloud",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server"
+      },
+      "findet": {
+        "konto": "google-calendar"
+      },
+      "bedarf": {
+        "werkzeuge": [
+          "calendar_",
+          "kalender_"
+        ],
+        "woerter": [
+          "kalender",
+          "termin",
+          "termine",
+          "besprechung"
+        ]
+      },
+      "entryHash": "4dac6a9a75fd362ec050592f260ee8f31ab2e012f5a4ea74830c4b19e31d8c83"
+    },
+    {
+      "name": "home-assistant",
+      "title": "Home Assistant",
+      "kategorie": "zuhause",
+      "wirkung": "kann dann Lichter, Steckdosen und Geräte schalten und den Zustand lesen",
+      "icon_url": "xaventra:icons/home-assistant.svg",
+      "icon_hash": "485879a2a7f8442ca5ad3b8642597432992fc19bda10591ae9fe9a0842f13739",
+      "auth_typ": "ha-login",
+      "transport": {
+        "art": "http",
+        "url": "{basis}/api/mcp"
+      },
+      "capabilities": {
+        "GetLiveContext": "lesen",
+        "homeassistant__GetLiveContext": "lesen",
+        "GetDateTime": "lesen",
+        "homeassistant__GetDateTime": "lesen",
+        "HassTurnOn": "schalten",
+        "intent__HassTurnOn": "schalten",
+        "HassTurnOff": "schalten",
+        "intent__HassTurnOff": "schalten",
+        "HassLightSet": "schalten",
+        "intent__HassLightSet": "schalten",
+        "HassFanSetSpeed": "schalten",
+        "intent__HassFanSetSpeed": "schalten",
+        "HassClimateSetTemperature": "schalten",
+        "intent__HassClimateSetTemperature": "schalten"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://www.home-assistant.io/integrations/mcp_server/"
+      },
+      "findet": {
+        "geraet": "homeassistant"
+      },
+      "bedarf": {
+        "werkzeuge": [
+          "hass_"
+        ],
+        "woerter": [
+          "licht",
+          "lampe",
+          "steckdose",
+          "heizung",
+          "rollladen"
+        ]
+      },
+      "entryHash": "b6af6e0637f911ac257d46b3bc254e783116cd0ef6f2955c76832a601c46a59d"
+    },
+    {
+      "name": "immich",
+      "title": "Immich",
+      "kategorie": "dateien",
+      "wirkung": "kann dann Fotos und Alben suchen",
+      "icon_url": "xaventra:icons/immich.svg",
+      "icon_hash": "413ddf00f0c07319534c1785dfa3cf04ac541249430f2fa857ec34bead72dc4b",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "IMMICH_BASE_URL",
+          "label": "Immich-Adresse",
+          "geheim": false
+        },
+        {
+          "env": "IMMICH_API_KEY",
+          "label": "API-Schlüssel aus Immich (Kontoeinstellungen)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "stdio",
+        "command": "uvx",
+        "args": [
+          "immich-photo-manager==2.0.11"
+        ]
+      },
+      "capabilities": {
+        "search_photos": "lesen",
+        "list_albums": "lesen"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/drolosoft/immich-photo-manager",
+        "registry_id": "io.github.drolosoft/immich-photo-manager",
+        "version": "2.0.11"
+      },
+      "findet": {
+        "geraet": "immich"
+      },
+      "bedarf": {
+        "woerter": [
+          "foto",
+          "fotos",
+          "album",
+          "immich"
+        ]
+      },
+      "entryHash": "821ed020bc83b53d72548f9f985700b4fe8cf1250a87db24cc2ac82069e34f1d"
+    },
+    {
+      "name": "n8n",
+      "title": "n8n",
+      "kategorie": "entwicklung",
+      "wirkung": "kann dann Automationen finden und – nach deinem Ja – starten",
+      "icon_url": "xaventra:icons/n8n.svg",
+      "icon_hash": "6c958781e087747341e9f7a273c7d8212b507bd79a80ef08f966c7992e7e694c",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "N8N_MCP_TOKEN",
+          "label": "MCP-Token aus n8n (Einstellungen → MCP)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "http",
+        "url": "{basis}/mcp-server/http"
+      },
+      "capabilities": {
+        "search_workflows": "lesen",
+        "get_workflow_details": "lesen",
+        "execute_workflow": "schreiben"
+      },
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://docs.n8n.io/connect/connect-to-n8n-mcp-server"
+      },
+      "findet": {
+        "geraet": "n8n"
+      },
+      "bedarf": {
+        "woerter": [
+          "n8n",
+          "automation",
+          "automatisierung"
+        ]
+      },
+      "entryHash": "380518079314b3728ae0f54f0b0f27d034576e4b6f7ead5395809ed602701938"
+    },
+    {
+      "name": "paperless",
+      "title": "Paperless-ngx",
+      "kategorie": "dateien",
+      "wirkung": "kann dann Dokumente suchen und lesen",
+      "icon_url": "xaventra:icons/paperless.svg",
+      "icon_hash": "61373d106ad018c718f29e3fd99736d02c97b8152d56627f647fbfcdf3d0515f",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "PAPERLESS_URL",
+          "label": "Paperless-Adresse",
+          "geheim": false
+        },
+        {
+          "env": "PAPERLESS_TOKEN",
+          "label": "API-Token aus Paperless (Profil → API-Auth-Token)",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-paperless-ngx@0.1.1"
+        ],
+        "env": {
+          "PAPERLESS_READ_ONLY": "true"
+        }
+      },
+      "capabilities": {
+        "search_documents": "lesen",
+        "get_document": "lesen"
+      },
+      "standard_capability": "lesen",
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/tobee89/mcp-paperless-ngx",
+        "registry_id": "io.github.tobee89/mcp-paperless-ngx",
+        "version": "0.1.1"
+      },
+      "findet": {
+        "geraet": "paperless"
+      },
+      "bedarf": {
+        "woerter": [
+          "dokument",
+          "dokumente",
+          "rechnung",
+          "paperless"
+        ]
+      },
+      "entryHash": "58cb2e79d519cf925988e014234b2e554f82e446bbb02cd8fae0b506d652cd79"
+    },
+    {
+      "name": "proxmox",
+      "title": "Proxmox VE",
+      "kategorie": "infrastruktur",
+      "wirkung": "kann dann VMs, Container und Speicher lesend sehen",
+      "icon_url": "xaventra:icons/proxmox.svg",
+      "icon_hash": "af0827f30c21e569c8d90bf7d1d322b561f9cae3b5235e2af7f942b297f29c8f",
+      "auth_typ": "token",
+      "zugang": [
+        {
+          "env": "PROXMOX_HOST",
+          "label": "Proxmox-Adresse",
+          "geheim": false
+        },
+        {
+          "env": "PROXMOX_USER",
+          "label": "API-Benutzer (z. B. root@pam)",
+          "geheim": false
+        },
+        {
+          "env": "PROXMOX_TOKEN_NAME",
+          "label": "API-Token-Name",
+          "geheim": false
+        },
+        {
+          "env": "PROXMOX_TOKEN_VALUE",
+          "label": "API-Token-Wert",
+          "geheim": true
+        }
+      ],
+      "transport": {
+        "art": "stdio",
+        "command": "uvx",
+        "args": [
+          "proxmox-ve-mcp==2.3.0"
+        ],
+        "env": {
+          "PROXMOX_RISK_LEVEL": "read"
+        }
+      },
+      "capabilities": {
+        "get_nodes": "lesen",
+        "get_vms": "lesen",
+        "get_containers": "lesen",
+        "get_storage": "lesen",
+        "get_cluster_status": "lesen"
+      },
+      "standard_capability": "lesen",
+      "datenklasse": "lokal",
+      "trust": "geprueft",
+      "quelle": {
+        "url": "https://github.com/akmalovaa/proxmox-mcp",
+        "registry_id": "io.github.akmalovaa/proxmox-mcp",
+        "version": "2.3.0"
+      },
+      "bedarf": {
+        "werkzeuge": [
+          "proxmox_",
+          "pve_"
+        ],
+        "woerter": [
+          "proxmox",
+          "vm",
+          "vms"
+        ]
+      },
+      "entryHash": "cdc280dde76af5536fbabf320e921b23602906aa91341866f63554f74b4d3f07"
+    }
+  ],
+  "rejected": []
+}

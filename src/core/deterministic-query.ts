@@ -48,6 +48,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /^welche (?:programme|software|werkzeuge|tools) (?:würden|wuerden|könnten|koennten) dir (?:noch )?helfen$/.test(text)
         || /^welche (?:programme|software|werkzeuge|tools) (?:fehlen|fehlt) dir(?: noch)?$/.test(text)
         || /^(?:zeig(?:e)?(?: mir)? )?(?:den |deinen )?werkzeugkasten$/.test(text)) return route('software', 'werkzeugkasten', 'toolbox')
+    // 2.85 Paket A: the connections list (read-only, owner command) without a slash.
+    if (/^(?:womit|mit was|mit welchen diensten) (?:kannst|könntest) du dich (?:alles )?verbinden$/.test(text)
+        || /^(?:welche|was für) verbindungen (?:hast|kennst) du(?: alles)?$/.test(text)
+        || /^was ist (?:alles )?verbunden$/.test(text)
+        || /^(?:zeig|zeige)(?: mir)? (?:deine |die |alle )?verbindungen$/.test(text)) return route('verbindungen', '', 'connections-list')
 
     const forgetTarget = parseNaturalMemoryForget(input)
     if (forgetTarget) return route('memory', `forget-natural ${forgetTarget}`, 'memory-forget', 'controlled-action')

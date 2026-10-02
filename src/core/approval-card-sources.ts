@@ -267,6 +267,10 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     // Phase 6c: Proxmox kinds (pve-*); each re-checks pool/tag/protection/cap before its single write.
     const { registerProxmoxCardExecutors } = await import('../infra/proxmox-command.js')
     registerProxmoxCardExecutors()
+
+    // 2.85 Paket A: „Verbinden“ (one card = approval of the connection config).
+    const { registerConnectCardExecutor } = await import('../connections/connect-flow.js')
+    registerConnectCardExecutor()
 }
 
 // ---------------------------------------------------------------------------

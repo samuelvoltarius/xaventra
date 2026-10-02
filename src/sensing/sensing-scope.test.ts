@@ -82,11 +82,11 @@ describe('Selbst-Erkennung: Rate- und Zeitlimit', () => {
             },
             httpProbe: async () => null,
         })
-        expect(report.probes).toBe(30) // 6 Hosts × 5 Ports
+        expect(report.probes).toBe(54) // 6 Hosts × 9 Ports (2.85: + n8n, Paperless, Immich, Jellyfin)
         expect(maxInFlight).toBeLessThanOrEqual(3)
         const sorted = [...starts].sort((a, b) => a - b)
-        // 30 starts at 50/s need at least ~29 × 20 ms.
-        expect(sorted[sorted.length - 1] - sorted[0]).toBeGreaterThanOrEqual(29 * 20 - 40)
+        // 54 starts at 50/s need at least ~53 × 20 ms.
+        expect(sorted[sorted.length - 1] - sorted[0]).toBeGreaterThanOrEqual(53 * 20 - 40)
     })
 
     it('bricht nach der Gesamtzeit ab und meldet das', async () => {
@@ -118,5 +118,32 @@ describe('Selbst-Erkennung: Rate- und Zeitlimit', () => {
         expect(identifyHttp(80, '/', { status: 200, body: '<title>OctoPrint</title>' })).toBe('octoprint')
         expect(identifyHttp(80, '/', { status: 200, body: '<title>Router</title>' })).toBeNull()
         expect(identifyHttp(7125, '/server/info', { status: 401, body: 'moonraker' })).toBeNull()
+    })
+
+    it('2.85: erkennt selbst gehostete Dienste mit MCP-Anschluss an öffentlichen Kennungen (still, ohne Login)', () => {
+        expect(identifyHttp(5678, '/', { status: 200, body: '<html><head><title>n8n.io - Workflow Automation</title>' })).toBe('n8n')
+        expect(identifyHttp(8000, '/accounts/login/', { status: 200, body: '<title>Paperless-ngx sign in</title>' })).toBe('paperless')
+        expect(identifyHttp(2283, '/api/server/ping', { status: 200, body: '{"res":"pong"}' })).toBe('immich')
+        expect(identifyHttp(2283, '/api/server-info/ping', { status: 200, body: '{"res":"pong"}' })).toBe('immich')
+        expect(identifyHttp(8096, '/System/Info/Public', { status: 200, body: '{"ProductName":"Jellyfin Server","Version":"10.10.0"}' })).toBe('jellyfin')
+        expect(identifyHttp(80, '/status.php', { status: 200, body: '{"installed":true,"productname":"Nextcloud"}' })).toBe('nextcloud')
+        expect(identifyHttp(5678, '/', { status: 200, body: '<title>Sonstwas</title>' })).toBeNull()
+        expect(identifyHttp(2283, '/api/server/ping', { status: 401, body: '{"res":"pong"}' })).toBeNull()
+    })
+})
+
+describe('2.85: gefundene Dienste bleiben still (nur „Gefunden“ in Verbindungen)', () => {
+    it('fragt für n8n/Paperless/Immich/Jellyfin/Nextcloud nicht nach einem Zugang und überwacht nichts', async () => {
+        const { mkdtempSync, rmSync } = await import('node:fs')
+        const { tmpdir } = await import('node:os')
+        const { join } = await import('node:path')
+        const { recordCandidates, autoMonitorDevices, loadDevices } = await import('./device-registry.js')
+        const dir = mkdtempSync(join(tmpdir(), 'xv-dienste-'))
+        try {
+            recordCandidates(dir, (['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud'] as const).map((type, index) => ({ type, host: `192.168.1.${50 + index}`, port: 1000 + index, via: 'http' as const })))
+            const result = autoMonitorDevices(dir)
+            expect(result).toEqual({ monitored: [], asked: [] })
+            expect(loadDevices(dir).every(device => device.status === 'gefunden' && !device.ownerAskedAt)).toBe(true)
+        } finally { rmSync(dir, { recursive: true, force: true }) }
     })
 })

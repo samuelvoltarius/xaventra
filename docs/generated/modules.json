@@ -1222,6 +1222,130 @@
       ]
     },
     {
+      "module": "src/connections/connect-flow.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "./connector-login.js",
+        "./registry-directory.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connection-demand.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/outcome-ledger.js",
+        "../core/validator-failure-escalation.js",
+        "./connector-catalog.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connection-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connector-catalog.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connections-api.ts",
+      "imports": [
+        "./connect-flow.js",
+        "./connection-store.js",
+        "./connections-view.js",
+        "./icon-cache.js",
+        "./registry-directory.js",
+        "express"
+      ]
+    },
+    {
+      "module": "src/connections/connections-view.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "./connector-login.js",
+        "./icon-cache.js",
+        "./registry-directory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connector-catalog.ts",
+      "imports": [
+        "../install/install-catalog.js",
+        "./connector-icons.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/connections/connector-icons.ts",
+      "imports": []
+    },
+    {
+      "module": "src/connections/connector-login.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "@modelcontextprotocol/sdk/client/auth.js",
+        "@modelcontextprotocol/sdk/shared/auth.js",
+        "@modelcontextprotocol/sdk/shared/transport.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/connector-policy.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../routing/task-model-routing.js",
+        "./connector-catalog.js"
+      ]
+    },
+    {
+      "module": "src/connections/icon-cache.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/login-return.ts",
+      "imports": [
+        "./connect-flow.js"
+      ]
+    },
+    {
+      "module": "src/connections/registry-directory.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "./connector-catalog.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/action-intent.ts",
       "imports": [
         "./tool-evidence-binding.js"
@@ -2517,6 +2641,7 @@
     {
       "module": "src/desktop/desktop-api.ts",
       "imports": [
+        "../connections/connections-api.js",
         "../core/data-root.js",
         "../core/nova-state.js",
         "../core/outcome-ledger.js",
@@ -4315,6 +4440,7 @@
     {
       "module": "src/mcp/mcp-client.ts",
       "imports": [
+        "../connections/connector-policy.js",
         "../tools/complete-registry.js",
         "@modelcontextprotocol/sdk/client/auth.js",
         "@modelcontextprotocol/sdk/client/index.js",
@@ -4327,6 +4453,8 @@
     {
       "module": "src/mcp/mcp-runtime.ts",
       "imports": [
+        "../connections/connection-store.js",
+        "../connections/connector-login.js",
         "../core/config.js",
         "../tools/complete-registry.js",
         "./mcp-client.js"

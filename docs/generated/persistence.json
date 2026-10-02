@@ -90,6 +90,22 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/connections/connect-flow.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connection-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connections-view.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connector-login.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/action-policy.ts",
       "path": ".nova-data"
     },
@@ -1000,6 +1016,22 @@
     {
       "owner": "src/auth/codex-runtime.test.ts",
       "path": ".nova-data/codex-auth-index/nova_ns1.json"
+    },
+    {
+      "owner": "src/connections/connection-demand.ts",
+      "path": ".nova-data/connections/bedarf.json"
+    },
+    {
+      "owner": "src/connections/connection-demand.ts",
+      "path": ".nova-data/connections/connections.json"
+    },
+    {
+      "owner": "src/connections/icon-cache.ts",
+      "path": ".nova-data/connections/icons"
+    },
+    {
+      "owner": "src/connections/registry-directory.ts",
+      "path": ".nova-data/connections/registry-cache.json"
     },
     {
       "owner": "src/desktop-direct/store.ts",

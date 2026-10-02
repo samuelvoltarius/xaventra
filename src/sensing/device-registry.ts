@@ -19,6 +19,8 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { cleanEvidence, cleanText, type Evidence } from './ports.js'
 
 export type DeviceType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu' | 'homeassistant'
+    // 2.85 Paket A: self-hosted services with an MCP connector (found quietly, connected via „Verbindungen“).
+    | 'n8n' | 'paperless' | 'immich' | 'jellyfin' | 'nextcloud'
 export type DeviceStatus = 'gefunden' | 'eingerichtet' | 'abgelehnt' | 'aus'
 
 export interface DeviceRecord {
@@ -56,6 +58,11 @@ export const DEVICE_LABEL: Record<DeviceType, string> = {
     prusalink: 'Drucker (PrusaLink)',
     bambu: 'Drucker (Bambu, nur TCP erkannt)',
     homeassistant: 'Home Assistant',
+    n8n: 'n8n (Automationen)',
+    paperless: 'Paperless-ngx (Dokumente)',
+    immich: 'Immich (Fotos)',
+    jellyfin: 'Jellyfin (Medien)',
+    nextcloud: 'Nextcloud (Dateien)',
 }
 
 export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'port'>): string {
@@ -129,6 +136,12 @@ export function setDeviceStatus(dataDir: string, id: string, status: 'abgelehnt'
     return { ok: true, message: status === 'aus' ? `${device.name}: Überwachung aus.` : `${device.name}: abgelehnt, wird nicht mehr vorgeschlagen.` }
 }
 
+/**
+ * 2.85 Paket A: services that are only listed under „Gefunden“ in „Verbindungen“ —
+ * never auto-monitored, never asked about (Bedarfsregel: finding alone never asks).
+ */
+export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud'])) as ReadonlySet<DeviceType>
+
 /** Types a read-only adapter can watch without any credential. */
 export const AUTO_MONITOR_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['moonraker'])) as ReadonlySet<DeviceType>
 
@@ -154,6 +167,7 @@ export function autoMonitorDevices(dataDir: string, nowMs = Date.now()): AutoMon
     const at = new Date(nowMs).toISOString()
     for (const device of devices) {
         if (device.status !== 'gefunden') continue
+        if (SILENT_SERVICE_TYPES.has(device.type)) continue
         if (AUTO_MONITOR_TYPES.has(device.type)) {
             device.status = 'eingerichtet'
             device.approvedAt = at

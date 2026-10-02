@@ -44,6 +44,7 @@ import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute,
 import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallieren } from './werkzeugkasten-view.js'
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
+import { registerConnectionsApi } from '../connections/connections-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -578,6 +579,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     })
     toolboxAction('/api/desktop/werkzeugkasten/installieren', werkzeugkastenInstallieren, 'katalogId')
     toolboxAction('/api/desktop/werkzeugkasten/entfernen', werkzeugkastenEntfernen, 'queueId')
+    // 2.85 Paket A: Verbindungen (Gefunden / Möglich / Verbunden), owner only.
+    registerConnectionsApi(app, { ownerOnly })
 
     app.post('/api/desktop/karten/:id/antwort', async (req, res) => {
         if (!ownerOnly(req, res)) return

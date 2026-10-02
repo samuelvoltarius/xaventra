@@ -3586,6 +3586,21 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const { formatSoftwareCommand } = await import('../install/software-scout.js')
             return formatSoftwareCommand()
         }
+        // 2.85 Paket A: Verbindungen (owner only, see COMMAND_MINIMUM_ROLE default). Read-only list;
+        // `verbinden <name>` only creates the card, `anmelden <name>` returns the login address.
+        case 'verbindungen': {
+            const [sub, name] = args.trim().split(/\s+/)
+            const view = await import('../connections/connections-view.js')
+            if (!sub) return view.formatConnectionsText()
+            const flow = await import('../connections/connect-flow.js')
+            const { connectionIdFor } = await import('../connections/connection-store.js')
+            if (sub === 'verbinden' && name) return (await flow.requestConnect({ connectorId: name, quelle: 'telegram' })).message
+            if (sub === 'anmelden' && name) {
+                const result = await flow.beginLogin(connectionIdFor(name))
+                return result.url ? `Bitte hier anmelden (gilt 15 Minuten): ${result.url}` : result.message
+            }
+            return 'Nutzung: /verbindungen · /verbindungen verbinden <name> · /verbindungen anmelden <name>'
+        }
         case 'gedanken': {
             const { collectGedanken, formatGedanken } = await import('./now-view.js')
             const limit = Math.min(60, Math.max(5, Number.parseInt(args.trim(), 10) || 25))
