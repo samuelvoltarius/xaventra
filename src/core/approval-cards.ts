@@ -434,7 +434,7 @@ async function record(card: ApprovalCard, opts: CardStoreOptions, extra: Record<
  * synchronously (no await between read and write), so two concurrent presses
  * can never both pass.
  */
-export async function answerApprovalCard(callbackData: string, presser: { userId: string; ownerIds: readonly string[]; via?: 'telegram' | 'even-g2' }, opts: CardStoreOptions = {}): Promise<CardAnswerResult> {
+export async function answerApprovalCard(callbackData: string, presser: { userId: string; ownerIds: readonly string[]; via?: 'telegram' | 'even-g2' | 'desktop' }, opts: CardStoreOptions = {}): Promise<CardAnswerResult> {
     const data = String(callbackData ?? '')
     const token = data.startsWith(CALLBACK_PREFIX) ? data.slice(CALLBACK_PREFIX.length) : ''
     if (!TOKEN_PATTERN.test(token)) return { ok: false, code: 'unbekannt', message: 'Unbekannter Knopf.' }
@@ -468,7 +468,7 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
         return { ok: false, code: 'nicht-erlaubt', message: '„Immer erlauben“ gibt es für diese Aktionsart nicht.', card }
     }
     // The channel only labels who answered; the owner check above is the same for every channel.
-    const decidedBy = `${presser.via === 'even-g2' ? 'even-g2' : 'telegram'}:${String(presser.userId).trim()}`
+    const decidedBy = `${presser.via === 'even-g2' || presser.via === 'desktop' ? presser.via : 'telegram'}:${String(presser.userId).trim()}`
     const decidedAt = iso(now)
     if (button.answer === 'spaeter') {
         const resendAt = Math.min(now + SNOOZE_MS, Date.parse(card.expiresAt))

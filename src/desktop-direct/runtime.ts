@@ -84,6 +84,34 @@ export function pressDesktopButton(callbackData: string, presser: { userId: stri
     return runtime.store.press(callbackData, presser)
 }
 
+/** Desktops for the Desktop app (no target, no password file, no link). */
+export function listDirectDesktops(): { enabled: boolean; desktops: Array<{ id: string; label: string; allowControl: boolean; agentInput: boolean; active: Array<'view' | 'control'> }> } {
+    if (!runtime) return { enabled: false, desktops: [] }
+    const active = runtime.store.activeSessions()
+    return {
+        enabled: true,
+        desktops: runtime.config.desktops.map(desktop => ({
+            id: desktop.id, label: desktop.label, allowControl: desktop.allowControl, agentInput: desktop.agentInput,
+            active: active.filter(session => session.desktop.id === desktop.id).map(session => session.mode),
+        })),
+    }
+}
+
+/**
+ * Einmal-Link for the authenticated Desktop app owner. Same store, same
+ * one-time link, same gateway checks as the Telegram button; only the audit
+ * label differs. Closing the app window ends the session (and a takeover).
+ */
+export function issueDesktopAppLink(desktopId: string, mode: unknown, ownerId: string): { ok: true; url: string; expiresAt: number; label: string; mode: 'view' | 'control' } | { ok: false; code: 'aus' | 'unbekannt' | 'nicht-erlaubt'; message: string } {
+    if (!runtime) return { ok: false, code: 'aus', message: 'Desktop-Direktverbindung ist aus.' }
+    if (mode !== 'view' && mode !== 'control') return { ok: false, code: 'nicht-erlaubt', message: 'Modus muss Ansehen oder Übernehmen sein.' }
+    const desktop = runtime.store.desktop(String(desktopId || ''))
+    if (!desktop) return { ok: false, code: 'unbekannt', message: 'Desktop nicht konfiguriert.' }
+    if (mode === 'control' && !desktop.allowControl) return { ok: false, code: 'nicht-erlaubt', message: 'Dieser Desktop erlaubt nur Ansehen.' }
+    const issued = runtime.store.issueLink(desktop, mode, String(ownerId || 'desktop-owner').slice(0, 200), 'desktop')
+    return { ok: true, url: issued.url, expiresAt: issued.expiresAt, label: desktop.label, mode }
+}
+
 /** Plain text for the link message. The URL is the only secret in it; never logged. */
 export function formatLinkMessage(link: NonNullable<PressResult['link']>): string {
     const until = new Date(link.expiresAt).toISOString().slice(11, 16)

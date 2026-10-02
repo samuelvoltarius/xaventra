@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('novaDesktop', Object.freeze({
       sendOnEnter: input?.sendOnEnter !== false,
       showInspector: input?.showInspector !== false,
       compactMode: input?.compactMode === true,
+      theme: ['system', 'hell', 'dunkel'].includes(input?.theme) ? input.theme : undefined,
       activeWorkspaceId: typeof input?.activeWorkspaceId === 'string' ? input.activeWorkspaceId : undefined,
     }),
   }),
@@ -25,6 +26,9 @@ contextBridge.exposeInMainWorld('novaDesktop', Object.freeze({
   }),
   desktop: Object.freeze({
     capture: () => ipcRenderer.invoke('nova:desktop:capture'),
+  }),
+  desktopDirect: Object.freeze({
+    open: input => ipcRenderer.invoke('nova:desktop-direct:open', { desktopId: String(input?.desktopId || ''), mode: input?.mode === 'control' ? 'control' : 'view' }),
   }),
   workspace: Object.freeze({
     select: () => ipcRenderer.invoke('nova:workspace:select'),

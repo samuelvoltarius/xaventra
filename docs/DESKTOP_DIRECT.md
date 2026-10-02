@@ -196,7 +196,11 @@ Nur `serve` (Tailnet), **nie** `funnel` (öffentlich). `publicBaseUrl` =
   Andere Desktops ohne Xaventra-Eingabewerkzeug brauchen keine Pause.
 - Nur RFB 3.7/3.8 mit Sicherheitstyp None oder VNC-Auth; VeNCrypt/TLS/Apple-Auth
   werden nicht unterstützt (Transport ist ohnehin WireGuard/Tailscale bzw. Loopback).
-- Die Desktop-App (später) kann denselben Gateway nutzen; Links gibt es bis
-  dahin nur über Telegram. Andere Kanäle zeigen nur die Liste.
+- Die Desktop-App (System › Desktops) holt denselben Einmal-Link über
+  `POST /api/desktop/direct/:id/link` (nur Owner-Token, Audit `desktop:…`). Der
+  Hauptprozess öffnet ihn in einem eigenen Fenster mit flüchtiger Sitzung; der
+  Renderer sieht den Link nie. Fenster schließen = Sitzung beendet. Im Browser
+  öffnet die gemeinsame Oberfläche den Link in einem neuen Tab. Andere Kanäle
+  zeigen nur die Liste.
 - Die Telegram-Nachricht mit dem (verbrauchten) Link bleibt im Chat stehen; der
   Link ist nach Nutzung oder 10 min wertlos.

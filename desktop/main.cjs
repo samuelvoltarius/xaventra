@@ -1,4 +1,4 @@
-const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, safeStorage, screen, shell } = require('electron')
+const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, safeStorage, screen, shell } = require('electron')
 const { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, statSync } = require('node:fs')
 const { basename, extname, isAbsolute, join, relative, resolve } = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
@@ -16,7 +16,14 @@ function secureStorageAvailable() {
   return credentialEncryptionAvailable
 }
 
-const DEFAULT_PREFERENCES = Object.freeze({ requestTimeoutMs: 120_000, sendOnEnter: true, showInspector: true, compactMode: false })
+const DEFAULT_PREFERENCES = Object.freeze({ requestTimeoutMs: 120_000, sendOnEnter: true, showInspector: true, compactMode: false, theme: 'system' })
+const THEMES = new Set(['system', 'hell', 'dunkel'])
+function normalizeTheme(value) { return THEMES.has(value) ? value : 'system' }
+// Window chrome and prefers-color-scheme follow the chosen theme.
+function applyNativeTheme(theme) {
+  if (!nativeTheme) return
+  nativeTheme.themeSource = theme === 'hell' ? 'light' : theme === 'dunkel' ? 'dark' : 'system'
+}
 
 function configPath() { return join(app.getPath('userData'), 'connection.json') }
 
@@ -47,6 +54,7 @@ function readConfig() {
       sendOnEnter: value.sendOnEnter !== false,
       showInspector: value.showInspector !== false,
       compactMode: value.compactMode === true,
+      theme: normalizeTheme(value.theme),
       workspaces: Array.isArray(value.workspaces) ? value.workspaces.filter(item => item?.id && item?.path).slice(0, 20).map(item => ({
         id: String(item.id).slice(0, 120), name: String(item.name || basename(item.path)).slice(0, 120), path: String(item.path),
       })) : [],
@@ -68,6 +76,7 @@ function writeConfig(input) {
     sendOnEnter: typeof input.sendOnEnter === 'boolean' ? input.sendOnEnter : current.sendOnEnter !== false,
     showInspector: typeof input.showInspector === 'boolean' ? input.showInspector : current.showInspector !== false,
     compactMode: typeof input.compactMode === 'boolean' ? input.compactMode : current.compactMode === true,
+    theme: typeof input.theme === 'string' ? normalizeTheme(input.theme) : normalizeTheme(current.theme),
     workspaces: current.workspaces || [],
     activeWorkspaceId: typeof input.activeWorkspaceId === 'string' ? input.activeWorkspaceId.slice(0, 120) : current.activeWorkspaceId,
   }
@@ -76,6 +85,7 @@ function writeConfig(input) {
     next.encryptedToken = input.token ? safeStorage.encryptString(input.token).toString('base64') : undefined
   }
   persistConfig(next)
+  applyNativeTheme(next.theme)
   return publicConfig(next)
 }
 
@@ -89,7 +99,7 @@ function publicConfig(value) {
     endpoint: value.endpoint, principal: value.principal, clientId: value.clientId,
     hasToken: Boolean(value.encryptedToken), encryptionAvailable: credentialEncryptionAvailable,
     requestTimeoutMs: value.requestTimeoutMs, sendOnEnter: value.sendOnEnter,
-    showInspector: value.showInspector, compactMode: value.compactMode,
+    showInspector: value.showInspector, compactMode: value.compactMode, theme: normalizeTheme(value.theme),
     workspaces: (value.workspaces || []).map(item => ({ id: item.id, name: item.name, path: item.path })),
     activeWorkspaceId: value.activeWorkspaceId,
   }
@@ -202,6 +212,8 @@ function assertApiPath(path) {
   if (!/^\/api\/desktop(?:\/[a-zA-Z0-9._~!$&'()*+,;=:@%-]+)*?(?:\?[a-zA-Z0-9._~!$&'()*+,;=:@%/?-]*)?$/.test(value)) {
     throw new Error('Desktop API path is not allowed')
   }
+  // URL parsing would resolve dot segments and leave /api/desktop.
+  if (value.split('?')[0].split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) throw new Error('Desktop API path is not allowed')
   return value
 }
 
@@ -230,13 +242,22 @@ function sendHttpRequest({ url, method, headers, body, signal }) {
   })
 }
 
+// One-time Desktop-Direkt links are secrets: only the main process requests
+// them and loads them into its own viewer window; the renderer never sees one.
+const MAIN_ONLY_API = /^\/api\/desktop\/direct(?:\/|$|\?)/
+
 async function apiRequest(_event, input) {
   const method = String(input?.method || 'GET').toUpperCase()
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) throw new Error('HTTP method is not allowed')
   const path = assertApiPath(input?.path)
+  if (MAIN_ONLY_API.test(path)) throw new Error('Desktop-Direkt-Links laufen nur über den Hauptprozess')
+  return coreRequest(method, path, input?.body)
+}
+
+async function coreRequest(method, path, payload) {
   const config = readConfig()
   const token = getToken(config)
-  const body = input?.body === undefined ? undefined : JSON.stringify(input.body)
+  const body = payload === undefined ? undefined : JSON.stringify(payload)
   if (body && Buffer.byteLength(body) > 1_000_000) throw new Error('Desktop request body exceeds 1 MB')
   const controller = new AbortController()
   // Bootstrap must not occupy the full multi-minute chat budget per retry.
@@ -263,6 +284,56 @@ async function apiRequest(_event, input) {
   } finally {
     clearTimeout(timeout)
   }
+}
+
+const DESKTOP_LINK_PATH = /^\/desktop\/s\/[A-Za-z0-9_-]{43}$/
+const viewers = new Set()
+
+/** Validate a one-time link from the Core: https, gateway path, no query or credentials. */
+function desktopLinkUrl(raw) {
+  let url
+  try { url = new URL(String(raw || '')) } catch { throw new Error('Desktop-Link ist ungültig') }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !DESKTOP_LINK_PATH.test(url.pathname)) {
+    throw new Error('Desktop-Link ist ungültig')
+  }
+  return url
+}
+
+/**
+ * Open a Desktop-Direkt session (noVNC from the Main's gateway) in an
+ * isolated in-app window: own in-memory session, no preload, no node,
+ * no permissions, navigation only within the gateway origin. Closing the
+ * window ends the WebSocket and with it the session (and a takeover).
+ */
+async function openDesktopDirect(event, input) {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) throw new Error('Desktop caller is not trusted')
+  const desktopId = String(input?.desktopId || '')
+  const mode = input?.mode === 'control' ? 'control' : 'view'
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(desktopId)) throw new Error('Unbekannter Desktop')
+  const issued = await coreRequest('POST', `/api/desktop/direct/${encodeURIComponent(desktopId)}/link`, { mode })
+  const url = desktopLinkUrl(issued?.url)
+  const label = String(issued?.label || desktopId).slice(0, 80)
+  const viewer = new BrowserWindow({
+    width: 1280, height: 860, minWidth: 640, minHeight: 420, parent: mainWindow, backgroundColor: '#000000',
+    title: `${label} – ${mode === 'control' ? 'Übernehmen' : 'Ansehen'}`, autoHideMenuBar: true, show: false,
+    webPreferences: {
+      partition: `desktop-direct-${randomUUID()}`, contextIsolation: true, sandbox: true, nodeIntegration: false,
+      webSecurity: true, spellcheck: false, devTools: !app.isPackaged,
+    },
+  })
+  viewers.add(viewer)
+  const session = viewer.webContents.session
+  session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  session.setPermissionCheckHandler(() => false)
+  const sameOrigin = target => { try { return new URL(target).origin === url.origin } catch { return false } }
+  viewer.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  viewer.webContents.on('will-navigate', (navigation, target) => { if (!sameOrigin(target)) navigation.preventDefault() })
+  viewer.webContents.on('will-redirect', (navigation, target) => { if (!sameOrigin(target)) navigation.preventDefault() })
+  viewer.webContents.on('will-attach-webview', navigation => navigation.preventDefault())
+  viewer.once('ready-to-show', () => viewer.show())
+  viewer.once('closed', () => viewers.delete(viewer))
+  await viewer.loadURL(url.toString())
+  return { ok: true, label, mode, expiresAt: Number(issued?.expiresAt) || null }
 }
 
 async function capturePrimaryDisplay(event) {
@@ -328,6 +399,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('io.xaventra.desktop')
+  applyNativeTheme(readConfig().theme)
   ipcMain.handle('nova:config:get', () => {
     const value = readConfig()
     if (!existsSync(configPath())) persistConfig(value)
@@ -336,6 +408,7 @@ app.whenReady().then(() => {
   ipcMain.handle('nova:config:set', (_event, input) => writeConfig(input || {}))
   ipcMain.handle('nova:api', apiRequest)
   ipcMain.handle('nova:desktop:capture', capturePrimaryDisplay)
+  ipcMain.handle('nova:desktop-direct:open', openDesktopDirect)
   ipcMain.handle('nova:workspace:select', selectWorkspace)
   ipcMain.handle('nova:workspace:set-active', (_event, id) => setActiveWorkspace(String(id || '')))
   ipcMain.handle('nova:workspace:execute', executeWorkspaceOperation)

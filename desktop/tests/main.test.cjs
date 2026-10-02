@@ -137,3 +137,60 @@ test('main-process API does not follow redirects or accept oversized responses',
   await assert.rejects(handlers.get('nova:api')(null, { path: '/api/desktop/bootstrap' }), /HTTP 302/)
   await assert.rejects(handlers.get('nova:api')(null, { path: '/api/desktop/redirect-target' }), /exceeds 2 MB/)
 })
+
+test('the renderer cannot request a Desktop-Direkt one-time link through the API bridge', async t => {
+  const { handlers, evaluate, context } = harness(t)
+  const seen = []
+  context.endpointRequest = async request => { seen.push(request.url); return { status: 200, text: '{"url":"https://x.invalid/desktop/s/a"}' } }
+  evaluate('sendHttpRequest = endpointRequest')
+  handlers.get('nova:config:get')()
+  for (const path of ['/api/desktop/direct/spark/link', '/api/desktop/direct', '/api/desktop/direct?x=1'])
+    await assert.rejects(handlers.get('nova:api')(null, { method: 'POST', path, body: { mode: 'view' } }), /Hauptprozess/)
+  assert.deepEqual(seen, [])
+})
+
+test('only a gateway one-time link over HTTPS is ever loaded into the viewer', t => {
+  const { evaluate, context } = harness(t)
+  const valid = `https://main.example.ts.net/desktop/s/${'A'.repeat(43)}`
+  context.candidate = valid
+  assert.equal(evaluate('desktopLinkUrl(candidate).toString()'), valid)
+  for (const bad of [`http://main.example.ts.net/desktop/s/${'A'.repeat(43)}`, `https://main.example.ts.net/desktop/s/${'A'.repeat(43)}?x=1`,
+    `https://u:p@main.example.ts.net/desktop/s/${'A'.repeat(43)}`, 'https://main.example.ts.net/desktop/s/short', 'https://main.example.ts.net/other', 'javascript:alert(1)']) {
+    context.candidate = bad
+    assert.throws(() => evaluate('desktopLinkUrl(candidate)'), /ungültig/, bad)
+  }
+})
+
+test('Desktop-Direkt opens only for the main window and validates the desktop id first', async t => {
+  const { handlers, evaluate, context } = harness(t)
+  const seen = []
+  context.endpointRequest = async request => { seen.push(request.url); return { status: 200, text: '{}' } }
+  evaluate('sendHttpRequest = endpointRequest')
+  handlers.get('nova:config:get')()
+  await assert.rejects(handlers.get('nova:desktop-direct:open')({ sender: { id: 99 } }, { desktopId: 'spark', mode: 'view' }), /not trusted/)
+  await assert.rejects(handlers.get('nova:desktop-direct:open')({ sender: { id: 1 } }, { desktopId: '../x', mode: 'view' }), /Unbekannter Desktop/)
+  assert.deepEqual(seen, [])
+  // A Core answer without a valid link never opens anything.
+  await assert.rejects(handlers.get('nova:desktop-direct:open')({ sender: { id: 1 } }, { desktopId: 'spark', mode: 'control' }), /ungültig/)
+  assert.equal(seen.length, 1)
+  assert.match(seen[0], /\/api\/desktop\/direct\/spark\/link$/)
+})
+
+test('the colour theme is stored as a normalized preference', t => {
+  const { handlers } = harness(t)
+  assert.equal(handlers.get('nova:config:get')().theme, 'system')
+  assert.equal(handlers.get('nova:config:set')(null, { theme: 'dunkel' }).theme, 'dunkel')
+  assert.equal(handlers.get('nova:config:set')(null, { theme: 'neon' }).theme, 'system')
+  assert.equal(handlers.get('nova:config:set')(null, { compactMode: true }).theme, 'system')
+})
+
+test('dot segments can never leave the Desktop API', async t => {
+  const { handlers, evaluate, context } = harness(t)
+  const seen = []
+  context.endpointRequest = async request => { seen.push(request.url); return { status: 200, text: '{}' } }
+  evaluate('sendHttpRequest = endpointRequest')
+  handlers.get('nova:config:get')()
+  for (const path of ['/api/desktop/../config', '/api/desktop/%2e%2e/status', '/api/desktop/./heute'])
+    await assert.rejects(handlers.get('nova:api')(null, { path }), /not allowed/, path)
+  assert.deepEqual(seen, [])
+})

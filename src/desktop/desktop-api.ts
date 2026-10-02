@@ -40,6 +40,7 @@ import { getMemoryAssetCatalog } from '../memory/memory-asset-catalog.js'
 import { resolvePrincipalId } from '../users/principal-id.js'
 import { getNovaState } from '../core/nova-state.js'
 import { getPatchProposals } from '../synthesis/self-evolution.js'
+import { answerCardFromDesktop, collectArbeit, collectGedaechtnis, collectHeute, collectSystem, collectVms } from './desktop-views.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -144,6 +145,17 @@ export function desktopExecutionPrincipal(ownerId: string): string {
 
 function desktopClientId(req: Request): string {
     return String(req.headers['x-nova-desktop-client'] || '').trim().slice(0, 120)
+}
+
+/** Numeric Telegram owner ids (allowFrom): the one owner list every card channel uses. */
+async function desktopCardOwnerIds(): Promise<string[]> {
+    try {
+        const { getTelegramAdapter } = await import('../channels/telegram.js')
+        const ids = getTelegramAdapter()?.getOwnerChatIds?.() || []
+        if (ids.length) return ids
+    } catch { /* config fallback */ }
+    const { numericOwnerIds } = await import('../channels/even-g2-runtime.js')
+    return numericOwnerIds(getNovaState().config)
 }
 
 function safeError(error: unknown): string { return redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 500) }
@@ -508,6 +520,56 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
         const result = await approvePatchProposal(proposal.id, { approver: { permission: 'owner', principalId: desktopExecutionPrincipal(principal(req)) }, token })
         if (!result.ok) return void res.status(409).json({ success: false, code: result.code, rollbackPerformed: result.rollbackPerformed, error: safeError(result.error || result.message) })
         res.json({ success: true, proposalId: proposal.id, activationPending: result.activationPending === true, attemptId: result.attemptId, message: result.message })
+    })
+
+    // ── Redesign: Fenster zum Mitschauen (nur Owner) ─────────────────────────
+    // Lesesichten über die vorhandenen Module; die einzigen Knöpfe sind die
+    // Knopf-Karten (vorhandener Einmal-Token-Mechanismus) und der vorhandene
+    // Einmal-Link von Desktop-Direkt. Keine zweite Freigabe-Logik.
+    const ownerOnly = (req: Request, res: Response): boolean => {
+        if (isDesktopOwner(req)) return true
+        res.status(403).json({ error: 'Owner authorization required' })
+        return false
+    }
+    const view = (path: string, collect: () => Promise<unknown>) => app.get(path, async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        try { res.setHeader('Cache-Control', 'no-store'); res.json(await collect()) } catch (error) { res.status(500).json({ error: safeError(error) }) }
+    })
+    view('/api/desktop/heute', () => collectHeute())
+    view('/api/desktop/arbeit', () => collectArbeit())
+    view('/api/desktop/system', () => collectSystem())
+    view('/api/desktop/system/vms', () => collectVms())
+    view('/api/desktop/gedaechtnis', () => collectGedaechtnis())
+
+    app.post('/api/desktop/karten/:id/antwort', async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        try {
+            const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
+            await ensureBuiltinCardExecutors()
+            const result = await answerCardFromDesktop(String(req.params.id || ''), req.body?.answer, { ownerIds: await desktopCardOwnerIds() })
+            if (result.status === 200) {
+                // The Telegram copies of the card lose their buttons (cosmetic; the decision is stored).
+                try {
+                    const { getTelegramAdapter } = await import('../channels/telegram.js')
+                    const { listApprovalCards, formatCardText } = await import('../core/approval-cards.js')
+                    const card = listApprovalCards().find(item => item.id === req.params.id)
+                    const tg: any = getTelegramAdapter()
+                    if (card && tg?.syncApprovalCardMessages) await tg.syncApprovalCardMessages(card, formatCardText(card))
+                } catch { /* best effort */ }
+            }
+            res.status(result.status).json(result.body)
+        } catch (error) { res.status(500).json({ error: safeError(error) }) }
+    })
+
+    app.post('/api/desktop/direct/:id/link', async (req, res) => {
+        if (!ownerOnly(req, res)) return
+        try {
+            const { issueDesktopAppLink } = await import('../desktop-direct/runtime.js')
+            const issued = issueDesktopAppLink(String(req.params.id || ''), req.body?.mode, desktopOwnerId())
+            res.setHeader('Cache-Control', 'no-store')
+            if (issued.ok === false) return void res.status(issued.code === 'aus' ? 409 : issued.code === 'unbekannt' ? 404 : 403).json({ error: issued.message, code: issued.code })
+            res.json({ url: issued.url, expiresAt: issued.expiresAt, label: issued.label, mode: issued.mode })
+        } catch (error) { res.status(500).json({ error: safeError(error) }) }
     })
 
     app.get('/api/desktop/memory', (req, res) => {
