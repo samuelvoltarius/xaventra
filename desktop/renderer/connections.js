@@ -4,8 +4,13 @@
 // Jeder Knopf startet nur den vorhandenen Weg: „Verbinden“ legt eine Karte an
 // (Ja/Nein direkt hier oder unter „Heute“), „Anmelden“ öffnet die Login-Seite
 // des Dienstes, „Trennen“ trennt. Konfiguration ändert sich nur nach dem Ja.
+// KI-Modelle (Paket C) stehen hier mit: lokale Modelle und SearXNG unter
+// „Gefunden“ (lokal = ohne Frage nutzbar), Cloud-Anbieter unter „Möglich“ mit
+// API-Key (einmal einfügen, sofort geprüft, nie wieder angezeigt) oder – nur wo
+// der Anbieter es offiziell erlaubt – Anmeldung mit Konto.
 ;(() => {
   const PATH = '/api/desktop/verbindungen'
+  const LLM = '/api/desktop/llm-connections'
   const local = { data: null, error: '', loading: false, at: 0, tried: 0, query: '', results: null, searching: false, busy: new Set(), cards: {}, icons: {} }
   const MAX_AGE = 20_000
 
@@ -25,11 +30,18 @@
       <button class="secondary" data-conn-card="${h.attr(cardId)}" data-conn-answer="nein" ${busy ? 'disabled' : ''}>${h.icon('x', 'sm')}Nein</button></div>`
   }
 
+  // KI-Modelle: Key einfügen (immer), Konto-Anmeldung nur wo der Anbieter es Drittanwendungen erlaubt.
+  function llmButtons(h, llm) {
+    return `${llm.kontoHinweis ? `<p class="section-note">${h.esc(llm.kontoHinweis)}</p>` : ''}<div class="toolbar">
+      <button class="secondary" data-conn-llm-key="${h.attr(llm.provider)}">API-Key einfügen</button>
+      ${llm.konto ? `<button class="primary" data-conn-llm-login="${h.attr(llm.provider)}">Mit Konto anmelden</button>` : ''}</div>`
+  }
+
   function foundSection(h, data) {
     const items = data.gefunden || []
     const rows = items.map(item => `<div class="row"><div>${img(h, item.icon, item.title)}<div class="row-title">${h.esc(item.title)}</div>
       <div class="row-sub">${h.esc(item.fund)} · ${h.esc(item.wirkung)}</div>${item.connectorId ? cardButtons(h, item.connectorId) : ''}</div>
-      <div class="row-side">${where(h, item.datenklasse)}${item.verbunden ? '<span class="pill good">verbunden</span>'
+      <div class="row-side">${where(h, item.datenklasse)}${item.verbunden ? `<span class="pill good">${item.connectorId ? 'verbunden' : 'in Nutzung'}</span>`
         : item.connectorId ? `<button class="primary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button>` : ''}</div></div>`).join('')
     return `<section class="section" aria-labelledby="conn-found"><div class="section-head"><h2 id="conn-found">${h.icon('eye')}Gefunden</h2><span class="section-note">selbst entdeckt – sie fragt deswegen nicht</span></div>
       ${rows ? `<div class="rows">${rows}</div>` : `<div class="section-body"><div class="empty-note">Noch nichts gefunden. Sie sucht selbst im eigenen Netz und in den eigenen Konten.</div></div>`}</section>`
@@ -42,6 +54,7 @@
       ${group.eintraege.map(item => `<div>${img(h, item.icon, item.title)} <strong>${h.esc(item.title)}</strong> ${where(h, item.datenklasse)} <span class="pill good">geprüft</span>
         <p>${h.esc(item.wirkung)}</p>${item.hinweis ? `<p class="section-note">${h.esc(item.hinweis)}</p>` : ''}
         ${item.status === 'verbunden' ? '<span class="pill good">verbunden</span>' : item.status === 'wartet' ? '<span class="pill warn">eingerichtet – siehe unten</span>'
+          : item.llm ? llmButtons(h, item.llm)
           : `<div class="toolbar"><button class="secondary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button></div>`}
         ${cardButtons(h, item.connectorId)}</div>`).join('')}</article>`).join('')
     const results = local.results
@@ -64,13 +77,14 @@
       const darf = item.darf || {}
       const test = item.letzterTest ? ` · getestet: ${item.letzterTest.werkzeuge} Werkzeuge` : ''
       return `<div class="row"><div>${img(h, item.icon, item.title)}<div class="row-title">${h.esc(item.title)} ${item.trust === 'community' ? '<span class="pill warn">nicht geprüft</span>' : ''}</div>
-        <div class="row-sub">Darf selbst: ${h.esc((darf.lesen || []).join(', ') || '—')}${test}</div>
-        <div class="row-sub">Fragt dich: ${h.esc((darf.fragt || []).join(', ') || '—')}${(darf.nie || []).length ? ` · nie: ${h.esc(darf.nie.join(', '))}` : ''}</div>
+        ${item.llm ? `<div class="row-sub">KI-Modelle${item.llm.maske ? ` · Key ${h.esc(item.llm.maske)}` : ''}</div>` : `<div class="row-sub">Darf selbst: ${h.esc((darf.lesen || []).join(', ') || '—')}${test}</div>
+        <div class="row-sub">Fragt dich: ${h.esc((darf.fragt || []).join(', ') || '—')}${(darf.nie || []).length ? ` · nie: ${h.esc(darf.nie.join(', '))}` : ''}</div>`}
         <div class="row-sub">${h.esc(darf.sonst || '')}</div></div>
         <div class="row-side"><span class="pill ${tone}">${h.esc(label)}</span>${where(h, item.datenklasse)}
           ${item.aktion === 'anmelden' ? `<button class="primary" data-conn-login="${h.attr(item.id)}">Anmelden</button>` : ''}
           ${item.aktion === 'zugang' ? `<button class="primary" data-conn-access="${h.attr(item.id)}">Zugang eintragen</button>` : ''}
-          <button class="ghost" data-conn-disconnect="${h.attr(item.id)}">Trennen</button></div></div>`
+          ${item.llm ? (item.llm.trennbar ? `<button class="ghost" data-conn-llm-disconnect="${h.attr(item.llm.provider)}">Trennen</button>` : '')
+            : `<button class="ghost" data-conn-disconnect="${h.attr(item.id)}">Trennen</button>`}</div></div>`
     }).join('')
     return `<section class="section" aria-labelledby="conn-connected"><div class="section-head"><h2 id="conn-connected">${h.icon('check')}Verbunden</h2><span class="section-note">was sie damit darf</span></div>
       ${rows ? `<div class="rows">${rows}</div>` : `<div class="section-body"><div class="empty-note">Noch nichts verbunden.</div></div>`}</section>`
@@ -173,6 +187,41 @@
     finally { local.searching = false; h.rerender() }
   }
 
+  // Paket C: der Key geht nur an den eigenen Anbieter zur Prüfung, wird sicher abgelegt und nie wieder angezeigt.
+  async function llmKey(h, provider) {
+    const item = (local.data?.moeglich?.gruppen || []).flatMap(group => group.eintraege).find(entry => entry.llm?.provider === provider)
+    const where = item?.llm?.keyUrl ? `<p class="section-note">Key erstellen: <span class="mono">${h.esc(item.llm.keyUrl)}</span></p>` : ''
+    h.showModal(`${item ? item.title : provider}: API-Key`, `<form class="form" id="conn-llm-key">${where}<label>API-Key (wird sofort geprüft, danach nie wieder angezeigt)<input name="key" type="password" autocomplete="off" maxlength="512" required></label>
+      <div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Prüfen und verbinden</button></div></form>`)
+    const form = document.querySelector('#conn-llm-key')
+    form?.addEventListener('submit', async event => {
+      event.preventDefault()
+      const key = String(new FormData(form).get('key') || '')
+      h.closeModal()
+      try {
+        const result = await h.api.post(`${LLM}/key`, { provider, key })
+        h.toast(result?.ok ? `Verbunden${result.maske ? ` (Key ${result.maske})` : ''}.` : (result?.meldung || 'Nicht verbunden.'))
+      } catch (error) { h.fail(error) }
+      await load(h, true)
+    })
+  }
+
+  async function llmLogin(h, provider) {
+    try {
+      const result = await h.api.post(`${LLM}/oauth/start`, { provider })
+      if (!result?.url) { h.toast(result?.meldung || 'Anmeldung nicht möglich.'); return }
+      if (/^https:\/\//.test(result.url)) window.open(result.url, '_blank', 'noopener')
+      if (result.manuell && result.state) {
+        const code = await ask(h, 'Anmelden', 'Den Code von der Anmeldeseite hier einfügen', 'code')
+        if (!code) return
+        const done = await h.api.post(`${LLM}/oauth/complete`, { state: result.state, code })
+        h.toast(done?.ok ? 'Verbunden.' : (done?.meldung || 'Nicht verbunden.'))
+        return void load(h, true)
+      }
+      h.showModal('Anmelden', `<p>Die Anmeldeseite des Anbieters ist geöffnet. Danach geht es automatisch weiter.</p>${result.code ? `<p class="section-note">Code für die Anmeldeseite:</p><p class="mono">${h.esc(result.code)}</p>` : ''}<p class="section-note">Nicht geöffnet? Diese Adresse im Browser öffnen:</p><p class="mono">${h.esc(result.url)}</p><div class="toolbar"><button class="primary" data-close-modal>Fertig</button></div>`)
+    } catch (error) { h.fail(error) }
+  }
+
   function mount(h) {
     const page = document.querySelector('#page')
     if (!page) return
@@ -183,6 +232,12 @@
     page.querySelectorAll('[data-conn-access]').forEach(node => node.addEventListener('click', () => access(h, node.dataset.connAccess)))
     page.querySelectorAll('[data-conn-disconnect]').forEach(node => node.addEventListener('click', async () => {
       try { const result = await h.api.post(`${PATH}/${encodeURIComponent(node.dataset.connDisconnect)}/trennen`, {}); h.toast(result.message) } catch (error) { h.fail(error) }
+      await load(h, true)
+    }))
+    page.querySelectorAll('[data-conn-llm-key]').forEach(node => node.addEventListener('click', () => llmKey(h, node.dataset.connLlmKey)))
+    page.querySelectorAll('[data-conn-llm-login]').forEach(node => node.addEventListener('click', () => llmLogin(h, node.dataset.connLlmLogin)))
+    page.querySelectorAll('[data-conn-llm-disconnect]').forEach(node => node.addEventListener('click', async () => {
+      try { const result = await h.api.delete(`${LLM}/key/${encodeURIComponent(node.dataset.connLlmDisconnect)}`); h.toast(result?.removed ? 'Getrennt.' : 'Nichts zu trennen.') } catch (error) { h.fail(error) }
       await load(h, true)
     }))
     page.querySelector('[data-conn-search]')?.addEventListener('submit', event => {

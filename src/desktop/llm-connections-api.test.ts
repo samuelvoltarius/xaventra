@@ -56,7 +56,10 @@ describe('Desktop: KI-Modelle verbinden', () => {
             expect(JSON.parse(text)).toMatchObject({ ok: true, maske: '••••wxyz', modelle: 1 })
             const bad = await fetch(`${srv.base}/api/desktop/llm-connections/key`, json({ provider: 'anthropic', key: 'zu kurz' }))
             expect(bad.status).toBe(400)
-            expect(await bad.json()).toMatchObject({ ok: false, grund: 'format' })
+            const badBody = await bad.json() as any
+            expect(badBody).toMatchObject({ ok: false, grund: 'format' })
+            // The one UI shows `error` of a failed request: the plain reason must arrive there.
+            expect(badBody.error).toBe(badBody.meldung)
             const list = await (await fetch(`${srv.base}/api/desktop/llm-connections`, { headers: { 'x-test-owner': '1' } })).json() as any
             expect(list.verbunden.find((item: any) => item.id === 'cloud:anthropic')).toMatchObject({ maske: '••••wxyz' })
             const anon = await (await fetch(`${srv.base}/api/desktop/llm-connections`)).text()

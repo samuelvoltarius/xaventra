@@ -4,7 +4,8 @@ const WEB = window.novaDesktop.web === true
 
 // Xaventra arbeitet selbstständig. Diese Oberfläche ist ein Fenster zum
 // Mitschauen und Knöpfe-Drücken: Heute (was sie tut, wo sie dich braucht),
-// Unterhaltung, Arbeit, System, Gedächtnis. Fachwerkzeuge liegen unter „Mehr“.
+// Unterhaltung, Arbeit, System, Gedächtnis, Verbindungen, Werkzeugkasten.
+// Fachwerkzeuge liegen unter „Mehr“.
 
 const state = {
   section: 'heute',
@@ -44,12 +45,12 @@ const NAV_MAIN = [
   ['system', 'System', 'server'],
   ['gedaechtnis', 'Gedächtnis', 'brain'],
   ['verbindungen', 'Verbindungen', 'plug'],
+  // Owner-Entscheidung 02.10.: Werkzeugkasten in die Hauptleiste (Paket D, eigene Datei werkzeugkasten.js).
+  ['werkzeugkasten', 'Werkzeug\u00ADkasten', 'wrench'], // weiches Trennzeichen: passt in die schmale Leiste
 ]
 const NAV_BOTTOM = [['mehr', 'Mehr', 'grid'], ['settings', 'Einstellungen', 'settings']]
 // Fachseiten unter „Mehr“: bleiben erreichbar, stehen aber nicht im Weg.
 const MORE_PAGES = {
-  // 2.85 Paket D: eigene Seite in werkzeugkasten.js.
-  werkzeugkasten: { title: 'Werkzeugkasten', icon: 'wrench', text: 'Programme, die Xaventra stärker machen – mit einem Knopf installieren und wieder entfernen.' },
   trust: { title: 'Belege & Reparaturen', icon: 'fileCheck', text: 'Jeder Arbeitslauf mit Werkzeugen, Prüfung und Kosten. Doctor-Reparaturen, die eine PATCH_GATE-Freigabe brauchen.' },
   bots: { title: 'Spezialisten', icon: 'users', text: 'Aufgaben-Profile und angebundene Hermes-/OpenClaw-Agenten. Xaventra zieht sie selbst hinzu.' },
   modules: { title: 'Studio', icon: 'sparkles', text: 'Sprache, Sehen, CAD, Druck, Smart Home: Arbeitsräume für einzelne Fähigkeiten.' },
@@ -58,7 +59,7 @@ const MORE_PAGES = {
   start: { title: 'Erster Start', icon: 'sparkles', text: 'Was Xaventra beim Einrichten selbst getan hat; Name, Telegram koppeln, gefundene Dienste.' },
 }
 const SECTION_ALIAS = { memory: 'gedaechtnis' }
-const KNOWN_SECTIONS = new Set(['heute', 'chat', 'arbeit', 'system', 'gedaechtnis', 'verbindungen', 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
+const KNOWN_SECTIONS = new Set([...NAV_MAIN.map(([id]) => id), 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
 
 // ── Symbole (eine Linienfamilie, 24er Raster) ───────────────
 const ICONS = {
@@ -362,7 +363,7 @@ function pageFor(section) {
   if (section === 'security') return subPage('security', securityView())
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
-  if (section === 'werkzeugkasten') return subPage('werkzeugkasten', window.Werkzeugkasten ? window.Werkzeugkasten.view(werkzeugkastenHelpers()) : loadingBlock('Werkzeugkasten wird geladen'))
+  if (section === 'werkzeugkasten') return window.Werkzeugkasten ? `<div class="page"><div class="page-inner">${window.Werkzeugkasten.view(werkzeugkastenHelpers())}</div></div>` : loadingBlock('Werkzeugkasten')
   if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
   return settingsView()
 }

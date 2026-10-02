@@ -61,7 +61,8 @@ describe('Verbindungen: Gefunden / Möglich / Verbunden (2.85 Paket A, Punkt 6)'
     it('listConnections() for the first start: flat, status gefunden | moeglich | verbunden', async () => {
         const list = await listConnections(deps(tmp()))
         expect(list.filter(item => item.status === 'gefunden').map(item => item.title)).toEqual(['Home Assistant', 'Gmail'])
-        expect(list.filter(item => item.status === 'verbunden').map(item => item.title)).toEqual(['Google Kalender'])
+        // 2.85 Integration: a set-up device in use counts as connected (the first start shows real numbers).
+        expect(list.filter(item => item.status === 'verbunden').map(item => item.title)).toEqual(['Google Kalender', 'Drucker (Klipper)'])
         expect(list.some(item => item.status === 'moeglich' && item.connectorId === 'github')).toBe(true)
         expect(list.some(item => item.status === 'moeglich' && item.connectorId === 'google-calendar')).toBe(false)
     })

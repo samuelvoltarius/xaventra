@@ -57,7 +57,12 @@ export interface PossibleItem {
     status: 'moeglich' | 'verbunden' | 'wartet'
     /** Owner step needed before a login is possible (e.g. own OAuth client at Google). */
     hinweis?: string
+    /** KI-Modelle (Paket C): connected with an API key or the provider's own account login, not with a card. */
+    llm?: LlmPossible
 }
+/** How a cloud model provider is connected (Paket C's routes; the key is entered once, never shown again). */
+export interface LlmPossible { provider: string; konto: string | null; kontoHinweis: string; keyUrl: string }
+export interface LlmConnected { provider: string; trennbar: boolean; maske: string | null }
 export interface ConnectedItem {
     id: string
     connectorId: string
@@ -71,16 +76,21 @@ export interface ConnectedItem {
     aktion: 'anmelden' | 'zugang' | 'keine'
     /** token connectors: the fields the owner enters once (names only, never values). */
     felder?: Array<{ env: string; label: string; geheim: boolean }>
+    llm?: LlmConnected
 }
 export interface ConnectionsOverview {
     gefunden: FoundItem[]
-    moeglich: { gruppen: Array<{ kategorie: ConnectorKategorie; label: string; eintraege: PossibleItem[] }>; verzeichnis: { anzahl: number; stand: string | null; vollstaendig: boolean } }
+    moeglich: { gruppen: Array<{ kategorie: ViewKategorie; label: string; eintraege: PossibleItem[] }>; verzeichnis: { anzahl: number; stand: string | null; vollstaendig: boolean } }
     verbunden: ConnectedItem[]
     stand: string
 }
 
-/** Dock for other packages (Paket C: KI-Modelle, Suche/Hilfsdienste). They scan; this view only shows. */
-export interface ConnectionSource { id: string; list(): Promise<FoundItem[]> | FoundItem[] }
+/**
+ * Dock for other packages (Paket C: KI-Modelle, Suche/Hilfsdienste). They scan; this view only shows.
+ * An item is a finding unless it says `status: 'moeglich' | 'verbunden'` (cloud model providers).
+ */
+export type SourceItem = FoundItem & ({ status?: 'gefunden' } | { status: 'moeglich'; llm?: LlmPossible } | { status: 'verbunden'; llm?: LlmConnected })
+export interface ConnectionSource { id: string; list(): Promise<SourceItem[]> | SourceItem[] }
 const sources = new Map<string, ConnectionSource>()
 export function registerConnectionSource(source: ConnectionSource): void {
     if (!/^[a-z][a-z0-9-]{1,39}$/.test(String(source?.id || '')) || typeof source.list !== 'function') throw new Error('Ungültige Verbindungs-Quelle')
@@ -186,26 +196,57 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             verbunden: connectorId ? connectedIds.has(connectorId) : false,
         })
     }
+    const sourcePossible: Array<PossibleItem & { kategorie: ViewKategorie }> = []
+    const sourceConnected: ConnectedItem[] = []
     for (const source of sources.values()) {
         try {
             for (const item of (await source.list()).slice(0, 50)) {
                 if (!item || typeof item.title !== 'string') continue
-                gefunden.push({ ...item, id: `${source.id}:${String(item.id).slice(0, 120)}`, title: item.title.slice(0, 80), wirkung: String(item.wirkung || '').slice(0, 160), fund: String(item.fund || '').slice(0, 120) })
+                const id = `${source.id}:${String(item.id).slice(0, 120)}`
+                const title = item.title.slice(0, 80)
+                const wirkung = String(item.wirkung || '').slice(0, 160)
+                const kategorie: ViewKategorie = item.kategorie in VIEW_KATEGORIE_LABEL ? item.kategorie : 'weitere'
+                const datenklasse = item.datenklasse === 'cloud' ? 'cloud' as const : 'lokal' as const
+                const connectorId = String(item.connectorId || id).slice(0, 80)
+                if (item.status === 'moeglich') {
+                    sourcePossible.push({
+                        kategorie, connectorId, title, wirkung, datenklasse, auth: 'token', trust: 'geprueft', icon: item.icon || null, status: 'moeglich',
+                        ...(item.llm ? { llm: { provider: String(item.llm.provider), konto: item.llm.konto || null, kontoHinweis: String(item.llm.kontoHinweis || '').slice(0, 240), keyUrl: String(item.llm.keyUrl || '') } } : {}),
+                    })
+                } else if (item.status === 'verbunden') {
+                    sourceConnected.push({
+                        id, connectorId, title, status: 'verbunden', trust: 'geprueft', datenklasse, icon: item.icon || null, aktion: 'keine',
+                        darf: { lesen: [], fragt: [], nie: [], sonst: datenklasse === 'cloud' ? 'Nur Rückfall, wenn lokal nicht reicht; Privates geht nie in die Cloud.' : 'bleibt lokal.' },
+                        ...(item.llm ? { llm: { provider: String(item.llm.provider), trennbar: item.llm.trennbar === true, maske: item.llm.maske ? String(item.llm.maske).slice(-8) : null } } : {}),
+                    })
+                } else {
+                    gefunden.push({
+                        id, title, kategorie, wirkung, fund: String(item.fund || '').slice(0, 120), verbunden: item.verbunden === true,
+                        ...(item.connectorId ? { connectorId: String(item.connectorId) } : {}), ...(item.datenklasse ? { datenklasse } : {}), ...(item.icon ? { icon: item.icon } : {}),
+                    })
+                }
             }
         } catch { /* a broken source shows nothing, never breaks the view */ }
     }
 
-    const gruppen = (Object.keys(KATEGORIE_LABEL) as ConnectorKategorie[]).map(kategorie => ({
-        kategorie, label: KATEGORIE_LABEL[kategorie],
+    const gruppen: ConnectionsOverview['moeglich']['gruppen'] = (Object.keys(KATEGORIE_LABEL) as ConnectorKategorie[]).map(kategorie => ({
+        kategorie: kategorie as ViewKategorie, label: KATEGORIE_LABEL[kategorie],
         eintraege: catalog.entries.filter(entry => entry.kategorie === kategorie).map(entry => ({
             connectorId: entry.name, title: entry.title, wirkung: entry.wirkung, datenklasse: entry.datenklasse, auth: entry.auth_typ, trust: 'geprueft' as const,
             icon: resolveConnectorIcon(entry), status: connectedIds.has(entry.name) ? 'verbunden' as const : pendingIds.has(entry.name) ? 'wartet' as const : 'moeglich' as const,
             ...(hinweisFor(entry, deps) ? { hinweis: hinweisFor(entry, deps) } : {}),
         })),
     })).filter(group => group.eintraege.length)
+    // Docked categories (e.g. KI-Modelle) follow the catalog groups, one group per category.
+    for (const item of sourcePossible) {
+        const { kategorie, ...entry } = item
+        let group = gruppen.find(candidate => candidate.kategorie === kategorie)
+        if (!group) { group = { kategorie, label: VIEW_KATEGORIE_LABEL[kategorie], eintraege: [] }; gruppen.push(group) }
+        if (!group.eintraege.some(existing => existing.connectorId === entry.connectorId)) group.eintraege.push(entry)
+    }
     const cache = readDirectoryCache(deps.directoryCachePath)
 
-    const verbunden: ConnectedItem[] = connections.map(record => {
+    const verbunden: ConnectedItem[] = [...connections.map(record => {
         const manifest = record.trust === 'geprueft' ? manifestOf(record.connectorId) : undefined
         return {
             id: record.id, connectorId: record.connectorId, title: record.title, status: record.status, trust: record.trust, datenklasse: record.datenklasse,
@@ -213,8 +254,8 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             icon: manifest ? resolveConnectorIcon(manifest) : null,
             ...(record.auth === 'token' && manifest?.zugang ? { felder: manifest.zugang.map(field => ({ ...field })) } : {}),
             aktion: record.status === 'wartet-auf-zugang' ? 'zugang' : ['wartet-auf-anmeldung', 'abgelaufen'].includes(record.status) && record.auth !== 'keiner' ? 'anmelden' : 'keine',
-        }
-    })
+        } as ConnectedItem
+    }), ...sourceConnected]
     return {
         gefunden, verbunden,
         moeglich: { gruppen, verzeichnis: { anzahl: cache.entries.length, stand: cache.fetchedAt ? new Date(cache.fetchedAt).toISOString() : null, vollstaendig: cache.complete } },
@@ -228,6 +269,11 @@ export async function listConnections(deps: ViewDeps = {}): Promise<ConnectionEn
     const view = await collectConnections(deps)
     const found = view.gefunden.filter(item => !item.verbunden).map(item => ({ id: item.id, title: item.title, status: 'gefunden' as const, kategorie: item.kategorie, datenklasse: item.datenklasse, connectorId: item.connectorId, wirkung: item.wirkung }))
     const connected = view.verbunden.filter(item => item.status === 'verbunden').map(item => ({ id: item.id, title: item.title, status: 'verbunden' as const, kategorie: 'verbunden', datenklasse: item.datenklasse, connectorId: item.connectorId, wirkung: '' }))
+    // Found and already in use (a set-up device, a local model): connected, counted once.
+    const connectedIds = new Set(connected.map(item => item.connectorId))
+    const inUse = view.gefunden.filter(item => item.verbunden && !(item.connectorId && connectedIds.has(item.connectorId)))
+        .map(item => ({ id: item.id, title: item.title, status: 'verbunden' as const, kategorie: item.kategorie, datenklasse: item.datenklasse, connectorId: item.connectorId, wirkung: item.wirkung }))
+    connected.push(...inUse)
     const possible = view.moeglich.gruppen.flatMap(group => group.eintraege.filter(item => item.status === 'moeglich').map(item => ({ id: `katalog:${item.connectorId}`, title: item.title, status: 'moeglich' as const, kategorie: group.kategorie, datenklasse: item.datenklasse, connectorId: item.connectorId, wirkung: item.wirkung })))
     return [...found, ...connected, ...possible]
 }
@@ -246,6 +292,8 @@ export async function formatConnectionsText(deps: ViewDeps = {}): Promise<string
     lines.push(connected.length ? `Verbunden: ${connected.map(item => item.title).join(', ')}` : 'Verbunden: noch nichts')
     const waiting = view.verbunden.filter(item => item.status !== 'verbunden')
     if (waiting.length) lines.push(`Wartet: ${waiting.map(item => `${item.title} (${item.status === 'abgelaufen' ? 'Anmeldung abgelaufen' : item.status === 'wartet-auf-zugang' ? 'Zugang fehlt' : item.status === 'fehler' ? 'Fehler' : 'Anmeldung fehlt'})`).join(', ')}`)
+    const inUse = view.gefunden.filter(item => item.verbunden && item.datenklasse === 'lokal' && !item.connectorId)
+    if (inUse.length) lines.push(`Lokal in Nutzung: ${inUse.slice(0, 6).map(item => item.title).join(', ')}`)
     const found = view.gefunden.filter(item => !item.verbunden)
     if (found.length) lines.push(`Gefunden: ${found.slice(0, 6).map(item => item.title).join(', ')}`)
     for (const group of view.moeglich.gruppen) {

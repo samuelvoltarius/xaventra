@@ -55,7 +55,8 @@ describe('Desktop-Ansicht „Erster Start“ (2.85 Paket B, Punkt 3)', () => {
         expect(html.match(/<section class="section">/g)).toHaveLength(4)
         expect(html).toContain('https://t.me/BotFather')
         expect(html).toMatch(/name="token" type="password" autocomplete="off"/)
-        expect(html).toContain('Die Ansicht „Verbindungen“ kommt')
+        // Without the dock (connection-docks.ts) the step only says the view is not reachable.
+        expect(html).toContain('Die Ansicht „Verbindungen“ ist gerade nicht erreichbar')
     })
 
     it('once a bot exists it is one button, then a QR code and a link; paired shows who', async () => {

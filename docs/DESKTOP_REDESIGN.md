@@ -37,7 +37,9 @@ dem Paket, der Main liefert dieselben Dateien im Browser aus
 | **Arbeit** | Missionen (Schritte, Versuch, Übergabe), Aufträge (aktiv + Verlauf), Delegationen mit Prüfung, Verantwortungen (erfüllt/verletzt), „macht sie inzwischen selbst“ (Vertrauensleiter + dauerhafte Erlaubnisse), Geplant (Planer-Jobs) | `responsibility-runtime` (`readArbeitState`), `autonomous-executor`, `delegation`, `action-policy`, `planner` |
 | **System** | Knoten mit Messwerten und 24-h-Verlauf, Erreichbarkeit, Vorausschau (Platte/RAM, Zertifikate, Sicherungen), Nachtwache, Desktops (Ansehen/Übernehmen im eigenen Fenster), VMs, Modelle | `watch` (`getWatchOverview`, Messproben), `desktop-direct`, `infra/proxmox` (`readVmsInventory`), Modellkatalog |
 | **Gedächtnis** | Entscheidungen (kausales Gedächtnis), Werkzeuge der Schmiede (ohne Code), Wissen (Wissenspakete, bestätigte Fakten) | `decisions`, `skill-builder`, Memory-Katalog/-Governance |
-| **Mehr** | Belege & Reparaturen (Ergebnisakte, Doctor/PATCH_GATE), Spezialisten, Studio, Abwehr, Knoten aufnehmen | bestehende Desktop-Endpunkte |
+| **Verbindungen** (2.85) | Gefunden / Möglich / Verbunden für Dienste (geprüfter Katalog, MCP-Verzeichnis), KI-Modelle (lokal gefunden, Cloud per API-Key oder erlaubter Konto-Anmeldung) und Hilfsdienste (SearXNG) — eine Stelle | `connections-view` (`collectConnections`), Quelle `ki-modelle` aus `llm-connections` (`connection-docks.ts`) |
+| **Werkzeugkasten** (2.85, Owner-Entscheidung 02.10.: Hauptleiste) | Programme, die sie stärker machen: Status, passender Knoten, Bedarf, Installieren/Entfernen über die Karte | `werkzeugkasten-view`, Installationskatalog |
+| **Mehr** | Belege & Reparaturen (Ergebnisakte, Doctor/PATCH_GATE), Spezialisten, Studio, Abwehr, Knoten aufnehmen, Erster Start | bestehende Desktop-Endpunkte |
 | **Einstellungen** | Verbindung, Token, Farbschema (System/Hell/Dunkel), Unterhaltung, Projektordner | lokal (Electron) bzw. Browser |
 
 ## Neue Lese-Endpunkte (nur Owner)

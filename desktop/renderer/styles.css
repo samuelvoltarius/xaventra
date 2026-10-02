@@ -115,7 +115,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .brand-mark i { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--success); border: 2px solid var(--rail); }
 .brand-mark.offline i { background: var(--danger); }
 .rail-button { position: relative; width: 100%; min-height: 56px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); display: grid; place-items: center; align-content: center; gap: 4px; padding: 6px 2px; transition: background 150ms ease, color 150ms ease; }
-.rail-button .label { font-size: 11px; font-weight: 600; line-height: 1.15; text-align: center; max-width: 84px; white-space: nowrap; letter-spacing: -.01em; }
+.rail-button .label { font-size: 11px; font-weight: 600; line-height: 1.15; text-align: center; max-width: 78px; white-space: normal; hyphens: manual; overflow-wrap: normal; letter-spacing: -.01em; }
 .rail-button:hover { background: var(--surface-3); color: var(--text); }
 .rail-button.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
 .rail-button.active::before { content: ""; position: absolute; left: -8px; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }

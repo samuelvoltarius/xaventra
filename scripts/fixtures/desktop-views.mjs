@@ -129,5 +129,62 @@ export function createFixtureViews(now = Date.now()) {
     { kind: 'preference', content: 'Berichte kurz halten, höchstens fünf Punkte je Abschnitt.', status: 'canonical', confidence: 0.9, provenance: [{ source: 'gespraech' }] },
   ] }
   const memoryAssets = { assets: [{ id: 'asset-1', name: 'Haus und Geräte', kind: 'wiki', version: 3, visibility: 'private', status: 'active', description: 'Wo welches Gerät steht und wie es heißt.', source: 'nova-desktop', updatedAt: ago(now, 2000) }], bindings: [] }
-  return { heute, arbeit, system, vms, gedaechtnis, memory, memoryAssets }
+  // 2.85: Werkzeugkasten, Verbindungen (incl. KI-Modelle from Paket C), Erster Start. Invented values only.
+  const tool = (over) => ({ detail: 'Geprüfter Katalogeintrag mit Installations-, Prüf- und Rückweg.', bedarf: [], aktualitaet: { status: 'aktuell', stand: '2026-10', text: 'Aktuell laut Katalog (Stand 10/2026).' }, katalogId: null, groesseMb: null, knopf: null, hinweis: '', warteschlange: null, empfohlen: false, ...over })
+  const werkzeugkasten = {
+    generatedAt: new Date(now).toISOString(), knoten: [{ id: 'fixture-main', bewertet: true }, { id: 'fixture-one', bewertet: true }],
+    hinweis: 'Installiert wird erst nach deinem Ja auf der Karte.', probleme: [],
+    gruppen: [
+      { faehigkeit: 'stt', titel: 'Sprache verstehen', eintraege: [
+        tool({ id: 'faster-whisper', name: 'faster-whisper', nutzen: 'Ich verstehe Sprachnachrichten, ohne sie in die Cloud zu schicken.', faehigkeit: 'stt', status: 'passt', statusText: 'passt auf fixture-one', knoten: 'fixture-one', empfohlen: true, bedarf: ['3× Sprachnachricht ohne Spracherkennung (14 Tage)'], katalogId: 'faster-whisper', groesseMb: 1500, knopf: { art: 'installieren', katalogId: 'faster-whisper' } }),
+      ] },
+      { faehigkeit: 'search', titel: 'Suchen', eintraege: [
+        tool({ id: 'searxng', name: 'SearXNG', nutzen: 'Private Websuche ohne Key – wird vor Cloud-Suchen genutzt.', faehigkeit: 'search', status: 'laeuft', statusText: 'läuft im eigenen Netz (search.example.com)', knoten: 'fixture-main' }),
+      ] },
+      { faehigkeit: 'tts', titel: 'Sprechen und Medien', eintraege: [
+        tool({ id: 'piper', name: 'Piper', nutzen: 'Ich kann Antworten vorlesen, lokal.', faehigkeit: 'tts', status: 'passt', statusText: 'passt auf fixture-main', knoten: 'fixture-main', katalogId: 'piper-tts', groesseMb: 120, knopf: { art: 'installieren', katalogId: 'piper-tts' } }),
+        tool({ id: 'ffmpeg', name: 'ffmpeg', nutzen: 'Ich kann Audio und Video umwandeln.', faehigkeit: 'media', status: 'installiert', statusText: 'installiert auf fixture-main', knoten: 'fixture-main' }),
+      ] },
+    ],
+  }
+  const svg = (letter, color) => `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><rect width="28" height="28" rx="6" fill="${color}"/><text x="14" y="19" font-size="14" text-anchor="middle" fill="#fff" font-family="sans-serif">${letter}</text></svg>`).toString('base64')}`
+  const verbindungen = {
+    stand: new Date(now).toISOString(),
+    gefunden: [
+      { id: 'geraet:homeassistant:ha.example.com:8123', title: 'Home Assistant', kategorie: 'zuhause', wirkung: 'kann dann Lichter, Steckdosen und Geräte schalten und den Zustand lesen', fund: 'im Netz ha.example.com:8123', connectorId: 'home-assistant', datenklasse: 'lokal', icon: svg('H', '#41BDF5'), verbunden: false },
+      { id: 'ki-modelle:lokal:ollama@http://gpu.example.com:11434', title: 'Ollama im eigenen Netz (gpu.example.com)', kategorie: 'ki-modelle', wirkung: '3 lokale Modelle — privat, ohne Frage nutzbar', fund: 'im Netz gpu.example.com:11434', datenklasse: 'lokal', verbunden: true },
+      { id: 'ki-modelle:lokal:searxng@http://search.example.com:8088', title: 'SearXNG im eigenen Netz (search.example.com)', kategorie: 'hilfsdienste', wirkung: 'Private Websuche ohne Key — wird vor Cloud-Suchen genutzt', fund: 'im Netz search.example.com:8088', datenklasse: 'lokal', verbunden: true },
+      { id: 'geraet:paperless:docs.example.com:8000', title: 'Paperless-ngx', kategorie: 'dateien', wirkung: 'kann dann Dokumente suchen und lesen', fund: 'im Netz docs.example.com:8000', connectorId: 'paperless', datenklasse: 'lokal', verbunden: false },
+    ],
+    verbunden: [
+      { id: 'c-google-calendar', connectorId: 'google-calendar', title: 'Google Kalender', status: 'verbunden', trust: 'geprueft', datenklasse: 'cloud', icon: svg('K', '#4285F4'), aktion: 'keine', letzterTest: { werkzeuge: 6 },
+        darf: { lesen: ['list_events'], fragt: ['create_event'], nie: ['delete_event'], sonst: 'Unbekannte Werkzeuge fragen dich; Privates geht nie in die Cloud.' } },
+      { id: 'ki-modelle:cloud:openrouter', connectorId: 'llm:openrouter', title: 'OpenRouter', status: 'verbunden', trust: 'geprueft', datenklasse: 'cloud', icon: null, aktion: 'keine', llm: { provider: 'openrouter', trennbar: true, maske: '••••a1b2' },
+        darf: { lesen: [], fragt: [], nie: [], sonst: 'Nur Rückfall, wenn lokal nicht reicht; Privates geht nie in die Cloud.' } },
+    ],
+    moeglich: {
+      verzeichnis: { anzahl: 1240, stand: ago(now, 600), vollstaendig: true },
+      gruppen: [
+        { kategorie: 'zuhause', label: 'Zuhause', eintraege: [{ connectorId: 'home-assistant', title: 'Home Assistant', wirkung: 'Lichter, Steckdosen und Geräte schalten', datenklasse: 'lokal', auth: 'ha-login', trust: 'geprueft', icon: svg('H', '#41BDF5'), status: 'moeglich' }] },
+        { kategorie: 'kalender', label: 'Kalender', eintraege: [{ connectorId: 'google-calendar', title: 'Google Kalender', wirkung: 'Termine lesen und – nach deinem Ja – eintragen', datenklasse: 'cloud', auth: 'oauth', trust: 'geprueft', icon: svg('K', '#4285F4'), status: 'verbunden' }] },
+        { kategorie: 'entwicklung', label: 'Entwicklung', eintraege: [{ connectorId: 'github', title: 'GitHub', wirkung: 'Issues und Pull Requests lesen', datenklasse: 'cloud', auth: 'oauth', trust: 'geprueft', icon: svg('G', '#24292F'), status: 'moeglich', hinweis: 'Vorher einmal eine GitHub-OAuth-App anlegen (Owner) und ihre Client-ID eintragen.' }] },
+        { kategorie: 'ki-modelle', label: 'KI-Modelle', eintraege: [
+          { connectorId: 'llm:anthropic', title: 'Anthropic (Claude)', wirkung: 'Claude-Modelle über die Anthropic-API — nur nicht-private Inhalte', datenklasse: 'cloud', auth: 'token', trust: 'geprueft', icon: null, status: 'moeglich', llm: { provider: 'anthropic', konto: null, kontoHinweis: 'Anthropic erlaubt Drittanwendungen keine Anmeldung mit Claude-Konto — bitte einen API-Key verwenden.', keyUrl: 'https://platform.claude.com/settings/keys' } },
+          { connectorId: 'llm:openai', title: 'OpenAI (ChatGPT)', wirkung: 'Cloud-Modelle von OpenAI als Rückfall — nur nicht-private Inhalte', datenklasse: 'cloud', auth: 'token', trust: 'geprueft', icon: null, status: 'moeglich', llm: { provider: 'openai', konto: 'codex-app-server', kontoHinweis: 'Anmeldung mit ChatGPT-Konto nur über die offizielle Codex-App.', keyUrl: 'https://platform.openai.com/api-keys' } },
+        ] },
+      ],
+    },
+  }
+  const onboarding = {
+    firstStart: true, state: 'pending', ownerName: 'Alex',
+    doctor: { running: false, report: { startedAt: ago(now, 5), finishedAt: ago(now, 4), hardware: { platform: 'linux', arch: 'x64', cpus: 8, memoryGb: 16, gpu: null }, localModel: null, items: [
+      { step: 'hardware', status: 'getan', text: 'Rechner erkannt: 8 Kerne, 16 GB Speicher, keine GPU.' },
+      { step: 'modell', status: 'vorgeschlagen', catalogId: 'ollama-model:qwen3.5-9b', proposalId: 'iq-0123456789ab', text: 'Kein lokales Modell gefunden. Vorschlag: qwen3.5-9b (passt zu 16 GB). Ein Ja auf der Karte genügt, dann installiere ich es.' },
+      { step: 'einrichtung', status: 'getan', text: 'Gedächtnis eingerichtet: eigenes Einbettungsmodell, lokal.' },
+    ] } },
+    telegram: { configured: false, running: false, botUsername: null, paired: false, pairedWith: null, pairingPending: false, pairingExpiresAt: null, restartNeeded: false },
+    connections: { available: true, gefunden: 2, verbunden: 4, beispiele: ['Home Assistant', 'Paperless-ngx'], view: 'verbindungen' },
+    questions: [{ id: 'name', done: true }, { id: 'telegram', done: false }, { id: 'verbindungen', done: false, available: true }],
+  }
+  return { heute, arbeit, system, vms, gedaechtnis, memory, memoryAssets, werkzeugkasten, verbindungen, onboarding }
 }

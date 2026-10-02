@@ -247,3 +247,24 @@ describe('Owner entfernt ein selbst abgeleitetes Ziel', () => {
         expect(again.targets.some(target => target.name === 'Knoten xaventra-ns1')).toBe(false)
     })
 })
+
+describe('2.85 Integration I ← A/C: neue Funde der Discovery werden ohne Zusatzregel Wächter-Ziele', () => {
+    it('selbst gehostete Dienste (Paket A) und Hilfsdienste im eigenen Netz (Paket C) erscheinen als Ziele', () => {
+        const sources = derivedSourcesFrom({
+            localNodeId: 'xaventra-spark',
+            devices: [
+                { type: 'paperless', name: 'Paperless-ngx (Dokumente)', host: 'docs.example.com', port: 8000, status: 'gefunden' },
+                { type: 'n8n', name: 'n8n (Automationen)', host: 'flows.example.com', port: 5678, status: 'gefunden' },
+                { type: 'immich', name: 'Immich (Fotos)', host: 'fotos.example.com', port: 2283, status: 'abgelehnt' },
+            ],
+            scanServices: [{ name: 'searxng', host: 'search.example.com', port: 8088, status: 'running', sourceNode: 'local', metadata: { source: 'own-network' } }],
+        })
+        const names = deriveWatchTargets(sources).targets.map(target => `${target.name} ${target.host}:${target.port} ${target.origin}`)
+        expect(names).toEqual(expect.arrayContaining([
+            'Paperless-ngx (Dokumente) docs.example.com:8000 selbst',
+            'n8n (Automationen) flows.example.com:5678 selbst',
+            'KI-Dienst searxng search.example.com:8088 selbst',
+        ]))
+        expect(names.some(name => name.includes('fotos.example.com'))).toBe(false)
+    })
+})

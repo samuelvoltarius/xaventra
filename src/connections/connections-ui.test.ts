@@ -51,4 +51,56 @@ describe('Desktop-Ansicht „Verbindungen“ (2.85 Paket A, Punkt 6)', () => {
             expect(rendered).toContain('Fragt dich: create_draft')
         })
     })
+
+    it('Owner-Entscheidung 02.10.: Werkzeugkasten und Verbindungen stehen in der Hauptleiste, nicht unter „Mehr“', () => {
+        const app = file('desktop/renderer/app.js')
+        const block = (name: string) => {
+            const start = app.indexOf(`const ${name} = `)
+            const open = app.indexOf(name === 'MORE_PAGES' ? '{' : '[', start)
+            let depth = 0
+            for (let i = open; i < app.length; i++) {
+                if ('[{'.includes(app[i])) depth++
+                if (']}'.includes(app[i]) && --depth === 0) return runInNewContext(`(${app.slice(open, i + 1)})`)
+            }
+            throw new Error(`${name} fehlt`)
+        }
+        const main = block('NAV_MAIN').map((entry: string[]) => entry[0])
+        expect(main).toEqual(expect.arrayContaining(['heute', 'verbindungen', 'werkzeugkasten']))
+        expect(main.indexOf('werkzeugkasten')).toBe(main.indexOf('verbindungen') + 1)
+        expect(Object.keys(block('MORE_PAGES'))).not.toContain('werkzeugkasten')
+        // Its own page: no "zurück zu Mehr" link.
+        expect(app).not.toMatch(/subPage\('werkzeugkasten'/)
+    })
+
+    it('KI-Modelle (Paket C) in „Verbindungen“: API-Key einmal einfügen, Konto-Anmeldung nur wo erlaubt, Trennen über den eigenen Weg', () => {
+        const sandbox: any = { window: {}, document: {}, Date, Number, String, Object, Promise, encodeURIComponent, URLSearchParams }
+        runInNewContext(file('desktop/renderer/connections.js'), sandbox)
+        const ui = sandbox.window.XaventraConnections
+        const esc = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' } as any)[char])
+        const h = { esc, attr: esc, icon: () => '', toast: () => undefined, fail: () => undefined, rerender: () => undefined, api: {} }
+        const data = {
+            gefunden: [{ id: 'ki-modelle:lokal:ollama', title: 'Ollama im eigenen Netz (192.168.1.30)', kategorie: 'ki-modelle', fund: 'im Netz 192.168.1.30:11434', wirkung: '2 lokale Modelle — privat, ohne Frage nutzbar', datenklasse: 'lokal', verbunden: true, icon: null }],
+            moeglich: { gruppen: [{ kategorie: 'ki-modelle', label: 'KI-Modelle', eintraege: [
+                { connectorId: 'llm:anthropic', title: 'Anthropic (Claude)', wirkung: 'Claude-Modelle', datenklasse: 'cloud', status: 'moeglich', icon: null, llm: { provider: 'anthropic', konto: null, kontoHinweis: 'nur API-Key', keyUrl: 'https://platform.claude.com/settings/keys' } },
+                { connectorId: 'llm:openrouter', title: 'OpenRouter', wirkung: 'Viele Modelle', datenklasse: 'cloud', status: 'moeglich', icon: null, llm: { provider: 'openrouter', konto: 'openrouter-pkce', kontoHinweis: 'offizielle Anmeldung', keyUrl: 'https://openrouter.ai/settings/keys' } },
+            ] }], verzeichnis: { anzahl: 0 } },
+            verbunden: [{ id: 'ki-modelle:cloud:openai', connectorId: 'llm:openai', title: 'OpenAI (ChatGPT)', status: 'verbunden', trust: 'geprueft', datenklasse: 'cloud', darf: { lesen: [], fragt: [], nie: [], sonst: 'Privates geht nie in die Cloud.' }, aktion: 'keine', icon: null, llm: { provider: 'openai', trennbar: true, maske: '••••1234' } }],
+        }
+        let rendered = ''
+        const page = { querySelector: () => null, querySelectorAll: () => [] }
+        sandbox.document.querySelector = () => page
+        return new Promise<void>(resolve => {
+            ui.mount({ ...h, api: { get: async () => data }, rerender: () => { rendered = ui.view(h); resolve() } })
+        }).then(() => {
+            expect(rendered).toContain('KI-Modelle')
+            expect(rendered).toContain('data-conn-llm-key="anthropic"')
+            expect(rendered).not.toContain('data-conn-llm-login="anthropic"')
+            expect(rendered).toContain('data-conn-llm-login="openrouter"')
+            expect(rendered).not.toContain('data-conn-connect="llm:')
+            expect(rendered).toContain('data-conn-llm-disconnect="openai"')
+            expect(rendered).not.toContain('data-conn-disconnect="ki-modelle:cloud:openai"')
+            expect(rendered).toContain('Key ••••1234')
+            expect(rendered).toContain('in Nutzung')
+        })
+    })
 })

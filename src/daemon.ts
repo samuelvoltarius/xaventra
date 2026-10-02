@@ -184,6 +184,15 @@ async function startDaemon() {
         if (applied.length) console.log(`[Nova] Verbundene KI-Anbieter: ${applied.join(', ')}`)
     } catch { /* optional */ }
 
+    // 2.85 Integration: the docks between Verbindungen (A), Erster Start (B), KI-Modelle (C)
+    // and the one need rule (F) — also for Telegram and the autonomy loop without the desktop API.
+    try {
+        const { registerConnectionDocks } = await import('./connections/connection-docks.js')
+        registerConnectionDocks()
+    } catch (error) {
+        console.warn(`[Nova] Verbindungen andocken fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
     // === PID File: Prevent duplicate daemons ===
     const pidFile = join(process.cwd(), '.nova.pid')
     try {

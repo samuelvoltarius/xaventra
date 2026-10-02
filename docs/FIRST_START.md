@@ -77,15 +77,17 @@ finished). The page says so.
 
 The first start builds no catalog and no connect flow. It only points to the
 Desktop view "Verbindungen" of package A through a small port,
-`src/onboarding/connections-port.ts`. Docking point when package A is merged,
-one line at its startup:
+`src/onboarding/connections-port.ts`. Docked at startup (daemon and desktop API,
+`src/connections/connection-docks.ts`):
 
 ```ts
 registerConnectionsProvider(listConnections)
 ```
 
 Only `status` (`gefunden`, `moeglich`, `verbunden`) and `title` of the entries
-are read. Until then the step says the view comes with the next package.
+are read. Found services already in use (a set-up device, a local model) count
+as `verbunden`; local models and SearXNG come from package C through the same
+view. Without the dock the step says the view is not available.
 
 ## Draft: adding more computers by code (not built yet)
 

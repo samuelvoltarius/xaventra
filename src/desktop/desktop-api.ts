@@ -45,6 +45,7 @@ import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallie
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
+import { registerConnectionDocks } from '../connections/connection-docks.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -580,6 +581,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     toolboxAction('/api/desktop/werkzeugkasten/installieren', werkzeugkastenInstallieren, 'katalogId')
     toolboxAction('/api/desktop/werkzeugkasten/entfernen', werkzeugkastenEntfernen, 'queueId')
     // 2.85 Paket A: Verbindungen (Gefunden / Möglich / Verbunden), owner only.
+    // Docks B → A (Erster Start), C → A (KI-Modelle, Hilfsdienste), F ↔ A (one need rule).
+    registerConnectionDocks()
     registerConnectionsApi(app, { ownerOnly })
 
     app.post('/api/desktop/karten/:id/antwort', async (req, res) => {

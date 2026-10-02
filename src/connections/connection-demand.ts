@@ -11,8 +11,9 @@
  *
  * Signals, only existing ones, fixed rules, no model:
  *  1. Outcome-Ledger: validated owner runs (`ownerKernelRun`) in which a tool of
- *     that service failed (manifest `bedarf.werkzeuge`, e.g. `hass_*`).
- *  2. Werkzeug-Schmiede: a "fehlendes Werkzeug" need whose name matches.
+ *     that service failed (manifest `bedarf.werkzeuge`, e.g. `hass_*`) — as the one
+ *     need classification `classifyNeed` (software-demand.ts) decides: `dienst:<id>`.
+ *  2. Werkzeug-Schmiede: a "fehlendes Werkzeug" need classified the same way.
  *  3. Owner requests (direct chat) with a service word (`bedarf.woerter`) while
  *     the service is not connected — stored as connector + time only.
  * A proposal is a thought with a button (Gedanken-Hub, Stufe fragen); its Ja is
@@ -26,6 +27,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { OutcomeRunView } from '../core/outcome-ledger.js'
 import { ownerKernelRun } from '../core/validator-failure-escalation.js'
+import { classifyNeed, registerServiceNeedRule, type NeedClassification, type ServiceNeedRule } from '../install/software-demand.js'
 import { getConnectorCatalog, KATEGORIE_LABEL, type ConnectorManifest } from './connector-catalog.js'
 
 export const DEMAND_WINDOW_MS = 14 * 24 * 60 * 60_000
@@ -70,8 +72,36 @@ function connectorForTool(name: string): string | null {
     return null
 }
 
-/** Signal 1: validated owner runs of the last 14 days that failed at a service tool. One run counts once per service. */
-export function demandFromRuns(runs: readonly OutcomeRunView[], now = Date.now()): ConnectionDemandSignal[] {
+/**
+ * The one service rule (2.85 F ↔ A, „ein Bedarf, ein Empfänger“): a tool of a catalog service
+ * (manifest `bedarf.werkzeuge`, e.g. `hass_*`) whose service is not connected means
+ * „Verbindung fehlt“. Registered with `classifyNeed` (software-demand.ts), so Bug-Finder,
+ * Schmiede and Scout leave it to „Verbindungen“; a failure while connected stays a tool fault.
+ */
+export function connectionServiceRule(options: { connected?: () => Set<string> } = {}): ServiceNeedRule {
+    return toolName => {
+        const connectorId = connectorForTool(toolName)
+        if (!connectorId) return null
+        let connected: Set<string>
+        try { connected = (options.connected || defaultConnected)() } catch { connected = new Set() }
+        return connected.has(connectorId) ? null : connectorId
+    }
+}
+let unregisterRule: (() => void) | null = null
+/** Exactly one connection rule is registered; docking again replaces it (connection-docks.ts). */
+export function dockConnectionServiceRule(options: { connected?: () => Set<string> } = {}): () => void {
+    unregisterRule?.()
+    const off = registerServiceNeedRule(connectionServiceRule(options))
+    unregisterRule = off
+    return () => { off(); if (unregisterRule === off) unregisterRule = null }
+}
+
+type Classify = (toolName: unknown, errorText?: unknown) => NeedClassification
+const serviceOf = (need: NeedClassification | undefined) =>
+    need?.kind === 'dienst' && need.service && manifests().some(manifest => manifest.name === need.service) ? need.service : null
+
+/** Signal 1: validated owner runs of the last 14 days that failed at a service tool (as `classifyNeed` decides). One run counts once per service. */
+export function demandFromRuns(runs: readonly OutcomeRunView[], now = Date.now(), classify: Classify = classifyNeed): ConnectionDemandSignal[] {
     const out: ConnectionDemandSignal[] = []
     for (const run of runs) {
         if (!run || !ownerKernelRun(run)) continue
@@ -80,7 +110,9 @@ export function demandFromRuns(runs: readonly OutcomeRunView[], now = Date.now()
         const seen = new Set<string>()
         for (const tool of run.tools || []) {
             if (tool?.success !== false) continue
-            const connectorId = connectorForTool(String(tool.toolName || ''))
+            let need: NeedClassification | undefined
+            try { need = classify(String(tool.toolName || ''), String(tool.result ?? tool.error ?? '').slice(0, 2_000)) } catch { need = undefined }
+            const connectorId = serviceOf(need)
             if (!connectorId || seen.has(connectorId)) continue
             seen.add(connectorId)
             out.push({ connectorId, source: 'owner-lauf', at, detail: String(tool.toolName).slice(0, 60) })
@@ -89,11 +121,13 @@ export function demandFromRuns(runs: readonly OutcomeRunView[], now = Date.now()
     return out
 }
 
-/** Signal 2: forge needs "fehlendes Werkzeug" (tool name only). */
-export function demandFromForgeNeeds(needs: ReadonlyArray<{ tool: string; at: string }>, now = Date.now()): ConnectionDemandSignal[] {
+/** Signal 2: forge needs "fehlendes Werkzeug" (tool name only), classified by the same place. */
+export function demandFromForgeNeeds(needs: ReadonlyArray<{ tool: string; at: string }>, now = Date.now(), classify: Classify = classifyNeed): ConnectionDemandSignal[] {
     const out: ConnectionDemandSignal[] = []
     for (const need of needs) {
-        const connectorId = connectorForTool(need?.tool)
+        let routed: NeedClassification | undefined
+        try { routed = classify(String(need?.tool || ''), '') } catch { routed = undefined }
+        const connectorId = serviceOf(routed)
         const at = Date.parse(String(need?.at || ''))
         if (connectorId && within(at, now)) out.push({ connectorId, source: 'schmiede', at, detail: String(need.tool).slice(0, 60) })
     }
@@ -230,3 +264,6 @@ function defaultSink(): ConnectionDemandSink {
         },
     }
 }
+
+// Wherever the connection need logic is loaded, its one rule is active (connection-docks.ts re-docks at start).
+dockConnectionServiceRule()

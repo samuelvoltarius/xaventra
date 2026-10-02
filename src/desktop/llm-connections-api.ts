@@ -38,7 +38,9 @@ function ownerOnly(options: LlmConnectionsApiOptions, req: Request, res: Respons
     return false
 }
 
-const failure = (res: Response, result: { ok: boolean }) => res.status(result.ok ? 200 : 400).json(result)
+// A failed step carries its plain reason also as `error` (the one UI shows `error` of a failed request).
+const withError = <T extends { ok: boolean; meldung?: string }>(result: T) => result.ok || !result.meldung ? result : { ...result, error: result.meldung }
+const failure = (res: Response, result: { ok: boolean; meldung?: string }) => res.status(result.ok ? 200 : 400).json(withError(result))
 
 export function registerLlmConnectionsApi(app: Express, options: LlmConnectionsApiOptions): void {
     const deps = options.deps || {}
@@ -54,7 +56,7 @@ export function registerLlmConnectionsApi(app: Express, options: LlmConnectionsA
     app.post('/api/desktop/llm-connections/key', async (req, res) => {
         if (!ownerOnly(options, req, res)) return
         try { failure(res, await connectLlmApiKey(req.body?.provider, req.body?.key, deps)) }
-        catch { res.status(500).json({ ok: false, meldung: 'Speichern fehlgeschlagen — der Key wurde nicht übernommen.' }) }
+        catch { res.status(500).json(withError({ ok: false, meldung: 'Speichern fehlgeschlagen — der Key wurde nicht übernommen.' })) }
     })
 
     app.delete('/api/desktop/llm-connections/key/:provider', async (req, res) => {
@@ -66,8 +68,8 @@ export function registerLlmConnectionsApi(app: Express, options: LlmConnectionsA
     app.post('/api/desktop/llm-connections/oauth/start', async (req, res) => {
         if (!ownerOnly(options, req, res)) return
         const info = findLlmProvider(req.body?.provider)
-        if (!info) return void res.status(404).json({ ok: false, meldung: 'Diesen Anbieter kenne ich nicht.' })
-        if (!info.konto.erlaubt) return void res.status(400).json({ ok: false, provider: info.id, meldung: info.konto.hinweis, quelle: info.konto.quelle, apiKey: true, keyUrl: info.keyUrl })
+        if (!info) return void res.status(404).json(withError({ ok: false, meldung: 'Diesen Anbieter kenne ich nicht.' }))
+        if (!info.konto.erlaubt) return void res.status(400).json(withError({ ok: false, provider: info.id, meldung: info.konto.hinweis, quelle: info.konto.quelle, apiKey: true, keyUrl: info.keyUrl }))
         try {
             if (info.konto.weg === 'openrouter-pkce') {
                 // A browser return works when this UI is opened on the same machine; otherwise
@@ -81,7 +83,7 @@ export function registerLlmConnectionsApi(app: Express, options: LlmConnectionsA
             const login = await (deps.codexLogin || (async (id: string) => (await import('../auth/codex-runtime.js')).beginCodexRuntimeLogin(id, 'device')))(principal)
             res.json({ ok: true, provider: info.id, weg: info.konto.weg, url: login.verificationUrl, code: login.userCode || null, hinweis: info.konto.hinweis })
         } catch {
-            res.status(502).json({ ok: false, provider: info.id, meldung: info.id === 'openai' ? 'Codex-Anmeldung nicht verfügbar (Codex nicht installiert?). Alternativ einen API-Key einfügen.' : 'Anmeldung konnte nicht gestartet werden.' })
+            res.status(502).json(withError({ ok: false, provider: info.id, meldung: info.id === 'openai' ? 'Codex-Anmeldung nicht verfügbar (Codex nicht installiert?). Alternativ einen API-Key einfügen.' : 'Anmeldung konnte nicht gestartet werden.' }))
         }
     })
 

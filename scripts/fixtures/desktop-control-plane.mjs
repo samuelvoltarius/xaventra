@@ -38,7 +38,8 @@ export async function createDesktopFixture(options = {}) {
       res.writeHead(200, { 'Content-Type': TYPES[extname(name)] })
       return res.end(readFileSync(join(RENDERER, name)))
     }
-    const viewPaths = { '/api/desktop/heute': 'heute', '/api/desktop/arbeit': 'arbeit', '/api/desktop/system': 'system', '/api/desktop/system/vms': 'vms', '/api/desktop/gedaechtnis': 'gedaechtnis', '/api/desktop/memory': 'memory', '/api/desktop/memory-assets': 'memoryAssets' }
+    const viewPaths = { '/api/desktop/heute': 'heute', '/api/desktop/arbeit': 'arbeit', '/api/desktop/system': 'system', '/api/desktop/system/vms': 'vms', '/api/desktop/gedaechtnis': 'gedaechtnis', '/api/desktop/memory': 'memory', '/api/desktop/memory-assets': 'memoryAssets',
+      '/api/desktop/werkzeugkasten': 'werkzeugkasten', '/api/desktop/verbindungen': 'verbindungen', '/api/desktop/onboarding': 'onboarding' }
     if (viewPaths[url.pathname] && req.method === 'GET') {
       if (!controls.ownerViews && !['/api/desktop/memory', '/api/desktop/memory-assets'].includes(url.pathname)) return reply(403, { error: 'Owner authorization required' })
       return reply(200, views[viewPaths[url.pathname]])

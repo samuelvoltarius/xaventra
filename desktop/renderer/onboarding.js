@@ -88,7 +88,7 @@
   function connectionsQuestion(ctx, data) {
     const { esc, icon } = ctx
     const c = data.connections || {}
-    if (!c.available) return question(ctx, 3, 'Gefundene Dienste verbinden', '<div class="empty-note"><span>Die Ansicht „Verbindungen“ kommt mit dem nächsten Paket. Bis dahin muss hier nichts getan werden.</span></div>', true)
+    if (!c.available) return question(ctx, 3, 'Gefundene Dienste verbinden', '<div class="empty-note"><span>Die Ansicht „Verbindungen“ ist gerade nicht erreichbar. Hier muss nichts getan werden.</span></div>', true)
     const text = c.gefunden
       ? `Ich habe ${c.gefunden} Dienst${c.gefunden === 1 ? '' : 'e'} gefunden: ${esc(c.beispiele.join(', '))}. Verbinden geht mit einem Knopf.`
       : 'Ich habe nichts gefunden, was sich verbinden lässt. In „Verbindungen“ siehst du, was möglich ist.'
