@@ -15,7 +15,7 @@ import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
-import { containsHttpUrl, isNodeScreenshotRequest, liveEvidenceGuidance, mentionsMesh, NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
+import { containsHttpUrl, isNodeScreenshotRequest, liveEvidenceGuidance, mentionsMesh } from './request-capabilities.js'
 
 
 // State and handler types
@@ -1956,7 +1956,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             })
             if (need.queued) console.log(`[Werkzeuge] Bedarf erkannt (${need.kind}): Bau läuft im Hintergrund`)
         } catch (err) { console.debug('[Pipeline] forge need hook failed:', err) }
-        const { authoritativeDiagnosticResponse, screenshotFailureResponse } = await import('./tool-evidence-response.js')
+        const { authoritativeDiagnosticResponse, screenshotFailureResponse, nodeScreenshotResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
         const fulfillmentToolCount = kernelState
@@ -1966,7 +1966,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
         if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
-            supervised.content = isNodeScreenshotRequest(content) ? NODE_SCREENSHOT_LIMITATION : screenshotFailureResponse(failedExecutions)
+            supervised.content = isNodeScreenshotRequest(content) ? nodeScreenshotResponse(successfulExecutions) : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
                 supervised.content = 'Ich habe selbst einen konkreten Skill-Vorschlag erstellt. Er wartet gemäß PATCH_GATE auf deine Freigabe; die angeforderte Aktion ist noch nicht ausgeführt.'
@@ -2017,7 +2017,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // A synthesis/fact-check fallback may emit raw discovery results.
             // Delivery truth is deterministic and remains authoritative last.
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
-                finalContent = isNodeScreenshotRequest(content) ? NODE_SCREENSHOT_LIMITATION : screenshotFailureResponse(failedExecutions)
+                finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse(successfulExecutions)) : screenshotFailureResponse(failedExecutions)
             }
 
             // Internal provider reasoning is never a channel artifact. Verbose

@@ -1,4 +1,4 @@
-# Telegram Bot Setup and HA (v2.85.1 candidate)
+# Telegram Bot Setup and HA (v2.85.2 candidate)
 
 Configure Nova as a Telegram bot with interactive actions, user isolation and
 fenced Main failover.
@@ -94,6 +94,13 @@ node-addressed capture transport instead of capturing a different local desktop,
 delegating an unbound capture or returning a tool catalog as the result. A
 headless node may have no display; this is not inferred from its name. Enabling
 remote capture requires a separately authorized, target-bound integration.
+
+A bounded mixed request such as "was können deine nodes? send mir einen screnn
+shot vbon jeden" retains the node reference across the question mark. A previous
+erroneous target question for that request is discarded, not replayed. Successful
+Mesh observations remain in the reply alongside the explicit capture limitation;
+without such observations the node capabilities are labelled unverified. This
+does not supply a target for additional installations/deletions or another recipient.
 
 ### Evidence-based notifications
 

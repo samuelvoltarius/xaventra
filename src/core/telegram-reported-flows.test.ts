@@ -98,6 +98,12 @@ describe('reported Telegram conversation regressions', () => {
         expect(isNodeScreenshotRequest('Screenshot vom Desktop')).toBe(false)
         expect(isNodeScreenshotRequest('Screenshot vom Desktop und zeige die Nodes')).toBe(false)
         expect(mentionsScreenshot('Beschreibe meine Screensaver')).toBe(false)
+        const reported = 'was können deine nodes? send mir einen screnn shot vbon jeden'
+        expect(isNodeScreenshotRequest(reported)).toBe(true)
+        expect(getRelevantTools(reported).map(t => t.name)).toEqual(expect.arrayContaining(['mesh_nodes', 'mesh_services']))
+        expect(getRelevantTools(reported).some(t => t.name === 'desktop_screenshot')).toBe(false)
+        expect(isNodeScreenshotRequest('Was können deine Nodes? Screenshot vom Desktop')).toBe(false)
+        expect(isNodeScreenshotRequest('send mir einen screnn shot vbon jeden')).toBe(false)
     })
 
     it('preserves tool identifiers, converts bold and leaves code untouched', () => {

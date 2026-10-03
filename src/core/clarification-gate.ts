@@ -5,6 +5,7 @@ import { getSessionContinuityStore, type PendingClarification } from '../memory/
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { getBeliefStore } from './belief-store.js'
 import { inferRequiredToolTargets } from './tool-evidence-binding.js'
+import { isResolvedNodeScreenshotReply } from './request-capabilities.js'
 
 export interface ClarificationDecision {
     action: 'continue' | 'ask' | 'cancel'
@@ -70,7 +71,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'reference'
             && hasExplicitReadUrlReference(pending.originalRequest))
         || (pending.missingFields.length === 1 && ['target', 'reference'].includes(pending.missingFields[0])
-            && OWN_SCREENSHOT_REPLY.test(pending.originalRequest.trim())))) {
+            && (OWN_SCREENSHOT_REPLY.test(pending.originalRequest.trim()) || isResolvedNodeScreenshotReply(pending.originalRequest))))) {
         store.clearPendingClarification(principalId)
         pending = undefined
     }
@@ -129,7 +130,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // URL resolves a read-only reference, not a missing deployment/deletion
     // destination. Multiple targets and unrelated actions still require context.
     const explicitReadTarget = hasExplicitReadUrlReference(text)
-    const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text)
+    const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text) || isResolvedNodeScreenshotReply(text)
     const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
         && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply
     const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply

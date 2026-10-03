@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.85.2] — 2026-10-03 (source candidate)
+
+- Resolve the bounded mixed request "was können deine nodes? send mir einen
+  screnn shot vbon jeden" without an unnecessary target question. The immediate
+  node question supplies the collective referent; unrelated operations and
+  other recipients do not inherit this exemption.
+- Retire the corresponding erroneous persisted target clarification instead of
+  replaying it on the next message. Preserve normal clarification gates.
+- Retain successful, redacted Mesh inventory/service evidence alongside the
+  missing node-addressed screenshot transport notice, even after synthesis or
+  fact-check fallback. Never substitute local captures or tool catalogs.
+
+No remote screenshot transport or additional permissions are introduced.
+Scripted pipeline regressions do not establish live Telegram delivery.
+Local verification: 683 Core suites (4,702 passed, two skipped), 84 focused
+regressions, 23 Desktop tests and four build-chain checks passed. Typecheck,
+build, catalog freshness and Assurance passed. Exact-source CI, signed package
+publication and production acceptance remain separate release gates.
+
 ## [2.85.1] — 2026-10-03 (local candidate, not deployed)
 
 Exact source CI and evidence limits: [verification record](docs/VERIFICATION_2.85.1.md).

@@ -26,8 +26,25 @@ export function mentionsMesh(text: string): boolean {
 export function isNodeScreenshotRequest(text: string): boolean {
     // Separate mixed tasks: "Screenshot vom Desktop und zeige die Nodes"
     // must not turn the explicitly local capture into a remote one.
-    return text.split(/[!?;\n]|\s+(?:und|and)\s+(?=(?:zeige?|liste|prüfe|check|list|show)\b)/i)
-        .some(clause => mentionsScreenshot(clause) && mentionsMesh(clause))
+    const clauses = text.split(/[!?;\n]|\s+(?:und|and)\s+(?=(?:zeige?|liste|prüfe|check|list|show)\b)/i).map(c => c.trim()).filter(Boolean)
+    return clauses.some((clause, index) => mentionsScreenshot(clause) && (mentionsMesh(clause)
+        || (index > 0 && isNodeOverviewQuestion(clauses[index - 1])
+            && /\b(?:von|vbon)\s+(?:jedem|jeden|allen)\s*(?:bitte)?[.!]*$/i.test(clause))))
+}
+
+function isNodeOverviewQuestion(text: string): boolean {
+    return /^was\s+können\s+(?:(?:deine|die|alle)\s+)?(?:nodes|knoten)\s*$/i.test(text)
+}
+
+/** Only a bounded screenshot reply to the requester resolves this target.
+ * Node mentions must not authorize another operation or another recipient.
+ * `vbon` is recognized here as the observed typo, never globally rewritten.
+ */
+export function isResolvedNodeScreenshotReply(text: string): boolean {
+    const clauses = text.trim().split(/[!?;\n]+/).map(c => c.trim()).filter(Boolean)
+    if (clauses.length === 2 && isNodeOverviewQuestion(clauses[0])) clauses.shift()
+    if (clauses.length !== 1 || !isNodeScreenshotRequest(text)) return false
+    return /^(?:bitte\s+)?(?:send(?:e)?|schick(?:e)?)\s+mir\s+(?:mal\s+)?(?:einen?\s+)?(?:screnn\s*shots?|screen\s*shots?|screenshots?|bildschirmfotos?)\s+(?:von|vbon)\s+(?:(?:jedem|jeden|allen)(?:\s+(?:nodes?|knoten))?|(?:den|deinen)\s+(?:nodes|knoten))\s*(?:bitte)?[.]*$/i.test(clauses[0])
 }
 
 export const NODE_SCREENSHOT_LIMITATION = 'Nodebezogene Bildschirmaufnahmen sind mit dem vorhandenen Desktop-Werkzeug nicht unterstützt: Es nimmt nur den freigegebenen Desktop auf und kann keinen Mesh-Node als Ziel auswählen. Es wurde keine Bilddatei übertragen. Für die gewünschten Nodes muss zuerst ein autorisierter, zielgebundener Aufnahmeweg verfügbar sein; ein Headless-Server hat möglicherweise keinen Bildschirm.'

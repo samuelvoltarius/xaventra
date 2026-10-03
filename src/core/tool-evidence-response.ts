@@ -1,10 +1,21 @@
 import { redactSecrets } from '../security/secret-redaction.js'
+import { NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
 
 export interface ResponseToolExecution {
     toolName?: string
     name?: string
     success?: boolean
     result?: unknown
+}
+
+/** Preserve the verified inventory half of a mixed request, never catalog-only
+ * output or the model's unsupported claim that captures were delivered. */
+export function nodeScreenshotResponse(executions: ResponseToolExecution[]): string {
+    const inventory = executions.filter(item => item.success === true
+        && ['mesh_nodes', 'mesh_status', 'mesh_services'].includes(item.toolName || item.name || ''))
+    const details = inventory.length ? verifiedToolEvidenceResponse(inventory)
+        : 'Die Node-Fähigkeiten wurden in diesem Lauf noch nicht durch aktuelle Mesh-Werkzeuge verifiziert.'
+    return `${details}\n\n${NODE_SCREENSHOT_LIMITATION}`
 }
 
 const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([

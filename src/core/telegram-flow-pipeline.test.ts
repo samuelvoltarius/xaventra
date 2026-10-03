@@ -49,6 +49,21 @@ async function run(content: string) {
 }
 
 describe('actual message pipeline with scripted agent, no network or capture', () => {
+    it('retains verified node capabilities alongside the capture limitation after fact-check fallback', async () => {
+        fixtures.agent.mockResolvedValue({ content: 'Alle Bilder gesendet.', sessionId: 'fixture-session', toolsExecuted: ['mesh_nodes', 'nova_capabilities'],
+            toolExecutions: [
+                { toolName: 'mesh_nodes', success: true, result: 'fixture-node: online; LLM und STT verfügbar' },
+                { toolName: 'nova_capabilities', success: true, result: 'RAW CATALOG' },
+            ], actionState: { requiresTool: true, kind: 'screenshot', fulfilled: false } })
+        const { replies } = await run('was können deine nodes? send mir einen screnn shot vbon jeden')
+        expect(replies.at(-1)).toContain('fixture-node: online; LLM und STT verfügbar')
+        expect(replies.at(-1)).toContain('keine Bilddatei übertragen')
+        expect(replies.at(-1)).not.toContain('RAW CATALOG')
+        expect(replies.at(-1)).not.toContain('Alle Bilder gesendet')
+        expect(fixtures.capture).not.toHaveBeenCalled()
+        expect(fixtures.photo).not.toHaveBeenCalled()
+    }, 15000)
+
     it('passes measured identity and the complete mixed question to the agent without a cached answer', async () => {
         const question = 'Welches Model nutzt du gerade ? Und warum willst auf auf na1 ein llm. ?'
         const { identity } = await run(question)
@@ -65,8 +80,9 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(fixtures.cache).not.toHaveBeenCalled()
     }, 15000)
 
-    it('does not deliver a catalog or wrong desktop after failed screenshot synthesis and fact-checking', async () => {
-        const { replies } = await run('send mir mal einen screnn schots von allen nodes bitte')
+    it.each(['send mir mal einen screnn schots von allen nodes bitte',
+        'was können deine nodes? send mir einen screnn shot vbon jeden'])('does not deliver a catalog or wrong desktop for %s', async text => {
+        const { replies } = await run(text)
         expect(fixtures.agent).toHaveBeenCalledOnce()
         expect(replies.at(-1)).toContain('keinen Mesh-Node als Ziel auswählen')
         expect(replies.at(-1)).toContain('keine Bilddatei übertragen')

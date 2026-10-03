@@ -351,7 +351,7 @@ export function getRelevantTools(
     // No node-addressed capture transport exists. Do not substitute local
     // pixels or delegate an unbound capture. Inventory is still useful evidence.
     if (isNodeScreenshotRequest(primaryMessage)) {
-        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes'].map(name => registry.get(name))
+        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes', 'mesh_services'].map(name => registry.get(name))
             .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
     }
 

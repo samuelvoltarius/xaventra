@@ -7,6 +7,34 @@ import { BeliefStore, getBeliefStore, setBeliefStore } from './belief-store.js'
 import { getSessionContinuityStore, SessionContinuityStore, setSessionContinuityStore } from '../memory/session-summarizer.js'
 
 describe('ClarificationGate', () => {
+    it.each([
+        'was können deine nodes? send mir einen screnn shot vbon jeden',
+        'Was können deine Nodes? Sende mir einen Screenshot von jedem.',
+        'Sende mir Screenshots von allen Nodes.',
+    ])('resolves bounded all-node screenshot replies: %s', text => {
+        expect(evaluateClarification('user:node-shot', text)).toMatchObject({ action: 'continue', content: text })
+    })
+
+    it('retires the erroneous all-node target question without replaying it', () => {
+        const store = getSessionContinuityStore()
+        store.setPendingClarification('user:node-shot', {
+            id: 'reported-2109', originalRequest: 'was können deine nodes? send mir einen screnn shot vbon jeden',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now(),
+        })
+        expect(evaluateClarification('user:node-shot', 'Hallo').content).toBe('Hallo')
+        expect(store.getSummary('user:node-shot')?.pendingClarification).toBeFalsy()
+    })
+
+    it.each([
+        'send mir einen screnn shot vbon jeden',
+        'was können deine nodes? send ihm einen screnn shot vbon jeden',
+        'was können deine nodes? send mir einen screnn shot vbon jeden und installiere Docker',
+        'was können deine nodes? lösche das',
+    ])('does not reuse the node mention for unresolved recipients or extra actions: %s', text => {
+        expect(evaluateClarification('user:node-negative', text).action).toBe('ask')
+    })
+
     beforeEach(() => {
         const root = mkdtempSync(join(tmpdir(), 'nova-clarify-'))
         setSessionContinuityStore(new SessionContinuityStore(join(root, 'continuity.json')))

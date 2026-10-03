@@ -1504,6 +1504,7 @@
         "../mesh/capability-graph.js",
         "./action-intent.js",
         "./belief-store.js",
+        "./request-capabilities.js",
         "./tool-evidence-binding.js",
         "node:crypto",
         "node:fs"
@@ -2430,7 +2431,8 @@
     {
       "module": "src/core/tool-evidence-response.ts",
       "imports": [
-        "../security/secret-redaction.js"
+        "../security/secret-redaction.js",
+        "./request-capabilities.js"
       ]
     },
     {

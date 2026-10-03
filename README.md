@@ -25,7 +25,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.1 preview** (Telegram and Mesh URL correctness
+Current source candidate: **2.85.2 preview** (Telegram collective-node reference
 fixes; production activation tracked separately). It builds on the 2.85.0 source. See the
 [changelog](CHANGELOG.md) and [Telegram guide](docs/TELEGRAM.md) for the fixes
 and the explicit boundary on node-targeted screenshots. The 2.85.0 feature
