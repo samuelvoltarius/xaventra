@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fixtures = vi.hoisted(() => ({ agent: vi.fn(), cache: vi.fn(), capture: vi.fn(), photo: vi.fn() }))
+const fixtures = vi.hoisted(() => ({ agent: vi.fn(), cache: vi.fn(), capture: vi.fn(), photo: vi.fn(), permission: 'user' }))
 vi.mock('../users/multi-user-middleware.js', () => ({
     initMultiUser: () => undefined,
-    checkAuth: () => ({ allowed: true, permission: 'user', isNewUser: false, user: {} }),
+    checkAuth: () => ({ allowed: true, permission: fixtures.permission, isNewUser: false, user: {} }),
+    getUserPermission: () => fixtures.permission,
     isGroupChat: () => false, shouldCoalesce: () => false,
     coalesceMessage: async (_chat: string, _from: string, text: string) => text,
     getUserContextString: () => '', getGroupContext: () => '', addUserTopic: () => undefined,
@@ -27,6 +28,7 @@ const { handleMessage } = await import('./message-pipeline.js')
 
 beforeEach(() => {
     vi.clearAllMocks()
+    fixtures.permission = 'user'
     ;(globalThis as any).__novaLastMsg = {}
     fixtures.cache.mockReturnValue('STALE CACHED ANSWER')
     fixtures.agent.mockResolvedValue({
@@ -49,6 +51,24 @@ async function run(content: string) {
 }
 
 describe('actual message pipeline with scripted agent, no network or capture', () => {
+    it('answers the owner LAN question from background facts despite invented control claims and failed fact-check', async () => {
+        fixtures.permission = 'owner'
+        const { getNovaDataDir } = await import('./data-root.js')
+        const { recordDiscoveryObservation } = await import('../sensing/awareness.js')
+        const { recordCandidates } = await import('../sensing/device-registry.js')
+        recordDiscoveryObservation(getNovaDataDir(), { scannedHosts: 154, probes: 1297, timedOut: true, truncated: true } as any)
+        recordCandidates(getNovaDataDir(), [{ type: 'homeassistant', host: '192.168.1.42', port: 8123, via: 'mdns' }])
+        fixtures.agent.mockResolvedValue({ content: 'Alle Geräte voll steuerbar. Screenshots von jedem Node. Kein Internet.', sessionId: 'fixture-session', toolsExecuted: ['blue_asset_inventory'],
+            toolExecutions: [{ toolName: 'blue_asset_inventory', success: true, result: 'fixture-node online' }],
+            actionState: { requiresTool: true, kind: 'system', fulfilled: true } })
+        const { replies } = await run('welche geräte findest du im netzwerk? die du verwalten und sterun könntest?')
+        expect(replies.at(-1)).toContain('Home Assistant')
+        expect(replies.at(-1)).toContain('Teilsuche')
+        expect(replies.at(-1)).toContain('fixture-node online')
+        expect(replies.at(-1)).not.toContain('voll steuerbar')
+        expect(replies.at(-1)).not.toContain('Kein Internet')
+        expect(fixtures.cache).not.toHaveBeenCalled()
+    }, 15000)
     it('retains verified node capabilities alongside the capture limitation after fact-check fallback', async () => {
         fixtures.agent.mockResolvedValue({ content: 'Alle Bilder gesendet.', sessionId: 'fixture-session', toolsExecuted: ['mesh_nodes', 'nova_capabilities'],
             toolExecutions: [

@@ -4909,6 +4909,7 @@
       "imports": [
         "../core/data-root.js",
         "./mesh-identity.js",
+        "./node-exchange.js",
         "./transport-contracts.js",
         "node:path"
       ]
@@ -4976,6 +4977,7 @@
         "./mesh-policy.js",
         "./mesh-registry.js",
         "./mesh-transport-router.js",
+        "./node-exchange.js",
         "./relay-mesh-transport.js",
         "./supabase-mesh-transport.js",
         "./transport-contracts.js",
@@ -4987,6 +4989,17 @@
     {
       "module": "src/mesh/model-recommender.ts",
       "imports": []
+    },
+    {
+      "module": "src/mesh/node-exchange.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path"
+      ]
     },
     {
       "module": "src/mesh/node-intelligence.ts",
@@ -5780,6 +5793,17 @@
       ]
     },
     {
+      "module": "src/sensing/awareness.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./device-registry.js",
+        "./discovery.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/config.ts",
       "imports": [
         "../core/autonomy-defaults.js",
@@ -5799,10 +5823,14 @@
     {
       "module": "src/sensing/discovery.ts",
       "imports": [
+        "../startup/tailscale-status.js",
         "./device-registry.js",
         "./net-scope.js",
+        "node:child_process",
+        "node:crypto",
         "node:dgram",
-        "node:net"
+        "node:net",
+        "node:util"
       ]
     },
     {
@@ -5857,6 +5885,7 @@
         "./adapters/printer.js",
         "./adapters/proxmox.js",
         "./adapters/system.js",
+        "./awareness.js",
         "./config.js",
         "./device-registry.js",
         "./discovery.js",
@@ -5905,6 +5934,12 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/startup/tailscale-status.ts",
+      "imports": [
+        "node:fs"
       ]
     },
     {
@@ -6243,8 +6278,10 @@
         "./desktop-input-tool.js",
         "./desktop-screenshot-tool.js",
         "./developer-capability-tools.js",
+        "./environment-inventory-tool.js",
         "./homeassistant.js",
         "./knowledge-system.js",
+        "./mesh-exchange-tools.js",
         "./mesh-inspect-url.js",
         "./minimax-tools.js",
         "./mission-workspace-tools.js",
@@ -6314,6 +6351,14 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/environment-inventory-tool.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../sensing/awareness.js",
+        "./complete-registry.js"
       ]
     },
     {
@@ -6394,14 +6439,22 @@
       ]
     },
     {
+      "module": "src/tools/mesh-exchange-tools.ts",
+      "imports": [
+        "../mesh/node-exchange.js",
+        "./complete-registry.js",
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/tools/mesh-inspect-url.ts",
       "imports": [
         "../mesh/mesh-registry.js",
         "../resilience/ssrf-guard.js",
         "../sensing/net-scope.js",
+        "../startup/tailscale-status.js",
         "./complete-registry.js",
         "node:child_process",
-        "node:fs",
         "node:util"
       ]
     },

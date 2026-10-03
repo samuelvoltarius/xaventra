@@ -46,7 +46,7 @@ class MeshOutbox {
     }
     private persist(): void {
         const dir = dirname(this.path); if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        const temporary = `${this.path}.tmp`; writeFileSync(temporary, JSON.stringify(this.items, null, 2)); renameSync(temporary, this.path)
+        const temporary = `${this.path}.tmp`; writeFileSync(temporary, JSON.stringify(this.items, null, 2), { mode: 0o600 }); renameSync(temporary, this.path)
     }
 }
 

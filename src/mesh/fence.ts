@@ -264,6 +264,7 @@ export const FENCE_EXEMPT_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
     'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
     'find_capability', 'resolve_capability', 'list_sessions', 'mission_config',
     'list_reminders', 'list_sub_agents', 'nova_trace_stats', 'list_tool_policies',
+    'environment_inventory', 'blue_asset_inventory', 'mesh_services',
 ])
 
 export function toolRequiresFence(name: string): boolean {

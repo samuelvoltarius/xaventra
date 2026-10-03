@@ -77,7 +77,7 @@ describe('TelegramPresentationSession in status-card mode', () => {
         deleteMessage: vi.fn(async () => undefined),
     })
 
-    it('keeps the card and marks it ✅ before the final answer instead of deleting it', async () => {
+    it('keeps the card and marks it ✅ only after the final answer is sent', async () => {
         const a = adapter()
         const session = new TelegramPresentationSession(a, 'chat', { statusCard: true, minEditIntervalMs: 2_000 })
         await session.deliver('⚙️ Schritt 2/3: screenshot')
@@ -89,6 +89,27 @@ describe('TelegramPresentationSession in status-card mode', () => {
         expect(a.deleteMessage).not.toHaveBeenCalled()
         expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^✅/))
         expect(a.send).toHaveBeenCalledOnce()
+        expect(a.editMessage.mock.invocationCallOrder.at(-1)).toBeGreaterThan(a.send.mock.invocationCallOrder[0])
+        expect(a.editMessage.mock.calls.at(-1)?.[2]).not.toContain('Zuletzt:')
+    })
+    it('never labels cleanup after progress-only output as answer delivery', async () => {
+        const a = adapter()
+        const session = new TelegramPresentationSession(a, 'chat', { statusCard: true })
+        await session.deliver('⏳ Werkzeuge laufen')
+        await session.clearProgress()
+        expect(a.send).not.toHaveBeenCalled()
+        expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^❌/))
+    })
+
+    it('does not claim success if final delivery fails and measures from request creation', async () => {
+        const a = adapter()
+        const session = new TelegramPresentationSession(a, 'chat', { statusCard: true })
+        vi.advanceTimersByTime(25_000)
+        await session.deliver('⏳ Ich arbeite noch (25s): LLM/Tools laufen')
+        vi.advanceTimersByTime(5_000)
+        a.send.mockRejectedValueOnce(new Error('delivery failed'))
+        await expect(session.deliver('Antwort')).rejects.toThrow('delivery failed')
+        expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^❌.*30 s$/))
     })
 
     it('marks the card ❌ when the task fails', async () => {

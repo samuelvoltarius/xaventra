@@ -6,6 +6,37 @@ Nova's autonomous capabilities — from missions to dreaming.
 
 ## Standard: selbstständig (P8, ab 2.82)
 
+### Umgebungswissen und Austausch (2.85.3)
+
+Die Geräte-Suche startet am Main ohne Chat-Befehl. Ein Zeitlimit oder Host-Limit
+speichert die nächste Adresse und den noch offenen Port; nach fünf Minuten
+folgt die Fortsetzung. Ein abgeschlossener Zyklus wird standardmäßig stündlich
+erneuert (`autonomy.sensing.discovery.intervalHours`); ausdrücklich eingestellte
+Intervalle bleiben gültig. Die Suchgrenze bleibt das eigene private Subnetz
+(höchstens /24 pro Interface) plus bekannte Adressen des eigenen Tailnets.
+Erkannt werden die vorhandenen Dienstkennungen und offene geprüfte Ports, kein
+garantiertes Vollinventar sämtlicher Netzwerkgeräte.
+
+`environment_inventory` liest diese Hintergrundfunde mit Fundzeit und Status.
+Das Gespräch unterscheidet gefunden, verbunden, lesend überwacht und für eine
+konkrete Aktion steuerbar. Bestehende Gedanken-, Verbindungs- und
+Verantwortungswege erzeugen Vorschläge; gespeicherte Ablehnungen und einmalige
+Zugangsanfragen gehen beim Wachsen der Inventur nicht verloren.
+
+Jeder Node hat einen eigenen Ordner `<NOVA_RUNTIME_ROOT>/exchange/`.
+`mesh_exchange_write` legt erzeugte Berichte dort ab, `mesh_exchange_list` zeigt
+Dateien und `mesh_exchange_send` kopiert sie zwischen zwei Nodes. Diese Schritte
+können in bereits autorisierten Owner-Aufträgen verwendet werden; lesende
+Hintergrundprüfungen bekommen dadurch keine Schreibrechte. Einzeldateien sind
+auf 256 KiB begrenzt, der Ordner auf 32 MiB und 1.000 Einträge. Andere Pfade,
+Laufzeitdaten, Secrets und verlinkte Dateien sind ausgeschlossen. Eine andere
+Datei wird nicht überschrieben; Erfolg erfordert den Empfangsbeleg mit Größe
+und SHA-256 des Ziel-Nodes. Ein Transport-ACK allein reicht nicht.
+
+Headless-Nodes erhalten durch den Dateiaustausch keinen Desktop. Die vorhandene
+Bildschirmaufnahme bleibt an den freigegebenen Desktop gebunden; ein
+Node-Auftrag wird nicht durch ein Bild eines anderen Rechners ersetzt.
+
 Owner-Regel (Alfred, 01.10.2026): „Wir trainieren auf Selbstständigkeit.“ Xaventra
 erkennt selbst, welche Hardware es gibt (auch im Netz), was wo läuft, und handelt —
 ohne dass jemand `/desktop`, `/vms`, `/arbeit`, `/modelle` tippen oder Ja/Nein sagen

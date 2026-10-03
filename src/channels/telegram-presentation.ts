@@ -104,6 +104,8 @@ export class TelegramPresentationSession {
     private progressMessageId: number | null = null
     private lastProgress = ''
     private card: LiveStatusCard | null = null
+    private readonly startedAt = Date.now()
+    private answerDelivered = false
 
     constructor(
         private readonly adapter: TelegramPresentationAdapter,
@@ -119,12 +121,18 @@ export class TelegramPresentationSession {
                 this.card ||= new LiveStatusCard({
                     send: body => this.adapter.sendProgress(this.chatId, body),
                     edit: (messageId, body) => this.adapter.editMessage(this.chatId, messageId, body),
-                }, { minIntervalMs: this.options.minEditIntervalMs ?? 2_000, chatId: this.chatId })
+                }, { minIntervalMs: this.options.minEditIntervalMs ?? 2_000, chatId: this.chatId, startedAt: this.startedAt })
                 await this.card.update(text)
                 return 'progress'
             }
-            await this.finishProgress(!isTelegramFailureReply(text))
-            await this.adapter.send({ channel: 'telegram', to: this.chatId, content: text })
+            try {
+                await this.adapter.send({ channel: 'telegram', to: this.chatId, content: text })
+                this.answerDelivered = !isTelegramFailureReply(text)
+                await this.finishProgress(!isTelegramFailureReply(text))
+            } catch (error) {
+                await this.finishProgress(false)
+                throw error
+            }
             return 'message'
         }
         if (isTelegramProgress(text)) {
@@ -152,7 +160,7 @@ export class TelegramPresentationSession {
     }
 
     async clearProgress(): Promise<void> {
-        if (this.options.statusCard) return this.finishProgress(true)
+        if (this.options.statusCard) return this.finishProgress(this.answerDelivered)
         if (this.progressMessageId === null) return
         const messageId = this.progressMessageId
         this.progressMessageId = null

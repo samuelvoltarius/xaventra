@@ -25,6 +25,8 @@ import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
 import { scanNowTool } from './scan-now-tool.js'
 import { meshInspectUrlTool } from './mesh-inspect-url.js'
+import { meshExchangeTools } from './mesh-exchange-tools.js'
+import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -3041,6 +3043,8 @@ export const ALL_TOOLS: NovaTool[] = [
     ...homeAssistantTools,
     scanNowTool,
     meshInspectUrlTool,
+    ...meshExchangeTools,
+    environmentInventoryTool,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,

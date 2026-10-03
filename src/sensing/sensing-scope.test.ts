@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ipToInt, ownSubnets, scanHosts, scanTargetAllowed } from './net-scope.js'
-import { ProbeLimiter, discoverDevices, identifyHttp } from './discovery.js'
+import { ProbeLimiter, discoverDevices, identifyHttp, tailnetPeerAddresses } from './discovery.js'
 
 const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }
 
@@ -67,9 +67,56 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
         expect(report.candidates.map(item => item.host)).toEqual(['192.168.1.40'])
         expect(report.rejected.some(item => item.host === '93.184.216.34')).toBe(true)
     })
+    it('ermittelt Tailnet-Adressen selbst, prüft sie aber vor jedem Probe', async () => {
+        const probed: string[] = []
+        const report = await discoverDevices({ deadlineMs: 1000, ratePerSec: 200, concurrency: 2, maxHosts: 2, mdns: false, tailnetHosts: [] }, {
+            interfaces: { ts: [{ address: '100.86.70.71', netmask: '255.255.255.255', family: 'IPv4', internal: false }] },
+            tailnetPeers: async () => ['100.73.189.71', '8.8.8.8'],
+            tcpProbe: async host => { probed.push(host); return false }, httpProbe: async () => null,
+        })
+        expect(probed).toContain('100.73.189.71')
+        expect(probed).not.toContain('8.8.8.8')
+        expect(report.rejected).toContainEqual(expect.objectContaining({ host: '8.8.8.8' }))
+        expect(tailnetPeerAddresses({ Peer: { p: { TailscaleIPs: ['100.73.189.71', '8.8.8.8', 'fd7a::1'], DNSName: 'private' } } })).toEqual(['100.73.189.71'])
+    })
+    it('behauptet bei einem offenen MQTT-Port keinen Bambu-Drucker und meldet unbekannte Dienste', async () => {
+        const report = await discoverDevices({ deadlineMs: 1000, ratePerSec: 200, concurrency: 1, maxHosts: 1, mdns: false, tailnetHosts: [] }, {
+            interfaces: lan, tcpProbe: async (_host, port) => port === 8883 || port === 80, httpProbe: async () => ({ status: 200, body: '<title>router</title>' }),
+        })
+        expect(report.candidates.map(c => c.type)).toEqual(['networkservice', 'networkservice'])
+        expect(report.candidates.some(c => c.type === 'bambu')).toBe(false)
+    })
 })
 
 describe('Selbst-Erkennung: Rate- und Zeitlimit', () => {
+    it('setzt nach dem Zeitlimit am unvollständigen Port fort und erreicht spätere Adressen', async () => {
+        let clock = 0
+        const visited: string[] = []
+        const options = { deadlineMs: 450, ratePerSec: 10, concurrency: 1, maxHosts: 2, mdns: false, tailnetHosts: [] }
+        const deps = { interfaces: lan, now: () => clock, sleep: async (ms: number) => { clock += ms },
+            tcpProbe: async (host: string, port: number) => { visited.push(`${host}:${port}`); return false }, httpProbe: async () => null }
+        let cursor: import('./discovery.js').DiscoveryCursor | undefined
+        for (let run = 0; run < 5; run++) {
+            const report = await discoverDevices({ ...options, cursor }, deps)
+            expect(report.timedOut).toBe(true)
+            cursor = report.cursor
+        }
+        expect(visited).toContain('192.168.1.3:7125')
+        expect(visited.filter(item => item === '192.168.1.1:7125')).toHaveLength(1)
+        expect(visited.filter(item => item.startsWith('192.168.1.1:'))).toHaveLength(9)
+        const changed = await discoverDevices({ ...options, cursor }, { ...deps, interfaces: { eth: [{ address: '192.168.2.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] } })
+        expect(changed.cursor?.scopeKey).not.toBe(cursor?.scopeKey)
+        expect(visited).toContain('192.168.2.1:7125')
+    })
+
+    it('setzt auch hinter dem Host-Limit in weiteren eigenen Subnetzen fort', () => {
+        const scope = ownSubnets({ ...lan, wifi: [{ address: '192.168.2.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] })
+        const page = scanHosts(scope, [], 10, 254)
+        expect(page.hosts[0]).toBe('192.168.2.1')
+        expect(page.totalHosts).toBe(508)
+        expect(page.truncated).toBe(true)
+    })
+
     it('hält Verbindungen/s und Parallelität ein', async () => {
         const starts: number[] = []
         let inFlight = 0

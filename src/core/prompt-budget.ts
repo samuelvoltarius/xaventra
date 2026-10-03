@@ -19,7 +19,7 @@
  * first; the order of the remaining blocks never changes.
  */
 
-import { mentionsMesh } from './request-capabilities.js'
+import { mentionsEnvironment } from './request-capabilities.js'
 
 export interface PromptBudgetResult {
     prompt: string
@@ -73,7 +73,7 @@ function splitBlocks(input: string, activeRequest: string): Block[] {
         const headingLine = text.replace(/^\n+/, '').split('\n', 1)[0] || ''
         const isHeading = headingLine.startsWith('## ')
         // Text before the first heading is the identity (soul + persona).
-        const relevantLiveState = mentionsMesh(activeRequest) && /mesh|system-status|system-befund|inventar|inventory/i.test(headingLine)
+        const relevantLiveState = mentionsEnvironment(activeRequest) && /mesh|system-status|system-befund|inventar|inventory|umgebungsbeobachtungen/i.test(headingLine)
         const priority: BlockPriority = isHeading ? (relevantLiveState ? 1 : blockPriority(headingLine)) : 1
         blocks.push({ text, heading: isHeading ? headingLine.trim() : '(Identität)', priority, keep: text.length })
     }

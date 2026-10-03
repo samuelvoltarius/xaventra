@@ -26,6 +26,7 @@ import { approveDevice, autoMonitorDevices, claimOwnerAsk, credentialNeed, DEVIC
 import { discoverDevices, realMdnsBrowse, type DiscoveryDeps } from './discovery.js'
 import { accountEvents, detectAccounts, readAuthProfileShapes } from './accounts.js'
 import { learnQuietHours, readOwnerTimestamps } from './quiet-hours.js'
+import { readDiscoveryCursor, recordDiscoveryObservation } from './awareness.js'
 
 interface RuntimeState {
     raw: unknown
@@ -36,6 +37,8 @@ interface RuntimeState {
     sinks: { eventSink?: EventSink; thoughtSink?: ThoughtSink }
     discoveryRunning: boolean
     timers: Array<ReturnType<typeof setTimeout>>
+    continuation?: ReturnType<typeof setTimeout>
+    discoveryAbort?: AbortController
 }
 
 const state: RuntimeState = {
@@ -136,9 +139,17 @@ export function startSensing(options: { nodeOnly: boolean; nodeId?: string; auto
 
 /** P8: discovery + account check without any command — shortly after start, then every `intervalHours`. */
 function scheduleAutoDiscovery(runner?: () => Promise<unknown>): void {
+    const bus = state.bus
     const run = () => {
         if (runner) { void runner().catch(() => undefined); return }
-        void runDiscoveryNow().then(text => sensingLog(`Suche (selbst): ${text.split('\n')[0]}`)).catch(error => sensingLog(`Suche (selbst) fehlgeschlagen: ${cleanText(String((error as Error)?.message || error), 160)}`))
+        void runDiscoveryNow().then(text => {
+            sensingLog(`Suche (selbst): ${text.split('\n')[0]}`)
+            const cursor = readDiscoveryCursor(state.dataDir)
+            if (state.bus === bus && bus && cursor && (cursor.hostOffset > 0 || cursor.portIndex > 0) && !state.continuation) {
+                state.continuation = setTimeout(() => { state.continuation = undefined; run() }, 5 * 60_000)
+                state.continuation.unref?.()
+            }
+        }).catch(error => sensingLog(`Suche (selbst) fehlgeschlagen: ${cleanText(String((error as Error)?.message || error), 160)}`))
         void proposeAccounts().catch(() => undefined)
     }
     const first = setTimeout(run, state.config.discovery.firstRunDelaySec * 1000)
@@ -149,6 +160,9 @@ function scheduleAutoDiscovery(runner?: () => Promise<unknown>): void {
 }
 
 export function stopSensing(): void {
+    state.discoveryAbort?.abort()
+    if (state.continuation) clearTimeout(state.continuation)
+    state.continuation = undefined
     for (const timer of state.timers.splice(0)) { clearTimeout(timer); clearInterval(timer) }
     state.bus?.stop()
     state.bus = null
@@ -185,14 +199,20 @@ export async function runDiscoveryNow(deps: DiscoveryDeps = {}): Promise<string>
     if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
     if (state.discoveryRunning) return 'Geräte-Suche läuft bereits.'
     state.discoveryRunning = true
+    const controller = new AbortController()
+    state.discoveryAbort = controller
+    const dataDir = state.dataDir
     try {
         const report = await discoverDevices({
             deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
             maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
+            cursor: readDiscoveryCursor(dataDir), signal: controller.signal,
         }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ...deps })
-        const fresh = recordCandidates(state.dataDir, report.candidates)
+        if (controller.signal.aborted) return 'Geräte-Suche beim Stoppen abgebrochen.'
+        const fresh = recordCandidates(dataDir, report.candidates)
+        recordDiscoveryObservation(dataDir, report)
         // P8: watching is L0 — found devices are monitored right away, no card.
-        const handled = autoMonitorDevices(state.dataDir)
+        const handled = autoMonitorDevices(dataDir)
         const events = deviceEvents(handled)
         if (events.length) await busForPublish().publish('discovery', events)
         const watchedIds = new Set(handled.monitored.map(device => device.id))
@@ -200,11 +220,12 @@ export async function runDiscoveryNow(deps: DiscoveryDeps = {}): Promise<string>
             `Suche fertig in ${Math.round(report.durationMs / 100) / 10} s: ${report.scannedHosts} Adressen, ${report.probes} Proben${report.timedOut ? ' (Zeitlimit erreicht)' : ''}.`,
             `Netze: ${report.scope.subnets.join(', ') || 'keine privaten'}${report.scope.hasTailnet ? ' + Tailnet' : ''}.`,
             report.rejected.length ? `Abgelehnt (fremd/öffentlich): ${report.rejected.length}.` : '',
-            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id}, ${watchedIds.has(device.id) ? 'überwacht, nur lesend' : 'Zugang fehlt, einmal beim Owner angefragt'})`).join('; ')}.` : 'Keine neuen Geräte.',
+            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id}, ${watchedIds.has(device.id) ? 'überwacht, nur lesend' : handled.asked.some(asked => asked.id === device.id) ? 'Zugang fehlt, einmal beim Owner angefragt' : 'beobachtet, Steuerung nicht geprüft'})`).join('; ')}.` : 'Keine neuen Geräte.',
             handled.monitored.some(device => !fresh.some(item => item.id === device.id)) ? `Jetzt überwacht (früher gefunden): ${handled.monitored.filter(device => !fresh.some(item => item.id === device.id)).map(device => device.name).join('; ')}.` : '',
         ].filter(Boolean).join('\n')
     } finally {
         state.discoveryRunning = false
+        if (state.discoveryAbort === controller) state.discoveryAbort = undefined
     }
 }
 

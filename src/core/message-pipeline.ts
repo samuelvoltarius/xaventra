@@ -15,7 +15,7 @@ import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
-import { containsHttpUrl, isNodeScreenshotRequest, liveEvidenceGuidance, mentionsMesh } from './request-capabilities.js'
+import { containsHttpUrl, isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance, mentionsEnvironment } from './request-capabilities.js'
 
 
 // State and handler types
@@ -1005,6 +1005,9 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     // ============================================
     if (contextPolicy.mesh && principalContext.permission === 'owner') try {
         const { loadHosts, formatKnownHostsContext } = await import('../tools/ssh-tool-hosts.js')
+        const { environmentAwareness } = await import('../sensing/awareness.js')
+        const { getNovaDataDir } = await import('./data-root.js')
+        systemPrompt += `\n\n${environmentAwareness(getNovaDataDir(), 'owner')}`
         const inventory = formatKnownHostsContext(loadHosts())
         if (inventory) systemPrompt += `\n\n${inventory}`
     } catch { console.debug('[Pipeline] host inventory not available') }
@@ -1494,7 +1497,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // path so their other clauses are answered rather than silently dropped.
         const measuredModelContext = !question && !isSystemAuthored ? await runtimeModelContext(content, state.llm) : ''
         systemPrompt += measuredModelContext
-        const requiresFreshRuntimeEvidence = Boolean(measuredModelContext) || mentionsMesh(content) || containsHttpUrl(content) || detectActionIntent(content).kind === 'screenshot'
+        const requiresFreshRuntimeEvidence = Boolean(measuredModelContext) || mentionsEnvironment(content) || containsHttpUrl(content) || detectActionIntent(content).kind === 'screenshot'
         const asksModel = question?.model
         const asksNovaVersion = question?.version
         const asksNovaIdentity = question?.identity
@@ -2016,6 +2019,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
             // A synthesis/fact-check fallback may emit raw discovery results.
             // Delivery truth is deterministic and remains authoritative last.
+            if (!isSystemMessage && principalContext.permission === 'owner' && isEnvironmentOverview(content)) {
+                const { environmentAwareness } = await import('../sensing/awareness.js')
+                const { getNovaDataDir } = await import('./data-root.js')
+                const { verifiedToolEvidenceResponse } = await import('./tool-evidence-response.js')
+                const inventory = successfulExecutions.filter((e: any) => ['mesh_nodes', 'mesh_status', 'mesh_services', 'blue_asset_inventory', 'scan_now'].includes(e.toolName || e.name))
+                finalContent = sanitizeInternalOutboundArtifacts(`${environmentAwareness(getNovaDataDir(), 'owner', Date.now(), false)}\n\n${inventory.length ? verifiedToolEvidenceResponse(inventory) : 'Mesh-Zustand in diesem Lauf nicht frisch abgefragt.'}`)
+            }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse(successfulExecutions)) : screenshotFailureResponse(failedExecutions)
             }

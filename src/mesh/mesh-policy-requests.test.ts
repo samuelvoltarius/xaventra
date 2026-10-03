@@ -21,6 +21,12 @@ const tool = (tool: string, args: Record<string, unknown>) => ({ tool, arguments
 describe('MI-6 mesh request policy', () => {
     const policy = new MeshPolicy({ mode: 'direct', peers: [peer(['system', 'worker', 'observer'])] }, 'main')
 
+    it('limits exchange requests to configured privileged roles and flat exchange names', () => {
+        expect(policy.verify(request('exchange.request', 'worker', { operation: 'list' }))).toMatchObject({ accepted: false, reason: 'request_role_not_allowed' })
+        expect(policy.verify(request('exchange.request', 'system', { operation: 'list' }))).toMatchObject({ accepted: true })
+        expect(policy.verify(request('exchange.request', 'system', { operation: 'read', name: '../auth.json' }))).toMatchObject({ accepted: false, reason: 'invalid_exchange_request' })
+    })
+
     it.each([
         '.nova-data/mesh-identity/main.json',
         '/etc/passwd',

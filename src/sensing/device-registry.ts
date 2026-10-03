@@ -20,7 +20,7 @@ import { cleanEvidence, cleanText, type Evidence } from './ports.js'
 
 export type DeviceType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu' | 'homeassistant'
     // 2.85 Paket A: self-hosted services with an MCP connector (found quietly, connected via „Verbindungen“).
-    | 'n8n' | 'paperless' | 'immich' | 'jellyfin' | 'nextcloud'
+    | 'n8n' | 'paperless' | 'immich' | 'jellyfin' | 'nextcloud' | 'networkservice'
 export type DeviceStatus = 'gefunden' | 'eingerichtet' | 'abgelehnt' | 'aus'
 
 export interface DeviceRecord {
@@ -63,6 +63,7 @@ export const DEVICE_LABEL: Record<DeviceType, string> = {
     immich: 'Immich (Fotos)',
     jellyfin: 'Jellyfin (Medien)',
     nextcloud: 'Nextcloud (Dateien)',
+    networkservice: 'Netzwerkdienst (Typ und Steuerbarkeit ungeprüft)',
 }
 
 export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'port'>): string {
@@ -79,7 +80,9 @@ export function loadDevices(dataDir: string): DeviceRecord[] {
 
 function saveDevices(dataDir: string, devices: DeviceRecord[]): void {
     mkdirSync(join(dataDir, 'sensing'), { recursive: true, mode: 0o700 })
-    atomicWriteJsonSync(FILE(dataDir), { version: 1, devices: devices.slice(-200) })
+    // Never evict an owner's rejection, setup or the persisted one-time ask.
+    // New observations are bounded at admission instead of deleting decisions.
+    atomicWriteJsonSync(FILE(dataDir), { version: 1, devices })
 }
 
 /** Records candidates; returns only the ones that are NEW (never seen before). */
@@ -91,6 +94,7 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
         const id = deviceId(candidate)
         const existing = devices.find(item => item.id === id)
         if (existing) { existing.lastSeenAt = at; continue }
+        if (devices.length >= 1000 || (candidate.type === 'networkservice' && devices.filter(d => d.type === 'networkservice').length >= 200)) continue
         const record: DeviceRecord = {
             id, type: candidate.type,
             name: cleanText(candidate.name || `${DEVICE_LABEL[candidate.type]} ${candidate.host}`, 80),
@@ -140,7 +144,7 @@ export function setDeviceStatus(dataDir: string, id: string, status: 'abgelehnt'
  * 2.85 Paket A: services that are only listed under „Gefunden“ in „Verbindungen“ —
  * never auto-monitored, never asked about (Bedarfsregel: finding alone never asks).
  */
-export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud'])) as ReadonlySet<DeviceType>
+export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud', 'networkservice'])) as ReadonlySet<DeviceType>
 
 /** Types a read-only adapter can watch without any credential. */
 export const AUTO_MONITOR_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['moonraker'])) as ReadonlySet<DeviceType>

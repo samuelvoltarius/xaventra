@@ -4,22 +4,14 @@
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { existsSync } from 'node:fs'
+import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
+export { tailscaleStatusCommand } from '../startup/tailscale-status.js'
 import type { NovaTool } from './complete-registry.js'
 import type { MeshNode } from '../mesh/mesh-registry.js'
 import { isTailnet } from '../sensing/net-scope.js'
 import { fetchWithSsrfGuard } from '../resilience/ssrf-guard.js'
 
 type Node = Pick<MeshNode, 'node_id' | 'hostname' | 'ip' | 'status' | 'last_heartbeat' | 'software'>
-export function tailscaleStatusCommand(binary: string, exists = existsSync) {
-    // The snap launcher cannot run in a hardened systemd service. Use the
-    // installed snap's actual CLI and its socket, never sudo or an ACL change.
-    if (binary === '/snap/bin/tailscale' && exists('/snap/tailscale/current/bin/tailscale')
-        && exists('/var/snap/tailscale/common/socket/tailscaled.sock')) {
-        return { binary: '/snap/tailscale/current/bin/tailscale', args: ['--socket=/var/snap/tailscale/common/socket/tailscaled.sock', 'status', '--json'] }
-    }
-    return { binary, args: ['status', '--json'] }
-}
 export function bindMeshLandingPage(input: string, status: any, nodes: Node[], now = Date.now()) {
     const url = new URL(input)
     if (url.protocol !== 'https:' || url.port || url.pathname !== '/' || url.search || url.hash || url.username || url.password

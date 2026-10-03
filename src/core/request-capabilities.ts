@@ -22,6 +22,15 @@ export function mentionsMesh(text: string): boolean {
     return containsTailnetUrl(text) || /\b(?:mesh|nodes?|knoten|ns\d+|jetson|pi5|raspberry|proxmox|nas|spark)\b/i.test(text)
 }
 
+export function mentionsEnvironment(text: string): boolean {
+    return mentionsMesh(text) || /\b(?:netzwerk|netz|lan|tailnet|hardware|geräte|geraete|devices)\b/i.test(text)
+}
+
+export function isEnvironmentOverview(text: string): boolean {
+    return mentionsEnvironment(text) && /^(?:und\s+)?(?:was\b|welche[nrs]?\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(text.trim())
+        && !/\b(?:installier\w*|lösch\w*|kopier\w*|verschieb\w*|starte?|stoppe?|deploy\w*|update\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*)\b/i.test(text)
+}
+
 /** A node target must not silently become the daemon's local desktop. */
 export function isNodeScreenshotRequest(text: string): boolean {
     // Separate mixed tasks: "Screenshot vom Desktop und zeige die Nodes"

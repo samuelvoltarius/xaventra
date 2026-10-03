@@ -5,19 +5,23 @@
  *   mit eigenem Tailnet-Interface). Jede Adresse — auch aus mDNS — passiert
  *   `scanTargetAllowed` direkt vor dem Verbindungsaufbau.
  * - Feste Port-Liste: Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
- *   Bambu 8883 (nur TCP-Connect, kein MQTT-Login), Home Assistant 8123;
+ *   MQTT 8883 (nur TCP-Connect, kein MQTT-Login oder Bambu-Nachweis), Home Assistant 8123;
  *   2.85: n8n 5678, Paperless-ngx 8000, Immich 2283, Jellyfin 8096,
  *   Nextcloud 80 (/status.php) — still gemeldet, nur unter „Verbindungen“.
  * - Erkennung über öffentliche, unauthentifizierte GET-Pfade; keine Logins,
  *   keine API-Keys, keine Schreibzugriffe.
  * - Rate-Limit (Verbindungen/s), begrenzte Parallelität, harte Gesamtzeit.
- * - Funde werden in die Geräte-Datei geschrieben (`gefunden`) und als Gedanke
- *   „Gerät X gefunden … überwachen?“ mit Stufe `fragen` gemeldet. Eingerichtet
- *   wird erst über `approveDevice`.
+ * - Runtime übernimmt Funde in die vorhandene Geräte-Datei. Verifizierte
+ *   öffentliche Adapter werden nur lesend überwacht; nötige Zugänge einmal
+ *   angefragt. Ein unbekannter offener Port bleibt unbestätigte Beobachtung.
  */
 
 import { Socket } from 'node:net'
 import { createSocket } from 'node:dgram'
+import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
 import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 
@@ -32,6 +36,7 @@ export interface DiscoveryDeps {
     mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>>
     now?: () => number
     sleep?: (ms: number) => Promise<void>
+    tailnetPeers?: () => Promise<string[]>
 }
 
 export interface DiscoveryOptions {
@@ -42,7 +47,11 @@ export interface DiscoveryOptions {
     mdns: boolean
     tailnetHosts: string[]
     probeTimeoutMs?: number
+    cursor?: DiscoveryCursor
+    signal?: AbortSignal
 }
+
+export interface DiscoveryCursor { scopeKey: string; hostOffset: number; portIndex: number }
 
 export interface DiscoveryReport {
     candidates: DeviceCandidate[]
@@ -53,6 +62,7 @@ export interface DiscoveryReport {
     timedOut: boolean
     durationMs: number
     scope: { subnets: string[]; hasTailnet: boolean }
+    cursor?: DiscoveryCursor
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +85,20 @@ export function realTcpProbe(host: string, port: number, timeoutMs: number): Pro
 export async function realHttpProbe(url: string, timeoutMs: number): Promise<HttpProbeResult | null> {
     try {
         const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, text/html' } })
-        const text = (await res.text()).slice(0, 8192)
+        const reader = res.body?.getReader()
+        const chunks: Uint8Array[] = []
+        let length = 0
+        if (reader) {
+            try {
+                while (length < 8192) {
+                    const item = await reader.read()
+                    if (item.done) break
+                    const bytes = item.value.subarray(0, 8192 - length)
+                    chunks.push(bytes); length += bytes.length
+                }
+            } finally { await reader.cancel().catch(() => undefined) }
+        }
+        const text = Buffer.concat(chunks).toString('utf8')
         return { status: res.status, server: res.headers.get('server') || undefined, body: text }
     } catch { return null }
 }
@@ -124,9 +147,9 @@ export class ProbeLimiter {
     maxInFlight = 0
     started = 0
     constructor(private readonly ratePerSec: number, private readonly concurrency: number, private readonly deadline: number,
-        private readonly now: () => number, private readonly sleep: (ms: number) => Promise<void>) {}
+        private readonly now: () => number, private readonly sleep: (ms: number) => Promise<void>, private readonly signal?: AbortSignal) {}
 
-    expired(): boolean { return this.now() >= this.deadline }
+    expired(): boolean { return this.signal?.aborted === true || this.now() >= this.deadline }
 
     async run<T>(task: () => Promise<T>): Promise<T | undefined> {
         if (this.expired()) return undefined
@@ -151,6 +174,26 @@ export class ProbeLimiter {
 
 const cidrText = (cidr: Cidr) => `${[cidr.base >>> 24, (cidr.base >>> 16) & 255, (cidr.base >>> 8) & 255, cidr.base & 255].join('.')}/${cidr.bits}`
 
+/** Read only local Tailscale state; names and keys never enter the inventory. */
+export function tailnetPeerAddresses(value: unknown): string[] {
+    const peers = (value as { Peer?: unknown })?.Peer
+    if (!peers || typeof peers !== 'object' || Array.isArray(peers)) return []
+    return [...new Set(Object.values(peers).flatMap((peer: any) => Array.isArray(peer?.TailscaleIPs)
+        ? peer.TailscaleIPs.filter((ip: unknown) => typeof ip === 'string' && /^100\.(?:\d{1,3}\.){2}\d{1,3}$/.test(ip)) : []))].slice(0, 256).sort() as string[]
+}
+
+async function localTailnetPeers(timeoutMs = 2000): Promise<string[]> {
+    try {
+        const { locateProgram } = await import('../startup/environment-scanner.js')
+        const binary = locateProgram('tailscale', ['/usr/bin/tailscale', '/usr/local/bin/tailscale', '/snap/bin/tailscale'])
+        if (!binary) return []
+        const command = tailscaleStatusCommand(binary)
+        const { stdout } = await promisify(execFile)(command.binary, command.args, { timeout: timeoutMs, maxBuffer: 256 * 1024, windowsHide: true })
+        const status = JSON.parse(stdout)
+        return status?.BackendState === 'Running' ? tailnetPeerAddresses(status) : []
+    } catch { return [] }
+}
+
 export async function discoverDevices(options: DiscoveryOptions, deps: DiscoveryDeps = {}): Promise<DiscoveryReport> {
     const now = deps.now || Date.now
     const sleep = deps.sleep || ((ms: number) => new Promise<void>(resolve => { const t = setTimeout(resolve, ms); t.unref?.() }))
@@ -160,8 +203,16 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const deadline = startedAt + options.deadlineMs
     const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
     const scope = ownSubnets(deps.interfaces)
-    const plan = scanHosts(scope, options.tailnetHosts, options.maxHosts)
-    const limiter = new ProbeLimiter(options.ratePerSec, options.concurrency, deadline, now, sleep)
+    const peers = scope.hasTailnet ? await (deps.tailnetPeers || (() => localTailnetPeers(Math.max(100, Math.min(2000, options.deadlineMs / 4)))))().catch(() => []) : []
+    const tailnetHosts = [...new Set([...options.tailnetHosts, ...peers])].sort()
+    const scopeKey = createHash('sha256').update(JSON.stringify({ subnets: scope.subnets, tailnet: scope.hasTailnet, extra: tailnetHosts })).digest('hex')
+    const saved = options.cursor
+    const validCursor = saved?.scopeKey === scopeKey && Number.isSafeInteger(saved.hostOffset) && saved.hostOffset >= 0
+        && Number.isInteger(saved.portIndex) && saved.portIndex >= 0 && saved.portIndex < DISCOVERY_PORTS.length
+    let hostOffset = validCursor ? saved.hostOffset : 0
+    let plan = scanHosts(scope, tailnetHosts, options.maxHosts, hostOffset)
+    if (hostOffset >= plan.totalHosts) { hostOffset = 0; plan = scanHosts(scope, tailnetHosts, options.maxHosts) }
+    const limiter = new ProbeLimiter(options.ratePerSec, options.concurrency, deadline, now, sleep, options.signal)
     const candidates: DeviceCandidate[] = []
     const rejected = [...plan.rejected]
     const seen = new Set<string>()
@@ -184,46 +235,63 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
         } catch { /* mDNS optional */ }
     }
 
-    const probeHost = async (host: string): Promise<void> => {
-        for (const port of DISCOVERY_PORTS) {
+    const progress = new Map<number, number>()
+    const probeHost = async (host: string, hostIndex: number): Promise<void> => {
+        const firstPort = hostIndex === 0 && validCursor && hostOffset === saved.hostOffset ? saved.portIndex : 0
+        progress.set(hostIndex, firstPort)
+        for (let portIndex = firstPort; portIndex < DISCOVERY_PORTS.length; portIndex++) {
+            const port = DISCOVERY_PORTS[portIndex]
             if (limiter.expired()) return
             // Gate directly before every connect.
             if (!scanTargetAllowed(host, scope).allowed) return
             const open = await limiter.run(() => tcpProbe(host, port, probeTimeout))
-            if (!open) continue
+            if (open === undefined) return
+            if (!open) { progress.set(hostIndex, portIndex + 1); continue }
             if (port === 8883) {
-                add({ type: 'bambu', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'MQTT-Port offen, nicht angemeldet' } })
+                add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'TLS/MQTT-Port offen; kein Beleg für einen Bambu-Drucker' } })
+                progress.set(hostIndex, portIndex + 1)
                 continue
             }
+            let identified = false
             for (const check of HTTP_CHECKS[port] || []) {
                 const result = await limiter.run(() => httpProbe(`http://${host}:${port}${check.path}`, probeTimeout))
+                if (result === undefined) return
                 const type = identifyHttp(port, check.path, result ?? null)
                 if (type) {
                     add({ type, host, port, via: 'http', evidence: { quelle: `GET ${check.path}`, port, http: result?.status ?? null } })
+                    identified = true
                     break
                 }
             }
+            if (!identified) add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'Erreichbar, keine bestätigte Dienstkennung oder Steuerfreigabe' } })
+            progress.set(hostIndex, portIndex + 1)
         }
     }
 
     let index = 0
     const workers = Array.from({ length: Math.max(1, Math.min(options.concurrency, plan.hosts.length)) }, async () => {
         while (index < plan.hosts.length && !limiter.expired()) {
-            const host = plan.hosts[index++]
-            await probeHost(host)
+            const hostIndex = index++
+            await probeHost(plan.hosts[hostIndex], hostIndex)
         }
     })
     await Promise.all(workers)
+
+    let completedPrefix = 0
+    while (progress.get(completedPrefix) === DISCOVERY_PORTS.length) completedPrefix++
+    const nextOffset = hostOffset + completedPrefix
+    const remaining = nextOffset < plan.totalHosts
 
     return {
         candidates,
         scannedHosts: Math.min(index, plan.hosts.length),
         probes: limiter.started,
         rejected,
-        truncated: plan.truncated || index < plan.hosts.length,
-        timedOut: limiter.expired() && index < plan.hosts.length,
+        truncated: remaining,
+        timedOut: limiter.expired() && completedPrefix < plan.hosts.length,
         durationMs: now() - startedAt,
         scope: { subnets: scope.subnets.map(cidrText), hasTailnet: scope.hasTailnet },
+        cursor: { scopeKey, hostOffset: remaining ? nextOffset : 0, portIndex: remaining ? (progress.get(completedPrefix) ?? 0) : 0 },
     }
 }
 

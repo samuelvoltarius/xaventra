@@ -6,6 +6,7 @@ const governedReadOnlyTools = new Set([
     'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
     'find_capability', 'resolve_capability', 'list_sessions', 'mission_config',
     'list_reminders', 'list_sub_agents', 'nova_trace_stats',
+    'blue_asset_inventory', 'environment_inventory', 'mesh_services',
 ])
 
 const toolPolicyManagementTools = new Set(['set_tool_policy', 'list_tool_policies'])
@@ -53,6 +54,10 @@ async function authorize(name: string, args: Record<string, unknown>, authority:
     }
     if (governedReadOnly) {
         if (!governedReadOnlyTools.has(name)) throw new Error(`Read-only automation policy blocked tool: ${name}`)
+        if (['blue_asset_inventory', 'environment_inventory', 'mesh_services'].includes(name)) {
+            const { isToolAllowed, getToolRestrictionMessage } = await import('../users/multi-user-middleware.js')
+            if (!authUserId || !isToolAllowed(authUserId, name, channel)) throw new Error(getToolRestrictionMessage(authUserId, name, channel))
+        }
     } else {
         const { isToolAllowed, getToolRestrictionMessage } = await import('../users/multi-user-middleware.js')
         // No principal is never a reason to skip authorization. Any import or

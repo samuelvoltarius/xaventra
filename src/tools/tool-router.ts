@@ -15,7 +15,7 @@
 import { getToolRegistry } from './complete-registry.js'
 import { detectActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
-import { containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh } from '../core/request-capabilities.js'
+import { containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to LLM
@@ -103,7 +103,7 @@ const SKILL_PACKS: SkillPack[] = [
         name: 'mesh-network',
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
         keywords: ['mesh', 'node', 'nodes', 'knoten', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],
-        tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file'],
+        tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send'],
     },
     {
         name: 'docker',
@@ -381,6 +381,7 @@ export function getRelevantTools(
     // ── FILTERED MODE (weak models) ─────────────────────────────────────────────
     const includedToolNames = new Set<string>(CORE_TOOLS)
     const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes'] : []
+    if (mentionsEnvironment(primaryMessage)) liveTools.push('environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes')
     if (containsTailnetUrl(primaryMessage)) liveTools.push('mesh_inspect_url', 'mesh_services')
     if (primaryIntent.kind === 'screenshot') liveTools.push('desktop_screenshot')
     for (const name of liveTools) includedToolNames.add(name)

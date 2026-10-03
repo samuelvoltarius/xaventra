@@ -1055,6 +1055,12 @@
       ]
     },
     {
+      "name": "environment_inventory",
+      "category": "system",
+      "description": "Liest die bereits automatisch erkannten LAN-/Tailnet-Geräte mit Fundzeit, Status und Grenzen der letzten Suche. Startet keinen neuen Scan; trennt Gerätefunde von bestätigter Steuerbarkeit.",
+      "parameters": []
+    },
+    {
       "name": "evolution_history",
       "category": "system",
       "description": "Zeigt die letzten Self-Evolution-Änderungen an",
@@ -1841,6 +1847,62 @@
           "name": "local_name",
           "type": "string",
           "required": false
+        }
+      ]
+    },
+    {
+      "name": "mesh_exchange_list",
+      "category": "mesh",
+      "description": "Listet Dateien im eigenen Austauschordner eines Nodes. Keine anderen Verzeichnisse oder Laufzeitdaten.",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mesh_exchange_send",
+      "category": "mesh",
+      "description": "Kopiert eine vorhandene Datei zwischen den eigenen Austauschordnern zweier Nodes. Meldet Erfolg erst nach bestätigter Größen- und SHA-256-Prüfung am Ziel. Keine allgemeinen Dateipfade.",
+      "parameters": [
+        {
+          "name": "source_node",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "target_node",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "mesh_exchange_write",
+      "category": "mesh",
+      "description": "Legt einen erzeugten Text/JSON-Bericht im eigenen Austauschordner eines Nodes ab (max. 256 KiB). Überschreibt keine andere Datei. Keine Secrets oder Laufzeitdaten ablegen.",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true
         }
       ]
     },

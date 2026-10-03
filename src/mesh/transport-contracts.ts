@@ -4,6 +4,7 @@ export type MeshEnvelopeKind =
     | 'mesh.hello' | 'mesh.ack'
     | 'node.heartbeat' | 'node.capabilities' | 'node.tools'
     | 'tool.request' | 'agent.request' | 'mission.request'
+    | 'exchange.request' | 'exchange.response'
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
     | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
@@ -180,6 +181,7 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
     return typeof value === 'string' && new Set<MeshEnvelopeKind>([
         'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools',
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
+        'exchange.request', 'exchange.response',
         'run.checkpoint', 'run.result', 'run.cancel',
     ]).has(value as MeshEnvelopeKind)
 }

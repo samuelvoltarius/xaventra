@@ -12,6 +12,7 @@ import { learnQuietHours, readOwnerTimestamps } from './quiet-hours.js'
 import { createSystemAdapter } from './adapters/system.js'
 import { detectAccounts, readAuthProfileShapes } from './accounts.js'
 import * as runtime from './runtime.js'
+import * as discovery from './discovery.js'
 
 const dirs: string[] = []
 const tmp = (prefix: string) => { const dir = mkdtempSync(join(tmpdir(), prefix)); dirs.push(dir); return dir }
@@ -268,6 +269,44 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
 })
 
 describe('Eigene Systeme, Konten, Ruhezeiten', () => {
+    it('setzt unvollständige automatische Suchen selbst fort und stoppt die Fortsetzung nach Abschluss', async () => {
+        vi.useFakeTimers()
+        try {
+            const dataDir = tmp('sense-resume-')
+            runtime.setSensingConfig({ adapters: { printer: { enabled: false }, homeassistant: { enabled: false }, mail: { enabled: false }, system: { enabled: false } }, discovery: { firstRunDelaySec: 1, intervalHours: 24, mdns: false } }, {}, dataDir)
+            const report = { candidates: [], scannedHosts: 1, probes: 9, rejected: [], truncated: true, timedOut: true, durationMs: 1000,
+                scope: { subnets: ['192.168.1.0/24'], hasTailnet: false }, cursor: { scopeKey: 'scope', hostOffset: 1, portIndex: 3 } }
+            const spy = vi.spyOn(discovery, 'discoverDevices').mockResolvedValueOnce(report).mockResolvedValue({ ...report, truncated: false, timedOut: false, cursor: { scopeKey: 'scope', hostOffset: 0, portIndex: 0 } })
+            runtime.startSensing({ nodeOnly: false })
+            await vi.advanceTimersByTimeAsync(1000)
+            expect(spy).toHaveBeenCalledTimes(1)
+            await vi.advanceTimersByTimeAsync(5 * 60_000)
+            expect(spy).toHaveBeenCalledTimes(2)
+            expect(spy.mock.calls[1][0].cursor).toEqual(report.cursor)
+            await vi.advanceTimersByTimeAsync(5 * 60_000)
+            expect(spy).toHaveBeenCalledTimes(2)
+        } finally { runtime.stopSensing(); vi.useRealTimers() }
+    })
+
+    it('speichert nach dem Stoppen keine späten Scan-Funde und keine Owner-Frage', async () => {
+        const dataDir = tmp('sense-cancel-')
+        runtime.setSensingConfig({ discovery: { mdns: false, deadlineSec: 1, maxHosts: 1 } }, {}, dataDir)
+        let resolve!: (report: discovery.DiscoveryReport) => void
+        vi.spyOn(discovery, 'discoverDevices').mockImplementation(() => new Promise(done => { resolve = done }))
+        const run = runtime.runDiscoveryNow()
+        runtime.stopSensing()
+        resolve({ candidates: [{ type: 'homeassistant', host: '192.168.1.2', port: 8123, via: 'http' }], scannedHosts: 1, probes: 1, rejected: [], truncated: false, timedOut: false, durationMs: 1, scope: { subnets: [], hasTailnet: false } })
+        expect(await run).toContain('abgebrochen')
+        expect(loadDevices(dataDir)).toEqual([])
+    })
+
+    it('verliert alte Owner-Entscheidungen nicht bei mehr als 200 Funden', () => {
+        const dataDir = tmp('sense-retain-')
+        const [first] = recordCandidates(dataDir, [{ type: 'homeassistant', host: '192.168.1.1', port: 8123, via: 'http' }])
+        setDeviceStatus(dataDir, first.id, 'abgelehnt', { permission: 'owner', principalId: 'owner' })
+        recordCandidates(dataDir, Array.from({ length: 220 }, (_, i) => ({ type: 'n8n' as const, host: `192.168.1.${i + 2}`, port: 5678, via: 'http' as const })))
+        expect(loadDevices(dataDir).find(d => d.id === first.id)?.status).toBe('abgelehnt')
+    })
     it('System-Adapter meldet nur neue Zeilen (keine Altlasten beim Start)', async () => {
         const dataDir = tmp('sense-sys-')
         mkdirSync(join(dataDir, 'self-heal', 'journal'), { recursive: true })

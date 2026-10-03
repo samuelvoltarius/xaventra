@@ -20,6 +20,7 @@ import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } fro
 import { checkDelegatedFence } from './fence-highwater.js'
 import { heartbeatProfileFields, peerWantsProfile, sanitizeNodeProfile, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
+import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -53,6 +54,7 @@ const results = new Map<string, ResultPayload>()
 const processed = new Map<string, ResultPayload>()
 const activeAgentRuns = new Map<string, AbortController>()
 const cancelledAgentRuns = new Map<string, number>()
+const exchangePending = new Map<string, { node: string; expiresAt: number }>()
 const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
 /** MI-17: idempotency/result caches are bounded (oldest entries evicted first). */
 export const MAX_PROCESSED_RESULTS = 2_000
@@ -149,6 +151,37 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
 }
 
 export function getMeshTransport(): MeshTransportRouter | null { return router }
+
+/** Main orchestrates transfers; remote receipts are bound to the requested node. */
+export async function requestNodeExchange(node: string, payload: ExchangeRequest): Promise<unknown> {
+    if (!validExchangeRequest(payload) || !node || node === '*') throw new Error('invalid exchange target/request')
+    await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:exchange.request' })
+    if (node === getLocalNodeId()) return executeExchange(payload, undefined, async () => {
+        await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:exchange.commit' })
+    })
+    const transport = router || initMeshTransportRuntime()
+    const envelope = transport.create('exchange.request', node, payload, { ttlMs: 30_000, fence: currentMainMeshFence() })
+    if (exchangePending.size >= 64) throw new Error('too many pending exchanges')
+    exchangePending.set(envelope.id, { node, expiresAt: envelope.expiresAt })
+    try {
+        const ack = await transport.send(node, envelope)
+        if (ack.status === 'rejected' || ack.status === 'unreachable') throw new Error(`exchange not delivered: ${ack.status}`)
+        const result = await waitForMeshRunResult(envelope.id, 30_000)
+        if (!result) throw new Error('exchange receipt timed out; transfer is unconfirmed')
+        if (result.success !== true) throw new Error('exchange failed; no confirmed success receipt')
+        return validateExchangeResult(payload, result.result)
+    } finally { exchangePending.delete(envelope.id); results.delete(envelope.id) }
+}
+
+export async function transferNodeExchange(source: string, target: string, name: string): Promise<ExchangeFile> {
+    const file = await requestNodeExchange(source, { operation: 'read', name }) as ExchangeFile
+    if (!file || file.name !== name || !validExchangeRequest({ operation: 'write', name, base64: file.base64, sha256: file.sha256 })) throw new Error('invalid exchange source receipt')
+    const bytes = Buffer.from(file.base64!, 'base64')
+    if (bytes.length !== file.bytes || createHash('sha256').update(bytes).digest('hex') !== file.sha256) throw new Error('exchange source hash mismatch')
+    const receipt = await requestNodeExchange(target, { operation: 'write', name, base64: file.base64, sha256: file.sha256 }) as ExchangeFile
+    if (receipt?.name !== name || receipt.bytes !== file.bytes || receipt.sha256 !== file.sha256) throw new Error('exchange destination receipt mismatch')
+    return { name, bytes: receipt.bytes, sha256: receipt.sha256 }
+}
 
 /** CL-07: the Main fence that delegated work carries (signed with the envelope). */
 export function currentMainMeshFence(): MeshFence | undefined {
@@ -414,6 +447,27 @@ export async function stopMeshTransportRuntime(): Promise<void> {
 
 async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHandler): Promise<void> {
     if (!router) return
+    if (envelope.kind === 'exchange.response') {
+        const result = envelope.payload as ResultPayload
+        const pending = exchangePending.get(result?.requestId)
+        if (pending && pending.node === envelope.sourceNode && pending.expiresAt >= Date.now()) {
+            rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
+        }
+        return
+    }
+    if (envelope.kind === 'exchange.request') {
+        let result: ResultPayload
+        try {
+            const fence = await verifyDelegatedEnvelopeFence(envelope)
+            if (!fence.ok || envelope.fence?.service !== 'nova-main') throw new Error('exchange Main fence rejected')
+            result = makeResult(envelope.id, true, await executeExchange(envelope.payload as ExchangeRequest, undefined, async () => {
+                if (!(await verifyDelegatedEnvelopeFence(envelope)).ok || envelope.expiresAt < Date.now()) throw new Error('exchange authority expired before commit')
+            }))
+        } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
+        const response = router.create('exchange.response', envelope.sourceNode, result, { ttlMs: 30_000 })
+        await router.send(envelope.sourceNode, response)
+        return
+    }
     if (envelope.kind === 'node.heartbeat') {
         const previous = peerStates[envelope.sourceNode]
         if (peerWantsProfile(getLocalNodeId(), previous?.bootId, envelope.payload)) profilePublishState = { ...profilePublishState, resendWanted: true }
@@ -426,6 +480,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     }
     if (envelope.kind === 'run.result') {
         const result = envelope.payload as ResultPayload
+        if (exchangePending.has(result?.requestId)) return
         if (result?.requestId) {
             rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
             try {

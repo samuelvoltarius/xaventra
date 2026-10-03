@@ -86,14 +86,15 @@ export function scanTargetAllowed(ip: string, scope: { subnets: Cidr[]; hasTailn
 }
 
 /** All hosts of the own subnets plus validated tailnet hosts, capped at maxHosts. */
-export function scanHosts(scope: { subnets: Cidr[]; hasTailnet: boolean }, extra: string[], maxHosts: number): { hosts: string[]; rejected: Array<{ host: string; reason: string }>; truncated: boolean } {
+export function scanHosts(scope: { subnets: Cidr[]; hasTailnet: boolean }, extra: string[], maxHosts: number, offset = 0): { hosts: string[]; rejected: Array<{ host: string; reason: string }>; truncated: boolean; totalHosts: number } {
     const hosts: string[] = []
     const rejected: Array<{ host: string; reason: string }> = []
-    let truncated = false
+    const seen = new Set<string>()
+    let totalHosts = 0
     const push = (ip: string) => {
-        if (hosts.includes(ip)) return
-        if (hosts.length >= maxHosts) { truncated = true; return }
-        hosts.push(ip)
+        if (seen.has(ip)) return
+        seen.add(ip)
+        if (totalHosts++ >= offset && hosts.length < maxHosts) hosts.push(ip)
     }
     for (const ip of extra) {
         const decision = scanTargetAllowed(ip, scope)
@@ -105,8 +106,7 @@ export function scanHosts(scope: { subnets: Cidr[]; hasTailnet: boolean }, extra
         for (let offset = 0; offset < size; offset++) {
             const ip = intToIp((subnet.base + offset) >>> 0)
             if (scanTargetAllowed(ip, scope).allowed) push(ip)
-            if (truncated) break
         }
     }
-    return { hosts, rejected, truncated }
+    return { hosts, rejected, truncated: offset + hosts.length < totalHosts, totalHosts }
 }

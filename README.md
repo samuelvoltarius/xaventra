@@ -25,11 +25,16 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.2 preview** (Telegram collective-node reference
-fixes; production activation tracked separately). It builds on the 2.85.0 source. See the
+Current source candidate: **2.85.3 preview** (background network awareness,
+resumable discovery and verified node exchange; production activation tracked
+separately). It builds on the 2.85.0 source. See the
 [changelog](CHANGELOG.md) and [Telegram guide](docs/TELEGRAM.md) for the fixes
 and the explicit boundary on node-targeted screenshots. The 2.85.0 feature
 baseline and its verification record follow below.
+The [autonomy guide](docs/AUTONOMY_GUIDE.md) describes the automatic scan cadence,
+partial-coverage limits and each node's own exchange folder. Inventory and
+transport receipts establish observed capabilities and completed transfers;
+they do not imply unrestricted control or a desktop on a headless server.
 See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
 [verification record](docs/VERIFICATION_2.85.0.md). The
 [2.78.58 record](docs/VERIFICATION_2.78.58.md) remains the prior baseline.

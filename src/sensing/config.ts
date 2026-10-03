@@ -16,7 +16,7 @@
  *     },
  *     "discovery": { "enabled": true, "deadlineSec": 60, "ratePerSec": 40, "concurrency": 16,
  *                    "maxHosts": 512, "mdns": true, "tailnetHosts": [],
- *                    "firstRunDelaySec": 120, "intervalHours": 24 }
+ *                    "firstRunDelaySec": 120, "intervalHours": 1 }
  *   } }
  * }
  */
@@ -138,7 +138,7 @@ export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = proces
             mdns: discovery.mdns !== false,
             tailnetHosts: strings(discovery.tailnetHosts, 64),
             firstRunDelaySec: num(discovery.firstRunDelaySec, 120, 0, 86_400),
-            intervalHours: num(discovery.intervalHours, 24, 1, 24 * 30),
+            intervalHours: num(discovery.intervalHours, 1, 1, 24 * 30),
         },
     }
 }

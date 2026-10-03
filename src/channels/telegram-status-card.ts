@@ -17,6 +17,7 @@ export interface StatusCardTransport {
 }
 
 export interface StatusCardOptions {
+    startedAt?: number
     minIntervalMs?: number
     now?: () => number
     chatId?: string
@@ -52,7 +53,7 @@ export class LiveStatusCard {
     constructor(private readonly transport: StatusCardTransport, private readonly options: StatusCardOptions = {}) {
         this.minIntervalMs = Math.max(0, options.minIntervalMs ?? 2_000)
         this.now = options.now ?? Date.now
-        this.startedAt = this.now()
+        this.startedAt = options.startedAt ?? this.now()
     }
 
     get message(): number | null { return this.messageId }
@@ -106,8 +107,8 @@ export class LiveStatusCard {
         if (this.messageId === null || this.disabled) return
         const seconds = Math.max(0, Math.round((this.now() - this.startedAt) / 1000))
         const steps = this.maxStep > 0 ? `${this.maxStep} Schritte` : `${this.updates} Statusmeldungen`
-        const head = ok ? `✅ Fertig · ${steps} · ${seconds} s` : `❌ Abgebrochen · ${steps} · ${seconds} s`
-        const tail = detail ? `\n${String(detail).trim().slice(0, 300)}` : this.lastSent ? `\nZuletzt: ${this.lastSent.slice(0, 200)}` : ''
+        const head = ok ? `✅ Antwort gesendet · ${steps} · ${seconds} s` : `❌ Abgebrochen · ${steps} · ${seconds} s`
+        const tail = detail ? `\n${String(detail).trim().slice(0, 300)}` : ''
         await this.edit(`${head}${tail}`)
     }
 

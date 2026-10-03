@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.85.3] — 2026-10-04 (source candidate)
+
+- Owner network questions use existing background observations, including
+  freshness and partial coverage. Relevant inventory survives prompt budgeting
+  and bypasses response caching; synthesis cannot turn found devices into
+  universally controllable nodes.
+- Device discovery resumes interrupted hosts/ports and continues capped pages
+  after five minutes, including across restarts. Completed cycles default to
+  hourly refresh; explicit configured intervals remain unchanged. Stopping
+  sensing prevents late findings and owner questions.
+- Read local Tailscale peer addresses automatically through the existing native
+  CLI/socket path. Public/foreign addresses still fail the own-network gate.
+  Unidentified reachable services remain unverified; an open MQTT port no longer
+  invents a Bambu printer. Bound HTTP probe bodies before buffering them.
+- Preserve saved device decisions and one-time credential asks instead of
+  dropping the oldest entries when the inventory grows.
+- Add signed, Main-fenced exchanges between each node's own `exchange/` folder:
+  flat names, 256 KiB files, quota, no state/credential paths, no conflicting
+  overwrite, size/hash readback and correlated destination receipts.
+- Permit role-checked read-only inventory in the governed automation path.
+  Telegram reports answer delivery only after the send succeeds and measures
+  elapsed time from the inbound request.
+
+Remote desktop capture remains unavailable; no host display or credential
+access is introduced. Local regressions are separate from exact-source CI,
+signed packages and production acceptance.
+
 ## [2.85.2] — 2026-10-03 (source candidate)
 
 - Resolve the bounded mixed request "was können deine nodes? send mir einen
