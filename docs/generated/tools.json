@@ -4,7 +4,7 @@
     {
       "name": "add_exec_rule",
       "category": "security",
-      "description": "Fï¿½gt eine Custom Exec-Approval Regel hinzu (allow/deny/confirm)",
+      "description": "Fügt eine Custom Exec-Approval Regel hinzu (allow/deny/confirm)",
       "parameters": [
         {
           "name": "pattern",
@@ -31,7 +31,7 @@
     {
       "name": "add_route",
       "category": "system",
-      "description": "Fï¿½gt eine neue Route hinzu (Channel + Pattern ? Agent/Model).",
+      "description": "Fügt eine neue Route hinzu (Channel + Pattern ? Agent/Model).",
       "parameters": [
         {
           "name": "channel",
@@ -58,7 +58,7 @@
     {
       "name": "analyze_image",
       "category": "media",
-      "description": "Analysiert ein Bild mit KI Vision (Nova-LLM/OpenAI/Anthropic). Auto-wÃ¤hlt verfÃ¼gbaren Provider â€” funktioniert ohne API Keys Ã¼ber Nova-LLM.",
+      "description": "Analysiert ein Bild mit KI Vision (Nova-LLM/OpenAI/Anthropic). Auto-wählt verfügbaren Provider — funktioniert ohne API Keys über Nova-LLM.",
       "parameters": [
         {
           "name": "path",
@@ -605,7 +605,7 @@
     {
       "name": "check_command",
       "category": "security",
-      "description": "Prï¿½ft ob ein Command sicher ist: erkennt rm -rf, DROP DATABASE, Fork Bombs etc. Gibt Risk-Level zurï¿½ck.",
+      "description": "Prüft ob ein Command sicher ist: erkennt rm -rf, DROP DATABASE, Fork Bombs etc. Gibt Risk-Level zurück.",
       "parameters": [
         {
           "name": "command",
@@ -767,7 +767,7 @@
     {
       "name": "create_hook",
       "category": "system",
-      "description": "Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelï¿½st wird",
+      "description": "Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelöst wird",
       "parameters": [
         {
           "name": "name",
@@ -833,7 +833,7 @@
     {
       "name": "delete_file",
       "category": "file",
-      "description": "LÃ¶scht eine Datei oder Ordner",
+      "description": "Löscht eine Datei oder Ordner",
       "parameters": [
         {
           "name": "path",
@@ -845,7 +845,7 @@
     {
       "name": "delete_hook",
       "category": "system",
-      "description": "Lï¿½scht einen Event-Hook",
+      "description": "Löscht einen Event-Hook",
       "parameters": [
         {
           "name": "hook_id",
@@ -1057,7 +1057,7 @@
     {
       "name": "evolution_history",
       "category": "system",
-      "description": "Zeigt die letzten Self-Evolution-ï¿½nderungen an",
+      "description": "Zeigt die letzten Self-Evolution-Änderungen an",
       "parameters": [
         {
           "name": "limit",
@@ -1069,13 +1069,13 @@
     {
       "name": "evolution_stats",
       "category": "system",
-      "description": "Zeigt Statistiken ï¿½ber bisherige Self-Evolutions",
+      "description": "Zeigt Statistiken über bisherige Self-Evolutions",
       "parameters": []
     },
     {
       "name": "evolve_self",
       "category": "system",
-      "description": "Modifiziert Novas eigenen TypeScript-Quellcode sicher: erstellt Git-Branch ? ï¿½ndert Code ? kompiliert ? merged bei Erfolg, rollt zurï¿½ck bei Fehler. Nur fï¿½r src/tools/ und src/layers/ erlaubt.",
+      "description": "Modifiziert Novas eigenen TypeScript-Quellcode sicher: erstellt Git-Branch ? ändert Code ? kompiliert ? merged bei Erfolg, rollt zurück bei Fehler. Nur für src/tools/ und src/layers/ erlaubt.",
       "parameters": [
         {
           "name": "file",
@@ -1125,7 +1125,7 @@
     {
       "name": "execute_python",
       "category": "system",
-      "description": "Fï¿½hrt Python-Code direkt aus. Nutze dies IMMER wenn du Python-Skripte schreibst ï¿½ statt sie nur in den Chat zu schreiben. Unterstï¿½tzt inline Code, .py Dateien, und optionale pip-Installationen.",
+      "description": "Führt Python-Code direkt aus. Nutze dies IMMER wenn du Python-Skripte schreibst — statt sie nur in den Chat zu schreiben. Unterstützt inline Code, .py Dateien, und optionale pip-Installationen.",
       "parameters": [
         {
           "name": "code",
@@ -1169,7 +1169,7 @@
     {
       "name": "fetch_url",
       "category": "browser",
-      "description": "LÃ¤dt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.",
+      "description": "Lädt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.",
       "parameters": [
         {
           "name": "url",
@@ -1198,7 +1198,7 @@
     {
       "name": "file_to_base64",
       "category": "media",
-      "description": "Liest eine Datei und gibt Base64-Inhalt + MIME zurï¿½ck",
+      "description": "Liest eine Datei und gibt Base64-Inhalt + MIME zurück",
       "parameters": [
         {
           "name": "path",
@@ -1259,7 +1259,7 @@
     {
       "name": "generate_image",
       "category": "media",
-      "description": "Generiert ein Bild mit KI (DALL-E 3 / OpenAI Image). Gibt den Dateipfad des generierten Bildes zurÃ¼ck. UnterstÃ¼tzt verschiedene SeitenverhÃ¤ltnisse.",
+      "description": "Generiert ein Bild mit KI (DALL-E 3 / OpenAI Image). Gibt den Dateipfad des generierten Bildes zurück. Unterstützt verschiedene Seitenverhältnisse.",
       "parameters": [
         {
           "name": "prompt",
@@ -1276,7 +1276,7 @@
     {
       "name": "get_current_time",
       "category": "system",
-      "description": "Gibt die exakte aktuelle Systemzeit zurï¿½ck. NUTZE DAS wenn du die Uhrzeit brauchst ï¿½ NIEMALS raten oder schï¿½tzen! Dieses Tool liefert die echte Systemuhr.",
+      "description": "Gibt die exakte aktuelle Systemzeit zurück. NUTZE DAS wenn du die Uhrzeit brauchst — NIEMALS raten oder schätzen! Dieses Tool liefert die echte Systemuhr.",
       "parameters": []
     },
     {
@@ -1294,7 +1294,7 @@
     {
       "name": "google_search",
       "category": "browser",
-      "description": "Sucht mit Google Ã¼ber Headless-Browser (Playwright). Gibt echte Suchergebnisse zurÃ¼ck.",
+      "description": "Sucht mit Google über Headless-Browser (Playwright). Gibt echte Suchergebnisse zurück.",
       "parameters": [
         {
           "name": "query",
@@ -1437,7 +1437,7 @@
     {
       "name": "hook_history",
       "category": "system",
-      "description": "Zeigt Hook-Ausfï¿½hrungs-Verlauf",
+      "description": "Zeigt Hook-Ausführungs-Verlauf",
       "parameters": [
         {
           "name": "limit",
@@ -1466,7 +1466,7 @@
     {
       "name": "kg_remember",
       "category": "memory",
-      "description": "Speichert eine Tatsache direkt im Knowledge Graph. Z.B. \"Sample nutzt tmux\" â†’ kg_remember(\"Sample\", \"uses\", \"tmux\")",
+      "description": "Speichert eine Tatsache direkt im Knowledge Graph. Z.B. \"Sample nutzt tmux\" → kg_remember(\"Sample\", \"uses\", \"tmux\")",
       "parameters": [
         {
           "name": "subject",
@@ -1488,7 +1488,7 @@
     {
       "name": "kg_search",
       "category": "memory",
-      "description": "Durchsucht den Knowledge Graph per Keyword â€” kein LLM nÃ¶tig. Findet Fakten, Beziehungen und Eigenschaften von EntitÃ¤ten.",
+      "description": "Durchsucht den Knowledge Graph per Keyword — kein LLM nötig. Findet Fakten, Beziehungen und Eigenschaften von Entitäten.",
       "parameters": [
         {
           "name": "query",
@@ -1636,7 +1636,7 @@
     {
       "name": "list_media_providers",
       "category": "media",
-      "description": "Zeigt alle verfï¿½gbaren Media-Provider und ihre Capabilities.",
+      "description": "Zeigt alle verfügbaren Media-Provider und ihre Capabilities.",
       "parameters": []
     },
     {
@@ -1690,7 +1690,7 @@
     {
       "name": "list_voices",
       "category": "media",
-      "description": "Listet verfï¿½gbare TTS-Stimmen fï¿½r einen Provider",
+      "description": "Listet verfügbare TTS-Stimmen für einen Provider",
       "parameters": [
         {
           "name": "provider",
@@ -1702,7 +1702,7 @@
     {
       "name": "load_plugin",
       "category": "system",
-      "description": "Lï¿½dt ein Plugin aus einem Verzeichnis.",
+      "description": "Lädt ein Plugin aus einem Verzeichnis.",
       "parameters": [
         {
           "name": "path",
@@ -1714,7 +1714,7 @@
     {
       "name": "load_skills",
       "category": "system",
-      "description": "Lï¿½dt Skills aus einem Verzeichnis.",
+      "description": "Lädt Skills aus einem Verzeichnis.",
       "parameters": [
         {
           "name": "dir",
@@ -1820,7 +1820,7 @@
     {
       "name": "mesh_download_file",
       "category": "system",
-      "description": "LÃ¤dt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen GerÃ¤ten zu holen bevor du sie mit send_file weiterschickst.",
+      "description": "Lädt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen Geräten zu holen bevor du sie mit send_file weiterschickst.",
       "parameters": [
         {
           "name": "host",
@@ -1845,21 +1845,33 @@
       ]
     },
     {
+      "name": "mesh_inspect_url",
+      "category": "system",
+      "description": "Ordnet eine Tailscale-HTTPS-Startseite über lokale Peerliste und aktuellen Mesh-Node zu und liest sie begrenzt. Nur Owner; keine fremden Ziele, Pfade, Logins oder Weiterleitungen. Meldet Diensthinweise als Seiteninhalt, nicht als bewiesene Dienstfunktion.",
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "mesh_nodes",
       "category": "system",
-      "description": "Listet alle verfï¿½gbaren (online, nicht-busy) Nodes im Mesh auf ï¿½ schnelle ï¿½bersicht fï¿½r Task-Delegation.",
+      "description": "Listet alle verfügbaren (online, nicht-busy) Nodes im Mesh auf — schnelle Übersicht für Task-Delegation.",
       "parameters": []
     },
     {
       "name": "mesh_recommendations",
       "category": "mesh",
-      "description": "Zeigt Installationsempfehlungen fÃ¼r alle Mesh-Nodes â€” was sollte wo installiert werden und warum.",
+      "description": "Zeigt Installationsempfehlungen für alle Mesh-Nodes — was sollte wo installiert werden und warum.",
       "parameters": []
     },
     {
       "name": "mesh_route",
       "category": "mesh",
-      "description": "Zeigt welcher Node am besten fÃ¼r einen bestimmten Task geeignet ist.",
+      "description": "Zeigt welcher Node am besten für einen bestimmten Task geeignet ist.",
       "parameters": [
         {
           "name": "task",
@@ -1871,7 +1883,7 @@
     {
       "name": "mesh_scan",
       "category": "mesh",
-      "description": "Scannt alle Nodes im Mesh â€” entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfÃ¼gbar ist.",
+      "description": "Scannt alle Nodes im Mesh — entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfügbar ist.",
       "parameters": [
         {
           "name": "force",
@@ -2113,7 +2125,7 @@
     {
       "name": "nova_capabilities",
       "category": "system",
-      "description": "Nova fragt ihr eigenes Tool-Inventar ab. Zeigt alle Tools die fÃ¼r ein bestimmtes Thema verfÃ¼gbar sind â€” mit Name, Beschreibung und Kategorie. Nutze das wenn du nicht sicher bist welches Tool du fÃ¼r eine Aufgabe verwenden sollst.",
+      "description": "Nova fragt ihr eigenes Tool-Inventar ab. Zeigt alle Tools die für ein bestimmtes Thema verfügbar sind — mit Name, Beschreibung und Kategorie. Nutze das wenn du nicht sicher bist welches Tool du für eine Aufgabe verwenden sollst.",
       "parameters": [
         {
           "name": "topic",
@@ -2125,7 +2137,7 @@
     {
       "name": "nova_introspect",
       "category": "system",
-      "description": "Zeigt Novas eigenen internen Zustand: Ziele, gelernte Regeln, Skills, Performance-Metriken, Erinnerungen und System-Prompt. Nutze dies wenn du verstehen willst wer du bist, was du weiÃŸt, wie du performst oder was deine aktuellen Ziele sind.",
+      "description": "Zeigt Novas eigenen internen Zustand: Ziele, gelernte Regeln, Skills, Performance-Metriken, Erinnerungen und System-Prompt. Nutze dies wenn du verstehen willst wer du bist, was du weißt, wie du performst oder was deine aktuellen Ziele sind.",
       "parameters": [
         {
           "name": "type",
@@ -2160,7 +2172,7 @@
     {
       "name": "nova_trace_stats",
       "category": "system",
-      "description": "Zeigt Novas eigene Performance-Statistiken aus den letzten 7 Tagen: welche Tools am langsamsten/fehleranfÃ¤lligsten sind, welches Modell am besten performt, Latenz-Durchschnitte, Self-Healing Retries. Nutze dies zur Selbstoptimierung oder wenn du wissen willst wie du performst.",
+      "description": "Zeigt Novas eigene Performance-Statistiken aus den letzten 7 Tagen: welche Tools am langsamsten/fehleranfälligsten sind, welches Modell am besten performt, Latenz-Durchschnitte, Self-Healing Retries. Nutze dies zur Selbstoptimierung oder wenn du wissen willst wie du performst.",
       "parameters": [
         {
           "name": "refresh",
@@ -2172,7 +2184,7 @@
     {
       "name": "parse_markdown",
       "category": "other",
-      "description": "Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blï¿½cke.",
+      "description": "Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blöcke.",
       "parameters": [
         {
           "name": "content",
@@ -2422,7 +2434,7 @@
     {
       "name": "read_file",
       "category": "file",
-      "description": "Liest den Inhalt einer Datei. UnterstÃ¼tzt optionale start_line/end_line fÃ¼r gezieltes Lesen groÃŸer Dateien.",
+      "description": "Liest den Inhalt einer Datei. Unterstützt optionale start_line/end_line für gezieltes Lesen großer Dateien.",
       "parameters": [
         {
           "name": "path",
@@ -2444,7 +2456,7 @@
     {
       "name": "recall",
       "category": "memory",
-      "description": "Ruft Erinnerungen aus dem Langzeit-Gedï¿½chtnis ab (LanceDB mit MMR, Temporal Decay, Hybrid Search)",
+      "description": "Ruft Erinnerungen aus dem Langzeit-Gedächtnis ab (LanceDB mit MMR, Temporal Decay, Hybrid Search)",
       "parameters": [
         {
           "name": "query",
@@ -2549,7 +2561,7 @@
     {
       "name": "research_capability_plan",
       "category": "system",
-      "description": "Recherchiert via Websuche die aktuell beste Installationsstrategie fÃ¼r eine fehlende AI-Capability (stt/tts/llm/embedding/vision/ffmpeg) auf der passenden Hardware. BerÃ¼cksichtigt Apple Silicon, CUDA, ARM, Windows. Ergebnis wird in Setup-Aktionen umgewandelt.",
+      "description": "Recherchiert via Websuche die aktuell beste Installationsstrategie für eine fehlende AI-Capability (stt/tts/llm/embedding/vision/ffmpeg) auf der passenden Hardware. Berücksichtigt Apple Silicon, CUDA, ARM, Windows. Ergebnis wird in Setup-Aktionen umgewandelt.",
       "parameters": [
         {
           "name": "capability",
@@ -2588,7 +2600,7 @@
     {
       "name": "run_command",
       "category": "system",
-      "description": "FÃ¼hrt einen Shell-Befehl aus. Merkt sich das letzte Arbeitsverzeichnis. WICHTIG: Vor install-Befehlen (npm/pip/etc.) IMMER zuerst mit readfile oder listdir prÃ¼fen welche Dateien vorhanden sind! package.json â†’ npm, requirements.txt â†’ pip, Cargo.toml â†’ cargo. Nicht raten â€” lesen!",
+      "description": "Führt einen Shell-Befehl aus. Merkt sich das letzte Arbeitsverzeichnis. WICHTIG: Vor install-Befehlen (npm/pip/etc.) IMMER zuerst mit readfile oder listdir prüfen welche Dateien vorhanden sind! package.json → npm, requirements.txt → pip, Cargo.toml → cargo. Nicht raten — lesen!",
       "parameters": [
         {
           "name": "command",
@@ -2728,7 +2740,7 @@
     {
       "name": "security_audit",
       "category": "security",
-      "description": "Fï¿½hrt vollstï¿½ndigen Security-Audit durch: Secrets, gefï¿½hrlicher Code, Config, Permissions. Score 0-100.",
+      "description": "Führt vollständigen Security-Audit durch: Secrets, gefährlicher Code, Config, Permissions. Score 0-100.",
       "parameters": [
         {
           "name": "path",
@@ -2851,7 +2863,7 @@
     {
       "name": "self_setup_research",
       "category": "system",
-      "description": "Recherchiert via Websuche fÃ¼r ALLE aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie und schreibt die Ergebnisse (mit Confidence, Quelle, Hardware-Match) zurÃ¼ck in setup-state.json. Research lÃ¤uft ohne Gate. Install/Apply bleibt weiter freigabepflichtig.",
+      "description": "Recherchiert via Websuche für ALLE aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie und schreibt die Ergebnisse (mit Confidence, Quelle, Hardware-Match) zurück in setup-state.json. Research läuft ohne Gate. Install/Apply bleibt weiter freigabepflichtig.",
       "parameters": [
         {
           "name": "force",
@@ -2930,7 +2942,7 @@
     {
       "name": "service_status",
       "category": "system",
-      "description": "Prï¿½ft den Status eines systemd-Services (Linux) oder Windows-Dienstes",
+      "description": "Prüft den Status eines systemd-Services (Linux) oder Windows-Dienstes",
       "parameters": [
         {
           "name": "service",
@@ -2942,7 +2954,7 @@
     {
       "name": "set_model_override",
       "category": "system",
-      "description": "Setzt ein Model-Override fï¿½r eine Session.",
+      "description": "Setzt ein Model-Override für eine Session.",
       "parameters": [
         {
           "name": "session_id",
@@ -2959,7 +2971,7 @@
     {
       "name": "set_quiet_hours",
       "category": "system",
-      "description": "Setzt Novas Ruhezeiten (Quiet Hours). Nutze dieses Tool wenn der User sagt er mï¿½chte nicht gestï¿½rt werden, nur im Notfall kontaktiert werden, oder die Ruhezeiten ï¿½ndern mï¿½chte.",
+      "description": "Setzt Novas Ruhezeiten (Quiet Hours). Nutze dieses Tool wenn der User sagt er möchte nicht gestört werden, nur im Notfall kontaktiert werden, oder die Ruhezeiten ändern möchte.",
       "parameters": [
         {
           "name": "mode",
@@ -3013,7 +3025,7 @@
     {
       "name": "set_tool_policy",
       "category": "security",
-      "description": "Setzt eine Tool-Policy (allow/deny/confirm) fï¿½r ein Tool-Pattern.",
+      "description": "Setzt eine Tool-Policy (allow/deny/confirm) für ein Tool-Pattern.",
       "parameters": [
         {
           "name": "pattern",
@@ -3035,7 +3047,7 @@
     {
       "name": "spawn_subagent",
       "category": "system",
-      "description": "Spawnt einen fokussierten Subagenten fÃ¼r eine Teilaufgabe. Ideal fÃ¼r parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und lÃ¤uft mit eigenem Timeout.",
+      "description": "Spawnt einen fokussierten Subagenten für eine Teilaufgabe. Ideal für parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und läuft mit eigenem Timeout.",
       "parameters": [
         {
           "name": "task",
@@ -3062,7 +3074,7 @@
     {
       "name": "spawn_subagents_parallel",
       "category": "system",
-      "description": "Spawnt MEHRERE Subagenten gleichzeitig (echt parallel) und wartet auf alle Ergebnisse. Perfekt fÃ¼r parallele Recherchen, Multi-Node-Analysen oder unabhÃ¤ngige Teilaufgaben.",
+      "description": "Spawnt MEHRERE Subagenten gleichzeitig (echt parallel) und wartet auf alle Ergebnisse. Perfekt für parallele Recherchen, Multi-Node-Analysen oder unabhängige Teilaufgaben.",
       "parameters": [
         {
           "name": "tasks",
@@ -3101,7 +3113,7 @@
     {
       "name": "ssh_command",
       "category": "system",
-      "description": "Fï¿½hrt einen Befehl auf einem Remote-Gerï¿½t via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool fï¿½r ALLE Befehle die auf einem anderen Gerï¿½t laufen sollen ï¿½ NICHT run_command! Gespeicherte Hosts/Passwï¿½rter werden automatisch verwendet. Anfï¿½hrungszeichen im Befehl werden automatisch escaped.",
+      "description": "Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle die auf einem anderen Gerät laufen sollen — NICHT run_command! Gespeicherte Hosts/Passwörter werden automatisch verwendet. Anführungszeichen im Befehl werden automatisch escaped.",
       "parameters": [
         {
           "name": "host",
@@ -3202,7 +3214,7 @@
     {
       "name": "transcribe_audio",
       "category": "media",
-      "description": "Transkribiert eine Audio-Datei (Whisper/Nova-LLM/Deepgram). Auto-wÃ¤hlt verfÃ¼gbaren Provider.",
+      "description": "Transkribiert eine Audio-Datei (Whisper/Nova-LLM/Deepgram). Auto-wählt verfügbaren Provider.",
       "parameters": [
         {
           "name": "path",
@@ -3219,7 +3231,7 @@
     {
       "name": "tts_cleanup",
       "category": "media",
-      "description": "Rï¿½umt alte TTS-Temp-Dateien auf",
+      "description": "Räumt alte TTS-Temp-Dateien auf",
       "parameters": []
     },
     {
@@ -3237,7 +3249,7 @@
     {
       "name": "update_memory",
       "category": "system",
-      "description": "Fï¿½gt einen Eintrag zum Langzeit-Gedï¿½chtnis (MEMORY.md) hinzu. Nutze das fï¿½r wichtige Entscheidungen, gelï¿½ste Probleme, gelernte Lektionen.",
+      "description": "Fügt einen Eintrag zum Langzeit-Gedächtnis (MEMORY.md) hinzu. Nutze das für wichtige Entscheidungen, gelöste Probleme, gelernte Lektionen.",
       "parameters": [
         {
           "name": "section",
@@ -3254,7 +3266,7 @@
     {
       "name": "update_user_profile",
       "category": "system",
-      "description": "Aktualisiert das User-Profil (USER.md). Nutze das wenn du neue Fakten ï¿½ber den User lernst: Name, Gerï¿½te, IPs, Projekte, Prï¿½ferenzen. Der content ersetzt den GESAMTEN Inhalt von USER.md.",
+      "description": "Aktualisiert das User-Profil (USER.md). Nutze das wenn du neue Fakten über den User lernst: Name, Geräte, IPs, Projekte, Präferenzen. Der content ersetzt den GESAMTEN Inhalt von USER.md.",
       "parameters": [
         {
           "name": "content",
@@ -3328,7 +3340,7 @@
     {
       "name": "web_search",
       "category": "browser",
-      "description": "Sucht im Internet mit DuckDuckGo (kein API-Key nÃ¶tig)",
+      "description": "Sucht im Internet mit DuckDuckGo (kein API-Key nötig)",
       "parameters": [
         {
           "name": "query",
@@ -3362,7 +3374,7 @@
     {
       "name": "write_file",
       "category": "file",
-      "description": "Schreibt Inhalt in eine Datei. ACHTUNG: GeschÃ¼tzte System-Dateien (daemon.ts, auth/, core/, L0-*) kÃ¶nnen nicht autonom Ã¼berschrieben werden.",
+      "description": "Schreibt Inhalt in eine Datei. ACHTUNG: Geschützte System-Dateien (daemon.ts, auth/, core/, L0-*) können nicht autonom überschrieben werden.",
       "parameters": [
         {
           "name": "path",

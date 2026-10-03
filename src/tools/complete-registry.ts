@@ -24,6 +24,7 @@ import { browserUseTools } from './browser-use.js'
 import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
 import { scanNowTool } from './scan-now-tool.js'
+import { meshInspectUrlTool } from './mesh-inspect-url.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -193,7 +194,7 @@ export const fileTools: NovaTool[] = [
     },
     {
         name: 'read_file',
-        description: 'Liest den Inhalt einer Datei. UnterstÃ¼tzt optionale start_line/end_line fÃ¼r gezieltes Lesen groÃŸer Dateien.',
+        description: 'Liest den Inhalt einer Datei. Unterstützt optionale start_line/end_line für gezieltes Lesen großer Dateien.',
         category: 'file',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zur Datei', required: true },
@@ -228,7 +229,7 @@ export const fileTools: NovaTool[] = [
     },
     {
         name: 'write_file',
-        description: 'Schreibt Inhalt in eine Datei. ACHTUNG: GeschÃ¼tzte System-Dateien (daemon.ts, auth/, core/, L0-*) kÃ¶nnen nicht autonom Ã¼berschrieben werden.',
+        description: 'Schreibt Inhalt in eine Datei. ACHTUNG: Geschützte System-Dateien (daemon.ts, auth/, core/, L0-*) können nicht autonom überschrieben werden.',
         category: 'file',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zur Datei', required: true },
@@ -251,7 +252,7 @@ export const fileTools: NovaTool[] = [
                 }
             }
 
-            // === SECURITY: Protected Paths (Prompt Injection â†’ RCE Prevention) ===
+            // === SECURITY: Protected Paths (Prompt Injection → RCE Prevention) ===
             const PROTECTED_PATTERNS = [
                 /^src\/daemon\.ts$/,
                 /^src\/core\//,
@@ -278,9 +279,9 @@ export const fileTools: NovaTool[] = [
             const isProtected = PROTECTED_PATTERNS.some(p => new RegExp(p.source, 'i').test(rel))
                 || isSecretFilePath(path, root)
             if (isProtected) {
-                console.log(`[SECURITY] ðŸš¨ BLOCKED write to protected path: ${rel}`)
+                console.log(`[SECURITY] 🚨 BLOCKED write to protected path: ${rel}`)
                 return {
-                    error: `ðŸš¨ GESCHÃœTZT: "${rel}" ist ein System-kritischer Pfad. Ã„nderungen an Core-Dateien (daemon, auth, L0, config) erfordern manuelle BestÃ¤tigung durch den Admin. Nutze update_memory um die gewÃ¼nschte Ã„nderung zu dokumentieren.`,
+                    error: `🚨 GESCHÜTZT: "${rel}" ist ein System-kritischer Pfad. Änderungen an Core-Dateien (daemon, auth, L0, config) erfordern manuelle Bestätigung durch den Admin. Nutze update_memory um die gewünschte Änderung zu dokumentieren.`,
                     blocked: true,
                     path: rel,
                 }
@@ -305,9 +306,9 @@ export const fileTools: NovaTool[] = [
 
             const hasDangerousContent = DANGEROUS_PATTERNS.some(p => p.test(content))
             if (hasDangerousContent) {
-                console.log(`[SECURITY] ðŸš¨ BLOCKED dangerous content in write to: ${rel}`)
+                console.log(`[SECURITY] 🚨 BLOCKED dangerous content in write to: ${rel}`)
                 return {
-                    error: `ðŸš¨ GEFÃ„HRLICHER INHALT erkannt in "${rel}". Der Inhalt enthÃ¤lt potenziell schÃ¤dliche Patterns (child_process, exec, eval, shell injection). Schreibvorgang blockiert.`,
+                    error: `🚨 GEFÄHRLICHER INHALT erkannt in "${rel}". Der Inhalt enthält potenziell schädliche Patterns (child_process, exec, eval, shell injection). Schreibvorgang blockiert.`,
                     blocked: true,
                     path: rel,
                 }
@@ -323,9 +324,9 @@ export const fileTools: NovaTool[] = [
                 if (/\.(?:[cm]?[jt]s|[jt]sx)$/i.test(rel)) {
                     const check = await fullSecurityCheck(content, rel, 'nova-self')
                     if (!check.allowed) {
-                        console.log(`[CodeGuardian] ðŸš¨ BLOCKED: ${check.reason}`)
+                        console.log(`[CodeGuardian] 🚨 BLOCKED: ${check.reason}`)
                         return {
-                            error: `ðŸ›¡ï¸ Code Guardian hat den Schreibvorgang blockiert:\n${check.reason}\n\nConfidence: ${check.signature.confidence}\nHash: ${check.signature.hash}`,
+                            error: `🛡️ Code Guardian hat den Schreibvorgang blockiert:\n${check.reason}\n\nConfidence: ${check.signature.confidence}\nHash: ${check.signature.hash}`,
                             blocked: true,
                             path: rel,
                             signature: check.signature,
@@ -345,7 +346,7 @@ export const fileTools: NovaTool[] = [
                         path: rel,
                     }
                 }
-                /* Nicht-Code: weiterhin erlaubt â€” allow write */ }
+                /* Nicht-Code: weiterhin erlaubt — allow write */ }
 
             const dir = dirname(path)
             if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -380,7 +381,7 @@ export const fileTools: NovaTool[] = [
     },
     {
         name: 'delete_file',
-        description: 'LÃ¶scht eine Datei oder Ordner',
+        description: 'Löscht eine Datei oder Ordner',
         category: 'file',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zur Datei/Ordner', required: true },
@@ -403,11 +404,11 @@ let lastUsedCwd: string | null = null
 export const systemTools: NovaTool[] = [
     {
         name: 'run_command',
-        description: 'FÃ¼hrt einen Shell-Befehl aus. Merkt sich das letzte Arbeitsverzeichnis. WICHTIG: Vor install-Befehlen (npm/pip/etc.) IMMER zuerst mit readfile oder listdir prÃ¼fen welche Dateien vorhanden sind! package.json â†’ npm, requirements.txt â†’ pip, Cargo.toml â†’ cargo. Nicht raten â€” lesen!',
+        description: 'Führt einen Shell-Befehl aus. Merkt sich das letzte Arbeitsverzeichnis. WICHTIG: Vor install-Befehlen (npm/pip/etc.) IMMER zuerst mit readfile oder listdir prüfen welche Dateien vorhanden sind! package.json → npm, requirements.txt → pip, Cargo.toml → cargo. Nicht raten — lesen!',
         category: 'system',
         parameters: [
             { name: 'command', type: 'string', description: 'Befehl', required: true },
-            { name: 'cwd', type: 'string', description: 'Arbeitsverzeichnis (optional ï¿½ wird automatisch vom letzten Befehl ï¿½bernommen)', required: false },
+            { name: 'cwd', type: 'string', description: 'Arbeitsverzeichnis (optional — wird automatisch vom letzten Befehl übernommen)', required: false },
         ],
         handler: async (params) => {
             const { execSync } = await import('node:child_process')
@@ -452,9 +453,9 @@ export const systemTools: NovaTool[] = [
 
             const isDangerous = DANGEROUS_CMD_PATTERNS.some(p => p.test(command))
             if (isDangerous) {
-                console.log(`[SECURITY] ðŸš¨ BLOCKED dangerous command: ${command.slice(0, 100)}`)
+                console.log(`[SECURITY] 🚨 BLOCKED dangerous command: ${command.slice(0, 100)}`)
                 return {
-                    error: `ðŸš¨ GEFÃ„HRLICHER BEFEHL blockiert! Der Befehl enthÃ¤lt bekannte Angriffsmuster (Shell-Injection, Reverse-Shell, Disk-Wipe). AusfÃ¼hrung verweigert.`,
+                    error: `🚨 GEFÄHRLICHER BEFEHL blockiert! Der Befehl enthält bekannte Angriffsmuster (Shell-Injection, Reverse-Shell, Disk-Wipe). Ausführung verweigert.`,
                     blocked: true,
                 }
             }
@@ -466,7 +467,7 @@ export const systemTools: NovaTool[] = [
                 recordMetric('tool_call', 1)
                 if (isKillSwitchActive()) {
                     const ks = getKillSwitchStatus()
-                    return { error: `ðŸš¨ Kill-Switch aktiv: ${ks.reason}. Keine Befehle erlaubt bis Admin zurÃ¼cksetzt.`, blocked: true }
+                    return { error: `🚨 Kill-Switch aktiv: ${ks.reason}. Keine Befehle erlaubt bis Admin zurücksetzt.`, blocked: true }
                 }
             } catch (ksErr) {
                 // FAIL-CLOSED: Ein Fehler in der Not-Aus-Pruefung darf den
@@ -588,10 +589,10 @@ export const systemTools: NovaTool[] = [
                 if (!existsSync(pkgJson)) {
                     const isPython = existsSync(reqTxt) || existsSync(setupPy) || existsSync(pyprojectToml)
                     return {
-                        error: `âŒ Kein package.json in ${cwd} â€” npm install kann hier nichts tun.`,
+                        error: `❌ Kein package.json in ${cwd} — npm install kann hier nichts tun.`,
                         hint: isPython
                             ? `Dies ist ein PYTHON-Projekt! Nutze stattdessen: pip install -r requirements.txt`
-                            : `PrÃ¼fe ob du im richtigen Verzeichnis bist. Nutze readfile oder listdir um die Dateien zu prÃ¼fen.`,
+                            : `Prüfe ob du im richtigen Verzeichnis bist. Nutze readfile oder listdir um die Dateien zu prüfen.`,
                         cwd,
                         filesFound: isPython ? 'requirements.txt / setup.py erkannt' : 'Kein Paketmanager-Config gefunden',
                     }
@@ -604,8 +605,8 @@ export const systemTools: NovaTool[] = [
                 const fullReqPath = reqFile.startsWith('/') || reqFile.includes(':') ? reqFile : `${cwd}/${reqFile}`
                 if (!existsSync(fullReqPath)) {
                     return {
-                        error: `âŒ ${reqFile} nicht gefunden in ${cwd}`,
-                        hint: `PrÃ¼fe den Pfad mit listdir. Die Datei muss existieren bevor pip install lÃ¤uft.`,
+                        error: `❌ ${reqFile} nicht gefunden in ${cwd}`,
+                        hint: `Prüfe den Pfad mit listdir. Die Datei muss existieren bevor pip install läuft.`,
                         cwd,
                     }
                 }
@@ -636,7 +637,7 @@ export const systemTools: NovaTool[] = [
                                 action: 'CREATE_FILE_FIRST',
                                 error: `Script fehlt: ${fullPath}`,
                                 missingFile: fullPath,
-                                hint: `Erstelle die Datei zuerst mit write_file bevor du sie ausfï¿½hren kannst`,
+                                hint: `Erstelle die Datei zuerst mit write_file bevor du sie ausführen kannst`,
                             }
                         }
                     }
@@ -729,7 +730,7 @@ export const systemTools: NovaTool[] = [
     },
     {
         name: 'ssh_command',
-        description: 'Fï¿½hrt einen Befehl auf einem Remote-Gerï¿½t via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool fï¿½r ALLE Befehle die auf einem anderen Gerï¿½t laufen sollen ï¿½ NICHT run_command! Gespeicherte Hosts/Passwï¿½rter werden automatisch verwendet. Anfï¿½hrungszeichen im Befehl werden automatisch escaped.',
+        description: 'Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle die auf einem anderen Gerät laufen sollen — NICHT run_command! Gespeicherte Hosts/Passwörter werden automatisch verwendet. Anführungszeichen im Befehl werden automatisch escaped.',
         category: 'system',
         parameters: [
             { name: 'host', type: 'string', description: 'Host/IP', required: true },
@@ -771,16 +772,16 @@ export const systemTools: NovaTool[] = [
                 const status = runHealthCheck()
                 return { ...status, formatted: formatHealthStatus(status) }
             } catch {
-                return { error: 'Health Monitor nicht verfï¿½gbar' }
+                return { error: 'Health Monitor nicht verfügbar' }
             }
         },
     },
     {
         name: 'update_user_profile',
-        description: 'Aktualisiert das User-Profil (USER.md). Nutze das wenn du neue Fakten ï¿½ber den User lernst: Name, Gerï¿½te, IPs, Projekte, Prï¿½ferenzen. Der content ersetzt den GESAMTEN Inhalt von USER.md.',
+        description: 'Aktualisiert das User-Profil (USER.md). Nutze das wenn du neue Fakten über den User lernst: Name, Geräte, IPs, Projekte, Präferenzen. Der content ersetzt den GESAMTEN Inhalt von USER.md.',
         category: 'system',
         parameters: [
-            { name: 'content', type: 'string', description: 'Neuer Inhalt fï¿½r USER.md (Markdown)', required: true },
+            { name: 'content', type: 'string', description: 'Neuer Inhalt für USER.md (Markdown)', required: true },
         ],
         handler: async (args: any) => {
             try {
@@ -798,11 +799,11 @@ export const systemTools: NovaTool[] = [
     },
     {
         name: 'update_memory',
-        description: 'Fï¿½gt einen Eintrag zum Langzeit-Gedï¿½chtnis (MEMORY.md) hinzu. Nutze das fï¿½r wichtige Entscheidungen, gelï¿½ste Probleme, gelernte Lektionen.',
+        description: 'Fügt einen Eintrag zum Langzeit-Gedächtnis (MEMORY.md) hinzu. Nutze das für wichtige Entscheidungen, gelöste Probleme, gelernte Lektionen.',
         category: 'system',
         parameters: [
-            { name: 'section', type: 'string', description: 'Abschnitt: "Gelï¿½ste Probleme", "Wichtige Entscheidungen", oder "Gelernte Lektionen"', required: true },
-            { name: 'entry', type: 'string', description: 'Der Eintrag (kurz und prï¿½gnant)', required: true },
+            { name: 'section', type: 'string', description: 'Abschnitt: "Gelöste Probleme", "Wichtige Entscheidungen", oder "Gelernte Lektionen"', required: true },
+            { name: 'entry', type: 'string', description: 'Der Eintrag (kurz und prägnant)', required: true },
         ],
         handler: async (args: any) => {
             try {
@@ -820,21 +821,21 @@ export const systemTools: NovaTool[] = [
     },
     {
         name: 'get_current_time',
-        description: 'Gibt die exakte aktuelle Systemzeit zurï¿½ck. NUTZE DAS wenn du die Uhrzeit brauchst ï¿½ NIEMALS raten oder schï¿½tzen! Dieses Tool liefert die echte Systemuhr.',
+        description: 'Gibt die exakte aktuelle Systemzeit zurück. NUTZE DAS wenn du die Uhrzeit brauchst — NIEMALS raten oder schätzen! Dieses Tool liefert die echte Systemuhr.',
         category: 'system',
         parameters: [],
         handler: async () => {
             const now = new Date()
             const h = now.getHours()
             let tageszeit = 'Nacht'
-            if (h >= 5 && h < 8) tageszeit = 'Frï¿½her Morgen'
+            if (h >= 5 && h < 8) tageszeit = 'Früher Morgen'
             else if (h >= 8 && h < 10) tageszeit = 'Morgen'
             else if (h >= 10 && h < 12) tageszeit = 'Vormittag'
             else if (h >= 12 && h < 14) tageszeit = 'Mittag'
             else if (h >= 14 && h < 17) tageszeit = 'Nachmittag'
             else if (h >= 17 && h < 20) tageszeit = 'Abend'
-            else if (h >= 20 && h < 23) tageszeit = 'Spï¿½tabend'
-            else if (h >= 0 && h < 5) tageszeit = 'Nacht (spï¿½t/frï¿½h)'
+            else if (h >= 20 && h < 23) tageszeit = 'Spätabend'
+            else if (h >= 0 && h < 5) tageszeit = 'Nacht (spät/früh)'
 
             return {
                 uhrzeit: now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -849,12 +850,12 @@ export const systemTools: NovaTool[] = [
     },
     {
         name: 'set_quiet_hours',
-        description: 'Setzt Novas Ruhezeiten (Quiet Hours). Nutze dieses Tool wenn der User sagt er mï¿½chte nicht gestï¿½rt werden, nur im Notfall kontaktiert werden, oder die Ruhezeiten ï¿½ndern mï¿½chte.',
+        description: 'Setzt Novas Ruhezeiten (Quiet Hours). Nutze dieses Tool wenn der User sagt er möchte nicht gestört werden, nur im Notfall kontaktiert werden, oder die Ruhezeiten ändern möchte.',
         category: 'system',
         parameters: [
-            { name: 'mode', type: 'string', description: 'Modus: "on" (Standard 23-07), "off" (24/7 erreichbar), "emergency" (nur Notfï¿½lle), "custom" (eigene Zeiten)', required: true },
-            { name: 'start', type: 'number', description: 'Startzeit (0-23) ï¿½ nur bei mode=custom', required: false },
-            { name: 'end', type: 'number', description: 'Endzeit (0-23) ï¿½ nur bei mode=custom', required: false },
+            { name: 'mode', type: 'string', description: 'Modus: "on" (Standard 23-07), "off" (24/7 erreichbar), "emergency" (nur Notfälle), "custom" (eigene Zeiten)', required: true },
+            { name: 'start', type: 'number', description: 'Startzeit (0-23) — nur bei mode=custom', required: false },
+            { name: 'end', type: 'number', description: 'Endzeit (0-23) — nur bei mode=custom', required: false },
         ],
         handler: async (params) => {
             try {
@@ -884,7 +885,7 @@ export const systemTools: NovaTool[] = [
                         updateAutonomyConfig({ quietHoursStart: start, quietHoursEnd: end })
                         return { success: true, message: `Quiet Hours angepasst: ${start}:00 - ${end}:00` }
                     }
-                    return { success: false, message: 'Ungï¿½ltige Zeiten. Bitte 0-23 verwenden.' }
+                    return { success: false, message: 'Ungültige Zeiten. Bitte 0-23 verwenden.' }
                 }
 
                 if (mode === 'status') {
@@ -897,7 +898,7 @@ export const systemTools: NovaTool[] = [
                     }
                 }
 
-                return { success: false, message: 'Unbekannter Modus. Verfï¿½gbar: on, off, emergency, custom, status' }
+                return { success: false, message: 'Unbekannter Modus. Verfügbar: on, off, emergency, custom, status' }
             } catch (err) {
                 return { success: false, error: `${err}` }
             }
@@ -912,7 +913,7 @@ export const systemTools: NovaTool[] = [
 export const browserTools: NovaTool[] = [
     {
         name: 'web_search',
-        description: 'Sucht im Internet mit DuckDuckGo (kein API-Key nÃ¶tig)',
+        description: 'Sucht im Internet mit DuckDuckGo (kein API-Key nötig)',
         category: 'browser',
         parameters: [
             { name: 'query', type: 'string', description: 'Suchanfrage', required: true },
@@ -946,7 +947,7 @@ export const browserTools: NovaTool[] = [
     },
     {
         name: 'google_search',
-        description: 'Sucht mit Google Ã¼ber Headless-Browser (Playwright). Gibt echte Suchergebnisse zurÃ¼ck.',
+        description: 'Sucht mit Google über Headless-Browser (Playwright). Gibt echte Suchergebnisse zurück.',
         category: 'browser',
         parameters: [
             { name: 'query', type: 'string', description: 'Suchanfrage', required: true },
@@ -958,7 +959,7 @@ export const browserTools: NovaTool[] = [
                 return googleSearch(params.query as string, (params.count as number) || 5)
             } catch (err: any) {
                 // Fallback to DuckDuckGo if Playwright not available
-                console.log('[Google Search] Playwright nicht verfÃ¼gbar, nutze DuckDuckGo Fallback')
+                console.log('[Google Search] Playwright nicht verfügbar, nutze DuckDuckGo Fallback')
                 const webSearch = browserTools.find(t => t.name === 'web_search')
                 if (webSearch) return webSearch.handler(params)
                 return { error: err.message }
@@ -967,11 +968,11 @@ export const browserTools: NovaTool[] = [
     },
     {
         name: 'fetch_url',
-        description: 'LÃ¤dt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.',
+        description: 'Lädt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.',
         category: 'browser',
         parameters: [
             { name: 'url', type: 'string', description: 'URL', required: true },
-            { name: 'raw', type: 'boolean', description: 'Wenn true, wird rohes HTML zurÃ¼ckgegeben statt Markdown', required: false },
+            { name: 'raw', type: 'boolean', description: 'Wenn true, wird rohes HTML zurückgegeben statt Markdown', required: false },
         ],
         handler: async (params) => {
             try {
@@ -1069,7 +1070,7 @@ export const memoryTools: NovaTool[] = [
     },
     {
         name: 'recall',
-        description: 'Ruft Erinnerungen aus dem Langzeit-Gedï¿½chtnis ab (LanceDB mit MMR, Temporal Decay, Hybrid Search)',
+        description: 'Ruft Erinnerungen aus dem Langzeit-Gedächtnis ab (LanceDB mit MMR, Temporal Decay, Hybrid Search)',
         category: 'memory',
         parameters: [
             { name: 'query', type: 'string', description: 'Wonach suchen', required: true },
@@ -1110,12 +1111,12 @@ export const evolutionTools: NovaTool[] = [
         category: 'system',
         parameters: [
             { name: 'file', type: 'string', description: 'Relativer Pfad zur Datei (z.B. src/core/runtime.ts)', required: true },
-            { name: 'description', type: 'string', description: 'Was die ï¿½nderung bewirkt', required: true },
+            { name: 'description', type: 'string', description: 'Was die Änderung bewirkt', required: true },
             { name: 'search', type: 'string', description: 'Exakter Text der ersetzt werden soll', required: true },
             { name: 'replace', type: 'string', description: 'Neuer Text', required: true },
             { name: 'repairProfileId', type: 'string', description: 'Vom Operator registriertes Quell-/Probe-Profil, keine freien Ziele', required: false },
             { name: 'reproductionTest', type: 'string', description: 'Vorhandener unveränderter src/*.test.ts-Regressionsbeleg: muss vorher fehlschlagen und danach bestehen', required: false },
-            { name: 'reason', type: 'string', description: 'Warum diese ï¿½nderung', required: false },
+            { name: 'reason', type: 'string', description: 'Warum diese Änderung', required: false },
         ],
         handler: async (params) => {
             const { evolve } = await import('../synthesis/self-evolution.js')
@@ -1145,10 +1146,10 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'evolution_history',
-        description: 'Zeigt die letzten Self-Evolution-ï¿½nderungen an',
+        description: 'Zeigt die letzten Self-Evolution-Änderungen an',
         category: 'system',
         parameters: [
-            { name: 'limit', type: 'number', description: 'Max Anzahl Eintrï¿½ge', required: false },
+            { name: 'limit', type: 'number', description: 'Max Anzahl Einträge', required: false },
         ],
         handler: async (params) => {
             const { getEvolutionHistory } = await import('../synthesis/self-evolution.js')
@@ -1157,7 +1158,7 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'evolution_stats',
-        description: 'Zeigt Statistiken ï¿½ber bisherige Self-Evolutions',
+        description: 'Zeigt Statistiken über bisherige Self-Evolutions',
         category: 'system',
         parameters: [],
         handler: async () => {
@@ -1344,7 +1345,7 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'self_setup_research',
-        description: 'Recherchiert via Websuche fÃ¼r ALLE aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie und schreibt die Ergebnisse (mit Confidence, Quelle, Hardware-Match) zurÃ¼ck in setup-state.json. Research lÃ¤uft ohne Gate. Install/Apply bleibt weiter freigabepflichtig.',
+        description: 'Recherchiert via Websuche für ALLE aktuell fehlenden Capabilities die beste aktuelle Installationsstrategie und schreibt die Ergebnisse (mit Confidence, Quelle, Hardware-Match) zurück in setup-state.json. Research läuft ohne Gate. Install/Apply bleibt weiter freigabepflichtig.',
         category: 'system',
         parameters: [
             { name: 'force', type: 'boolean', description: 'Cache ignorieren und alles neu recherchieren (auch frischer Scan)', required: false },
@@ -1357,11 +1358,11 @@ export const evolutionTools: NovaTool[] = [
     },
     {
         name: 'research_capability_plan',
-        description: 'Recherchiert via Websuche die aktuell beste Installationsstrategie fÃ¼r eine fehlende AI-Capability (stt/tts/llm/embedding/vision/ffmpeg) auf der passenden Hardware. BerÃ¼cksichtigt Apple Silicon, CUDA, ARM, Windows. Ergebnis wird in Setup-Aktionen umgewandelt.',
+        description: 'Recherchiert via Websuche die aktuell beste Installationsstrategie für eine fehlende AI-Capability (stt/tts/llm/embedding/vision/ffmpeg) auf der passenden Hardware. Berücksichtigt Apple Silicon, CUDA, ARM, Windows. Ergebnis wird in Setup-Aktionen umgewandelt.',
         category: 'system',
         parameters: [
             { name: 'capability', type: 'string', description: 'Welche Capability: stt, tts, llm, embedding, vision, ffmpeg, whisper, ollama', required: true },
-            { name: 'node', type: 'string', description: 'Spezifischer Mesh-Node-Name (optional; sonst wird bester Node automatisch gewÃ¤hlt)', required: false },
+            { name: 'node', type: 'string', description: 'Spezifischer Mesh-Node-Name (optional; sonst wird bester Node automatisch gewählt)', required: false },
             { name: 'force', type: 'boolean', description: 'Cache ignorieren und neu recherchieren', required: false },
         ],
         handler: async (params) => {
@@ -1469,7 +1470,7 @@ export const systemHelperTools: NovaTool[] = [
         description: 'Scannt offene Ports auf localhost',
         category: 'system',
         parameters: [
-            { name: 'ports', type: 'string', description: 'Komma-getrennte Ports zum Prï¿½fen (z.B. "3000,3001,8080"). Leer = Standard-Ports', required: false },
+            { name: 'ports', type: 'string', description: 'Komma-getrennte Ports zum Prüfen (z.B. "3000,3001,8080"). Leer = Standard-Ports', required: false },
         ],
         handler: async (params) => {
             const net = await import('node:net')
@@ -1564,7 +1565,7 @@ export const devopsTools: NovaTool[] = [
         description: 'Zeigt Festplattenauslastung',
         category: 'system',
         parameters: [
-            { name: 'path', type: 'string', description: 'Pfad zum Prï¿½fen (default: /)', required: false },
+            { name: 'path', type: 'string', description: 'Pfad zum Prüfen (default: /)', required: false },
         ],
         handler: async (params) => {
             // Use Node's native statfsSync (v18+) — no external process, instant,
@@ -1632,7 +1633,7 @@ export const devopsTools: NovaTool[] = [
     },
     {
         name: 'service_status',
-        description: 'Prï¿½ft den Status eines systemd-Services (Linux) oder Windows-Dienstes',
+        description: 'Prüft den Status eines systemd-Services (Linux) oder Windows-Dienstes',
         category: 'system',
         parameters: [
             { name: 'service', type: 'string', description: 'Service-Name', required: true },
@@ -1723,10 +1724,10 @@ export const devopsTools: NovaTool[] = [
 export const execApprovalTools: NovaTool[] = [
     {
         name: 'check_command',
-        description: 'Prï¿½ft ob ein Command sicher ist: erkennt rm -rf, DROP DATABASE, Fork Bombs etc. Gibt Risk-Level zurï¿½ck.',
+        description: 'Prüft ob ein Command sicher ist: erkennt rm -rf, DROP DATABASE, Fork Bombs etc. Gibt Risk-Level zurück.',
         category: 'security',
         parameters: [
-            { name: 'command', type: 'string', description: 'Das zu prï¿½fende Command', required: true },
+            { name: 'command', type: 'string', description: 'Das zu prüfende Command', required: true },
             { name: 'source', type: 'string', description: 'Quelle: user, tool, self-evolution, plugin', required: false },
         ],
         handler: async (params) => {
@@ -1740,13 +1741,13 @@ export const execApprovalTools: NovaTool[] = [
     },
     {
         name: 'add_exec_rule',
-        description: 'Fï¿½gt eine Custom Exec-Approval Regel hinzu (allow/deny/confirm)',
+        description: 'Fügt eine Custom Exec-Approval Regel hinzu (allow/deny/confirm)',
         category: 'security',
         parameters: [
             { name: 'pattern', type: 'string', description: 'Regex-Pattern', required: true },
             { name: 'action', type: 'string', description: 'allow, deny, oder confirm', required: true },
             { name: 'risk', type: 'string', description: 'safe, low, medium, high, critical', required: true },
-            { name: 'reason', type: 'string', description: 'Begrï¿½ndung', required: true },
+            { name: 'reason', type: 'string', description: 'Begründung', required: true },
         ],
         handler: async (params) => {
             const { addCustomRule } = await import('../security/exec-approvals.js')
@@ -1774,7 +1775,7 @@ export const execApprovalTools: NovaTool[] = [
         description: 'Zeigt Exec-Approval Verlauf und Statistiken',
         category: 'security',
         parameters: [
-            { name: 'limit', type: 'number', description: 'Anzahl Eintrï¿½ge (default: 20)', required: false },
+            { name: 'limit', type: 'number', description: 'Anzahl Einträge (default: 20)', required: false },
         ],
         handler: async (params) => {
             const { getApprovalHistory, getApprovalStats } = await import('../security/exec-approvals.js')
@@ -1826,7 +1827,7 @@ export const autoUpdateTools: NovaTool[] = [
         description: 'Zeigt Update-Verlauf (checks & updates)',
         category: 'system',
         parameters: [
-            { name: 'limit', type: 'number', description: 'Anzahl Eintrï¿½ge', required: false },
+            { name: 'limit', type: 'number', description: 'Anzahl Einträge', required: false },
         ],
         handler: async (params) => {
             const { getUpdateHistory } = await import('../infra/auto-update.js')
@@ -1848,7 +1849,7 @@ export const ttsTools: NovaTool[] = [
             { name: 'text', type: 'string', description: 'Text zum Vorlesen', required: true },
             { name: 'provider', type: 'string', description: 'openai, edge, oder elevenlabs (auto-detect wenn leer)', required: false },
             { name: 'voice', type: 'string', description: 'Stimme (z.B. nova, alloy, de-DE-KatjaNeural)', required: false },
-            { name: 'output_path', type: 'string', description: 'Dateipfad fï¿½r Audio (default: temp)', required: false },
+            { name: 'output_path', type: 'string', description: 'Dateipfad für Audio (default: temp)', required: false },
         ],
         handler: async (params) => {
             const { speak } = await import('../tts/text-to-speech.js')
@@ -1862,7 +1863,7 @@ export const ttsTools: NovaTool[] = [
     },
     {
         name: 'list_voices',
-        description: 'Listet verfï¿½gbare TTS-Stimmen fï¿½r einen Provider',
+        description: 'Listet verfügbare TTS-Stimmen für einen Provider',
         category: 'media',
         parameters: [
             { name: 'provider', type: 'string', description: 'openai, edge, oder elevenlabs', required: false },
@@ -1874,7 +1875,7 @@ export const ttsTools: NovaTool[] = [
     },
     {
         name: 'tts_cleanup',
-        description: 'Rï¿½umt alte TTS-Temp-Dateien auf',
+        description: 'Räumt alte TTS-Temp-Dateien auf',
         category: 'media',
         parameters: [],
         handler: async () => {
@@ -1910,7 +1911,7 @@ export const ttsTools: NovaTool[] = [
 export const meshBrainTools: NovaTool[] = [
     {
         name: 'mesh_scan',
-        description: 'Scannt alle Nodes im Mesh â€” entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfÃ¼gbar ist.',
+        description: 'Scannt alle Nodes im Mesh — entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfügbar ist.',
         category: 'mesh',
         parameters: [
             { name: 'force', type: 'boolean', description: 'Erzwingt neuen Scan auch wenn Cache noch frisch ist', required: false },
@@ -1930,24 +1931,24 @@ export const meshBrainTools: NovaTool[] = [
     },
     {
         name: 'mesh_recommendations',
-        description: 'Zeigt Installationsempfehlungen fÃ¼r alle Mesh-Nodes â€” was sollte wo installiert werden und warum.',
+        description: 'Zeigt Installationsempfehlungen für alle Mesh-Nodes — was sollte wo installiert werden und warum.',
         category: 'mesh',
         parameters: [],
         handler: async () => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
             const snap = brain.load()
-            if (!snap) return 'Kein Mesh-Scan vorhanden. Bitte zuerst mesh_scan ausfÃ¼hren.'
+            if (!snap) return 'Kein Mesh-Scan vorhanden. Bitte zuerst mesh_scan ausführen.'
             const recs = brain.getAllRecommendations()
-            if (recs.length === 0) return 'Keine Empfehlungen â€” alles optimal konfiguriert!'
+            if (recs.length === 0) return 'Keine Empfehlungen — alles optimal konfiguriert!'
             return recs.map(({ node, rec }) =>
-                `[${rec.priority.toUpperCase()}] ${node}: ${rec.tool} â€” ${rec.reason}${rec.installCmd ? `\n  â†’ ${rec.installCmd}` : ''}`
+                `[${rec.priority.toUpperCase()}] ${node}: ${rec.tool} — ${rec.reason}${rec.installCmd ? `\n  → ${rec.installCmd}` : ''}`
             ).join('\n\n')
         },
     },
     {
         name: 'mesh_route',
-        description: 'Zeigt welcher Node am besten fÃ¼r einen bestimmten Task geeignet ist.',
+        description: 'Zeigt welcher Node am besten für einen bestimmten Task geeignet ist.',
         category: 'mesh',
         parameters: [
             { name: 'task', type: 'string', description: 'Task-Typ: large-llm, fast-llm, embedding, image-generation, stt-voice, media-convert, cuda-inference', required: true },
@@ -1956,16 +1957,16 @@ export const meshBrainTools: NovaTool[] = [
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
             const snap = brain.load()
-            if (!snap) return 'Kein Mesh-Scan. Bitte mesh_scan ausfÃ¼hren.'
+            if (!snap) return 'Kein Mesh-Scan. Bitte mesh_scan ausführen.'
             const route = brain.getBestNodeFor(params.task as string)
-            if (!route) return `Kein Node gefunden fÃ¼r Task: ${params.task}`
+            if (!route) return `Kein Node gefunden für Task: ${params.task}`
             const lines = [
                 `Task: ${route.task}`,
-                `â†’ Bester Node: ${route.bestNode}`,
+                `→ Bester Node: ${route.bestNode}`,
                 `   Grund: ${route.reason}`,
             ]
-            if (route.fallback) lines.push(`   Fallback: ${route.fallback} (wenn ${route.bestNode} nicht verfÃ¼gbar)`)
-            else lines.push(`   Fallback: keiner verfÃ¼gbar`)
+            if (route.fallback) lines.push(`   Fallback: ${route.fallback} (wenn ${route.bestNode} nicht verfügbar)`)
+            else lines.push(`   Fallback: keiner verfügbar`)
             return lines.join('\n')
         },
     },
@@ -1978,7 +1979,7 @@ export const meshBrainTools: NovaTool[] = [
 export const securityAuditTools: NovaTool[] = [
     {
         name: 'security_audit',
-        description: 'Fï¿½hrt vollstï¿½ndigen Security-Audit durch: Secrets, gefï¿½hrlicher Code, Config, Permissions. Score 0-100.',
+        description: 'Führt vollständigen Security-Audit durch: Secrets, gefährlicher Code, Config, Permissions. Score 0-100.',
         category: 'security',
         parameters: [
             { name: 'path', type: 'string', description: 'Verzeichnis zum Scannen (default: cwd)', required: false },
@@ -2009,7 +2010,7 @@ export const securityAuditTools: NovaTool[] = [
 export const hooksTools: NovaTool[] = [
     {
         name: 'create_hook',
-        description: 'Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelï¿½st wird',
+        description: 'Erstellt einen Event-Hook (webhook oder email; script-Hooks werden abgelehnt) der bei Events ausgelöst wird',
         category: 'system',
         parameters: [
             { name: 'name', type: 'string', description: 'Name des Hooks', required: true },
@@ -2039,7 +2040,7 @@ export const hooksTools: NovaTool[] = [
     },
     {
         name: 'delete_hook',
-        description: 'Lï¿½scht einen Event-Hook',
+        description: 'Löscht einen Event-Hook',
         category: 'system',
         parameters: [
             { name: 'hook_id', type: 'string', description: 'Hook-ID', required: true },
@@ -2051,10 +2052,10 @@ export const hooksTools: NovaTool[] = [
     },
     {
         name: 'hook_history',
-        description: 'Zeigt Hook-Ausfï¿½hrungs-Verlauf',
+        description: 'Zeigt Hook-Ausführungs-Verlauf',
         category: 'system',
         parameters: [
-            { name: 'limit', type: 'number', description: 'Anzahl Eintrï¿½ge', required: false },
+            { name: 'limit', type: 'number', description: 'Anzahl Einträge', required: false },
         ],
         handler: async (params) => {
             const { getHookHistory } = await import('../hooks/event-hooks.js')
@@ -2094,7 +2095,7 @@ export const mediaTools: NovaTool[] = [
     },
     {
         name: 'file_to_base64',
-        description: 'Liest eine Datei und gibt Base64-Inhalt + MIME zurï¿½ck',
+        description: 'Liest eine Datei und gibt Base64-Inhalt + MIME zurück',
         category: 'media',
         parameters: [
             { name: 'path', type: 'string', description: 'Dateipfad', required: true },
@@ -2141,7 +2142,7 @@ export const learningTools: NovaTool[] = [
 export const mediaProviderTools: NovaTool[] = [
     {
         name: 'analyze_image',
-        description: 'Analysiert ein Bild mit KI Vision (Nova-LLM/OpenAI/Anthropic). Auto-wÃ¤hlt verfÃ¼gbaren Provider â€” funktioniert ohne API Keys Ã¼ber Nova-LLM.',
+        description: 'Analysiert ein Bild mit KI Vision (Nova-LLM/OpenAI/Anthropic). Auto-wählt verfügbaren Provider — funktioniert ohne API Keys über Nova-LLM.',
         category: 'media',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zur Bilddatei', required: true },
@@ -2155,7 +2156,7 @@ export const mediaProviderTools: NovaTool[] = [
     },
     {
         name: 'transcribe_audio',
-        description: 'Transkribiert eine Audio-Datei (Whisper/Nova-LLM/Deepgram). Auto-wÃ¤hlt verfÃ¼gbaren Provider.',
+        description: 'Transkribiert eine Audio-Datei (Whisper/Nova-LLM/Deepgram). Auto-wählt verfügbaren Provider.',
         category: 'media',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zur Audiodatei', required: true },
@@ -2181,11 +2182,11 @@ export const mediaProviderTools: NovaTool[] = [
     },
     {
         name: 'generate_image',
-        description: 'Generiert ein Bild mit KI (DALL-E 3 / OpenAI Image). Gibt den Dateipfad des generierten Bildes zurÃ¼ck. UnterstÃ¼tzt verschiedene SeitenverhÃ¤ltnisse.',
+        description: 'Generiert ein Bild mit KI (DALL-E 3 / OpenAI Image). Gibt den Dateipfad des generierten Bildes zurück. Unterstützt verschiedene Seitenverhältnisse.',
         category: 'media',
         parameters: [
             { name: 'prompt', type: 'string', description: 'Beschreibung des zu generierenden Bildes (Englisch empfohlen)', required: true },
-            { name: 'aspect_ratio', type: 'string', description: 'Seitenverhï¿½ltnis: 1:1, 16:9, 9:16, 4:3, 3:4', required: false },
+            { name: 'aspect_ratio', type: 'string', description: 'Seitenverhältnis: 1:1, 16:9, 9:16, 4:3, 3:4', required: false },
         ],
         handler: async (params) => {
             const { executeImageGen } = await import('./image-gen-tool.js')
@@ -2199,7 +2200,7 @@ export const mediaProviderTools: NovaTool[] = [
         parameters: [
             { name: 'path', type: 'string', description: 'Absoluter Pfad zur Datei', required: true },
             { name: 'caption', type: 'string', description: 'Optionale Bildunterschrift/Beschreibung', required: false },
-            { name: 'as_document', type: 'boolean', description: 'Erzwinge Versand als Dokument (auch fï¿½r Bilder)', required: false },
+            { name: 'as_document', type: 'boolean', description: 'Erzwinge Versand als Dokument (auch für Bilder)', required: false },
         ],
         handler: async (params) => {
             const { executeSendFile } = await import('./send-file-tool.js')
@@ -2208,7 +2209,7 @@ export const mediaProviderTools: NovaTool[] = [
     },
     {
         name: 'list_media_providers',
-        description: 'Zeigt alle verfï¿½gbaren Media-Provider und ihre Capabilities.',
+        description: 'Zeigt alle verfügbaren Media-Provider und ihre Capabilities.',
         category: 'media',
         parameters: [],
         handler: async () => {
@@ -2225,7 +2226,7 @@ export const mediaProviderTools: NovaTool[] = [
 export const markdownTools: NovaTool[] = [
     {
         name: 'parse_markdown',
-        description: 'Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blï¿½cke.',
+        description: 'Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blöcke.',
         category: 'other',
         parameters: [
             { name: 'content', type: 'string', description: 'Markdown-Inhalt', required: true },
@@ -2267,7 +2268,7 @@ export const sessionTools: NovaTool[] = [
     },
     {
         name: 'set_model_override',
-        description: 'Setzt ein Model-Override fï¿½r eine Session.',
+        description: 'Setzt ein Model-Override für eine Session.',
         category: 'system',
         parameters: [
             { name: 'session_id', type: 'string', description: 'Session-ID', required: true },
@@ -2280,11 +2281,11 @@ export const sessionTools: NovaTool[] = [
     },
     {
         name: 'add_route',
-        description: 'Fï¿½gt eine neue Route hinzu (Channel + Pattern ? Agent/Model).',
+        description: 'Fügt eine neue Route hinzu (Channel + Pattern ? Agent/Model).',
         category: 'system',
         parameters: [
             { name: 'channel', type: 'string', description: 'Channel (telegram, whatsapp, discord, *)', required: true },
-            { name: 'pattern', type: 'string', description: 'Regex-Muster fï¿½r Nachrichten', required: false },
+            { name: 'pattern', type: 'string', description: 'Regex-Muster für Nachrichten', required: false },
             { name: 'agent', type: 'string', description: 'Ziel-Agent', required: false },
             { name: 'model', type: 'string', description: 'Ziel-Model', required: false },
         ],
@@ -2319,7 +2320,7 @@ export const pluginTools: NovaTool[] = [
     },
     {
         name: 'load_plugin',
-        description: 'Lï¿½dt ein Plugin aus einem Verzeichnis.',
+        description: 'Lädt ein Plugin aus einem Verzeichnis.',
         category: 'system',
         parameters: [
             { name: 'path', type: 'string', description: 'Pfad zum Plugin-Verzeichnis', required: true },
@@ -2435,12 +2436,12 @@ export const browserAutomationTools: NovaTool[] = [
 export const agentPatternTools: NovaTool[] = [
     {
         name: 'set_tool_policy',
-        description: 'Setzt eine Tool-Policy (allow/deny/confirm) fï¿½r ein Tool-Pattern.',
+        description: 'Setzt eine Tool-Policy (allow/deny/confirm) für ein Tool-Pattern.',
         category: 'security',
         parameters: [
-            { name: 'pattern', type: 'string', description: 'Tool-Name oder Pattern (* fï¿½r alle)', required: true },
+            { name: 'pattern', type: 'string', description: 'Tool-Name oder Pattern (* für alle)', required: true },
             { name: 'action', type: 'string', description: 'allow, deny, oder confirm', required: true },
-            { name: 'reason', type: 'string', description: 'Begrï¿½ndung', required: false },
+            { name: 'reason', type: 'string', description: 'Begründung', required: false },
         ],
         handler: async (params) => {
             const { addToolPolicy } = await import('../agents/agent-patterns.js')
@@ -2497,7 +2498,7 @@ export const agentPatternTools: NovaTool[] = [
     },
     {
         name: 'load_skills',
-        description: 'Lï¿½dt Skills aus einem Verzeichnis.',
+        description: 'Lädt Skills aus einem Verzeichnis.',
         category: 'system',
         parameters: [
             { name: 'dir', type: 'string', description: 'Skills-Verzeichnis', required: true },
@@ -2537,7 +2538,7 @@ import { knowledgeStoreTool, knowledgeRecallTool, knowledgeListTool, knowledgeDe
 const selfModificationTools: NovaTool[] = [
     {
         name: 'execute_python',
-        description: 'Fï¿½hrt Python-Code direkt aus. Nutze dies IMMER wenn du Python-Skripte schreibst ï¿½ statt sie nur in den Chat zu schreiben. Unterstï¿½tzt inline Code, .py Dateien, und optionale pip-Installationen.',
+        description: 'Führt Python-Code direkt aus. Nutze dies IMMER wenn du Python-Skripte schreibst — statt sie nur in den Chat zu schreiben. Unterstützt inline Code, .py Dateien, und optionale pip-Installationen.',
         category: 'system',
         parameters: [
             { name: 'code', type: 'string', description: 'Python-Code als String (inline)', required: false },
@@ -2552,14 +2553,14 @@ const selfModificationTools: NovaTool[] = [
     },
     {
         name: 'evolve_self',
-        description: 'Modifiziert Novas eigenen TypeScript-Quellcode sicher: erstellt Git-Branch ? ï¿½ndert Code ? kompiliert ? merged bei Erfolg, rollt zurï¿½ck bei Fehler. Nur fï¿½r src/tools/ und src/layers/ erlaubt.',
+        description: 'Modifiziert Novas eigenen TypeScript-Quellcode sicher: erstellt Git-Branch ? ändert Code ? kompiliert ? merged bei Erfolg, rollt zurück bei Fehler. Nur für src/tools/ und src/layers/ erlaubt.',
         category: 'system',
         parameters: [
             { name: 'file', type: 'string', description: 'Relativer Pfad zur TS-Datei (z.B. src/tools/reminder-tool.ts)', required: true },
-            { name: 'description', type: 'string', description: 'Kurzbeschreibung der ï¿½nderung', required: true },
+            { name: 'description', type: 'string', description: 'Kurzbeschreibung der Änderung', required: true },
             { name: 'search', type: 'string', description: 'Exakter Text der ersetzt werden soll', required: true },
             { name: 'replace', type: 'string', description: 'Neuer Text (Ersatz)', required: true },
-            { name: 'reason', type: 'string', description: 'Warum diese ï¿½nderung?', required: false },
+            { name: 'reason', type: 'string', description: 'Warum diese Änderung?', required: false },
         ],
         handler: async (params) => {
             const { default: evolution } = await import('../synthesis/self-evolution.js')
@@ -2579,27 +2580,27 @@ const selfModificationTools: NovaTool[] = [
     },
     {
         name: 'nova_trace_stats',
-        description: 'Zeigt Novas eigene Performance-Statistiken aus den letzten 7 Tagen: welche Tools am langsamsten/fehleranfÃ¤lligsten sind, welches Modell am besten performt, Latenz-Durchschnitte, Self-Healing Retries. Nutze dies zur Selbstoptimierung oder wenn du wissen willst wie du performst.',
+        description: 'Zeigt Novas eigene Performance-Statistiken aus den letzten 7 Tagen: welche Tools am langsamsten/fehleranfälligsten sind, welches Modell am besten performt, Latenz-Durchschnitte, Self-Healing Retries. Nutze dies zur Selbstoptimierung oder wenn du wissen willst wie du performst.',
         category: 'system',
         parameters: [
             { name: 'refresh', type: 'boolean', description: 'true = Analyse neu berechnen (dauert ~1s), false = gecachte Insights laden (Standard)', required: false },
         ],
         handler: async (params) => {
             const insights = params.refresh ? runTraceAnalysis() : (loadTraceInsights() ?? runTraceAnalysis())
-            if (insights.tracesAnalyzed === 0) return 'ðŸ“Š Noch keine Trace-Daten vorhanden. Nach ein paar Unterhaltungen verfÃ¼gbar.'
+            if (insights.tracesAnalyzed === 0) return '📊 Noch keine Trace-Daten vorhanden. Nach ein paar Unterhaltungen verfügbar.'
 
             const lines = [
-                `ðŸ“Š **Nova Trace-Analyse** (${insights.tracesAnalyzed} Requests, letzte ${insights.periodDays} Tage)`,
+                `📊 **Nova Trace-Analyse** (${insights.tracesAnalyzed} Requests, letzte ${insights.periodDays} Tage)`,
                 '',
-                `**Gesamt-Latenz:** âˆ… ${(insights.overall.avgTotalLatencyMs / 1000).toFixed(1)}s | LLM: ${(insights.overall.avgLlmLatencyMs / 1000).toFixed(1)}s | Tools: ${(insights.overall.avgToolLatencyMs / 1000).toFixed(1)}s`,
-                `**Erfolgsrate:** ${(insights.overall.successRate * 100).toFixed(0)}% | Self-Healing Retries: âˆ… ${insights.overall.avgSelfHealingRetries.toFixed(2)}/Request`,
-                `**Tool-Calls/Request:** âˆ… ${insights.overall.avgToolCallsPerRequest}`,
+                `**Gesamt-Latenz:** ∅ ${(insights.overall.avgTotalLatencyMs / 1000).toFixed(1)}s | LLM: ${(insights.overall.avgLlmLatencyMs / 1000).toFixed(1)}s | Tools: ${(insights.overall.avgToolLatencyMs / 1000).toFixed(1)}s`,
+                `**Erfolgsrate:** ${(insights.overall.successRate * 100).toFixed(0)}% | Self-Healing Retries: ∅ ${insights.overall.avgSelfHealingRetries.toFixed(2)}/Request`,
+                `**Tool-Calls/Request:** ∅ ${insights.overall.avgToolCallsPerRequest}`,
             ]
 
             if (insights.models.length > 0) {
                 lines.push('\n**Modelle:**')
                 for (const m of insights.models.slice(0, 3)) {
-                    lines.push(`  â€¢ ${m.modelId} (${m.provider}): ${m.callCount} Calls, ${(m.successRate * 100).toFixed(0)}% Erfolg, âˆ… ${(m.avgLlmLatencyMs / 1000).toFixed(1)}s`)
+                    lines.push(`  • ${m.modelId} (${m.provider}): ${m.callCount} Calls, ${(m.successRate * 100).toFixed(0)}% Erfolg, ∅ ${(m.avgLlmLatencyMs / 1000).toFixed(1)}s`)
                 }
             }
 
@@ -2607,17 +2608,17 @@ const selfModificationTools: NovaTool[] = [
                 lines.push('\n**Top Tools:**')
                 for (const t of insights.tools.slice(0, 5)) {
                     const errPct = (t.errorRate * 100).toFixed(0)
-                    lines.push(`  â€¢ ${t.name}: ${t.callCount}x, âˆ… ${t.avgLatencyMs}ms, ${errPct}% Fehler`)
+                    lines.push(`  • ${t.name}: ${t.callCount}x, ∅ ${t.avgLatencyMs}ms, ${errPct}% Fehler`)
                 }
             }
 
-            if (insights.slowestTools.length > 0) lines.push(`\nâ± **Langsamste Tools:** ${insights.slowestTools.join(', ')}`)
-            if (insights.mostFailingTools.length > 0) lines.push(`âŒ **FehleranfÃ¤lligste Tools:** ${insights.mostFailingTools.join(', ')}`)
-            if (insights.cacheCandidates.length > 0) lines.push(`ðŸ’¾ **Cache-Kandidaten:** ${insights.cacheCandidates.join(', ')}`)
+            if (insights.slowestTools.length > 0) lines.push(`\n⏱ **Langsamste Tools:** ${insights.slowestTools.join(', ')}`)
+            if (insights.mostFailingTools.length > 0) lines.push(`❌ **Fehleranfälligste Tools:** ${insights.mostFailingTools.join(', ')}`)
+            if (insights.cacheCandidates.length > 0) lines.push(`💾 **Cache-Kandidaten:** ${insights.cacheCandidates.join(', ')}`)
 
             if (insights.recommendations.length > 0) {
                 lines.push('\n**Empfehlungen:**')
-                for (const r of insights.recommendations) lines.push(`  â†’ ${r}`)
+                for (const r of insights.recommendations) lines.push(`  → ${r}`)
             }
 
             return lines.join('\n')
@@ -2625,7 +2626,7 @@ const selfModificationTools: NovaTool[] = [
     },
     {
         name: 'nova_introspect',
-        description: 'Zeigt Novas eigenen internen Zustand: Ziele, gelernte Regeln, Skills, Performance-Metriken, Erinnerungen und System-Prompt. Nutze dies wenn du verstehen willst wer du bist, was du weiÃŸt, wie du performst oder was deine aktuellen Ziele sind.',
+        description: 'Zeigt Novas eigenen internen Zustand: Ziele, gelernte Regeln, Skills, Performance-Metriken, Erinnerungen und System-Prompt. Nutze dies wenn du verstehen willst wer du bist, was du weißt, wie du performst oder was deine aktuellen Ziele sind.',
         category: 'system',
         parameters: [
             {
@@ -2637,7 +2638,7 @@ const selfModificationTools: NovaTool[] = [
             {
                 name: 'search',
                 type: 'string',
-                description: 'Suchbegriff â€” nur relevant wenn type=tools (z.B. "search", "browser", "memory")',
+                description: 'Suchbegriff — nur relevant wenn type=tools (z.B. "search", "browser", "memory")',
                 required: false,
             },
         ],
@@ -2651,13 +2652,13 @@ const selfModificationTools: NovaTool[] = [
     },
     {
         name: 'nova_capabilities',
-        description: 'Nova fragt ihr eigenes Tool-Inventar ab. Zeigt alle Tools die fÃ¼r ein bestimmtes Thema verfÃ¼gbar sind â€” mit Name, Beschreibung und Kategorie. Nutze das wenn du nicht sicher bist welches Tool du fÃ¼r eine Aufgabe verwenden sollst.',
+        description: 'Nova fragt ihr eigenes Tool-Inventar ab. Zeigt alle Tools die für ein bestimmtes Thema verfügbar sind — mit Name, Beschreibung und Kategorie. Nutze das wenn du nicht sicher bist welches Tool du für eine Aufgabe verwenden sollst.',
         category: 'system',
         parameters: [
             {
                 name: 'topic',
                 type: 'string',
-                description: 'Suchbegriff fÃ¼r das Tool-Inventar (z.B. "search", "browser", "file", "ssh", "memory", "agent"). Leer = alle Tools gruppiert nach Kategorie.',
+                description: 'Suchbegriff für das Tool-Inventar (z.B. "search", "browser", "file", "ssh", "memory", "agent"). Leer = alle Tools gruppiert nach Kategorie.',
                 required: false,
             },
         ],
@@ -2771,14 +2772,14 @@ const meshTools: NovaTool[] = [
     },
     {
         name: 'mesh_nodes',
-        description: 'Listet alle verfï¿½gbaren (online, nicht-busy) Nodes im Mesh auf ï¿½ schnelle ï¿½bersicht fï¿½r Task-Delegation.',
+        description: 'Listet alle verfügbaren (online, nicht-busy) Nodes im Mesh auf — schnelle Übersicht für Task-Delegation.',
         category: 'system',
         parameters: [],
         handler: async () => {
             const { getAvailableNodes } = await import('../mesh/mesh-registry.js')
             const nodes = await getAvailableNodes()
-            if (nodes.length === 0) return 'Keine verfï¿½gbaren Nodes im Mesh. Nur ich bin aktiv.'
-            return nodes.map(n => `?? ${n.hostname} (${n.node_id}) ï¿½ ${n.capabilities?.join(', ')}`).join('\n')
+            if (nodes.length === 0) return 'Keine verfügbaren Nodes im Mesh. Nur ich bin aktiv.'
+            return nodes.map(n => `?? ${n.hostname} (${n.node_id}) — ${n.capabilities?.join(', ')}`).join('\n')
         },
     },
     {
@@ -2887,7 +2888,7 @@ const sendFileTool: NovaTool = {
 
 const meshDownloadFileTool: NovaTool = {
     name: 'mesh_download_file',
-    description: 'LÃ¤dt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen GerÃ¤ten zu holen bevor du sie mit send_file weiterschickst.',
+    description: 'Lädt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen Geräten zu holen bevor du sie mit send_file weiterschickst.',
     category: 'system',
     parameters: [
         { name: 'host', type: 'string', description: 'Remote Host/IP (z.B. 100.64.0.22)', required: true },
@@ -2917,11 +2918,11 @@ const meshDownloadFileTool: NovaTool = {
             )
             const buffer = Buffer.from(b64output.trim(), 'base64')
             writeFileSync(localPath, buffer)
-            console.log(`[MeshDownload] âœ… ${remotePath} â†’ ${localPath} (${buffer.length} bytes)`)
+            console.log(`[MeshDownload] ✅ ${remotePath} → ${localPath} (${buffer.length} bytes)`)
             return { success: true, local_path: localPath, size: buffer.length, source: `${user}@${host}:${remotePath}` }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err)
-            console.log(`[MeshDownload] âŒ ${msg}`)
+            console.log(`[MeshDownload] ❌ ${msg}`)
             return { error: `Download fehlgeschlagen: ${msg}`, host, remote_path: remotePath }
         }
     },
@@ -3039,6 +3040,7 @@ export const ALL_TOOLS: NovaTool[] = [
     ...agentPatternTools,
     ...homeAssistantTools,
     scanNowTool,
+    meshInspectUrlTool,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,
@@ -3059,7 +3061,7 @@ export const ALL_TOOLS: NovaTool[] = [
         description: 'Sendet eine Telegram-Nachricht an einen konfigurierten Benutzeralias oder eine direkte Chat-ID.',
         category: 'other' as const,
         parameters: [
-            { name: 'to', type: 'string', description: 'EmpfÃ¤nger: konfigurierter Alias oder direkte Chat-ID/Nummer', required: true },
+            { name: 'to', type: 'string', description: 'Empfänger: konfigurierter Alias oder direkte Chat-ID/Nummer', required: true },
             { name: 'message', type: 'string', description: 'Nachricht die gesendet werden soll', required: true },
         ],
         handler: async (params: Record<string, unknown>) => {
@@ -3103,7 +3105,7 @@ export const ALL_TOOLS: NovaTool[] = [
                 return {
                     success: true, sentTo: resolvedId,
                     messageId: Number((sent as any)?.message_id || 0) || undefined,
-                    message: `âœ… Nachricht an ${params.to} (${resolvedId}) gesendet`,
+                    message: `✅ Nachricht an ${params.to} (${resolvedId}) gesendet`,
                 }
             } catch (err) {
                 return { success: false, error: String(err) }
@@ -3127,13 +3129,13 @@ export const ALL_TOOLS: NovaTool[] = [
     // Subagent Delegation
     {
         name: 'spawn_subagent',
-        description: 'Spawnt einen fokussierten Subagenten fÃ¼r eine Teilaufgabe. Ideal fÃ¼r parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und lÃ¤uft mit eigenem Timeout.',
+        description: 'Spawnt einen fokussierten Subagenten für eine Teilaufgabe. Ideal für parallele Arbeit oder isolierte Recherchen. Der Subagent bekommt nur die erlaubten Tools und läuft mit eigenem Timeout.',
         category: 'system',
         parameters: [
             { name: 'task', type: 'string', description: 'Was soll der Subagent tun? Klare, fokussierte Aufgabenbeschreibung.', required: true },
             { name: 'tools', type: 'string', description: 'Kommagetrennte Tool-Namen (optional). Standard: alle sicheren Tools.', required: false },
             { name: 'timeout_seconds', type: 'number', description: 'Timeout in Sekunden (Standard: 60)', required: false },
-            { name: 'mesh_node', type: 'string', description: 'Optional: Name des Mesh-Nodes (z.B. "MacMini") fÃ¼r Remote-Delegation', required: false },
+            { name: 'mesh_node', type: 'string', description: 'Optional: Name des Mesh-Nodes (z.B. "MacMini") für Remote-Delegation', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
@@ -3147,9 +3149,9 @@ export const ALL_TOOLS: NovaTool[] = [
                     ...(await subagentParentIdentity(params)),
                 })
                 if (result.status === 'completed') {
-                    return `âœ… Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
+                    return `✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
                 } else {
-                    return `âš ï¸ Subagent ${result.id}: ${result.status}${result.error ? ' â€” ' + result.error : ''}`
+                    return `⚠️ Subagent ${result.id}: ${result.status}${result.error ? ' — ' + result.error : ''}`
                 }
             } catch (err) {
                 return `Subagent-Fehler: ${err}`
@@ -3176,7 +3178,7 @@ export const ALL_TOOLS: NovaTool[] = [
     },
     {
         name: 'spawn_subagents_parallel',
-        description: 'Spawnt MEHRERE Subagenten gleichzeitig (echt parallel) und wartet auf alle Ergebnisse. Perfekt fÃ¼r parallele Recherchen, Multi-Node-Analysen oder unabhÃ¤ngige Teilaufgaben.',
+        description: 'Spawnt MEHRERE Subagenten gleichzeitig (echt parallel) und wartet auf alle Ergebnisse. Perfekt für parallele Recherchen, Multi-Node-Analysen oder unabhängige Teilaufgaben.',
         category: 'system',
         parameters: [
             {
@@ -3191,7 +3193,7 @@ export const ALL_TOOLS: NovaTool[] = [
                 const { spawnSubagentsParallel } = await import('../agents/subagent-orchestrator.js')
                 const raw = params.tasks
                 const tasks = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : [])
-                if (!tasks.length) return 'Keine Tasks Ã¼bergeben.'
+                if (!tasks.length) return 'Keine Tasks übergeben.'
                 return await spawnSubagentsParallel(tasks, await subagentParentIdentity(params))
             } catch (err) {
                 return `Parallel-Spawn-Fehler: ${err}`
@@ -3199,10 +3201,10 @@ export const ALL_TOOLS: NovaTool[] = [
         },
     },
 
-    // Knowledge Graph Tools (LLM-unabhÃ¤ngige Faktensuche)
+    // Knowledge Graph Tools (LLM-unabhängige Faktensuche)
     {
         name: 'kg_search',
-        description: 'Durchsucht den Knowledge Graph per Keyword â€” kein LLM nÃ¶tig. Findet Fakten, Beziehungen und Eigenschaften von EntitÃ¤ten.',
+        description: 'Durchsucht den Knowledge Graph per Keyword — kein LLM nötig. Findet Fakten, Beziehungen und Eigenschaften von Entitäten.',
         category: 'memory',
         parameters: [
             { name: 'query', type: 'string', description: 'Suchbegriff oder Frage', required: true },
@@ -3221,12 +3223,12 @@ export const ALL_TOOLS: NovaTool[] = [
     },
     {
         name: 'kg_remember',
-        description: 'Speichert eine Tatsache direkt im Knowledge Graph. Z.B. "Sample nutzt tmux" â†’ kg_remember("Sample", "uses", "tmux")',
+        description: 'Speichert eine Tatsache direkt im Knowledge Graph. Z.B. "Sample nutzt tmux" → kg_remember("Sample", "uses", "tmux")',
         category: 'memory',
         parameters: [
-            { name: 'subject', type: 'string', description: 'EntitÃ¤t (z.B. "Sample", "Nova", "MacMini")', required: true },
+            { name: 'subject', type: 'string', description: 'Entität (z.B. "Sample", "Nova", "MacMini")', required: true },
             { name: 'relation', type: 'string', description: 'Beziehung (z.B. "uses", "prefers", "owns")', required: true },
-            { name: 'object', type: 'string', description: 'Wert oder Ziel-EntitÃ¤t', required: true },
+            { name: 'object', type: 'string', description: 'Wert oder Ziel-Entität', required: true },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
@@ -3253,7 +3255,7 @@ export const ALL_TOOLS: NovaTool[] = [
             { name: 'name', type: 'string', description: 'Provider-Name (z.B. "minimax", "kimi", "deepseek")', required: true },
             { name: 'api_key', type: 'string', description: 'API Key des Providers', required: true },
             { name: 'base_url', type: 'string', description: 'OpenAI-kompatibler Basis-URL (z.B. https://api.minimax.chat/v1)', required: true },
-            { name: 'models', type: 'string', description: 'Kommagetrennte Modell-IDs (optional â€” werden sonst auto-entdeckt)', required: false },
+            { name: 'models', type: 'string', description: 'Kommagetrennte Modell-IDs (optional — werden sonst auto-entdeckt)', required: false },
             { name: 'roles', type: 'string', description: 'Kommagetrennte Rollen: chat,code,vision,embedding (Standard: chat,code)', required: false },
             { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
@@ -3314,7 +3316,7 @@ export const ALL_TOOLS: NovaTool[] = [
                 const status = getCapabilityStatus()
                 const extList = ext.length > 0
                     ? '\n\n**Registrierte externe Provider:**\n' + ext.map(p =>
-                        `- ${p.name}: ${p.enabled ? 'âœ…' : 'âŒ'} | ${p.models?.length || 0} Modelle | ${p.baseUrl}`
+                        `- ${p.name}: ${p.enabled ? '✅' : '❌'} | ${p.models?.length || 0} Modelle | ${p.baseUrl}`
                     ).join('\n')
                     : '\n\n*Keine externen Provider registriert*'
                 return status + extList
@@ -3334,14 +3336,14 @@ export const ALL_TOOLS: NovaTool[] = [
             try {
                 const { removeExternalProvider } = await import('../core/model-resolver.js')
                 const ok = removeExternalProvider(String(params.name))
-                return ok ? `âœ… Provider "${params.name}" entfernt.` : `Provider "${params.name}" nicht gefunden.`
+                return ok ? `✅ Provider "${params.name}" entfernt.` : `Provider "${params.name}" nicht gefunden.`
             } catch (err) {
                 return `Fehler: ${err}`
             }
         },
     },
 
-    // Capability Router â€” Nova installs missing tools autonomously
+    // Capability Router — Nova installs missing tools autonomously
     capabilityTool,
 ]
 
@@ -3393,11 +3395,11 @@ export class NovaToolRegistry {
             this.register(tool)
         }
 
-        // Register the Skill Pack loader (from tool-router) â€” async because ESM
+        // Register the Skill Pack loader (from tool-router) — async because ESM
         import('./tool-router.js').then(({ loadSkillPackTool }) => {
             if (loadSkillPackTool) {
                 this.register(loadSkillPackTool)
-                console.log(`[Tools] âœ… load_skill_pack Tool registriert`)
+                console.log(`[Tools] ✅ load_skill_pack Tool registriert`)
             }
         }).catch(() => { /* tool-router not yet available */ })
 
@@ -3482,7 +3484,7 @@ export class NovaToolRegistry {
 
         // Check if result indicates an error
         if (!isSuccessfulToolResult(result)) {
-            // Track failure by TOOL NAME only ï¿½ not params!
+            // Track failure by TOOL NAME only — not params!
             // Nova often varies params between retries, which would reset the counter
             const key = name
             const failures = (this.failureCount.get(key) || 0) + 1
@@ -3577,7 +3579,7 @@ export async function getDynamicTools(): Promise<NovaTool[]> {
         const extras = await getScannedExtraTools(existingNames)
         _dynamicTools = [...ALL_TOOLS, ...extras]
         if (extras.length > 0) {
-            console.log(`[ToolRegistry] âœ… ${ALL_TOOLS.length} built-in + ${extras.length} auto-scanned = ${_dynamicTools.length} total tools`)
+            console.log(`[ToolRegistry] ✅ ${ALL_TOOLS.length} built-in + ${extras.length} auto-scanned = ${_dynamicTools.length} total tools`)
         }
         return _dynamicTools
     } catch {

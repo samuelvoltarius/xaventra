@@ -1328,7 +1328,9 @@ export class TelegramAdapter implements ChannelAdapter {
                 // If Markdown parsing fails, try plain text
                 if (err.message?.includes("can't parse entities")) {
                     console.log('[Nova Telegram] Markdown failed, sending as plain text')
-                    await this.bot.sendMessage(msg.to, chunk.replace(/[*_`\[\]]/g, ''), {
+                    // No parse_mode: retain identifiers and code exactly. Removing
+                    // underscores corrupted tool names in the October 3 report.
+                    await this.bot.sendMessage(msg.to, chunk.replace(/\\([_*`\[\]])/g, '$1'), {
                         reply_to_message_id: i === 0 && msg.replyTo ? parseInt(msg.replyTo) : undefined,
                     })
                 } else {

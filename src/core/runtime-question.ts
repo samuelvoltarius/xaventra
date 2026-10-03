@@ -1,3 +1,19 @@
+/** Independently enrich supported clauses without swallowing the rest of a turn. */
+export async function runtimeModelContext(content: string, llm: {
+    modelId?: string; providerId?: string; runtimeModelIdentity?: () => Promise<{ model?: string } | null>
+}): Promise<string> {
+    const hasModelClause = content.split(/\s*[?!;]\s*|\s+und\s+/i)
+        .some(clause => runtimeQuestion(clause)?.model)
+    if (!hasModelClause) return ''
+    let identity: { model?: string } | null | undefined
+    try { identity = await llm.runtimeModelIdentity?.() } catch { /* Unknown, not guessed. */ }
+    return '\n\n## Ehrlichkeit: aktuelle Modellidentität\n'
+        + `Konfiguriertes Runtime-Modell: ${llm.providerId || 'unbekannt'}/${llm.modelId || 'unbekannt'}.\n`
+        + (identity?.model ? `Der konfigurierte Server meldet für diesen Alias: ${identity.model}.\n`
+            : 'Der vollständige Modellname hinter dem Alias ist nicht verifiziert.\n')
+        + 'Dies ist Server-Metadaten-Evidence, kein Nachweis des Modells jeder einzelnen Anfrage; Routing oder Failover kann abweichen. Beantworte auch die übrigen Fragen der Nachricht, ohne Gründe zu erfinden.'
+}
+
 /** The fast path must cover the WHOLE request, never swallow a second task. */
 export function runtimeQuestion(content: string, previous: Array<{ role: string; content: string }> = []) {
     const result = { model: false, version: false, identity: false, mesh: false }

@@ -1,5 +1,34 @@
 # Changelog
 
+## [2.85.1] — 2026-10-03 (local candidate, not deployed)
+
+- Compound model questions retain the full conversational task while receiving
+  verified server model metadata (or an explicit unverified result).
+- Short node-name corrections retain the immediate routing context. Live mesh
+  inventory tools and relevant prompt blocks survive ordinary routing/budgeting.
+- Screenshot typos/plurals use one recognition path. Node-targeted requests do
+  not substitute local desktop captures or enter catalog-only execution loops;
+  the missing node-addressed capture transport is reported honestly. Existing
+  owner/enrollment and delivery checks remain unchanged.
+- Repair corrupted German tool-catalog strings and Telegram bold formatting;
+  plain-text delivery fallback preserves tool identifiers.
+- Lone HTTP(S) links select guarded URL inspection, not search or SSH. URL
+  requests bypass response caching and receive guidance distinguishing untested
+  reachability, DNS/HTTP failures and SSRF denial. Private-address guards stay on.
+- Tailscale landing-page requests retain Mesh context and use an owner-only
+  inspector: local peer DNS/IP plus a fresh mesh identity, pinned HTTPS GET,
+  bounded body/time, no redirects, arbitrary ports/paths or TLS exceptions.
+  Native Snap CLI/socket discovery avoids the launcher failing in service users.
+
+No remote capture transport, enrollment, publication or production change is
+included. See [Telegram guide](docs/TELEGRAM.md) for the screenshot boundary.
+
+Local Windows verification: build/typecheck/catalog/assurance checks; 683 Core
+suites (4,692 passed, 2 skipped) and 23 Desktop tests.
+The Core rerun used process-local Git long-path support after a Windows path
+limit failure in the initial repair-publication fixture. Pipeline scenarios use
+a scripted agent; this is not live Telegram or fleet screenshot acceptance.
+
 ## [2.85.0] — 2026-10-03 (release candidate)
 
 > Xaventra erkennt ihre Umgebung, verbindet sich selbstständig mit erlaubten Diensten und baut aus den gefundenen Fähigkeiten einen brauchbaren Werkzeugkasten — ohne Config-Dateien.

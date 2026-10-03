@@ -1,4 +1,5 @@
 import { inferRequiredToolTargets } from './tool-evidence-binding.js'
+import { isBareHttpUrl, mentionsScreenshot } from './request-capabilities.js'
 
 export interface ActionIntent {
     requiresTool: boolean
@@ -58,6 +59,7 @@ export function conversationResponseGuidance(input: string): string {
  * side effect. These requests must never be answered from model imagination.
  */
 export function detectActionIntent(input: string): ActionIntent {
+    if (isBareHttpUrl(input)) return { requiresTool: true, kind: 'web' }
     const text = actionRequestText(input).toLowerCase().replace(/\s+/g, ' ').trim()
     const explicitFileTargets = inferRequiredToolTargets(text)
         .filter(target => !/^https?:\/\//.test(target))
@@ -67,7 +69,7 @@ export function detectActionIntent(input: string): ActionIntent {
         return { requiresTool: true, kind: 'system-state' }
     }
 
-    if (/\b(screen\s*shot|scre+ns?\s*shot|screnn\s*shot|screenshot|bildschirmfoto|display.{0,20}(?:bild|foto)|monitor.{0,20}(?:bild|foto))\b/i.test(text)) {
+    if (mentionsScreenshot(text)) {
         return { requiresTool: true, kind: 'screenshot' }
     }
     if (/\b(?:erstel+l\w*|generier\w*|mach\w*)\b.{0,50}\b(?:bild|foto|illustration|grafik)\b|\b(?:bild|foto|illustration|grafik)\b.{0,50}\b(?:erstel+l\w*|generier\w*|mach\w*)\b/i.test(text)) {

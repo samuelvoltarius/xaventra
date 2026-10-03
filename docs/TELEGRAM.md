@@ -1,4 +1,4 @@
-# Telegram Bot Setup and HA (v2.74.1)
+# Telegram Bot Setup and HA (v2.85.1 candidate)
 
 Configure Nova as a Telegram bot with interactive actions, user isolation and
 fenced Main failover.
@@ -41,6 +41,24 @@ Send `/start` to `@userinfobot` on Telegram.
 ### Text Messages
 Just type normally. Nova responds in German.
 
+A lone HTTP(S) link selects guarded URL inspection. A private-address policy
+denial does not prove an Internet outage or a failed service. URL requests avoid
+cached responses; network and policy failures must be distinguished. Private
+targets remain blocked by the public fetch tool. For a Tailscale HTTPS landing
+page, `mesh_inspect_url` maps local Tailscale DNS/IP evidence to a fresh mesh
+node before an owner-only, bounded GET. Only port 443 and `/` without query,
+credentials or redirects are allowed; TLS validation stays enabled. Unknown,
+offline or ambiguous peers fail closed. Snap CLI/socket discovery works under
+a service account without sudo. A hostname alone is not a service map, and a
+page title is not a functional test of the service advertised on that page.
+
+Model questions combined with other questions receive current server metadata
+without dropping the other task. The configured alias and server-reported model
+name are distinct; routing/failover may still select a different model per call.
+Short corrections such as `ns1 sorry` retain the immediate tool-routing context.
+Node status comes from live mesh evidence, not an empty knowledge-graph search;
+unmeasured connectivity or installation motives must be reported as unknown.
+
 ### Request lifecycle
 
 Long tasks keep one silent progress bubble and edit it in place. Step updates no
@@ -68,6 +86,14 @@ Remote desktop control remains denied by default; a locked session must be
 unlocked locally, never bypassed. Production screenshot delivery is not yet
 qualified. See [capture enrollment and acceptance](./SCREENSHOT_DELIVERY.md)
 for failure diagnosis and the required correlated capture/delivery receipts.
+
+Screenshot spelling variants and plurals are recognized. Requests for images of
+mesh nodes (including all nodes) cannot use `desktop_screenshot`: that tool has
+no node target. Nova may inspect the mesh inventory, but reports the missing
+node-addressed capture transport instead of capturing a different local desktop,
+delegating an unbound capture or returning a tool catalog as the result. A
+headless node may have no display; this is not inferred from its name. Enabling
+remote capture requires a separately authorized, target-bound integration.
 
 ### Evidence-based notifications
 

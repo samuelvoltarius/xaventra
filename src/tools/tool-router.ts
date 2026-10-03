@@ -15,6 +15,7 @@
 import { getToolRegistry } from './complete-registry.js'
 import { detectActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
+import { containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to LLM
@@ -101,7 +102,7 @@ const SKILL_PACKS: SkillPack[] = [
     {
         name: 'mesh-network',
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
-        keywords: ['mesh', 'node', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],
+        keywords: ['mesh', 'node', 'nodes', 'knoten', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],
         tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file'],
     },
     {
@@ -347,11 +348,19 @@ export function getRelevantTools(
     const primaryLower = primaryMessage.toLowerCase()
     const primaryIntent = detectActionIntent(primaryMessage)
 
+    // No node-addressed capture transport exists. Do not substitute local
+    // pixels or delegate an unbound capture. Inventory is still useful evidence.
+    if (isNodeScreenshotRequest(primaryMessage)) {
+        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes'].map(name => registry.get(name))
+            .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+    }
+
     // Checking a concrete endpoint is not a search for pages about that URL.
     // Keep the exact fetch inside the original immutable contract, including in
     // all-tools mode. No fabricated search receipt or relaxed target validator.
     if (isDirectUrlCheck(primaryMessage)) {
-        return [...CORE_TOOLS, 'fetch_url'].map(name => registry.get(name))
+        const urlTools = containsTailnetUrl(primaryMessage) ? ['mesh_inspect_url', 'mesh_nodes', 'mesh_services'] : ['fetch_url']
+        return [...CORE_TOOLS, ...urlTools].map(name => registry.get(name))
             .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
     }
 
@@ -371,6 +380,10 @@ export function getRelevantTools(
 
     // ── FILTERED MODE (weak models) ─────────────────────────────────────────────
     const includedToolNames = new Set<string>(CORE_TOOLS)
+    const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes'] : []
+    if (containsTailnetUrl(primaryMessage)) liveTools.push('mesh_inspect_url', 'mesh_services')
+    if (primaryIntent.kind === 'screenshot') liveTools.push('desktop_screenshot')
+    for (const name of liveTools) includedToolNames.add(name)
 
     // An explicit registered tool identifier is stronger than a fuzzy pack
     // keyword. Names such as `health_status` contain underscores, so matching
@@ -445,6 +458,7 @@ export function getRelevantTools(
     const prioritizedNames = [
         ...CORE_TOOLS,
         ...explicitToolNames,
+        ...liveTools,
         ...externalMatches,
         ...forgeMatches,
         ...rankedPacks.flatMap(candidate => candidate.pack.tools),
@@ -468,7 +482,7 @@ export function getToolRouterPrompt(): string {
 Du hast ${CORE_TOOLS.size} Core-Tools immer verfügbar.
 Zusätzlich gibt es **Skill-Packs** mit spezialisierten Tools die automatisch geladen werden wenn der Kontext passt.
 
-Falls du ein Tool brauchst das nicht in deiner aktuellen Liste ist, nutze \`load_skill_pack\` um ein Skill-Pack zu laden.
+\`load_skill_pack\` zeigt nur den Katalog eines Skill-Packs und erweitert den aktuellen Werkzeugvertrag nicht. Nutze vorhandene Ausführungswerkzeuge direkt; fehlt ein benötigtes Werkzeug, melde die konkrete Einschränkung statt wiederholt Kataloge abzufragen.
 Wenn du nicht weißt welche Tools du für eine Aufgabe hast, nutze \`nova_capabilities\` um dein Tool-Inventar zu durchsuchen.
 
 ### Verfügbare Skill-Packs:

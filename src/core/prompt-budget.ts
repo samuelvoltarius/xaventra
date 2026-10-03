@@ -19,6 +19,8 @@
  * first; the order of the remaining blocks never changes.
  */
 
+import { mentionsMesh } from './request-capabilities.js'
+
 export interface PromptBudgetResult {
     prompt: string
     truncated: boolean
@@ -56,7 +58,7 @@ const TRIM_MARKER = '\n[… gekürzt …]\n'
 /** Below this a trimmed block carries no useful content and is dropped. */
 const MIN_TRIMMED_BLOCK = 160
 
-function splitBlocks(input: string): Block[] {
+function splitBlocks(input: string, activeRequest: string): Block[] {
     // A block starts at a line beginning with "## " (level-2 heading).
     const starts = [0]
     const re = /\n(?=## )/g
@@ -71,7 +73,8 @@ function splitBlocks(input: string): Block[] {
         const headingLine = text.replace(/^\n+/, '').split('\n', 1)[0] || ''
         const isHeading = headingLine.startsWith('## ')
         // Text before the first heading is the identity (soul + persona).
-        const priority: BlockPriority = isHeading ? blockPriority(headingLine) : 1
+        const relevantLiveState = mentionsMesh(activeRequest) && /mesh|system-status|system-befund|inventar|inventory/i.test(headingLine)
+        const priority: BlockPriority = isHeading ? (relevantLiveState ? 1 : blockPriority(headingLine)) : 1
         blocks.push({ text, heading: isHeading ? headingLine.trim() : '(Identität)', priority, keep: text.length })
     }
     return blocks
@@ -102,8 +105,8 @@ function fitTier(blocks: Block[], budget: number): void {
 }
 
 /** Keeps the most important blocks in full and trims background first. */
-export function applySystemPromptBudget(input: string, maxChars: number): PromptBudgetResult {
-    const blocks = splitBlocks(input)
+export function applySystemPromptBudget(input: string, maxChars: number, activeRequest = ''): PromptBudgetResult {
+    const blocks = splitBlocks(input, activeRequest)
     const kept = (): [number, number, number, number] => {
         const out: [number, number, number, number] = [0, 0, 0, 0]
         for (const block of blocks) out[block.priority] += renderBlock(block).length

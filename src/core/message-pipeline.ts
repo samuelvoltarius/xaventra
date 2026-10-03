@@ -15,6 +15,7 @@ import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { containsHttpUrl, isNodeScreenshotRequest, liveEvidenceGuidance, mentionsMesh, NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
 
 
 // State and handler types
@@ -353,6 +354,7 @@ export interface ScreenshotFallbackRequest {
 export async function runAuthorizedScreenshotFallback(
     request: ScreenshotFallbackRequest,
 ): Promise<{ path: string; size?: number } | null> {
+    if (isNodeScreenshotRequest(request.content)) return null
     if (request.channel.toLowerCase() !== 'telegram') return null
     if (!request.tools?.execute || !request.telegram?.sendPhoto) return null
     let args: Record<string, unknown>
@@ -733,6 +735,7 @@ async function handleMessageInScope(
         systemPrompt = buildSystemPromptFromSoul() + '\n\n' + NOVA_PERSONA
     }
     if (!isSystemAuthored) systemPrompt += conversationResponseGuidance(content)
+    if (!isSystemAuthored) systemPrompt += liveEvidenceGuidance(content)
 
     // Gemessener Systembefund statt Annahmen. Der Environment-Scanner laeuft
     // beim Start; sein Ergebnis floss bisher nur in den Self-Setup-Orchestrator,
@@ -1482,11 +1485,16 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // ============================================
         // Direct Runtime Introspection — no LLM guessing for identity/status.
         // ============================================
-        const { runtimeQuestion } = await import('./runtime-question.js')
+        const { runtimeQuestion, runtimeModelContext } = await import('./runtime-question.js')
         const turns = recentSessionTurns(canonicalUser, channel)
         // The current user turn is already journaled; follow-up scope is the preceding answer.
         if (turns.at(-1)?.role === 'user' && turns.at(-1)?.content === content.slice(0, 2000)) turns.pop()
         const question = runtimeQuestion(content, turns)
+        // Mixed questions still need measured identity; keep the normal agent
+        // path so their other clauses are answered rather than silently dropped.
+        const measuredModelContext = !question && !isSystemAuthored ? await runtimeModelContext(content, state.llm) : ''
+        systemPrompt += measuredModelContext
+        const requiresFreshRuntimeEvidence = Boolean(measuredModelContext) || mentionsMesh(content) || containsHttpUrl(content) || detectActionIntent(content).kind === 'screenshot'
         const asksModel = question?.model
         const asksNovaVersion = question?.version
         const asksNovaIdentity = question?.identity
@@ -1554,7 +1562,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const cacheKeyMessages = responseCacheMessages(canonicalUser, channel, content)
         try {
             const { getCachedResponse } = await import('../llm/response-cache.js')
-            cachedResponse = getCachedResponse(systemPrompt, cacheKeyMessages)
+            if (!requiresFreshRuntimeEvidence) cachedResponse = getCachedResponse(systemPrompt, cacheKeyMessages)
             if (cachedResponse) {
                 console.log(`[Pipeline] ✅ Cache HIT — skipping LLM call`)
             }
@@ -1627,7 +1635,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         if (systemPrompt.length > MAX_SYSTEM_PROMPT) {
             console.log(`[Pipeline] ⚠️ systemPrompt too large: ${systemPrompt.length} chars, capping to ${MAX_SYSTEM_PROMPT}`)
             const { applySystemPromptBudget } = await import('./prompt-budget.js')
-            const budgeted = applySystemPromptBudget(systemPrompt, MAX_SYSTEM_PROMPT)
+            const budgeted = applySystemPromptBudget(systemPrompt, MAX_SYSTEM_PROMPT, content)
             systemPrompt = budgeted.prompt
             console.log(`[Pipeline] Prompt budgets: ${JSON.stringify(budgeted.sections)}`)
         }
@@ -1738,7 +1746,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // already sent it and this block sent the same file again.
         const { pendingScreenshot } = await import('./screenshot-delivery.js')
         let screenshotDelivered = (result as any).screenshotDelivered === true
-        if (pendingScreenshot(result as any) && channel.toLowerCase() === 'telegram') {
+        if (!isNodeScreenshotRequest(content) && pendingScreenshot(result as any) && channel.toLowerCase() === 'telegram') {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 if (tg?.sendPhoto) {
@@ -1872,7 +1880,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // tool through the same authorization boundary.
         const preGateIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         const { shouldRunScreenshotFallback, applyScreenshotFallback } = await import('./screenshot-delivery.js')
-        if (shouldRunScreenshotFallback({ isSystemMessage, intentKind: preGateIntent.kind, screenshotDelivered, result: result as any })) {
+        if (!isNodeScreenshotRequest(content) && shouldRunScreenshotFallback({ isSystemMessage, intentKind: preGateIntent.kind, screenshotDelivered, result: result as any })) {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 const captured = await runAuthorizedScreenshotFallback({
@@ -1900,7 +1908,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         }
 
         // A retry can create the screenshot after the first delivery opportunity.
-        if (!screenshotDelivered && (result as any).screenshotPath && channel.toLowerCase() === 'telegram') {
+        if (!isNodeScreenshotRequest(content) && !screenshotDelivered && (result as any).screenshotPath && channel.toLowerCase() === 'telegram') {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 const imgPath = (result as any).screenshotPath
@@ -1957,8 +1965,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const skillProposalCreated = kernelState
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
-        if (!isSystemMessage && actionIntent.kind === 'screenshot' && !screenshotDelivered) {
-            supervised.content = screenshotFailureResponse(failedExecutions)
+        if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
+            supervised.content = isNodeScreenshotRequest(content) ? NODE_SCREENSHOT_LIMITATION : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
                 supervised.content = 'Ich habe selbst einen konkreten Skill-Vorschlag erstellt. Er wartet gemäß PATCH_GATE auf deine Freigabe; die angeforderte Aktion ist noch nicht ausgeführt.'
@@ -2005,6 +2013,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     }
                 }
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
+
+            // A synthesis/fact-check fallback may emit raw discovery results.
+            // Delivery truth is deterministic and remains authoritative last.
+            if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
+                finalContent = isNodeScreenshotRequest(content) ? NODE_SCREENSHOT_LIMITATION : screenshotFailureResponse(failedExecutions)
+            }
 
             // Internal provider reasoning is never a channel artifact. Verbose
             // mode exposes the selected policy and verified evidence instead.
@@ -2116,7 +2130,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             try {
                 const { cacheResponse } = await import('../llm/response-cache.js')
                 if (!(result as any).error && result.validation?.success === true && !detectActionIntent(content).requiresTool) {
-                    cacheResponse(systemPrompt, cacheKeyMessages, finalContent, routedModel || 'default')
+                    if (!requiresFreshRuntimeEvidence) cacheResponse(systemPrompt, cacheKeyMessages, finalContent, routedModel || 'default')
                 }
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             console.log(`[Nova] [${channel}] Antwort gesendet (${supervised.content.length} chars, ${result.toolsExecuted.length} tools, Session: ${result.sessionId.slice(0, 8)}...)`)

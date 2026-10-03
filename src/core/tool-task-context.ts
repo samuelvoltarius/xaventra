@@ -38,7 +38,11 @@ export function buildToolTaskContext(
     // conversation mentioned setup/install/deploy. Short messages used to keep
     // the entire window and could turn "dich besser machen" into an unrelated
     // self_setup_plan call. Deictic follow-ups retain the active task window.
-    if (!numericChoice && !FOLLOW_UP.test(current.trim())) active = []
+    // Explicit short name corrections retain only the immediate exchange, not
+    // arbitrary historical install/deploy intents. This is routing, not consent.
+    const nameCorrection = /^(?:[\p{L}\p{N}_.-]{1,64}\s*[,;]?\s+(?:sorry|pardon|meinte ich)|(?:sorry|pardon|ich meinte)\s*[,;]?\s+[\p{L}\p{N}_.-]{1,64})[.!]?$/iu.test(current.trim())
+    if (nameCorrection) active = active.slice(-2)
+    if (!numericChoice && !nameCorrection && !FOLLOW_UP.test(current.trim())) active = []
 
     return [...active.map(m => m.content), current].join('\n')
 }

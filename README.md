@@ -25,7 +25,11 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current candidate: **2.85.0 preview**, based on the 2.84.0 preview.
+Current local candidate: **2.85.1 preview** (Telegram correctness fixes; not
+published or deployed). It builds on the 2.85.0 source. See the
+[changelog](CHANGELOG.md) and [Telegram guide](docs/TELEGRAM.md) for the fixes
+and the explicit boundary on node-targeted screenshots. The 2.85.0 feature
+baseline and its verification record follow below.
 See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
 [verification record](docs/VERIFICATION_2.85.0.md). The
 [2.78.58 record](docs/VERIFICATION_2.78.58.md) remains the prior baseline.

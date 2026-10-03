@@ -66,6 +66,11 @@ export function normalizeTelegramTables(input: string): string {
 /** Mobile-first formatting shared by regular, progress and streaming messages. */
 export function formatTelegramMessage(input: string): string {
     return normalizeTelegramTables(String(input || ''))
+        // Preserve code verbatim; Telegram's legacy Markdown uses single *.
+        .split(/(```[\s\S]*?```|`[^`\n]*`|\[[^\]\n]*\]\([^\)\n]*\)|https?:\/\/\S+)/g)
+        .map((part, index) => index % 2 ? part : part.replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+            .replace(/(?<=[\p{L}\p{N}])_(?=[\p{L}\p{N}])/gu, '\\_'))
+        .join('')
         .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
         .replace(/^\s*[-*]\s+\[x\]\s+/gim, '✅ ')
         .replace(/^\s*[-*]\s+\[ \]\s+/gim, '⬜ ')

@@ -1,4 +1,5 @@
 import { actionRequestText, isConversationOnly } from './action-intent.js'
+import { mentionsMesh } from './request-capabilities.js'
 
 export type CognitiveMode = 'fast' | 'balanced' | 'deep' | 'research'
 
@@ -64,7 +65,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     const isResearch = RESEARCH.test(lower)
     const isRecovery = RECOVERY.test(lower)
     const needsMemory = MEMORY.test(lower)
-    const mesh = MESH.test(lower)
+    const mesh = MESH.test(lower) || mentionsMesh(lower)
     const hardware = hasImage || HARDWARE.test(lower)
     const multiStep = MULTI_STEP.test(lower) || (text.match(/[\n;]+/g)?.length || 0) >= 2
     const highStakes = HIGH_STAKES.test(lower)

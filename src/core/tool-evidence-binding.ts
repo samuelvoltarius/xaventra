@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isBareHttpUrl } from './request-capabilities.js'
 
 export interface VerifiedToolCallEvidence {
     callId: string
@@ -97,6 +98,7 @@ function evidenceRequestText(input: string): string {
  * Strip only literal GET-example syntax. Unknown flags, mixed instructions and
  * multiple destinations retain normal planning; pasted shell is never executed. */
 export function isDirectUrlCheck(input: string): boolean {
+    if (isBareHttpUrl(input)) return true
     const text = evidenceRequestText(input)
     const targets = inferRequiredToolTargets(text)
     if (targets.length !== 1 || !/^https?:\/\//i.test(targets[0])) return false

@@ -1358,6 +1358,7 @@
     {
       "module": "src/core/action-intent.ts",
       "imports": [
+        "./request-capabilities.js",
         "./tool-evidence-binding.js"
       ]
     },
@@ -1564,7 +1565,8 @@
     {
       "module": "src/core/context-policy.ts",
       "imports": [
-        "./action-intent.js"
+        "./action-intent.js",
+        "./request-capabilities.js"
       ]
     },
     {
@@ -1814,6 +1816,7 @@
         "../users/principal-id.js",
         "./action-intent.js",
         "./context-policy.js",
+        "./request-capabilities.js",
         "./request-tracer.js",
         "./system-message.js",
         "node:fs",
@@ -2085,7 +2088,9 @@
     },
     {
       "module": "src/core/prompt-budget.ts",
-      "imports": []
+      "imports": [
+        "./request-capabilities.js"
+      ]
     },
     {
       "module": "src/core/quiet-hours.ts",
@@ -2127,6 +2132,10 @@
         "node:path",
         "node:url"
       ]
+    },
+    {
+      "module": "src/core/request-capabilities.ts",
+      "imports": []
     },
     {
       "module": "src/core/request-gate.ts",
@@ -2414,6 +2423,7 @@
     {
       "module": "src/core/tool-evidence-binding.ts",
       "imports": [
+        "./request-capabilities.js",
         "node:crypto"
       ]
     },
@@ -6233,6 +6243,7 @@
         "./developer-capability-tools.js",
         "./homeassistant.js",
         "./knowledge-system.js",
+        "./mesh-inspect-url.js",
         "./minimax-tools.js",
         "./mission-workspace-tools.js",
         "./owner-approval.js",
@@ -6378,6 +6389,18 @@
       "imports": [
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/mesh-inspect-url.ts",
+      "imports": [
+        "../mesh/mesh-registry.js",
+        "../resilience/ssrf-guard.js",
+        "../sensing/net-scope.js",
+        "./complete-registry.js",
+        "node:child_process",
+        "node:fs",
+        "node:util"
       ]
     },
     {
@@ -6563,6 +6586,7 @@
       "module": "src/tools/tool-router.ts",
       "imports": [
         "../core/action-intent.js",
+        "../core/request-capabilities.js",
         "../core/tool-evidence-binding.js",
         "./complete-registry.js"
       ]

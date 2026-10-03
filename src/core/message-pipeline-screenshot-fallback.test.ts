@@ -35,6 +35,17 @@ const request = 'Schick mir einen Screenshot vom Desktop'
 afterEach(() => loadPolicy({ toolPolicy: { defaultAction: DEFAULT_POLICY.defaultAction, rules: [] } }))
 
 describe('deterministic screenshot fallback authorization (H1)', () => {
+    it('never substitutes a local image for a mesh-node screenshot request', async () => {
+        enrollCapture(['owner-principal'])
+        const { execute, sendPhoto } = harness()
+        expect(await runAuthorizedScreenshotFallback({
+            channel: 'Telegram', from: 'owner-raw', principalId: 'owner-principal',
+            content: 'send mir mal einen screnn schots von allen nodes bitte',
+            tools: { execute }, telegram: { sendPhoto },
+        })).toBeNull()
+        expect(execute).not.toHaveBeenCalled()
+        expect(sendPhoto).not.toHaveBeenCalled()
+    })
     it('never captures or sends for a guest after a failed model turn, even with capture enrolled', async () => {
         enrollCapture(['guest-principal'])
         const { execute, sendPhoto } = harness()
