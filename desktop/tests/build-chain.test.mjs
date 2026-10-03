@@ -9,6 +9,14 @@ import { join } from 'node:path'
 import { downloadArtifact, ElectronDownloadCacheMode } from '@electron/get'
 // Deliberately inspect the pinned builder's transport boundary, not an app API.
 const { shouldRetryDownloadError } = await import(new URL('./util/electronGet.js', import.meta.resolve('app-builder-lib')))
+const { validateConfiguration } = await import(new URL('./util/config/config.js', import.meta.resolve('app-builder-lib')))
+
+test('all platform packaging options match the pinned builder schema', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  await validateConfiguration(pkg.build, { isEnabled: false })
+  assert.equal(pkg.build.linux.maintainer, pkg.author)
+  assert.match(pkg.build.deb.packageName, /^[a-z0-9][a-z0-9+.-]+$/)
+})
 
 test('locked build graph contains no vulnerable HTTP cache implementation, including nested copies', async () => {
   const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'))

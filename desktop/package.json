@@ -51,7 +51,7 @@
     },
     "linux": {
       "maintainer": "Xaventra contributors",
-      "packageName": "xaventra-desktop",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "executableName": "xaventra-desktop",
       "icon": "../assets/xaventra-icon.png",
       "target": [
@@ -59,6 +59,9 @@
         "deb"
       ],
       "category": "Utility"
+    },
+    "deb": {
+      "packageName": "xaventra-desktop"
     },
     "mac": {
       "icon": "../assets/xaventra-icon.png",
