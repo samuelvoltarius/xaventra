@@ -28,6 +28,21 @@ Core and Desktop versions are synchronized. This is not a production receipt.
 - Gitleaks 8.30.1 scanned 617 public-repository commits with zero findings.
 - Staged candidate secret scan and `git diff --check` pass.
 
-Pending: exact candidate CI, main CI, signed publication and
+## Desktop build-chain remediation
+
+- Initial candidate CI `37100573324` failed all three Desktop dependency audits;
+  its three Desktop smoke jobs and repair jobs passed. The failed gate was not
+  waived. No production runtime exploit was established.
+- User-approved build-only migration pins `electron-builder 27.0.0-alpha.9`.
+  The locked graph contains no `got`, `cacheable-request` or
+  `http-cache-semantics` copies; Desktop audit reports zero vulnerabilities.
+- Three focused download contracts pass: fresh download and headers, checksum
+  rejection including cached-artifact revalidation, cache reuse, cancellation,
+  and HTTP/network retry classification. Existing 23 Desktop tests pass.
+- Local Windows unpacked, NSIS and portable builds pass. These are unsigned
+  compatibility builds, not signing or end-user installation acceptance.
+- CI additionally builds configured platform installers without publishing.
+
+Pending: exact updated candidate CI, main CI, signed publication and
 independent activation checks. Scripted/local tests do not prove live model,
 Telegram, operating-system installation or multi-node acceptance.

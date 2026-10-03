@@ -8,6 +8,11 @@ Integrated source candidate; publication and activation pending. Goal: a person 
 technical background installs Xaventra and she connects herself to what is
 around her — no config files, no terminal.
 
+- Desktop build tooling is pinned to `electron-builder 27.0.0-alpha.9` to remove
+  the vulnerable legacy HTTP-cache dependency chain (GHSA-ch52-4w7c-c8xp).
+  This prerelease is build-only; Desktop builds require Node 22.12 or newer.
+  Download integrity contracts and installer generation are checked in CI.
+
 - **Erster Start ohne Fragebogen:** after installing, Xaventra starts with safe
   defaults, the doctor runs first, detects hardware and local models and fixes
   what it can. At most three questions in the app: name, pair Telegram by QR

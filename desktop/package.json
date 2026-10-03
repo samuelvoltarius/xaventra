@@ -7,6 +7,9 @@
   "license": "MIT",
   "repository": "https://github.com/samuelvoltarius/xaventra",
   "main": "main.cjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
@@ -15,7 +18,7 @@
   },
   "devDependencies": {
     "electron": "^44.0.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "27.0.0-alpha.9"
   },
   "overrides": {
     "js-yaml@^4.0.0": "^4.3.2"

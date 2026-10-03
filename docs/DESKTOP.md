@@ -21,6 +21,14 @@ integration supplied by Electron.
 
 ## Start and package
 
+Building Desktop requires Node.js 22.12 or newer. The build-only
+`electron-builder` dependency is pinned to `27.0.0-alpha.9`: its fetch-based
+downloader removes the legacy HTTP-cache chain affected by GHSA-ch52-4w7c-c8xp.
+Keep the exact pin until a replacement passes the download contracts and
+three-platform packaging checks. This does not add build tools to the app's
+runtime dependencies. CI installer builds are unsigned compatibility checks,
+not evidence of operating-system signing or successful end-user installation.
+
 ```bash
 npm run desktop:install
 npm run desktop:dev

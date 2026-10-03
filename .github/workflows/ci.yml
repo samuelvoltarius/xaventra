@@ -451,8 +451,12 @@ jobs:
             desktop/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm ci --prefix desktop
+      - name: Desktop download security and compatibility contracts
+        run: node --test desktop/tests/build-chain.test.mjs
       - run: npm run build
       - run: npm run desktop:build
+      - name: Build platform installers without publishing
+        run: npm run desktop:package
       - name: Install the packaged Chromium sandbox helper in the disposable runner
         if: runner.os == 'Linux'
         run: |
