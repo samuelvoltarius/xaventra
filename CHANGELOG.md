@@ -2,6 +2,8 @@
 
 ## [2.85.1] — 2026-10-03 (local candidate, not deployed)
 
+Exact source CI and evidence limits: [verification record](docs/VERIFICATION_2.85.1.md).
+
 - Compound model questions retain the full conversational task while receiving
   verified server model metadata (or an explicit unverified result).
 - Short node-name corrections retain the immediate routing context. Live mesh
