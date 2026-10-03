@@ -36,13 +36,27 @@ Core and Desktop versions are synchronized. This is not a production receipt.
 - User-approved build-only migration pins `electron-builder 27.0.0-alpha.9`.
   The locked graph contains no `got`, `cacheable-request` or
   `http-cache-semantics` copies; Desktop audit reports zero vulnerabilities.
-- Three focused download contracts pass: fresh download and headers, checksum
+- Four focused build/download contracts pass: configuration schema, fresh download and headers, checksum
   rejection including cached-artifact revalidation, cache reuse, cancellation,
   and HTTP/network retry classification. Existing 23 Desktop tests pass.
 - Local Windows unpacked, NSIS and portable builds pass. These are unsigned
   compatibility builds, not signing or end-user installation acceptance.
 - CI additionally builds configured platform installers without publishing.
 
-Pending: exact updated candidate CI, main CI, signed publication and
+## Exact candidate CI (2026-10-03)
+
+Candidate `3465308923b6df5f81a76b740ba0da20d3759b85` passed all nine jobs in
+[CI 37102211010](https://github.com/samuelvoltarius/xaventra/actions/runs/37102211010).
+The downloaded Windows, Linux and macOS Desktop reports identify this exact
+revision and 2.85.0, each passing 14 UI, five isolated Core and seven full-daemon
+checks. Configured installers build on all three platforms without publishing
+or claiming OS signing. Linux Core regression reports 4,660 passing tests.
+Docker snapshot, peer rollback and container-update reports identify the same
+revision with `sourceDirty: false`. The complete 621-commit history secret scan
+found no leaks. The two intermediate installer configuration failures remain
+recorded in earlier CI runs; neither was waived.
+
+This evidence commit requires its own exact green CI before main promotion.
+Pending: evidence-commit CI, main CI, signed publication and
 independent activation checks. Scripted/local tests do not prove live model,
 Telegram, operating-system installation or multi-node acceptance.
