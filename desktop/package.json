@@ -50,6 +50,8 @@
       ]
     },
     "linux": {
+      "maintainer": "Xaventra contributors",
+      "packageName": "xaventra-desktop",
       "executableName": "xaventra-desktop",
       "icon": "../assets/xaventra-icon.png",
       "target": [
