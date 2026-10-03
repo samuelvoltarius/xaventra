@@ -454,7 +454,7 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
     const { hasGlobalAutonomyAuthority } = await import('./autonomy-authority.js')
     mainAuthority = () => hasGlobalAutonomyAuthority()
     const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
-    const { addThought } = await import('../planner/index.js')
+    const { addThought, listThoughts, setThoughtStatus } = await import('../planner/index.js')
     const { createApprovalCard, listApprovalCards } = await import('./approval-cards.js')
     const { recordMissionDecision } = await import('./decisions.js')
     const { noteMissionWaiting } = await import('../planner/auto-reminders.js')
@@ -466,7 +466,14 @@ export async function startResponsibilities(options: { nodeOnly: boolean }): Pro
         collectSignals: collectProductionSignals,
         executors: productionExecutors(),
         ports: {
-            thoughts: { add: input => addThought(input) },
+            thoughts: {
+                add: input => addThought(input),
+                retireProposal: signature => {
+                    for (const thought of listThoughts({ source: 'verantwortung', status: ['offen', 'wartet-auf-knopf'], limit: 500 })) {
+                        if (thought.signature === signature) setThoughtStatus(thought.id, 'verworfen', 'verantwortung:frage-gegenstandslos')
+                    }
+                },
+            },
             cards: {
                 create: input => createApprovalCard(input),
                 status: id => listApprovalCards().find(card => card.id === id)?.status,

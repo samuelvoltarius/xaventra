@@ -16,6 +16,7 @@ const NOW = Date.parse('2026-10-01T10:00:00Z')
 let dataDir: string
 let thoughts: Array<Record<string, any>>
 let manager: ResponsibilityManager
+let retired: string[]
 
 function signals(overrides: Partial<ResponsibilitySignals> = {}): ResponsibilitySignals {
     return {
@@ -35,10 +36,11 @@ function signals(overrides: Partial<ResponsibilitySignals> = {}): Responsibility
 beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'responsibilities-'))
     thoughts = []
+    retired = []
     manager = createResponsibilityManager({
         dataDir, now: () => NOW, localNodeId: 'main-a',
         ports: {
-            thoughts: { add: input => { thoughts.push(input) } },
+            thoughts: { add: input => { thoughts.push(input) }, retireProposal: signature => { retired.push(signature) } },
             cards: { create: input => createApprovalCard(input, { dataDir, now: () => NOW, ledger: null }) },
         },
     })
@@ -119,10 +121,14 @@ describe('self-derived responsibilities (fixed rules)', () => {
         expect(result.aktiviert.map(item => item.id).filter(id => id.startsWith('dienst-laeuft'))).toEqual(['dienst-laeuft:disk-root@local'])
         expect(manager.get('dienst-laeuft:disk-root@local')).toMatchObject({ status: 'aktiv', titel: 'Platte Spark auf main-a läuft', scope: ['main-a'] })
         expect(manager.get('dienst-laeuft:vllm@local')!.status).toBe('abgelehnt')
+        expect(retired).toContain('verantwortung:vorschlag:dienst-laeuft:disk-root@local')
+        expect(retired).toContain('verantwortung:vorschlag:dienst-laeuft:vllm@local')
         maintainApprovalCards({ dataDir, now: () => NOW })
         expect(listApprovalCards({ dataDir }).find(item => card.ok && item.id === card.card.id)!.status).toBe('erledigt')
         // idempotent: a second sync announces nothing again
+        retired = []
         expect(manager.sync(signals({ nightwatch })).aktiviert).toHaveLength(0)
+        expect(retired).toContain('verantwortung:vorschlag:dienst-laeuft:disk-root@local')
     })
 
     it('derives device and release responsibilities', () => {

@@ -1132,6 +1132,11 @@ export class NovaLLM {
     get modelId(): string | undefined { return this.currentConfig?.model }
     get providerId(): string | undefined { return this.currentConfig?.provider }
 
+    async runtimeModelIdentity() {
+        const { resolveRuntimeModelIdentity } = await import('./runtime-model-identity.js')
+        return resolveRuntimeModelIdentity({ ...this.currentConfig })
+    }
+
     configure(config: ProviderConfig): void {
         this.currentConfig = config
 

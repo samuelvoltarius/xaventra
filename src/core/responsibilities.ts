@@ -278,7 +278,10 @@ export function measureCriterion(criterion: Criterion, signals: ResponsibilitySi
 // manager
 // ---------------------------------------------------------------------------
 
-export interface ThoughtPort { add(input: { source: string; title: string; evidence?: string; severity?: 'critical' | 'warning' | 'info'; kind?: 'ereignis' | 'idee' | 'vorschlag'; proposal?: string; permission?: 'selbst' | 'fragen' | 'nie'; signature?: string; node?: string }): unknown }
+export interface ThoughtPort {
+    add(input: { source: string; title: string; evidence?: string; severity?: 'critical' | 'warning' | 'info'; kind?: 'ereignis' | 'idee' | 'vorschlag'; proposal?: string; permission?: 'selbst' | 'fragen' | 'nie'; signature?: string; node?: string }): unknown
+    retireProposal?(signature: string): void
+}
 export interface CardPort {
     create(input: NewCardInput): { ok: true; card: ApprovalCard; created: boolean } | { ok: false; reason: string }
     isOpen?(cardId: string): boolean
@@ -403,6 +406,11 @@ export function createResponsibilityManager(options: ResponsibilityOptions): Res
                 items.push(item)
             }
             if (aktiviert.length || vorgeschlagen.length) save(items)
+            // Also repairs stale questions left by an earlier activation/restart.
+            // Retiring visibility never changes responsibility authority.
+            for (const item of items) if (item.status !== 'vorgeschlagen') {
+                options.ports.thoughts.retireProposal?.(`verantwortung:vorschlag:${item.id}`)
+            }
             return { aktiviert, vorgeschlagen }
         },
         decide(id, answer, by) {
@@ -414,6 +422,7 @@ export function createResponsibilityManager(options: ResponsibilityOptions): Res
             if (answer === 'ja') Object.assign(item, { status: 'aktiv', activatedAt: at, activatedBy: by, decidedAt: at, decidedBy: by, updatedAt: at })
             else Object.assign(item, { status: 'abgelehnt', decidedAt: at, decidedBy: by, updatedAt: at })
             save(items)
+            options.ports.thoughts.retireProposal?.(`verantwortung:vorschlag:${item.id}`)
             return { ok: true, message: answer === 'ja' ? `Übernommen: ${item.titel}.` : `Abgelehnt: ${item.titel} — ich schlage das nicht noch einmal vor.` }
         },
         setPaused(id, paused, by) {

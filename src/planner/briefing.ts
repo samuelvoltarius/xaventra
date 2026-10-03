@@ -122,22 +122,22 @@ function learningCurve(sources: BriefingSources, since: number, now: number): st
     try { extras.push(...(sources.learning.suggestionLines?.(since, now) || []).filter(item => typeof item === 'string' && item.trim())) } catch { /* optional input */ }
     const shownExtras = extras.slice(0, MAX_LINES - 1)
     const rates = (trend?.taskTypes || []).slice(0, MAX_LINES - shownExtras.length).map(item =>
-        `${item.taskType} ${percent(item.previous)} → ${percent(item.current)} (Proben ${item.previous.samples}/${item.current.samples})`)
+        `${({ none: 'Nicht klassifiziert', file: 'Dateiaufgaben' } as Record<string, string>)[item.taskType] || item.taskType} ${percent(item.previous)} → ${percent(item.current)} (Proben ${item.previous.samples}/${item.current.samples})`)
     return [...rates, ...shownExtras]
 }
 
 export function buildBriefing(kind: BriefingKind, sources: BriefingSources, since: number, now: number): Briefing {
     const thoughts = sources.thoughts.list({ limit: 500 })
 
-    // Erledigt: planner runs (not the briefings themselves) + thoughts closed as done.
+    // Successful scheduler cycles are observations, not completed user work.
     const runCounts = new Map<string, number>()
     for (const entry of readJsonl(sources.runsFile)) {
         if (entry?.ergebnis !== 'ok' || !inWindow(entry.at, since, now)) continue
         if (String(entry.kind).startsWith('briefing')) continue
         runCounts.set(entry.kind, (runCounts.get(entry.kind) || 0) + 1)
     }
+    const background = [...runCounts].map(([jobKind, count]) => `${KIND_LABELS[jobKind] || jobKind}: ${count}`)
     const done = [
-        ...[...runCounts].map(([jobKind, count]) => `${KIND_LABELS[jobKind] || jobKind}: ${count}`),
         ...thoughts.filter(t => t.status === 'erledigt' && t.source !== 'skills' && inWindow(t.statusAt, since, now)).map(t => t.title),
     ]
 
@@ -196,6 +196,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
         ...section('Erledigt', done),
+        ...section('Hintergrundprüfungen (Durchläufe)', background),
         ...section('Selbst repariert', repaired),
         ...section('Installiert', installed),
         ...section('Wartet auf dich', waiting),
@@ -205,6 +206,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Skills', skills),
         ...section('Zurückgehalten', held),
         ...section('Neu gemerkt (Entscheidungen)', remembered),
+        ...(curve.length && sources.learning ? ['Erfolgsquote: Vorwoche → diese Woche (je 7 Tage); wechselnder Aufgaben-/Modellmix, kein Lernnachweis.'] : []),
         ...section('Lernkurve', curve),
     ]
     const sinceText = formatZoned(since, sources.timeZone)

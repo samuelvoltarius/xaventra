@@ -1482,17 +1482,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // ============================================
         // Direct Runtime Introspection — no LLM guessing for identity/status.
         // ============================================
-        const normalizedQuestion = content.toLowerCase()
-        const asksModel =
-            /\b(welches|welche|was).*?(modell|model|llm)\b/i.test(content) ||
-            /\b(model|modell|llm).*?(nutzt|aktiv|verwendest|l[äa]uft)\b/i.test(content)
-        const asksNovaVersion =
-            /\b(welche|was).*?version.*?(nova|dir|von dir|l[äa]uft)\b/i.test(content) ||
-            /\bversion.*?(nova|von dir|l[äa]uft)\b/i.test(content)
-        const asksNovaIdentity = /^(?:wer|was)\s+bist\s+du\s*\??$/i.test(content.trim())
-
-        const asksMeshRuntime = /\b(mesh|nodes?|knoten)\b/i.test(content) &&
-            (/\b(version|versionen|status|online|offline)\b/i.test(content) || normalizedQuestion.trim().length < 80)
+        const { runtimeQuestion } = await import('./runtime-question.js')
+        const turns = recentSessionTurns(canonicalUser, channel)
+        // The current user turn is already journaled; follow-up scope is the preceding answer.
+        if (turns.at(-1)?.role === 'user' && turns.at(-1)?.content === content.slice(0, 2000)) turns.pop()
+        const question = runtimeQuestion(content, turns)
+        const asksModel = question?.model
+        const asksNovaVersion = question?.version
+        const asksNovaIdentity = question?.identity
+        const asksMeshRuntime = question?.mesh
 
         if (asksModel || asksNovaVersion || asksNovaIdentity || asksMeshRuntime) {
             let version = 'unbekannt'
@@ -1502,7 +1500,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             } catch { /* optional */ }
 
             const model = state.llm?.modelId || (globalThis as any).__novaState?.activeModel || 'unbekannt'
-            const provider = state.llm?.provider || 'auto'
+            const provider = state.llm?.providerId || 'unbekannt'
             const lines: string[] = []
             if (asksNovaIdentity) lines.push((await import('./self-description.js')).XAVENTRA_IDENTITY)
             if (asksNovaVersion) lines.push(`Xaventra läuft hier auf v${version}.`)
@@ -1515,7 +1513,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     codexRoute = Boolean(codex.available && codex.authenticated && codex.preferred)
                     codexNode = codex.nodeId || ''
                 } catch { /* Codex is optional. */ }
-                lines.push(`Aktives Runtime-Modell: ${provider}/${model}.`)
+                lines.push(`Konfiguriertes Runtime-Modell: ${provider}/${model}.`)
+                const identity = await state.llm?.runtimeModelIdentity?.()
+                lines.push(identity?.model
+                    ? `Der konfigurierte Server meldet für diesen Alias: ${identity.model}.`
+                    : 'Den vollständigen Modellnamen hinter diesem Alias konnte ich nicht verifizieren.')
+                lines.push('Eine einzelne Anfrage kann durch Routing oder Failover ein anderes Modell verwenden.')
                 lines.push(codexRoute
                     ? `Für Code, größere Umbauten und schwierige Fehlersuche wird deine authentifizierte Codex-Route${codexNode ? ` auf ${codexNode}` : ''} gewählt; Smalltalk, Kurzes, Bilder und Privates laufen über ${provider}/${model}, das auch der Fallback ist.`
                     : `Codex ist für diesen Benutzer derzeit nicht als bevorzugte Route verfügbar; normale Chats laufen über ${provider}/${model}.`)

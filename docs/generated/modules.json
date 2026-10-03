@@ -2190,6 +2190,10 @@
       ]
     },
     {
+      "module": "src/core/runtime-question.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/runtime-readiness.ts",
       "imports": []
     },
@@ -4439,6 +4443,12 @@
       "module": "src/llm/response-cache.ts",
       "imports": [
         "node:crypto"
+      ]
+    },
+    {
+      "module": "src/llm/runtime-model-identity.ts",
+      "imports": [
+        "./model-list-cache.js"
       ]
     },
     {

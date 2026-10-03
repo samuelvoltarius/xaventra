@@ -35,6 +35,16 @@ afterEach(() => {
 })
 
 describe('Morgen-/Abendbericht', () => {
+    it('zählt erfolgreiche Hintergrundläufe nicht als erledigte Arbeit', () => {
+        const runsFile = join(dir, 'runs.jsonl')
+        appendFileSync(runsFile, JSON.stringify({ at: new Date(t).toISOString(), kind: 'nachtwache', ergebnis: 'ok' }) + '\n')
+        const briefing = buildBriefing('abend', {
+            dataDir: dir, thoughts: createThoughtStore({ dataDir: dir, now: () => t }), runsFile, timeZone: 'Europe/Vienna',
+        }, t - 3600_000, t)
+        expect(briefing.counts.erledigt).toBe(0)
+        expect(briefing.text).not.toContain('Erledigt:')
+        expect(briefing.text).toContain('Hintergrundprüfungen (Durchläufe):')
+    })
     it('P8: neue und deaktivierte Skills stehen als eigene Zeilen im Abendbericht', () => {
         const thoughts = createThoughtStore({ dataDir: dir, now: () => t })
         const neu = thoughts.add({ source: 'skills', kind: 'ereignis', permission: 'selbst', title: 'Neuer Skill „Routine: wetter salzburg“ angelegt', evidence: '3× gleiche Absicht' }).thought

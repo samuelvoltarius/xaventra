@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased] — Vorschau 2.85.0 (in Arbeit)
+## [2.85.0] — 2026-10-03 (release candidate)
 
 > Xaventra erkennt ihre Umgebung, verbindet sich selbstständig mit erlaubten Diensten und baut aus den gefundenen Fähigkeiten einen brauchbaren Werkzeugkasten — ohne Config-Dateien.
 
-Preview of the next version; planned, not released. Goal: a person without any
+Integrated source candidate; publication and activation pending. Goal: a person without any
 technical background installs Xaventra and she connects herself to what is
 around her — no config files, no terminal.
 
@@ -35,6 +35,21 @@ around her — no config files, no terminal.
 - **Eigenes Embedding-Modell:** a small embedding model runs inside Xaventra
   (llama.cpp), so semantic memory works on every machine without extra servers.
 
+
+Review corrections:
+
+- Runtime introspection answers only requests fully covered by the fast path;
+  a model question followed by a second task reaches the normal agent.
+- An immediate model-name follow-up uses the same user's channel history.
+  The exact configured alias is checked against server metadata; unavailable
+  or ambiguous metadata stays unknown. Configuration is not claimed to prove
+  which provider handled an individual request after routing or failover.
+- Successful background cycles are reported separately from completed work.
+- Obsolete responsibility questions are retired after activation or rejection,
+  including questions left behind by an earlier version; permissions do not change.
+- Post-rollout disappearance is described as no longer observed, not as proof
+  of repair. Success-rate comparisons name their windows and sample counts;
+  changing task/model mixes are explicitly not proof of learning.
 
 ## [2.84.0] — 2026-10-02
 

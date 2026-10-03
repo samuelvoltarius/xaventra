@@ -66,7 +66,8 @@ describe('Nachkontrolle mit Messung (Punkt 1)', () => {
         expect(outboxRecords(outbox)[0]).toMatchObject({ state: 'closed', checkedInVersion: '1.1.0' })
         expect(thoughts.added).toHaveLength(1)
         expect(thoughts.added[0]).toMatchObject({ source: 'bug-finder' })
-        expect(thoughts.added[0].title).toMatch(/nach Rollout v?1\.1\.0 behoben \(gemessen\)/)
+        expect(thoughts.added[0].title).toMatch(/nach Rollout v?1\.1\.0 nicht mehr beobachtet/)
+        expect(thoughts.added[0].title).not.toContain('behoben')
         expect(thoughts.status).toEqual([{ id: 'th-000000000001', status: 'erledigt' }])
     })
 

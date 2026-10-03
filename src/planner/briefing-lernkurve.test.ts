@@ -49,6 +49,16 @@ function sources(router: OutcomeRouter, extra: Partial<BriefingSources> = {}): B
 }
 
 describe('Lernkurve im Abendbericht (Punkt 7)', () => {
+    it('erklärt Metrik, Zeitfenster und nicht klassifizierte Aufgaben ohne Lernbehauptung', () => {
+        const router = newRouter()
+        record(router, 'none', 3, 5, 10)
+        record(router, 'none', 4, 5, 2)
+        const briefing = buildBriefing('abend', sources(router), t - DAY, t)
+        expect(briefing.text).toContain('Nicht klassifiziert')
+        expect(briefing.text).toContain('Erfolgsquote')
+        expect(briefing.text).toContain('Vorwoche → diese Woche')
+        expect(briefing.text).toContain('kein Lernnachweis')
+    })
     it('recherche: Vorwoche 6/10, diese Woche 9/10 → „recherche 60 % → 90 %“', () => {
         const router = newRouter()
         record(router, 'recherche', 6, 10, 10)

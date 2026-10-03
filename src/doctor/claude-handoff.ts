@@ -210,7 +210,7 @@ function noteMeasuredClosing(thoughts: HandoffThoughtPort | undefined, record: H
         const measurement = item?.evidenceRefs.filter(ref => ref.startsWith('messung:') || ref.startsWith('repair-controller:')).at(-1)
         const added = thoughts.add({
             source: 'bug-finder', kind: 'ereignis', severity: 'info', signature: `doctor-handoff-closed:${record.id}`,
-            title: `Fehler „${clip(record.title, 80)}“ nach Rollout v${clip(record.checkedInVersion, 30).replace(/^v/, '')} behoben (gemessen)`,
+            title: `Fehler „${clip(record.title, 80)}“ nach Rollout v${clip(record.checkedInVersion, 30).replace(/^v/, '')} nicht mehr beobachtet`,
             evidence: `Fall ${record.caseId}, übergeben in v${record.version.replace(/^v/, '')}. ${measurement ? `Beleg: ${measurement}` : 'Fall nicht mehr in der Warteschlange'}. Heißt: nicht mehr beobachtet, nicht „repariert bestätigt“.`,
         }) as { thought?: { id?: string } } | undefined
         const id = added?.thought?.id

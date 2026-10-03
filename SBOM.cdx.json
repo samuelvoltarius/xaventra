@@ -1,13 +1,13 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:019dc4ba-b872-4bb1-afa5-d97bdee7449c",
+  "serialNumber": "urn:uuid:934dac27-2066-4982-a3d6-aa8de5ecc7ce",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "name": "@xaventra/core",
-      "version": "2.78.57",
+      "version": "2.85.0",
       "licenses": [
         {
           "license": {
@@ -19,7 +19,7 @@
     "properties": [
       {
         "name": "xaventra:package-lock-sha256",
-        "value": "019dc4bab8725bb16fa5d97bdee7449cebe2ed3ec79e5354ee8b498b60ff6ac4"
+        "value": "934dac272066d982e3d6aa8de5ecc7ce94a16d5128636e4da1344fb7b29a916c"
       }
     ]
   },
@@ -836,15 +836,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40grpc%2Fgrpc-js@1.14.4?path=node_modules%2F%40grpc%2Fgrpc-js",
+      "bom-ref": "pkg:npm/%40grpc%2Fgrpc-js@1.14.5?path=node_modules%2F%40grpc%2Fgrpc-js",
       "name": "@grpc/grpc-js",
-      "version": "1.14.4",
+      "version": "1.14.5",
       "licenses": [
         {
           "expression": "Apache-2.0"
         }
       ],
-      "purl": "pkg:npm/%40grpc%2Fgrpc-js@1.14.4",
+      "purl": "pkg:npm/%40grpc%2Fgrpc-js@1.14.5",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -5104,15 +5104,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/axios@1.19.0?path=node_modules%2Faxios",
+      "bom-ref": "pkg:npm/axios@1.20.0?path=node_modules%2Faxios",
       "name": "axios",
-      "version": "1.19.0",
+      "version": "1.20.0",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/axios@1.19.0",
+      "purl": "pkg:npm/axios@1.20.0",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -6976,15 +6976,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/fast-uri@3.1.7?path=node_modules%2Ffast-uri",
+      "bom-ref": "pkg:npm/fast-uri@3.1.8?path=node_modules%2Ffast-uri",
       "name": "fast-uri",
-      "version": "3.1.7",
+      "version": "3.1.8",
       "licenses": [
         {
           "expression": "BSD-3-Clause"
         }
       ],
-      "purl": "pkg:npm/fast-uri@3.1.7",
+      "purl": "pkg:npm/fast-uri@3.1.8",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -7804,15 +7804,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/ip-address@10.4.0?path=node_modules%2Fip-address",
+      "bom-ref": "pkg:npm/ip-address@10.7.2?path=node_modules%2Fip-address",
       "name": "ip-address",
-      "version": "10.4.0",
+      "version": "10.7.2",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/ip-address@10.4.0",
+      "purl": "pkg:npm/ip-address@10.7.2",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -11822,15 +11822,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/undici@6.28.0?path=node_modules%2Fundici",
+      "bom-ref": "pkg:npm/undici@6.29.0?path=node_modules%2Fundici",
       "name": "undici",
-      "version": "6.28.0",
+      "version": "6.29.0",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/undici@6.28.0",
+      "purl": "pkg:npm/undici@6.29.0",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
