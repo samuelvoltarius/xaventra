@@ -37,6 +37,7 @@ export class DirectMeshTransport implements MeshTransport {
     private readonly sockets = new Map<string, WebSocket>()
     // Includes pre-hello, rejected and replaced connections, not just known peers.
     private readonly allSockets = new Set<WebSocket>()
+    private readonly encryptedSockets = new WeakSet<WebSocket>()
     private readonly peerBySocket = new WeakMap<WebSocket, string>()
     private readonly pending = new Map<string, PendingAck>()
     private readonly handlers = new Set<MeshHandler>()
@@ -58,7 +59,8 @@ export class DirectMeshTransport implements MeshTransport {
             this.track(socket)
             if (this.stopped) { socket.terminate(); return }
             const remote = request.socket.remoteAddress || ''
-            const secure = Boolean((request.socket as any).encrypted) || /^(?:::ffff:)?100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(remote) || /127\.0\.0\.1|::1/.test(remote)
+            const secure = Boolean((request.socket as any).encrypted) || /^(?:::ffff:)?100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(remote) || ['127.0.0.1', '::ffff:127.0.0.1', '::1'].includes(remote)
+            if (secure) this.encryptedSockets.add(socket)
             if (!secure && !this.config.allowInsecureLan) {
                 socket.close(1008, 'direct mesh requires Tailscale or TLS')
                 return
@@ -91,6 +93,7 @@ export class DirectMeshTransport implements MeshTransport {
                 clearTimeout(timeout)
                 if (this.stopped) { socket.terminate(); reject(new Error('direct transport closed')); return }
                 this.sockets.set(peer.nodeId, socket)
+                if (isPrivateEncryptedPath(peer.url!)) this.encryptedSockets.add(socket)
                 this.peerBySocket.set(socket, peer.nodeId)
                 this.bind(socket)
                 try {
@@ -111,7 +114,11 @@ export class DirectMeshTransport implements MeshTransport {
                 if (!peer) return this.ack(envelope.id, peerId, 'unreachable', 'unknown direct peer')
                 await this.connect(peer)
             }
-            return await this.sendOnSocket(peerId, this.sockets.get(peerId)!, envelope)
+            const socket = this.sockets.get(peerId)!
+            if (envelope.kind.startsWith('capture.') && !this.encryptedSockets.has(socket)) {
+                return this.ack(envelope.id, peerId, 'rejected', 'capture requires TLS, Tailscale or loopback')
+            }
+            return await this.sendOnSocket(peerId, socket, envelope)
         } catch (error) {
             this.lastError = String(error)
             return this.ack(envelope.id, peerId, 'unreachable', String(error).slice(0, 200))
@@ -184,6 +191,7 @@ export class DirectMeshTransport implements MeshTransport {
         if (this.stopped) return
         let envelope: MeshEnvelope
         try { envelope = JSON.parse(raw) as MeshEnvelope } catch { socket.close(1007, 'invalid JSON'); return }
+        if (typeof envelope.kind === 'string' && envelope.kind.startsWith('capture.') && !this.encryptedSockets.has(socket)) { socket.close(1008, 'capture requires encrypted transport'); return }
         try {
             for (const handler of this.handlers) await handler(envelope)
             if (this.stopped) return

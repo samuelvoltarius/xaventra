@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DirectMeshTransport } from './direct-mesh-transport.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { MeshPolicy } from './mesh-policy.js'
@@ -147,6 +147,27 @@ describe('DirectMeshTransport', () => {
 })
 
 describe('transport routing', () => {
+    it('never queues capture pixels or falls back to a shared-store transport', async () => {
+        const a = identity('capture-route-a')
+        const durableSend = vi.fn(async () => ({ status: 'queued' }))
+        const durable = { name: 'supabase', discover: async () => [], connect: async () => {}, send: durableSend,
+            broadcast: async () => {}, subscribe: () => {}, health: () => ({ name: 'supabase', healthy: true, connectedPeers: 0, queued: 0 }) } as unknown as MeshTransport
+        const router = new MeshTransportRouter(a, principal(a.nodeId), { mode: 'ha', peers: [] }, [durable])
+        cleanup.push(() => router.close())
+        const result = await router.send('capture-route-b', router.create('capture.response', 'capture-route-b', { base64: 'PRIVATE_PIXELS' }))
+        expect(result.status).toBe('unreachable')
+        expect(router.health().queued).toBe(0)
+        expect(durableSend).not.toHaveBeenCalled()
+    })
+    it('does not transmit capture frames over a legacy unencrypted socket', async () => {
+        const a = identity('insecure-capture-a')
+        const transport = new DirectMeshTransport(a, principal(a.nodeId), { allowInsecureLan: true })
+        const send = vi.fn()
+        ;(transport as any).sockets.set('peer', { readyState: 1, send })
+        const result = await transport.send('peer', a.create({ kind: 'capture.request', targetNode: 'peer', principal: principal(a.nodeId), payload: {} }))
+        expect(result.status).toBe('rejected')
+        expect(send).not.toHaveBeenCalled()
+    })
     it('delivers between multiple Nova processes on the same host through LocalMeshTransport', async () => {
         const a = identity('local-a'); const b = identity('local-b')
         const la = new LocalMeshTransport('local-a'); const lb = new LocalMeshTransport('local-b')

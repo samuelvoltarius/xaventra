@@ -1968,8 +1968,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const skillProposalCreated = kernelState
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
-        if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
-            supervised.content = isNodeScreenshotRequest(content) ? nodeScreenshotResponse(successfulExecutions) : screenshotFailureResponse(failedExecutions)
+        if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
+            supervised.content = isNodeScreenshotRequest(content) ? nodeScreenshotResponse([...successfulExecutions, ...failedExecutions]) : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
                 supervised.content = 'Ich habe selbst einen konkreten Skill-Vorschlag erstellt. Er wartet gemäß PATCH_GATE auf deine Freigabe; die angeforderte Aktion ist noch nicht ausgeführt.'
@@ -2026,8 +2026,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 const inventory = successfulExecutions.filter((e: any) => ['mesh_nodes', 'mesh_status', 'mesh_services', 'blue_asset_inventory', 'scan_now'].includes(e.toolName || e.name))
                 finalContent = sanitizeInternalOutboundArtifacts(`${environmentAwareness(getNovaDataDir(), 'owner', Date.now(), false)}\n\n${inventory.length ? verifiedToolEvidenceResponse(inventory) : 'Mesh-Zustand in diesem Lauf nicht frisch abgefragt.'}`)
             }
-            if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !screenshotDelivered) {
-                finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse(successfulExecutions)) : screenshotFailureResponse(failedExecutions)
+            if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
+                finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse([...successfulExecutions, ...failedExecutions])) : screenshotFailureResponse(failedExecutions)
             }
 
             // Internal provider reasoning is never a channel artifact. Verbose

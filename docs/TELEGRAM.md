@@ -88,12 +88,14 @@ qualified. See [capture enrollment and acceptance](./SCREENSHOT_DELIVERY.md)
 for failure diagnosis and the required correlated capture/delivery receipts.
 
 Screenshot spelling variants and plurals are recognized. Requests for images of
-mesh nodes (including all nodes) cannot use `desktop_screenshot`: that tool has
-no node target. Nova may inspect the mesh inventory, but reports the missing
-node-addressed capture transport instead of capturing a different local desktop,
-delegating an unbound capture or returning a tool catalog as the result. A
-headless node may have no display; this is not inferred from its name. Enabling
-remote capture requires a separately authorized, target-bound integration.
+mesh nodes (including all nodes) use `mesh_screenshot` with a current node ID or
+`all`, never `desktop_screenshot` as a different-node substitute. Each node must
+locally enroll its own graphical session agent (`NOVA_MESH_CAPTURE_ENABLED=1`);
+headless, locked or unenrolled nodes return individual failures. The signed,
+Main-fenced capture protocol uses only direct encrypted/local transport and
+verifies image hashes. Only actual owner-bound Bot API send receipts establish
+delivery; partial results never claim all pictures were sent. See the
+[autonomy guide](./AUTONOMY_GUIDE.md) for enrollment and limits.
 
 A bounded mixed request such as "was können deine nodes? send mir einen screnn
 shot vbon jeden" retains the node reference across the question mark. A previous

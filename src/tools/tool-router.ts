@@ -103,7 +103,7 @@ const SKILL_PACKS: SkillPack[] = [
         name: 'mesh-network',
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
         keywords: ['mesh', 'node', 'nodes', 'knoten', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],
-        tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send'],
+        tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send', 'mesh_screenshot'],
     },
     {
         name: 'docker',
@@ -348,10 +348,9 @@ export function getRelevantTools(
     const primaryLower = primaryMessage.toLowerCase()
     const primaryIntent = detectActionIntent(primaryMessage)
 
-    // No node-addressed capture transport exists. Do not substitute local
-    // pixels or delegate an unbound capture. Inventory is still useful evidence.
+    // Only the source-bound capture protocol may fulfill a node screenshot.
     if (isNodeScreenshotRequest(primaryMessage)) {
-        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes', 'mesh_services'].map(name => registry.get(name))
+        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes', 'mesh_services', 'mesh_screenshot'].map(name => registry.get(name))
             .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
     }
 

@@ -5,6 +5,7 @@ export type MeshEnvelopeKind =
     | 'node.heartbeat' | 'node.capabilities' | 'node.tools'
     | 'tool.request' | 'agent.request' | 'mission.request'
     | 'exchange.request' | 'exchange.response'
+    | 'capture.request' | 'capture.response'
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
     | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
@@ -182,6 +183,7 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
         'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools',
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
         'exchange.request', 'exchange.response',
+        'capture.request', 'capture.response',
         'run.checkpoint', 'run.result', 'run.cancel',
     ]).has(value as MeshEnvelopeKind)
 }

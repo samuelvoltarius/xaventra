@@ -14,7 +14,10 @@ folgt die Fortsetzung. Ein abgeschlossener Zyklus wird standardmäßig stündlic
 erneuert (`autonomy.sensing.discovery.intervalHours`); ausdrücklich eingestellte
 Intervalle bleiben gültig. Die Suchgrenze bleibt das eigene private Subnetz
 (höchstens /24 pro Interface) plus bekannte Adressen des eigenen Tailnets.
-Erkannt werden die vorhandenen Dienstkennungen und offene geprüfte Ports, kein
+Die Suche erfasst 19 feste Ports (u.a. SSH, HTTPS, SMB, RDP, IPP/JetDirect,
+RTSP, MQTT und die bisherigen Anwendungen), passende mDNS-Ankündigungen sowie
+vorhandene ARP/Nachbartabellen. Cache-Einträge sind kein Online-Beleg. Erkannt
+werden die vorhandenen Dienstkennungen und offene geprüfte Ports, kein
 garantiertes Vollinventar sämtlicher Netzwerkgeräte.
 
 `environment_inventory` liest diese Hintergrundfunde mit Fundzeit und Status.
@@ -33,9 +36,23 @@ Laufzeitdaten, Secrets und verlinkte Dateien sind ausgeschlossen. Eine andere
 Datei wird nicht überschrieben; Erfolg erfordert den Empfangsbeleg mit Größe
 und SHA-256 des Ziel-Nodes. Ein Transport-ACK allein reicht nicht.
 
-Headless-Nodes erhalten durch den Dateiaustausch keinen Desktop. Die vorhandene
-Bildschirmaufnahme bleibt an den freigegebenen Desktop gebunden; ein
-Node-Auftrag wird nicht durch ein Bild eines anderen Rechners ersetzt.
+`mesh_screenshot(node_id)` nimmt den Bildschirm eines aktuellen Nodes auf;
+`node_id=all` versucht alle aktuellen Nodes und berichtet Teilergebnisse einzeln.
+Jeder Ziel-Node benötigt die lokale Operator-Freigabe `NOVA_MESH_CAPTURE_ENABLED=1`
+sowie seinen eigenen `NOVA_CAPTURE_SOCKET` und `NOVA_CAPTURE_TOKEN_FILE` des
+vorhandenen grafischen Session-Agenten. Eine gesperrte Sitzung bleibt gesperrt.
+Es werden keine Desktop-Sitzungen installiert oder fremde Displays als Ersatz
+verwendet. Headless-Nodes melden einen konkreten Fehler statt eines Fake-Bildes.
+Main-Berechtigung wird vor und nach der Aufnahme geprüft; signierte Quellen,
+Bildgröße (max. 8 MiB) und SHA-256 werden am anfragenden Node validiert.
+Pixels laufen ausschließlich über direkte TLS-/Tailscale-/lokale Wege, nie die
+gemeinsame Mesh-Warteschlange. Private lokale Dateien liegen unter
+`.nova-vision/mesh-captures/` (max. 256 Dateien / 256 MiB, kein Überschreiben).
+Telegram-Zustellung geht nur an den authentifizierten Owner des Auftrags und
+benötigt einen echten Versandbeleg. `send=false` speichert nur lokal; andere
+Kanäle erhalten ohne eigenen Bildzustellweg keine Versand-Erfolgsmeldung.
+Die automatische LAN-Suche benötigt keinen Zuruf. Bildschirmaufnahmen dagegen
+sind auf autorisierte Owner-Aufträge beschränkt, keine heimliche Dauerüberwachung.
 
 Owner-Regel (Alfred, 01.10.2026): „Wir trainieren auf Selbstständigkeit.“ Xaventra
 erkennt selbst, welche Hardware es gibt (auch im Netz), was wo läuft, und handelt —

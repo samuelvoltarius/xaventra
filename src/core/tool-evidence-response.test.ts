@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse } from './tool-evidence-response.js'
+import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse, nodeScreenshotResponse } from './tool-evidence-response.js'
 
 describe('screenshot failure evidence', () => {
+    it('retains per-node capture/delivery truth even when the overall tool reports a partial failure', () => {
+        const text = nodeScreenshotResponse([{ toolName: 'mesh_screenshot', success: false, result: { captures: [
+            { nodeId: 'spark', captured: true, delivered: true }, { nodeId: 'worker', captured: false, delivered: false, error: 'headless' },
+        ] } }])
+        expect(text).toContain('spark: Bild aufgenommen; Bildzustellung bestätigt')
+        expect(text).toContain('worker: kein Bild aufgenommen; keine Bildzustellung bestätigt — headless')
+        expect(text).not.toContain('In diesem Lauf wurde keine Bilddatei')
+    })
     it('preserves the actual pre-execution policy denial', () => {
         const text = screenshotFailureResponse([{ toolName: 'desktop_screenshot', success: false,
             result: 'Error: Tool authorization rejected desktop_screenshot: Error: Desktop-Steuerung nur lokal' }])

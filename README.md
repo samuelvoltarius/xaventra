@@ -26,7 +26,7 @@ stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
 Current source candidate: **2.85.3 preview** (background network awareness,
-resumable discovery and verified node exchange; production activation tracked
+broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
 separately). It builds on the 2.85.0 source. See the
 [changelog](CHANGELOG.md) and [Telegram guide](docs/TELEGRAM.md) for the fixes
 and the explicit boundary on node-targeted screenshots. The 2.85.0 feature

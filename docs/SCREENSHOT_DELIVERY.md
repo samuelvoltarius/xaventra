@@ -2,6 +2,19 @@
 
 ## Status and evidence
 
+### Node-bound capture (2.85.3 source candidate)
+
+`mesh_screenshot` is a separate owner-only, Main-fenced capture protocol. It
+uses a node's own enrolled graphical agent, not a remote shell or a different
+desktop. Each target requires `NOVA_MESH_CAPTURE_ENABLED=1` plus its local
+capture socket/token-file settings. These settings are never copied by Mesh.
+The request and PNG receipt travel only through direct encrypted/local
+transport; shared queues, generic result caches and text audits receive no
+pixels. Captures are size/hash/source-checked and stored privately with quota.
+Missing enrollment and locked/headless sessions remain failures. Telegram
+delivery is requester-bound and independently reported for every node. This
+source implementation does not establish deployed end-to-end acceptance.
+
 This guide describes the 2.78.57 source candidate, not a production-qualified
 feature. Regressions cover the default policy denial, exact principal/channel
 enrollment, trusted Telegram channel spelling and preserved failure details.

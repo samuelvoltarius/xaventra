@@ -23,8 +23,16 @@
   Telegram reports answer delivery only after the send succeeds and measures
   elapsed time from the inbound request.
 
-Remote desktop capture remains unavailable; no host display or credential
-access is introduced. Local regressions are separate from exact-source CI,
+- Add owner-only `mesh_screenshot` for one current node or all current nodes.
+  Local operator enrollment and the unlocked session capture agent are required;
+  signed Main-fenced receipts bind pixels to the source node. Only direct TLS,
+  Tailscale or local transport is accepted, never shared queues or SSH fallback.
+  Per-node capture/delivery truth survives partial failures; headless stays headless.
+- Broaden own-network discovery to 19 bounded TCP ports, SSH/SMB/printing/cast
+  mDNS announcements and existing OS neighbor caches. Cache observations do not
+  establish online status, device type, credentials or control permission.
+
+Local regressions are separate from exact-source CI,
 signed packages and production acceptance.
 
 ## [2.85.2] — 2026-10-03 (source candidate)

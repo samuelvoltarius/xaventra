@@ -26,6 +26,7 @@ import { homeAssistantTools } from './homeassistant.js'
 import { scanNowTool } from './scan-now-tool.js'
 import { meshInspectUrlTool } from './mesh-inspect-url.js'
 import { meshExchangeTools } from './mesh-exchange-tools.js'
+import { meshScreenshotTool } from './mesh-screenshot-tool.js'
 import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
@@ -3044,6 +3045,7 @@ export const ALL_TOOLS: NovaTool[] = [
     scanNowTool,
     meshInspectUrlTool,
     ...meshExchangeTools,
+    meshScreenshotTool,
     environmentInventoryTool,
     ...printerTools,
     ...minimaxTools,

@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { getRelevantTools, matchesSkillKeyword, loadSkillPack, loadSkillPackTool } from './tool-router.js'
 
 describe('bounded capability recovery', () => {
+    it('offers only source-bound captures for a collective node screenshot request', () => {
+        const names = getRelevantTools('was können deine nodes? send mir einen screnn shot vbon jeden').map(t => t.name)
+        expect(names).toContain('mesh_screenshot')
+        expect(names).not.toContain('desktop_screenshot')
+        expect(names).not.toContain('send_file')
+        expect(names).not.toContain('ssh_command')
+    })
     it('exposes actual computer-use tools for the requested capability', () => {
         const names=getRelevantTools('Kannst du computer use nutzen und mit der Maus klicken?').map(t=>t.name)
         expect(names).toContain('desktop_input')

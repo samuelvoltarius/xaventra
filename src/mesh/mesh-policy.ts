@@ -3,6 +3,7 @@ import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
 import { validExchangeRequest } from './node-exchange.js'
+import { validNodeCaptureRequest } from './node-capture.js'
 
 const NEVER_REMOTE = new Set([
     'run_command', 'system_executor', 'execute_command', 'bash', 'shell', 'powershell',
@@ -24,6 +25,7 @@ const REQUEST_ROLES: Partial<Record<MeshEnvelopeKind, readonly MeshRole[]>> = {
     'agent.request': ['system', 'owner', 'admin', 'worker'],
     'mission.request': ['system', 'owner', 'admin'],
     'exchange.request': ['system', 'owner', 'admin'],
+    'capture.request': ['system', 'owner', 'admin'],
     'codex.status.request': ['system', 'owner', 'admin'],
     'codex.complete.request': ['system', 'owner', 'admin'],
 }
@@ -115,6 +117,8 @@ export class MeshPolicy {
             }
         }
         if (envelope.kind === 'tool.request') return this.verifyTool(envelope, peer)
+        if (envelope.kind === 'capture.request') return validNodeCaptureRequest(envelope.payload) && envelope.targetNode !== '*'
+            ? { accepted: true } : { accepted: false, reason: 'invalid_capture_request' }
         if (envelope.kind === 'exchange.request') return validExchangeRequest(envelope.payload) && envelope.targetNode !== '*'
             ? { accepted: true } : { accepted: false, reason: 'invalid_exchange_request' }
         if (envelope.kind === 'agent.request') return this.verifyAgent(envelope, peer)

@@ -83,6 +83,18 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(fixtures.capture).not.toHaveBeenCalled()
         expect(fixtures.photo).not.toHaveBeenCalled()
     }, 15000)
+    it('retains actual per-node delivery after partial capture, not model all-images claims', async () => {
+        fixtures.permission = 'owner'
+        fixtures.agent.mockResolvedValue({ content: 'Alle Bilder gesendet.', sessionId: 'fixture-session', toolsExecuted: ['mesh_screenshot'],
+            toolExecutions: [{ toolName: 'mesh_screenshot', success: false, result: { captures: [
+                { nodeId: 'spark', captured: true, delivered: true }, { nodeId: 'nas', captured: false, delivered: false, error: 'No enrolled graphical adapter' },
+            ] } }], actionState: { requiresTool: true, kind: 'screenshot', fulfilled: false } })
+        const { replies } = await run('send mir einen Screenshot von allen nodes')
+        expect(replies.at(-1)).toContain('spark: Bild aufgenommen; Bildzustellung bestätigt')
+        expect(replies.at(-1)).toContain('nas: kein Bild aufgenommen; keine Bildzustellung bestätigt')
+        expect(replies.at(-1)).not.toContain('Alle Bilder gesendet')
+        expect(fixtures.capture).not.toHaveBeenCalled()
+    }, 15000)
 
     it('passes measured identity and the complete mixed question to the agent without a cached answer', async () => {
         const question = 'Welches Model nutzt du gerade ? Und warum willst auf auf na1 ein llm. ?'
@@ -104,7 +116,7 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         'was können deine nodes? send mir einen screnn shot vbon jeden'])('does not deliver a catalog or wrong desktop for %s', async text => {
         const { replies } = await run(text)
         expect(fixtures.agent).toHaveBeenCalledOnce()
-        expect(replies.at(-1)).toContain('keinen Mesh-Node als Ziel auswählen')
+        expect(replies.at(-1)).toContain('mesh_screenshot benötigt')
         expect(replies.at(-1)).toContain('keine Bilddatei übertragen')
         expect(replies.at(-1)).not.toContain('RAW CATALOG')
         expect(fixtures.capture).not.toHaveBeenCalled()

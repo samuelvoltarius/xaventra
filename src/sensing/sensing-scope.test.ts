@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ipToInt, ownSubnets, scanHosts, scanTargetAllowed } from './net-scope.js'
-import { ProbeLimiter, discoverDevices, identifyHttp, tailnetPeerAddresses } from './discovery.js'
+import { DISCOVERY_PORTS, ProbeLimiter, discoverDevices, identifyHttp, tailnetPeerAddresses } from './discovery.js'
 
 const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }
 
@@ -96,17 +96,17 @@ describe('Selbst-Erkennung: Rate- und Zeitlimit', () => {
         const deps = { interfaces: lan, now: () => clock, sleep: async (ms: number) => { clock += ms },
             tcpProbe: async (host: string, port: number) => { visited.push(`${host}:${port}`); return false }, httpProbe: async () => null }
         let cursor: import('./discovery.js').DiscoveryCursor | undefined
-        for (let run = 0; run < 5; run++) {
+        for (let run = 0; run < Math.ceil(DISCOVERY_PORTS.length * 3 / 4); run++) {
             const report = await discoverDevices({ ...options, cursor }, deps)
             expect(report.timedOut).toBe(true)
             cursor = report.cursor
         }
         expect(visited).toContain('192.168.1.3:7125')
         expect(visited.filter(item => item === '192.168.1.1:7125')).toHaveLength(1)
-        expect(visited.filter(item => item.startsWith('192.168.1.1:'))).toHaveLength(9)
+        expect(visited.filter(item => item.startsWith('192.168.1.1:'))).toHaveLength(DISCOVERY_PORTS.length)
         const changed = await discoverDevices({ ...options, cursor }, { ...deps, interfaces: { eth: [{ address: '192.168.2.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] } })
         expect(changed.cursor?.scopeKey).not.toBe(cursor?.scopeKey)
-        expect(visited).toContain('192.168.2.1:7125')
+        expect(visited).toContain(`192.168.2.1:${DISCOVERY_PORTS[0]}`)
     })
 
     it('setzt auch hinter dem Host-Limit in weiteren eigenen Subnetzen fort', () => {
@@ -129,11 +129,10 @@ describe('Selbst-Erkennung: Rate- und Zeitlimit', () => {
             },
             httpProbe: async () => null,
         })
-        expect(report.probes).toBe(54) // 6 Hosts × 9 Ports (2.85: + n8n, Paperless, Immich, Jellyfin)
+        expect(report.probes).toBe(6 * DISCOVERY_PORTS.length)
         expect(maxInFlight).toBeLessThanOrEqual(3)
         const sorted = [...starts].sort((a, b) => a - b)
-        // 54 starts at 50/s need at least ~53 × 20 ms.
-        expect(sorted[sorted.length - 1] - sorted[0]).toBeGreaterThanOrEqual(53 * 20 - 40)
+        expect(sorted[sorted.length - 1] - sorted[0]).toBeGreaterThanOrEqual((6 * DISCOVERY_PORTS.length - 1) * 20 - 40)
     })
 
     it('bricht nach der Gesamtzeit ab und meldet das', async () => {

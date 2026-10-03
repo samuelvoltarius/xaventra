@@ -122,6 +122,7 @@ const DEVICE_TITLE: Record<string, { title: string; wirkung: string; kategorie: 
     jellyfin: { title: 'Jellyfin', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'weitere' },
     nextcloud: { title: 'Nextcloud', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'dateien' },
     networkservice: { title: 'Netzwerkdienst', wirkung: 'erreichbar; Typ und Steuerbarkeit noch ungeprüft', kategorie: 'geraete' },
+    networkdevice: { title: 'LAN-Gerät', wirkung: 'Nachbartabelle; Online-Status und Steuerbarkeit ungeprüft', kategorie: 'geraete' },
 }
 
 function defaultDevices(dataDir: string) {

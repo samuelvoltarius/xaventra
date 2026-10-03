@@ -15,7 +15,12 @@ export function nodeScreenshotResponse(executions: ResponseToolExecution[]): str
         && ['mesh_nodes', 'mesh_status', 'mesh_services'].includes(item.toolName || item.name || ''))
     const details = inventory.length ? verifiedToolEvidenceResponse(inventory)
         : 'Die Node-Fähigkeiten wurden in diesem Lauf noch nicht durch aktuelle Mesh-Werkzeuge verifiziert.'
-    return `${details}\n\n${NODE_SCREENSHOT_LIMITATION}`
+    const capture = [...executions].reverse().find(item => (item.toolName || item.name) === 'mesh_screenshot')
+    let result = capture?.result
+    if (typeof result === 'string') { try { result = JSON.parse(result) } catch { /* policy denial remains text */ } }
+    const rows = result && typeof result === 'object' && Array.isArray((result as any).captures) ? (result as any).captures.slice(0, 16) : []
+    const receipts = rows.map((row: any) => `${safeResult(row.nodeId, 100)}: ${row.captured === true ? 'Bild aufgenommen' : 'kein Bild aufgenommen'}; ${row.delivered === true ? 'Bildzustellung bestätigt' : 'keine Bildzustellung bestätigt'}${row.error ? ` — ${safeResult(row.error, 400)}` : ''}`).join('\n')
+    return `${details}\n\n${receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)}`
 }
 
 const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([

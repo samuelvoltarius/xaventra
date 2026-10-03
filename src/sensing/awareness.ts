@@ -44,7 +44,7 @@ export function environmentAwareness(dataDir: string, permission: string, now = 
     ]
     if (forPrompt) common.push(
         'Die LAN-Suche ist am Main standardmäßig automatisch aktiv, außer der Owner hat sie ausgeschaltet. scan_now kann sie aktualisieren; Subnetze kommen aus eigenen Interfaces. blue_asset_inventory ist Host-/Mesh-Inventar, nicht LAN-Inventar.',
-        'Node-Aufträge: mesh_delegate. Eigene Austauschordner: mesh_exchange_list/write/send; Erfolg nur nach Empfangsbeleg. Updates: konfigurierter signierter Weg. Nodebezogene Screenshots derzeit nicht unterstützt. Aus fehlenden Inventardaten niemals Internet-Ausfall ableiten.',
+        'Node-Aufträge: mesh_delegate. Eigene Austauschordner: mesh_exchange_list/write/send; Erfolg nur nach Empfangsbeleg. Updates: konfigurierter signierter Weg. Node-Screenshots: mesh_screenshot, nur lokal freigegebene grafische Capture-Agenten; Headless ist kein Desktop. Keine unaufgeforderte Bildschirmüberwachung. Aus fehlenden Inventardaten niemals Internet-Ausfall ableiten.',
     )
     return redactSecrets(common.filter(Boolean).join('\n')).slice(0, 6000)
 }

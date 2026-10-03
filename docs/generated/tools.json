@@ -1955,6 +1955,23 @@
       ]
     },
     {
+      "name": "mesh_screenshot",
+      "category": "mesh",
+      "description": "Echte Bildschirmaufnahme eines aktuellen Mesh-Nodes oder aller Nodes (node_id=all). Nur lokal freigegebene grafische Capture-Agenten; Headless/gesperrte Nodes liefern einen konkreten Fehler. Bilder werden nur dem authentifizierten Auftraggeber gesendet, keine SSH-Ersatzaufnahme.",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "send",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "mesh_services",
       "category": "system",
       "description": "Zeigt Relay, Witness, Mesh-Transporte und laufende AI-Runtimes getrennt vom Nova-Node-Status.",

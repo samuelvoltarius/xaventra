@@ -4,7 +4,8 @@
  * - Ziele nur aus ./net-scope.ts (eigene private Subnetze, max /24, Tailnet nur
  *   mit eigenem Tailnet-Interface). Jede Adresse — auch aus mDNS — passiert
  *   `scanTargetAllowed` direkt vor dem Verbindungsaufbau.
- * - Feste Port-Liste: Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
+ * - Feste 19-Port-Liste: SSH/HTTPS/SMB/RDP, IPP/JetDirect, RTSP/MQTT,
+ *   Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
  *   MQTT 8883 (nur TCP-Connect, kein MQTT-Login oder Bambu-Nachweis), Home Assistant 8123;
  *   2.85: n8n 5678, Paperless-ngx 8000, Immich 2283, Jellyfin 8096,
  *   Nextcloud 80 (/status.php) — still gemeldet, nur unter „Verbindungen“.
@@ -22,10 +23,11 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
+import { localNeighbors } from './neighbors.js'
 import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 
-export const DISCOVERY_PORTS = Object.freeze([7125, 80, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
+export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
 
 export interface HttpProbeResult { status: number; server?: string; body: string }
 
@@ -37,6 +39,7 @@ export interface DiscoveryDeps {
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     tailnetPeers?: () => Promise<string[]>
+    neighbors?: () => Promise<string[]>
 }
 
 export interface DiscoveryOptions {
@@ -203,13 +206,15 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const deadline = startedAt + options.deadlineMs
     const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
     const scope = ownSubnets(deps.interfaces)
+    const neighbors = await (deps.neighbors || (() => localNeighbors(Math.max(100, Math.min(1500, options.deadlineMs / 8)))))().catch(() => [])
     const peers = scope.hasTailnet ? await (deps.tailnetPeers || (() => localTailnetPeers(Math.max(100, Math.min(2000, options.deadlineMs / 4)))))().catch(() => []) : []
     const tailnetHosts = [...new Set([...options.tailnetHosts, ...peers])].sort()
-    const scopeKey = createHash('sha256').update(JSON.stringify({ subnets: scope.subnets, tailnet: scope.hasTailnet, extra: tailnetHosts })).digest('hex')
+    const scopeKey = createHash('sha256').update(JSON.stringify({ subnets: scope.subnets, tailnet: scope.hasTailnet, extra: tailnetHosts, ports: DISCOVERY_PORTS })).digest('hex')
     const saved = options.cursor
     const validCursor = saved?.scopeKey === scopeKey && Number.isSafeInteger(saved.hostOffset) && saved.hostOffset >= 0
         && Number.isInteger(saved.portIndex) && saved.portIndex >= 0 && saved.portIndex < DISCOVERY_PORTS.length
     let hostOffset = validCursor ? saved.hostOffset : 0
+    // Preserve the stable address plan: changing ARP caches must not reset the cursor.
     let plan = scanHosts(scope, tailnetHosts, options.maxHosts, hostOffset)
     if (hostOffset >= plan.totalHosts) { hostOffset = 0; plan = scanHosts(scope, tailnetHosts, options.maxHosts) }
     const limiter = new ProbeLimiter(options.ratePerSec, options.concurrency, deadline, now, sleep, options.signal)
@@ -221,6 +226,9 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
         if (seen.has(key)) return
         seen.add(key)
         candidates.push(candidate)
+    }
+    for (const host of neighbors.slice(0, 512)) {
+        if (scanTargetAllowed(host, scope).allowed) add({ type: 'networkdevice', host, port: 0, via: 'neighbor', evidence: { quelle: 'OS-Nachbartabelle', hinweis: 'Bekannte LAN-Adresse; Cache ist kein Online- oder Steuerungsbeleg' } })
     }
 
     // mDNS first (cheap, one multicast query); every answer is re-checked.
@@ -318,6 +326,14 @@ export const MDNS_SERVICES: Readonly<Record<string, DeviceType>> = Object.freeze
     '_moonraker._tcp.local': 'moonraker',
     '_octoprint._tcp.local': 'octoprint',
     '_home-assistant._tcp.local': 'homeassistant',
+    '_ssh._tcp.local': 'networkservice',
+    '_smb._tcp.local': 'networkservice',
+    '_http._tcp.local': 'networkservice',
+    '_https._tcp.local': 'networkservice',
+    '_ipp._tcp.local': 'networkservice',
+    '_ipps._tcp.local': 'networkservice',
+    '_airplay._tcp.local': 'networkservice',
+    '_googlecast._tcp.local': 'networkservice',
 })
 
 function encodeName(name: string): Buffer {
@@ -348,6 +364,7 @@ function readName(buf: Buffer, offset: number, depth = 0): { name: string; next:
             pos = -1
             break
         }
+        if (len > 63 || pos + 1 + len > buf.length) throw new Error('mDNS: ungültiger Name')
         labels.push(buf.toString('utf8', pos + 1, pos + 1 + len))
         pos += 1 + len
     }
@@ -357,14 +374,16 @@ function readName(buf: Buffer, offset: number, depth = 0): { name: string; next:
 export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string } }
 
 export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
-    if (buf.length < 12) return []
+    if (buf.length < 12 || buf.length > 9000) return []
     const qd = buf.readUInt16BE(4)
     const total = buf.readUInt16BE(6) + buf.readUInt16BE(8) + buf.readUInt16BE(10)
+    if (qd > 64 || total > 256) return []
     let pos = 12
     for (let i = 0; i < qd; i++) pos = readName(buf, pos).next + 4
     const records: MdnsRecord[] = []
     for (let i = 0; i < total && pos + 10 <= buf.length; i++) {
         const { name, next } = readName(buf, pos)
+        if (next < 0 || next + 10 > buf.length) break
         const type = buf.readUInt16BE(next)
         const rdlen = buf.readUInt16BE(next + 8)
         const rd = next + 10
@@ -400,7 +419,7 @@ export function realMdnsBrowse(timeoutMs: number): Promise<Array<{ type: DeviceT
         const finish = () => { try { socket.close() } catch { /* closed */ } resolve(mdnsCandidates(records)) }
         const timer = setTimeout(finish, timeoutMs)
         timer.unref?.()
-        socket.on('message', message => { try { records.push(...parseMdnsResponse(message)) } catch { /* ignore malformed */ } })
+        socket.on('message', message => { if (records.length >= 2048) return; try { records.push(...parseMdnsResponse(message).slice(0, 2048 - records.length)) } catch { /* ignore malformed */ } })
         socket.on('error', () => { clearTimeout(timer); finish() })
         socket.bind(0, () => {
             socket.send(buildMdnsQuery(Object.keys(MDNS_SERVICES)), 5353, '224.0.0.251', error => { if (error) { clearTimeout(timer); finish() } })

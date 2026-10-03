@@ -21,6 +21,7 @@ import { checkDelegatedFence } from './fence-highwater.js'
 import { heartbeatProfileFields, peerWantsProfile, sanitizeNodeProfile, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
+import { captureEnrolledNode, validateNodeCapture, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt } from './node-capture.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -55,6 +56,7 @@ const processed = new Map<string, ResultPayload>()
 const activeAgentRuns = new Map<string, AbortController>()
 const cancelledAgentRuns = new Map<string, number>()
 const exchangePending = new Map<string, { node: string; expiresAt: number }>()
+const capturePending = new Map<string, { node: string; receive: (value: unknown) => void }>()
 const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
 /** MI-17: idempotency/result caches are bounded (oldest entries evicted first). */
 export const MAX_PROCESSED_RESULTS = 2_000
@@ -151,6 +153,33 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
 }
 
 export function getMeshTransport(): MeshTransportRouter | null { return router }
+
+export async function requestNodeCapture(node: string, payload: NodeCaptureRequest): Promise<NodeCaptureReceipt> {
+    if (!node || node === '*' || !validNodeCaptureRequest(payload)) throw new Error('invalid capture target/context')
+    const check = async () => { await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:capture.request' }) }
+    await check()
+    if (node === getLocalNodeId()) return captureEnrolledNode(node, check)
+    if (capturePending.size >= 4) throw new Error('Capture concurrency limit reached')
+    const transport = router || initMeshTransportRuntime()
+    const envelope = transport.create('capture.request', node, payload, { ttlMs: 30_000, fence: currentMainMeshFence() })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const response = new Promise<unknown>(resolve => {
+        capturePending.set(envelope.id, { node, receive: resolve })
+        timer = setTimeout(() => resolve(null), 30_000)
+    })
+    try {
+        const ack = await transport.send(node, envelope)
+        if (!['delivered', 'duplicate'].includes(ack.status)) throw new Error('No direct node capture path')
+        const reply = await response as ResultPayload | null
+        if (reply?.success !== true) throw new Error(typeof reply?.error === 'string' ? reply.error.slice(0, 200) : 'Node capture timed out; no image confirmed')
+        await check()
+        return validateNodeCapture(reply.result, node)
+    } finally { clearTimeout(timer); capturePending.delete(envelope.id) }
+}
+
+export function currentCaptureNodes(): string[] {
+    return [getLocalNodeId(), ...Object.values(peerStates).filter(p => Date.now() - p.lastSeen < 120_000 && watchKnownNodes().includes(p.nodeId)).map(p => p.nodeId)].filter((id, i, all) => all.indexOf(id) === i).slice(0, 16)
+}
 
 /** Main orchestrates transfers; remote receipts are bound to the requested node. */
 export async function requestNodeExchange(node: string, payload: ExchangeRequest): Promise<unknown> {
@@ -436,6 +465,8 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
 }
 
 export async function stopMeshTransportRuntime(): Promise<void> {
+    for (const pending of capturePending.values()) pending.receive(null)
+    capturePending.clear()
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     heartbeatTimer = null
     for (const controller of activeAgentRuns.values()) controller.abort()
@@ -447,6 +478,25 @@ export async function stopMeshTransportRuntime(): Promise<void> {
 
 async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHandler): Promise<void> {
     if (!router) return
+    if (envelope.kind === 'capture.response') {
+        const result = envelope.payload as ResultPayload
+        const pending = capturePending.get(result?.requestId)
+        if (pending?.node === envelope.sourceNode) pending.receive(result)
+        return
+    }
+    if (envelope.kind === 'capture.request') {
+        const check = async () => {
+            if (!(await verifyDelegatedEnvelopeFence(envelope)).ok || envelope.fence?.service !== 'nova-main' || envelope.expiresAt < Date.now()) throw new Error('Capture Main authority expired')
+        }
+        let result: ResultPayload
+        try {
+            if (!validNodeCaptureRequest(envelope.payload)) throw new Error('Invalid capture context')
+            await check()
+            result = makeResult(envelope.id, true, await captureEnrolledNode(getLocalNodeId(), check))
+        } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
+        await router.send(envelope.sourceNode, router.create('capture.response', envelope.sourceNode, result, { ttlMs: 30_000 }))
+        return
+    }
     if (envelope.kind === 'exchange.response') {
         const result = envelope.payload as ResultPayload
         const pending = exchangePending.get(result?.requestId)
@@ -480,7 +530,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     }
     if (envelope.kind === 'run.result') {
         const result = envelope.payload as ResultPayload
-        if (exchangePending.has(result?.requestId)) return
+        if (exchangePending.has(result?.requestId) || capturePending.has(result?.requestId)) return
         if (result?.requestId) {
             rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
             try {
