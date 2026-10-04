@@ -16,7 +16,7 @@ const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATH
 Object.assign(env, { HOME: root, USERPROFILE: root, APPDATA: join(root, 'appdata'), LOCALAPPDATA: join(root, 'localappdata'), CODEX_HOME: join(root, 'codex'),
   NODE_ENV: 'test', NOVA_TEST_MODE: '1', NOVA_NO_SIDE_EFFECTS: '1', NOVA_SKIP_MODEL_RESOLVER_INIT: '1', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled',
   NOVA_NODE_ID: 'desktop-core-fixture', NOVA_DESKTOP_OWNER_ID: 'desktop-core-test', NOVA_AUTO_START_OLLAMA: '0', NOVA_OTEL_ENABLED: 'false', OTEL_SDK_DISABLED: 'true',
-  NOVA_AGENT_TIMEOUT_MS: '15000', XAVENTRA_RESPONSE_CONTRACT_FIXTURE: '1' })
+  NOVA_AGENT_TIMEOUT_MS: '15000', XAVENTRA_RESPONSE_CONTRACT_FIXTURE: '1', XAVENTRA_INVENTORY_FIXTURE: '1' })
 // TOK-1: only a token holder is the Desktop owner; one disposable token per run.
 const desktopToken = randomBytes(24).toString('hex')
 env.NOVA_DESKTOP_API_TOKEN = desktopToken
@@ -50,6 +50,25 @@ try {
       report.cases.push({ id, pass: true })
     } catch (error) { report.cases.push({ id, pass: false, error: String(error) }); process.exitCode = 1 }
   }
+  try {
+    const before = JSON.parse(readFileSync(join(root, 'model-call-count.json')))
+    const started = Date.now()
+    const response = await api(`/rooms/${info.roomId}/messages`, { method: 'POST', body: JSON.stringify({
+      content: 'send mir was du im netzwerk findest und wo mit du dich verbinden kannst mesh netzwerk und local',
+    }) })
+    const reply = response.replies.find(item => item.botId === 'nova')
+    assert.ok(reply?.message && !reply.error, JSON.stringify(response))
+    assert.match(reply.message.content, /69 Adressen, 1248 Prüfungen/)
+    assert.match(reply.message.content, /Teilsuche/)
+    assert.doesNotMatch(reply.message.content, /keine verwertbaren|voll steuerbar/)
+    assert.equal(JSON.parse(readFileSync(join(root, 'model-call-count.json'))), before, 'Inventory must not depend on model planning/synthesis/fact-check')
+    const run = await api(`/trust/runs/${reply.message.runId}`)
+    assert.equal(run.status, 'completed'); assert.equal(run.validation.success, true)
+    assert.deepEqual(run.tools.map(tool => tool.toolName).sort(), ['environment_inventory', 'mesh_status'])
+    assert.ok(run.tools.every(tool => tool.success))
+    assert.ok(Date.now() - started < 10000, 'Inventory response exceeded bounded fast path')
+    report.cases.push({ id: 'owner-inventory-no-model-rounds', pass: true, durationMs: Date.now() - started })
+  } catch (error) { report.cases.push({ id: 'owner-inventory-no-model-rounds', pass: false, error: String(error) }); process.exitCode = 1 }
 } catch (error) { report.error = String(error); process.exitCode = 1 }
 finally {
   clearTimeout(watchdog)

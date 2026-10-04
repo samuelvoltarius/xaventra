@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.85.4] — 2026-10-04 (source candidate)
+
+- Preserve formatted network observations in an incomplete synthesis response.
+  A successful inventory must not disappear when the model follow-up times out.
+- Recognize bounded owner reporting requests such as "send mir was du im
+  netzwerk findest ... mesh netzwerk und local". Pure inventory uses the normal
+  governed executor for existing LAN observations and current Mesh status, then
+  delivers verified evidence without model planning, synthesis or fact-check
+  rounds. No new scan, control permission or write is authorized by this path.
+- Keep screenshots, URL checks, transfers, mixed actions, non-owner/system
+  requests and explicit response-format constraints out of that shortcut.
+  Live deployment/Telegram acceptance remains separate from local regression.
+
 ## [2.85.3] — 2026-10-04 (source candidate)
 
 - Owner network questions use existing background observations, including

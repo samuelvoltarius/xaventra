@@ -25,7 +25,8 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.3 preview** (background network awareness,
+Current source candidate: **2.85.4 preview** (verified inventory delivery without
+model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
 separately). It builds on the 2.85.0 source. See the
 [changelog](CHANGELOG.md) and [Telegram guide](docs/TELEGRAM.md) for the fixes

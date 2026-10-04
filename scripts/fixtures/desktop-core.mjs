@@ -21,6 +21,7 @@ mkdirSync(join(root, '.nova-data'), { recursive: true })
 writeFileSync(join(root, 'SOUL.md'), '# Xaventra\nAntworte kurz auf Deutsch. Nutze echte Tools.\n')
 writeFileSync(join(root, '.nova-data/soul.md'), '# Xaventra\n')
 let modelCalls = 0
+writeFileSync(join(root, 'model-call-count.json'), '0')
 const model = createServer(async (req, res) => {
   const chunks = []; for await (const chunk of req) chunks.push(chunk)
   res.setHeader('Content-Type', 'application/json')
@@ -28,6 +29,7 @@ const model = createServer(async (req, res) => {
   const input = JSON.parse(Buffer.concat(chunks).toString() || '{}')
   writeFileSync(join(root, 'last-model-request.json'), JSON.stringify(input))
   modelCalls++
+  writeFileSync(join(root, 'model-call-count.json'), JSON.stringify(modelCalls))
   if (modelCalls > 30) { res.statusCode = 429; return res.end('{}') }
   const messages = input.messages || []
   const lastUser = messages.findLastIndex(message => message.role === 'user')
@@ -69,8 +71,13 @@ const { availableLLMs } = await load('core/llm-factory.js')
 availableLLMs.push({ provider: 'local', model: 'fixture-model', endpoint: baseUrl, local: true })
 const { getLifecyclePolicy } = await load('core/lifecycle-policy.js')
 getLifecyclePolicy().register({ id: 'desktop-core-read-only', event: 'tool.before', priority: -1000, failClosed: true,
-  handler: payload => payload.toolName === 'read_file' && resolve(String(payload.input?.path || '')) === allowed
+  handler: payload => (payload.toolName === 'read_file' && resolve(String(payload.input?.path || '')) === allowed)
+    || (process.env.XAVENTRA_INVENTORY_FIXTURE === '1' && ['environment_inventory', 'mesh_status'].includes(payload.toolName))
     ? { decision: 'allow' } : { decision: 'deny', reason: 'Disposable acceptance permits only its exact evidence file' } })
+if (process.env.XAVENTRA_INVENTORY_FIXTURE === '1') {
+  const { recordDiscoveryObservation } = await load('sensing/awareness.js')
+  recordDiscoveryObservation(join(root, '.nova-data'), { scannedHosts: 69, probes: 1248, timedOut: true, truncated: true })
+}
 const { shouldStartExclusiveService } = await load('mesh/leader-election.js')
 // Same path as the daemon: only the renewal path holds a fencing token (CL-07).
 assert.ok(await shouldStartExclusiveService('nova-main')); assert.ok(await shouldStartExclusiveService('dashboard'))

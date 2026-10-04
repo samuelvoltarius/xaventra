@@ -29,7 +29,8 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, environmentOverviewResponse } from '../core/tool-evidence-response.js'
+import { environmentOverviewPlan } from './environment-overview.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
 import { repairConstrainedResponse } from './response-repair.js'
 import type { ResponseConstraint } from '../core/response-contract.js'
@@ -650,6 +651,10 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         }
 
         let forcedToolResponse: any = null
+        const { getUserPermission } = await import('../users/multi-user-middleware.js')
+        const overviewPlan = environmentOverviewPlan({ content, permission: getUserPermission(authUserId, channel),
+            internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
+        if (overviewPlan) forcedToolResponse = { content: '', toolCalls: overviewPlan, finishReason: 'tool_calls' }
         if (isExplicitCodexInstallRequest(content) && toolDefinitions.some((tool: any) => tool.name === 'codex_install')) {
             console.log('[Nova Doctor] Deterministic repair path: explicit Codex installation -> codex_install')
             forcedToolResponse = {
@@ -1611,7 +1616,15 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 const { runGovernedSdkLoop } = await import('./governed-sdk-loop.js')
                 const configuredRounds = Number(process.env.NOVA_MAX_TOOL_ROUNDS ?? (process.env.NOVA_OS_MODE === 'true' ? 50 : 3))
                 const maxTurns = sdkTurnLimit(configuredRounds, isDiagnosticRun ? contract : undefined)
-                finalContent = await runGovernedSdkLoop({
+                if (overviewPlan) {
+                    // Same governed executor and receipt path as SDK calls. Do
+                    // not spend model rounds paraphrasing an existing report.
+                    for (const [index, call] of overviewPlan.entries()) {
+                        if (abortSignal?.aborted) throw new Error('AbortError: inventory dispatch cancelled')
+                        await executeSdkTool({ ...call, id: `${kernel.contract.id}:overview:${index}` })
+                    }
+                    finalContent = environmentOverviewResponse(toolExecutions)
+                } else finalContent = await runGovernedSdkLoop({
                     messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
                     maxTurns, signal: abortSignal, execute: executeSdkTool,
                     modelOptions: {

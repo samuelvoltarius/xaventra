@@ -1,5 +1,5 @@
 import { inferRequiredToolTargets } from './tool-evidence-binding.js'
-import { isBareHttpUrl, mentionsScreenshot } from './request-capabilities.js'
+import { isBareHttpUrl, isEnvironmentOverview, mentionsScreenshot } from './request-capabilities.js'
 
 export interface ActionIntent {
     requiresTool: boolean
@@ -61,6 +61,7 @@ export function conversationResponseGuidance(input: string): string {
 export function detectActionIntent(input: string): ActionIntent {
     if (isBareHttpUrl(input)) return { requiresTool: true, kind: 'web' }
     const text = actionRequestText(input).toLowerCase().replace(/\s+/g, ' ').trim()
+    if (isEnvironmentOverview(input)) return { requiresTool: true, kind: 'system-state' }
     const explicitFileTargets = inferRequiredToolTargets(text)
         .filter(target => !/^https?:\/\//.test(target))
 

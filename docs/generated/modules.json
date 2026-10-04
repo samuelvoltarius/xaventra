@@ -50,6 +50,12 @@
       ]
     },
     {
+      "module": "src/agents/environment-overview.ts",
+      "imports": [
+        "../core/request-capabilities.js"
+      ]
+    },
+    {
       "module": "src/agents/governed-sdk-loop.ts",
       "imports": [
         "../llm/nova-llm-sdk.js",
@@ -124,6 +130,7 @@
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
+        "./environment-overview.js",
         "./history-evidence.js",
         "./response-repair.js",
         "./session-checkpoints.js",

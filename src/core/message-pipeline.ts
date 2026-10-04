@@ -1993,7 +1993,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             try {
                 const { validateWithLLM } = await import('../layers/L12-anti-hallucination.js')
                 const toolExecs = (result as any).toolExecutions || []
-                if (toolExecs.length > 0) {
+                if (toolExecs.length > 0 && !(principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length)) {
                     // 15s timeout on hallucination check — non-critical
                     const validation = await Promise.race([
                         validateWithLLM(supervised.content, toolExecs),
@@ -2019,12 +2019,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
             // A synthesis/fact-check fallback may emit raw discovery results.
             // Delivery truth is deterministic and remains authoritative last.
-            if (!isSystemMessage && principalContext.permission === 'owner' && isEnvironmentOverview(content)) {
-                const { environmentAwareness } = await import('../sensing/awareness.js')
-                const { getNovaDataDir } = await import('./data-root.js')
-                const { verifiedToolEvidenceResponse } = await import('./tool-evidence-response.js')
-                const inventory = successfulExecutions.filter((e: any) => ['mesh_nodes', 'mesh_status', 'mesh_services', 'blue_asset_inventory', 'scan_now'].includes(e.toolName || e.name))
-                finalContent = sanitizeInternalOutboundArtifacts(`${environmentAwareness(getNovaDataDir(), 'owner', Date.now(), false)}\n\n${inventory.length ? verifiedToolEvidenceResponse(inventory) : 'Mesh-Zustand in diesem Lauf nicht frisch abgefragt.'}`)
+            if (!isSystemMessage && principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length) {
+                const { environmentOverviewResponse } = await import('./tool-evidence-response.js')
+                finalContent = sanitizeInternalOutboundArtifacts(environmentOverviewResponse((result as any).toolExecutions || []))
             }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse([...successfulExecutions, ...failedExecutions])) : screenshotFailureResponse(failedExecutions)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse, nodeScreenshotResponse } from './tool-evidence-response.js'
+import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse, nodeScreenshotResponse, environmentOverviewResponse } from './tool-evidence-response.js'
 
 describe('screenshot failure evidence', () => {
     it('retains per-node capture/delivery truth even when the overall tool reports a partial failure', () => {
@@ -34,6 +34,31 @@ describe('screenshot failure evidence', () => {
 })
 
 describe('grounded tool responses', () => {
+    it('preserves formatted inventory when model synthesis times out', () => {
+        const text = incompleteToolResponse([JSON.stringify({ formatted: '69 Adressen, 1248 Prüfungen; Teilsuche. api_key=secret-value' })])
+        expect(text).toContain('69 Adressen, 1248 Prüfungen; Teilsuche')
+        expect(text).not.toContain('secret-value')
+        expect(text).not.toContain('keine verwertbaren')
+    })
+    it('delivers only verified inventory and mesh evidence without claiming general control', () => {
+        const text = environmentOverviewResponse([
+            { toolName: 'environment_inventory', success: true, result: '{"formatted":"Letzte Suche: Teilsuche; 69 Adressen"}' },
+            { toolName: 'mesh_status', success: true, result: '5 Nodes online; api_key=secret-value' },
+            { toolName: 'run_command', success: true, result: 'unrelated-secret' },
+        ])
+        expect(text).toContain('69 Adressen'); expect(text).toContain('5 Nodes online')
+        expect(text).toContain('keine allgemeine Steuerfreigabe')
+        expect(text).not.toContain('secret-value'); expect(text).not.toContain('unrelated-secret')
+    })
+    it('never fabricates successful inventory or recycles an earlier successful result after denial', () => {
+        const text = environmentOverviewResponse([
+            { toolName: 'environment_inventory', success: true, result: 'old findings' },
+            { toolName: 'environment_inventory', success: false, result: 'permission denied' },
+        ])
+        expect(text).toContain('environment_inventory: in diesem Lauf nicht erfolgreich verifiziert')
+        expect(text).toContain('mesh_status: in diesem Lauf nicht erfolgreich verifiziert')
+        expect(text).not.toContain('old findings')
+    })
     it('does not present acknowledgements and empty search as completed research', () => {
         const text = incompleteToolResponse(['✅ Erfolgreich!', '{"success":true,"results":[]}'])
         expect(text).toContain('nicht abgeschlossen')

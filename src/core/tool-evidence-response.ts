@@ -56,7 +56,7 @@ export function incompleteToolResponse(results: string[]): string {
             value.slice(0, 8).forEach(item => collect(item, depth + 1))
         } else if (value && typeof value === 'object') {
             const item = value as Record<string, unknown>
-            for (const key of ['title', 'url', 'snippet', 'text', 'content', 'summary', 'output', 'results', 'error']) {
+            for (const key of ['title', 'url', 'snippet', 'text', 'content', 'formatted', 'summary', 'output', 'results', 'error']) {
                 if (item[key] !== undefined) collect(item[key], depth + 1)
             }
         }
@@ -68,6 +68,21 @@ export function incompleteToolResponse(results: string[]): string {
     return details
         ? `Die Aufgabe ist noch nicht vollständig ausgewertet. Bisherige Tool-Beobachtungen (keine abschließende Antwort):\n\n${details}`
         : 'Die Aufgabe ist nicht abgeschlossen: Es liegen keine verwertbaren inhaltlichen Ergebnisse vor. Eine technische Erfolgsbestätigung allein reicht dafür nicht.'
+}
+
+/** Current, verified read-only results already contain the human-facing report.
+ * No model synthesis or second opinion is required to deliver these facts. */
+export function environmentOverviewResponse(executions: ResponseToolExecution[]): string {
+    const results = ['environment_inventory', 'mesh_status'].map(name => {
+        const execution = [...executions].reverse().find(e => (e.toolName || e.name) === name)
+        if (!execution || execution.success !== true) return `${name}: in diesem Lauf nicht erfolgreich verifiziert.`
+        let value = execution.result
+        if (typeof value === 'string') { try { value = JSON.parse(value) } catch { /* formatted text */ } }
+        const text = value && typeof value === 'object' && typeof (value as any).formatted === 'string'
+            ? (value as any).formatted : value
+        return safeResult(text, name === 'environment_inventory' ? 6000 : 4000) || `${name}: kein inhaltliches Ergebnis.`
+    })
+    return results.join('\n\n') + '\n\nMesh-Verbindung und beobachtete Dienste sind keine allgemeine Steuerfreigabe. Konkrete Aktionen benötigen passende freigegebene Werkzeuge; Erreichbarkeit weiterer Dienste wurde hier nicht aktiv getestet.'
 }
 
 function safeResult(value: unknown, limit = 4_000): string {

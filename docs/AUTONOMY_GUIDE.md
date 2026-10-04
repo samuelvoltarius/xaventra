@@ -21,6 +21,12 @@ werden die vorhandenen Dienstkennungen und offene geprüfte Ports, kein
 garantiertes Vollinventar sämtlicher Netzwerkgeräte.
 
 `environment_inventory` liest diese Hintergrundfunde mit Fundzeit und Status.
+Ab 2.85.4 lesen reine Owner-Inventarfragen (auch "send mir was du im netzwerk
+findest ...") dieses Werkzeug und den aktuellen `mesh_status` über denselben
+geprüften Ausführungsweg. Die Antwort braucht keine Modellplanung oder erneute
+Modell-Auswertung; ein Modell-Timeout verwirft daher keine vorhandenen Funde.
+Die Frage startet keinen zusätzlichen Scan. Gemischte Aktionen, Screenshots,
+Transfers und besondere Ausgabeformate bleiben im normalen Aufgabenweg.
 Das Gespräch unterscheidet gefunden, verbunden, lesend überwacht und für eine
 konkrete Aktion steuerbar. Bestehende Gedanken-, Verbindungs- und
 Verantwortungswege erzeugen Vorschläge; gespeicherte Ablehnungen und einmalige

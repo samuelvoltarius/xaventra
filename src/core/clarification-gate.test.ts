@@ -7,6 +7,21 @@ import { BeliefStore, getBeliefStore, setBeliefStore } from './belief-store.js'
 import { getSessionContinuityStore, SessionContinuityStore, setSessionContinuityStore } from '../memory/session-summarizer.js'
 
 describe('ClarificationGate', () => {
+    it('does not request an effect target or resume an unrelated pending action for an inventory report', () => {
+        const text = 'send mir was du im netzwerk findest und wo mit du dich verbinden kannst mesh netzwerk und local'
+        const store = getSessionContinuityStore()
+        store.setPendingClarification('user:inventory', { id: 'pending-install', originalRequest: 'Installiere Docker',
+            question: 'Auf welchem Node?', missingFields: ['target'], createdAt: Date.now() })
+        expect(evaluateClarification('user:inventory', text)).toMatchObject({ action: 'continue', content: text })
+        expect(store.getSummary('user:inventory')?.pendingClarification?.id).toBe('pending-install')
+    })
+    it('retires an obsolete inventory target question instead of replaying it as an action', () => {
+        const store = getSessionContinuityStore()
+        store.setPendingClarification('user:old-inventory', { id: 'old-inventory', originalRequest: 'sende mir welche Geräte im LAN sind',
+            question: 'Auf welchem Node?', missingFields: ['target'], createdAt: Date.now() })
+        expect(evaluateClarification('user:old-inventory', 'Hallo').content).toBe('Hallo')
+        expect(store.getSummary('user:old-inventory')?.pendingClarification).toBeFalsy()
+    })
     it.each([
         'was können deine nodes? send mir einen screnn shot vbon jeden',
         'Was können deine Nodes? Sende mir einen Screenshot von jedem.',

@@ -27,8 +27,13 @@ export function mentionsEnvironment(text: string): boolean {
 }
 
 export function isEnvironmentOverview(text: string): boolean {
-    return mentionsEnvironment(text) && /^(?:und\s+)?(?:was\b|welche[nrs]?\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(text.trim())
-        && !/\b(?:installier\w*|lösch\w*|kopier\w*|verschieb\w*|starte?|stoppe?|deploy\w*|update\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*)\b/i.test(text)
+    // "send mir was ..." requests a textual overview, not a file transfer.
+    // Strip only this bounded reporting prefix; any later effect verb still
+    // prevents the shortcut. Never turn mixed actions into read-only inventory.
+    const question = text.trim().replace(/^(?:bitte\s+)?(?:send(?:e)?|schick(?:e)?|zeig(?:e)?)\s+mir\s+(?=(?:was|welche[nrs]?)\b)/i, '')
+    return mentionsEnvironment(question) && /^(?:und\s+)?(?:was\b|welche[nrs]?\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(question)
+        && !mentionsScreenshot(question) && !containsHttpUrl(question)
+        && !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|übertrag\w*|upload\w*|download\w*)\b/i.test(question)
 }
 
 /** A node target must not silently become the daemon's local desktop. */

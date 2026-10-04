@@ -5,7 +5,7 @@ import { getSessionContinuityStore, type PendingClarification } from '../memory/
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { getBeliefStore } from './belief-store.js'
 import { inferRequiredToolTargets } from './tool-evidence-binding.js'
-import { isResolvedNodeScreenshotReply } from './request-capabilities.js'
+import { isEnvironmentOverview, isResolvedNodeScreenshotReply } from './request-capabilities.js'
 
 export interface ClarificationDecision {
     action: 'continue' | 'ask' | 'cancel'
@@ -65,7 +65,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // the next ordinary reply into a resumed installation from that bad state.
     const expired = pending && (typeof pending.createdAt !== 'number' || !Number.isFinite(pending.createdAt)
         || Date.now() - pending.createdAt > PENDING_CLARIFICATION_TTL_MS)
-    if (pending && (expired || isConversationOnly(pending.originalRequest)
+    if (pending && (expired || isConversationOnly(pending.originalRequest) || isEnvironmentOverview(pending.originalRequest)
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'belief'
             && OBSOLETE_WORKFLOW_QUESTION.test(pending.question))
         || (pending.missingFields.length === 1 && pending.missingFields[0] === 'reference'
@@ -75,6 +75,11 @@ export function evaluateClarification(principalId: string, content: string): Cla
         store.clearPendingClarification(principalId)
         pending = undefined
     }
+
+    // A bounded reporting request has no effect target to clarify and is not
+    // consent to resume a different pending action. Leave that action pending.
+    if (isEnvironmentOverview(text)) return { action: 'continue', content: text,
+        missingFields: [], confidence: 1, evidence: ['read-only environment overview, not an action target'] }
 
     if (pending) {
         if (CANCEL.test(text)) {
