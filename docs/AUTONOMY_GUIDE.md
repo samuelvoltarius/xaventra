@@ -560,6 +560,38 @@ model decides importance or permission). Runs only on the Main, never with
 | `mail` | IMAP with `EXAMINE` + `BODY.PEEK` or Gmail REST `GET` (metadata) | new mail from a known contact and/or with Angebot/Rechnung/Termin; summary = sender + shortened subject + keywords, never the text |
 | `system` | Nachtwache journal, Selbstheilung journal, `install-journal.jsonl`, Self-Doctor findings | new failures/results since the last run |
 
+### Hardware recognition and connection offers (2.85.5)
+
+The existing automatic Main-only discovery now feeds unknown observations to
+the monitored local learning model in the background (never the cloud Main): at most three addresses and two model
+rounds per run, with a 20-second recognition budget. Oldest recognition attempts
+are considered first in subsequent search pages. Reporting an inventory still
+reads stored observations; it does not wait for this model loop.
+
+The model can suggest light/dimmer, plug, TV/media device, printer, NAS, bridge or
+unknown. These are **hypotheses**, not verified device identities. It can choose
+only fixed read-only probe IDs: Shelly public device information (Gen1 `/shelly`,
+Gen2+ `/rpc/Shelly.GetDeviceInfo`) or `/description.xml`. No arbitrary URL, shell
+command, credential search, XML external entity, redirect, login or write is
+executed. A failed probe permits a revised hypothesis, not a fabricated success.
+Shelly protocol reference: [Gen1](https://shelly-api-docs.shelly.cloud/gen1/) and
+[Gen2+](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Shelly/).
+
+Only a supported connection becomes a real question in the existing thought/card
+system. Publicly identified Shelly devices offer an identity-bound **read-only
+connection monitor**, not a new switch/control tool. A verified Home Assistant
+instance offers the existing Home Assistant setup/login/test flow at that exact
+address. Login/pairing remains the owner's step; the bridge alone cannot reveal
+its lights without authorized access. Other hardware is listed with its evidence
+and uncertainty until a supported connector exists.
+
+`Ja` rechecks the current endpoint and rejects a changed device, stale observation
+or disabled/rejected record. `Nein` persists rejection. Neither discovery nor
+connection consent authorizes switching, firmware changes or installation.
+Inventory groups records by address, omits port zero and does not equate address
+counts with physical hardware counts. Actual device and Telegram acceptance are
+not implied by fixture tests.
+
 Mail credentials come only from this config (`password` or `passwordEnv`) or an
 existing Google profile in the own auth store (`.nova-data/auth.json`). Without them
 the adapter does nothing: no guessed hosts, no environment search, no foreign

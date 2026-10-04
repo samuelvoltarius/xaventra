@@ -142,6 +142,7 @@ describe('Punkt 5: Invariante — jeder Erzeuger von „fragen“ hat einen Ausf
         'src/sensing/adapters/mail.ts': 'Sensing-Sink: ohne approveDevice nur Bericht',
         'src/sensing/adapters/printer.ts': 'Sensing-Sink: ohne approveDevice nur Bericht',
         'src/sensing/event-bus.ts': 'Sensing-Sink: nur approveDevice wird Frage',
+        'src/sensing/runtime.ts': 'Verifizierter Gerätefund: approveDevice mit zielgebundenem Fingerprint und lesendem Verbindungsprüfer',
         'src/core/self-update/fencing-readiness.ts': 'Selbst-Update-Sink: ohne Host-Agent nur Bericht',
         'src/watch/engine.ts': 'rememberWatchAction; ohne freigegebenen Weg Text statt Karte',
         'src/planner/thoughts.ts': 'Standard für vorschlag; die Brücke prüft hasThoughtAction',

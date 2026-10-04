@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.85.5] — 2026-10-04 (source candidate)
+
+- Extend existing background sensing with bounded LLM hardware hypotheses and
+  fixed read-only verification probes. Device-reported identity, an unconfirmed
+  hypothesis and unknown hardware remain distinct; model text cannot authorize
+  commands, credentials, arbitrary endpoints or device control.
+- Offer an identity-bound connection through the existing sensing/card path:
+  supported Shelly public identity endpoints can be monitored after owner consent;
+  verified Home Assistant instances use the existing connection/login/test flow.
+  A bridge does not prove which lights are behind it. Unsupported devices are
+  observations, not promises of control. No switching or pairing is automatic.
+- Preserve owner rejection and disabled status, recheck identity before connection,
+  and reject obsolete approvals. Group service observations by address in the
+  inventory; neighbor-cache entries no longer appear as port zero or as separate
+  physical devices. Live device acceptance and deployment are separate gates.
+
 ## [2.85.4] — 2026-10-04 (source candidate)
 
 - Preserve formatted network observations in an incomplete synthesis response.

@@ -72,7 +72,7 @@ export interface SensingEvent {
 }
 
 export type ThoughtAction =
-    | { kind: 'approveDevice'; deviceId: string }
+    | { kind: 'approveDevice'; deviceId: string; fingerprint?: string }
     | { kind: 'connectAccount'; accountId: string }
     | { kind: 'applyQuietHours'; start: number; end: number }
 

@@ -45,7 +45,7 @@ import { getNovaDataDir } from './data-root.js'
 import { addThought } from '../planner/index.js'
 
 type StoredAction =
-    | { kind: 'approveDevice'; deviceId: string }
+    | { kind: 'approveDevice'; deviceId: string; fingerprint?: string }
     | { kind: 'thinking'; thoughtKind: string; action?: ThinkingAction; params?: Record<string, string | number>; key?: string; beleg?: string; ziel?: string }
     | { kind: 'self-update'; action: string }
     | { kind: 'note'; what: string }
@@ -172,7 +172,8 @@ export function createSensingThoughtSink() {
                 signature: thought.dedupeKey ? String(thought.dedupeKey) : undefined,
                 node: thought.origin?.nodeId,
             })
-            if (approvable) remember(stored.id, { kind: 'approveDevice', deviceId: String(action.deviceId) })
+            if (approvable) remember(stored.id, { kind: 'approveDevice', deviceId: String(action.deviceId),
+                ...(typeof action.fingerprint === 'string' && /^[a-f0-9]{64}$/.test(action.fingerprint) ? { fingerprint: action.fingerprint } : {}) })
             else if (action?.kind === 'connectAccount' || action?.kind === 'applyQuietHours') remember(stored.id, { kind: 'note', what: action.kind })
         },
     }
@@ -528,11 +529,14 @@ export async function dispatchThoughtAnswer(thoughtId: string, answer: 'ja' | 'n
         const { acceptAutoReminderPlan, declineAutoReminderPlan } = await import('../planner/auto-reminders.js')
         return answer === 'ja' ? acceptAutoReminderPlan(action.planId, `telegram:${ctx.userId}`) : declineAutoReminderPlan(action.planId, `telegram:${ctx.userId}`)
     }
-    if (answer === 'nein') return { ok: true, message: 'Verworfen.' }
     if (action.kind === 'approveDevice') {
-        const { approveSensingDevice } = await import('../sensing/runtime.js')
-        return approveSensingDevice(action.deviceId, { principalId: ctx.userId, permission: 'owner' })
+        const { approveSensingDevice, declineSensingDevice } = await import('../sensing/runtime.js')
+        if (answer === 'nein') return declineSensingDevice(action.deviceId, { principalId: ctx.userId, permission: 'owner' }, action.fingerprint)
+        return action.fingerprint
+            ? approveSensingDevice(action.deviceId, { principalId: ctx.userId, permission: 'owner' }, action.fingerprint)
+            : approveSensingDevice(action.deviceId, { principalId: ctx.userId, permission: 'owner' })
     }
+    if (answer === 'nein') return { ok: true, message: 'Verworfen.' }
     if (action.kind === 'self-update') return { ok: true, message: 'Vermerkt. Die Aktivierung führt erst der Host-Agent aus, sobald er dafür eingerichtet ist; bis dahin rollt Claude aus.' }
     return { ok: true, message: `Vermerkt (${action.what}); die Ausführung dafür ist noch nicht gebaut.` }
 }

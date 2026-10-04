@@ -5759,6 +5759,14 @@
       ]
     },
     {
+      "module": "src/sensing/adapters/hardware.ts",
+      "imports": [
+        "../device-registry.js",
+        "../event-bus.js",
+        "../hardware-recognition.js"
+      ]
+    },
+    {
       "module": "src/sensing/adapters/homeassistant.ts",
       "imports": [
         "../../tools/homeassistant.js",
@@ -5814,6 +5822,7 @@
         "../security/secret-redaction.js",
         "./device-registry.js",
         "./discovery.js",
+        "./hardware-recognition.js",
         "./ports.js",
         "node:fs",
         "node:path"
@@ -5830,6 +5839,7 @@
       "module": "src/sensing/device-registry.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "./hardware-recognition.js",
         "./ports.js",
         "node:crypto",
         "node:fs",
@@ -5843,6 +5853,7 @@
         "./device-registry.js",
         "./neighbors.js",
         "./net-scope.js",
+        "./ports.js",
         "node:child_process",
         "node:crypto",
         "node:dgram",
@@ -5858,6 +5869,16 @@
         "./ports.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/hardware-recognition.ts",
+      "imports": [
+        "./device-registry.js",
+        "./discovery.js",
+        "./net-scope.js",
+        "./ports.js",
+        "node:crypto"
       ]
     },
     {
@@ -5904,7 +5925,9 @@
       "module": "src/sensing/runtime.ts",
       "imports": [
         "../infra/proxmox.js",
+        "../runtime/service-runtime.js",
         "./accounts.js",
+        "./adapters/hardware.js",
         "./adapters/homeassistant.js",
         "./adapters/mail.js",
         "./adapters/printer.js",
@@ -5915,6 +5938,7 @@
         "./device-registry.js",
         "./discovery.js",
         "./event-bus.js",
+        "./hardware-recognition.js",
         "./ports.js",
         "./quiet-hours.js",
         "node:fs",

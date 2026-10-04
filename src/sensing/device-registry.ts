@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { cleanEvidence, cleanText, type Evidence } from './ports.js'
+import type { HardwareIdentity } from './hardware-recognition.js'
 
 export type DeviceType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu' | 'homeassistant'
     // 2.85 Paket A: self-hosted services with an MCP connector (found quietly, connected via „Verbindungen“).
@@ -38,6 +39,8 @@ export interface DeviceRecord {
     /** set once when the owner was asked for an API key/token (never repeated). */
     ownerAskedAt?: string
     evidence: Evidence
+    hardware?: HardwareIdentity
+    hardwareAskedFingerprint?: string
 }
 
 export interface DeviceCandidate {
@@ -47,6 +50,7 @@ export interface DeviceCandidate {
     via: 'tcp' | 'http' | 'mdns' | 'neighbor'
     name?: string
     evidence?: Record<string, unknown>
+    hardware?: HardwareIdentity
 }
 
 export interface Approver { principalId: string; permission?: string }
@@ -69,6 +73,11 @@ export const DEVICE_LABEL: Record<DeviceType, string> = {
 
 export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'port'>): string {
     return `dev-${createHash('sha256').update(`${candidate.type}|${candidate.host}|${candidate.port}`).digest('hex').slice(0, 10)}`
+}
+
+export function sensingDeviceFingerprint(device: Pick<DeviceRecord, 'type' | 'host' | 'port' | 'hardware'>): string {
+    const h = device.hardware
+    return createHash('sha256').update(JSON.stringify([device.type, device.host, device.port, h?.connector, h?.identity, h?.model, h?.probe])).digest('hex')
 }
 
 export function loadDevices(dataDir: string): DeviceRecord[] {
@@ -94,7 +103,14 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
     for (const candidate of candidates) {
         const id = deviceId(candidate)
         const existing = devices.find(item => item.id === id)
-        if (existing) { existing.lastSeenAt = at; continue }
+        if (existing) {
+            existing.lastSeenAt = at
+            existing.evidence = cleanEvidence(candidate.evidence)
+            if (candidate.via === 'http') existing.via = 'http'
+            if (candidate.name) existing.name = cleanText(candidate.name, 80)
+            if (candidate.hardware) existing.hardware = candidate.hardware
+            continue
+        }
         if (devices.length >= 1000 || (['networkservice', 'networkdevice'].includes(candidate.type) && devices.filter(d => ['networkservice', 'networkdevice'].includes(d.type)).length >= 200)) continue
         const record: DeviceRecord = {
             id, type: candidate.type,
@@ -102,6 +118,7 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
             host: candidate.host, port: candidate.port, via: candidate.via,
             status: 'gefunden', foundAt: at, lastSeenAt: at,
             evidence: cleanEvidence(candidate.evidence),
+            ...(candidate.hardware ? { hardware: candidate.hardware } : {}),
         }
         devices.push(record)
         fresh.push(record)
@@ -207,6 +224,13 @@ export function claimOwnerAsk(dataDir: string, key: string, nowMs = Date.now()):
 
 export function monitoredDevices(dataDir: string): DeviceRecord[] {
     return loadDevices(dataDir).filter(item => item.status === 'eingerichtet')
+}
+
+/** Persist one offer only after its sensing event was successfully published. */
+export function markHardwareAsked(dataDir: string, id: string, fingerprint: string): void {
+    const devices = loadDevices(dataDir)
+    const device = devices.find(d => d.id === id)
+    if (device) { device.hardwareAskedFingerprint = fingerprint; saveDevices(dataDir, devices) }
 }
 
 export function formatDevices(devices: DeviceRecord[]): string {

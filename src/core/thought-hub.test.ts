@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const approve = vi.hoisted(() => vi.fn(() => ({ ok: true, message: 'Gerät wird überwacht.' })))
+const decline = vi.hoisted(() => vi.fn(() => ({ ok: true, message: 'Gerät abgelehnt.' })))
 const decisions = vi.hoisted(() => vi.fn((..._args: unknown[]) => true))
-vi.mock('../sensing/runtime.js', () => ({ approveSensingDevice: approve }))
+vi.mock('../sensing/runtime.js', () => ({ approveSensingDevice: approve, declineSensingDevice: decline }))
 vi.mock('../thinking/thinking-runtime.js', () => ({ getThinkingSettings: () => ({ enabled: true, learning: { enabled: true } }) }))
 vi.mock('./decisions.js', () => ({ recordThoughtAnswer: decisions }))
 
@@ -34,6 +35,15 @@ describe('Gedanken-Hub: Phase 2/3/4 → Planer-Gedanken → Knopf → Aktion', (
         const thought = listThoughts().find(item => item.title.includes('Anderer'))!
         await dispatchThoughtAnswer(thought.id, 'nein', { userId: '1413797900' })
         expect(approve).not.toHaveBeenCalled()
+        expect(decline).toHaveBeenCalledWith('dev_other', { principalId: '1413797900', permission: 'owner' }, undefined)
+    })
+
+    it('preserves the concrete device fingerprint through thought storage and approval dispatch', async () => {
+        const fingerprint = 'a'.repeat(64)
+        createSensingThoughtSink().writeThought(sensingThought({ title: 'Identitätsgebundene Steckdose', dedupeKey: 'device:bound', action: { kind: 'approveDevice', deviceId: 'dev_bound', fingerprint } }))
+        const thought = listThoughts().find(item => item.title.includes('Identitätsgebundene'))!
+        await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1413797900' })
+        expect(approve).toHaveBeenCalledWith('dev_bound', { principalId: '1413797900', permission: 'owner' }, fingerprint)
     })
 
     it('a model-chosen action never reaches a thought (only known action kinds are kept)', async () => {

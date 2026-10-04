@@ -26,6 +26,7 @@ import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
 import { localNeighbors } from './neighbors.js'
 import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
+import { cleanText } from './ports.js'
 
 export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
 
@@ -34,7 +35,7 @@ export interface HttpProbeResult { status: number; server?: string; body: string
 export interface DiscoveryDeps {
     interfaces?: InterfaceMap
     tcpProbe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>
-    httpProbe?: (url: string, timeoutMs: number) => Promise<HttpProbeResult | null>
+    httpProbe?: (url: string, timeoutMs: number, signal?: AbortSignal) => Promise<HttpProbeResult | null>
     mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>>
     now?: () => number
     sleep?: (ms: number) => Promise<void>
@@ -85,9 +86,9 @@ export function realTcpProbe(host: string, port: number, timeoutMs: number): Pro
     })
 }
 
-export async function realHttpProbe(url: string, timeoutMs: number): Promise<HttpProbeResult | null> {
+export async function realHttpProbe(url: string, timeoutMs: number, signal?: AbortSignal): Promise<HttpProbeResult | null> {
     try {
-        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, text/html' } })
+        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, text/html' } })
         const reader = res.body?.getReader()
         const chunks: Uint8Array[] = []
         let length = 0
@@ -223,7 +224,11 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const seen = new Set<string>()
     const add = (candidate: DeviceCandidate) => {
         const key = `${candidate.type}|${candidate.host}|${candidate.port}`
-        if (seen.has(key)) return
+        if (seen.has(key)) {
+            const existing = candidates.find(c => `${c.type}|${c.host}|${c.port}` === key)
+            if (existing && candidate.via === 'http') Object.assign(existing, candidate, { name: candidate.name || existing.name })
+            return
+        }
         seen.add(key)
         candidates.push(candidate)
     }
@@ -261,17 +266,22 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
                 continue
             }
             let identified = false
+            let publicHints: Record<string, unknown> = {}
             for (const check of HTTP_CHECKS[port] || []) {
                 const result = await limiter.run(() => httpProbe(`http://${host}:${port}${check.path}`, probeTimeout))
                 if (result === undefined) return
                 const type = identifyHttp(port, check.path, result ?? null)
+                if (result?.status === 200 && check.path === '/') {
+                    const title = result.body.match(/<title[^>]*>([^<]{1,160})<\/title>/i)?.[1]
+                    publicHints = { ...(title ? { pageTitle: cleanText(title, 80) } : {}), ...(result.server ? { server: cleanText(result.server, 80) } : {}) }
+                }
                 if (type) {
                     add({ type, host, port, via: 'http', evidence: { quelle: `GET ${check.path}`, port, http: result?.status ?? null } })
                     identified = true
                     break
                 }
             }
-            if (!identified) add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'Erreichbar, keine bestätigte Dienstkennung oder Steuerfreigabe' } })
+            if (!identified) add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, ...publicHints, hinweis: 'Erreichbar, keine bestätigte Dienstkennung oder Steuerfreigabe' } })
             progress.set(hostIndex, portIndex + 1)
         }
     }

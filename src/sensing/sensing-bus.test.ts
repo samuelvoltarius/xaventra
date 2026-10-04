@@ -195,7 +195,7 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
         await expect(runtime.handleGeraeteCommand(`ja ${device.id}`, { principalId: 'x', permission: 'admin' })).resolves.toContain('nur für den Owner')
     })
 
-    it('Gerät mit nötigem Token → genau EINE Bitte an den Owner (ohne Karte), keine Wiederholung, keine Überwachung ohne Zugang', async () => {
+    it('Home Assistant → genau EINE zielgebundene Verbindungsfrage, keine Wiederholung oder Überwachung ohne Zustimmung', async () => {
         const dataDir = tmp('sense-dev-key-')
         runtime.setSensingConfig({ discovery: { mdns: false, deadlineSec: 5, ratePerSec: 200 } }, {}, dataDir)
         const deps = {
@@ -212,10 +212,10 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
         expect(monitoredDevices(dataDir)).toEqual([])
         const first = readThoughts(dataDir)
         expect(first).toHaveLength(1)
-        expect(first[0].action).toBeUndefined()
-        expect(first[0].level).toBe('selbst')
-        expect(first[0].title).toContain('brauche einmal den Zugang')
-        expect(first[0].proposal).toContain('Home-Assistant-Token')
+        expect(first[0].action).toMatchObject({ kind: 'approveDevice', deviceId: device.id, fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) })
+        expect(first[0].level).toBe('fragen')
+        expect(first[0].title).toContain('Home Assistant')
+        expect(first[0].proposal).toContain('einmal anmelden')
         // Zweiter und dritter Suchlauf: keine weitere Bitte.
         await runtime.runDiscoveryNow(deps)
         await runtime.runDiscoveryNow(deps)

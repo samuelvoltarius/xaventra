@@ -25,7 +25,8 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.4 preview** (verified inventory delivery without
+Current source candidate: **2.85.5 preview** (bounded hardware hypotheses and
+identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
 separately). It builds on the 2.85.0 source. See the

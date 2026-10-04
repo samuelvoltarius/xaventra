@@ -4,12 +4,13 @@
  * selbe Tageslimit, und ein „Ja“ auf eine Schmiede-Idee schaltet kein
  * funktionierendes Werkzeug ab (Kandidat statt Ersatz).
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelRequest } from '@openai/agents'
 import type { NovaTool } from './complete-registry.js'
 import { NovaAgentsModel } from '../agents/nova-model-provider.js'
+import { getNovaDataDir } from '../core/data-root.js'
 import {
     buildTool, getForgeTool, missingToolFailures, noteForgeNeed, reviseTool,
     setForgeModel, setForgeNotifier, setForgePermissionResolver, setForgeRegistry, type ForgeDraft,
@@ -44,6 +45,9 @@ const modelReturning = (factor: number, extra = '') => {
 }
 
 beforeEach(() => {
+    // The test setup owns an isolated runtime. Earlier tests must not consume
+    // this test's rolling 24-hour build allowance as fixed dates approach today.
+    rmSync(getNovaDataDir('forge', 'bedarf.json'), { force: true })
     registered.clear()
     events.length = 0
     setForgeRegistry(registry)

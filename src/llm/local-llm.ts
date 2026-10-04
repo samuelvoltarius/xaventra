@@ -26,6 +26,8 @@ export interface LocalLLMConfig {
     requestTimeoutMs?: number
 }
 
+export interface LocalLLMCallOptions { timeoutMs?: number; maxTokens?: number; maxAttempts?: number; signal?: AbortSignal; reasoningEffort?: string }
+
 export interface LocalLLMMessage {
     role: 'system' | 'user' | 'assistant'
     content: string
@@ -346,14 +348,19 @@ export class LocalLLM {
     // Chat Completion (Ollama format)
     // ============================================
 
-    async complete(messages: LocalLLMMessage[], tools: LocalToolDefinition[] = []): Promise<LocalLLMResponse> {
+    async complete(messages: LocalLLMMessage[], tools: LocalToolDefinition[] = [], options: LocalLLMCallOptions = {}): Promise<LocalLLMResponse> {
+        const configured = this.config.requestTimeoutMs ?? 55_000
+        const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? Math.min(configured, options.timeoutMs) : configured
+        const deadline = AbortSignal.timeout(timeoutMs)
+        const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline
+        signal.throwIfAborted()
         // Detect API type and use appropriate endpoint
         const isOllama = this.config.baseUrl.includes('11434')
 
         if (isOllama) {
-            return this.completeOllama(messages, tools)
+            return this.completeOllama(messages, tools, signal, options)
         } else {
-            return this.completeOpenAI(messages, tools)
+            return this.completeOpenAI(messages, tools, signal, options)
         }
     }
 
@@ -371,7 +378,7 @@ export class LocalLLM {
         return selected
     }
 
-    private async completeOllama(messages: LocalLLMMessage[], tools: LocalToolDefinition[]): Promise<LocalLLMResponse> {
+    private async completeOllama(messages: LocalLLMMessage[], tools: LocalToolDefinition[], signal: AbortSignal, options: LocalLLMCallOptions): Promise<LocalLLMResponse> {
         console.log(`[LocalLLM] Calling Ollama: ${this.config.model}`)
 
         const response = await fetch(`${this.config.baseUrl}/api/chat`, {
@@ -394,8 +401,9 @@ export class LocalLLM {
                 // Qwen 3.x can otherwise exhaust the fallback deadline in its
                 // separate thinking channel and leave message.content empty.
                 think: false,
+                ...(Number.isInteger(options.maxTokens) && options.maxTokens > 0 ? { options: { num_predict: Math.min(options.maxTokens, 65536) } } : {}),
             }),
-            signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? 55_000),
+            signal,
         })
 
         if (!response.ok) {
@@ -429,7 +437,7 @@ export class LocalLLM {
         }
     }
 
-    private async completeOpenAI(messages: LocalLLMMessage[], tools: LocalToolDefinition[]): Promise<LocalLLMResponse> {
+    private async completeOpenAI(messages: LocalLLMMessage[], tools: LocalToolDefinition[], signal: AbortSignal, options: LocalLLMCallOptions): Promise<LocalLLMResponse> {
         console.log(`[LocalLLM] Calling ${this.config.name || this.config.model} at ${this.config.baseUrl}`)
 
         // vLLM / Qwen requires: system message FIRST, only one system message allowed.
@@ -452,17 +460,21 @@ export class LocalLLM {
         }
 
         await this.resolveOpenAIModel()
+        signal.throwIfAborted()
         const request = () => fetch(`${this.config.baseUrl}/v1/chat/completions`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
                     model: this.config.model,
                     messages: toOpenAIChatMessages(normalizedMessages as any),
+                    ...(Number.isInteger(options.maxTokens) && options.maxTokens > 0 ? { max_tokens: Math.min(options.maxTokens, 65536) } : {}),
+                    ...(options.reasoningEffort === 'none' && /qwen/i.test(this.config.model)
+                        ? { chat_template_kwargs: { enable_thinking: false } } : {}),
                     ...(tools.length > 0 && {
                         tools: tools.map(tool => ({ type: 'function', function: tool })),
                     }),
                 }),
-                signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? 55_000), // stay below the caller deadline
+                signal,
             })
 
         let response = await request()
@@ -470,7 +482,7 @@ export class LocalLLM {
         if (!response.ok) {
             const error = await response.text()
             const missingModel = response.status === 404 && /model.+(?:does not exist|not found|unknown)/i.test(error)
-            if (missingModel) {
+            if (missingModel && options.maxAttempts !== 1) {
                 const failedModel = this.config.model
                 await this.resolveOpenAIModel(true)
                 if (this.config.model !== failedModel) {
