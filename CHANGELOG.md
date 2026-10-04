@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.85.7] — 2026-10-04 (source candidate; not deployed)
+
+- Ask the owner to choose local versus manufacturer cloud per smart-device
+  identity, then separately approve the chosen connection. Route changes revoke
+  prior access; no implicit fallback. Expose unavailable routes honestly.
+- Add bounded local Hue button pairing and actual lamp metadata, Shelly channel
+  inventory and Tasmota power functions, without Home Assistant. Keep Hue keys
+  outside observable inventories. Tuya cloud can read only the
+  selected device's function schema with separately configured API credentials.
+  Add isolated authenticated Tuya LAN reads (3.1/3.3/3.4/3.5) and encrypted
+  ESPHome native entity inventory, private owner credential forms, strict route
+  binding and no SDK write/plaintext fallback. Require Node >=22.20.0.
+  These native SDK integrations are locally tested, not hardware-accepted.
+  Include dynamic protocol workers in the actual build, not just source tests.
+  Add device-private Tuya cloud access and Shelly Cloud v2 selected-device status,
+  exact device ID validation, credential revision binding and request rate limiting.
+  Add Matter IP controller/private fabric persistence, separate one-shot pairing,
+  strict production DCL attestation, fenced UDP effects and actual endpoint-type
+  projection. Discover IPv6/Thread border-router advertisements; permit routed
+  Thread ULA /64 only via an own LAN link-local gateway. No BLE provisioning,
+  resets or blind pairing retries. Add separate single-use owner confirmation for
+  concrete on/off actions on measured Hue/Shelly/Tasmota/ESPHome/Matter functions
+  and standard Boolean Tuya/Shelly cloud outputs. Recheck authority/identity/keys;
+  require actual device state readback, never HTTP success alone. No automatic
+  write retries, generic model commands, unknown DPS, locks or motion controls.
+  Correct actual pinned Matter refresh/argument-free command request formats.
+  Matter hardware acceptance, Hue HTTPS/cloud and further manufacturer clouds
+  and other typed physical-control paths remain unfinished;
+  this candidate is not a complete smart-device implementation or a rollout.
+- Recover repeated wrong Shelly-generation hypotheses with the other fixed
+  read-only identity endpoint. Share the two-probe budget across hints and
+  model proposals; confirmation still requires structured device evidence.
+- Automatically project manufacturer/model from an approved Home Assistant
+  device registry using a sealed, bounded template read. Report HA device
+  classes for outlets/TV functions without treating names as type proof.
+  Missing metadata does not erase measured functions; no service/state writes.
+- Recognize the observed `welceh Geräte sind local verfügbar?` reporting typo
+  in the evidence-only overview path. Preserve mixed-action exclusions and
+  reject port/IP-only claims of routers, printers or container bridges.
+- Real-device acceptance and HA owner login remain separate from fixture tests;
+  universal manufacturer recognition is not claimed.
+
 ## [2.85.6] — 2026-10-04 (source candidate; live acceptance pending)
 
 - Add bounded Tuya LAN announcements (55AA plaintext/ECB, 6699 GCM), sender/IP

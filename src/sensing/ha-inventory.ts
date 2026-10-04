@@ -10,8 +10,10 @@ import { cleanText } from './ports.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import type { HaConnection } from './adapters/homeassistant.js'
 import type { RawEvent } from './event-bus.js'
+import { applyHaDeviceMetadata, boundedHaJson, haDeviceTemplate } from './ha-device-metadata.js'
 
-export interface HaFunction { id: string; name: string; kind: string; state: string; available: boolean }
+export interface HaFunction { id: string; name: string; kind: string; state: string; available: boolean
+    manufacturer?: string; model?: string; deviceId?: string; identitySource?: string }
 export interface HaInventory { source: string; at: string; status: 'ok' | 'unavailable'; functions: HaFunction[]; truncated: boolean }
 const file = (dataDir: string) => join(dataDir, 'sensing', 'ha-inventory.json')
 const kinds: Record<string, string> = { light: 'Lichtfunktion', switch: 'Schalter (nicht automatisch eine Steckdose)', media_player: 'Medienfunktion (nicht automatisch ein TV)', climate: 'Heizung/Klima', cover: 'Rollladen/Abdeckung', fan: 'Ventilator', vacuum: 'Staubsauger', lock: 'Schloss' }
@@ -20,7 +22,9 @@ export function identifyHaFunctions(body: unknown): { functions: HaFunction[]; t
     if (!Array.isArray(body)) throw new Error('Ungültiger Home-Assistant-Bestand')
     const items = body.slice(0, 2000).filter(e => e && typeof e.entity_id === 'string' && /^[a-z_]+\.[a-z0-9_]{1,120}$/.test(e.entity_id) && Object.hasOwn(kinds, e.entity_id.split('.')[0]))
     const functions = items.slice(0, 200).map(e => ({ id: e.entity_id, name: cleanText(redactSecrets(String(e.attributes?.friendly_name || e.entity_id)), 80),
-        kind: kinds[e.entity_id.split('.')[0]], state: ['on', 'off', 'playing', 'paused', 'idle', 'unavailable'].includes(e.state) ? e.state : 'unknown', available: typeof e.state === 'string' && !!e.state && !['unavailable', 'unknown'].includes(e.state) }))
+        kind: e.entity_id.startsWith('switch.') && e.attributes?.device_class === 'outlet' ? 'Steckdosenfunktion (laut HA-Geräteklasse)'
+            : e.entity_id.startsWith('media_player.') && e.attributes?.device_class === 'tv' ? 'TV-Funktion (laut HA-Geräteklasse)' : kinds[e.entity_id.split('.')[0]],
+        state: ['on', 'off', 'playing', 'paused', 'idle', 'unavailable'].includes(e.state) ? e.state : 'unknown', available: typeof e.state === 'string' && !!e.state && !['unavailable', 'unknown'].includes(e.state) }))
     return { functions, truncated: items.length > functions.length || body.length > 2000 }
 }
 
@@ -47,13 +51,17 @@ export async function refreshHaInventory(dataDir: string, legacy: HaConnection |
         try {
             const response = await source.fetch(`${source.base.replace(/\/$/, '')}/api/states`, { method: 'GET', redirect: 'manual', signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]), headers: { Accept: 'application/json' } })
             if (!response.ok) throw new Error('HA inventory not available')
-            // Bound body before parsing. No state attributes or private sensor values persist.
-            const reader = response.body?.getReader()
-            if (!reader) throw new Error('Missing HA inventory body')
-            const chunks: Uint8Array[] = []; let length = 0
-            try { for (;;) { const next = await reader.read(); if (next.done) break; length += next.value.length; if (length > 512_000) throw new Error('HA inventory too large'); chunks.push(next.value) } }
-            finally { await reader.cancel().catch(() => undefined) }
-            const identified = identifyHaFunctions(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+            const identified = identifyHaFunctions(await boundedHaJson(response))
+            if (identified.functions.length && !signal.aborted) {
+                try {
+                    // POST is HA's documented template-read endpoint, NOT a state or service write.
+                    // Only validated entity IDs enter a fixed template; no model/device code.
+                    const metadata = await source.fetch(`${source.base.replace(/\/$/, '')}/api/template`, { method: 'POST', redirect: 'manual',
+                        signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]), headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ template: haDeviceTemplate(identified.functions) }) })
+                    identified.functions = applyHaDeviceMetadata(identified.functions, await boundedHaJson(metadata))
+                } catch { /* Keep measured functions when optional registry data is unavailable. */ }
+            }
             result.push({ source: source.id, at: new Date(now).toISOString(), status: 'ok', ...identified })
         } catch { result.push({ source: source.id, at: new Date(now).toISOString(), status: 'unavailable', functions: [], truncated: false }) }
     }
@@ -73,7 +81,7 @@ export function haInventoryEvents(sources: HaInventory[], previous: Record<strin
             dedupeKey: `ha-functions:${source.source}:${fresh.map(f => f.id).sort().join(',').slice(0, 500)}`,
             dedupeWindowMs: 24 * 3600_000,
             summary: `${fresh.length} neue Gerätefunktionen über die bereits freigegebene Home-Assistant-Verbindung erkannt: ${fresh.slice(0, 4).map(f => `${f.name} (${f.kind})`).join('; ')}. Der Bestand wurde lesend geprüft; Schalten benötigt weiterhin eine konkrete Freigabe.`,
-            evidence: { verbindung: source.source, neue_funktionen: fresh.length, quelle: 'autorisierte GET /api/states Abfrage', beobachtet: source.at },
+            evidence: { verbindung: source.source, neue_funktionen: fresh.length, quelle: 'autorisierte HA-Funktions-/Geräteregisterabfrage', beobachtet: source.at },
             hint: { importance: 'normal', title: 'Neue Gerätefunktionen hinter Home Assistant erkannt' } })
     }
     return events
@@ -91,10 +99,10 @@ export function haInventoryAwareness(dataDir: string, now = Date.now(), legacyAu
         lines.push(`${cleanText(source.source, 80)}: ${source.status === 'ok' && fresh ? 'Bestand gelesen' : 'Bestand derzeit nicht bestätigt'}; ${cleanText(source.at, 30)}.`)
         if (source.status !== 'ok' || !fresh || !Array.isArray(source.functions)) continue
         if (!source.functions.length) lines.push('Keine unterstützten Licht-/Schalter-/Medienfunktionen im gelesenen Bestand.')
-        for (const e of source.functions.slice(0, 16)) lines.push(`${cleanText(e.name, 80)} (${cleanText(e.id, 130)}): ${cleanText(e.kind, 80)}; ${e.available ? 'als verfügbar gemeldet' : 'nicht verfügbar'}; Verbindungsweg ${cleanText(source.source, 80)}. Schalten benötigt konkrete Freigabe.`)
+        for (const e of source.functions.slice(0, 16)) lines.push(`${cleanText(e.name, 80)} (${cleanText(e.id, 130)}): ${cleanText(e.kind, 80)}; ${e.manufacturer || e.model ? `Hersteller/Modell laut HA-Geräteregister: ${cleanText(e.manufacturer || 'unbekannt', 80)} / ${cleanText(e.model || 'unbekannt', 80)}; ` : ''}${e.available ? 'als verfügbar gemeldet' : 'nicht verfügbar'}; Verbindungsweg ${cleanText(source.source, 80)}. Schalten benötigt konkrete Freigabe.`)
         if (source.functions.length > 16 || source.truncated) lines.push('Weitere Funktionen vorhanden; Übersicht gekürzt.')
     }
     if (lines.length === 1) lines.push('Noch kein aktueller autorisierter Gerätebestand. Ein gefundener HA-Server reicht nicht; der bestehende Verbindungs-/Anmeldedialog ist nötig.')
-    lines.push('Entitäten sind Funktionen; Hersteller, Modell und Anzahl physischer Geräte sind daraus allein nicht bestätigt.')
+    lines.push('Entitäten sind Funktionen. Hersteller/Modell stammen, wenn vorhanden, aus dem HA-Geräteregister; keine unabhängige physische Herstellerprüfung oder Geräteanzahl.')
     return redactSecrets(lines.join('\n')).slice(0, 3200)
 }

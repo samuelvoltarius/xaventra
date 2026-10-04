@@ -2687,6 +2687,7 @@
         "../security/blue-team.js",
         "../security/red-team.js",
         "../security/secret-redaction.js",
+        "../sensing/smart-access-api.js",
         "../synthesis/self-evolution.js",
         "../tools/skill-builder.js",
         "../users/multi-user-middleware.js",
@@ -5858,11 +5859,34 @@
       ]
     },
     {
+      "module": "src/sensing/direct-smart-devices.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
+        "./device-registry.js",
+        "./event-bus.js",
+        "./ha-device-metadata.js",
+        "./hardware-recognition.js",
+        "./matter-client.js",
+        "./net-scope.js",
+        "./ports.js",
+        "./shelly-cloud-inventory.js",
+        "./smart-control.js",
+        "./smart-device-access.js",
+        "./smart-device-route.js",
+        "./smart-native-client.js",
+        "./tuya-cloud-inventory.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/discovery.ts",
       "imports": [
         "../startup/tailscale-status.js",
         "./device-registry.js",
         "./hardware-recognition.js",
+        "./matter-scope.js",
         "./neighbors.js",
         "./net-scope.js",
         "./ports.js",
@@ -5871,6 +5895,7 @@
         "node:crypto",
         "node:dgram",
         "node:net",
+        "node:os",
         "node:util"
       ]
     },
@@ -5885,6 +5910,14 @@
       ]
     },
     {
+      "module": "src/sensing/ha-device-metadata.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./ha-inventory.js",
+        "./ports.js"
+      ]
+    },
+    {
       "module": "src/sensing/ha-inventory.ts",
       "imports": [
         "../connections/connect-flow.js",
@@ -5894,6 +5927,7 @@
         "../security/secret-redaction.js",
         "./adapters/homeassistant.js",
         "./event-bus.js",
+        "./ha-device-metadata.js",
         "./ports.js",
         "node:fs",
         "node:path"
@@ -5908,6 +5942,50 @@
         "./ports.js",
         "node:crypto"
       ]
+    },
+    {
+      "module": "src/sensing/matter-client.ts",
+      "imports": [
+        "./direct-smart-devices.js",
+        "./matter-scope.js",
+        "./net-scope.js",
+        "node:child_process",
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
+      "module": "src/sensing/matter-controller.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./direct-smart-devices.js",
+        "./ports.js"
+      ]
+    },
+    {
+      "module": "src/sensing/matter-process.ts",
+      "imports": [
+        "../resilience/ssrf-guard.js",
+        "./matter-controller.js",
+        "./matter-scope.js",
+        "./matter-wire.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/sensing/matter-scope.ts",
+      "imports": [
+        "./net-scope.js",
+        "node:child_process",
+        "node:net",
+        "node:os",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/sensing/matter-wire.ts",
+      "imports": []
     },
     {
       "module": "src/sensing/neighbors.ts",
@@ -5964,16 +6042,111 @@
         "./awareness.js",
         "./config.js",
         "./device-registry.js",
+        "./direct-smart-devices.js",
         "./discovery.js",
         "./event-bus.js",
         "./ha-inventory.js",
         "./hardware-recognition.js",
         "./ports.js",
         "./quiet-hours.js",
+        "./smart-control-http.js",
+        "./smart-control.js",
+        "./smart-device-route.js",
         "./ssdp.js",
         "./tuya-discovery.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/shelly-cloud-inventory.ts",
+      "imports": [
+        "./direct-smart-devices.js",
+        "./ha-device-metadata.js",
+        "./smart-device-access.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-access-api.ts",
+      "imports": [
+        "./device-registry.js",
+        "./matter-client.js",
+        "./smart-control-http.js",
+        "./smart-control.js",
+        "./smart-device-access.js",
+        "./smart-device-route.js",
+        "express"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-control-http.ts",
+      "imports": [
+        "./device-registry.js",
+        "./direct-smart-devices.js",
+        "./ha-device-metadata.js",
+        "./hardware-recognition.js",
+        "./matter-client.js",
+        "./net-scope.js",
+        "./shelly-cloud-inventory.js",
+        "./smart-control.js",
+        "./smart-device-access.js",
+        "./smart-device-route.js",
+        "./smart-native-client.js",
+        "./tuya-cloud-inventory.js"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-control.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./device-registry.js",
+        "./direct-smart-devices.js",
+        "./smart-device-access.js",
+        "./smart-device-route.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-device-access.ts",
+      "imports": [
+        "./device-registry.js",
+        "./smart-device-route.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-device-route.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./device-registry.js",
+        "./event-bus.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-native-client.ts",
+      "imports": [
+        "./direct-smart-devices.js",
+        "./net-scope.js",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "module": "src/sensing/smart-native-worker.ts",
+      "imports": [
+        "./ports.js",
+        "esphome-client",
+        "node:module",
+        "node:url",
+        "node:worker_threads",
+        "tuyapi"
       ]
     },
     {
@@ -5983,6 +6156,16 @@
         "./ports.js",
         "node:dgram",
         "node:net"
+      ]
+    },
+    {
+      "module": "src/sensing/tuya-cloud-inventory.ts",
+      "imports": [
+        "./direct-smart-devices.js",
+        "./ha-device-metadata.js",
+        "./ports.js",
+        "./smart-device-access.js",
+        "node:crypto"
       ]
     },
     {

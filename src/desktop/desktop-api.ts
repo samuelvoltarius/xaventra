@@ -45,6 +45,7 @@ import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallie
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
+import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
@@ -584,6 +585,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     // Docks B → A (Erster Start), C → A (KI-Modelle, Hilfsdienste), F ↔ A (one need rule).
     registerConnectionDocks()
     registerConnectionsApi(app, { ownerOnly })
+    registerSmartAccessApi(app, { ownerOnly, authoritative: desktopControlPlaneAuthoritative, root: getNovaDataDir,
+        owner: async req => ({ principalId: (await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req)), permission: 'owner' }) })
 
     app.post('/api/desktop/karten/:id/antwort', async (req, res) => {
         if (!ownerOnly(req, res)) return

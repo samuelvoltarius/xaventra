@@ -64,7 +64,7 @@ describe('actual message pipeline with scripted agent, no network or capture', (
                 { toolName: 'mesh_status', success: true, result: 'fixture-node online' },
             ],
             actionState: { requiresTool: true, kind: 'system', fulfilled: true } })
-        const { replies } = await run('welche geräte findest du im netzwerk? die du verwalten und sterun könntest?')
+        const { replies } = await run('welceh geräte sind local verfügbar?')
         expect(replies.at(-1)).toContain('Home Assistant')
         expect(replies.at(-1)).toContain('Teilsuche')
         expect(replies.at(-1)).toContain('fixture-node online')

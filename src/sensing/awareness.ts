@@ -58,6 +58,7 @@ export function environmentAwareness(dataDir: string, permission: string, now = 
         groups.length > devices.length ? `${groups.length - devices.length} weitere gespeicherte Einträge; die Übersicht ist gekürzt.` : '',
         `${hosts.length} Adressen aus ${allDevices.length} Dienst-/Nachbarbeobachtungen; Adressen sind keine Zählung physischer Geräte.`,
         'Gefunden heißt noch nicht steuerbar. Ein aktiver Agent oder ein offener Port belegt keine allgemeine Steuerfreigabe.',
+        'IP-Adresse und Ports allein belegen weder Router/Gateway, Drucker, Docker-Bridge noch Hersteller oder Gerätetyp. Unbestätigte Typen bleiben ausdrücklich Vermutungen. Home-Assistant-Zugang erfolgt über den vorhandenen HA-Anmeldeweg, nicht über einen pauschalen SSH-Vorschlag.',
     ]
     if (forPrompt) common.push(
         'Die LAN-Suche ist am Main standardmäßig automatisch aktiv, außer der Owner hat sie ausgeschaltet. scan_now kann sie aktualisieren; Subnetze kommen aus eigenen Interfaces. blue_asset_inventory ist Host-/Mesh-Inventar, nicht LAN-Inventar.',

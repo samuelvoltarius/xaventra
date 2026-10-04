@@ -18,6 +18,8 @@
  */
 
 import { Socket } from 'node:net'
+import { matterTargetAllowed, matterInterfaceNames, localMatterRoutes } from './matter-scope.js'
+import { networkInterfaces } from 'node:os'
 import { createSocket } from 'node:dgram'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -211,6 +213,7 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const deadline = startedAt + options.deadlineMs
     const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
     const scope = ownSubnets(deps.interfaces)
+    const matterRoutes = options.mdns ? await localMatterRoutes(deps.interfaces) : []
     const neighbors = await (deps.neighbors || (() => localNeighbors(Math.max(100, Math.min(1500, options.deadlineMs / 8)))))().catch(() => [])
     const peers = scope.hasTailnet ? await (deps.tailnetPeers || (() => localTailnetPeers(Math.max(100, Math.min(2000, options.deadlineMs / 4)))))().catch(() => []) : []
     const tailnetHosts = [...new Set([...options.tailnetHosts, ...peers])].sort()
@@ -245,10 +248,15 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
         try {
             const found = await deps.mdnsBrowse(Math.min(2000, options.deadlineMs / 4))
             for (const item of found) {
-                const decision = scanTargetAllowed(item.host, scope)
+                const matterService = ['_matter._tcp.local', '_matterc._udp.local', '_meshcop._udp.local'].includes(item.hints?.service)
+                const decision = matterService && matterTargetAllowed(item.host, deps.interfaces, matterRoutes) ? { allowed: true, reason: 'eigener Matter-IPv4/IPv6-Bereich' } : scanTargetAllowed(item.host, scope)
                 if (!decision.allowed) { rejected.push({ host: item.host, reason: `mDNS: ${decision.reason}` }); continue }
-                add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name, evidence: { quelle: 'mDNS', port: item.port,
-                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn'].includes(key)).slice(0, 6).map(([key, value]) => [key, cleanText(value, 80)])) } })
+                const esphome = item.hints?.service === '_esphomelib._tcp.local' && /^[a-zA-Z0-9_-]{1,63}$/.test(item.name || '') && Number.isInteger(item.port) && item.port > 0 && item.port <= 65535
+                const matterId = item.hints?.dnsHost?.replace(/\.local$/i, '') || item.name
+                const matter = ['_matter._tcp.local', '_matterc._udp.local'].includes(item.hints?.service) && /^[a-zA-Z0-9_-]{1,80}$/.test(matterId || '') && Number.isInteger(item.port) && item.port > 0 && item.port <= 65535
+                add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name,
+                    ...(esphome ? { hardware: { kind: 'unknown' as const, label: 'ESPHome-Endpunkt (Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: item.name, ecosystem: 'esphome' as const, connector: 'esphome-native' as const, observedAt: new Date(now()).toISOString() } } : matter ? { hardware: { kind: 'unknown' as const, label: 'Matter-Endpunkt (Hersteller, Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: matterId, ecosystem: 'matter' as const, connector: 'matter-ip' as const, observedAt: new Date(now()).toISOString() } } : {}), evidence: { quelle: 'mDNS', port: item.port,
+                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn', 'vp', 'dt', 'cm', 'd', 'nn', 'mn', 'rv'].includes(key)).slice(0, 12).map(([key, value]) => [key, cleanText(value, 80)])) } })
             }
         } catch { /* mDNS optional */ }
     }
@@ -373,6 +381,7 @@ export const MDNS_SERVICES: Readonly<Record<string, DeviceType>> = Object.freeze
     '_hap._tcp.local': 'networkservice',
     '_matter._tcp.local': 'networkservice',
     '_matterc._udp.local': 'networkservice',
+    '_meshcop._udp.local': 'networkservice',
 })
 
 function encodeName(name: string): Buffer {
@@ -380,10 +389,10 @@ function encodeName(name: string): Buffer {
     return Buffer.concat([...parts, Buffer.from([0])])
 }
 
-export function buildMdnsQuery(names: string[]): Buffer {
+export function buildMdnsQuery(names: string[], unicast = false): Buffer {
     const header = Buffer.alloc(12)
     header.writeUInt16BE(names.length, 4)
-    const questions = names.map(name => Buffer.concat([encodeName(name), Buffer.from([0x00, 0x0c, 0x00, 0x01])]))
+    const questions = names.map(name => Buffer.concat([encodeName(name), Buffer.from([0x00, 0x0c, unicast ? 0x80 : 0x00, 0x01])]))
     return Buffer.concat([header, ...questions])
 }
 
@@ -410,7 +419,7 @@ function readName(buf: Buffer, offset: number, depth = 0): { name: string; next:
     return { name: labels.filter(Boolean).join('.'), next: next >= 0 ? next : pos }
 }
 
-export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string; txt?: Record<string, string> } }
+export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string; aaaa?: string; txt?: Record<string, string> } }
 
 export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
     if (buf.length < 12 || buf.length > 9000) return []
@@ -431,12 +440,13 @@ export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
         if (type === 12) data.ptr = readName(buf, rd).name
         else if (type === 33 && rdlen >= 7) { data.port = buf.readUInt16BE(rd + 4); data.target = readName(buf, rd + 6).name }
         else if (type === 1 && rdlen === 4) data.a = [buf[rd], buf[rd + 1], buf[rd + 2], buf[rd + 3]].join('.')
+        else if (type === 28 && rdlen === 16) data.aaaa = Array.from({ length: 8 }, (_, i) => buf.readUInt16BE(rd + i * 2).toString(16)).join(':')
         else if (type === 16) {
             data.txt = {}; let at = rd
             while (at < rd + rdlen && Object.keys(data.txt).length < 6) {
                 const length = buf[at++]; if (at + length > rd + rdlen) break
                 const value = buf.toString('utf8', at, at + length); at += length
-                const match = /^(model|manufacturer|md|ty|fn)=(.*)$/i.exec(value)
+                const match = /^(model|manufacturer|md|ty|fn|vp|dt|cm|d|nn|mn|rv)=(.*)$/i.exec(value)
                 if (match) data.txt[match[1].toLowerCase()] = cleanText(match[2], 80)
             }
         }
@@ -448,30 +458,55 @@ export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
 
 export function mdnsCandidates(records: MdnsRecord[]): Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }> {
     const out: Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }> = []
-    const addr = new Map(records.filter(r => r.type === 1 && r.data.a).map(r => [r.name.toLowerCase(), r.data.a!]))
+    const addr = new Map<string, string[]>()
+    for (const r of records) {
+        const address = r.type === 1 ? r.data.a : r.type === 28 ? r.data.aaaa : undefined
+        if (!address) continue
+        const key = r.name.toLowerCase(), values = addr.get(key) || []
+        if (!values.includes(address)) values.push(address)
+        addr.set(key, values)
+    }
     for (const ptr of records.filter(r => r.type === 12 && r.data.ptr)) {
         const type = MDNS_SERVICES[ptr.name.toLowerCase()]
         if (!type) continue
         const srv = records.find(r => r.type === 33 && r.name.toLowerCase() === ptr.data.ptr!.toLowerCase())
         if (!srv?.data.target || !srv.data.port) continue
-        const host = addr.get(srv.data.target.toLowerCase())
+        const hosts = addr.get(srv.data.target.toLowerCase()) || []
         const txt = records.find(r => r.type === 16 && r.name.toLowerCase() === ptr.data.ptr!.toLowerCase())?.data.txt || {}
-        if (host) out.push({ type, host, port: srv.data.port, name: ptr.data.ptr!.split('.')[0], hints: { service: ptr.name.toLowerCase(), ...txt } })
+        for (const host of hosts) out.push({ type, host, port: srv.data.port, name: ptr.data.ptr!.split('.')[0], hints: { service: ptr.name.toLowerCase(), ...(['_matter._tcp.local', '_matterc._udp.local'].includes(ptr.name.toLowerCase()) ? { dnsHost: cleanText(srv.data.target, 80) } : {}), ...txt } })
     }
     return out
 }
 
-export function realMdnsBrowse(timeoutMs: number): Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>> {
+export function realMdnsBrowse(timeoutMs: number): Promise<Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }>> {
     return new Promise(resolve => {
-        const socket = createSocket({ type: 'udp4', reuseAddr: true })
+        const interfaces = networkInterfaces(), names = matterInterfaceNames(interfaces as any)
+        const sockets: ReturnType<typeof createSocket>[] = []
         const records: MdnsRecord[] = []
-        const finish = () => { try { socket.close() } catch { /* closed */ } resolve(mdnsCandidates(records)) }
+        let done = false
+        const finish = () => { if (done) return; done = true; clearTimeout(timer); for (const socket of sockets) try { socket.close() } catch { /* closed */ } resolve(mdnsCandidates(records)) }
         const timer = setTimeout(finish, timeoutMs)
         timer.unref?.()
-        socket.on('message', message => { if (records.length >= 2048) return; try { records.push(...parseMdnsResponse(message).slice(0, 2048 - records.length)) } catch { /* ignore malformed */ } })
-        socket.on('error', () => { clearTimeout(timer); finish() })
-        socket.bind(0, () => {
-            socket.send(buildMdnsQuery(Object.keys(MDNS_SERVICES)), 5353, '224.0.0.251', error => { if (error) { clearTimeout(timer); finish() } })
-        })
+        const open = (type: 'udp4' | 'udp6', address: string, zone?: string) => {
+            const socket = createSocket({ type, reuseAddr: true }); sockets.push(socket)
+            socket.on('message', message => {
+                if (done || records.length >= 2048) return
+                try {
+                    const parsed = parseMdnsResponse(message).slice(0, 2048 - records.length)
+                    const scope = zone || (names.length === 1 ? names[0] : undefined)
+                    for (const record of parsed) if (record.data.aaaa?.startsWith('fe80:') && scope) record.data.aaaa += '%' + scope
+                    records.push(...parsed)
+                } catch { /* malformed advertisements never become authority */ }
+            })
+            socket.on('error', () => { try { socket.close() } catch {} })
+            socket.bind(0, () => { if (done) return; socket.send(buildMdnsQuery(Object.keys(MDNS_SERVICES), true), 5353, address, () => {}) })
+        }
+        open('udp4', '224.0.0.251')
+        for (const name of names.slice(0, 8)) {
+            const entry = interfaces[name]?.find(entry => !entry.internal && entry.family === 'IPv6')
+            if (!entry) continue
+            const zone = process.platform === 'win32' ? String(entry.scopeid) : name
+            if (zone && zone !== 'undefined') open('udp6', 'ff02::fb%' + zone, zone)
+        }
     })
 }

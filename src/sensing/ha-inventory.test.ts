@@ -29,18 +29,46 @@ describe('automatic authorized HA function inventory', () => {
         expect(result.functions[2].available).toBe(false)
         expect(JSON.stringify(result)).not.toContain('secret-')
     })
-    it('reads only the fixed states endpoint after approval, with no service/write calls', async () => {
+    it('reads fixed states and registry projection after approval, with no service/state writes', async () => {
         const dir = root(); approve(dir)
         const request = vi.fn(async () => response())
         await refreshHaInventory(dir, null, signal(), request as typeof fetch, now)
-        expect(request).toHaveBeenCalledTimes(1)
+        expect(request).toHaveBeenCalledTimes(2)
         expect(request.mock.calls[0][0]).toBe('http://192.168.1.2:8123/api/states')
         const init = request.mock.calls[0][1] as RequestInit
         expect(init.method).toBe('GET'); expect(init.redirect).toBe('manual')
         expect(new Headers(init.headers).get('Authorization')).toBe('Bearer owner-token')
+        expect(request.mock.calls[1][0]).toBe('http://192.168.1.2:8123/api/template')
+        const metadataInit = request.mock.calls[1][1] as RequestInit
+        expect(metadataInit.method).toBe('POST'); expect(metadataInit.redirect).toBe('manual')
+        expect(new Headers(metadataInit.headers).get('Authorization')).toBe('Bearer owner-token')
+        expect(JSON.parse(String(metadataInit.body)).template).toContain("device_attr(e, 'manufacturer')")
         const persisted = readFileSync(join(dir, 'sensing', 'ha-inventory.json'), 'utf8')
         expect(persisted).not.toContain('owner-token'); expect(persisted).not.toContain('secret-attribute')
         expect(haInventoryAwareness(dir, now)).toContain('Küche (light.kitchen): Lichtfunktion')
+    })
+    it('automatically enriches arbitrary manufacturers from the approved registry and retains functions on metadata failure', async () => {
+        const dir = root(); approve(dir)
+        const request = vi.fn(async (url: string) => url.endsWith('/api/states') ? response() : new Response(JSON.stringify([
+            { entity_id: 'light.kitchen', device_id: 'a'.repeat(32), manufacturer: 'Example Vendor', model: 'Lamp 7', secret: 'not-for-storage' },
+        ])))
+        const result = await refreshHaInventory(dir, null, signal(), request as typeof fetch, now)
+        expect(result[0].functions[0]).toMatchObject({ manufacturer: 'Example Vendor', model: 'Lamp 7', identitySource: 'home-assistant-device-registry' })
+        expect(haInventoryAwareness(dir, now)).toContain('laut HA-Geräteregister: Example Vendor / Lamp 7')
+        expect(readFileSync(join(dir, 'sensing', 'ha-inventory.json'), 'utf8')).not.toContain('not-for-storage')
+        const failed = await refreshHaInventory(dir, null, signal(), (async (url: string) => url.endsWith('/api/states') ? response() : new Response('', { status: 403 })) as typeof fetch, now)
+        expect(failed[0].status).toBe('ok'); expect(failed[0].functions).toHaveLength(3)
+        expect(failed[0].functions[0].manufacturer).toBeUndefined()
+    })
+    it('uses reported device classes only, never product names as proof of an outlet or television', () => {
+        const result = identifyHaFunctions([
+            { entity_id: 'switch.plug', state: 'on', attributes: { friendly_name: 'TV Plug' } },
+            { entity_id: 'switch.outlet', state: 'on', attributes: { device_class: 'outlet' } },
+            { entity_id: 'media_player.tv', state: 'on', attributes: { device_class: 'tv' } },
+        ])
+        expect(result.functions[0].kind).toContain('nicht automatisch')
+        expect(result.functions[1].kind).toContain('laut HA-Geräteklasse')
+        expect(result.functions[2].kind).toContain('laut HA-Geräteklasse')
     })
     it('does not fetch without access, after disconnect or when stopped', async () => {
         const dir = root(); const request = vi.fn(async () => response())

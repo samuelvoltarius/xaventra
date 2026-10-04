@@ -11,6 +11,8 @@
 ;(() => {
   const PATH = '/api/desktop/verbindungen'
   const LLM = '/api/desktop/llm-connections'
+  const SMART = '/api/desktop/smart-geraete'
+  let smartDevices = [], smartError = ''
   const local = { data: null, error: '', loading: false, at: 0, tried: 0, query: '', results: null, searching: false, busy: new Set(), cards: {}, icons: {} }
   const MAX_AGE = 20_000
 
@@ -95,7 +97,7 @@
       <div class="head-actions">${local.at ? `<span class="stamp">Stand ${h.esc(new Date(local.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }))}</span>` : ''}<button class="icon-button" data-conn-refresh title="Aktualisieren" aria-label="Aktualisieren">${h.icon('refresh')}</button></div></header>`
     if (local.error && !local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body"><div class="empty-note">${h.icon('alert')}<span>${h.esc(local.error)}</span></div></div></div></div></div>`
     if (!local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div></div></div></div>`
-    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${connectedSection(h, local.data)}${possibleSection(h, local.data)}
+    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${smartSection(h)}${connectedSection(h, local.data)}${possibleSection(h, local.data)}
       <p class="section-note">Kommt die Anmeldung auf einem anderen Gerät zurück? <button class="link-button" data-conn-paste>Rückkehr-Adresse einfügen</button></p></div></div>`
   }
 
@@ -103,7 +105,11 @@
     if (local.loading || (!force && Date.now() - local.tried < MAX_AGE)) return
     local.loading = true
     local.tried = Date.now()
-    try { local.data = await h.api.get(PATH); local.error = ''; local.at = Date.now() }
+    try {
+      local.data = await h.api.get(PATH); local.error = ''; local.at = Date.now()
+      try { smartDevices = (await h.api.get(SMART)).devices || []; smartError = '' }
+      catch { smartDevices = []; smartError = 'Smart-Gerätezugänge konnten nicht geladen werden.' }
+    }
     catch (error) { local.error = h.errorText ? h.errorText(error) : String(error?.message || error) }
     finally { local.loading = false; h.rerender() }
   }
@@ -174,6 +180,58 @@
     await load(h, true)
   }
 
+  function smartSection(h) {
+    if (!smartDevices.length && !smartError) return ''
+    return `<section class="section" aria-labelledby="smart-access"><div class="section-head"><h2 id="smart-access">Direkte Smart-Geräte</h2><span class="section-note">ohne Home Assistant · keine Schaltfreigabe</span></div>
+      ${smartError ? `<div class="section-body">${h.esc(smartError)}</div>` : `<div class="rows">${smartDevices.map(d => `<div class="row"><div><div class="row-title">${h.esc(d.name)}</div>
+      <div class="row-sub">${h.esc(d.id)} · ${d.route === 'local' ? 'lokaler lesender Zugang freigegeben' : d.route === 'cloud' ? 'Cloud-Weg freigegeben; kein lokaler Ersatzweg' : 'Zugriffsweg oder Verbindungsfreigabe noch offen'}</div>
+      <div class="row-sub">${d.accessStored ? 'Zugang privat hinterlegt; tatsächliches Abfrageergebnis separat prüfen.' : 'Kein privater Gerätezugang hinterlegt.'}</div>
+      ${!d.route ? `<div class="row-sub">Mit Nova wählen: /geraete weg ${h.esc(d.id)} lokal oder cloud; danach /geraete ja ${h.esc(d.id)}.</div>` : ''}</div>
+      <div class="row-side">${d.route && d.fields?.length ? `<button class="secondary" data-smart-access="${h.attr(d.id)}">${d.accessStored ? 'Zugang ersetzen' : d.route === 'cloud' ? 'Cloud-Zugang eintragen' : 'Lokalen Zugang eintragen'}</button>` : ''}
+      ${d.controls?.length ? `<button class="secondary" data-smart-control="${h.attr(d.id)}">Geräteaktion vorbereiten</button>` : ''}</div></div>`).join('')}</div>`}</section>`
+  }
+
+  function smartControl(h, id) {
+    const d = smartDevices.find(d => d.id === id)
+    if (!d?.controls?.length) return
+    h.showModal('Konkrete Geräteaktion', `<form class="form" id="smart-control-form"><p>${h.esc(d.name)} · ${d.route === 'cloud' ? 'Hersteller-Cloud' : 'lokal'}. Eine physische Aktion, keine Dauerfreigabe.</p>
+      <label>Bestätigte Funktion<select name="functionId" required><option value="">Bitte wählen</option>${d.controls.map(f => `<option value="${h.attr(f.id)}">${h.esc(f.name)} · ${h.esc(f.id)}</option>`).join('')}</select></label>
+      <label>Zielzustand<select name="state" required><option value="">Bitte wählen</option><option value="on">Ein</option><option value="off">Aus</option></select></label>
+      <div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Vorbereiten, noch nicht ausführen</button></div></form>`)
+    document.querySelector('#smart-control-form')?.addEventListener('submit', async event => {
+      event.preventDefault()
+      const values = new FormData(event.currentTarget)
+      h.closeModal()
+      try {
+        const proposal = await h.api.post(`${SMART}/${encodeURIComponent(id)}/aktion`, { functionId: String(values.get('functionId')), on: values.get('state') === 'on' })
+        if (!proposal?.ok || !proposal.confirmationId) { h.toast(proposal?.message || 'Nicht vorbereitet.'); return }
+        h.showModal('Physische Aktion einmalig bestätigen', `<p>${h.esc(proposal.message)}</p><p class="section-note">Bei unklarer Wirkung wird nicht erneut geschaltet. Diese Bestätigung verfällt nach zwei Minuten.</p><div class="toolbar"><button class="secondary" data-close-modal>Abbrechen</button><button class="primary" id="smart-control-confirm">Genau diese Aktion ausführen</button></div>`)
+        document.querySelector('#smart-control-confirm')?.addEventListener('click', async () => {
+          h.closeModal()
+          try { const result = await h.api.post(`/api/desktop/smart-aktionen/${encodeURIComponent(proposal.confirmationId)}/bestaetigen`, { confirm: 'ja' }); h.toast(result.message) }
+          catch { h.toast('Wirkung nicht bestätigt. Nicht automatisch wiederholen; Gerätezustand prüfen.') }
+          await load(h, true)
+        }, { once: true })
+      } catch { h.toast('Geräteaktion konnte nicht vorbereitet werden. Nichts ausgeführt.') }
+    })
+  }
+
+  function smartAccess(h, id) {
+    const d = smartDevices.find(d => d.id === id)
+    if (!d || !d.route || !d.fields?.length) return
+    h.showModal(`${d.protocol === 'matter' ? 'Matter' : d.protocol === 'esphome' ? 'ESPHome' : d.protocol === 'shelly' ? 'Shelly' : 'Tuya'}: privater ${d.route === 'cloud' ? 'Cloud-' : 'lokaler '}Zugang`, `<form class="form" id="smart-access-form"><p class="section-note">${d.protocol === 'matter' ? 'Einmaliges Pairing dieses Geräts, danach nur lesende Abfragen. Bei bestehenden Fabrics zuerst das Multi-Admin-Fenster öffnen; kein Reset. Matter über Thread benötigt einen erreichbaren Border-Router. Zur Zertifikatsprüfung werden öffentliche Vertrauens- und Sperrlisten geladen; keine Gerätesecrets hochgeladen. Kein Schalten.' : `Nur dieses Gerät, nur lesend. ${d.route === 'cloud' ? 'Abfrage über den ausgewählten Hersteller; kein lokaler Ersatzweg. Kein Schalten.' : 'Kein Cloud-Abruf und kein Schalten.'}`} Den Schlüssel nicht im Chat teilen.</p>
+      ${(d.fields || []).map(f => `<label>${h.esc(f.label)}${f.choices ? `<select name="${h.attr(f.name)}" required><option value="">Bitte wählen</option>${f.choices.map(v => `<option value="${h.attr(v)}">${h.esc(v)}</option>`).join('')}</select>` : `<input type="${f.secret === false ? 'text' : 'password'}" name="${h.attr(f.name)}" autocomplete="off" ${Number.isInteger(f.length) ? `minlength="${f.length}" maxlength="${f.length}"` : 'maxlength="512"'} required>`}</label>`).join('')}
+      <div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">${d.protocol === 'matter' ? 'Einmaliges Pairing durchführen' : 'Privat speichern'}</button></div></form>`)
+    document.querySelector('#smart-access-form')?.addEventListener('submit', async event => {
+      event.preventDefault()
+      const form = event.currentTarget, values = Object.fromEntries(new FormData(form).entries())
+      form.reset(); h.closeModal()
+      try { const result = await h.api.post(`${SMART}/${encodeURIComponent(id)}/zugang`, { fingerprint: d.fingerprint, values }); h.toast(result.message) }
+      catch { h.toast('Privater Zugang konnte nicht gespeichert werden. Keine Verbindung bestätigt.') }
+      finally { for (const key of Object.keys(values)) values[key] = ''; await load(h, true) }
+    })
+  }
+
   async function search(h, query) {
     local.query = query; local.searching = true; h.rerender()
     try {
@@ -230,6 +288,8 @@
     page.querySelectorAll('[data-conn-card]').forEach(node => node.addEventListener('click', () => answer(h, node.dataset.connCard, node.dataset.connAnswer)))
     page.querySelectorAll('[data-conn-login]').forEach(node => node.addEventListener('click', () => login(h, node.dataset.connLogin)))
     page.querySelectorAll('[data-conn-access]').forEach(node => node.addEventListener('click', () => access(h, node.dataset.connAccess)))
+    page.querySelectorAll('[data-smart-access]').forEach(node => node.addEventListener('click', () => smartAccess(h, node.dataset.smartAccess)))
+    page.querySelectorAll('[data-smart-control]').forEach(node => node.addEventListener('click', () => smartControl(h, node.dataset.smartControl)))
     page.querySelectorAll('[data-conn-disconnect]').forEach(node => node.addEventListener('click', async () => {
       try { const result = await h.api.post(`${PATH}/${encodeURIComponent(node.dataset.connDisconnect)}/trennen`, {}); h.toast(result.message) } catch (error) { h.fail(error) }
       await load(h, true)

@@ -47,6 +47,7 @@
         "src/mcp/**/*",
         "src/acp/**/*",
         "src/startup/**/*",
+        "src/sensing/**/*",
         "src/integration/**/*",
         "src/config/config.ts",
         "src/terminal/theme.ts",

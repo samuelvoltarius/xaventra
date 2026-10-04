@@ -34,6 +34,10 @@ import { createHardwareAdapter } from './adapters/hardware.js'
 import { refreshHaInventory, haInventoryEvents } from './ha-inventory.js'
 import { realSsdpBrowse } from './ssdp.js'
 import { realTuyaBrowse } from './tuya-discovery.js'
+import { createDirectSmartAdapter, requestHuePairing } from './direct-smart-devices.js'
+import { chooseSmartRoute, selectedSmartRoute, approveSmartRoute, smartRouteEvents } from './smart-device-route.js'
+import { proposeSmartSwitch, confirmSmartSwitch } from './smart-control.js'
+import { executeSmartSwitch } from './smart-control-http.js'
 
 interface RuntimeState {
     raw: unknown
@@ -112,6 +116,7 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
     const bus = newBus(options.nodeId || 'local', options.role || 'main')
     const a = cfg.adapters
     if (cfg.discovery.enabled) bus.register(createHardwareAdapter(() => monitoredDevices(state.dataDir)))
+    if (cfg.discovery.enabled) bus.register(createDirectSmartAdapter(state.dataDir))
     if (a.printer.enabled) bus.register(createPrinterAdapter({ targets: printerTargets, intervalMs: a.printer.intervalSec * 1000, timeoutMs: a.printer.timeoutSec * 1000 }))
     if (a.homeassistant.enabled) bus.register(createHomeAssistantAdapter({ connection: () => resolveHaConnection(a.homeassistant, state.rootConfig), entities: a.homeassistant.entities, intervalMs: a.homeassistant.intervalSec * 1000, timeoutMs: a.homeassistant.timeoutSec * 1000 }))
     if (a.homeassistant.enabled) bus.register({ id: 'homeassistant-inventory', source: 'homeassistant', intervalMs: 120_000, timeoutMs: 25_000,
@@ -252,8 +257,15 @@ export async function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: Ha
         const events = deviceEvents({ ...handled, asked: handled.asked.filter(d => d.type !== 'homeassistant') })
         if (events.length) await busForPublish().publish('discovery', events)
         if (process.env.NOVA_NODE_ONLY !== 'true') {
+            const routeQuestions = smartRouteEvents(dataDir)
+            if (routeQuestions.length) await busForPublish().publish('discovery', routeQuestions)
             const haConfigured = resolveHaConnection(cfg.adapters.homeassistant, state.rootConfig)
-            const offers = hardwareConnectionEvents(loadDevices(dataDir), Boolean(haConfigured))
+            const found = loadDevices(dataDir)
+            const offers = hardwareConnectionEvents(found, Boolean(haConfigured)).filter(offer => {
+                const d = found.find(d => d.id === offer.subject)!
+                const route = selectedSmartRoute(dataDir, d)
+                return !d.hardware?.connector || route === 'local' || (route === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(d.hardware.connector))
+            })
             if (offers.length) {
                 await busForPublish().publish('discovery', offers)
                 for (const offer of offers) markHardwareAsked(dataDir, offer.subject, String(offer.evidence.fingerprint))
@@ -280,6 +292,9 @@ export async function approveSensingDevice(id: string, approver: Approver, finge
     if (approver.permission !== 'owner' || !String(approver.principalId || '').trim()) return { ok: false, message: 'Nur der Owner kann Geräte verbinden.' }
     const dataDir = state.dataDir
     const device = loadDevices(dataDir).find(d => d.id === id)
+    const route = device?.hardware?.connector ? selectedSmartRoute(dataDir, device) : undefined
+    if (device?.hardware?.connector && !route) return { ok: false, message: `Bitte zuerst gemeinsam den Zugriffsweg wählen: /geraete weg ${id} lokal oder /geraete weg ${id} cloud. Noch nichts verbunden.` }
+    if (route === 'cloud' && !['tuya-announcements', 'shelly-readonly'].includes(device?.hardware?.connector)) return { ok: false, message: 'Für dieses Gerät ist der Hersteller-Cloud-Zugang noch nicht implementiert. Keine Verbindung und kein stiller Wechsel auf lokal.' }
     if (fingerprint || device?.hardware || device?.type === 'homeassistant') {
         if (!device || (fingerprint && fingerprint !== sensingDeviceFingerprint(device)) || ['abgelehnt', 'aus'].includes(device.status)
             || Date.now() - Date.parse(device.lastSeenAt) > 24 * 60 * 60_000 || !Number.isFinite(Date.parse(device.lastSeenAt))) {
@@ -307,8 +322,15 @@ export async function approveSensingDevice(id: string, approver: Approver, finge
         }
     }
     const result = approveDevice(dataDir, id, approver)
-    if (result.ok && device?.hardware?.connector === 'tuya-announcements') return { ok: true,
-        message: 'Die öffentlichen Tuya-Geräteankündigungen werden ab jetzt lesend beobachtet. Kein authentifizierter Direktzugriff, keine Schaltfreigabe und kein bestätigter Lampen-/Steckdosentyp.' }
+    if (result.ok && route && !approveSmartRoute(dataDir, loadDevices(dataDir).find(d => d.id === id)!, route, approver.principalId)) return { ok: false, message: 'Zugriffsweg während der Prüfung geändert. Keine neue Zugriffsfreigabe; bitte erneut bestätigen.' }
+    if (result.ok && device?.hardware?.access === 'hue-pairing-v1') {
+        requestHuePairing(dataDir, loadDevices(dataDir).find(d => d.id === id)!, approver.principalId)
+        return { ok: true, message: 'Lokales Hue-Pairing freigegeben. Bitte innerhalb von zwei Minuten die Taste der gefundenen Bridge drücken. Nova registriert dann nur diesen lokalen Zugang und liest die Lampen direkt, ohne Home Assistant oder Hersteller-Cloud. Kein Schalten freigegeben.' }
+    }
+    if (result.ok && route === 'cloud') return { ok: true, message: 'Lesendes Hersteller-Cloud-Funktionsinventar für genau dieses Gerät freigegeben. Privaten Herstellerzugang unter Verbindungen im Desktop eintragen, nicht im Chat. Fehlender Zugang ist kein Verbindungserfolg. Kein lokaler Ersatzweg und kein Schalten.' }
+    if (result.ok && device?.hardware?.connector === 'matter-ip') return { ok: true, message: 'Matter-Verbindungsweg freigegeben, noch kein Pairing. Im Desktop den privaten manuellen Code und das gesonderte Pairing-Ja eingeben. Bestehendes Gerät: Multi-Admin-Fenster am bisherigen Controller öffnen, nicht zurücksetzen. Thread benötigt Border-Router und IPv6-Erreichbarkeit. Kein Schalten.' }
+    if (result.ok && ['tuya-announcements', 'esphome-native'].includes(device?.hardware?.connector)) return { ok: true,
+        message: 'Lokaler lesender Gerätezugriff freigegeben. Den privaten Local-Key beziehungsweise ESPHome Encryption-Key unter Verbindungen im Desktop eintragen, nicht im Chat. Tatsächliches Abfrageergebnis folgt separat; keine Schaltfreigabe und kein bereits bestätigter Gerätezugang.' }
     return { ok: result.ok, message: result.message }
 }
 
@@ -323,18 +345,18 @@ export function declineSensingDevice(id: string, approver: Approver, fingerprint
 /** Only supported, protocol-verified endpoints become actionable questions. */
 export function hardwareConnectionEvents(devices: DeviceRecord[], haConfigured = false, now = Date.now()): RawEvent[] {
     return devices.filter(d => d.status === 'gefunden' && Number.isFinite(Date.parse(d.lastSeenAt)) && now - Date.parse(d.lastSeenAt) <= 24 * 60 * 60_000
-        && ((d.type === 'homeassistant' && d.via === 'http' && !haConfigured) || (d.hardware?.certainty === 'confirmed' && ['shelly-readonly', 'hue-readonly', 'tasmota-readonly', 'tuya-announcements'].includes(d.hardware.connector))))
+        && ((d.type === 'homeassistant' && d.via === 'http' && !haConfigured) || ['esphome-native', 'matter-ip'].includes(d.hardware?.connector) || (d.hardware?.certainty === 'confirmed' && ['shelly-readonly', 'hue-readonly', 'tasmota-readonly', 'tuya-announcements'].includes(d.hardware.connector))))
         .filter(d => d.hardwareAskedFingerprint !== sensingDeviceFingerprint(d)).map(d => {
             const fingerprint = sensingDeviceFingerprint(d)
             const compatible = [...new Set(devices.filter(other => other.status === 'gefunden' && other.hardware?.certainty === 'confirmed' && other.hardware.ecosystem
                 && now - Date.parse(other.lastSeenAt) <= 24 * 60 * 60_000).map(other => other.hardware.ecosystem))].join(', ')
             const label = d.hardware ? `${HARDWARE_LABEL[d.hardware.kind]}: ${d.hardware.label}` : 'Home Assistant (Smart-Home-Zentrale; angeschlossene Geräte noch nicht ausgelesen)'
             return { kind: 'discovery.connection-offer', subject: d.id, severity: 'info', dedupeKey: `hardware-offer:${d.id}:${fingerprint}`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
-                summary: `${label} bei ${d.host} erkannt. ${d.hardware?.connector === 'tuya-announcements' ? 'Soll ich seine öffentlichen Geräteankündigungen beobachten? Direkter Zugriff und Geräteart sind noch ungeprüft.' : 'Soll ich mich damit verbinden?'}${d.type === 'homeassistant' && compatible ? ` Weitere Protokollfunde: ${compatible}; ob diese dort eingebunden sind, prüfe ich erst nach Anmeldung.` : ''}`, evidence: { geraet: d.id, fingerprint, adresse: d.host, kennung: d.hardware?.identity || 'Home-Assistant-Manifest' },
+                summary: `${label} bei ${d.host} erkannt. ${d.hardware?.connector === 'tuya-announcements' ? 'Soll ich den gewählten lesenden Gerätezugriff einrichten? Lokal braucht der direkte Zugriff deinen privaten Local-Key; Geräteart und Zugang sind noch ungeprüft.' : 'Soll ich mich damit verbinden?'}${d.type === 'homeassistant' && compatible ? ` Weitere Protokollfunde: ${compatible}; ob diese dort eingebunden sind, prüfe ich erst nach Anmeldung.` : ''}`, evidence: { geraet: d.id, fingerprint, adresse: d.host, kennung: d.hardware?.identity || 'Home-Assistant-Manifest' },
                 hint: { importance: 'normal', title: `Gefunden: ${label}`, level: 'fragen', proposal: d.hardware?.connector === 'tuya-announcements'
-                    ? 'Ja = öffentliche Tuya-Ankündigung erneut prüfen und anschließend nur diese Ankündigungen beobachten. Kein Cloud-Login, kein direkter Gerätezugriff, kein Schalten. Geräteart bleibt bis zu weiteren Belegen unbekannt.' : d.type === 'homeassistant'
+                    ? `Zuerst /geraete weg ${d.id} lokal oder /geraete weg ${d.id} cloud wählen. Ja bestätigt danach nur den gewählten lesenden Weg: lokal direkte verschlüsselte Abfragen nach separater privater Local-Key-Eingabe im Desktop; Cloud Funktionsschema mit gesondertem API-Zugang. Kein Schalten und kein automatischer Wechsel; Geräteart bleibt bis zu Belegen unbekannt.` : d.type === 'homeassistant'
                     ? 'Ja = Home Assistant an dieser Adresse einrichten, danach einmal anmelden und Verbindung testen. Schalten fragt weiterhin separat.'
-                    : 'Ja = Gerätekennung erneut prüfen und nur öffentliche Identitätsdaten überwachen. Kein Schalten, kein Pairing; Geräte hinter einer Bridge sind damit noch nicht ausgelesen.',
+                    : `Zuerst gemeinsam wählen: /geraete weg ${d.id} lokal oder /geraete weg ${d.id} cloud. Ja bestätigt erst danach den gewählten unterstützten Zugang. Lokal bei Hue: Bridge-Taste für Pairing erforderlich. Kein Schalten und kein stiller Wechsel auf den anderen Weg.`,
                     action: { kind: 'approveDevice', deviceId: d.id, fingerprint } },
             }
         })
@@ -388,7 +410,7 @@ function formatStatus(): string {
 /** /geraete [suchen|ja <id>|nein <id>|aus <id>|konten|ruhe|status] — owner only (slash-commands default). */
 export async function handleGeraeteCommand(args: string, principal: { principalId?: string; rawUserId?: string; permission?: string } | undefined, from = ''): Promise<string> {
     if (principal?.permission !== 'owner') return '⛔ /geraete ist nur für den Owner.'
-    const [sub = '', id = ''] = args.trim().split(/\s+/)
+    const [sub = '', id = '', route = ''] = args.trim().split(/\s+/)
     const approver: Approver = { principalId: principal.principalId || principal.rawUserId || from, permission: principal.permission }
     switch (sub.toLowerCase()) {
         case '':
@@ -397,9 +419,38 @@ export async function handleGeraeteCommand(args: string, principal: { principalI
         case 'suchen':
         case 'scan':
             return runDiscoveryNow()
+        case 'weg':
+            if (!id) return 'Usage: /geraete weg <id> lokal|cloud'
+            {
+                const result = chooseSmartRoute(state.dataDir, id, route === 'lokal' ? 'local' : route.toLowerCase(), approver)
+                if (result.ok && state.bus) {
+                    const devices = loadDevices(state.dataDir), chosen = devices.find(d => d.id === id)!
+                    const selected = selectedSmartRoute(state.dataDir, chosen)
+                    const offers = hardwareConnectionEvents(devices).filter(offer => offer.subject === id && (selected === 'local' || (selected === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(chosen.hardware?.connector))))
+                    if (offers.length) {
+                        await busForPublish().publish('discovery', offers)
+                        for (const offer of offers) markHardwareAsked(state.dataDir, id, String(offer.evidence.fingerprint))
+                    }
+                }
+                return result.message
+            }
         case 'ja':
         case 'einrichten':
             return id ? (await approveSensingDevice(id, approver)).message : 'Usage: /geraete ja <id>'
+        case 'schalten': {
+            const { getServiceFencingToken, MAIN_SERVICE } = await import('../mesh/leader-election.js')
+            if (!getServiceFencingToken(MAIN_SERVICE)) return 'Nur der autoritative Main kann konkrete Geräteaktionen vorbereiten.'
+            const parts = args.trim().split(/\s+/), target = parts[3]
+            if (parts.length !== 4 || !['ein', 'aus'].includes(target)) return 'Usage: /geraete schalten <id> <funktion> ein|aus — bereitet nur vor, schaltet noch nicht.'
+            const result = proposeSmartSwitch(state.dataDir, { deviceId: id, functionId: route, on: target === 'ein' }, approver)
+            return result.message + (result.proposal ? `\nSeparat genau diese physische Aktion bestätigen: /geraete bestaetigen ${result.proposal.id}` : '')
+        }
+        case 'bestaetigen': {
+            const { getServiceFencingToken, MAIN_SERVICE } = await import('../mesh/leader-election.js')
+            const result = await confirmSmartSwitch(state.dataDir, id, approver, () => Boolean(getServiceFencingToken(MAIN_SERVICE)),
+                (d, a, signal, authorize) => executeSmartSwitch(state.dataDir, d, a, signal, authorize))
+            return result.message
+        }
         case 'nein':
             return id ? setDeviceStatus(state.dataDir, id, 'abgelehnt', approver).message : 'Usage: /geraete nein <id>'
         case 'aus':
@@ -411,6 +462,6 @@ export async function handleGeraeteCommand(args: string, principal: { principalI
         case 'status':
             return formatStatus()
         default:
-            return `Unbekannt: ${cleanText(sub, 20)}. /geraete [suchen|ja <id>|nein <id>|aus <id>|konten|ruhe|status]`
+            return `Unbekannt: ${cleanText(sub, 20)}. /geraete [suchen|weg <id> lokal|cloud|ja <id>|nein <id>|aus <id>|schalten <id> <funktion> ein|aus|bestaetigen <aktions-id>|konten|ruhe|status]`
     }
 }

@@ -79,6 +79,7 @@ export function sensingDeviceFingerprint(device: Pick<DeviceRecord, 'type' | 'ho
     const h = device.hardware
     const fields = [device.type, device.host, device.port, h?.connector, h?.identity, h?.model, h?.probe]
     if (h?.ecosystem) fields.push(h.ecosystem)
+    if (h?.access) fields.push(h.access)
     return createHash('sha256').update(JSON.stringify(fields)).digest('hex')
 }
 

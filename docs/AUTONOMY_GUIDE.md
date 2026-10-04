@@ -33,8 +33,17 @@ werden. Quellenstand und tatsächliche Funktion im ausgerollten System werden
 getrennt abgenommen.
 Der Hintergrundadapter liest nach vorhandener Home-Assistant-Freigabe alle zwei
 Minuten den begrenzten Funktionsbestand (fester GET `/api/states`). Er meldet neue
-Funktionen über den bestehenden Gedanken-Bus, ohne Schaltaktion. Nur ausgewählte
-Gerätefunktions-Domänen und kurze Namen werden gespeichert, keine Sensorwerte
+Funktionen über den bestehenden Gedanken-Bus, ohne Schaltaktion.
+Ab Quellkandidat 2.85.7 ergänzt eine feste lesende POST-Abfrage `/api/template`
+Hersteller und Modell aus dem HA-Geräteregister für genau diese Entitäten.
+Der Template-Code ist fest vorgegeben; Geräte/LLM dürfen keinen Code liefern.
+Die Herkunft wird als „laut HA-Geräteregister“ ausgewiesen: Registry-Einträge
+können auch logische Dienste sein. Gemeldete outlet-/tv-Geräteklassen werden als
+HA-Funktion bezeichnet, nicht als unabhängig geprüfte physische Geräte.
+Fehlende Anmeldung wird nicht umgangen. Ein fehlgeschlagener Metadatenabruf
+erhält die erfolgreich gelesenen Funktionen. Shelly-Generationsverwechslungen
+erhalten einen festen Protokoll-Fallback innerhalb derselben Zwei-Proben-Grenze.
+Nur ausgewählte Gerätefunktions-Domänen und kurze Namen werden gespeichert, keine Sensorwerte
 oder beliebigen Attribute. Abgelaufene/getrennte Verbindungen und mehr als zehn
 Minuten alte Bestände gelten nicht als aktuell bestätigt. Ohne Zugang folgt keine
 Abfrage; die bestehende zielgebundene Verbindungs-/Anmeldefrage bleibt zuständig.
@@ -63,7 +72,9 @@ belegt keine konkrete Lampe/Steckdose und keinen OEM-Hersteller. Nova fragt selb
 ob sie genau die öffentlichen Ankündigungen dieses Gerätes beobachten soll. Das
 Ja prüft den Fund erneut; anschließend beobachtet der vorhandene Adapter diese
 Ankündigungen gebündelt. Fehlende Ankündigung bedeutet nicht automatisch offline.
-Ein direkter authentifizierter Tuya-Adapter ist noch nicht implementiert.
+Ein direkter authentifizierter, nur lesender Tuya-Adapter ist im lokalen
+2.85.7-Kandidaten implementiert (siehe Direktgeräte unten), nicht ausgerollt
+oder an realer Hardware abgenommen.
 Eine gefundene Home-Assistant-Zentrale bietet weiterhin den vorhandenen
 Verbindungs-/Anmeldeweg an; ob Tuya-Geräte dort integriert sind, bleibt zu prüfen.
 Hue-kompatible Bridges und Tasmota-Firmware werden über feste öffentliche,
@@ -1364,3 +1375,98 @@ Suche über SearXNG, falls konfiguriert, sonst über die gesteuerte Suchkette �
 Tavily direkt, keine Rückfrage im Leerlauf. `.nova-data/local-knowledge.json` wurde
 nie gelesen und wird beim Start einmal als `local-knowledge.json.migriert`
 beiseitegelegt (nicht gelöscht).
+## Direktgeräte: lokale Verbindung oder Hersteller-Cloud
+
+Nova fragt bei einem neuen Smart-Gerätefund nach dem Zugriffsweg. Der Owner
+wählt `/geraete weg <id> lokal` oder `/geraete weg <id> cloud` und bestätigt
+anschließend separat mit `/geraete ja <id>`. Die Wahl ist an die beobachtete
+Identität gebunden. Eine neue Wahl setzt die Verbindungsfreigabe zurück; Nova
+wechselt bei Fehlern niemals ungefragt zwischen lokal und Cloud. Die Wahl und
+das lesende Inventar erlauben keine Schaltaktionen.
+
+Der lokale Weg liest Hue-Lampen nach einer ausdrücklichen Pairing-Freigabe
+(Bridge-Taste innerhalb von zwei Minuten), Shelly-Kanäle und Tasmota-POWER-
+Funktionen. Home Assistant ist dafür nicht erforderlich. Hue-Zugangsschlüssel
+liegen privat im Laufzeitdatenverzeichnis, nicht im Inventar oder Chat.
+
+Tuya unterstützt im lokalen Kandidaten verschlüsselte LAN-Abfragen mit
+privatem Local-Key für 3.1/3.3/3.4/3.5. Der Schlüssel wird nach der separaten
+lokalen Freigabe unter Desktop → Verbindungen → Direkte Smart-Geräte
+eingegeben, niemals im Chat. Rohwerte und Schlüssel werden nicht als
+Geräteinventar gespeichert. Datenpunktnummern allein beweisen weder Lampen-
+noch Steckdosentyp. Der SDK-Fallback auf CONTROL ist gesperrt; Protokoll 3.2
+wird dadurch nicht als nur-lesend unterstützt. Ein fehlgeschlagener Zugriff
+löst keinen Cloud-Ersatzweg aus. Der Cloud-Weg kann das Funktionsschema genau
+eines freigegebenen Geräts lesen. Der Tuya-API-Projektzugang (Access-ID,
+Access-Secret und Region `eu`, `us`, `cn`, `in`) wird gerätegebunden im privaten
+Desktop-Formular eingegeben, nicht aus einem fremden Prozesskonto übernommen.
+Keine Schlüssel im Chat senden.
+Fehlender Zugang ist kein Erfolg. Ein Funktionsschema ist kein gemessener
+Gerätezustand und keine nachgewiesene Steuerbarkeit. Shelly Cloud v2 fragt nur
+die erkannte MAC-basierte Gerätekennung ab, mit privatem Auth-Key und fest
+begrenzter Hersteller-Domain. Keine kontoweite Suche, Geräteeinstellungen oder
+Schaltbefehle. Hersteller-Cloud für Hue/Tasmota bleibt nicht implementiert.
+
+ESPHome-Endpunkte werden über `_esphomelib._tcp.local` angeboten, ohne aus
+dieser Ankündigung Hersteller oder Geräteart zu bestätigen. Nach lokaler
+Freigabe wird der API Encryption-Key ausschließlich im geschützten Desktop-
+Formular eingetragen. Die Native-API-Abfrage liefert die tatsächlichen
+Entity-Typen und gemeldetes Modell/Hersteller. Klartext-Fallback und Reconnect
+sind gesperrt, jede Abfrage hat ein hartes Worker-Zeitlimit. Der SDK-Pin 2.0.0
+benötigt Node >=22.20 und ist für aktuelle ESPHome-Firmware vorgesehen;
+Legacy-Passwortzugänge sind damit nicht abgedeckt. Kein Schalten freigegeben.
+ESPHome hat keine eigene Hersteller-Cloud; ein konkreter externer Dienst
+benötigt einen separaten Adapter und eine gesonderte Freigabe.
+
+Matter-Ankündigungen und Thread-Border-Router (`_meshcop._udp`) werden über
+mDNS erfasst, auch mit IPv6. IPv6 wird nicht enumeriert. Zulässig sind eigene
+ULA-/64-Bereiche und explizit interfacegebundene Link-Local-Adressen; auf Linux
+auch konkrete geroutete Thread-ULA-/64-Bereiche über den eigenen LAN-Router,
+nicht beliebige private IPv6-Adressen oder Default-Routen.
+Der Matter-IP-Controller unterstützt WLAN/LAN und bereits geroutetes Thread.
+Thread benötigt einen Border-Router; neues BLE-/Thread-Netzwerk-Provisioning ist
+nicht implementiert. Nach Verbindungsfreigabe werden manueller Pairing-Code und
+ein getrenntes Pairing-Ja privat im Desktop eingegeben. Bei bestehenden Fabrics
+zuerst das Multi-Admin-Fenster öffnen, niemals das Gerät zurücksetzen.
+Zertifikatsprüfung lädt öffentliche DCL-/Sperrlisten mit DNS-/SSRF-Prüfung,
+ohne Gerätesecrets. Testzertifikate und Attestierungswarnungen werden abgelehnt.
+Nach unklarem Ausgang kein automatisches erneutes Pairing. Fabric-Schlüssel
+bleiben im privaten Gerätespeicher; Folgeabfragen lesen authentifiziert aktuelle
+Endpoint-Gerätetypen, ohne physische Steuerung.
+
+Diese SDK-Pfade sind noch nicht an echten Geräten abgenommen. Die vollständige
+Matter-Abnahme über LAN und Thread, weitere Hersteller-Clouds und weitere typisierte
+Steueraktionen bleiben Teil des offenen Gesamtauftrags. Gefunden,
+Zugang gespeichert, authentifiziert ausgelesen und erfolgreich gesteuert
+sind unterschiedliche Zustände; der Ausbau ist erst nach Geräteabnahme fertig.
+
+### Konkrete physische Aktionen separat bestätigen
+
+Desktop → Verbindungen → Direkte Smart-Geräte bietet für frisch ausgelesene,
+unterstützte Licht-/Schalterfunktionen „Geräteaktion vorbereiten“. Funktion und
+Ein/Aus werden ausdrücklich gewählt. Danach erscheint eine zweite Bestätigung
+für genau diese Funktion, diesen Zugriffsweg und diesen Zielzustand. Sie gilt zwei
+Minuten und nur einmal. Die Verbindungsfreigabe allein erlaubt weiterhin nichts
+zu schalten. Vorbereitung sendet keinen Gerätebefehl; der LLM darf keine freie
+URL, RPC-Methode, Shell oder unbekannte Datenpunktnummer ausführen.
+Nova schlägt frisch gelesene unterstützte Funktionen über den bestehenden
+Gedanken-Bus vor, ohne einen Zielzustand selbst zu setzen. Im Owner-Chat geht
+derselbe Ablauf mit `/geraete schalten <id> <funktion> ein|aus` und danach
+`/geraete bestaetigen <aktions-id>`. Beide Wege prüfen die aktuelle Main-Autorität.
+
+Unterstützt sind Ein/Aus für lokale Hue-v1-Lampen, Shelly Gen1/Gen2+ Kanäle,
+Tasmota POWER, verschlüsselte ESPHome Licht-/Schalter-Entities und Matter OnOff
+auf bereits privat gepairten Endpunkten. Über die gewählte Cloud sind Shelly
+Licht-/Schalterkanäle sowie frisch verifizierte Boolean-Funktionen `switch_led`
+und `switch[_n]` von Tuya implementiert. Erfolg erfordert eine Rückmeldung des
+gewünschten Zustands, nicht nur ein erfolgreiches Kommando. Bei Timeout,
+Widerruf oder unklarer Wirkung: keine automatische Wiederholung; eine Aktion
+kann physisch bereits erfolgt sein. Schlüsseltausch/Identitäts-/Owner-/Wechsel
+und verlorene Main-Autorität machen die alte Bestätigung unbrauchbar.
+
+Noch nicht abgedeckt: unbekannte Tuya-LAN-DPS ohne belegte Semantik, Farb-/Dimmer-
+Parameter, Schlösser, Heizungen, bewegende Geräte sowie neue Herstellerprotokolle.
+Aktuelle Hue-Firmware verlangt HTTPS; der vorhandene HTTP-v1-Pfad ist nur für
+kompatible ältere Bridges und kein Beleg für Hue-Pro-/aktuelle-Firmware-Support.
+Neue TLS-/OAuth-Pfade dürfen keine Zertifikatsprüfung umgehen. Echte Hardware-
+Abnahme und Auslieferung bleiben separate, noch offene Schritte.

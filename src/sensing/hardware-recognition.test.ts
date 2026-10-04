@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hardwareFingerprint, identifyHardware, parseHardwareHypothesis, recognizeHardware, verifyHardwareConnection } from './hardware-recognition.js'
 import { loadDevices, markHardwareAsked, recordCandidates, sensingDeviceFingerprint, setDeviceStatus, type DeviceCandidate } from './device-registry.js'
-import { approveSensingDevice, declineSensingDevice, hardwareConnectionEvents, unsupportedHardwareEvents, runDiscoveryNow, setSensingConfig, stopSensing } from './runtime.js'
+import { approveSensingDevice, declineSensingDevice, hardwareConnectionEvents, unsupportedHardwareEvents, runDiscoveryNow, setSensingConfig, stopSensing, handleGeraeteCommand } from './runtime.js'
 import { environmentAwareness } from './awareness.js'
+import { chooseSmartRoute } from './smart-device-route.js'
 
 const roots: string[] = []
 const root = () => { const p = mkdtempSync(join(tmpdir(), 'hardware-')); roots.push(p); return p }
@@ -59,13 +60,15 @@ describe('additional fixed manufacturer protocol probes', () => {
         const dir = root(); setSensingConfig({}, {}, dir)
         const [device] = recordCandidates(dir, [candidate])
         const [offer] = hardwareConnectionEvents(loadDevices(dir))
-        expect(offer.summary).toContain('Geräteankündigungen beobachten')
-        expect(offer.hint.proposal).toContain('kein Schalten')
+        expect(offer.summary).toContain('privaten Local-Key')
+        expect(offer.hint.proposal).toMatch(/kein Schalten/i)
         expect((await approveSensingDevice(device.id, owner, sensingDeviceFingerprint(device), { interfaces, tuyaBrowse: async () => [] })).ok).toBe(false)
         expect(loadDevices(dir)[0].status).toBe('gefunden')
+        expect(chooseSmartRoute(dir, device.id, 'local', owner).ok).toBe(true)
         const result = await approveSensingDevice(device.id, owner, sensingDeviceFingerprint(device), { interfaces, tuyaBrowse: async () => [candidate] })
         expect(result).toMatchObject({ ok: true })
-        expect(result.message).toContain('Kein authentifizierter Direktzugriff')
+        expect(result.message).toContain('kein bereits bestätigter Gerätezugang')
+        expect(result.message).toContain('privaten Local-Key')
         expect(loadDevices(dir)[0].status).toBe('eingerichtet')
         const replacement = { ...candidate, hardware: { ...candidate.hardware!, identity: 'other-device-1234' } }
         expect(await verifyHardwareConnection(device, { interfaces, tuyaBrowse: async () => [replacement] })).toBe(false)
@@ -119,10 +122,23 @@ describe('bounded hardware hypotheses', () => {
     it('never promotes repeated guesses or redirect/error results into a connection', async () => {
         const probe = vi.fn(async () => ({ status: 302, body: shelly.body }))
         const result = await recognizeHardware([candidate()], async () => guess(), { interfaces, httpProbe: probe })
-        expect(probe).toHaveBeenCalledTimes(1)
+        expect(probe).toHaveBeenCalledTimes(2)
         expect(result[0].hardware.certainty).not.toBe('confirmed')
         const dir = root(); recordCandidates(dir, result)
         expect(hardwareConnectionEvents(loadDevices(dir))).toEqual([])
+    })
+    it('recovers a repeated wrong Shelly generation using protocol evidence, not the model label', async () => {
+        const model = vi.fn(async () => guess('shelly-gen1', 'light'))
+        const probe = vi.fn(async (url: string) => url.endsWith('/shelly') ? { status: 404, body: '' } : shelly)
+        const [result] = await recognizeHardware([candidate()], model, { interfaces, httpProbe: probe, sleep: async () => {} })
+        expect(result.hardware).toMatchObject({ kind: 'plug', model: 'SNPL-00112EU', certainty: 'confirmed', probe: 'shelly-info' })
+        expect(probe.mock.calls.map(c => c[0])).toEqual(['http://192.168.1.21:80/shelly', 'http://192.168.1.21:80/rpc/Shelly.GetDeviceInfo'])
+    })
+    it('uses Shelly evidence hints without needing a model and never probes more than twice', async () => {
+        const probe = vi.fn(async () => shelly)
+        const [result] = await recognizeHardware([{ ...candidate(), evidence: { title: 'Shelly Plus Plug S' } }], undefined, { interfaces, httpProbe: probe })
+        expect(result.hardware?.certainty).toBe('confirmed')
+        expect(probe).toHaveBeenCalledTimes(1)
     })
     it('checks scope, limits hosts and does not probe unknown ports', async () => {
         const probe = vi.fn(async () => shelly), model = vi.fn(async () => guess())
@@ -148,6 +164,23 @@ describe('bounded hardware hypotheses', () => {
 })
 
 describe('existing sensing consent and connection paths', () => {
+    it('exposes owner route selection through the actual device command without connecting', async () => {
+        const dir = root(), [d] = recordCandidates(dir, [{ ...candidate(), hardware: identifyHardware(shelly, 'shelly-info')! }])
+        setSensingConfig({}, {}, dir)
+        expect(await handleGeraeteCommand(`weg ${d.id} cloud`, { ...owner, permission: 'user' })).toContain('nur für den Owner')
+        expect(await handleGeraeteCommand(`weg ${d.id} lokal`, owner)).toContain('lokaler Weg gewählt')
+        expect(loadDevices(dir)[0].status).toBe('gefunden')
+        expect(await handleGeraeteCommand(`weg ${d.id} cloud`, owner)).toContain('Cloud- Weg gewählt')
+        const request = vi.fn(async () => shelly)
+        const approved = await approveSensingDevice(d.id, owner, undefined, { interfaces, httpProbe: request })
+        expect(approved.ok).toBe(true)
+        expect(approved.message).toContain('Privaten Herstellerzugang')
+        // The newly supported cloud path still verifies the observed LAN identity;
+        // choosing/approving alone does not contact the vendor or invent a login.
+        expect(request).toHaveBeenCalledOnce()
+        expect(request).toHaveBeenCalledWith('http://192.168.1.21:80/rpc/Shelly.GetDeviceInfo', 1200, undefined)
+        expect(loadDevices(dir)[0].status).toBe('eingerichtet')
+    })
     it('updates evidence but preserves an owner rejection; no new proposal', async () => {
         const dir = root(), h = identifyHardware(shelly, 'shelly-info')!
         const [d] = recordCandidates(dir, [{ ...candidate(), hardware: h }])
@@ -169,6 +202,9 @@ describe('existing sensing consent and connection paths', () => {
         const probe = vi.fn(async () => shelly)
         expect((await approveSensingDevice(d.id, { ...owner, permission: 'user' }, sensingDeviceFingerprint(d), { interfaces, httpProbe: probe })).ok).toBe(false)
         expect(probe).not.toHaveBeenCalled()
+        expect((await approveSensingDevice(d.id, owner, sensingDeviceFingerprint(d), { interfaces, httpProbe: probe })).ok).toBe(false)
+        expect(probe).not.toHaveBeenCalled()
+        expect(chooseSmartRoute(dir, d.id, 'local', owner).ok).toBe(true)
         expect((await approveSensingDevice(d.id, owner, sensingDeviceFingerprint(d), { interfaces, httpProbe: probe })).ok).toBe(true)
         expect(loadDevices(dir)[0].status).toBe('eingerichtet')
         expect(probe.mock.calls).toHaveLength(1)
@@ -198,7 +234,8 @@ describe('existing sensing consent and connection paths', () => {
         await runDiscoveryNow({ interfaces, neighbors: async () => [], hardwareModel: async () => guess(),
             tcpProbe: async (_, port) => port === 80, httpProbe: async url => url.endsWith('/rpc/Shelly.GetDeviceInfo') ? shelly : { status: 404, body: '' } })
         const d = loadDevices(dir).find(d => d.hardware?.connector === 'shelly-readonly')!
-        expect(d).toMatchObject({ status: 'gefunden', hardware: { kind: 'plug', certainty: 'confirmed' }, hardwareAskedFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) })
+        expect(d).toMatchObject({ status: 'gefunden', hardware: { kind: 'plug', certainty: 'confirmed' } })
+        expect(d.hardwareAskedFingerprint).toBeUndefined() // no binary connection card before route selection
         const view = environmentAwareness(dir, 'owner')
         expect(view).toContain('Steckdose')
         expect(view).toContain('öffentliche Gerätekennung belegt')

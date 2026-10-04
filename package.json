@@ -1,6 +1,6 @@
 {
   "name": "@xaventra/core",
-  "version": "2.85.6",
+  "version": "2.85.7",
   "description": "Xaventra - governed, self-hosted autonomous agent OS with verifiable tools, durable memory and a resilient multi-node mesh",
   "type": "module",
   "main": "dist/daemon.js",
@@ -131,6 +131,9 @@
     "discord.js": "^14.0.0",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
+    "esphome-client": "2.0.0",
+    "@matter/main": "0.17.9",
+    "@matter/nodejs": "0.17.9",
     "form-data": "^4.0.6",
     "grammy": "^1.39.3",
     "matrix-js-sdk": "^42.1.0",
@@ -144,6 +147,7 @@
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.35.4",
+    "tuyapi": "7.7.1",
     "ws": "^8.18.0",
     "youtube-transcript": "^1.2.1",
     "zod": "^4.4.3"
@@ -165,7 +169,7 @@
     "qs": "^6.16.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.20.0"
   },
   "author": "Xaventra contributors",
   "license": "MIT",

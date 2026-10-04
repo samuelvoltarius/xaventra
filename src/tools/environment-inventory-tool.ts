@@ -24,6 +24,8 @@ export const environmentInventoryTool: NovaTool = {
         ])
         const rootConfig = getNovaConfig(), sensing = parseSensingConfig((rootConfig as any).autonomy?.sensing)
         const legacyAuthorized = sensing.enabled && sensing.adapters.homeassistant.enabled && Boolean(resolveHaConnection(sensing.adapters.homeassistant, rootConfig))
-        return { formatted: capabilities + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) }
+        const { directInventoryAwareness } = await import('../sensing/direct-smart-devices.js')
+        const { smartRouteAwareness } = await import('../sensing/smart-device-route.js')
+        return { formatted: capabilities + '\n\n' + smartRouteAwareness(dataDir) + '\n\n' + directInventoryAwareness(dataDir) + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) }
     },
 }
