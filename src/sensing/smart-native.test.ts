@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { it, expect, vi, afterEach } from 'vitest'
 import { readTuyaSdk, readEspHomeSdk } from './smart-native-worker.js'
 import { readLocalTuya } from './smart-native-client.js'
@@ -65,7 +66,7 @@ it('loads the actual pinned ESPHome ESM transport without opening a connection',
       const create=()=>({connect:async()=>{},disconnect(){disconnected=true},health:()=>({encrypted:true}),deviceInfo:()=>({name:'fixture'}),getEntitiesWithIds:()=>[]});
       const rows=await readEspHomeSdk({host:'192.0.2.1',port:6053,psk:Buffer.alloc(32).toString('base64'),identity:'fixture'},create);
       if(!disconnected)throw Error('disconnect missing');console.log(JSON.stringify(rows));`
-    const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { encoding: 'utf8', timeout: 15000, maxBuffer: 128 * 1024 })
+    const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', timeout: 15000, maxBuffer: 128 * 1024 })
     expect(JSON.parse(output)).toEqual([])
 }, 20000)
 it('rejects public targets and aborted requests before worker creation', async () => {
