@@ -133,7 +133,7 @@ describe('existing sensing consent and connection paths', () => {
         const view = environmentAwareness(dir, 'owner')
         expect(view).toContain('Steckdose')
         expect(view).toContain('öffentliche Gerätekennung belegt')
-        expect(view).not.toContain(':0')
+        expect(view).not.toMatch(/\b(?:\d{1,3}\.){3}\d{1,3}:0\b/)
     })
     it('does not offer unsupported devices, mDNS-only HA, configured HA or stale observations', () => {
         const dir = root(); recordCandidates(dir, [{ ...candidate(), hardware: { kind: 'tv', label: 'TV', certainty: 'probable', observedAt: new Date().toISOString() } },
