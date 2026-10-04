@@ -6143,8 +6143,6 @@
       "imports": [
         "./ports.js",
         "esphome-client",
-        "node:module",
-        "node:url",
         "node:worker_threads",
         "tuyapi"
       ]

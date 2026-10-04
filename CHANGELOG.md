@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.85.8] — 2026-10-05 (source candidate; not deployed)
+
+- Correct ESPHome transport resolution for the supported Node 22 runtime: use
+  the package's ESM import export, not CommonJS require resolution. The real
+  ARM64 package probe found this before any production activation of 2.85.7.
+- Test actual transport loading with no connection, and add an isolated smart
+  SDK/wire-format gate to built-image acceptance before release signing.
+- Retain all 2.85.7 smart-device consent boundaries and its documented hardware
+  and integration limitations; this is not universal device acceptance.
+
 ## [2.85.7] — 2026-10-04 (source candidate; not deployed)
 
 - Ask the owner to choose local versus manufacturer cloud per smart-device

@@ -1,8 +1,6 @@
 /** Isolated read-only SDK execution. No credentials in argv, environment or output. */
 import { parentPort, workerData } from 'node:worker_threads'
 import TuyaDevice from 'tuyapi'
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
 import { EspHomeClient } from 'esphome-client'
 import { cleanText } from './ports.js'
 
@@ -11,8 +9,10 @@ export async function readEspHomeSdk(input: { host: string; port: number; psk: s
     // Pinned 2.0.0 transport integration: the public client offers a factory but
     // does not re-export Transport. No dynamic package names or network imports.
     if (!open) {
-        const entry = createRequire(import.meta.url).resolve('esphome-client')
-        const { Transport } = await import(new URL('./transport.js', pathToFileURL(entry)).href)
+        // The pinned package exports an import condition, not a CommonJS
+        // require condition. Node 24's require(ESM) must not mask Node 22 failure.
+        const entry = import.meta.resolve('esphome-client')
+        const { Transport } = await import(new URL('./transport.js', entry).href)
         open = options => Transport.open(options)
     }
     let transports = 0

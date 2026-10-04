@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { it, expect, vi, afterEach } from 'vitest'
 import { readTuyaSdk, readEspHomeSdk } from './smart-native-worker.js'
 import { readLocalTuya } from './smart-native-client.js'
@@ -55,6 +56,18 @@ it('reports authenticated ESPHome entity types, never controls entities, and val
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ reconnect: false, keepAlive: false, serverName: 'lamp' }))
     await expect(readEspHomeSdk({ host: input.host, port: 6053, psk, identity: 'other' }, create, async () => ({}))).rejects.toThrow('identity changed')
 })
+it('loads the actual pinned ESPHome ESM transport without opening a connection', () => {
+    // Vitest's synthetic import.meta does not implement Node's resolve.
+    // Exercise the real ESM resolver in the current Node runtime, not a mock.
+    const url = new URL('./smart-native-worker.ts', import.meta.url).href
+    const script = `const {readEspHomeSdk}=await import(${JSON.stringify(url)});
+      let disconnected=false;
+      const create=()=>({connect:async()=>{},disconnect(){disconnected=true},health:()=>({encrypted:true}),deviceInfo:()=>({name:'fixture'}),getEntitiesWithIds:()=>[]});
+      const rows=await readEspHomeSdk({host:'192.0.2.1',port:6053,psk:Buffer.alloc(32).toString('base64'),identity:'fixture'},create);
+      if(!disconnected)throw Error('disconnect missing');console.log(JSON.stringify(rows));`
+    const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { encoding: 'utf8', timeout: 15000, maxBuffer: 128 * 1024 })
+    expect(JSON.parse(output)).toEqual([])
+}, 20000)
 it('rejects public targets and aborted requests before worker creation', async () => {
     await expect(readLocalTuya({ ...input, host: '8.8.8.8' }, new AbortController().signal, interfaces)).rejects.toThrow('scope')
     const controller = new AbortController(); controller.abort()

@@ -18,6 +18,12 @@ try {
     const version = JSON.parse(readFileSync('package.json', 'utf8')).version
     if (metadata.Id !== image || metadata.Config?.Labels?.['org.opencontainers.image.version'] !== version
         || metadata.Config?.Labels?.['org.opencontainers.image.revision'] !== report.sourceRevision) throw Error('Package provenance mismatch')
+    const protocols = execFileSync('docker', ['run', '--rm', '-i', '--network', 'none', '--read-only', '--user', '1000:1000',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '768m', '--cpus', '2', '--pids-limit', '64',
+        '--tmpfs', '/tmp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000', '--entrypoint', '/usr/local/bin/node', image, '--input-type=module'],
+        { input: readFileSync('scripts/check-smart-protocol-sdk.mjs'), encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 })
+    report.protocols = JSON.parse(protocols)
+    if (!report.protocols.passed || report.protocols.version !== version || report.protocols.hardwareActions !== 'none') throw Error('Packaged smart SDK not verified')
     id = execFileSync('docker', ['create', '--name', `xaventra-package-qa-${randomUUID()}`, '--network', 'none', '--read-only',
         '--user', '1000:1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '3g', '--cpus', '2', '--pids-limit', '256',
         '--tmpfs', '/tmp:rw,nosuid,nodev,size=768m,uid=1000,gid=1000', '--tmpfs', '/runtime:rw,nosuid,nodev,size=64m,uid=1000,gid=1000',

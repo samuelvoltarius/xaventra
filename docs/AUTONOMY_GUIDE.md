@@ -1415,6 +1415,10 @@ Entity-Typen und gemeldetes Modell/Hersteller. Klartext-Fallback und Reconnect
 sind gesperrt, jede Abfrage hat ein hartes Worker-Zeitlimit. Der SDK-Pin 2.0.0
 benötigt Node >=22.20 und ist für aktuelle ESPHome-Firmware vorgesehen;
 Legacy-Passwortzugänge sind damit nicht abgedeckt. Kein Schalten freigegeben.
+Ab 2.85.8 wird die tatsächliche ESPHome-ESM-Transportauflösung auch unter
+Node 22 geprüft. Ein zusätzlicher Test im gebauten, netzlosen Release-Paket
+prüft SDK-Laden und Matter-Anfrageformate vor der Signierung. Das ist kein
+Nachweis einer Verbindung zu einem echten Gerät.
 ESPHome hat keine eigene Hersteller-Cloud; ein konkreter externer Dienst
 benötigt einen separaten Adapter und eine gesonderte Freigabe.
 
