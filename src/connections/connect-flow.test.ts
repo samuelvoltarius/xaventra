@@ -6,7 +6,7 @@ import { answerApprovalCard, listApprovalCards } from '../core/approval-cards.js
 import { BUILTIN_CONNECTORS, loadConnectorCatalog, type ConnectorManifest } from './connector-catalog.js'
 import { getConnection, loadConnections, readConnectionSecrets, connectionSecretsPath } from './connection-store.js'
 import {
-    allowConnectionTool, beginLogin, completeLoginAndConnect, connectAndTest, disconnectConnection, requestConnect, submitAccess, type ConnectDeps, type ConnectionGateway,
+    allowConnectionTool, beginLogin, completeLoginAndConnect, connectAndTest, connectFromApproval, disconnectConnection, requestConnect, submitAccess, type ConnectDeps, type ConnectionGateway,
 } from './connect-flow.js'
 import { haBearerFetch, startLogin } from './connector-login.js'
 
@@ -67,6 +67,28 @@ async function pressJa(dir: string, cardId: string) {
 }
 
 describe('Verbinden = eine Karte (2.85 Paket A, Punkt 4)', () => {
+    it('discovered HA approval immediately offers login, then reads actual functions after callback without another owner command', async () => {
+        const dir = tmp()
+        const fetchFn = vi.fn(async (input: any) => String(input).endsWith('/auth/token')
+            ? new Response(JSON.stringify({ access_token: SECRET_AT, refresh_token: SECRET_RT, token_type: 'Bearer', expires_in: 3600 }), { status: 200 })
+            : new Response(JSON.stringify([{ entity_id: 'light.office', state: 'off', attributes: { friendly_name: 'Bürolicht' } }]), { status: 200 }))
+        const deps = depsFor(dir, { fetchFn })
+        expect(loadConnections({ dataDir: dir })).toEqual([])
+        const approved = await connectFromApproval('home-assistant', 'telegram:42', deps)
+        expect(approved.ok).toBe(true)
+        const url = new URL(approved.message.match(/https?:\/\/\S*\/auth\/authorize\?\S+/)![0])
+        expect(url.origin).toBe('http://ha.example.com:8123')
+        expect(deps.gateway.connected).toEqual([])
+        expect(fetchFn).not.toHaveBeenCalled()
+        const callback = await completeLoginAndConnect({ state: url.searchParams.get('state'), code: 'owner-approved-code' }, deps)
+        expect(callback.ok).toBe(true)
+        const { refreshHaInventory } = await import('../sensing/ha-inventory.js')
+        const inventory = await refreshHaInventory(dir, null, new AbortController().signal, fetchFn)
+        expect(inventory[0]).toMatchObject({ status: 'ok', functions: [{ id: 'light.office', name: 'Bürolicht', state: 'off' }] })
+        expect(fetchFn.mock.calls.map(call => String(call[0]))).toEqual(['http://ha.example.com:8123/auth/token', 'http://ha.example.com:8123/api/states'])
+        expect(approved.message).not.toContain(SECRET_AT)
+        expect(JSON.stringify(inventory)).not.toContain(SECRET_RT)
+    })
     it('one card per service; nothing is written before the Ja', async () => {
         const dir = tmp()
         const deps = depsFor(dir)

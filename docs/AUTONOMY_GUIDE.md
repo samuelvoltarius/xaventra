@@ -21,6 +21,60 @@ werden die vorhandenen Dienstkennungen und offene geprüfte Ports, kein
 garantiertes Vollinventar sämtlicher Netzwerkgeräte.
 
 `environment_inventory` liest diese Hintergrundfunde mit Fundzeit und Status.
+Ab dem Quellkandidaten 2.85.6 liest es zusätzlich den kanonischen Capability-Graph,
+den vorhandenen MCP-Katalog und den Verbindungsbestand. Die Übersicht nennt
+konkrete verfügbare Modellfähigkeiten pro Node sowie MCP-Werkzeuge mit Zugang
+und Policy: lesend, Zustimmung pro Aufruf oder gesperrt. Veraltete Node-Fähigkeiten,
+abgelaufene Anmeldung und getrennte Transporte gelten nicht als nutzbar.
+Werkzeugbeschreibungen sind Katalogdaten, keine Anweisungen oder Aktionsbelege.
+Diese Übersicht verbindet nichts und liest keine privaten MCP-Ressourcen; Geräte
+hinter Home Assistant müssen über eine passende autorisierte Abfrage ermittelt
+werden. Quellenstand und tatsächliche Funktion im ausgerollten System werden
+getrennt abgenommen.
+Der Hintergrundadapter liest nach vorhandener Home-Assistant-Freigabe alle zwei
+Minuten den begrenzten Funktionsbestand (fester GET `/api/states`). Er meldet neue
+Funktionen über den bestehenden Gedanken-Bus, ohne Schaltaktion. Nur ausgewählte
+Gerätefunktions-Domänen und kurze Namen werden gespeichert, keine Sensorwerte
+oder beliebigen Attribute. Abgelaufene/getrennte Verbindungen und mehr als zehn
+Minuten alte Bestände gelten nicht als aktuell bestätigt. Ohne Zugang folgt keine
+Abfrage; die bestehende zielgebundene Verbindungs-/Anmeldefrage bleibt zuständig.
+Nova findet die bestätigte Zentrale selbst und stellt die Verbindungsfrage über
+den bestehenden Owner-Kartenweg (normale Fragen im nächsten Bericht). Das Ja
+liefert für Home Assistant direkt den Anmeldelink; ein zusätzlicher Befehl oder
+manuelles Suchen der Adresse ist nicht nötig. Nach der Anmeldung laufen der
+Verbindungstest und der Hintergrundbestand ohne weiteren Inventarbefehl.
+Verbindungs- und erneute Anmeldevorschläge haben einen ausführbaren Kartenweg.
+Die direkte Suche ergänzt SSDP-Gerätebeschreibungen (XML, gleiche private
+Antwortadresse, passende UDN, keine Weiterleitungen/Control-URLs) und mDNS-
+Service-/Modellhinweise. Hinweise bleiben Vermutungen, bis eine Identitätsprobe
+sie belegt. Benannte Docker-/veth-/virbr-Interfaces sind keine LAN-Suchnetze;
+echte private 172er-Netze bleiben erlaubt. Unterstützte Shelly-Kennungen werden
+auch ohne LLM geprüft. Adress-Aliase mit gleicher bestätigter Kennung teilen
+keine Aktionsfreigabe. Proprietäres Pairing und universelle Gerätesteuerung sind
+damit nicht implementiert; echte Geräteabnahme bleibt erforderlich.
+Tuya-LAN-Ankündigungen werden nun zusätzlich in einem begrenzten Zeitfenster
+auf UDP 6666/6667/7000 ausgewertet (55AA und 6699). Neuere Geräte werden mit
+einer festen Geräteinfo-Anfrage auf dem eigenen begrenzten LAN angesprochen;
+keine Tuya-Cloud, kein Provisioning, keine Steuerkommandos oder Schlüsselversuche.
+Der Parser prüft Rahmen/Prüfsumme beziehungsweise GCM-Tag und bindet die gemeldete
+Adresse an den Absender. Er speichert nur ausgewählte öffentliche Kennungen,
+nicht Tokens, lokale Geräteschlüssel oder Datenpunkte. Ein Tuya-Protokollfund
+belegt keine konkrete Lampe/Steckdose und keinen OEM-Hersteller. Nova fragt selbst,
+ob sie genau die öffentlichen Ankündigungen dieses Gerätes beobachten soll. Das
+Ja prüft den Fund erneut; anschließend beobachtet der vorhandene Adapter diese
+Ankündigungen gebündelt. Fehlende Ankündigung bedeutet nicht automatisch offline.
+Ein direkter authentifizierter Tuya-Adapter ist noch nicht implementiert.
+Eine gefundene Home-Assistant-Zentrale bietet weiterhin den vorhandenen
+Verbindungs-/Anmeldeweg an; ob Tuya-Geräte dort integriert sind, bleibt zu prüfen.
+Hue-kompatible Bridges und Tasmota-Firmware werden über feste öffentliche,
+nur lesende Kennungsabfragen geprüft. Nach dem Owner-Ja läuft ausschließlich
+die Kennungsüberwachung, kein Pairing und kein Licht-/Schalterzugriff.
+ESPHome-, HomeKit- und Matter-mDNS-Ankündigungen sind weitere Diensthinweise,
+noch keine bestätigte physische Geräteart oder freigegebene Verbindung.
+Die Ankündigungssuche folgt dem bestehenden `discovery.mdns`-Schalter
+(mDNS/SSDP/Tuya); ausgeschaltete Suche und Stoppen werden respektiert.
+UDP-Ankündigungen werden nicht als geöffnete TCP-Ports dargestellt.
+Protokollreferenz: [TinyTuya LAN framing](https://github.com/jasonacox/tinytuya/blob/master/PROTOCOL.md).
 Ab 2.85.4 lesen reine Owner-Inventarfragen (auch "send mir was du im netzwerk
 findest ...") dieses Werkzeug und den aktuellen `mesh_status` über denselben
 geprüften Ausführungsweg. Die Antwort braucht keine Modellplanung oder erneute

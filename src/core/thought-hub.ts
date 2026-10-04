@@ -552,6 +552,10 @@ export async function hasThoughtAction(thoughtId: string): Promise<boolean> {
     const action = load()[thoughtId]
     if (!action) return false
     switch (action.kind) {
+        case 'verbindung':
+            return action.action === 'login'
+                ? /^c-[a-z0-9][a-z0-9-]{1,60}$/.test(String(action.connectionId || ''))
+                : /^[a-zA-Z0-9][a-zA-Z0-9./_-]{1,120}$/.test(String(action.connectorId || ''))
         case 'approveDevice':
         case 'auto-reminder':
             return true

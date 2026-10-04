@@ -5763,7 +5763,8 @@
       "imports": [
         "../device-registry.js",
         "../event-bus.js",
-        "../hardware-recognition.js"
+        "../hardware-recognition.js",
+        "../tuya-discovery.js"
       ]
     },
     {
@@ -5836,6 +5837,16 @@
       ]
     },
     {
+      "module": "src/sensing/connection-awareness.ts",
+      "imports": [
+        "../connections/connection-store.js",
+        "../connections/connector-policy.js",
+        "../mcp/mcp-client.js",
+        "../security/secret-redaction.js",
+        "./ports.js"
+      ]
+    },
+    {
       "module": "src/sensing/device-registry.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5851,9 +5862,11 @@
       "imports": [
         "../startup/tailscale-status.js",
         "./device-registry.js",
+        "./hardware-recognition.js",
         "./neighbors.js",
         "./net-scope.js",
         "./ports.js",
+        "./ssdp.js",
         "node:child_process",
         "node:crypto",
         "node:dgram",
@@ -5866,6 +5879,21 @@
       "imports": [
         "../core/atomic-storage.js",
         "./notify-policy.js",
+        "./ports.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/ha-inventory.ts",
+      "imports": [
+        "../connections/connect-flow.js",
+        "../connections/connection-store.js",
+        "../connections/connector-login.js",
+        "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
+        "./adapters/homeassistant.js",
+        "./event-bus.js",
         "./ports.js",
         "node:fs",
         "node:path"
@@ -5938,11 +5966,32 @@
         "./device-registry.js",
         "./discovery.js",
         "./event-bus.js",
+        "./ha-inventory.js",
         "./hardware-recognition.js",
         "./ports.js",
         "./quiet-hours.js",
+        "./ssdp.js",
+        "./tuya-discovery.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/ssdp.ts",
+      "imports": [
+        "./net-scope.js",
+        "./ports.js",
+        "node:dgram",
+        "node:net"
+      ]
+    },
+    {
+      "module": "src/sensing/tuya-discovery.ts",
+      "imports": [
+        "./device-registry.js",
+        "./net-scope.js",
+        "node:crypto",
+        "node:dgram"
       ]
     },
     {

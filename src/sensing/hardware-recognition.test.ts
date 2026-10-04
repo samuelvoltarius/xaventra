@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hardwareFingerprint, identifyHardware, parseHardwareHypothesis, recognizeHardware, verifyHardwareConnection } from './hardware-recognition.js'
 import { loadDevices, markHardwareAsked, recordCandidates, sensingDeviceFingerprint, setDeviceStatus, type DeviceCandidate } from './device-registry.js'
-import { approveSensingDevice, declineSensingDevice, hardwareConnectionEvents, runDiscoveryNow, setSensingConfig, stopSensing } from './runtime.js'
+import { approveSensingDevice, declineSensingDevice, hardwareConnectionEvents, unsupportedHardwareEvents, runDiscoveryNow, setSensingConfig, stopSensing } from './runtime.js'
 import { environmentAwareness } from './awareness.js'
 
 const roots: string[] = []
@@ -16,7 +16,76 @@ const shelly = { status: 200, body: JSON.stringify({ id: 'shellyplusplug-s-aabbc
 const guess = (next = 'shelly-info', kind = 'plug') => JSON.stringify({ kind, label: 'Mögliche Steckdose', next })
 const owner = { principalId: 'owner-test', permission: 'owner' }
 
+describe('additional fixed manufacturer protocol probes', () => {
+    const hue = { status: 200, body: JSON.stringify({ bridgeid: '001788fffe123456', modelid: 'BSB002', swversion: '1967054020' }) }
+    const tasmota = { status: 200, body: JSON.stringify({ Status: { Module: 1 }, StatusFWR: { Version: '14.2.0(release-tasmota)' }, StatusNET: { Mac: 'AA:BB:CC:DD:EE:FF' } }) }
+    it('confirms public Hue/Tasmota identifiers without guessing devices behind a bridge or firmware', () => {
+        expect(identifyHardware(hue, 'hue-config')).toMatchObject({ kind: 'bridge', ecosystem: 'hue', connector: 'hue-readonly' })
+        expect(identifyHardware(tasmota, 'tasmota-info')).toMatchObject({ kind: 'unknown', ecosystem: 'tasmota', connector: 'tasmota-readonly' })
+        expect(identifyHardware({ status: 401, body: hue.body }, 'hue-config')).toBeNull()
+        expect(identifyHardware({ status: 200, body: '{"name":"Hue"}' }, 'hue-config')).toBeNull()
+    })
+    it('uses public hints only to choose fixed probes, then binds monitoring to the verified identity', async () => {
+        for (const [name, response, probe] of [['Hue bridge', hue, 'hue-config'], ['Tasmota', tasmota, 'tasmota-info']] as const) {
+            const request = vi.fn(async () => response)
+            const [result] = await recognizeHardware([{ ...candidate(), name }], undefined, { interfaces, httpProbe: request })
+            expect(result.hardware?.certainty).toBe('confirmed')
+            expect(result.hardware?.probe).toBe(probe)
+            expect(await verifyHardwareConnection(result, { interfaces, httpProbe: request })).toBe(true)
+            expect(await verifyHardwareConnection({ ...result, hardware: { ...result.hardware!, connector: 'shelly-readonly' } }, { interfaces, httpProbe: request })).toBe(false)
+        }
+    })
+    it('offers real read-only monitors and reports Tuya without a pretend executor; rejection is preserved', () => {
+        const dir = root()
+        const [bridge, tuya, ha] = recordCandidates(dir, [
+            { ...candidate(), hardware: identifyHardware(hue, 'hue-config')! },
+            { ...candidate('192.168.1.22'), port: 6668, via: 'udp', hardware: { kind: 'unknown', certainty: 'confirmed', label: 'Tuya', identity: '1234567890abcdef', ecosystem: 'tuya', observedAt: new Date().toISOString() } },
+            { type: 'homeassistant', host: '192.168.1.23', port: 8123, via: 'http' },
+        ])
+        const cards = hardwareConnectionEvents(loadDevices(dir))
+        expect(cards.find(c => c.subject === bridge.id)?.hint.action.kind).toBe('approveDevice')
+        expect(cards.find(c => c.subject === ha.id)?.summary).toContain('tuya')
+        expect(cards.some(c => c.subject === tuya.id)).toBe(false)
+        expect(unsupportedHardwareEvents(loadDevices(dir))[0].hint.action).toBeUndefined()
+        setDeviceStatus(dir, tuya.id, 'abgelehnt', owner)
+        expect(unsupportedHardwareEvents(loadDevices(dir))).toEqual([])
+    })
+    it('binds a Tuya announcement-monitor question to the observed device and rechecks before owner approval', async () => {
+        const { parseTuyaAnnouncement } = await import('./tuya-discovery.js')
+        const { createCipheriv, createHash } = await import('node:crypto')
+        const cipher = createCipheriv('aes-128-ecb', createHash('md5').update('yGAdlopoPVldABfn').digest(), null)
+        const payload = Buffer.from(JSON.stringify({ ip: '192.168.1.21', gwId: 'device12345678901234', version: '3.3' }))
+        const candidate = parseTuyaAnnouncement(Buffer.concat([cipher.update(payload), cipher.final()]), '192.168.1.21', interfaces)!
+        const dir = root(); setSensingConfig({}, {}, dir)
+        const [device] = recordCandidates(dir, [candidate])
+        const [offer] = hardwareConnectionEvents(loadDevices(dir))
+        expect(offer.summary).toContain('Geräteankündigungen beobachten')
+        expect(offer.hint.proposal).toContain('kein Schalten')
+        expect((await approveSensingDevice(device.id, owner, sensingDeviceFingerprint(device), { interfaces, tuyaBrowse: async () => [] })).ok).toBe(false)
+        expect(loadDevices(dir)[0].status).toBe('gefunden')
+        const result = await approveSensingDevice(device.id, owner, sensingDeviceFingerprint(device), { interfaces, tuyaBrowse: async () => [candidate] })
+        expect(result).toMatchObject({ ok: true })
+        expect(result.message).toContain('Kein authentifizierter Direktzugriff')
+        expect(loadDevices(dir)[0].status).toBe('eingerichtet')
+        const replacement = { ...candidate, hardware: { ...candidate.hardware!, identity: 'other-device-1234' } }
+        expect(await verifyHardwareConnection(device, { interfaces, tuyaBrowse: async () => [replacement] })).toBe(false)
+    })
+})
+
 describe('bounded hardware hypotheses', () => {
+    it('verifies a Shelly manufacturer hint even without a model', async () => {
+        const probe = vi.fn(async () => shelly)
+        const result = await recognizeHardware([{ ...candidate(), name: 'Shelly kitchen' }], undefined, { interfaces, httpProbe: probe })
+        expect(result[0].hardware).toMatchObject({ kind: 'plug', certainty: 'confirmed', connector: 'shelly-readonly' })
+        expect(probe).toHaveBeenCalledTimes(1)
+    })
+    it('never overwrites an already protocol-confirmed identity with an LLM guess', async () => {
+        const identity = identifyHardware(shelly, 'shelly-info')!
+        const model = vi.fn(async () => guess('none', 'tv'))
+        const result = await recognizeHardware([{ ...candidate(), hardware: identity }, { ...candidate(), port: 0, type: 'networkdevice', via: 'neighbor' }], model, { interfaces })
+        expect(result[0].hardware).toEqual(identity)
+        expect(model).not.toHaveBeenCalled()
+    })
     it('treats a thrown transport failure as negative evidence and revises the guess', async () => {
         const model = vi.fn().mockResolvedValueOnce(guess()).mockResolvedValueOnce(guess('none', 'unknown'))
         const httpProbe = vi.fn().mockRejectedValue(new Error('connection refused'))

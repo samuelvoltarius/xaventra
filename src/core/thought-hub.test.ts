@@ -74,6 +74,23 @@ describe('Gedanken-Hub: Phase 2/3/4 → Planer-Gedanken → Knopf → Aktion', (
 })
 
 describe('ganze Kette: Fund → Gedanke → Karte → Owner drückt Ja → Aktion', () => {
+    it('automatic connection and login thoughts reach the existing owner question-card path', async () => {
+        const { createConnectionThought, hasThoughtAction } = await import('./thought-hub.js')
+        const { createPlannerTelegramPort } = await import('./planner-card-bridge.js')
+        const { listApprovalCards } = await import('./approval-cards.js')
+        for (const kind of ['connect', 'login'] as const) {
+            const title = `Automatischer HA ${kind}`
+            createConnectionThought({ kind, connectorId: 'home-assistant', connectionId: 'c-home-assistant', title,
+                text: 'Bestätigte Zentrale gefunden', proposal: 'Verbinden beziehungsweise anmelden?', dedupeKey: `test-ha-${kind}` })
+            const thought = listThoughts().find(t => t.title === title)!
+            expect(await hasThoughtAction(thought.id)).toBe(true)
+            const sendApprovalCard = vi.fn(async () => 1)
+            await createPlannerTelegramPort({ hasCardAuthority: async () => true, getOwnerChatIds: () => ['1413797900'], sendApprovalCard }).deliver({
+                id: `out-ha-${kind}`, kind: 'gedanke', title, text: thought.evidence, permission: 'fragen', thoughtId: thought.id,
+                createdAt: new Date().toISOString(), urgency: 'normal' })
+            expect(listApprovalCards({ status: 'offen' }).some(c => c.aktion.ref === thought.id)).toBe(true)
+        }
+    })
     it('a discovered printer ends up approved only after the owner presses Ja on the card', async () => {
         approve.mockClear()
         const { getThought } = await import('../planner/index.js')

@@ -1057,7 +1057,7 @@
     {
       "name": "environment_inventory",
       "category": "system",
-      "description": "Liest die bereits automatisch erkannten LAN-/Tailnet-Geräte mit Fundzeit, Status und Grenzen der letzten Suche. Startet keinen neuen Scan; trennt Gerätefunde von bestätigter Steuerbarkeit.",
+      "description": "Liest bestehende Node-Fähigkeiten, MCP-Verbindungen mit Werkzeugkatalog und Zugang/Freigabe sowie LAN-/Tailnet-Geräte mit Fundzeit und Grenzen der letzten Suche. Startet keinen Scan oder Verbindungsaufbau; trennt Funde, Verbindungen und Ausführungsrechte.",
       "parameters": []
     },
     {

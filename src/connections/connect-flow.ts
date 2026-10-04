@@ -210,7 +210,14 @@ export async function connectFromApproval(connectorId: string, approvedBy: strin
     }
     const request: ConnectRequest = { id: `r-${randomBytes(8).toString('hex')}`, connectorId: manifest.name, community: false, basis, createdAt: (deps.now || Date.now)(), quelle: 'bedarf' }
     writeRequests([...readRequests(deps).filter(item => item.connectorId !== manifest.name), request], deps)
-    return establishConnection(request.id, approvedBy, deps)
+    const established = await establishConnection(request.id, approvedBy, deps)
+    // Discovery already carries the concrete address and the owner's approval.
+    // Do not require another command to start the Home Assistant login.
+    if (!established.ok || manifest.auth_typ !== 'ha-login') return established
+    const login = await beginLogin(connectionIdFor(manifest.name), deps)
+    return { ok: login.ok, message: login.url
+        ? `Home Assistant an der bestätigten Adresse eingerichtet. Bitte hier anmelden (gilt 15 Minuten): ${login.url}\nDanach teste ich die Verbindung und lese den Gerätebestand automatisch; noch nichts geschaltet.`
+        : login.message }
 }
 
 /** Browser return: finish the login, then connect and test automatically. */

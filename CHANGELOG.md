@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.85.6] — 2026-10-04 (source candidate; live acceptance pending)
+
+- Add bounded Tuya LAN announcements (55AA plaintext/ECB, 6699 GCM), sender/IP
+  and checksum/tag checks, scoped device-info discovery only. Retain selected
+  public identifiers, never local keys, DPS or tokens. Tuya protocol presence
+  does not establish a lamp/plug type, OEM manufacturer or control access.
+- Add fixed public Hue/Tasmota identity probes and owner-approved identity-only
+  monitors; mDNS recognizes Hue, ESPHome, HomeKit and Matter service hints.
+  Tuya offers only an identity-bound public-announcement monitor, with recheck
+  after owner consent; no direct authenticated control. Missing announcements
+  do not prove offline status. A found HA bridge offer names protocol observations
+  but does not claim they are already integrated. No pairing/switching added.
+- Discovered Home Assistant approval immediately supplies the existing login
+  link, without requiring another owner command. Connection/login thoughts now
+  qualify for existing owner question cards. Login callback tests and background
+  inventory remain read-only; real Telegram/device acceptance is still pending.
+- Add automatic read-only Home Assistant entity inventory through existing
+  approved login/configuration, including newly observed function thoughts.
+  No guessed credentials, sensor dumps, pairing or switching. A light entity is
+  a light function; switches/media entities do not prove plugs/TV panels.
+- Enrich mDNS with bounded model/service hints and add scoped SSDP XML identity
+  verification with matching UDN and no redirects/control URLs. Exclude named
+  container-only interfaces without excluding real 172.* LANs. Prefer actively
+  observed candidates, verify Shelly hints without a model, preserve completed
+  checks on internal budget expiry, and reconcile only confirmed identity aliases.
+
+- Owner environment overviews now read canonical node capability snapshots, live
+  MCP catalogs and the existing connection store, not only LAN observations and
+  heartbeat/tool counts. Show concrete model capabilities and published MCP tools
+  with their connection policy; expired access, offline nodes and disconnected
+  transports are not described as usable.
+- Preserve separate output budgets for node, MCP and LAN evidence. Overview reads
+  do not connect, probe, read private MCP resources or execute tools. Catalog
+  presence is not a physical device identification or successful action receipt.
+
+
 ## [2.85.5] — 2026-10-04 (source candidate)
 
 - Extend existing background sensing with bounded LLM hardware hypotheses and

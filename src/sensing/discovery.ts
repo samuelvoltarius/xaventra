@@ -27,6 +27,8 @@ import { localNeighbors } from './neighbors.js'
 import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 import { cleanText } from './ports.js'
+import type { SsdpDescription } from './ssdp.js'
+import { identifyHardware } from './hardware-recognition.js'
 
 export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
 
@@ -36,7 +38,9 @@ export interface DiscoveryDeps {
     interfaces?: InterfaceMap
     tcpProbe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>
     httpProbe?: (url: string, timeoutMs: number, signal?: AbortSignal) => Promise<HttpProbeResult | null>
-    mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string }>>
+    mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }>>
+    ssdpBrowse?: (timeoutMs: number) => Promise<SsdpDescription[]>
+    tuyaBrowse?: (timeoutMs: number) => Promise<DeviceCandidate[]>
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     tailnetPeers?: () => Promise<string[]>
@@ -88,7 +92,7 @@ export function realTcpProbe(host: string, port: number, timeoutMs: number): Pro
 
 export async function realHttpProbe(url: string, timeoutMs: number, signal?: AbortSignal): Promise<HttpProbeResult | null> {
     try {
-        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, text/html' } })
+        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json, application/xml, text/html' } })
         const reader = res.body?.getReader()
         const chunks: Uint8Array[] = []
         let length = 0
@@ -243,12 +247,32 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
             for (const item of found) {
                 const decision = scanTargetAllowed(item.host, scope)
                 if (!decision.allowed) { rejected.push({ host: item.host, reason: `mDNS: ${decision.reason}` }); continue }
-                add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name, evidence: { quelle: 'mDNS', port: item.port } })
+                add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name, evidence: { quelle: 'mDNS', port: item.port,
+                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn'].includes(key)).slice(0, 6).map(([key, value]) => [key, cleanText(value, 80)])) } })
             }
         } catch { /* mDNS optional */ }
     }
 
     const progress = new Map<number, number>()
+    if (options.mdns && deps.tuyaBrowse && !limiter.expired() && !options.signal?.aborted) {
+        const found = await deps.tuyaBrowse(Math.min(3000, Math.max(100, deadline - now()))).catch(() => [])
+        for (const device of found.slice(0, 32)) {
+            if (!options.signal?.aborted && scanTargetAllowed(device.host, scope).allowed && device.via === 'udp' && device.hardware?.ecosystem === 'tuya') add(device)
+        }
+    }
+    // Alongside mDNS, validate device-description identity on the responder's
+    // own address. ProbeLimiter owns the same rate and total deadline.
+    if (options.mdns && deps.ssdpBrowse && !limiter.expired() && !options.signal?.aborted) {
+        const descriptors = await deps.ssdpBrowse(Math.min(1500, options.deadlineMs / 8)).catch(() => [])
+        for (const d of descriptors.slice(0, 8)) {
+            if (!scanTargetAllowed(d.host, scope).allowed || !/^\/[a-z0-9_./-]{1,150}\.xml$/i.test(d.path) || d.path.includes('..') || !Number.isInteger(d.port) || d.port < 1 || d.port > 65535) continue
+            const result = await limiter.run(() => httpProbe(`http://${d.host}:${d.port}${d.path}`, probeTimeout, options.signal))
+            const hardware = identifyHardware(result ?? null, 'upnp-description')
+            if (hardware?.identity && d.usn.split('::')[0].toLowerCase() === hardware.identity.toLowerCase()) {
+                add({ type: 'networkservice', host: d.host, port: d.port, via: 'http', name: hardware.label, hardware, evidence: { quelle: 'SSDP + öffentliche UPnP-Gerätebeschreibung', geraetekennung: hardware.identity } })
+            }
+        }
+    }
     const probeHost = async (host: string, hostIndex: number): Promise<void> => {
         const firstPort = hostIndex === 0 && validCursor && hostOffset === saved.hostOffset ? saved.portIndex : 0
         progress.set(hostIndex, firstPort)
@@ -344,6 +368,11 @@ export const MDNS_SERVICES: Readonly<Record<string, DeviceType>> = Object.freeze
     '_ipps._tcp.local': 'networkservice',
     '_airplay._tcp.local': 'networkservice',
     '_googlecast._tcp.local': 'networkservice',
+    '_hue._tcp.local': 'networkservice',
+    '_esphomelib._tcp.local': 'networkservice',
+    '_hap._tcp.local': 'networkservice',
+    '_matter._tcp.local': 'networkservice',
+    '_matterc._udp.local': 'networkservice',
 })
 
 function encodeName(name: string): Buffer {
@@ -381,7 +410,7 @@ function readName(buf: Buffer, offset: number, depth = 0): { name: string; next:
     return { name: labels.filter(Boolean).join('.'), next: next >= 0 ? next : pos }
 }
 
-export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string } }
+export interface MdnsRecord { name: string; type: number; data: { ptr?: string; target?: string; port?: number; a?: string; txt?: Record<string, string> } }
 
 export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
     if (buf.length < 12 || buf.length > 9000) return []
@@ -402,14 +431,23 @@ export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
         if (type === 12) data.ptr = readName(buf, rd).name
         else if (type === 33 && rdlen >= 7) { data.port = buf.readUInt16BE(rd + 4); data.target = readName(buf, rd + 6).name }
         else if (type === 1 && rdlen === 4) data.a = [buf[rd], buf[rd + 1], buf[rd + 2], buf[rd + 3]].join('.')
+        else if (type === 16) {
+            data.txt = {}; let at = rd
+            while (at < rd + rdlen && Object.keys(data.txt).length < 6) {
+                const length = buf[at++]; if (at + length > rd + rdlen) break
+                const value = buf.toString('utf8', at, at + length); at += length
+                const match = /^(model|manufacturer|md|ty|fn)=(.*)$/i.exec(value)
+                if (match) data.txt[match[1].toLowerCase()] = cleanText(match[2], 80)
+            }
+        }
         records.push({ name, type, data })
         pos = rd + rdlen
     }
     return records
 }
 
-export function mdnsCandidates(records: MdnsRecord[]): Array<{ type: DeviceType; host: string; port: number; name?: string }> {
-    const out: Array<{ type: DeviceType; host: string; port: number; name?: string }> = []
+export function mdnsCandidates(records: MdnsRecord[]): Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }> {
+    const out: Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }> = []
     const addr = new Map(records.filter(r => r.type === 1 && r.data.a).map(r => [r.name.toLowerCase(), r.data.a!]))
     for (const ptr of records.filter(r => r.type === 12 && r.data.ptr)) {
         const type = MDNS_SERVICES[ptr.name.toLowerCase()]
@@ -417,7 +455,8 @@ export function mdnsCandidates(records: MdnsRecord[]): Array<{ type: DeviceType;
         const srv = records.find(r => r.type === 33 && r.name.toLowerCase() === ptr.data.ptr!.toLowerCase())
         if (!srv?.data.target || !srv.data.port) continue
         const host = addr.get(srv.data.target.toLowerCase())
-        if (host) out.push({ type, host, port: srv.data.port, name: ptr.data.ptr!.split('.')[0] })
+        const txt = records.find(r => r.type === 16 && r.name.toLowerCase() === ptr.data.ptr!.toLowerCase())?.data.txt || {}
+        if (host) out.push({ type, host, port: srv.data.port, name: ptr.data.ptr!.split('.')[0], hints: { service: ptr.name.toLowerCase(), ...txt } })
     }
     return out
 }

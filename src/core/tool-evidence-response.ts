@@ -80,7 +80,7 @@ export function environmentOverviewResponse(executions: ResponseToolExecution[])
         if (typeof value === 'string') { try { value = JSON.parse(value) } catch { /* formatted text */ } }
         const text = value && typeof value === 'object' && typeof (value as any).formatted === 'string'
             ? (value as any).formatted : value
-        return safeResult(text, name === 'environment_inventory' ? 6000 : 4000) || `${name}: kein inhaltliches Ergebnis.`
+        return safeResult(text, name === 'environment_inventory' ? 15500 : 4000) || `${name}: kein inhaltliches Ergebnis.`
     })
     return results.join('\n\n') + '\n\nMesh-Verbindung und beobachtete Dienste sind keine allgemeine Steuerfreigabe. Konkrete Aktionen benötigen passende freigegebene Werkzeuge; Erreichbarkeit weiterer Dienste wurde hier nicht aktiv getestet.'
 }

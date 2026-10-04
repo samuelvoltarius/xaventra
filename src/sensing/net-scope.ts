@@ -53,7 +53,10 @@ export function ownSubnets(interfaces: InterfaceMap = networkInterfaces() as Int
     const subnets: Cidr[] = []
     const own: string[] = []
     let hasTailnet = false
-    for (const list of Object.values(interfaces)) {
+    for (const [name, list] of Object.entries(interfaces)) {
+        // Interface identity, not the 172/12 range: real LANs may use 172.*.
+        // Named container-only bridges are not physical LAN discovery scopes.
+        if (/^(?:docker\d+|veth[\w-]*|br-[a-f0-9]{8,}|virbr\d+)$/i.test(name)) continue
         for (const entry of list || []) {
             const family = entry.family === 4 ? 'IPv4' : entry.family
             if (family !== 'IPv4' || entry.internal || !isStrictIpv4(entry.address)) continue

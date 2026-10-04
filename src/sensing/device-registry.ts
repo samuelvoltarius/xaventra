@@ -30,7 +30,7 @@ export interface DeviceRecord {
     name: string
     host: string
     port: number
-    via: 'tcp' | 'http' | 'mdns' | 'neighbor'
+    via: 'tcp' | 'http' | 'mdns' | 'neighbor' | 'udp'
     status: DeviceStatus
     foundAt: string
     lastSeenAt: string
@@ -47,7 +47,7 @@ export interface DeviceCandidate {
     type: DeviceType
     host: string
     port: number
-    via: 'tcp' | 'http' | 'mdns' | 'neighbor'
+    via: 'tcp' | 'http' | 'mdns' | 'neighbor' | 'udp'
     name?: string
     evidence?: Record<string, unknown>
     hardware?: HardwareIdentity
@@ -77,7 +77,9 @@ export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'por
 
 export function sensingDeviceFingerprint(device: Pick<DeviceRecord, 'type' | 'host' | 'port' | 'hardware'>): string {
     const h = device.hardware
-    return createHash('sha256').update(JSON.stringify([device.type, device.host, device.port, h?.connector, h?.identity, h?.model, h?.probe])).digest('hex')
+    const fields = [device.type, device.host, device.port, h?.connector, h?.identity, h?.model, h?.probe]
+    if (h?.ecosystem) fields.push(h.ecosystem)
+    return createHash('sha256').update(JSON.stringify(fields)).digest('hex')
 }
 
 export function loadDevices(dataDir: string): DeviceRecord[] {
@@ -106,7 +108,7 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
         if (existing) {
             existing.lastSeenAt = at
             existing.evidence = cleanEvidence(candidate.evidence)
-            if (candidate.via === 'http') existing.via = 'http'
+            if (candidate.via === 'http' || candidate.via === 'udp') existing.via = candidate.via
             if (candidate.name) existing.name = cleanText(candidate.name, 80)
             if (candidate.hardware) existing.hardware = candidate.hardware
             continue

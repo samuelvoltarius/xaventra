@@ -31,6 +31,9 @@ import { getServiceRuntime } from '../runtime/service-runtime.js'
 import { HARDWARE_LABEL, HARDWARE_PROMPT, recognizeHardware, verifyHardwareConnection, type HardwareModel } from './hardware-recognition.js'
 import { markHardwareAsked, sensingDeviceFingerprint, deviceId } from './device-registry.js'
 import { createHardwareAdapter } from './adapters/hardware.js'
+import { refreshHaInventory, haInventoryEvents } from './ha-inventory.js'
+import { realSsdpBrowse } from './ssdp.js'
+import { realTuyaBrowse } from './tuya-discovery.js'
 
 interface RuntimeState {
     raw: unknown
@@ -111,6 +114,14 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
     if (cfg.discovery.enabled) bus.register(createHardwareAdapter(() => monitoredDevices(state.dataDir)))
     if (a.printer.enabled) bus.register(createPrinterAdapter({ targets: printerTargets, intervalMs: a.printer.intervalSec * 1000, timeoutMs: a.printer.timeoutSec * 1000 }))
     if (a.homeassistant.enabled) bus.register(createHomeAssistantAdapter({ connection: () => resolveHaConnection(a.homeassistant, state.rootConfig), entities: a.homeassistant.entities, intervalMs: a.homeassistant.intervalSec * 1000, timeoutMs: a.homeassistant.timeoutSec * 1000 }))
+    if (a.homeassistant.enabled) bus.register({ id: 'homeassistant-inventory', source: 'homeassistant', intervalMs: 120_000, timeoutMs: 25_000,
+        async poll(ctx) {
+            const sources = await refreshHaInventory(state.dataDir, resolveHaConnection(a.homeassistant, state.rootConfig), ctx.signal)
+            if (ctx.signal.aborted) return []
+            const previous = (ctx.state.functions || {}) as Record<string, string[]>
+            const events = haInventoryEvents(sources, previous); ctx.state.functions = previous
+            return events
+        } })
     if (a.mail.enabled) bus.register(createMailAdapter({ config: a.mail, credentials: () => resolveMailCredentials(a.mail, { env: process.env, authProfiles: loadAuthProfiles() }) }))
     if (a.system.enabled) bus.register(createSystemAdapter({ dataDir: state.dataDir, intervalMs: a.system.intervalSec * 1000, timeoutMs: a.system.timeoutSec * 1000 }))
     // Phase 6c: Proxmox (read only) when infra.proxmox is on and watch is not false.
@@ -212,12 +223,16 @@ export async function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: Ha
             deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
             maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
             cursor: readDiscoveryCursor(dataDir), signal: controller.signal,
-        }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ...deps })
+        }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
+            tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces, controller.signal) : undefined, ...deps })
         if (controller.signal.aborted) return 'Geräte-Suche beim Stoppen abgebrochen.'
         const known = loadDevices(dataDir)
         const attempted = (host: string) => Math.max(0, ...known.filter(d => d.host === host).map(d => Date.parse(d.hardware?.observedAt || '') || 0))
         const eligible = report.candidates.filter(c => !known.some(d => d.host === c.host && ['abgelehnt', 'aus'].includes(d.status)))
-            .sort((a, b) => attempted(a.host) - attempted(b.host))
+            .sort((a, b) => {
+                const rank = (c: typeof a) => c.port > 0 && c.via !== 'neighbor' ? 0 : 1
+                return rank(a) - rank(b) || attempted(a.host) - attempted(b.host)
+            })
         // The monitored local learning facade owns privacy, health and token budget.
         // Never fall back to the cloud Main client for private network observations.
         const serviceRuntime = getServiceRuntime()
@@ -243,6 +258,8 @@ export async function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: Ha
                 await busForPublish().publish('discovery', offers)
                 for (const offer of offers) markHardwareAsked(dataDir, offer.subject, String(offer.evidence.fingerprint))
             }
+            const observations = unsupportedHardwareEvents(loadDevices(dataDir))
+            if (observations.length) await busForPublish().publish('discovery', observations)
         }
         const watchedIds = new Set(handled.monitored.map(device => device.id))
         return [
@@ -290,6 +307,8 @@ export async function approveSensingDevice(id: string, approver: Approver, finge
         }
     }
     const result = approveDevice(dataDir, id, approver)
+    if (result.ok && device?.hardware?.connector === 'tuya-announcements') return { ok: true,
+        message: 'Die öffentlichen Tuya-Geräteankündigungen werden ab jetzt lesend beobachtet. Kein authentifizierter Direktzugriff, keine Schaltfreigabe und kein bestätigter Lampen-/Steckdosentyp.' }
     return { ok: result.ok, message: result.message }
 }
 
@@ -304,18 +323,33 @@ export function declineSensingDevice(id: string, approver: Approver, fingerprint
 /** Only supported, protocol-verified endpoints become actionable questions. */
 export function hardwareConnectionEvents(devices: DeviceRecord[], haConfigured = false, now = Date.now()): RawEvent[] {
     return devices.filter(d => d.status === 'gefunden' && Number.isFinite(Date.parse(d.lastSeenAt)) && now - Date.parse(d.lastSeenAt) <= 24 * 60 * 60_000
-        && ((d.type === 'homeassistant' && d.via === 'http' && !haConfigured) || (d.hardware?.certainty === 'confirmed' && d.hardware.connector === 'shelly-readonly')))
+        && ((d.type === 'homeassistant' && d.via === 'http' && !haConfigured) || (d.hardware?.certainty === 'confirmed' && ['shelly-readonly', 'hue-readonly', 'tasmota-readonly', 'tuya-announcements'].includes(d.hardware.connector))))
         .filter(d => d.hardwareAskedFingerprint !== sensingDeviceFingerprint(d)).map(d => {
             const fingerprint = sensingDeviceFingerprint(d)
+            const compatible = [...new Set(devices.filter(other => other.status === 'gefunden' && other.hardware?.certainty === 'confirmed' && other.hardware.ecosystem
+                && now - Date.parse(other.lastSeenAt) <= 24 * 60 * 60_000).map(other => other.hardware.ecosystem))].join(', ')
             const label = d.hardware ? `${HARDWARE_LABEL[d.hardware.kind]}: ${d.hardware.label}` : 'Home Assistant (Smart-Home-Zentrale; angeschlossene Geräte noch nicht ausgelesen)'
             return { kind: 'discovery.connection-offer', subject: d.id, severity: 'info', dedupeKey: `hardware-offer:${d.id}:${fingerprint}`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
-                summary: `${label} bei ${d.host} erkannt. Soll ich mich damit verbinden?`, evidence: { geraet: d.id, fingerprint, adresse: d.host, kennung: d.hardware?.identity || 'Home-Assistant-Manifest' },
-                hint: { importance: 'normal', title: `Gefunden: ${label}`, level: 'fragen', proposal: d.type === 'homeassistant'
+                summary: `${label} bei ${d.host} erkannt. ${d.hardware?.connector === 'tuya-announcements' ? 'Soll ich seine öffentlichen Geräteankündigungen beobachten? Direkter Zugriff und Geräteart sind noch ungeprüft.' : 'Soll ich mich damit verbinden?'}${d.type === 'homeassistant' && compatible ? ` Weitere Protokollfunde: ${compatible}; ob diese dort eingebunden sind, prüfe ich erst nach Anmeldung.` : ''}`, evidence: { geraet: d.id, fingerprint, adresse: d.host, kennung: d.hardware?.identity || 'Home-Assistant-Manifest' },
+                hint: { importance: 'normal', title: `Gefunden: ${label}`, level: 'fragen', proposal: d.hardware?.connector === 'tuya-announcements'
+                    ? 'Ja = öffentliche Tuya-Ankündigung erneut prüfen und anschließend nur diese Ankündigungen beobachten. Kein Cloud-Login, kein direkter Gerätezugriff, kein Schalten. Geräteart bleibt bis zu weiteren Belegen unbekannt.' : d.type === 'homeassistant'
                     ? 'Ja = Home Assistant an dieser Adresse einrichten, danach einmal anmelden und Verbindung testen. Schalten fragt weiterhin separat.'
-                    : 'Ja = Gerätekennung erneut prüfen und nur lesende Verbindung überwachen. Kein Schalten und keine Konfigurationsänderung am Gerät.',
+                    : 'Ja = Gerätekennung erneut prüfen und nur öffentliche Identitätsdaten überwachen. Kein Schalten, kein Pairing; Geräte hinter einer Bridge sind damit noch nicht ausgelesen.',
                     action: { kind: 'approveDevice', deviceId: d.id, fingerprint } },
             }
         })
+}
+
+/** Inform automatically when a protocol was identified but no credentialed
+ * executor exists. Do not turn an unsupported connection into a fake Ja card. */
+export function unsupportedHardwareEvents(devices: DeviceRecord[], now = Date.now()): RawEvent[] {
+    return devices.filter(d => d.status === 'gefunden' && d.hardware?.ecosystem === 'tuya' && !d.hardware.connector && d.hardware.certainty === 'confirmed'
+        && Number.isFinite(Date.parse(d.lastSeenAt)) && now - Date.parse(d.lastSeenAt) >= 0 && now - Date.parse(d.lastSeenAt) <= 24 * 3600_000).slice(0, 16).map(d => ({
+        kind: 'discovery.hardware-protocol', subject: d.id, severity: 'info', dedupeKey: `hardware-protocol:${d.id}:${sensingDeviceFingerprint(d)}`, dedupeWindowMs: 30 * 24 * 3600_000,
+        summary: `Tuya-kompatibles Gerät bei ${d.host} erkannt. Ob Lampe, Steckdose oder anderes, ist noch unbekannt. Eine vorhandene Home-Assistant-Zentrale kann nach deiner Anmeldung ihren eingebundenen Bestand liefern. Direkter Tuya-Zugriff braucht autorisierten Zugang; derzeit nicht verbunden oder steuerbar.`,
+        evidence: { geraet: d.id, adresse: d.host, protokoll: 'Tuya', kennung: d.hardware.identity },
+        hint: { title: 'Tuya-Gerät gefunden — Geräteart/Zugang noch offen', importance: 'normal', level: 'selbst' },
+    }))
 }
 
 export async function proposeAccounts(): Promise<string> {
