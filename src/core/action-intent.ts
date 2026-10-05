@@ -62,6 +62,7 @@ export function detectActionIntent(input: string): ActionIntent {
     if (isBareHttpUrl(input)) return { requiresTool: true, kind: 'web' }
     const text = actionRequestText(input).toLowerCase().replace(/\s+/g, ' ').trim()
     if (isEnvironmentOverview(input)) return { requiresTool: true, kind: 'system-state' }
+    if (/\b(?:verfolg\w*|track\w*|paketstatus|sendungsstatus)\b.{0,80}\b(?:[a-z0-9-]{4,40})\b|\b(?:wo|status|prüfe|pruefe)\b.{0,60}\b(?:paket|sendung|trackingnummer)\b/i.test(text)) return { requiresTool: true, kind: 'web' }
     const explicitFileTargets = inferRequiredToolTargets(text)
         .filter(target => !/^https?:\/\//.test(target))
 

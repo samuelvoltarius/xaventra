@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
+it('requires provider evidence for a parcel status instead of model imagination', () => {
+    expect(detectActionIntent('Verfolge DHL 12345678')).toEqual({ requiresTool: true, kind: 'web' })
+})
+
 it.each(['Recherchiere Informationen über einen Fotografen', 'Suche weiter im Internet nach mir', 'Google bitte nach dem Unternehmen'])('recognizes research request: %s', text => {
     expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'web' })
 })

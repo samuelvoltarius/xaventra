@@ -23,18 +23,28 @@ export function mentionsMesh(text: string): boolean {
 }
 
 export function mentionsEnvironment(text: string): boolean {
-    return mentionsMesh(text) || /\b(?:netzwerk|netz|lan|tailnet|hardware|geräte|geraete|devices)\b/i.test(text)
+    return mentionsMesh(text) || /\b(?:netzwerk|netz|lan|tailnet|hardware|geräte|geraete|devices|home\s*assistant|hue|tuya|shelly|esphome|matter|tasmota|smart[- ]?home|lampen|steckdosen)\b/i.test(text)
+}
+
+/** Ignore only complete, bounded prohibitions, never an effect hidden after one.
+ * This is classification, not authorization; tool policy still owns execution. */
+export function inventoryRequestText(text: string): string {
+    return text.split(/[!?;\n]|\.\s+/).filter(clause => {
+        const value = clause.trim().replace(/[.,]+$/, '')
+        return !/^(?:(?:noch|bitte)\s+)?(?:nichts|nicht)\s+(?:koppeln|installieren|schalten)(?:\s*(?:,|oder|und)\s*(?:koppeln|installieren|schalten))*$/i.test(value)
+            && !/^keine?\s+(?:kopplung|installation(?:en)?|steuerung|schaltaktion(?:en)?|geräteaktion(?:en)?|ssh-abfrage)(?:\s*(?:,|oder|und)\s*(?:kopplung|installation(?:en)?|steuerung|schaltaktion(?:en)?|geräteaktion(?:en)?|ssh-abfrage))*$/i.test(value)
+    }).join('\n')
 }
 
 export function isEnvironmentOverview(text: string): boolean {
     // "send mir was ..." requests a textual overview, not a file transfer.
     // Strip only this bounded reporting prefix; any later effect verb still
     // prevents the shortcut. Never turn mixed actions into read-only inventory.
-    const question = text.trim().replace(/^(?:bitte\s+)?(?:send(?:e)?|schick(?:e)?|zeig(?:e)?)\s+mir\s+(?=(?:was|welche[nrs]?|welceh)\b)/i, '')
+    const question = inventoryRequestText(text).trim().replace(/^(?:bitte\s+)?(?:send(?:e)?|schick(?:e)?|zeig(?:e)?)\s+mir\s+(?=(?:was|welche[nrs]?|welceh)\b)/i, '')
         .replace(/^(und\s+)?welceh\b/i, '$1welche')
-    return mentionsEnvironment(question) && /^(?:und\s+)?(?:was\b|welche[nrs]?\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(question)
+    return mentionsEnvironment(question) && /^(?:und\s+)?(?:bitte\s+)?(?:was\b|welche[nrs]?\b|(?:siehst|erkennst|findest)\s+du\b|prüfe\b|pruefe\b|ermittle\b|suche\b|scanne\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(question)
         && !mentionsScreenshot(question) && !containsHttpUrl(question)
-        && !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|übertrag\w*|upload\w*|download\w*)\b/i.test(question)
+        && !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|schalt\w*|koppel\w*|übertrag\w*|upload\w*|download\w*)\b/i.test(question)
 }
 
 /** A node target must not silently become the daemon's local desktop. */

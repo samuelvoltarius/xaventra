@@ -155,6 +155,19 @@ describe('Worker sendet nichts direkt an den Owner', () => {
 })
 
 describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
+    it('cancels a subscriber without aborting another request\'s shared scan', async () => {
+        runtime.setSensingConfig({ enabled: true, discovery: { enabled: true } }, {}, tmp('sense-cancel-'))
+        let finish!: (report: any) => void
+        const scan = vi.spyOn(discovery, 'discoverDevices').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+        const background = runtime.runDiscoveryNow()
+        const controller = new AbortController()
+        const subscriber = runtime.runDiscoveryNow({}, controller.signal)
+        controller.abort(new Error('request cancelled'))
+        await expect(subscriber).rejects.toThrow('request cancelled')
+        finish({ candidates: [], rejected: [], scope: { subnets: [], hasTailnet: false }, durationMs: 100, scannedHosts: 1, probes: 1 })
+        expect(await background).toContain('Suche fertig')
+        expect(scan).toHaveBeenCalledTimes(1)
+    })
     it('joins an active bounded scan before returning fresh observations and releases the single flight', async () => {
         runtime.setSensingConfig({ enabled: true, discovery: { enabled: true } }, {}, tmp('sense-flight-'))
         let finish!: (report: any) => void

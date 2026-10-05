@@ -3,6 +3,19 @@ import { isEnvironmentOverview } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
+    it('routes specific devices and fresh read-only requests without a target clarification', () => {
+        for (const text of ['Siehst du lokal Home Assistant und eine Hue Bridge?',
+            'Prüfe jetzt erneut, welche Geräte lokal und im Mesh verfügbar sind. Noch nichts koppeln, installieren oder schalten.',
+            'Siehst du die Hue Bridge? Keine Kopplung, Installation, SSH-Abfrage oder Geräteaktion.']) {
+            expect(isEnvironmentOverview(text)).toBe(true)
+            expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'system-state' })
+        }
+    })
+    it('does not hide effects after a prohibition', () => {
+        for (const text of ['Welche Geräte gibt es? Nichts installieren aber kopiere meine Datei.',
+            'Siehst du Hue? Keine Kopplung, aber schalte das Licht ein.',
+            'Prüfe jetzt das Mesh und starte ns1.', 'Siehst du Home Assistant? Verbinde dich damit.']) expect(isEnvironmentOverview(text)).toBe(false)
+    })
     it('recognizes the observed owner questions', () => {
         for (const text of ['welceh geräte sind local verfügbar?', 'welche geräte findest du im netzwerk? die du verwalten und steuern könntest?', 'und im local netzwerk was findest du?', 'was können deine nodes?']) expect(isEnvironmentOverview(text)).toBe(true)
     })

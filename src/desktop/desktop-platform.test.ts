@@ -10,7 +10,7 @@ import { getDesktopModuleCatalog } from './module-catalog.js'
 import { createSkillProposal, getSkillProposals } from '../tools/skill-builder.js'
 import { DesktopControlQueue } from './desktop-control.js'
 import { pruneDesktopCaptures, withDesktopBotTimeout } from './desktop-api.js'
-import { getDesktopAgentContext, publishDesktopAgentOutcome, runWithDesktopAgentContext } from './desktop-agent-context.js'
+import { getDesktopAgentContext, getDesktopAbortSignal, publishDesktopAgentOutcome, runWithDesktopAgentContext } from './desktop-agent-context.js'
 
 const roots: string[] = []
 function tempFile(name: string): string {
@@ -24,6 +24,18 @@ afterEach(() => {
 })
 
 describe('Nova Desktop platform stores', () => {
+    it('aborts underlying work before reporting a deadline and preserves the real signal outside the serializable context', async () => {
+        let stopped = false
+        await expect(withDesktopBotTimeout(signal => new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => { stopped = true; reject(signal.reason) }, { once: true })
+        }), 10)).rejects.toThrow('Bot-Lauf')
+        expect(stopped).toBe(true)
+        const controller = new AbortController()
+        runWithDesktopAgentContext({ abortSignal: controller.signal }, () => {
+            expect(getDesktopAbortSignal()).toBe(controller.signal)
+            expect(getDesktopAgentContext().abortSignal).toBeUndefined()
+        })
+    })
     it('bounds a stalled group-chat bot without blocking every other reply', async () => {
         await expect(withDesktopBotTimeout(new Promise(() => {}), 10)).rejects.toThrow('Bot-Lauf nach 1 Sekunden beendet')
         await expect(withDesktopBotTimeout(Promise.resolve('ready'), 100)).resolves.toBe('ready')

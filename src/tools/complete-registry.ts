@@ -28,6 +28,7 @@ import { meshInspectUrlTool } from './mesh-inspect-url.js'
 import { meshExchangeTools } from './mesh-exchange-tools.js'
 import { meshScreenshotTool } from './mesh-screenshot-tool.js'
 import { environmentInventoryTool } from './environment-inventory-tool.js'
+import { parcelTrackTool } from './parcel-track-tool.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -3047,6 +3048,7 @@ export const ALL_TOOLS: NovaTool[] = [
     ...meshExchangeTools,
     meshScreenshotTool,
     environmentInventoryTool,
+    parcelTrackTool,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,

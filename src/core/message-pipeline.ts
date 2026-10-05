@@ -396,6 +396,14 @@ async function handleMessageInScope(
     execution?: MessageExecutionOptions,
     messageContext?: MessageContext,
 ) {
+    // Desktop ingress carries cancellation out-of-band, never as model text.
+    const desktopAbort = channel.toLowerCase() === 'desktop'
+        ? (await import('../desktop/desktop-agent-context.js')).getDesktopAbortSignal() : undefined
+    const desktopCancellationOnly = Boolean(desktopAbort && !execution)
+    const requestAbortSignal = desktopAbort && execution?.abortSignal
+        ? AbortSignal.any([desktopAbort, execution.abortSignal]) : desktopAbort || execution?.abortSignal
+    if (desktopAbort && !content.trimStart().startsWith('/')) execution = { ...execution, abortSignal: requestAbortSignal }
+    requestAbortSignal?.throwIfAborted()
     execution?.abortSignal?.throwIfAborted()
     replyFn = protectReplyDelivery(replyFn)
     let trackedTaskId: string | undefined
@@ -593,7 +601,7 @@ async function handleMessageInScope(
             || t.trim().split(/\s+/).length >= 4
     }
 
-    if (!soulExists() && !isInOnboarding) {
+    if (!content.trimStart().startsWith('/') && !soulExists() && !isInOnboarding) {
         console.log('[Nova] First run detected - starting onboarding')
             ; (global as any)[onboardingKey] = true
         if (!wirktWieAuftrag(content)) {
@@ -614,7 +622,7 @@ async function handleMessageInScope(
     // zwar geloescht, aber isInOnboarding ist eine Konstante von vorher.
     // Ohne diese zweite Pruefung landete "Beschreibe mir, was auf dem
     // Bildschirm zu sehen ist" als Persoenlichkeit in ihrer Seele.
-    if (isInOnboarding && !wirktWieAuftrag(content) && isOnboardingResponse(content)) {
+    if (!content.trimStart().startsWith('/') && isInOnboarding && !wirktWieAuftrag(content) && isOnboardingResponse(content)) {
         // User is defining the persona
         console.log('[Nova] Processing onboarding response')
         const soul = parseOnboardingResponse(content)
@@ -657,7 +665,7 @@ async function handleMessageInScope(
     // Read-only natural-language fast path. It reuses the same command
     // handlers and RBAC context as slash commands, but avoids prompt assembly,
     // model latency and fragile tool selection for common live-status queries.
-    if (!execution) {
+    if (!execution || desktopCancellationOnly) {
         try {
             const { detectDeterministicCommand } = await import('./deterministic-query.js')
             const deterministic = detectDeterministicCommand(content)
@@ -798,19 +806,21 @@ async function handleMessageInScope(
                     + `nicht "Locale", sondern "Sprache des Systems". Nicht "Repository",\n`
                     + `sondern "Paketquelle".\n`
                     + `Antworte in zwei bis vier Saetzen.\n\n`
-                    + `**KEINE RUECKFRAGEN.** Das ist die wichtigste Regel hier. Wer diesen\n`
+                    + `**Keine unnötigen technischen Rückfragen.** Wer diesen\n`
                     + `Modus nutzt, kann Auswahlfragen nicht beantworten — "XFCE, GNOME oder\n`
                     + `LXQt?" ist fuer ihn keine Frage, sondern eine Sackgasse.\n`
-                    + `Also: **entscheide selbst.** Nimm die naheliegendste, sparsamste,\n`
+                    + `Bei bereits autorisierten, reversiblen Routine-Details entscheide selbst. Nimm die naheliegendste, sparsamste,\n`
                     + `verbreitetste Variante, sag in EINEM Satz was du genommen hast und\n`
                     + `warum, und mach es dann. Danach erwaehnst du beilaeufig, dass es\n`
                     + `aenderbar ist, falls es ihm nicht passt.\n`
                     + `Beispiel: statt "Welchen Desktop willst du?" → "Ich nehme XFCE, das ist\n`
                     + `schlank und laeuft ueberall. Moment, ich installiere es." Und dann tun.\n\n`
-                    + `Fragen darfst du nur, wenn sonst **unwiderruflich Daten verloren gehen**\n`
-                    + `wuerden. Sonst nie.\n\n`
+                    + `Frage immer bei fehlender Freigabe, Anmeldung oder Kopplung, bei der Wahl\n`
+                    + `lokal/Hersteller-Cloud und vor neuen Kosten oder unwiderruflichem Datenverlust.\n`
+                    + `Diese Entscheidungen trifft der Mensch; keine Zugangsdaten im Chat erfragen.\n\n`
                     + `Wenn etwas nicht ging: EIN Satz was nicht ging, EIN Satz was du\n`
-                    + `stattdessen tust — und dann tu es, ohne zu fragen.\n\n`
+                    + `stattdessen innerhalb der bestehenden Freigabe tun kannst. Keine neue Wirkung\n`
+                    + `oder Cloud-Verbindung ohne die erforderliche Nutzerentscheidung.\n\n`
                     + `**Hoere nie mit einer Ankuendigung auf.** Saetze wie "Jetzt\n`
                     + `installiere ich X:" oder "Ich pruefe das kurz:" duerfen nicht das\n`
                     + `Ende deiner Antwort sein — dann sitzt der Mensch da und muss dich\n`

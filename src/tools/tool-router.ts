@@ -381,6 +381,7 @@ export function getRelevantTools(
     const includedToolNames = new Set<string>(CORE_TOOLS)
     const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes'] : []
     if (mentionsEnvironment(primaryMessage)) liveTools.push('environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes')
+    if (/\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(primaryMessage)) liveTools.push('parcel_track')
     if (containsTailnetUrl(primaryMessage)) liveTools.push('mesh_inspect_url', 'mesh_services')
     if (primaryIntent.kind === 'screenshot') liveTools.push('desktop_screenshot')
     for (const name of liveTools) includedToolNames.add(name)

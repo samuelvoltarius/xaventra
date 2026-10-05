@@ -15,6 +15,7 @@ export interface DesktopAgentContext {
     workspaceId?: string
     memoryAssetIds?: string[]
     onOutcome?: (outcome: DesktopAgentOutcome) => void
+    abortSignal?: AbortSignal
 }
 
 export interface DesktopAgentOutcome {
@@ -39,9 +40,11 @@ export function runWithDesktopAgentContext<T>(context: DesktopAgentContext, oper
 export function getDesktopAgentContext(): DesktopAgentContext | undefined {
     const value = storage.getStore()
     if (!value) return undefined
-    const { onOutcome: _onOutcome, ...serializable } = value
+    const { onOutcome: _onOutcome, abortSignal: _abortSignal, ...serializable } = value
     return structuredClone(serializable)
 }
+
+export function getDesktopAbortSignal(): AbortSignal | undefined { return storage.getStore()?.abortSignal }
 
 export function publishDesktopAgentOutcome(outcome: DesktopAgentOutcome): void {
     storage.getStore()?.onOutcome?.(structuredClone(outcome))

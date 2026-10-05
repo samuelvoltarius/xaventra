@@ -56,6 +56,7 @@ it('publishes a clean source copy and signed artifact without advancing live sou
     expect(f.index().sourceHash).toBe(f.binding.baselineHash)
     expect(readFileSync(join(f.source, f.patch.file), 'utf8')).toContain('value = 1')
     const mirror = join(f.store, 'sources', f.binding.candidateHash)
+    if (process.platform === 'win32') expect(execFileSync('git', ['config', '--local', 'core.longpaths'], { cwd: mirror, encoding: 'utf8' }).trim()).toBe('true')
     expect(readFileSync(join(mirror, f.patch.reproductionTest), 'utf8')).toBe('immutable original oracle')
     expect(execFileSync('git', ['status', '--porcelain'], { cwd: mirror, encoding: 'utf8' }).trim()).toBe('')
     expect(await f.publisher.publish(f.binding, f.patch)).toEqual(signed)

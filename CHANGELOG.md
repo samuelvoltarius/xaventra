@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.85.10] — 2026-10-05 (source candidate; not deployed)
+
+- Recognize Home Assistant, Hue and other explicit smart-device overview
+  questions. Preserve read-only prohibitions without hiding mixed actions;
+  use governed inventory/Mesh evidence rather than self-diagnostics.
+- Include pending per-device connection questions and local/cloud requirements
+  in direct inventory replies, independently of notification deduplication.
+- Propagate Desktop request deadlines into inference, external agents and
+  foreground discovery. Use a bounded discovery request budget; cancelled
+  subscribers do not stop another caller's shared scan.
+- Keep slash commands available before persona onboarding, including /status.
+- Bound default regression worker concurrency to reduce process/lease startup
+  contention. This does not establish that every live model timeout is fixed.
+- Add owner-scoped parcel_track for DHL and existing 17TRACK registrations,
+  with explicit provider choice, private setup questions and matching-number
+  evidence. No automatic registration, paid real-time query or cloud fallback.
+  Real provider/device acceptance still requires authorized access.
+
 ## [2.85.9] — 2026-10-05 (source candidate; not yet deployed)
 
 - Propagate request cancellation to local/cloud HTTP inference and Codex

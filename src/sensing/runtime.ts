@@ -216,27 +216,44 @@ function busForPublish(): SensingBus {
     return state.bus || newBus('local', 'main')
 }
 
-export function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: HardwareModel } = {}): Promise<string> {
+export function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: HardwareModel } = {}, signal?: AbortSignal): Promise<string> {
     // A foreground fresh inventory must wait for the current bounded scan,
     // not mistake "already running" for fresh observations or start a rival scan.
-    if (state.discoveryInFlight) return state.discoveryInFlight
-    const operation = performDiscovery(deps).finally(() => {
+    signal?.throwIfAborted()
+    if (state.discoveryInFlight) {
+        // Cancelling a subscriber must not stop an already running background scan.
+        if (!signal) return state.discoveryInFlight
+        return waitForDiscovery(state.discoveryInFlight, signal)
+    }
+    const operation = performDiscovery(deps, signal).finally(() => {
         if (state.discoveryInFlight === operation) state.discoveryInFlight = undefined
     })
     state.discoveryInFlight = operation
     return operation
 }
 
-async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: HardwareModel }): Promise<string> {
+function waitForDiscovery(work: Promise<string>, signal: AbortSignal): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const stop = () => reject(signal.reason || new Error('Discovery cancelled'))
+        signal.addEventListener('abort', stop, { once: true })
+        work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop))
+        if (signal.aborted) stop()
+    })
+}
+
+async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: HardwareModel }, signal?: AbortSignal): Promise<string> {
     const cfg = state.config
     if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
     state.discoveryRunning = true
     const controller = new AbortController()
+    const stop = () => controller.abort(signal?.reason)
+    signal?.addEventListener('abort', stop, { once: true })
+    if (signal?.aborted) stop()
     state.discoveryAbort = controller
     const dataDir = state.dataDir
     try {
         const report = await discoverDevices({
-            deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
+            deadlineMs: signal ? Math.min(cfg.discovery.deadlineSec * 1000, 60_000) : cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
             maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
             cursor: readDiscoveryCursor(dataDir), signal: controller.signal,
         }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
@@ -293,6 +310,7 @@ async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: Hardware
             handled.monitored.some(device => !fresh.some(item => item.id === device.id)) ? `Jetzt überwacht (früher gefunden): ${handled.monitored.filter(device => !fresh.some(item => item.id === device.id)).map(device => device.name).join('; ')}.` : '',
         ].filter(Boolean).join('\n')
     } finally {
+        signal?.removeEventListener('abort', stop)
         state.discoveryRunning = false
         if (state.discoveryAbort === controller) state.discoveryAbort = undefined
     }

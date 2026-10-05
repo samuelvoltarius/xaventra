@@ -9,6 +9,7 @@
  * thoughts/watch paths.
  */
 import type { NovaTool } from './complete-registry.js'
+import { getToolAbortSignal } from '../core/tool-abort-scope.js'
 
 type Part = 'alles' | 'hardware' | 'dienste' | 'geraete'
 const PARTS: readonly Part[] = ['alles', 'hardware', 'dienste', 'geraete']
@@ -42,8 +43,9 @@ export const scanNowTool: NovaTool = {
         const [profile, services, devices] = await Promise.all([
             want('hardware') ? settle(async () => (await import('../core/node-profile.js')).collectNodeProfile({ force: true })) : null,
             want('dienste') ? settle(async () => (await import('../mesh/ai-scanner.js')).scanAllAIServices({ forceFresh: true, skipRemoteSSH: true })) : null,
-            want('geraete') && !worker ? settle(async () => (await import('../sensing/runtime.js')).runDiscoveryNow()) : null,
+            want('geraete') && !worker ? settle(async () => (await import('../sensing/runtime.js')).runDiscoveryNow({}, getToolAbortSignal())) : null,
         ])
+        getToolAbortSignal()?.throwIfAborted()
         const lines: string[] = ['🔎 Scan (nur lesend):']
         if (profile) {
             if (profile.ok) {

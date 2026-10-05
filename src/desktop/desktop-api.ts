@@ -59,13 +59,18 @@ type MessageHandler = (message: string, channel: string) => Promise<string>
 const DESKTOP_BOT_TIMEOUT_MS = Number(process.env.NOVA_DESKTOP_BOT_TIMEOUT_MS)
     || (process.env.NOVA_OS_MODE === 'true' ? 2_400_000 : 30_000)
 
-export async function withDesktopBotTimeout<T>(work: Promise<T>, timeoutMs = DESKTOP_BOT_TIMEOUT_MS): Promise<T> {
+export async function withDesktopBotTimeout<T>(work: Promise<T> | ((signal: AbortSignal) => Promise<T>), timeoutMs = DESKTOP_BOT_TIMEOUT_MS): Promise<T> {
     let timer: NodeJS.Timeout | undefined
+    const controller = new AbortController()
     try {
         return await Promise.race([
-            work,
+            typeof work === 'function' ? work(controller.signal) : work,
             new Promise<T>((_resolve, reject) => {
-                timer = setTimeout(() => reject(new Error(`Bot-Lauf nach ${Math.ceil(timeoutMs / 1000)} Sekunden beendet`)), timeoutMs)
+                timer = setTimeout(() => {
+                    const error = new Error(`Bot-Lauf nach ${Math.ceil(timeoutMs / 1000)} Sekunden beendet`)
+                    controller.abort(error)
+                    reject(error)
+                }, timeoutMs)
                 timer.unref?.()
             }),
         ])
@@ -363,10 +368,10 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                 if (!bot?.enabled) return { botId, error: 'Bot unavailable' }
                 try {
                     if (bot.source !== 'nova') {
-                        const external = await withDesktopBotTimeout(getExternalAgentRegistry().complete(bot.externalConnectionId || '', ownerId, [
+                        const external = await withDesktopBotTimeout(signal => getExternalAgentRegistry().complete(bot.externalConnectionId || '', ownerId, [
                             { role: 'system', content: `${bot.instructions}\nDu bist als externer ${bot.source}-Bot in einem Nova-Themenraum. Behaupte niemals, Nova-Tools ausgefuehrt zu haben.` },
                             { role: 'user', content: history.map(item => `[${item.authorId}] ${item.content}`).join('\n').slice(-30_000) },
-                        ]))
+                        ], signal))
                         const stored = roomStore.addMessage(ownerId, room.id, { authorType: 'bot', authorId: bot.id, content: external.content, model: external.model, node: bot.source, verifiedEvidence: 0 })
                         return { botId, message: stored, external: true }
                     }
@@ -382,7 +387,10 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                     // session checkpoints. Flattening old turns into this
                     // message duplicates context, breaks slash/intent routing,
                     // and misrepresents historical requests as current consent.
-                    const response = await withDesktopBotTimeout(runWithDesktopAgentContext({
+                    const { isEnvironmentOverview } = await import('../core/request-capabilities.js')
+                    const { DISCOVERY_REQUEST_MS } = await import('../core/tool-abort-scope.js')
+                    const response = await withDesktopBotTimeout(signal => runWithDesktopAgentContext({
+                        abortSignal: signal,
                         principalId: ownerId, clientId: desktopClientId(req), authorizationUserId,
                         roomId: room.id, botId: bot.id, preferredNodeIds: requestedNodes,
                         modelMode: room.modelMode, pinnedModel: pinnedRoute?.id || room.pinnedModel,
@@ -394,7 +402,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                             { type: 'principal', id: ownerId }, { type: 'bot', id: bot.id }, { type: 'room', id: room.id },
                         ], room.memoryAssetIds).map(asset => asset.id),
                         onOutcome: value => { outcome = value },
-                    }, () => handler(content, 'desktop')))
+                    }, () => handler(content, 'desktop')), isEnvironmentOverview(content) ? DISCOVERY_REQUEST_MS : DESKTOP_BOT_TIMEOUT_MS)
                     const state = (globalThis as any).__novaState
                     const stored = roomStore.addMessage(ownerId, room.id, {
                         authorType: 'bot', authorId: bot.id, content: response,

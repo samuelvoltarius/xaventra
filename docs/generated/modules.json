@@ -119,6 +119,7 @@
         "../core/side-effects.js",
         "../core/system-message.js",
         "../core/task-contract.js",
+        "../core/tool-abort-scope.js",
         "../core/tool-evidence-response.js",
         "../core/tool-failure-escalation.js",
         "../core/tool-task-context.js",
@@ -2438,6 +2439,12 @@
         "./atomic-storage.js",
         "./data-root.js",
         "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/tool-abort-scope.ts",
+      "imports": [
+        "node:async_hooks"
       ]
     },
     {
@@ -6584,6 +6591,7 @@
         "./minimax-tools.js",
         "./mission-workspace-tools.js",
         "./owner-approval.js",
+        "./parcel-track-tool.js",
         "./printer-tool.js",
         "./reminder-tool.js",
         "./scan-now-tool.js",
@@ -6801,6 +6809,13 @@
       ]
     },
     {
+      "module": "src/tools/parcel-track-tool.ts",
+      "imports": [
+        "../core/tool-abort-scope.js",
+        "./complete-registry.js"
+      ]
+    },
+    {
       "module": "src/tools/patch.ts",
       "imports": [
         "../resilience/backup.js",
@@ -6840,6 +6855,7 @@
     {
       "module": "src/tools/scan-now-tool.ts",
       "imports": [
+        "../core/tool-abort-scope.js",
         "./complete-registry.js"
       ]
     },

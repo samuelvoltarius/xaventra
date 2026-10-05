@@ -2261,6 +2261,23 @@
       ]
     },
     {
+      "name": "parcel_track",
+      "category": "other",
+      "description": "Liest den belegten Paketstatus einer angegebenen Trackingnummer bei DHL oder 17TRACK (bereits registrierte Sendungen vieler Anbieter). Anbieter muss vom Nutzer gewählt sein; fragt bei fehlendem Zugang. Keine Registrierung, kein Abonnement, keine kostenpflichtige Echtzeitabfrage.",
+      "parameters": [
+        {
+          "name": "number",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "parse_markdown",
       "category": "other",
       "description": "Parsed Markdown zu IR (Intermediate Representation). Extrahiert Frontmatter, Headings, Code-Blöcke.",

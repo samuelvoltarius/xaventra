@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { getRelevantTools, matchesSkillKeyword, loadSkillPack, loadSkillPackTool } from './tool-router.js'
 
 describe('bounded capability recovery', () => {
+    it.each(['Verfolge DHL 12345678', 'Prüfe 17TRACK AB123456789CD'])('exposes the dedicated parcel adapter for provider-only wording: %s', request => {
+        expect(getRelevantTools(request).some(tool => tool.name === 'parcel_track')).toBe(true)
+    })
     it('offers only source-bound captures for a collective node screenshot request', () => {
         const names = getRelevantTools('was können deine nodes? send mir einen screnn shot vbon jeden').map(t => t.name)
         expect(names).toContain('mesh_screenshot')

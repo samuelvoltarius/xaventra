@@ -70,7 +70,7 @@ export class ExternalAgentRegistry {
         return structuredClone(entry)
     }
 
-    async complete(id: string, ownerId: string, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>): Promise<{ content: string; model: string; source: string }> {
+    async complete(id: string, ownerId: string, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, signal?: AbortSignal): Promise<{ content: string; model: string; source: string }> {
         const entry = this.entries.get(id)
         if (!entry || entry.ownerId !== ownerId || !entry.enabled) throw new Error('External agent connection is unavailable')
         const token = process.env[entry.credentialEnv]
@@ -78,7 +78,7 @@ export class ExternalAgentRegistry {
         const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 180_000)
         try {
             const response = await fetch(`${entry.baseUrl}/v1/chat/completions`, {
-                method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, signal: controller.signal,
+                method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
                 body: JSON.stringify({ model: entry.model, messages, stream: false }),
             })
             if (!response.ok) throw new Error(`${entry.kind} returned HTTP ${response.status}`)

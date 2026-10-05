@@ -1,4 +1,4 @@
-import { isEnvironmentOverview } from '../core/request-capabilities.js'
+import { isEnvironmentOverview, inventoryRequestText } from '../core/request-capabilities.js'
 
 /** A bounded read-only plan, narrowed by the frozen tool contract. The normal
  * executor still owns authorization, Main fences, verification and receipts. */
@@ -16,10 +16,10 @@ export function environmentOverviewPlan(input: {
 /** Only an explicit fresh, read-only discovery request gets an active scan. */
 export function isFreshEnvironmentRequest(content: string): boolean {
     const text = content.trim()
-    if (!/^(?:bitte\s+)?(?:prüfe|pruefe|ermittle|suche|scanne)\b/i.test(text)
+    if (!isEnvironmentOverview(content) || !/^(?:bitte\s+)?(?:prüfe|pruefe|ermittle|suche|scanne)\b/i.test(text)
         || !/\b(?:netzwerk|lan|mesh)\b/i.test(text)
         || !/\b(?:erneut|jetzt|frisch|neu|scan\w*)\b/i.test(text)) return false
     // Explicit prohibitions do not turn a read-only test into an effect request.
-    const effects = text.replace(/(?:noch\s+)?(?:nichts|nicht)\s+(?:koppeln|installieren|schalten)(?:\s*,?\s*(?:oder|und)?\s*(?:koppeln|installieren|schalten))*/gi, '')
+    const effects = inventoryRequestText(text)
     return !/\b(?:kopier\w*|lösch\w*|loesch\w*|installier\w*|schalt\w*|koppel\w*|deploy\w*|update\w*|übertrag\w*)\b/i.test(effects)
 }

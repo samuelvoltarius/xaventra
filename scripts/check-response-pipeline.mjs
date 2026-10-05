@@ -53,9 +53,12 @@ try {
   try {
     const before = JSON.parse(readFileSync(join(root, 'model-call-count.json')))
     const started = Date.now()
-    const response = await api(`/rooms/${info.roomId}/messages`, { method: 'POST', body: JSON.stringify({
-      content: 'send mir was du im netzwerk findest und wo mit du dich verbinden kannst mesh netzwerk und local',
-    }) })
+    for (const content of [
+      'send mir was du im netzwerk findest und wo mit du dich verbinden kannst mesh netzwerk und local',
+      'Siehst du lokal Home Assistant und eine Hue Bridge? Verwende nur vorhandene lesende Inventarfunktionen. Keine Kopplung, Installation, SSH-Abfrage oder Geräteaktion.',
+    ]) {
+    const requestStarted = Date.now()
+    const response = await api(`/rooms/${info.roomId}/messages`, { method: 'POST', body: JSON.stringify({ content }) })
     const reply = response.replies.find(item => item.botId === 'nova')
     assert.ok(reply?.message && !reply.error, JSON.stringify(response))
     assert.match(reply.message.content, /69 Adressen, 1248 Prüfungen/)
@@ -66,7 +69,8 @@ try {
     assert.equal(run.status, 'completed'); assert.equal(run.validation.success, true)
     assert.deepEqual(run.tools.map(tool => tool.toolName).sort(), ['environment_inventory', 'mesh_status'])
     assert.ok(run.tools.every(tool => tool.success))
-    assert.ok(Date.now() - started < 10000, 'Inventory response exceeded bounded fast path')
+    assert.ok(Date.now() - requestStarted < 10000, 'Inventory response exceeded bounded fast path')
+    }
     report.cases.push({ id: 'owner-inventory-no-model-rounds', pass: true, durationMs: Date.now() - started })
   } catch (error) { report.cases.push({ id: 'owner-inventory-no-model-rounds', pass: false, error: String(error) }); process.exitCode = 1 }
 } catch (error) { report.error = String(error); process.exitCode = 1 }

@@ -9,6 +9,8 @@ vi.mock('../connections/connection-store.js', () => ({ loadConnections: () => []
 vi.mock('../mesh/capability-graph.js', () => ({ getCapabilityGraph: () => ({ getSnapshot: () => ({ nodes: state.nodes }) }) }))
 vi.mock('../mesh/capability-orchestrator.js', () => ({ nodesFromCapabilityGraph: (s: any) => s.nodes }))
 vi.mock('./complete-registry.js', () => ({ getToolRegistry: () => ({ get: (name: string) => name === 'mesh_delegate' ? {} : undefined }) }))
+vi.mock('../sensing/runtime.js', () => ({ hardwareConnectionEvents: () => [{ subject: 'hue', summary: 'Hue erkannt. Soll ich mich damit verbinden?', hint: { proposal: 'Lokal: Bridge-Pairing; Cloud nicht implementiert.' } }] }))
+vi.mock('../sensing/device-registry.js', () => ({ loadDevices: () => [] }))
 import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { environmentOverviewResponse } from '../core/tool-evidence-response.js'
 beforeEach(() => { state.permission = 'owner'; state.authUserId = 'owner'; state.servers = []; state.nodes = [] })
@@ -22,6 +24,8 @@ describe('owner overview integration', () => {
         expect(text).toContain('get_devices: Geräte lesen')
         expect(text).toContain('LAN: Gerät gefunden')
         expect(text).toContain('worker online')
+        expect(text).toContain('Soll ich mich damit verbinden?')
+        expect(text).toContain('Bridge-Pairing')
     })
     it('denies non-owners and missing authentication before catalog access', async () => {
         state.permission = 'user'

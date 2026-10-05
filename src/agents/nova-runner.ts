@@ -42,6 +42,7 @@ import { escalateVerifiedToolFailures, type VerifiedToolFailureObservation } fro
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
+import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -78,6 +79,7 @@ const IMAGE_TOOLS = new Set(['desktop_screenshot', 'screenshot', 'check_ui', 'br
 const MEDIA_TOOLS = new Set(['generate_image'])
 
 function timeoutForTool(name: string): number {
+    if (name === 'scan_now') return DISCOVERY_TOOL_MS
     if (MEDIA_TOOLS.has(name)) return TIMEOUT_TOOL_MEDIA
     if (IMAGE_TOOLS.has(name)) return TIMEOUT_TOOL_SCREENSHOT
     if (SLOW_TOOLS.has(name)) return TIMEOUT_TOOL_SLOW
@@ -1084,7 +1086,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 internal: isInternalRequest,
                 isBlocked: () => policyBlocked,
                 block: awaiting => { policyBlocked = true; awaitingPolicyApproval = awaiting },
-                execute: (name, args) => registry.execute(name, args),
+                execute: (name, args) => withToolAbortSignal(abortSignal, () => registry.execute(name, args)),
                 record: (id, metadata) => nativeExecutionMetadata.set(id, metadata),
             })
             let capturedImage: { base64: string; mimeType: string } | null = null

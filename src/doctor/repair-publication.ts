@@ -52,7 +52,12 @@ export class RepairPublication {
             GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
             GIT_AUTHOR_NAME: 'Repair publisher', GIT_AUTHOR_EMAIL: 'repair@example.invalid', GIT_COMMITTER_NAME: 'Repair publisher', GIT_COMMITTER_EMAIL: 'repair@example.invalid' }
         const git = (args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=', '-c', 'init.templateDir=', '-c', 'commit.gpgsign=false', ...args], { cwd: staged, env, timeout: 30_000, stdio: 'pipe' })
-        git(['init', '-q']); git(['add', '--', '.']); git(['commit', '-qm', `Verified source ${hash}`])
+        git(['init', '-q'])
+        // The content-addressed final path is longer than the staging path.
+        // Persist this per-repository setting so later status/read operations
+        // can open its objects on Windows, without changing user/global Git.
+        if (process.platform === 'win32') git(['config', 'core.longpaths', 'true'])
+        git(['add', '--', '.']); git(['commit', '-qm', `Verified source ${hash}`])
         if (patchSnapshotHash(readPatchSnapshot(staged)) !== hash) throw Error('Source materialization mismatch')
         renameSync(staged, destination); return hash
     }

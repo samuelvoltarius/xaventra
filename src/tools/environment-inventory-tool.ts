@@ -25,7 +25,17 @@ export const environmentInventoryTool: NovaTool = {
         const rootConfig = getNovaConfig(), sensing = parseSensingConfig((rootConfig as any).autonomy?.sensing)
         const legacyAuthorized = sensing.enabled && sensing.adapters.homeassistant.enabled && Boolean(resolveHaConnection(sensing.adapters.homeassistant, rootConfig))
         const { directInventoryAwareness } = await import('../sensing/direct-smart-devices.js')
-        const { smartRouteAwareness } = await import('../sensing/smart-device-route.js')
-        return { formatted: capabilities + '\n\n' + smartRouteAwareness(dataDir) + '\n\n' + directInventoryAwareness(dataDir) + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) }
+        const { smartRouteAwareness, smartRouteEvents } = await import('../sensing/smart-device-route.js')
+        const { hardwareConnectionEvents } = await import('../sensing/runtime.js')
+        const { loadDevices } = await import('../sensing/device-registry.js')
+        const routes = smartRouteEvents(dataDir)
+        const questions = [
+            ...routes.map(event => `${event.summary}\n${event.hint?.proposal || ''}`),
+            ...hardwareConnectionEvents(loadDevices(dataDir).map(device => ({ ...device, hardwareAskedFingerprint: undefined })), legacyAuthorized)
+                .filter(event => !routes.some(route => route.subject === event.subject))
+                .map(event => `${event.summary}\n${event.hint?.proposal || ''}`),
+        ].slice(0, 16)
+        const connectionQuestions = questions.length ? '\n\nVerbindung gemeinsam entscheiden (noch nichts verbunden):\n' + questions.join('\n\n') : ''
+        return { formatted: capabilities + '\n\n' + smartRouteAwareness(dataDir) + '\n\n' + directInventoryAwareness(dataDir) + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) + connectionQuestions }
     },
 }

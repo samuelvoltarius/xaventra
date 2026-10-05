@@ -35,7 +35,7 @@ export function chooseSmartRoute(root: string, id: string, route: unknown, appro
     return { ok: true, message: `${id}: ${route === 'local' ? 'lokaler' : 'Cloud-'} Weg gewählt. Noch keine Verbindung, kein Pairing und kein Schalten freigegeben. Verbindung separat bestätigen: /geraete ja ${id}. Fehlender Zugang wird separat angefragt; kein automatischer Wechsel auf den anderen Weg.` }
 }
 export function smartRouteEvents(root: string): RawEvent[] {
-    return loadDevices(root).filter(d => d.status === 'gefunden' && !selectedSmartRoute(root, d) && (d.hardware?.connector || /hue|esphome|matter|tasmota|shelly|tuya/i.test(JSON.stringify(d.evidence)))).slice(0, 16).map(d => ({
+    return loadDevices(root).filter(d => d.status === 'gefunden' && Date.now() >= Date.parse(d.lastSeenAt) && Date.now() - Date.parse(d.lastSeenAt) <= 24 * 3600_000 && !selectedSmartRoute(root, d) && (d.hardware?.connector || /hue|esphome|matter|tasmota|shelly|tuya/i.test(JSON.stringify(d.evidence)))).slice(0, 16).map(d => ({
         kind: 'smart.route-choice', subject: d.id, severity: 'info', dedupeKey: `smart-route:${d.id}:${sensingDeviceFingerprint(d)}`, dedupeWindowMs: 365 * 24 * 3600_000,
         summary: `${d.hardware?.label || d.name}: Möchtest du den lokalen Weg oder die Hersteller-Cloud? ${smartRouteSupport(d)} Lokal benötigt gegebenenfalls Pairing/Schlüssel, Cloud einen gesonderten Herstellerzugang.`,
         evidence: { geraet: d.id, fingerprint: sensingDeviceFingerprint(d), adresse: d.host },
