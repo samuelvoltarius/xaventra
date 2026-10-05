@@ -47,6 +47,7 @@ interface RuntimeState {
     bus: SensingBus | null
     sinks: { eventSink?: EventSink; thoughtSink?: ThoughtSink }
     discoveryRunning: boolean
+    discoveryInFlight?: Promise<string>
     timers: Array<ReturnType<typeof setTimeout>>
     continuation?: ReturnType<typeof setTimeout>
     discoveryAbort?: AbortController
@@ -215,10 +216,20 @@ function busForPublish(): SensingBus {
     return state.bus || newBus('local', 'main')
 }
 
-export async function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: HardwareModel } = {}): Promise<string> {
+export function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: HardwareModel } = {}): Promise<string> {
+    // A foreground fresh inventory must wait for the current bounded scan,
+    // not mistake "already running" for fresh observations or start a rival scan.
+    if (state.discoveryInFlight) return state.discoveryInFlight
+    const operation = performDiscovery(deps).finally(() => {
+        if (state.discoveryInFlight === operation) state.discoveryInFlight = undefined
+    })
+    state.discoveryInFlight = operation
+    return operation
+}
+
+async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: HardwareModel }): Promise<string> {
     const cfg = state.config
     if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
-    if (state.discoveryRunning) return 'Geräte-Suche läuft bereits.'
     state.discoveryRunning = true
     const controller = new AbortController()
     state.discoveryAbort = controller

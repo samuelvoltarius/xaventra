@@ -155,6 +155,20 @@ describe('Worker sendet nichts direkt an den Owner', () => {
 })
 
 describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
+    it('joins an active bounded scan before returning fresh observations and releases the single flight', async () => {
+        runtime.setSensingConfig({ enabled: true, discovery: { enabled: true } }, {}, tmp('sense-flight-'))
+        let finish!: (report: any) => void
+        const scan = vi.spyOn(discovery, 'discoverDevices').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+        const first = runtime.runDiscoveryNow()
+        const second = runtime.runDiscoveryNow()
+        expect(second).toBe(first)
+        expect(scan).toHaveBeenCalledTimes(1)
+        finish({ candidates: [], rejected: [], scope: { subnets: [], hasTailnet: false }, durationMs: 100, scannedHosts: 1, probes: 1 })
+        expect(await second).toContain('Suche fertig')
+        scan.mockResolvedValue({ candidates: [], rejected: [], scope: { subnets: [], hasTailnet: false }, durationMs: 100, scannedHosts: 2, probes: 2 } as any)
+        expect(await runtime.runDiscoveryNow()).toContain('2 Adressen')
+        expect(scan).toHaveBeenCalledTimes(2)
+    })
     const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.248', family: 'IPv4', internal: false }] }
     const owner = { principalId: 'alfred', permission: 'owner' }
 

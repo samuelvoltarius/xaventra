@@ -13,6 +13,7 @@
   Cancellation is scoped to the caller and current chat.
 - Route explicit fresh owner LAN/Mesh discovery requests through the existing
   governed read-only device scan before inventory and current Mesh status.
+  Join an already running bounded scan instead of reading old observations.
   Return bounded device observations without another model round. This does
   not imply universal device recognition, pairing or hardware acceptance.
 
