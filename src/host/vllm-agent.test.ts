@@ -29,8 +29,15 @@ function switcher() {
 }
 const marker = () => join(home, '.spark-stage-saved-target')
 
+// Windows runners may expose an 8.3 TEMP path (e.g. RUNNER~1), which is
+// deliberately outside the host-agent's closed path alphabet. Keep the mock
+// Linux host fixture under the checkout, without relaxing production validation.
+const fixtureParent = join(process.env.NOVA_PROJECT_ROOT || process.cwd(), '.nova-test-tmp')
+mkdirSync(fixtureParent, { recursive: true })
+const fixtureRoot = mkdtempSync(join(fixtureParent, 'vllm-'))
+
 beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'vllm-home-'))
+    home = mkdtempSync(join(fixtureRoot, 'home-'))
     stateDir = mkdtempSync(join(tmpdir(), 'vllm-state-'))
     launches = []; exitNow = []
     writeFileSync(join(home, 'spark-models.sh'), '#!/bin/sh\nexit 0\n')
@@ -69,6 +76,11 @@ describe('vLLM-Tickets', () => {
 })
 
 describe('Host-Agent: vLLM-Wechsel am Spark', () => {
+    it('lehnt unsichere Home-Pfade weiterhin vor jedem Start ab', () => {
+        expect(() => createHostVllmSwitcher({ nodeId: 'spark', clientId: 'main', stateDir,
+            ticketPublicKey: publicKey, user: { uid: 1000, gid: 998, home: home + '~unsafe' } }, launcher)).toThrow(/Benutzer ungültig/)
+        expect(launches).toEqual([])
+    })
     it('liest Zustand und Modell-IDs (nur Ziele der Liste, keine Shell-Werte)', async () => {
         expect(parseModelIds('flash=qwen\ncoder: qwen-coder\nnano qwen\nevil=$(id)\nfoo=bar', DEFAULT_VLLM_TARGETS)).toEqual({ flash: 'qwen', coder: 'qwen-coder', nano: 'qwen' })
         const state = await switcher().state()
