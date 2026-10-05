@@ -358,6 +358,7 @@ function shouldRethrowAbort(err: unknown): boolean {
 // ============================================
 
 export interface RunWithFallbackParams<T> {
+    signal?: AbortSignal
     provider: string
     model: string
     fallbacks?: ModelCandidate[]
@@ -393,10 +394,12 @@ export async function runWithModelFallback<T>(
     let lastError: unknown
 
     for (let i = 0; i < candidates.length; i++) {
+        params.signal?.throwIfAborted()
         const candidate = candidates[i]
 
         try {
             const result = await params.run(candidate.provider, candidate.model)
+            params.signal?.throwIfAborted()
             return {
                 result,
                 provider: candidate.provider,
@@ -404,6 +407,7 @@ export async function runWithModelFallback<T>(
                 attempts,
             }
         } catch (err) {
+            params.signal?.throwIfAborted()
             // Rethrow abort errors (user cancelled)
             if (shouldRethrowAbort(err)) throw err
 

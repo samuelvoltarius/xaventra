@@ -126,6 +126,7 @@
         "../doctor/tool-contract.js",
         "../layers/L6-session-summary.js",
         "../learning/trace.js",
+        "../llm/cancellable-completion.js",
         "../plugins/plugin-sdk.js",
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
@@ -1578,6 +1579,10 @@
       ]
     },
     {
+      "module": "src/core/control-command.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/correction-detector.ts",
       "imports": [
         "../memory/memory-governance.js",
@@ -1594,6 +1599,7 @@
       "module": "src/core/daemon-channels.ts",
       "imports": [
         "../channels/telegram-presentation.js",
+        "./reply-delivery-error.js",
         "./runtime-event-log.js",
         "./single-flight.js"
       ]
@@ -1603,6 +1609,7 @@
       "imports": [
         "../infra/telemetry.js",
         "../users/principal-id.js",
+        "./control-command.js",
         "./execution-control.js",
         "./message-bus.js",
         "./message-pipeline.js",
@@ -1824,6 +1831,7 @@
         "../users/principal-id.js",
         "./action-intent.js",
         "./context-policy.js",
+        "./reply-delivery-error.js",
         "./request-capabilities.js",
         "./request-tracer.js",
         "./system-message.js",
@@ -2140,6 +2148,10 @@
         "node:path",
         "node:url"
       ]
+    },
+    {
+      "module": "src/core/reply-delivery-error.ts",
+      "imports": []
     },
     {
       "module": "src/core/request-capabilities.ts",
@@ -4272,6 +4284,12 @@
         "../core/types.js",
         "../tools/executor.js",
         "../tools/registry.js"
+      ]
+    },
+    {
+      "module": "src/llm/cancellable-completion.ts",
+      "imports": [
+        "./nova-llm-sdk.js"
       ]
     },
     {

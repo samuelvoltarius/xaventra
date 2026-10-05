@@ -12,6 +12,7 @@
 import { logRuntimeEvent } from './runtime-event-log.js'
 import { TelegramPresentationSession } from '../channels/telegram-presentation.js'
 import { createSingleFlight } from './single-flight.js'
+import { ReplyDeliveryError } from './reply-delivery-error.js'
 
 // ============================================
 // Types
@@ -277,7 +278,10 @@ async function startTelegramOnce(
             // Status card: ❌ instead of a silent removal (clearProgress would mark ✅).
             await (typeof presentation.finishProgress === 'function' ? presentation.finishProgress(false) : presentation.clearProgress())
                 .catch(() => { /* best effort after failure */ })
-            queue?.incrementRetry(msgId)
+            // Delivery may already have happened. Never rerun tools/inference
+            // merely because the transport acknowledgment was ambiguous.
+            if (err instanceof ReplyDeliveryError) queue?.markFailed(msgId)
+            else queue?.incrementRetry(msgId)
             logRuntimeEvent({ event: 'telegram.message.failed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: false, durationMs: Date.now() - processingStartedAt, detail: String(err).slice(0, 500) })
             throw err
         } finally {

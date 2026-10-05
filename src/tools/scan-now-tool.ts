@@ -60,7 +60,7 @@ export const scanNowTool: NovaTool = {
         }
         if (want('geraete')) {
             if (worker) lines.push('• Geräte: die Netz-Suche macht nur der Main.')
-            else if (devices?.ok) lines.push(`• Geräte: ${String(devices.value).split('\n').slice(0, 6).join(' / ')}`)
+            else if (devices?.ok) lines.push(`• Geräte: ${String(devices.value).slice(0, 16000)}`)
             else if (devices) lines.push(`• Geräte: fehlgeschlagen (${(devices as any).error})`)
         }
         return { success: true, formatted: lines.join('\n') }

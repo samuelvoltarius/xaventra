@@ -1112,6 +1112,12 @@ export class TelegramAdapter implements ChannelAdapter {
     private onRawMessage(msg: any): void {
         this.persistInboundSync(msg)
         const chatId = String(msg?.chat?.id || 'unknown')
+        if (/^\/(?:log|status|cancel)\s*$/i.test(String(msg.text || '').trim())) {
+            // Same allowlist, group admission, live authority and durable dedup
+            // as ordinary input, but not blocked by that chat's inference.
+            void this.handleMessage(msg).catch(error => console.warn('[Telegram] Control command failed:', String(error)))
+            return
+        }
         this.enqueueMessage(chatId, () => this.handleMessage(msg))
     }
 

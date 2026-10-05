@@ -92,8 +92,9 @@ export class NovaAgentsModel implements Model {
             if (request.signal?.aborted) throw new Error('AbortError: agent model call cancelled')
             await this.options.beforeCall?.(input, tools)
             if (request.signal?.aborted) throw new Error('AbortError: agent model call cancelled')
-            // The existing provider interface has no cancellation signal. Race
-            // its result and refuse late output; never dispatch tools after abort.
+            // Abort the actual provider request as well as rejecting late output
+            // from clients that do not cooperate with cancellation.
+            const controller = new AbortController()
             let timer: ReturnType<typeof setTimeout> | undefined
             let onAbort: (() => void) | undefined
             try {
@@ -103,10 +104,12 @@ export class NovaAgentsModel implements Model {
                         maxTokens: this.options.maxTokens ?? request.modelSettings.maxTokens,
                         reasoningEffort: 'none',
                         timeoutMs: this.options.timeoutMs ?? 60_000,
+                        signal: controller.signal,
                     }),
                     new Promise<never>((_, reject) => {
-                        timer = setTimeout(() => reject(new Error('Timeout: agent model call exceeded deadline')), this.options.timeoutMs ?? 60_000)
-                        onAbort = () => reject(new Error('AbortError: agent model call cancelled'))
+                        const stop = (reason: Error) => { controller.abort(reason); reject(reason) }
+                        timer = setTimeout(() => stop(new Error('Timeout: agent model call exceeded deadline')), this.options.timeoutMs ?? 60_000)
+                        onAbort = () => stop(new Error('AbortError: agent model call cancelled'))
                         request.signal?.addEventListener('abort', onAbort, { once: true })
                         if (request.signal?.aborted) onAbort()
                     }),

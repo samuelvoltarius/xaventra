@@ -21,6 +21,26 @@ function attachBot(adapter: TelegramAdapter, overrides: Record<string, any> = {}
 }
 
 describe('Telegram authority boundary', () => {
+    it('dispatches exact controls while a chat handler is stalled, without bypassing admission', async () => {
+        const adapter = new TelegramAdapter({ token: 'fixture', verifyAuthority: async () => false })
+        attachBot(adapter)
+        const handler = vi.fn(async () => undefined)
+        adapter.onMessage(handler)
+        const update = { message_id: 8, date: 1, text: '/status', chat: { id: 42, type: 'private' }, from: { id: 9 } }
+        ;(adapter as any).onRawMessage(update)
+        await vi.waitFor(() => expect(handler).not.toHaveBeenCalled())
+        let finish!: () => void
+        const dispatch = vi.spyOn(adapter as any, 'handleMessage').mockImplementation((message: any) =>
+            message.text === 'slow' ? new Promise<void>(resolve => { finish = resolve }) : Promise.resolve())
+        ;(adapter as any).onRawMessage({ ...update, text: 'slow' })
+        await vi.waitFor(() => expect(finish).toBeDefined())
+        ;(adapter as any).onRawMessage(update)
+        ;(adapter as any).onRawMessage({ ...update, text: '/deploy' })
+        await vi.waitFor(() => expect(dispatch.mock.calls.map(call => (call[0] as any).text)).toEqual(['slow', '/status']))
+        finish()
+        await vi.waitFor(() => expect(dispatch.mock.calls.map(call => (call[0] as any).text)).toEqual(['slow', '/status', '/deploy']))
+        dispatch.mockRestore()
+    })
     it('fences every Bot API effect on the predecessor and admits only the successor', async () => {
         let owner = 'node-a'
         const predecessor = new TelegramAdapter({ token: 'fixture', verifyAuthority: async () => owner === 'node-a' })

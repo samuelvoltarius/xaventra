@@ -2,6 +2,23 @@
 
 Nova's autonomous capabilities — from missions to dreaming.
 
+## Frische Netzprüfung und Abbruch (2.85.9)
+
+Ein ausdrücklicher Owner-Auftrag wie „Prüfe jetzt erneut, welche Geräte im
+lokalen Netzwerk und Mesh verfügbar sind; nichts koppeln oder schalten“ ruft
+die vorhandene lesende Geräteerkennung auf. Danach folgen Inventur und aktueller
+Mesh-Status über dieselbe autorisierte Werkzeugausführung. Beobachtungen bleiben
+von bestätigten Identitäten und Steuerfreigaben getrennt. Die Suche ist begrenzt;
+ein Zeitlimit oder unbekanntes Gerät ist kein vollständiger Erkennungsnachweis.
+
+Bei unterbrochener Modellauswertung werden vorhandene Werkzeugbefunde als
+Teilbericht ausgegeben, ohne weitere Modell-Reparatur. `/log`, `/status` und
+`/cancel` warten nicht hinter einer laufenden Telegram-Modellantwort. `/cancel`
+bricht nur eigene laufende Anfragen im selben Chat ab; es macht bereits
+ausgeführte physische Aktionen nicht rückgängig. Ein unklarer Telegram-
+Zustellfehler startet weder ein Ersatzmodell noch einen automatischen Replay.
+Die konkrete Ursache eines Telegram-Transportfehlers muss separat geprüft werden.
+
 ---
 
 ## Standard: selbstständig (P8, ab 2.82)

@@ -31,6 +31,7 @@ import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
 import { incompleteToolResponse, environmentOverviewResponse } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
+import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
 import { repairConstrainedResponse } from './response-repair.js'
 import type { ResponseConstraint } from '../core/response-contract.js'
@@ -132,6 +133,7 @@ export interface AgentRunParams {
 }
 
 export interface AgentResponse {
+    incompleteSynthesis?: boolean
     content: string
     /** Canonical Outcome Ledger run for this invocation. */
     runId?: string
@@ -770,6 +772,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // Every native planning, follow-up and repair round shares one budget.
         // Do not mutate the global/shared client used by other users or runs.
         llmClient = kernel.inference.wrap(llmClient)
+        llmClient = cancellableCompletion(llmClient, abortSignal, TIMEOUT_LLM)
         // Generate response WITH TOOLS!
         _traceRecorder.llmCallStart(_traceId)
         // Race the LLM call against the hard abort signal so a hung initial call doesn't
@@ -1701,7 +1704,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             policyBlocked,
         })
         outcomeLedger.recordValidation(kernel.contract.id, taskValidation)
-        const repaired = await repairConstrainedResponse({
+        const repaired = incompleteSynthesis ? null : await repairConstrainedResponse({
             contract: kernel.contract, validation: taskValidation, response: finalContent,
             requiresTool: actionIntent.requiresTool, startedAt: outcomeStartedAt,
             tokensUsed: kernel.inference.snapshot().totalTokens, signal: abortSignal,
@@ -1884,6 +1887,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         _traceRecorder.finish(_traceId, { success: taskValidation.success, responseContent: finalContent })
         return {
             content: finalContent,
+            incompleteSynthesis,
             runId: kernel.contract.id,
             validation: taskValidation,
             responseConstraints: kernel.contract.responseConstraints,

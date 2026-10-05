@@ -263,9 +263,10 @@ export class CodexCLIAdapter {
      */
     async complete(
         prompt: string,
-        options: { systemPrompt?: string; model?: string; timeoutMs?: number } = {}
+        options: { systemPrompt?: string; model?: string; timeoutMs?: number; signal?: AbortSignal } = {}
     ): Promise<CodexCompletionResult> {
         if (!mayUseCodex()) throw new Error(CODEX_OWNER_ONLY)
+        options.signal?.throwIfAborted()
         const model = options.model || this.model
         const timeout = options.timeoutMs || 120000
 
@@ -307,6 +308,7 @@ export class CodexCLIAdapter {
 
             const invocation = resolveCodexCommand(this.binaryPath, args)
             proc = spawn(invocation.command, invocation.args, {
+                signal: options.signal,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 cwd: codexProxyWorkdir(),
                 env: { ...process.env, NO_COLOR: '1' },

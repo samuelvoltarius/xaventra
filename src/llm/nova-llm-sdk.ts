@@ -80,6 +80,8 @@ export interface LLMResponse {
 }
 
 export interface LLMCallOptions {
+    /** Request-wide cancellation; an aborted request must never fail over. */
+    signal?: AbortSignal
     toolChoice?: 'auto' | 'required'
     maxTokens?: number
     /** Provider-compatible reasoning control. Local Qwen/vLLM uses `none` for
@@ -404,6 +406,7 @@ class LegacyCloudProvider extends LLMProvider {
         // Retry loop for rate limits and transient errors (with endpoint fallback)
         let lastError: Error | null = null
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            options?.signal?.throwIfAborted()
             // Use different endpoint on each retry (like pi-ai)
             const endpoint = this.ENDPOINTS[Math.min(attempt, this.ENDPOINTS.length - 1)]
             const url = `${endpoint}/v1internal:generateContent`
@@ -411,6 +414,7 @@ class LegacyCloudProvider extends LLMProvider {
             try {
                 const response = await fetch(url, {
                     method: 'POST',
+                    signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
@@ -446,6 +450,7 @@ class LegacyCloudProvider extends LLMProvider {
                     status: response.status,
                 })
             } catch (err) {
+                options?.signal?.throwIfAborted()
                 lastError = err instanceof Error ? err : new Error(String(err))
                 if (attempt < MAX_RETRIES && lastError.message.includes('fetch failed')) {
                     console.log(`[CloudLLM] Network error, retrying... (${attempt + 1}/${MAX_RETRIES})`)
@@ -694,7 +699,7 @@ class ClaudeProvider extends LLMProvider {
 
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
-            signal: AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
+            signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
             headers: {
                 ...anthropicAuthHeaders(token),
                 'Content-Type': 'application/json',
@@ -828,6 +833,7 @@ class MiniMaxProvider extends LLMProvider {
             temperature: this.config.temperature,
             tools,
             toolChoice: options?.toolChoice,
+            signal: options?.signal,
         })
         return {
             content: result.content,
@@ -904,7 +910,7 @@ class OpenAIProvider extends LLMProvider {
         // If no API key, use Codex CLI directly
         if (!token || token === 'undefined') {
             if (this.codexAdapter) {
-                return this.completeViaCodex(messages)
+                return this.completeViaCodex(messages, options)
             }
             throw new Error('No OpenAI API key and Codex CLI not available')
         }
@@ -935,7 +941,7 @@ class OpenAIProvider extends LLMProvider {
         try {
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                signal: AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
+                signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -948,7 +954,8 @@ class OpenAIProvider extends LLMProvider {
                 // Fallback to Codex CLI on auth/quota errors
                 if ((response.status === 429 || response.status === 401) && this.codexAdapter) {
                     console.log(`[OpenAI] API returned ${response.status}, using Codex CLI proxy`)
-                    return this.completeViaCodex(messages)
+                    options?.signal?.throwIfAborted()
+                    return this.completeViaCodex(messages, options)
                 }
                 throw new Error(`OpenAI API error ${response.status}: ${error}`)
             }
@@ -957,15 +964,17 @@ class OpenAIProvider extends LLMProvider {
             return this.parseResponse(data)
         } catch (err) {
             // Fallback to Codex CLI on network errors
+            options?.signal?.throwIfAborted()
             if (this.codexAdapter) {
                 console.log('[OpenAI] API failed, using Codex CLI:', (err as Error).message?.slice(0, 80))
-                return this.completeViaCodex(messages)
+                return this.completeViaCodex(messages, options)
             }
             throw err
         }
     }
 
-    private async completeViaCodex(messages: LLMMessage[]): Promise<LLMResponse> {
+    private async completeViaCodex(messages: LLMMessage[], options?: LLMCallOptions): Promise<LLMResponse> {
+        options?.signal?.throwIfAborted()
         if (!this.codexAdapter) throw new Error('Codex CLI not available')
 
         // Extract system prompt and user message
@@ -986,7 +995,8 @@ class OpenAIProvider extends LLMProvider {
             {
                 systemPrompt: systemMsg?.content,
                 model: this.config.model,
-                timeoutMs: 120000,
+                timeoutMs: options?.timeoutMs ?? 120000,
+                signal: options?.signal,
             }
         )
 
@@ -1176,6 +1186,7 @@ export class NovaLLM {
     }
 
     private async completeObserved(messages: LLMMessage[], tools?: ToolDefinition[], options?: LLMCallOptions, failover = false): Promise<LLMResponse> {
+        options?.signal?.throwIfAborted()
         if (!this.provider) throw new Error('LLM nicht konfiguriert. Rufe configure() auf.')
         const provider = this.currentConfig?.provider || 'unknown'
         const model = this.currentConfig?.model || 'unknown'
@@ -1189,6 +1200,7 @@ export class NovaLLM {
         }, async span => {
             try {
                 const response = await this.provider!.complete(messages, tools, options)
+                options?.signal?.throwIfAborted()
                 const usage = response.usage
                 span.setAttribute('gen_ai.usage.input_tokens', usage?.promptTokens || 0)
                 span.setAttribute('gen_ai.usage.output_tokens', usage?.completionTokens || 0)
@@ -1472,7 +1484,9 @@ class LocalLLMProvider extends LLMProvider {
     ): Promise<LLMResponse> {
         const chatMessages = this._buildChatMessages(messages)
 
+        options?.signal?.throwIfAborted()
         const allCandidates = await this.getFailoverCandidates()
+        options?.signal?.throwIfAborted()
         // Phase 8: while a vLLM switch runs, that endpoint is not called (it would
         // hang for minutes). Other local endpoints stay; never a cloud failover.
         const discovered = allCandidates.filter(candidate => !vllmSwitchBlocks(candidate.baseUrl))
@@ -1492,6 +1506,7 @@ class LocalLLMProvider extends LLMProvider {
 
         const maxAttempts = Math.max(1, Math.min(candidates.length, options?.maxAttempts ?? candidates.length))
         for (let i = 0; i < maxAttempts; i++) {
+            options?.signal?.throwIfAborted()
             const candidate = candidates[i]
 
             try {
@@ -1511,10 +1526,15 @@ class LocalLLMProvider extends LLMProvider {
                     options?.maxTokens,
                     options?.reasoningEffort,
                     options?.toolChoice,
+                    options?.signal,
                 )
+                options?.signal?.throwIfAborted()
                 if (result.content || result.toolCalls?.length) sessionFailureMap.delete(`${candidate.baseUrl}|${candidate.model}`)
                 return result
             } catch (err) {
+                // Caller cancellation is not an endpoint failure or permission
+                // to send the same context to another candidate.
+                options?.signal?.throwIfAborted()
                 lastError = err
                 const errMsg = err instanceof Error ? err.message.slice(0, 200) : String(err)
                 console.log(`[LocalLLM] ${candidate.model} at ${candidate.baseUrl} failed: ${errMsg}`)
@@ -1634,6 +1654,7 @@ class LocalLLMProvider extends LLMProvider {
         maxTokens?: number,
         reasoningEffort?: LLMCallOptions['reasoningEffort'],
         toolChoice?: LLMCallOptions['toolChoice'],
+        requestSignal?: AbortSignal,
     ): Promise<LLMResponse> {
         const isOllama = baseUrl.includes('11434')
 
@@ -1642,7 +1663,9 @@ class LocalLLMProvider extends LLMProvider {
 
         // Each individual attempt gets its own abort signal so a hung model doesn't
         // block the fallback loop — the outer withTimeout() in nova-runner is the hard cap.
-        const signal = AbortSignal.timeout(timeoutMs)
+        const deadline = AbortSignal.timeout(timeoutMs)
+        const signal = requestSignal ? AbortSignal.any([requestSignal, deadline]) : deadline
+        signal.throwIfAborted()
 
         if (isOllama) {
             // Ollama API — chatMessages already converted by _buildChatMessages()

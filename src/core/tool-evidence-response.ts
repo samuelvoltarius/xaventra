@@ -73,7 +73,9 @@ export function incompleteToolResponse(results: string[]): string {
 /** Current, verified read-only results already contain the human-facing report.
  * No model synthesis or second opinion is required to deliver these facts. */
 export function environmentOverviewResponse(executions: ResponseToolExecution[]): string {
-    const results = ['environment_inventory', 'mesh_status'].map(name => {
+    const names = executions.some(item => (item.toolName || item.name) === 'scan_now')
+        ? ['scan_now', 'environment_inventory', 'mesh_status'] : ['environment_inventory', 'mesh_status']
+    const results = names.map(name => {
         const execution = [...executions].reverse().find(e => (e.toolName || e.name) === name)
         if (!execution || execution.success !== true) return `${name}: in diesem Lauf nicht erfolgreich verifiziert.`
         let value = execution.result

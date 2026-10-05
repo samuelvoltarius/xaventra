@@ -20,6 +20,25 @@ function entry() {
 const MISSION_TEXT = '[NOVA_MISSION_KEY:m1:step:2] [NOVA_MISSION_FENCE:m1:3:tok-abc] [MISSION Schritt 2/4] run it'
 
 describe('daemon external message entry (INT-3a)', () => {
+    it('allows local controls during a stalled request and cancels only this user in this chat', async () => {
+        let activeSignal: AbortSignal | undefined
+        const pipeline = vi.fn(async (...args: any[]) => {
+            if (args[2].startsWith('/')) return args[5](args[2].slice(1), '', args[1], { permission: 'owner' })
+            activeSignal = args[7].abortSignal
+            return new Promise<void>(resolve => activeSignal!.addEventListener('abort', () => resolve(), { once: true }))
+        })
+        const handle = createDaemonMessageEntry({ pipeline, getState: () => ({}), handleCommand: vi.fn(async () => 'status') })
+        const pending = handle('Telegram', 'owner', 'check devices', async () => {}, undefined, undefined, { chatId: 'a' })
+        await vi.waitFor(() => expect(activeSignal).toBeDefined())
+        expect(await handle('Telegram', 'owner', '/status', async () => {}, undefined, undefined, { chatId: 'a' })).toBe('status')
+        expect(await handle('Telegram', 'other', '/cancel', async () => {}, undefined, undefined, { chatId: 'a' })).toContain('Keine')
+        expect(activeSignal?.aborted).toBe(false)
+        expect(await handle('Telegram', 'owner', '/cancel', async () => {}, undefined, undefined, { chatId: 'b' })).toContain('Keine')
+        await handle('Telegram', 'owner', '/cancel', async () => {}, undefined, undefined, { chatId: 'a' })
+        await pending
+        expect(activeSignal?.aborted).toBe(true)
+        expect(await handle('Telegram', 'owner', '/cancel', async () => {}, undefined, undefined, { chatId: 'a' })).toContain('Keine')
+    })
     it('strips mission key and fence markers from external text', async () => {
         const { handle, pipeline } = entry()
         await handle('telegram', '123', `please ${MISSION_TEXT}`, async () => undefined)

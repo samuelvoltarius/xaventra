@@ -70,6 +70,16 @@ describe('Nova SDK model bridge', () => {
         await expect(pending).rejects.toThrow('AbortError')
         finish(call('fetch_url'))
     })
+    it('aborts the actual provider signal at its deadline, with no correction retry', async () => {
+        let signal: AbortSignal | undefined
+        const client = { complete: vi.fn((_messages, _tools, options) => {
+            signal = options.signal
+            return new Promise<any>((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }))
+        }) }
+        await expect(new NovaAgentsModel('qwen', { client, timeoutMs: 25 }).getResponse(request())).rejects.toThrow('deadline')
+        expect(signal?.aborted).toBe(true)
+        expect(client.complete).toHaveBeenCalledTimes(1)
+    })
     it('retains history, correlated tool results and an input image through the bridge', () => {
         const messages: any[] = [
             { role: 'system', content: 'Instructions' }, { role: 'user', content: 'Previous question' },

@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.85.9] — 2026-10-05 (source candidate; not yet deployed)
+
+- Propagate request cancellation to local/cloud HTTP inference and Codex
+  processes. Stop fallback chains after a request-wide deadline or owner abort.
+- Preserve verified partial tool observations after interrupted synthesis;
+  do not start response repair or model fact-checking after that interruption.
+- Separate reply delivery failures from inference failures. An ambiguous
+  Telegram delivery fails its durable message instead of replaying tools.
+- Process exact `/log`, `/status` and `/cancel` controls outside long chat/model
+  queues while retaining admission, authority and deduplication checks.
+  Cancellation is scoped to the caller and current chat.
+- Route explicit fresh owner LAN/Mesh discovery requests through the existing
+  governed read-only device scan before inventory and current Mesh status.
+  Return bounded device observations without another model round. This does
+  not imply universal device recognition, pairing or hardware acceptance.
+
 ## [2.85.8] — 2026-10-05 (source candidate; not deployed)
 
 - Correct ESPHome transport resolution for the supported Node 22 runtime: use

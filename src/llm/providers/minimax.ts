@@ -133,7 +133,7 @@ export class MiniMaxLLM {
 
 async complete(
         messages: MiniMaxMessage[],
-        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required' } = {}
+        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required'; signal?: AbortSignal } = {}
     ): Promise<MiniMaxCompletionResult> {
         // Use OpenAI endpoint — this is what worked for "schreib Sample Two" (3 tool rounds)
         // Anthropic endpoint: tool_choice:{type:"any"} was ignored, returned text anyway
@@ -144,7 +144,7 @@ async complete(
     // ---- Anthropic-compatible endpoint (with thinking + tools) ----
     private async completeAnthropic(
         messages: MiniMaxMessage[],
-        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required' } = {}
+        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required'; signal?: AbortSignal } = {}
     ): Promise<MiniMaxCompletionResult> {
         // Anthropic format: system is separate, messages only user/assistant
         const anthropicMessages = messages
@@ -255,7 +255,7 @@ async complete(
     // ---- OpenAI-compatible endpoint (simple chat, no thinking) ----
     private async completeOpenAI(
         messages: MiniMaxMessage[],
-        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required' } = {}
+        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; tools?: any[]; toolChoice?: 'auto' | 'required'; signal?: AbortSignal } = {}
     ): Promise<MiniMaxCompletionResult> {
         const builtMessages: Array<{ role: string; content: any }> = []
         if (options.systemPrompt) {
@@ -327,7 +327,7 @@ async complete(
                 'Accept': 'application/json; charset=utf-8',
             },
             body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000))),
+            signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000)))]) : AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000))),
         })
 
         if (!response.ok) {
@@ -412,7 +412,7 @@ async complete(
 
     async *stream(
         messages: MiniMaxMessage[],
-        options: { maxTokens?: number; temperature?: number; systemPrompt?: string } = {}
+        options: { maxTokens?: number; temperature?: number; systemPrompt?: string; signal?: AbortSignal } = {}
     ): AsyncGenerator<{ content?: string; reasoning?: string; done: boolean }> {
         const systemPrompt = options.systemPrompt
 
@@ -445,7 +445,7 @@ async complete(
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000))),
+            signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000)))]) : AbortSignal.timeout(Math.max(5_000, Number(process.env.NOVA_MINIMAX_TIMEOUT_MS || 30_000))),
         })
 
         if (!response.ok) {

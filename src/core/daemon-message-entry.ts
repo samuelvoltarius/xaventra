@@ -15,6 +15,7 @@ import type { MessageContext, MessageExecutionOptions } from './message-pipeline
 import type { PrincipalContext } from '../users/principal-id.js'
 import { startTrace, endTrace, runWithTrace, traceLog } from './request-tracer.js'
 import { interactiveRequestGate } from './request-gate.js'
+import { isImmediateControl } from './control-command.js'
 import { getMessageBus } from './message-bus.js'
 import { recordChannelMessage, recordExecutionStage, withSpan } from '../infra/telemetry.js'
 
@@ -62,10 +63,22 @@ export function neutralizeInternalPrefixes(content: string): string {
 }
 
 export function createDaemonMessageEntry(deps: DaemonMessageEntryDeps): ExternalMessageHandler {
+    const active = new Map<string, Set<AbortController>>()
     return async function handleMessage(channel, from, rawContent, replyFn, image, execution, messageContext) {
         // Trust boundary: external text never carries mission protocol markers.
         const stripped = stripMissionProtocolMarkers(String(rawContent ?? ''))
         const content = execution?.systemAuthored === true ? stripped : neutralizeInternalPrefixes(stripped)
+        const control = isImmediateControl(content) && !execution && !image
+        const scope = JSON.stringify([channel.toLowerCase(), from, messageContext?.chatId || from])
+        const controller = !content.startsWith('/') && !execution ? new AbortController() : undefined
+        const commandHandler = control && content.trim().toLowerCase() === '/cancel'
+            ? async (cmd: string, args: string, user: string, context?: PrincipalContext) => {
+                // Called only after the pipeline's authentication/admission.
+                if (cmd !== 'cancel') return deps.handleCommand(cmd, args, user, context)
+                const requests = active.get(scope)
+                for (const request of requests || []) request.abort(new Error('AbortError: request cancelled by user'))
+                return requests?.size ? 'Die laufende Anfrage wird abgebrochen.' : 'Keine laufende Anfrage in diesem Chat.'
+            } : deps.handleCommand
         const traceId = startTrace(channel, from, content)
         recordChannelMessage({ channel, direction: 'inbound' })
         const { getStateMachine } = await import('./state-machine.js')
@@ -76,6 +89,10 @@ export function createDaemonMessageEntry(deps: DaemonMessageEntryDeps): External
         }
         let runtimeError: string | undefined
         try {
+            if (controller) {
+                const requests = active.get(scope) || new Set<AbortController>()
+                requests.add(controller); active.set(scope, requests)
+            }
             getMessageBus().emitSync('user:message', { channel, userId: from, content, hasImage: Boolean(image) }, { source: 'daemon', correlationId: traceId })
             const priority = channel === 'internal' || from === 'Nova-Autonomy' ? -10 : 10
             return await withSpan('nova.channel.message', {
@@ -83,7 +100,8 @@ export function createDaemonMessageEntry(deps: DaemonMessageEntryDeps): External
                 'nova.channel': channel,
                 'nova.has_image': Boolean(image),
                 'nova.system_authored': channel === 'internal' || from === 'Nova-Autonomy',
-            }, async () => interactiveRequestGate.run(() => runWithTrace(traceId, async () => {
+            }, async () => {
+              const run = () => runWithTrace(traceId, async () => {
                 traceLog(traceId, 'pipeline:start')
                 recordExecutionStage({ stage: 'pipeline.started', success: true })
                 const observedReply = async (message: string): Promise<void> => {
@@ -95,18 +113,25 @@ export function createDaemonMessageEntry(deps: DaemonMessageEntryDeps): External
                         throw error
                     }
                 }
-                const result = await deps.pipeline(channel, from, content, observedReply, deps.getState(), deps.handleCommand, image, execution, messageContext)
+                const result = await deps.pipeline(channel, from, content, observedReply, deps.getState(), commandHandler, image, execution || (controller ? { abortSignal: controller.signal } : undefined), messageContext)
                 traceLog(traceId, 'pipeline:complete')
                 recordExecutionStage({ stage: 'pipeline.completed', success: true })
                 getMessageBus().emitSync('llm:response', { channel, userId: from, completed: true }, { source: 'pipeline', correlationId: traceId })
                 return result
-            }), priority))
+              })
+              return control ? run() : interactiveRequestGate.run(run, priority)
+            })
         } catch (error) {
             runtimeError = String(error).slice(0, 200)
             recordExecutionStage({ stage: 'pipeline.failed', success: false })
             getMessageBus().emitSync('system:error', { channel, userId: from, error: String(error) }, { source: 'pipeline', correlationId: traceId })
             throw error
         } finally {
+            if (controller) {
+                const requests = active.get(scope)
+                requests?.delete(controller)
+                if (!requests?.size) active.delete(scope)
+            }
             runtimeState.completeOperation(traceId, runtimeError)
             endTrace(traceId)
         }

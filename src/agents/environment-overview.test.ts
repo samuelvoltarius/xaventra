@@ -5,6 +5,15 @@ const input = { content: 'send mir was du im netzwerk findest und wo mit du dich
     permission: 'owner', internal: false, hasImage: false, constrained: false,
     tools: [{ name: 'environment_inventory' }, { name: 'mesh_status' }] }
 describe('bounded deterministic owner inventory', () => {
+    it('performs a fresh governed device scan before inventory for the actual test request', () => {
+        const content = 'Prüfe jetzt erneut, welche Geräte in meinem lokalen Netzwerk und im Mesh verfügbar sind. Noch nichts koppeln, installieren oder schalten.'
+        expect(environmentOverviewPlan({ ...input, content, tools: [...input.tools, { name: 'scan_now' }] })).toEqual([
+            { name: 'scan_now', arguments: { was: 'geraete' } },
+            { name: 'environment_inventory', arguments: {} }, { name: 'mesh_status', arguments: {} },
+        ])
+        expect(environmentOverviewPlan({ ...input, content })).toBeNull()
+        expect(environmentOverviewPlan({ ...input, content: content + ' Installiere danach etwas.', tools: [...input.tools, { name: 'scan_now' }] })).toBeNull()
+    })
     it('plans only stored discovery and current Mesh status, never a scan or a write', () => {
         expect(environmentOverviewPlan(input)).toEqual([{ name: 'environment_inventory', arguments: {} }, { name: 'mesh_status', arguments: {} }])
     })

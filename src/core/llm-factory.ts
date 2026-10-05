@@ -799,6 +799,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
         },
 
         complete: async (msgs: Array<{ role: string; content: string; image?: { data: string; mimeType: string }; toolCalls?: any[]; toolCallId?: string }> | string, tools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>, options?: import('../llm/nova-llm-sdk.js').LLMCallOptions) => {
+            options?.signal?.throwIfAborted()
             const normalizedMsgs = Array.isArray(msgs)
                 ? msgs
                 : [{ role: 'user', content: String(msgs) }]
@@ -827,6 +828,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                                 systemPrompt,
                                 model: activeModelId,
                                 timeoutMs: 180000,
+                                signal: options?.signal,
                             })
 
                             return {
@@ -841,6 +843,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
                         }
                     }
                 } catch (codexErr) {
+                    options?.signal?.throwIfAborted()
                     console.log(`[NovaLLM] Official Codex CLI failed: ${(codexErr as Error).message?.slice(0, 160)}`)
                 }
             }
@@ -951,7 +954,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     stream: true,
                                     store: false,
                                 }),
-                                signal: AbortSignal.timeout(30000),
+                                signal: options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
                             })
 
                             if (response.ok) {
@@ -1018,6 +1021,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             console.log(`[NovaLLM] ChatGPT Backend API ${response.status}: ${errBody.slice(0, 200)}`)
                         }
                     } catch (oauthErr) {
+                        options?.signal?.throwIfAborted()
                         console.log(`[NovaLLM] ChatGPT Backend API failed: ${(oauthErr as Error).message?.slice(0, 100)}`)
                     }
                 }
@@ -1044,6 +1048,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                     try {
                         minimaxAdapter.setModel?.(tryModel)
                         const result = await minimaxAdapter.complete(chatMsgs, {
+                            signal: options?.signal,
                             systemPrompt: combinedSystem || undefined,
                             maxTokens: 8192,
                             tools,
@@ -1058,6 +1063,8 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             usage: result.tokensUsed ? { promptTokens: result.promptTokens ?? 0, completionTokens: result.completionTokens ?? 0, totalTokens: result.tokensUsed } : undefined,
                         }
                     } catch (err) {
+                        minimaxAdapter.setModel?.(originalModel)
+                        options?.signal?.throwIfAborted()
                         console.log(`[NovaLLM] MiniMax ${tryModel} failed: ${String(err).slice(0, 80)}`)
                         if (/429|rate.?limit|usage limit|quota/i.test(String(err))) {
                             await markMiniMaxRateLimited(err)
@@ -1084,6 +1091,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                     const response = await openaiAdapter.complete(msgs as any, (tools || []) as any, options)
                     return { content: response.content, toolCalls: response.toolCalls, usage: response.usage }
                 } catch (err) {
+                    options?.signal?.throwIfAborted()
                     // Fall back for this call only. Dropping the adapter would
                     // silently return every later call to the previous model.
                     console.log(`[NovaLLM] ${activeProvider}/${activeModelId} failed, falling back for this call: ${err}`)
@@ -1103,6 +1111,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
             } catch { runningServices = [] }
 
             return runWithModelFallback({
+                signal: options?.signal,
                 provider: fallbackEntry.provider,
                 model: fallbackEntry.model,
                 fallbacks: getDefaultFallbacks(runningServices),
@@ -1138,6 +1147,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             const failedEndpoints = new Set<string>()
                             let lastLocalError: unknown = new Error('Kein lokales LLM erreichbar')
                             for (const discovered of candidates.slice(0, 4) as LLMEntry[]) {
+                                options?.signal?.throwIfAborted()
                                 if (!discovered.endpoint || failedEndpoints.has(discovered.endpoint)) continue
                                 const localLLM = createLocalLLM({
                                     baseUrl: discovered.endpoint,
@@ -1152,6 +1162,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                 })
                                 try {
                                     const available = await localLLM.checkAvailable()
+                                    options?.signal?.throwIfAborted()
                                     if (!available) {
                                         failedEndpoints.add(discovered.endpoint)
                                         continue
@@ -1169,6 +1180,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     })
                                     return { content: response.content, toolCalls: response.toolCalls, usage: response.usage }
                                 } catch (err) {
+                                    options?.signal?.throwIfAborted()
                                     lastLocalError = err
                                     failedEndpoints.add(discovered.endpoint)
                                     console.log(`[ModelFallback] Local candidate ${discovered.model} failed: ${String(err).slice(0, 120)}`)

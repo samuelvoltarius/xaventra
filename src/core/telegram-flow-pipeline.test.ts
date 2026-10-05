@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fixtures = vi.hoisted(() => ({ agent: vi.fn(), cache: vi.fn(), capture: vi.fn(), photo: vi.fn(), permission: 'user' }))
+const fixtures = vi.hoisted(() => ({ agent: vi.fn(), cache: vi.fn(), capture: vi.fn(), photo: vi.fn(), fallback: vi.fn(), permission: 'user' }))
 vi.mock('../users/multi-user-middleware.js', () => ({
     initMultiUser: () => undefined,
     checkAuth: () => ({ allowed: true, permission: fixtures.permission, isNewUser: false, user: {} }),
@@ -17,7 +17,7 @@ vi.mock('./soul.js', () => ({
 }))
 vi.mock('../agents/nova-runner.js', () => ({ runNovaAgent: fixtures.agent, clearSession: () => undefined }))
 vi.mock('../llm/response-cache.js', () => ({ getCachedResponse: fixtures.cache, cacheResponse: vi.fn() }))
-vi.mock('../layers/L12-anti-hallucination.js', () => ({ validateWithLLM: async () => ({ honest: false, issues: ['fixture synthesis failure'] }) }))
+vi.mock('../layers/L12-anti-hallucination.js', () => ({ validateWithLLM: vi.fn(async () => ({ honest: false, issues: ['fixture synthesis failure'] })) }))
 vi.mock('../tools/skill-builder.js', () => ({ noteForgeNeed: () => ({ queued: false }) }))
 vi.mock('../layers/subconscious-reflector.js', () => ({ recordActivity: () => undefined }))
 vi.mock('../layers/L9-idle-learning.js', () => ({ getIdleLearningManager: () => null }))
@@ -39,18 +39,40 @@ beforeEach(() => {
     })
 })
 
-async function run(content: string) {
+async function run(content: string, reply?: (text: string) => Promise<void>) {
     const replies: string[] = []
     const identity = vi.fn(async () => ({ model: 'fixture/Measured-Model' }))
+    const complete = fixtures.fallback.mockResolvedValue({ content: 'unexpected fallback' })
     const state: any = {
-        config: {}, llm: { modelId: 'alias', providerId: 'local', runtimeModelIdentity: identity },
+        config: {}, llm: { modelId: 'alias', providerId: 'local', runtimeModelIdentity: identity, complete },
         tools: { execute: fixtures.capture }, channels: { telegram: { sendPhoto: fixtures.photo } }, startTime: Date.now(),
     }
-    await handleMessage('Telegram', 'test-flow-user', content, async text => { replies.push(text) }, state, async () => '')
-    return { replies, identity }
+    await handleMessage('Telegram', 'test-flow-user', content, reply || (async text => { replies.push(text) }), state, async () => '')
+    return { replies, identity, complete }
 }
 
 describe('actual message pipeline with scripted agent, no network or capture', () => {
+    it('propagates a transport failure without running the agent again or a plain fallback', async () => {
+        fixtures.cache.mockReturnValue(null)
+        const send = vi.fn().mockRejectedValue(new Error('EFATAL: fixture fetch failed'))
+        await expect(run('Beschreibe die vorhandenen Belege', send)).rejects.toMatchObject({ name: 'ReplyDeliveryError' })
+        expect(fixtures.agent).toHaveBeenCalledTimes(1)
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(fixtures.fallback).not.toHaveBeenCalled()
+    }, 15000)
+    it('delivers verified partial results without a post-timeout fact-check', async () => {
+        fixtures.cache.mockReturnValue(null)
+        const { validateWithLLM } = await import('../layers/L12-anti-hallucination.js')
+        vi.mocked(validateWithLLM).mockClear()
+        fixtures.agent.mockResolvedValue({ incompleteSynthesis: true, content: 'unverified final claim', sessionId: 'fixture-session',
+            toolsExecuted: ['read_file'], toolExecutions: [{ toolName: 'read_file', success: true, result: 'fixture verified observation' }],
+            actionState: { requiresTool: true, kind: 'system', fulfilled: true } })
+        const { replies, complete } = await run('Lies bitte den aktuellen Diagnosebericht')
+        expect(replies.at(-1)).toContain('fixture verified observation')
+        expect(replies.at(-1)).not.toContain('unverified final claim')
+        expect(validateWithLLM).not.toHaveBeenCalled()
+        expect(complete).not.toHaveBeenCalled()
+    }, 15000)
     it('answers the owner LAN question from background facts despite invented control claims and failed fact-check', async () => {
         fixtures.permission = 'owner'
         const { getNovaDataDir } = await import('./data-root.js')

@@ -7,6 +7,12 @@
 > A governed, self-hosted autonomous agent operating system with verifiable
 > tool execution, durable user-scoped memory and a resilient multi-node mesh.
 
+The 2.85.9 source candidate adds request-wide inference cancellation, independent
+Telegram `/log` / `/status` / `/cancel` controls and fresh governed read-only
+network discovery for explicit owner test requests. Verified partial findings
+survive interrupted synthesis; delivery errors do not replay tools or inference.
+This is not universal hardware acceptance. See [Autonomy Guide](docs/AUTONOMY_GUIDE.md).
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-14B8A6.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-4F7CFF.svg)](package.json)
 

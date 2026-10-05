@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, ope
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
+import { ReplyDeliveryError, protectReplyDelivery } from './reply-delivery-error.js'
 import { selectContextPolicy } from './context-policy.js'
 import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 import { isNovaSystemAuthored } from './system-message.js'
@@ -396,6 +397,8 @@ async function handleMessageInScope(
     messageContext?: MessageContext,
 ) {
     execution?.abortSignal?.throwIfAborted()
+    replyFn = protectReplyDelivery(replyFn)
+    let trackedTaskId: string | undefined
     traceStep('input:accepted')
     let contextPolicy = selectContextPolicy(content, Boolean(image))
     let memoryDecision = decideMemoryTurn(content)
@@ -1609,7 +1612,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         // Task Tracker: start tracking this task. The id lets a concurrent
         // request's completion leave this task alone.
-        let trackedTaskId: string | undefined
         try {
             const { startTask } = await import('./task-tracker.js')
             trackedTaskId = (await startTask(content, channel, canonicalUser))?.id
@@ -1962,6 +1964,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const { authoritativeDiagnosticResponse, screenshotFailureResponse, nodeScreenshotResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
+        if ((result as any).incompleteSynthesis) {
+            // No post-timeout repair/fact-check or unsupported completion claim.
+            const { incompleteToolResponse } = await import('./tool-evidence-response.js')
+            supervised.content = incompleteToolResponse(successfulExecutions.map((item: any) =>
+                typeof item.result === 'string' ? item.result : JSON.stringify(item.result)))
+        }
         const fulfillmentToolCount = kernelState
             ? (kernelState.fulfilled ? 1 : 0)
             : successfulExecutions.filter((execution: any) => toolProvidesActionEvidence(execution.toolName)).length
@@ -1993,7 +2001,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             try {
                 const { validateWithLLM } = await import('../layers/L12-anti-hallucination.js')
                 const toolExecs = (result as any).toolExecutions || []
-                if (toolExecs.length > 0 && !(principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length)) {
+                if (!(result as any).incompleteSynthesis && toolExecs.length > 0 && !(principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length)) {
                     // 15s timeout on hallucination check — non-critical
                     const validation = await Promise.race([
                         validateWithLLM(supervised.content, toolExecs),
@@ -2147,6 +2155,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 const { completeTask } = await import('./task-tracker.js')
                 // Typed for the optional task id so this compiles before and after it exists.
                 ;(completeTask as (failed?: boolean, taskId?: string) => void)(Boolean((result as any).error) || result.validation?.success !== true, trackedTaskId)
+                trackedTaskId = undefined
             } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             // L14 CostTracker: Track tokens for /status
             try {
@@ -2259,6 +2268,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
     } catch (err) {
         console.error(`[Nova] [${channel}] Fehler: ${err}`)
+        if (err instanceof ReplyDeliveryError) throw err
         const disposition = agentFailureDisposition(err, execution?.abortSignal)
 
         // Resilience: Track error and attempt auto-fix
@@ -2302,6 +2312,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             try {
                 await replyFn('Entschuldigung, es ist ein Fehler aufgetreten. Ich bin aber noch da — bitte versuche es erneut.')
             } catch { /* absolutely nothing we can do */ }
+        }
+    } finally {
+        // A timeout, cancellation or failed delivery must not leave /task active.
+        // The ID guard preserves another concurrent request's tracker entry.
+        if (trackedTaskId) {
+            try { (await import('./task-tracker.js')).completeTask(true, trackedTaskId) }
+            catch (error) { console.debug('[Pipeline] task cleanup failed:', error) }
         }
     }
 }
