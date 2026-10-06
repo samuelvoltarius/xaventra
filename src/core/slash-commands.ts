@@ -124,6 +124,7 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     { command: 'waechter', description: '🛡️ Wächter: Messwerte & Erreichbarkeit (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'geraete', description: '📱 Geräte, Konten, Ruhezeiten (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)', gruppe: 'Wahrnehmen' },
+    { command: 'cluster', description: '☸️ Kubernetes: Status, Skalieren, Chart-Update per Karte (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'nodes', description: '🌐 Mesh-Nodes anzeigen/verwalten', gruppe: 'Wahrnehmen' },
     { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)', gruppe: 'Wahrnehmen' },
     // System
@@ -3557,6 +3558,12 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         case 'vms': {
             const { handleVmsCommand } = await import('../infra/proxmox-command.js')
             return handleVmsCommand(args)
+        }
+
+        // 2.88 P19: Kubernetes (owner only, see COMMAND_MINIMUM_ROLE default). Fixed API actions, never kubectl.
+        case 'cluster': {
+            const { handleClusterCommand } = await import('../infra/kubernetes-command.js')
+            return handleClusterCommand(args)
         }
 
         // Phase 1 Teil A: Sichtbarkeit (owner only, see COMMAND_MINIMUM_ROLE default)
