@@ -291,7 +291,7 @@ export interface ModelCallDetail {
 export function isInfrastructureModelFailure(detail: ModelCallDetail = {}): boolean {
     if (detail.finishReason === 'length') return true
     if (detail.status && [408, 429, 502, 503, 504].includes(detail.status)) return true
-    return isInfrastructureFailure(String(detail.error || '')) || /(?:429|502|503|504)|context length|maximum context|max_tokens|too many requests|overloaded/i.test(String(detail.error || ''))
+    return isInfrastructureFailure(String(detail.error || '')) || /\b(?:429|502|503|504)\b|context length|maximum context|max_tokens|too many requests|overloaded/i.test(String(detail.error || ''))
 }
 
 export function recordModelCall(

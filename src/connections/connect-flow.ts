@@ -33,7 +33,7 @@ import {
     connectionIdFor, deleteConnectionSecrets, getConnection, loadConnections, saveConnection, updateConnection, updateConnectionSecrets,
     type ConnectionRecord, type ConnectionTestResult,
 } from './connection-store.js'
-import { isAuthFailure, markLoginExpired, startLogin, type LoginDeps } from './connector-login.js'
+import { haBearerFetch, isAuthFailure, markLoginExpired, startLogin, type LoginDeps } from './connector-login.js'
 
 export const CONNECT_CARD_KIND = 'verbindung-herstellen'
 const REQUEST_ID = /^r-[a-f0-9]{16}$/
@@ -240,10 +240,42 @@ export async function completeLoginAndConnect(input: { state?: unknown; code?: u
     return tested
 }
 
+/** Home Assistant without the MCP server integration answers POST /api/mcp with 404. */
+const isMcpEndpointMissing = (error: unknown) => /\b404\b|not found/i.test(String((error as any)?.message || error || ''))
+const HA_REST_OK = 'Home Assistant ist verbunden. Ich lese jetzt deine Geräte; geschaltet wird nur, wenn du es sagst und Ja drückst.'
+const HA_NICHT_ERREICHBAR = 'Home Assistant antwortet gerade nicht richtig. Ich habe nichts verändert und versuche es später noch einmal.'
+
+/**
+ * 2.86.1 (d): the same login, the normal HA interface (`GET /api/` → „API running.“).
+ * Read only; the bearer comes fresh from the secrets store (refresh before expiry).
+ */
+async function haRestTest(record: ConnectionRecord, deps: ConnectDeps): Promise<{ ok: boolean; message: string }> {
+    const at = new Date((deps.now || Date.now)()).toISOString()
+    try {
+        const base = String(record.basis || '').replace(/\/+$/, '')
+        const response = await haBearerFetch(record.id, deps)(`${base}/api/`, { method: 'GET', redirect: 'manual', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) } as any)
+        const body = response.ok ? await response.text() : ''
+        if (response.ok && /API running/i.test(body)) {
+            updateConnection(record.id, { status: 'verbunden', weg: 'rest', loginAskedAt: undefined, letzterTest: { ok: true, at, werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0 } }, deps)
+            return { ok: true, message: HA_REST_OK }
+        }
+        if (response.status === 401) return { ok: false, message: `${record.title}: Anmeldung fehlt oder ist abgelaufen — bitte einmal neu anmelden.` }
+        updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at, werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler: `HA-Schnittstelle: Status ${response.status}` } }, deps)
+        return { ok: false, message: HA_NICHT_ERREICHBAR }
+    } catch (error) {
+        if (isAuthFailure(error)) return { ok: false, message: `${record.title}: Anmeldung fehlt oder ist abgelaufen — bitte einmal neu anmelden.` }
+        updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at, werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler: 'HA-Schnittstelle nicht erreichbar' } }, deps)
+        return { ok: false, message: HA_NICHT_ERREICHBAR }
+    }
+}
+
 /** Connect through the MCP runtime and test (tools listed). Expired login → exactly one request. */
 export async function connectAndTest(connectionId: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string }> {
     const record = getConnection(connectionId, deps)
     if (!record) return { ok: false, message: 'Unbekannte Verbindung.' }
+    const haLogin = record.connectorId === 'home-assistant' && record.auth === 'ha-login'
+    // 2.86.1 (d): a Home Assistant already known to run without its MCP integration is tested directly.
+    if (haLogin && record.weg === 'rest') return haRestTest(record, deps)
     const gateway = deps.gateway || await defaultGateway(deps)
     try {
         const test = await gateway.connect(record)
@@ -256,11 +288,14 @@ export async function connectAndTest(connectionId: string, deps: ConnectDeps = d
             await markLoginExpired(record.id, deps)
             return { ok: false, message: `${record.title}: Anmeldung fehlt oder ist abgelaufen — bitte einmal neu anmelden.` }
         }
+        // 2.86.1 (d): HA without the MCP server integration → the same login over the normal HA interface.
+        if (haLogin && isMcpEndpointMissing(error)) return haRestTest(record, deps)
         const fehler = String(error instanceof Error ? error.message : error).replace(/(bearer|token|code)\s*[=:]\s*\S+/gi, '$1=[redacted]').slice(0, 160)
         updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at: new Date((deps.now || Date.now)()).toISOString(), werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler } }, deps)
         // 2.86 Paket N: a blocked address (SSRF guard) never reaches the owner as raw text.
         if (/ssrf|private address|blocked/i.test(fehler)) return { ok: false, message: `${record.title} ist von hier aus gerade nicht erreichbar. Ich habe nichts verändert.` }
-        return { ok: false, message: `${record.title}: Verbindung fehlgeschlagen (${fehler}).` }
+        // 2.86.1: the technical reason stays in the test record (app); the owner gets one plain sentence.
+        return { ok: false, message: `${record.title} hat die Verbindung gerade nicht angenommen. Ich habe nichts verändert; die Einzelheiten stehen in der App unter „Verbindungen“.` }
     }
 }
 

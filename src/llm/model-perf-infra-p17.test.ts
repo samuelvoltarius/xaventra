@@ -31,6 +31,7 @@ describe('2.86.1 Punkt 6: Hauptmodell nie wegen Infrastruktur abschalten', () =>
         fail('qwen', 'AbortError: The operation was aborted due to timeout', 16)
         fail('qwen', 'fetch failed', 4)
         fail('qwen', '', 6, { finishReason: 'length' })
+        fail('qwen', 'LLM API error (502): Bad Gateway', 6)
         expect(isModelDisabled('qwen')).toBe(false)
         expect(getDisabledModels()).toEqual([])
     })

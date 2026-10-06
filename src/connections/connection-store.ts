@@ -45,6 +45,12 @@ export interface ConnectionRecord {
     letzterTest?: ConnectionTestResult
     /** Set once when the owner was asked to log in again (exactly one request per expiry). */
     loginAskedAt?: string
+    /**
+     * 2.86.1: how the connection is used. `rest` = Home Assistant without its MCP
+     * server integration (POST /api/mcp → 404): the same login reads through the
+     * normal HA interface (inventory, hass_* tools); switching stays behind a card.
+     */
+    weg?: 'mcp' | 'rest'
 }
 
 export interface StoreOptions { dataDir?: string; now?: () => number }

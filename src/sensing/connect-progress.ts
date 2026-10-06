@@ -55,8 +55,7 @@ export function beendeVorgang(dataDir: string, key: string, status: Exclude<Vorg
     // by the same place as after every new connection (guided/example-prompts.ts).
     if (status === 'verbunden' && vorher !== 'verbunden') {
         // 2.86.1 Punkt 5: a success the owner has not seen yet goes WITH the three buttons (one message).
-        try { beispieleNachErfolg(list[index].art, { dataDir, now: () => opts.now ?? Date.now() }, opts.satzZuDenBeispielen ? `${satz}
-Probier mal:` : undefined) } catch { /* examples are a convenience */ }
+        try { beispieleNachErfolg(list[index].art, { dataDir, now: () => opts.now ?? Date.now() }, opts.satzZuDenBeispielen ? `${satz}\nProbier mal:` : undefined) } catch { /* examples are a convenience */ }
     }
     return list[index]
 }

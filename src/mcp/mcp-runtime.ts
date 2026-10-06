@@ -55,7 +55,7 @@ export async function initializeMCPRuntime(configs?: MCPServerConfig[]): Promise
         try {
             const { loadConnections } = await import('../connections/connection-store.js')
             const { defaultDeps } = await import('../connections/connect-flow.js')
-            for (const record of loadConnections().filter(item => item.status === 'verbunden')) {
+            for (const record of loadConnections().filter(item => item.status === 'verbunden' && usesMcpRuntime(item))) {
                 try {
                     await connectConnectionRecord(record, defaultDeps())
                     connected.push(serverNameFor(record))
@@ -90,6 +90,14 @@ function bindingOf(record: ConnectionRecord) {
         connectorId: record.connectorId, trust: record.trust, datenklasse: record.datenklasse,
         capabilities: record.capabilities, standard: record.standard, erlaubteWerkzeuge: record.erlaubteWerkzeuge,
     }
+}
+
+/**
+ * 2.86.1 (d): a Home Assistant without its MCP server integration is used over the
+ * normal HA interface (inventory, hass_* tools) — the MCP runtime leaves it alone.
+ */
+export function usesMcpRuntime(record: Pick<ConnectionRecord, 'connectorId' | 'weg'>): boolean {
+    return record.weg !== 'rest'
 }
 
 export async function connectionServerConfig(record: ConnectionRecord, deps: LoginDeps): Promise<MCPServerConfig> {
