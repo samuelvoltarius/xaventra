@@ -111,6 +111,8 @@ export class TelegramAdapter implements ChannelAdapter {
     private typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
     private conflictRetryTimer?: ReturnType<typeof setTimeout>
     private disconnecting = false
+    /** 2.86 Paket O: Antworttexte je Chat, solange eine Sprachnachricht bearbeitet wird (für die Sprachantwort). */
+    private voiceCapture = new Map<string, string[]>()
     // Per-chat message queue to prevent concurrent LLM API calls (prevents 403 rate-limiting)
     private messageQueue = new Map<string, Promise<void>>()
 
@@ -308,74 +310,76 @@ export class TelegramAdapter implements ChannelAdapter {
         if (!(await this.acceptInbound())) return
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
-
+        const isOwner = this.getOwnerChatIds().includes(userId)
+        const { join } = await import('node:path')
+        const { mkdirSync, writeFileSync, unlinkSync } = await import('node:fs')
+        const dir = join(process.cwd(), '.nova-voice')
+        const tempPath = join(dir, `voice_${Date.now()}.ogg`)
         try {
-            // Download voice file
             const fileInfo = await this.bot.getFile(msg.voice.file_id)
-            const fileUrl = `https://api.telegram.org/file/bot${this.config.token}/${fileInfo.file_path}`
+            const response = await fetch(`https://api.telegram.org/file/bot${this.config.token}/${fileInfo.file_path}`)
+            const audio = Buffer.from(await response.arrayBuffer())
+            mkdirSync(dir, { recursive: true })
+            writeFileSync(tempPath, audio, { mode: 0o600 })
 
-            const response = await fetch(fileUrl)
-            const buffer = await response.arrayBuffer()
-
-            // Save temporarily
-            const { writeFileSync, unlinkSync } = await import('node:fs')
-            const { join } = await import('node:path')
-            const tempPath = join(process.cwd(), '.nova-voice', `voice_${Date.now()}.ogg`)
-
-            const { mkdirSync, existsSync } = await import('node:fs')
-            const dir = join(process.cwd(), '.nova-voice')
-            if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-            writeFileSync(tempPath, Buffer.from(buffer))
-            console.log(`[Nova Telegram] Voice message received: ${tempPath}`)
-
-            // Transcribe with Whisper
-            try {
-                const { transcribe } = await import('../voice/voice-input.js')
-                const result = await transcribe(tempPath, { model: 'whisper-local' })
-
-                console.log(`[Nova Telegram] Transcribed: "${result.text}"`)
-
-                // Create message with transcribed text
-                const incoming: IncomingMessage = {
-                    id: telegramInboundKey(msg),
-                    channel: 'telegram',
-                    from: userId,
-                    to: chatId,
-                    content: result.text,
-                    timestamp: msg.date * 1000,
-                    isGroup: false,
-                }
-
-                if (this.messageHandler) {
-                    this.startTyping(chatId)
-                    try {
-                        await (this.messageHandler(incoming) as unknown as Promise<void>)
-                    } catch (err) {
-                        console.error(`[Nova Telegram] Voice messageHandler threw: ${err}`)
-                    } finally {
-                        this.stopTyping(chatId)
-                    }
-                }
-
-                // Cleanup
-                try { unlinkSync(tempPath) } catch { }
-            } catch (err) {
-                // No capability resolution here: it used to auto-install Whisper
-                // (pip/ssh) and "transcribe" on a remote node without uploading the
-                // voice file. Installs go through the install catalog instead.
-                console.log(`[Nova Telegram] Whisper not available: ${err}`)
+            // 2.86 Paket O: zuerst der Sprachdienst im eigenen Mesh, sonst lokales Whisper; nie die Cloud.
+            // No capability resolution here: installs go through the Werkzeugkasten card only.
+            const voice = await import('./telegram-voice.js')
+            const heard = await voice.transcribeVoiceNote(audio, String(msg.voice.mime_type || 'audio/ogg'), tempPath)
+            if (!heard) {
                 // 2.85: an owner voice message without speech recognition is a recorded need
                 // for the Software-Scout (capability + time only, no content, no user id).
-                if (this.getOwnerChatIds().includes(userId)) {
+                if (isOwner) {
                     try { (await import('../install/software-demand.js')).recordCapabilityNeed('stt', 'sprachnachricht-ohne-stt') } catch { /* optional */ }
                 }
-                await this.bot.sendMessage(chatId, '🎤 Sprachnachricht empfangen, aber lokale Spracherkennung (Whisper) ist auf diesem Knoten nicht verfügbar.\n\nBitte als Text schreiben. Whisper kann der Owner über den Install-Katalog freigeben.')
-                try { unlinkSync(tempPath) } catch { }
+                const notice = voice.voiceUnavailableNotice()
+                await this.bot.sendMessage(chatId, notice.text, isOwner ? { reply_markup: { inline_keyboard: notice.keyboard } } : {})
+                return
+            }
+            console.log(`[Nova Telegram] Sprachnachricht verstanden (${heard.via})`)
+            const incoming: IncomingMessage = {
+                id: telegramInboundKey(msg),
+                channel: 'telegram',
+                from: userId,
+                to: chatId,
+                content: heard.text,
+                timestamp: msg.date * 1000,
+                isGroup: false,
+            }
+            if (!this.messageHandler) return
+            const reply = voice.shouldReplyByVoice(heard.text, isOwner)
+            const captured: string[] = []
+            if (reply.speak) this.voiceCapture.set(chatId, captured)
+            this.startTyping(chatId)
+            try {
+                await (this.messageHandler(incoming) as unknown as Promise<void>)
+            } catch (err) {
+                console.error(`[Nova Telegram] Voice messageHandler threw: ${err}`)
+            } finally {
+                this.stopTyping(chatId)
+                if (this.voiceCapture.get(chatId) === captured) this.voiceCapture.delete(chatId)
+            }
+            const answer = captured.filter(text => text.trim()).at(-1)
+            if (reply.speak && answer) {
+                const ogg = await voice.speakReply(answer, reply.voice)
+                if (ogg) await this.sendVoice(chatId, ogg)
             }
         } catch (err) {
             console.error(`[Nova Telegram] Voice error: ${err}`)
+        } finally {
+            try { unlinkSync(tempPath) } catch { /* nicht angelegt */ }
         }
+    }
+
+    /** 2.86 Paket O: Sprachnachricht (Ogg/Opus) senden. */
+    async sendVoice(chatId: string, audio: Buffer): Promise<void> {
+        if (!this.bot) throw new Error('Telegram not connected')
+        await this.bot.sendVoice(chatId, audio, {}, { filename: 'antwort.ogg', contentType: 'audio/ogg' })
+    }
+
+    private noteVoiceAnswer(chatId: unknown, text: unknown): void {
+        const captured = this.voiceCapture.get(String(chatId))
+        if (captured && typeof text === 'string') captured.push(text)
     }
 
 
@@ -503,6 +507,15 @@ export class TelegramAdapter implements ChannelAdapter {
         }
         if (typeof data === 'string' && data.startsWith('nv:')) {
             await this.handleNavPress(query)
+            return
+        }
+        if (data === 'vo:install') {
+            // 2.86 Paket O: „Sprachdienst einrichten“ → Werkzeugkasten-Karte (nur Owner, privater Chat).
+            const userId = query.from?.id?.toString() ?? ''
+            const isOwner = this.getOwnerChatIds().includes(userId) && String(query.message?.chat?.id ?? '') === userId
+            const { pressVoiceInstall } = await import('./telegram-voice.js')
+            const text = await pressVoiceInstall(isOwner)
+            try { await this.bot.answerCallbackQuery(query.id, { text: text.slice(0, 190) }) } catch { /* ignore */ }
             return
         }
         const chatId = query.message?.chat?.id?.toString()
@@ -1398,6 +1411,7 @@ export class TelegramAdapter implements ChannelAdapter {
         if (!this.bot) {
             throw new Error('Telegram not connected')
         }
+        this.noteVoiceAnswer(msg.to, sanitizeInternalOutboundArtifacts(msg.content))
 
         // Sanitize content for Telegram
         let cleanContent = this.sanitizeForTelegram(formatTelegramMessage(sanitizeInternalOutboundArtifacts(msg.content)))
@@ -1577,6 +1591,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     return sent.message_id
                 },
                 async (cid: number | string, msgId: number, text: string) => {
+                    this.noteVoiceAnswer(cid, text)
                     const clean = this.sanitizeForTelegram(text)
                     try {
                         await this.bot.editMessageText(clean, {
@@ -1607,6 +1622,7 @@ export class TelegramAdapter implements ChannelAdapter {
      */
     async editMessage(chatId: string, messageId: number, text: string): Promise<void> {
         if (!this.bot) return
+        this.noteVoiceAnswer(chatId, text)
         const clean = this.sanitizeForTelegram(text)
         try {
             await this.bot.editMessageText(clean, {

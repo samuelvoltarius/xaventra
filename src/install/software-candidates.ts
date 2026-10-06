@@ -99,6 +99,16 @@ export const BUILTIN_SOFTWARE_CANDIDATES: readonly SoftwareCandidate[] = Object.
         benefit: 'Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst.',
     },
     {
+        // 2.86 Paket O: der Stack aus dem Voice-Lab (Silero VAD, Nemotron 3.5 Streaming, Piper Ramona/Thorsten)
+        // als ein Knopf; läuft im Xaventra-Dienst des Knotens (voice/voice-service.ts), wird als
+        // `xaventra-voice` im Mesh gefunden. Quellen/Lizenzen/sha256 in voice/voice-artifacts.ts.
+        id: 'sprache-lokal-de', title: 'Lokaler Sprachdienst Deutsch (Verstehen + Sprechen, CPU)', capability: 'stt', kind: 'runtime',
+        platforms: [...LINUX], arches: [...BOTH_ARCHES], minRamGB: 4, minDiskGB: 2, gpu: 'none', detect: { services: ['xaventra-voice'] },
+        catalogId: 'sprachdienst:de',
+        nutzen: 'Versteht dann deine Sprachnachrichten, antwortet auf Wunsch mit Stimme und kann telefonieren.',
+        benefit: 'Spracherkennung, Sprachausgabe und Freisprechen auf einem eigenen Rechner, ohne Cloud: Sprache bleibt im eigenen Netz.',
+    },
+    {
         // 2.86 (Paket G, checked 02.10.2026): own in-process embedder via node-llama-cpp, no
         // Ollama needed (the Spark has none). Qwen3-Embedding-0.6B Q8_0, Apache-2.0, 1024 dim.,
         // multilingual; pinned file + sha256 (memory/embedding-artifacts.ts). First = preferred.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalogHash": "7dee76b30da9d15ef9e6fa6ca5ad87b0747da45907dd89d7e009592b0f923815",
+  "catalogHash": "8b7f4c52103c222f44491ebfa58acec6c8eda67c3143faa2ccdf09d5ab375c8c",
   "entries": [
     {
       "id": "embedding-gguf:qwen3-embedding-0.6b-q8_0",
@@ -427,6 +427,49 @@
       "risk": "low",
       "approval": "fragen",
       "entryHash": "eee3aefd0f66499444d285fb71d0f5213e28007b50af3fa125a147154eea91f4"
+    },
+    {
+      "id": "sprachdienst:de",
+      "title": "Lokaler Sprachdienst Deutsch (Sprache verstehen + sprechen, sha256-geprüft)",
+      "kind": "runtime-addon",
+      "targets": [
+        "host-agent"
+      ],
+      "requires": {
+        "platform": "linux"
+      },
+      "install": [
+        "{node}",
+        "{program}/dist/voice/voice-bundle-fetch.js",
+        "install",
+        "de",
+        "{runtime}/voice"
+      ],
+      "verify": [
+        [
+          "{node}",
+          "{program}/dist/voice/voice-bundle-fetch.js",
+          "verify",
+          "de",
+          "{runtime}/voice"
+        ]
+      ],
+      "rollback": {
+        "kind": "command",
+        "argv": [
+          "{node}",
+          "{program}/dist/voice/voice-bundle-fetch.js",
+          "remove",
+          "de",
+          "{runtime}/voice"
+        ]
+      },
+      "runAs": "service",
+      "sizeMb": 1100,
+      "timeoutSec": 3600,
+      "risk": "low",
+      "approval": "fragen",
+      "entryHash": "c9a1bb937a7e70ed391facdd37370e6778ad5a8eb968d8ad1d57cdcefa8fba66"
     },
     {
       "id": "tesseract-ocr",

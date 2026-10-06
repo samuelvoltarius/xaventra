@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidatesHash": "72a9d53df2fc62d317e031ef186e4b35fcb98a9a5f81e7ce241e616b3f975709",
+  "candidatesHash": "25fa333ccddbcfd0f3a4e4c4332066307f0c54f9f184cf43a15829901f7b7990",
   "entries": [
     {
       "id": "stt-whisper-large-v3",
@@ -78,6 +78,30 @@
       },
       "nutzen": "Kann dir dann Antworten vorlesen, ganz ohne Internet.",
       "benefit": "Sprachausgabe lokal und offline (deutsche Stimmen), statt nur über einen Online-Dienst."
+    },
+    {
+      "id": "sprache-lokal-de",
+      "title": "Lokaler Sprachdienst Deutsch (Verstehen + Sprechen, CPU)",
+      "capability": "stt",
+      "kind": "runtime",
+      "platforms": [
+        "linux"
+      ],
+      "arches": [
+        "x64",
+        "arm64"
+      ],
+      "minRamGB": 4,
+      "minDiskGB": 2,
+      "gpu": "none",
+      "detect": {
+        "services": [
+          "xaventra-voice"
+        ]
+      },
+      "catalogId": "sprachdienst:de",
+      "nutzen": "Versteht dann deine Sprachnachrichten, antwortet auf Wunsch mit Stimme und kann telefonieren.",
+      "benefit": "Spracherkennung, Sprachausgabe und Freisprechen auf einem eigenen Rechner, ohne Cloud: Sprache bleibt im eigenen Netz."
     },
     {
       "id": "embedding-qwen3-0.6b-gguf",

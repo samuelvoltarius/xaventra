@@ -1,6 +1,7 @@
 import { createHash, sign, verify } from 'node:crypto'
 import { neverListViolation, packageNeverListViolation } from './never-list.js'
 import { EMBEDDING_ARTIFACTS, type EmbeddingArtifact } from '../memory/embedding-artifacts.js'
+import { VOICE_BUNDLE, VOICE_BUNDLE_SIZE_MB } from '../voice/voice-artifacts.js'
 
 // ============================================================================
 // Stufe 2 (S2.1): installation catalog. Part of the release (compiled into
@@ -120,6 +121,26 @@ function embeddingEntry(artifact: EmbeddingArtifact): InstallCatalogEntry {
     }
 }
 
+/** Program that fetches the pinned voice bundle (2.86 Paket O, voice/voice-artifacts.ts). */
+export const VOICE_FETCH_SCRIPT = '{program}/dist/voice/voice-bundle-fetch.js'
+export const VOICE_BUNDLE_DIR = '{runtime}/voice'
+
+/**
+ * 2.86 Paket O: lokaler Sprachdienst (Spracherkennung + Sprachausgabe). Wie beim
+ * eigenen Einbetter nennt der Befehl nur das Bündel; URLs, Größen, sha256 und
+ * Lizenzen sind im Programm eingetragen. verify prüft Quittung + Dateien,
+ * rollback entfernt genau den Bündel-Ordner. Kein pip, keine Shell.
+ */
+function voiceEntry(): InstallCatalogEntry {
+    const run = (operation: string) => ['{node}', VOICE_FETCH_SCRIPT, operation, VOICE_BUNDLE.name, VOICE_BUNDLE_DIR]
+    return {
+        id: `sprachdienst:${VOICE_BUNDLE.name}`, title: 'Lokaler Sprachdienst Deutsch (Sprache verstehen + sprechen, sha256-geprüft)',
+        kind: 'runtime-addon', targets: ['host-agent'], requires: { platform: 'linux' },
+        install: run('install'), verify: [run('verify')], rollback: { kind: 'command', argv: run('remove') },
+        runAs: 'service', sizeMb: VOICE_BUNDLE_SIZE_MB, timeoutSec: 3600, risk: 'low', approval: 'fragen',
+    }
+}
+
 export const BUILTIN_INSTALL_CATALOG: readonly InstallCatalogEntry[] = Object.freeze([
     aptEntry('ffmpeg', 'ffmpeg (Audio/Video-Werkzeuge)', ['ffmpeg'], [['/usr/bin/ffmpeg', '-version']], 300, 900, 'low'),
     aptEntry('xfce-workstation', 'XFCE-Arbeitsplatz (Desktop für die Workstation)', XFCE_PACKAGES,
@@ -147,6 +168,7 @@ export const BUILTIN_INSTALL_CATALOG: readonly InstallCatalogEntry[] = Object.fr
         runAs: 'root', sizeMb: 600, timeoutSec: 900, risk: 'high', approval: 'fragen',
     } as InstallCatalogEntry,
     ...EMBEDDING_ARTIFACTS.map(embeddingEntry),
+    voiceEntry(),
 ].map(entry => Object.freeze(entry)))
 
 export interface RejectedCatalogEntry { id: string; reason: string }

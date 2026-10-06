@@ -22,6 +22,7 @@ import type { MeshNode } from './mesh-registry.js'
 import { ownSubnets, scanHosts, scanTargetAllowed, type InterfaceMap } from '../sensing/net-scope.js'
 import { ProbeLimiter, realTcpProbe } from '../sensing/discovery.js'
 import { parseSensingConfig } from '../sensing/config.js'
+import { isXaventraVoiceHealth, VOICE_SERVICE_NAME, VOICE_SERVICE_PORT } from '../voice/voice-contract.js'
 
 
 const execAsync = promisify(exec)
@@ -277,6 +278,16 @@ export const AI_SERVICE_PROBES: AIServiceProbe[] = [
         healthEndpoint: '/',
         detectFn: (body) => body.includes('vosk') || body.length > 0,
         binaries: ['vosk-server'],
+    },
+
+    // 2.86 Paket O: Xaventras eigener Sprachdienst (Verstehen + Sprechen + Freisprechen).
+    // Strenge Erkennung: nur die eigene Health-Antwort, nie ein beliebiges {status: ok}.
+    {
+        name: VOICE_SERVICE_NAME,
+        type: 'stt',
+        defaultPort: VOICE_SERVICE_PORT,
+        healthEndpoint: '/health',
+        detectFn: isXaventraVoiceHealth,
     },
 
     // === Embedding Servers ===
