@@ -9,7 +9,7 @@ describe('stable principal identity', () => {
             .toBe('owner-sample')
     })
 
-    it('links channels only through an explicit mapping', () => {
+    it('links channels only through an explicit mapping (or a confirmed owner account, see owner-accounts.test)', () => {
         const config = { userPrincipals: { 'telegram:42': 'sample', 'discord:99': 'sample' } }
         expect(resolvePrincipalId(config, 'telegram', '42')).toBe(resolvePrincipalId(config, 'discord', '99'))
         expect(resolvePrincipalId({}, 'discord', '99')).toBe('99')
