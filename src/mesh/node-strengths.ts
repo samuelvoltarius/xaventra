@@ -10,7 +10,7 @@
  *  - gemessene Umlaufzeit des Herzschlags (Latenz) und Alter der letzten Meldung.
  *
  * `rankNodes` ist rein und deterministisch (Gleichstand → Knoten-ID). Jede
- * Entscheidung trägt einen kurzen, menschlichen Grund („spark: GPU frei,
+ * Entscheidung trägt einen kurzen, menschlichen Grund („gpu-box: GPU frei,
  * Modell geladen“). Hier wird nichts installiert, gestartet, angepingt oder
  * per SSH abgefragt; keine neue Verbindung.
  */
@@ -329,7 +329,7 @@ export function rankNodes(skill: Skill, nodes: readonly NodeStrength[], options:
     return { skill, label: SKILL_LABELS[skill], ranked: scored, excluded }
 }
 
-/** Short human reason for a routing decision: "spark: GPU frei, Modell qwen3 geladen". */
+/** Short human reason for a routing decision: "gpu-box: GPU frei, Modell qwen3 geladen". */
 export function shortReason(ranking: NodeRanking): string {
     const best = ranking.ranked[0]
     if (!best) return `Für ${ranking.label} passt gerade kein Knoten${ranking.excluded.length ? ` (${ranking.excluded.slice(0, 3).map(item => `${item.nodeId}: ${item.reason}`).join('; ')})` : ''}.`

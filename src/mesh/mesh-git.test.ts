@@ -130,7 +130,7 @@ describe('Mesh-Git contract', () => {
     })
 
     it('names result branches from the node id, safely', () => {
-        expect(resultBranch('Spark Node #1', 'w-12345678')).toBe('mesh/spark-node-1/w-12345678')
+        expect(resultBranch('GPU Box #1', 'w-12345678')).toBe('mesh/gpu-box-1/w-12345678')
         expect(resultBranch('../../x', 'w-12345678')).toBe('mesh/x/w-12345678')
     })
 })

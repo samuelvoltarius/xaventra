@@ -4,7 +4,7 @@
  * Mesh-Gehirn 2.88: the decision comes from node-strengths.ts (signed node
  * profiles, live load from the heartbeat, measured latency). No fixed node
  * list, no hosts in code, no ping, no SSH. The reason is one short human
- * line ("spark: GPU frei, Modell geladen").
+ * line ("gpu-box: GPU frei, Modell geladen").
  */
 
 import { collectNodeStrengths, formatStrengthList, rankNodes, shortReason, skillForTask, type NodeRanking, type NodeStrength, type Skill } from './node-strengths.js'
@@ -28,7 +28,7 @@ export type MeshTaskType =
 export interface RoutingDecision {
     nodeId: string
     nodeName: string
-    /** One short human line: "spark: GPU frei, Modell geladen". */
+    /** One short human line: "gpu-box: GPU frei, Modell geladen". */
     reason: string
     score: number
     taskType: MeshTaskType
