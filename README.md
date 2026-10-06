@@ -33,7 +33,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.12 preview** (security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
+Current source candidate: **2.86.0 preview** (one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
@@ -51,6 +51,11 @@ See [desktop use and enrollment](docs/COMPUTER_USE.md) and the
 Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
+
+**Next version (preview, 2.87.0 in progress).** One mesh brain that knows what
+each node does best and routes work there, and a main succession that hands
+over with the full state if the main fails. Details:
+[CHANGELOG → Unreleased](CHANGELOG.md).
 
 ## Why Xaventra
 

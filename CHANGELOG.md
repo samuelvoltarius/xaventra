@@ -1,5 +1,64 @@
 # Changelog
 
+## [Unreleased] — Vorschau 2.87.0 (in Arbeit)
+
+- **Ein Mesh-Gehirn:** one view of what each node does best (GPU, memory,
+  disk, running models), tasks routed there with a reason, work data carried
+  along through an own Git target in the mesh.
+- **Main-Nachfolge mit vollem Wissen:** the main state is journaled to other
+  nodes; if the main fails, the best-suited node takes over with everything it
+  knew, never two mains at once; without a majority a safe mode plus an owner
+  emergency code.
+- Open live cases: the local model must never be switched off for timeouts;
+  remaining duplicate model recommenders.
+
+## [2.86.0] — 2026-10-06
+
+Geführt und einfach: Xaventra asks one question at a time, connects what she
+can on her own, explains everything in plain words and can be spoken to.
+
+Geführt:
+
+- One question at a time: at most one owner question is open; the rest wait
+  in order of importance (critical items and short deadlines may go first,
+  direct answers to the owner's own request come at once). The menu shows
+  "1 Frage für dich, 5 danach".
+- Setup checklist ("3 von 5 erledigt") in Telegram and the app, one button per
+  open step, ticks itself off.
+- Three example sentences as buttons after every new device or service, one
+  tip per day at most, an "Ich komm nicht weiter" button with one concrete
+  next step.
+- "Heute" as a cockpit with four traffic-light tiles; a pinned Telegram status
+  message that is edited instead of resent; plain information goes into the
+  report, only questions and critical items are pushed.
+
+Geräte einfach und sicher:
+
+- "Welche smarten Geräte findest du?" answers with one line per real device
+  (at most 600 characters), technical details behind a button.
+- Home Assistant login as one link button; a pasted return link is recognised
+  and completes the login without the code reaching the model or logs.
+- After pairing one success message ("✅ Hue verbunden: 4 Lampen …") followed
+  by example sentences; "und?" reports the state of the last connection.
+- Preview before switching, five-minute undo, errors turned into the next step
+  ("Lampe ist aus — nochmal versuchen, wenn sie an ist?"), rooms ("Licht im
+  Wohnzimmer aus"), routines in plain language ("jeden Abend um 23 Uhr alles
+  aus") after one yes. Local devices without a login connect on their own; Tuya
+  connects locally without asking.
+
+Sprache und Handy:
+
+- Telegram voice messages are understood through a local speech service in
+  the own mesh (never the cloud); "antworte per Sprache" adds a spoken reply.
+- "Anrufen" in the app: hands-free conversation with barge-in, answered by the
+  normal pipeline (memory, tools, rules).
+- The interface installs as a web app on the phone; the service worker caches
+  only static files, never API answers or tokens.
+- Local speech service (VAD, streaming recognition, German voices) as one-button
+  toolbox entry with fixed sources, checksums and licences.
+
+One list of technical words is checked against all owner texts.
+
 ## [2.85.12] — 2026-10-06
 
 Security update for two advisories published on 06.10.2026:
