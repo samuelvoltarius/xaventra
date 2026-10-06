@@ -62,6 +62,30 @@ export function beispielKopf(titel: string): string {
     return `✅ ${String(titel).slice(0, 60)} ist verbunden. Probier mal:`
 }
 
+/** The header of an offer (own line after a device success message, else „✅ … ist verbunden. Probier mal:“). */
+export const angebotsKopf = (offer: Pick<OffeneBeispiele, 'titel' | 'kopf'>) => offer.kopf || beispielKopf(offer.titel)
+
+export type ErfolgsArt = 'hue' | 'homeassistant'
+const ERFOLG_TITEL: Record<ErfolgsArt, string> = { hue: 'Hue', homeassistant: 'Home Assistant' }
+/** How long a device success covers the same type in the „Verbindungen“ list (no second offer). */
+const ERFOLG_DECKT_MS = 24 * 60 * 60_000
+
+/**
+ * 2.86 (N + M): after the device success message („✅ Hue verbunden: 4 Lampen …“,
+ * „✅ Home Assistant verbunden …“) the three example sentences — offered by the
+ * same place as after every new connection (the guided pass sends them, the app
+ * lists them). The success itself was already said, so the header only says
+ * „Probier mal mit Hue:“. Once per success; the list does not offer the type again.
+ */
+export function beispieleNachErfolg(art: ErfolgsArt, opts: GuidedOptions = {}): OffeneBeispiele {
+    const titel = ERFOLG_TITEL[art]
+    const offer: OffeneBeispiele = { key: `i:erfolg:${art}`, titel, saetze: [...BEISPIELSAETZE[art]], at: new Date(nowOf(opts)).toISOString(), kopf: `Probier mal mit ${titel}:`, typ: art }
+    updateGuidedState(next => {
+        next.beispieleOffen = [offer, ...next.beispieleOffen.filter(item => item.key !== offer.key)].slice(0, 10)
+    }, opts)
+    return offer
+}
+
 export interface VerbundenerEintrag { id: string; title: string; connectorId?: string; kategorie?: string }
 const keyOf = (entry: VerbundenerEintrag) => entry.connectorId ? `c:${entry.connectorId}` : `i:${entry.id}`
 
@@ -79,12 +103,17 @@ export function noteConnected(entries: readonly VerbundenerEintrag[], opts: Guid
         return []
     }
     const seen = new Set(state.beispieleGesehen)
+    // 2.86: a device success just offered this type already (beispieleNachErfolg) — not twice.
+    const coveredTypes = new Set(state.beispieleOffen.filter(item => item.typ && nowOf(opts) - Date.parse(item.at) < ERFOLG_DECKT_MS).map(item => item.typ))
     for (const entry of entries) {
         const key = keyOf(entry)
         if (seen.has(key)) continue
         seen.add(key)
+        const typ = beispielTyp(entry)
+        if (coveredTypes.has(typ)) continue
         fresh.push({ key, titel: String(entry.title).slice(0, 60), saetze: beispielSaetze(entry), at })
     }
+    if (!fresh.length && seen.size !== state.beispieleGesehen.length) updateGuidedState(next => { next.beispieleGesehen = [...seen].slice(-500) }, opts)
     if (!fresh.length) return []
     updateGuidedState(next => {
         next.beispieleGesehen = [...seen].slice(-500)

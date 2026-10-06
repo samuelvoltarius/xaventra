@@ -24,7 +24,7 @@ export interface GuidedApiOptions {
 const safe = (error: unknown) => String(error instanceof Error ? error.message : error).replace(/(bearer|token|code|secret)\s*[=:]\s*\S+/gi, '$1=[redacted]').slice(0, 200)
 const KEY = /^(?:ki|telegram|geraet:[\w:.-]{1,120}|dienst:[\w:.@-]{1,120})$/
 const TIPP_ID = /^[a-z][a-z0-9-]{1,40}$/
-const BEISPIEL_KEY = /^[ci]:[\w:.@-]{1,160}$/
+const BEISPIEL_KEY = /^[ci]:[\w:.@-]{1,160}$/ // incl. „i:erfolg:hue“ (2.86, after a device success)
 
 export function registerGuidedApi(app: Express, options: GuidedApiOptions): void {
     const deps: () => GuidedDeps = options.deps || (() => ({}))

@@ -11,7 +11,13 @@ import { getNovaDataDir } from '../core/data-root.js'
 
 export interface GuidedOptions { dataDir?: string; now?: () => number }
 
-export interface OffeneBeispiele { key: string; titel: string; saetze: string[]; at: string; gesendet?: boolean }
+export interface OffeneBeispiele {
+    key: string; titel: string; saetze: string[]; at: string; gesendet?: boolean
+    /** 2.86: own header line (after a device success message „✅ Hue verbunden …“ the „verbunden“ is not repeated). */
+    kopf?: string
+    /** 2.86: the template type, so the „Verbindungen“ list does not offer the same type a second time. */
+    typ?: string
+}
 
 export interface GuidedState {
     version: 1

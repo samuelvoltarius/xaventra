@@ -8,6 +8,7 @@ import { runGuidedAction, runGuidedTelegramTick } from './guided-runtime.js'
 import { pressGuided } from './telegram-guided.js'
 import { listDecisions } from '../core/decisions.js'
 import { zonedHour } from '../planner/time.js'
+import { beendeVorgang, starteVorgang, vorgangsEreignisse } from '../sensing/connect-progress.js'
 
 // 2.86 Paket M Punkt 3 (drei Beispielsätze) und Punkt 10 (höchstens ein Tipp am Tag).
 
@@ -103,5 +104,48 @@ describe('höchstens ein Tipp am Tag', () => {
     it('unknown tips are refused; every tip has exactly one button sentence', async () => {
         expect((await tippAblehnen('gibt-es-nicht', 'x', opts())).ok).toBe(false)
         for (const tipp of TIPPS) expect(tipp.knopf.satz.length).toBeGreaterThan(5)
+    })
+})
+
+// 2.86 Zusammenstecken (N + M): nach der Erfolgsmeldung „✅ Hue verbunden …“ kommen die drei
+// Beispielsätze — von derselben Stelle wie nach jeder neuen Verbindung, nur einmal.
+describe('Beispielsätze nach der Erfolgsmeldung einer Geräte-Verbindung', () => {
+    const hueRow = (deviceId: string) => ({ deviceId, fingerprint: 'f', at: new Date(t).toISOString(), protocol: 'hue', status: 'ok',
+        functions: [{ id: 'light:1', kind: 'light', name: 'Sofa', available: true }] }) as any
+    const hueEntry = { id: 'geraet:hue:192.0.2.11:80', title: 'Hue Bridge', kategorie: 'zuhause' }
+
+    it('Hue im Hintergrund fertig: Erfolgsmeldung, danach EINE Nachricht mit drei Hue-Sätzen; die Verbindungsliste bietet sie nicht noch einmal an', async () => {
+        noteConnected([ki], opts())
+        starteVorgang(dir, { key: 'dev-00000000f1', art: 'hue' }, t)
+        const [event] = vorgangsEreignisse(dir, [hueRow('dev-00000000f1')], t + 30_000)
+        expect(event.summary).toBe('✅ Hue verbunden: 1 Lampe, alle erreichbar.')
+        t += 60_000
+        const tg = telegram()
+        await runGuidedTelegramTick(tg, guided([ki, hueEntry]))
+        const offers = tg.log.filter(item => item.op === 'send' && item.keyboard.length === 3)
+        expect(offers).toHaveLength(1)
+        expect(offers[0].text).toBe('Probier mal mit Hue:')
+        expect(offers[0].keyboard.map(row => row[0].text)).toEqual([...BEISPIELSAETZE.hue])
+        await runGuidedTelegramTick(tg, guided([ki, hueEntry]))
+        expect(tg.log.filter(item => item.op === 'send' && item.keyboard.length === 3)).toHaveLength(1)
+    })
+
+    it('Home Assistant nach der Anmeldung: dieselbe Stelle, Home-Assistant-Sätze; ein zweites „verbunden“ bietet nichts doppelt an', async () => {
+        starteVorgang(dir, { key: 'homeassistant', art: 'homeassistant' }, t)
+        beendeVorgang(dir, 'homeassistant', 'verbunden', '✅ Home Assistant verbunden. Ich lese jetzt deine Geräte.', { gemeldet: true, now: t })
+        beendeVorgang(dir, 'homeassistant', 'verbunden', '✅ Home Assistant verbunden. Ich lese jetzt deine Geräte.', { gemeldet: true, now: t + 1000 })
+        const tg = telegram()
+        await runGuidedTelegramTick(tg, guided([ki, ha]))
+        const offers = tg.log.filter(item => item.op === 'send' && item.keyboard.length === 3)
+        expect(offers.map(item => item.text)).toEqual(['Probier mal mit Home Assistant:'])
+        expect(offers[0].keyboard.map(row => row[0].text)).toEqual([...BEISPIELSAETZE.homeassistant])
+        // the app lists it once too
+        expect(offeneBeispiele(opts()).filter(item => item.titel === 'Home Assistant')).toHaveLength(1)
+    })
+
+    it('fehlgeschlagen = keine Beispielsätze', async () => {
+        starteVorgang(dir, { key: 'homeassistant', art: 'homeassistant' }, t)
+        beendeVorgang(dir, 'homeassistant', 'fehlgeschlagen', 'Das hat nicht geklappt.', { gemeldet: true, now: t })
+        expect(offeneBeispiele(opts())).toEqual([])
     })
 })

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import type { RawEvent } from './event-bus.js'
 import type { DirectFunction, DirectInventory } from './direct-smart-devices.js'
+import { beispieleNachErfolg } from '../guided/example-prompts.js'
 
 export type VorgangArt = 'hue' | 'homeassistant'
 export type VorgangStatus = 'laeuft' | 'verbunden' | 'fehlgeschlagen'
@@ -47,8 +48,14 @@ export function beendeVorgang(dataDir: string, key: string, status: Exclude<Vorg
     const index = list.findIndex(v => v.key === key)
     if (index < 0) return undefined
     const at = new Date(opts.now ?? Date.now()).toISOString()
+    const vorher = list[index].status
     list[index] = { ...list[index], status, satz, updatedAt: at, ...(opts.gemeldet ? { gemeldetAt: at } : {}) }
     speichere(dataDir, list)
+    // 2.86 (N + M): after the success message the three example sentences — offered once,
+    // by the same place as after every new connection (guided/example-prompts.ts).
+    if (status === 'verbunden' && vorher !== 'verbunden') {
+        try { beispieleNachErfolg(list[index].art, { dataDir, now: () => opts.now ?? Date.now() }) } catch { /* examples are a convenience */ }
+    }
     return list[index]
 }
 

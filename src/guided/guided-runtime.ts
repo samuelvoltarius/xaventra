@@ -9,7 +9,7 @@
  */
 import { collectChecklist, skipChecklistItem, startChecklistItem, type Checklist, type ChecklistDeps } from './setup-checklist.js'
 import { ichKommNichtWeiter, type HilfeAntwort, type HilfeDeps } from './stuck-helper.js'
-import { beispielKopf, beispielTyp, connectedEntries, markBeispieleGesendet, noteConnected, type VerbundenerEintrag } from './example-prompts.js'
+import { angebotsKopf, beispielTyp, connectedEntries, markBeispieleGesendet, noteConnected, type VerbundenerEintrag } from './example-prompts.js'
 import { markTippGesendet, tippAblehnen, tippHeute, tippSchonGesendet, type Tipp } from './daily-tip.js'
 import { beispielView, checklistView, hilfeView, tippView, updatePinnedStatus, type GuidedAktion, type GuidedTelegram, type Keyboard, type PinnedFacts } from './telegram-guided.js'
 import { loadGuidedState, nowOf, type GuidedOptions } from './guided-store.js'
@@ -169,12 +169,13 @@ export async function runGuidedTelegramTick(tg: GuidedTelegram, deps: GuidedDeps
     let entries: VerbundenerEintrag[] = []
     try { entries = await cached('verbunden', deps, Boolean(deps.verbunden), () => deps.verbunden ? deps.verbunden() : connectedEntries(deps)) } catch { entries = [] }
 
-    // Punkt 3: three example sentences after each new connection (once).
+    // Punkt 3: three example sentences after each new connection (once) — and, since 2.86,
+    // after a device success message (connect-progress → beispieleNachErfolg). The one place that sends them.
     noteConnected(entries, deps)
     const offers = loadGuidedState(deps).beispieleOffen.filter(item => !item.gesendet && nowOf(deps) - Date.parse(item.at) < 24 * 60 * 60_000)
     for (const offer of offers.slice(0, 3)) {
         for (const chatId of chats) {
-            const view = beispielView(chatId, beispielKopf(offer.titel), offer.saetze, deps)
+            const view = beispielView(chatId, angebotsKopf(offer), offer.saetze, deps)
             await tg.send(chatId, view.text, view.keyboard)
         }
         out.beispiele++
