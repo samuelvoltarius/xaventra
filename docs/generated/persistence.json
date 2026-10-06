@@ -894,6 +894,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/sehen/aktivitaet.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/sensing/device-connect.ts",
       "path": ".nova-data"
     },
