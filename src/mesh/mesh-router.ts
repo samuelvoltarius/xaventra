@@ -1,19 +1,13 @@
 /**
- * Nova Mesh Router — Intelligent Task Routing
+ * Nova Mesh Router — which node does a task?
  *
- * Routes tasks to the best available node based on:
- * - Capability match (40% weight)
- * - Current load (30% weight)
- * - Network latency (30% weight)
- *
- * Uses data from:
- * - mesh-registry.ts (node capabilities, status)
- * - L21-node-health.ts (CPU/RAM/temp snapshots)
- * - model-router.ts (task type detection)
+ * Mesh-Gehirn 2.88: the decision comes from node-strengths.ts (signed node
+ * profiles, live load from the heartbeat, measured latency). No fixed node
+ * list, no hosts in code, no ping, no SSH. The reason is one short human
+ * line ("spark: GPU frei, Modell geladen").
  */
 
-import { exec, execFile } from 'node:child_process'
-import { isIP } from 'node:net'
+import { collectNodeStrengths, formatStrengthList, rankNodes, shortReason, skillForTask, type NodeRanking, type NodeStrength, type Skill } from './node-strengths.js'
 
 // ============================================
 // Types
@@ -34,166 +28,14 @@ export type MeshTaskType =
 export interface RoutingDecision {
     nodeId: string
     nodeName: string
-    host: string
+    /** One short human line: "spark: GPU frei, Modell geladen". */
     reason: string
     score: number
     taskType: MeshTaskType
+    skill: Skill | null
     isLocal: boolean       // true = run on current node
-    sshUser?: string
+    ranking?: NodeRanking
 }
-
-export interface NodeScore {
-    nodeId: string
-    nodeName: string
-    host: string
-    sshUser?: string
-    capabilityScore: number  // 0-100
-    loadScore: number        // 0-100 (100 = idle)
-    latencyScore: number     // 0-100 (100 = fastest)
-    totalScore: number       // weighted combination
-    capabilities: string[]
-    online: boolean
-}
-
-// ============================================
-// Task → Capability Mapping
-// ============================================
-
-const TASK_REQUIREMENTS: Record<MeshTaskType, {
-    required: string[]      // must have ALL of these
-    preferred: string[]     // bonus points for these
-    needsInternet?: boolean
-    needsGPU?: boolean
-}> = {
-    llm_query: {
-        required: ['internet'],
-        preferred: ['openai'],
-        needsInternet: true,
-    },
-    media_convert: {
-        required: ['ffmpeg'],
-        preferred: ['gpu', 'fast-disk'],
-    },
-    image_analysis: {
-        required: ['python'],
-        preferred: ['opencv', 'gpu', 'cuda'],
-        needsGPU: true,
-    },
-    ml_inference: {
-        required: ['python'],
-        preferred: ['ollama', 'cuda', 'gpu', 'metal', 'apple-silicon'],
-        needsGPU: true,
-    },
-    embedding: {
-        required: ['python'],
-        preferred: ['ollama', 'cuda', 'gpu', 'metal', 'apple-silicon'],
-        needsGPU: true,
-    },
-    adb_command: {
-        required: ['adb'],
-        preferred: [],
-    },
-    file_transfer: {
-        required: ['ssh'],
-        preferred: [],
-    },
-    code_execution: {
-        required: [],  // any node can run code
-        preferred: ['python', 'node'],
-    },
-    system_command: {
-        required: [],
-        preferred: [],
-    },
-    general: {
-        required: [],
-        preferred: [],
-    },
-}
-
-// ============================================
-// Static Node Profiles (fallback)
-// ============================================
-
-interface NodeProfile {
-    name: string
-    host: string
-    sshUser: string
-    role: 'main' | 'edge' | 'primary-compute' | 'compute' | 'infrastructure'
-    capabilities: string[]
-    specialties: string[]
-}
-
-const NODE_PROFILES: Record<string, NodeProfile> = {
-    'main-pc': {
-        name: 'Main PC',
-        host: 'localhost',
-        sshUser: '',
-        role: 'main',
-        capabilities: ['internet', 'openai', 'node', 'python', 'ffmpeg', 'ssh', 'git'],
-        specialties: ['llm-gateway', 'telegram', 'dashboard'],
-    },
-    'pi5': {
-        name: 'Pi5',
-        host: '100.64.0.21',
-        sshUser: 'xaventra',
-        role: 'edge',
-        capabilities: ['node', 'python', 'ffmpeg', 'adb', 'ssh', 'git'],
-        specialties: ['tv-control', 'beamer-control', 'media-playback'],
-    },
-    'jetson': {
-        name: 'Jetson',
-        host: '100.64.0.22',
-        sshUser: 'xaventra',
-        role: 'edge',
-        capabilities: ['node', 'python', 'cuda', 'gpu', 'opencv', 'ollama', 'ssh', 'git'],
-        specialties: ['ml-inference', 'image-processing', 'embedding'],
-    },
-    'macbook-pro': {
-        name: 'MacBookPro',
-        host: '100.64.0.23',
-        sshUser: 'xaventra',
-        role: 'primary-compute',
-        // M3 Pro/Max 36GB unified memory — best local LLM node (30B+ models)
-        capabilities: ['node', 'python', 'ollama', 'ssh', 'git', 'ffmpeg', 'apple-silicon', 'metal'],
-        specialties: ['large-model-inference', 'ml-inference', 'embedding', 'long-context'],
-    },
-    'mac-mini': {
-        name: 'MacMini',
-        host: '100.64.0.24',
-        sshUser: 'xaventra',
-        role: 'compute',
-        // Apple M4 16GB — fast 9B models
-        capabilities: ['node', 'python', 'ollama', 'ssh', 'git', 'apple-silicon', 'metal'],
-        specialties: ['ml-inference', 'embedding', 'voice-processing'],
-    },
-    // DGX Spark — coming soon, disabled until host is known
-    // 'dgx-spark': {
-    //     name: 'DGXSpark',
-    //     host: '',    // fill in once online
-    //     sshUser: '',
-    //     role: 'primary-compute',
-    //     capabilities: ['node', 'python', 'cuda', 'gpu', 'ollama', 'ssh', 'git'],
-    //     specialties: ['large-model-inference', 'ml-inference', 'embedding', '1petaflop-ai'],
-    // },
-}
-
-// ============================================
-// Scoring Weights
-// ============================================
-
-const WEIGHTS = {
-    capability: 0.4,
-    load: 0.3,
-    latency: 0.3,
-}
-
-// ============================================
-// Runtime State
-// ============================================
-
-const latencyCache = new Map<string, { latencyMs: number; measuredAt: number }>()
-const LATENCY_CACHE_TTL = 60_000 // 1 minute
 
 // ============================================
 // Task Type Detection (from message content)
@@ -246,241 +88,44 @@ export const detectMeshTaskType = (content: string): MeshTaskType => {
 }
 
 // ============================================
-// Node Scoring
+// Routing (Mesh-Gehirn 2.88): one source, node-strengths.ts
 // ============================================
 
-const scoreCapability = (nodeCapabilities: string[], task: MeshTaskType): number => {
-    const requirements = TASK_REQUIREMENTS[task]
-    if (!requirements) return 50
-
-    // Check required capabilities (must have ALL)
-    for (const req of requirements.required) {
-        if (!nodeCapabilities.includes(req)) return 0 // Hard fail
-    }
-
-    // Base score: 60 for meeting requirements
-    let score = 60
-
-    // Bonus for preferred capabilities
-    const preferredHits = requirements.preferred.filter(p => nodeCapabilities.includes(p))
-    score += (preferredHits.length / Math.max(requirements.preferred.length, 1)) * 40
-
-    return Math.min(100, Math.round(score))
+const TASK_SKILL: Partial<Record<MeshTaskType, Skill>> = {
+    media_convert: 'medien',
+    image_analysis: 'vision',
+    ml_inference: 'llm',
+    embedding: 'embedding',
+    code_execution: 'code',
 }
 
-const scoreLoad = async (host: string): Promise<number> => {
-    // Try to get load from health monitor
-    try {
-        const { getNodeHealthMonitor } = await import('../layers/L21-node-health.js')
-        const monitor = getNodeHealthMonitor()
-        const snapshots = monitor.getLastSnapshots()
-        const snap = snapshots.find(s => s.host === host)
-
-        if (snap?.online && snap.cpu) {
-            // Convert load average to idle percentage
-            const loadPerCore = snap.cpu.loadAvg1m / snap.cpu.cores
-            const idlePercent = Math.max(0, 100 - (loadPerCore * 100))
-            return Math.round(idlePercent)
-        }
-    } catch { /* no health data */ }
-
-    // Default: assume 70% idle
-    return 70
-}
-
-const scoreLatency = async (host: string): Promise<number> => {
-    if (host === 'localhost') return 100 // Local is instant
-
-    // Check cache
-    const cached = latencyCache.get(host)
-    if (cached && Date.now() - cached.measuredAt < LATENCY_CACHE_TTL) {
-        return latencyToScore(cached.latencyMs)
-    }
-
-    // Measure latency via ping
-    const latencyMs = await measureLatency(host)
-    latencyCache.set(host, { latencyMs, measuredAt: Date.now() })
-
-    return latencyToScore(latencyMs)
-}
-
-const latencyToScore = (ms: number): number => {
-    if (ms < 5) return 100
-    if (ms < 20) return 90
-    if (ms < 50) return 80
-    if (ms < 100) return 60
-    if (ms < 500) return 40
-    return 20
-}
+/** Which strength a message needs: wording first, then the legacy task type. */
+export const skillForContent = (content: string): Skill | null => skillForTask(content) || TASK_SKILL[detectMeshTaskType(content)] || null
 
 /**
- * MI-2: node addresses come from the shared registry table and are untrusted.
- * Only a literal IP or a plain DNS hostname is pinged, and never via a shell.
+ * Picks the node for a task from the signed strength profiles and says why in
+ * one short line. Never pings, never SSH; delegation goes over the signed mesh
+ * transport (spawn_subagent with mesh_node).
  */
-export const isSafePingHost = (host: unknown): host is string => {
-    if (typeof host !== 'string' || !host || host.length > 253) return false
-    if (isIP(host)) return true
-    return /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(host)
-}
-
-export const measureLatency = (host: string): Promise<number> => {
-    return new Promise<number>((resolve) => {
-        if (!isSafePingHost(host)) {
-            resolve(9999) // Invalid address: treated as unreachable, never executed
-            return
-        }
-        const start = Date.now()
-        const isWindows = process.platform === 'win32'
-        const args = isWindows
-            ? ['-n', '1', '-w', '2000', host]
-            : ['-c', '1', '-W', '2', host]
-
-        execFile('ping', args, { timeout: 5000 }, (err) => {
-            if (err) {
-                resolve(9999) // Unreachable
-            } else {
-                resolve(Date.now() - start)
-            }
-        })
-    })
-}
-
-// ============================================
-// Main Router
-// ============================================
-
-export const scoreAllNodes = async (task: MeshTaskType): Promise<NodeScore[]> => {
-    const scores: NodeScore[] = []
-
-    // Get dynamic nodes from mesh registry if available
-    let dynamicNodes: Array<{ node_id: string; hostname: string; ip?: string; ssh_user?: string; capabilities: string[]; status: string }> = []
-    try {
-        const { getAvailableNodes } = await import('./mesh-registry.js')
-        dynamicNodes = await getAvailableNodes()
-    } catch { /* use static profiles */ }
-
-    // Build node list from static profiles + dynamic discovery
-    const nodeList: Array<{ id: string; name: string; host: string; sshUser: string; capabilities: string[]; online: boolean }> = []
-
-    // Static profiles first
-    for (const [id, profile] of Object.entries(NODE_PROFILES)) {
-        nodeList.push({
-            id,
-            name: profile.name,
-            host: profile.host,
-            sshUser: profile.sshUser,
-            capabilities: profile.capabilities,
-            online: true, // Assume online, latency check will catch offline
-        })
-    }
-
-    // Merge dynamic nodes (override static if same host)
-    for (const dn of dynamicNodes) {
-        const existingIdx = nodeList.findIndex(n => n.host === dn.ip)
-        if (existingIdx >= 0) {
-            // Merge capabilities
-            const existing = nodeList[existingIdx]
-            const merged = [...new Set([...existing.capabilities, ...dn.capabilities])]
-            nodeList[existingIdx].capabilities = merged
-        } else if (dn.ip) {
-            nodeList.push({
-                id: dn.node_id,
-                name: dn.hostname,
-                host: dn.ip,
-                sshUser: dn.ssh_user || 'root',
-                capabilities: dn.capabilities,
-                online: dn.status === 'online',
-            })
-        }
-    }
-
-    // Score each node in parallel
-    await Promise.all(nodeList.map(async (node) => {
-        const capScore = scoreCapability(node.capabilities, task)
-        const loadScore = await scoreLoad(node.host)
-        const latScore = await scoreLatency(node.host)
-
-        const total = Math.round(
-            capScore * WEIGHTS.capability +
-            loadScore * WEIGHTS.load +
-            latScore * WEIGHTS.latency
-        )
-
-        scores.push({
-            nodeId: node.id,
-            nodeName: node.name,
-            host: node.host,
-            sshUser: node.sshUser,
-            capabilityScore: capScore,
-            loadScore: loadScore,
-            latencyScore: latScore,
-            totalScore: total,
-            capabilities: node.capabilities,
-            online: node.online && latScore > 10,
-        })
-    }))
-
-    // Sort by total score descending
-    scores.sort((a, b) => b.totalScore - a.totalScore)
-
-    return scores
-}
-
 export const routeTask = async (
     content: string,
-    forceLocal = false
+    forceLocal = false,
+    strengths?: readonly NodeStrength[],
 ): Promise<RoutingDecision> => {
     const taskType = detectMeshTaskType(content)
+    const skill = skillForContent(content)
+    const local = (reason: string, score: number): RoutingDecision => ({ nodeId: localId(strengths), nodeName: localId(strengths), reason, score, taskType, skill, isLocal: true })
+    if (forceLocal || !skill) return local(forceLocal ? 'lokal angefordert' : 'normale Aufgabe — läuft hier', 100)
+    const nodes = strengths || await collectNodeStrengths()
+    const ranking = rankNodes(skill, nodes)
+    const best = ranking.ranked[0]
+    if (!best) return local(shortReason(ranking), 0)
+    console.log(`[MeshRouter] ${skill} → ${best.nodeId} (${shortReason(ranking)})`)
+    return { nodeId: best.nodeId, nodeName: best.nodeId, reason: shortReason(ranking), score: best.score, taskType, skill, isLocal: best.local, ranking }
+}
 
-    // Force local for general tasks or when explicitly requested
-    if (forceLocal || taskType === 'general' || taskType === 'llm_query') {
-        return {
-            nodeId: 'main-pc',
-            nodeName: 'Main PC',
-            host: 'localhost',
-            reason: taskType === 'llm_query'
-                ? 'LLM queries run through OpenAI on main'
-                : 'General task — running locally',
-            score: 100,
-            taskType,
-            isLocal: true,
-        }
-    }
-
-    const scores = await scoreAllNodes(taskType)
-    const onlineScores = scores.filter(s => s.online && s.capabilityScore > 0)
-
-    if (onlineScores.length === 0) {
-        // No capable nodes — fall back to local
-        return {
-            nodeId: 'main-pc',
-            nodeName: 'Main PC',
-            host: 'localhost',
-            reason: `No capable nodes for ${taskType} — running locally`,
-            score: 50,
-            taskType,
-            isLocal: true,
-        }
-    }
-
-    const best = onlineScores[0]
-    const isLocal = best.host === 'localhost'
-
-    console.log(
-        `[MeshRouter] ${taskType} → ${best.nodeName} ` +
-        `(score: ${best.totalScore} | cap: ${best.capabilityScore} load: ${best.loadScore} lat: ${best.latencyScore})`
-    )
-
-    return {
-        nodeId: best.nodeId,
-        nodeName: best.nodeName,
-        host: best.host,
-        sshUser: best.sshUser,
-        reason: `Best node for ${taskType}: ${best.nodeName} (score ${best.totalScore}/100)`,
-        score: best.totalScore,
-        taskType,
-        isLocal,
-    }
+function localId(strengths?: readonly NodeStrength[]): string {
+    return strengths?.find(node => node.local)?.nodeId || 'lokal'
 }
 
 // ============================================
@@ -503,40 +148,14 @@ export const executeRemote = async (
 }
 
 // ============================================
-// Diagnostics
+// Diagnostics: "was kann welcher Knoten?"
 // ============================================
 
-export const getRoutingDiagnostics = async (): Promise<string> => {
-    const lines: string[] = ['🌐 **Mesh Router Status**\n']
-
-    // Live-ping all nodes in parallel (don't rely on stale cache)
-    const entries = Object.entries(NODE_PROFILES)
-    const results = await Promise.all(entries.map(async ([id, profile]) => {
-        if (profile.host === 'localhost') {
-            return { id, profile, latencyMs: 0, online: true }
-        }
-        const latencyMs = await measureLatency(profile.host)
-        latencyCache.set(profile.host, { latencyMs, measuredAt: Date.now() })
-        return { id, profile, latencyMs, online: latencyMs < 5000 }
-    }))
-
-    for (const { id, profile, latencyMs, online } of results) {
-        const status = online ? '🟢' : '🔴'
-        const latStr = profile.host === 'localhost' ? 'local' : `${latencyMs}ms`
-        lines.push(`${status} **${profile.name}** (${profile.host}) — ${latStr}`)
-        lines.push(`   Capabilities: ${profile.capabilities.join(', ')}`)
-        lines.push(`   Specialties: ${profile.specialties.join(', ')}`)
-        lines.push('')
-    }
-
-    return lines.join('\n')
-}
+export const getRoutingDiagnostics = async (): Promise<string> => formatStrengthList(await collectNodeStrengths())
 
 export default {
     routeTask,
-    scoreAllNodes,
     executeRemote,
     detectMeshTaskType,
     getRoutingDiagnostics,
-    NODE_PROFILES,
 }

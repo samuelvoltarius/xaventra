@@ -1175,19 +1175,26 @@ Du läufst auf: ${hwSummary}
         }
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
-    // Mesh Router: inject node awareness so Nova knows about available compute nodes
-    if (contextPolicy.mesh) try {
-        const { getRoutingDiagnostics, detectMeshTaskType, routeTask } = await import('../mesh/mesh-router.js')
-        const taskType = detectMeshTaskType(content)
-        if (taskType !== 'general') {
+    // Mesh-Gehirn (2.88): which node fits this task, from the signed strength
+    // profiles. Delegation only over the signed mesh path, never ssh_command.
+    // Also without the word "mesh": "erzeuge ein Bild" needs the GPU node. The
+    // block only appears when another node fits better (or the owner asks about the mesh).
+    try {
+        const { routeTask, skillForContent } = await import('../mesh/mesh-router.js')
+        if (skillForContent(content)) {
             const decision = await routeTask(content)
-            systemPrompt += `\n\n## 🌐 MESH ROUTING (automatisch erkannt)
-Aufgabentyp: **${taskType}**
-Empfohlener Node: **${decision.nodeName}** (${decision.host})
-Grund: ${decision.reason}
-Lokal: ${decision.isLocal ? 'JA' : 'NEIN — nutze ssh_command an ${decision.host}'}
+            if (!decision.isLocal) {
+                systemPrompt += `
 
-WICHTIG: Wenn die Aufgabe zu einem anderen Node geroutet wird, nutze ssh_command mit dem Host des empfohlenen Nodes.`
+## MESH
+Passender Knoten: **${decision.nodeId}** — ${decision.reason}.
+Wenn die Aufgabe dort besser läuft: spawn_subagent mit mesh_node="${decision.nodeId}" (signierter Mesh-Weg). Nie ssh_command. Dem Nutzer den Grund in einem kurzen Satz nennen.`
+            } else if (contextPolicy.mesh) {
+                systemPrompt += `
+
+## MESH
+Passender Knoten: dieser (${decision.reason}).`
+            }
         }
     } catch (err) { console.debug('[Pipeline] mesh router not available:', err) }
 
