@@ -206,6 +206,10 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     if (!settings.enabled) return null
 
     registerReminders(planner, reminders)
+    // 2.86 Paket N: device routines (only the targets of the owner's Ja) and „nochmal, wenn erreichbar“ (once).
+    const { registerDeviceJobs, productionSchaltDeps } = await import('../sensing/device-switch.js')
+    const deviceJobDeps = { ...(await productionSchaltDeps()), dataDir, timeZone: settings.briefing.timeZone, planer: () => planner }
+    registerDeviceJobs(planner, () => deviceJobDeps)
     registerRoutineHandlers(planner, {
         ownerChatId: () => reminders.getAdminChatId(),
         wake: (userId, channel, text) => reminders.wakePipeline(userId, channel, text),

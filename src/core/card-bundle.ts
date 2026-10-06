@@ -43,12 +43,19 @@ export interface BundleSender {
 
 const HEAD: Record<string, (n: number) => string> = {
     geraete: n => `🟡 ${n} ${n === 1 ? 'Gerät' : 'Geräte'} gefunden — verbinden?`,
+    // 2.86 Paket N: one question with buttons when a room/device is ambiguous; the routine list.
+    raumwahl: () => '🟡 Kurze Rückfrage — was meinst du?',
+    routinen: n => `📅 ${n} ${n === 1 ? 'Routine' : 'Routinen'}`,
 }
 const FOOT: Record<string, string> = {
     geraete: 'Ohne dein Ja passiert nichts; geschaltet wird darüber nie.',
+    raumwahl: 'Danach zeige ich dir noch einmal genau, was ich schalte.',
+    routinen: 'Beenden = die Routine schaltet ab sofort nichts mehr. ✖ = behalten.',
 }
 const CLOSED: Record<string, string> = {
     geraete: '✅ Geräte-Fragen beantwortet. Unbeantwortete stehen im nächsten Bericht; verbinden geht jederzeit über „Geräte“ im Menü.',
+    raumwahl: '✅ Beantwortet.',
+    routinen: '✅ Erledigt.',
 }
 
 const file = (opts: CardStoreOptions) => join(opts.dataDir || getNovaDataDir(), 'approval-cards', 'buendel.json')
@@ -113,6 +120,15 @@ function withNav(composed: NonNullable<ReturnType<typeof compose>>, key: string,
     if (composed.page > 0) nav.push({ text: '◀ Zurück', callback_data: bundlePageToken(chatId, key, composed.page - 1, opts) })
     if (composed.page < composed.pages - 1) nav.push({ text: `Weiter ▶ (${composed.page + 1}/${composed.pages})`, callback_data: bundlePageToken(chatId, key, composed.page + 1, opts) })
     return [...composed.rows, nav]
+}
+
+/**
+ * 2.86 Paket N: the owner asked again (e.g. „Welche Geräte findest du?“): the next
+ * delivery sends the open bundle as a NEW message (the old one may be far up).
+ */
+export function requestBundleResend(key: string, opts: CardStoreOptions = {}): void {
+    const state = loadStates(opts).find(item => item.key === key)
+    if (state?.deliveredAt) saveState({ ...state, deliveredAt: undefined, signature: undefined }, opts)
 }
 
 /** The current page of a bundle for one chat (null = nothing open). */

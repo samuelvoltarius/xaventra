@@ -98,6 +98,8 @@ export interface ApprovalCard {
     knopf?: string
     /** Paket L: the one reminder before expiry was sent. */
     erinnertAt?: string
+    /** 2.86 Paket N: only ONE button (the Ja, labelled `knopf`), e.g. „↩️ Rückgängig“. */
+    einKnopf?: boolean
 }
 
 export type CardDelivery = 'sofort' | 'bericht'
@@ -123,11 +125,15 @@ export interface NewCardInput {
     kurz?: string
     gruppe?: string
     knopf?: string
+    /** 2.86 Paket N: show only the Ja button, labelled `knopf` (e.g. „↩️ Rückgängig“). */
+    einKnopf?: boolean
 }
 
 export interface CardExecutionResult {
     ok: boolean
     message: string
+    /** 2.86 Paket N: one URL button (e.g. „Bei Home Assistant anmelden“). Passed to the channel, never stored or logged. */
+    link?: { label: string; url: string }
     /** The real outcome when the work continues after the answer (e.g. an install on the host); the trust ladder waits for it. */
     completion?: Promise<{ ok: boolean; rolledBack?: boolean }>
 }
@@ -155,7 +161,7 @@ export interface CardStoreOptions {
 }
 
 export type CardAnswerCode = 'ok' | 'kein-owner' | 'unbekannt' | 'verbraucht' | 'abgelaufen' | 'nie-liste' | 'nicht-erlaubt' | 'fehler'
-export interface CardAnswerResult { ok: boolean; code: CardAnswerCode; message: string; card?: ApprovalCard }
+export interface CardAnswerResult { ok: boolean; code: CardAnswerCode; message: string; card?: ApprovalCard; link?: { label: string; url: string } }
 
 export interface ThoughtEntry { at: string; quelle: string; titel: string; status: string; text?: string }
 
@@ -379,7 +385,8 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(input.gruppe && REF_PATTERN.test(String(input.gruppe)) ? { gruppe: String(input.gruppe) } : {}),
         ...(short(input.knopf, 24) ? { knopf: short(input.knopf, 24) } : {}),
     } : {}
-    const card: ApprovalCard = { ...base, zustellung, ...bundle, buttons: issueButtons(base) }
+    const single = input.einKnopf === true && short(input.knopf, 24) ? { einKnopf: true, knopf: short(input.knopf, 24) } : {}
+    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...single, buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }
@@ -396,6 +403,10 @@ const ANSWER_TEXT: Record<CardAnswer, string> = { ja: 'Ja', nein: 'Nein', spaete
 
 export function cardKeyboard(card: ApprovalCard): Array<Array<{ text: string; callback_data: string }>> {
     if (card.status !== 'offen') return []
+    if (card.einKnopf && card.knopf) {
+        const ja = card.buttons.find(item => item.answer === 'ja')
+        return ja ? [[{ text: card.knopf, callback_data: `${CALLBACK_PREFIX}${ja.token}` }]] : []
+    }
     const button = (item: CardButton) => ({ text: LABELS[item.answer], callback_data: `${CALLBACK_PREFIX}${item.token}` })
     const rows = [card.buttons.filter(item => item.answer !== 'immer').map(button)]
     const always = card.buttons.find(item => item.answer === 'immer')
@@ -563,7 +574,8 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
             recordCardDecision(final, { dataDir: opts.dataDir, now: opts.now })
         } catch { /* memory is evidence, never a reason to fail the answer */ }
     }
-    return { ok: true, code: 'ok', message: `${ANSWER_TEXT[button.answer]}: ${final.result?.message || ''}`.trim(), card: final }
+    const link = result.link && /^https?:\/\//.test(String(result.link.url)) ? { label: clean(result.link.label, 40) || 'Öffnen', url: String(result.link.url) } : undefined
+    return { ok: true, code: 'ok', message: `${ANSWER_TEXT[button.answer]}: ${final.result?.message || ''}`.trim(), card: final, ...(link ? { link } : {}) }
 }
 
 /** Expire overdue cards, resurface snoozed ones with fresh tokens, close cards settled elsewhere. */

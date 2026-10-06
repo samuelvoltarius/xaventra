@@ -6,7 +6,7 @@ import type { HaFunction } from './ha-inventory.js'
 
 export function haDeviceTemplate(functions: HaFunction[]): string {
     const ids = [...new Set(functions.map(f => f.id).filter(id => /^[a-z_]+\.[a-z0-9_]{1,120}$/.test(id)))].slice(0, 200)
-    return `{% set ids = ${JSON.stringify(ids)} %}[{% for e in ids %}{{ {'entity_id': e, 'device_id': device_id(e), 'manufacturer': device_attr(e, 'manufacturer'), 'model': device_attr(e, 'model')} | tojson }}{% if not loop.last %},{% endif %}{% endfor %}]`
+    return `{% set ids = ${JSON.stringify(ids)} %}[{% for e in ids %}{{ {'entity_id': e, 'device_id': device_id(e), 'manufacturer': device_attr(e, 'manufacturer'), 'model': device_attr(e, 'model'), 'area': area_name(e)} | tojson }}{% if not loop.last %},{% endif %}{% endfor %}]`
 }
 
 export function applyHaDeviceMetadata(functions: HaFunction[], body: unknown): HaFunction[] {
@@ -17,11 +17,14 @@ export function applyHaDeviceMetadata(functions: HaFunction[], body: unknown): H
         const matches = body.filter(row => row && row.entity_id === f.id)
         if (matches.length !== 1) return f
         const row = matches[0]
+        // 2.86 Paket N: HA's area (Bereich) belongs to the entity — the room, nothing more.
+        const raum = field(row.area).slice(0, 40)
+        const withRoom = raum ? { ...f, raum } : f
         // HA's device registry represents physical devices AND logical services.
         // Do not turn registry membership into an authenticated physical proof.
-        if (typeof row.device_id !== 'string' || !/^[a-f0-9]{32}$/i.test(row.device_id)) return f
+        if (typeof row.device_id !== 'string' || !/^[a-f0-9]{32}$/i.test(row.device_id)) return withRoom
         const manufacturer = field(row.manufacturer), model = field(row.model)
-        return { ...f, deviceId: row.device_id.toLowerCase(), identitySource: 'home-assistant-device-registry',
+        return { ...withRoom, deviceId: row.device_id.toLowerCase(), identitySource: 'home-assistant-device-registry',
             ...(manufacturer ? { manufacturer } : {}), ...(model ? { model } : {}) }
     })
 }

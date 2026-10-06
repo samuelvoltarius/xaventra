@@ -11,9 +11,19 @@ import { readMatterPeer } from './matter-client.js'
 import { controlTuyaBoolean } from './tuya-cloud-inventory.js'
 import { controlShellyCloudBoolean } from './shelly-cloud-inventory.js'
 
+/**
+ * 2.86 Paket N: the on/off state a device reported right before switching
+ * (Hue light state, Tasmota POWER). `undefined` = not readable → no „Rückgängig“.
+ */
+export function vorherZustand(connector: string | undefined, functionId: string, body: any): boolean | undefined {
+    if (connector === 'hue-readonly') return typeof body?.state?.on === 'boolean' ? body.state.on : undefined
+    if (connector === 'tasmota-readonly') { const v = body?.StatusSTS?.[functionId]; return v === 'ON' ? true : v === 'OFF' ? false : undefined }
+    return undefined
+}
+
 /** Fixed typed operations, followed by independent state read. No free commands. */
 export async function executeSmartSwitch(root: string, d: DeviceRecord, action: SwitchAction, signal: AbortSignal, authorize: () => boolean,
-    deps: { fetch?: typeof fetch; interfaces?: InterfaceMap } = {}): Promise<boolean> {
+    deps: { fetch?: typeof fetch; interfaces?: InterfaceMap; onBefore?: (on: boolean) => void } = {}): Promise<boolean> {
     if (typeof action.on !== 'boolean' || !authorize() || signal.aborted) throw new Error('No current control permission')
     const fetchFn: typeof fetch = async (url, options) => {
         if (!authorize() || signal.aborted) throw new Error('Control authority changed')
@@ -56,6 +66,8 @@ export async function executeSmartSwitch(root: string, d: DeviceRecord, action: 
         if (!id || !key) throw new Error('Invalid Hue function/access')
         const before = await request(`/api/${key}/lights/${id}`)
         if (!before?.state || typeof before.state.on !== 'boolean' || before.state.reachable !== true) throw new Error('Hue light not currently reachable')
+        // 2.86 Paket N: the state read right before switching is what „Rückgängig“ restores.
+        deps.onBefore?.(vorherZustand('hue-readonly', action.functionId, before)!)
         const reply = await request(`/api/${key}/lights/${id}/state`, 'PUT', { on: action.on })
         if (!Array.isArray(reply) || reply.length !== 1 || reply[0]?.success?.[`/lights/${id}/state/on`] !== action.on) return false
         const after = await request(`/api/${key}/lights/${id}`)
@@ -65,6 +77,7 @@ export async function executeSmartSwitch(root: string, d: DeviceRecord, action: 
         if (!/^POWER\d{0,3}$/.test(action.functionId)) throw new Error('Invalid Tasmota function')
         const before = await request('/cm?cmnd=Status%200')
         if (!['ON', 'OFF'].includes(before?.StatusSTS?.[action.functionId])) throw new Error('Function no longer confirmed')
+        deps.onBefore?.(vorherZustand('tasmota-readonly', action.functionId, before)!)
         await request(`/cm?cmnd=${encodeURIComponent(action.functionId + ' ' + (action.on ? 'ON' : 'OFF'))}`)
         const after = await request('/cm?cmnd=Status%200')
         return after?.StatusSTS?.[action.functionId] === (action.on ? 'ON' : 'OFF')
@@ -76,7 +89,9 @@ export async function executeSmartSwitch(root: string, d: DeviceRecord, action: 
         if (gen1 !== (d.hardware.probe === 'shelly-gen1')) throw new Error('Shelly generation mismatch')
         const path = gen1 ? '/status' : '/rpc/Shelly.GetStatus'
         const state = (body: any) => gen1 ? body?.[kind]?.[Number(channel)]?.ison : body?.[action.functionId]?.output
-        if (typeof state(await request(path)) !== 'boolean') throw new Error('Shelly function no longer confirmed')
+        const vorher = state(await request(path))
+        if (typeof vorher !== 'boolean') throw new Error('Shelly function no longer confirmed')
+        deps.onBefore?.(vorher)
         if (gen1) await request(`/${kind === 'relays' ? 'relay' : 'light'}/${Number(channel)}?turn=${action.on ? 'on' : 'off'}`)
         else await request(`/rpc/${{ switch: 'Switch', light: 'Light', rgb: 'RGB', rgbw: 'RGBW' }[kind]}.Set`, 'POST', { id: Number(channel), on: action.on })
         return state(await request(path)) === action.on

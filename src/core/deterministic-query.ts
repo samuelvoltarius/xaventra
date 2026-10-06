@@ -1,4 +1,5 @@
 import { parseNaturalMemoryForget } from '../memory/memory-quality.js'
+import { parseRoutineSatz, parseSchaltSatz } from '../sensing/device-sentences.js'
 
 export type NaturalCommandRisk = 'read-only' | 'controlled-action'
 
@@ -53,6 +54,19 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /^(?:welche|was für) verbindungen (?:hast|kennst) du(?: alles)?$/.test(text)
         || /^was ist (?:alles )?verbunden$/.test(text)
         || /^(?:zeig|zeige)(?: mir)? (?:deine |die |alle )?verbindungen$/.test(text)) return route('verbindungen', '', 'connections-list')
+
+    // 2.86 Paket N: „und?“ / „hat's geklappt?“ right after connecting → the stored state of that
+    // connection (handler answers '' when nothing ran lately → normal conversation).
+    if (/^(?:und|und jetzt|und nun|na und|hat(?:'s|s| es) geklappt|geklappt|fertig|klappt(?:'s|s| es)|und klappt(?:'s|s| es))$/.test(text)) return route('geraete', 'stand', 'connect-progress')
+    // 2.86 Paket N: switching and routines in everyday language. The handler only
+    // creates a preview card (physical = card, policy unchanged); a bare device
+    // name needs a switching verb, so „ich gehe heute aus“ stays conversation.
+    if (/^(?:zeig(?:e)?(?: mir)? )?(?:meine |die |alle )?(?:geräte|geraete|schalt)[- ]?routinen$/.test(text)) return route('geraete', 'routinen', 'device-routines')
+    const deviceRoutine = parseRoutineSatz(input)
+    const deviceSwitch = deviceRoutine ? deviceRoutine.satz : parseSchaltSatz(input)
+    if (deviceSwitch && (deviceRoutine || deviceSwitch.was !== 'name' || /^(?:bitte )?(?:mach|mache|schalt|schalte|knips)\b/.test(text))) {
+        return route('geraete', `sag ${input.trim()}`, 'device-switch-preview', 'controlled-action')
+    }
 
     const forgetTarget = parseNaturalMemoryForget(input)
     if (forgetTarget) return route('memory', `forget-natural ${forgetTarget}`, 'memory-forget', 'controlled-action')
