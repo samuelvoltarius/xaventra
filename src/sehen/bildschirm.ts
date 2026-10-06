@@ -95,7 +95,7 @@ function produktion(d: BildschirmDeps): Required<BildschirmDeps> {
         gedanke: d.gedanke || (async input => {
             const { getPlannerRuntime } = await import('../planner/runtime.js')
             const store = getPlannerRuntime()?.thoughts || (await import('../planner/index.js')).getThoughtStore()
-            store.add({ source: 'owner-lenkung', kind: 'vorschlag', title: input.title, evidence: input.evidence, proposal: input.proposal, severity: 'info', permission: 'fragen', ...(input.node ? { node: input.node } : {}) })
+            store.add({ source: 'owner-lenkung', kind: 'ereignis', title: input.title, evidence: input.evidence, proposal: input.proposal, severity: 'info', permission: 'selbst', ...(input.node ? { node: input.node } : {}) })
             return true
         }),
         eingabe: d.eingabe || (async action => {
