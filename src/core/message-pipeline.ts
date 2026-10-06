@@ -435,8 +435,9 @@ async function handleMessageInScope(
             return
         }
     }
-    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
-    const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback)\b/i.test(content.trim())
+    // 2.87 Paket P: `/telefon passwort …` wie Anmelde-Befehle nie protokollieren (auch nicht im Konsolen-Log).
+    const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback|telefon\s+(?:passwort|ari-passwort))\b/i.test(content.trim())
+    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
     if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'user', content)
 
     // Track user activity for Dreaming/Idle systems

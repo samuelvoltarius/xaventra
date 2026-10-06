@@ -281,6 +281,10 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     const { createSchaltExecutor, productionSchaltDeps } = await import('../sensing/device-switch.js')
     const schaltDeps = await productionSchaltDeps()
     registerCardExecutor(createSchaltExecutor(schaltDeps))
+
+    // 2.87 Paket P: Anruf an eine fremde Nummer (extern, kostet Guthaben) — erst das Ja wählt.
+    const { createTelefonCardExecutor } = await import('../voice/telefon-ausgang.js')
+    registerCardExecutor(createTelefonCardExecutor())
 }
 
 // ---------------------------------------------------------------------------

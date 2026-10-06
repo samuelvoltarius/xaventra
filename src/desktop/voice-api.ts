@@ -184,7 +184,16 @@ type MessageHandler = (message: string, channel: string) => Promise<string>
  * in der Unterhaltung). Mit `stream` meldet die Pipeline unterwegs Textstücke und
  * Werkzeugrunden (2.87 Paket P, request-lokal, nur in diesem Sprach-Zug).
  */
-export function pipelineAnswer(context: VoiceTicketContext, resolveHandler: () => MessageHandler | null) {
+export interface PipelineAnswerOptions {
+    /** Wer handelt (Rechte). App-Anruf: `desktop:<owner>` als Owner. Telefon: `telefon:<nummer>`. */
+    authorizationUserId?: string
+    /** Telefon: 'user' — eine Rufnummer ist kein Owner-Nachweis. */
+    permission?: 'owner' | 'user'
+    roomTitle?: string
+    roomTopic?: string
+}
+
+export function pipelineAnswer(context: VoiceTicketContext, resolveHandler: () => MessageHandler | null, options: PipelineAnswerOptions = {}) {
     return async (text: string, signal: AbortSignal, stream?: VoiceAnswerStream): Promise<string> => {
         const handler = resolveHandler()
         if (!handler) throw new Error('Pipeline noch nicht bereit')
@@ -193,12 +202,14 @@ export function pipelineAnswer(context: VoiceTicketContext, resolveHandler: () =
         ])
         const store = getTopicRoomStore()
         const owner = context.principalId
-        const room = store.listRooms(owner).find(item => item.title === 'Anruf') || store.createRoom(owner, { title: 'Anruf', topic: 'Gespräche per Sprache', botIds: ['nova'] } as any)
+        const roomTitle = options.roomTitle || 'Anruf'
+        const room = store.listRooms(owner).find(item => item.title === roomTitle) || store.createRoom(owner, { title: roomTitle, topic: options.roomTopic || 'Gespräche per Sprache', botIds: ['nova'] } as any)
         store.addMessage(owner, room.id, { authorType: 'user', authorId: owner, content: text, verifiedEvidence: 0 } as any)
-        const authorizationUserId = `desktop:${owner}`
+        const authorizationUserId = options.authorizationUserId || `desktop:${owner}`
         getOrCreateUser(authorizationUserId, 'desktop', owner)
-        // Das Ticket gibt es nur gegen das Desktop-Owner-Token (registerVoiceApi prüft isOwner).
-        setUserPermission(authorizationUserId, 'owner')
+        // App: das Ticket gibt es nur gegen das Desktop-Owner-Token (registerVoiceApi prüft isOwner).
+        // Telefon: Rufnummern lassen sich fälschen → nie Owner-Rechte.
+        setUserPermission(authorizationUserId, options.permission || 'owner')
         const run = () => runWithDesktopAgentContext({
             abortSignal: signal, principalId: owner, clientId: context.clientId, authorizationUserId,
             roomId: room.id, botId: 'nova', preferredNodeIds: [], modelMode: 'auto', memoryAssetIds: [],
