@@ -20,6 +20,8 @@ import { CLIENT_METADATA_JSON, USER_AGENT, API_CLIENT } from '../core/client-ide
 import { CodexCLIAdapter, isCodexAvailable, isCodexAuthenticated } from './codex-cli-adapter.js'
 import { MiniMaxLLM, createMiniMaxLLM } from './providers/minimax.js'
 import { recordLlmRequest, withSpan } from '../infra/telemetry.js'
+import { speakableSink } from '../voice/voice-turn-stream.js'
+import { readOpenAiCompletionStream } from './sse-completion.js'
 
 // Codex CLI module reference for OpenAI provider fallback
 type CodexCLIAdapterType = CodexCLIAdapter
@@ -1724,6 +1726,14 @@ class LocalLLMProvider extends LLMProvider {
                 max_tokens: maxTokens || (tools?.length ? 2048 : 4096),
                 temperature: 0.2,
             }
+            // 2.87 Paket P: in einer sprechbaren Runde eines Sprach-Zugs wortweise
+            // streamen und request-lokal ohne Denken antworten (nur dieser Aufruf).
+            const voiceSink = speakableSink()
+            if (voiceSink) {
+                requestBody.stream = true
+                requestBody.stream_options = { include_usage: true }
+                reasoningEffort = 'none'
+            }
             if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort
             if (reasoningEffort === 'none' && /qwen/i.test(model)) {
                 requestBody.chat_template_kwargs = { enable_thinking: false }
@@ -1751,10 +1761,11 @@ class LocalLLMProvider extends LLMProvider {
                 // incorrectly declaring the endpoint offline.
                 const unsupportedReasoning = response.status === 400
                     && reasoningEffort
-                    && /reasoning[_ .-]?effort|chat_template_kwargs|extra[_ .-]?(?:field|input)|unknown (?:field|parameter)|unrecognized/i.test(error)
+                    && /reasoning[_ .-]?effort|chat_template_kwargs|stream_options|extra[_ .-]?(?:field|input)|unknown (?:field|parameter)|unrecognized/i.test(error)
                 if (unsupportedReasoning) {
                     delete requestBody.reasoning_effort
                     delete requestBody.chat_template_kwargs
+                    delete requestBody.stream_options
                     console.warn(`[LocalLLM] ${model} rejects reasoning extensions; retrying without those extensions`)
                     response = await sendRequest()
                     if (!response.ok) error = await response.text()
@@ -1765,6 +1776,18 @@ class LocalLLMProvider extends LLMProvider {
                 }
             }
 
+            if (requestBody.stream && response.body && /event-stream/i.test(response.headers.get('content-type') || 'text/event-stream')) {
+                const streamed = await readOpenAiCompletionStream(response.body, voiceSink)
+                const content = this.stripProviderReasoning(streamed.content)
+                recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content || Boolean(streamed.toolCalls?.length))
+                return {
+                    content,
+                    reasoning: streamed.reasoning,
+                    toolCalls: streamed.toolCalls,
+                    finishReason: streamed.finishReason as LLMResponse['finishReason'],
+                    usage: streamed.usage ? normalizeTokenUsage(streamed.usage.promptTokens, streamed.usage.completionTokens, streamed.usage.totalTokens) : undefined,
+                }
+            }
             const data = await response.json() as any
             const message = data.choices?.[0]?.message || {}
             const content = this.stripProviderReasoning(message.content || '')

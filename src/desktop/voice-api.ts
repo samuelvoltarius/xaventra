@@ -10,16 +10,19 @@
  * holt die App mit dem Desktop-Token ein kurzes Einmal-Ticket. Das Token selbst
  * steht nie in einer Adresse.
  *
- * Ablauf eines Anrufs (erster Schritt, siehe Bericht): Der Sprachdienst hört
- * (VAD + Pre-Roll + Partials + Endtext), der Main fragt die Pipeline (Gedächtnis,
- * Werkzeuge, Regeln) und lässt die fertige Antwort phrasenweise sprechen.
- * Dazwischenreden bricht Antwort und Sprachausgabe ab.
+ * Ablauf eines Anrufs: Der Sprachdienst hört (VAD + Pre-Roll + Partials +
+ * Endtext), der Main fragt die Pipeline (Gedächtnis, Werkzeuge, Regeln).
+ * 2.87 Paket P: die Antwort wird wortweise gesprochen, während sie entsteht;
+ * einfache Fragen (Uhrzeit, Datum, „läuft alles?“) kommen ohne Modellrunde.
+ * Dazwischenreden bricht Antwort, Werkzeugrunde und Sprachausgabe ab.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import type { Express, Request } from 'express'
-import { VoiceCallSession, type SpokenAudio, type VoiceName } from '../voice/voice-call.js'
+import { VoiceCallSession, type SpokenAudio, type VoiceAnswerStream, type VoiceCallDeps, type VoiceName } from '../voice/voice-call.js'
+import { runWithVoiceTurn } from '../voice/voice-turn-stream.js'
+import { createVoiceAnswerer } from '../voice/voice-quick.js'
 import { discoverVoiceService, VoiceServiceClient } from '../voice/voice-mesh.js'
 import { readVoicePrefs, writeVoicePrefs } from '../voice/voice-prefs.js'
 
@@ -114,7 +117,7 @@ interface SocketLike {
 export interface VoiceCallBridgeDeps {
     discover: Discover
     openUpstream: (url: string) => SocketLike
-    answer: (text: string, signal: AbortSignal) => Promise<string>
+    answer: VoiceCallDeps['answer']
     voice: VoiceName
     speak?: (text: string, voice: VoiceName, signal: AbortSignal) => Promise<SpokenAudio>
 }
@@ -176,9 +179,13 @@ export async function runVoiceCallBridge(browser: SocketLike, deps: VoiceCallBri
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
-/** Antwort aus der echten Pipeline, im Gesprächsraum „Anruf“ (Verlauf steht danach in der Unterhaltung). */
+/**
+ * Antwort aus der echten Pipeline, im Gesprächsraum „Anruf“ (Verlauf steht danach
+ * in der Unterhaltung). Mit `stream` meldet die Pipeline unterwegs Textstücke und
+ * Werkzeugrunden (2.87 Paket P, request-lokal, nur in diesem Sprach-Zug).
+ */
 export function pipelineAnswer(context: VoiceTicketContext, resolveHandler: () => MessageHandler | null) {
-    return async (text: string, signal: AbortSignal): Promise<string> => {
+    return async (text: string, signal: AbortSignal, stream?: VoiceAnswerStream): Promise<string> => {
         const handler = resolveHandler()
         if (!handler) throw new Error('Pipeline noch nicht bereit')
         const [{ getTopicRoomStore }, { runWithDesktopAgentContext }, { getOrCreateUser, setUserPermission }] = await Promise.all([
@@ -192,10 +199,15 @@ export function pipelineAnswer(context: VoiceTicketContext, resolveHandler: () =
         getOrCreateUser(authorizationUserId, 'desktop', owner)
         // Das Ticket gibt es nur gegen das Desktop-Owner-Token (registerVoiceApi prüft isOwner).
         setUserPermission(authorizationUserId, 'owner')
-        const reply = await runWithDesktopAgentContext({
+        const run = () => runWithDesktopAgentContext({
             abortSignal: signal, principalId: owner, clientId: context.clientId, authorizationUserId,
             roomId: room.id, botId: 'nova', preferredNodeIds: [], modelMode: 'auto', memoryAssetIds: [],
         }, () => handler(text, 'desktop'))
+        const reply = stream ? await runWithVoiceTurn({
+            onTextDelta: delta => stream.onTextDelta(delta),
+            onToolRound: names => stream.onToolRound(names),
+            onToolDone: (name, ok) => stream.onToolDone?.(name, ok),
+        }, run) : await run()
         if (!signal.aborted) store.addMessage(owner, room.id, { authorType: 'bot', authorId: 'nova', content: reply, verifiedEvidence: 0 } as any)
         return reply
     }
@@ -222,11 +234,14 @@ export async function handleVoiceUpgrade(req: IncomingMessage, socket: Duplex, h
     }
     const { WebSocketServer, WebSocket } = await import('ws')
     upgradeServer ||= new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false })
+    const { productionQuickDeps } = await import('../voice/voice-quick-runtime.js')
+    const quick = await productionQuickDeps()
     upgradeServer.handleUpgrade(req, socket, head, ws => {
         void runVoiceCallBridge(ws as unknown as SocketLike, {
             discover: discoverVoiceService,
             openUpstream: target => new WebSocket(target, { perMessageDeflate: false, maxPayload: 256 * 1024 }) as unknown as SocketLike,
-            answer: pipelineAnswer(context, deps.resolveHandler),
+            // Das Ticket gibt es nur gegen das Owner-Token: hier ist ein gesprochenes „ja“ eine Owner-Antwort.
+            answer: createVoiceAnswerer({ pipeline: pipelineAnswer(context, deps.resolveHandler), quick, ownerAuthenticated: true }),
             voice: readVoicePrefs().voice,
         })
     })
