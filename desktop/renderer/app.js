@@ -35,6 +35,8 @@ const state = {
   cardBusy: new Set(),
   tabs: { arbeit: 'missionen', gedaechtnis: 'entscheidungen' },
   showAllThoughts: false,
+  showAllCards: false,
+  heuteDetails: false,
   refreshTimer: null,
 }
 
@@ -399,6 +401,7 @@ function render() {
   if (state.section === 'trust') void loadTrust()
   if (state.section === 'start') window.XaventraOnboarding?.bind(onboardingContext())
   if (state.section === 'verbindungen') window.XaventraConnections?.mount(connectionHelpers())
+  if (state.section === 'heute') window.XaventraCockpit?.mount(cockpitHelpers())
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
   if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')
@@ -487,6 +490,19 @@ function startRefresh() {
     if (['arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   }, 20_000)
   void ensureView('heute')
+}
+
+// Cockpit „Heute“ (2.86 Paket M) lebt in cockpit.js; ask() schickt einen Satz als normale Nachricht.
+function cockpitHelpers() {
+  return { api, esc, attr, icon, toast, fail, errorText, navigate, ask: askInChat, rerender: () => { if (state.section === 'heute') render() } }
+}
+function askInChat(text) {
+  state.section = 'chat'
+  render()
+  const composer = document.querySelector('#composer')
+  if (!composer) return
+  composer.value = String(text || '').slice(0, 200)
+  document.querySelector('#compose-form')?.requestSubmit()
 }
 
 // Verbindungen (2.85) lebt in connections.js; es bekommt nur diese Helfer.
@@ -605,16 +621,25 @@ function heuteView() {
       <span>${tasks.length ? `${esc(tasks[0].quelle)} · seit ${esc(relTime(tasks[0].seit).replace(/^vor /, ''))}` : 'Sie beobachtet und meldet sich, wenn etwas zu tun ist.'}${queue.length ? ` · ${queue.length} in der Warteschlange` : ''}</span>
       ${tasks.length > 1 || queue.length ? `<ul class="now-list">${tasks.slice(1, 4).map(task => `<li>${esc(task.text)}</li>`).join('')}${queue.slice(0, 3).map(item => `<li>Wartet: ${esc(String(item).replace(/^\[(?:queued|running)\]\s*/, ''))}</li>`).join('')}</ul>` : ''}</div>
     <span class="pill ${control.authoritative ? 'good' : 'bad'}" title="Verbunden mit ${attr(control.hostname || control.nodeId || 'Main')}">${control.authoritative ? 'verbunden' : 'nicht verbunden'}</span></section>`
-  const askSection = `<section class="section" aria-labelledby="ask-title"><div class="section-head"><h2 id="ask-title">${icon('bulb')}Braucht dich <span class="count">${open.length ? `· ${open.length}` : ''}</span></h2></div>
-    <div class="section-body">${open.length ? open.map(askCard).join('') : `<div class="empty-note">${icon('check')}Nichts offen. Sie meldet sich, wenn sie dich braucht.</div>`}</div></section>`
+  // 2.86 Paket M: immer nur EINE Frage zur Zeit — die erste (Warteschlange), der Rest per Klick.
+  const waiting = Math.max(Number(data.wartend) || 0, open.length - 1)
+  const shownCards = state.showAllCards ? open : open.slice(0, 1)
+  const askSection = `<section class="section" aria-labelledby="ask-title"><div class="section-head"><h2 id="ask-title">${icon('bulb')}Braucht dich</h2>${waiting ? `<span class="section-note">danach ${waiting === 1 ? 'wartet noch 1 Frage' : `warten noch ${waiting} Fragen`}</span>` : ''}</div>
+    <div class="section-body">${open.length ? shownCards.map(askCard).join('') : `<div class="empty-note">${icon('check')}Nichts offen. Sie meldet sich, wenn sie dich braucht.</div>`}
+    ${open.length > 1 ? `<div class="show-more"><button class="ghost" data-action="toggle-cards">${state.showAllCards ? 'Nur die erste zeigen' : `Alle ${open.length} zeigen`}</button></div>` : ''}</div></section>`
   const report = data.bericht
   const reportSection = `<section class="section" aria-labelledby="report-title"><div class="section-head"><h2 id="report-title">${icon('book')}${report ? esc(report.art === 'morgen' ? 'Morgenbericht' : 'Abendbericht') : 'Bericht'}</h2>${report ? '<span class="pill">Vorschau</span>' : ''}</div><div class="section-body">${reportBlock(report)}</div></section>`
   const decided = data.entschieden || []
   const decidedSection = decided.length ? `<section class="section"><div class="section-head"><h2>${icon('check')}Zuletzt entschieden</h2></div><div class="rows">${decided.map(card => `<div class="row"><div><div class="row-title">${esc(card.titel)}</div><div class="row-sub">${esc(ANSWER_LABEL[card.antwort] || card.status)} · ${esc(relTime(card.decidedAt))}${card.entschiedenUeber ? ` · über ${esc(card.entschiedenUeber === 'desktop' ? 'diese App' : card.entschiedenUeber === 'even-g2' ? 'die Brille' : 'Telegram')}` : ''}${card.ergebnis ? ` · ${esc(card.ergebnis.text)}` : ''}</div></div><div class="row-side">${card.ergebnis ? `<span class="pill ${card.ergebnis.ok ? 'good' : 'bad'}">${card.ergebnis.ok ? 'ausgeführt' : 'nicht ausgeführt'}</span>` : ''}</div></div>`).join('')}</div></section>` : ''
   const thoughtSection = `<section class="section" aria-labelledby="thought-title"><div class="section-head"><h2 id="thought-title">${icon('brain')}Gedanken</h2><span class="section-note">auch Verworfenes</span></div>
     ${thoughts.length ? `<ul class="timeline">${shownThoughts.map(thoughtItem).join('')}</ul>${thoughts.length > 12 ? `<div class="show-more"><button class="ghost" data-action="toggle-thoughts">${state.showAllThoughts ? 'Weniger zeigen' : `Alle ${thoughts.length} zeigen`}</button></div>` : ''}` : `<div class="section-body"><div class="empty-note">Noch keine Gedanken aufgezeichnet.</div></div>`}</section>`
-  return `<div class="page"><div class="page-inner">${head}${strip}${problemsNote(data.probleme)}
-    <div class="grid-2"><div class="stack">${askSection}${reportSection}</div><div class="stack">${thoughtSection}${decidedSection}</div></div></div></div>`
+  // 2.86 Paket M: Cockpit (4 Ampel-Kacheln) + geführte Teile oben; alles andere per Klick.
+  const cockpit = window.XaventraCockpit
+  const tiles = cockpit ? cockpit.tiles(cockpitHelpers(), data.cockpit) : ''
+  const guided = cockpit ? cockpit.guided(cockpitHelpers()) : ''
+  return `<div class="page"><div class="page-inner">${head}${tiles}${askSection}${guided}
+    <details class="cockpit-more"${state.heuteDetails ? ' open' : ''}><summary>Alles im Detail</summary>${strip}${problemsNote(data.probleme)}
+    <div class="grid-2"><div class="stack">${reportSection}</div><div class="stack">${thoughtSection}${decidedSection}</div></div></details></div></div>`
 }
 
 async function answerCard(cardId, answer) {
@@ -1166,6 +1191,8 @@ function bind() {
     render()
   }))
   document.querySelector('[data-action="toggle-thoughts"]')?.addEventListener('click', () => { state.showAllThoughts = !state.showAllThoughts; render() })
+  document.querySelector('[data-action="toggle-cards"]')?.addEventListener('click', () => { state.showAllCards = !state.showAllCards; render() })
+  document.querySelector('.cockpit-more')?.addEventListener('toggle', event => { state.heuteDetails = event.currentTarget.open })
   document.querySelectorAll('[data-card-answer]').forEach(node => node.addEventListener('click', () => answerCard(node.dataset.cardId, node.dataset.cardAnswer)))
   document.querySelectorAll('[data-desktop-open]').forEach(node => node.addEventListener('click', () => openDesktop(node.dataset.desktopOpen, node.dataset.mode)))
   document.querySelectorAll('[data-room]').forEach(node => node.addEventListener('click', async () => {

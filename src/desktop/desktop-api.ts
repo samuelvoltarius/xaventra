@@ -48,6 +48,7 @@ import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
 import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
+import { registerGuidedApi } from '../guided/guided-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -596,6 +597,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     // Docks B → A (Erster Start), C → A (KI-Modelle, Hilfsdienste), F ↔ A (one need rule).
     registerConnectionDocks()
     registerConnectionsApi(app, { ownerOnly })
+    // 2.86 Paket M „Geführt“: Einrichtungs-Checkliste, Beispielsätze, Tipp, „Ich komm nicht weiter“.
+    registerGuidedApi(app, { ownerOnly, owner: async req => `desktop:${(await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req))}` })
     registerSmartAccessApi(app, { ownerOnly, authoritative: desktopControlPlaneAuthoritative, root: getNovaDataDir,
         owner: async req => ({ principalId: (await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req)), permission: 'owner' }) })
 

@@ -232,13 +232,16 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
         console.warn('[Planer] Automatik-Muster nicht übernommen:', (error as Error)?.message)
     }
     const { bundledCards, releaseBundledCards, expiredCardsSince } = await import('../core/approval-cards.js')
+    const { waitingQuestionCount } = await import('../core/question-queue.js')
+    const { isBundleVisible } = await import('../core/card-bundle.js')
     const { trustChangesSince } = await import('../core/action-policy.js')
     const { getOutcomeRouter } = await import('../routing/outcome-router.js')
     const { suggestionSummaryLines } = await import('../core/decisions.js')
     const briefingSources = {
         dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone,
         // The planner's clock, not the wall clock (the briefing window and the card validity must agree).
-        cards: { bundled: () => bundledCards({ dataDir, now: options.now }), release: () => releaseBundledCards({ dataDir, now: options.now }), expiredSince: (since: number, until: number) => expiredCardsSince(since, until, { dataDir, now: options.now }) },
+        cards: { bundled: () => bundledCards({ dataDir, now: options.now }), release: () => releaseBundledCards({ dataDir, now: options.now }), expiredSince: (since: number, until: number) => expiredCardsSince(since, until, { dataDir, now: options.now }),
+            waiting: () => waitingQuestionCount({ dataDir, now: options.now, bundleVisible: key => isBundleVisible(key, { dataDir }), bundleIntoReport: settings.briefing.enabled }) },
         trust: { changesSince: (since: number, until: number) => trustChangesSince(since, until, { dataDir }) },
         learning: {
             successTrend: (now: number) => getOutcomeRouter().successTrend(now),

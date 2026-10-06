@@ -308,6 +308,9 @@ export function formatThoughtText(thought: Thought): string {
     return lines.join('\n')
 }
 
+/** 2.86 Paket M: wording that is critical even without the `dringend` rule (same words as the card loop). */
+const PUSH_AT_ONCE = /sicherheit|security|ausfall|outage|offline|nicht erreichbar|unreachable|down|alarm|kritisch|critical|notfall|einbruch|intrusion|angriff|attack|leck|leak/i
+
 export interface ThoughtDeliveryLogEntry {
     at: string
     deliveryId: string
@@ -339,6 +342,13 @@ export async function deliverPendingThoughts(
                 result.held++
                 if (options.briefingEnabled) store.markNotice(thought.id, 'zurueckgehalten', 'ruhezeit')
                 else if (thought.noticeReason !== 'ruhezeit') store.markNotice(thought.id, 'ausstehend', 'ruhezeit')
+                continue
+            }
+            // 2.86 Paket M „Bündeln“: while the report is on, only questions and critical things are
+            // pushed at once; plain information waits for the next report (listed there, nothing lost).
+            if (options.briefingEnabled && thought.permission !== 'fragen' && !PUSH_AT_ONCE.test(`${thought.title} ${thought.evidence || ''}`)) {
+                result.held++
+                store.markNotice(thought.id, 'zurueckgehalten', 'tagesbericht')
                 continue
             }
             if (store.budget().sent >= store.settings.maxPerDay) {

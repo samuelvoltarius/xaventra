@@ -100,6 +100,8 @@ export interface ApprovalCard {
     erinnertAt?: string
     /** 2.86 Paket N: only ONE button (the Ja, labelled `knopf`), e.g. „↩️ Rückgängig“. */
     einKnopf?: boolean
+    /** 2.86 Paket M: created with `wichtigkeit: 'hoch'` — may jump the one-question queue (question-queue.ts). */
+    wichtig?: boolean
 }
 
 export type CardDelivery = 'sofort' | 'bericht'
@@ -386,7 +388,7 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(short(input.knopf, 24) ? { knopf: short(input.knopf, 24) } : {}),
     } : {}
     const single = input.einKnopf === true && short(input.knopf, 24) ? { einKnopf: true, knopf: short(input.knopf, 24) } : {}
-    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...single, buttons: issueButtons(base) }
+    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...single, ...(input.wichtigkeit === 'hoch' ? { wichtig: true } : {}), buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }

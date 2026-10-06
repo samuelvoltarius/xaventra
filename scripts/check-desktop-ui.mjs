@@ -180,6 +180,8 @@ try {
     await page.locator('.modal').waitFor(); await screenshot('karte-immer-rueckfrage')
     await page.locator('.modal [data-close-modal]').last().click(); await page.locator('.modal').waitFor({ state: 'detached' })
     assert.equal(answers().length, 0, 'Cancelled „Immer erlauben“ must not answer the card')
+    // 2.86 Paket M: only ONE question is shown at a time; the rest is one click away.
+    if (await page.locator('[data-card-id=k1f2e3d4c5b6a]').count() === 0) await page.locator('[data-action=toggle-cards]').click()
     await page.locator('[data-card-answer=nein][data-card-id=k1f2e3d4c5b6a]').click()
     await wait(() => answers().length === 1)
     assert.deepEqual({ path: answers()[0].path, body: answers()[0].body }, { path: '/api/desktop/karten/k1f2e3d4c5b6a/antwort', body: { answer: 'nein' } })

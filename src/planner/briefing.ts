@@ -44,6 +44,8 @@ export interface BriefingSources {
     cards?: {
         bundled(): Array<{ id: string; art: string; titel: string; vorschlag?: string }>
         release(): number
+        /** 2.86 Paket M: questions waiting behind the one visible question (question-queue.ts). */
+        waiting?(): number
         /** Paket L: questions that expired without an answer in the window (listed once). */
         expiredSince?(since: number, until: number): Array<{ titel: string; kurz?: string }>
     }
@@ -181,7 +183,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     // 2.84: a held-back thought already listed under „Wartet auf dich“ is not listed a second time
     // (it is still marked `im-bericht` after delivery).
     const waitingIds = new Set(waitingThoughts.map(t => t.id))
-    const held = heldThoughts.filter(t => !waitingIds.has(t.id)).map(t => `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
+    const held = heldThoughts.filter(t => !waitingIds.has(t.id)).map(t => t.noticeReason === 'tagesbericht' ? t.title : `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
 
     // Kausales Gedächtnis: what was remembered (or ended) without a command.
     let remembered: string[] = []
@@ -206,6 +208,11 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     let expired: string[] = []
     try { expired = (sources.cards?.expiredSince?.(since, now) || []).map(card => card.kurz ? `${card.titel} (${card.kurz})` : card.titel) } catch { expired = [] }
 
+    // 2.86 Paket M: one question at a time — the report says how many wait behind the visible one.
+    let queued = 0
+    try { queued = Math.max(0, Math.floor(Number(sources.cards?.waiting?.()) || 0)) } catch { queued = 0 }
+    const queuedLines = queued ? [`${queued === 1 ? '1 Frage wartet' : `${queued} Fragen warten`} – sie kommen einzeln, die wichtigste zuerst.`] : []
+
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
         ...section('Erledigt', done),
@@ -214,7 +221,8 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Installiert', installed),
         ...section('Wartet auf dich', waiting),
         ...section('Ohne Antwort abgelaufen', expired),
-        ...section('Fragen gesammelt (Knöpfe folgen gleich)', bundled),
+        ...section('Fragen gesammelt (Knöpfe kommen einzeln)', bundled),
+        ...section('Fragen in der Warteschlange', queuedLines),
         ...section('Selbst übernommen', trustLines),
         ...section('Ideen', ideas),
         ...section('Skills', skills),
@@ -228,7 +236,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ? `${title}\nNichts Neues seit ${sinceText}.`
         : `${title} (seit ${sinceText})${body.join('\n')}`
     const sections = ([
-        ['Wartet auf dich', waiting], ['Ohne Antwort abgelaufen', expired], ['Erledigt', done], ['Selbst repariert', repaired], ['Installiert', installed],
+        ['Wartet auf dich', waiting], ['Fragen in der Warteschlange', queuedLines], ['Ohne Antwort abgelaufen', expired], ['Erledigt', done], ['Selbst repariert', repaired], ['Installiert', installed],
         ['Fragen gesammelt', bundled], ['Selbst übernommen', trustLines], ['Hintergrundprüfungen', background], ['Ideen', ideas], ['Skills', skills],
         ['Zurückgehalten', held], ['Neu gemerkt', remembered], ['Lernkurve', curve],
     ] as Array<[string, string[]]>).filter(([, items]) => items.length)
@@ -238,7 +246,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         title,
         text: cleanText(text, 3500),
         sections,
-        kopf: ampelKopf({ kritisch, fragen: waiting.length + bundled.length }),
+        kopf: ampelKopf({ kritisch, fragen: waiting.length + bundled.length + queued }),
         thoughtIds: heldThoughts.map(t => t.id),
         counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length, gesammelt: bundled.length, vertrauen: trustLines.length, lernkurve: curve.length },
     }

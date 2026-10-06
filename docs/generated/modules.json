@@ -1534,6 +1534,7 @@
         "./atomic-storage.js",
         "./data-root.js",
         "./owner-text.js",
+        "./question-queue.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -2154,6 +2155,12 @@
       ]
     },
     {
+      "module": "src/core/question-queue.ts",
+      "imports": [
+        "./approval-cards.js"
+      ]
+    },
+    {
       "module": "src/core/quiet-hours.ts",
       "imports": []
     },
@@ -2743,6 +2750,7 @@
         "../core/data-root.js",
         "../core/nova-state.js",
         "../core/outcome-ledger.js",
+        "../guided/guided-api.js",
         "../memory/memory-asset-catalog.js",
         "../memory/memory-governance.js",
         "../mesh/leader-election.js",
@@ -3498,6 +3506,88 @@
       "module": "src/globals.ts",
       "imports": [
         "./terminal/theme.js"
+      ]
+    },
+    {
+      "module": "src/guided/ampel.ts",
+      "imports": []
+    },
+    {
+      "module": "src/guided/daily-tip.ts",
+      "imports": [
+        "../planner/time.js",
+        "./example-prompts.js",
+        "./guided-store.js"
+      ]
+    },
+    {
+      "module": "src/guided/example-prompts.ts",
+      "imports": [
+        "./guided-store.js"
+      ]
+    },
+    {
+      "module": "src/guided/fachwoerter.ts",
+      "imports": []
+    },
+    {
+      "module": "src/guided/guided-api.ts",
+      "imports": [
+        "./example-prompts.js",
+        "./guided-runtime.js",
+        "./setup-checklist.js",
+        "./stuck-helper.js",
+        "express"
+      ]
+    },
+    {
+      "module": "src/guided/guided-runtime.ts",
+      "imports": [
+        "./daily-tip.js",
+        "./example-prompts.js",
+        "./guided-store.js",
+        "./setup-checklist.js",
+        "./stuck-helper.js",
+        "./telegram-guided.js"
+      ]
+    },
+    {
+      "module": "src/guided/guided-store.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/guided/setup-checklist.ts",
+      "imports": [
+        "../connections/connections-view.js",
+        "./guided-store.js"
+      ]
+    },
+    {
+      "module": "src/guided/stuck-helper.ts",
+      "imports": [
+        "../doctor/types.js",
+        "./guided-store.js",
+        "./setup-checklist.js"
+      ]
+    },
+    {
+      "module": "src/guided/telegram-guided.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../planner/time.js",
+        "./ampel.js",
+        "./guided-store.js",
+        "./setup-checklist.js",
+        "./stuck-helper.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {
