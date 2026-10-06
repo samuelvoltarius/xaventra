@@ -22,6 +22,7 @@ import { collectLiveLoad, heartbeatProfileFields, peerWantsProfile, sanitizeLive
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
 import { captureEnrolledNode, validateNodeCapture, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt } from './node-capture.js'
+import { executeGitRequest, validateGitReceipt, validGitRequest, type GitReceipt, type GitRequest } from './mesh-git.js'
 
 
 export interface MeshAgentExecutionOptions {
@@ -56,6 +57,9 @@ const processed = new Map<string, ResultPayload>()
 const activeAgentRuns = new Map<string, AbortController>()
 const cancelledAgentRuns = new Map<string, number>()
 const exchangePending = new Map<string, { node: string; expiresAt: number }>()
+const gitPending = new Map<string, { node: string; expiresAt: number }>()
+/** Mesh-Git: bundles can take a while on slow disks; still bounded. */
+export const GIT_REQUEST_TTL_MS = 120_000
 const capturePending = new Map<string, { node: string; receive: (value: unknown) => void }>()
 const forRequest = (result: ResultPayload, requestId: string): ResultPayload => ({ ...result, requestId })
 /** MI-17: idempotency/result caches are bounded (oldest entries evicted first). */
@@ -202,6 +206,30 @@ export async function requestNodeExchange(node: string, payload: ExchangeRequest
         if (result.success !== true) throw new Error('exchange failed; no confirmed success receipt')
         return validateExchangeResult(payload, result.result)
     } finally { exchangePending.delete(envelope.id); results.delete(envelope.id) }
+}
+
+/**
+ * Mesh-Git (2.88): the Main asks a node to take a repository state, hand its
+ * result back, or clean up. Same rules as the node exchange: Main fence,
+ * typed request, receipt bound to the request and node; and like capture only
+ * over a live encrypted direct/local connection (never stored in a queue).
+ */
+export async function requestGitOperation(node: string, payload: GitRequest): Promise<GitReceipt> {
+    if (!validGitRequest(payload) || !node || node === '*') throw new Error('invalid git target/request')
+    await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:git.request' })
+    if (node === getLocalNodeId()) return validateGitReceipt(payload, await executeGitRequest(payload))
+    const transport = router || initMeshTransportRuntime()
+    const envelope = transport.create('git.request', node, payload, { ttlMs: GIT_REQUEST_TTL_MS, fence: currentMainMeshFence() })
+    if (gitPending.size >= 16) throw new Error('too many pending git requests')
+    gitPending.set(envelope.id, { node, expiresAt: envelope.expiresAt })
+    try {
+        const ack = await transport.send(node, envelope)
+        if (!['delivered', 'duplicate'].includes(ack.status)) throw new Error(`git request not delivered: ${ack.status}${ack.reason ? ` (${ack.reason})` : ''}`)
+        const result = await waitForMeshRunResult(envelope.id, GIT_REQUEST_TTL_MS)
+        if (!result) throw new Error('git receipt timed out; state unconfirmed')
+        if (result.success !== true) throw new Error(typeof result.error === 'string' ? result.error.slice(0, 200) : 'git request failed')
+        return validateGitReceipt(payload, result.result)
+    } finally { gitPending.delete(envelope.id); results.delete(envelope.id) }
 }
 
 export async function transferNodeExchange(source: string, target: string, name: string): Promise<ExchangeFile> {
@@ -529,6 +557,25 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         await router.send(envelope.sourceNode, response)
         return
     }
+    if (envelope.kind === 'git.response') {
+        const result = envelope.payload as ResultPayload
+        const pending = gitPending.get(result?.requestId)
+        if (pending && pending.node === envelope.sourceNode && pending.expiresAt >= Date.now()) {
+            rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
+        }
+        return
+    }
+    if (envelope.kind === 'git.request') {
+        let result: ResultPayload
+        try {
+            const fence = await verifyDelegatedEnvelopeFence(envelope)
+            if (!fence.ok || envelope.fence?.service !== 'nova-main') throw new Error('git Main fence rejected')
+            if (envelope.expiresAt < Date.now()) throw new Error('git request expired')
+            result = makeResult(envelope.id, true, await executeGitRequest(envelope.payload as GitRequest))
+        } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
+        await router.send(envelope.sourceNode, router.create('git.response', envelope.sourceNode, result, { ttlMs: GIT_REQUEST_TTL_MS }))
+        return
+    }
     if (envelope.kind === 'node.heartbeat') {
         const previous = peerStates[envelope.sourceNode]
         if (peerWantsProfile(getLocalNodeId(), previous?.bootId, envelope.payload)) profilePublishState = { ...profilePublishState, resendWanted: true }
@@ -541,7 +588,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
     }
     if (envelope.kind === 'run.result') {
         const result = envelope.payload as ResultPayload
-        if (exchangePending.has(result?.requestId) || capturePending.has(result?.requestId)) return
+        if (exchangePending.has(result?.requestId) || capturePending.has(result?.requestId) || gitPending.has(result?.requestId)) return
         if (result?.requestId) {
             rememberBounded(results, result.requestId, result, MAX_PENDING_RESULTS)
             try {

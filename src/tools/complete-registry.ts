@@ -1958,6 +1958,34 @@ export const meshBrainTools: NovaTool[] = [
         },
     },
     {
+        name: 'mesh_repo_task',
+        description: 'Führt eine Aufgabe an einem Git-Repository auf dem passenden Mesh-Knoten aus: derselbe Repo-Stand reist über den signierten Mesh-Weg hin, das Ergebnis kommt als eigener Zweig mesh/<knoten>/<arbeit> zurück (main bleibt unverändert). Ohne mesh_node wählt Xaventra den Knoten nach Stärken.',
+        category: 'mesh',
+        parameters: [
+            { name: 'repo', type: 'string', description: 'Name des Mesh-Repos (a-z, 0-9, - und _)', required: true },
+            { name: 'task', type: 'string', description: 'Was am Repo getan werden soll', required: true },
+            { name: 'mesh_node', type: 'string', description: 'Optional: Knoten-ID; leer oder "auto" = passender Knoten', required: false },
+            { name: 'source_path', type: 'string', description: 'Optional: lokales Git-Repository, dessen aktueller Stand vorher ins Mesh-Repo übernommen wird', required: false },
+            { name: 'branch', type: 'string', description: 'Optional: Ausgangszweig im Mesh-Repo (Standard main)', required: false },
+            { name: 'tools', type: 'string', description: 'Optional: Kommagetrennte Werkzeuge für den Knoten (Standard: nur lesen; Schreiben nur, wo die Mesh-Richtlinie es erlaubt)', required: false },
+            { name: 'timeout_seconds', type: 'number', description: 'Optional: Zeitlimit (Standard 600)', required: false },
+        ],
+        handler: async (params: Record<string, unknown>) => {
+            const { formatRepoTaskResult, runRepoTaskOnNode } = await import('../mesh/mesh-repo-task.js')
+            const result = await runRepoTaskOnNode({
+                repo: String(params.repo || ''),
+                task: String(params.task || ''),
+                node: params.mesh_node ? String(params.mesh_node) : undefined,
+                sourcePath: params.source_path ? String(params.source_path) : undefined,
+                ref: params.branch ? String(params.branch) : undefined,
+                tools: params.tools ? String(params.tools).split(',').map(tool => tool.trim()).filter(Boolean) : undefined,
+                timeoutMs: (Number(params.timeout_seconds) || 600) * 1000,
+                parent: await subagentParentIdentity(params),
+            })
+            return formatRepoTaskResult(result)
+        },
+    },
+    {
         name: 'mesh_route',
         description: 'Welcher Knoten macht eine Aufgabe am besten, mit kurzem Grund. task = Aufgabe in eigenen Worten ODER Fähigkeit: grosse-modelle, llm, code, embedding, bilder, vision, stt, tts, medien, speicher, rechnen.',
         category: 'mesh',
