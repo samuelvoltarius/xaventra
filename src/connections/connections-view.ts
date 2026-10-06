@@ -45,6 +45,8 @@ export interface FoundItem {
     datenklasse?: 'lokal' | 'cloud'
     icon?: string | null
     verbunden: boolean
+    /** Paket L: one real device (consolidated); `verbinden` = its connect way (button in the view). */
+    geraet?: { id: string; verbinden: 'homeassistant' | 'hue' | 'tuya' | 'matter' | null; dienste: number }
 }
 export interface PossibleItem {
     connectorId: string
@@ -100,7 +102,9 @@ export function unregisterConnectionSource(id: string): void { sources.delete(id
 
 export interface ViewDeps {
     dataDir?: string
-    devices?: () => Array<{ type: string; host: string; port: number; status?: string; name?: string }>
+    devices?: () => Array<{ type: string; host: string; port: number; status?: string; name?: string; id?: string; via?: string; evidence?: Record<string, unknown>; hardware?: any; lastSeenAt?: string }>
+    /** Paket L: consolidation context (own nets, mesh nodes, tailnet aliases); default from this machine. */
+    consolidation?: import('../sensing/device-consolidation.js').KonsolidierungsKontext
     accounts?: () => Array<{ kind: 'gmail' | 'imap' | 'google-calendar'; label: string }>
     connections?: () => ConnectionRecord[]
     directoryCachePath?: string
@@ -178,14 +182,35 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     const manifestOf = (id: string) => catalog.entries.find(entry => entry.name === id)
 
     const gefunden: FoundItem[] = []
-    for (const device of (deps.devices || (() => defaultDevices(dataDir)))()) {
-        const known = DEVICE_TITLE[String(device?.type)]
-        if (!known || device.status === 'abgelehnt' || typeof device.host !== 'string') continue
-        const connectorId = catalog.entries.find(entry => entry.findet?.geraet === device.type)?.name
+    // Paket L: one entry per real device (device-consolidation.ts) — Home Assistant over LAN
+    // and tailnet once, the Hue bridge once; container/own-machine noise and bare ports left out.
+    const { consolidateDevices, defaultConsolidationContext } = await import('../sensing/device-consolidation.js')
+    const raw = ((deps.devices || (() => defaultDevices(dataDir)))() || []).filter((device: any) => device && typeof device.host === 'string' && typeof device.type === 'string')
+    const records = raw.map((device: any, index: number) => ({
+        id: typeof device.id === 'string' ? device.id : `dev-${index.toString(16).padStart(10, '0')}`, name: String(device.name || ''), via: device.via || 'tcp',
+        status: device.status || 'gefunden', foundAt: '', lastSeenAt: String(device.lastSeenAt || ''), evidence: device.evidence || {}, ...device,
+    }))
+    const ctx = deps.consolidation || (deps.devices ? {} : await defaultConsolidationContext(dataDir))
+    const GERAET_WIRKUNG: Record<string, string> = {
+        hue: 'kann dann die Lampen lesen; geschaltet wird nur nach eigener Karte',
+        tuya: 'kann dann lesen (lokal oder Cloud, du wählst); geschaltet wird nur nach eigener Karte',
+        matter: 'kann nach der Kopplung lesen; geschaltet wird nur nach eigener Karte',
+        tv: 'erkannt; Steuerbarkeit noch ungeprüft', geraet: 'erkannt; Typ und Steuerbarkeit noch ungeprüft',
+    }
+    for (const g of consolidateDevices(records as any, ctx).geraete) {
+        if (g.status === 'abgelehnt') continue
+        const primary = records.find((record: any) => record.id === g.primaryId) as any
+        const known = DEVICE_TITLE[String(primary?.type)]
+        const typed = known && !['networkservice', 'networkdevice'].includes(primary.type)
+        const connectorId = catalog.entries.find(entry => entry.findet?.geraet === primary?.type)?.name
         gefunden.push({
-            id: `geraet:${device.type}:${device.host}:${device.port}`, title: known.title, kategorie: known.kategorie, wirkung: known.wirkung,
-            fund: `im Netz ${device.host}:${device.port}`, ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : device.status === 'eingerichtet',
+            id: `geraet:${primary.type}:${primary.host}:${primary.port}`, title: typed ? known.title : g.titel,
+            kategorie: typed ? known.kategorie : g.art === 'hue' || g.art === 'tuya' || g.art === 'matter' ? 'zuhause' as ViewKategorie : 'geraete',
+            wirkung: typed ? known.wirkung : GERAET_WIRKUNG[g.art] || GERAET_WIRKUNG.geraet,
+            fund: `im Netz ${primary.host}:${primary.port}${g.adressen.length > 1 ? ` (+${g.adressen.length - 1} weitere Adresse${g.adressen.length > 2 ? 'n' : ''})` : ''}`,
+            ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
+            verbunden: connectorId ? connectedIds.has(connectorId) : g.status === 'eingerichtet',
+            geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
         })
     }
     for (const account of deps.accounts ? deps.accounts() : await defaultAccounts(dataDir)) {

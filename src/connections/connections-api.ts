@@ -47,6 +47,15 @@ export function registerConnectionsApi(app: Express, options: ConnectionsApiOpti
         const result = await requestConnect({ connectorId: String(req.body?.connectorId || ''), basis: req.body?.basis, ordner: req.body?.ordner, quelle: 'desktop' }, deps())
         return result.ok ? { body: { ok: true, message: result.message, cardId: result.card.id } } : { status: 409, body: result }
     }))
+    // Paket L: „Verbinden“ on a found device (Hue, Tuya, Matter, Home Assistant) creates its ONE connect card.
+    app.post('/api/desktop/verbindungen/geraet/:id/verbinden', route(async req => {
+        if (!/^dev-[a-f0-9]{10}$/.test(String(req.params.id))) return { status: 404, body: { error: 'Unbekanntes Gerät' } }
+        const { offerDeviceConnection } = await import('../sensing/device-connect.js')
+        const d = deps() as any
+        const result = await offerDeviceConnection({ dataDir: d.dataDir || (await import('../core/data-root.js')).getNovaDataDir(), ...(d.consolidation ? { ctx: d.consolidation } : {}), ...(d.cardOpts ? { cardOpts: d.cardOpts } : {}) },
+            String(req.params.id), req.body?.weg === 'cloud' ? 'cloud' : req.body?.weg === 'local' ? 'local' : undefined)
+        return result.ok ? { body: result } : { status: 409, body: result }
+    }))
     app.post('/api/desktop/verbindungen/rueckkehr', route(async req => done(await completeLoginAndConnect({ address: req.body?.adresse }, deps()))))
     app.post('/api/desktop/verbindungen/:id/anmelden', route(async req => {
         if (!isConnectionId(req.params.id)) return { status: 404, body: { error: 'Unbekannte Verbindung' } }

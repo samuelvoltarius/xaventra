@@ -30,7 +30,7 @@
  * (`NOVA_NODE_ONLY=true`) never sends — its proposals reach the Main via mesh.
  */
 import {
-    cardKeyboard, createApprovalCard, formatCardText, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
+    cardKeyboard, createApprovalCard, formatCardText, formatCardTextShort, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
     registerCardExecutor, requestCardRedelivery, type ApprovalCard, type CardExecutor, type CardStoreOptions, type NewCardInput,
 } from './approval-cards.js'
 import { approveQueuedInstall, loadInstallQueue, rollbackQueuedInstall, type InstallProposal, type InstallQueueDeps } from '../install/install-queue.js'
@@ -271,6 +271,11 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     // 2.85 Paket A: „Verbinden“ (one card = approval of the connection config).
     const { registerConnectCardExecutor } = await import('../connections/connect-flow.js')
     registerConnectCardExecutor()
+
+    // 2.85.11 Paket L: „Gerät verbinden“ (HA login, Hue pairing, Tuya lokal/Cloud, Matter) — one card per device.
+    const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')
+    const deviceDeps = await productionDeviceConnectDeps()
+    registerCardExecutor(createDeviceConnectExecutor(deviceDeps))
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +368,8 @@ export async function deliverPendingCards(sender: CardSender, opts: CardStoreOpt
     if (isWorkerNode()) return 0
     // P8: while the morning/evening report is on, non-time-critical cards wait for it (approval-cards.ts).
     const now = (opts.now || Date.now)()
-    const pending = listApprovalCards({ ...opts, status: 'offen' }).filter(card => !card.deliveredAt && isCardDue(card, { bundleIntoReport: opts.bundleIntoReport, now }))
+    // Paket L: bundled cards (one message for many devices) are delivered by card-bundle.ts.
+    const pending = listApprovalCards({ ...opts, status: 'offen' }).filter(card => !card.buendel && !card.deliveredAt && isCardDue(card, { bundleIntoReport: opts.bundleIntoReport, now }))
     if (!pending.length) return 0
     if (!(await sender.canSend())) return 0
     const chats = sender.ownerChatIds().filter(id => /^\d{1,20}$/.test(id)).slice(0, 3)
@@ -373,7 +379,10 @@ export async function deliverPendingCards(sender: CardSender, opts: CardStoreOpt
         const messages: Array<{ chatId: string; messageId: number }> = []
         for (const chatId of chats) {
             try {
-                const messageId = await sender.send(chatId, formatCardText(card), cardKeyboard(card))
+                // Paket L: short text without technical ids; the full evidence behind „Details“.
+                const { detailsButton } = await import('../channels/telegram-pages.js')
+                const keyboard = [...cardKeyboard(card), [detailsButton(chatId, formatCardText(card), { dataDir: opts.dataDir, now: opts.now })]]
+                const messageId = await sender.send(chatId, formatCardTextShort(card), keyboard)
                 if (typeof messageId === 'number') messages.push({ chatId, messageId })
             } catch (error) {
                 console.warn(`[Knopf-Karten] Zustellung ${card.id} fehlgeschlagen: ${short(error, 160)}`)
@@ -430,6 +439,14 @@ export async function runApprovalCardTick(): Promise<void> {
             ownerChatIds: () => tg.getOwnerChatIds(),
             send: (chatId, text, keyboard) => tg.sendApprovalCard(chatId, text, keyboard),
         }, { bundleIntoReport })
+        // Paket L: related questions (found devices) as ONE message, edited instead of resent.
+        const { deliverBundles } = await import('./card-bundle.js')
+        await deliverBundles({
+            canSend: () => tg.hasCardAuthority(),
+            ownerChatIds: () => tg.getOwnerChatIds(),
+            send: (chatId, text, keyboard) => tg.sendApprovalCard(chatId, text, keyboard),
+            edit: (chatId, messageId, text, keyboard) => tg.editOwnerView(chatId, messageId, text, keyboard),
+        })
     } catch (error) {
         console.warn(`[Knopf-Karten] Durchlauf fehlgeschlagen: ${short(error, 200)}`)
     } finally {

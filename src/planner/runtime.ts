@@ -227,14 +227,14 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
     } catch (error) {
         console.warn('[Planer] Automatik-Muster nicht übernommen:', (error as Error)?.message)
     }
-    const { bundledCards, releaseBundledCards } = await import('../core/approval-cards.js')
+    const { bundledCards, releaseBundledCards, expiredCardsSince } = await import('../core/approval-cards.js')
     const { trustChangesSince } = await import('../core/action-policy.js')
     const { getOutcomeRouter } = await import('../routing/outcome-router.js')
     const { suggestionSummaryLines } = await import('../core/decisions.js')
     const briefingSources = {
         dataDir, thoughts, runsFile: planner.paths.runs, timeZone: settings.briefing.timeZone,
         // The planner's clock, not the wall clock (the briefing window and the card validity must agree).
-        cards: { bundled: () => bundledCards({ dataDir, now: options.now }), release: () => releaseBundledCards({ dataDir, now: options.now }) },
+        cards: { bundled: () => bundledCards({ dataDir, now: options.now }), release: () => releaseBundledCards({ dataDir, now: options.now }), expiredSince: (since: number, until: number) => expiredCardsSince(since, until, { dataDir, now: options.now }) },
         trust: { changesSince: (since: number, until: number) => trustChangesSince(since, until, { dataDir }) },
         learning: {
             successTrend: (now: number) => getOutcomeRouter().successTrend(now),

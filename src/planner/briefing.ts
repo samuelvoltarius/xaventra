@@ -27,6 +27,7 @@ import { cleanText } from './delivery-port.js'
 import type { JobHandler } from './planner.js'
 import { isOpenThought, type Thought, type ThoughtStore } from './thoughts.js'
 import { formatZoned } from './time.js'
+import { ampelKopf, ownerText } from '../core/owner-text.js'
 import type { SuccessTrend, SuccessTrendWindow } from '../routing/outcome-router.js'
 
 export type BriefingKind = 'morgen' | 'abend'
@@ -40,7 +41,12 @@ export interface BriefingSources {
     installJournalFile?: string
     timeZone: string
     /** P8: bundled Knopf-Karten (approval-cards.ts). */
-    cards?: { bundled(): Array<{ id: string; art: string; titel: string; vorschlag?: string }>; release(): number }
+    cards?: {
+        bundled(): Array<{ id: string; art: string; titel: string; vorschlag?: string }>
+        release(): number
+        /** Paket L: questions that expired without an answer in the window (listed once). */
+        expiredSince?(since: number, until: number): Array<{ titel: string; kurz?: string }>
+    }
     /** P8: trust ladder changes (action-policy.ts). */
     trust?: { changesSince(since: number, until: number): { promoted: Array<{ kind: string; text: string }>; reset: Array<{ kind: string; reason: string }> } }
     /** 2.83.0 Lernkurve (only the evening report). */
@@ -64,6 +70,10 @@ export interface Briefing {
     /** Held-back thoughts this briefing reports (marked `im-bericht` after delivery). */
     thoughtIds: string[]
     counts: Record<'erledigt' | 'repariert' | 'installiert' | 'wartet' | 'ideen' | 'zurueckgehalten' | 'skills' | 'gemerkt' | 'gesammelt' | 'vertrauen' | 'lernkurve', number>
+    /** Paket L: every section with ALL its lines (owner text, no ids) for the paged Telegram view. */
+    sections: Array<{ titel: string; zeilen: string[] }>
+    /** Paket L: traffic light + one sentence. */
+    kopf: string
 }
 
 const MAX_LINES = 5
@@ -192,6 +202,9 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     } catch { trustLines = [] }
 
     const curve = kind === 'abend' ? learningCurve(sources, since, now) : []
+    // Paket L: a question never expires silently — it is listed once in the next report.
+    let expired: string[] = []
+    try { expired = (sources.cards?.expiredSince?.(since, now) || []).map(card => card.kurz ? `${card.titel} (${card.kurz})` : card.titel) } catch { expired = [] }
 
     const title = `${kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht'} ${formatZoned(now, sources.timeZone)}`
     const body = [
@@ -200,6 +213,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Selbst repariert', repaired),
         ...section('Installiert', installed),
         ...section('Wartet auf dich', waiting),
+        ...section('Ohne Antwort abgelaufen', expired),
         ...section('Fragen gesammelt (Knöpfe folgen gleich)', bundled),
         ...section('Selbst übernommen', trustLines),
         ...section('Ideen', ideas),
@@ -213,9 +227,18 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const text = body.length === 0
         ? `${title}\nNichts Neues seit ${sinceText}.`
         : `${title} (seit ${sinceText})${body.join('\n')}`
+    const sections = ([
+        ['Wartet auf dich', waiting], ['Ohne Antwort abgelaufen', expired], ['Erledigt', done], ['Selbst repariert', repaired], ['Installiert', installed],
+        ['Fragen gesammelt', bundled], ['Selbst übernommen', trustLines], ['Hintergrundprüfungen', background], ['Ideen', ideas], ['Skills', skills],
+        ['Zurückgehalten', held], ['Neu gemerkt', remembered], ['Lernkurve', curve],
+    ] as Array<[string, string[]]>).filter(([, items]) => items.length)
+        .map(([titel, items]) => ({ titel, zeilen: items.map(item => ownerText(cleanText(item, 300)).replace(/\s+/g, ' ').trim()).filter(Boolean) }))
+    const kritisch = thoughts.filter(t => isOpenThought(t) && t.importance === 'dringend').length
     return {
         title,
         text: cleanText(text, 3500),
+        sections,
+        kopf: ampelKopf({ kritisch, fragen: waiting.length + bundled.length }),
         thoughtIds: heldThoughts.map(t => t.id),
         counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length, gesammelt: bundled.length, vertrauen: trustLines.length, lernkurve: curve.length },
     }
@@ -246,7 +269,7 @@ export function createBriefingHandler(options: { kind: BriefingKind; sources: Br
             const c = briefing.counts
             return {
                 summary: `${briefing.title}: erledigt ${c.erledigt}, repariert ${c.repariert}, installiert ${c.installiert}, wartet ${c.wartet}, Ideen ${c.ideen}`,
-                outgoing: { kind: 'briefing', title: briefing.title, text: briefing.text, urgency: 'normal', refs: briefing.thoughtIds },
+                outgoing: { kind: 'briefing', title: briefing.title, text: briefing.text, urgency: 'normal', refs: briefing.thoughtIds, sections: briefing.sections, kopf: briefing.kopf },
             }
         },
         afterDelivery(_job, outgoing, ctx) {

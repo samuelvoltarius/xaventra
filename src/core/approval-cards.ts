@@ -46,6 +46,7 @@ import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { ownerText, OWNER_PAGE_CHARS } from './owner-text.js'
 import {
     grantStanding, isNieAktionsart, isNurEinzelnesJa, isStandingExcluded, KARTEN_EXTERN, KARTEN_PHYSISCH, nieEffekt, policyKindForCard,
     recordActionOutcome, recordOwnerAnswer,
@@ -87,6 +88,16 @@ export interface ApprovalCard {
     zustellung?: CardDelivery
     /** set when a report listed the bundled card; the card loop then delivers it. */
     freigegebenAt?: string
+    /** Paket L: delivered inside ONE bundled message (card-bundle.ts), never on its own. */
+    buendel?: string
+    /** Paket L: short owner line for the bundle (no ids). */
+    kurz?: string
+    /** Paket L: cards of one subject that render in one row (e.g. lokal/Cloud of one device). */
+    gruppe?: string
+    /** Paket L: button label for the Ja of this card inside a group row. */
+    knopf?: string
+    /** Paket L: the one reminder before expiry was sent. */
+    erinnertAt?: string
 }
 
 export type CardDelivery = 'sofort' | 'bericht'
@@ -107,6 +118,11 @@ export interface NewCardInput {
     dedupeKey?: string
     /** 'hoch' = time-critical, always delivered at once (never bundled). */
     wichtigkeit?: 'hoch' | 'normal'
+    /** Paket L: bundle key (card-bundle.ts) plus short line, row group and button label. */
+    buendel?: string
+    kurz?: string
+    gruppe?: string
+    knopf?: string
 }
 
 export interface CardExecutionResult {
@@ -356,7 +372,14 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         createdAt: iso(now), expiresAt: iso(now + ttl), status: 'offen' as const, usedTokens: [], messages: [],
     }
     const zustellung = cardDeliveryFor({ wirkung, ttlMs: ttl, wichtigkeit: input.wichtigkeit, text: `${art} ${kind} ${base.quelle} ${titel} ${base.beleg}` })
-    const card: ApprovalCard = { ...base, zustellung, buttons: issueButtons(base) }
+    const short = (value: unknown, max: number) => { const v = clean(value, max); return v || undefined }
+    const bundle = input.buendel && KIND_PATTERN.test(String(input.buendel)) ? {
+        buendel: String(input.buendel),
+        ...(short(input.kurz, 80) ? { kurz: short(input.kurz, 80) } : {}),
+        ...(input.gruppe && REF_PATTERN.test(String(input.gruppe)) ? { gruppe: String(input.gruppe) } : {}),
+        ...(short(input.knopf, 24) ? { knopf: short(input.knopf, 24) } : {}),
+    } : {}
+    const card: ApprovalCard = { ...base, zustellung, ...bundle, buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }
@@ -381,6 +404,27 @@ export function cardKeyboard(card: ApprovalCard): Array<Array<{ text: string; ca
 }
 
 const IMPACT_TEXT: Record<CardImpact, string> = { intern: 'intern', infra: 'Infrastruktur (VMs) — fragt immer', physisch: 'physisch — fragt immer', extern: 'nach außen — fragt immer' }
+
+/**
+ * Paket L: the Telegram text of a card — title + proposal, short (<= 600) and
+ * without technical identifiers. Evidence, kind and validity stay available
+ * behind „Details“ (`formatCardText`).
+ */
+export function formatCardTextShort(card: ApprovalCard): string {
+    const title = ownerText(card.titel) || card.art
+    const proposal = ownerText(card.vorschlag)
+    const lines = [`🔘 ${title}`]
+    if (proposal && proposal !== title) lines.push(proposal.length > 360 ? `${proposal.slice(0, 359)}…` : proposal)
+    if (card.wirkung !== 'intern') lines.push(card.wirkung === 'physisch' ? 'Wirkt im Raum — fragt jedes Mal.' : card.wirkung === 'extern' ? 'Geht nach außen — fragt jedes Mal.' : 'Betrifft Infrastruktur — fragt jedes Mal.')
+    if (card.status !== 'offen') {
+        const answer = card.answer ? ANSWER_TEXT[card.answer] : card.status
+        lines.push('', card.status === 'abgelaufen' ? '⌛ Abgelaufen — nichts ausgeführt; steht im nächsten Bericht.'
+            : card.status === 'erledigt' ? '☑️ Anderweitig erledigt.'
+            : `→ ${answer}${card.result ? `: ${ownerText(card.result.message)}` : ''}`)
+    }
+    const text = lines.join('\n')
+    return text.length > OWNER_PAGE_CHARS ? `${text.slice(0, OWNER_PAGE_CHARS - 1)}…` : text
+}
 
 /** Plain text (no Markdown) so evidence can never break the message. */
 export function formatCardText(card: ApprovalCard): string {
@@ -523,10 +567,10 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
 }
 
 /** Expire overdue cards, resurface snoozed ones with fresh tokens, close cards settled elsewhere. */
-export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: ApprovalCard[]; resurfaced: ApprovalCard[]; settled: ApprovalCard[] } {
+export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: ApprovalCard[]; resurfaced: ApprovalCard[]; settled: ApprovalCard[]; reminded: ApprovalCard[] } {
     const now = nowOf(opts)
     const cards = loadCards(opts)
-    const expired: ApprovalCard[] = [], resurfaced: ApprovalCard[] = [], settled: ApprovalCard[] = []
+    const expired: ApprovalCard[] = [], resurfaced: ApprovalCard[] = [], settled: ApprovalCard[] = [], reminded: ApprovalCard[] = []
     let changed = false
     for (let index = 0; index < cards.length; index++) {
         const card = cards[index]
@@ -545,17 +589,32 @@ export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: A
             cards[index] = { ...card, status: 'offen', buttons: issueButtons(card), resendAt: undefined, messages: [], deliveredAt: undefined }
             resurfaced.push(cards[index])
             changed = true
+            continue
+        }
+        // Paket L: never expire silently — exactly one reminder in the last quarter of the
+        // validity (same tokens; the first press still consumes every copy). A bundled card
+        // is reminded by its bundle message (card-bundle.ts).
+        const ttl = Date.parse(card.expiresAt) - Date.parse(card.createdAt)
+        if (card.status === 'offen' && !card.erinnertAt && (card.deliveredAt || card.buendel) && Date.parse(card.expiresAt) - now <= ttl / 4) {
+            cards[index] = { ...card, erinnertAt: iso(now), ...(card.buendel ? {} : { deliveredAt: undefined, freigegebenAt: card.freigegebenAt || iso(now) }) }
+            reminded.push(cards[index])
+            changed = true
         }
     }
     if (changed) saveCards(cards, opts)
     for (const card of expired) noteThought({ quelle: card.quelle, titel: card.titel, status: 'abgelaufen' }, opts)
-    return { expired, resurfaced, settled }
+    return { expired, resurfaced, settled, reminded }
+}
+
+/** Paket L: cards that expired without an answer in [since, until] — listed once in the report. */
+export function expiredCardsSince(since: number, until: number, opts: CardStoreOptions = {}): ApprovalCard[] {
+    return loadCards(opts).filter(card => card.status === 'abgelaufen' && !card.answer && Date.parse(card.expiresAt) >= since && Date.parse(card.expiresAt) <= until)
 }
 
 /** P8: open, not yet delivered cards that wait for the next report (still >= 2 h valid). */
 export function bundledCards(opts: CardStoreOptions = {}): ApprovalCard[] {
     const now = nowOf(opts)
-    return loadCards(opts).filter(card => card.status === 'offen' && !card.deliveredAt && card.zustellung === 'bericht' && !card.freigegebenAt
+    return loadCards(opts).filter(card => card.status === 'offen' && !card.deliveredAt && card.zustellung === 'bericht' && !card.freigegebenAt && !card.buendel
         && Date.parse(card.expiresAt) - now >= BUNDLE_MIN_REMAINING_MS)
 }
 

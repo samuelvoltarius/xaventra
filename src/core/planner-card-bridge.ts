@@ -83,8 +83,25 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
             }
             const chats = target.getOwnerChatIds()
             if (!chats.length) return { status: 'kein-port' } as DeliveryReceipt
+            const { pagedView, sectionedView, rememberLastReport } = await import('../channels/telegram-pages.js')
+            const { ownerText } = await import('./owner-text.js')
+            // Paket L: a report is one short overview with a button per section (+ main menu);
+            // every other owner message is short with „Mehr“ and free of technical ids.
+            if (msg.kind === 'briefing' && Array.isArray(msg.sections)) {
+                try { rememberLastReport({ titel: msg.title, kopf: msg.kopf || '', sections: msg.sections }) } catch { /* menu „Bericht“ then shows nothing */ }
+                const fragen = msg.sections.filter(section => ['Wartet auf dich', 'Fragen gesammelt'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
+                for (const chatId of chats) {
+                    const view = sectionedView(chatId, { kopf: msg.kopf || '', titel: msg.title, sections: msg.sections }, { counts: { fragen } })
+                    await target.sendApprovalCard(chatId, view.text, view.keyboard)
+                }
+                return { status: 'zugestellt' } as DeliveryReceipt
+            }
             const text = msg.title && !msg.text.startsWith(msg.title) ? `${msg.title}\n\n${msg.text}` : msg.text
-            for (const chatId of chats) await target.sendApprovalCard(chatId, text, [])
+            const plain = msg.kind === 'erinnerung' ? text : ownerText(text)
+            for (const chatId of chats) {
+                const view = pagedView(chatId, plain)
+                await target.sendApprovalCard(chatId, view.text, view.keyboard)
+            }
             return { status: 'zugestellt' } as DeliveryReceipt
         },
     }

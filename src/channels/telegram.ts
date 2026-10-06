@@ -501,6 +501,10 @@ export class TelegramAdapter implements ChannelAdapter {
             await this.handleDesktopPress(query)
             return
         }
+        if (typeof data === 'string' && data.startsWith('nv:')) {
+            await this.handleNavPress(query)
+            return
+        }
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const retired = retiredApprovalHint(data)
@@ -1062,20 +1066,35 @@ export class TelegramAdapter implements ChannelAdapter {
             try { await this.bot.answerCallbackQuery(query.id, { text: String(text).slice(0, 190) }) } catch { /* ignore */ }
         }
         try {
-            const { answerApprovalCard, formatCardText } = await import('../core/approval-cards.js')
+            const { answerApprovalCard } = await import('../core/approval-cards.js')
             const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
             await ensureBuiltinCardExecutors()
             const result = await answerApprovalCard(String(query.data), { userId: String(query.from?.id ?? ''), ownerIds: this.getOwnerChatIds() })
             await answer(result.ok ? `✓ ${result.message}` : result.message)
             if (!result.card || result.code === 'kein-owner' || result.code === 'nicht-erlaubt') return
             if (result.code === 'verbraucht' || result.code === 'unbekannt') return
+            if (result.card.buendel) {
+                // Paket L: a bundled question — the bundle message is edited (the other devices keep
+                // their buttons); the result comes as one short message (e.g. the HA login address).
+                const pressedChat = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+                const { ownerText } = await import('../core/owner-text.js')
+                if (pressedChat && result.card.result?.message) {
+                    await this.requireLiveAuthority('card result')
+                    await this.bot.sendMessage(pressedChat, `${result.card.result.ok ? '✅' : '⚠️'} ${ownerText(result.card.result.message)}`.slice(0, 900), { disable_web_page_preview: true })
+                }
+                const { deliverBundles } = await import('../core/card-bundle.js')
+                await deliverBundles({ canSend: () => this.hasCardAuthority(), ownerChatIds: () => this.getOwnerChatIds(),
+                    send: (chatId, text, keyboard) => this.sendApprovalCard(chatId, text, keyboard), edit: (chatId, messageId, text, keyboard) => this.editOwnerView(chatId, messageId, text, keyboard) })
+                return
+            }
             const targets = [...(result.card.messages || [])]
             const pressedChat = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
             const pressedId = query.message?.message_id
             if (pressedChat && typeof pressedId === 'number' && !targets.some(item => item.chatId === pressedChat && item.messageId === pressedId)) {
                 targets.push({ chatId: pressedChat, messageId: pressedId })
             }
-            const text = formatCardText(result.card)
+            const { formatCardTextShort } = await import('../core/approval-cards.js')
+            const text = formatCardTextShort(result.card)
             for (const target of targets) {
                 try {
                     await this.bot.editMessageText(text, { chat_id: target.chatId, message_id: target.messageId, reply_markup: { inline_keyboard: [] } })
@@ -1084,6 +1103,90 @@ export class TelegramAdapter implements ChannelAdapter {
         } catch (error) {
             console.warn(`[Nova Telegram] Knopf-Karte: ${String((error as Error)?.message || error).slice(0, 200)}`)
             await answer('❌ Fehler — nichts ausgeführt.')
+        }
+    }
+
+    /** Paket L: edit an owner view in place (plain text, never Markdown — ids or evidence can't break it). */
+    async editOwnerView(chatId: string, messageId: number, text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
+        if (!this.bot) return
+        await this.requireLiveAuthority('owner view')
+        try {
+            await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard }, disable_web_page_preview: true })
+        } catch (error) {
+            if (!/message is not modified/i.test(String((error as Error)?.message || error))) throw error
+        }
+    }
+
+    /** Paket L: open-question count for the main menu (cards + bundled device questions). */
+    private async openQuestionCount(): Promise<number> {
+        try { const { listApprovalCards } = await import('../core/approval-cards.js'); return listApprovalCards({ status: 'offen' }).length } catch { return 0 }
+    }
+
+    /** Paket L: the fixed main menu (Status · Braucht mich (n) · Geräte · Bericht · Mehr). */
+    async sendMainMenu(chatId: string): Promise<void> {
+        if (!this.bot) return
+        await this.requireLiveAuthority('main menu')
+        const fragen = await this.openQuestionCount()
+        const { ampelKopf, menuKeyboard } = await import('./telegram-pages.js')
+        await this.bot.sendMessage(chatId, `${ampelKopf({ fragen })}\nWas möchtest du sehen?`, { reply_markup: { inline_keyboard: menuKeyboard(chatId, { fragen }) } })
+    }
+
+    /** Paket L: read-only menu views; registered per press with the presser's own principal. */
+    private async registerMenuViews(chatId: string, principal: PrincipalContext | null): Promise<void> {
+        const pages = await import('./telegram-pages.js')
+        pages.registerMenuProvider('status', async () => {
+            const { handleCommand } = await import('../core/slash-commands.js')
+            const { availableLLMs } = await import('../core/llm-factory.js')
+            const text = principal ? await handleCommand('status', '', chatId, (globalThis as any).__novaState, availableLLMs, principal) : null
+            return { titel: 'Status', text: String(text || 'Status gerade nicht verfügbar.').replace(/[*_`]/g, '') }
+        })
+        pages.registerMenuProvider('fragen', async () => {
+            const { listApprovalCards } = await import('../core/approval-cards.js')
+            const open = listApprovalCards({ status: 'offen' })
+            const lines = open.map(card => `• ${pages.ownerText(card.kurz || card.titel)}`)
+            return { titel: 'Braucht dich', fragen: open.length, text: lines.length ? `${lines.join('\n')}\n\nDie Knöpfe stehen bei der jeweiligen Frage bzw. in der Geräte-Nachricht.` : 'Gerade wartet nichts auf dich.' }
+        })
+        pages.registerMenuProvider('geraete', async () => {
+            const { loadConsolidatedDevices, formatGeraete } = await import('../sensing/device-consolidation.js')
+            const { getNovaDataDir } = await import('../core/data-root.js')
+            return { titel: 'Geräte', text: formatGeraete(await loadConsolidatedDevices(getNovaDataDir())) }
+        })
+        pages.registerMenuProvider('bericht', async () => {
+            const report = pages.lastReport()
+            if (!report) return { titel: 'Bericht', text: 'Noch kein Bericht zugestellt.' }
+            return { titel: report.titel, text: report.sections.map(section => `${section.titel}:\n${section.zeilen.map(line => `• ${line}`).join('\n')}`).join('\n\n') || 'Nichts Neues.' }
+        })
+        pages.registerMenuProvider('mehr', async () => ({ titel: 'Mehr', text: 'Alles geht über die Knöpfe. Wer lieber tippt: /geraete, /status, /gedanken, /verbindungen, /hilfe. Fragen stellst du einfach in normalen Sätzen.' }))
+    }
+
+    /** Paket L: `nv:` navigation — owner only, bound to its chat, never executes an action. */
+    private async handleNavPress(query: any): Promise<void> {
+        const answer = async (text = '') => { try { await this.bot.answerCallbackQuery(query.id, text ? { text: String(text).slice(0, 190) } : undefined) } catch { /* ignore */ } }
+        try {
+            const chatId = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            const messageId = query.message?.message_id
+            const pages = await import('./telegram-pages.js')
+            const fragen = await this.openQuestionCount()
+            const result = pages.pressNav(String(query.data), { userId: String(query.from?.id ?? ''), ownerIds: this.getOwnerChatIds(), chatId }, { counts: { fragen } })
+            if (!result.ok) { await answer(result.message); return }
+            await answer()
+            let view = result.edit
+            if (result.menu) {
+                await this.registerMenuViews(chatId, await this.resolveCallbackPrincipal(query))
+                view = await pages.runMenu(result.menu, chatId, { counts: { fragen } })
+            } else if (result.bundle) {
+                const { showBundlePage } = await import('../core/card-bundle.js')
+                view = await showBundlePage(result.bundle.key, chatId, result.bundle.page) || undefined
+            }
+            if (result.send) {
+                await this.requireLiveAuthority('details')
+                await this.bot.sendMessage(chatId, result.send.text, { reply_markup: { inline_keyboard: result.send.keyboard }, disable_web_page_preview: true })
+                return
+            }
+            if (view && typeof messageId === 'number') await this.editOwnerView(chatId, messageId, view.text, view.keyboard)
+        } catch (error) {
+            console.warn(`[Nova Telegram] Navigation: ${String((error as Error)?.message || error).slice(0, 160)}`)
+            await answer('❌ Ansicht gerade nicht verfügbar.')
         }
     }
 
@@ -1188,6 +1291,12 @@ export class TelegramAdapter implements ChannelAdapter {
             }
         }
         if (!this.passesInboundPolicy(msg, true)) return
+
+        // Paket L: the fixed main menu — buttons instead of commands one has to know.
+        if (authorized && !isGroup && chatId === userId && /^\/(?:menu|menü|menue)(?:@\w+)?\s*$/i.test(String(msg.text || '')) && this.getOwnerChatIds().includes(userId)) {
+            try { await this.sendMainMenu(chatId) } catch (error) { console.warn(`[Nova Telegram] Menü: ${String((error as Error)?.message || error).slice(0, 120)}`) }
+            return
+        }
 
         // Handle text or caption
         let content = msg.text || msg.caption || ''
@@ -1303,6 +1412,21 @@ export class TelegramAdapter implements ChannelAdapter {
                 console.log('[Nova Telegram] Skipped empty message after sanitization')
                 return
             }
+        }
+
+        // Paket L: owner chats get short messages — the first page plus „Mehr ▶“ (no text walls).
+        if (cleanContent.length > 600 && this.getOwnerChatIds().includes(String(msg.to))) {
+            const { pagedView } = await import('./telegram-pages.js')
+            const view = pagedView(String(msg.to), cleanContent)
+            const options = { reply_markup: { inline_keyboard: view.keyboard }, reply_to_message_id: msg.replyTo ? parseInt(msg.replyTo) : undefined }
+            try {
+                await this.bot.sendMessage(msg.to, view.text, { parse_mode: 'Markdown', ...options })
+            } catch (err: any) {
+                if (!err?.message?.includes("can't parse entities")) throw err
+                await this.bot.sendMessage(msg.to, view.text.replace(/\\([_*`\[\]])/g, '$1'), options)
+            }
+            this.stopTyping(msg.to)
+            return
         }
 
         // Smart chunking for long messages (Telegram limit: 4096 chars)

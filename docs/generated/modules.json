@@ -1118,6 +1118,18 @@
       "imports": []
     },
     {
+      "module": "src/channels/telegram-pages.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/owner-text.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/channels/telegram-polling-guard.ts",
       "imports": []
     },
@@ -1402,6 +1414,7 @@
         "./action-policy.js",
         "./atomic-storage.js",
         "./data-root.js",
+        "./owner-text.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -1497,6 +1510,19 @@
         "./self-setup-orchestrator.js",
         "node:fs",
         "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/core/card-bundle.ts",
+      "imports": [
+        "../channels/telegram-pages.js",
+        "./approval-cards.js",
+        "./atomic-storage.js",
+        "./data-root.js",
+        "./owner-text.js",
+        "node:crypto",
+        "node:fs",
         "node:path"
       ]
     },
@@ -2041,6 +2067,10 @@
       "imports": [
         "../planner/thoughts.js"
       ]
+    },
+    {
+      "module": "src/core/owner-text.ts",
+      "imports": []
     },
     {
       "module": "src/core/paths.ts",
@@ -5221,6 +5251,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/decisions.js",
+        "../core/owner-text.js",
         "../doctor/self-heal.js",
         "../routing/outcome-router.js",
         "./delivery-port.js",
@@ -5870,6 +5901,32 @@
         "../mcp/mcp-client.js",
         "../security/secret-redaction.js",
         "./ports.js"
+      ]
+    },
+    {
+      "module": "src/sensing/device-connect.ts",
+      "imports": [
+        "../connections/connection-store.js",
+        "../core/approval-cards.js",
+        "./device-consolidation.js",
+        "./device-registry.js",
+        "./direct-smart-devices.js",
+        "./discovery.js",
+        "./hardware-recognition.js",
+        "./smart-device-route.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/device-consolidation.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./device-registry.js",
+        "node:crypto",
+        "node:fs",
+        "node:net",
+        "node:path"
       ]
     },
     {

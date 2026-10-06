@@ -24,11 +24,11 @@ export function approveSmartRoute(root: string, d: DeviceRecord, route: SmartRou
     choice.approved = true
     atomicWriteJsonSync(path(root), { version: 1, choices }); return true
 }
-export function chooseSmartRoute(root: string, id: string, route: unknown, approver: Approver): { ok: boolean; message: string } {
+export function chooseSmartRoute(root: string, id: string, route: unknown, approver: Approver, now = Date.now()): { ok: boolean; message: string } {
     if (approver.permission !== 'owner' || !approver.principalId?.trim()) return { ok: false, message: 'Nur der authentifizierte Owner kann den Zugriffsweg wählen.' }
     if (route !== 'local' && route !== 'cloud') return { ok: false, message: 'Bitte lokal oder cloud wählen.' }
     const device = loadDevices(root).find(d => d.id === id)
-    if (!device || ['aus', 'abgelehnt'].includes(device.status) || !Number.isFinite(Date.parse(device.lastSeenAt)) || Date.now() < Date.parse(device.lastSeenAt) || Date.now() - Date.parse(device.lastSeenAt) > 24 * 3600_000)
+    if (!device || ['aus', 'abgelehnt'].includes(device.status) || !Number.isFinite(Date.parse(device.lastSeenAt)) || now < Date.parse(device.lastSeenAt) || now - Date.parse(device.lastSeenAt) > 24 * 3600_000)
         return { ok: false, message: 'Gerätefund fehlt, ist veraltet oder wurde abgelehnt. Kein Zugriffsweg geändert.' }
     const choices = read(root); choices[id] = { fingerprint: sensingDeviceFingerprint(device), owner: approver.principalId, route, approved: false }
     mkdirSync(join(root, 'sensing'), { recursive: true, mode: 0o700 }); atomicWriteJsonSync(path(root), { version: 1, choices })
