@@ -33,7 +33,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.11 preview** (2.85.10 plus a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
+Current source candidate: **2.85.12 preview** (security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked

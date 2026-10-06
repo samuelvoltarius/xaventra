@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.85.12] — 2026-10-06
+
+Security update for two advisories published on 06.10.2026:
+
+- `@modelcontextprotocol/sdk` 1.30 → 1.32.1 (GHSA-6qxp-vccf-f47h): the MCP
+  OAuth client could send credentials to an authorization server chosen by
+  the MCP server. Relevant for connecting services via MCP.
+- `sharp` 0.35.4 → 0.35.5 (GHSA-wq5f-xc86-pv6w, librsvg).
+
+`npm audit --omit=dev` reports no known vulnerability afterwards.
+
 ## [2.85.11] — 2026-10-06
 
 - Failure memory no longer blocks a tool forever. Live on 2.85.10 a single
