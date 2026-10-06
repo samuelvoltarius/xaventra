@@ -29,6 +29,7 @@ import { meshExchangeTools } from './mesh-exchange-tools.js'
 import { meshScreenshotTool } from './mesh-screenshot-tool.js'
 import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { parcelTrackTool } from './parcel-track-tool.js'
+import { verbindenTools } from './verbinden-tools.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -3049,6 +3050,8 @@ export const ALL_TOOLS: NovaTool[] = [
     meshScreenshotTool,
     environmentInventoryTool,
     parcelTrackTool,
+    // 2.88: Dienste finden/verbinden, Passwort-Tresor (nur Kurznamen), Proxmox im Gespräch.
+    ...verbindenTools,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,
