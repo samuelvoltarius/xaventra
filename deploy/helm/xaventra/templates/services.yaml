@@ -1,0 +1,62 @@
+{{- $full := include "xaventra.fullname" . -}}
+# Headless service of the Main StatefulSet: stable DNS per Main pod for the
+# mesh (<full>-main-0.<full>-main-headless.<namespace>.svc). Not-ready pods
+# stay reachable so a warm candidate can still talk mesh.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-main-headless
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+    xaventra.ai/component: main
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "xaventra.selectorLabels" . | nindent 4 }}
+    xaventra.ai/component: main
+  ports:
+    - name: mesh
+      port: {{ .Values.mesh.directPort }}
+      targetPort: mesh
+---
+# Mesh entry point for workers (signed Xaventra envelopes; Kubernetes only routes).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-mesh
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+    xaventra.ai/component: main
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "xaventra.selectorLabels" . | nindent 4 }}
+    xaventra.ai/component: main
+  ports:
+    - name: mesh
+      port: {{ .Values.mesh.directPort }}
+      targetPort: mesh
+---
+# API and dashboard of the Main.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-api
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+    xaventra.ai/component: main
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "xaventra.selectorLabels" . | nindent 4 }}
+    xaventra.ai/component: main
+  ports:
+    - name: dashboard
+      port: {{ .Values.main.dashboard.port }}
+      targetPort: dashboard
+    {{- if .Values.main.api.enabled }}
+    - name: api
+      port: {{ .Values.main.api.port }}
+      targetPort: api
+    {{- end }}

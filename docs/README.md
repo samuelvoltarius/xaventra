@@ -32,6 +32,7 @@ authoritative source files and required evidence.
 | [Memory System](./MEMORY.md) | LanceDB + Vector Memory + Mesh Memory Sync |
 | [Autonomy Guide](./AUTONOMY_GUIDE.md) | Missions, self-evolution, dreaming, Vibe Regler |
 | [Proxmox](./PROXMOX.md) | Wo laufe ich?, /vms, eigene VMs im Pool, Token/Rolle/Fingerprint |
+| [Kubernetes](./KUBERNETES.md) | Helm-Chart, In-Cluster-Erkennung, Node-Labels, /cluster, Mandanten |
 | [Troubleshooting](./TROUBLESHOOTING.md) | Common issues & fixes |
 | [Production Operations](./PRODUCTION_OPERATIONS.md) | Node roles, health, rollout, rollback and Telegram recovery |
 | [Signed Mesh Releases](./MESH-RELEASE-UPDATES.md) | Signed artifact rollout and receipts |

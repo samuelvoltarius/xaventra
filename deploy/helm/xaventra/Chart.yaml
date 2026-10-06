@@ -1,0 +1,17 @@
+apiVersion: v2
+name: xaventra
+description: >-
+  Xaventra on Kubernetes. Kubernetes decides WHERE a process runs; Xaventra
+  decides WHAT runs, with which model, tool and data, and whether an approval
+  is needed. Kubernetes never replaces the Xaventra mesh, its lease, witness
+  epoch or fencing.
+type: application
+version: 0.1.0
+appVersion: "2.87.0"
+home: https://github.com/samuelvoltarius/xaventra
+sources:
+  - https://github.com/samuelvoltarius/xaventra
+keywords:
+  - agent
+  - mesh
+  - self-hosted

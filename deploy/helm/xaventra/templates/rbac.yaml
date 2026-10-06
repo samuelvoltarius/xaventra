@@ -1,0 +1,84 @@
+{{- $full := include "xaventra.fullname" . -}}
+{{- $workerNames := list -}}
+{{- range $key, $w := .Values.workers -}}
+{{- if $w.enabled -}}
+{{- $workerNames = append $workerNames (printf "%s-%s" $full $w.name) -}}
+{{- end -}}
+{{- end -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-main
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+---
+# Workers never talk to the Kubernetes API.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-worker
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- if .Values.control.enabled }}
+---
+# Only the own namespace. No secrets, no pods/exec|attach|portforward|proxy,
+# no delete, no create, nothing cluster-wide. Writes only on own objects.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $full }}-control
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  {{- if $workerNames }}
+  # resourceNames is never empty here: an empty list would mean "all objects".
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    resourceNames:
+      {{- range $name := $workerNames }}
+      - {{ $name | quote }}
+      {{- end }}
+    verbs: ["get", "patch"]
+  {{- end }}
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    resourceNames: [{{ printf "%s-main" $full | quote }}]
+    verbs: ["patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ printf "%s-control" $full | quote }}]
+    verbs: ["get", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $full }}-control
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $full }}-control
+subjects:
+  - kind: ServiceAccount
+    name: {{ $full }}-main
+    namespace: {{ .Release.Namespace }}
+{{- end }}

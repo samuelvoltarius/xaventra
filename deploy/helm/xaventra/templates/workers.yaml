@@ -1,0 +1,155 @@
+{{- $full := include "xaventra.fullname" . -}}
+{{- range $key, $w := .Values.workers }}
+{{- if $w.enabled }}
+{{- if gt (int $w.replicas.min) (int $w.replicas.max) }}
+{{- fail (printf "workers.%s.replicas: min darf nicht größer als max sein" $key) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-{{ $w.name }}
+  labels:
+    {{- include "xaventra.labels" $ | nindent 4 }}
+    xaventra.ai/component: worker
+    xaventra.ai/workload: {{ $w.name }}
+spec:
+  {{- if not $w.autoscale }}
+  replicas: {{ $w.replicas.min }}
+  {{- else }}
+  # No replicas field: Xaventra scales between replicas.min and replicas.max
+  # (control.json), and helm upgrade does not reset it.
+  {{- end }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "xaventra.selectorLabels" $ | nindent 6 }}
+      xaventra.ai/workload: {{ $w.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "xaventra.selectorLabels" $ | nindent 8 }}
+        xaventra.ai/component: worker
+        xaventra.ai/workload: {{ $w.name }}
+      annotations:
+        checksum/config: {{ toJson $.Values.config | sha256sum }}
+    spec:
+      serviceAccountName: {{ $full }}-worker
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      {{- include "xaventra.placement" (dict "placement" $w.placement "affinity" $w.affinity "tolerations" $w.tolerations "wan" $w.wanTolerations) | nindent 6 }}
+      containers:
+        - name: xaventra
+          image: {{ include "xaventra.image" (dict "root" $ "image" $w.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+            readOnlyRootFilesystem: {{ $w.readOnlyRootFilesystem }}
+          env:
+            {{- include "xaventra.podEnv" (dict "root" $ "workload" $w.name) | nindent 12 }}
+            - name: NOVA_NODE_ONLY
+              value: "true"
+            - name: NOVA_NO_TELEGRAM
+              value: "true"
+            - name: NOVA_TELEGRAM_MODE
+              value: "disabled"
+            - name: NOVA_MAIN_ELIGIBLE
+              value: "false"
+            - name: NOVA_MESH_FAILOVER_MAIN
+              value: "false"
+            - name: NODE_OPTIONS
+              value: {{ $w.nodeOptions | quote }}
+            {{- if $w.identitySecret }}
+            - name: XAVENTRA_MESH_IDENTITY_FILE
+              value: "/etc/xaventra/mesh-identity/identity.json"
+            {{- end }}
+            {{- range $name, $value := $w.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if $.Values.secrets.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.secrets.existingSecret }}
+          {{- end }}
+          ports:
+            - name: mesh
+              containerPort: {{ $.Values.mesh.directPort }}
+          startupProbe:
+            {{- include "xaventra.tcpProbe" $.Values.mesh.directPort | nindent 12 }}
+            periodSeconds: {{ $.Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ $.Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            {{- include "xaventra.tcpProbe" $.Values.mesh.directPort | nindent 12 }}
+            periodSeconds: {{ $.Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            {{- include "xaventra.tcpProbe" $.Values.mesh.directPort | nindent 12 }}
+            periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.readiness.failureThreshold }}
+          resources:
+            requests:
+              {{- toYaml $w.resources.requests | nindent 14 }}
+            limits:
+              {{- toYaml $w.resources.limits | nindent 14 }}
+              {{- if gt (int (default 0 $w.gpus)) 0 }}
+              nvidia.com/gpu: {{ $w.gpus }}
+              {{- end }}
+          volumeMounts:
+            - name: runtime
+              mountPath: /runtime
+            - name: config
+              mountPath: /runtime/xaventra.config.json
+              subPath: xaventra.config.json
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if $w.identitySecret }}
+            - name: mesh-identity
+              mountPath: /etc/xaventra/mesh-identity
+              readOnly: true
+            {{- end }}
+            {{- if $w.shmSizeLimit }}
+            - name: dshm
+              mountPath: /dev/shm
+            {{- end }}
+      volumes:
+        {{- include "xaventra.configVolume" $ | nindent 8 }}
+        # Workers keep no state of their own: scalable replicas, nothing to lose.
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ $w.runtimeSizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        {{- if $w.identitySecret }}
+        - name: mesh-identity
+          secret:
+            secretName: {{ $w.identitySecret }}
+            defaultMode: 288
+            items:
+              - key: identity.json
+                path: identity.json
+        {{- end }}
+        {{- if $w.shmSizeLimit }}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ $w.shmSizeLimit }}
+        {{- end }}
+{{- end }}
+{{- end }}

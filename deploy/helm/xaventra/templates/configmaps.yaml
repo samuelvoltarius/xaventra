@@ -1,0 +1,44 @@
+{{- $full := include "xaventra.fullname" . -}}
+{{- if not (or .Values.config.existingSecret .Values.config.existingConfigMap) }}
+# Non-secret runtime configuration. Secrets come from secrets.existingSecret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-config
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+data:
+  xaventra.config.json: |
+    {{- toJson .Values.config.values | nindent 4 }}
+{{- end }}
+{{- if .Values.control.enabled }}
+---
+# What Xaventra may steer in this release (read by src/infra/kubernetes.ts).
+# A chart update through a card may patch min/max here; a later helm upgrade
+# resets it to these values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-control
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+data:
+  control.json: |
+    {
+      "schema": 1,
+      "namespace": {{ .Release.Namespace | quote }},
+      "release": {{ .Release.Name | quote }},
+      "fullname": {{ $full | quote }},
+      "controlConfigMap": {{ printf "%s-control" $full | quote }},
+      "image": { "repository": {{ .Values.image.repository | quote }} },
+      "autoscale": {{ toJson .Values.control.autoscale }},
+      "workloads": {
+        "main": { "kind": "StatefulSet", "object": {{ printf "%s-main" $full | quote }}, "container": "xaventra", "role": "main", "min": 1, "max": 1, "autoscale": false }
+        {{- range $key, $w := .Values.workers }}
+        {{- if $w.enabled }},
+        {{ $w.name | quote }}: { "kind": "Deployment", "object": {{ printf "%s-%s" $full $w.name | quote }}, "container": "xaventra", "role": {{ $w.controlRole | quote }}, "min": {{ int $w.replicas.min }}, "max": {{ int $w.replicas.max }}, "autoscale": {{ and $w.autoscale (eq $w.controlRole "worker") }} }
+        {{- end }}
+        {{- end }}
+      }
+    }
+{{- end }}

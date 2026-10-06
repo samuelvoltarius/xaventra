@@ -1,0 +1,103 @@
+{{- $full := include "xaventra.fullname" . -}}
+{{- if .Values.networkPolicy.enabled }}
+# Main: mesh only from pods of this release (plus explicitly listed peers),
+# API/dashboard only from this release and the listed clients.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-main
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "xaventra.selectorLabels" . | nindent 6 }}
+      xaventra.ai/component: main
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "xaventra.selectorLabels" . | nindent 14 }}
+        {{- with .Values.networkPolicy.meshFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.mesh.directPort }}
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "xaventra.selectorLabels" . | nindent 14 }}
+        {{- with .Values.networkPolicy.apiFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.main.dashboard.port }}
+          protocol: TCP
+        {{- if .Values.main.api.enabled }}
+        - port: {{ .Values.main.api.port }}
+          protocol: TCP
+        {{- end }}
+---
+# Workers: reachable only from the Main's mesh side. Nothing else talks to them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-workers
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "xaventra.selectorLabels" . | nindent 6 }}
+      xaventra.ai/component: worker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "xaventra.selectorLabels" . | nindent 14 }}
+              xaventra.ai/component: main
+      ports:
+        - port: {{ .Values.mesh.directPort }}
+          protocol: TCP
+{{- if and .Values.workers.toolSandbox.enabled .Values.networkPolicy.lockToolSandboxEgress }}
+---
+# Tool sandbox: may only resolve names and reach the Main's mesh port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-tool-sandbox-egress
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "xaventra.selectorLabels" . | nindent 6 }}
+      xaventra.ai/workload: {{ .Values.workers.toolSandbox.name }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "xaventra.selectorLabels" . | nindent 14 }}
+              xaventra.ai/component: main
+      ports:
+        - port: {{ .Values.mesh.directPort }}
+          protocol: TCP
+{{- end }}
+{{- end }}
