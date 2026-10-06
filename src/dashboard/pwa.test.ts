@@ -50,7 +50,12 @@ describe('PWA: Auslieferung über den Dashboard-Server', () => {
         expect(sw.status).toBe(200)
         expect(sw.headers['content-type']).toMatch(/javascript/)
         expect(sw.headers['cache-control']).toBe('no-store')
-        for (const icon of data.icons) expect((await send(icon.src.startsWith('/') ? icon.src : `/${icon.src}`)).status, icon.src).toBe(200)
+        // Icons sind Binärdateien; die Reparatur-Sandbox kopiert keine (dann 404, Seite läuft trotzdem).
+        const { existsSync } = await import('node:fs')
+        for (const icon of data.icons) {
+            const shipped = existsSync(fileURLToPath(new URL(`../../desktop/renderer${icon.src}`, import.meta.url)))
+            expect((await send(icon.src)).status, icon.src).toBe(shipped ? 200 : 404)
+        }
     })
 
     it('Mikrofon nur für die eigene Seite, Kamera/Ort weiter aus', async () => {
@@ -61,6 +66,20 @@ describe('PWA: Auslieferung über den Dashboard-Server', () => {
     it('ein eingetragener Tailnet-Name (tailscale serve) wird bedient, fremde weiter nicht', async () => {
         expect((await send('/', { host: 'main.example.com' })).status).toBe(200)
         expect((await send('/', { host: 'rebound.example.net' })).status).toBe(403)
+    })
+})
+
+describe('PWA: Icons sind Beiwerk', () => {
+    it('die Seite wird auch ohne Bild-Dateien gefunden (z. B. Reparatur-Sandbox ohne Binärdateien)', async () => {
+        const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+        const { tmpdir } = await import('node:os')
+        const { UI_FILES, resolveUiDir } = await import('./server.js')
+        const base = mkdtempSync(join(tmpdir(), 'ui-'))
+        try {
+            mkdirSync(join(base, 'public'))
+            for (const name of Object.keys(UI_FILES).filter(name => !name.endsWith('.png'))) writeFileSync(join(base, 'public', name), 'x')
+            expect(resolveUiDir(base)).toBe(join(base, 'public'))
+        } finally { rmSync(base, { recursive: true, force: true }) }
     })
 })
 

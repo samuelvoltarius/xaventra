@@ -51,7 +51,8 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
 })
 export function resolveUiDir(base = __dirname): string | null {
     for (const dir of [join(base, 'public'), resolve(base, '..', '..', 'desktop', 'renderer')]) {
-        if (Object.keys(UI_FILES).every(name => existsSync(join(dir, name)))) return dir
+        // Bild-Dateien (Web-App-Icons) sind Beiwerk: fehlen sie (z. B. Reparatur-Sandbox ohne Binärdateien), gibt es dafür 404.
+        if (Object.keys(UI_FILES).filter(name => !name.endsWith('.png')).every(name => existsSync(join(dir, name)))) return dir
     }
     return null
 }
@@ -137,6 +138,7 @@ app.get(['/', '/index.html', ...Object.keys(UI_FILES).map(name => `/${name}`)], 
     const name = req.path === '/' ? 'index.html' : req.path.slice(1)
     const dir = resolveUiDir()
     if (!dir || !UI_FILES[name]) return void res.status(503).type('text/plain; charset=utf-8').send('Xaventra: Oberfläche nicht gebaut (npm run build).')
+    if (!existsSync(join(dir, name))) return void res.status(404).type('text/plain; charset=utf-8').send('Nicht gefunden.')
     res.setHeader('Content-Type', UI_FILES[name])
     if (name === 'index.html') res.setHeader('Content-Security-Policy', UI_CSP)
     res.send(readFileSync(join(dir, name)))
