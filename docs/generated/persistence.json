@@ -602,6 +602,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/learning/capability-learning.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/learning/engine-corrections-only.test.ts",
       "path": ".nova-data"
     },
@@ -1107,6 +1111,10 @@
     },
     {
       "owner": "src/tools/schmiede-bedarf-version.test.ts",
+      "path": ".nova-data/forge/bedarf.json"
+    },
+    {
+      "owner": "src/tools/schmiede-lernen.test.ts",
       "path": ".nova-data/forge/bedarf.json"
     },
     {

@@ -866,6 +866,7 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
     // Phase 5b Software-Scout: off until autonomy.softwareScout.enabled; only gap thoughts, never an install.
     await runSoftwareScoutPhase()
     await runConnectionsPhase()
+    await runCapabilityLearningPhaseOnMain()
 
     // Phase 4: EXECUTE PENDING GOALS
     // Nova actually works on her own goals — not just reports them
@@ -1040,6 +1041,18 @@ async function runConnectionsPhase(): Promise<void> {
         if (refreshed?.ok) console.log(`[Autonomy] MCP-Verzeichnis: ${refreshed.entries} Einträge (${refreshed.complete ? 'vollständig' : 'Teil'})`)
     } catch (err) {
         console.debug(`[Autonomy] MCP-Verzeichnis non-critical error: ${err}`)
+    }
+}
+
+// 2.88 „Was ich nicht kann, lerne ich“: waiting learn jobs (card, connection, install)
+// are resolved, learned capabilities are measured and rolled back when they get worse.
+async function runCapabilityLearningPhaseOnMain(): Promise<void> {
+    if (!(config.enabled && hasGlobalAutonomyAuthority())) return
+    try {
+        const { runCapabilityLearningPhase } = await import('../learning/capability-learning.js')
+        await runCapabilityLearningPhase()
+    } catch (err) {
+        console.debug(`[Autonomy] Lernen non-critical error: ${err}`)
     }
 }
 

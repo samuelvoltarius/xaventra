@@ -4354,6 +4354,24 @@
       ]
     },
     {
+      "module": "src/learning/capability-learning.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../core/decisions.js",
+        "../core/infrastructure-failure.js",
+        "../core/side-effects.js",
+        "../install/software-candidates.js",
+        "../install/software-freshness.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/learning/engine.ts",
       "imports": [
         "./feedback.js",

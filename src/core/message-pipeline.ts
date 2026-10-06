@@ -752,6 +752,25 @@ async function handleMessageInScope(
         }
     } catch { /* learning non-critical */ }
 
+    // 2.88 „Was ich nicht kann, lerne ich“: a capability question/request for which the
+    // real inventory has no tool, connection or learned skill gets the honest answer
+    // at once („Nein, das kann ich noch nicht. Soll ich es lernen?“ + Ja/Nein card for
+    // the owner) — no model, no excuse. Anything the inventory can do runs as before.
+    if (!isSystemAuthored && !image && !execution) {
+        try {
+            const { capabilityGate } = await import('../learning/capability-learning.js')
+            const gate = await capabilityGate(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
+            if (gate.handled && gate.reply) {
+                await replyFn(gate.reply)
+                logSession(canonicalUser, channel, 'assistant', gate.reply)
+                traceStep('capability:honest-no')
+                return
+            }
+        } catch (error) {
+            console.debug(`[Pipeline] capability gate unavailable: ${error}`)
+        }
+    }
+
     // Reload SOUL.md on every message (L24 changes take effect immediately)
     NOVA_PERSONA = loadSoul()
 
@@ -857,6 +876,11 @@ async function handleMessageInScope(
         // the options parameter exists.
         const gelernt = (getCapabilitiesPrompt as (options?: { permission?: string }) => string)({ permission: principalContext.permission })
         if (gelernt.trim()) systemPrompt += '\n\n' + gelernt
+    } catch { /* nicht kritisch */ }
+    // 2.88: fixed honesty rule — no tool for it → the one honest sentence (then the learn card).
+    if (!isSystemAuthored) try {
+        const { capabilityHonestyPrompt } = await import('../learning/capability-learning.js')
+        systemPrompt += '\n\n' + capabilityHonestyPrompt()
     } catch { /* nicht kritisch */ }
 
     // Desktop Bot Mode is a scoped projection of the canonical prompt path.
@@ -2127,6 +2151,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     console.debug(`[Desktop] outcome projection unavailable: ${error}`)
                 }
             }
+
+            // 2.88: the model used the honesty sentence → the same learn card (or the honest status).
+            if (!isSystemMessage) try {
+                const { capabilityReplyGate } = await import('../learning/capability-learning.js')
+                finalContent = await capabilityReplyGate(content, finalContent, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
+            } catch (error) { console.debug(`[Pipeline] capability reply gate unavailable: ${error}`) }
 
             await replyFn(finalContent)
             logSession(canonicalUser, channel, 'assistant', finalContent)
