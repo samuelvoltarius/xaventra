@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerDesktopApi } from './desktop-api.js'
-import { answerCardFromDesktop, collectHeute, publicCard } from './desktop-views.js'
+import { answerCardFromDesktop, collectHeute, previewReport, publicCard } from './desktop-views.js'
 import { createApprovalCard, listApprovalCards, registerCardExecutor, unregisterCardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
 import { issueDesktopAppLink, listDirectDesktops, startDesktopDirect, stopDesktopDirect } from '../desktop-direct/runtime.js'
 
@@ -143,5 +143,17 @@ describe('Desktop-Direkt from the app uses the existing one-time link', () => {
         const audit = readFileSync(join(dataDir, 'desktop-sessions.jsonl'), 'utf8')
         expect(audit).toContain('"by":"desktop:owner"')
         if (link.ok === true) expect(audit).not.toContain(link.url.split('/').pop())
+    })
+})
+
+// 2.86 (Fremd-Fehler aus Paket M): Intl de-AT formatiert die Stunde als „08 Uhr“ — keine Zahl,
+// die Vorschau war deshalb immer „Abendbericht“.
+describe('Berichtsvorschau: Morgen oder Abend nach der Ortszeit', () => {
+    it('vormittags Morgenbericht, abends Abendbericht (Europe/Vienna)', async () => {
+        const dataDir = mkdtempSync(join(tmpdir(), 'desktop-report-'))
+        expect((await previewReport({ dataDir, now: () => Date.parse('2026-10-06T06:00:00.000Z') /* 08:00 Wien */ })).art).toBe('morgen')
+        expect((await previewReport({ dataDir, now: () => Date.parse('2026-10-06T11:30:00.000Z') /* 13:30 Wien */ })).art).toBe('morgen')
+        expect((await previewReport({ dataDir, now: () => Date.parse('2026-10-06T16:00:00.000Z') /* 18:00 Wien */ })).art).toBe('abend')
+        expect((await previewReport({ dataDir, now: () => Date.parse('2026-10-06T22:30:00.000Z') /* 00:30 Wien */ })).art).toBe('morgen')
     })
 })

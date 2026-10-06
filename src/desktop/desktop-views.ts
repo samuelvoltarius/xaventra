@@ -124,7 +124,7 @@ export async function previewReport(opts: ViewOptions = {}): Promise<DesktopRepo
     const { getPlannerRuntime } = await import('../planner/runtime.js')
     const { getThoughtStore } = await import('../planner/index.js')
     const { buildBriefing } = await import('../planner/briefing.js')
-    const { DEFAULT_TIME_ZONE } = await import('../planner/time.js')
+    const { DEFAULT_TIME_ZONE, zonedHour } = await import('../planner/time.js')
     const { bundledCards } = await import('../core/approval-cards.js')
     const { trustChangesSince } = await import('../core/action-policy.js')
     const runtime = opts.dataDir ? null : getPlannerRuntime()
@@ -136,7 +136,8 @@ export async function previewReport(opts: ViewOptions = {}): Promise<DesktopRepo
         lastDelivered = Number.isFinite(value) ? value : null
     } catch { lastDelivered = null }
     const since = Math.max(lastDelivered ?? now - DAY_MS, now - 36 * 3_600_000)
-    const hour = Number(new Intl.DateTimeFormat('de-AT', { hour: '2-digit', hour12: false, timeZone }).format(new Date(now)))
+    // Not Intl de-AT: it formats the hour as „08 Uhr“ (no number → always „abend“).
+    const hour = zonedHour(now, timeZone)
     const art: 'morgen' | 'abend' = hour < 14 ? 'morgen' : 'abend'
     const briefing = buildBriefing(art, {
         dataDir, thoughts: opts.dataDir ? getThoughtStore(dataDir) : (runtime?.thoughts || getThoughtStore()),
