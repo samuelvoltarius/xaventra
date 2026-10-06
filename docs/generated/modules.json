@@ -5014,6 +5014,14 @@
       ]
     },
     {
+      "module": "src/mesh/emergency-code.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/mesh/event-hub.ts",
       "imports": [
         "ws"
@@ -5028,6 +5036,7 @@
         "./fence.js",
         "./leader-election.js",
         "./mesh-registry.js",
+        "./succession-runtime.js",
         "node:fs",
         "node:path"
       ]
@@ -5055,6 +5064,7 @@
         "../infra/telemetry.js",
         "./fence.js",
         "./mesh-registry.js",
+        "./succession-config.js",
         "node:crypto",
         "node:fs",
         "node:os"
@@ -5132,6 +5142,7 @@
         "../doctor/nvidia-smi.js",
         "../startup/environment-scanner.js",
         "./mesh-node-lifecycle.js",
+        "./succession-config.js",
         "child_process",
         "crypto",
         "fs",
@@ -5274,6 +5285,64 @@
         "node:fs",
         "node:http",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/secret-vault.ts",
+      "imports": [
+        "./emergency-code.js",
+        "node:crypto",
+        "node:util"
+      ]
+    },
+    {
+      "module": "src/mesh/state-journal.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/mesh/succession-config.ts",
+      "imports": [
+        "../config/config-path.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/mesh/succession-local-api.ts",
+      "imports": [
+        "node:crypto",
+        "node:http"
+      ]
+    },
+    {
+      "module": "src/mesh/succession-runtime.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./emergency-code.js",
+        "./fence-highwater.js",
+        "./fence.js",
+        "./leader-election.js",
+        "./mesh-registry.js",
+        "./secret-vault.js",
+        "./state-journal.js",
+        "./succession-config.js",
+        "./succession.js",
+        "node:crypto",
+        "node:fs",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/mesh/succession.ts",
+      "imports": [
+        "./emergency-code.js",
+        "./leader-election.js",
+        "./secret-vault.js",
+        "./state-journal.js"
       ]
     },
     {

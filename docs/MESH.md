@@ -17,6 +17,77 @@ Other coordination modes retain the encrypted shared-memory transport. A
 production HA claim still requires independent witness hosts, controlled
 network loss and physical-node takeover evidence.
 
+## Main succession with full knowledge (2.88, opt-in)
+
+When the Main fails, another owner-approved node takes over with the same
+memory, connections, responsibilities, cards and configuration, and Telegram
+moves with it. It reuses the existing Main lease (witness quorum or Supabase),
+CL-07 epochs and fencing; there is no second election.
+
+```json
+{
+  "mesh": {
+    "succession": {
+      "enabled": true,
+      "mainEligible": true,
+      "mainNodes": ["node-a", "node-b", "node-c"],
+      "emergencyMaxMinutes": 240,
+      "vacancyGraceSeconds": 20,
+      "localPort": 3019
+    }
+  }
+}
+```
+
+- **Owner decision per node.** With succession on, only nodes with
+  `mainEligible: true` (or `NOVA_MAIN_ELIGIBLE=true`) and listed in
+  `mainNodes` can become Main; every other node stays a worker
+  (`src/mesh/succession-config.ts`). `mainNodes` is fixed on purpose so a
+  shrinking discovery view never lowers the majority.
+- **Journal** (`src/mesh/state-journal.ts`). Every state change is an
+  AES-256-GCM encrypted, HMAC-authenticated, hash-chained entry, replicated to
+  the other `mainNodes` and committed once a majority stored it. Each replica
+  keeps an epoch high-water mark; a new term starts with a `term` entry, after
+  which older epochs are rejected. The old Main's first write after the epoch
+  change fences its writer for good. The key is derived from the shared HA
+  state key (`NOVA_HA_STATE_KEY`).
+- **Successor** (`src/mesh/succession.ts`, `src/mesh/succession-runtime.ts`).
+  On a vacancy the strongest reachable eligible node reads the logs of a
+  majority (fewer: safe mode), raises the witness epoch floor above every
+  epoch they saw, acquires the lease, restores the state, starts its term on a
+  majority and opens the secret vault. Telegram starts only after that and
+  sends once: "Ich bin jetzt auf X umgezogen, alles da." (nothing is
+  announced when the same node simply restarts).
+- **Secrets on every node** (`src/mesh/secret-vault.ts`). Telegram and
+  connector tokens are encrypted once; the data key is split k-of-n (k =
+  majority of all nodes, Shamir) and each node holds one share sealed to its
+  own X25519 key. A holder releases its share only after its own view of the
+  coordinator confirms the requester holds the Main lease in exactly that
+  epoch, and never for an epoch below its high-water mark. Below three nodes
+  the share path is disabled and only the owner code opens the vault.
+  Plaintext exists only in memory and is wiped on step-down.
+- **No majority: safe mode.** Read only, nothing is sent; the lease layer
+  refuses acquisition and effects stay fenced.
+- **Owner emergency code** (`src/mesh/emergency-code.ts`). Set in advance; the
+  node stores only a salted scrypt hash. The check is constant-time, does the
+  same work without a configured code, locks after 5 wrong attempts and never
+  logs or returns the code. With the right code, an eligible node in safe mode
+  becomes emergency Main (witness coordination only) for at most
+  `emergencyMaxMinutes`, with an epoch above every known term (token
+  `nova-main:e<epoch>:<node>`); the next majority term lies above it. As soon
+  as a majority is reachable again the emergency term ends (or turns into a
+  regular term if this node wins the majority). The code also opens the
+  vault's owner wrap.
+- **Local owner door.** In safe mode no Dashboard runs, so an eligible node
+  listens on `127.0.0.1:<localPort>` (direct loopback only):
+  `GET /nachfolge`, `POST /nachfolge/notfall {code}`,
+  `POST /nachfolge/notfallcode {code, current?}` (owner token required when
+  `NOVA_DESKTOP_API_TOKEN` is set; replacing a code needs the current one).
+- **Mesh messages.** `succession.request` / `succession.response` (role
+  `system`, targeted only): journal export and delivery (writer bound to the
+  sending node), share release, share public key, vault distribution
+  (`distributeSecretVault`, acting Main only, verified by each receiver).
+
 ## Capability Graph convergence
 
 The Capability Graph is the canonical shareable inventory of node hardware,

@@ -806,6 +806,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/succession-runtime.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/onboarding/first-start.test.ts",
       "path": ".nova-data"
     },
@@ -1288,6 +1292,10 @@
     {
       "owner": "src/core/soul.ts",
       "path": ".nova-data/soul.md"
+    },
+    {
+      "owner": "src/mesh/succession-runtime.ts",
+      "path": ".nova-data/succession"
     },
     {
       "owner": "src/thinking/idea-run.ts",
