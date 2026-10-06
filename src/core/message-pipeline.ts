@@ -413,7 +413,8 @@ async function handleMessageInScope(
     // Map channel-specific user IDs to canonical names (from xaventra.config.json)
     const configAliases = (state as any).config?.userAliases || {}
     const canonicalUser = configAliases[from] || from
-    const principalId = resolvePrincipalId((state as any).config, channel, from)
+    // 2.88: re-resolved after authentication when a confirmed owner account joins the one owner principal.
+    let principalId = resolvePrincipalId((state as any).config, channel, from)
     const principalContext: PrincipalContext = { channel, rawUserId: from, principalId }
     let requestUserContext = ''
     let requestGroupContext = ''
@@ -526,6 +527,26 @@ async function handleMessageInScope(
 
         // 4. Group Chat — track who speaks
         isGroupMessage = mu.isGroupChat(chatId, from) === true
+
+        // 2.88 ein Owner über alle Kanäle: a confirmed owner account (configured
+        // Telegram owner, token-checked App/CLI/REST, or linked by code) shares
+        // the one owner principal — same session, memory and projects.
+        // Strangers, groups and phone callers keep their own identity.
+        try {
+            const { confirmOwnerAccountIfTrusted } = await import('../users/owner-accounts.js')
+            const owner = confirmOwnerAccountIfTrusted({
+                config: (state as any).config, channel, rawUserId: from, permission: authResult.permission,
+                permissionSource: authResult.user?.permissionSource, isGroup: isGroupMessage,
+            })
+            if (owner) {
+                principalId = resolvePrincipalId((state as any).config, channel, from)
+                principalContext.principalId = principalId
+            } else if (authResult.permission !== 'owner') {
+                // A linked account that is no longer owner (demoted) never keeps the owner's context.
+                principalId = resolvePrincipalId((state as any).config, channel, from, { ownerLinks: false })
+                principalContext.principalId = principalId
+            }
+        } catch (error) { console.debug(`[Pipeline] owner accounts unavailable: ${error}`) }
         if (isGroupMessage) {
             requestIsGroup = true
             mu.trackGroupMessage(chatId, from, canonicalUser)
@@ -590,6 +611,36 @@ async function handleMessageInScope(
         }
         // Later steps (coalescing, onboarding, context) are optional.
         console.log(`[MultiUser] ⚠ Middleware error after authorization (non-fatal): ${err}`)
+    }
+
+    // 2.88: link a further channel to the owner without config files:
+    // owner asks for a code in a known channel, then sends „verknüpfen 123456"
+    // in the new one. Deterministic, before any log, model or session.
+    if (senderAuthorized && !isSystemAuthored && !image && !content.trimStart().startsWith('/')) {
+        try {
+            const { ownerLinkTurn } = await import('../users/owner-accounts.js')
+            const link = ownerLinkTurn({ channel, rawUserId: from, isGroup: isGroupMessage, text: content, config: (state as any).config })
+            if (link) {
+                if (link.kind === 'verbunden' && link.linkedPrincipal) {
+                    const mu = await import('../users/multi-user-middleware.js')
+                    mu.setUserPermission(from, 'owner')
+                }
+                console.log(`[Nova] [${channel}] Owner-Konto verknüpfen: ${link.kind}`)
+                await replyFn(link.reply)
+                return
+            }
+        } catch (error) { console.debug(`[Pipeline] owner link unavailable: ${error}`) }
+    }
+
+    // 2.88 Kanalwechsel-Übergabe: who keeps this exchange (the principal, and
+    // for an owner-number phone call also the owner, marked unverified).
+    let handoffTargetsForTurn: Array<{ principalId: string; channel: string; unverified?: boolean }> = []
+    if (senderAuthorized && !isSensitiveAuthCommand && !content.trimStart().startsWith('/')) {
+        try {
+            const { handoffTargets, recordHandoff } = await import('./conversation-handoff.js')
+            handoffTargetsForTurn = await handoffTargets({ channel, from, principalId, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
+            recordHandoff(handoffTargetsForTurn, 'user', content)
+        } catch (error) { console.debug(`[Pipeline] handoff unavailable: ${error}`) }
     }
 
     // ============================================
@@ -705,6 +756,33 @@ async function handleMessageInScope(
             }
         } catch (error) {
             console.debug(`[Pipeline] deterministic fast-path unavailable: ${error}`)
+        }
+    }
+
+    // 2.88 Projekte: „Kümmer dich um X und nebenbei um Y" starts parallel
+    // background projects; „Wie steht's?" lists them; later messages (any
+    // channel of the owner) are assigned to the right project. Owner only,
+    // direct conversation only, never for system messages.
+    let projectHint = ''
+    if ((!execution || desktopCancellationOnly) && !isSystemAuthored && !image && principalContext.permission === 'owner'
+        && isGroupMessage === false && !content.trimStart().startsWith('/')) {
+        try {
+            const { getProjectCoordinator } = await import('./projects-runtime.js')
+            const turn = await (await getProjectCoordinator()).handleTurn({
+                principalId, permission: principalContext.permission, isGroup: isGroupMessage, systemAuthored: isSystemAuthored,
+                channel, text: content, auftraggeber: { channel, rawId: from },
+            })
+            if (turn.reply) {
+                await replyFn(turn.reply)
+                logSession(canonicalUser, channel, 'assistant', turn.reply)
+                const { recordHandoff } = await import('./conversation-handoff.js')
+                recordHandoff(handoffTargetsForTurn, 'assistant', turn.reply)
+                traceStep('projects:handled')
+                return
+            }
+            projectHint = turn.hint || ''
+        } catch (error) {
+            console.debug(`[Pipeline] projects unavailable: ${error}`)
         }
     }
 
@@ -1355,6 +1433,16 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
     } catch (err) {
         // Observer not critical - continue without it
     }
+
+    // 2.88: what this same person said on another channel moments ago, and
+    // the project this message belongs to. Outside the observer block so an
+    // optional memory failure never drops them.
+    if (isGroupMessage === false && !isSystemAuthored && handoffTargetsForTurn[0]) try {
+        const { getChannelHandoffLog } = await import('../memory/channel-handoff.js')
+        const handoff = getChannelHandoffLog().prompt(principalId, handoffTargetsForTurn[0].channel)
+        if (handoff) systemPrompt += '\n\n' + handoff
+    } catch (error) { console.debug(`[Pipeline] handoff prompt unavailable: ${error}`) }
+    if (projectHint) systemPrompt += '\n\n' + projectHint
 
     // P8 Routine-Skills: passt die Owner-Anfrage zu einem gespeicherten Skill,
     // steht sein Plan zuerst im Prompt. Er erlaubt nichts zusätzlich: jeder
@@ -2130,6 +2218,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
             await replyFn(finalContent)
             logSession(canonicalUser, channel, 'assistant', finalContent)
+            if (handoffTargetsForTurn.length) {
+                try { (await import('./conversation-handoff.js')).recordHandoff(handoffTargetsForTurn, 'assistant', finalContent) } catch { /* best effort */ }
+            }
 
             // Conversation continuity may retain only outcomes that crossed
             // the authoritative execution/evidence gate. Model prose alone is
