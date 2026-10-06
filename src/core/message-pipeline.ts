@@ -2054,8 +2054,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // A synthesis/fact-check fallback may emit raw discovery results.
             // Delivery truth is deterministic and remains authoritative last.
             if (!isSystemMessage && principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length) {
-                const { environmentOverviewResponse } = await import('./tool-evidence-response.js')
-                finalContent = sanitizeInternalOutboundArtifacts(environmentOverviewResponse((result as any).toolExecutions || []))
+                const { environmentOverviewResponse, wantsTechnicalDetails } = await import('./tool-evidence-response.js')
+                finalContent = sanitizeInternalOutboundArtifacts(environmentOverviewResponse((result as any).toolExecutions || [], { technisch: wantsTechnicalDetails(content) }))
             }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse([...successfulExecutions, ...failedExecutions])) : screenshotFailureResponse(failedExecutions)

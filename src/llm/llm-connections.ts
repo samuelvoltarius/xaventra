@@ -370,7 +370,8 @@ export type LlmConnectionStatus = 'gefunden' | 'moeglich' | 'verbunden'
 
 export interface LlmConnection {
     id: string
-    kategorie: 'ki-modelle' | 'suche'
+    /** 2.86.1: `hilfsdienst` = speech recognition / speech output / images of own machines (Verbindungen → Hilfsdienste). */
+    kategorie: 'ki-modelle' | 'suche' | 'hilfsdienst'
     title: string
     status: LlmConnectionStatus
     datenklasse: 'lokal' | 'cloud'
@@ -396,6 +397,13 @@ export interface ListInputs {
     registry?: { endpoints: RegistryEndpointLike[] } | null
     codex?: { authenticated: boolean; available: boolean } | null
     includeMasks?: boolean
+}
+
+/** 2.86.1 (a): helper services in plain words. */
+const HILFSDIENST_TITEL: Record<string, { titel: string; wirkung: string }> = {
+    stt: { titel: 'Spracherkennung', wirkung: 'versteht Sprachnachrichten — privat, im eigenen Netz' },
+    tts: { titel: 'Sprachausgabe', wirkung: 'liest Antworten vor — privat, im eigenen Netz' },
+    image: { titel: 'Bilder erzeugen', wirkung: 'erstellt Bilder — privat, im eigenen Netz' },
 }
 
 const RUNTIME_TITLE: Record<string, string> = {
@@ -432,6 +440,18 @@ export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike |
                 status: 'gefunden', datenklasse: 'lokal', nutzbar: false,
                 wirkung: 'Installiert, läuft aber nicht — wird nicht von selbst gestartet; erst nach dem Start nutzbar.',
                 endpoint: service.endpoint, node: service.sourceNode, modelle: [],
+            })
+            continue
+        }
+        // 2.86.1 (a): helper services of own machines (speech, images) are listed too — in plain words.
+        if (!search && HILFSDIENST_TITEL[service.type]) {
+            const key = `${service.name}@${service.endpoint}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            const where = service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
+            list.push({
+                id: `lokal:${key}`, kategorie: 'hilfsdienst', title: `${HILFSDIENST_TITEL[service.type].titel} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
+                wirkung: HILFSDIENST_TITEL[service.type].wirkung, endpoint: service.endpoint, node: service.sourceNode, modelle: [...(service.models || [])],
             })
             continue
         }

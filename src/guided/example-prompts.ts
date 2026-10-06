@@ -77,9 +77,10 @@ const ERFOLG_DECKT_MS = 24 * 60 * 60_000
  * lists them). The success itself was already said, so the header only says
  * „Probier mal mit Hue:“. Once per success; the list does not offer the type again.
  */
-export function beispieleNachErfolg(art: ErfolgsArt, opts: GuidedOptions = {}): OffeneBeispiele {
+export function beispieleNachErfolg(art: ErfolgsArt, opts: GuidedOptions = {}, kopf?: string): OffeneBeispiele {
     const titel = ERFOLG_TITEL[art]
-    const offer: OffeneBeispiele = { key: `i:erfolg:${art}`, titel, saetze: [...BEISPIELSAETZE[art]], at: new Date(nowOf(opts)).toISOString(), kopf: `Probier mal mit ${titel}:`, typ: art }
+    // 2.86.1: `kopf` = the success sentence + „Probier mal:“ when it was not shown on its own.
+    const offer: OffeneBeispiele = { key: `i:erfolg:${art}`, titel, saetze: [...BEISPIELSAETZE[art]], at: new Date(nowOf(opts)).toISOString(), kopf: (kopf || `Probier mal mit ${titel}:`).slice(0, 300), typ: art }
     updateGuidedState(next => {
         next.beispieleOffen = [offer, ...next.beispieleOffen.filter(item => item.key !== offer.key)].slice(0, 10)
     }, opts)

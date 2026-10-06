@@ -182,7 +182,9 @@ describe('Eine Liste: gefunden / möglich / verbunden', () => {
         const registry = { endpoints: [{ model: 'qwen3-vl-32b', baseUrl: 'http://localhost:8000', capabilities: [{ capability: 'chat' }, { capability: 'tools' }] }] }
         const list = buildLlmConnectionList({ services, registry }, null, {}, {})
         const local = list.filter(item => item.status === 'gefunden')
-        expect(local.map(item => item.id)).toEqual(['lokal:vllm@http://localhost:8000', 'lokal:ollama@http://192.168.50.20:11434', 'lokal:searxng@http://192.168.50.30:8888'])
+        // 2.86.1 (a): the speech output of this machine is listed as a helper service, in plain words
+        expect(local.map(item => item.id)).toEqual(['lokal:vllm@http://localhost:8000', 'lokal:ollama@http://192.168.50.20:11434', 'lokal:searxng@http://192.168.50.30:8888', 'lokal:piper@http://localhost:5030'])
+        expect(local[3]).toMatchObject({ kategorie: 'hilfsdienst', title: 'Sprachausgabe auf diesem Rechner' })
         expect(local.every(item => item.datenklasse === 'lokal' && item.nutzbar)).toBe(true)
         expect(local[0].faehigkeiten).toEqual({ belegt: ['chat', 'tools'], vermutet: ['vision'] })
         expect(local[1]).toMatchObject({ title: 'Ollama im eigenen Netz (192.168.50.20)', faehigkeiten: { belegt: [], vermutet: ['chat', 'embedding'] } })
@@ -212,7 +214,7 @@ describe('Eine Liste: gefunden / möglich / verbunden', () => {
     it('listLlmConnections teilt in die drei Listen', async () => {
         const box = sandbox()
         const result = await listLlmConnections({ services, registry: null, codex: null, store: box.store, statusFile: box.statusFile, env: { XAI_API_KEY: OTHER } })
-        expect(result.gefunden).toHaveLength(3)
+        expect(result.gefunden).toHaveLength(4)
         expect(result.verbunden.map(item => item.id)).toEqual(['cloud:xai'])
         expect(result.moeglich).toHaveLength(LLM_PROVIDERS.length - 1)
         expect(JSON.stringify(result)).not.toContain(OTHER)

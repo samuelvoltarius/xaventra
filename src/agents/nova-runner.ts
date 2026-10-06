@@ -29,7 +29,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse, environmentOverviewResponse } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, environmentOverviewResponse, wantsTechnicalDetails } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
 import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
@@ -1628,7 +1628,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         if (abortSignal?.aborted) throw new Error('AbortError: inventory dispatch cancelled')
                         await executeSdkTool({ ...call, id: `${kernel.contract.id}:overview:${index}` })
                     }
-                    finalContent = environmentOverviewResponse(toolExecutions)
+                    finalContent = environmentOverviewResponse(toolExecutions, { technisch: wantsTechnicalDetails(content) })
                 } else finalContent = await runGovernedSdkLoop({
                     messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
                     maxTurns, signal: abortSignal, execute: executeSdkTool,
