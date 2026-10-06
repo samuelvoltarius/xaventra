@@ -5079,8 +5079,20 @@
     {
       "module": "src/mesh/mesh-brain.ts",
       "imports": [
-        "./node-intelligence.js",
+        "../core/data-root.js",
+        "./model-recommender.js",
+        "./node-strengths.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/mesh/mesh-git.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
         "node:child_process",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]
@@ -5118,6 +5130,7 @@
       "module": "src/mesh/mesh-policy.ts",
       "imports": [
         "../core/data-root.js",
+        "./mesh-git.js",
         "./mesh-identity.js",
         "./node-capture.js",
         "./node-exchange.js",
@@ -5147,10 +5160,15 @@
       ]
     },
     {
+      "module": "src/mesh/mesh-repo-task.ts",
+      "imports": [
+        "./mesh-git.js"
+      ]
+    },
+    {
       "module": "src/mesh/mesh-router.ts",
       "imports": [
-        "node:child_process",
-        "node:net"
+        "./node-strengths.js"
       ]
     },
     {
@@ -5184,6 +5202,7 @@
         "./fence-highwater.js",
         "./fence.js",
         "./local-mesh-transport.js",
+        "./mesh-git.js",
         "./mesh-identity.js",
         "./mesh-policy.js",
         "./mesh-registry.js",
@@ -5244,6 +5263,12 @@
       "imports": [
         "node:child_process",
         "node:net"
+      ]
+    },
+    {
+      "module": "src/mesh/node-strengths.ts",
+      "imports": [
+        "../core/node-profile.js"
       ]
     },
     {
