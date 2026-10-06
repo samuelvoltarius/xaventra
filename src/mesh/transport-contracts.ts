@@ -9,6 +9,7 @@ export type MeshEnvelopeKind =
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
     | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
+    | 'succession.request' | 'succession.response'
 
 export type MeshRole = 'system' | 'owner' | 'admin' | 'worker' | 'observer'
 
@@ -185,5 +186,6 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
         'exchange.request', 'exchange.response',
         'capture.request', 'capture.response',
         'run.checkpoint', 'run.result', 'run.cancel',
+        'succession.request', 'succession.response',
     ]).has(value as MeshEnvelopeKind)
 }

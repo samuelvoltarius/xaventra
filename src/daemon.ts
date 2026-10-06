@@ -378,6 +378,16 @@ async function startDaemon() {
         console.log(`[Nova] Mesh Transport early startup failed: ${err}`)
     }
 
+    // 2.88 Main succession (opt-in: mesh.succession.enabled + mainNodes). Must
+    // be active before channels start so a takeover restores the replicated
+    // state and opens the secret vault before Telegram connects.
+    try {
+        const { startSuccessionRuntime } = await import('./mesh/succession-runtime.js')
+        await startSuccessionRuntime()
+    } catch (err) {
+        console.log(`[Nova] Main-Nachfolge nicht verfügbar: ${err}`)
+    }
+
     // Load cold storage files into state for memory pipeline
     try {
         const coldFiles: Record<string, string> = {}

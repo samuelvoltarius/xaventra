@@ -38,9 +38,10 @@ export function getFenceHighWater(service: string): number {
     return load()[service] || 0
 }
 
-/** Parse `service:epoch:node` (Supabase) or `service:q<epoch>:node` (witness). */
+/** Parse `service:epoch:node` (Supabase), `service:q<epoch>:node` (witness) or
+ * `service:e<epoch>:node` (owner-confirmed emergency Main, 2.88). */
 export function parseFenceToken(token: string): { service: string; epoch: number; nodeId: string } | null {
-    const match = /^(.+):q?(\d+):([^:]+)$/.exec(String(token || ''))
+    const match = /^(.+):[qe]?(\d+):([^:]+)$/.exec(String(token || ''))
     if (!match) return null
     const epoch = Number(match[2])
     return Number.isSafeInteger(epoch) && epoch > 0 ? { service: match[1], epoch, nodeId: match[3] } : null

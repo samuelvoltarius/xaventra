@@ -5,6 +5,7 @@ import { isHaStateAvailable } from '../core/ha-state.js'
 import { discoverNodes, getMeshMainAuthority, type MeshMainAuthority, type MeshNode } from './mesh-registry.js'
 import { getLeaseProtocol, getPreferredTakeoverNode, readCoordinatorFencingStatus, type CoordinatorFencingStatus } from './leader-election.js'
 import { getFenceStatus, getFencingMode, type FencingMode } from './fence.js'
+import { successionStatusText } from './succession-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
 
 
@@ -103,6 +104,7 @@ export function formatFailoverReadiness(report: FailoverReadiness): string {
         `Main: ${report.main || 'nicht verifiziert'} | Standby: ${report.standby || 'keiner'} | RTO-Ziel: ${Math.round(report.estimatedRtoMs / 1000)}s`,
         ...report.gates.map(gate => `${gate.ok ? '✅' : '❌'} ${gate.id}: ${gate.evidence}`),
         fencingSummary(),
+        ...(successionStatusText() ? [`🧭 Nachfolge: ${successionStatusText()}`] : []),
     ].join('\n')
 }
 

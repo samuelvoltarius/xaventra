@@ -12,6 +12,7 @@
  * - Dead node cleanup (no heartbeat > 5 min = offline)
  */
 
+import { isNodeMainEligible } from './succession-config.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -1371,7 +1372,8 @@ export async function failTask(taskId: string, error: string): Promise<void> {
 
 function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, software: NodeSoftware } {
     const caps: string[] = ['chat', 'tools', 'memory']
-    if (String(process.env.NOVA_MAIN_ELIGIBLE || 'true').toLowerCase() === 'false') {
+    // Owner decision (2.88): with succession on, only explicitly allowed nodes are main-eligible.
+    if (!isNodeMainEligible()) {
         caps.push('worker-only', 'main-ineligible')
     } else {
         caps.push('main-eligible')
