@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ipToInt, ownSubnets, scanHosts, scanTargetAllowed } from './net-scope.js'
-import { DISCOVERY_PORTS, ProbeLimiter, discoverDevices, identifyHttp, tailnetPeerAddresses } from './discovery.js'
+import { DISCOVERY_PORTS, ProbeLimiter, discoverDevices, identifyHttp, identifyTls, tailnetPeerAddresses } from './discovery.js'
 
 const lan = { eth0: [{ address: '192.168.1.20', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }
 
@@ -79,6 +79,21 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
         expect(report.rejected).toContainEqual(expect.objectContaining({ host: '8.8.8.8' }))
         expect(tailnetPeerAddresses({ Peer: { p: { TailscaleIPs: ['100.73.189.71', '8.8.8.8', 'fd7a::1'], DNSName: 'private' } } })).toEqual(['100.73.189.71'])
     })
+    it('2.88: erkennt Proxmox an Port 8006 nur am Zertifikat (Handshake, kein Login)', async () => {
+        const tls: string[] = []
+        const report = await discoverDevices({ deadlineMs: 2000, ratePerSec: 500, concurrency: 2, maxHosts: 3, mdns: false, tailnetHosts: [] }, {
+            interfaces: lan,
+            tcpProbe: async (host, port) => port === 8006 && (host === '192.168.1.1' || host === '192.168.1.2'),
+            httpProbe: async () => null,
+            tlsProbe: async (host, port) => { tls.push(`${host}:${port}`); return host === '192.168.1.1' ? { issuer: 'PVE Cluster Manager CA', subject: 'pve1' } : { issuer: 'Irgendwer', subject: 'nas' } },
+        })
+        expect(tls.sort()).toEqual(['192.168.1.1:8006', '192.168.1.2:8006'])
+        expect(report.candidates.find(item => item.host === '192.168.1.1')).toMatchObject({ type: 'proxmox', port: 8006, via: 'tcp' })
+        expect(report.candidates.find(item => item.host === '192.168.1.2')).toMatchObject({ type: 'networkservice', port: 8006 })
+        expect(identifyTls(8006, { issuer: 'Proxmox Virtual Environment' })).toBe('proxmox')
+        expect(identifyTls(443, { issuer: 'PVE Cluster Manager CA' })).toBeNull()
+    })
+
     it('behauptet bei einem offenen MQTT-Port keinen Bambu-Drucker und meldet unbekannte Dienste', async () => {
         const report = await discoverDevices({ deadlineMs: 1000, ratePerSec: 200, concurrency: 1, maxHosts: 1, mdns: false, tailnetHosts: [] }, {
             interfaces: lan, tcpProbe: async (_host, port) => port === 8883 || port === 80, httpProbe: async () => ({ status: 200, body: '<title>router</title>' }),

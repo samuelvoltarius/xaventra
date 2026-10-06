@@ -128,6 +128,7 @@ const DEVICE_TITLE: Record<string, { title: string; wirkung: string; kategorie: 
     immich: { title: 'Immich', wirkung: 'kann dann Fotos und Alben suchen', kategorie: 'dateien' },
     jellyfin: { title: 'Jellyfin', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'weitere' },
     nextcloud: { title: 'Nextcloud', wirkung: 'gefunden; ein geprüfter Anschluss fehlt noch (Verzeichnis durchsuchen)', kategorie: 'dateien' },
+    proxmox: { title: 'Proxmox VE', wirkung: 'kann dann deine VMs sehen und im Pool xaventra steuern — ein Token unter „Proxmox“ genügt', kategorie: 'infrastruktur' },
     networkservice: { title: 'Netzwerkdienst', wirkung: 'erreichbar; Typ und Steuerbarkeit noch ungeprüft', kategorie: 'geraete' },
     networkdevice: { title: 'LAN-Gerät', wirkung: 'Nachbartabelle; Online-Status und Steuerbarkeit ungeprüft', kategorie: 'geraete' },
 }
@@ -245,7 +246,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     for (const item of gefunden) {
         if (item.connectorId || item.verbunden || !item.id.startsWith('geraet:')) continue
         const type = item.id.split(':')[1]
-        if (!DEVICE_TITLE[type] || ['networkservice', 'networkdevice', 'moonraker', 'octoprint', 'prusalink', 'bambu', 'homeassistant'].includes(type)) continue
+        if (!DEVICE_TITLE[type] || ['networkservice', 'networkdevice', 'moonraker', 'octoprint', 'prusalink', 'bambu', 'homeassistant', 'proxmox'].includes(type)) continue
         const vorschlaege = vorschlaegeFuer(DEVICE_TITLE[type].title, { cachePath: deps.directoryCachePath, limit: 3, catalog })
             .filter(entry => entry.stufe !== 'geprueft' && entry.verbindbar)
         if (vorschlaege.length) item.verzeichnis = vorschlaege.map(({ pruefung: _p, ...entry }) => entry)
