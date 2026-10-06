@@ -45,9 +45,13 @@ const NAV_MAIN = [
   ['chat', 'Unterhaltung', 'message'],
   // 2.86 Paket O: mit ihr sprechen, ohne Sprechtaste (eigene Datei anruf.js).
   ['anruf', 'Anrufen', 'phone'],
+  // 2.88 „Sehen und lenken“ (eigene Datei sehen.js): was sie tut, ihr Bildschirm, deine Regeln.
+  ['aktivitaet', 'Aktivität', 'activity'],
+  ['computer', 'Ihr Computer', 'monitor'],
   ['arbeit', 'Arbeit', 'briefcase'],
   ['system', 'System', 'server'],
   ['gedaechtnis', 'Gedächtnis', 'brain'],
+  ['regeln', 'Regeln', 'scale'],
   ['verbindungen', 'Verbindungen', 'plug'],
   // Owner-Entscheidung 02.10.: Werkzeugkasten in die Hauptleiste (Paket D, eigene Datei werkzeugkasten.js).
   ['werkzeugkasten', 'Werkzeug\u00ADkasten', 'wrench'], // weiches Trennzeichen: passt in die schmale Leiste
@@ -368,10 +372,25 @@ function pageFor(section) {
   if (section === 'security') return subPage('security', securityView())
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
+  if (['aktivitaet', 'computer', 'regeln'].includes(section)) return window.XaventraSehen ? window.XaventraSehen.view(section, sehenHelpers()) : loadingBlock('Wird geladen')
   if (section === 'anruf') return window.XaventraAnruf ? window.XaventraAnruf.view(anrufHelpers()) : loadingBlock('Anrufen')
   if (section === 'werkzeugkasten') return window.Werkzeugkasten ? `<div class="page"><div class="page-inner">${window.Werkzeugkasten.view(werkzeugkastenHelpers())}</div></div>` : loadingBlock('Werkzeugkasten')
   if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
   return settingsView()
+}
+
+// Sehen und lenken (2.88): eigene Datei sehen.js; hier nur die Hilfsfunktionen.
+// Neu zeichnen nie, während jemand in ein Feld dieser Seiten tippt.
+function sehenHelpers() {
+  return {
+    api, esc, attr, icon, toast, fail, errorText, navigate, openDesktop,
+    rerender: () => {
+      if (!['aktivitaet', 'computer', 'regeln'].includes(state.section) || document.querySelector('.modal')) return
+      const active = document.activeElement
+      if (active && active.tagName === 'INPUT' && active.closest('.page') && active.value) return
+      render()
+    },
+  }
 }
 
 // Anrufen (2.86 Paket O): eigene Datei anruf.js; hier nur die Hilfsfunktionen.
@@ -402,6 +421,7 @@ function render() {
   if (state.section === 'start') window.XaventraOnboarding?.bind(onboardingContext())
   if (state.section === 'verbindungen') window.XaventraConnections?.mount(connectionHelpers())
   if (state.section === 'heute') window.XaventraCockpit?.mount(cockpitHelpers())
+  window.XaventraSehen?.mount(state.section, sehenHelpers())
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
   if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')
@@ -488,6 +508,9 @@ function startRefresh() {
     if (document.visibilityState === 'hidden' || !state.bootstrap) return
     void ensureView('heute')
     if (['arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
+    // 2.88: Aktivität und Bildschirme bleiben aktuell, solange die Seite offen ist.
+    if (state.section === 'aktivitaet') void window.XaventraSehen?.load(sehenHelpers(), 'aktivitaet')
+    if (state.section === 'computer') void window.XaventraSehen?.load(sehenHelpers(), 'bildschirme')
   }, 20_000)
   void ensureView('heute')
 }
