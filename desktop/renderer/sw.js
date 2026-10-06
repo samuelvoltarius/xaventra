@@ -4,11 +4,11 @@
 // mit Token und alles außer GET auf dem eigenen Ursprung fasst dieser Worker nie
 // an – die gehen immer direkt ans Netz und landen in keinem Cache.
 'use strict'
-// v2 (2.86): auch das Cockpit „Heute“ und der Anruf-Worklet; dieselbe Liste wie
+// v3 (2.87): dazu telefon.js (Verbindungen → Telefon); dieselbe Liste wie
 // DASHBOARD_UI_FILES in src/dev/copy-dashboard-assets.ts (ohne sw.js selbst, Test pwa.test.ts).
-const CACHE = 'xaventra-ui-v2'
+const CACHE = 'xaventra-ui-v3'
 const STATIC = Object.freeze([
-  '/', '/index.html', '/bridge.js', '/pwa.js', '/werkzeugkasten.js', '/onboarding.js', '/connections.js', '/cockpit.js', '/anruf.js', '/anruf-worklet.js', '/app.js',
+  '/', '/index.html', '/bridge.js', '/pwa.js', '/werkzeugkasten.js', '/onboarding.js', '/telefon.js', '/connections.js', '/cockpit.js', '/anruf.js', '/anruf-worklet.js', '/app.js',
   '/styles.css', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png',
 ])
 

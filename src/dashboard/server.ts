@@ -38,6 +38,8 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'werkzeugkasten.js': 'text/javascript; charset=utf-8',
     'onboarding.js': 'text/javascript; charset=utf-8',
     'connections.js': 'text/javascript; charset=utf-8',
+    // 2.87 Paket P: Verbindungen → Telefon.
+    'telefon.js': 'text/javascript; charset=utf-8',
     'cockpit.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
     // 2.86 Paket O: Anrufen + installierbare Web-App (Handy über das Tailnet).
@@ -185,6 +187,8 @@ export async function startDashboard(port: number = 3011, host: string = '127.0.
     dashboardPort = Number(new URL(dashboardUrl).port)
     // 2.86 Paket N: a login return address another browser can reach (only when the listener is not loopback).
     try { const { noteDashboardAddress } = await import('../connections/connect-flow.js'); noteDashboardAddress(dashboardUrl) } catch { /* optional */ }
+    // 2.87 Paket P: Telefon nur, wenn der Owner es eingerichtet hat (sonst lauscht nichts).
+    void import('../voice/telefon-runtime.js').then(({ applyTelefonConfig }) => applyTelefonConfig(() => novaMessageHandler)).catch(() => undefined)
     console.log(`\n✨ Xaventra im Browser: ${dashboardUrl}  (Desktop-Token in den Einstellungen der Seite eintragen)\n`)
     return dashboardUrl
 }
@@ -192,6 +196,7 @@ export async function startDashboard(port: number = 3011, host: string = '127.0.
 export async function stopDashboard(): Promise<void> {
     if (!dashboardStarted) return
     server.closeAllConnections?.()
+    try { await (await import('../voice/telefon-runtime.js')).stopTelefon() } catch { /* optional */ }
     await new Promise<void>((resolveStop, reject) => server.close(error => error ? reject(error) : resolveStop()))
     dashboardStarted = false
     console.log(`[Dashboard] Stopped port ${dashboardPort} after leadership loss`)

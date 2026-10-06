@@ -3665,6 +3665,13 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             return handleWaechterCommand(principalContext)
         }
 
+        // 2.87 Paket P: Telefon-Zugang als Telegram-Dialog (owner only, see COMMAND_MINIMUM_ROLE default).
+        case 'telefon': {
+            const { handleTelefonCommand } = await import('../voice/telefon-command.js')
+            const { telefonLauscht } = await import('../voice/telefon-runtime.js')
+            return handleTelefonCommand(args, { lauscht: telefonLauscht })
+        }
+
         // Phase 2 Wahrnehmen: Geräte/Konten/Ruhezeiten (owner only, see COMMAND_MINIMUM_ROLE default)
         case 'geraete':
         case 'geräte': {

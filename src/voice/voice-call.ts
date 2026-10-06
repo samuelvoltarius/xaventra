@@ -29,9 +29,22 @@ export type VoiceCallEvent =
     | { type: 'cancelled'; turn: number }
     | { type: 'notice'; turn: number; text: string }
 
+/**
+ * 2.87 Paket P: die Pipeline meldet unterwegs, was entsteht. Alles optional —
+ * eine Pipeline ohne Strom liefert wie bisher nur den fertigen Text.
+ */
+export interface VoiceAnswerStream {
+    /** Sichtbare Textstücke der laufenden Antwort. */
+    onTextDelta(text: string): void
+    /** Eine Werkzeugrunde beginnt (kurzer Füllsatz statt Stille). */
+    onToolRound(names: string[]): void
+    /** Ein Werkzeug ist gelaufen — bei Abbruch ehrlich nennen, nicht rückgängig machen. */
+    onToolDone?(name: string, ok: boolean): void
+}
+
 export interface VoiceCallDeps {
     /** Antwort der Pipeline auf den gesprochenen Satz. Muss das Signal beachten (Dazwischenreden). */
-    answer: (text: string, signal: AbortSignal) => Promise<string>
+    answer: (text: string, signal: AbortSignal, stream?: VoiceAnswerStream) => Promise<string>
     /** Eine Phrase sprechen (Sprachdienst). */
     speak: (text: string, voice: VoiceName, signal: AbortSignal) => Promise<SpokenAudio>
     emit: (event: VoiceCallEvent) => void
@@ -44,6 +57,33 @@ export interface VoiceCallDeps {
 
 /** Phrasen ab dieser Länge werden zusammen gesprochen (Voice-Lab: 120 Zeichen). */
 const SPEAK_BATCH_CHARS = 120
+/** Was während einer Werkzeugrunde gesagt wird (einmal pro Zug). */
+export const TOOL_FILLER = 'Ich schau kurz nach.'
+
+function words(text: string): string[] { return String(text || '').toLowerCase().match(/[a-z0-9äöüß]+/g) || [] }
+
+/**
+ * Was von der fertigen Antwort noch nicht gesprochen wurde. null = die fertige
+ * Antwort beginnt NICHT mit dem Gesprochenen (die Pipeline hat korrigiert).
+ */
+export function unspokenRest(spoken: string, final: string): string | null {
+    const said = words(spoken)
+    const tokens = cleanForSpeech(final).split(' ').filter(Boolean)
+    let index = 0
+    let consumed = 0
+    while (consumed < said.length && index < tokens.length) {
+        for (const word of words(tokens[index])) {
+            if (consumed >= said.length) return null
+            if (word !== said[consumed]) return null
+            consumed += 1
+        }
+        index += 1
+    }
+    if (consumed < said.length) return null
+    return tokens.slice(index).join(' ')
+}
+
+const toolLabel = (name: string) => String(name || '').replace(/[_-]+/g, ' ').trim()
 
 /** Voice-Lab `pop_phrase`: bis zum Satzzeichen, sonst bei langem Puffer am Leerzeichen 45–90. */
 export function popPhrase(buffer: string, force = false): { phrase: string | null; rest: string } {
@@ -143,6 +183,10 @@ export class VoiceCallSession {
     private assistantReference = ''
     private speechAnnounced = false
     private stopped = false
+    /** Werkzeuge, die in diesem Zug schon gelaufen sind (Wirkung bleibt bei Abbruch). */
+    private executedTools: string[] = []
+    /** Ehrlicher Satz für den nächsten Zug nach einem Abbruch. */
+    private carryNote = ''
     private voice: VoiceName
     /** Bis wann der Browser voraussichtlich noch spricht (Voice-Lab `assistant_audio_until`). */
     private audioUntil = 0
@@ -206,36 +250,95 @@ export class VoiceCallSession {
 
     private async respond(turn: number, transcript: string, controller: AbortController): Promise<void> {
         const signal = controller.signal
+        const speaker = new TurnSpeaker(this, turn, signal)
+        this.executedTools = []
+        let pending = ''
+        let streamed = false
+        let fillerSaid = false
+        const carry = this.carryNote
+        this.carryNote = ''
+        const stream: VoiceAnswerStream = {
+            onTextDelta: text => {
+                if (signal.aborted || this.stopped || !text) return
+                if (!streamed && carry) speaker.say(carry, true)
+                streamed = true
+                pending += text
+                for (;;) {
+                    const { phrase, rest } = popPhrase(pending)
+                    if (!phrase) break
+                    pending = rest
+                    speaker.say(cleanForSpeech(phrase))
+                }
+            },
+            onToolRound: () => {
+                if (signal.aborted || this.stopped) return
+                // Halbe Sätze vor einer Werkzeugrunde werden nicht gesprochen.
+                pending = ''
+                if (fillerSaid) return
+                fillerSaid = true
+                speaker.say(TOOL_FILLER, true)
+            },
+            onToolDone: (name, ok) => {
+                if (!ok || !name) return
+                if (signal.aborted) {
+                    // Nach dem Abbruch fertig geworden: Wirkung bleibt, also beim nächsten Mal ehrlich nennen.
+                    const done = `Nach dem Abbruch ist noch fertig geworden: ${toolLabel(name)} – das bleibt so.`
+                    this.carryNote = `${this.carryNote || 'Übrigens:'} ${done}`.trim()
+                    this.emit({ type: 'notice', turn, text: done })
+                    return
+                }
+                if (!this.executedTools.includes(name)) this.executedTools.push(name)
+            },
+        }
         try {
-            const answer = await this.deps.answer(transcript, signal)
+            const answer = await this.deps.answer(transcript, signal, stream)
             if (signal.aborted || this.stopped) return
             this.emit({ type: 'answer', turn, text: answer })
-            let sequence = 0
-            for (const chunk of speakableChunks(limitSpoken(answer, this.deps.maxSpokenChars))) {
-                if (signal.aborted || this.stopped) return
-                this.noteAssistantText(chunk)
-                const spoken = await this.deps.speak(chunk, this.voice, signal)
-                if (signal.aborted || this.stopped) return
-                sequence += 1
-                this.audioUntil = Math.max(this.now(), this.audioUntil) + spoken.durationSec * 1000 + 500
-                this.emit({ type: 'audio', turn, sequence, text: chunk, mime: spoken.mime, durationSec: spoken.durationSec, data: spoken.audio.toString('base64') })
+            if (!streamed) {
+                for (const chunk of speakableChunks(limitSpoken(`${carry} ${answer}`.trim(), this.deps.maxSpokenChars))) speaker.say(chunk)
+            } else {
+                const rest = unspokenRest(speaker.answerText, answer)
+                if (rest === null) speaker.say(`Korrektur: ${limitSpoken(answer, this.deps.maxSpokenChars)}`, true)
+                else if (rest) for (const chunk of speakableChunks(rest)) speaker.say(chunk)
             }
+            await speaker.finished()
+            if (signal.aborted || this.stopped) return
             this.emit({ type: 'done', turn })
         } catch {
             if (!signal.aborted) this.emit({ type: 'notice', turn, text: 'Das hat gerade nicht geklappt. Sag es bitte noch einmal.' })
         }
     }
 
-    /** Laufende Antwort abbrechen (Barge-in). */
+    /** @internal für TurnSpeaker: eine Phrase sprechen und als Audio melden. */
+    async speakOne(turn: number, sequence: number, text: string, signal: AbortSignal): Promise<boolean> {
+        this.noteAssistantText(text)
+        const spoken = await this.deps.speak(text, this.voice, signal)
+        if (signal.aborted || this.stopped) return false
+        this.audioUntil = Math.max(this.now(), this.audioUntil) + spoken.durationSec * 1000 + 500
+        this.emit({ type: 'audio', turn, sequence, text, mime: spoken.mime, durationSec: spoken.durationSec, data: spoken.audio.toString('base64') })
+        return true
+    }
+
+    /** @internal Obergrenze der gesprochenen Zeichen pro Zug. */
+    get spokenLimit(): number | undefined { return this.deps.maxSpokenChars }
+
+    /** Laufende Antwort abbrechen (Barge-in). Schon Erledigtes bleibt — und wird ehrlich genannt. */
     cancel(notify = true): void {
         const controller = this.controller
         const playing = this.now() < this.audioUntil
         this.audioUntil = 0
         if (!controller && !playing) return
+        const wasWorking = Boolean(controller && !controller.signal.aborted)
         controller?.abort()
         this.controller = null
         this.assistantReference = ''
         if (notify) this.emit({ type: 'cancelled', turn: this.turn })
+        if (wasWorking && this.executedTools.length) {
+            const done = `Schon erledigt war: ${this.executedTools.map(toolLabel).join(', ')} – das bleibt so.`
+            this.carryNote = `Übrigens: ${done}`
+            this.emit({ type: 'notice', turn: this.turn, text: `Ich habe aufgehört. ${done}` })
+        }
+        this.executedTools = []
     }
 
     /** Wartet, bis die aktuelle Antwort fertig oder abgebrochen ist (Tests, sauberes Beenden). */
@@ -244,5 +347,51 @@ export class VoiceCallSession {
     stop(): void {
         this.cancel(false)
         this.stopped = true
+    }
+}
+
+/**
+ * Spricht die Stücke eines Zugs der Reihe nach. Was wartet, während gerade
+ * gesprochen wird, geht zusammen raus (weniger Pausen, Voice-Lab ≈120 Zeichen).
+ * Das erste Stück geht sofort allein raus — das ist das „erste Audio“.
+ */
+class TurnSpeaker {
+    private queue: string[] = []
+    private running: Promise<void> | null = null
+    private failure: unknown = null
+    private sequence = 0
+    private chars = 0
+    private limited = false
+    /** Alles, was als Antworttext (nicht Füll-/Hinweissatz) an die Sprache ging. */
+    answerText = ''
+
+    constructor(private readonly session: VoiceCallSession, private readonly turn: number, private readonly signal: AbortSignal) {}
+
+    say(text: string, extra = false): void {
+        const clean = String(text || '').trim()
+        if (!clean || this.signal.aborted || this.limited) return
+        const max = this.session.spokenLimit
+        if (max && !extra && this.chars + clean.length > max) {
+            this.limited = true
+            this.queue.push('Den Rest siehst du im Text.')
+        } else {
+            if (!extra) { this.chars += clean.length; this.answerText = `${this.answerText} ${clean}`.trim() }
+            this.queue.push(clean)
+        }
+        if (!this.running) this.running = this.drain().catch(error => { this.failure = error }).finally(() => { this.running = null })
+    }
+
+    private async drain(): Promise<void> {
+        while (this.queue.length && !this.signal.aborted) {
+            let batch = this.queue.shift()!
+            while (this.sequence > 0 && this.queue.length && batch.length < SPEAK_BATCH_CHARS) batch = `${batch} ${this.queue.shift()}`
+            this.sequence += 1
+            if (!(await this.session.speakOne(this.turn, this.sequence, batch, this.signal))) return
+        }
+    }
+
+    async finished(): Promise<void> {
+        while (this.running) await this.running
+        if (this.failure && !this.signal.aborted) throw this.failure
     }
 }

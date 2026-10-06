@@ -46,6 +46,7 @@ import { collectWerkzeugkasten, werkzeugkastenEntfernen, werkzeugkastenInstallie
 import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes } from '../onboarding/onboarding-api.js'
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
+import { registerTelefonApi } from './telefon-api.js'
 import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
 import { registerGuidedApi } from '../guided/guided-api.js'
@@ -597,6 +598,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     // Docks B → A (Erster Start), C → A (KI-Modelle, Hilfsdienste), F ↔ A (one need rule).
     registerConnectionDocks()
     registerConnectionsApi(app, { ownerOnly })
+    // 2.87 Paket P: Verbindungen → Telefon (SIP-Zugang, Telefonanlage), owner only.
+    registerTelefonApi(app, { ownerOnly, resolveHandler: resolveMessageHandler })
     // 2.86 Paket M „Geführt“: Einrichtungs-Checkliste, Beispielsätze, Tipp, „Ich komm nicht weiter“.
     registerGuidedApi(app, { ownerOnly, owner: async req => `desktop:${(await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req))}` })
     registerSmartAccessApi(app, { ownerOnly, authoritative: desktopControlPlaneAuthoritative, root: getNovaDataDir,

@@ -43,6 +43,7 @@ import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
+import { noteVoiceToolDone, speakableClient } from '../voice/voice-turn-stream.js'
 
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
@@ -785,15 +786,18 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
             reasoningEffort,
         }
+        // 2.87 Paket P: in einem Sprach-Zug sind nur diese Runde und die Folgerunden
+        // nach Werkzeugen sprechbar (wortweise an den Phrasenpuffer); sonst unverändert.
+        const speakingClient = speakableClient(llmClient)
         let response = forcedToolResponse || await (abortSignal
             ? Promise.race([
-                withTimeout(llmClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call'),
+                withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call'),
                 new Promise<never>((_, reject) => {
                     if (abortSignal.aborted) { reject(new Error('AbortError: hard cancel')) }
                     else { abortSignal.addEventListener('abort', () => reject(new Error('AbortError: hard cancel')), { once: true }) }
                 }),
             ])
-            : withTimeout(llmClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call')
+            : withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call')
         ) as any
         if (reasoningEffort !== 'none' && isReasoningOnlyResponse(response)) {
             console.warn(`[Nova Agent] Reasoning-only response (${response.finishReason || 'unknown'}); retrying once without reasoning`)
@@ -1154,6 +1158,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         )
                         const _resultStr = typeof result === 'string' ? result : JSON.stringify(result)
                         _traceRecorder.toolEnd(_traceId, true, _resultStr.length)
+                        noteVoiceToolDone(call.name, !(result && typeof result === 'object' && (result as any).success === false))
                         try { const { getSelfCheckManager } = await import('../layers/L15-self-check.js'); getSelfCheckManager().toolCallFinished() } catch { }
                         toolsExecuted.push(call.name)
 
@@ -1633,7 +1638,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
                     maxTurns, signal: abortSignal, execute: executeSdkTool,
                     modelOptions: {
-                        client: llmClient, timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
+                        client: speakableClient(llmClient), timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
                         maxTokens: kernel.cognition.executionBudget.maxOutputTokens,
                         beforeCall: async (sdkMessages, sdkTools) => {
                             if (policyBlocked) throw new ToolAuthorizationError('Run stopped at policy gate')

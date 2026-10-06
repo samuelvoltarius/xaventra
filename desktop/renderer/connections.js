@@ -106,7 +106,7 @@
       <div class="head-actions">${local.at ? `<span class="stamp">Stand ${h.esc(new Date(local.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }))}</span>` : ''}<button class="icon-button" data-conn-refresh title="Aktualisieren" aria-label="Aktualisieren">${h.icon('refresh')}</button></div></header>`
     if (local.error && !local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body"><div class="empty-note">${h.icon('alert')}<span>${h.esc(local.error)}</span></div></div></div></div></div>`
     if (!local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div></div></div></div>`
-    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${smartSection(h)}${connectedSection(h, local.data)}${possibleSection(h, local.data)}
+    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${smartSection(h)}${connectedSection(h, local.data)}${window.XaventraTelefon ? window.XaventraTelefon.section(h) : ''}${possibleSection(h, local.data)}
       <p class="section-note">Kommt die Anmeldung auf einem anderen Gerät zurück? <button class="link-button" data-conn-paste>Rückkehr-Adresse einfügen</button></p></div></div>`
   }
 
@@ -329,6 +329,7 @@
       try { const result = await h.api.post(`${PATH}/rueckkehr`, { adresse }); h.toast(result.message) } catch (error) { h.fail(error) }
       await load(h, true)
     })
+    window.XaventraTelefon?.mount(h)
     void load(h)
   }
 

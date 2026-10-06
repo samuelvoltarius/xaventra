@@ -109,7 +109,8 @@ describe('Anruf-Brücke Browser ⇄ Sprachdienst ⇄ Pipeline', () => {
         await vi.waitFor(() => expect(browser.sent.map(raw => JSON.parse(raw).type)).toContain('done'))
         const types = browser.sent.map(raw => JSON.parse(raw).type)
         expect(types).toEqual(expect.arrayContaining(['ready', 'speech_start', 'partial', 'final', 'answer', 'audio', 'done']))
-        expect(answer).toHaveBeenCalledWith('wie spät ist es', expect.any(AbortSignal))
+        // 2.87 Paket P: dritter Parameter = Strom für wortweises Sprechen.
+        expect(answer).toHaveBeenCalledWith('wie spät ist es', expect.any(AbortSignal), expect.objectContaining({ onTextDelta: expect.any(Function), onToolRound: expect.any(Function) }))
         expect(speak).toHaveBeenCalledWith('Du hast gesagt: wie spät ist es.', 'female', expect.any(AbortSignal))
         browser.emit('close')
         expect(upstream.closed).toBe(true)
@@ -133,5 +134,36 @@ describe('voiceStatus', () => {
     it('liest die Einstellung und den gefundenen Dienst', async () => {
         const status = await voiceStatus(async () => null)
         expect(status.dienst.gefunden).toBe(false)
+    })
+})
+
+describe('pipelineAnswer — Sprach-Zug mit Strom (2.87 Paket P)', () => {
+    it('Textstücke und Werkzeuge der sprechbaren Runde kommen beim Anruf an; ohne Strom bleibt alles wie bisher', async () => {
+        const { runSpeakable, speakableSink, noteVoiceToolDone } = await import('../voice/voice-turn-stream.js')
+        const { pipelineAnswer } = await import('./voice-api.js')
+        const seenSinks: boolean[] = []
+        const handler = async () => {
+            runSpeakable(() => {
+                const sink = speakableSink()
+                seenSinks.push(Boolean(sink))
+                sink?.onToolRound(['ha_state'])
+                sink?.onTextDelta('Es ist warm.')
+            })
+            noteVoiceToolDone('ha_state', true)
+            // Außerhalb der sprechbaren Runde (z. B. Prüfaufruf) gibt es keinen Hörer.
+            seenSinks.push(Boolean(speakableSink()))
+            return 'Es ist warm.'
+        }
+        const answer = pipelineAnswer({ principalId: 'desktop-owner', clientId: 'web-1' }, () => handler)
+        const stream = { onTextDelta: vi.fn(), onToolRound: vi.fn(), onToolDone: vi.fn() }
+        expect(await answer('wie warm', new AbortController().signal, stream)).toBe('Es ist warm.')
+        expect(stream.onTextDelta).toHaveBeenCalledWith('Es ist warm.')
+        expect(stream.onToolRound).toHaveBeenCalledWith(['ha_state'])
+        expect(stream.onToolDone).toHaveBeenCalledWith('ha_state', true)
+        expect(seenSinks).toEqual([true, false])
+
+        seenSinks.length = 0
+        expect(await answer('wie warm', new AbortController().signal)).toBe('Es ist warm.')
+        expect(seenSinks).toEqual([false, false])
     })
 })
