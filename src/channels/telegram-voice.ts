@@ -16,7 +16,14 @@ export const VOICE_CATALOG_ID = 'sprachdienst:de'
 /** Telegram-Sprachnachrichten sind kurz; längere Antworten werden gekürzt vorgelesen (Text steht ja da). */
 const MAX_SPOKEN_CHARS = 1200
 
-export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath?: string): Promise<{ text: string; via: 'sprachdienst' | 'whisper' } | null> {
+export type VoiceHeard = { text: string; via: 'sprachdienst' | 'whisper' | 'whisper-gpu'; zuLang?: boolean }
+
+/**
+ * 1. eigener Sprachdienst (`xaventra-voice`), 2. (2.86.1) `whisper-gpu` im eigenen
+ * Netz — lange Nachrichten in Stücken ≤ 30 s, nicht teilbar → `zuLang`,
+ * 3. lokales Whisper auf diesem Rechner. Nie ein Cloud-Dienst.
+ */
+export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath?: string, durationSec?: number): Promise<VoiceHeard | null> {
     try {
         const { discoverVoiceService, VoiceServiceClient } = await import('../voice/voice-mesh.js')
         const service = await discoverVoiceService()
@@ -27,14 +34,36 @@ export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath
     } catch (error) {
         console.warn(`[Nova Telegram] Sprachdienst: ${String((error as Error)?.message || error).slice(0, 160)}`)
     }
-    if (!localPath) return null
+    let zuLang = false
+    try {
+        const { discoverWhisperGpu, transcribeWithWhisperGpu, WhisperZuLangError } = await import('../voice/whisper-gpu.js')
+        const whisper = await discoverWhisperGpu()
+        if (whisper) {
+            try {
+                const { ffmpegConvert } = await import('../voice/voice-service.js')
+                const result = await transcribeWithWhisperGpu(whisper.endpoint, audio, mime || 'audio/ogg', { durationSec, convert: ffmpegConvert })
+                if (result.text) return { text: result.text, via: 'whisper-gpu' }
+            } catch (error) {
+                if (error instanceof WhisperZuLangError) zuLang = true
+                else console.warn(`[Nova Telegram] Spracherkennung: ${String((error as Error)?.message || error).slice(0, 160)}`)
+            }
+        }
+    } catch (error) {
+        console.warn(`[Nova Telegram] Spracherkennung: ${String((error as Error)?.message || error).slice(0, 160)}`)
+    }
+    if (!localPath) return zuLang ? { text: '', via: 'whisper-gpu', zuLang: true } : null
     try {
         // Lokales Whisper auf diesem Rechner (alter Weg), nie die Cloud-Variante.
         const { transcribe } = await import('../voice/voice-input.js')
         const result = await transcribe(localPath, { model: 'whisper-local' })
         const text = String(result?.text || '').trim()
-        return text ? { text, via: 'whisper' } : null
-    } catch { return null }
+        return text ? { text, via: 'whisper' } : zuLang ? { text: '', via: 'whisper-gpu', zuLang: true } : null
+    } catch { return zuLang ? { text: '', via: 'whisper-gpu', zuLang: true } : null }
+}
+
+/** 2.86.1: an honest sentence when a voice message is too long and cannot be split. */
+export function voiceTooLongNotice(): string {
+    return '🎤 Deine Sprachnachricht ist mir zu lang – ich kann gerade nur bis etwa 30 Sekunden am Stück anhören. Schick sie mir bitte kürzer oder in Teilen, oder schreib mir.'
 }
 
 export function voiceUnavailableNotice(): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {

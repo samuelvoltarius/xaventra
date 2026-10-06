@@ -23,6 +23,7 @@ import { ownSubnets, scanHosts, scanTargetAllowed, type InterfaceMap } from '../
 import { ProbeLimiter, realTcpProbe } from '../sensing/discovery.js'
 import { parseSensingConfig } from '../sensing/config.js'
 import { isXaventraVoiceHealth, VOICE_SERVICE_NAME, VOICE_SERVICE_PORT } from '../voice/voice-contract.js'
+import { isWhisperGpuHealth, whisperGpuModels, WHISPER_GPU_NAME, WHISPER_GPU_PORT } from '../voice/whisper-gpu.js'
 
 
 const execAsync = promisify(exec)
@@ -288,6 +289,18 @@ export const AI_SERVICE_PROBES: AIServiceProbe[] = [
         defaultPort: VOICE_SERVICE_PORT,
         healthEndpoint: '/health',
         detectFn: isXaventraVoiceHealth,
+    },
+
+    // 2.86.1 Ergänzung b: whisper-gpu (OpenAI-kompatibel, Audio ≤ 30 s), z. B. auf dem Spark.
+    // Strenge Erkennung: Health-JSON mit status ok UND einem whisper-Modell.
+    {
+        name: WHISPER_GPU_NAME,
+        type: 'stt',
+        defaultPort: WHISPER_GPU_PORT,
+        healthEndpoint: '/health',
+        modelsEndpoint: '/health',
+        detectFn: isWhisperGpuHealth,
+        parseModelsFn: whisperGpuModels,
     },
 
     // === Embedding Servers ===

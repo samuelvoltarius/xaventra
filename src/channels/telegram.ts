@@ -325,7 +325,12 @@ export class TelegramAdapter implements ChannelAdapter {
             // 2.86 Paket O: zuerst der Sprachdienst im eigenen Mesh, sonst lokales Whisper; nie die Cloud.
             // No capability resolution here: installs go through the Werkzeugkasten card only.
             const voice = await import('./telegram-voice.js')
-            const heard = await voice.transcribeVoiceNote(audio, String(msg.voice.mime_type || 'audio/ogg'), tempPath)
+            const heard = await voice.transcribeVoiceNote(audio, String(msg.voice.mime_type || 'audio/ogg'), tempPath, Number(msg.voice.duration) || undefined)
+            // 2.86.1: too long and not splittable → an honest sentence, not „cannot listen“.
+            if (heard?.zuLang) {
+                await this.bot.sendMessage(chatId, voice.voiceTooLongNotice())
+                return
+            }
             if (!heard) {
                 // 2.85: an owner voice message without speech recognition is a recorded need
                 // for the Software-Scout (capability + time only, no content, no user id).
