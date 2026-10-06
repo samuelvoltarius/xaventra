@@ -470,6 +470,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/infra/proxmox-app-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/infra/proxmox-setup.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/install/install-queue.ts",
       "path": ".nova-data"
     },
@@ -859,6 +867,10 @@
     },
     {
       "owner": "src/runtime/mission-workspace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/secrets/credential-broker.ts",
       "path": ".nova-data"
     },
     {
