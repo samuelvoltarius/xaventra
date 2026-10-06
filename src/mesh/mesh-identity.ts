@@ -19,13 +19,43 @@ function atomicWrite(path: string, value: unknown): void {
     renameSync(temporary, path)
 }
 
+const WORKLOAD_KEY_ERROR = 'Workload-Schlüssel passt nicht zu diesem Knoten'
+const POD_SUFFIX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+function readSharedIdentity(path: string, nodeId: string): IdentityFile {
+    let identity: IdentityFile | null = null
+    try { identity = JSON.parse(readFileSync(path, 'utf8')) as IdentityFile } catch { /* reported below without the path content */ }
+    if (!identity || typeof identity.privateKey !== 'string' || typeof identity.publicKey !== 'string' || typeof identity.nodeId !== 'string' || !identity.nodeId) {
+        throw new Error(`${WORKLOAD_KEY_ERROR} (Datei fehlt oder ist unlesbar)`)
+    }
+    const prefix = `${identity.nodeId}-`
+    if (!nodeId.startsWith(prefix) || !POD_SUFFIX.test(nodeId.slice(prefix.length))) {
+        throw new Error(`${WORKLOAD_KEY_ERROR}: ${nodeId} gehört nicht zu ${identity.nodeId}`)
+    }
+    return identity
+}
+
 export class MeshIdentity {
     private sequence = 0
     readonly nodeId: string
     readonly publicKey: string
     private readonly privateKey: string
 
-    constructor(nodeId: string, dir = getNovaDataDir('mesh-identity')) {
+    /**
+     * `sharedFile` (env XAVENTRA_MESH_IDENTITY_FILE, P19): the owner-provided
+     * key of one Kubernetes worker WORKLOAD, mounted read-only from a Secret.
+     * Every replica signs with it under its own node id (`<workload>-<pod>`);
+     * the Main trusts them via one pinned `nodeIdPrefix` peer entry. Read only,
+     * nothing is generated or written; a mismatch fails closed.
+     */
+    constructor(nodeId: string, dir = getNovaDataDir('mesh-identity'), sharedFile = process.env.XAVENTRA_MESH_IDENTITY_FILE) {
+        if (sharedFile && String(sharedFile).trim()) {
+            const shared = readSharedIdentity(String(sharedFile).trim(), nodeId)
+            this.nodeId = nodeId
+            this.privateKey = shared.privateKey
+            this.publicKey = shared.publicKey
+            return
+        }
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
         const path = join(dir, `${nodeId}.json`)
         let identity: IdentityFile | null = null

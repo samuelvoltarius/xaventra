@@ -6,7 +6,7 @@ import { getCapabilityGraph } from './capability-graph.js'
 import { DirectMeshTransport } from './direct-mesh-transport.js'
 import { LocalMeshTransport } from './local-mesh-transport.js'
 import { MeshIdentity } from './mesh-identity.js'
-import { containsFreeShellPayload, DEFAULT_PEER_ROLES, peersWithoutKeys } from './mesh-policy.js'
+import { containsFreeShellPayload, DEFAULT_PEER_ROLES, parseWorkloadPeers, peersWithoutKeys, pruneEphemeralPeerStates, type WorkloadPeer } from './mesh-policy.js'
 import { MeshTransportRouter } from './mesh-transport-router.js'
 import { RelayMeshTransport } from './relay-mesh-transport.js'
 import { SupabaseMeshTransport } from './supabase-mesh-transport.js'
@@ -44,6 +44,8 @@ interface RuntimeConfig {
     allowTofu: boolean
     allowedTools?: string[]
     direct: { enabled: boolean; listenHost?: string; port?: number; peers: MeshPeer[]; allowInsecureLan?: boolean }
+    /** P19: replicas of scalable Kubernetes worker workloads (prefix + pinned key). */
+    workloadPeers: WorkloadPeer[]
     supabase: { url?: string; key?: string; table?: string }
     relay: { url?: string; token?: string }
 }
@@ -119,9 +121,12 @@ function loadRuntimeConfig(): RuntimeConfig {
             port: Number(process.env.NOVA_MESH_DIRECT_PORT || direct.port || 9091), peers,
             allowInsecureLan: direct.allowInsecureLan === true,
         },
+        workloadPeers: parseWorkloadPeers(direct.peers),
         supabase, relay: { url: mesh.relay?.url, token: process.env.NOVA_MESH_RELAY_TOKEN || mesh.relay?.token },
     }
 }
+
+let workloadPeerEntries: WorkloadPeer[] = []
 
 /** Wächter: peers that may deliver samples — configured AND with a pinned publicKey. */
 export function watchKnownNodes(peers: readonly MeshPeer[] = loadRuntimeConfig().direct.peers): string[] {
@@ -140,7 +145,8 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
     if (config.direct.enabled) direct.start()
     const supabase = new SupabaseMeshTransport(nodeId, config.supabase)
     const relay = new RelayMeshTransport(nodeId, config.relay)
-    router = new MeshTransportRouter(identity, principal, { mode: config.mode, peers: config.direct.peers, allowTofu: config.allowTofu, allowedTools: config.allowedTools }, [direct, supabase, relay, local])
+    workloadPeerEntries = config.workloadPeers
+    router = new MeshTransportRouter(identity, principal, { mode: config.mode, peers: config.direct.peers, allowTofu: config.allowTofu, allowedTools: config.allowedTools, workloadPeers: config.workloadPeers }, [direct, supabase, relay, local])
     router.subscribe(envelope => handleEnvelope(envelope, runtimeMessageHandler))
     const keyless = peersWithoutKeys(config.direct.peers)
     if (keyless.length) {
@@ -522,6 +528,8 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const previous = peerStates[envelope.sourceNode]
         if (peerWantsProfile(getLocalNodeId(), previous?.bootId, envelope.payload)) profilePublishState = { ...profilePublishState, resendWanted: true }
         peerStates[envelope.sourceNode] = peerStateWithHeartbeat(previous, envelope.sourceNode, envelope.payload, MeshIdentity.fingerprint(envelope.publicKey))
+        // P19: replaced Kubernetes replica pods must not pile up forever.
+        if (workloadPeerEntries.length) peerStates = pruneEphemeralPeerStates(peerStates, workloadPeerEntries)
         persistPeerStates(); return
     }
     if (envelope.kind === 'node.tools') {
