@@ -9,6 +9,23 @@
   not remembered as a wrong approach; a remembered real failure blocks the
   identical retry only for the same build and at most 24 hours, so entries
   from earlier versions stop blocking after an update.
+- Smart devices: one entry per real device (Home Assistant over LAN and
+  Tailnet, Hue Bridge with its mDNS/UPnP/Matter announcements, Tuya, Matter
+  merged by their identifiers); Docker networks, the Main itself and bare
+  open ports of own mesh nodes are no longer listed as devices. `/geraete`
+  shows one line per device, `/geraete liste roh` the raw list. The stored
+  device file is read, never rewritten.
+- One "connect" per device: Home Assistant through its own login, Hue after
+  pressing the bridge button, Tuya local or cloud, Matter with its pairing code
+  in the app. Switching still always asks with its own card.
+- Questions reach the owner: one bundled Telegram message with a button per
+  device, edited instead of resent, one reminder, then listed in the report;
+  no more silent "need access" thoughts.
+- Telegram stays short: owner messages over 600 characters get pages with
+  "Mehr ▶"; cards show a short text with details behind a button; the report
+  is a traffic-light header with one line and one button per section; `/menu`
+  offers Status · Braucht mich · Geräte · Bericht · Mehr. No internal ids,
+  hashes or paths in owner texts.
 
 ## [2.85.10] — 2026-10-06
 
