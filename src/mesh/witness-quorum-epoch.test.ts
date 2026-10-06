@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createQuorumWitnessServer } from './quorum-witness.js'
 import { acquireWitnessQuorumLease, resetWitnessEpochHighWaterForTests, type WitnessQuorumConfig } from './witness-quorum.js'
 
@@ -9,6 +9,7 @@ const servers: ReturnType<typeof createQuorumWitnessServer>[] = []
 afterEach(async () => {
     resetWitnessEpochHighWaterForTests()
     await Promise.all(servers.splice(0).map(instance => new Promise<void>(resolve => instance.server.close(() => resolve()))))
+    vi.restoreAllMocks()
 })
 
 const expired = new Date(Date.now() - 60_000).toISOString()
@@ -19,6 +20,10 @@ const lease = (holderNodeId: string, epoch: number) => ({
 
 describe('CL-07 witness epochs are monotone across quorum changes', () => {
     it('never hands a later term a lower epoch (FENCING_ANALYSE §1.3 example) and keeps the token stable', async () => {
+        // Keep lease time independent of scheduler load. HTTP, authentication,
+        // the 300ms transport deadline and the production 1s reserve remain real.
+        let now = Date.now()
+        vi.spyOn(Date, 'now').mockImplementation(() => now)
         const dir = mkdtempSync(join(tmpdir(), 'nova-witness-epoch-'))
         // W1/W2 remember A in epoch 5, W3 only an older term 3 (it was down).
         const seeds = [lease('node-a', 5), lease('node-a', 5), lease('node-x', 3)]
@@ -42,8 +47,11 @@ describe('CL-07 witness epochs are monotone across quorum changes', () => {
         const renewed = await acquireWitnessQuorumLease('nova-main', 1_200, quorum([dead(0), endpoints[1], endpoints[2]]), 'node-b')
         expect(renewed.fencingToken).toBe(b.fencingToken)
 
+        const blocked = await acquireWitnessQuorumLease('nova-main', 1_200, quorum([endpoints[0], dead(1), endpoints[2]]), 'node-a')
+        expect(blocked.leader).toBe(false)
+
         // B dies; A (a fresh process) takes over with W1 + W3 while W2 is down.
-        await new Promise(resolve => setTimeout(resolve, 1_300))
+        now += 1_300
         resetWitnessEpochHighWaterForTests()
         const a = await acquireWitnessQuorumLease('nova-main', 1_200, quorum([endpoints[0], dead(1), endpoints[2]]), 'node-a')
         expect(a.leader).toBe(true)
