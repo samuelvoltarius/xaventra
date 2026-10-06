@@ -350,6 +350,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/dashboard/pwa.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/desktop/bot-profile-store.ts",
       "path": ".nova-data"
     },
@@ -1300,6 +1304,10 @@
     {
       "owner": "src/supervisor/supervisor-autofix-safety.test.ts",
       "path": ".nova-data/users.json"
+    },
+    {
+      "owner": "src/voice/voice-prefs.ts",
+      "path": ".nova-data/voice-prefs.json"
     },
     {
       "owner": "src/watch/runtime.ts",

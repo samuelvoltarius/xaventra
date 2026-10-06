@@ -19,6 +19,7 @@ function novaOsBedienmodus(): { modus: 'standard' | 'experte' | null; istNovaOS:
 }
 import { getBotProfileStore } from './bot-profile-store.js'
 import { getTopicRoomStore } from './topic-room-store.js'
+import { registerVoiceApi } from './voice-api.js'
 import { getExternalAgentRegistry } from './external-agent-registry.js'
 import { getDesktopModelCatalog, switchDesktopModel } from './model-control.js'
 import { getNodeEnrollmentService } from './node-enrollment.js'
@@ -289,6 +290,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     app.use('/api/desktop', requireDesktopAuth)
     // 2.85 Paket C: KI-Modelle verbinden (status, key, account login) for Paket A/B.
     registerLlmConnectionsApi(app, { isOwner: isDesktopOwner, executionPrincipal: req => desktopExecutionPrincipal(principal(req)) })
+    // 2.86 Paket O: Sprache (Einstellung, Sprachdienst-Status, Anruf-Ticket).
+    registerVoiceApi(app, { isOwner: isDesktopOwner, principal, clientId: desktopClientId })
 
     app.get('/api/desktop/bootstrap', async (req, res) => {
         try {

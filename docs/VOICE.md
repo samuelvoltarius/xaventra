@@ -4,6 +4,29 @@ Speech input and output for Nova.
 
 ---
 
+## Lokaler Sprachdienst (2.86, Paket O)
+
+Der empfohlene Weg: der Werkzeugkasten-Eintrag **„Lokaler Sprachdienst Deutsch“**
+(`sprachdienst:de`). Er installiert ein fest eingetragenes Bündel (feste URLs,
+Größen, sha256, Lizenzen in `src/voice/voice-artifacts.ts`): Silero VAD,
+Nemotron 3.5 ASR Streaming 0.6B INT8 (560 ms), Piper „Ramona“ (Standard) und
+„Thorsten“, sherpa-onnx für Node. Danach startet der Xaventra-Dienst des
+Knotens den Sprachdienst `xaventra-voice` (Port 18795, nur eigenes Netz) und
+der KI-Scanner findet ihn im Mesh.
+
+- **Telegram:** Sprachnachrichten werden über den gefundenen Dienst verstanden;
+  Antwort als Text, auf Wunsch zusätzlich als Sprachnachricht („antworte per
+  Sprache“, „ab jetzt immer per Sprache“, „wieder per Text“ oder Schalter in der App).
+- **App → Anrufen:** Freisprechen ohne Taste (VAD mit 300 ms Pre-Roll, Partials,
+  Dazwischenreden bricht ab). Mikrofon braucht HTTPS, z. B. `tailscale serve`
+  vor dem Dashboard; den `.ts.net`-Namen in `dashboard.publicHosts` eintragen.
+- **Web-App:** Manifest + Service-Worker (nur statische Seitendateien im Cache,
+  nie API-Antworten oder Token) – auf dem Handy „Zum Startbildschirm“.
+
+Schnittstelle des Dienstes: `src/voice/voice-contract.ts`.
+
+---
+
 ## Requirements
 
 - Edge-TTS (included)

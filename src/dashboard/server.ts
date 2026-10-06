@@ -39,6 +39,15 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'onboarding.js': 'text/javascript; charset=utf-8',
     'connections.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
+    // 2.86 Paket O: Anrufen + installierbare Web-App (Handy über das Tailnet).
+    'anruf.js': 'text/javascript; charset=utf-8',
+    'anruf-worklet.js': 'text/javascript; charset=utf-8',
+    'pwa.js': 'text/javascript; charset=utf-8',
+    'sw.js': 'text/javascript; charset=utf-8',
+    'manifest.webmanifest': 'application/manifest+json; charset=utf-8',
+    'icon-192.png': 'image/png',
+    'icon-512.png': 'image/png',
+    'apple-touch-icon.png': 'image/png',
 })
 export function resolveUiDir(base = __dirname): string | null {
     for (const dir of [join(base, 'public'), resolve(base, '..', '..', 'desktop', 'renderer')]) {
@@ -49,7 +58,7 @@ export function resolveUiDir(base = __dirname): string | null {
 
 export const UI_CSP = [
     "default-src 'self'", "script-src 'self'", "style-src 'self'", "img-src 'self' data:", "connect-src 'self'",
-    "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+    "manifest-src 'self'", "worker-src 'self'", "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
 ].join('; ')
 
 const app = express()
@@ -85,7 +94,8 @@ app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
     res.setHeader('Referrer-Policy', 'no-referrer')
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    // 2.86 Paket O: Mikrofon nur für die eigene Seite („Anrufen“); Kamera und Ort bleiben aus.
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()')
     res.setHeader('Cache-Control', 'no-store')
     next()
 })
@@ -133,6 +143,15 @@ app.get(['/', '/index.html', ...Object.keys(UI_FILES).map(name => `/${name}`)], 
 })
 app.use((_req, res) => { res.status(404).type('text/plain; charset=utf-8').send('Nicht gefunden.') })
 
+// 2.86 Paket O: „Anrufen“ — WebSocket mit Einmal-Ticket (gleiche Host-/Origin-Regeln wie oben).
+server.on('upgrade', (req, socket, head) => {
+    void import('../desktop/voice-api.js').then(({ handleVoiceUpgrade }) => handleVoiceUpgrade(req, socket, head, {
+        allowedHost: host => isAllowedDashboardHost(host, dashboardConfiguredHosts),
+        sameOrigin: isSameOriginRequest,
+        resolveHandler: () => novaMessageHandler,
+    })).then(handled => { if (!handled) socket.destroy() }).catch(() => socket.destroy())
+})
+
 // ============================================
 // Start / Stop
 // ============================================
@@ -143,10 +162,19 @@ let dashboardUrl = ''
 
 export function getDashboardAddress(): string | null { return dashboardAddress(server) }
 
-export async function startDashboard(port: number = 3011, host: string = '127.0.0.1'): Promise<string> {
+/** Zusätzliche Host-Namen, unter denen die Seite erreichbar sein darf (genaue Namen, keine Muster). */
+export function dashboardPublicHosts(configured: readonly string[] = [], env = process.env.XAVENTRA_DASHBOARD_HOSTS): string[] {
+    const names = [...configured, ...String(env || '').split(',')].map(name => String(name || '').trim().toLowerCase())
+    return [...new Set(names.filter(name => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name)))]
+}
+
+export async function startDashboard(port: number = 3011, host: string = '127.0.0.1', publicHosts: readonly string[] = []): Promise<string> {
     if (dashboardStarted) return dashboardUrl
     const bindHost = String(host || '').trim().toLowerCase()
     if (bindHost && !['0.0.0.0', '::', '[::]'].includes(bindHost)) dashboardConfiguredHosts.add(bindHost)
+    // 2.86 Paket O: Handy über das Tailnet (`tailscale serve` → https://<name>.ts.net). Nur ausdrücklich
+    // eingetragene Namen (dashboard.publicHosts bzw. XAVENTRA_DASHBOARD_HOSTS), nie ein Platzhalter.
+    for (const name of dashboardPublicHosts(publicHosts)) dashboardConfiguredHosts.add(name)
     if (!resolveUiDir()) console.warn('[Dashboard] Oberfläche fehlt (dist/dashboard/public) — npm run build ausführen')
     if (!dashboardToken() && !process.env.NOVA_DESKTOP_API_TOKEN) console.warn('[Dashboard] Kein Token lesbar: die API bleibt gesperrt')
     dashboardUrl = await listenDashboard(server, port, host)

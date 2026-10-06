@@ -74,7 +74,11 @@
     "dashboard": {
       "enabled": "boolean",
       "host": "string",
-      "port": "number"
+      "port": "number",
+      "publicHosts": {
+        "type": "array",
+        "items": "unknown"
+      }
     },
     "desktop": {
       "direct": {

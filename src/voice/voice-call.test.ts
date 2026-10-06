@@ -110,6 +110,27 @@ describe('VoiceCallSession', () => {
         await session.idle()
     })
 
+    it('solange die Antwort noch abgespielt wird, gilt der Echo-Schutz weiter (kein Antworten auf sich selbst)', async () => {
+        let now = 1_000
+        const events: VoiceCallEvent[] = []
+        const answer = vi.fn(async () => 'Morgen wird es sonnig in Salzburg.')
+        const session = new VoiceCallSession({
+            answer, now: () => now,
+            speak: async text => ({ audio: Buffer.from(text), mime: 'audio/wav', durationSec: 3 }),
+            emit: event => { events.push(event) },
+        })
+        await session.onSpeechStart()
+        await session.onFinal('wie wird das wetter')
+        await session.idle()
+        expect(session.assistantActive).toBe(true) // Browser spielt noch 3 s
+        await session.onSpeechStart()
+        await session.onPartial('morgen wird es sonnig')
+        await session.onFinal('morgen wird es sonnig')
+        expect(answer).toHaveBeenCalledTimes(1)
+        now += 4_000
+        expect(session.assistantActive).toBe(false)
+    })
+
     it('stop() beendet laufende Arbeit und meldet nichts mehr', async () => {
         const { session, events } = harness({ answer: () => new Promise<string>(() => { /* hängt */ }) })
         await session.onSpeechStart()

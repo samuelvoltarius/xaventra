@@ -36,6 +36,10 @@ export interface VoiceCallDeps {
     speak: (text: string, voice: VoiceName, signal: AbortSignal) => Promise<SpokenAudio>
     emit: (event: VoiceCallEvent) => void
     voice?: VoiceName
+    /** Uhr in ms (Tests). */
+    now?: () => number
+    /** Längere Antworten werden gekürzt vorgelesen; der volle Text steht im Gespräch. */
+    maxSpokenChars?: number
 }
 
 /** Phrasen ab dieser Länge werden zusammen gesprochen (Voice-Lab: 120 Zeichen). */
@@ -69,6 +73,16 @@ export function speakableChunks(text: string): string[] {
     if (last) batch = `${batch} ${last}`.trim()
     if (batch) chunks.push(batch)
     return chunks
+}
+
+/** Kürzt an einer Satz- oder Wortgrenze und sagt, wo der Rest steht. */
+export function limitSpoken(text: string, max?: number): string {
+    const clean = cleanForSpeech(text)
+    if (!max || clean.length <= max) return clean
+    const cut = clean.slice(0, max)
+    const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+    const head = end > max / 2 ? cut.slice(0, end + 1) : cut.slice(0, cut.lastIndexOf(' ')).trim()
+    return `${head} Den Rest siehst du im Text.`
 }
 
 /** Markdown/Emoji/Links sind zum Vorlesen ungeeignet. */
@@ -130,12 +144,17 @@ export class VoiceCallSession {
     private speechAnnounced = false
     private stopped = false
     private voice: VoiceName
+    /** Bis wann der Browser voraussichtlich noch spricht (Voice-Lab `assistant_audio_until`). */
+    private audioUntil = 0
+    private readonly now: () => number
 
     constructor(private readonly deps: VoiceCallDeps) {
         this.voice = deps.voice === 'male' ? 'male' : 'female'
+        this.now = deps.now || Date.now
     }
 
-    get assistantActive(): boolean { return Boolean(this.controller && !this.controller.signal.aborted) }
+    /** Sie denkt, erzeugt Sprache oder der Browser spielt noch ab. */
+    get assistantActive(): boolean { return Boolean(this.controller && !this.controller.signal.aborted) || this.now() < this.audioUntil }
 
     setVoice(voice: unknown): void { if (voice === 'male' || voice === 'female') this.voice = voice }
 
@@ -192,12 +211,13 @@ export class VoiceCallSession {
             if (signal.aborted || this.stopped) return
             this.emit({ type: 'answer', turn, text: answer })
             let sequence = 0
-            for (const chunk of speakableChunks(answer)) {
+            for (const chunk of speakableChunks(limitSpoken(answer, this.deps.maxSpokenChars))) {
                 if (signal.aborted || this.stopped) return
                 this.noteAssistantText(chunk)
                 const spoken = await this.deps.speak(chunk, this.voice, signal)
                 if (signal.aborted || this.stopped) return
                 sequence += 1
+                this.audioUntil = Math.max(this.now(), this.audioUntil) + spoken.durationSec * 1000 + 500
                 this.emit({ type: 'audio', turn, sequence, text: chunk, mime: spoken.mime, durationSec: spoken.durationSec, data: spoken.audio.toString('base64') })
             }
             this.emit({ type: 'done', turn })
@@ -209,8 +229,10 @@ export class VoiceCallSession {
     /** Laufende Antwort abbrechen (Barge-in). */
     cancel(notify = true): void {
         const controller = this.controller
-        if (!controller) return
-        controller.abort()
+        const playing = this.now() < this.audioUntil
+        this.audioUntil = 0
+        if (!controller && !playing) return
+        controller?.abort()
         this.controller = null
         this.assistantReference = ''
         if (notify) this.emit({ type: 'cancelled', turn: this.turn })
