@@ -470,6 +470,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/infra/kubernetes-command.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/install/install-queue.ts",
       "path": ".nova-data"
     },
