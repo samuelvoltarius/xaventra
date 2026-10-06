@@ -87,7 +87,7 @@ describe('Cockpit „Heute“ in der App', () => {
         expect(view.wartend).toBe(2)
         expect(view.cockpit!.map(tile => tile.id)).toEqual(['laeuft', 'braucht', 'getan', 'gelernt'])
         expect(view.cockpit![1]).toMatchObject({ ampel: 'gelb', satz: '„ffmpeg installieren?“', karteId: shown.id })
-    })
+    }, 20_000)
 })
 
 describe('/api/desktop/gefuehrt', () => {

@@ -66,6 +66,18 @@ export function cockpitZeilen(sections: ReadonlyArray<{ titel: string; zeilen: s
 const ICON: Record<Ampel, string> = { gruen: '🟢', gelb: '🟡', rot: '🔴' }
 export const ampelIcon = (ampel: Ampel) => ICON[ampel]
 
+/**
+ * Head of the menu/status in Telegram: ONE question is for the owner now, the
+ * rest comes after it (question-queue) — never „6 Fragen warten“.
+ */
+export function fragenKopf(input: { kritisch?: number; offen: number }): string {
+    const kritisch = Math.max(0, Math.floor(Number(input.kritisch) || 0))
+    const offen = Math.max(0, Math.floor(Number(input.offen) || 0))
+    const frage = offen === 0 ? 'keine Frage offen' : offen === 1 ? '1 Frage für dich' : `1 Frage für dich, ${offen - 1} danach`
+    if (kritisch > 0) return `🔴 ${kritisch === 1 ? '1 Problem braucht' : `${kritisch} Probleme brauchen`} dich — ${frage}`
+    return `${offen ? '🟡' : '🟢'} Alles läuft — ${frage}`
+}
+
 /** Head of a system message (not reminders: they are the owner's own words). */
 export function systemKopf(msg: { kind: string; urgency?: string }): string {
     if (msg.urgency === 'dringend') return '🔴 Das braucht dich jetzt.'

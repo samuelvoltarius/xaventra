@@ -90,6 +90,18 @@ describe('Telegram-Menü und geführte Knöpfe', () => {
         expect(keyboard.at(-1).every((b: any) => /^gf:[a-f0-9]{16}$/.test(b.callback_data))).toBe(true)
     })
 
+    it('/menu shows ONE question and how many wait after it (owner 06.10.: not „6 Fragen warten“)', async () => {
+        const { createApprovalCard, listApprovalCards } = await import('../core/approval-cards.js')
+        const before = listApprovalCards({ status: 'offen' }).length
+        for (let i = 0; i < 6; i++) createApprovalCard({ art: 'install', titel: `Frage ${i + 1}?`, beleg: 'b', vorschlag: 'v', aktion: { kind: 'install', ref: `iq-menu-${i}` } } as any)
+        const total = before + 6
+        const { instance, bot } = adapter()
+        await (instance as any).handleMessage({ message_id: 8, date: 1, text: '/menu', chat: { id: 111, type: 'private' }, from: { id: 111, username: 'owner' } })
+        const [, text, options] = bot.sendMessage.mock.calls[0] as any[]
+        expect(text.split('\n')[0]).toBe(`🟡 Alles läuft — 1 Frage für dich, ${total - 1} danach`)
+        expect(options.reply_markup.inline_keyboard[0][1].text).toBe('Braucht mich (1)')
+    })
+
     it('an example-sentence button runs as a normal owner request; a stranger cannot press it', async () => {
         const { guidedButton } = await import('./telegram-guided.js')
         const { instance } = adapter()

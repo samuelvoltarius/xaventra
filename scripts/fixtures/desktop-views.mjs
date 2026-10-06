@@ -186,5 +186,15 @@ export function createFixtureViews(now = Date.now()) {
     connections: { available: true, gefunden: 2, verbunden: 4, beispiele: ['Home Assistant', 'Paperless-ngx'], view: 'verbindungen' },
     questions: [{ id: 'name', done: true }, { id: 'telegram', done: false }, { id: 'verbindungen', done: false, available: true }],
   }
-  return { heute, arbeit, system, vms, gedaechtnis, memory, memoryAssets, werkzeugkasten, verbindungen, onboarding }
+  // 2.86 Paket M: Einrichtung, Beispielsätze, Tipp (Testdaten, Doku-IPs).
+  const gefuehrt = {
+    einrichtung: { erledigt: 2, gesamt: 3, fertig: false, kopf: '2 von 3 erledigt', punkte: [
+      { key: 'ki', titel: 'KI-Modell läuft', erledigt: true, satz: 'Ich kann denken und antworten.' },
+      { key: 'telegram', titel: 'Telegram gekoppelt', erledigt: true, satz: 'Du erreichst mich auch unterwegs.' },
+      { key: 'geraet:dev-00000000bb', titel: 'Hue Bridge verbinden', erledigt: false, satz: 'Ich habe Hue Bridge gefunden; ein Knopf, dann frage ich dich einmal.', knopf: { label: 'Verbinden', aktion: { art: 'verbinden', key: 'geraet:dev-00000000bb' } } },
+    ] },
+    beispiele: [],
+    tipp: null,
+  }
+  return { heute, arbeit, system, vms, gedaechtnis, memory, memoryAssets, werkzeugkasten, verbindungen, onboarding, gefuehrt }
 }

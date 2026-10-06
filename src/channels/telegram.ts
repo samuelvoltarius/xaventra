@@ -1134,11 +1134,14 @@ export class TelegramAdapter implements ChannelAdapter {
     async sendMainMenu(chatId: string): Promise<void> {
         if (!this.bot) return
         await this.requireLiveAuthority('main menu')
-        const fragen = await this.openQuestionCount()
-        const { ampelKopf, menuKeyboard } = await import('./telegram-pages.js')
+        const offen = await this.openQuestionCount()
+        const { menuKeyboard } = await import('./telegram-pages.js')
+        // 2.86 Paket M: ONE question at a time — head „1 Frage für dich, n danach“, button „Braucht mich (1)“.
+        const { fragenKopf } = await import('../guided/ampel.js')
+        const fragen = Math.min(1, offen)
         // 2.86 Paket M: second row „Einrichtung“ · „Ich komm nicht weiter“ (guided/telegram-guided.ts).
         const { guidedMenuRow } = await import('../guided/telegram-guided.js')
-        await this.bot.sendMessage(chatId, `${ampelKopf({ fragen })}\nWas möchtest du sehen?`, { reply_markup: { inline_keyboard: [...menuKeyboard(chatId, { fragen }), ...guidedMenuRow(chatId)] } })
+        await this.bot.sendMessage(chatId, `${fragenKopf({ offen })}\nWas möchtest du sehen?`, { reply_markup: { inline_keyboard: [...menuKeyboard(chatId, { fragen }), ...guidedMenuRow(chatId)] } })
     }
 
     /** 2.86 Paket M: pin the status message silently (edited later, never resent). */
@@ -1240,7 +1243,7 @@ export class TelegramAdapter implements ChannelAdapter {
             const chatId = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
             const messageId = query.message?.message_id
             const pages = await import('./telegram-pages.js')
-            const fragen = await this.openQuestionCount()
+            const fragen = Math.min(1, await this.openQuestionCount())
             const result = pages.pressNav(String(query.data), { userId: String(query.from?.id ?? ''), ownerIds: this.getOwnerChatIds(), chatId }, { counts: { fragen } })
             if (!result.ok) { await answer(result.message); return }
             await answer()
