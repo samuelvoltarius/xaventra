@@ -51,28 +51,54 @@ function getHassConfig(): HassConfig | null {
     return null
 }
 
+export interface HassAccess { url: string; fetch: (url: string, init?: RequestInit) => Promise<Response> }
+
+/**
+ * 2.86.1 (d): how the hass_* tools reach Home Assistant. Configured access
+ * (HASS_URL/HASS_TOKEN or the config file) first; otherwise the owner's
+ * connection under „Verbindungen“ (Home Assistant login): the bearer comes
+ * fresh from the secrets store per request, refreshed before it expires — it
+ * is never copied into config files or tool output.
+ */
+export async function hassAccess(opts: { env?: NodeJS.ProcessEnv; dataDir?: string; fetchFn?: typeof fetch } = {}): Promise<HassAccess | null> {
+    const fetchFn = opts.fetchFn || fetch
+    const cfg = opts.env ? (opts.env.HASS_URL && opts.env.HASS_TOKEN ? { url: opts.env.HASS_URL.replace(/\/$/, ''), token: opts.env.HASS_TOKEN } : null) : getHassConfig()
+    if (cfg) {
+        return { url: cfg.url, fetch: (url, init = {}) => { const headers = new Headers(init.headers); headers.set('Authorization', `Bearer ${cfg.token}`); return fetchFn(url, { ...init, headers }) } }
+    }
+    try {
+        const { loadConnections } = await import('../connections/connection-store.js')
+        const { haBearerFetch } = await import('../connections/connector-login.js')
+        const { defaultDeps } = await import('../connections/connect-flow.js')
+        const record = loadConnections({ dataDir: opts.dataDir }).find(c => c.connectorId === 'home-assistant' && c.status === 'verbunden' && c.auth === 'ha-login' && c.basis)
+        if (!record?.basis) return null
+        const bearer = haBearerFetch(record.id, { ...defaultDeps(), ...(opts.dataDir ? { dataDir: opts.dataDir } : {}), ...(opts.fetchFn ? { fetchFn: opts.fetchFn as any } : {}) })
+        return { url: record.basis.replace(/\/+$/, ''), fetch: (url, init) => bearer(url, init as any) as Promise<Response> }
+    } catch { return null }
+}
+
 // ============================================
 // HTTP Helper
 // ============================================
 
 async function hassGet<T = unknown>(path: string): Promise<T> {
-    const cfg = getHassConfig()
-    if (!cfg) throw new Error('Home Assistant nicht konfiguriert. Setze HASS_URL und HASS_TOKEN.')
+    const access = await hassAccess()
+    if (!access) throw new Error('Home Assistant ist noch nicht verbunden. Unter „Verbindungen“ einmal Home Assistant verbinden.')
 
-    const res = await fetch(`${cfg.url}/api${path}`, {
-        headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' },
+    const res = await access.fetch(`${access.url}/api${path}`, {
+        headers: { 'Content-Type': 'application/json' },
     })
     if (!res.ok) throw new Error(`HA API Fehler ${res.status}: ${await res.text()}`)
     return res.json() as Promise<T>
 }
 
 async function hassPost<T = unknown>(path: string, body: unknown = {}): Promise<T> {
-    const cfg = getHassConfig()
-    if (!cfg) throw new Error('Home Assistant nicht konfiguriert. Setze HASS_URL und HASS_TOKEN.')
+    const access = await hassAccess()
+    if (!access) throw new Error('Home Assistant ist noch nicht verbunden. Unter „Verbindungen“ einmal Home Assistant verbinden.')
 
-    const res = await fetch(`${cfg.url}/api${path}`, {
+    const res = await access.fetch(`${access.url}/api${path}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     })
     if (!res.ok) throw new Error(`HA API Fehler ${res.status}: ${await res.text()}`)

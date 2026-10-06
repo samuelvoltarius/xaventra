@@ -19,7 +19,10 @@ describe('owner overview integration', () => {
         state.nodes = [{ name: 'worker', address: 'local', online: true, capabilities: [{ name: 'llm', provider: 'qwen', available: true }] }]
         state.servers = [{ name: 'home', connected: true, tools: [{ name: 'get_devices', description: 'Geräte lesen' }] }]
         const result = await environmentInventoryTool.handler({} as any)
-        const text = environmentOverviewResponse([{ toolName: 'environment_inventory', success: true, result }, { toolName: 'mesh_status', success: true, result: 'worker online' }])
+        const executions = [{ toolName: 'environment_inventory', success: true, result }, { toolName: 'mesh_status', success: true, result: 'worker online' }]
+        // 2.86.1: the owner answer carries no technical inventory; it comes only on explicit request.
+        expect(environmentOverviewResponse(executions)).not.toContain('get_devices')
+        const text = environmentOverviewResponse(executions, { technisch: true })
         expect(text).toContain('Sprachmodell (qwen)')
         expect(text).toContain('get_devices: Geräte lesen')
         expect(text).toContain('LAN: Gerät gefunden')

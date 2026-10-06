@@ -22,9 +22,10 @@ const readJson = (file: string): any => { try { return JSON.parse(readFileSync(f
 
 /** Alltagsname eines Geräts (Markennamen bleiben, Fachbegriffe nicht). */
 export function alltagsTitel(g: Pick<Geraet, 'art' | 'titel'>): string {
-    if (g.art === 'matter') return 'Smart-Gerät'
-    if (g.art === 'drucker') return '3D-Drucker'
-    const titel = ownerText(g.titel).replace(/\s*\([^)]*\)\s*$/, '').trim()
+    // 2.86.1: the consolidation already builds the everyday name (type word, own name, brand);
+    // the brand in brackets and the number of a second device of the same name stay.
+    if (g.art === 'matter') return /^Matter-Gerät( \(\d+\))?$/.test(g.titel) ? g.titel.replace('Matter-Gerät', 'Smart-Gerät') : 'Smart-Gerät'
+    const titel = ownerText(g.titel).trim()
     return !titel || fachwoerterIn(titel).length ? 'Gerät im Netz' : titel
 }
 
@@ -106,8 +107,55 @@ export function geraeteUeberblick(dataDir: string, k: Konsolidierung, istVerbund
     return out.join('\n')
 }
 
+/** Höchstlänge der „Details“ zur Geräteliste: zwei Telegram-Seiten. */
+export const DETAILS_MAX_CHARS = 2 * OWNER_PAGE_CHARS - 100
+
+const WEG_RANG: Record<string, number> = { mdns: 0, udp: 1, http: 2, tcp: 3, neighbor: 4 }
+const WEG_TEXT: Record<string, string> = { mdns: 'meldet sich selbst im Netz', udp: 'meldet sich selbst im Netz', http: 'antwortet auf Nachfrage', tcp: 'ist im Netz erreichbar', neighbor: 'war im Netz zu sehen' }
+
+/**
+ * 2.86.1 Punkt 1: „Details“ zur Geräteliste — kurz und strukturiert, höchstens
+ * zwei Seiten: je Gerät Adresse, wie ich es erkannt habe und der Stand, in
+ * Alltagssprache. Knoten-Fähigkeiten, Arbeitswege, Anschlüsse und
+ * Rohbeobachtungen gibt es nur auf ausdrückliche Nachfrage („technische
+ * Details“) oder in der App.
+ */
+/** Ehrlich, wie weit die letzte Suche kam (gespeicherter Suchbericht; startet keine Suche). */
+export function suchStand(dataDir: string): string {
+    const r = readJson(join(dataDir, 'sensing', 'last-discovery.json'))
+    if (!r || !Number.isInteger(r.scannedHosts) || r.scannedHosts < 0 || !Number.isInteger(r.probes) || r.probes < 0) return ''
+    return `Letzte Suche: ${r.scannedHosts} Adressen, ${r.probes} Prüfungen – ${r.partial ? 'Teilsuche, nicht das ganze Netz' : 'Suchlauf fertig'}.`
+}
+
+export function geraeteDetails(dataDir: string, k: Konsolidierung, istVerbunden: (g: Geraet) => boolean, max = DETAILS_MAX_CHARS): string {
+    const records = loadDevices(dataDir)
+    const sichtbar = k.geraete.filter(g => g.status !== 'abgelehnt' && g.status !== 'aus')
+    const suche = suchStand(dataDir)
+    if (!sichtbar.length) return ['Noch keine Geräte – ich suche von selbst weiter.', suche].filter(Boolean).join('\n')
+    const out = ['So habe ich deine Geräte gefunden:']
+    const fuss = [suche, 'Mehr zu jedem Gerät steht in der App unter „Verbindungen“.'].filter(Boolean).join('\n')
+    let rest = sichtbar.length
+    for (const g of sichtbar) {
+        const zustand = geraetZeile(dataDir, g, records, (() => { try { return istVerbunden(g) } catch { return false } })()).zustand
+        const weg = [...g.dienste].sort((a, b) => (WEG_RANG[a.via] ?? 9) - (WEG_RANG[b.via] ?? 9))[0]?.via || 'tcp'
+        const adressen = g.adressen.filter(ip => !ip.includes(':')).slice(0, 2)
+        const stand = zustand === 'verbunden' ? 'verbunden' : zustand === 'wartet' ? 'wartet aufs Verbinden' : 'nur gefunden'
+        const line = `• ${alltagsTitel(g)}: ${adressen.length ? `${adressen.join(' und ')} · ` : ''}${WEG_TEXT[weg] || WEG_TEXT.tcp} · ${stand}`
+        if (out.join('\n').length + 1 + line.length > max - fuss.length - 40) break
+        out.push(line); rest--
+    }
+    if (rest > 0) out.push(`… und ${rest} weitere.`)
+    out.push(fuss)
+    return ownerText(out.join('\n'))
+}
+
 /** Produktion: Liste + die eine Verbinden-Bündelnachricht (neu zugestellt, wenn Fragen offen sind). */
 export async function ownerGeraeteAntwort(dataDir: string, deps: { kick?: () => void | Promise<void> } = {}): Promise<string> {
+    return (await ownerGeraeteAntworten(dataDir, deps)).text
+}
+
+/** 2.86.1: die Owner-Liste (eine Nachricht) und ihre kurzen „Details“ (höchstens zwei Seiten). */
+export async function ownerGeraeteAntworten(dataDir: string, deps: { kick?: () => void | Promise<void> } = {}): Promise<{ text: string; details: string }> {
     const { loadConsolidatedDevices, defaultConsolidationContext } = await import('./device-consolidation.js')
     const { isDeviceConnected, offerDeviceConnections, DEVICE_BUNDLE } = await import('./device-connect.js')
     const ctx = await defaultConsolidationContext(dataDir)
@@ -115,7 +163,9 @@ export async function ownerGeraeteAntwort(dataDir: string, deps: { kick?: () => 
     const records = loadDevices(dataDir)
     let connections: ReturnType<typeof loadConnections> = []
     try { connections = loadConnections({ dataDir }) } catch { connections = [] }
-    const text = geraeteUeberblick(dataDir, k, g => g.art === 'homeassistant' ? connections.some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') : isDeviceConnected(dataDir, g, records))
+    const verbunden = (g: Geraet) => g.art === 'homeassistant' ? connections.some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') : isDeviceConnected(dataDir, g, records)
+    const text = geraeteUeberblick(dataDir, k, verbunden)
+    const details = geraeteDetails(dataDir, k, verbunden)
     try {
         const { created } = await offerDeviceConnections({ dataDir, ctx })
         const { requestBundleResend } = await import('../core/card-bundle.js')
@@ -123,5 +173,5 @@ export async function ownerGeraeteAntwort(dataDir: string, deps: { kick?: () => 
         if (deps.kick) await deps.kick()
         else { const { runApprovalCardTick } = await import('../core/approval-card-sources.js'); void runApprovalCardTick() }
     } catch { /* die Liste gilt auch ohne Karte */ }
-    return text
+    return { text, details }
 }

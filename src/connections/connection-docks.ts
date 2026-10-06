@@ -42,7 +42,7 @@ export function llmSourceItems(list: readonly LlmConnection[]): SourceItem[] {
         if (item.datenklasse === 'lokal') {
             const host = hostOf(item.endpoint)
             out.push({
-                id: item.id, title: item.title, kategorie: item.kategorie === 'suche' ? 'hilfsdienste' : 'ki-modelle', wirkung: item.wirkung,
+                id: item.id, title: item.title, kategorie: item.kategorie === 'suche' || item.kategorie === 'hilfsdienst' ? 'hilfsdienste' : 'ki-modelle', wirkung: item.wirkung,
                 fund: host ? `im Netz ${host}` : 'auf diesem Rechner', datenklasse: 'lokal', icon: null,
                 // Local = private: usable without a question, nothing to connect.
                 verbunden: item.nutzbar === true,

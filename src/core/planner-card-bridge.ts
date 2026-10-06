@@ -83,7 +83,7 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
             }
             const chats = target.getOwnerChatIds()
             if (!chats.length) return { status: 'kein-port' } as DeliveryReceipt
-            const { pagedView, sectionedView, rememberLastReport } = await import('../channels/telegram-pages.js')
+            const { pagedView, sectionedView, rememberLastReport, OWNER_SYSTEM_MAX_PAGES } = await import('../channels/telegram-pages.js')
             const { ownerText } = await import('./owner-text.js')
             // Paket L: a report is one short overview with a button per section (+ main menu);
             // every other owner message is short with „Mehr“ and free of technical ids.
@@ -102,7 +102,7 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
             const { systemKopf } = await import('../guided/ampel.js')
             const kopf = msg.kind === 'gedanke' || msg.kind === 'job' ? systemKopf(msg) : undefined
             for (const chatId of chats) {
-                const view = pagedView(chatId, plain, kopf ? { kopf } : {})
+                const view = pagedView(chatId, plain, { ...(kopf ? { kopf } : {}), maxPages: OWNER_SYSTEM_MAX_PAGES })
                 await target.sendApprovalCard(chatId, view.text, view.keyboard)
             }
             return { status: 'zugestellt' } as DeliveryReceipt

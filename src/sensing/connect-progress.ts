@@ -43,7 +43,7 @@ export function starteVorgang(dataDir: string, input: { key: string; art: Vorgan
 }
 
 /** Ergebnis festhalten. `gemeldet` = der Owner hat den Satz schon gesehen (z. B. direkt auf der Karte). */
-export function beendeVorgang(dataDir: string, key: string, status: Exclude<VorgangStatus, 'laeuft'>, satz: string, opts: { gemeldet?: boolean; now?: number } = {}): Vorgang | undefined {
+export function beendeVorgang(dataDir: string, key: string, status: Exclude<VorgangStatus, 'laeuft'>, satz: string, opts: { gemeldet?: boolean; now?: number; satzZuDenBeispielen?: boolean } = {}): Vorgang | undefined {
     const list = lade(dataDir)
     const index = list.findIndex(v => v.key === key)
     if (index < 0) return undefined
@@ -54,7 +54,8 @@ export function beendeVorgang(dataDir: string, key: string, status: Exclude<Vorg
     // 2.86 (N + M): after the success message the three example sentences — offered once,
     // by the same place as after every new connection (guided/example-prompts.ts).
     if (status === 'verbunden' && vorher !== 'verbunden') {
-        try { beispieleNachErfolg(list[index].art, { dataDir, now: () => opts.now ?? Date.now() }) } catch { /* examples are a convenience */ }
+        // 2.86.1 Punkt 5: a success the owner has not seen yet goes WITH the three buttons (one message).
+        try { beispieleNachErfolg(list[index].art, { dataDir, now: () => opts.now ?? Date.now() }, opts.satzZuDenBeispielen ? `${satz}\nProbier mal:` : undefined) } catch { /* examples are a convenience */ }
     }
     return list[index]
 }
@@ -74,8 +75,10 @@ export function hueErfolgsSatz(functions: readonly DirectFunction[]): string {
 }
 
 /**
- * Wahrnehmen (direkte Geräte): eine laufende Hue-Kopplung ist fertig → GENAU
- * ein Ereignis mit dem Nutzen-Satz; danach nie wieder für diesen Vorgang.
+ * Wahrnehmen (direkte Geräte): eine laufende Hue-Kopplung ist fertig → der
+ * Nutzen-Satz wird festgehalten und kommt (2.86.1, Owner-Entscheidung) in EINER
+ * Nachricht zusammen mit den drei Beispiel-Knöpfen (geführter Durchlauf) —
+ * kein eigenes Ereignis mehr, also keine zweite Nachricht.
  */
 export function vorgangsEreignisse(dataDir: string, rows: readonly DirectInventory[], now = Date.now()): RawEvent[] {
     const events: RawEvent[] = []
@@ -84,9 +87,7 @@ export function vorgangsEreignisse(dataDir: string, rows: readonly DirectInvento
         const v = lade(dataDir).find(item => item.key === row.deviceId)
         if (!v || v.gemeldetAt || v.status === 'fehlgeschlagen') continue
         const satz = hueErfolgsSatz(row.functions)
-        beendeVorgang(dataDir, row.deviceId, 'verbunden', satz, { gemeldet: true, now })
-        events.push({ kind: 'smart.verbunden', subject: row.deviceId, severity: 'info', dedupeKey: `verbunden:${row.deviceId}:${v.startedAt}`, dedupeWindowMs: 24 * 3600_000,
-            summary: satz, evidence: { geraet: row.deviceId, lampen: row.functions.filter(f => f.kind === 'light').length }, hint: { importance: 'normal', title: satz } })
+        beendeVorgang(dataDir, row.deviceId, 'verbunden', satz, { gemeldet: true, now, satzZuDenBeispielen: true })
     }
     return events
 }

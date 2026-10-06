@@ -8,6 +8,7 @@ import { connectDevice, type DeviceConnectDeps } from './device-connect.js'
 import { hueErfolgsSatz, starteVorgang, vorgangsEreignisse, vorgangsStand } from './connect-progress.js'
 import type { DeviceRecord } from './device-registry.js'
 import type { DirectInventory } from './direct-smart-devices.js'
+import { loadGuidedState } from '../guided/guided-store.js'
 
 // 2.86 Paket N, Live-Befund 06.10. 16:31–16:33: Hue gekoppelt, aber nicht gemeldet;
 // „und?“ lief als Modellrunde ins Leere.
@@ -25,12 +26,14 @@ describe('genau EINE Erfolgsnachricht nach der Kopplung', () => {
         expect(hueErfolgsSatz(lamps)).toBe('✅ Hue verbunden: 4 Lampen, 2 gerade erreichbar — Sofa, Wohnzimmer.')
     })
 
-    it('die Kopplung wird im Hintergrund fertig → ein Ereignis, danach keins mehr', () => {
+    it('die Kopplung wird im Hintergrund fertig → EINE Nachricht: Erfolgssatz mit den Beispiel-Knöpfen (2.86.1)', () => {
         starteVorgang(dir, { key: 'dev-00000000f1', art: 'hue' }, t)
         expect(vorgangsEreignisse(dir, [row('dev-00000000f1', 'pairing')], t)).toEqual([])
-        const [event, ...rest] = vorgangsEreignisse(dir, [row('dev-00000000f1')], t + 30_000)
-        expect(rest).toEqual([])
-        expect(event).toMatchObject({ kind: 'smart.verbunden', summary: '✅ Hue verbunden: 4 Lampen, 2 gerade erreichbar — Sofa, Wohnzimmer.', hint: { importance: 'normal' } })
+        // 2.86.1 Punkt 5: kein eigenes Ereignis mehr — der Satz steht im Kopf der Beispielsätze
+        expect(vorgangsEreignisse(dir, [row('dev-00000000f1')], t + 30_000)).toEqual([])
+        const offen = loadGuidedState({ dataDir: dir }).beispieleOffen
+        expect(offen.map(item => item.kopf)).toEqual(['✅ Hue verbunden: 4 Lampen, 2 gerade erreichbar — Sofa, Wohnzimmer.\nProbier mal:'])
+        expect(vorgangsStand(dir, t + 31_000)).toBe('✅ Hue verbunden: 4 Lampen, 2 gerade erreichbar — Sofa, Wohnzimmer.')
         expect(vorgangsEreignisse(dir, [row('dev-00000000f1')], t + 45_000)).toEqual([])
         // ohne laufenden Vorgang (normale Abfrage) keine Meldung
         expect(vorgangsEreignisse(dir, [row('dev-00000000f2')], t)).toEqual([])

@@ -197,7 +197,8 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
         matter: 'kann nach der Kopplung lesen; geschaltet wird nur nach eigener Karte',
         tv: 'erkannt; Steuerbarkeit noch ungeprüft', geraet: 'erkannt; Typ und Steuerbarkeit noch ungeprüft',
     }
-    for (const g of consolidateDevices(records as any, ctx).geraete) {
+    const konsolidiert = consolidateDevices(records as any, ctx)
+    for (const g of konsolidiert.geraete) {
         if (g.status === 'abgelehnt') continue
         const primary = records.find((record: any) => record.id === g.primaryId) as any
         const known = DEVICE_TITLE[String(primary?.type)]
@@ -211,6 +212,20 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
             verbunden: connectorId ? connectedIds.has(connectorId) : g.status === 'eingerichtet',
             geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
+        })
+    }
+    // 2.86.1 (a): services of the own machine / own mesh nodes are no devices, but they stay
+    // usable — listed under „Hilfsdienste“ in plain words (generic ones like remote access left out).
+    const eigeneAdressen = new Set(ctx.eigeneAdressen || [])
+    for (const dienst of konsolidiert.eigeneDienste) {
+        const known = DEVICE_TITLE[dienst.typ]
+        if (!known || ['networkservice', 'networkdevice'].includes(dienst.typ)) continue
+        const connectorId = catalog.entries.find(entry => entry.findet?.geraet === dienst.typ)?.name
+        gefunden.push({
+            id: `geraet:${dienst.typ}:${dienst.adresse}:${dienst.port}`, title: `${dienst.titel} ${eigeneAdressen.has(dienst.adresse) ? 'auf deinem Rechner' : 'auf einem deiner Rechner'}`,
+            kategorie: 'hilfsdienste', wirkung: known.wirkung, fund: `im Netz ${dienst.adresse}:${dienst.port}`,
+            ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : {}),
+            verbunden: connectorId ? connectedIds.has(connectorId) : dienst.status === 'eingerichtet',
         })
     }
     for (const account of deps.accounts ? deps.accounts() : await defaultAccounts(dataDir)) {

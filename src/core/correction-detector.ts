@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getMemoryGovernanceCoordinator } from '../memory/memory-governance.js'
 import { loadHosts, saveHosts } from '../tools/ssh-tool-hosts.js'
+import { isInfrastructureFailure } from './infrastructure-failure.js'
 
 // ============================================
 // Types
@@ -346,9 +347,7 @@ export const FAILURE_MEMORY_TTL_MS = 24 * 60 * 60_000
  * errors say nothing about whether an approach is wrong. Live 06.10.2026 one
  * scan_now timeout at the old 30 s limit blocked the device scan for good.
  */
-export function isInfrastructureFailure(error: string): boolean {
-    return /\[Timeout\]|timed? ?out|exceeded \d+ ?ms|budget exhausted|outside task contract|AbortError|aborted|fetch failed|ECONN(?:REFUSED|RESET)|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(String(error || ''))
-}
+export { isInfrastructureFailure }
 
 let cachedVersion: string | undefined
 function currentVersion(): string {

@@ -103,7 +103,7 @@ export function sectionedView(chatId: string, input: { kopf: string; titel: stri
     const overview: PagesView = { id: newToken(), chatId: String(chatId), pages: [], createdAt: now, menu: true, links: [] }
     for (const section of input.sections.slice(0, 12)) {
         const lines = section.zeilen.map(line => `• ${line}`)
-        const view: PagesView = { id: newToken(), chatId: String(chatId), pages: paginate(`${section.titel}\n${lines.join('\n')}`), createdAt: now, back: overview.id }
+        const view: PagesView = { id: newToken(), chatId: String(chatId), pages: capPages(paginate(`${section.titel}\n${lines.join('\n')}`), OWNER_SYSTEM_MAX_PAGES), createdAt: now, back: overview.id }
         store.views.push(view)
         overview.links!.push({ label: `${section.titel} (${section.zeilen.length})`.slice(0, 40), viewId: view.id })
     }
@@ -119,10 +119,13 @@ export function sectionedView(chatId: string, input: { kopf: string; titel: stri
  * Stores a long text and returns its first page with „Mehr ▶“ (and the main
  * menu when `menu` is set). A text that fits gets no navigation buttons.
  */
-export function pagedView(chatId: string, text: string, opts: PageOptions & { menu?: boolean; counts?: { fragen?: number }; max?: number; kopf?: string } = {}): { text: string; keyboard: Keyboard } {
+export function pagedView(chatId: string, text: string, opts: PageOptions & { menu?: boolean; counts?: { fragen?: number }; max?: number; kopf?: string; maxPages?: number } = {}): { text: string; keyboard: Keyboard } {
     const body = String(text ?? '').trim()
     const head = opts.kopf ? `${opts.kopf}\n\n` : ''
-    const pages = paginate(body, Math.max(200, (opts.max || OWNER_PAGE_CHARS) - head.length)).map((page, i) => i === 0 ? `${head}${page}` : page)
+    const pageMax = Math.max(200, (opts.max || OWNER_PAGE_CHARS) - head.length)
+    let pages = paginate(body, pageMax).map((page, i) => i === 0 ? `${head}${page}` : page)
+    // 2.86.1 Punkt 1: owner system messages never get more than a few pages — the rest is in the app.
+    if (opts.maxPages && opts.maxPages > 0 && pages.length > opts.maxPages) pages = capPages(pages, opts.maxPages, pageMax)
     if (pages.length === 1 && !opts.menu) return { text: pages[0], keyboard: [] }
     const store = load(opts)
     const now = nowOf(opts)
@@ -133,11 +136,26 @@ export function pagedView(chatId: string, text: string, opts: PageOptions & { me
     return rendered
 }
 
+/** Höchstzahl Telegram-Seiten einer Owner-Systemnachricht (2.86.1). */
+export const OWNER_SYSTEM_MAX_PAGES = 3
+export const GEKUERZT_HINWEIS = '… gekürzt – den ganzen Text findest du in der App.'
+
+/** Keeps the first `maxPages` pages; the last one ends with a note where the rest is. */
+export function capPages(pages: readonly string[], maxPages: number, pageMax = OWNER_PAGE_CHARS): string[] {
+    if (pages.length <= maxPages) return [...pages]
+    const kept = pages.slice(0, maxPages)
+    const lines = kept[maxPages - 1].split('\n')
+    while (lines.length > 1 && lines.join('\n').length + 1 + GEKUERZT_HINWEIS.length > pageMax) lines.pop()
+    const last = lines.join('\n')
+    kept[maxPages - 1] = `${last.length + 1 + GEKUERZT_HINWEIS.length > pageMax ? last.slice(0, Math.max(0, pageMax - GEKUERZT_HINWEIS.length - 2)) : last}\n${GEKUERZT_HINWEIS}`
+    return kept
+}
+
 /** „Details“ under a card: shows the full evidence as a separate message (the card keeps its buttons). */
 export function detailsButton(chatId: string, text: string, opts: PageOptions = {}): { text: string; callback_data: string } {
     const store = load(opts)
     const now = nowOf(opts)
-    const view: PagesView = { id: newToken(), chatId: String(chatId), pages: paginate(String(text ?? '')), createdAt: now, separate: true }
+    const view: PagesView = { id: newToken(), chatId: String(chatId), pages: capPages(paginate(String(text ?? '')), OWNER_SYSTEM_MAX_PAGES), createdAt: now, separate: true }
     store.views.push(view)
     const data = issue(store, chatId, { kind: 'seite', viewId: view.id, index: 0 }, now)
     save(store, opts)

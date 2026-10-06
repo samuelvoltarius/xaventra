@@ -125,13 +125,17 @@ describe('Live-Befund: „Welche smarten Geräte findest du?“ → kurze Gerät
         expect(pages[0]).toBe(owner)
         expect(pages[0]).not.toMatch(/mesh|MCP|Fabric|Thread|Local-Key|dev-/i)
         expect(pages.slice(1).join('\n')).toContain(DETAILS_TRENNER)
-        expect(pages.slice(1).join('\n')).toContain('Smart-Geräte-Zugriffswege')
+        // 2.86.1: the technical inventory only on explicit request („technische Details“).
+        expect(pages.slice(1).join('\n')).not.toContain('Smart-Geräte-Zugriffswege')
+        expect(environmentOverviewResponse([
+            { toolName: 'environment_inventory', success: true, result: { owner, formatted: technik } },
+        ], { technisch: true })).toContain('Smart-Geräte-Zugriffswege')
     })
 
     it('das Werkzeug liefert die Owner-Liste mit (eine Formatierungsstelle, kein zweiter Weg)', () => {
         const source = readFileSync(fileURLToPath(new URL('../tools/environment-inventory-tool.ts', import.meta.url)), 'utf8')
-        expect(source).toContain('ownerGeraeteAntwort(dataDir)')
-        expect(source).toMatch(/return \{ owner, formatted:/)
+        expect(source).toContain('ownerGeraeteAntworten(dataDir)')
+        expect(source).toMatch(/return \{ owner, details, formatted:/)
     })
 })
 

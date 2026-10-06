@@ -114,17 +114,18 @@ describe('Beispielsätze nach der Erfolgsmeldung einer Geräte-Verbindung', () =
         functions: [{ id: 'light:1', kind: 'light', name: 'Sofa', available: true }] }) as any
     const hueEntry = { id: 'geraet:hue:192.0.2.11:80', title: 'Hue Bridge', kategorie: 'zuhause' }
 
-    it('Hue im Hintergrund fertig: Erfolgsmeldung, danach EINE Nachricht mit drei Hue-Sätzen; die Verbindungsliste bietet sie nicht noch einmal an', async () => {
+    it('Hue im Hintergrund fertig: Erfolgssatz + drei Hue-Sätze in EINER Nachricht (2.86.1); die Verbindungsliste bietet sie nicht noch einmal an', async () => {
         noteConnected([ki], opts())
         starteVorgang(dir, { key: 'dev-00000000f1', art: 'hue' }, t)
-        const [event] = vorgangsEreignisse(dir, [hueRow('dev-00000000f1')], t + 30_000)
-        expect(event.summary).toBe('✅ Hue verbunden: 1 Lampe, alle erreichbar.')
+        // 2.86.1 Punkt 5 (Owner-Entscheidung): keine eigene Erfolgsnachricht mehr — sie kommt mit den Knöpfen.
+        expect(vorgangsEreignisse(dir, [hueRow('dev-00000000f1')], t + 30_000)).toEqual([])
         t += 60_000
         const tg = telegram()
         await runGuidedTelegramTick(tg, guided([ki, hueEntry]))
         const offers = tg.log.filter(item => item.op === 'send' && item.keyboard.length === 3)
         expect(offers).toHaveLength(1)
-        expect(offers[0].text).toBe('Probier mal mit Hue:')
+        expect(offers[0].text).toBe('✅ Hue verbunden: 1 Lampe, alle erreichbar.\nProbier mal:')
+        expect(tg.log.filter(item => item.op === 'send' && item.text.includes('Hue verbunden'))).toHaveLength(1)
         expect(offers[0].keyboard.map(row => row[0].text)).toEqual([...BEISPIELSAETZE.hue])
         await runGuidedTelegramTick(tg, guided([ki, hueEntry]))
         expect(tg.log.filter(item => item.op === 'send' && item.keyboard.length === 3)).toHaveLength(1)

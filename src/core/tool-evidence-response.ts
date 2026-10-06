@@ -1,6 +1,17 @@
 import { redactSecrets } from '../security/secret-redaction.js'
 import { NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
-import { DETAILS_TRENNER } from './owner-text.js'
+import { DETAILS_TRENNER, OWNER_PAGE_CHARS } from './owner-text.js'
+
+/** 2.86.1: „Details“ to the device list fit on two Telegram pages. */
+const DETAILS_MAX_CHARS = 2 * OWNER_PAGE_CHARS - 100
+
+/**
+ * 2.86.1 Punkt 1: did the owner explicitly ask for the technical details
+ * (node capabilities, work routes, connections, raw observations)?
+ */
+export function wantsTechnicalDetails(text: unknown): boolean {
+    return /\btechnisch\w*\s+(?:details|einzelheiten|infos?|angaben)|\b(?:roh(?:daten|beobachtungen)|alle\s+details|fachlich\w*\s+details|knoten-?f(?:ä|ae)higkeiten)\b/i.test(String(text ?? ''))
+}
 
 export interface ResponseToolExecution {
     toolName?: string
@@ -73,7 +84,7 @@ export function incompleteToolResponse(results: string[]): string {
 
 /** Current, verified read-only results already contain the human-facing report.
  * No model synthesis or second opinion is required to deliver these facts. */
-export function environmentOverviewResponse(executions: ResponseToolExecution[]): string {
+export function environmentOverviewResponse(executions: ResponseToolExecution[], options: { technisch?: boolean } = {}): string {
     const names = executions.some(item => (item.toolName || item.name) === 'scan_now')
         ? ['scan_now', 'environment_inventory', 'mesh_status'] : ['environment_inventory', 'mesh_status']
     const results = names.map(name => {
@@ -92,7 +103,12 @@ export function environmentOverviewResponse(executions: ResponseToolExecution[])
     let value = inventory?.result
     if (typeof value === 'string') { try { value = JSON.parse(value) } catch { /* formatted text */ } }
     const owner = value && typeof value === 'object' && typeof (value as any).owner === 'string' ? safeResult((value as any).owner, 700) : ''
-    return owner ? `${owner}\n${DETAILS_TRENNER}\n${body}` : body
+    if (!owner) return body
+    // 2.86.1 Punkt 1: ONE message plus at most a short second one („Details“, ≤ 2 pages).
+    // The technical inventory only on explicit request („technische Details“) or in the app.
+    if (options.technisch) return `${owner}\n${DETAILS_TRENNER}\n${body}`
+    const details = typeof (value as any).details === 'string' ? safeResult((value as any).details, DETAILS_MAX_CHARS) : ''
+    return `${owner}\n${DETAILS_TRENNER}\n${details || 'Mehr zu jedem Gerät steht in der App unter „Verbindungen“.'}`
 }
 
 function safeResult(value: unknown, limit = 4_000): string {

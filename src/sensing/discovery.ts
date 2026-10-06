@@ -137,6 +137,24 @@ export function identifyHttp(port: number, path: string, result: HttpProbeResult
     return null
 }
 
+/**
+ * 2.86.1 (c): Home Assistant's unauthenticated, read-only `/api/discovery_info`
+ * names the instance (uuid, location name, version). Two addresses with the same
+ * instance are ONE device — without relying on Tailscale reporting LAN endpoints.
+ * Only these three bounded fields are kept.
+ */
+export function parseHaDiscoveryInfo(result: HttpProbeResult | null | undefined): { uuid?: string; location_name?: string; version?: string } {
+    if (!result || result.status !== 200 || typeof result.body !== 'string' || result.body.length > 4096) return {}
+    try {
+        const data = JSON.parse(result.body)
+        const out: { uuid?: string; location_name?: string; version?: string } = {}
+        if (typeof data?.uuid === 'string' && /^[a-f0-9-]{8,64}$/i.test(data.uuid)) out.uuid = data.uuid.toLowerCase()
+        if (typeof data?.version === 'string' && /^\d{4}\.\d{1,2}\.\d{1,3}[a-z0-9.]*$/i.test(data.version)) out.version = data.version
+        if (typeof data?.location_name === 'string' && data.location_name.trim() && (out.uuid || out.version)) out.location_name = cleanText(data.location_name, 60)
+        return out.uuid || out.version ? out : {}
+    } catch { return {} }
+}
+
 const HTTP_CHECKS: Record<number, Array<{ path: string }>> = {
     7125: [{ path: '/server/info' }],
     8123: [{ path: '/manifest.json' }],
@@ -284,7 +302,7 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
                 const matter = ['_matter._tcp.local', '_matterc._udp.local'].includes(item.hints?.service) && /^[a-zA-Z0-9_-]{1,80}$/.test(matterId || '') && Number.isInteger(item.port) && item.port > 0 && item.port <= 65535
                 add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name,
                     ...(esphome ? { hardware: { kind: 'unknown' as const, label: 'ESPHome-Endpunkt (Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: item.name, ecosystem: 'esphome' as const, connector: 'esphome-native' as const, observedAt: new Date(now()).toISOString() } } : matter ? { hardware: { kind: 'unknown' as const, label: 'Matter-Endpunkt (Hersteller, Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: matterId, ecosystem: 'matter' as const, connector: 'matter-ip' as const, observedAt: new Date(now()).toISOString() } } : {}), evidence: { quelle: 'mDNS', port: item.port,
-                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn', 'vp', 'dt', 'cm', 'd', 'nn', 'mn', 'rv', 'uuid', 'bridgeid', 'modelid'].includes(key)).slice(0, 14).map(([key, value]) => [key, cleanText(value, 80)])) } })
+                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn', 'vp', 'dt', 'cm', 'd', 'nn', 'mn', 'rv', 'uuid', 'bridgeid', 'modelid', 'location_name', 'version'].includes(key)).slice(0, 16).map(([key, value]) => [key, cleanText(value, 80)])) } })
             }
         } catch { /* mDNS optional */ }
     }
@@ -336,7 +354,10 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
                     publicHints = { ...(title ? { pageTitle: cleanText(title, 80) } : {}), ...(result.server ? { server: cleanText(result.server, 80) } : {}) }
                 }
                 if (type) {
-                    add({ type, host, port, via: 'http', evidence: { quelle: `GET ${check.path}`, port, http: result?.status ?? null } })
+                    // 2.86.1 (c): the instance id of a Home Assistant (read only, no login).
+                    const instanz = type === 'homeassistant' && !limiter.expired()
+                        ? parseHaDiscoveryInfo(await limiter.run(() => httpProbe(`http://${host}:${port}/api/discovery_info`, probeTimeout)) ?? null) : {}
+                    add({ type, host, port, via: 'http', evidence: { quelle: `GET ${check.path}`, port, http: result?.status ?? null, ...instanz } })
                     identified = true
                     break
                 }
