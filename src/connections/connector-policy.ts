@@ -18,7 +18,8 @@
  *
  * Community connectors (Stufe 2) publish only reading tools; a non-reading
  * tool becomes visible only after the owner allowed exactly that tool — and
- * every call of it still asks.
+ * every call of it still asks. 2.88: a directory entry that failed the own
+ * check („unbekannt“, registry-vetting.ts) is `streng`: even reads ask.
  *
  * Privacy: a cloud connector never receives private content. The same fixed
  * classifier the model routing uses ("Privates bleibt lokal",
@@ -37,6 +38,11 @@ export interface ConnectorBinding {
     standard?: ConnectorCapability
     /** Community only: non-reading tools the owner allowed one by one. */
     erlaubteWerkzeuge?: string[]
+    /**
+     * 2.88: directory entry that failed Xaventra's own check (registry-vetting.ts
+     * „unbekannt“, or a new unapproved version): every tool asks, also reads.
+     */
+    streng?: boolean
 }
 export type ToolCapability = ConnectorCapability | 'unbekannt'
 
@@ -86,8 +92,10 @@ export interface ConnectorToolVerdict { capability: ToolCapability; verdict: Pol
 export function connectorToolVerdict(tool: { name: string; annotations?: ToolAnnotations }, binding: ConnectorBinding, options: { localNodeId?: string } = {}): ConnectorToolVerdict {
     const capability = toolCapability(tool, binding)
     const outward = binding.datenklasse === 'cloud' && capability !== 'lesen'
+    // „unbekannt“ directory servers: a read is no reason to run on its own (card + nothing local).
+    const strict = binding.trust === 'community' && binding.streng === true
     const verdict = evaluateAction({
-        kind: POLICY_KIND[capability],
+        kind: POLICY_KIND[strict && capability === 'lesen' ? 'unbekannt' : capability],
         effects: outward ? ['extern:senden'] : [],
         target: `mcp:${binding.connectorId}/${String(tool?.name || '').slice(0, 80)}`,
         origin: 'model',

@@ -24,6 +24,7 @@ import {
 } from './connector-catalog.js'
 import { loadConnections, type ConnectionRecord, type ConnectionStatus } from './connection-store.js'
 import { readDirectoryCache, searchDirectory, type CommunityEntry } from './registry-directory.js'
+import { pruefeEintrag, vorschlaegeFuer, type Pruefung, type Vorschlag } from './registry-vetting.js'
 import { cachedIcon } from './icon-cache.js'
 import { needsOwnerOAuthClient, oauthClientFor } from './connector-login.js'
 
@@ -47,6 +48,8 @@ export interface FoundItem {
     verbunden: boolean
     /** Paket L: one real device (consolidated); `verbinden` = its connect way (button in the view). */
     geraet?: { id: string; verbinden: 'homeassistant' | 'hue' | 'tuya' | 'matter' | null; dienste: number }
+    /** 2.88: no checked connector — matching entries from the (cached, checked) MCP directory. */
+    verzeichnis?: Vorschlag[]
 }
 export interface PossibleItem {
     connectorId: string
@@ -238,6 +241,15 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             verbunden: connectorId ? connectedIds.has(connectorId) : false,
         })
     }
+    // 2.88: what was found but has no checked connector → matching directory entries (cache only, checked).
+    for (const item of gefunden) {
+        if (item.connectorId || item.verbunden || !item.id.startsWith('geraet:')) continue
+        const type = item.id.split(':')[1]
+        if (!DEVICE_TITLE[type] || ['networkservice', 'networkdevice', 'moonraker', 'octoprint', 'prusalink', 'bambu', 'homeassistant'].includes(type)) continue
+        const vorschlaege = vorschlaegeFuer(DEVICE_TITLE[type].title, { cachePath: deps.directoryCachePath, limit: 3, catalog })
+            .filter(entry => entry.stufe !== 'geprueft' && entry.verbindbar)
+        if (vorschlaege.length) item.verzeichnis = vorschlaege.map(({ pruefung: _p, ...entry }) => entry)
+    }
     const sourcePossible: Array<PossibleItem & { kategorie: ViewKategorie }> = []
     const sourceConnected: ConnectedItem[] = []
     for (const source of sources.values()) {
@@ -348,6 +360,7 @@ export async function formatConnectionsText(deps: ViewDeps = {}): Promise<string
 }
 
 /** Community search with cached icons only (no network while listing). */
-export function searchCommunity(query: string, deps: Pick<ViewDeps, 'directoryCachePath'> & { iconDir?: string } = {}): Array<CommunityEntry & { iconData: string | null }> {
-    return searchDirectory(query, { cachePath: deps.directoryCachePath, limit: 40 }).map(entry => ({ ...entry, iconData: entry.icon ? cachedIcon(entry.icon.src, deps.iconDir) : null }))
+export function searchCommunity(query: string, deps: Pick<ViewDeps, 'directoryCachePath'> & { iconDir?: string } = {}): Array<CommunityEntry & { iconData: string | null; pruefung: Pruefung }> {
+    // 2.88: every directory hit carries Xaventra's own check (level, publisher, source, version, network).
+    return searchDirectory(query, { cachePath: deps.directoryCachePath, limit: 40 }).map(entry => ({ ...entry, iconData: entry.icon ? cachedIcon(entry.icon.src, deps.iconDir) : null, pruefung: pruefeEintrag(entry) }))
 }

@@ -43,6 +43,15 @@ describe('MCP tool → action policy (2.85 Paket A, Punkt 3)', () => {
         expect(granted.verdict.decision).toBe('ask')
     })
 
+    it('2.88: an unknown directory entry (streng) shows reading tools but every call asks, also reads', () => {
+        const strict = { ...community, streng: true }
+        const read = connectorToolVerdict({ name: 'get_forecast', annotations: { readOnlyHint: true } }, strict)
+        expect(read).toMatchObject({ sichtbar: true, verdict: { decision: 'ask' } })
+        expect(connectorToolVerdict({ name: 'set_alarm', annotations: { readOnlyHint: false } }, strict).sichtbar).toBe(false)
+        const granted = connectorToolVerdict({ name: 'set_alarm', annotations: { readOnlyHint: false } }, { ...strict, erlaubteWerkzeuge: ['set_alarm'] })
+        expect(granted).toMatchObject({ sichtbar: true, verdict: { decision: 'ask' } })
+    })
+
     it('cloud connectors get nothing private; local ones are not restricted', () => {
         expect(cloudPrivacyRefusal({ query: 'Termine nächste Woche' }, calendar)).toBeNull()
         expect(cloudPrivacyRefusal({ query: 'Kundendaten von Müller und seine Telefonnummer' }, calendar)).toMatch(/Privates/)

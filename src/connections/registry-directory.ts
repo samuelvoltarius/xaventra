@@ -121,7 +121,11 @@ export function readDirectoryCache(cachePath = defaultCachePath()): DirectoryCac
         const raw = JSON.parse(readFileSync(cachePath, 'utf8'))
         // The cache file is our own, but it is re-checked like fresh data.
         const entries = (Array.isArray(raw?.entries) ? raw.entries : []).slice(0, MAX_ENTRIES)
-            .map((entry: CommunityEntry) => sanitizeRegistryEntry({ server: { ...entry, repository: entry?.repository ? { url: entry.repository } : undefined, icons: entry?.icon ? [entry.icon] : [] } }))
+            .map((entry: CommunityEntry) => sanitizeRegistryEntry({ server: {
+                ...entry, repository: entry?.repository ? { url: entry.repository } : undefined, icons: entry?.icon ? [entry.icon] : [],
+                // 2.88: keep the "needs a login" flag across the re-check (it is stored as `auth`, not as headers).
+                remotes: Array.isArray(entry?.remotes) ? entry.remotes.map(remote => ({ ...remote, headers: remote?.auth === true ? [{ name: 'Authorization' }] : [] })) : [],
+            } }))
             .filter(Boolean) as CommunityEntry[]
         return { version: 1, fetchedAt: Number(raw?.fetchedAt) || 0, complete: raw?.complete === true, entries }
     } catch { return { version: 1, fetchedAt: 0, complete: false, entries: [] } }
@@ -177,12 +181,23 @@ export async function refreshDirectory(options: RefreshOptions = {}): Promise<Re
     return { ok: true, entries: entries.length, pages, complete }
 }
 
+/** 2.88 offline robust: after a failed refresh the next try waits this long (the cache stays). */
+export const DIRECTORY_RETRY_MS = 60 * 60_000
+const lastFailure = new Map<string, number>()
+
 /** Refresh only when due (Main only; the caller decides). Never throws. */
 export async function refreshDirectoryIfDue(options: RefreshOptions & { isMain: boolean }): Promise<RefreshResult | null> {
     if (!options.isMain) return null
+    const now = options.now ?? Date.now()
+    const key = options.cachePath || defaultCachePath()
     const cache = readDirectoryCache(options.cachePath)
-    if (!directoryDue(cache, options.now ?? Date.now())) return null
-    try { return await refreshDirectory(options) } catch { return null }
+    if (!directoryDue(cache, now)) return null
+    if (now - (lastFailure.get(key) ?? -Infinity) < DIRECTORY_RETRY_MS) return null
+    let result: RefreshResult | null
+    try { result = await refreshDirectory(options) } catch { result = null }
+    if (!result?.ok) lastFailure.set(key, now)
+    else lastFailure.delete(key)
+    return result
 }
 
 /** Search in the cache only (no network). Stufe-1 registry ids are hidden. */

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-    directoryDue, readDirectoryCache, refreshDirectory, sanitizeRegistryEntry, searchDirectory, type DirectoryFetch,
+    directoryDue, readDirectoryCache, refreshDirectory, refreshDirectoryIfDue, sanitizeRegistryEntry, searchDirectory, type DirectoryFetch,
 } from './registry-directory.js'
 
 const BASE = 'https://registry.example.com/v0/servers'
@@ -92,6 +92,19 @@ describe('community directory (Stufe 2, untrusted)', () => {
         const again = await refreshDirectory({ fetchFn: broken, baseUrl: BASE, cachePath: join(dir, 'c.json'), now: 10 })
         expect(again.ok).toBe(false)
         expect(readDirectoryCache(join(dir, 'c.json')).fetchedAt).toBe(5)
+    })
+
+    it('2.88 offline: a failed refresh waits an hour before the next try and keeps the cache', async () => {
+        const dir = tmp()
+        let calls = 0
+        const offline: DirectoryFetch = async () => { calls++; throw new Error('getaddrinfo ENOTFOUND') }
+        const first = await refreshDirectoryIfDue({ isMain: true, fetchFn: offline, baseUrl: BASE, cachePath: join(dir, 'c.json'), now: 10_000_000 })
+        expect(first?.ok).toBe(false)
+        expect(await refreshDirectoryIfDue({ isMain: true, fetchFn: offline, baseUrl: BASE, cachePath: join(dir, 'c.json'), now: 10_000_000 + 30 * 60_000 })).toBeNull()
+        expect(calls).toBe(1)
+        await refreshDirectoryIfDue({ isMain: true, fetchFn: offline, baseUrl: BASE, cachePath: join(dir, 'c.json'), now: 10_000_000 + 61 * 60_000 })
+        expect(calls).toBe(2)
+        expect(readDirectoryCache(join(dir, 'c.json')).entries).toEqual([])
     })
 
     it("is due once a day (and when never fetched)", () => {
