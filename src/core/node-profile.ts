@@ -14,6 +14,7 @@ import { existsSync, readFileSync, statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, networkInterfaces, platform, totalmem } from 'node:os'
 import { parse as parsePath } from 'node:path'
 import { assessLocalMemory, diskLevel, markVllmNode } from './resource-thresholds.js'
+import { detectKubernetes, sanitizeKubernetesInfo, type KubernetesInfo } from '../infra/kubernetes-node.js'
 
 export type NodeRuntimeKind = 'native' | 'container' | 'unknown'
 export type NodeInstallPath = 'package-manager' | 'host-agent' | 'image' | 'none'
@@ -53,6 +54,8 @@ export interface NodeProfile {
 
     /** Phase 6c; older peers send no field (read as kind 'unknown'). */
     virtualization?: VirtualizationInfo
+    /** P19 (2.88): pod facts when this node runs in Kubernetes; older peers send no field. */
+    kubernetes?: KubernetesInfo
     installPath: NodeInstallPath
     tools: string[]
     selfCheck: { status: SelfCheckStatus; checkedAt: string; items: SelfCheckItem[] }
@@ -63,9 +66,10 @@ export interface NodeProfile {
 // Pure detection helpers (tested with fixtures)
 // ---------------------------------------------------------------------------
 
-export function detectRuntimeKind(input: { platform: string; dockerenv: boolean; cgroup: string; systemdInvocation: boolean }): NodeRuntimeKind {
+export function detectRuntimeKind(input: { platform: string; dockerenv: boolean; cgroup: string; systemdInvocation: boolean; kubernetes?: boolean }): NodeRuntimeKind {
     if (input.platform !== 'linux') return 'native'
-    if (input.dockerenv || /\b(docker|containerd|kubepods|libpod)\b/.test(input.cgroup)) return 'container'
+    // containerd pods with cgroup v2 show only "0::/" and have no /.dockerenv.
+    if (input.kubernetes || input.dockerenv || /\b(docker|containerd|kubepods|libpod)\b/.test(input.cgroup)) return 'container'
     return input.systemdInvocation ? 'native' : 'unknown'
 }
 
@@ -191,9 +195,10 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
     }
     const { getNovaDataDir } = await import('./data-root.js')
     const os = platform()
+    const kubernetes = os === 'linux' ? detectKubernetes() : null
     const runtime = detectRuntimeKind({
         platform: os, dockerenv: existsSync('/.dockerenv'), cgroup: readText('/proc/1/cgroup'),
-        systemdInvocation: Boolean(process.env.INVOCATION_ID),
+        systemdInvocation: Boolean(process.env.INVOCATION_ID), kubernetes: Boolean(kubernetes),
     })
     const rootReadOnly = os === 'linux' ? rootIsReadOnly(readText('/proc/self/mountinfo')) : null
     const virtualization: VirtualizationInfo = {
@@ -257,6 +262,7 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         gpu: { name: gpuName, backend, viaVllm },
         services,
         virtualization,
+        ...(kubernetes ? { kubernetes } : {}),
         installPath: installPathFor({ runtime, rootReadOnly, noNewPrivileges, hasApt: tools.includes('apt'), isRoot: process.getuid?.() === 0 }),
         tools,
         selfCheck: runLocalSelfCheck(getNovaDataDir(), now),
@@ -371,6 +377,7 @@ export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
         gpu: { name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true },
         ...(Array.isArray(value.services) ? { services: sanitizeNodeServices(value.services) } : {}),
         virtualization: sanitizeVirtualization(value.virtualization),
+        ...(sanitizeKubernetesInfo(value.kubernetes) ? { kubernetes: sanitizeKubernetesInfo(value.kubernetes) } : {}),
         installPath: oneOf(value.installPath, ['package-manager', 'host-agent', 'image', 'none'] as const, 'none'),
         tools: Array.isArray(value.tools) ? value.tools.slice(0, 60).map((tool: unknown) => str(tool, 40)) : [],
         selfCheck: {
@@ -393,7 +400,8 @@ export function suggestionsFor(profile: NodeProfile): string[] {
     for (const item of profile.selfCheck.items) if (item.status !== 'ok') out.push(`${item.label}: ${item.detail}`)
     if (profile.gpu.backend === 'cpu' && profile.gpu.viaVllm) out.push('GPU wird über vLLM genutzt; lokale GGUF-Modelle liefen hier auf der CPU.')
     else if (profile.gpu.name && profile.gpu.backend === 'cpu') out.push(`GPU ${profile.gpu.name} erkannt, aber ungenutzt (lokal nur CPU).`)
-    if (profile.installPath === 'image') out.push('Container: Pakete nur über ein neues Image beim nächsten Tausch.')
+    if (profile.kubernetes) out.push('Kubernetes: Pakete nur über ein neues Image (Chart-Update per Karte); Neustarts macht Kubernetes.')
+    else if (profile.installPath === 'image') out.push('Container: Pakete nur über ein neues Image beim nächsten Tausch.')
     else if (profile.installPath === 'host-agent') out.push('Gehärteter Dienst: Installation nur über den Host-Agenten (Stufe 2).')
     return out
 }
@@ -418,6 +426,8 @@ export function formatNodeOverview(entries: Array<{ profile: NodeProfile | null;
         const virt = profile.virtualization
         if (virt?.platform === 'proxmox') lines.push(`  Proxmox-VM ${virt.vmid} auf ${virt.pveNode}${virt.ownMachine ? ' (eigene Maschine)' : ''}`)
         else if (virt?.kind === 'kvm') lines.push('  läuft in einer KVM-VM (Proxmox-Zuordnung unbekannt)')
+        const k8s = profile.kubernetes
+        if (k8s) lines.push(`  Kubernetes-Pod ${k8s.pod || '?'} in ${k8s.namespace || '?'} auf Knoten ${k8s.node || '?'}${k8s.workload ? ` (${k8s.workload})` : ''}`)
         for (const suggestion of suggestionsFor(profile)) lines.push(`  → ${suggestion}`)
     }
     return lines.join('\n')
