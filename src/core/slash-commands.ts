@@ -107,6 +107,9 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     { command: 'help', description: '✨ Befehle anzeigen', gruppe: 'Überblick' },
     { command: 'status', description: '📊 System-Status & Uptime', gruppe: 'Überblick' },
     { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)', gruppe: 'Überblick' },
+    { command: 'aktivitaet', description: '👀 Alles, was ich tue – mit Stopp/Später (Owner)', gruppe: 'Überblick' },
+    { command: 'regeln', description: '📜 Deine Regeln in Klartext (Owner)', gruppe: 'Überblick' },
+    { command: 'computer', description: '🖥 Ihr Computer: Bildschirme (Owner)', gruppe: 'Überblick' },
     { command: 'arbeit', description: '🗂️ Verantwortungen & Missionen (Owner)', gruppe: 'Überblick' },
     { command: 'gedanken', description: '💭 Letzte Gedanken & Vorschläge (Owner)', gruppe: 'Überblick' },
     // Gelerntes
@@ -3563,6 +3566,35 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         case 'jetzt': {
             const { collectJetzt, formatJetzt } = await import('./now-view.js')
             return formatJetzt(await collectJetzt())
+        }
+        // 2.88 „Sehen und lenken“ (owner only, see COMMAND_MINIMUM_ROLE default). Shortcuts only:
+        // the same lists live in the app; rules also come from plain sentences in the chat.
+        case 'aktivitaet': {
+            const { aktivitaetText, sammleAktivitaet } = await import('../sehen/aktivitaet.js')
+            const view = await sammleAktivitaet()
+            const text = aktivitaetText(view)
+            const ownerId = String(principalContext?.rawUserId || '').trim()
+            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId) && ownerId === String(from)) {
+                const { getTelegramAdapter } = await import('../channels/telegram.js')
+                const tg = getTelegramAdapter()
+                const { aktivitaetKnoepfe } = await import('../sehen/telegram-sehen.js')
+                const keyboard = aktivitaetKnoepfe(view, ownerId)
+                if (tg && keyboard.length) {
+                    await tg.sendWithButtons(from, text, keyboard)
+                    return '__HANDLED__'
+                }
+            }
+            return text
+        }
+        case 'regeln': {
+            const { neueRegel, regelnText } = await import('../sehen/regeln.js')
+            const satz = args.trim()
+            if (satz) return neueRegel(satz, { principalId: String(principalContext?.principalId || principalContext?.rawUserId || 'owner'), kanal: principalContext?.channel || 'chat' }).message
+            return regelnText()
+        }
+        case 'computer': {
+            const { bildschirmeText, listeBildschirme } = await import('../sehen/bildschirm.js')
+            return bildschirmeText(await listeBildschirme())
         }
         // /desktop – Direktverbindung (owner only, see COMMAND_MINIMUM_ROLE default).
         // Buttons only in Telegram; links are sent by the button press, never here.
