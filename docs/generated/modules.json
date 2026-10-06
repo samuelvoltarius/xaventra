@@ -6017,6 +6017,7 @@
       "module": "src/sensing/connect-progress.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../guided/example-prompts.js",
         "./direct-smart-devices.js",
         "./event-bus.js",
         "node:fs",
@@ -6122,7 +6123,9 @@
     },
     {
       "module": "src/sensing/device-words.ts",
-      "imports": []
+      "imports": [
+        "../guided/fachwoerter.js"
+      ]
     },
     {
       "module": "src/sensing/direct-smart-devices.ts",
