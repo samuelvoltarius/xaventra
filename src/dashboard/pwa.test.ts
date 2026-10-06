@@ -116,6 +116,24 @@ describe('PWA: Seite und Service-Worker', () => {
         expect(cached).toEqual(expect.arrayContaining(['/', '/app.js', '/bridge.js', '/styles.css', '/manifest.webmanifest']))
     })
 
+    // 2.86 Zusammenstecken (O + M): die Web-App startet auch ohne Netz mit ALLEN Seitendateien
+    // (auch dem Cockpit „Heute“ aus Paket M) — aber nie mit API-Antworten oder Token.
+    it('cached jede Seitendatei der einen Oberfläche (auch cockpit.js), sonst nichts', async () => {
+        const { DASHBOARD_UI_FILES } = await import('../dev/copy-dashboard-assets.js')
+        const { listeners, cached } = loadWorker()
+        let pending: Promise<unknown> = Promise.resolve()
+        listeners.install({ waitUntil: (p: Promise<unknown>) => { pending = p } })
+        await pending
+        const expected = DASHBOARD_UI_FILES.filter(name => name !== 'sw.js').map(name => `/${name}`)
+        expect([...cached].filter(url => url !== '/').sort()).toEqual([...expected].sort())
+        const { listeners: l2 } = loadWorker()
+        const handled = (url: string) => { let r = false; l2.fetch({ request: { url, method: 'GET', headers: { get: () => null } }, respondWith: () => { r = true } }); return r }
+        expect(handled('https://main.example.com/cockpit.js')).toBe(true)
+        expect(handled('https://main.example.com/cockpit.js?token=abc')).toBe(false)
+        expect(handled('https://main.example.com/api/desktop/gefuehrt')).toBe(false)
+        expect(handled('https://main.example.com/sw.js')).toBe(false)
+    })
+
     it('fasst API-Aufrufe, fremde Ursprünge und Nicht-GET nie an', () => {
         const { listeners } = loadWorker()
         const handled = (url: string, method = 'GET', headers: Record<string, string> = {}) => {
