@@ -1,16 +1,48 @@
 # Changelog
 
-## [Unreleased] — Vorschau 2.87.0 (in Arbeit)
+## [Unreleased] — Vorschau 2.88.0 (in Arbeit)
 
 - **Ein Mesh-Gehirn:** one view of what each node does best (GPU, memory,
-  disk, running models), tasks routed there with a reason, work data carried
-  along through an own Git target in the mesh.
+  disk, running models), tasks routed there with a reason, work data and Git
+  repositories carried along through an own Git target in the mesh.
 - **Main-Nachfolge mit vollem Wissen:** the main state is journaled to other
   nodes; if the main fails, the best-suited node takes over with everything it
   knew, never two mains at once; without a majority a safe mode plus an owner
   emergency code.
-- Open live cases: the local model must never be switched off for timeouts;
-  remaining duplicate model recommenders.
+- Later candidate: running the mesh under Kubernetes (chart with workers as a
+  deployment and a single main).
+
+## [2.87.0] — 2026-10-07
+
+Übersichtlich und erreichbar: the device list fits on one page, the local
+model stays on, voice messages use the local speech service, and Xaventra can
+answer as she speaks and be prepared for phone calls.
+
+Übersicht:
+
+- "Welche smarten Geräte findest du?" fits on one page; details at most two
+  pages, technical data only on request. Duplicates (for example Home
+  Assistant seen twice) are merged; own nodes no longer appear as devices,
+  their services are listed as helpers. Plain device names.
+- A successful light connection is announced once, with example sentences.
+- Home Assistant without the MCP integration falls back to its normal
+  interface instead of failing.
+
+Modelle und Sprache:
+
+- The last local model is never switched off; timeouts and other
+  infrastructure errors no longer count against a model.
+- A local GPU speech-recognition service is detected and used for voice
+  messages; long messages are split into short pieces.
+
+Sprechen und Telefon:
+
+- Streaming answers: speech output starts while the answer is still being
+  written; short questions get a quick answer.
+- Phone page in the app and a short phone command: phone calls are prepared
+  and become active only after the owner enters the SIP details of a provider.
+  The login is checked before anything is saved. An existing local telephone
+  system can be connected; that step stays the owner's choice.
 
 ## [2.86.0] — 2026-10-06
 
