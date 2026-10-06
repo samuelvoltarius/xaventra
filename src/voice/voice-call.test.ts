@@ -261,3 +261,26 @@ describe('VoiceCallSession — wortweise sprechen (Paket P)', () => {
         expect(spoken.at(-1)).toBe('Übrigens: Schon erledigt war: geraet schalten – das bleibt so. Gut.')
     })
 })
+
+describe('VoiceCallSession — Werkzeug wird nach dem Abbruch fertig (Paket P)', () => {
+    it('nennt die Wirkung trotzdem ehrlich', async () => {
+        let finishTool!: () => void
+        const events: VoiceCallEvent[] = []
+        const session = new VoiceCallSession({
+            answer: async (_text, signal, stream) => {
+                await new Promise<void>(resolve => { finishTool = resolve })
+                stream?.onToolDone?.('licht_schalten', true)
+                return signal.aborted ? '' : 'ok'
+            },
+            speak: async text => ({ audio: Buffer.from(text), mime: 'audio/wav', durationSec: 0.01 }),
+            emit: event => { events.push(event) },
+        })
+        await session.onSpeechStart()
+        await session.onFinal('licht an')
+        await session.onSpeechStart()
+        await session.onPartial('stopp')
+        finishTool()
+        await session.idle()
+        expect((events.filter(e => e.type === 'notice').at(-1) as any).text).toBe('Nach dem Abbruch ist noch fertig geworden: licht schalten – das bleibt so.')
+    })
+})

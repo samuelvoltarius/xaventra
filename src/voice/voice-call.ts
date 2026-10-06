@@ -278,7 +278,17 @@ export class VoiceCallSession {
                 fillerSaid = true
                 speaker.say(TOOL_FILLER, true)
             },
-            onToolDone: (name, ok) => { if (ok && name && !this.executedTools.includes(name)) this.executedTools.push(name) },
+            onToolDone: (name, ok) => {
+                if (!ok || !name) return
+                if (signal.aborted) {
+                    // Nach dem Abbruch fertig geworden: Wirkung bleibt, also beim nächsten Mal ehrlich nennen.
+                    const done = `Nach dem Abbruch ist noch fertig geworden: ${toolLabel(name)} – das bleibt so.`
+                    this.carryNote = `${this.carryNote || 'Übrigens:'} ${done}`.trim()
+                    this.emit({ type: 'notice', turn, text: done })
+                    return
+                }
+                if (!this.executedTools.includes(name)) this.executedTools.push(name)
+            },
         }
         try {
             const answer = await this.deps.answer(transcript, signal, stream)
