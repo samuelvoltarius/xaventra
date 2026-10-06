@@ -2,15 +2,36 @@
 
 ## [Unreleased] — Vorschau 2.88.0 (in Arbeit)
 
-- **Ein Mesh-Gehirn:** one view of what each node does best (GPU, memory,
-  disk, running models), tasks routed there with a reason, work data and Git
-  repositories carried along through an own Git target in the mesh.
-- **Main-Nachfolge mit vollem Wissen:** the main state is journaled to other
-  nodes; if the main fails, the best-suited node takes over with everything it
-  knew, never two mains at once; without a majority a safe mode plus an owner
-  emergency code.
-- Later candidate: running the mesh under Kubernetes (chart with workers as a
-  deployment and a single main).
+Goal: a personal agent that can do almost anything — and learns what it cannot
+yet do — running on your own hardware, private by default.
+
+- **Ihr Computer:** watch her desktop and browser live in the app; take over
+  with one button (she stops her mouse and keyboard at once), hand back, or
+  give her a different goal.
+- **Aktivität:** one list of everything she is doing right now and in the
+  background, with stop, later and "anders" on every entry.
+- **Regeln in Klartext:** "you may switch lights without asking", "always ask
+  before mail", "never delete anything" — fixed safety rules stay fixed.
+- **Projekte:** several projects at once from one conversation, no commands;
+  follow-up messages land in the right project.
+- **Ein Gedächtnis über alle Kanäle:** Telegram, app, phone call and team chat
+  share one context for the owner.
+- **Kann ich nicht — soll ich es lernen?** Asked for something she cannot do,
+  she says so and offers to learn it: research, a tested sandbox attempt, a
+  security check, then she keeps measuring and rolls back if it gets worse.
+  Never "paste this into a root shell".
+- **Verbinden ohne Technik:** connectors found through the public MCP registry
+  and checked before use (unknown servers start read-only); a password vault
+  where the model only ever sees a name, never the secret; virtualisation
+  hosts connected with one token entry in the app.
+- **Ein Mesh-Gehirn:** each node's strengths known, work routed there with a
+  reason, Git repositories and work data travel along.
+- **Main-Nachfolge mit vollem Wissen:** state journaled to other nodes, the
+  best-suited node takes over, never two mains; without a majority a safe mode
+  plus an owner emergency code.
+- **Kubernetes (optional):** a Helm chart with workers as a deployment and one
+  active main; she scales her own workers through a narrow interface limited
+  to her own namespace — no raw cluster shell.
 
 ## [2.87.0] — 2026-10-07
 

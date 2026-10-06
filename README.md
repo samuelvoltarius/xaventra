@@ -52,10 +52,13 @@ Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
-**Next version (preview, 2.88.0 in progress).** One mesh brain that knows what
-each node does best and routes work there, and a main succession that hands
-over with the full state (including Git repositories) if the main fails. Details:
-[CHANGELOG → Unreleased](CHANGELOG.md).
+**Next version (preview, 2.88.0 in progress).** An agent that can do almost
+anything and learns the rest: watch and take over her own computer, one
+activity list, rules in plain words, several projects from one conversation,
+one memory across Telegram, app and phone, "I can't do that yet — shall I
+learn it?", connectors from the MCP registry, a password vault the model never
+sees, a mesh brain with main succession, and an optional Kubernetes chart.
+Details: [CHANGELOG → Unreleased](CHANGELOG.md).
 
 ## Why Xaventra
 
