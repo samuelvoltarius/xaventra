@@ -77,7 +77,7 @@ describe('Verbinden = eine Karte (2.85 Paket A, Punkt 4)', () => {
         expect(loadConnections({ dataDir: dir })).toEqual([])
         const approved = await connectFromApproval('home-assistant', 'telegram:42', deps)
         expect(approved.ok).toBe(true)
-        const url = new URL(approved.message.match(/https?:\/\/\S*\/auth\/authorize\?\S+/)![0])
+        const url = new URL(approved.link!.url)
         expect(url.origin).toBe('http://ha.example.com:8123')
         expect(deps.gateway.connected).toEqual([])
         expect(fetchFn).not.toHaveBeenCalled()

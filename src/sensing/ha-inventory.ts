@@ -13,7 +13,9 @@ import type { RawEvent } from './event-bus.js'
 import { applyHaDeviceMetadata, boundedHaJson, haDeviceTemplate } from './ha-device-metadata.js'
 
 export interface HaFunction { id: string; name: string; kind: string; state: string; available: boolean
-    manufacturer?: string; model?: string; deviceId?: string; identitySource?: string }
+    manufacturer?: string; model?: string; deviceId?: string; identitySource?: string
+    /** 2.86 Paket N: HA area (Bereich) of the entity. */
+    raum?: string }
 export interface HaInventory { source: string; at: string; status: 'ok' | 'unavailable'; functions: HaFunction[]; truncated: boolean }
 const file = (dataDir: string) => join(dataDir, 'sensing', 'ha-inventory.json')
 const kinds: Record<string, string> = { light: 'Lichtfunktion', switch: 'Schalter (nicht automatisch eine Steckdose)', media_player: 'Medienfunktion (nicht automatisch ein TV)', climate: 'Heizung/Klima', cover: 'Rollladen/Abdeckung', fan: 'Ventilator', vacuum: 'Staubsauger', lock: 'Schloss' }

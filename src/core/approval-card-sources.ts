@@ -276,6 +276,11 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')
     const deviceDeps = await productionDeviceConnectDeps()
     registerCardExecutor(createDeviceConnectExecutor(deviceDeps))
+
+    // 2.86 Paket N: preview → Ja → switch, „Rückgängig“, retry when reachable, room question, routines.
+    const { createSchaltExecutor, productionSchaltDeps } = await import('../sensing/device-switch.js')
+    const schaltDeps = await productionSchaltDeps()
+    registerCardExecutor(createSchaltExecutor(schaltDeps))
 }
 
 // ---------------------------------------------------------------------------

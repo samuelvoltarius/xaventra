@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answerApprovalCard, listApprovalCards, maintainApprovalCards, registerCardExecutor } from '../core/approval-cards.js'
-import { createDeviceConnectExecutor, DEVICE_CONNECT_KIND, offerDeviceConnections, type DeviceConnectDeps } from './device-connect.js'
+import { createDeviceConnectExecutor, DEVICE_CONNECT_KIND, offerDeviceConnection, offerDeviceConnections, type DeviceConnectDeps } from './device-connect.js'
 import { loadDevices, type DeviceRecord } from './device-registry.js'
 import { selectedSmartRoute } from './smart-device-route.js'
 import { saveConnection, connectionIdFor } from '../connections/connection-store.js'
@@ -50,16 +50,15 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'dev-connect-')); t = Date.p
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 describe('Paket L: je Gerät genau EIN Verbinden', () => {
-    it('offers one bundled card per connectable device (Tuya as lokal/Cloud pair)', async () => {
+    it('offers one bundled card per connectable device (2.86: Tuya local, chosen by her)', async () => {
         const d = deps()
         const { created } = await offerDeviceConnections(d)
         const cards = listApprovalCards({ dataDir: dir })
-        expect(created).toBe(5)
+        expect(created).toBe(4)
         expect(cards.every(c => c.buendel === 'geraete' && c.aktion.kind === DEVICE_CONNECT_KIND)).toBe(true)
-        expect(cards.map(c => c.kurz?.split(' · ')[0]).sort()).toEqual(['Home Assistant', 'Hue Bridge', 'Matter-Gerät', 'Tuya-Gerät', 'Tuya-Gerät'])
+        expect(cards.map(c => c.kurz?.split(' · ')[0]).sort()).toEqual(['Home Assistant', 'Hue Bridge', 'Smart-Gerät', 'Tuya-Gerät'])
         const tuya = cards.filter(c => c.kurz?.startsWith('Tuya'))
-        expect(new Set(tuya.map(c => c.gruppe)).size).toBe(1)
-        expect(tuya.map(c => c.knopf).sort()).toEqual(['Cloud', 'Lokal'])
+        expect(tuya.map(c => [c.aktion.ref, c.knopf])).toEqual([['dev-00000000c1:local', undefined]])
         for (const c of cards) expect(`${c.kurz} ${c.titel}`).not.toMatch(/192\.0\.2|dev-/)
         // the Hue card tells the owner to press the bridge button first
         expect(cards.find(c => c.kurz?.startsWith('Hue'))!.vorschlag).toMatch(/Taste.*Bridge.*dann.*Ja/i)
@@ -107,16 +106,16 @@ describe('Paket L: je Gerät genau EIN Verbinden', () => {
         expect(d.calls).toEqual(['GET http://192.0.2.30:8123/manifest.json', 'approve dev-00000000a1 telegram:111'])
     })
 
-    it('Tuya: one press chooses the way, the other button closes', async () => {
+    it('Tuya: one Ja connects locally; the manufacturer way only as an explicit choice in the app', async () => {
         const d = deps()
         registerCardExecutor(createDeviceConnectExecutor(d))
         await offerDeviceConnections(d)
-        const cloud = listApprovalCards({ dataDir: dir }).find(c => c.knopf === 'Cloud')!
-        await answerApprovalCard(`ac:${cloud.buttons.find(b => b.answer === 'ja')!.token}`, owner, { dataDir: dir, now: () => t, ledger: null })
-        expect(selectedSmartRoute(dir, loadDevices(dir).find(r => r.id === 'dev-00000000c1')!)).toBe('cloud')
+        const local = listApprovalCards({ dataDir: dir }).find(c => c.aktion.ref === 'dev-00000000c1:local')!
+        await answerApprovalCard(`ac:${local.buttons.find(b => b.answer === 'ja')!.token}`, owner, { dataDir: dir, now: () => t, ledger: null })
+        expect(selectedSmartRoute(dir, loadDevices(dir).find(r => r.id === 'dev-00000000c1')!)).toBe('local')
         expect(d.calls).toContain('approve dev-00000000c1 telegram:111')
-        maintainApprovalCards({ dataDir: dir, now: () => t, ledger: null })
-        expect(listApprovalCards({ dataDir: dir }).find(c => c.knopf === 'Lokal')!.status).toBe('erledigt')
+        const explicit = await offerDeviceConnection(d, 'dev-00000000c1', 'cloud')
+        expect(listApprovalCards({ dataDir: dir }).find(c => c.id === explicit.cardId)?.aktion.ref).toBe('dev-00000000c1:cloud')
     })
 
     it('Nein hides every endpoint of the device and it is not asked again', async () => {

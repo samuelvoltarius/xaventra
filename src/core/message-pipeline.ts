@@ -421,6 +421,20 @@ async function handleMessageInScope(
     let requestIsGroup = false
     let routineSkillApplied: string | null = null
 
+    // 2.86 Paket N: a pasted login return address (…/verbindungen/rueckkehr?state=…&code=…)
+    // finishes the login at once. Checked BEFORE any log, session, ledger or model:
+    // the code never leaves this branch. Only the owner; the single-use state is the proof.
+    if (!image) {
+        const { loginReturnInMessage, handlePastedLoginReturn } = await import('../connections/login-paste.js')
+        const address = loginReturnInMessage(content)
+        if (address) {
+            const { getUserPermission } = await import('../users/multi-user-middleware.js')
+            const owner = getUserPermission(from, channel) === 'owner'
+            console.log(`[Nova] [${channel}] Anmelde-Rückkehr eingefügt${owner ? '' : ' (kein Owner, verworfen)'}`)
+            await replyFn(owner ? await handlePastedLoginReturn(address) : 'Eine Anmeldung kann nur der Owner abschließen.')
+            return
+        }
+    }
     console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback)\b/i.test(content.trim())
     if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'user', content)
@@ -668,7 +682,9 @@ async function handleMessageInScope(
     if (!execution || desktopCancellationOnly) {
         try {
             const { detectDeterministicCommand } = await import('./deterministic-query.js')
-            const deterministic = detectDeterministicCommand(content)
+            const detected = detectDeterministicCommand(content)
+            // 2.86 Paket N: „und?“ after a connection is only the owner's; everyone else just talks.
+            const deterministic = detected && !(detected.reason === 'connect-progress' && principalContext.permission !== 'owner') ? detected : null
             if (deterministic) {
                 const response = await handleCommandFn(
                     deterministic.command,

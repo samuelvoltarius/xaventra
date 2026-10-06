@@ -1,5 +1,6 @@
 import { redactSecrets } from '../security/secret-redaction.js'
 import { NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
+import { DETAILS_TRENNER } from './owner-text.js'
 
 export interface ResponseToolExecution {
     toolName?: string
@@ -84,7 +85,14 @@ export function environmentOverviewResponse(executions: ResponseToolExecution[])
             ? (value as any).formatted : value
         return safeResult(text, name === 'environment_inventory' ? 15500 : 4000) || `${name}: kein inhaltliches Ergebnis.`
     })
-    return results.join('\n\n') + '\n\nMesh-Verbindung und beobachtete Dienste sind keine allgemeine Steuerfreigabe. Konkrete Aktionen benötigen passende freigegebene Werkzeuge; Erreichbarkeit weiterer Dienste wurde hier nicht aktiv getestet.'
+    const body = results.join('\n\n') + '\n\nMesh-Verbindung und beobachtete Dienste sind keine allgemeine Steuerfreigabe. Konkrete Aktionen benötigen passende freigegebene Werkzeuge; Erreichbarkeit weiterer Dienste wurde hier nicht aktiv getestet.'
+    // 2.86 Paket N: the owner sees the short device list first; node capabilities,
+    // work routes, access routes and raw observations only behind „Details“.
+    const inventory = [...executions].reverse().find(e => (e.toolName || e.name) === 'environment_inventory' && e.success === true)
+    let value = inventory?.result
+    if (typeof value === 'string') { try { value = JSON.parse(value) } catch { /* formatted text */ } }
+    const owner = value && typeof value === 'object' && typeof (value as any).owner === 'string' ? safeResult((value as any).owner, 700) : ''
+    return owner ? `${owner}\n${DETAILS_TRENNER}\n${body}` : body
 }
 
 function safeResult(value: unknown, limit = 4_000): string {

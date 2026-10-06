@@ -31,6 +31,7 @@ import { identifyHardware } from './hardware-recognition.js'
 import { identifyHttp, type HttpProbeResult } from './discovery.js'
 import { approvedSmartRoute, chooseSmartRoute, type SmartRoute } from './smart-device-route.js'
 import { hueKey } from './direct-smart-devices.js'
+import { nutzenSatz } from './device-words.js'
 
 export const DEVICE_CONNECT_KIND = 'geraet-verbinden'
 export const DEVICE_BUNDLE = 'geraete'
@@ -48,7 +49,7 @@ export interface DeviceConnectDeps {
     allowTarget?: (host: string) => boolean
     httpProbe?: (url: string, timeoutMs: number) => Promise<HttpProbeResult | null>
     /** The existing owner approval path (default: sensing runtime `approveSensingDevice`). */
-    approve?: (id: string, approver: Approver) => Promise<{ ok: boolean; message: string }>
+    approve?: (id: string, approver: Approver) => Promise<{ ok: boolean; message: string; link?: { label: string; url: string } }>
     /** One immediate Hue pairing + lamp read (default: direct-smart-devices). */
     pairNow?: (id: string) => Promise<{ status: string; lampen: number }>
 }
@@ -69,29 +70,41 @@ export function isDeviceConnected(dataDir: string, geraet: Geraet, records: Devi
     return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)))
 }
 
-function kurzOf(g: Geraet): string {
-    const hint: Record<string, string> = {
-        homeassistant: 'dann einmal bei Home Assistant anmelden',
-        hue: 'erst Taste an der Bridge drücken, dann Ja',
-        tuya: 'lokal oder über die Hersteller-Cloud?',
-        matter: 'Kopplungscode danach in der App eingeben',
-    }
-    return `${g.titel} · ${hint[g.verbinden || ''] || g.ort}`
+/**
+ * 2.86 Paket N (Grundsatz Alfred 06.10.: Nutzer sind keine Techniker): genau EIN
+ * Alltagssatz für den einen unvermeidbaren Schritt, keine Fachwörter.
+ * „Lokal oder Cloud?“ fragt sie nicht: im Heimnetz gefunden = lokal. Der Weg über
+ * den Hersteller bleibt nur als ausdrückliche Wahl in der App (Verbindungen).
+ */
+const SCHRITT: Record<string, string> = {
+    homeassistant: 'Bei Home Assistant einmal anmelden',
+    hue: 'Drück die runde Taste auf der Hue Bridge, dann Ja',
+    tuya: 'Danach einmal den Code aus der Tuya-App eingeben',
+    matter: 'Danach den Code vom Aufkleber am Gerät eingeben',
 }
 
-function cardInputs(g: Geraet): Array<Parameters<typeof createApprovalCard>[0]> {
+function kurzOf(g: Geraet): string {
+    return `${g.verbinden === 'matter' ? 'Smart-Gerät' : g.titel} · ${SCHRITT[g.verbinden || ''] || g.ort}`
+}
+
+function cardInputs(g: Geraet, weg?: 'local' | 'cloud'): Array<Parameters<typeof createApprovalCard>[0]> {
     const base = { art: DEVICE_CONNECT_KIND, buendel: DEVICE_BUNDLE, kurz: kurzOf(g), ablaufMs: CARD_TTL_MS, quelle: 'geraete', gruppe: g.id }
-    const beleg = `${g.titel} im ${g.ort} gefunden (${g.dienste.length} ${g.dienste.length === 1 ? 'Dienst' : 'Dienste'}). Erst nach dem Verbinden lese ich, was dahinter hängt; geschaltet wird nur über eine eigene Karte.`
+    const name = g.verbinden === 'matter' ? 'Ein Smart-Gerät' : g.titel
+    const beleg = `${name} in deinem Netz gefunden. Erst nach dem Verbinden sehe ich, was dahinter hängt; geschaltet wird nur, wenn du es sagst und Ja drückst.`
     if (g.verbinden === 'homeassistant') return [{ ...base, titel: 'Home Assistant verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Ja = Adresse übernehmen und die Anmeldeseite von Home Assistant öffnen. Danach lese ich Lampen, Steckdosen und Sensoren; nichts wird geschaltet.', dedupeKey: `geraet:${g.key}` }]
-    if (g.verbinden === 'hue') return [{ ...base, titel: 'Hue Bridge koppeln?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Erst die runde Taste an der Hue Bridge drücken, dann innerhalb von 30 Sekunden Ja. Ich hole nur den lokalen Schlüssel und lese die Lampen; nichts wird geschaltet.', dedupeKey: `geraet:${g.key}` }]
-    if (g.verbinden === 'tuya') return (['local', 'cloud'] as const).map(route => ({ ...base, titel: `Tuya-Gerät ${route === 'local' ? 'lokal' : 'über die Hersteller-Cloud'} verbinden?`, beleg,
-        aktion: { kind: DEVICE_CONNECT_KIND, ref: `${g.primaryId}:${route}` }, knopf: route === 'local' ? 'Lokal' : 'Cloud',
-        vorschlag: route === 'local' ? 'Lokal: den privaten Geräteschlüssel trägst du danach in der App unter Verbindungen ein. Nur lesen, nichts schalten.' : 'Cloud: den Herstellerzugang trägst du danach in der App unter Verbindungen ein. Nur lesen, nichts schalten.',
-        dedupeKey: `geraet:${g.key}:${route}` }))
-    if (g.verbinden === 'matter') return [{ ...base, titel: 'Matter-Gerät koppeln?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Ja = Kopplung vorbereiten. Den Kopplungscode gibst du danach in der App unter Verbindungen ein (nicht im Chat). Nichts wird geschaltet.', dedupeKey: `geraet:${g.key}` }]
+        vorschlag: 'Bei Home Assistant einmal anmelden: Ja öffnet die Anmeldeseite von Home Assistant. Danach sehe ich deine Lampen, Steckdosen und Sensoren; geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
+    if (g.verbinden === 'hue') return [{ ...base, titel: 'Hue Bridge verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
+        vorschlag: 'Drück die runde Taste auf der Hue Bridge, dann innerhalb von 30 Sekunden Ja. Danach sehe ich deine Lampen; geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
+    if (g.verbinden === 'tuya') {
+        // Im Heimnetz gefunden → lokal (sie entscheidet selbst). Über den Hersteller nur auf ausdrücklichen Wunsch in der App.
+        const route = weg || 'local'
+        return [{ ...base, titel: 'Tuya-Gerät verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: `${g.primaryId}:${route}` },
+            vorschlag: route === 'local' ? 'Ja = ich verbinde es direkt bei dir zu Hause. Danach einmal den Code aus der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Geschaltet wird nichts.'
+                : 'Ja = ich verbinde es über das Internet beim Hersteller. Danach einmal die Anmeldung der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Geschaltet wird nichts.',
+            dedupeKey: `geraet:${g.key}:${route}` }]
+    }
+    if (g.verbinden === 'matter') return [{ ...base, titel: 'Smart-Gerät verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
+        vorschlag: 'Ja = ich bereite das Verbinden vor. Den Code vom Aufkleber am Gerät gibst du danach in der App unter Verbindungen ein (nicht im Chat). Geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
     return []
 }
 
@@ -130,7 +143,7 @@ export async function offerDeviceConnection(deps: DeviceConnectDeps, primaryId: 
     const { geraet } = findDevice(deps.dataDir, primaryId, await contextOf(deps))
     if (!geraet || !geraet.verbinden) return { ok: false, message: 'Für dieses Gerät gibt es keinen Verbindungsweg.' }
     if (isDeviceConnected(deps.dataDir, geraet)) return { ok: false, message: `${geraet.titel} ist schon verbunden.` }
-    const inputs = cardInputs(geraet).filter(input => !weg || input.aktion.ref.endsWith(`:${weg}`) || !input.aktion.ref.includes(':'))
+    const inputs = cardInputs(geraet, weg)
     let cardId: string | undefined
     for (const input of inputs) {
         const result = createApprovalCard(input, deps.cardOpts || { dataDir: deps.dataDir })
@@ -155,7 +168,7 @@ async function probe(deps: DeviceConnectDeps, url: string): Promise<HttpProbeRes
     const { realHttpProbe } = await import('./discovery.js')
     return realHttpProbe(url, 1500)
 }
-async function approveVia(deps: DeviceConnectDeps, id: string, approver: Approver): Promise<{ ok: boolean; message: string }> {
+async function approveVia(deps: DeviceConnectDeps, id: string, approver: Approver): Promise<{ ok: boolean; message: string; link?: { label: string; url: string } }> {
     if (deps.approve) return deps.approve(id, approver)
     const { approveSensingDevice } = await import('./runtime.js')
     return approveSensingDevice(id, approver)
@@ -170,22 +183,27 @@ async function pairVia(deps: DeviceConnectDeps, id: string): Promise<{ status: s
 
 async function connectHue(deps: DeviceConnectDeps, record: DeviceRecord, approver: Approver): Promise<{ ok: boolean; message: string }> {
     const allow = deps.allowTarget ? deps.allowTarget(record.host) : await defaultScope(record.host)
-    if (!allow) return { ok: false, message: 'Die Bridge liegt nicht mehr im eigenen Netz. Nichts gekoppelt.' }
+    if (!allow) return { ok: false, message: 'Die Bridge ist gerade nicht in deinem Heimnetz. Nichts verbunden.' }
     const identity = identifyHardware(await probe(deps, `http://${record.host}:80/api/config`), 'hue-config', nowOf(deps))
-    if (!identity) return { ok: false, message: 'Die Bridge hat sich nicht als Hue Bridge bestätigt. Nichts gekoppelt; bitte später erneut versuchen.' }
+    if (!identity) return { ok: false, message: 'Die Hue Bridge hat nicht geantwortet. Nichts verbunden; bitte später nochmal versuchen.' }
     recordCandidates(deps.dataDir, [{ type: 'networkservice', host: record.host, port: 80, via: 'http', name: 'Hue Bridge', hardware: identity, evidence: { quelle: 'GET /api/config', bridgeid: identity.identity } }], nowOf(deps))
     const endpointId = deviceId({ type: 'networkservice', host: record.host, port: 80 })
     const chosen = chooseSmartRoute(deps.dataDir, endpointId, 'local', approver, nowOf(deps))
-    if (!chosen.ok) return { ok: false, message: 'Lokaler Weg konnte nicht gewählt werden. Nichts gekoppelt.' }
+    if (!chosen.ok) return { ok: false, message: 'Das Verbinden hat nicht geklappt. Nichts verändert; bitte später nochmal.' }
     const approved = await approveVia(deps, endpointId, approver)
-    if (!approved.ok) return { ok: false, message: `Nicht gekoppelt: ${approved.message}` }
+    if (!approved.ok) return { ok: false, message: `Nicht verbunden: ${approved.message}` }
     const paired = await pairVia(deps, endpointId)
-    if (paired.status === 'ok') return { ok: true, message: `Hue Bridge gekoppelt: ${paired.lampen} ${paired.lampen === 1 ? 'Lampe' : 'Lampen'} gelesen. Geschaltet wird nur über eine eigene Karte.` }
-    if (paired.status === 'pairing') return { ok: true, message: 'Kopplung freigegeben, die Taste wurde noch nicht erkannt. Drück sie jetzt — ich versuche es zwei Minuten lang weiter und melde die Lampen.' }
-    return { ok: true, message: 'Kopplung freigegeben; die Bridge hat noch nicht geantwortet. Ich versuche es zwei Minuten lang weiter.' }
+    // 2.86 Paket N: the running connection — finished later by the direct adapter (ONE success message) or asked with „und?“.
+    const { starteVorgang, beendeVorgang } = await import('./connect-progress.js')
+    starteVorgang(deps.dataDir, { key: endpointId, art: 'hue' }, nowOf(deps))
+    if (paired.status === 'ok') beendeVorgang(deps.dataDir, endpointId, 'verbunden', nutzenSatz({ lampen: paired.lampen }), { gemeldet: true, now: nowOf(deps) })
+    // 2.86 Paket N: das Ergebnis als Nutzen, nicht als Technik.
+    if (paired.status === 'ok') return { ok: true, message: `${nutzenSatz({ lampen: paired.lampen })} Geschaltet wird nur, wenn du es sagst und Ja drückst.` }
+    if (paired.status === 'pairing') return { ok: true, message: 'Die Taste habe ich noch nicht gesehen. Drück sie jetzt — ich versuche es zwei Minuten lang weiter und sage dir, was ich sehe.' }
+    return { ok: true, message: 'Die Bridge hat noch nicht geantwortet. Ich versuche es zwei Minuten lang weiter.' }
 }
 
-export async function connectDevice(deps: DeviceConnectDeps, ref: string, approver: Approver): Promise<{ ok: boolean; message: string }> {
+export async function connectDevice(deps: DeviceConnectDeps, ref: string, approver: Approver): Promise<{ ok: boolean; message: string; link?: { label: string; url: string } }> {
     const match = REF.exec(String(ref || ''))
     if (!match) return { ok: false, message: 'Unbekanntes Gerät — nichts verbunden.' }
     const [, id, route] = match
@@ -198,7 +216,9 @@ export async function connectDevice(deps: DeviceConnectDeps, ref: string, approv
             return { ok: false, message: 'Home Assistant antwortet gerade nicht an dieser Adresse. Nichts verbunden; bitte später erneut.' }
         }
         recordCandidates(deps.dataDir, [{ type: 'homeassistant', host: record.host, port: record.port, via: 'http' }], nowOf(deps))
-        return approveVia(deps, id, approver)
+        const approved = await approveVia(deps, id, approver)
+        if (approved.ok) { const { starteVorgang } = await import('./connect-progress.js'); starteVorgang(deps.dataDir, { key: 'homeassistant', art: 'homeassistant' }, nowOf(deps)) }
+        return approved
     }
     if (geraet.art === 'hue') return connectHue(deps, record, approver)
     if (geraet.art === 'tuya' || geraet.art === 'matter') {
@@ -207,8 +227,9 @@ export async function connectDevice(deps: DeviceConnectDeps, ref: string, approv
         if (!chosen.ok) return { ok: false, message: 'Der Fund ist veraltet; bei der nächsten Suche frage ich neu. Nichts verbunden.' }
         const approved = await approveVia(deps, id, approver)
         return approved.ok
-            ? { ok: true, message: geraet.art === 'matter' ? 'Kopplung vorbereitet. Den Kopplungscode bitte in der App unter Verbindungen eingeben (nicht im Chat). Nichts geschaltet.'
-                : `${way === 'local' ? 'Lokaler' : 'Cloud-'} Weg freigegeben. Den ${way === 'local' ? 'Geräteschlüssel' : 'Herstellerzugang'} bitte in der App unter Verbindungen eintragen (nicht im Chat). Nichts geschaltet.` }
+            ? { ok: true, message: geraet.art === 'matter' ? 'Vorbereitet. Den Code vom Aufkleber am Gerät bitte in der App unter Verbindungen eingeben (nicht im Chat). Nichts geschaltet.'
+                : way === 'local' ? 'Freigegeben. Bitte einmal den Code aus der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Nichts geschaltet.'
+                    : 'Freigegeben über den Hersteller. Bitte einmal die Anmeldung der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Nichts geschaltet.' }
             : approved
     }
     return { ok: false, message: 'Für dieses Gerät gibt es keinen Verbindungsweg.' }
