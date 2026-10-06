@@ -26,7 +26,7 @@ export interface ChannelStarterConfig {
         discord?: { enabled: boolean; token?: string; allowFrom?: string[]; guildId?: string }
         cli?: { enabled: boolean }
     }
-    dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
+    dashboard?: { enabled: boolean; host?: string; port: number; password?: string; publicHosts?: string[] }
 }
 
 /**
@@ -636,7 +636,7 @@ export async function startDashboard(
     // Always try to start new Nova Dashboard
     try {
         const { startDashboard: startNovaDashboard, setNovaMessageHandler } = await import('../dashboard/server.js')
-        const url = await startNovaDashboard(config?.port || 3011, config?.host || '127.0.0.1')
+        const url = await startNovaDashboard(config?.port || 3011, config?.host || '127.0.0.1', Array.isArray(config?.publicHosts) ? config.publicHosts : [])
 
         // Wire up chat handler — routes through unified handleMessage
         setNovaMessageHandler(async (message: string, channel: string) => {

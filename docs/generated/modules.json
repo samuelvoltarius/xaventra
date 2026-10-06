@@ -1149,6 +1149,13 @@
       "imports": []
     },
     {
+      "module": "src/channels/telegram-voice.ts",
+      "imports": [
+        "../voice/voice-call.js",
+        "../voice/voice-prefs.js"
+      ]
+    },
+    {
       "module": "src/channels/telegram.ts",
       "imports": [
         "../core/outbound-content-guard.js",
@@ -2759,6 +2766,7 @@
         "./module-catalog.js",
         "./node-enrollment.js",
         "./topic-room-store.js",
+        "./voice-api.js",
         "./werkzeugkasten-view.js",
         "express",
         "node:crypto",
@@ -2839,6 +2847,18 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/desktop/voice-api.ts",
+      "imports": [
+        "../voice/voice-call.js",
+        "../voice/voice-mesh.js",
+        "../voice/voice-prefs.js",
+        "express",
+        "node:crypto",
+        "node:http",
+        "node:stream"
       ]
     },
     {
@@ -3673,6 +3693,7 @@
       "module": "src/install/install-catalog.ts",
       "imports": [
         "../memory/embedding-artifacts.js",
+        "../voice/voice-artifacts.js",
         "./never-list.js",
         "node:crypto"
       ]
@@ -4812,6 +4833,7 @@
         "../sensing/config.js",
         "../sensing/discovery.js",
         "../sensing/net-scope.js",
+        "../voice/voice-contract.js",
         "./discovery-probe.js",
         "./mesh-registry.js",
         "node:child_process",
@@ -7226,6 +7248,32 @@
       "imports": []
     },
     {
+      "module": "src/voice/voice-artifacts.ts",
+      "imports": [
+        "../core/data-root.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "node:stream",
+        "node:stream/promises"
+      ]
+    },
+    {
+      "module": "src/voice/voice-bundle-fetch.ts",
+      "imports": [
+        "./voice-artifacts.js"
+      ]
+    },
+    {
+      "module": "src/voice/voice-call.ts",
+      "imports": []
+    },
+    {
+      "module": "src/voice/voice-contract.ts",
+      "imports": []
+    },
+    {
       "module": "src/voice/voice-e2e-check.ts",
       "imports": [
         "./voice-input.js",
@@ -7245,12 +7293,42 @@
       ]
     },
     {
+      "module": "src/voice/voice-mesh.ts",
+      "imports": [
+        "../mesh/ai-scanner.js",
+        "./voice-call.js",
+        "./voice-contract.js"
+      ]
+    },
+    {
       "module": "src/voice/voice-output.ts",
       "imports": [
         "node:child_process",
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/voice-prefs.ts",
+      "imports": [
+        "../core/data-root.js",
+        "./voice-call.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/voice-service.ts",
+      "imports": [
+        "./voice-call.js",
+        "./voice-contract.js",
+        "./voice-mesh.js",
+        "node:child_process",
+        "node:http",
+        "node:module",
+        "node:os",
+        "ws"
       ]
     },
     {

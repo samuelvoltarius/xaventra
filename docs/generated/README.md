@@ -5,10 +5,10 @@ Generated from authoritative source. Do not edit by hand.
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
 | tools.json | 228 | `779c1acec479a9da7c41653ff3085ea77650698e71cb70f1cd8a8a9a2da3481d` |
-| config.json | 0 | `1b9bb5913934a40bac4b7145cd8b7d1fc108f79c8233557e380b28f7b737b3a7` |
-| persistence.json | 356 | `50404619e853a1bd8758387ca9e74d22d9b07e6c2906fb35a4f8a83ead57e32f` |
-| modules.json | 854 | `ddd90b80c2b18b4255534af594db1f292c2a54dfdd98724d2cb763704a90f551` |
+| config.json | 0 | `441fb2792fcb3df81a94b00e9d70a2bc459034b6ffb093f9e38a2b67fd899bec` |
+| persistence.json | 358 | `8b46ec5224d6b929d82ca6fcc6f9290bd69385b886a0f049b9f8b2bdcbbcdb78` |
+| modules.json | 863 | `1cf5f5211990e9b8ba69e67689713689ee9bf954d9f4490ecd51a00dce6a47a0` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
-| install-catalog.json | 13 | `14830e62608da9ff7574a6d86b0379b7ddc98e076c0e20a719a9c7a6d1cbcdee` |
-| software-candidates.json | 17 | `e55077b9d696858fd0091f2bd53c919bfe6fb7d874e4077196ff34fe6c27576e` |
+| install-catalog.json | 14 | `9248a1a6085920111a44f42672e5d94ab9690b2fa0ab88f74d0d4053512df059` |
+| software-candidates.json | 18 | `abe3e02f517a52d374a2378b58c3861c80942cd27abe716655121f5dd91fc0d3` |
 | connector-catalog.json | 9 | `c3840fd2385d8a61b65394adf2a05478d5fc4325e0c8a2a8fa12440c3e6d8016` |

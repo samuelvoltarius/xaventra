@@ -19,7 +19,7 @@ describe('install catalog (S2.1)', () => {
         expect(catalog.rejected).toEqual([])
         expect(catalog.entries.map(entry => entry.id)).toEqual([
             'embedding-gguf:qwen3-embedding-0.6b-q8_0', 'ffmpeg', 'node-llama-cpp-cuda', 'ollama-model:bge-m3', 'ollama-model:gemma4-e2b', 'ollama-model:mxbai-embed-large', 'ollama-model:nomic-embed-text',
-            'ollama-model:qwen3.5-2b', 'ollama-model:qwen3.5-4b', 'ollama-model:qwen3.5-9b', 'playwright-chromium', 'tesseract-ocr', 'xfce-workstation',
+            'ollama-model:qwen3.5-2b', 'ollama-model:qwen3.5-4b', 'ollama-model:qwen3.5-9b', 'playwright-chromium', 'sprachdienst:de', 'tesseract-ocr', 'xfce-workstation',
         ])
         for (const entry of catalog.entries) {
             expect(Array.isArray(entry.install)).toBe(true)
@@ -30,6 +30,12 @@ describe('install catalog (S2.1)', () => {
         }
         expect(findCatalogEntry('xfce-workstation')!.install).toEqual([APT_GET, 'install', '-y', '--no-install-recommends', 'xfce4', 'xfce4-terminal', 'thunar', 'dbus-x11'])
         expect(findCatalogEntry('node-llama-cpp-cuda')).toMatchObject({ targets: ['host-agent'], requires: { arch: 'arm64', gpuVendor: 'nvidia' } })
+        // 2.86 Paket O: Sprachdienst nur über das eigene Bezugsprogramm (feste Dateien + sha256), nie curl|sh.
+        const voice = findCatalogEntry('sprachdienst:de')!
+        expect(voice).toMatchObject({ kind: 'runtime-addon', targets: ['host-agent'], requires: { platform: 'linux' }, runAs: 'service', approval: 'fragen' })
+        expect(voice.install).toEqual(['{node}', '{program}/dist/voice/voice-bundle-fetch.js', 'install', 'de', '{runtime}/voice'])
+        expect(voice.verify).toEqual([['{node}', '{program}/dist/voice/voice-bundle-fetch.js', 'verify', 'de', '{runtime}/voice']])
+        expect(voice.rollback).toEqual({ kind: 'command', argv: ['{node}', '{program}/dist/voice/voice-bundle-fetch.js', 'remove', 'de', '{runtime}/voice'] })
     })
 
     it('uses the same XFCE package set as the setup option', () => {

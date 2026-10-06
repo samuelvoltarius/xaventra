@@ -77,7 +77,7 @@ interface NovaConfig {
         discord?: { enabled: boolean; token?: string }
         cli?: { enabled: boolean }
     }
-    dashboard?: { enabled: boolean; host?: string; port: number; password?: string }
+    dashboard?: { enabled: boolean; host?: string; port: number; password?: string; publicHosts?: string[] }
     runtime?: { profile?: 'home' | 'server' | 'nas' | 'worker' | 'developer'; bundles?: string[]; hotReload?: boolean; acpEnabled?: boolean }
 }
 
@@ -2619,6 +2619,12 @@ async function startDaemon() {
             console.log(`[Nova] ⚠ Startup Report failed: ${err}`)
         }
     }, 15000)  // Wait 15s for all nodes to boot
+
+    // 2.86 Paket O: lokaler Sprachdienst (xaventra-voice). Startet nur, wenn das
+    // geprüfte Bündel aus dem Werkzeugkasten installiert ist; sonst still nichts.
+    void import('./voice/voice-service.js')
+        .then(({ maybeStartVoiceService }) => maybeStartVoiceService())
+        .catch(err => console.debug(`[Nova] Sprachdienst skipped: ${err}`))
 
     // ============================================
     // Initialize Voice Pipeline (Jarvis Mode)

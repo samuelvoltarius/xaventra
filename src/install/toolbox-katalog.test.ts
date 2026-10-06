@@ -44,6 +44,8 @@ describe('Werkzeugkasten: Katalog-Erweiterung', () => {
         expect(findSoftwareCandidate('vision-gemma4-e2b')?.catalogId).toBe('ollama-model:gemma4-e2b')
         expect(findSoftwareCandidate('vision-tesseract-ocr')?.catalogId).toBe('tesseract-ocr')
         expect(findSoftwareCandidate('embedding-mxbai-embed-large')?.catalogId).toBe('ollama-model:mxbai-embed-large')
+        // 2.86 Paket O: ein Knopf „Sprache“ (Verstehen + Sprechen), erkannt am laufenden Sprachdienst.
+        expect(findSoftwareCandidate('sprache-lokal-de')).toMatchObject({ capability: 'stt', catalogId: 'sprachdienst:de', detect: { services: ['xaventra-voice'] } })
     })
 
     it('SearXNG, Piper and faster-whisper stay visible without a catalog id (no container/pip route yet)', () => {

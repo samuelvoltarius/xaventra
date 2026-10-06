@@ -158,8 +158,17 @@ describe('Eignungsprüfung je Knoten (rein)', () => {
         expect(gapThoughts(analysis, 99, { demand: NEED }).some(thought => thought.capability === 'media' || thought.capability === 'llm')).toBe(false)
     })
 
-    it('best node per gap: Whisper large on the Spark (GPU), with why not elsewhere', () => {
+    it('2.86 Paket O: the one-button local voice service is proposed first (catalog route, no GPU needed)', () => {
         const analysis = analyzeMesh(mesh(), { now: NOW })
+        const [stt] = gapThoughts(analysis, undefined, { demand: NEED })
+        expect(stt.capability).toBe('stt')
+        expect(stt.candidateId).toBe('sprache-lokal-de')
+        expect(stt.proposal).toMatch(/Installations-Warteschlange \(Katalog sprachdienst:de/)
+    })
+
+    it('best node per gap: Whisper large on the Spark (GPU), with why not elsewhere', () => {
+        const withoutVoiceBundle = { ...getSoftwareCandidates(), entries: getSoftwareCandidates().entries.filter(entry => entry.id !== 'sprache-lokal-de') }
+        const analysis = analyzeMesh(mesh(), { now: NOW, candidates: withoutVoiceBundle })
         const [stt] = gapThoughts(analysis, undefined, { demand: NEED })
         expect(stt.capability).toBe('stt')
         expect(stt.candidateId).toBe('stt-whisper-large-v3')

@@ -473,3 +473,30 @@ html.novaos-standard button { font-size: 16px !important; }
 .onboarding-pair > div { flex: 1 1 240px; min-width: 0; }
 .onboarding-pair img { width: 200px; height: 200px; border-radius: var(--radius-sm); background: #fff; padding: 6px; }
 .section-head h2 .badge { margin-right: 2px; }
+
+/* ============================================================
+   2.86 Paket O: Anrufen + Handy (Web-App über das Tailnet)
+   ============================================================ */
+.call-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; display: grid; gap: 14px; justify-items: start; }
+.call-card.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.call-button { min-height: 56px; padding: 12px 28px; font-size: 17px; border-radius: 999px; gap: 10px; }
+.call-button.hangup { background: var(--danger); color: #fff; border: 1px solid transparent; display: inline-flex; align-items: center; font-weight: 600; }
+.call-line { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 15px; }
+.call-bubble { width: 100%; border-radius: var(--radius-sm); padding: 10px 14px; background: var(--surface-3); }
+.call-bubble.me { background: var(--accent-soft); }
+.call-bubble p { margin: 2px 0 0; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-settings { display: grid; gap: 12px; }
+.call-settings select { margin-left: 8px; }
+.switch-row { display: flex; gap: 10px; align-items: center; }
+
+@media (max-width: 720px) {
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100dvh; }
+  .rail { order: 2; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-right: 0; border-top: 1px solid var(--hairline); padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); gap: 2px; }
+  .rail .brand, .rail-spacer { display: none; }
+  .rail-button { min-width: 72px; width: auto; min-height: 52px; }
+  .rail-button.active::before { left: 14px; right: 14px; top: -4px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
+  .workspace { height: auto; }
+  .page { padding: 16px 14px 28px; }
+  .call-button { width: 100%; }
+  .toast { left: 12px; right: 12px; bottom: 76px; max-width: none; }
+}

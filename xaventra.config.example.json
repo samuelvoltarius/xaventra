@@ -95,7 +95,7 @@
         "acpEnabled": false
     },
     "name": "Xaventra",
-    "dashboard": { "enabled": true, "host": "127.0.0.1", "port": 3011 },
+    "dashboard": { "enabled": true, "host": "127.0.0.1", "port": 3011, "publicHosts": [] },
     "desktop": {
         "direct": {
             "enabled": false,

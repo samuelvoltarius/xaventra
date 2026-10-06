@@ -41,6 +41,8 @@ const state = {
 const NAV_MAIN = [
   ['heute', 'Heute', 'sun'],
   ['chat', 'Unterhaltung', 'message'],
+  // 2.86 Paket O: mit ihr sprechen, ohne Sprechtaste (eigene Datei anruf.js).
+  ['anruf', 'Anrufen', 'phone'],
   ['arbeit', 'Arbeit', 'briefcase'],
   ['system', 'System', 'server'],
   ['gedaechtnis', 'Gedächtnis', 'brain'],
@@ -88,6 +90,7 @@ const ICONS = {
   plusCircle: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   send: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/>',
   wrench: '<path d="M14.7 6.3a4 4 0 0 0 5 5L22 14l-8 8-2.3-2.3a4 4 0 0 0-5-5L4 12l2.3-2.3a4 4 0 0 0 5-5L14 2z"/>',
   scale: '<path d="M12 3v18M5 7h14M5 7l-3 7a4 4 0 0 0 6 0zM19 7l-3 7a4 4 0 0 0 6 0zM8 21h8"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
@@ -363,9 +366,15 @@ function pageFor(section) {
   if (section === 'security') return subPage('security', securityView())
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
+  if (section === 'anruf') return window.XaventraAnruf ? window.XaventraAnruf.view(anrufHelpers()) : loadingBlock('Anrufen')
   if (section === 'werkzeugkasten') return window.Werkzeugkasten ? `<div class="page"><div class="page-inner">${window.Werkzeugkasten.view(werkzeugkastenHelpers())}</div></div>` : loadingBlock('Werkzeugkasten')
   if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
   return settingsView()
+}
+
+// Anrufen (2.86 Paket O): eigene Datei anruf.js; hier nur die Hilfsfunktionen.
+function anrufHelpers() {
+  return { api, esc, attr, icon, toast, fail, rerender: () => { if (state.section === 'anruf' && !document.querySelector('.modal')) render() } }
 }
 
 // Erster Start (2.85): eigene Datei onboarding.js; hier nur die Hilfsfunktionen.
@@ -1210,6 +1219,7 @@ function bind() {
   document.querySelectorAll('[data-enrollment-action]').forEach(node => node.addEventListener('click', () => enrollmentAction(node.dataset.id, node.dataset.enrollmentAction)))
   document.querySelectorAll('[data-memory-equip]').forEach(node => node.addEventListener('click', () => toggleRoomMemoryAsset(node.dataset.memoryEquip, node.dataset.equipped === 'true')))
   if (state.section === 'werkzeugkasten') window.Werkzeugkasten?.bind(werkzeugkastenHelpers())
+  if (state.section === 'anruf') window.XaventraAnruf?.bind(anrufHelpers())
 }
 
 function showRepairApproval(proposalId) {
