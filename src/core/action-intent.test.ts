@@ -95,6 +95,22 @@ describe('action intent evidence gate', () => {
         expect(toolProvidesActionEvidence('send_file')).toBe(true)
     })
 
+    it('2.88: status questions about connections, devices and services need tool evidence (live: „Ja — verbunden.“ without any tool)', () => {
+        for (const question of [
+            'Ist Home Assistant verbunden? Antworte kurz.',
+            'Ist der Drucker erreichbar?',
+            'Sind die Lampen im Wohnzimmer eingeschaltet?',
+            'Ist Paperless noch angebunden?',
+            'Welche Verbindungen sind aktiv?',
+            'Funktioniert die Verbindung zu Gmail?',
+            'Ist mein NAS online?',
+        ]) expect(detectActionIntent(question), question).toEqual({ requiresTool: true, kind: 'system-state' })
+        for (const talk of ['Ist das Wort verbunden mit Bindung verwandt?', 'Was bedeutet erreichbar?', 'Bist du online?']) {
+            expect(detectActionIntent(talk).requiresTool, talk).toBe(false)
+        }
+        expect(honestNoToolResponse('system-state')).toBe('Das weiß ich gerade nicht sicher — ich konnte es nicht nachprüfen. Frag mich gleich noch einmal, dann prüfe ich es.')
+    })
+
     it('does not force tools for ordinary conversation', () => {
         expect(detectActionIntent('Erkläre mir, warum der Himmel blau ist.')).toEqual({ requiresTool: false, kind: 'none' })
     })
