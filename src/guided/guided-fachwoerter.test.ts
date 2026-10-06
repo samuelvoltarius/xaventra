@@ -10,6 +10,11 @@ import { buildChecklist, factsFromOverview, skipChecklistItem } from './setup-ch
 import { checklistView, guidedMenuRow, hilfeView, pinnedText, tippView } from './telegram-guided.js'
 import { buildCockpit, systemKopf } from './ampel.js'
 import { APP_SATZ } from './guided-runtime.js'
+import { fachwoerterIn, geraetAnzeige, imRaum, nutzenSatz, vorschauSatz } from '../sensing/device-words.js'
+import { naechsterSchritt } from '../sensing/device-errors.js'
+import { hueErfolgsSatz } from '../sensing/connect-progress.js'
+import { pressVoiceInstall, voiceUnavailableNotice } from '../channels/telegram-voice.js'
+import { voiceStatus } from '../desktop/voice-api.js'
 
 // 2.86 Paket M Grundsatz: keine Fachwörter in Owner-Texten. Eine Liste (fachwoerter.ts),
 // ein Test gegen ALLE Owner-Texte von Paket M (Telegram, App, Bericht).
@@ -81,6 +86,48 @@ describe('Fachwörter in Owner-Texten', () => {
     it('no new owner text of Paket M contains a technical word', () => {
         const texts = ownerTexts()
         expect(texts.length).toBeGreaterThan(150)
+        const hits = texts.map(text => ({ text, woerter: findeFachwoerter(text) })).filter(item => item.woerter.length)
+        expect(hits).toEqual([])
+    })
+})
+
+// 2.86 Zusammenstecken: EINE Fachwortliste für N (Geräte), M (Geführt) und O (Sprache).
+async function nmoOwnerTexts(): Promise<string[]> {
+    const texts: string[] = []
+    // N: Nutzen-, Vorschau-, Fehler- und Erfolgssätze
+    for (const z of [{ lampen: 12, schalter: 3 }, { lampen: 1 }, { drucker: 1 }, { drucker: 2 }, { sensoren: 2, schalter: 1 }, {}]) texts.push(nutzenSatz(z))
+    texts.push(vorschauSatz([{ name: 'Stehlampe', raum: 'Wohnzimmer', art: 'licht', on: false }, { name: 'Steckdose', raum: 'Küche', art: 'schalter', on: true }]))
+    texts.push(imRaum('Balkon'), geraetAnzeige('Stehlampe', 'Wohnzimmer'))
+    for (const ursache of ['aus', 'zeit', 'anmeldung', 'unbekannt'] as const) {
+        const schritt = naechsterSchritt(ursache, 'Stehlampe im Wohnzimmer')
+        texts.push(schritt.satz, schritt.knopf || '')
+    }
+    texts.push(hueErfolgsSatz([]), hueErfolgsSatz([{ id: 'light:1', kind: 'light', name: 'Sofa', available: true }, { id: 'light:2', kind: 'light', name: 'Flur', available: false }] as any))
+    // O: Telegram-Sprachnachricht, Anrufen in der App
+    const notice = voiceUnavailableNotice()
+    texts.push(notice.text, ...notice.keyboard.flat().map(button => button.text), await pressVoiceInstall(false))
+    for (const found of [null, { endpoint: 'http://192.0.2.9:8765', sourceNode: 'ns1' }]) {
+        const status: any = await voiceStatus(async () => found as any)
+        texts.push(status.text, status.knopf?.text || '')
+    }
+    const anruf = readFileSync(join(process.env.NOVA_PROJECT_ROOT || process.cwd(), 'desktop', 'renderer', 'anruf.js'), 'utf8')
+    texts.push(...[...anruf.matchAll(/'([A-ZÄÖÜ][^'\n]*\s[^'\n]*)'/g)].map(match => match[1]))
+    texts.push(...[...anruf.matchAll(/>([^<>$`{}]{3,})</g)].map(match => match[1]))
+    return texts.filter(text => text && text.trim())
+}
+
+describe('EINE Fachwortliste für N, M und O', () => {
+    it('device-words prüft gegen dieselbe Liste wie Paket M (auch die Gerätewörter aus N)', () => {
+        expect(fachwoerterIn('Mesh-Node mit Daemon')).toEqual(findeFachwoerter('Mesh-Node mit Daemon'))
+        expect(fachwoerterIn('Mesh-Node mit Daemon').length).toBeGreaterThan(0)
+        for (const n of ['Cloud-Konto', 'Zigbee', 'Firmware', 'Geräteschlüssel', 'mDNS', 'per https']) expect(findeFachwoerter(n), n).not.toEqual([])
+        // „besser“ schlägt nie selbst ein Fachwort vor
+        for (const entry of FACHWOERTER) expect(findeFachwoerter(entry.besser), entry.wort).toEqual([])
+    })
+
+    it('kein Owner-Text aus N, M oder O enthält ein Fachwort', async () => {
+        const texts = [...ownerTexts(), ...await nmoOwnerTexts()]
+        expect(texts.length).toBeGreaterThan(200)
         const hits = texts.map(text => ({ text, woerter: findeFachwoerter(text) })).filter(item => item.woerter.length)
         expect(hits).toEqual([])
     })

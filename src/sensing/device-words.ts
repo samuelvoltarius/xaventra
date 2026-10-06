@@ -3,24 +3,19 @@
  *
  * Nutzer sind keine Techniker (Grundsatz Alfred 06.10.): Owner-Texte der
  * Geräte- und Verbindungswege sagen den Nutzen in einem Satz und enthalten
- * keine Fachwörter. `FACHWOERTER` ist die feste Prüfliste (Test gegen alle
- * Owner-Texte dieser Wege); Markennamen, die auf dem Gerät stehen (Hue,
- * Home Assistant, Tuya, Shelly), sind erlaubt.
+ * keine Fachwörter. Geprüft wird gegen die EINE Liste in
+ * `guided/fachwoerter.ts` (Test gegen alle Owner-Texte aus N, M und O);
+ * Markennamen, die auf dem Gerät stehen (Hue, Home Assistant, Tuya, Shelly),
+ * sind erlaubt.
  */
+import { findeFachwoerter } from '../guided/fachwoerter.js'
 
-/** Fachwörter, die in Owner-Texten der Geräte-/Verbindungswege nie stehen. */
-export const FACHWOERTER: ReadonlyArray<RegExp> = Object.freeze([
-    /\bAPI\b/i, /api-?schl(?:ü|ue)ssel/i, /\btoken\b/i, /\bfabric\b/i, /local[- ]?key/i, /\bprotokoll/i, /\boauth\b/i,
-    /\bpairing\b/i, /\bport\b/i, /\bIP(?:v4|v6)?\b/, /\bentit(?:ä|ae)t/i, /\binstanz/i, /\bmdns\b/i, /cloud/i,
-    /\bendpunkt|\bendpoint/i, /\bhttps?\b/i, /\bjson\b/i, /\bzigbee\b/i, /\bthread\b/i, /\bfirmware\b/i, /\bmatter\b/i,
-    /\bfingerabdruck|\bfingerprint/i, /\bconnector\b/i, /kopplungscode/i, /\bfunktions-?id\b/i, /\bdev-[a-f0-9]{10}\b/i,
-    /ger(?:ä|ae)teschl(?:ü|ue)ssel/i, /\bschl(?:ü|ue)ssel\b/i,
-])
-
-/** Treffer der Fachwörter-Liste in einem Owner-Text (leer = sauber). */
+/**
+ * Fachwörter-Prüfung: EINE Liste für alle Owner-Texte (guided/fachwoerter.ts),
+ * hier nur unter dem bisherigen Namen der Geräte-Wege.
+ */
 export function fachwoerterIn(text: unknown): string[] {
-    const value = String(text ?? '')
-    return FACHWOERTER.filter(pattern => pattern.test(value)).map(pattern => pattern.source)
+    return findeFachwoerter(text)
 }
 
 export interface NutzenZaehlung { lampen?: number; schalter?: number; sensoren?: number; drucker?: number }

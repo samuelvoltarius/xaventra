@@ -87,7 +87,7 @@
     if (state.call) return
     const web = window.novaDesktop && window.novaDesktop.web === true
     if (!web) return h.toast('Anrufen geht im Browser oder auf dem Handy (Web-App).', true)
-    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return h.toast('Für das Mikrofon braucht die Seite eine sichere Adresse (https über das Tailnet).', true)
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return h.toast('Für das Mikrofon muss die Seite über die sichere Adresse offen sein – die mit dem Schloss vorne in der Adresszeile.', true)
     const call = { ws: null, capture: null, playback: null, player: null, stream: null, node: null, source: null, mute: null }
     state.call = call
     try {
