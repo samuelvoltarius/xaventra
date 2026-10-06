@@ -196,7 +196,7 @@ export async function establishConnection(requestId: string, approvedBy: string,
  * Ja on a need thought („Home Assistant verbinden?“, connection-demand.ts): that Ja is
  * the approval of the config change, exactly like the card — no second question.
  */
-export async function connectFromApproval(connectorId: string, approvedBy: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string }> {
+export async function connectFromApproval(connectorId: string, approvedBy: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string; link?: { label: string; url: string } }> {
     const manifest = findConnector(connectorId, deps.catalog || getConnectorCatalog())
     if (!manifest) return { ok: false, message: 'Diesen Dienst gibt es nicht im geprüften Katalog — nichts eingerichtet.' }
     const existing = getConnection(connectionIdFor(manifest.name), deps)
@@ -215,9 +215,12 @@ export async function connectFromApproval(connectorId: string, approvedBy: strin
     // Do not require another command to start the Home Assistant login.
     if (!established.ok || manifest.auth_typ !== 'ha-login') return established
     const login = await beginLogin(connectionIdFor(manifest.name), deps)
-    return { ok: login.ok, message: login.url
-        ? `Home Assistant an der bestätigten Adresse eingerichtet. Bitte hier anmelden (gilt 15 Minuten): ${login.url}\nDanach teste ich die Verbindung und lese den Gerätebestand automatisch; noch nichts geschaltet.`
-        : login.message }
+    // 2.86 Paket N: ONE sentence + ONE URL button (never the address as text: Telegram
+    // pages and owner-text filters must not cut or alter it).
+    if (!login.url) return { ok: login.ok, message: login.message }
+    const paste = returnOnlyLocal(deps.redirectBase) ? ' Wenn danach eine leere Seite kommt: kopier die Adresse oben aus dem Browser und schick sie mir hier.' : ''
+    return { ok: true, link: { label: 'Bei Home Assistant anmelden', url: login.url },
+        message: `Ein Schritt noch: Bei Home Assistant anmelden. Der Knopf gilt eine Viertelstunde.${paste} Danach sehe ich deine Geräte; geschaltet wird nichts.` }
 }
 
 /** Browser return: finish the login, then connect and test automatically. */
@@ -225,7 +228,16 @@ export async function completeLoginAndConnect(input: { state?: unknown; code?: u
     const { finishLogin, finishLoginFromAddress } = await import('./connector-login.js')
     const finished = input.address !== undefined ? await finishLoginFromAddress(input.address, deps) : await finishLogin(input, deps)
     if (finished.ok === false) return { ok: false, message: finished.message }
-    return connectAndTest(finished.connectionId, deps)
+    const tested = await connectAndTest(finished.connectionId, deps)
+    // 2.86 Paket N: „und?“ answers the last connection from memory.
+    try {
+        const { beendeVorgang } = await import('../sensing/connect-progress.js')
+        if (getConnection(finished.connectionId, deps)?.connectorId === 'home-assistant') {
+            beendeVorgang(deps.dataDir || (await import('../core/data-root.js')).getNovaDataDir(), 'homeassistant', tested.ok ? 'verbunden' : 'fehlgeschlagen',
+                tested.ok ? '✅ Home Assistant verbunden. Ich lese jetzt deine Geräte.' : tested.message, { gemeldet: true })
+        }
+    } catch { /* progress is a convenience */ }
+    return tested
 }
 
 /** Connect through the MCP runtime and test (tools listed). Expired login → exactly one request. */
@@ -246,6 +258,8 @@ export async function connectAndTest(connectionId: string, deps: ConnectDeps = d
         }
         const fehler = String(error instanceof Error ? error.message : error).replace(/(bearer|token|code)\s*[=:]\s*\S+/gi, '$1=[redacted]').slice(0, 160)
         updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at: new Date((deps.now || Date.now)()).toISOString(), werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler } }, deps)
+        // 2.86 Paket N: a blocked address (SSRF guard) never reaches the owner as raw text.
+        if (/ssrf|private address|blocked/i.test(fehler)) return { ok: false, message: `${record.title} ist von hier aus gerade nicht erreichbar. Ich habe nichts verändert.` }
         return { ok: false, message: `${record.title}: Verbindung fehlgeschlagen (${fehler}).` }
     }
 }
@@ -323,10 +337,30 @@ export function defaultDeps(): ConnectDeps {
     return { redirectBase: currentRedirectBase(), askLogin: record => askLoginAgain(record) }
 }
 
-/** The Main's own address for the browser return (config `connections.redirectBase`, else the dashboard). */
+let dashboardReturnBase = ''
+/** 2.86 Paket N: the dashboard's real listener (dashboard/server.ts) — only a non-loopback one helps another browser. */
+export function noteDashboardAddress(url: string): void {
+    try {
+        const parsed = new URL(String(url || ''))
+        const host = parsed.hostname.replace(/^\[|\]$/g, '')
+        dashboardReturnBase = !host || /^(?:127\.|localhost$|::1$|0\.0\.0\.0$|::$)/.test(host) ? '' : `${parsed.protocol}//${parsed.host}`
+    } catch { dashboardReturnBase = '' }
+}
+
+/** True when only a browser on the Main itself can reach the return address (paste fallback needed). */
+export function returnOnlyLocal(base: string): boolean {
+    try { return /^(?:127\.|localhost$|\[?::1\]?$)/.test(new URL(base).hostname) } catch { return true }
+}
+
+/**
+ * The Main's own address for the browser return: config `connections.redirectBase`
+ * (e.g. the Tailnet HTTPS address), else the dashboard's real non-loopback
+ * listener, else this machine only (then the owner pastes the address once).
+ */
 export function currentRedirectBase(): string {
     const configured = (globalThis as any).__novaState?.config?.connections?.redirectBase
     if (typeof configured === 'string' && /^https?:\/\/[^\s/]+\/?$/.test(configured)) return configured.replace(/\/$/, '')
+    if (dashboardReturnBase) return dashboardReturnBase
     return `http://127.0.0.1:${Number(process.env.NOVA_DASHBOARD_PORT) || 3011}`
 }
 

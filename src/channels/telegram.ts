@@ -1071,6 +1071,9 @@ export class TelegramAdapter implements ChannelAdapter {
             await ensureBuiltinCardExecutors()
             const result = await answerApprovalCard(String(query.data), { userId: String(query.from?.id ?? ''), ownerIds: this.getOwnerChatIds() })
             await answer(result.ok ? `✓ ${result.message}` : result.message)
+            // 2.86 Paket N: a login address comes as ONE URL button, never as (paged/filtered) text.
+            const linkChat = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            if (result.link && linkChat) await this.sendLinkButton(linkChat, result.card?.result?.message || '', result.link)
             if (!result.card || result.code === 'kein-owner' || result.code === 'nicht-erlaubt') return
             if (result.code === 'verbraucht' || result.code === 'unbekannt') return
             if (result.card.buendel) {
@@ -1078,7 +1081,7 @@ export class TelegramAdapter implements ChannelAdapter {
                 // their buttons); the result comes as one short message (e.g. the HA login address).
                 const pressedChat = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
                 const { ownerText } = await import('../core/owner-text.js')
-                if (pressedChat && result.card.result?.message) {
+                if (pressedChat && result.card.result?.message && !result.link) {
                     await this.requireLiveAuthority('card result')
                     await this.bot.sendMessage(pressedChat, `${result.card.result.ok ? '✅' : '⚠️'} ${ownerText(result.card.result.message)}`.slice(0, 900), { disable_web_page_preview: true })
                 }
@@ -1103,6 +1106,19 @@ export class TelegramAdapter implements ChannelAdapter {
         } catch (error) {
             console.warn(`[Nova Telegram] Knopf-Karte: ${String((error as Error)?.message || error).slice(0, 200)}`)
             await answer('❌ Fehler — nichts ausgeführt.')
+        }
+    }
+
+    /** 2.86 Paket N: one sentence + one URL button. Fallback: the plain address in its own message (never cut, never Markdown). */
+    private async sendLinkButton(chatId: string, sentence: string, link: { label: string; url: string }): Promise<void> {
+        const { ownerText } = await import('../core/owner-text.js')
+        const text = ownerText(sentence).replace(/https?:\/\/\S+/g, '').trim().slice(0, 500) || link.label
+        await this.requireLiveAuthority('card link')
+        try {
+            await this.bot.sendMessage(chatId, text, { disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: link.label, url: link.url }]] } } as any)
+        } catch {
+            await this.bot.sendMessage(chatId, text, { disable_web_page_preview: true })
+            await this.bot.sendMessage(chatId, link.url, { disable_web_page_preview: true })
         }
     }
 

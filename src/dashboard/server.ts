@@ -152,6 +152,8 @@ export async function startDashboard(port: number = 3011, host: string = '127.0.
     dashboardUrl = await listenDashboard(server, port, host)
     dashboardStarted = true
     dashboardPort = Number(new URL(dashboardUrl).port)
+    // 2.86 Paket N: a login return address another browser can reach (only when the listener is not loopback).
+    try { const { noteDashboardAddress } = await import('../connections/connect-flow.js'); noteDashboardAddress(dashboardUrl) } catch { /* optional */ }
     console.log(`\n✨ Xaventra im Browser: ${dashboardUrl}  (Desktop-Token in den Einstellungen der Seite eintragen)\n`)
     return dashboardUrl
 }
