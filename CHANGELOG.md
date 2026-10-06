@@ -19,6 +19,10 @@
 - Keep explicit current-conversation fact recall in the memory path rather than
   external research. Mixed analysis and requests for fresh sources retain their
   normal evidence and reasoning requirements.
+- Pin patched indirect Git-guard and proxy-address dependencies without
+  downgrading the native local-model runtime or relaxing the release audit.
+- Construct Matter wire requests through the pinned pure protocol/type APIs,
+  without loading the entire Node platform during message construction.
 - Add owner-scoped parcel_track for DHL and existing 17TRACK registrations,
   with explicit provider choice, private setup questions and matching-number
   evidence. No automatic registration, paid real-time query or cloud fallback.

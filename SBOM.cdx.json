@@ -1,13 +1,13 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:934dac27-2066-4982-a3d6-aa8de5ecc7ce",
+  "serialNumber": "urn:uuid:4e2a8dbd-60b9-4e4d-aae9-cd6043b447cf",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "name": "@xaventra/core",
-      "version": "2.85.0",
+      "version": "2.85.10",
       "licenses": [
         {
           "license": {
@@ -19,7 +19,7 @@
     "properties": [
       {
         "name": "xaventra:package-lock-sha256",
-        "value": "934dac272066d982e3d6aa8de5ecc7ce94a16d5128636e4da1344fb7b29a916c"
+        "value": "4e2a8dbd60b97e4d7ae9cd6043b447cfe9db8cd6eecf8828be83f535bf7f1c0d"
       }
     ]
   },
@@ -1738,6 +1738,132 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fgeneral@0.17.9?path=node_modules%2F%40matter%2Fgeneral",
+      "name": "@matter/general",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fgeneral@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/general"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fmain@0.17.9?path=node_modules%2F%40matter%2Fmain",
+      "name": "@matter/main",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fmain@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/main"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fmodel@0.17.9?path=node_modules%2F%40matter%2Fmodel",
+      "name": "@matter/model",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fmodel@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/model"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fnode@0.17.9?path=node_modules%2F%40matter%2Fnode",
+      "name": "@matter/node",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fnode@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/node"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fnodejs@0.17.9?path=node_modules%2F%40matter%2Fnodejs",
+      "name": "@matter/nodejs",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fnodejs@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/nodejs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Fprotocol@0.17.9?path=node_modules%2F%40matter%2Fprotocol",
+      "name": "@matter/protocol",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Fprotocol@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/protocol"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40matter%2Ftypes@0.17.9?path=node_modules%2F%40matter%2Ftypes",
+      "name": "@matter/types",
+      "version": "0.17.9",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:npm/%40matter%2Ftypes@0.17.9",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@matter/types"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:npm/%40modelcontextprotocol%2Fsdk@1.30.0?path=node_modules%2F%40modelcontextprotocol%2Fsdk",
       "name": "@modelcontextprotocol/sdk",
       "version": "1.30.0",
@@ -1985,6 +2111,42 @@
         {
           "name": "xaventra:lockfile-path",
           "value": "node_modules/@napi-rs/lzma-linux-x64-gnu"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40noble%2Fcurves@2.4.0?path=node_modules%2F%40noble%2Fcurves",
+      "name": "@noble/curves",
+      "version": "2.4.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/%40noble%2Fcurves@2.4.0",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@noble/curves"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40noble%2Fhashes@2.4.0?path=node_modules%2F%40noble%2Fhashes",
+      "name": "@noble/hashes",
+      "version": "2.4.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/%40noble%2Fhashes@2.4.0",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/@noble/hashes"
         }
       ]
     },
@@ -3682,15 +3844,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40simple-git%2Fargs-pathspec@1.0.3?path=node_modules%2F%40simple-git%2Fargs-pathspec",
+      "bom-ref": "pkg:npm/%40simple-git%2Fargs-pathspec@1.0.4?path=node_modules%2F%40simple-git%2Fargs-pathspec",
       "name": "@simple-git/args-pathspec",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/%40simple-git%2Fargs-pathspec@1.0.3",
+      "purl": "pkg:npm/%40simple-git%2Fargs-pathspec@1.0.4",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -3700,15 +3862,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40simple-git%2Fargv-parser@1.1.1?path=node_modules%2F%40simple-git%2Fargv-parser",
+      "bom-ref": "pkg:npm/%40simple-git%2Fargv-parser@2.0.1?path=node_modules%2F%40simple-git%2Fargv-parser",
       "name": "@simple-git/argv-parser",
-      "version": "1.1.1",
+      "version": "2.0.1",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/%40simple-git%2Fargv-parser@1.1.1",
+      "purl": "pkg:npm/%40simple-git%2Fargv-parser@2.0.1",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -6683,6 +6845,24 @@
         {
           "name": "xaventra:lockfile-path",
           "value": "node_modules/escape-html"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/esphome-client@2.0.0?path=node_modules%2Fesphome-client",
+      "name": "esphome-client",
+      "version": "2.0.0",
+      "licenses": [
+        {
+          "expression": "ISC"
+        }
+      ],
+      "purl": "pkg:npm/esphome-client@2.0.0",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/esphome-client"
         }
       ]
     },
@@ -10092,15 +10272,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/proxy-addr@2.0.7?path=node_modules%2Fproxy-addr",
+      "bom-ref": "pkg:npm/proxy-addr@2.0.8?path=node_modules%2Fproxy-addr",
       "name": "proxy-addr",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/proxy-addr@2.0.7",
+      "purl": "pkg:npm/proxy-addr@2.0.8",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -10922,15 +11102,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/simple-git@3.36.0?path=node_modules%2Fsimple-git",
+      "bom-ref": "pkg:npm/simple-git@4.0.2?path=node_modules%2Fsimple-git",
       "name": "simple-git",
-      "version": "3.36.0",
+      "version": "4.0.2",
       "licenses": [
         {
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:npm/simple-git@3.36.0",
+      "purl": "pkg:npm/simple-git@4.0.2",
       "properties": [
         {
           "name": "xaventra:lockfile-path",
@@ -11673,6 +11853,24 @@
         {
           "name": "xaventra:lockfile-path",
           "value": "node_modules/tsx"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/tuyapi@7.7.1?path=node_modules%2Ftuyapi",
+      "name": "tuyapi",
+      "version": "7.7.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "purl": "pkg:npm/tuyapi@7.7.1",
+      "properties": [
+        {
+          "name": "xaventra:lockfile-path",
+          "value": "node_modules/tuyapi"
         }
       ]
     },
