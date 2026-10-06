@@ -132,6 +132,7 @@
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
+        "../voice/voice-turn-stream.js",
         "./environment-overview.js",
         "./history-evidence.js",
         "./response-repair.js",
@@ -2773,6 +2774,7 @@
         "./model-control.js",
         "./module-catalog.js",
         "./node-enrollment.js",
+        "./telefon-api.js",
         "./topic-room-store.js",
         "./voice-api.js",
         "./werkzeugkasten-view.js",
@@ -2849,6 +2851,14 @@
       "imports": []
     },
     {
+      "module": "src/desktop/telefon-api.ts",
+      "imports": [
+        "../voice/sip-login-check.js",
+        "../voice/telefon-config.js",
+        "express"
+      ]
+    },
+    {
       "module": "src/desktop/topic-room-store.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -2863,6 +2873,8 @@
         "../voice/voice-call.js",
         "../voice/voice-mesh.js",
         "../voice/voice-prefs.js",
+        "../voice/voice-quick.js",
+        "../voice/voice-turn-stream.js",
         "express",
         "node:crypto",
         "node:http",
@@ -4587,11 +4599,13 @@
         "../core/client-identity.js",
         "../infra/telemetry.js",
         "../routing/vllm-switch-state.js",
+        "../voice/voice-turn-stream.js",
         "./codex-cli-adapter.js",
         "./endpoint-trust.js",
         "./model-fallback.js",
         "./model-perf-db.js",
         "./providers/minimax.js",
+        "./sse-completion.js",
         "./token-usage.js",
         "node:events",
         "node:fs",
@@ -4643,6 +4657,12 @@
       "module": "src/llm/runtime-model-identity.ts",
       "imports": [
         "./model-list-cache.js"
+      ]
+    },
+    {
+      "module": "src/llm/sse-completion.ts",
+      "imports": [
+        "../voice/voice-turn-stream.js"
       ]
     },
     {
@@ -7341,6 +7361,66 @@
       "imports": []
     },
     {
+      "module": "src/voice/audiosocket.ts",
+      "imports": []
+    },
+    {
+      "module": "src/voice/sip-login-check.ts",
+      "imports": [
+        "./telefon-config.js",
+        "node:crypto",
+        "node:net",
+        "node:tls"
+      ]
+    },
+    {
+      "module": "src/voice/telefon-ausgang.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/data-root.js",
+        "./telefon-bridge.js",
+        "./telefon-config.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/telefon-bridge.ts",
+      "imports": [
+        "./audiosocket.js",
+        "./telefon-config.js",
+        "./voice-call.js",
+        "./voice-contract.js",
+        "./voice-mesh.js",
+        "node:crypto",
+        "node:http",
+        "node:net"
+      ]
+    },
+    {
+      "module": "src/voice/telefon-command.ts",
+      "imports": [
+        "./telefon-config.js"
+      ]
+    },
+    {
+      "module": "src/voice/telefon-config.ts",
+      "imports": [
+        "../connections/connection-store.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/telefon-runtime.ts",
+      "imports": [
+        "./telefon-bridge.js"
+      ]
+    },
+    {
       "module": "src/voice/voice-artifacts.ts",
       "imports": [
         "../core/data-root.js",
@@ -7412,6 +7492,20 @@
       ]
     },
     {
+      "module": "src/voice/voice-quick-runtime.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "./voice-call.js",
+        "./voice-quick.js"
+      ]
+    },
+    {
+      "module": "src/voice/voice-quick.ts",
+      "imports": [
+        "./voice-call.js"
+      ]
+    },
+    {
       "module": "src/voice/voice-service.ts",
       "imports": [
         "./voice-call.js",
@@ -7431,6 +7525,12 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/voice-turn-stream.ts",
+      "imports": [
+        "node:async_hooks"
       ]
     },
     {

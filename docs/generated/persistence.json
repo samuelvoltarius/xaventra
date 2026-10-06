@@ -1026,6 +1026,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/voice/telefon-ausgang.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/voice/telefon-config.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/voice/wake-word.ts",
       "path": ".nova-data"
     },
