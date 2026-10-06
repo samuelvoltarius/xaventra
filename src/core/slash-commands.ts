@@ -103,6 +103,7 @@ export async function formatAllNodeProfiles(now = Date.now()): Promise<string> {
 export interface CommandMenuEntry { command: string; description: string; gruppe: string }
 export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     // Überblick
+    { command: 'menu', description: '🏠 Hauptmenü mit Knöpfen', gruppe: 'Überblick' },
     { command: 'help', description: '✨ Befehle anzeigen', gruppe: 'Überblick' },
     { command: 'status', description: '📊 System-Status & Uptime', gruppe: 'Überblick' },
     { command: 'jetzt', description: '🟢 Was ich gerade tue (Owner)', gruppe: 'Überblick' },
@@ -194,6 +195,10 @@ export async function handleCommand(
             const { dockerInventoryCommand } = await import('./docker-command.js')
             return dockerInventoryCommand(args, state.tools, principalContext)
         }
+        case 'menu':
+        case 'menü':
+            // Paket L: Telegram answers /menu itself with buttons (owner chat); elsewhere a short pointer.
+            return '🏠 Das Hauptmenü mit Knöpfen (Status · Braucht mich · Geräte · Bericht · Mehr) öffnest du in Telegram mit /menu.'
         case 'identity':
             return XAVENTRA_IDENTITY
         case 'whoami':

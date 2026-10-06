@@ -39,12 +39,21 @@
       ${llm.konto ? `<button class="primary" data-conn-llm-login="${h.attr(llm.provider)}">Mit Konto anmelden</button>` : ''}</div>`
   }
 
+  // Paket L: one row per real device; Hue/Tuya/Matter get their own „Verbinden“ (one card each, Tuya: lokal or Cloud).
+  function deviceButtons(h, item) {
+    const g = item.geraet
+    if (!g?.verbinden || item.verbunden || item.connectorId) return ''
+    if (g.verbinden === 'tuya') return `<button class="primary" data-conn-device="${h.attr(g.id)}" data-conn-weg="local">Lokal verbinden</button><button class="secondary" data-conn-device="${h.attr(g.id)}" data-conn-weg="cloud">Über Cloud</button>`
+    return `<button class="primary" data-conn-device="${h.attr(g.id)}">${g.verbinden === 'hue' || g.verbinden === 'matter' ? 'Koppeln' : 'Verbinden'}</button>`
+  }
+
   function foundSection(h, data) {
     const items = data.gefunden || []
     const rows = items.map(item => `<div class="row"><div>${img(h, item.icon, item.title)}<div class="row-title">${h.esc(item.title)}</div>
-      <div class="row-sub">${h.esc(item.fund)} · ${h.esc(item.wirkung)}</div>${item.connectorId ? cardButtons(h, item.connectorId) : ''}</div>
+      <div class="row-sub">${h.esc(item.fund)} · ${h.esc(item.wirkung)}${item.geraet?.dienste > 1 ? ` · ${Number(item.geraet.dienste)} Dienste` : ''}</div>${item.connectorId ? cardButtons(h, item.connectorId) : item.geraet ? cardButtons(h, `geraet:${item.geraet.id}`) : ''}
+      ${item.geraet?.verbinden === 'hue' && !item.verbunden ? '<div class="row-sub">Vor dem Ja die runde Taste an der Bridge drücken.</div>' : ''}</div>
       <div class="row-side">${where(h, item.datenklasse)}${item.verbunden ? `<span class="pill good">${item.connectorId ? 'verbunden' : 'in Nutzung'}</span>`
-        : item.connectorId ? `<button class="primary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button>` : ''}</div></div>`).join('')
+        : item.connectorId ? `<button class="primary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button>` : deviceButtons(h, item)}</div></div>`).join('')
     return `<section class="section" aria-labelledby="conn-found"><div class="section-head"><h2 id="conn-found">${h.icon('eye')}Gefunden</h2><span class="section-note">selbst entdeckt – sie fragt deswegen nicht</span></div>
       ${rows ? `<div class="rows">${rows}</div>` : `<div class="section-body"><div class="empty-note">Noch nichts gefunden. Sie sucht selbst im eigenen Netz und in den eigenen Konten.</div></div>`}</section>`
   }
@@ -129,6 +138,15 @@
     try {
       const result = await h.api.post(`${PATH}/verbinden`, body)
       local.cards[connectorId] = result.cardId
+      h.toast(result.message || 'Karte erstellt.')
+    } catch (error) { h.fail(error) }
+    h.rerender()
+  }
+
+  async function connectDevice(h, id, weg) {
+    try {
+      const result = await h.api.post(`${PATH}/geraet/${encodeURIComponent(id)}/verbinden`, weg ? { weg } : {})
+      local.cards[`geraet:${id}`] = result.cardId
       h.toast(result.message || 'Karte erstellt.')
     } catch (error) { h.fail(error) }
     h.rerender()
@@ -285,6 +303,7 @@
     if (!page) return
     page.querySelector('[data-conn-refresh]')?.addEventListener('click', () => load(h, true))
     page.querySelectorAll('[data-conn-connect]').forEach(node => node.addEventListener('click', () => connect(h, node.dataset.connConnect)))
+    page.querySelectorAll('[data-conn-device]').forEach(node => node.addEventListener('click', () => connectDevice(h, node.dataset.connDevice, node.dataset.connWeg)))
     page.querySelectorAll('[data-conn-card]').forEach(node => node.addEventListener('click', () => answer(h, node.dataset.connCard, node.dataset.connAnswer)))
     page.querySelectorAll('[data-conn-login]').forEach(node => node.addEventListener('click', () => login(h, node.dataset.connLogin)))
     page.querySelectorAll('[data-conn-access]').forEach(node => node.addEventListener('click', () => access(h, node.dataset.connAccess)))

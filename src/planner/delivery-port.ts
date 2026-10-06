@@ -52,6 +52,10 @@ export interface PlannerOutgoing {
     refs?: string[]
     /** A pending delivery after this instant is logged as `verfallen`, not sent. */
     expiresAt?: string
+    /** Paket L: briefing sections for the paged Telegram view (one button per section). */
+    sections?: Array<{ titel: string; zeilen: string[] }>
+    /** Paket L: traffic light + one sentence. */
+    kopf?: string
 }
 
 export type OutgoingDraft = Omit<PlannerOutgoing, 'id' | 'createdAt' | 'jobId' | 'slot'>

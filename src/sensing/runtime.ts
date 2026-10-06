@@ -216,7 +216,9 @@ function busForPublish(): SensingBus {
     return state.bus || newBus('local', 'main')
 }
 
-export function runDiscoveryNow(deps: DiscoveryDeps & { hardwareModel?: HardwareModel } = {}, signal?: AbortSignal): Promise<string> {
+type RunDeps = DiscoveryDeps & { hardwareModel?: HardwareModel; consolidation?: import('./device-consolidation.js').KonsolidierungsKontext; cardOpts?: import('../core/approval-cards.js').CardStoreOptions }
+
+export function runDiscoveryNow(deps: RunDeps = {}, signal?: AbortSignal): Promise<string> {
     // A foreground fresh inventory must wait for the current bounded scan,
     // not mistake "already running" for fresh observations or start a rival scan.
     signal?.throwIfAborted()
@@ -241,7 +243,7 @@ function waitForDiscovery(work: Promise<string>, signal: AbortSignal): Promise<s
     })
 }
 
-async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: HardwareModel }, signal?: AbortSignal): Promise<string> {
+async function performDiscovery(deps: RunDeps, signal?: AbortSignal): Promise<string> {
     const cfg = state.config
     if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
     state.discoveryRunning = true
@@ -278,19 +280,29 @@ async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: Hardware
         } : undefined)
         const enriched = await recognizeHardware(eligible, model, deps, controller.signal)
         if (controller.signal.aborted) return 'Geräte-Suche beim Stoppen abgebrochen.'
-        const fresh = recordCandidates(dataDir, [...enriched, ...report.candidates.filter(c => !eligible.includes(c))])
+        // Paket L: container bridges, the own machine and unidentified ports of own mesh
+        // nodes are noise — not recorded at all. Tailnet/LAN twins are remembered.
+        const { defaultConsolidationContext, isNoiseCandidate, recordHostAliases } = await import('./device-consolidation.js')
+        recordHostAliases(dataDir, report.aliases || {})
+        const scopeCtx = deps.consolidation || await defaultConsolidationContext(dataDir, deps.interfaces)
+        const all = [...enriched, ...report.candidates.filter(c => !eligible.includes(c))]
+        const fresh = recordCandidates(dataDir, all.filter(c => !isNoiseCandidate(c, scopeCtx)))
         recordDiscoveryObservation(dataDir, report)
         // P8: watching is L0 — found devices are monitored right away, no card.
         const handled = autoMonitorDevices(dataDir)
-        const events = deviceEvents({ ...handled, asked: handled.asked.filter(d => d.type !== 'homeassistant') })
+        // Paket L: no silent „brauche Zugang“ thoughts — connectable devices get ONE card in
+        // the bundled device message (device-connect.ts); only watched devices are reported.
+        const events = deviceEvents({ monitored: handled.monitored, asked: [] })
         if (events.length) await busForPublish().publish('discovery', events)
         if (process.env.NOVA_NODE_ONLY !== 'true') {
-            const routeQuestions = smartRouteEvents(dataDir)
-            if (routeQuestions.length) await busForPublish().publish('discovery', routeQuestions)
             const haConfigured = resolveHaConnection(cfg.adapters.homeassistant, state.rootConfig)
             const found = loadDevices(dataDir)
+            // Shelly/Tasmota/ESPHome keep their existing connect offer; HA, Hue, Tuya and
+            // Matter are asked through the device bundle (no second question).
+            const bundled = (d: DeviceRecord) => d.type === 'homeassistant' || ['hue', 'tuya', 'matter'].includes(String(d.hardware?.ecosystem)) || d.hardware?.connector === 'matter-ip'
             const offers = hardwareConnectionEvents(found, Boolean(haConfigured)).filter(offer => {
                 const d = found.find(d => d.id === offer.subject)!
+                if (bundled(d)) return false
                 const route = selectedSmartRoute(dataDir, d)
                 return !d.hardware?.connector || route === 'local' || (route === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(d.hardware.connector))
             })
@@ -298,15 +310,20 @@ async function performDiscovery(deps: DiscoveryDeps & { hardwareModel?: Hardware
                 await busForPublish().publish('discovery', offers)
                 for (const offer of offers) markHardwareAsked(dataDir, offer.subject, String(offer.evidence.fingerprint))
             }
-            const observations = unsupportedHardwareEvents(loadDevices(dataDir))
-            if (observations.length) await busForPublish().publish('discovery', observations)
+            try {
+                const { offerDeviceConnections } = await import('./device-connect.js')
+                const { migrateDeviceRegistry } = await import('./device-consolidation.js')
+                migrateDeviceRegistry(dataDir, scopeCtx)
+                // The card loop (every minute) delivers them as ONE bundled message.
+                await offerDeviceConnections({ dataDir, ctx: scopeCtx, ...(deps.cardOpts ? { cardOpts: deps.cardOpts } : {}) })
+            } catch (error) { sensingLog(`Geräte-Fragen nicht erstellt: ${cleanText(String((error as Error)?.message || error), 160)}`) }
         }
         const watchedIds = new Set(handled.monitored.map(device => device.id))
         return [
             `Suche fertig in ${Math.round(report.durationMs / 100) / 10} s: ${report.scannedHosts} Adressen, ${report.probes} Proben${report.timedOut ? ' (Zeitlimit erreicht)' : ''}.`,
             `Netze: ${report.scope.subnets.join(', ') || 'keine privaten'}${report.scope.hasTailnet ? ' + Tailnet' : ''}.`,
             report.rejected.length ? `Abgelehnt (fremd/öffentlich): ${report.rejected.length}.` : '',
-            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id}, ${watchedIds.has(device.id) ? 'überwacht, nur lesend' : handled.asked.some(asked => asked.id === device.id) ? 'Zugang fehlt, einmal beim Owner angefragt' : 'beobachtet, Steuerung nicht geprüft'})`).join('; ')}.` : 'Keine neuen Geräte.',
+            fresh.length ? `Neu gefunden: ${fresh.map(device => `${device.name} (${device.id}, ${watchedIds.has(device.id) ? 'überwacht, nur lesend' : handled.asked.some(asked => asked.id === device.id) ? (device.type === 'homeassistant' ? 'Verbinden-Frage in der Geräte-Nachricht' : 'Zugang fehlt, in der App unter Verbindungen eintragen') : 'beobachtet, Steuerung nicht geprüft'})`).join('; ')}.` : 'Keine neuen Geräte.',
             handled.monitored.some(device => !fresh.some(item => item.id === device.id)) ? `Jetzt überwacht (früher gefunden): ${handled.monitored.filter(device => !fresh.some(item => item.id === device.id)).map(device => device.name).join('; ')}.` : '',
         ].filter(Boolean).join('\n')
     } finally {
@@ -443,8 +460,11 @@ export async function handleGeraeteCommand(args: string, principal: { principalI
     const approver: Approver = { principalId: principal.principalId || principal.rawUserId || from, permission: principal.permission }
     switch (sub.toLowerCase()) {
         case '':
-        case 'liste':
-            return `${formatDevices(loadDevices(state.dataDir))}\n\n${formatStatus()}`
+        case 'liste': {
+            if (id === 'roh') return `${formatDevices(loadDevices(state.dataDir))}\n\n${formatStatus()}`
+            const { loadConsolidatedDevices, formatGeraete } = await import('./device-consolidation.js')
+            return formatGeraete(await loadConsolidatedDevices(state.dataDir))
+        }
         case 'suchen':
         case 'scan':
             return runDiscoveryNow()

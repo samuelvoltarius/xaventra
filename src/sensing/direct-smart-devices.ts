@@ -51,6 +51,15 @@ export function parseDirectFunctions(protocol: string, body: any): DirectFunctio
             result.push({ id: `light:${id}`, kind: 'light', name: text(v.name) || `Hue light ${id}`, model: text(v.modelid), manufacturer: text(v.manufacturername) || undefined,
                 ...(typeof v.state.reachable === 'boolean' ? { available: v.state.reachable } : {}) })
         }
+    } else if (protocol === 'hue-sensors') {
+        // Paket L: physical Zigbee sensors behind the bridge (read only); daylight/virtual CLIP entries are skipped.
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid Hue sensors')
+        const kinds: Record<string, DirectFunction['kind']> = { ZLLPresence: 'binary_sensor', ZLLSwitch: 'input', ZLLTemperature: 'sensor', ZLLLightLevel: 'sensor', ZHAPresence: 'binary_sensor', ZHATemperature: 'sensor', ZHAOpenClose: 'binary_sensor' }
+        for (const [id, v] of Object.entries(body).slice(0, 200) as Array<[string, any]>) {
+            if (!/^\d{1,8}$/.test(id) || !v || typeof v.type !== 'string' || !kinds[v.type] || typeof v.modelid !== 'string' || !v.state || typeof v.state !== 'object') continue
+            result.push({ id: `sensor:${id}`, kind: kinds[v.type], name: text(v.name) || `Hue sensor ${id}`, model: text(v.modelid), manufacturer: text(v.manufacturername) || undefined,
+                ...(typeof v.config?.reachable === 'boolean' ? { available: v.config.reachable } : {}) })
+        }
     } else if (protocol === 'shelly') {
         if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid Shelly inventory')
         for (const key of Object.keys(body).slice(0, 200)) {
@@ -74,15 +83,17 @@ export function parseDirectFunctions(protocol: string, body: any): DirectFunctio
     return result.slice(0, 200)
 }
 
-export async function refreshDirectInventory(root: string, signal: AbortSignal, deps: { interfaces?: InterfaceMap; fetch?: typeof fetch; now?: () => number; tuyaRead?: typeof readLocalTuya } = {}): Promise<DirectInventory[]> {
+export async function refreshDirectInventory(root: string, signal: AbortSignal, deps: { interfaces?: InterfaceMap; fetch?: typeof fetch; now?: () => number; tuyaRead?: typeof readLocalTuya; only?: string } = {}): Promise<DirectInventory[]> {
     const now = deps.now || Date.now, fetchFn = deps.fetch || fetch
     const requests: Record<string, PairRequest> = read(root, 'smart-pairing')
     const saved = read(root, 'direct-inventory').devices
     const previous: DirectInventory[] = Array.isArray(saved) ? saved : []
     const results: DirectInventory[] = []
     const devices = loadDevices(root)
-    const eligible = devices.filter(d => d.status === 'eingerichtet' && ['hue-readonly', 'shelly-readonly', 'tasmota-readonly', 'tuya-announcements', 'esphome-native', 'matter-ip'].includes(d.hardware?.connector))
-    const cursor = read(root, 'direct-cursor').offset
+    const eligible = devices.filter(d => d.status === 'eingerichtet' && ['hue-readonly', 'shelly-readonly', 'tasmota-readonly', 'tuya-announcements', 'esphome-native', 'matter-ip'].includes(d.hardware?.connector)
+        // Paket L: the owner's Ja on a Hue card pairs this one device at once (the bridge button window is short).
+        && (!deps.only || d.id === deps.only))
+    const cursor = deps.only ? 0 : read(root, 'direct-cursor').offset
     const offset = Number.isSafeInteger(cursor) && cursor >= 0 && eligible.length ? cursor % eligible.length : 0
     // Bound work per poll without permanently starving devices after the first 8.
     const batch = Array.from({ length: Math.min(8, eligible.length) }, (_, index) => eligible[(offset + index) % eligible.length])
@@ -194,6 +205,8 @@ export async function refreshDirectInventory(root: string, signal: AbortSignal, 
                 }
                 if (!key) { row.status = pair?.status === 'pending' ? 'pairing' : 'access-required'; continue }
                 row.functions = parseDirectFunctions(protocol, await request(`/api/${key}/lights`))
+                // Paket L: sensors behind the bridge too (read only; a failed sensor read keeps the lamps).
+                try { row.functions = [...row.functions, ...parseDirectFunctions('hue-sensors', await request(`/api/${key}/sensors`))].slice(0, 200) } catch { /* lamps only */ }
             } else row.functions = parseDirectFunctions(protocol, await request(protocol === 'shelly' ? d.hardware!.probe === 'shelly-gen1' ? '/status' : '/rpc/Shelly.GetStatus' : '/cm?cmnd=Status%200'))
             if (signal.aborted) return []
             row.status = 'ok'
@@ -203,7 +216,7 @@ export async function refreshDirectInventory(root: string, signal: AbortSignal, 
         const retained = previous.filter(r => r && !results.some(next => next.deviceId === r.deviceId)
             && devices.some(d => d.id === r.deviceId && d.status === 'eingerichtet' && sensingDeviceFingerprint(d) === r.fingerprint))
         store(root, 'smart-pairing', requests); store(root, 'direct-inventory', { version: 1, devices: [...results, ...retained].slice(0, 1000) })
-        store(root, 'direct-cursor', { offset: eligible.length ? (offset + results.length) % eligible.length : 0 })
+        if (!deps.only) store(root, 'direct-cursor', { offset: eligible.length ? (offset + results.length) % eligible.length : 0 })
     }
     return signal.aborted ? [] : results
 }

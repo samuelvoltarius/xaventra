@@ -1,3 +1,4 @@
+import { listApprovalCards } from '../core/approval-cards.js'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -222,7 +223,7 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
         await expect(runtime.handleGeraeteCommand(`ja ${device.id}`, { principalId: 'x', permission: 'admin' })).resolves.toContain('nur für den Owner')
     })
 
-    it('Home Assistant → genau EINE zielgebundene Verbindungsfrage, keine Wiederholung oder Überwachung ohne Zustimmung', async () => {
+    it('Home Assistant → genau EINE Verbinden-Karte in der Geräte-Nachricht, keine stille Bitte, keine Wiederholung oder Überwachung ohne Zustimmung', async () => {
         const dataDir = tmp('sense-dev-key-')
         runtime.setSensingConfig({ discovery: { mdns: false, deadlineSec: 5, ratePerSec: 200 } }, {}, dataDir)
         const deps = {
@@ -232,22 +233,21 @@ describe('P8: gefundene Geräte werden ohne Karte lesend überwacht', () => {
             mdnsBrowse: undefined,
         }
         const text = await runtime.runDiscoveryNow(deps)
-        expect(text).toContain('Zugang fehlt')
+        expect(text).toContain('Verbinden-Frage in der Geräte-Nachricht')
         const [device] = loadDevices(dataDir)
         expect(device).toMatchObject({ status: 'gefunden', type: 'homeassistant' })
-        expect(device.ownerAskedAt).toBeTruthy()
         expect(monitoredDevices(dataDir)).toEqual([])
-        const first = readThoughts(dataDir)
-        expect(first).toHaveLength(1)
-        expect(first[0].action).toMatchObject({ kind: 'approveDevice', deviceId: device.id, fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) })
-        expect(first[0].level).toBe('fragen')
-        expect(first[0].title).toContain('Home Assistant')
-        expect(first[0].proposal).toContain('einmal anmelden')
-        // Zweiter und dritter Suchlauf: keine weitere Bitte.
+        // Paket L: no silent „brauche Zugang“ thought — one card with a button instead.
+        expect(readThoughts(dataDir)).toHaveLength(0)
+        const cards = () => listApprovalCards({ dataDir }).filter(card => card.status === 'offen')
+        expect(cards()).toHaveLength(1)
+        expect(cards()[0]).toMatchObject({ buendel: 'geraete', aktion: { kind: 'geraet-verbinden', ref: device.id } })
+        expect(cards()[0].vorschlag).toContain('Anmeldeseite von Home Assistant')
+        // Zweiter und dritter Suchlauf: keine weitere Frage.
         await runtime.runDiscoveryNow(deps)
         await runtime.runDiscoveryNow(deps)
-        expect(readThoughts(dataDir)).toHaveLength(1)
-        expect(JSON.stringify(readThoughts(dataDir))).not.toMatch(/token["']?\s*:\s*["'][^"']{8,}/i)
+        expect(cards()).toHaveLength(1)
+        expect(JSON.stringify(listApprovalCards({ dataDir }).map(card => [card.titel, card.beleg, card.vorschlag, card.kurz]))).not.toMatch(/token["']?\s*:\s*["'][^"']{8,}/i)
     })
 
     it('Gegenprobe Konten: fehlender Login → genau eine Bitte, keine Karte, nie wiederholt', async () => {

@@ -86,6 +86,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/channels/telegram-pages.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/channels/telegram.ts",
       "path": ".nova-data"
     },
@@ -95,6 +99,10 @@
     },
     {
       "owner": "src/connections/connection-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/connections/connections-api.ts",
       "path": ".nova-data"
     },
     {
@@ -167,6 +175,10 @@
     },
     {
       "owner": "src/core/capability-researcher.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/card-bundle.ts",
       "path": ".nova-data"
     },
     {
@@ -871,6 +883,10 @@
     },
     {
       "owner": "src/security/security-audit.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/sensing/device-connect.ts",
       "path": ".nova-data"
     },
     {

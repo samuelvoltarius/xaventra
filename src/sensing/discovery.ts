@@ -26,7 +26,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
 import { localNeighbors } from './neighbors.js'
-import { ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
+import { isPrivateRange, isTailnet, ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 import { cleanText } from './ports.js'
 import type { SsdpDescription } from './ssdp.js'
@@ -46,6 +46,7 @@ export interface DiscoveryDeps {
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     tailnetPeers?: () => Promise<string[]>
+    tailnetAliases?: () => Record<string, string>
     neighbors?: () => Promise<string[]>
 }
 
@@ -73,6 +74,8 @@ export interface DiscoveryReport {
     durationMs: number
     scope: { subnets: string[]; hasTailnet: boolean }
     cursor?: DiscoveryCursor
+    /** Paket L: tailnet address -> LAN address of the same machine (from Tailscale). */
+    aliases?: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +195,29 @@ export function tailnetPeerAddresses(value: unknown): string[] {
         ? peer.TailscaleIPs.filter((ip: unknown) => typeof ip === 'string' && /^100\.(?:\d{1,3}\.){2}\d{1,3}$/.test(ip)) : []))].slice(0, 256).sort() as string[]
 }
 
+/**
+ * Paket L: Tailscale reports the endpoints of each peer; a private LAN endpoint
+ * proves that the tailnet address and that LAN address are the same machine
+ * (Home Assistant reached over LAN and over the tailnet = one device).
+ */
+export function tailnetPeerLanAliases(value: unknown, isLan: (ip: string) => boolean = isPrivateRange, isTail: (ip: string) => boolean = isTailnet): Record<string, string> {
+    const peers = (value as { Peer?: unknown })?.Peer
+    if (!peers || typeof peers !== 'object' || Array.isArray(peers)) return {}
+    const out: Record<string, string> = {}
+    for (const peer of Object.values(peers).slice(0, 256) as any[]) {
+        const tailnet = (Array.isArray(peer?.TailscaleIPs) ? peer.TailscaleIPs : []).find((ip: unknown) => typeof ip === 'string' && isTail(ip))
+        if (!tailnet) continue
+        const endpoints = [...(Array.isArray(peer?.Addrs) ? peer.Addrs : []), peer?.CurAddr].filter((item: unknown) => typeof item === 'string')
+        const lan = [...new Set(endpoints.map((item: string) => item.replace(/:\d{1,5}$/, '')).filter((ip: string) => isLan(ip)))]
+        if (lan.length === 1) out[tailnet] = lan[0] as string
+    }
+    return out
+}
+
+let lastTailnetAliases: Record<string, string> = {}
+/** Aliases seen by the last real tailnet status read (no extra process start). */
+export function lastSeenTailnetAliases(): Record<string, string> { return { ...lastTailnetAliases } }
+
 async function localTailnetPeers(timeoutMs = 2000): Promise<string[]> {
     try {
         const { locateProgram } = await import('../startup/environment-scanner.js')
@@ -200,7 +226,9 @@ async function localTailnetPeers(timeoutMs = 2000): Promise<string[]> {
         const command = tailscaleStatusCommand(binary)
         const { stdout } = await promisify(execFile)(command.binary, command.args, { timeout: timeoutMs, maxBuffer: 256 * 1024, windowsHide: true })
         const status = JSON.parse(stdout)
-        return status?.BackendState === 'Running' ? tailnetPeerAddresses(status) : []
+        if (status?.BackendState !== 'Running') return []
+        lastTailnetAliases = tailnetPeerLanAliases(status)
+        return tailnetPeerAddresses(status)
     } catch { return [] }
 }
 
@@ -256,7 +284,7 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
                 const matter = ['_matter._tcp.local', '_matterc._udp.local'].includes(item.hints?.service) && /^[a-zA-Z0-9_-]{1,80}$/.test(matterId || '') && Number.isInteger(item.port) && item.port > 0 && item.port <= 65535
                 add({ type: item.type, host: item.host, port: item.port, via: 'mdns', name: item.name,
                     ...(esphome ? { hardware: { kind: 'unknown' as const, label: 'ESPHome-Endpunkt (Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: item.name, ecosystem: 'esphome' as const, connector: 'esphome-native' as const, observedAt: new Date(now()).toISOString() } } : matter ? { hardware: { kind: 'unknown' as const, label: 'Matter-Endpunkt (Hersteller, Gerätetyp und Zugang noch ungeprüft)', certainty: 'probable' as const, identity: matterId, ecosystem: 'matter' as const, connector: 'matter-ip' as const, observedAt: new Date(now()).toISOString() } } : {}), evidence: { quelle: 'mDNS', port: item.port,
-                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn', 'vp', 'dt', 'cm', 'd', 'nn', 'mn', 'rv'].includes(key)).slice(0, 12).map(([key, value]) => [key, cleanText(value, 80)])) } })
+                    ...Object.fromEntries(Object.entries(item.hints || {}).filter(([key]) => ['service', 'model', 'manufacturer', 'md', 'ty', 'fn', 'vp', 'dt', 'cm', 'd', 'nn', 'mn', 'rv', 'uuid', 'bridgeid', 'modelid'].includes(key)).slice(0, 14).map(([key, value]) => [key, cleanText(value, 80)])) } })
             }
         } catch { /* mDNS optional */ }
     }
@@ -342,6 +370,7 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
         durationMs: now() - startedAt,
         scope: { subnets: scope.subnets.map(cidrText), hasTailnet: scope.hasTailnet },
         cursor: { scopeKey, hostOffset: remaining ? nextOffset : 0, portIndex: remaining ? (progress.get(completedPrefix) ?? 0) : 0 },
+        aliases: scope.hasTailnet ? (deps.tailnetAliases || (deps.tailnetPeers ? () => ({}) : lastSeenTailnetAliases))() : {},
     }
 }
 
@@ -443,10 +472,10 @@ export function parseMdnsResponse(buf: Buffer): MdnsRecord[] {
         else if (type === 28 && rdlen === 16) data.aaaa = Array.from({ length: 8 }, (_, i) => buf.readUInt16BE(rd + i * 2).toString(16)).join(':')
         else if (type === 16) {
             data.txt = {}; let at = rd
-            while (at < rd + rdlen && Object.keys(data.txt).length < 6) {
+            while (at < rd + rdlen && Object.keys(data.txt).length < 8) {
                 const length = buf[at++]; if (at + length > rd + rdlen) break
                 const value = buf.toString('utf8', at, at + length); at += length
-                const match = /^(model|manufacturer|md|ty|fn|vp|dt|cm|d|nn|mn|rv)=(.*)$/i.exec(value)
+                const match = /^(model|manufacturer|md|ty|fn|vp|dt|cm|d|nn|mn|rv|uuid|bridgeid|modelid)=(.*)$/i.exec(value)
                 if (match) data.txt[match[1].toLowerCase()] = cleanText(match[2], 80)
             }
         }
