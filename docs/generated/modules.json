@@ -1628,6 +1628,7 @@
       "imports": [
         "../memory/memory-governance.js",
         "../tools/ssh-tool-hosts.js",
+        "./infrastructure-failure.js",
         "node:fs",
         "node:path"
       ]
@@ -1833,6 +1834,10 @@
         "../llm/token-usage.js",
         "./task-contract.js"
       ]
+    },
+    {
+      "module": "src/core/infrastructure-failure.ts",
+      "imports": []
     },
     {
       "module": "src/core/intent-dispatcher.ts",
@@ -4569,6 +4574,7 @@
       "module": "src/llm/model-perf-db.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../core/infrastructure-failure.js",
         "node:async_hooks",
         "node:crypto",
         "node:fs",
@@ -4924,6 +4930,7 @@
         "../sensing/discovery.js",
         "../sensing/net-scope.js",
         "../voice/voice-contract.js",
+        "../voice/whisper-gpu.js",
         "./discovery-probe.js",
         "./mesh-registry.js",
         "node:child_process",
@@ -7440,6 +7447,12 @@
         "node:fs",
         "node:os",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/voice/whisper-gpu.ts",
+      "imports": [
+        "../mesh/ai-scanner.js"
       ]
     },
     {
