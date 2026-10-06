@@ -153,3 +153,20 @@ describe('2.86.1 Ergänzung c: Instanz-Kennung lesend erfragen', () => {
         expect(parseHaDiscoveryInfo({ status: 200, body: JSON.stringify({ uuid: 'x; rm -rf', version: 'neu' }) })).toEqual({})
     })
 })
+
+describe('2.86.1 Punkt 1: „Details“ sagen ehrlich, wie weit die Suche kam', () => {
+    it('die letzte Suche (Adressen, Prüfungen, Teilsuche) steht in einer Alltagszeile', async () => {
+        const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs')
+        const { tmpdir } = await import('node:os')
+        const { join } = await import('node:path')
+        const { geraeteDetails } = await import('./device-overview.js')
+        const dir = mkdtempSync(join(tmpdir(), 'p17-details-'))
+        mkdirSync(join(dir, 'sensing'), { recursive: true })
+        writeFileSync(join(dir, 'sensing', 'last-discovery.json'), JSON.stringify({ observedAt: '2026-10-06T10:00:00.000Z', scannedHosts: 69, probes: 1248, partial: true }))
+        const leer = geraeteDetails(dir, { geraete: [], rauschen: 0, rauschGruende: {}, ungeprueft: 0, ungeprueftEintraege: 0, eigeneDienste: [] }, () => false)
+        expect(leer).toContain('Letzte Suche: 69 Adressen, 1248 Prüfungen – Teilsuche, nicht das ganze Netz.')
+        const voll = geraeteDetails(dir, consolidateDevices(liveList(), ctx), () => false)
+        expect(voll).toContain('69 Adressen, 1248 Prüfungen')
+        expect(voll.length).toBeLessThanOrEqual(1100)
+    })
+})

@@ -11,9 +11,17 @@ if (process.argv[2] === '--child') {
   process.env.NOVA_SKIP_MODEL_RESOLVER_INIT = '1'
   process.env.NOVA_OS_MODE = 'false'
   const { createNovaLLMClient } = await import('../dist/llm/nova-llm-sdk.js')
-  const { recordModelCall, isModelDisabled } = await import('../dist/llm/model-perf-db.js')
+  const { recordModelCall, isModelDisabled, getHeldModels } = await import('../dist/llm/model-perf-db.js')
   const model = 'recovery-fixture'
-  if (process.argv[5] === 'seed') for (let i = 0; i < 5; i++) recordModelCall(model, 'chat', 1, false)
+  // 2.86.1: the last available local model is never disabled. The bounded-admission
+  // checks need a second local model that still works; `last` checks the new rule.
+  if (process.argv[5] !== 'last') recordModelCall('recovery-other-local', 'chat', 1, true, { local: true })
+  if (process.argv[5] === 'seed' || process.argv[5] === 'last') for (let i = 0; i < 5; i++) recordModelCall(model, 'chat', 1, false, { local: true, error: 'LLM API error (500): broken fixture' })
+  if (process.argv[5] === 'last') {
+    await new Promise(resolve => setTimeout(resolve, 5200))
+    writeFileSync(join(process.cwd(), 'result-last.json'), JSON.stringify({ ok: false, disabled: isModelDisabled(model), held: getHeldModels().some(entry => entry.model === model) }))
+    process.exit(0)
+  }
   const client = await createNovaLLMClient({ provider: 'local', model, baseUrl: process.argv[4] })
   let ok = false
   try { const result = await client.complete([{ role: 'user', content: 'Reply OK' }], [], { timeoutMs: 2000, maxTokens: 8 }); ok = result.content === 'OK' } catch { /* expected fail-closed case */ }
@@ -54,9 +62,11 @@ try {
   healthy = true
   const fresh = mkdtempSync(join(output, 'healthy-'))
   const recovered = await child('seed', fresh)
+  const lonely = await child('last', mkdtempSync(join(output, 'last-')))
   const checks = { oneBoundedRequest: afterFirst === 1 && !first.ok,
     restartDoesNotResetAdmission: afterRestart === 1 && !second.ok && second.disabled,
-    realHttpRecoveryClearsHold: calls === 2 && recovered.ok && !recovered.disabled }
+    realHttpRecoveryClearsHold: calls === 2 && recovered.ok && !recovered.disabled,
+    lastLocalModelStaysOnAndIsReported: !lonely.disabled && lonely.held }
   report = { evidenceClass: 'real-http-and-process-restart-with-scripted-provider',
     sourceRevision: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim(),
     sourceDirty: !!spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.trim(),

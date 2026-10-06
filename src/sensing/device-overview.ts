@@ -120,12 +120,20 @@ const WEG_TEXT: Record<string, string> = { mdns: 'meldet sich selbst im Netz', u
  * Rohbeobachtungen gibt es nur auf ausdrückliche Nachfrage („technische
  * Details“) oder in der App.
  */
+/** Ehrlich, wie weit die letzte Suche kam (gespeicherter Suchbericht; startet keine Suche). */
+export function suchStand(dataDir: string): string {
+    const r = readJson(join(dataDir, 'sensing', 'last-discovery.json'))
+    if (!r || !Number.isInteger(r.scannedHosts) || r.scannedHosts < 0 || !Number.isInteger(r.probes) || r.probes < 0) return ''
+    return `Letzte Suche: ${r.scannedHosts} Adressen, ${r.probes} Prüfungen – ${r.partial ? 'Teilsuche, nicht das ganze Netz' : 'Suchlauf fertig'}.`
+}
+
 export function geraeteDetails(dataDir: string, k: Konsolidierung, istVerbunden: (g: Geraet) => boolean, max = DETAILS_MAX_CHARS): string {
     const records = loadDevices(dataDir)
     const sichtbar = k.geraete.filter(g => g.status !== 'abgelehnt' && g.status !== 'aus')
-    if (!sichtbar.length) return 'Noch keine Geräte – ich suche von selbst weiter.'
+    const suche = suchStand(dataDir)
+    if (!sichtbar.length) return ['Noch keine Geräte – ich suche von selbst weiter.', suche].filter(Boolean).join('\n')
     const out = ['So habe ich deine Geräte gefunden:']
-    const fuss = 'Mehr zu jedem Gerät steht in der App unter „Verbindungen“.'
+    const fuss = [suche, 'Mehr zu jedem Gerät steht in der App unter „Verbindungen“.'].filter(Boolean).join('\n')
     let rest = sichtbar.length
     for (const g of sichtbar) {
         const zustand = geraetZeile(dataDir, g, records, (() => { try { return istVerbunden(g) } catch { return false } })()).zustand
