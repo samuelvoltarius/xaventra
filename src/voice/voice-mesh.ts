@@ -23,13 +23,20 @@ export function isPrivateVoiceHost(host: string): boolean {
     return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 100 && b >= 64 && b <= 127)
 }
 
+const LOOPBACK = ['127.0.0.1', 'localhost', '::1']
+
 function isLocal(service: DiscoveredAIService): boolean {
-    return ['127.0.0.1', 'localhost', '::1'].includes(service.host) || service.sourceNode === 'local'
+    return LOOPBACK.includes(service.host) && (!service.sourceNode || service.sourceNode === 'local')
+}
+
+/** Ein anderer Knoten, der „localhost“ meldet, meint sich selbst — von hier aus nicht erreichbar. */
+function reachable(service: DiscoveredAIService): boolean {
+    return !LOOPBACK.includes(service.host) || isLocal(service)
 }
 
 /** Bester laufender Sprachdienst im eigenen Netz, eigener Rechner zuerst. */
 export function findVoiceService(services: readonly DiscoveredAIService[]): DiscoveredAIService | null {
-    const usable = services.filter(service => service.name === VOICE_SERVICE_NAME && service.status === 'running' && isPrivateVoiceHost(service.host))
+    const usable = services.filter(service => service.name === VOICE_SERVICE_NAME && service.status === 'running' && isPrivateVoiceHost(service.host) && reachable(service))
     return usable.find(isLocal) || usable[0] || null
 }
 

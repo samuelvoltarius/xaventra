@@ -32,6 +32,8 @@ describe('findVoiceService', () => {
         expect(findVoiceService([svc('100.64.0.12')])?.endpoint).toBe(`http://100.64.0.12:${VOICE_SERVICE_PORT}`)
         expect(findVoiceService([svc('192.168.1.20', { status: 'stopped' })])).toBeNull()
         expect(findVoiceService([{ ...svc('100.64.0.12'), name: 'whisper-server' }])).toBeNull()
+        // Ein anderer Knoten meldet „localhost“: von hier aus wäre das der falsche Rechner.
+        expect(findVoiceService([svc('127.0.0.1', { sourceNode: 'ns1', metadata: { source: 'mesh-advertised', nodeId: 'ns1' } })])).toBeNull()
     })
     it('isPrivateVoiceHost', () => {
         for (const host of ['127.0.0.1', 'localhost', '10.0.0.3', '192.168.1.2', '172.16.4.1', '100.64.0.1', '100.127.255.254']) expect(isPrivateVoiceHost(host), host).toBe(true)

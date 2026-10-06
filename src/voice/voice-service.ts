@@ -348,6 +348,7 @@ export function defaultVoiceBindHost(interfaces = networkInterfaces()): string {
 }
 
 let running: VoiceServiceHandle | null = null
+let loopback: VoiceServiceHandle | null = null
 
 /**
  * Startet den Sprachdienst, wenn das Bündel installiert und geprüft ist
@@ -361,7 +362,10 @@ export async function maybeStartVoiceService(): Promise<VoiceServiceHandle | nul
     } catch { return null }
     try {
         const engine = await loadSherpaEngine()
-        running = await startVoiceService({ engine, host: defaultVoiceBindHost() })
+        const host = defaultVoiceBindHost()
+        running = await startVoiceService({ engine, host })
+        // Zusätzlich auf dem eigenen Rechner, damit der eigene Scanner/Main ihn ohne Umweg findet.
+        if (host !== '127.0.0.1') loopback = await startVoiceService({ engine, host: '127.0.0.1' }).catch(() => null)
         console.log(`[Voice] Sprachdienst läuft auf ${running.host}:${running.port}`)
         return running
     } catch (error) {
@@ -371,7 +375,8 @@ export async function maybeStartVoiceService(): Promise<VoiceServiceHandle | nul
 }
 
 export async function stopVoiceService(): Promise<void> {
-    const handle = running
+    const handles = [running, loopback]
     running = null
-    await handle?.close()
+    loopback = null
+    await Promise.all(handles.map(handle => handle?.close()))
 }
