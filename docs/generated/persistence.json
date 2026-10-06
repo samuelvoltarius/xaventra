@@ -890,6 +890,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/sensing/device-switch.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/sensing/runtime.ts",
       "path": ".nova-data"
     },

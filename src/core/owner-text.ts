@@ -44,17 +44,33 @@ export function ampelKopf(input: { kritisch?: number; fragen?: number }): string
     return `${fragen ? '🟡' : '🟢'} Alles läuft — ${frageText}`
 }
 
+/** 2.86 Paket N: a line starting with this marker starts a new page („Details“ behind „Mehr ▶“). */
+export const DETAILS_TRENNER = '── Details ──'
+
 /** Splits text into pages of at most `max` characters at paragraph/line boundaries; nothing is lost. */
 export function paginate(value: unknown, max = OWNER_PAGE_CHARS): string[] {
     const text = String(value ?? '').replace(/\r\n/g, '\n').trim()
+    const parts = text.split(`\n${DETAILS_TRENNER}`).map((part, i) => i === 0 ? part : `${DETAILS_TRENNER}${part}`)
+    if (parts.length > 1) return parts.flatMap(part => paginate(part, max)).filter(Boolean)
     if (text.length <= max) return [text]
     const pages: string[] = []
     let current = ''
     const flush = () => { if (current.trim()) pages.push(current.trim()); current = '' }
     for (const line of text.split('\n')) {
         if (line.length > max) {
+            // 2.86 Paket N: split long lines at spaces only — never inside a word or an address
+            // (a single token longer than a page stays whole on its own page).
             flush()
-            for (let i = 0; i < line.length; i += max) pages.push(line.slice(i, i + max))
+            for (const word of line.split(' ')) {
+                if (current && current.length + 1 + word.length > max) flush()
+                if (word.length > max && !/^https?:\/\//.test(word)) {
+                    // a word longer than a page (no space to split at) is still cut; an address never
+                    for (let i = 0; i < word.length; i += max) pages.push(word.slice(i, i + max))
+                    continue
+                }
+                current = current ? `${current} ${word}` : word
+            }
+            flush()
             continue
         }
         if (current && current.length + 1 + line.length > max) flush()

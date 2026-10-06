@@ -36,6 +36,9 @@ export const environmentInventoryTool: NovaTool = {
                 .map(event => `${event.summary}\n${event.hint?.proposal || ''}`),
         ].slice(0, 16)
         const connectionQuestions = questions.length ? '\n\nVerbindung gemeinsam entscheiden (noch nichts verbunden):\n' + questions.join('\n\n') : ''
-        return { formatted: capabilities + '\n\n' + smartRouteAwareness(dataDir) + '\n\n' + directInventoryAwareness(dataDir) + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) + connectionQuestions }
+        // 2.86 Paket N: the owner answer (one line per real device, plain words) + the one connect bundle.
+        let owner = ''
+        try { const { ownerGeraeteAntwort } = await import('../sensing/device-overview.js'); owner = await ownerGeraeteAntwort(dataDir) } catch { owner = '' }
+        return { owner, formatted: capabilities + '\n\n' + smartRouteAwareness(dataDir) + '\n\n' + directInventoryAwareness(dataDir) + '\n\n' + haInventoryAwareness(dataDir, Date.now(), legacyAuthorized) + '\n\n' + environmentAwareness(dataDir, 'owner', Date.now(), false) + connectionQuestions }
     },
 }

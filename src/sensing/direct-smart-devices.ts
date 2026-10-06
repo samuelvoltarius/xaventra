@@ -17,8 +17,11 @@ import { readMatterPeer } from './matter-client.js'
 import { readShellyCloudFunctions } from './shelly-cloud-inventory.js'
 import { readLocalTuya, readLocalEspHome } from './smart-native-client.js'
 import { switchSupported } from './smart-control.js'
+import { vorgangsEreignisse } from './connect-progress.js'
 
-export interface DirectFunction { id: string; kind: 'light' | 'switch' | 'input' | 'printer' | 'unknown' | 'sensor' | 'binary_sensor' | 'fan' | 'cover' | 'climate' | 'lock' | 'media_player' | 'button' | 'number' | 'select' | 'text'; name: string; manufacturer?: string; model?: string; available?: boolean }
+export interface DirectFunction { id: string; kind: 'light' | 'switch' | 'input' | 'printer' | 'unknown' | 'sensor' | 'binary_sensor' | 'fan' | 'cover' | 'climate' | 'lock' | 'media_player' | 'button' | 'number' | 'select' | 'text'; name: string; manufacturer?: string; model?: string; available?: boolean
+    /** 2.86 Paket N: room from the bridge's own rooms/zones (Hue groups, read only). */
+    raum?: string }
 export interface DirectInventory { deviceId: string; fingerprint: string; at: string; protocol: string; approvedAt?: string; accessRevision?: string; status: 'ok' | 'pairing' | 'access-required' | 'unavailable'; functions: DirectFunction[] }
 interface PairRequest { fingerprint: string; owner: string; deadline: number; attempts: number; status: 'pending' | 'connected' | 'expired' }
 const directory = (root: string) => join(root, 'sensing')
@@ -207,6 +210,8 @@ export async function refreshDirectInventory(root: string, signal: AbortSignal, 
                 row.functions = parseDirectFunctions(protocol, await request(`/api/${key}/lights`))
                 // Paket L: sensors behind the bridge too (read only; a failed sensor read keeps the lamps).
                 try { row.functions = [...row.functions, ...parseDirectFunctions('hue-sensors', await request(`/api/${key}/sensors`))].slice(0, 200) } catch { /* lamps only */ }
+                // 2.86 Paket N: rooms/zones of the bridge (read only); a failed read keeps the lamps without room.
+                try { const { mitHueRaeumen, parseHueRaeume } = await import('./rooms.js'); row.functions = mitHueRaeumen(row.functions, parseHueRaeume(await request(`/api/${key}/groups`))) } catch { /* no rooms */ }
             } else row.functions = parseDirectFunctions(protocol, await request(protocol === 'shelly' ? d.hardware!.probe === 'shelly-gen1' ? '/status' : '/rpc/Shelly.GetStatus' : '/cm?cmnd=Status%200'))
             if (signal.aborted) return []
             row.status = 'ok'
@@ -255,6 +260,8 @@ export function createDirectSmartAdapter(root: string): SensingAdapter {
                 evidence: { geraet: r.deviceId, protokoll: r.protocol, status: r.status, funktionen: r.functions.length }, hint: { importance: 'normal' as const, level: 'selbst' as const,
                     ...(controls.length ? { proposal: `Direkte Gerätefunktionen verfügbar: ${controls.map(f => `${text(f.name)} (${text(f.id)})`).join(', ')}. Möchtest du eine davon ein- oder ausschalten? Vorbereiten mit /geraete schalten ${r.deviceId} <funktion> ein|aus, danach die konkrete Aktion separat bestätigen. Kein automatisches Schalten.` } : {}) } })
         }
+        // 2.86 Paket N: a pairing that finished in the background → exactly ONE success message (benefit sentence).
+        try { events.push(...vorgangsEreignisse(root, rows) as typeof events) } catch { /* progress is a convenience */ }
         ctx.state.known = known; return events
     } }
 }

@@ -38,6 +38,9 @@ import { createDirectSmartAdapter, requestHuePairing } from './direct-smart-devi
 import { chooseSmartRoute, selectedSmartRoute, approveSmartRoute, smartRouteEvents } from './smart-device-route.js'
 import { proposeSmartSwitch, confirmSmartSwitch } from './smart-control.js'
 import { executeSmartSwitch } from './smart-control-http.js'
+import { nutzenSatz } from './device-words.js'
+
+const PRINTER_TYPES: ReadonlySet<string> = new Set(['moonraker', 'octoprint', 'prusalink', 'bambu'])
 
 interface RuntimeState {
     raw: unknown
@@ -195,9 +198,10 @@ export function deviceEvents(result: { monitored: DeviceRecord[]; asked: DeviceR
     const month = 30 * 24 * 60 * 60_000
     const watched: RawEvent[] = result.monitored.map(device => ({
         kind: 'discovery.device', subject: device.id, severity: 'info' as const, dedupeKey: `device:${device.id}:ueberwacht`, dedupeWindowMs: month,
-        summary: `${DEVICE_LABEL[device.type]} gefunden (${device.host}:${device.port}) und ab jetzt nur lesend überwacht (Fortschritt, fertig, Fehler, pausiert). Abschalten: /geraete aus ${device.id}.`,
+        // 2.86 Paket N: the result as a benefit sentence (no address, no command); details stay in the evidence.
+        summary: `${PRINTER_TYPES.has(device.type) ? nutzenSatz({ drucker: 1 }) : `${DEVICE_LABEL[device.type]} sehe ich jetzt.`} Ich lese nur; abschalten geht unter „Geräte“.`,
         evidence: { geraet: device.id, typ: device.type, adresse: `${device.host}:${device.port}`, gefunden_ueber: device.via, status: 'eingerichtet (selbst, lesend)' },
-        hint: { importance: 'normal' as const, title: `Gefunden + überwacht: ${DEVICE_LABEL[device.type]} (${device.host})` },
+        hint: { importance: 'normal' as const, title: `Gefunden + überwacht: ${PRINTER_TYPES.has(device.type) ? '3D-Drucker' : DEVICE_LABEL[device.type]}` },
     }))
     const asks: RawEvent[] = result.asked.map(device => ({
         kind: 'discovery.device', subject: device.id, severity: 'info' as const, dedupeKey: `device:${device.id}:zugang`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
@@ -510,6 +514,19 @@ export async function handleGeraeteCommand(args: string, principal: { principalI
             return proposeQuietHours([principal.principalId, principal.rawUserId, from].filter((item): item is string => Boolean(item)))
         case 'status':
             return formatStatus()
+        // 2.86 Paket N: „Licht im Wohnzimmer aus“ / „Jeden Abend um 23 Uhr alles aus“ → preview card ('' = not a device sentence).
+        case 'sag': {
+            const { sagSchalten, productionSchaltDeps } = await import('./device-switch.js')
+            return sagSchalten({ ...(await productionSchaltDeps()), dataDir: state.dataDir }, args.trim().slice(sub.length).trim(), approver.principalId)
+        }
+        case 'stand': {
+            const { vorgangsStand } = await import('./connect-progress.js')
+            return vorgangsStand(state.dataDir)
+        }
+        case 'routinen': {
+            const { routinenListe, productionSchaltDeps } = await import('./device-switch.js')
+            return routinenListe({ ...(await productionSchaltDeps()), dataDir: state.dataDir }, approver.principalId)
+        }
         default:
             return `Unbekannt: ${cleanText(sub, 20)}. /geraete [suchen|weg <id> lokal|cloud|ja <id>|nein <id>|aus <id>|schalten <id> <funktion> ein|aus|bestaetigen <aktions-id>|konten|ruhe|status]`
     }

@@ -1360,6 +1360,12 @@
       ]
     },
     {
+      "module": "src/connections/login-paste.ts",
+      "imports": [
+        "./connector-login.js"
+      ]
+    },
+    {
       "module": "src/connections/login-return.ts",
       "imports": [
         "./connect-flow.js"
@@ -1684,7 +1690,8 @@
     {
       "module": "src/core/deterministic-query.ts",
       "imports": [
-        "../memory/memory-quality.js"
+        "../memory/memory-quality.js",
+        "../sensing/device-sentences.js"
       ]
     },
     {
@@ -2488,6 +2495,7 @@
       "module": "src/core/tool-evidence-response.ts",
       "imports": [
         "../security/secret-redaction.js",
+        "./owner-text.js",
         "./request-capabilities.js"
       ]
     },
@@ -5894,6 +5902,16 @@
       ]
     },
     {
+      "module": "src/sensing/connect-progress.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./direct-smart-devices.js",
+        "./event-bus.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/connection-awareness.ts",
       "imports": [
         "../connections/connection-store.js",
@@ -5910,6 +5928,7 @@
         "../core/approval-cards.js",
         "./device-consolidation.js",
         "./device-registry.js",
+        "./device-words.js",
         "./direct-smart-devices.js",
         "./discovery.js",
         "./hardware-recognition.js",
@@ -5930,6 +5949,25 @@
       ]
     },
     {
+      "module": "src/sensing/device-errors.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/device-overview.ts",
+      "imports": [
+        "../connections/connection-store.js",
+        "../core/owner-text.js",
+        "./device-consolidation.js",
+        "./device-registry.js",
+        "./device-words.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/device-registry.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5939,6 +5977,40 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/sensing/device-routines.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "./device-sentences.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/device-sentences.ts",
+      "imports": []
+    },
+    {
+      "module": "src/sensing/device-switch.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/atomic-storage.js",
+        "../planner/planner.js",
+        "./device-errors.js",
+        "./device-registry.js",
+        "./device-routines.js",
+        "./device-words.js",
+        "./rooms.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/device-words.ts",
+      "imports": []
     },
     {
       "module": "src/sensing/direct-smart-devices.ts",
@@ -6110,6 +6182,19 @@
       ]
     },
     {
+      "module": "src/sensing/rooms.ts",
+      "imports": [
+        "./device-registry.js",
+        "./device-sentences.js",
+        "./device-words.js",
+        "./direct-smart-devices.js",
+        "./smart-control.js",
+        "./smart-device-route.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/runtime.ts",
       "imports": [
         "../infra/proxmox.js",
@@ -6124,6 +6209,7 @@
         "./awareness.js",
         "./config.js",
         "./device-registry.js",
+        "./device-words.js",
         "./direct-smart-devices.js",
         "./discovery.js",
         "./event-bus.js",
