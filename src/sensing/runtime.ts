@@ -21,7 +21,8 @@ import { createHomeAssistantAdapter, resolveHaConnection } from './adapters/home
 import { createMailAdapter, resolveMailCredentials } from './adapters/mail.js'
 import { createSystemAdapter } from './adapters/system.js'
 import { createProxmoxAdapter } from './adapters/proxmox.js'
-import { loadProxmoxRuntime, parseProxmoxConfig } from '../infra/proxmox.js'
+import { effectiveProxmoxConfig, loadProxmoxRuntime } from '../infra/proxmox.js'
+import { confirmedProxmoxApp } from '../infra/proxmox-app-store.js'
 import { approveDevice, autoMonitorDevices, claimOwnerAsk, credentialNeed, DEVICE_LABEL, formatDevices, loadDevices, monitoredDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
 import { discoverDevices, realMdnsBrowse, type DiscoveryDeps } from './discovery.js'
 import { accountEvents, detectAccounts, readAuthProfileShapes } from './accounts.js'
@@ -135,7 +136,8 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
     if (a.system.enabled) bus.register(createSystemAdapter({ dataDir: state.dataDir, intervalMs: a.system.intervalSec * 1000, timeoutMs: a.system.timeoutSec * 1000 }))
     // Phase 6c: Proxmox (read only) when infra.proxmox is on and watch is not false.
     const pveRaw = state.rootConfig?.infra?.proxmox
-    const pve = parseProxmoxConfig(pveRaw)
+    // 2.88: also the app setup (token + confirmed fingerprint), not only infra.proxmox.
+    const pve = effectiveProxmoxConfig(pveRaw, () => confirmedProxmoxApp())
     if (pve.enabled && pve.watch) {
         bus.register(createProxmoxAdapter({
             client: async () => { const runtime = await loadProxmoxRuntime({ rawConfig: pveRaw }); return runtime.ok ? runtime.client : null },

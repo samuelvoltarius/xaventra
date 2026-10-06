@@ -272,6 +272,12 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     const { registerConnectCardExecutor } = await import('../connections/connect-flow.js')
     registerConnectCardExecutor()
 
+    // 2.88: Tresor-Freigabe (entry × service) and Proxmox setup (fingerprint, pool) — each only after the owner's Ja.
+    const { registerFreigabeExecutor } = await import('../secrets/tresor-cards.js')
+    registerFreigabeExecutor()
+    const { registerProxmoxSetupExecutors } = await import('../infra/proxmox-setup.js')
+    registerProxmoxSetupExecutors()
+
     // 2.85.11 Paket L: „Gerät verbinden“ (HA login, Hue pairing, Tuya lokal/Cloud, Matter) — one card per device.
     const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')
     const deviceDeps = await productionDeviceConnectDeps()
