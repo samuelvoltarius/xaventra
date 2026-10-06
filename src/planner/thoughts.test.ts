@@ -125,7 +125,8 @@ describe('Gedanken: Ruhezeit und Tagesobergrenze', () => {
         const s = store({ maxPerDay: 2 })
         const { port: p, sent } = port()
         // Distinct things (digits alone do not make a new signature: "Platte 91%" = "Platte 92%").
-        const ids = ['A', 'B', 'C'].map(n => s.add({ source: 'nachtwache', title: `Warnung ${n}`, severity: 'warning' }).thought.id)
+        // 2.86 Paket M: plain information waits for the report anyway; the budget applies to questions.
+        const ids = ['A', 'B', 'C'].map(n => s.add({ source: 'nachtwache', kind: 'vorschlag', title: `Warnung ${n}`, severity: 'warning' }).thought.id)
         const urgent = s.add({ source: 'nachtwache', title: 'Kritisch', severity: 'critical' }).thought.id
         const result = await deliverPendingThoughts(s, p, { briefingEnabled: true })
         expect(sent.map(msg => msg.thoughtId)).toEqual([urgent, ids[0]])
@@ -133,7 +134,7 @@ describe('Gedanken: Ruhezeit und Tagesobergrenze', () => {
         expect(s.get(ids[2])).toMatchObject({ notice: 'zurueckgehalten', noticeReason: 'tageslimit' })
         // A new day resets the budget.
         t += 24 * 3_600_000
-        s.add({ source: 'nachtwache', title: 'Neu', severity: 'warning' })
+        s.add({ source: 'nachtwache', kind: 'vorschlag', title: 'Neu', severity: 'warning' })
         await deliverPendingThoughts(s, p, { briefingEnabled: true })
         expect(sent).toHaveLength(3)
     })

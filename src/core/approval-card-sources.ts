@@ -30,7 +30,7 @@
  * (`NOVA_NODE_ONLY=true`) never sends — its proposals reach the Main via mesh.
  */
 import {
-    cardKeyboard, createApprovalCard, formatCardText, formatCardTextShort, isCardDue, listApprovalCards, maintainApprovalCards, recordCardDelivery,
+    cardKeyboard, createApprovalCard, formatCardText, formatCardTextShort, listApprovalCards, maintainApprovalCards, recordCardDelivery,
     registerCardExecutor, requestCardRedelivery, type ApprovalCard, type CardExecutor, type CardStoreOptions, type NewCardInput,
 } from './approval-cards.js'
 import { approveQueuedInstall, loadInstallQueue, rollbackQueuedInstall, type InstallProposal, type InstallQueueDeps } from '../install/install-queue.js'
@@ -369,7 +369,12 @@ export async function deliverPendingCards(sender: CardSender, opts: CardStoreOpt
     // P8: while the morning/evening report is on, non-time-critical cards wait for it (approval-cards.ts).
     const now = (opts.now || Date.now)()
     // Paket L: bundled cards (one message for many devices) are delivered by card-bundle.ts.
-    const pending = listApprovalCards({ ...opts, status: 'offen' }).filter(card => !card.buendel && !card.deliveredAt && isCardDue(card, { bundleIntoReport: opts.bundleIntoReport, now }))
+    // 2.86 Paket M: only ONE question at a time — the queue decides which card goes out now.
+    const { planQuestions } = await import('./question-queue.js')
+    const { isBundleVisible } = await import('./card-bundle.js')
+    const open = listApprovalCards({ ...opts, status: 'offen' })
+    const plan = new Set(planQuestions({ cards: open, bundleVisible: key => isBundleVisible(key, opts), bundleIntoReport: opts.bundleIntoReport, now }).karten)
+    const pending = open.filter(card => plan.has(card.id))
     if (!pending.length) return 0
     if (!(await sender.canSend())) return 0
     const chats = sender.ownerChatIds().filter(id => /^\d{1,20}$/.test(id)).slice(0, 3)
@@ -447,6 +452,19 @@ export async function runApprovalCardTick(): Promise<void> {
             send: (chatId, text, keyboard) => tg.sendApprovalCard(chatId, text, keyboard),
             edit: (chatId, messageId, text, keyboard) => tg.editOwnerView(chatId, messageId, text, keyboard),
         })
+        // 2.86 Paket M: pinned status message, example sentences after a new connection, one tip per day.
+        try {
+            const { runGuidedTelegramTick } = await import('../guided/guided-runtime.js')
+            let timeZone: string | undefined
+            try { timeZone = (await import('../planner/runtime.js')).getPlannerRuntime()?.settings.briefing.timeZone } catch { timeZone = undefined }
+            await runGuidedTelegramTick({
+                canSend: () => tg.hasCardAuthority(),
+                ownerChatIds: () => tg.getOwnerChatIds(),
+                send: (chatId, text, keyboard) => tg.sendApprovalCard(chatId, text, keyboard),
+                edit: (chatId, messageId, text, keyboard) => tg.editOwnerView(chatId, messageId, text, keyboard),
+                pin: (chatId, messageId) => tg.pinOwnerMessage(chatId, messageId),
+            }, { timeZone })
+        } catch (error) { console.warn(`[Knopf-Karten] Geführt: ${short(error, 160)}`) }
     } catch (error) {
         console.warn(`[Knopf-Karten] Durchlauf fehlgeschlagen: ${short(error, 200)}`)
     } finally {

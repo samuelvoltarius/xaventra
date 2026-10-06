@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { bundledCards, cardDeliveryFor, createApprovalCard, isCardDue, listApprovalCards } from './approval-cards.js'
+import { answerApprovalCard, bundledCards, cardDeliveryFor, createApprovalCard, isCardDue, listApprovalCards } from './approval-cards.js'
 import { deliverPendingCards } from './approval-card-sources.js'
 import type { DeliveryPort, PlannerOutgoing } from '../planner/delivery-port.js'
 import { startPlannerRuntime, stopPlannerRuntime } from '../planner/runtime.js'
@@ -76,6 +76,10 @@ describe('Zustellung: gebündelt oder sofort', () => {
         expect(report.text).not.toContain('nicht erreichbar')
         // … und gibt sie frei: jetzt kommt die Karte mit Knöpfen.
         expect(bundledCards({ dataDir: dir, now: () => t })).toEqual([])
+        // 2.86 Paket M: only one question at a time — the released card waits until the urgent one is answered.
+        expect(await deliverPendingCards(sender(texts), { dataDir: dir, now: () => t, bundleIntoReport: true })).toBe(0)
+        const nein = urgent.ok ? listApprovalCards({ dataDir: dir }).find(item => item.id === urgent.card.id)!.buttons.find(button => button.answer === 'nein')! : null
+        await answerApprovalCard(`ac:${nein!.token}`, { userId: '111', ownerIds: ['111'] }, { dataDir: dir, now: () => t, ledger: null })
         expect(await deliverPendingCards(sender(texts), { dataDir: dir, now: () => t, bundleIntoReport: true })).toBe(1)
         expect(texts[1]).toContain('ffmpeg auf spark installieren?')
         expect(listApprovalCards({ dataDir: dir }).every(item => item.deliveredAt)).toBe(true)

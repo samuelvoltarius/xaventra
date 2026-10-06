@@ -505,6 +505,10 @@ export class TelegramAdapter implements ChannelAdapter {
             await this.handleNavPress(query)
             return
         }
+        if (typeof data === 'string' && data.startsWith('gf:')) {
+            await this.handleGuidedPress(query)
+            return
+        }
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const retired = retiredApprovalHint(data)
@@ -1085,6 +1089,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 const { deliverBundles } = await import('../core/card-bundle.js')
                 await deliverBundles({ canSend: () => this.hasCardAuthority(), ownerChatIds: () => this.getOwnerChatIds(),
                     send: (chatId, text, keyboard) => this.sendApprovalCard(chatId, text, keyboard), edit: (chatId, messageId, text, keyboard) => this.editOwnerView(chatId, messageId, text, keyboard) })
+                // 2.86 Paket M: one question at a time — a closed bundle frees the slot for the next one.
+                this.nextQuestionSoon()
                 return
             }
             const targets = [...(result.card.messages || [])]
@@ -1100,6 +1106,8 @@ export class TelegramAdapter implements ChannelAdapter {
                     await this.bot.editMessageText(text, { chat_id: target.chatId, message_id: target.messageId, reply_markup: { inline_keyboard: [] } })
                 } catch { /* message may be too old; the decision is stored anyway */ }
             }
+            // 2.86 Paket M: one question at a time — the answer frees the slot for the next one.
+            this.nextQuestionSoon()
         } catch (error) {
             console.warn(`[Nova Telegram] Knopf-Karte: ${String((error as Error)?.message || error).slice(0, 200)}`)
             await answer('❌ Fehler — nichts ausgeführt.')
@@ -1128,7 +1136,73 @@ export class TelegramAdapter implements ChannelAdapter {
         await this.requireLiveAuthority('main menu')
         const fragen = await this.openQuestionCount()
         const { ampelKopf, menuKeyboard } = await import('./telegram-pages.js')
-        await this.bot.sendMessage(chatId, `${ampelKopf({ fragen })}\nWas möchtest du sehen?`, { reply_markup: { inline_keyboard: menuKeyboard(chatId, { fragen }) } })
+        // 2.86 Paket M: second row „Einrichtung“ · „Ich komm nicht weiter“ (guided/telegram-guided.ts).
+        const { guidedMenuRow } = await import('../guided/telegram-guided.js')
+        await this.bot.sendMessage(chatId, `${ampelKopf({ fragen })}\nWas möchtest du sehen?`, { reply_markup: { inline_keyboard: [...menuKeyboard(chatId, { fragen }), ...guidedMenuRow(chatId)] } })
+    }
+
+    /** 2.86 Paket M: pin the status message silently (edited later, never resent). */
+    async pinOwnerMessage(chatId: string, messageId: number): Promise<void> {
+        if (!this.bot) return
+        await this.requireLiveAuthority('pin status')
+        await this.bot.pinChatMessage(chatId, messageId, { disable_notification: true })
+    }
+
+    /**
+     * 2.86 Paket M: a guided button (`gf:`) — owner only, bound to its chat.
+     * It sends a fixed sentence as a normal request, opens an existing
+     * question or shows a read-only view; it never switches anything itself.
+     */
+    private async handleGuidedPress(query: any): Promise<void> {
+        const answer = async (text = '') => { try { await this.bot.answerCallbackQuery(query.id, text ? { text: String(text).slice(0, 190) } : undefined) } catch { /* ignore */ } }
+        try {
+            const chatId = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            const userId = String(query.from?.id ?? '')
+            const { pressGuided } = await import('../guided/telegram-guided.js')
+            const pressed = pressGuided(String(query.data), { userId, ownerIds: this.getOwnerChatIds(), chatId })
+            if (!pressed.ok || !pressed.aktion) { await answer(pressed.message); return }
+            const { runGuidedAction } = await import('../guided/guided-runtime.js')
+            const result = await runGuidedAction(pressed.aktion, { chatId, by: `telegram:${userId}` })
+            await answer(result.hinweis)
+            if (result.anfrage) this.injectOwnerRequest(chatId, userId, result.anfrage)
+            if (result.ansicht) {
+                const messageId = query.message?.message_id
+                if (result.ansicht.ersetzen && typeof messageId === 'number') await this.editOwnerView(chatId, messageId, result.ansicht.text, result.ansicht.keyboard)
+                else await this.sendApprovalCard(chatId, result.ansicht.text, result.ansicht.keyboard)
+            }
+            if (result.weiter) this.nextQuestionSoon()
+        } catch (error) {
+            console.warn(`[Nova Telegram] Geführt: ${String((error as Error)?.message || error).slice(0, 160)}`)
+            await answer('❌ Gerade nicht möglich.')
+        }
+    }
+
+    /** 2.86 Paket M: an example sentence / tip button runs as if the owner had typed it (normal request path). */
+    private injectOwnerRequest(chatId: string, userId: string, text: string): void {
+        const incoming: IncomingMessage = {
+            id: `tg-gf:${chatId}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+            channel: 'telegram', from: userId, to: chatId, content: String(text).slice(0, 200), timestamp: Date.now(), isGroup: false,
+        }
+        this.enqueueMessage(chatId, async () => {
+            if (!this.messageHandler) return
+            this.startTyping(chatId)
+            try { await (this.messageHandler(incoming) as unknown as Promise<void>) }
+            catch (error) { console.error(`[Nova Telegram] messageHandler threw: ${error}`) }
+            finally { this.stopTyping(chatId) }
+        })
+    }
+
+    /** 2.86 Paket M: after an answer the next waiting question goes out now, not at the next minute. */
+    private nextQuestionSoon(): void {
+        void (async () => {
+            const { deliverPendingCards } = await import('../core/approval-card-sources.js')
+            const { deliverBundles } = await import('../core/card-bundle.js')
+            let bundleIntoReport = false
+            try { bundleIntoReport = (await import('../planner/runtime.js')).getPlannerRuntime()?.settings.briefing.enabled === true } catch { bundleIntoReport = false }
+            const sender = { canSend: () => this.hasCardAuthority(), ownerChatIds: () => this.getOwnerChatIds(), send: (chatId: string, text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>) => this.sendApprovalCard(chatId, text, keyboard) }
+            await deliverPendingCards(sender, { bundleIntoReport })
+            await deliverBundles({ ...sender, edit: (chatId, messageId, text, keyboard) => this.editOwnerView(chatId, messageId, text, keyboard) })
+        })().catch(() => { /* the card loop retries every minute */ })
     }
 
     /** Paket L: read-only menu views; registered per press with the presser's own principal. */

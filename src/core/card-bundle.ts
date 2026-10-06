@@ -20,6 +20,7 @@ import { getNovaDataDir } from './data-root.js'
 import { CALLBACK_PREFIX, listApprovalCards, type ApprovalCard, type CardStoreOptions } from './approval-cards.js'
 import { ownerText } from './owner-text.js'
 import { bundlePageToken } from '../channels/telegram-pages.js'
+import { planQuestions } from './question-queue.js'
 
 type Keyboard = Array<Array<{ text: string; callback_data: string }>>
 const PAGE_SIZE = 5
@@ -115,6 +116,12 @@ function withNav(composed: NonNullable<ReturnType<typeof compose>>, key: string,
     return [...composed.rows, nav]
 }
 
+/** 2.86 Paket M: the bundle message is out (sent, not closed) — it is the one visible question. */
+export function isBundleVisible(key: string, opts: CardStoreOptions = {}): boolean {
+    const state = loadStates(opts).find(item => item.key === key)
+    return Boolean(state && state.messages.length && state.deliveredAt && !state.closedAt)
+}
+
 /** The current page of a bundle for one chat (null = nothing open). */
 export function renderBundle(key: string, chatId: string, opts: CardStoreOptions = {}, page?: number): { text: string; keyboard: Keyboard } | null {
     const composed = compose(key, page ?? stateOf(key, opts).page, opts)
@@ -135,6 +142,8 @@ export async function showBundlePage(key: string, chatId: string, page: number, 
  */
 export async function deliverBundles(sender: BundleSender, opts: CardStoreOptions & { keys?: string[] } = {}): Promise<number> {
     const keys = opts.keys || [...new Set([...listApprovalCards({ ...opts, status: 'offen' }).map(card => card.buendel).filter(Boolean) as string[], ...loadStates(opts).map(item => item.key)])]
+    // 2.86 Paket M: a bundle is ONE question — a new bundle message only when the queue allows it.
+    const mayOpen = new Set(planQuestions({ cards: listApprovalCards({ ...opts, status: 'offen' }), bundleVisible: key => isBundleVisible(key, opts), now: (opts.now || Date.now)() }).buendel)
     let changed = 0
     for (const key of keys) {
         const state = stateOf(key, opts)
@@ -154,6 +163,7 @@ export async function deliverBundles(sender: BundleSender, opts: CardStoreOption
         const signature = signatureOf(composed)
         const fresh = !state.deliveredAt || Boolean(state.closedAt)
         if (!fresh && !reminderDue && signature === state.signature) continue
+        if (fresh && !mayOpen.has(key)) continue
         if (!(await sender.canSend())) return changed
         const chats = sender.ownerChatIds().filter(id => /^\d{1,20}$/.test(id)).slice(0, 3)
         if (!chats.length) return changed

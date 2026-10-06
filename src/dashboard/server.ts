@@ -38,6 +38,7 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'werkzeugkasten.js': 'text/javascript; charset=utf-8',
     'onboarding.js': 'text/javascript; charset=utf-8',
     'connections.js': 'text/javascript; charset=utf-8',
+    'cockpit.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
 })
 export function resolveUiDir(base = __dirname): string | null {

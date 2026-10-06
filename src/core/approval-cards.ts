@@ -98,6 +98,8 @@ export interface ApprovalCard {
     knopf?: string
     /** Paket L: the one reminder before expiry was sent. */
     erinnertAt?: string
+    /** 2.86 Paket M: created with `wichtigkeit: 'hoch'` — may jump the one-question queue (question-queue.ts). */
+    wichtig?: boolean
 }
 
 export type CardDelivery = 'sofort' | 'bericht'
@@ -379,7 +381,7 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(input.gruppe && REF_PATTERN.test(String(input.gruppe)) ? { gruppe: String(input.gruppe) } : {}),
         ...(short(input.knopf, 24) ? { knopf: short(input.knopf, 24) } : {}),
     } : {}
-    const card: ApprovalCard = { ...base, zustellung, ...bundle, buttons: issueButtons(base) }
+    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...(input.wichtigkeit === 'hoch' ? { wichtig: true } : {}), buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }

@@ -58,7 +58,9 @@ describe('Telegram kurz mit Knöpfen', () => {
         await (instance as any).handleMessage({ message_id: 7, date: 1, text: '/menu', chat: { id: 111, type: 'private' }, from: { id: 111, username: 'owner' } })
         const [, text, options] = bot.sendMessage.mock.calls[0] as any[]
         expect(text).toMatch(/^🟢|^🟡|^🔴/)
-        expect(options.reply_markup.inline_keyboard.flat().map((b: any) => b.text)).toEqual(['Status', expect.stringMatching(/^Braucht mich \(\d+\)$/), 'Geräte', 'Bericht', 'Mehr'])
+        expect(options.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(['Status', expect.stringMatching(/^Braucht mich \(\d+\)$/), 'Geräte', 'Bericht', 'Mehr'])
+        // 2.86 Paket M: second row „Einrichtung“ · „Ich komm nicht weiter“
+        expect(options.reply_markup.inline_keyboard[1].map((b: any) => b.text)).toEqual(['🧭 Einrichtung', '🆘 Ich komm nicht weiter'])
     })
 
     it('a press in the device bundle answers that device, edits the bundle and reports the result once', async () => {

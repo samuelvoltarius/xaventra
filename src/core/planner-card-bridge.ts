@@ -98,8 +98,11 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
             }
             const text = msg.title && !msg.text.startsWith(msg.title) ? `${msg.title}\n\n${msg.text}` : msg.text
             const plain = msg.kind === 'erinnerung' ? text : ownerText(text)
+            // 2.86 Paket M: every system message starts with a traffic light + one sentence (reminders are the owner's own words).
+            const { systemKopf } = await import('../guided/ampel.js')
+            const kopf = msg.kind === 'gedanke' || msg.kind === 'job' ? systemKopf(msg) : undefined
             for (const chatId of chats) {
-                const view = pagedView(chatId, plain)
+                const view = pagedView(chatId, plain, kopf ? { kopf } : {})
                 await target.sendApprovalCard(chatId, view.text, view.keyboard)
             }
             return { status: 'zugestellt' } as DeliveryReceipt

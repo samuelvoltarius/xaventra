@@ -450,6 +450,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/guided/guided-store.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/hooks/event-hooks.test.ts",
       "path": ".nova-data"
     },

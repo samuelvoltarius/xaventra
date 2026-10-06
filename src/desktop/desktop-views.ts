@@ -114,6 +114,8 @@ export interface DesktopReport {
     seit: string
     zahlen: Record<string, number>
     geplant: { morgen: string; abend: string; an: boolean } | null
+    /** 2.86 Paket M: report sections (owner text) for the cockpit tiles. */
+    abschnitte?: Array<{ titel: string; zeilen: string[] }>
 }
 
 /** Live preview of the next morning/evening report (read-only; delivery state and bundled cards untouched). */
@@ -146,6 +148,7 @@ export async function previewReport(opts: ViewOptions = {}): Promise<DesktopRepo
     const text = redactSecrets(String(briefing.text || '')).slice(0, 3500)
     return {
         art, titel: clean(briefing.title, 120), text, seit: new Date(since).toISOString(), zahlen: { ...briefing.counts },
+        abschnitte: (briefing.sections || []).slice(0, 14).map(section => ({ titel: clean(section.titel, 60), zeilen: section.zeilen.slice(0, 12).map(line => clean(line, 240)) })),
         geplant: runtime ? { morgen: runtime.settings.briefing.morning, abend: runtime.settings.briefing.evening, an: runtime.settings.briefing.enabled } : null,
     }
 }
@@ -158,6 +161,10 @@ export interface HeuteView {
     bericht: DesktopReport | null
     gedanken: Array<{ at: string; quelle: string; status: string; text: string }>
     probleme: string[]
+    /** 2.86 Paket M: questions waiting behind the first one (they come one at a time). */
+    wartend?: number
+    /** 2.86 Paket M: four traffic-light tiles (Läuft alles? · Braucht dich · getan · gelernt). */
+    cockpit?: import('../guided/ampel.js').Kachel[]
 }
 
 export async function collectHeute(opts: ViewOptions = {}): Promise<HeuteView> {
@@ -167,17 +174,35 @@ export async function collectHeute(opts: ViewOptions = {}): Promise<HeuteView> {
     const jetzt = await attempt('Jetzt', () => collectJetzt(opts), problems)
     const gedanken = await attempt('Gedanken', () => collectGedanken(opts), problems)
     const bericht = await attempt('Bericht', () => previewReport(opts), problems)
+    // 2.86 Paket M: open questions in queue order (the visible one first), the cockpit tiles.
+    const { orderedOpenQuestions, waitingQuestionCount } = await import('../core/question-queue.js')
+    const { isBundleVisible } = await import('../core/card-bundle.js')
+    const offen = orderedOpenQuestions(jetzt?.openCards || [], now)
+    const wartend = await attempt('Warteschlange', () => waitingQuestionCount({ dataDir: opts.dataDir, now: opts.now, bundleVisible: key => isBundleVisible(key, { dataDir: opts.dataDir }) }), problems) ?? 0
+    const kritisch = await attempt('Ampel', async () => {
+        const { getThoughtStore, isOpenThought } = await import('../planner/index.js')
+        return getThoughtStore(opts.dataDir).list({ limit: 500 }).filter(item => isOpenThought(item) && item.importance === 'dringend').length
+    }, problems) ?? 0
+    const verbindungFehler = await attempt('Verbindungen', async () => {
+        const { loadConnections } = await import('../connections/connection-store.js')
+        return loadConnections({ dataDir: opts.dataDir }).filter(item => item.status === 'fehler' || item.status === 'abgelaufen').length
+    }, problems) ?? 0
+    const { buildCockpit, cockpitZeilen } = await import('../guided/ampel.js')
+    const zeilen = cockpitZeilen(bericht?.abschnitte)
+    const cockpit = buildCockpit({ kritisch, verbindungFehler, probleme: problems.length, frage: offen[0] ? { id: offen[0].id, titel: clean(offen[0].kurz || offen[0].titel, 200) } : null, wartend: Math.max(wartend, offen.length - 1), getan: zeilen.getan, gelernt: zeilen.gelernt })
     return {
         generatedAt: new Date(now).toISOString(),
         jetzt: {
             aufgaben: (jetzt?.tasks || []).slice(0, 8).map(task => ({ text: clean(task.label, 240), quelle: clean(task.source, 40), seit: iso(task.since) })),
             warteschlange: (jetzt?.queue || []).slice(0, 8).map(item => clean(item, 240)),
         },
-        karten: (jetzt?.openCards || []).slice(-20).reverse().map(publicCard),
+        karten: [...offen, ...(jetzt?.openCards || []).filter(card => card.status === 'spaeter')].slice(0, 20).map(publicCard),
         entschieden: (jetzt?.decisions || []).slice(-6).reverse().map(publicCard),
         bericht,
         gedanken: (gedanken || []).slice(-40).reverse().map(item => ({ at: clean(item.at, 40), quelle: clean(item.quelle, 60), status: clean(item.status, 30), text: clean(item.text, 400) })),
         probleme: problems,
+        wartend: Math.max(wartend, offen.length - 1),
+        cockpit,
     }
 }
 

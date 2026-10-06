@@ -85,8 +85,11 @@ describe('früher stumm verworfene Quellen', () => {
         const ideas = store.list().filter(item => item.kind === 'idee')
         expect(ideas.map(item => item.source).sort()).toEqual(['dream-digest', 'self-thinking'])
         expect(ideas.every(item => item.notice === 'keine' && /unbestätigt/.test(item.evidence))).toBe(true)
+        // 2.86 Paket M „Bündeln“: a trusted plain message is a notice (not an idea), but while the
+        // report is on it waits for the report instead of being pushed at once.
         const sent = await deliver()
-        expect(sent.map(item => item.title)).toEqual(['Mission Backup prüfen: Schritt 2/3 erledigt'])
+        expect(sent).toEqual([])
+        expect(store.list().find(item => item.source === 'mission-engine')).toMatchObject({ notice: 'zurueckgehalten', noticeReason: 'tagesbericht' })
     })
 
     it('Planer aus: nur dann trägt der Transport, und Unbestätigtes bleibt draußen', async () => {
