@@ -36,6 +36,8 @@ export interface FailedApproach {
     error: string
     timestamp: number
     userRequest: string
+    /** 2.85.11: the build that saw the failure; an update makes old entries stale. */
+    version?: string
 }
 
 export interface CorrectionState {
@@ -336,18 +338,57 @@ export function getLastToolCall(): LastToolCall | null {
 // Failure Memory
 // ============================================
 
+/** A remembered failure blocks the identical retry for at most this long. */
+export const FAILURE_MEMORY_TTL_MS = 24 * 60 * 60_000
+
+/**
+ * 2.85.11: timeouts, exhausted budgets, contract refusals, aborts and network
+ * errors say nothing about whether an approach is wrong. Live 06.10.2026 one
+ * scan_now timeout at the old 30 s limit blocked the device scan for good.
+ */
+export function isInfrastructureFailure(error: string): boolean {
+    return /\[Timeout\]|timed? ?out|exceeded \d+ ?ms|budget exhausted|outside task contract|AbortError|aborted|fetch failed|ECONN(?:REFUSED|RESET)|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(String(error || ''))
+}
+
+let cachedVersion: string | undefined
+function currentVersion(): string {
+    if (cachedVersion !== undefined) return cachedVersion
+    cachedVersion = ''
+    for (const file of [join(process.cwd(), 'package.json'), join(process.cwd(), '..', 'package.json')]) {
+        try {
+            const version = JSON.parse(readFileSync(file, 'utf-8'))?.version
+            if (typeof version === 'string' && version) { cachedVersion = version; break }
+        } catch { /* next */ }
+    }
+    return cachedVersion
+}
+
+/** Only a real failure of this build within the last day blocks the identical retry. */
+export function failureStillBlocks(entry: FailedApproach, options: { now?: number; version?: string } = {}): boolean {
+    const now = options.now ?? Date.now()
+    const version = options.version ?? currentVersion()
+    if (!entry?.version || !version || entry.version !== version) return false
+    if (!Number.isFinite(entry.timestamp) || now - entry.timestamp > FAILURE_MEMORY_TTL_MS) return false
+    return !isInfrastructureFailure(entry.error)
+}
+
 export function recordFailedApproach(
     toolName: string,
     params: Record<string, unknown>,
     error: string,
     userRequest: string
 ): void {
+    if (isInfrastructureFailure(error)) {
+        console.log(`[FailureMemory] Not remembered (infrastructure, not a wrong approach): ${toolName}`)
+        return
+    }
     state.failedApproaches.push({
         toolName,
         params,
         error,
         timestamp: Date.now(),
         userRequest,
+        version: currentVersion() || undefined,
     })
 
     // Keep only last 50 failures
@@ -359,10 +400,10 @@ export function recordFailedApproach(
     console.log(`[FailureMemory] Recorded failed approach: ${toolName}`)
 }
 
-export function hasFailedBefore(toolName: string, params: Record<string, unknown>): boolean {
+export function hasFailedBefore(toolName: string, params: Record<string, unknown>, options: { now?: number; version?: string } = {}): boolean {
     const key = JSON.stringify({ toolName, params })
     return state.failedApproaches.some(f =>
-        JSON.stringify({ toolName: f.toolName, params: f.params }) === key
+        JSON.stringify({ toolName: f.toolName, params: f.params }) === key && failureStillBlocks(f, options)
     )
 }
 

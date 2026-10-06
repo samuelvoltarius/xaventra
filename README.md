@@ -7,14 +7,13 @@
 > A governed, self-hosted autonomous agent operating system with verifiable
 > tool execution, durable user-scoped memory and a resilient multi-node mesh.
 
-The 2.85.10 source candidate adds smart-device inventory routing and explicit
+2.85.11 (deployed with 2.85.10's fixes) adds smart-device inventory routing and explicit
 connection questions, coupled Desktop cancellation and bounded discovery,
 first-run `/status` access, and [parcel tracking](docs/PARCEL_TRACKING.md).
 It retains request-wide inference cancellation and independent Telegram
 `/log` / `/status` / `/cancel` controls. Verified partial findings survive
 interrupted synthesis; delivery errors do not replay tools or inference.
-This is not universal hardware or parcel-provider acceptance and is not yet
-deployed. See [Autonomy Guide](docs/AUTONOMY_GUIDE.md).
+This is not universal hardware or parcel-provider acceptance. See [Autonomy Guide](docs/AUTONOMY_GUIDE.md).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14B8A6.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-4F7CFF.svg)](package.json)
@@ -34,7 +33,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.85.10 preview** (bounded hardware hypotheses and
+Current source candidate: **2.85.11 preview** (2.85.10 plus a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked

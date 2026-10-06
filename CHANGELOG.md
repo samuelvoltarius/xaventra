@@ -1,6 +1,16 @@
 # Changelog
 
-## [2.85.10] — 2026-10-05 (source candidate; not deployed)
+## [2.85.11] — 2026-10-06
+
+- Failure memory no longer blocks a tool forever. Live on 2.85.10 a single
+  device-scan timeout at the old 30 s limit (05.10.) kept `scan_now` blocked
+  across the update, so "which devices do you see?" ended without results.
+  Timeouts, exhausted budgets, contract refusals, aborts and network errors are
+  not remembered as a wrong approach; a remembered real failure blocks the
+  identical retry only for the same build and at most 24 hours, so entries
+  from earlier versions stop blocking after an update.
+
+## [2.85.10] — 2026-10-06
 
 - Recognize Home Assistant, Hue and other explicit smart-device overview
   questions. Preserve read-only prohibitions without hiding mixed actions;
