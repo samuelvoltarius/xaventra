@@ -1702,7 +1702,7 @@ class LocalLLMProvider extends LLMProvider {
                 toolCalls: ollamaToolCalls.length ? ollamaToolCalls : undefined,
                 usage: normalizeTokenUsage(data.prompt_eval_count, data.eval_count),
             }
-            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!result.content || ollamaToolCalls.length > 0)
+            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!result.content || ollamaToolCalls.length > 0, { local: isLocalEndpoint(baseUrl), finishReason: data.done_reason === 'length' ? 'length' : undefined })
             return result
         } else {
             // OpenAI-compatible API (LMStudio, vLLM, external cloud providers)
@@ -1760,7 +1760,7 @@ class LocalLLMProvider extends LLMProvider {
                     if (!response.ok) error = await response.text()
                 }
                 if (!response.ok) {
-                    recordModelCall(model, taskType || 'chat', Date.now() - callStart, false)
+                    recordModelCall(model, taskType || 'chat', Date.now() - callStart, false, { local: isLocalEndpoint(baseUrl), status: response.status, error: error.slice(0, 200) })
                     throw new Error(`LLM API error (${response.status}): ${error.slice(0, 200)}`)
                 }
             }
@@ -1778,7 +1778,7 @@ class LocalLLMProvider extends LLMProvider {
                 } catch { /* tool policy and schema validation handle empty args */ }
                 return { id: call.id || `local-tool-${index}`, name: call.function?.name || call.name || '', arguments: args }
             })
-            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content || toolCalls.length > 0)
+            recordModelCall(model, taskType || 'chat', Date.now() - callStart, !!content || toolCalls.length > 0, { local: isLocalEndpoint(baseUrl), finishReason: data.choices?.[0]?.finish_reason })
             return {
                 content,
                 reasoning: reasoning || undefined,

@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { isInfrastructureFailure } from '../core/infrastructure-failure.js'
 
 // ============================================
 // Types
@@ -41,6 +42,11 @@ export interface ModelPerfEntry {
     lastUpdated: string
     // Auto-disable: set to ISO timestamp when model should be re-enabled (null = not disabled)
     disabledUntil?: string | null
+    /** 2.86.1: failures that were the environment (timeout, abort, budget) — never counted towards disabling. */
+    infraFails?: number
+    /** 2.86.1: the last available local model was NOT disabled although it failed (reported instead). */
+    heldSince?: string | null
+    heldReason?: string
 }
 
 interface PerfDB {
@@ -48,6 +54,8 @@ interface PerfDB {
     schemaVersion: number
     lastSaved: string
     recoveryProbes?: Record<string, number>
+    /** 2.86.1: local models (own machine / own network) with their last call. */
+    localModels?: Record<string, string>
 }
 
 // ============================================
@@ -73,8 +81,17 @@ export function withModelPerformanceRecording<T>(
     return recordingScope.run(enabled, operation)
 }
 
+let pathOverride: string | null = null
 function getDbPath(): string {
-    return join(process.cwd(), PERF_FILE)
+    return pathOverride || join(process.cwd(), PERF_FILE)
+}
+
+/** Tests only: use another file (null = back to the default) and forget the loaded state. */
+export function resetModelPerfDbForTests(path: string | null): void {
+    pathOverride = path
+    _db = null
+    _dirty = false
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null }
 }
 
 function loadDB(): PerfDB {
@@ -101,7 +118,7 @@ function scheduleSave(): void {
         _saveTimer = null
         if (!_dirty || !_db) return
         try {
-            const dir = join(process.cwd(), '.nova-data')
+            const dir = pathOverride ? join(pathOverride, '..') : join(process.cwd(), '.nova-data')
             if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
             _db.lastSaved = new Date().toISOString()
             writeFileSync(getDbPath(), JSON.stringify(_db, null, 2))
@@ -156,6 +173,8 @@ export function isModelDisabled(model: string): boolean {
     if (e.disabledUntil) {
         const until = new Date(e.disabledUntil).getTime()
         if (Date.now() < until) {
+            // 2.86.1: a stored quarantine never silences the last available local model.
+            if (isLastLocalModel(db, model)) return false
             return true
         }
         // Cooldown expired — re-enable
@@ -186,7 +205,7 @@ export function getDisabledModels(): Array<{ model: string; disabledUntil: strin
     const db = loadDB()
     const now = Date.now()
     return Object.values(db.entries)
-        .filter(e => e.disabledUntil && new Date(e.disabledUntil).getTime() > now)
+        .filter(e => e.disabledUntil && new Date(e.disabledUntil).getTime() > now && !isLastLocalModel(db, e.model, now))
         .map(e => {
             const rate = e.totalCalls > 0 ? Math.round((e.totalSuccesses / e.totalCalls) * 100) : 0
             const reason = e.consecutiveFails >= AUTO_DISABLE_CONSEC_FAILS
@@ -194,6 +213,22 @@ export function getDisabledModels(): Array<{ model: string; disabledUntil: strin
                 : `${rate}% success rate over ${e.totalCalls} calls`
             return { model: e.model, disabledUntil: e.disabledUntil!, reason }
         })
+}
+
+const LOCAL_RECENT_MS = 24 * 60 * 60 * 1000
+
+/** Is `model` local and is there no other local model that is used recently and not disabled? */
+function isLastLocalModel(db: PerfDB, model: string, now = Date.now()): boolean {
+    const local = db.localModels || {}
+    if (!local[model]) return false
+    return !Object.entries(local).some(([other, at]) => other !== model && now - Date.parse(at) < LOCAL_RECENT_MS
+        && !(db.entries[other]?.disabledUntil && Date.parse(db.entries[other].disabledUntil!) > now))
+}
+
+/** 2.86.1: the „held“ report — the only local model failed but stays on (instead of going silent). */
+export function getHeldModels(): Array<{ model: string; since: string; reason: string }> {
+    const db = loadDB()
+    return Object.values(db.entries).filter(e => e.heldSince).map(e => ({ model: e.model, since: e.heldSince!, reason: e.heldReason || '' }))
 }
 
 function maybeAutoDisable(e: ModelPerfEntry): void {
@@ -205,14 +240,23 @@ function maybeAutoDisable(e: ModelPerfEntry): void {
     if (e.consecutiveFails >= AUTO_DISABLE_CONSEC_FAILS) {
         shouldDisable = true
         reason = `${e.consecutiveFails} consecutive failures`
-    } else if (e.totalCalls >= AUTO_DISABLE_LOW_RATE_CALLS) {
-        const rate = e.totalSuccesses / e.totalCalls
+    } else if (e.totalCalls - (e.infraFails || 0) >= AUTO_DISABLE_LOW_RATE_CALLS) {
+        // 2.86.1: environment failures (timeouts, aborts, budgets) are not the model's success rate.
+        const counted = e.totalCalls - (e.infraFails || 0)
+        const rate = e.totalSuccesses / counted
         if (rate < AUTO_DISABLE_LOW_RATE_THRESHOLD) {
             shouldDisable = true
-            reason = `${Math.round(rate * 100)}% success over ${e.totalCalls} calls`
+            reason = `${Math.round(rate * 100)}% success over ${counted} calls`
         }
     }
 
+    if (shouldDisable && isLastLocalModel(loadDB(), e.model)) {
+        // 2.86.1: never switch off the last local model — Xaventra would go silent. Report instead.
+        if (!e.heldSince) console.log(`[ModelPerfDB] ⚠ ${e.model} keeps failing (${reason}) but is the last local model — not disabled`)
+        e.heldSince = e.heldSince || new Date().toISOString()
+        e.heldReason = reason
+        return
+    }
     if (shouldDisable) {
         e.disabledUntil = new Date(Date.now() + AUTO_DISABLE_COOLDOWN_MS).toISOString()
         console.log(`[ModelPerfDB] 🚫 Auto-disabled ${e.model} for 1h: ${reason}`)
@@ -232,14 +276,34 @@ function maybeAutoDisable(e: ModelPerfEntry): void {
  * @param latencyMs   wall-clock time from request start to response (ms)
  * @param success     true = got a usable response, false = error/timeout/empty
  */
+export interface ModelCallDetail {
+    /** Error text of a failed call (timeouts/aborts/budgets never count towards disabling). */
+    error?: string
+    /** `length` = the output budget was exhausted: a limit, not a broken model. */
+    finishReason?: string
+    /** HTTP status of a failed call; 429/502/503/504 = busy/gateway, not the model. */
+    status?: number
+    /** The model runs on the own machine / own network. */
+    local?: boolean
+}
+
+/** 2.86.1 Punkt 6: a failure caused by the environment, not by the model. */
+export function isInfrastructureModelFailure(detail: ModelCallDetail = {}): boolean {
+    if (detail.finishReason === 'length') return true
+    if (detail.status && [408, 429, 502, 503, 504].includes(detail.status)) return true
+    return isInfrastructureFailure(String(detail.error || '')) || /(?:429|502|503|504)|context length|maximum context|max_tokens|too many requests|overloaded/i.test(String(detail.error || ''))
+}
+
 export function recordModelCall(
     model: string,
     taskType: string,
     latencyMs: number,
     success: boolean,
+    detail: ModelCallDetail = {},
 ): void {
     if (!isModelPerformanceRecordingEnabled()) return
     const db = loadDB()
+    if (detail.local) (db.localModels ||= {})[model] = new Date().toISOString()
     if (!db.entries[model]) {
         db.entries[model] = {
             model,
@@ -255,10 +319,16 @@ export function recordModelCall(
     const e = db.entries[model]
     e.totalCalls++
     e.totalLatencyMs += latencyMs
+    const infrastructure = !success && isInfrastructureModelFailure(detail)
     if (success) {
         e.totalSuccesses++
         e.consecutiveFails = 0
         e.disabledUntil = null
+        e.heldSince = null
+        e.heldReason = undefined
+    } else if (infrastructure) {
+        // 2.86.1: the environment failed (timeout, abort, budget) — no step towards disabling.
+        e.infraFails = (e.infraFails || 0) + 1
     } else {
         e.consecutiveFails++
     }
@@ -274,7 +344,7 @@ export function recordModelCall(
     e.lastUpdated = new Date().toISOString()
     // Historical low success rate remains a routing penalty, not a reason to
     // immediately quarantine a freshly successful inference again.
-    if (!success) maybeAutoDisable(e)
+    if (!success && !infrastructure) maybeAutoDisable(e)
     scheduleSave()
 }
 

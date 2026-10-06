@@ -569,6 +569,23 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
             }))
         }
     } catch { /* perf db optional */ }
+    try {
+        // 2.86.1: the last local model is never switched off — it keeps running and is reported here.
+        const { getHeldModels } = await import('../llm/model-perf-db.js')
+        const held = getHeldModels()
+        if (held.length > 0) {
+            generated.push(upsertFinding(findings, {
+                id: stableId(['llm-held', held.map(d => d.model).sort().join(',')]),
+                title: `${held.length} local model(s) failing but kept on (last local model)`,
+                detail: held.map(d => `${d.model}: ${d.reason} since ${d.since} — not disabled because it is the last available local model`).join('; '),
+                category: 'health',
+                severity: 'warning',
+                source: 'model-perf-db',
+                recommendation: 'Check the model server (logs, memory, model files). Timeouts, aborts and budget limits are not counted.',
+                evidence: { held },
+            }))
+        }
+    } catch { /* perf db optional */ }
 
     // ---- Message queue health ----
     try {
