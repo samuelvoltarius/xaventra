@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The one UI (desktop/renderer) is the only browser asset set; nothing else is copied. */
-export const DASHBOARD_UI_FILES = Object.freeze(['index.html', 'bridge.js', 'onboarding.js', 'app.js', 'werkzeugkasten.js', 'connections.js', 'telefon.js', 'cockpit.js', 'styles.css',
+export const DASHBOARD_UI_FILES = Object.freeze(['index.html', 'bridge.js', 'onboarding.js', 'app.js', 'werkzeugkasten.js', 'connections.js', 'telefon.js', 'zugaenge.js', 'cockpit.js', 'styles.css',
     // 2.86 Paket O: Anrufen + Web-App (Manifest, Service-Worker, Icons).
     'anruf.js', 'anruf-worklet.js', 'pwa.js', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'])
 

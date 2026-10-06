@@ -40,6 +40,7 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'connections.js': 'text/javascript; charset=utf-8',
     // 2.87 Paket P: Verbindungen → Telefon.
     'telefon.js': 'text/javascript; charset=utf-8',
+    'zugaenge.js': 'text/javascript; charset=utf-8',
     'cockpit.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
     // 2.86 Paket O: Anrufen + installierbare Web-App (Handy über das Tailnet).
