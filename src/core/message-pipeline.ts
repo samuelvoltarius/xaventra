@@ -527,6 +527,10 @@ async function handleMessageInScope(
 
         // 4. Group Chat — track who speaks
         isGroupMessage = mu.isGroupChat(chatId, from) === true
+        if (isGroupMessage) {
+            requestIsGroup = true
+            mu.trackGroupMessage(chatId, from, canonicalUser)
+        }
 
         // 2.88 ein Owner über alle Kanäle: a confirmed owner account (configured
         // Telegram owner, token-checked App/CLI/REST, or linked by code) shares
@@ -547,10 +551,6 @@ async function handleMessageInScope(
                 principalContext.principalId = principalId
             }
         } catch (error) { console.debug(`[Pipeline] owner accounts unavailable: ${error}`) }
-        if (isGroupMessage) {
-            requestIsGroup = true
-            mu.trackGroupMessage(chatId, from, canonicalUser)
-        }
 
         // 5. Message Coalescing — batch rapid-fire messages
         if (mu.shouldCoalesce(chatId, from)) {
@@ -618,13 +618,11 @@ async function handleMessageInScope(
     // in the new one. Deterministic, before any log, model or session.
     if (senderAuthorized && !isSystemAuthored && !image && !content.trimStart().startsWith('/')) {
         try {
-            const { ownerLinkTurn } = await import('../users/owner-accounts.js')
+            const { ownerLinkTurn, applyOwnerLink } = await import('../users/owner-accounts.js')
             const link = ownerLinkTurn({ channel, rawUserId: from, isGroup: isGroupMessage, text: content, config: (state as any).config })
             if (link) {
-                if (link.kind === 'verbunden' && link.linkedPrincipal) {
-                    const mu = await import('../users/multi-user-middleware.js')
-                    mu.setUserPermission(from, 'owner')
-                }
+                // Rights follow only a verified one-time code (checked again against the registry).
+                await applyOwnerLink(link, channel, from)
                 console.log(`[Nova] [${channel}] Owner-Konto verknüpfen: ${link.kind}`)
                 await replyFn(link.reply)
                 return

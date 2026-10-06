@@ -217,6 +217,19 @@ export function confirmOwnerAccountIfTrusted(input: OwnerAccountEvidence & { con
     }
 }
 
+/**
+ * After a successful code redemption the new account is the owner's own
+ * account and gets owner rights — the same proof standard as the Telegram
+ * pairing code (onboarding/telegram-pairing.ts). Re-checked against the
+ * registry, so a forged turn object grants nothing.
+ */
+export async function applyOwnerLink(turn: OwnerLinkTurn, channel: string, rawUserId: string): Promise<boolean> {
+    if (turn.kind !== 'verbunden' || !turn.linkedPrincipal) return false
+    if (getOwnerAccountRegistry().lookup(channel, rawUserId) !== turn.linkedPrincipal) return false
+    const { setUserPermission } = await import('./multi-user-middleware.js')
+    return setUserPermission(rawUserId, 'owner')
+}
+
 const REDEEM = /^\s*(?:verknüpfen|verknuepfen|verknüpfe|verknuepfe)\s+(\d{6})\s*[.!]?\s*$/i
 const ISSUE_CODE = /\bverkn(?:ü|ue)pfungscode\b|^\s*\/verkn(?:ü|ue)pfen\s*$/i
 const ISSUE_VERB = /\bverkn(?:ü|ue)pf/i

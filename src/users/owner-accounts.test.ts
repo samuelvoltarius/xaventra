@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-    OwnerAccountRegistry, canonicalOwnerCandidate, confirmOwnerAccountIfTrusted, ownerLinkTurn,
+    OwnerAccountRegistry, applyOwnerLink, canonicalOwnerCandidate, confirmOwnerAccountIfTrusted, ownerLinkTurn,
     setOwnerAccountRegistry, trustedOwnerSource,
 } from './owner-accounts.js'
 import { resolvePrincipalId } from './principal-id.js'
@@ -94,6 +94,12 @@ describe('owner accounts: link code for further channels', () => {
         now += 11 * 60_000
         expect(ownerLinkTurn({ channel: 'slack', rawUserId: 'U9', isGroup: false, text: `verknüpfen ${second}` })?.kind).toBe('abgelehnt')
         expect(resolvePrincipalId({}, 'slack', 'U9')).toBe('U9')
+    })
+
+    it('grants owner rights only for an account the registry really linked', async () => {
+        setOwnerAccountRegistry(freshRegistry())
+        expect(await applyOwnerLink({ kind: 'verbunden', reply: '', linkedPrincipal: '1001' }, 'slack', 'U5')).toBe(false)
+        expect(await applyOwnerLink({ kind: 'abgelehnt', reply: '' }, 'slack', 'U5')).toBe(false)
     })
 
     it('persists accounts but never the code', () => {

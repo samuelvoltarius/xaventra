@@ -31,6 +31,11 @@ describe('message pipeline authorization boundary', () => {
         expect(pipelineSource).not.toMatch(/adminHash/)
         expect(pipelineSource).not.toMatch(/setUserPermission\([^)]*['"]owner['"]\)/)
         expect(pipelineSource).not.toMatch(/__adminSessions/)
+        // 2.88: the only owner grant a message can lead to is a verified one-time link code,
+        // re-checked against the owner-account registry (same proof as Telegram pairing).
+        const ownerAccounts = readFileSync(fileURLToPath(new URL('../users/owner-accounts.ts', import.meta.url)), 'utf8')
+        expect(ownerAccounts.match(/setUserPermission\(/g)).toHaveLength(1)
+        expect(ownerAccounts).toMatch(/if \(getOwnerAccountRegistry\(\)\.lookup\(channel, rawUserId\) !== turn\.linkedPrincipal\) return false\s*const \{ setUserPermission \}/)
     })
 
     it('keeps authorization at the multi-user middleware boundary', () => {
