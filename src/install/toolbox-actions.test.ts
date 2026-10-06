@@ -56,6 +56,8 @@ describe('Werkzeugkasten-Knopf „Installieren“', () => {
         const [item] = loadInstallQueue(installDeps)
         expect(item).toMatchObject({ catalogId: 'tesseract-ocr', status: 'queued', source: 'owner', route: { kind: 'host-agent' } })
         expect(result.card!.aktion).toEqual({ kind: 'install', ref: item.id })
+        // 2.86: the owner pressed the button just now — the card is a direct answer (not behind older questions).
+        expect(result.card!.direktAt).toBe(new Date(clock).toISOString())
         expect(host.execute).not.toHaveBeenCalled()
         // A second press offers the same card again, no second proposal.
         const again = await requestToolboxInstall('tesseract-ocr', deps)

@@ -102,6 +102,12 @@ export interface ApprovalCard {
     einKnopf?: boolean
     /** 2.86 Paket M: created with `wichtigkeit: 'hoch'` — may jump the one-question queue (question-queue.ts). */
     wichtig?: boolean
+    /**
+     * 2.86: when the owner asked for exactly this card just now (e.g. the preview of
+     * „mach die Stehlampe aus“). A direct answer may go out at once instead of waiting
+     * behind older questions (question-queue.ts, only for a few minutes).
+     */
+    direktAt?: string
 }
 
 export type CardDelivery = 'sofort' | 'bericht'
@@ -129,6 +135,8 @@ export interface NewCardInput {
     knopf?: string
     /** 2.86 Paket N: show only the Ja button, labelled `knopf` (e.g. „↩️ Rückgängig“). */
     einKnopf?: boolean
+    /** 2.86: the direct answer to what the owner asked for just now (see `ApprovalCard.direktAt`). */
+    direkteAntwort?: boolean
 }
 
 export interface CardExecutionResult {
@@ -369,7 +377,11 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
     const dedupeKey = input.dedupeKey ? clean(input.dedupeKey, 200) : undefined
     if (dedupeKey) {
         const open = cards.find(card => card.dedupeKey === dedupeKey && (card.status === 'offen' || card.status === 'spaeter') && Date.parse(card.expiresAt) > now)
-        if (open) return { ok: true, card: open, created: false }
+        if (open) {
+            // Asked for again just now: the existing card is the direct answer.
+            if (input.direkteAntwort === true) return { ok: true, card: updateCard(open.id, { direktAt: iso(now) }, opts) || open, created: false }
+            return { ok: true, card: open, created: false }
+        }
     }
     const ttl = Math.min(MAX_TTL_MS, Math.max(MIN_TTL_MS, Number(input.ablaufMs) || DEFAULT_TTL_MS))
     const wirkung = classifyImpact(art, kind, input.wirkung, executors.get(kind)?.impact)
@@ -388,7 +400,7 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(short(input.knopf, 24) ? { knopf: short(input.knopf, 24) } : {}),
     } : {}
     const single = input.einKnopf === true && short(input.knopf, 24) ? { einKnopf: true, knopf: short(input.knopf, 24) } : {}
-    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...single, ...(input.wichtigkeit === 'hoch' ? { wichtig: true } : {}), buttons: issueButtons(base) }
+    const card: ApprovalCard = { ...base, zustellung, ...bundle, ...single, ...(input.wichtigkeit === 'hoch' ? { wichtig: true } : {}), ...(input.direkteAntwort === true ? { direktAt: iso(now) } : {}), buttons: issueButtons(base) }
     saveCards([...cards, card], opts)
     noteThought({ quelle: card.quelle, titel: card.titel, status: 'vorgeschlagen', text: card.vorschlag }, opts)
     return { ok: true, card, created: true }

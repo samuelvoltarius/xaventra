@@ -267,3 +267,19 @@ describe('Alltagssprache in allen neuen Owner-Texten', () => {
         expect(findePlan(dir, 'sp-000000000000')).toBeUndefined()
     })
 })
+
+// 2.86 Zusammenstecken (N + M): die Fragewarteschlange gilt auch für Geräte-Karten.
+describe('Fragewarteschlange: was ist eine direkte Antwort?', () => {
+    it('die Vorschau eines eben gewünschten Schaltens (und einer Routine) ist eine direkte Antwort; Fehler-Angebote nicht', async () => {
+        await sagSchalten(deps(), 'mach die Stehlampe aus', '111')
+        const [vorschau] = offene()
+        expect(vorschau.direktAt).toBe(new Date(t).toISOString())
+        await sagSchalten(deps(), 'jeden Abend um 23 Uhr Stehlampe aus', '111')
+        expect(offene().find(c => c.titel.startsWith('Jeden Tag'))!.direktAt).toBeTruthy()
+        antworten = [{ ok: false, vorbereitet: true, fehler: new Error('Hue light not currently reachable') }]
+        await press(vorschau)
+        const angebot = offene().find(c => c.titel.startsWith('Hat nicht geklappt'))!
+        expect(angebot).toBeTruthy()
+        expect(angebot.direktAt).toBeUndefined()
+    })
+})

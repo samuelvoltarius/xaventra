@@ -34,7 +34,8 @@ export async function requestToolboxInstall(katalogId: unknown, deps: ToolboxAct
     if (item.route.kind !== 'host-agent' || item.status !== 'queued') return { ok: item.status !== 'refused', message: describeProposal(item) }
     const { ensureBuiltinCardExecutors, installCardInput, offerCard } = await import('../core/approval-card-sources.js')
     await ensureBuiltinCardExecutors()
-    const offered = offerCard(installCardInput(item), deps.cards)
+    // 2.86: the owner pressed the button just now — the card is a direct answer (question-queue.ts).
+    const offered = offerCard({ ...installCardInput(item), direkteAntwort: true }, deps.cards)
     return offered.ok ? { ok: true, message: offered.message, card: offered.card } : { ok: false, message: offered.message }
 }
 
@@ -45,7 +46,7 @@ export async function requestToolboxRemoval(queueId: unknown, deps: ToolboxActio
     if (item.result?.alreadyInstalled) return { ok: false, message: 'War schon vorher installiert: kein Rückweg (nichts wurde geändert).' }
     const { ensureBuiltinCardExecutors, installRollbackCardInput, offerCard } = await import('../core/approval-card-sources.js')
     await ensureBuiltinCardExecutors()
-    const offered = offerCard(installRollbackCardInput(item), deps.cards)
+    const offered = offerCard({ ...installRollbackCardInput(item), direkteAntwort: true }, deps.cards)
     return offered.ok ? { ok: true, message: offered.message, card: offered.card } : { ok: false, message: offered.message }
 }
 

@@ -180,7 +180,8 @@ async function karte(deps: SchaltDeps, input: NewCardInput): Promise<ApprovalCar
 const basisKarte = (plan: SchaltPlan) => ({ art: SCHALT_KIND, aktion: { kind: SCHALT_KIND, ref: plan.id }, wirkung: 'physisch' as const, quelle: 'geraete', node: 'main' })
 
 async function vorschauKarte(deps: SchaltDeps, plan: SchaltPlan): Promise<ApprovalCard | undefined> {
-    const card = await karte(deps, { ...basisKarte(plan), titel: plan.satz, ablaufMs: PREVIEW_TTL_MS,
+    // 2.86: the owner just asked for exactly this — a direct answer, not behind older questions.
+    const card = await karte(deps, { ...basisKarte(plan), titel: plan.satz, ablaufMs: PREVIEW_TTL_MS, direkteAntwort: true,
         beleg: 'Du hast es eben gesagt. Erst dein Ja schaltet, nur genau das.', vorschlag: 'Ja = jetzt schalten. Nein = nichts passiert.' })
     return card
 }
@@ -346,7 +347,7 @@ function routineSatz(zeit: string, ziele: readonly Ziel[]): string {
 }
 
 async function routineKarte(deps: SchaltDeps, plan: SchaltPlan): Promise<ApprovalCard | undefined> {
-    return karte(deps, { ...basisKarte(plan), titel: plan.satz, ablaufMs: 24 * 60 * 60_000,
+    return karte(deps, { ...basisKarte(plan), titel: plan.satz, ablaufMs: 24 * 60 * 60_000, direkteAntwort: true,
         beleg: 'Dein Ja gilt nur für genau diese Routine. Kommt später ein Gerät dazu, gehört es nicht dazu.', vorschlag: 'Ja = Routine speichern. Nein = nichts passiert.' })
 }
 
@@ -397,7 +398,7 @@ export async function routinenListe(deps: SchaltDeps, principal: string): Promis
         const offen = ladePlaene(deps.dataDir).some(p => p.art === 'routine-ende' && p.routineId === routine.id && p.status === 'offen')
         if (offen) continue
         const plan = neuerPlan(deps, { art: 'routine-ende', owner: principal, ziele: [], satz: routine.satz, routineId: routine.id })
-        await karte(deps, { ...basisKarte(plan), titel: 'Routine beenden?', ablaufMs: ROUTINE_ENDE_TTL_MS, buendel: ROUTINEN_BUENDEL, gruppe: plan.id, knopf: 'Beenden',
+        await karte(deps, { ...basisKarte(plan), titel: 'Routine beenden?', ablaufMs: ROUTINE_ENDE_TTL_MS, buendel: ROUTINEN_BUENDEL, gruppe: plan.id, knopf: 'Beenden', direkteAntwort: true,
             kurz: routine.satz.replace(/ — nur genau das\.$/, ''), beleg: 'Beenden = die Routine schaltet ab sofort nichts mehr.', vorschlag: routine.satz })
     }
     return [`Deine Geräte-Routinen (${routinen.length}):`, ...routinen.slice(0, 20).map((r, i) => `${i + 1}. ${r.satz.replace(/ — nur genau das\.$/, '')}`), 'Zum Beenden den Knopf an der Routine drücken.'].join('\n')

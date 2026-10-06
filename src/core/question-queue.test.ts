@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answerApprovalCard, createApprovalCard, listApprovalCards, registerCardExecutor, unregisterCardExecutor } from './approval-cards.js'
 import { deliverPendingCards } from './approval-card-sources.js'
-import { deliverBundles } from './card-bundle.js'
+import { deliverBundles, requestBundleResend } from './card-bundle.js'
 import { planQuestions, waitingQuestionCount } from './question-queue.js'
 
 // 2.86 Paket M Punkt 2: immer nur EINE Frage zur Zeit; der Rest wartet geordnet.
@@ -91,5 +91,39 @@ describe('Frage-Warteschlange', () => {
 
     it('plan: nothing open → nothing visible, nothing waiting', () => {
         expect(planQuestions({ cards: [], bundleVisible: () => false, now: t })).toEqual({ karten: [], buendel: [], wartend: 0, sichtbar: null })
+    })
+})
+
+// 2.86 Zusammenstecken (N + M): die Warteschlange gilt auch für Geräte-Karten;
+// eine Antwort auf das, was der Owner GERADE verlangt hat, wartet aber nicht hinter alten Fragen.
+describe('direkte Antworten auf eine Owner-Bitte', () => {
+    it('eine eben verlangte Vorschau kommt sofort, ein Fehler-Angebot wartet; nach 10 Minuten ist sie keine direkte Antwort mehr', async () => {
+        const tg = telegram()
+        card('Alte Frage', 'q-alt', { ablaufMs: 24 * HOUR })
+        expect(await deliverPendingCards(tg, opts())).toBe(1)
+        t += 60_000
+        const vorschau = card('Jeden Tag um 23:00 schalte ich die Stehlampe aus', 'q-vorschau', { ablaufMs: 24 * HOUR, direkteAntwort: true })
+        card('Nochmal versuchen, wenn es wieder an ist?', 'q-nochmal', { ablaufMs: 6 * HOUR })
+        const plan = planQuestions({ cards: listApprovalCards({ ...opts(), status: 'offen' }), bundleVisible: () => false, now: t })
+        expect(plan.karten).toEqual([vorschau.id])
+        expect(plan.wartend).toBe(1)
+        const spaet = card('Später verlangt', 'q-spaet', { ablaufMs: 24 * HOUR, direkteAntwort: true })
+        t += 11 * 60_000
+        expect(planQuestions({ cards: listApprovalCards({ ...opts(), status: 'offen' }), bundleVisible: () => false, now: t }).karten).not.toContain(spaet.id)
+    })
+
+    it('„Welche Geräte findest du?“: die Geräte-Nachricht kommt neu, auch wenn gerade eine andere Frage offen ist', async () => {
+        const tg = telegram()
+        card('Hue Bridge', 'g-hue', { art: 'geraet-verbinden', aktion: { kind: 'geraet-verbinden', ref: 'g-hue' }, buendel: 'geraete', kurz: 'Hue Bridge', gruppe: 'g-hue', ablaufMs: 24 * HOUR })
+        await deliverBundles(tg, opts())
+        expect(tg.log.filter(item => item.op === 'send')).toHaveLength(1)
+        card('Platte kritisch voll', 'q-kritisch', { ablaufMs: 24 * HOUR, wichtigkeit: 'hoch' })
+        expect(await deliverPendingCards(tg, opts())).toBe(1)
+        t += 60_000
+        requestBundleResend('geraete', opts())
+        await deliverBundles(tg, opts())
+        const sends = tg.log.filter(item => item.op === 'send')
+        expect(sends).toHaveLength(3)
+        expect(sends.at(-1)!.text).toContain('gefunden')
     })
 })

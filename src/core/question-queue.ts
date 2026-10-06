@@ -11,6 +11,11 @@
  *   the rest; then the earlier deadline, then the older question.
  * - Critical questions and those with a real deadline may jump the queue:
  *   they go out even while another question is visible.
+ * - 2.86: so does the DIRECT answer to what the owner asked for just now
+ *   (device preview of „mach die Stehlampe aus“, the device list after
+ *   „Welche Geräte findest du?“, the card after pressing „Sprachdienst
+ *   einrichten“) — but only for `DIREKT_FENSTER_MS`; follow-ups such as
+ *   error offers („Nochmal versuchen, wenn es wieder an ist?“) wait.
  * - Nothing is lost: waiting questions stay open cards (in „Heute“, in the
  *   menu „Braucht mich“) and the report lists how many wait.
  *
@@ -33,7 +38,14 @@ export function questionRank(card: Pick<ApprovalCard, 'art' | 'titel' | 'beleg' 
 /** May this question go out while another one is visible? */
 export const mayJumpQueue = (rank: QuestionRank) => rank <= 1
 
-export interface QueueItem { kind: 'karte' | 'buendel'; id: string; rank: QuestionRank; expiresAt: number; createdAt: number; anzahl: number }
+/** How long „the owner just asked for it“ holds (a direct answer may jump the queue). */
+export const DIREKT_FENSTER_MS = 10 * 60_000
+export const isDirectAnswer = (direktAt: string | undefined, now: number) => {
+    const at = Date.parse(String(direktAt || ''))
+    return Number.isFinite(at) && now - at >= 0 && now - at < DIREKT_FENSTER_MS
+}
+
+export interface QueueItem { kind: 'karte' | 'buendel'; id: string; rank: QuestionRank; expiresAt: number; createdAt: number; anzahl: number; direkt?: boolean }
 export interface QueuePlan {
     /** Standalone cards to deliver now. */
     karten: string[]
@@ -51,7 +63,7 @@ const compare = (a: QueueItem, b: QueueItem) => a.rank - b.rank || a.expiresAt -
  * The plan for one loop pass. `bundleVisible(key)` tells whether a bundle
  * message is currently out (sent and not closed).
  */
-export function planQuestions(input: { cards: ApprovalCard[]; bundleVisible: (key: string) => boolean; bundleIntoReport?: boolean; now: number }): QueuePlan {
+export function planQuestions(input: { cards: ApprovalCard[]; bundleVisible: (key: string) => boolean; bundleIntoReport?: boolean; now: number; bundleDirect?: (key: string) => boolean }): QueuePlan {
     const now = input.now
     const open = input.cards.filter(card => card.status === 'offen' && Date.parse(card.expiresAt) > now)
     const visibleCards = open.filter(card => !card.buendel && card.deliveredAt)
@@ -62,17 +74,18 @@ export function planQuestions(input: { cards: ApprovalCard[]; bundleVisible: (ke
 
     const visibleBundles = [...bundles.keys()].filter(key => input.bundleVisible(key))
     const items: QueueItem[] = [
-        ...pendingCards.map(card => ({ kind: 'karte' as const, id: card.id, rank: questionRank(card, now), expiresAt: Date.parse(card.expiresAt), createdAt: Date.parse(card.createdAt), anzahl: 1 })),
+        ...pendingCards.map(card => ({ kind: 'karte' as const, id: card.id, rank: questionRank(card, now), expiresAt: Date.parse(card.expiresAt), createdAt: Date.parse(card.createdAt), anzahl: 1, direkt: isDirectAnswer(card.direktAt, now) })),
         ...[...bundles].filter(([key]) => !visibleBundles.includes(key)).map(([key, cards]) => ({
             kind: 'buendel' as const, id: key,
             rank: Math.min(...cards.map(card => questionRank(card, now))) as QuestionRank,
             expiresAt: Math.min(...cards.map(card => Date.parse(card.expiresAt))),
             createdAt: Math.min(...cards.map(card => Date.parse(card.createdAt))),
             anzahl: groupsOf(cards),
+            direkt: input.bundleDirect?.(key) === true || cards.some(card => isDirectAnswer(card.direktAt, now)),
         })),
     ].sort(compare)
 
-    const chosen: QueueItem[] = items.filter(item => mayJumpQueue(item.rank))
+    const chosen: QueueItem[] = items.filter(item => mayJumpQueue(item.rank) || item.direkt)
     const anythingVisible = visibleCards.length > 0 || visibleBundles.length > 0 || chosen.length > 0
     if (!anythingVisible && items.length) chosen.push(items[0])
     const chosenIds = new Set(chosen.map(item => `${item.kind}:${item.id}`))

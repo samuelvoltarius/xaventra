@@ -20,7 +20,7 @@ import { getNovaDataDir } from './data-root.js'
 import { CALLBACK_PREFIX, listApprovalCards, type ApprovalCard, type CardStoreOptions } from './approval-cards.js'
 import { ownerText } from './owner-text.js'
 import { bundlePageToken } from '../channels/telegram-pages.js'
-import { planQuestions } from './question-queue.js'
+import { isDirectAnswer, planQuestions } from './question-queue.js'
 
 type Keyboard = Array<Array<{ text: string; callback_data: string }>>
 const PAGE_SIZE = 5
@@ -33,6 +33,8 @@ interface BundleState {
     deliveredAt?: string
     remindedAt?: string
     closedAt?: string
+    /** 2.86: the owner asked for this list just now (a direct answer may jump the question queue). */
+    direktAt?: string
 }
 
 export interface BundleSender {
@@ -126,10 +128,12 @@ function withNav(composed: NonNullable<ReturnType<typeof compose>>, key: string,
 /**
  * 2.86 Paket N: the owner asked again (e.g. „Welche Geräte findest du?“): the next
  * delivery sends the open bundle as a NEW message (the old one may be far up).
+ * It is the direct answer to that question, so it does not wait behind older
+ * questions (question-queue.ts).
  */
 export function requestBundleResend(key: string, opts: CardStoreOptions = {}): void {
-    const state = loadStates(opts).find(item => item.key === key)
-    if (state?.deliveredAt) saveState({ ...state, deliveredAt: undefined, signature: undefined }, opts)
+    const state = stateOf(key, opts)
+    saveState({ ...state, ...(state.deliveredAt ? { deliveredAt: undefined, signature: undefined } : {}), direktAt: iso(opts) }, opts)
 }
 
 /** 2.86 Paket M: the bundle message is out (sent, not closed) — it is the one visible question. */
@@ -159,7 +163,9 @@ export async function showBundlePage(key: string, chatId: string, page: number, 
 export async function deliverBundles(sender: BundleSender, opts: CardStoreOptions & { keys?: string[] } = {}): Promise<number> {
     const keys = opts.keys || [...new Set([...listApprovalCards({ ...opts, status: 'offen' }).map(card => card.buendel).filter(Boolean) as string[], ...loadStates(opts).map(item => item.key)])]
     // 2.86 Paket M: a bundle is ONE question — a new bundle message only when the queue allows it.
-    const mayOpen = new Set(planQuestions({ cards: listApprovalCards({ ...opts, status: 'offen' }), bundleVisible: key => isBundleVisible(key, opts), now: (opts.now || Date.now)() }).buendel)
+    const now = (opts.now || Date.now)()
+    const mayOpen = new Set(planQuestions({ cards: listApprovalCards({ ...opts, status: 'offen' }), bundleVisible: key => isBundleVisible(key, opts), now,
+        bundleDirect: key => isDirectAnswer(stateOf(key, opts).direktAt, now) }).buendel)
     let changed = 0
     for (const key of keys) {
         const state = stateOf(key, opts)
