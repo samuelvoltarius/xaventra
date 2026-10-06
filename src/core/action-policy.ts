@@ -108,6 +108,19 @@ let decisionConstraintProvider: (() => readonly DecisionConstraint[]) | null = n
 export function setDecisionConstraintProvider(provider: (() => readonly DecisionConstraint[]) | null): void {
     decisionConstraintProvider = provider
 }
+/**
+ * 2.88 „Regeln in Klartext“: kinds the owner allowed without asking
+ * („Dienste darfst du ohne Frage neu starten“). Read only by
+ * evaluateActionWithTrust, and only for kinds that may ever run without a
+ * card (isStandingExcluded checks again). Set once by the daemon.
+ */
+let ownerAllowanceProvider: (() => readonly string[]) | null = null
+export function setOwnerAllowanceProvider(provider: (() => readonly string[]) | null): void {
+    ownerAllowanceProvider = provider
+}
+function ownerAllows(kindName: string): boolean {
+    try { return Boolean(ownerAllowanceProvider?.().includes(kindName)) } catch { return false }
+}
 function constraintsFor(options: PolicyOptions): readonly DecisionConstraint[] {
     if (Array.isArray(options.constraints)) return options.constraints
     try { return decisionConstraintProvider?.() ?? [] } catch { return [] }
@@ -678,12 +691,17 @@ export function evaluateActionWithTrust(request: ActionRequest, options: PolicyO
     if (request?.node && options.localNodeId && normalize(request.node) !== normalize(options.localNodeId)) return verdict
     let promoted = false
     let granted = false
+    let ruled = false
     try {
         promoted = isTrustPromoted(String(request?.kind || ''), options)
         granted = !promoted && typeof request?.target === 'string' && request.target !== '' && hasStanding(String(request.kind), request.target, options)
-    } catch { promoted = false; granted = false }
-    if (!promoted && !granted) return verdict
-    const why = promoted ? `Vertrauensleiter: ${TRUST_AUTO_PROMOTE_AFTER}× Ja ohne Rückweg → selbst` : `dauerhaft erlaubt für ${String(request.target).slice(0, 60)} → selbst`
+        const key = normalize(request?.kind)
+        ruled = !promoted && !granted && ownerAllows(key) && !isStandingExcluded(key)
+    } catch { promoted = false; granted = false; ruled = false }
+    if (!promoted && !granted && !ruled) return verdict
+    const why = promoted ? `Vertrauensleiter: ${TRUST_AUTO_PROMOTE_AFTER}× Ja ohne Rückweg → selbst`
+        : granted ? `dauerhaft erlaubt für ${String(request.target).slice(0, 60)} → selbst`
+            : 'Owner-Regel: ohne Frage erlaubt → selbst'
     return { ...verdict, level: 'L1', decision: 'auto', trusted: true, reason: `${verdict.reason}; ${why}` }
 }
 

@@ -283,3 +283,26 @@ describe('Fragewarteschlange: was ist eine direkte Antwort?', () => {
         expect(angebot.direktAt).toBeUndefined()
     })
 })
+
+describe('2.88 Regeln in Klartext — „Lichter darfst du ohne Frage schalten“', () => {
+    it('mit Owner-Regel: Lampen schalten ohne Vorschau-Karte, Rückgängig bleibt', async () => {
+        const reply = await sagSchalten({ ...deps(), lichtOhneFrage: () => true }, 'Licht im Wohnzimmer aus', '111')
+        expect(calls.map(c => [c.ziel.functionId, c.ziel.on])).toEqual([['light:1', false], ['light:2', false]])
+        expect(reply).toContain('Erledigt: 2 Lampen im Wohnzimmer aus')
+        expect(reply).toContain('Deine Regel: Lichter ohne Frage.')
+        expect(offene().map(c => c.titel)).toEqual(['Rückgängig?'])
+    })
+
+    it('Gegenprobe: ohne Regel bleibt die Vorschau-Karte, nichts geschaltet', async () => {
+        await sagSchalten({ ...deps(), lichtOhneFrage: () => false }, 'Licht im Wohnzimmer aus', '111')
+        expect(calls).toHaveLength(0)
+        expect(offene()).toHaveLength(1)
+    })
+
+    it('Routinen brauchen trotz Licht-Regel ihr Ja (nur das sofortige Schalten entfällt)', async () => {
+        const reply = await sagSchalten({ ...deps(), lichtOhneFrage: () => true }, 'Jeden Abend um 23 Uhr Licht im Wohnzimmer aus', '111')
+        expect(reply).toMatch(/^Vorschau:/)
+        expect(calls).toHaveLength(0)
+        expect(offene()).toHaveLength(1)
+    })
+})
