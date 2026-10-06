@@ -18,7 +18,7 @@ import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
 import { checkDelegatedFence } from './fence-highwater.js'
-import { heartbeatProfileFields, peerWantsProfile, sanitizeNodeProfile, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
+import { collectLiveLoad, heartbeatProfileFields, peerWantsProfile, sanitizeLiveLoad, sanitizeNodeProfile, type NodeLiveLoad, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
 import { captureEnrolledNode, validateNodeCapture, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt } from './node-capture.js'
@@ -79,6 +79,8 @@ interface PeerState {
     profile?: NodeProfile; profileSeen?: number
     /** Stufe 3: the worker's self-heal summary, sent only on change; workers never notify the owner themselves. */
     selfHeal?: SelfHealMeshSummary; selfHealSeen?: number
+    /** Mesh-Gehirn 2.88: live load from the last signed heartbeat. */
+    load?: NodeLiveLoad
 }
 const peerStatePath = join(getNovaDataDir(), 'mesh-peer-state.json')
 let peerStates: Record<string, PeerState> = (() => {
@@ -353,6 +355,8 @@ export async function waitForMeshRunResult(requestId: string, timeoutMs = 10_000
 
 export function getMeshRunResult(requestId: string): ResultPayload | undefined { return results.get(requestId) }
 export function getMeshPeerStates(): Readonly<Record<string, PeerState>> { return Object.freeze({ ...peerStates }) }
+/** Mesh-Gehirn 2.88: measured heartbeat round trip per peer (empty without a running router). */
+export function getMeshPeerRoundTrips(): Record<string, { ms: number; at: number }> { return router?.peerRoundTrips() || {} }
 
 /** node.capabilities → peer state. The Knotenprofil is bounded, bound to the
  * authenticated source node, and kept when a message carries none (profiles
@@ -375,14 +379,18 @@ export function peerStateWithCapabilities(previous: PeerState | undefined, sourc
 
 /** node.heartbeat → peer state, bound to the authenticated source node. */
 export function peerStateWithHeartbeat(previous: PeerState | undefined, sourceNode: string, payload: unknown, publicKeyFingerprint: string, now = Date.now()): PeerState {
-    const value = (payload && typeof payload === 'object' ? payload : {}) as { status?: unknown; uptimeMs?: unknown; bootId?: unknown }
+    const value = (payload && typeof payload === 'object' ? payload : {}) as { status?: unknown; uptimeMs?: unknown; bootId?: unknown; load?: unknown }
     const bootId = typeof value.bootId === 'string' ? value.bootId.replace(/[^\w.:-]/g, '').slice(0, 80) : undefined
+    const load = sanitizeLiveLoad(value.load)
+    const { load: _previousLoad, ...rest } = previous || ({} as PeerState)
     return {
-        ...previous, nodeId: sourceNode, lastSeen: now,
+        ...rest, nodeId: sourceNode, lastSeen: now,
         status: typeof value.status === 'string' ? value.status.slice(0, 20) : undefined,
         uptimeMs: Number.isFinite(Number(value.uptimeMs)) ? Number(value.uptimeMs) : undefined,
         publicKeyFingerprint,
         ...(bootId ? { bootId } : {}),
+        // A heartbeat without load (older peer) drops the old value: stale load is no fact.
+        ...(load ? { load } : {}),
     }
 }
 
@@ -406,7 +414,10 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
     if (heartbeatTimer) return
     const publish = async () => {
         const transport = router || initMeshTransportRuntime()
-        const heartbeat = transport.create('node.heartbeat', '*', { status: 'online', uptimeMs: Math.round(process.uptime() * 1000), ...heartbeatProfileFields(BOOT_ID, peerStates) })
+        const heartbeat = transport.create('node.heartbeat', '*', {
+            status: 'online', uptimeMs: Math.round(process.uptime() * 1000), ...heartbeatProfileFields(BOOT_ID, peerStates),
+            load: collectLiveLoad(getNovaDataDir()),
+        })
         await transport.broadcast(heartbeat)
         const localNode = getLocalNodeSnapshot()
         const verifiedAt = localNode?.last_heartbeat || new Date().toISOString()

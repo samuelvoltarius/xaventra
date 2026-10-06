@@ -47,7 +47,8 @@ export interface NodeProfile {
     noNewPrivileges: boolean | null
     cpus: number
     ramGB: number
-    gpu: { name: string | null; backend: string; viaVllm: boolean }
+    /** vramGB: total memory of a discrete NVIDIA GPU (nvidia-smi, static); absent when unknown or unified. */
+    gpu: { name: string | null; backend: string; viaVllm: boolean; vramGB?: number }
     /** Local AI services from the AI scanner (Phase 5b). Optional: older peers do not send it. */
     services?: NodeService[]
 
@@ -166,6 +167,63 @@ export function runLocalSelfCheck(dataDir: string, now = new Date()): NodeProfil
 }
 
 // ---------------------------------------------------------------------------
+// Live load (Mesh-Gehirn 2.88): rides on the 30 s heartbeat, never in the
+// profile (the profile fingerprint must not change every 30 s).
+// ---------------------------------------------------------------------------
+
+export interface NodeLiveLoad {
+    /** 1-minute load average per core (not on Windows). */
+    cpuPerCore?: number
+    memFreePercent?: number
+    /** Last nvidia-smi value; never waited for (cached, refreshed in the background). */
+    gpuUtilPercent?: number
+    /** Free space where this node keeps its data. */
+    diskFreeGB?: number
+}
+
+const boundedNumber = (value: unknown, max: number): number | undefined => {
+    const n = Number(value)
+    return Number.isFinite(n) && n >= 0 ? Math.min(max, Math.round(n * 100) / 100) : undefined
+}
+
+export function sanitizeLiveLoad(raw: unknown): NodeLiveLoad | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+    const value = raw as Record<string, unknown>
+    const load: NodeLiveLoad = {}
+    const cpu = boundedNumber(value.cpuPerCore, 1000); if (cpu !== undefined) load.cpuPerCore = cpu
+    const mem = boundedNumber(value.memFreePercent, 100); if (mem !== undefined) load.memFreePercent = mem
+    const gpu = boundedNumber(value.gpuUtilPercent, 100); if (gpu !== undefined) load.gpuUtilPercent = gpu
+    const disk = boundedNumber(value.diskFreeGB, 1e7); if (disk !== undefined) load.diskFreeGB = disk
+    return Object.keys(load).length ? load : undefined
+}
+
+/** Cheap and synchronous: os counters, one statfs, the cached nvidia-smi value. */
+export function collectLiveLoad(dataDir: string, gpuUtil: () => number | null = cachedGpuUtil): NodeLiveLoad {
+    const load: NodeLiveLoad = { memFreePercent: Math.round(freemem() / Math.max(1, totalmem()) * 100) }
+    if (platform() !== 'win32') load.cpuPerCore = Math.round(loadavg()[0] / Math.max(1, cpus().length) * 100) / 100
+    const util = gpuUtil()
+    if (util !== null) load.gpuUtilPercent = util
+    try {
+        const stats = statfsSync(existsSync(dataDir) ? dataDir : (platform() === 'win32' ? parsePath(process.cwd()).root : '/'))
+        load.diskFreeGB = Math.round(Number(stats.bavail) * Number(stats.bsize) / 1024 ** 3)
+    } catch { /* not measurable: field stays absent */ }
+    return load
+}
+
+let gpuUtilReader: (() => string[][] | null) | null = null
+function cachedGpuUtil(): number | null {
+    if (!gpuUtilReader) {
+        gpuUtilReader = () => null
+        void import('../doctor/nvidia-smi.js').then(module => {
+            gpuUtilReader = () => module.nvidiaStaticInfo() ? module.cachedNvidiaQuery(['utilization.gpu'], 60_000) : null
+        }).catch(() => undefined)
+    }
+    const rows = gpuUtilReader()
+    const values = (rows || []).map(row => Number.parseFloat(row[0] ?? '')).filter(Number.isFinite)
+    return values.length ? Math.max(...values) : null
+}
+
+// ---------------------------------------------------------------------------
 // Collection (cached; called by the 30 s mesh data plane)
 // ---------------------------------------------------------------------------
 
@@ -213,11 +271,13 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
     }
     const noNewPrivileges = os === 'linux' ? noNewPrivilegesFrom(readText('/proc/self/status')) : null
 
-    let gpuName: string | null = null, backend = 'cpu'
+    let gpuName: string | null = null, backend = 'cpu', vramGB: number | undefined
     try {
-        const { probeGpuRuntime } = await import('../doctor/gpu-runtime.js')
+        const { probeGpuRuntime, nvidiaStaticInfo } = await import('../doctor/gpu-runtime.js')
         const gpu = await probeGpuRuntime()
         gpuName = gpu.name; backend = gpu.activeBackend
+        const totalMb = nvidiaStaticInfo()?.memoryTotalMb
+        if (totalMb && totalMb > 0) vramGB = Math.round(totalMb / 1024)
     } catch { /* GPU probe optional */ }
 
     let viaVllm = false
@@ -254,7 +314,7 @@ export async function collectNodeProfile(options: { force?: boolean; now?: Date 
         noNewPrivileges,
         cpus: cpus().length,
         ramGB: Math.round(totalmem() / 1024 ** 3),
-        gpu: { name: gpuName, backend, viaVllm },
+        gpu: { name: gpuName, backend, viaVllm, ...(vramGB ? { vramGB } : {}) },
         services,
         virtualization,
         installPath: installPathFor({ runtime, rootReadOnly, noNewPrivileges, hasApt: tools.includes('apt'), isRoot: process.getuid?.() === 0 }),
@@ -368,7 +428,10 @@ export function sanitizeNodeProfile(raw: unknown): NodeProfile | null {
         runtime: oneOf(value.runtime, ['native', 'container', 'unknown'] as const, 'unknown'),
         rootReadOnly: boolOrNull(value.rootReadOnly), noNewPrivileges: boolOrNull(value.noNewPrivileges),
         cpus: num(value.cpus), ramGB: num(value.ramGB),
-        gpu: { name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true },
+        gpu: {
+            name: value.gpu?.name == null ? null : str(value.gpu.name, 120), backend: str(value.gpu?.backend, 20), viaVllm: value.gpu?.viaVllm === true,
+            ...(num(value.gpu?.vramGB) > 0 ? { vramGB: Math.min(4096, num(value.gpu.vramGB)) } : {}),
+        },
         ...(Array.isArray(value.services) ? { services: sanitizeNodeServices(value.services) } : {}),
         virtualization: sanitizeVirtualization(value.virtualization),
         installPath: oneOf(value.installPath, ['package-manager', 'host-agent', 'image', 'none'] as const, 'none'),

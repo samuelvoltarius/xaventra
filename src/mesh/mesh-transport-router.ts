@@ -4,6 +4,7 @@ import { getNovaDataDir } from '../core/data-root.js'
 import { recordMeshEvent, withSpan } from '../infra/telemetry.js'
 import { MeshIdentity } from './mesh-identity.js'
 import { MeshPolicy, type MeshTrustConfig } from './mesh-policy.js'
+import { isEphemeralMeshKind } from './transport-contracts.js'
 import type { MeshAck, MeshEnvelope, MeshEnvelopeKind, MeshFence, MeshHandler, MeshPeer, MeshPrincipal, MeshTransport, MeshTransportHealth } from './transport-contracts.js'
 
 interface OutboxItem { peerId: string; envelope: MeshEnvelope; attempts: number; nextAttemptAt: number; lastError?: string }
@@ -33,7 +34,7 @@ class MeshOutbox {
         const latest = new Map<string, OutboxItem>()
         const durable: OutboxItem[] = []
         for (const item of this.items) {
-            if (item.envelope.kind.startsWith('capture.')) continue
+            if (isEphemeralMeshKind(item.envelope.kind)) continue
             if (!STATE_UPDATE_KINDS.has(item.envelope.kind)) { durable.push(item); continue }
             const key = `${item.peerId}:${item.envelope.kind}`
             const previous = latest.get(key)
@@ -56,7 +57,7 @@ const STATE_UPDATE_KINDS = new Set(['node.heartbeat', 'node.capabilities', 'node
 // particular, an agent request must be acknowledged before its handler
 // finishes so the caller can deliver a correlated run.cancel while the work is
 // still active. Completion is reported independently through run.result.
-const ASYNC_DISPATCH_KINDS = new Set<MeshEnvelopeKind>(['agent.request', 'capture.request'])
+const ASYNC_DISPATCH_KINDS = new Set<MeshEnvelopeKind>(['agent.request', 'capture.request', 'git.request'])
 
 export class MeshTransportRouter implements MeshTransport {
     readonly name = 'outbox' as const
@@ -66,6 +67,7 @@ export class MeshTransportRouter implements MeshTransport {
     private retryTimer: ReturnType<typeof setInterval> | null = null
     private lastSuccessAt?: number
     private lastError?: string
+    private readonly roundTrips = new Map<string, { ms: number; at: number }>()
 
     constructor(
         readonly identity: MeshIdentity,
@@ -75,7 +77,7 @@ export class MeshTransportRouter implements MeshTransport {
     ) {
         this.policy = new MeshPolicy(trust, identity.nodeId, identity.publicKey)
         for (const transport of transports) transport.subscribe(envelope => {
-            if (envelope.kind.startsWith('capture.') && !['local', 'direct'].includes(transport.name)) throw new Error('Capture requires an ephemeral direct transport')
+            if (isEphemeralMeshKind(envelope.kind) && !['local', 'direct'].includes(transport.name)) throw new Error(`${envelope.kind} requires an ephemeral direct transport`)
             return this.receive(envelope)
         })
         this.retryTimer = setInterval(() => { void this.flushOutbox() }, 3000)
@@ -114,11 +116,16 @@ export class MeshTransportRouter implements MeshTransport {
             'nova.mesh.source_node': envelope.sourceNode,
             'nova.mesh.target_node': peerId,
         }, async () => {
-            const ephemeral = envelope.kind.startsWith('capture.')
+            const ephemeral = isEphemeralMeshKind(envelope.kind)
             const ordered = (await this.orderFor(peerId)).filter(t => !ephemeral || ['direct', 'local'].includes(t.name))
             let last: MeshAck | undefined
             for (const transport of ordered) {
+                const startedAt = Date.now()
                 const ack = await transport.send(peerId, envelope)
+                // Mesh-Gehirn 2.88: the heartbeat ack round trip is the node's measured latency.
+                if (envelope.kind === 'node.heartbeat' && ack.status === 'delivered' && transport.name === 'direct') {
+                    this.roundTrips.set(peerId, { ms: Date.now() - startedAt, at: Date.now() })
+                }
                 last = ack
                 recordMeshEvent({ event: 'envelope', nodeId: peerId, kind: envelope.kind, direction: 'outbound', transport: transport.name, status: ack.status })
                 if (ack.status === 'delivered' || ack.status === 'duplicate' || ack.status === 'queued') {
@@ -130,7 +137,7 @@ export class MeshTransportRouter implements MeshTransport {
                 if (ack.status === 'rejected') return ack
             }
             this.lastError = last?.reason || 'no healthy transport'
-            if (ephemeral) return { envelopeId: envelope.id, peerId, status: 'unreachable', transport: 'direct', timestamp: Date.now(), reason: 'No encrypted direct capture path; no fallback or persistence' }
+            if (ephemeral) return { envelopeId: envelope.id, peerId, status: 'unreachable', transport: 'direct', timestamp: Date.now(), reason: 'No encrypted direct path; no fallback or persistence' }
             this.outbox.add(peerId, envelope, this.lastError)
             recordMeshEvent({ event: 'envelope', nodeId: peerId, kind: envelope.kind, direction: 'outbound', transport: 'outbox', status: 'queued' })
             return { envelopeId: envelope.id, peerId, status: 'queued', transport: 'outbox', timestamp: Date.now(), reason: this.lastError }
@@ -153,6 +160,8 @@ export class MeshTransportRouter implements MeshTransport {
         }
     }
     transportHealth(): MeshTransportHealth[] { return this.transports.map(transport => transport.health()) }
+    /** Last measured heartbeat round trip per peer (direct transport only). */
+    peerRoundTrips(): Record<string, { ms: number; at: number }> { return Object.fromEntries(this.roundTrips) }
     async close(): Promise<void> {
         if (this.retryTimer) clearInterval(this.retryTimer); this.retryTimer = null
         await Promise.all(this.transports.map(transport => transport.close?.()))
@@ -197,7 +206,7 @@ export class MeshTransportRouter implements MeshTransport {
     private async flushOutbox(): Promise<void> {
         this.outbox.prune()
         for (const item of this.outbox.due()) {
-            if (item.envelope.kind.startsWith('capture.')) { this.outbox.complete(item); continue }
+            if (isEphemeralMeshKind(item.envelope.kind)) { this.outbox.complete(item); continue }
             const ordered = await this.orderFor(item.peerId)
             let delivered = false
             let reason = 'no healthy transport'
