@@ -62,9 +62,18 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     const isSocial = SOCIAL.test(text)
     const isAction = ACTION.test(actionRequestText(lower))
     const isAnalysis = ANALYSIS.test(lower)
-    const isResearch = RESEARCH.test(lower)
+    // "Current" can refer to the latest fact in this conversation, not fresh
+    // external knowledge. Keep this exception narrow; mixed web/action requests
+    // retain their ordinary effort and evidence requirements.
+    const conversationRecall = wordCount <= 60
+        && /^(?:wie lautet|was ist|welche?\b)/i.test(lower)
+        && /\b(?:aus|in) (?:unserem|dem|diesem) (?:gespräch|gespraech|chat)\b/i.test(lower)
+        && !/\b(?:online|internet|web|quelle\w*|beleg\w*|recherch\w*|research|heute|neueste\w*|preis|version|release|dokumentation|docs|github)\b/i.test(lower)
+        && !isAction && !isAnalysis && !RECOVERY.test(lower)
+        && !MULTI_STEP.test(lower) && !MESH.test(lower) && !HARDWARE.test(lower)
+    const isResearch = RESEARCH.test(lower) && !conversationRecall
     const isRecovery = RECOVERY.test(lower)
-    const needsMemory = MEMORY.test(lower)
+    const needsMemory = MEMORY.test(lower) || conversationRecall
     const mesh = MESH.test(lower) || mentionsEnvironment(lower)
     const hardware = hasImage || HARDWARE.test(lower)
     const multiStep = MULTI_STEP.test(lower) || (text.match(/[\n;]+/g)?.length || 0) >= 2
@@ -97,7 +106,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     score += Math.round(uncertainty * 16)
     if (isSocial) score = 0
 
-    const researchRequired = isResearch || (/\b(?:aktuell|heute|neueste|preis|version|release)\b/i.test(lower) && !isSocial)
+    const researchRequired = isResearch || (/\b(?:aktuell|heute|neueste|preis|version|release)\b/i.test(lower) && !isSocial && !conversationRecall)
     const cognitiveMode: CognitiveMode = researchRequired
         ? 'research'
         : score >= 40 ? 'deep'

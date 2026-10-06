@@ -7,6 +7,35 @@ afterEach(() => {
 })
 
 describe('local OpenAI-compatible tool calling', () => {
+    it.each(['qwen', 'qwen3.8-flash-next', 'other'])('honors explicit non-thinking policy without changing the deadline (%s)', async model => {
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { headers: { 'content-type': 'application/json' } }))
+        vi.stubGlobal('fetch', fetchMock)
+        const client = await createNovaLLMClient({ provider: 'local', model, baseUrl: 'http://127.0.0.1:8000/v1', isolated: true })
+        await client.complete([{ role: 'user', content: 'exact answer' }], [], { reasoningEffort: 'none', timeoutMs: 15000 })
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body))
+        expect(body.chat_template_kwargs).toEqual(/qwen/i.test(model) ? { enable_thinking: false } : undefined)
+    })
+
+    it('does not disable thinking for a reasoning-enabled Qwen call', async () => {
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { headers: { 'content-type': 'application/json' } }))
+        vi.stubGlobal('fetch', fetchMock)
+        const client = await createNovaLLMClient({ provider: 'local', model: 'qwen', baseUrl: 'http://127.0.0.1:8000/v1', isolated: true })
+        await client.complete([{ role: 'user', content: 'reason' }], [], { reasoningEffort: 'high' })
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body)).chat_template_kwargs).toBeUndefined()
+    })
+
+    it('retries a rejected Qwen extension once on the same endpoint without the extensions', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(new Response('unknown parameter chat_template_kwargs', { status: 400 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { headers: { 'content-type': 'application/json' } }))
+        vi.stubGlobal('fetch', fetchMock)
+        const client = await createNovaLLMClient({ provider: 'local', model: 'qwen', baseUrl: 'http://127.0.0.1:8000/v1', isolated: true })
+        expect((await client.complete([{ role: 'user', content: 'exact' }], [], { reasoningEffort: 'none' })).content).toBe('ok')
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        const body = JSON.parse(String(fetchMock.mock.calls[1][1].body))
+        expect(body.reasoning_effort).toBeUndefined()
+        expect(body.chat_template_kwargs).toBeUndefined()
+        expect(fetchMock.mock.calls[1][0]).toBe(fetchMock.mock.calls[0][0])
+    })
     it('uses an explicitly configured loopback vLLM endpoint before discovery completes', async () => {
         vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1')
         const fetchMock = vi.fn(async () => new Response(JSON.stringify({

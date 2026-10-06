@@ -104,7 +104,10 @@ export function locateProgram(name: string, commonPaths: string[] = []): string 
     const cached = programCache.get(key)
     if (cached && Date.now() - cached.at < ENVIRONMENT_CACHE_TTL_MS) return cached.path
     let found: string | undefined
-    try {
+    // The running Node executable is direct evidence, independent of PATH or
+    // a slow/unavailable `where` process on a loaded Windows host.
+    if (name === 'node' && existsSync(process.execPath)) found = process.execPath
+    if (!found) try {
         const out = execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
         const first = String(out).split(/\r?\n/)[0].trim()
         if (first && existsSync(first)) found = first

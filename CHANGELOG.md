@@ -13,6 +13,12 @@
 - Keep slash commands available before persona onboarding, including /status.
 - Bound default regression worker concurrency to reduce process/lease startup
   contention. This does not establish that every live model timeout is fixed.
+- Identify the running Node executable directly when external PATH lookup fails.
+  Forward explicit non-thinking policy to Qwen-compatible local endpoints, with
+  a bounded same-endpoint retry for unsupported extensions.
+- Keep explicit current-conversation fact recall in the memory path rather than
+  external research. Mixed analysis and requests for fresh sources retain their
+  normal evidence and reasoning requirements.
 - Add owner-scoped parcel_track for DHL and existing 17TRACK registrations,
   with explicit provider choice, private setup questions and matching-number
   evidence. No automatic registration, paid real-time query or cloud fallback.

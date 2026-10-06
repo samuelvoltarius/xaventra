@@ -81,6 +81,22 @@ describe('next-level infrastructure', () => {
         expect(research.taskClass).toBe('research')
     })
 
+    it('treats current conversation facts as memory, not external research', () => {
+        const recall = selectContextPolicy('Wie lautet unsere aktuelle Projektkennung? Antworte nur mit der Kennung aus unserem Gespräch.')
+        expect(recall.researchRequired).toBe(false)
+        expect(recall.cognitiveMode).toBe('fast')
+        expect(recall.reasoningEffort).toBe('minimal')
+        expect(recall.longTermMemory).toBe(true)
+    })
+
+    it.each([
+        'Wie lautet die aktuelle Version aus unserem Gespräch? Prüfe sie online.',
+        'Was ist der aktuelle Preis in unserem Chat? Nenne aktuelle Quellen.',
+        'Analysiere die aktuelle Projektkennung aus unserem Gespräch.',
+    ])('does not hide mixed research or analysis: %s', prompt => {
+        expect(selectContextPolicy(prompt).cognitiveMode).not.toBe('fast')
+    })
+
     it('applies global backpressure and rejects beyond queue capacity', async () => {
         const gate = new RequestGate(1, 1)
         let release!: () => void

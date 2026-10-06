@@ -1725,6 +1725,9 @@ class LocalLLMProvider extends LLMProvider {
                 temperature: 0.2,
             }
             if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort
+            if (reasoningEffort === 'none' && /qwen/i.test(model)) {
+                requestBody.chat_template_kwargs = { enable_thinking: false }
+            }
             if (tools?.length) {
                 requestBody.tools = tools.map(tool => ({
                     type: 'function',
@@ -1748,10 +1751,11 @@ class LocalLLMProvider extends LLMProvider {
                 // incorrectly declaring the endpoint offline.
                 const unsupportedReasoning = response.status === 400
                     && reasoningEffort
-                    && /reasoning[_ .-]?effort|extra[_ .-]?(?:field|input)|unknown (?:field|parameter)|unrecognized/i.test(error)
+                    && /reasoning[_ .-]?effort|chat_template_kwargs|extra[_ .-]?(?:field|input)|unknown (?:field|parameter)|unrecognized/i.test(error)
                 if (unsupportedReasoning) {
                     delete requestBody.reasoning_effort
-                    console.warn(`[LocalLLM] ${model} does not accept reasoning_effort; retrying without that extension`)
+                    delete requestBody.chat_template_kwargs
+                    console.warn(`[LocalLLM] ${model} rejects reasoning extensions; retrying without those extensions`)
                     response = await sendRequest()
                     if (!response.ok) error = await response.text()
                 }
