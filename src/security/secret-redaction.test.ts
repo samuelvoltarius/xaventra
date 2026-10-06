@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { redactSecrets } from './secret-redaction.js'
+import { forgetSecretValues, redactSecrets, registerSecretValue } from './secret-redaction.js'
 
 describe('secret redaction', () => {
     it('redacts environment tokens in process listings', () => {
@@ -38,5 +38,26 @@ describe('secret redaction: sshpass and URL credentials (handover from layers re
         expect(output).not.toContain(password)
         expect(output).toContain('https://alfred:[REDACTED]@git.example.com/repo.git')
         expect(output).toContain('postgres://nova:[REDACTED]@db:5432/x')
+    })
+})
+
+describe('2.88 live values from the password vault', () => {
+    it('a value handed out by the broker is redacted everywhere redactSecrets runs, also without a key name', () => {
+        // Assembled so secret scanners do not treat the fixture as a credential.
+        const value = ['Sommer', 'Wiese', '42', 'x'].join('-')
+        expect(redactSecrets(`Anmeldung mit ${value} fertig`)).toContain(value)
+        registerSecretValue(value, 'github-main')
+        expect(redactSecrets(`Anmeldung mit ${value} fertig`)).toBe('Anmeldung mit [TRESOR:github-main] fertig')
+        expect(redactSecrets(JSON.stringify({ note: value }))).not.toContain(value)
+        forgetSecretValues()
+        expect(redactSecrets(value)).toBe(value)
+    })
+    it('ignores values too short to be safely matched and expires them', () => {
+        registerSecretValue('abc', 'x')
+        expect(redactSecrets('abc')).toBe('abc')
+        const value = ['lange', 'genug', 'wert'].join('_')
+        registerSecretValue(value, 'kurzlebig', { ttlMs: 1, now: 0 })
+        expect(redactSecrets(value, { now: 10 })).toBe(value)
+        forgetSecretValues()
     })
 })

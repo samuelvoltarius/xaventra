@@ -89,6 +89,8 @@ function bindingOf(record: ConnectionRecord) {
     return {
         connectorId: record.connectorId, trust: record.trust, datenklasse: record.datenklasse,
         capabilities: record.capabilities, standard: record.standard, erlaubteWerkzeuge: record.erlaubteWerkzeuge,
+        // 2.88: a directory entry that failed the own check (or has an unapproved new version): every tool asks.
+        streng: record.trust === 'community' && (record.pruefung === 'unbekannt' || Boolean(record.versionNeu)),
     }
 }
 
@@ -110,8 +112,16 @@ export async function connectionServerConfig(record: ConnectionRecord, deps: Log
             const { readConnectionSecrets } = await import('../connections/connection-store.js')
             const { findConnector } = await import('../connections/connector-catalog.js')
             const field = findConnector(record.connectorId)?.zugang?.find(item => item.geheim)
-            const token = field ? readConnectionSecrets(record.id, deps).zugang?.[field.env] : undefined
-            if (token) config.headers = { Authorization: `Bearer ${token}` }
+            const secrets = readConnectionSecrets(record.id, deps)
+            const vaultId = field ? secrets.zugangRef?.[field.env] : undefined
+            if (vaultId) {
+                // 2.88: the token stays in the password vault; the broker sets it per request (released host only).
+                const { tresorBearerFetch } = await import('../secrets/credential-broker.js')
+                config.fetch = tresorBearerFetch(vaultId, { dataDir: deps.dataDir })
+            } else {
+                const token = field ? secrets.zugang?.[field.env] : undefined
+                if (token) config.headers = { Authorization: `Bearer ${token}` }
+            }
         } else if (record.auth === 'ha-login') {
             const { haBearerFetch } = await import('../connections/connector-login.js')
             config.fetch = haBearerFetch(record.id, deps)

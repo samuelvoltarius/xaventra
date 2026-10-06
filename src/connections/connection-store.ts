@@ -51,6 +51,12 @@ export interface ConnectionRecord {
      * normal HA interface (inventory, hass_* tools); switching stays behind a card.
      */
     weg?: 'mcp' | 'rest'
+    /** 2.88: directory connections — the version the owner approved (pinned). */
+    version?: string
+    /** 2.88: Xaventra's own check of a directory entry (registry-vetting.ts); `unbekannt` = every tool asks. */
+    pruefung?: 'community' | 'unbekannt'
+    /** 2.88: the directory lists a newer version than the approved one (set once; cleared by connecting again). */
+    versionNeu?: string
 }
 
 export interface StoreOptions { dataDir?: string; now?: () => number }
@@ -104,6 +110,8 @@ export interface ConnectionSecrets {
     ha?: { accessToken: string; refreshToken?: string; expiresAt: number; clientId: string }
     /** Owner-entered access values (token connectors), by env name. */
     zugang?: Record<string, string>
+    /** 2.88: secret fields that come from the password vault (credential id by env name; the value never lands here). */
+    zugangRef?: Record<string, string>
 }
 
 const secretFile = (id: string, opts: StoreOptions) => {

@@ -29,6 +29,7 @@ import {
 } from '../core/approval-cards.js'
 import { findConnector, getConnectorCatalog, KATEGORIE_LABEL, type ConnectorCatalog, type ConnectorManifest } from './connector-catalog.js'
 import { findDirectoryEntry, type CommunityEntry } from './registry-directory.js'
+import { pruefeEintrag, pruefSatz, versionsDrift, type VersionsDrift } from './registry-vetting.js'
 import {
     connectionIdFor, deleteConnectionSecrets, getConnection, loadConnections, saveConnection, updateConnection, updateConnectionSecrets,
     type ConnectionRecord, type ConnectionTestResult,
@@ -125,7 +126,9 @@ export async function requestConnect(input: { connectorId: string; basis?: strin
     if (community && !community.remotes.length) return { ok: false, message: `${community.title} gibt es nur als Paket zum Installieren — das führe ich aus dem Verzeichnis nie automatisch aus.` }
     const connectorId = manifest?.name || community!.name
     const existing = getConnection(connectionIdFor(connectorId), deps)
-    if (existing && existing.status === 'verbunden') return { ok: false, message: `${existing.title} ist schon verbunden.` }
+    // 2.88: a pinned directory connection with a new version may be connected again (new check, new card).
+    if (existing && existing.status === 'verbunden' && !existing.versionNeu) return { ok: false, message: `${existing.title} ist schon verbunden.` }
+    const pruefung = community ? pruefeEintrag(community, catalog) : undefined
     let basis: string | undefined
     let ordner: string | undefined
     if (manifest) basis = (input.basis ? cleanBasis(input.basis) : foundBasis(manifest, deps)) || undefined
@@ -142,7 +145,9 @@ export async function requestConnect(input: { connectorId: string; basis?: strin
     const where = manifest ? (manifest.datenklasse === 'lokal' ? 'lokal (bleibt im Haus)' : 'Cloud (bekommt nichts Privates)') : 'Cloud/fremd (bekommt nichts Privates)'
     const beleg = manifest
         ? `${manifest.wirkung}. ${KATEGORIE_LABEL[manifest.kategorie]}, ${where}, geprüft. ${rightsSummary(manifest)}${basis ? ` Adresse ${basis}.` : ''}${ordner ? ` Ordner ${ordner}.` : ''}`
-        : `NICHT GEPRÜFT (Verzeichnis): ${community!.description || community!.name}. ${where}. Zuerst nur lesende Werkzeuge; Schreiben erst, wenn du ein Werkzeug einzeln erlaubst.`
+        : `NICHT GEPRÜFT (Verzeichnis): ${community!.description || community!.name}. ${where}. ${pruefSatz(pruefung!)} ${pruefung!.stufe === 'unbekannt'
+            ? 'Darum fragt mich jedes Werkzeug, auch Lesen; hier läuft davon nichts.'
+            : 'Zuerst nur lesende Werkzeuge; Schreiben erst, wenn du ein Werkzeug einzeln erlaubst.'}`
     const card = createApprovalCard({
         art: 'verbindung', titel: `${title} verbinden?`, beleg,
         vorschlag: `Ja = Verbindung einrichten${manifest?.auth_typ === 'oauth' || manifest?.auth_typ === 'ha-login' || community?.remotes[0]?.auth ? ', dann einmal anmelden' : ''} und testen. Nein = nichts.`,
@@ -169,9 +174,12 @@ function recordFor(request: ConnectRequest, approvedBy: string, manifest: Connec
         }
     }
     const remote = community!.remotes[0]
+    const pruefung = pruefeEintrag(community!)
     return {
         ...base, trust: 'community', title: community!.title, kategorie: 'weitere', datenklasse: 'cloud', auth: remote.auth ? 'oauth' : 'keiner',
         transport: { art: 'http', url: remote.url }, status: 'wartet-auf-anmeldung',
+        // 2.88: pinned to the approved version; the own check decides how strict the tools are.
+        ...(community!.version ? { version: community!.version } : {}), pruefung: pruefung.stufe === 'community' ? 'community' : 'unbekannt',
     }
 }
 
@@ -314,13 +322,26 @@ export async function submitAccess(connectionId: string, values: Record<string, 
     const manifest = findConnector(record.connectorId, deps.catalog || getConnectorCatalog())
     const fields = manifest?.zugang || []
     const clean: Record<string, string> = {}
+    const refs: Record<string, string> = {}
     for (const field of fields) {
         // An address the discovery already found is taken as is (the owner only enters the secret).
         const value = String(values?.[field.env] ?? '').trim() || (!field.geheim && /_URL$|_HOST$/.test(field.env) && record.basis ? record.basis : '')
         if (!value || value.length > 300 || /[\u0000-\u001f]/.test(value)) return { ok: false, message: `${field.label} fehlt oder ist ungültig.` }
+        // 2.88: „tresor:<id>“ = the value stays in the password vault; the broker sets it per request.
+        const ref = field.geheim ? /^tresor:([a-z0-9][a-z0-9-]{1,39})$/.exec(value) : null
+        if (ref) {
+            const { listeEintraege } = await import('../secrets/credential-broker.js')
+            if (record.transport.art !== 'http') return { ok: false, message: `${field.label}: Für diesen Dienst bitte den Wert direkt eintragen (Tresor geht nur bei Web-Diensten).` }
+            if (!listeEintraege({ dataDir: deps.dataDir }).some(item => item.id === ref[1])) return { ok: false, message: `Den Zugang „${ref[1]}“ gibt es im Tresor nicht.` }
+            refs[field.env] = ref[1]
+            continue
+        }
         clean[field.env] = value
     }
-    updateConnectionSecrets(record.id, current => ({ ...current, zugang: clean }), deps)
+    updateConnectionSecrets(record.id, current => {
+        const { zugangRef: _old, ...rest } = current
+        return { ...rest, zugang: clean, ...(Object.keys(refs).length ? { zugangRef: refs } : {}) }
+    }, deps)
     return connectAndTest(record.id, deps)
 }
 
@@ -341,6 +362,19 @@ export async function allowConnectionTool(connectionId: string, tool: string, de
     const updated = updateConnection(record.id, { erlaubteWerkzeuge: [...new Set([...record.erlaubteWerkzeuge, tool])].slice(0, 50) }, deps)
     if (updated?.status === 'verbunden') await connectAndTest(record.id, deps)
     return { ok: true, message: `${tool} ist für ${record.title} sichtbar; jeder Aufruf fragt dich weiterhin.` }
+}
+
+/**
+ * 2.88: version pin. A directory connection whose directory entry now has another
+ * version than the approved one drops to „unbekannt“ (every tool asks), loses its
+ * individually allowed tools and is reported once. Connecting again (card) pins the
+ * new version. Returns what changed now.
+ */
+export function applyVersionsDrift(deps: Pick<ConnectDeps, 'dataDir' | 'directoryCachePath' | 'now'> = {}): VersionsDrift[] {
+    const records = loadConnections(deps).filter(record => !record.versionNeu)
+    const drift = versionsDrift(records, deps.directoryCachePath)
+    for (const item of drift) updateConnection(item.connectionId, { pruefung: 'unbekannt', versionNeu: item.neu, erlaubteWerkzeuge: [] }, deps)
+    return drift
 }
 
 export function createConnectCardExecutor(deps: ConnectDeps = defaultDeps()): CardExecutor {

@@ -23,9 +23,45 @@ const SECRET_KEY_NAME = String.raw`[A-Za-z0-9_.-]*(?:token|password|passwd|passp
 const JSON_SECRET_VALUE = new RegExp(String.raw`("${SECRET_KEY_NAME}"\s*:\s*)"(?:[^"\\]|\\.)*"`, 'gi')
 const ESCAPED_JSON_SECRET_VALUE = new RegExp(String.raw`(\\"${SECRET_KEY_NAME}\\"\s*:\s*)\\"(?:[^"\\]|\\[^"])*?\\"`, 'gi')
 
+// ---------------------------------------------------------------------------
+// 2.88: live values from the password vault (src/secrets/credential-broker.ts).
+// A value the broker handed to a tool is redacted wherever redactSecrets runs
+// (logs, thoughts, cards, memory, model context) — also without a key name.
+// Only kept in memory, bounded, with an expiry.
+// ---------------------------------------------------------------------------
+
+const MIN_LIVE_SECRET = 6
+const MAX_LIVE_SECRETS = 200
+const liveSecrets = new Map<string, { label: string; until: number }>()
+
+/** Remember a value handed out by the vault broker; `label` is the credential id (never the value). */
+export function registerSecretValue(value: string, label: string, options: { ttlMs?: number; now?: number } = {}): void {
+    const secret = String(value ?? '')
+    if (secret.length < MIN_LIVE_SECRET) return
+    const now = options.now ?? Date.now()
+    liveSecrets.delete(secret)
+    liveSecrets.set(secret, { label: String(label || 'zugang').replace(/[^a-z0-9-]/gi, '').slice(0, 40) || 'zugang', until: now + (options.ttlMs ?? 6 * 60 * 60_000) })
+    while (liveSecrets.size > MAX_LIVE_SECRETS) liveSecrets.delete(liveSecrets.keys().next().value as string)
+}
+
+/** Tests / vault locked: forget all live values. */
+export function forgetSecretValues(): void { liveSecrets.clear() }
+
+function redactLive(value: string, now: number): string {
+    if (!liveSecrets.size) return value
+    let out = value
+    for (const [secret, entry] of liveSecrets) {
+        if (entry.until < now) { liveSecrets.delete(secret); continue }
+        if (out.includes(secret)) out = out.split(secret).join(`[TRESOR:${entry.label}]`)
+        const escaped = JSON.stringify(secret).slice(1, -1)
+        if (escaped !== secret && out.includes(escaped)) out = out.split(escaped).join(`[TRESOR:${entry.label}]`)
+    }
+    return out
+}
+
 /** Redacts credentials from command output before it reaches logs, memory or an LLM. */
-export function redactSecrets(value: string): string {
-    return value
+export function redactSecrets(value: string, options: { now?: number } = {}): string {
+    return redactLive(value, options.now ?? Date.now())
         .replace(PEM_PRIVATE_KEY, '[REDACTED_PRIVATE_KEY]')
         .replace(SSHPASS_PASSWORD, '$1$2[REDACTED]$2')
         .replace(URL_USERINFO_PASSWORD, '$1[REDACTED]$3')
