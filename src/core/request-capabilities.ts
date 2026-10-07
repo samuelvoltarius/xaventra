@@ -88,5 +88,7 @@ export function liveEvidenceGuidance(text: string): string {
         + (isNodeScreenshotRequest(text)
             ? 'Dieser Screenshot-Auftrag nennt Mesh-Ziele. Nutze mesh_screenshot mit einer aktuellen Node-ID oder all für alle aktuellen Nodes. desktop_screenshot hat keinen Node-Parameter und erfüllt diesen Auftrag nicht. Fehlende Freigaben, gesperrte Sitzungen und Headless-Nodes einzeln melden. Keine Ersatzaufnahme, SSH- oder Delegationsumgehung. Erfolg nur anhand der Capture- und Lieferbelege behaupten. '
             : mentionsScreenshot(text) ? 'Für eine Bildschirmaufnahme direkt das freigegebene Screenshot-Werkzeug verwenden; Katalogabfragen sind keine Aufnahme. ' : '')
-        + 'load_skill_pack liefert nur einen Katalog und erweitert den aktuellen Werkzeugvertrag nicht. Wiederholte Katalogabfragen helfen nicht; fehlende Ausführungswege konkret melden.'
+        + (isNodeScreenshotRequest(text) || isBareHttpUrl(text)
+            ? 'Für diesen Auftrag bleibt der Werkzeugvertrag fest; load_skill_pack lädt hier nichts nach. Fehlende Ausführungswege konkret melden.'
+            : 'Fehlt ein Werkzeug, lädt load_skill_pack das passende Pack für diese Anfrage nach. Wiederholte Katalogabfragen ersetzen keine Prüfung; fehlende Ausführungswege konkret melden.')
 }

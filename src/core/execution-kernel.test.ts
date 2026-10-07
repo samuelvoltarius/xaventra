@@ -105,7 +105,7 @@ ${current}`
         const fast = new ExecutionKernel('Wie spät ist es?')
         const deep = new ExecutionKernel('Analysiere und vergleiche die komplette Architektur mit mehreren Alternativen.')
         expect(fast.cognition.cognitiveMode).toBe('fast')
-        expect(fast.contract.budget.maxToolCalls).toBe(4)
+        expect(fast.contract.budget.maxToolCalls).toBe(8) // 2.89: owner-assistant profile
         expect(deep.cognition.cognitiveMode).toBe('deep')
         expect(deep.contract.budget.maxOutputTokens).toBeGreaterThan(fast.contract.budget.maxOutputTokens || 0)
     })

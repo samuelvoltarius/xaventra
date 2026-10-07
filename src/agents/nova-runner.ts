@@ -29,7 +29,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse, incompleteExecutionsResponse, environmentOverviewResponse, wantsTechnicalDetails } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, incompleteExecutionsResponse, environmentOverviewResponse, wantsTechnicalDetails, META_TOOL_NAMES } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
 import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
@@ -42,6 +42,9 @@ import { escalateVerifiedToolFailures, type VerifiedToolFailureObservation } fro
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
+import { ToolAdmission } from './tool-admission.js'
+import { limitStopNotice, runLimits, toolTimeoutMs } from '../core/run-limits.js'
+import { loadSkillPack, toolExpansionPolicy } from '../tools/tool-router.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
 import { noteVoiceToolDone, speakableClient } from '../voice/voice-turn-stream.js'
 
@@ -61,30 +64,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 const TIMEOUT_LLM = 60_000      // 60s for primary LLM call (local/mesh models can need a cold-start)
-// In NovaOS ist jedes Werkzeug potenziell langsam: apt laedt hunderte
-// Pakete, ein Browser startet ein ganzes Chromium, ein Klick wartet auf
-// eine Seite. Mit 30 s bricht das mitten drin ab ("browser_click exceeded
-// 30000ms") und Nova haelt das faelschlich fuer einen Fehlschlag.
-const NOVAOS = process.env.NOVA_OS_MODE === 'true'
-const TIMEOUT_TOOL = NOVAOS ? 300_000 : 30_000
-const TIMEOUT_TOOL_SLOW = NOVAOS ? 1_800_000 : 120_000
-const TIMEOUT_TOOL_SCREENSHOT = NOVAOS ? 120_000 : 60_000
-const TIMEOUT_TOOL_MEDIA = NOVAOS ? 900_000 : 120_000
-
-// Tools that need more time (SSH connections, downloads, model pulls)
-const SLOW_TOOLS = new Set(['ssh_command', 'sshcommand', 'run_command', 'system_executor', 'codex_install'])
+// Per-tool timeouts by tool kind, tool rounds and the run deadline come from
+// one place (core/run-limits.ts, 2.89). NovaOS keeps its larger values; the
+// normal Main no longer stops after 3 rounds / 30 s per tool.
 const TIMEOUT_FOLLOWUP = 30_000 // 30s for follow-up LLM calls
-
-// Tools that may return images (checked after execution)
-const IMAGE_TOOLS = new Set(['desktop_screenshot', 'screenshot', 'check_ui', 'browse_url'])
-const MEDIA_TOOLS = new Set(['generate_image'])
 
 function timeoutForTool(name: string): number {
     if (name === 'scan_now') return DISCOVERY_TOOL_MS
-    if (MEDIA_TOOLS.has(name)) return TIMEOUT_TOOL_MEDIA
-    if (IMAGE_TOOLS.has(name)) return TIMEOUT_TOOL_SCREENSHOT
-    if (SLOW_TOOLS.has(name)) return TIMEOUT_TOOL_SLOW
-    return TIMEOUT_TOOL
+    return toolTimeoutMs(name)
 }
 
 export interface AgentMessage {
@@ -616,7 +603,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         }
 
         // Format tools for LLM
-        const toolDefinitions = Object.freeze(relevantTools.map(t => Object.freeze({
+        const toToolDefinition = (t: any) => Object.freeze({
             name: t.name,
             description: t.description,
             parameters: Object.freeze({
@@ -629,7 +616,29 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 )),
                 required: Object.freeze((t.parameters || []).filter((p: any) => p.required).map((p: any) => p.name))
             })
-        })))
+        })
+        const toolDefinitions = Object.freeze(relevantTools.map(toToolDefinition))
+
+        // 2.89: tools may join this run on demand (load_skill_pack, or a call
+        // to a registered tool that was not offered) — only for a normal user
+        // request with role/policy permission. Binding outer contracts,
+        // backend-narrowed tool lists, internal/benchmark/diagnostic runs and
+        // sealed routes (node screenshot, direct URL check) keep their set.
+        const expansion = toolExpansionPolicy(content)
+        const { isToolAllowed } = await import('../users/multi-user-middleware.js')
+        const { checkTool } = await import('../tools/tool-policy.js')
+        const toolAdmission = new ToolAdmission({
+            offered: toolDefinitions.map(tool => tool.name),
+            registered: registry.getAll().map(tool => tool.name),
+            enabled: !contract && !isInternalRequest && !isBenchmarkRun && !isDiagnosticRun && !Array.isArray(tools)
+                && !historyOnly && !isConversationalClosure(content) && !expansion.sealed && toolDefinitions.length > 0,
+            denied, excluded: expansion.excluded,
+            allows: name => Boolean(authUserId) && isToolAllowed(authUserId, name, channel)
+                && checkTool(name, { userId, authUserId, channel: channel.toLowerCase() }).allowed,
+            onAdmit: names => { kernel.admitTools(names) },
+        })
+        const admissibleDefinitions = toolAdmission.candidates()
+            .map(name => registry.get(name)).filter(Boolean).map(toToolDefinition)
 
         // Reasoning remains provider-internal. Never prompt a model to print its
         // chain of thought into ordinary content; that wastes tokens and risks a
@@ -1025,6 +1034,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let checkpointUnreplicated = false
         let awaitingPolicyApproval = false
         let failureEscalationContent: string | undefined
+        // 2.89: failed tool calls of this run, escalated once if the run ends
+        // without a model answer (a failure is an observation, not a stop).
+        const runFailureObservations: VerifiedToolFailureObservation[] = []
+        const failureIsObservation = !contract && !isInternalRequest && !isBenchmarkRun && !isDiagnosticRun
         const nativeExecutionMetadata = new Map<string, { idempotencyKey: string; executionInputHash: string }>()
 
         const persistNativeReceipt = async (callId: string): Promise<void> => {
@@ -1095,12 +1108,16 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 record: (id, metadata) => nativeExecutionMetadata.set(id, metadata),
             })
             let capturedImage: { base64: string; mimeType: string } | null = null
+            // A run limit hit inside a tool call (deadline, call budget, tool
+            // timeout) is reported honestly instead of as an ordinary failure.
+            let runLimitError: unknown
             const executeSdkTool = async (call: { id: string; name: string; arguments: Record<string, unknown> }): Promise<string> => {
                 // One executor for initial, continued and corrected SDK calls.
                 const response = { toolCalls: [call] }
                 const toolResults: string[] = []
                 const failureObservations: VerifiedToolFailureObservation[] = []
                 let hasToolErrors = false
+                let hardStop = false
 
                 // Import correction detector for failure tracking
                 let correctionDetector: any = null
@@ -1124,6 +1141,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             // Hard stop: break all tool execution
                             toolResults.push(loopWarning)
                             hasToolErrors = true
+                            hardStop = true
                             break
                         }
                         // Soft warning: skip THIS tool but continue with others
@@ -1468,6 +1486,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         logRuntimeEvent({ event: effectiveSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: effectiveSuccess })
                     } catch (err) {
                         _traceRecorder.toolEnd(_traceId, false, 0, String(err).slice(0, 200))
+                        if (limitStopNotice(err)) runLimitError ??= err
                         if (err instanceof ToolAuthorizationError) {
                             // A denied call never ran: do not teach L17 or the
                             // correction detector that the tool itself failed.
@@ -1604,28 +1623,37 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     incompleteSynthesis = true
                     finalContent = menschenlesbar(toolResults, content)
                 } else if (hasToolErrors && failureObservations.length > 0) {
-                    // A failed tool result is evidence, never a prompt that may
-                    // choose commands, permissions or build_skill. Persist one
-                    // deterministic decision: one targeted user question or the
-                    // existing bounded read-only Doctor research queue.
-                    const escalation = escalateVerifiedToolFailures({
-                        principalId: userId,
-                        runId: kernel.contract.id,
-                        request: content,
-                        observations: failureObservations,
-                    })
-                    failureEscalationContent = escalation?.content
-                    incompleteSynthesis = true
-                    finalContent = failureEscalationContent || menschenlesbar(toolResults, content)
-                    console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
+                    // 2.89 (live 15× in 36 h): ONE failed tool ended the whole run.
+                    // A failure is an observation: the model sees it and may choose
+                    // an alternative. The escalation (one targeted question or the
+                    // read-only Doctor queue) happens once, only if the run ends
+                    // without an answer. Policy blocks and loop stops stay hard.
+                    runFailureObservations.push(...failureObservations)
                 }
 
-                if (policyBlocked || hasToolErrors) throw new Error('Governed tool execution stopped')
+                if (policyBlocked || hardStop || (hasToolErrors && !failureIsObservation)) {
+                    // Bound runs (outer contract, internal/autonomy, benchmark,
+                    // diagnosis) keep the old stop-and-escalate behaviour.
+                    if (hasToolErrors && !policyBlocked && !isDiagnosticRun) { escalateRunFailures(); incompleteSynthesis = true; finalContent = failureEscalationContent || menschenlesbar(toolResults, content) }
+                    throw new Error('Governed tool execution stopped')
+                }
+                if (hasToolErrors) toolResults.push('Hinweis: Dieser Schritt ist nicht gelungen. Wähle einen anderen Weg mit den vorhandenen Werkzeugen oder sag ehrlich, was nicht ging. Keine neuen Berechtigungen, keine erfundenen Ergebnisse.')
                 return toolResults.join('\n\n')
+            }
+            const escalateRunFailures = () => {
+                if (failureEscalationContent || policyBlocked || !runFailureObservations.length || isDiagnosticRun) return
+                const escalation = escalateVerifiedToolFailures({
+                    principalId: userId,
+                    runId: kernel.contract.id,
+                    request: content,
+                    observations: runFailureObservations,
+                })
+                failureEscalationContent = escalation?.content
+                console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
             }
             try {
                 const { runGovernedSdkLoop } = await import('./governed-sdk-loop.js')
-                const configuredRounds = Number(process.env.NOVA_MAX_TOOL_ROUNDS ?? (process.env.NOVA_OS_MODE === 'true' ? 50 : 3))
+                const configuredRounds = runLimits().maxToolRounds
                 const maxTurns = sdkTurnLimit(configuredRounds, isDiagnosticRun ? contract : undefined)
                 if (overviewPlan) {
                     // Same governed executor and receipt path as SDK calls. Do
@@ -1636,9 +1664,22 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     }
                     finalContent = environmentOverviewResponse(toolExecutions, { technisch: wantsTechnicalDetails(content) })
                 } else finalContent = await runGovernedSdkLoop({
-                    messages: messages as any, tools: toolDefinitions.map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })), initialResponse: response,
-                    maxTurns, signal: abortSignal, execute: executeSdkTool,
+                    messages: messages as any,
+                    tools: [...toolDefinitions, ...admissibleDefinitions].map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })),
+                    initialResponse: response,
+                    maxTurns, signal: abortSignal,
+                    execute: async call => {
+                        const output = await executeSdkTool(call)
+                        // load_skill_pack really loads: the pack's tools are offered from the next model step on.
+                        if (call.name === 'load_skill_pack') {
+                            const pack = loadSkillPack(String(call.arguments?.pack_name || ''))
+                            if (pack.loaded) toolAdmission.admit(pack.tools, 'load_skill_pack')
+                        }
+                        return output
+                    },
                     modelOptions: {
+                        isOffered: name => toolAdmission.isOffered(name),
+                        admitTools: names => toolAdmission.admit(names, 'model-call'),
                         client: speakableClient(llmClient), timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
                         maxTokens: kernel.cognition.executionBudget.maxOutputTokens,
                         beforeCall: async (sdkMessages, sdkTools) => {
@@ -1665,12 +1706,20 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 })
                 if (!finalContent.trim()) {
                     incompleteSynthesis = true
-                    finalContent = incompleteExecutionsResponse(toolExecutions)
+                    escalateRunFailures()
+                    finalContent = failureEscalationContent || incompleteExecutionsResponse(toolExecutions)
                 }
             } catch (error) {
                 incompleteSynthesis = true
-                if (!policyBlocked && !failureEscalationContent) {
-                    finalContent = incompleteExecutionsResponse(toolExecutions)
+                escalateRunFailures()
+                if (!policyBlocked) finalContent = failureEscalationContent || incompleteExecutionsResponse(toolExecutions)
+                // 2.89: say which limit stopped the run (rounds, deadline, call
+                // budget, tool timeout) instead of a vague „nicht fertig“.
+                const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
+                if (notice) {
+                    const hasFindings = toolExecutions.some(item => item.success !== false && !META_TOOL_NAMES.has(String(item.toolName || '')))
+                    const body = failureEscalationContent || (hasFindings ? incompleteExecutionsResponse(toolExecutions) : 'Sag „weiter“, dann mache ich an der Stelle weiter.')
+                    finalContent = `${notice}\n\n${body}`
                 }
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')

@@ -299,18 +299,6 @@
     {
       "name": "browser_extract",
       "category": "browser",
-      "description": "Extrahiert Text, Links und Bilder einer Webseite.",
-      "parameters": [
-        {
-          "name": "url",
-          "type": "string",
-          "required": true
-        }
-      ]
-    },
-    {
-      "name": "browser_extract",
-      "category": "browser",
       "description": "Extrahiert sichtbaren Text und Links von der aktuellen Seite (oder einem CSS-Selektor-Bereich). Besser als fetch_url für JavaScript-gerenderte Seiten.",
       "parameters": [
         {
@@ -391,23 +379,6 @@
         {
           "name": "limit",
           "type": "number",
-          "required": false
-        }
-      ]
-    },
-    {
-      "name": "browser_screenshot",
-      "category": "browser",
-      "description": "Macht einen Screenshot einer Webseite via Playwright/Puppeteer.",
-      "parameters": [
-        {
-          "name": "url",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "full_page",
-          "type": "boolean",
           "required": false
         }
       ]
@@ -1215,23 +1186,6 @@
     },
     {
       "name": "fetch_url",
-      "category": "browser",
-      "description": "Lädt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.",
-      "parameters": [
-        {
-          "name": "url",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "raw",
-          "type": "boolean",
-          "required": false
-        }
-      ]
-    },
-    {
-      "name": "fetch_url",
       "category": "media",
       "description": "Holt und extrahiert Text-Inhalt von einer URL (HTML?Text, JSON, Links, Bilder)",
       "parameters": [
@@ -1702,12 +1656,6 @@
       "name": "list_sessions",
       "category": "system",
       "description": "Zeigt alle aktiven Sessions mit Channel, User, Message-Count.",
-      "parameters": []
-    },
-    {
-      "name": "list_skills",
-      "category": "system",
-      "description": "Listet alle installierten Agent Skills auf",
       "parameters": []
     },
     {
@@ -2587,6 +2535,12 @@
       ]
     },
     {
+      "name": "projekte_status",
+      "category": "other",
+      "description": "Zeigt den Stand der eigenen Hintergrund-Projekte (läuft, wartet auf dich, fertig). Nur lesen.",
+      "parameters": []
+    },
+    {
       "name": "proxmox_vm",
       "category": "system",
       "description": "Proxmox im Gespräch: „status“ und „snapshots“ lesen; „starten“, „herunterfahren“ (sauber), „snapshot“ und „zuruecksetzen“ legen EINE Karte an — ausgeführt wird erst nach dem Ja, nur für VMs im Pool xaventra. Hart stoppen, Snapshots löschen, Migration gibt es nie.",
@@ -3089,28 +3043,6 @@
       "category": "system",
       "description": "NUR bei einer ausdrücklichen aktuellen Setup-/Capability-/Runtime-Frage verwenden. Zeigt Novas aktuellen Self-Setup-State; niemals aus allgemeinen Wünschen wie \"Nova besser/schlauer machen\" ableiten.",
       "parameters": []
-    },
-    {
-      "name": "send_file",
-      "category": "media",
-      "description": "Sendet eine Datei an den User via Telegram. Erkennt automatisch ob Foto (jpg/png/gif/webp) oder Dokument (pdf/zip/etc). Nutze dies um generierte Bilder, Reports, oder andere Dateien zu senden.",
-      "parameters": [
-        {
-          "name": "path",
-          "type": "string",
-          "required": true
-        },
-        {
-          "name": "caption",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "as_document",
-          "type": "boolean",
-          "required": false
-        }
-      ]
     },
     {
       "name": "send_file",

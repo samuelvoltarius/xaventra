@@ -29,6 +29,7 @@ import { meshExchangeTools } from './mesh-exchange-tools.js'
 import { meshScreenshotTool } from './mesh-screenshot-tool.js'
 import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { parcelTrackTool } from './parcel-track-tool.js'
+import { projectsStatusTool } from './projects-tool.js'
 import { verbindenTools } from './verbinden-tools.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
@@ -976,68 +977,6 @@ export const browserTools: NovaTool[] = [
             }
         },
     },
-    {
-        name: 'fetch_url',
-        description: 'Lädt den Inhalt einer URL herunter und konvertiert HTML zu sauberem Markdown.',
-        category: 'browser',
-        parameters: [
-            { name: 'url', type: 'string', description: 'URL', required: true },
-            { name: 'raw', type: 'boolean', description: 'Wenn true, wird rohes HTML zurückgegeben statt Markdown', required: false },
-        ],
-        handler: async (params) => {
-            try {
-                const { fetchWithSsrfGuard } = await import('../resilience/ssrf-guard.js')
-                const response = await fetchWithSsrfGuard(params.url as string)
-                const text = await response.text()
-
-                // Return raw HTML if requested
-                if (params.raw) {
-                    return { status: response.status, content: text.slice(0, 50000) }
-                }
-
-                // Convert HTML to clean Markdown
-                let md = text
-                // Remove script, style, noscript blocks
-                md = md.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                md = md.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                md = md.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-                // Remove HTML comments
-                md = md.replace(/<!--[\s\S]*?-->/g, '')
-                // Convert headings
-                md = md.replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n# $1\n')
-                md = md.replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n## $1\n')
-                md = md.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n### $1\n')
-                md = md.replace(/<h4[^>]*>(.*?)<\/h4>/gi, '\n#### $1\n')
-                // Convert links
-                md = md.replace(/<a[^>]*href="([^"]*?)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
-                // Convert bold/italic
-                md = md.replace(/<(strong|b)>(.*?)<\/\1>/gi, '**$2**')
-                md = md.replace(/<(em|i)>(.*?)<\/\1>/gi, '*$2*')
-                // Convert lists
-                md = md.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1')
-                // Convert paragraphs and line breaks
-                md = md.replace(/<\/p>/gi, '\n\n')
-                md = md.replace(/<br\s*\/?>/gi, '\n')
-                // Convert code blocks
-                md = md.replace(/<pre[^>]*><code[^>]*>(.*?)<\/code><\/pre>/gi, '```\n$1\n```')
-                md = md.replace(/<code>(.*?)<\/code>/gi, '`$1`')
-                // Strip remaining HTML tags
-                md = md.replace(/<[^>]+>/g, '')
-                // Decode common HTML entities
-                md = md.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-                // Collapse whitespace
-                md = md.replace(/\n{3,}/g, '\n\n').trim()
-
-                return {
-                    status: response.status,
-                    content: md.slice(0, 50000),
-                    url: params.url,
-                }
-            } catch (err: any) {
-                return { error: err.message }
-            }
-        },
-    },
 ]
 
 // ============================================
@@ -1231,17 +1170,6 @@ export const evolutionTools: NovaTool[] = [
             if (refusal) return { success: false, message: refusal }
             const { importSkill } = await import('./skills-import-cli.js')
             return await importSkill(params.package as string)
-        },
-    },
-    {
-        name: 'list_skills',
-        description: 'Listet alle installierten Agent Skills auf',
-        category: 'system',
-        parameters: [],
-        handler: async () => {
-            const { listInstalledSkills } = await import('./skills-import-cli.js')
-            const skills = listInstalledSkills()
-            return skills.length > 0 ? `Installierte Skills: ${skills.join(', ')}` : 'Keine Skills installiert'
         },
     },
     {
@@ -2234,20 +2162,6 @@ export const mediaProviderTools: NovaTool[] = [
         },
     },
     {
-        name: 'send_file',
-        description: 'Sendet eine Datei an den User via Telegram. Erkennt automatisch ob Foto (jpg/png/gif/webp) oder Dokument (pdf/zip/etc). Nutze dies um generierte Bilder, Reports, oder andere Dateien zu senden.',
-        category: 'media',
-        parameters: [
-            { name: 'path', type: 'string', description: 'Absoluter Pfad zur Datei', required: true },
-            { name: 'caption', type: 'string', description: 'Optionale Bildunterschrift/Beschreibung', required: false },
-            { name: 'as_document', type: 'boolean', description: 'Erzwinge Versand als Dokument (auch für Bilder)', required: false },
-        ],
-        handler: async (params) => {
-            const { executeSendFile } = await import('./send-file-tool.js')
-            return await executeSendFile(params)
-        },
-    },
-    {
         name: 'list_media_providers',
         description: 'Zeigt alle verfügbaren Media-Provider und ihre Capabilities.',
         category: 'media',
@@ -2431,40 +2345,6 @@ export const pollTools: NovaTool[] = [
             const poll = getPoll(params.poll_id as string)
             if (!poll) return { error: 'Poll not found' }
             return { poll, formatted: formatPollResults(poll) }
-        },
-    },
-]
-
-// ============================================
-// Browser Automation Tools (Wave 4)
-// ============================================
-
-export const browserAutomationTools: NovaTool[] = [
-    {
-        name: 'browser_screenshot',
-        description: 'Macht einen Screenshot einer Webseite via Playwright/Puppeteer.',
-        category: 'browser',
-        parameters: [
-            { name: 'url', type: 'string', description: 'URL der Webseite', required: true },
-            { name: 'full_page', type: 'boolean', description: 'Ganze Seite (default: false)', required: false },
-        ],
-        handler: async (params) => {
-            const { captureScreenshot } = await import('./browser-automation.js')
-            const path = captureScreenshot(params.url as string, { fullPage: params.full_page as boolean })
-            return { path, success: true }
-        },
-    },
-    {
-        name: 'browser_extract',
-        description: 'Extrahiert Text, Links und Bilder einer Webseite.',
-        category: 'browser',
-        parameters: [
-            { name: 'url', type: 'string', description: 'URL der Webseite', required: true },
-        ],
-        handler: async (params) => {
-            const { fetchPageContent, htmlToText } = await import('./browser-automation.js')
-            const { text, status } = await fetchPageContent(params.url as string)
-            return { text: htmlToText(text), status }
         },
     },
 ]
@@ -3075,7 +2955,6 @@ export const ALL_TOOLS: NovaTool[] = [
     ...desktopControlTools,
 
     ...pollTools,
-    ...browserAutomationTools,
     ...browserUseTools,
     ...agentPatternTools,
     ...homeAssistantTools,
@@ -3085,6 +2964,7 @@ export const ALL_TOOLS: NovaTool[] = [
     meshScreenshotTool,
     environmentInventoryTool,
     parcelTrackTool,
+    projectsStatusTool,
     // 2.88: Dienste finden/verbinden, Passwort-Tresor (nur Kurznamen), Proxmox im Gespräch.
     ...verbindenTools,
     ...printerTools,

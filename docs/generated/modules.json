@@ -115,6 +115,7 @@
         "../core/outcome-ledger.js",
         "../core/reasoning-policy.js",
         "../core/response-contract.js",
+        "../core/run-limits.js",
         "../core/runtime-event-log.js",
         "../core/side-effects.js",
         "../core/system-message.js",
@@ -132,11 +133,13 @@
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
         "../tools/loop-detection.js",
+        "../tools/tool-router.js",
         "../voice/voice-turn-stream.js",
         "./environment-overview.js",
         "./history-evidence.js",
         "./response-repair.js",
         "./session-checkpoints.js",
+        "./tool-admission.js",
         "./tool-authorization.js",
         "./tool-contract-selection.js",
         "node:fs",
@@ -204,6 +207,10 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/agents/tool-admission.ts",
+      "imports": []
     },
     {
       "module": "src/agents/tool-authorization.ts",
@@ -1630,7 +1637,8 @@
       "module": "src/core/context-policy.ts",
       "imports": [
         "./action-intent.js",
-        "./request-capabilities.js"
+        "./request-capabilities.js",
+        "./runtime-profile.js"
       ]
     },
     {
@@ -1898,9 +1906,11 @@
         "../users/principal-id.js",
         "./action-intent.js",
         "./context-policy.js",
+        "./operating-mode-prompt.js",
         "./reply-delivery-error.js",
         "./request-capabilities.js",
         "./request-tracer.js",
+        "./runtime-profile.js",
         "./system-message.js",
         "node:fs",
         "node:os",
@@ -2069,6 +2079,10 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/core/operating-mode-prompt.ts",
+      "imports": []
     },
     {
       "module": "src/core/operational-event-bus.ts",
@@ -2307,11 +2321,21 @@
       ]
     },
     {
+      "module": "src/core/run-limits.ts",
+      "imports": [
+        "./runtime-profile.js"
+      ]
+    },
+    {
       "module": "src/core/runtime-event-log.ts",
       "imports": [
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/core/runtime-profile.ts",
+      "imports": []
     },
     {
       "module": "src/core/runtime-question.ts",
@@ -7176,6 +7200,7 @@
         "./owner-approval.js",
         "./parcel-track-tool.js",
         "./printer-tool.js",
+        "./projects-tool.js",
         "./reminder-tool.js",
         "./scan-now-tool.js",
         "./searxng-search.js",
@@ -7419,6 +7444,12 @@
         "node:child_process",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/projects-tool.ts",
+      "imports": [
+        "./complete-registry.js"
       ]
     },
     {
