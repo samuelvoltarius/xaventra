@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConnections } from '../connections/connection-store.js'
 import { createApprovalCard, listApprovalCards, type ApprovalCard, type CardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
-import { consolidateDevices, defaultConsolidationContext, migrateDeviceRegistry, type Geraet, type KonsolidierungsKontext } from './device-consolidation.js'
+import { consolidateDevices, defaultConsolidationContext, haConnectedFor, migrateDeviceRegistry, readHostAliases, type Geraet, type KonsolidierungsKontext } from './device-consolidation.js'
 import { deviceId, loadDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
 import { identifyHardware } from './hardware-recognition.js'
 import { identifyHttp, type HttpProbeResult } from './discovery.js'
@@ -61,11 +61,17 @@ async function contextOf(deps: DeviceConnectDeps): Promise<KonsolidierungsKontex
     return deps.ctx || defaultConsolidationContext(deps.dataDir)
 }
 
+/** 2.88.2: how many distinct Home Assistant instances the records consolidate to. */
+function haInstanceCount(records: DeviceRecord[], aliase: Record<string, string>): number {
+    return consolidateDevices(records, { aliase }).geraete.filter(g => g.art === 'homeassistant').length
+}
+
 /** Is the device already connected through its way? */
 export function isDeviceConnected(dataDir: string, geraet: Geraet, records: DeviceRecord[] = loadDevices(dataDir)): boolean {
     const members = records.filter(r => geraet.dienste.some(d => d.id === r.id))
     if (geraet.art === 'homeassistant') {
-        try { return loadConnections({ dataDir }).some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') } catch { return false }
+        // 2.88.2: only the instance whose address the connection belongs to (not every HA found).
+        try { const aliase = readHostAliases(dataDir); return haConnectedFor(loadConnections({ dataDir }), geraet.adressen, haInstanceCount(records, aliase), aliase) } catch { return false }
     }
     if (geraet.art === 'hue') return members.some(r => Boolean(hueKey(dataDir, r.id)))
     return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)) && keyedAccessReady(dataDir, r))
@@ -74,7 +80,7 @@ export function isDeviceConnected(dataDir: string, geraet: Geraet, records: Devi
 /** One device record already connected through its way (Home Assistant connection, Hue key, approved route). */
 export function isRecordConnected(dataDir: string, record: DeviceRecord): boolean {
     if (record.type === 'homeassistant') {
-        try { return loadConnections({ dataDir }).some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') } catch { return false }
+        try { const aliase = readHostAliases(dataDir); return haConnectedFor(loadConnections({ dataDir }), [record.host], haInstanceCount(loadDevices(dataDir), aliase), aliase) } catch { return false }
     }
     if (hueKey(dataDir, record.id)) return true
     return record.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, record)) && keyedAccessReady(dataDir, record)

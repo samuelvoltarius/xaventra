@@ -6394,7 +6394,6 @@
     {
       "module": "src/sensing/device-overview.ts",
       "imports": [
-        "../connections/connection-store.js",
         "../core/owner-text.js",
         "./device-consolidation.js",
         "./device-registry.js",

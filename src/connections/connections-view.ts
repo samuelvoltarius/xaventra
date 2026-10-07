@@ -188,7 +188,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     const gefunden: FoundItem[] = []
     // Paket L: one entry per real device (device-consolidation.ts) — Home Assistant over LAN
     // and tailnet once, the Hue bridge once; container/own-machine noise and bare ports left out.
-    const { consolidateDevices, defaultConsolidationContext } = await import('../sensing/device-consolidation.js')
+    const { consolidateDevices, defaultConsolidationContext, haConnectedFor } = await import('../sensing/device-consolidation.js')
     const raw = ((deps.devices || (() => defaultDevices(dataDir)))() || []).filter((device: any) => device && typeof device.host === 'string' && typeof device.type === 'string')
     const records = raw.map((device: any, index: number) => ({
         id: typeof device.id === 'string' ? device.id : `dev-${index.toString(16).padStart(10, '0')}`, name: String(device.name || ''), via: device.via || 'tcp',
@@ -223,6 +223,9 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
                 || access.getShellyCloudAccess(dataDir, record) || (matter && matter.state === 'connected'))
         } catch { return false }
     })
+    // 2.88.2: Home Assistant counts as connected per instance (the connection's address), not as soon as any HA is.
+    const haInstanzen = konsolidiert.geraete.filter(g => g.art === 'homeassistant').length
+    const haConnected = (g: { adressen: string[] }) => haConnectedFor(connections, g.adressen, haInstanzen, (ctx as any).aliase || {})
     for (const g of konsolidiert.geraete) {
         if (g.status === 'abgelehnt') continue
         const primary = records.find((record: any) => record.id === g.primaryId) as any
@@ -235,7 +238,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             wirkung: typed ? known.wirkung : GERAET_WIRKUNG[g.art] || GERAET_WIRKUNG.geraet,
             fund: `im Netz ${primary.host}:${primary.port}${g.adressen.length > 1 ? ` (+${g.adressen.length - 1} weitere Adresse${g.adressen.length > 2 ? 'n' : ''})` : ''}`,
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : deviceConnected(g),
+            verbunden: g.art === 'homeassistant' ? haConnected(g) : connectorId ? connectedIds.has(connectorId) : deviceConnected(g),
             geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
         })
     }
