@@ -27,7 +27,7 @@ describe('Anmeldung als URL-Knopf', () => {
         await ensureBuiltinCardExecutors()
         const state = 'a1'.repeat(24)
         const url = `http://ha.example.com:8123/auth/authorize?response_type=code&client_id=${encodeURIComponent('http://127.0.0.1:3011/')}&redirect_uri=${encodeURIComponent('http://127.0.0.1:3011/verbindungen/rueckkehr')}&state=${state}&code_challenge=${'Z'.repeat(43)}&code_challenge_method=S256`
-        registerCardExecutor({ kind: 'geraet-verbinden', async execute() { return { ok: true, message: 'Ein Schritt noch: Bei Home Assistant anmelden. Der Knopf gilt eine Viertelstunde.', link: { label: 'Bei Home Assistant anmelden', url } } } })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'geraet-verbinden', async execute() { return { ok: true, message: 'Ein Schritt noch: Bei Home Assistant anmelden. Der Knopf gilt eine Viertelstunde.', link: { label: 'Bei Home Assistant anmelden', url } } } })
         createApprovalCard({ art: 'geraet-verbinden', titel: 'Home Assistant verbinden?', beleg: 'b', vorschlag: 'v', aktion: { kind: 'geraet-verbinden', ref: 'dev-00000000f1' }, buendel: 'geraete', kurz: 'Home Assistant' } as any)
         const { instance, bot } = adapter()
         await deliverBundles({ canSend: () => true, ownerChatIds: () => ['111'], send: (c: string, t: string, k: any) => instance.sendApprovalCard(c, t, k), edit: (c: string, m: number, t: string, k: any) => instance.editOwnerView(c, m, t, k) })

@@ -31,7 +31,7 @@ export const environmentInventoryTool: NovaTool = {
         const routes = smartRouteEvents(dataDir)
         const questions = [
             ...routes.map(event => `${event.summary}\n${event.hint?.proposal || ''}`),
-            ...hardwareConnectionEvents(loadDevices(dataDir).map(device => ({ ...device, hardwareAskedFingerprint: undefined })), legacyAuthorized)
+            ...hardwareConnectionEvents(loadDevices(dataDir).map(device => ({ ...device, hardwareAskedFingerprint: undefined })), { dataDir })
                 .filter(event => !routes.some(route => route.subject === event.subject))
                 .map(event => `${event.summary}\n${event.hint?.proposal || ''}`),
         ].slice(0, 16)

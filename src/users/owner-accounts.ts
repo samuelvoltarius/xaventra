@@ -150,6 +150,26 @@ export function linkedOwnerPrincipal(channel: string, rawId: string): string | n
     try { return getOwnerAccountRegistry().lookup(channel, rawId) } catch { return null }
 }
 
+/**
+ * 2.89: who may answer a card. The numeric Telegram owner ids (allowFrom) and every
+ * CONFIRMED owner account as `channel:rawId` (App/Desktop with owner token, CLI, REST
+ * token, linked by code). Telegram accounts only count numerically (usernames never).
+ * Never throws; a damaged registry adds nothing.
+ */
+export function cardOwnerIdentities(config: PrincipalConfigLike | null | undefined, registry?: OwnerAccountRegistry): string[] {
+    const allowFrom = Array.isArray(config?.channels?.telegram?.allowFrom) ? config!.channels!.telegram!.allowFrom! : []
+    const out = allowFrom.map(item => clean(item).replace(/^telegram:/i, '')).filter(item => /^\d{1,20}$/.test(item))
+    try {
+        for (const account of (registry || getOwnerAccountRegistry()).list()) {
+            const channel = normalizeChannel(account.channel), raw = clean(account.rawId)
+            if (!raw) continue
+            if (channel === 'telegram') { if (/^\d{1,20}$/.test(raw)) out.push(raw); continue }
+            out.push(accountKey(channel, raw))
+        }
+    } catch { /* fail closed: only the configured ids */ }
+    return [...new Set(out)]
+}
+
 interface PrincipalConfigLike {
     ownerPrincipal?: string
     userPrincipals?: Record<string, string>

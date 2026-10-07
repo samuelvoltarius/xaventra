@@ -23,15 +23,13 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadConnections } from '../connections/connection-store.js'
+import { connectionState, geraetFrageKey, standKontext, verbindungsFrageOffen } from '../connections/connection-state.js'
 import { createApprovalCard, listApprovalCards, type ApprovalCard, type CardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
-import { consolidateDevices, defaultConsolidationContext, haConnectedFor, migrateDeviceRegistry, readHostAliases, type Geraet, type KonsolidierungsKontext } from './device-consolidation.js'
+import { consolidateDevices, defaultConsolidationContext, migrateDeviceRegistry, type Geraet, type KonsolidierungsKontext } from './device-consolidation.js'
 import { deviceId, loadDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
 import { identifyHardware } from './hardware-recognition.js'
 import { identifyHttp, type HttpProbeResult } from './discovery.js'
 import { approvedSmartRoute, chooseSmartRoute, type SmartRoute } from './smart-device-route.js'
-import { hueKey } from './direct-smart-devices.js'
-import { getEspHomeAccess, getMatterAccess, getShellyCloudAccess, getTuyaCloudAccess, getTuyaLocalAccess } from './smart-device-access.js'
 import { nutzenSatz } from './device-words.js'
 
 export const DEVICE_CONNECT_KIND = 'geraet-verbinden'
@@ -61,41 +59,12 @@ async function contextOf(deps: DeviceConnectDeps): Promise<KonsolidierungsKontex
     return deps.ctx || defaultConsolidationContext(deps.dataDir)
 }
 
-/** 2.88.2: how many distinct Home Assistant instances the records consolidate to. */
-function haInstanceCount(records: DeviceRecord[], aliase: Record<string, string>): number {
-    return consolidateDevices(records, { aliase }).geraete.filter(g => g.art === 'homeassistant').length
-}
+/** 2.89: „verbunden?“ comes from the one connection truth (connections/connection-state.ts). */
+const geraetVerbunden = (dataDir: string, geraet: Geraet, records: DeviceRecord[]) =>
+    connectionState(dataDir, { geraet }, standKontext(dataDir, { devices: records })).zustand === 'verbunden'
 
-/** Is the device already connected through its way? */
-export function isDeviceConnected(dataDir: string, geraet: Geraet, records: DeviceRecord[] = loadDevices(dataDir)): boolean {
-    const members = records.filter(r => geraet.dienste.some(d => d.id === r.id))
-    if (geraet.art === 'homeassistant') {
-        // 2.88.2: only the instance whose address the connection belongs to (not every HA found).
-        try { const aliase = readHostAliases(dataDir); return haConnectedFor(loadConnections({ dataDir }), geraet.adressen, haInstanceCount(records, aliase), aliase) } catch { return false }
-    }
-    if (geraet.art === 'hue') return members.some(r => Boolean(hueKey(dataDir, r.id)))
-    return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)) && keyedAccessReady(dataDir, r))
-}
-
-/** One device record already connected through its way (Home Assistant connection, Hue key, approved route). */
-export function isRecordConnected(dataDir: string, record: DeviceRecord): boolean {
-    if (record.type === 'homeassistant') {
-        try { const aliase = readHostAliases(dataDir); return haConnectedFor(loadConnections({ dataDir }), [record.host], haInstanceCount(loadDevices(dataDir), aliase), aliase) } catch { return false }
-    }
-    if (hueKey(dataDir, record.id)) return true
-    return record.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, record)) && keyedAccessReady(dataDir, record)
-}
-
-const KEYED_CONNECTORS = new Set(['tuya-announcements', 'esphome-native', 'matter-ip', 'shelly-readonly'])
-/** 2.88.1: devices that need a private key are connected only once it is stored (an approved way alone is not enough). */
-export function keyedAccessReady(dataDir: string, record: DeviceRecord): boolean {
-    if (!KEYED_CONNECTORS.has(String((record as any).hardware?.connector || ''))) return true
-    try {
-        const matter = getMatterAccess(dataDir, record)
-        return Boolean(getTuyaLocalAccess(dataDir, record) || getTuyaCloudAccess(dataDir, record) || getEspHomeAccess(dataDir, record)
-            || getShellyCloudAccess(dataDir, record) || (matter && matter.state === 'connected'))
-    } catch { return false }
-}
+/** 2.89: the device question key before 2.89 (an old „Nein“ / expired card still keeps the device quiet). */
+const legacyKey = (g: Geraet, route?: string) => `geraet:${g.key}${route ? `:${route}` : ''}`
 
 /**
  * 2.86 Paket N (Grundsatz Alfred 06.10.: Nutzer sind keine Techniker): genau EIN
@@ -116,22 +85,25 @@ function kurzOf(g: Geraet): string {
 
 function cardInputs(g: Geraet, weg?: 'local' | 'cloud'): Array<Parameters<typeof createApprovalCard>[0]> {
     const base = { art: DEVICE_CONNECT_KIND, buendel: DEVICE_BUNDLE, kurz: kurzOf(g), ablaufMs: CARD_TTL_MS, quelle: 'geraete', gruppe: g.id }
+    // 2.89: ONE question key per thing, shared with the „verbinden?“ card, the need thought and the discovery offer.
+    const key = geraetFrageKey(g)
     const name = g.verbinden === 'matter' ? 'Ein Smart-Gerät' : g.titel
     const beleg = `${name} in deinem Netz gefunden. Erst nach dem Verbinden sehe ich, was dahinter hängt; geschaltet wird nur, wenn du es sagst und Ja drückst.`
     if (g.verbinden === 'homeassistant') return [{ ...base, titel: 'Home Assistant verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Bei Home Assistant einmal anmelden: Ja öffnet die Anmeldeseite von Home Assistant. Danach sehe ich deine Lampen, Steckdosen und Sensoren; geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
+        vorschlag: 'Bei Home Assistant einmal anmelden: Ja öffnet die Anmeldeseite von Home Assistant. Danach sehe ich deine Lampen, Steckdosen und Sensoren; geschaltet wird nichts.', dedupeKey: key }]
     if (g.verbinden === 'hue') return [{ ...base, titel: 'Hue Bridge verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Drück die runde Taste auf der Hue Bridge, dann innerhalb von 30 Sekunden Ja. Danach sehe ich deine Lampen; geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
+        vorschlag: 'Drück die runde Taste auf der Hue Bridge, dann innerhalb von 30 Sekunden Ja. Danach sehe ich deine Lampen; geschaltet wird nichts.', dedupeKey: key }]
     if (g.verbinden === 'tuya') {
         // Im Heimnetz gefunden → lokal (sie entscheidet selbst). Über den Hersteller nur auf ausdrücklichen Wunsch in der App.
         const route = weg || 'local'
         return [{ ...base, titel: 'Tuya-Gerät verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: `${g.primaryId}:${route}` },
             vorschlag: route === 'local' ? 'Ja = ich verbinde es direkt bei dir zu Hause. Danach einmal den Code aus der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Geschaltet wird nichts.'
                 : 'Ja = ich verbinde es über das Internet beim Hersteller. Danach einmal die Anmeldung der Tuya-App in der App unter Verbindungen eingeben (nicht im Chat). Geschaltet wird nichts.',
-            dedupeKey: `geraet:${g.key}:${route}` }]
+            // The way over the manufacturer is only an explicit wish in the app — its own question.
+            dedupeKey: route === 'local' ? key : `${key}:cloud` }]
     }
     if (g.verbinden === 'matter') return [{ ...base, titel: 'Smart-Gerät verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
-        vorschlag: 'Ja = ich bereite das Verbinden vor. Den Code vom Aufkleber am Gerät gibst du danach in der App unter Verbindungen ein (nicht im Chat). Geschaltet wird nichts.', dedupeKey: `geraet:${g.key}` }]
+        vorschlag: 'Ja = ich bereite das Verbinden vor. Den Code vom Aufkleber am Gerät gibst du danach in der App unter Verbindungen ein (nicht im Chat). Geschaltet wird nichts.', dedupeKey: key }]
     return []
 }
 
@@ -146,13 +118,18 @@ export async function offerDeviceConnections(deps: DeviceConnectDeps): Promise<{
     let created = 0
     const offered: Geraet[] = []
     for (const g of geraete) {
-        if (!g.verbinden || isDeviceConnected(deps.dataDir, g, records)) continue
+        if (!g.verbinden || geraetVerbunden(deps.dataDir, g, records)) continue
         const seen = Date.parse(g.lastSeenAt)
         if (!Number.isFinite(seen) || now - seen > OFFER_MAX_AGE_MS) continue
         const inputs = cardInputs(g)
-        const quiet = cards.some(card => inputs.some(input => card.dedupeKey === input.dedupeKey)
+        const keys = new Set([...inputs.map(input => input.dedupeKey), legacyKey(g), legacyKey(g, 'local')])
+        const quiet = cards.some(card => keys.has(card.dedupeKey)
             && (card.status === 'nein' || (card.status === 'abgelaufen' && now - Date.parse(card.expiresAt) < QUIET_AFTER_EXPIRY_MS)))
         if (quiet) continue
+        // Never a second question about the same thing (e.g. an open need thought „verbinden?“).
+        const key = inputs[0]?.dedupeKey
+        const ownOpen = cards.some(card => card.dedupeKey === key && card.aktion.kind === DEVICE_CONNECT_KIND && (card.status === 'offen' || card.status === 'spaeter'))
+        if (key && !ownOpen && await verbindungsFrageOffen(key, { dataDir: opts.dataDir || deps.dataDir, now })) continue
         for (const input of inputs) {
             const result = createApprovalCard(input, opts)
             if (result.ok && result.created) created++
@@ -169,7 +146,7 @@ export async function offerDeviceConnections(deps: DeviceConnectDeps): Promise<{
 export async function offerDeviceConnection(deps: DeviceConnectDeps, primaryId: string, weg?: 'local' | 'cloud'): Promise<{ ok: boolean; message: string; cardId?: string }> {
     const { geraet } = findDevice(deps.dataDir, primaryId, await contextOf(deps))
     if (!geraet || !geraet.verbinden) return { ok: false, message: 'Für dieses Gerät gibt es keinen Verbindungsweg.' }
-    if (isDeviceConnected(deps.dataDir, geraet)) return { ok: false, message: `${geraet.titel} ist schon verbunden.` }
+    if (geraetVerbunden(deps.dataDir, geraet, loadDevices(deps.dataDir))) return { ok: false, message: `${geraet.titel} ist schon verbunden.` }
     const inputs = cardInputs(geraet, weg)
     let cardId: string | undefined
     for (const input of inputs) {
@@ -289,7 +266,7 @@ export function createDeviceConnectExecutor(deps: DeviceConnectDeps | (() => Dev
             if (!record || ['abgelehnt', 'aus'].includes(record.status)) return false
             // 2.87.1: a question asked before the device got connected (e.g. Home Assistant
             // login finished later) closes itself instead of returning in every bundle.
-            if (isRecordConnected(d.dataDir, record)) return false
+            if (connectionState(d.dataDir, { record }).zustand === 'verbunden') return false
             // a lokal/Cloud pair: once a way was chosen for this device, the other button closes
             if (match[2]) {
                 try { const routes = readRoutes(d.dataDir); const chosen = routes[match[1]]; if (chosen && chosen.route !== match[2]) return false } catch { /* keep open */ }

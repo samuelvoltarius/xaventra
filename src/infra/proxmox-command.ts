@@ -210,6 +210,9 @@ export function createProxmoxCardExecutor(action: ProxmoxWriteAction, deps: VmsD
             return { ok: result.ok, message: result.message }
         },
         async reject() { return { ok: true, message: 'Abgelehnt — an Proxmox wurde nichts gesendet.' } },
+        // 2.89: closed when the reference no longer decodes. The guest itself lives on the Proxmox
+        // host; pool/tag/protection/cap are re-read before the single write (never from the card).
+        isStillOpen(card) { return actionForKind(card.aktion.kind) === action && decodeActionRef(action, card.aktion.ref) !== null },
     }
 }
 

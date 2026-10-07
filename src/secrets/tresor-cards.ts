@@ -32,6 +32,15 @@ export function createFreigabeExecutor(deps: TresorCardDeps = {}): CardExecutor 
                 : { ok: false, message: 'Freigabe nicht gespeichert.' }
         },
         async reject() { return { ok: true, message: 'Nicht freigegeben; der Zugang bleibt nur für die bisherigen Dienste.' } },
+        // 2.89: closed when the entry is gone or already released for this service.
+        isStillOpen(card) {
+            const match = REF.exec(String(card.aktion.ref || ''))
+            if (!match) return false
+            try {
+                const eintrag = listeEintraege(deps).find(item => item.id === match[1])
+                return Boolean(eintrag) && !dienstPasst(eintrag!.dienste, match[2])
+            } catch { return true }
+        },
     }
 }
 

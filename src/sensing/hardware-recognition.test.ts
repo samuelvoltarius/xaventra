@@ -246,8 +246,9 @@ describe('existing sensing consent and connection paths', () => {
             { type: 'homeassistant', host: '192.168.1.22', port: 8123, via: 'mdns' }])
         expect(hardwareConnectionEvents(loadDevices(dir))).toEqual([])
         const [ha] = recordCandidates(dir, [{ type: 'homeassistant', host: '192.168.1.23', port: 8123, via: 'http' }])
-        expect(hardwareConnectionEvents([ha], true)).toEqual([])
-        expect(hardwareConnectionEvents([ha], false, Date.now() + 2 * 24 * 60 * 60_000)).toEqual([])
+        // 2.89: a configured Home Assistant is „verbunden“ in the one connection truth → never offered.
+        expect(hardwareConnectionEvents([ha], { dataDir: dir, konfiguriertesHa: 'http://192.168.1.23:8123' })).toEqual([])
+        expect(hardwareConnectionEvents([ha], { dataDir: dir, now: Date.now() + 2 * 24 * 60 * 60_000 })).toEqual([])
         expect(hardwareConnectionEvents([ha])).toHaveLength(1)
     })
 

@@ -9,6 +9,7 @@ import { vorherZustand } from './smart-control-http.js'
 import { createDeviceConnectExecutor, DEVICE_CONNECT_KIND, offerDeviceConnections, type DeviceConnectDeps } from './device-connect.js'
 import { consolidateDevices } from './device-consolidation.js'
 import { geraeteUeberblick, ownerGeraeteAntwort } from './device-overview.js'
+import { connectionState } from '../connections/connection-state.js'
 import type { DeviceRecord } from './device-registry.js'
 import { fachwoerterIn, nutzenSatz } from './device-words.js'
 import { deviceEvents } from './runtime.js'
@@ -92,11 +93,12 @@ describe('Verbinden: lokal entscheidet sie selbst, EIN Satz + EIN Knopf, keine F
 describe('Live-Befund: „Welche smarten Geräte findest du?“ → kurze Geräteliste, Technik nur hinter Details', () => {
     it('eine Zeile je echtem Gerät, Ampel + ein Satz, höchstens 600 Zeichen, keine Ids/Fachwörter', () => {
         const k = consolidateDevices(JSON.parse(readFileSync(join(dir, 'sensing', 'devices.json'), 'utf8')).devices, ctx)
-        const text = geraeteUeberblick(dir, k, () => false)
-        expect(text.split('\n')[0]).toBe('🟡 Ich kenne 5 Geräte in deinem Netz — 4 warten aufs Verbinden.')
-        expect(text).toContain('• Home Assistant — wartet aufs Verbinden')
+        // 2.89: the state of every line comes from the one connection truth.
+        const text = geraeteUeberblick(dir, k, g => connectionState(dir, { geraet: g }))
+        expect(text.split('\n')[0]).toBe('🟡 Ich kenne 5 Geräte in deinem Netz — 4 sind noch nicht verbunden.')
+        expect(text).toContain('• Home Assistant — gefunden, noch nicht verbunden')
         expect(text).toContain('• 3D-Drucker — ich sehe seinen Fortschritt')
-        expect(text).toContain('• Smart-Gerät — wartet aufs Verbinden')
+        expect(text).toContain('• Smart-Gerät — gefunden, noch nicht verbunden')
         expect(text).toContain('Verbinden: je ein Knopf in der Nachricht „Geräte gefunden“.')
         expect(text.length).toBeLessThanOrEqual(600)
         expect(text).not.toMatch(/192\.0\.2|dev-|g-[a-f0-9]{10}/)
@@ -106,7 +108,7 @@ describe('Live-Befund: „Welche smarten Geräte findest du?“ → kurze Gerät
     it('die Antwort hängt die EINE Verbinden-Bündelnachricht an', async () => {
         let kicked = 0
         const text = await ownerGeraeteAntwort(dir, { kick: () => { kicked++ } })
-        expect(text).toContain('warten aufs Verbinden')
+        expect(text).toContain('noch nicht verbunden')
         expect(kicked).toBe(1)
         const cards = listApprovalCards({ dataDir: dir, status: 'offen' })
         expect(cards.length).toBeGreaterThan(0)

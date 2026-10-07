@@ -54,7 +54,7 @@ describe('Anmeldelink: ein Satz + URL-Knopf, state immer gesetzt', () => {
     it('ein Knopf-Link wird weitergereicht, aber nie gespeichert oder ins Protokoll geschrieben', async () => {
         const dir = tmp()
         const secretish = 'https://ha.example.com/auth/authorize?state=' + 'a'.repeat(48)
-        registerCardExecutor({ kind: 'test-link', async execute() { return { ok: true, message: 'Ein Schritt noch.', link: { label: 'Bei Home Assistant anmelden', url: secretish } } } })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'test-link', async execute() { return { ok: true, message: 'Ein Schritt noch.', link: { label: 'Bei Home Assistant anmelden', url: secretish } } } })
         const card = createApprovalCard({ art: 'test-link', titel: 't', beleg: 'b', vorschlag: 'v', aktion: { kind: 'test-link', ref: 'x1' } }, { dataDir: dir })
         if (!card.ok) throw new Error('card')
         const result = await answerApprovalCard(`ac:${card.card.buttons.find(b => b.answer === 'ja')!.token}`, { userId: '42', ownerIds: ['42'] }, { dataDir: dir })

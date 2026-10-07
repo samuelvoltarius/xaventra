@@ -117,6 +117,12 @@ export function createTelefonCardExecutor(deps: AriDeps = {}): CardExecutor {
             savePlans(loadPlans(deps.opts).filter(item => item.id !== card.aktion.ref), deps.opts)
             return { ok: true, message: 'Gut, ich rufe nicht an.' }
         },
+        // 2.89: closed once the call plan is gone (called, declined) or older than its validity.
+        isStillOpen(card) {
+            const ref = String(card.aktion.ref || '')
+            const plan = PLAN_ID.test(ref) ? loadPlans(deps.opts).find(item => item.id === ref) : undefined
+            return Boolean(plan) && (deps.opts?.now || Date.now)() - plan!.createdAt < PLAN_TTL_MS
+        },
     }
 }
 

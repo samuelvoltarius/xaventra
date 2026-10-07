@@ -40,6 +40,7 @@ import { chooseSmartRoute, selectedSmartRoute, approveSmartRoute, smartRouteEven
 import { proposeSmartSwitch, confirmSmartSwitch } from './smart-control.js'
 import { executeSmartSwitch } from './smart-control-http.js'
 import { nutzenSatz } from './device-words.js'
+import { connectionState, recordFrageKey, standKontext, verbindungsFrageOffen } from '../connections/connection-state.js'
 
 const PRINTER_TYPES: ReadonlySet<string> = new Set(['moonraker', 'octoprint', 'prusalink', 'bambu'])
 
@@ -301,17 +302,20 @@ async function performDiscovery(deps: RunDeps, signal?: AbortSignal): Promise<st
         const events = deviceEvents({ monitored: handled.monitored, asked: [] })
         if (events.length) await busForPublish().publish('discovery', events)
         if (process.env.NOVA_NODE_ONLY !== 'true') {
-            const haConfigured = resolveHaConnection(cfg.adapters.homeassistant, state.rootConfig)
             const found = loadDevices(dataDir)
             // Shelly/Tasmota/ESPHome keep their existing connect offer; HA, Hue, Tuya and
             // Matter are asked through the device bundle (no second question).
             const bundled = (d: DeviceRecord) => d.type === 'homeassistant' || ['hue', 'tuya', 'matter'].includes(String(d.hardware?.ecosystem)) || d.hardware?.connector === 'matter-ip'
-            const offers = hardwareConnectionEvents(found, Boolean(haConfigured)).filter(offer => {
+            const offers: RawEvent[] = []
+            for (const offer of hardwareConnectionEvents(found, { dataDir })) {
                 const d = found.find(d => d.id === offer.subject)!
-                if (bundled(d)) return false
+                if (bundled(d)) continue
                 const route = selectedSmartRoute(dataDir, d)
-                return !d.hardware?.connector || route === 'local' || (route === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(d.hardware.connector))
-            })
+                if (!(!d.hardware?.connector || route === 'local' || (route === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(d.hardware.connector)))) continue
+                // 2.89: never a second question about the same thing (card or thought with the same key).
+                if (await verbindungsFrageOffen(offer.dedupeKey, { dataDir })) continue
+                offers.push(offer)
+            }
             if (offers.length) {
                 await busForPublish().publish('discovery', offers)
                 for (const offer of offers) markHardwareAsked(dataDir, offer.subject, String(offer.evidence.fingerprint))
@@ -364,7 +368,7 @@ export async function approveSensingDevice(id: string, approver: Approver, finge
             const { getConnection, connectionIdFor } = await import('../connections/connection-store.js')
             const basis = `http://${device.host}:${device.port}`
             const existing = getConnection(connectionIdFor('home-assistant'), { dataDir })
-            if (existing?.status === 'verbunden' && existing.basis !== basis) return { ok: false, message: 'Bereits mit einer anderen Home-Assistant-Zentrale verbunden. Kein automatischer Wechsel.' }
+            if (existing && connectionState(dataDir, { verbindung: existing }).zustand === 'verbunden' && existing.basis !== basis) return { ok: false, message: 'Bereits mit einer anderen Home-Assistant-Zentrale verbunden. Kein automatischer Wechsel.' }
             return connectFromApproval('home-assistant', approver.principalId, { ...defaultDeps(), dataDir, foundHomeAssistant: () => [basis] })
         }
         if (!await verifyHardwareConnection(device, deps)) return { ok: false, message: 'Gerätekennung oder unterstützte lesende Verbindung nicht bestätigt. Nichts verbunden.' }
@@ -394,16 +398,25 @@ export function declineSensingDevice(id: string, approver: Approver, fingerprint
     return setDeviceStatus(state.dataDir, id, 'abgelehnt', approver)
 }
 
-/** Only supported, protocol-verified endpoints become actionable questions. */
-export function hardwareConnectionEvents(devices: DeviceRecord[], haConfigured = false, now = Date.now()): RawEvent[] {
+/**
+ * Only supported, protocol-verified endpoints become actionable questions. 2.89: only what
+ * the one connection truth calls „gefunden“ (a connected or configured Home Assistant, a
+ * paired bridge … is never offered again); the question key is the shared
+ * `verbindung:<connector|Gerät>` of every connection question.
+ */
+export function hardwareConnectionEvents(devices: DeviceRecord[], options: { dataDir?: string; now?: number; konfiguriertesHa?: string | null } = {}): RawEvent[] {
+    const now = options.now ?? Date.now()
+    const dataDir = options.dataDir || state.dataDir
+    const kontext = standKontext(dataDir, { devices, ...(options.konfiguriertesHa !== undefined ? { konfiguriertesHa: options.konfiguriertesHa } : {}) })
     return devices.filter(d => d.status === 'gefunden' && Number.isFinite(Date.parse(d.lastSeenAt)) && now - Date.parse(d.lastSeenAt) <= 24 * 60 * 60_000
-        && ((d.type === 'homeassistant' && d.via === 'http' && !haConfigured) || ['esphome-native', 'matter-ip'].includes(d.hardware?.connector) || (d.hardware?.certainty === 'confirmed' && ['shelly-readonly', 'hue-readonly', 'tasmota-readonly', 'tuya-announcements'].includes(d.hardware.connector))))
-        .filter(d => d.hardwareAskedFingerprint !== sensingDeviceFingerprint(d)).map(d => {
+        && ((d.type === 'homeassistant' && d.via === 'http') || ['esphome-native', 'matter-ip'].includes(d.hardware?.connector) || (d.hardware?.certainty === 'confirmed' && ['shelly-readonly', 'hue-readonly', 'tasmota-readonly', 'tuya-announcements'].includes(d.hardware.connector))))
+        .filter(d => d.hardwareAskedFingerprint !== sensingDeviceFingerprint(d))
+        .filter(d => connectionState(dataDir, { record: d }, kontext).zustand === 'gefunden').map(d => {
             const fingerprint = sensingDeviceFingerprint(d)
             const compatible = [...new Set(devices.filter(other => other.status === 'gefunden' && other.hardware?.certainty === 'confirmed' && other.hardware.ecosystem
                 && now - Date.parse(other.lastSeenAt) <= 24 * 60 * 60_000).map(other => other.hardware.ecosystem))].join(', ')
             const label = d.hardware ? `${HARDWARE_LABEL[d.hardware.kind]}: ${d.hardware.label}` : 'Home Assistant (Smart-Home-Zentrale; angeschlossene Geräte noch nicht ausgelesen)'
-            return { kind: 'discovery.connection-offer', subject: d.id, severity: 'info', dedupeKey: `hardware-offer:${d.id}:${fingerprint}`, dedupeWindowMs: 365 * 24 * 60 * 60_000,
+            return { kind: 'discovery.connection-offer', subject: d.id, severity: 'info', dedupeKey: recordFrageKey(dataDir, d, kontext), dedupeWindowMs: 365 * 24 * 60 * 60_000,
                 summary: `${label} bei ${d.host} erkannt. ${d.hardware?.connector === 'tuya-announcements' ? 'Soll ich den gewählten lesenden Gerätezugriff einrichten? Lokal braucht der direkte Zugriff deinen privaten Local-Key; Geräteart und Zugang sind noch ungeprüft.' : 'Soll ich mich damit verbinden?'}${d.type === 'homeassistant' && compatible ? ` Weitere Protokollfunde: ${compatible}; ob diese dort eingebunden sind, prüfe ich erst nach Anmeldung.` : ''}`, evidence: { geraet: d.id, fingerprint, adresse: d.host, kennung: d.hardware?.identity || 'Home-Assistant-Manifest' },
                 hint: { importance: 'normal', title: `Gefunden: ${label}`, level: 'fragen', proposal: d.hardware?.connector === 'tuya-announcements'
                     ? `Zuerst /geraete weg ${d.id} lokal oder /geraete weg ${d.id} cloud wählen. Ja bestätigt danach nur den gewählten lesenden Weg: lokal direkte verschlüsselte Abfragen nach separater privater Local-Key-Eingabe im Desktop; Cloud Funktionsschema mit gesondertem API-Zugang. Kein Schalten und kein automatischer Wechsel; Geräteart bleibt bis zu Belegen unbekannt.` : d.type === 'homeassistant'
@@ -481,7 +494,7 @@ export async function handleGeraeteCommand(args: string, principal: { principalI
                 if (result.ok && state.bus) {
                     const devices = loadDevices(state.dataDir), chosen = devices.find(d => d.id === id)!
                     const selected = selectedSmartRoute(state.dataDir, chosen)
-                    const offers = hardwareConnectionEvents(devices).filter(offer => offer.subject === id && (selected === 'local' || (selected === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(chosen.hardware?.connector))))
+                    const offers = hardwareConnectionEvents(devices, { dataDir: state.dataDir }).filter(offer => offer.subject === id && (selected === 'local' || (selected === 'cloud' && ['tuya-announcements', 'shelly-readonly'].includes(chosen.hardware?.connector))))
                     if (offers.length) {
                         await busForPublish().publish('discovery', offers)
                         for (const offer of offers) markHardwareAsked(state.dataDir, id, String(offer.evidence.fingerprint))

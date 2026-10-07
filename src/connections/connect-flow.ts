@@ -35,6 +35,7 @@ import {
     type ConnectionRecord, type ConnectionTestResult,
 } from './connection-store.js'
 import { haBearerFetch, isAuthFailure, markLoginExpired, startLogin, type LoginDeps } from './connector-login.js'
+import { connectionState } from './connection-state.js'
 
 export const CONNECT_CARD_KIND = 'verbindung-herstellen'
 const REQUEST_ID = /^r-[a-f0-9]{16}$/
@@ -115,6 +116,25 @@ function rightsSummary(manifest: Pick<ConnectorManifest, 'capabilities'>): strin
     return `${reads} lesende Werkzeuge laufen selbst; ${asks} schreibende/schaltende fragen dich jedes Mal${caps.includes('loeschen') ? '; Löschen macht sie nie' : ''}.`
 }
 
+/** 2.89: „verbunden?“ for a connector — the one connection truth (connection-state.ts; a configured Home Assistant counts). */
+function connectedNow(connectorId: string, deps: ConnectDeps): boolean {
+    return connectionState(deps.dataDir || getNovaDataDir(), { connectorId }).zustand === 'verbunden'
+}
+
+/**
+ * Connected and nothing to renew: a pinned directory connection whose directory lists a
+ * newer version (`versionNeu`) may be connected again on purpose (new check, new card).
+ */
+function alreadyConnected(connectorId: string, deps: ConnectDeps): boolean {
+    return connectedNow(connectorId, deps) && !getConnection(connectionIdFor(connectorId), deps)?.versionNeu
+}
+
+/** 2.89 B0: is the request of this card still something to do (exists, service not connected meanwhile)? */
+function isConnectRequestOpen(requestId: string, deps: ConnectDeps): boolean {
+    const request = readRequests(deps).find(item => item.id === requestId)
+    return Boolean(request) && !alreadyConnected(request!.connectorId, deps)
+}
+
 export type RequestResult = { ok: true; message: string; card: ApprovalCard; created: boolean } | { ok: false; message: string }
 
 /** Owner pressed „Verbinden“ (desktop, Telegram) or a need was found: one card. */
@@ -126,8 +146,9 @@ export async function requestConnect(input: { connectorId: string; basis?: strin
     if (community && !community.remotes.length) return { ok: false, message: `${community.title} gibt es nur als Paket zum Installieren — das führe ich aus dem Verzeichnis nie automatisch aus.` }
     const connectorId = manifest?.name || community!.name
     const existing = getConnection(connectionIdFor(connectorId), deps)
-    // 2.88: a pinned directory connection with a new version may be connected again (new check, new card).
-    if (existing && existing.status === 'verbunden' && !existing.versionNeu) return { ok: false, message: `${existing.title} ist schon verbunden.` }
+    // 2.89: the one connection truth (a configured Home Assistant counts); 2.88: a pinned
+    // directory connection with a new version may be connected again (new check, new card).
+    if (alreadyConnected(connectorId, deps)) return { ok: false, message: `${existing?.title || manifest?.title || community!.title} ist schon verbunden.` }
     const pruefung = community ? pruefeEintrag(community, catalog) : undefined
     let basis: string | undefined
     let ordner: string | undefined
@@ -190,6 +211,12 @@ export async function establishConnection(requestId: string, approvedBy: string,
     const request = requests.find(item => item.id === requestId)
     if (!request) return { ok: false, message: 'Diese Anfrage gibt es nicht mehr — nichts eingerichtet.' }
     writeRequests(requests.filter(item => item.id !== requestId), deps)
+    // 2.89 B0: an old card never resets a connection that is connected meanwhile
+    // (saveConnection would overwrite „verbunden“ with „wartet-auf-anmeldung“).
+    if (alreadyConnected(request.connectorId, deps)) {
+        const title = getConnection(connectionIdFor(request.connectorId), deps)?.title || findConnector(request.connectorId, deps.catalog || getConnectorCatalog())?.title || request.connectorId
+        return { ok: true, message: `${title} ist schon verbunden — nichts geändert.` }
+    }
     // Resolved again from the release catalog / the cache — never from the card text.
     const manifest = request.community ? undefined : findConnector(request.connectorId, deps.catalog || getConnectorCatalog())
     const community = request.community ? findDirectoryEntry(request.connectorId, deps.directoryCachePath) : undefined
@@ -207,8 +234,7 @@ export async function establishConnection(requestId: string, approvedBy: string,
 export async function connectFromApproval(connectorId: string, approvedBy: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string; link?: { label: string; url: string } }> {
     const manifest = findConnector(connectorId, deps.catalog || getConnectorCatalog())
     if (!manifest) return { ok: false, message: 'Diesen Dienst gibt es nicht im geprüften Katalog — nichts eingerichtet.' }
-    const existing = getConnection(connectionIdFor(manifest.name), deps)
-    if (existing?.status === 'verbunden') return { ok: true, message: `${manifest.title} ist schon verbunden.` }
+    if (connectedNow(manifest.name, deps)) return { ok: true, message: `${manifest.title} ist schon verbunden.` }
     const basis = foundBasis(manifest, deps)
     if (manifest.transport.art === 'http' && manifest.transport.url.startsWith('{basis}') && !basis) {
         return { ok: false, message: `${manifest.title}: keine Adresse gefunden — bitte in „Verbindungen“ mit Adresse verbinden.` }
@@ -281,6 +307,8 @@ async function haRestTest(record: ConnectionRecord, deps: ConnectDeps): Promise<
 export async function connectAndTest(connectionId: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string }> {
     const record = getConnection(connectionId, deps)
     if (!record) return { ok: false, message: 'Unbekannte Verbindung.' }
+    // 2.89: taken over from the configuration — reached with the configured token, nothing to test here.
+    if (record.herkunft === 'konfiguriert') return { ok: true, message: `${record.title} ist über die Konfiguration verbunden.` }
     const haLogin = record.connectorId === 'home-assistant' && record.auth === 'ha-login'
     // 2.86.1 (d): a Home Assistant already known to run without its MCP integration is tested directly.
     if (haLogin && record.weg === 'rest') return haRestTest(record, deps)
@@ -390,6 +418,8 @@ export function createConnectCardExecutor(deps: ConnectDeps = defaultDeps()): Ca
             writeRequests(readRequests(deps).filter(item => item.id !== card.aktion.ref), deps)
             return { ok: true, message: 'Nicht verbunden; ich frage danach nicht von selbst wieder.' }
         },
+        // 2.89 B0: closed when the request is gone or the service got connected meanwhile.
+        isStillOpen(card) { return isConnectRequestOpen(card.aktion.ref, deps) },
     }
 }
 

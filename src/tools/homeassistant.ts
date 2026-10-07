@@ -70,7 +70,11 @@ export async function hassAccess(opts: { env?: NodeJS.ProcessEnv; dataDir?: stri
         const { loadConnections } = await import('../connections/connection-store.js')
         const { haBearerFetch } = await import('../connections/connector-login.js')
         const { defaultDeps } = await import('../connections/connect-flow.js')
-        const record = loadConnections({ dataDir: opts.dataDir }).find(c => c.connectorId === 'home-assistant' && c.status === 'verbunden' && c.auth === 'ha-login' && c.basis)
+        const { connectionState } = await import('../connections/connection-state.js')
+        const { getNovaDataDir } = await import('../core/data-root.js')
+        // 2.89: „verbunden“ from the one connection truth; only the owner's HA login has a bearer here.
+        const record = loadConnections({ dataDir: opts.dataDir }).find(c => c.connectorId === 'home-assistant' && c.auth === 'ha-login' && c.basis
+            && connectionState(opts.dataDir || getNovaDataDir(), { verbindung: c }).zustand === 'verbunden')
         if (!record?.basis) return null
         const bearer = haBearerFetch(record.id, { ...defaultDeps(), ...(opts.dataDir ? { dataDir: opts.dataDir } : {}), ...(opts.fetchFn ? { fetchFn: opts.fetchFn as any } : {}) })
         return { url: record.basis.replace(/\/+$/, ''), fetch: (url, init) => bearer(url, init as any) as Promise<Response> }

@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { loadConnections } from '../connections/connection-store.js'
+import { connectionState } from '../connections/connection-state.js'
 import { cleanBasis, defaultDeps } from '../connections/connect-flow.js'
 import { haBearerFetch } from '../connections/connector-login.js'
 import { cleanText } from './ports.js'
@@ -38,7 +39,9 @@ export function recordHaInventory(dataDir: string, inventory: HaInventory[]): vo
 
 export async function refreshHaInventory(dataDir: string, legacy: HaConnection | null, signal: AbortSignal,
     fetchFn: typeof fetch = fetch, now = Date.now()): Promise<HaInventory[]> {
-    const records = loadConnections({ dataDir }).filter(c => c.connectorId === 'home-assistant' && c.status === 'verbunden' && c.auth === 'ha-login' && c.approvedBy && c.basis)
+    // 2.89: „verbunden“ from the one connection truth; this reader only needs the owner's HA login records.
+    const records = loadConnections({ dataDir }).filter(c => c.connectorId === 'home-assistant' && c.auth === 'ha-login' && c.approvedBy && c.basis
+        && connectionState(dataDir, { verbindung: c }).zustand === 'verbunden')
     const sources: Array<{ id: string; base: string; fetch: typeof fetch }> = []
     for (const c of records.slice(0, 4)) {
         const base = cleanBasis(c.basis)
@@ -92,7 +95,7 @@ export function haInventoryEvents(sources: HaInventory[], previous: Record<strin
 export function haInventoryAwareness(dataDir: string, now = Date.now(), legacyAuthorized = false): string {
     let sources: HaInventory[] = []
     try { const raw = JSON.parse(readFileSync(file(dataDir), 'utf8')); sources = Array.isArray(raw.sources) ? raw.sources.slice(0, 4) : [] } catch { /* no receipt */ }
-    const approved = new Set(loadConnections({ dataDir }).filter(c => c.connectorId === 'home-assistant' && c.status === 'verbunden' && c.approvedBy).map(c => c.id))
+    const approved = new Set(loadConnections({ dataDir }).filter(c => c.connectorId === 'home-assistant' && c.approvedBy && connectionState(dataDir, { verbindung: c }).zustand === 'verbunden').map(c => c.id))
     const lines = ['Gerätefunktionen hinter Home Assistant (autorisierte lesende Bestandsabfrage):']
     for (const source of sources) {
         // A removed/expired owner connection invalidates its cached view immediately.

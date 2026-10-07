@@ -908,13 +908,10 @@ async function handleMessageInScope(
     if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })
         && principalContext.permission === 'owner' && !(requestIsGroup || isGroupMessage === true)) {
         try {
-            const { connectQuestionTarget, answerConnectQuestion } = await import('../connections/connect-question.js')
+            const { connectQuestionTarget, answerConnectQuestionLive } = await import('../connections/connect-question.js')
             if (connectQuestionTarget(content)) {
-                const { collectConnections } = await import('../connections/connections-view.js')
-                const view: any = await collectConnections()
-                const entries = [...(view.gefunden || []).map((g: any) => ({ title: String(g.title || ''), verbunden: g.verbunden === true })),
-                    ...(view.verbunden || []).map((v: any) => ({ title: String(v.title || ''), verbunden: true }))]
-                const connectAnswer = answerConnectQuestion(content, entries)
+                // 2.89: connector / device kind + the one connection truth (no title substring).
+                const connectAnswer = await answerConnectQuestionLive(content)
                 if (connectAnswer) {
                     await answer(connectAnswer, 'connect:already-connected')
                     return

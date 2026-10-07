@@ -98,7 +98,7 @@ describe('Karten-Ja füttert die Vertrauensleiter', () => {
 
     it('infrastructure cards (Proxmox) always ask: their „Ja“ never climbs the ladder', async () => {
         unregisterCardExecutor('pve-start')
-        registerCardExecutor({ kind: 'pve-start', impact: 'infra', execute: async () => ({ ok: true, message: 'gestartet' }) })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'pve-start', impact: 'infra', execute: async () => ({ ok: true, message: 'gestartet' }) })
         for (let i = 0; i < 3; i++) {
             const created = createApprovalCard({ art: 'proxmox', titel: 'VM starten', beleg: 'b', vorschlag: 'v', aktion: { kind: 'pve-start', ref: `vm${i}` } }, opts)
             if (!created.ok) throw new Error(created.reason)
@@ -132,7 +132,7 @@ describe('„Immer erlauben“ lands in trust.json (one store), never install-po
     it('release, patch, physical/external, single-Ja and removal kinds never get „Immer erlauben“, even from a permissive executor', () => {
         for (const kind of ['release-promote', 'patch', 'drucken', 'mail-senden', 'vllm-wechsel', 'pve-entfernen']) {
             unregisterCardExecutor(kind)
-            registerCardExecutor({ kind, allowAlways: () => true, standingSubject: () => 'x', execute: async () => ({ ok: true, message: 'ok' }) })
+            registerCardExecutor({ isStillOpen: () => true, kind, allowAlways: () => true, standingSubject: () => 'x', execute: async () => ({ ok: true, message: 'ok' }) })
             const created = createApprovalCard({ art: kind, titel: kind, beleg: 'b', vorschlag: 'v', aktion: { kind, ref: 'r1' } }, opts)
             unregisterCardExecutor(kind)
             if (!created.ok) continue
@@ -144,7 +144,7 @@ describe('„Immer erlauben“ lands in trust.json (one store), never install-po
 
     it('three confirmed Ja on release cards are counted under release-ausrollen but never promote', async () => {
         unregisterCardExecutor('release-promote')
-        registerCardExecutor({ kind: 'release-promote', execute: async () => ({ ok: true, message: 'ok' }) })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'release-promote', execute: async () => ({ ok: true, message: 'ok' }) })
         for (let i = 0; i < 3; i++) {
             const created = createApprovalCard({ art: 'release', titel: 'r', beleg: 'b', vorschlag: 'v', aktion: { kind: 'release-promote', ref: `r${i}` } }, opts)
             if (!created.ok) throw new Error(created.reason)

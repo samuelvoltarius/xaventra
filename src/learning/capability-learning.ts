@@ -51,6 +51,7 @@ import { sideEffectsDisabled } from '../core/side-effects.js'
 import type { SoftwareCapability } from '../install/software-candidates.js'
 import type { SearchHit, WebSearchPort } from '../install/software-freshness.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { connectedConnectorIds } from '../connections/connection-state.js'
 
 // ---------------------------------------------------------------------------
 // Felder, für die „kann ich / kann ich nicht“ ohne Modell belastbar ist
@@ -294,6 +295,11 @@ export interface LearnDeps {
     dataDir?: string
     now?: () => number
     inventory(): Promise<CapabilityInventory>
+    /**
+     * 2.89: the latest inventory without waiting (card maintenance is synchronous): a
+     * „Soll ich es lernen?“ card closes itself once the ability is there. null = not known yet.
+     */
+    inventoryNow?(): CapabilityInventory | null
     search: WebSearchPort | null
     /** MCP-Verzeichnis (Community, ungeprüft; nur gelesen). */
     directory(query: string): Array<{ name: string; title?: string }>
@@ -468,7 +474,12 @@ export function createLearnCardExecutor(getDeps: () => LearnDeps): CardExecutor 
             return { ok: Boolean(job), message: 'Okay, ich lerne es nicht.' }
         },
         isStillOpen(card) {
-            return getLearnJob(card.aktion.ref, getDeps())?.status === 'angeboten'
+            const deps = getDeps()
+            const job = getLearnJob(card.aktion.ref, deps)
+            if (job?.status !== 'angeboten') return false
+            // 2.89: closed when the ability is there by now (connected, a tool, learned elsewhere).
+            const inventory = deps.inventoryNow?.() ?? null
+            return !(inventory && assessCapability(`Kannst du ${job.topic}?`, inventory).status === 'kann')
         },
     }
 }
@@ -692,22 +703,33 @@ export async function capabilityLearningTick(deps: LearnDeps): Promise<{ learned
 // Produktion
 // ---------------------------------------------------------------------------
 
+/** 2.89: the last collected inventory (tools of the registry) for the synchronous card check. */
+let lastInventory: CapabilityInventory | null = null
+
+/** The latest inventory: tools as last collected, connections and learned abilities read now. */
+function inventoryNow(dataDir?: string): CapabilityInventory | null {
+    if (!lastInventory) return null
+    let connected = lastInventory.connected
+    try { connected = connectedConnectorIds(dataDir) } catch { /* keep the last */ }
+    const toolSet = new Set(lastInventory.tools)
+    const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
+    return { tools: lastInventory.tools, connected, learned }
+}
+
 async function collectInventory(dataDir?: string): Promise<CapabilityInventory> {
     const tools: string[] = []
     try {
         const { getToolRegistry } = await import('../tools/complete-registry.js')
         for (const tool of getToolRegistry().getAll()) if (tool?.name) tools.push(tool.name)
     } catch { /* leeres Register: dann entscheidet nur, was belegt ist */ }
-    const connected = new Set<string>()
-    try {
-        const { loadConnections } = await import('../connections/connection-store.js')
-        for (const record of loadConnections(dataDir ? { dataDir } : {})) if (record.status === 'verbunden') connected.add(record.connectorId)
-    } catch { /* keine Verbindungen */ }
-    if (process.env.HASS_URL && process.env.HASS_TOKEN) connected.add('home-assistant')
+    // 2.89: „verbunden“ kommt aus der einen Verbindungs-Wahrheit (konfiguriertes HA eingeschlossen).
+    let connected = new Set<string>()
+    try { connected = connectedConnectorIds(dataDir) } catch { /* keine Verbindungen */ }
     const toolSet = new Set(tools)
     // Ein gelerntes Werkzeug gilt nur, solange es im Register steht.
     const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
-    return { tools, connected, learned }
+    lastInventory = { tools, connected, learned }
+    return lastInventory
 }
 
 async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResult> {
@@ -725,9 +747,10 @@ async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResul
         return tool.counters.successes > 0 ? { result: 'ok', detail: 'erster echter Aufruf erfolgreich' } : { result: 'warten' }
     }
     if (job.weg === 'verbindung' && job.ref) {
-        const { loadConnections } = await import('../connections/connection-store.js')
+        const [{ connectionState }, { loadConnections }] = await Promise.all([import('../connections/connection-state.js'), import('../connections/connection-store.js')])
+        const stand = connectionState(dataDir || (await import('../core/data-root.js')).getNovaDataDir(), { connectorId: job.ref })
+        if (stand.zustand === 'verbunden') return { result: 'ok', detail: stand.grund }
         const record = loadConnections(dataDir ? { dataDir } : {}).find(item => item.connectorId === job.ref)
-        if (record?.status === 'verbunden') return { result: 'ok', detail: record.letzterTest?.ok ? `verbunden, ${record.letzterTest.werkzeuge} Werkzeuge getestet` : 'verbunden' }
         if (record?.status === 'fehler') return { result: 'fehler', detail: record.letzterTest?.fehler || 'Verbindung fehlgeschlagen' }
         return { result: 'warten' }
     }
@@ -745,6 +768,7 @@ async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResul
 export function defaultLearnDeps(): LearnDeps {
     return {
         inventory: () => collectInventory(),
+        inventoryNow: () => inventoryNow(),
         search: { async search(query) { const { createGovernedWebSearch } = await import('../install/software-freshness.js'); return createGovernedWebSearch().search(query) } },
         // Nur der Cache des MCP-Verzeichnisses, nie das Netz.
         directory: query => { try { return directorySearch?.(query) ?? [] } catch { return [] } },
@@ -830,14 +854,14 @@ let offerCardSync: ((input: NewCardInput) => { ok: boolean; card?: ApprovalCard 
 /** Lädt die Module der Produktions-Ports (einmal, idempotent). */
 export async function prepareLearnDeps(): Promise<LearnDeps> {
     if (!offerCardSync) {
-        const [{ searchDirectory }, { matchRequestWords }, { findConnector }, { loadConnections }, forge, cards] = await Promise.all([
+        const [{ searchDirectory }, { matchRequestWords }, { findConnector }, { connectedConnectorIds }, forge, cards] = await Promise.all([
             import('../connections/registry-directory.js'), import('../connections/connection-demand.js'), import('../connections/connector-catalog.js'),
-            import('../connections/connection-store.js'), import('../tools/skill-builder.js'), import('../core/approval-card-sources.js'),
+            import('../connections/connection-state.js'), import('../tools/skill-builder.js'), import('../core/approval-card-sources.js'),
         ])
         directorySearch = query => searchDirectory(query, { limit: 3 }).map(entry => ({ name: entry.name, title: entry.title }))
         connectorCandidates = (topic, domain) => {
             const ids = new Set([...(domain?.connectors || []), ...matchRequestWords(topic)])
-            const connected = new Set(loadConnections().filter(item => item.status === 'verbunden').map(item => item.connectorId))
+            const connected = connectedConnectorIds()
             return [...ids].filter(id => findConnector(id) && !connected.has(id))
         }
         recipeBuilderReady = () => forge.hasForgeModel()

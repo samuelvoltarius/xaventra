@@ -216,7 +216,7 @@
     return `<section class="section" aria-labelledby="smart-access"><div class="section-head"><h2 id="smart-access">Direkte Smart-Geräte</h2><span class="section-note">ohne Home Assistant · keine Schaltfreigabe</span></div>
       ${smartError ? `<div class="section-body">${h.esc(smartError)}</div>` : `<div class="rows">${smartDevices.map(d => `<div class="row"><div><div class="row-title">${h.esc(d.name)}</div>
       <div class="row-sub">${h.esc(d.id)} · ${d.route === 'local' ? 'lokaler lesender Zugang freigegeben' : d.route === 'cloud' ? 'Cloud-Weg freigegeben; kein lokaler Ersatzweg' : 'Zugriffsweg oder Verbindungsfreigabe noch offen'}</div>
-      <div class="row-sub">${d.accessStored ? 'Zugang privat hinterlegt; tatsächliches Abfrageergebnis separat prüfen.' : 'Kein privater Gerätezugang hinterlegt.'}</div>
+      <div class="row-sub">${d.zustand === 'verbunden' ? 'Verbunden.' : d.zustand === 'wartet' ? `Wartet: ${h.esc(d.grund || '')}.` : 'Nicht verbunden.'} ${d.accessStored ? 'Zugang privat hinterlegt.' : 'Kein privater Gerätezugang hinterlegt.'}</div>
       ${!d.route ? `<div class="row-sub">Mit Nova wählen: /geraete weg ${h.esc(d.id)} lokal oder cloud; danach /geraete ja ${h.esc(d.id)}.</div>` : ''}</div>
       <div class="row-side">${d.route && d.fields?.length ? `<button class="secondary" data-smart-access="${h.attr(d.id)}">${d.accessStored ? 'Zugang ersetzen' : d.route === 'cloud' ? 'Cloud-Zugang eintragen' : 'Lokalen Zugang eintragen'}</button>` : ''}
       ${d.controls?.length ? `<button class="secondary" data-smart-control="${h.attr(d.id)}">Geräteaktion vorbereiten</button>` : ''}</div></div>`).join('')}</div>`}</section>`

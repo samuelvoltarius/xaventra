@@ -180,6 +180,19 @@ async function desktopCardOwnerIds(): Promise<string[]> {
     return numericOwnerIds(getNovaState().config)
 }
 
+/**
+ * 2.89: who answers a card from the App. The token-checked App owner is a confirmed owner
+ * account (owner-accounts.ts) — cards are answerable without any Telegram owner.
+ */
+async function desktopCardAnswerer(req: Request): Promise<{ ownerIds: string[]; presserId: string }> {
+    const { accountKey, cardOwnerIdentities, confirmOwnerAccountIfTrusted } = await import('../users/owner-accounts.js')
+    const config = getNovaState().config
+    const raw = `desktop:${principal(req)}`
+    confirmOwnerAccountIfTrusted({ channel: 'desktop', rawUserId: raw, permission: 'owner', isGroup: false, config })
+    const ownerIds = [...new Set([...(await desktopCardOwnerIds()), ...cardOwnerIdentities(config)])]
+    return { ownerIds, presserId: accountKey('desktop', raw) }
+}
+
 function safeError(error: unknown): string { return redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 500) }
 function isDesktopOwner(req: Request): boolean { return tokenAuthenticated.has(req) }
 function desktopControlPlaneAuthoritative(): boolean {
@@ -623,7 +636,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
         try {
             const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
             await ensureBuiltinCardExecutors()
-            const result = await answerCardFromDesktop(String(req.params.id || ''), req.body?.answer, { ownerIds: await desktopCardOwnerIds() })
+            const result = await answerCardFromDesktop(String(req.params.id || ''), req.body?.answer, await desktopCardAnswerer(req))
             if (result.status === 200) {
                 // The Telegram copies of the card lose their buttons (cosmetic; the decision is stored).
                 try {

@@ -27,7 +27,7 @@
  *   (`isStandingExcluded`) also decide whether „Immer erlauben“ exists at all.
  *
  * API for other modules (e.g. the planner):
- *   registerCardExecutor({ kind, execute, reject?, allowAlways?, isStillOpen?, impact? })
+ *   registerCardExecutor({ kind, execute, isStillOpen, reject?, allowAlways?, impact? })  (2.89: isStillOpen required)
  *   createApprovalCard({ art, titel, beleg, vorschlag, aktion: { kind, ref }, ablaufMs?, effects?, wirkung?, dedupeKey?, node?, quelle? })
  *     -> { ok: true, card, created } | { ok: false, reason }
  *   The Main delivers new cards to Telegram (approval-card-sources.ts,
@@ -157,8 +157,13 @@ export interface CardExecutor {
     standingSubject?: (card: ApprovalCard) => string | null | undefined
     execute(card: ApprovalCard, answer: 'ja' | 'immer', ctx: CardDecisionContext): Promise<CardExecutionResult>
     reject?(card: ApprovalCard, ctx: CardDecisionContext): Promise<CardExecutionResult>
-    /** false when the underlying proposal was settled elsewhere (e.g. /setup approve). */
-    isStillOpen?(card: ApprovalCard): boolean
+    /**
+     * false when the underlying matter was settled elsewhere (e.g. /setup approve, the
+     * service got connected, the job is gone). 2.89: REQUIRED — a card closes itself
+     * (maintenance and on the press) instead of acting on something that is done.
+     * Executors whose matter can only be judged at execution time say so explicitly.
+     */
+    isStillOpen(card: ApprovalCard): boolean
 }
 
 export interface CardLedger { recordApproval(runId: string, approval: Record<string, unknown>): void }
@@ -242,6 +247,8 @@ const executors = new Map<string, CardExecutor>()
 
 export function registerCardExecutor(executor: CardExecutor): void {
     if (!executor || !KIND_PATTERN.test(String(executor.kind))) throw new Error('Ungültige Karten-Aktionsart')
+    // 2.89: every executor says when its card is settled (no card may act on something already done).
+    if (typeof executor.isStillOpen !== 'function') throw new Error(`Karten-Ausführer ${executor.kind} ohne isStillOpen`)
     if (neverListReason({ art: executor.kind, aktion: { kind: executor.kind, ref: 'x' } })) throw new Error('Nie-Liste: kein Ausführer erlaubt')
     executors.set(executor.kind, executor)
 }
@@ -252,6 +259,12 @@ export function unregisterCardExecutor(kind: string): void {
 
 export function getCardExecutor(kind: string): CardExecutor | undefined {
     return executors.get(kind)
+}
+
+/** false only when the card's executor says its matter was settled elsewhere (an error keeps it open). */
+function stillOpen(card: ApprovalCard): boolean {
+    const executor = executors.get(card.aktion.kind)
+    try { return executor?.isStillOpen ? executor.isStillOpen(card) !== false : true } catch { return true }
 }
 
 function alwaysAllowed(card: ApprovalCard): boolean {
@@ -470,11 +483,22 @@ export function formatCardText(card: ApprovalCard): string {
     return lines.join('\n')
 }
 
-/** Owner = numeric Telegram id listed in allowFrom (usernames never count). Shared with /desktop buttons. */
+/** 2.89: a confirmed owner account (`channel:rawId`, owner-accounts.ts) — never a Telegram one (those are numeric only). */
+const OWNER_ACCOUNT_KEY = /^(?!telegram:)[a-z0-9][a-z0-9-]{0,39}:\S{1,200}$/
+
+/**
+ * Owner = numeric Telegram id listed in allowFrom (usernames never count), or — 2.89 —
+ * a confirmed owner account `channel:rawId` (owner-accounts.ts `cardOwnerIdentities`):
+ * cards are answerable without Telegram. Exact match only. Shared with /desktop buttons.
+ */
 export function isCardOwner(userId: string, ownerIds: readonly string[]): boolean {
     const id = String(userId ?? '').trim()
-    if (!/^\d{1,20}$/.test(id)) return false
-    return ownerIds.some(entry => /^\d{1,20}$/.test(String(entry).trim()) && String(entry).trim() === id)
+    const numeric = /^\d{1,20}$/.test(id)
+    if (!numeric && !OWNER_ACCOUNT_KEY.test(id)) return false
+    return ownerIds.some(entry => {
+        const owner = String(entry).trim()
+        return owner === id && (numeric ? /^\d{1,20}$/.test(owner) : OWNER_ACCOUNT_KEY.test(owner))
+    })
 }
 
 function updateCard(id: string, patch: Partial<ApprovalCard>, opts: CardStoreOptions): ApprovalCard | undefined {
@@ -531,6 +555,14 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
         const refused = consume({ status: 'nein', result: { ok: false, message: never } })
         await record(refused, opts, { refused: 'nie-liste' })
         return { ok: false, code: 'nie-liste', message: never, card: refused }
+    }
+    // 2.89 B0: a card whose matter was settled elsewhere (service connected meanwhile, job
+    // gone …) closes itself on the press — nothing is executed, not even a „Nein“.
+    if (!stillOpen(card)) {
+        const settled = consume({ status: 'erledigt', result: { ok: false, message: 'Hat sich schon erledigt — nichts ausgeführt.' } })
+        noteThought({ quelle: card.quelle, titel: card.titel, status: 'erledigt' }, opts)
+        await record(settled, opts, { refused: 'erledigt' })
+        return { ok: false, code: 'verbraucht', message: 'Hat sich schon erledigt — nichts ausgeführt.', card: settled }
     }
     if (button.answer === 'immer' && !alwaysAllowed(card)) {
         // Never consume here: the token should not exist for such a card at all.
@@ -607,10 +639,7 @@ export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: A
             return cards[index]
         }
         if (now > Date.parse(card.expiresAt)) { expired.push(retire('abgelaufen')); continue }
-        const executor = executors.get(card.aktion.kind)
-        let open = true
-        try { open = executor?.isStillOpen ? executor.isStillOpen(card) !== false : true } catch { open = true }
-        if (!open) { settled.push(retire('erledigt')); continue }
+        if (!stillOpen(card)) { settled.push(retire('erledigt')); continue }
         if (card.status === 'spaeter' && card.resendAt && now >= Date.parse(card.resendAt)) {
             cards[index] = { ...card, status: 'offen', buttons: issueButtons(card), resendAt: undefined, messages: [], deliveredAt: undefined }
             resurfaced.push(cards[index])

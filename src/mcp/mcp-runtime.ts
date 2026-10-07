@@ -55,7 +55,10 @@ export async function initializeMCPRuntime(configs?: MCPServerConfig[]): Promise
         try {
             const { loadConnections } = await import('../connections/connection-store.js')
             const { defaultDeps } = await import('../connections/connect-flow.js')
-            for (const record of loadConnections().filter(item => item.status === 'verbunden' && usesMcpRuntime(item))) {
+            const { connectionState } = await import('../connections/connection-state.js')
+            const { getNovaDataDir } = await import('../core/data-root.js')
+            // 2.89: the one connection truth decides what is connected (a configured HA is REST, never MCP).
+            for (const record of loadConnections().filter(item => usesMcpRuntime(item) && connectionState(getNovaDataDir(), { verbindung: item }).zustand === 'verbunden')) {
                 try {
                     await connectConnectionRecord(record, defaultDeps())
                     connected.push(serverNameFor(record))
