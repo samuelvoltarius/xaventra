@@ -86,13 +86,13 @@ if (resume) {
         const runtime = { id: 'runtime-chat', name: 'vLLM', type: 'llm', endpoint: 'http://192.0.2.10:8000',
             status: 'running', models: ['custom-chat', 'second-finetune'], capabilities: ['llm'],
             verifiedAt: now, verificationSource: 'probe' }
-        await check('post-boot canonical discovery reaches chat and capability routing', () => {
+        await check('post-boot canonical discovery reaches chat and capability routing', async () => {
             graph.upsertLocalRuntime('fixture-worker', 'fixture-worker', runtime)
             assert.equal(api.findBestCapability(request)?.nodeName, 'fixture-worker')
             const map = api.getCapabilityMap()
             assert.ok(map.includes('vLLM: custom-chat, second-finetune'))
             assert.ok(!map.includes('Ollama: custom-chat'))
-            assert.ok(!api.getMissingCapabilities().includes('llm'))
+            assert.ok(!(await api.getMissingCapabilities()).includes('llm'))
         })
         await check('installed runtime is inventory, not an available endpoint', () => {
             graph.upsertLocalRuntime('fixture-worker', 'fixture-worker', { ...runtime, id: 'runtime-embed',
@@ -112,10 +112,11 @@ if (resume) {
                 capabilitySnapshot: graph.getSnapshot() })
             assert.deepEqual(state.llm.localCandidates, runtime.models.map(model => ({ node: 'fixture-worker', model, endpoint: runtime.endpoint })))
         })
-        await check('read path does not write the graph or perform network discovery', () => {
+        await check('read path does not write the graph or perform network discovery', async () => {
             const file = join(root, '.nova-data', 'capability-graph.json')
             const before = statSync(file).mtimeMs
-            for (let i = 0; i < 100; i++) { api.getCapabilityMap(); api.findBestCapability(request); api.getMissingCapabilities() }
+            for (let i = 0; i < 100; i++) { api.getCapabilityMap(); api.findBestCapability(request) }
+            for (let i = 0; i < 3; i++) await api.getMissingCapabilities()
             assert.equal(statSync(file).mtimeMs, before)
             assert.equal(networkAttempts, 0)
         })
