@@ -10,6 +10,7 @@
  *
  * Nothing here installs, repairs, restarts or reads secrets.
  */
+import { gpuFacts, ONLINE_WINDOW_MS } from '../mesh/node-strengths.js'
 import { existsSync, readFileSync, statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, networkInterfaces, platform, totalmem } from 'node:os'
 import { parse as parsePath } from 'node:path'
@@ -462,7 +463,7 @@ export function suggestionsFor(profile: NodeProfile): string[] {
     const out: string[] = []
     for (const item of profile.selfCheck.items) if (item.status !== 'ok') out.push(`${item.label}: ${item.detail}`)
     if (profile.gpu.backend === 'cpu' && profile.gpu.viaVllm) out.push('GPU wird über vLLM genutzt; lokale GGUF-Modelle liefen hier auf der CPU.')
-    else if (profile.gpu.name && profile.gpu.backend === 'cpu') out.push(`GPU ${profile.gpu.name} erkannt, aber ungenutzt (lokal nur CPU).`)
+    else if (gpuFacts(profile.gpu).has && profile.gpu.backend === 'cpu') out.push(`GPU ${profile.gpu.name} erkannt, aber ungenutzt (lokal nur CPU).`)
     if (profile.kubernetes) out.push('Kubernetes: Pakete nur über ein neues Image (Chart-Update per Karte); Neustarts macht Kubernetes.')
     else if (profile.installPath === 'image') out.push('Container: Pakete nur über ein neues Image beim nächsten Tausch.')
     else if (profile.installPath === 'host-agent') out.push('Gehärteter Dienst: Installation nur über den Host-Agenten (Stufe 2).')
@@ -477,12 +478,14 @@ export function formatNodeOverview(entries: Array<{ profile: NodeProfile | null;
     for (const entry of entries) {
         const profile = entry.profile
         const age = entry.local ? 'lokal' : entry.lastSeen ? `vor ${Math.max(0, Math.round((now - entry.lastSeen) / 60_000))} min` : 'nie gemeldet'
-        const stale = !entry.local && (!entry.lastSeen || now - entry.lastSeen > 5 * 60_000)
+        const stale = !entry.local && (!entry.lastSeen || now - entry.lastSeen > ONLINE_WINDOW_MS)
         if (!profile) {
             lines.push('', `${stale ? '❔' : '•'} *${entry.nodeId}* — kein Profil (${age}; ältere Version oder offline)`)
             continue
         }
-        const gpu = profile.gpu.name ? `${profile.gpu.name} (${profile.gpu.viaVllm ? 'via vLLM' : profile.gpu.backend})` : 'keine GPU'
+        // 2.89: a GPU only with compute evidence (gpuFacts); a display adapter name alone is no GPU.
+        const gpuInfo = gpuFacts(profile.gpu)
+        const gpu = gpuInfo.has ? `${gpuInfo.name || 'GPU'} (${profile.gpu.viaVllm ? 'via vLLM' : profile.gpu.backend})` : 'keine GPU'
         lines.push('',
             `${stale ? '❔' : STATUS_ICON[profile.selfCheck.status]} *${profile.nodeId}* — ${profile.role === 'main' ? 'Main' : 'Worker'}, ${RUNTIME_LABEL[profile.runtime]}${profile.rootReadOnly ? ', System schreibgeschützt' : ''}, v${profile.version} (${age}${stale ? ', veraltet' : ''})`,
             `  ${profile.cpus} Kerne, ${profile.ramGB} GB RAM, ${gpu}`)

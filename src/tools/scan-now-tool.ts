@@ -8,6 +8,7 @@
  * Nothing is installed, configured or switched; findings flow into the usual
  * thoughts/watch paths.
  */
+import { gpuFacts } from '../mesh/node-strengths.js'
 import type { NovaTool } from './complete-registry.js'
 import { getToolAbortSignal } from '../core/tool-abort-scope.js'
 
@@ -50,7 +51,9 @@ export const scanNowTool: NovaTool = {
         if (profile) {
             if (profile.ok) {
                 const p: any = profile.value || {}
-                const gpu = p.gpu?.name ? `, GPU ${p.gpu.name}${p.gpu.viaVllm ? ' (via vLLM)' : ''}` : ''
+                // 2.89: GPU only with compute evidence (gpuFacts), not for a bare display adapter name.
+                const gpuInfo = gpuFacts(p.gpu || {})
+                const gpu = gpuInfo.has && p.gpu?.name ? `, GPU ${p.gpu.name}${p.gpu.viaVllm ? ' (via vLLM)' : ''}` : ''
                 lines.push(`• Hardware: Rolle ${p.role ?? '?'}, ${p.cpu?.cores ?? '?'} Kerne, ${p.ramGB ?? '?'} GB RAM${gpu}, Laufzeit ${p.runtime ?? '?'}`)
             } else lines.push(`• Hardware: fehlgeschlagen (${(profile as any).error})`)
         }

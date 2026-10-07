@@ -26,6 +26,7 @@
  * successor is no longer "Katalogeintrag nötig" for the owner: it is collected for the
  * weekly Katalogpflege task to Claude (software-freshness.ts), flushed on every tick.
  */
+import { ONLINE_WINDOW_MS } from '../mesh/node-strengths.js'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -86,7 +87,8 @@ export interface FitResult {
 
 /** Free headroom next to vLLM on unified memory, in addition to the candidate's own need. */
 export const VLLM_SIDE_RESERVE_GB = 8
-export const STALE_PEER_MS = 10 * 60_000
+/** 2.89: the one online window of the mesh (node-strengths.ts), not a 10-minute value of its own. */
+export const STALE_PEER_MS = ONLINE_WINDOW_MS
 const UNIFIED_GPU = /\b(GB10|GB200|GH200|Grace|Thor|Orin|Jetson)\b/i
 
 // ---------------------------------------------------------------------------
