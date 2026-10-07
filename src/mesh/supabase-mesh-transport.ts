@@ -68,7 +68,7 @@ export class SupabaseMeshTransport implements MeshTransport {
         }
     }
     health(): MeshTransportHealth {
-        return { name: this.name, healthy: this.configured() && !this.lastError, connectedPeers: 0, queued: this.queued, lastSuccessAt: this.lastSuccessAt, lastError: this.lastError, encrypted: true, authenticated: true }
+        return { name: this.name, healthy: this.configured() && !this.lastError, configured: this.configured(), connectedPeers: 0, queued: this.queued, lastSuccessAt: this.lastSuccessAt, lastError: this.lastError, encrypted: true, authenticated: true }
     }
     async close(): Promise<void> { if (this.timer) clearInterval(this.timer); this.timer = null }
 

@@ -1065,6 +1065,8 @@ function pendingReplyView() {
   return `<article class="message pending"><div class="avatar">X</div><div class="message-body"><div class="message-head"><span>Xaventra</span><span class="origin">in Arbeit</span><time data-busy-seconds>${seconds}s</time></div><div class="message-content" data-busy-stage>${esc(pendingStage(seconds))}</div><div class="progress-line"><span></span></div></div></article>`
 }
 function pendingStage(seconds) {
+  // Real status of this room's running request (GET /fortschritt?room=), if the server reported one.
+  if (state.busyStep) return state.busyStep
   return seconds < 4 ? 'Nachricht wird an den Main gesendet.' : seconds < 15 ? 'Antwort vom Main steht noch aus.' : 'Die Anfrage läuft noch. Es liegt noch kein Ergebnis vor.'
 }
 function updateBusyProgress() {
@@ -1362,6 +1364,13 @@ async function sendMessage(event) {
     if (progressLoading || !state.busy) return
     progressLoading = true
     try {
+      const live = await api.get(`/api/desktop/fortschritt?room=${encodeURIComponent(roomId)}`).catch(() => null)
+      if (state.busy && state.busyRoomId === roomId) {
+        state.busyStep = typeof live?.schritt === 'string' ? live.schritt.slice(0, 160) : ''
+        updateBusyProgress()
+      }
+    } catch { /* progress is optional */ }
+    try {
       // Only this room's messages are evidence; a global progress label could
       // belong to another request and elapsed time does not prove tool usage.
       const latest = (await api.get(`/api/desktop/rooms/${encodeURIComponent(roomId)}/messages`)).messages || []
@@ -1391,6 +1400,7 @@ async function sendMessage(event) {
     state.busyTimer = null
     state.busy = false
     state.busyRoomId = null
+    state.busyStep = ''
     state.busySince = 0
     state.pendingMessage = null
     // A reply must not recreate settings/modals and discard in-progress edits.

@@ -13,6 +13,7 @@ interface ControlRecord {
 }
 
 const FILE = 'daemon-control.json'
+const ownServers = new Map<string, { instanceId: string; server: import('node:http').Server }>()
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 function alive(pid: number): boolean {
@@ -56,7 +57,11 @@ function readRecord(root: string): ControlRecord | undefined {
 export async function startDaemonControl(rootPath: string, onStop: () => Promise<void> | void) {
     const root = realpathSync.native(rootPath)
     const prior = readRecord(root)
-    if (prior && alive(prior.pid)) throw new Error('A live local daemon already owns this runtime')
+    // In a container the daemon is always PID 1: after a restart or hard crash the old record
+    // points at this very process, which is not a second daemon — it is stale.
+    // A control server of THIS process that is still listening for that root is a real owner.
+    const ownLive = (id: string) => ownServers.get(root)?.instanceId === id && ownServers.get(root)?.server.listening === true
+    if (prior && (prior.pid === process.pid ? ownLive(prior.instanceId) : alive(prior.pid))) throw new Error('A live local daemon already owns this runtime')
     const directory = join(root, '.nova-data')
     mkdirSync(directory, { recursive: true })
     const record: ControlRecord = {
@@ -106,6 +111,7 @@ export async function startDaemonControl(rootPath: string, onStop: () => Promise
         try { unlinkSync(temporary) } catch { /* best effort */ }
         throw error
     }
+    ownServers.set(root, { instanceId: record.instanceId, server })
     process.once('exit', cleanup)
     return {
         async close() {

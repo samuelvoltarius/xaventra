@@ -72,6 +72,8 @@ export interface MeshPeer {
 export interface MeshTransportHealth {
     name: string
     healthy: boolean
+    /** false = not set up at all (no URL/key): shown as „nicht eingerichtet“, never as unhealthy. */
+    configured?: boolean
     connectedPeers: number
     queued: number
     lastSuccessAt?: number

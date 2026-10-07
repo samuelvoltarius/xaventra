@@ -255,6 +255,20 @@ describe('Paket D — channels: /status and /aktivitaet from the app and from Te
         expect(result.outcome?.tools?.map((tool: any) => tool.name)).toContain('mesh_strengths')
     }, T)
 
+    it('[2.89 Abnahme] desktop: a measured fast-path answer carries its probe as evidence, a static one does not', async () => {
+        const e2e = await harness()
+        const environment = await e2e.module('core/environment.js')
+        environment.hasInternet({ force: true, run: () => { throw new Error('e2e harness: network closed') } })
+        const internet = await e2e.desktop('hast du Internet?')
+        expectClean(internet)
+        expect(internet.trace).toContain('fast-path:internet-status')
+        expect(internet.outcome?.verifiedEvidence).toBe(1)
+        expect(internet.outcome?.tools?.map((tool: any) => tool.name)).toEqual(['probe:internet-status'])
+        const identity = await e2e.desktop('wer bist du')
+        expect(identity.trace).toContain('fast-path:identity')
+        expect(identity.outcome?.verifiedEvidence || 0).toBe(0)
+    }, T)
+
     it('desktop: „Kannst du ein Fax senden?" — honest no + learning question in the app as well', async () => {
         const e2e = await harness()
         const result = await e2e.desktop('Kannst du ein Fax senden?')

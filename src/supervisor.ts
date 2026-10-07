@@ -108,7 +108,8 @@ function isProcessAlive(pid: number | null | undefined): boolean {
 function pidFromFile(): number | null {
     try {
         const pid = Number(readFileSync('.nova.pid', 'utf8').trim())
-        return Number.isInteger(pid) && pid > 0 ? pid : null
+        // A PID file naming this very process is stale (container restart: the supervisor/daemon is PID 1 again).
+        return Number.isInteger(pid) && pid > 0 && pid !== process.pid ? pid : null
     } catch { return null }
 }
 

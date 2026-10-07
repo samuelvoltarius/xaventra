@@ -114,6 +114,14 @@ Tests:
   scenarios pass.
 - A flaky witness test on Windows is now deterministic.
 
+Fixes from the live acceptance run:
+
+- Nova Desktop now shows what a running request is doing: the room status is kept per room, served by `/api/desktop/fortschritt?room=<id>`, shown in the pending reply and cleared when the run ends; it never enters the answer text.
+- On a first start without a persona, questions ("hast du Internet?") and fast-path commands are answered instead of being swallowed by the introduction.
+- "Can you connect to SearXNG?" is answered deterministically as already connected (or honestly as entered but unreachable) when a SearXNG URL is configured.
+- A daemon control record or PID file that names the current process (PID 1 after a container restart) is treated as stale instead of blocking the start.
+- Unconfigured mesh transports (no relay or Supabase set up) read "nicht eingerichtet" in the services view instead of "unhealthy".
+
 ## [2.88.3] — 2026-10-07
 
 - Normal messages were treated like internal agent jobs at one gate, so the

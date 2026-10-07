@@ -15,6 +15,8 @@ export interface DesktopAgentContext {
     workspaceId?: string
     memoryAssetIds?: string[]
     onOutcome?: (outcome: DesktopAgentOutcome) => void
+    /** 2.89.1: side sink for progress lines of this run (never part of the answer). */
+    onProgress?: (status: string) => void
     abortSignal?: AbortSignal
 }
 
@@ -42,11 +44,13 @@ export function runWithDesktopAgentContext<T>(context: DesktopAgentContext, oper
 export function getDesktopAgentContext(): DesktopAgentContext | undefined {
     const value = storage.getStore()
     if (!value) return undefined
-    const { onOutcome: _onOutcome, abortSignal: _abortSignal, ...serializable } = value
+    const { onOutcome: _onOutcome, onProgress: _onProgress, abortSignal: _abortSignal, ...serializable } = value
     return structuredClone(serializable)
 }
 
 export function getDesktopAbortSignal(): AbortSignal | undefined { return storage.getStore()?.abortSignal }
+
+export function getDesktopProgressSink(): ((status: string) => void) | undefined { return storage.getStore()?.onProgress }
 
 export function publishDesktopAgentOutcome(outcome: DesktopAgentOutcome): void {
     storage.getStore()?.onOutcome?.(structuredClone(outcome))

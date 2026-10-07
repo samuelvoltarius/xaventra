@@ -1833,6 +1833,7 @@ export async function formatMeshServices(): Promise<string> {
         const transport = getMeshTransport()
         for (const health of transport?.transportHealth() || []) {
             if (health.name === 'local') continue
+            if (health.configured === false) { lines.push(`⚪ ${health.name}: nicht eingerichtet`); continue }
             const icon = health.healthy ? '🟢' : '🔴'
             lines.push(`${icon} ${health.name}: ${health.healthy ? 'healthy' : 'unhealthy'}${health.connectedPeers ? ` | Peers ${health.connectedPeers}` : ''}${health.queued ? ` | Queue ${health.queued}` : ''}`)
         }

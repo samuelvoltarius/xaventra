@@ -2886,6 +2886,7 @@
         "./bot-profile-store.js",
         "./desktop-agent-context.js",
         "./desktop-control.js",
+        "./desktop-progress.js",
         "./desktop-views.js",
         "./external-agent-registry.js",
         "./llm-connections-api.js",
@@ -2911,6 +2912,10 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/desktop/desktop-progress.ts",
+      "imports": []
     },
     {
       "module": "src/desktop/desktop-views.ts",

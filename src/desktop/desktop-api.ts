@@ -23,6 +23,7 @@ import { registerVoiceApi } from './voice-api.js'
 import { getExternalAgentRegistry } from './external-agent-registry.js'
 import { getDesktopModelCatalog, switchDesktopModel } from './model-control.js'
 import { getNodeEnrollmentService } from './node-enrollment.js'
+import { clearDesktopProgress, readDesktopProgress, recordDesktopProgress } from './desktop-progress.js'
 import { runWithDesktopAgentContext, type DesktopAgentOutcome } from './desktop-agent-context.js'
 import { getBlueTeamService } from '../security/blue-team.js'
 import { getLatestRedTeamResult, runRedTeam } from '../security/red-team.js'
@@ -351,7 +352,13 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
 
     // Was Nova gerade WIRKLICH tut — geschrieben von onStepUpdate in der
     // Pipeline. Die Oberflaeche zeigte bisher nur zeitgeratene Saetze.
-    app.get('/api/desktop/fortschritt', (_req, res) => {
+    // 2.89.1: the in-memory per-room status (desktop-progress.ts) comes first,
+    // the NovaOS file stays as fallback. ?room=<id> asks for one room only.
+    app.get('/api/desktop/fortschritt', (req, res) => {
+        const room = typeof req.query.room === 'string' ? req.query.room.slice(0, 200) : ''
+        const live = readDesktopProgress(room || undefined)
+        if (live) return void res.json({ schritt: live.step, seit: live.at, ...(live.roomId ? { room: live.roomId } : {}) })
+        if (room) return void res.json({ schritt: null })
         try {
             const text = readFileSync('/run/novaos/fortschritt', 'utf-8').trim()
             res.json({ schritt: text || null })
@@ -428,6 +435,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                             { type: 'principal', id: ownerId }, { type: 'bot', id: bot.id }, { type: 'room', id: room.id },
                         ], room.memoryAssetIds).map(asset => asset.id),
                         onOutcome: value => { outcome = value },
+                        onProgress: status => recordDesktopProgress(room.id, status),
                     }, () => handler(content, 'desktop')), isEnvironmentOverview(content) ? DISCOVERY_REQUEST_MS : DESKTOP_BOT_TIMEOUT_MS)
                     const state = (globalThis as any).__novaState
                     const stored = roomStore.addMessage(ownerId, room.id, {
@@ -445,6 +453,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                 } catch (error) {
                     const message = roomStore.addMessage(ownerId, room.id, { authorType: 'system', authorId: bot.id, content: `Bot fehlgeschlagen: ${safeError(error)}`, verifiedEvidence: 0 })
                     return { botId, message, error: safeError(error) }
+                } finally {
+                    clearDesktopProgress(room.id)
                 }
             }))
             res.json({ accepted: userMessage, replies })

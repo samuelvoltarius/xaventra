@@ -57,7 +57,7 @@ vi.mock('./soul.js', () => ({
 }))
 vi.mock('../agents/nova-runner.js', () => ({ runNovaAgent: fixtures.agent, clearSession: () => undefined }))
 vi.mock('../layers/L12-anti-hallucination.js', () => ({ validateWithLLM: vi.fn(async () => ({ honest: true, issues: [] })) }))
-vi.mock('../tools/skill-builder.js', () => ({ noteForgeNeed: () => ({ queued: false }) }))
+vi.mock('../tools/skill-builder.js', async importOriginal => ({ ...(await importOriginal<any>()), noteForgeNeed: () => ({ queued: false }) }))
 vi.mock('../layers/subconscious-reflector.js', () => ({ recordActivity: () => undefined }))
 vi.mock('../layers/L9-idle-learning.js', () => ({ getIdleLearningManager: () => null }))
 vi.mock('../intelligence/roi-dashboard.js', () => ({ startTask: () => undefined, detectCategory: () => 'test', completeTask: () => undefined, recordTokens: () => undefined }))
@@ -546,6 +546,66 @@ describe('9 — Dashboard/Desktop: status lines never mix into the room answer',
         expect(replies).toEqual(['Antwort.'])
         expect(seen).toEqual(['Codex ist gerade nicht erreichbar – ich arbeite lokal weiter.'])
     }, 20000)
+
+    it('Desktop room: status is readable per room via /api/desktop/fortschritt while running, never in the answer, cleared afterwards', async () => {
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', '')
+        const { default: express } = await import('express')
+        const { registerDesktopApi } = await import('../desktop/desktop-api.js')
+        const app = express(); app.use(express.json())
+        registerDesktopApi(app, () => async (content: string) => {
+            let answer = ''
+            await entry('desktop', 'desktop:owner', content, async text => { answer = text })
+            return answer
+        })
+        const server = app.listen(0, '127.0.0.1')
+        await new Promise<void>(resolve => server.once('listening', resolve))
+        const endpoint = `http://127.0.0.1:${(server.address() as any).port}/api/desktop`
+        const headers = { 'Content-Type': 'application/json', 'x-nova-principal': 'owner' }
+        const during: any[] = []
+        try {
+            const room = await (await fetch(endpoint + '/rooms', { method: 'POST', headers, body: JSON.stringify({ title: 'Fortschritt', botIds: ['nova'] }) })).json() as any
+            fixtures.agent.mockImplementation(async (params: any) => {
+                await params.onStepUpdate('Codex ist gerade nicht erreichbar – ich arbeite lokal weiter.')
+                during.push(await (await fetch(`${endpoint}/fortschritt?room=${room.id}`, { headers })).json())
+                during.push(await (await fetch(`${endpoint}/fortschritt?room=anderer-raum`, { headers })).json())
+                during.push(await (await fetch(`${endpoint}/fortschritt`, { headers })).json())
+                return agentResult('Fertig.')
+            })
+            const posted = await (await fetch(`${endpoint}/rooms/${room.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: 'Fasse bitte die Lage zusammen' }) })).json() as any
+            expect(posted.replies[0].message.content).toBe('Fertig.')
+            expect(during[0]).toMatchObject({ schritt: 'Codex ist gerade nicht erreichbar – ich arbeite lokal weiter.', room: room.id })
+            expect(typeof during[0].seit).toBe('string')
+            expect(during[1]).toEqual({ schritt: null })
+            expect(during[2].schritt).toBe(during[0].schritt)
+            expect(await (await fetch(`${endpoint}/fortschritt?room=${room.id}`, { headers })).json()).toEqual({ schritt: null })
+        } finally {
+            server.closeAllConnections()
+            await new Promise<void>(resolve => server.close(() => resolve()))
+        }
+    }, 30000)
+})
+
+// ---------------------------------------------------------------------------
+describe('SearXNG from the environment counts as a connection (2.89.1)', () => {
+    it('„searxng kannst du dich mit dem verbinen ?“ → already connected, deterministic, no model; unreachable → honest', async () => {
+        const { createServer } = await import('node:http')
+        const searx = createServer((_req, res) => { res.end('ok') })
+        await new Promise<void>(resolve => searx.listen(0, '127.0.0.1', resolve))
+        try {
+            vi.stubEnv('NOVA_SEARXNG_URL', `http://127.0.0.1:${(searx.address() as any).port}`)
+            const replies = await send('Telegram', '1001', 'searxng kannst du dich mit dem verbinen ?')
+            expect(replies).toHaveLength(1)
+            expect(replies[0]).toMatch(/^Ja — SearXNG ist schon verbunden\. Ich suche schon darüber\./)
+            expect(fixtures.agent).not.toHaveBeenCalled()
+        } finally {
+            searx.closeAllConnections?.()
+            await new Promise<void>(resolve => searx.close(() => resolve()))
+        }
+        // Closed port: entered, but not reachable — said honestly, still no model.
+        const replies = await send('Telegram', '1001', 'searxng kannst du dich mit dem verbinen ?')
+        expect(replies[0]).toMatch(/eingetragen, aber gerade nicht erreichbar/)
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    }, 30000)
 })
 
 // ---------------------------------------------------------------------------

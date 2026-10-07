@@ -89,6 +89,9 @@ export function getMinutesSinceLastSelfThink(): number {
 
 
 // Pre-load hot-path modules at startup to avoid first-call latency
+/** Deterministic fast paths whose answer is a live measurement, not a static text. */
+const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness'])
+
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
     const minimalModules = [
@@ -736,10 +739,17 @@ async function handleMessageInScope(
     // 30.08.2026. Schlimmer noch: die naechste Nachricht wurde dann als
     // Namensantwort gelesen — Nova hiess ploetzlich "Brutus", nach ihrem
     // eigenen Beispielsatz.
+    // 2.89.1: Fragen („hast du Internet?“) und alles, was der deterministische
+    // Schnellweg erkennt, sind ebenfalls Auftraege — die Vorstellung frisst sie nicht.
+    const { detectDeterministicCommand: erkenneSchnellweg } = await import('./deterministic-query.js')
     const wirktWieAuftrag = (text: string): boolean => {
         const t = text.toLowerCase()
         if (t.includes('du heißt') || t.includes('du bist')
             || t.includes('dein name') || t.includes('nenne dich')) return false
+        const trimmed = t.trim()
+        if (trimmed.endsWith('?')
+            || /^(hast du|kannst du|bist du|ist|sind|gibt es|wie|was|wer|wo|wann|warum|wieso|weshalb|welche[rsmn]?|wieviel|wie viel|kann|darf|funktioniert|laeuft|läuft)/.test(trimmed)) return true
+        try { if (erkenneSchnellweg(text)) return true } catch { /* Erkennung ist optional */ }
         return /\b(installier|richte|mach|erstell|leg an|zeig|oeffne|öffne|starte|such|find|lade|kopier|loesch|lösch|schreib|repariere|verbinde|update|aktualisier)/.test(t)
             || t.trim().split(/\s+/).length >= 4
     }
@@ -836,6 +846,20 @@ async function handleMessageInScope(
                 )
                 if (response) {
                     if (response !== '__HANDLED__') await answer(response)
+                    // 2.89 Abnahme: fast-path answers that come from a live probe carry that probe as
+                    // evidence in the Desktop room (Internet, Docker, mesh/system status). Static answers
+                    // (identity, capabilities, lists) stay without evidence — no proof is claimed.
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: true }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
                     traceStep(`fast-path:${deterministic.reason}`)
                     console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
                     return true
@@ -1878,7 +1902,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 && canonicalUser !== 'nova-self'
                 && canonicalUser !== 'Nova-Autonomy',
             reply: replyFn,
-            onProgress: messageContext?.onProgress,
+            onProgress: messageContext?.onProgress ?? (await import('../desktop/desktop-agent-context.js')).getDesktopProgressSink(),
         })
 
         try {

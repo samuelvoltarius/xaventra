@@ -54,7 +54,7 @@ export class RelayMeshTransport implements MeshTransport {
         }
     }
     health(): MeshTransportHealth {
-        return { name: this.name, healthy: Boolean(this.config.url && this.config.token) && !this.lastError, connectedPeers: 0, queued: this.queued, lastSuccessAt: this.lastSuccessAt, lastError: this.lastError, encrypted: encryptedRelayPath(this.config.url), authenticated: Boolean(this.config.token) }
+        return { name: this.name, healthy: Boolean(this.config.url && this.config.token) && !this.lastError, configured: Boolean(this.config.url && this.config.token), connectedPeers: 0, queued: this.queued, lastSuccessAt: this.lastSuccessAt, lastError: this.lastError, encrypted: encryptedRelayPath(this.config.url), authenticated: Boolean(this.config.token) }
     }
     async close(): Promise<void> { if (this.timer) clearInterval(this.timer); this.timer = null }
 
