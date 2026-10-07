@@ -23,6 +23,7 @@
 
 import { createServer, IncomingMessage, ServerResponse, type Server } from 'node:http'
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { TECHNICAL_PROBE_PRINCIPAL } from '../core/channel-name.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -161,7 +162,7 @@ export function startRestApi(
                 res.setHeader('Access-Control-Allow-Origin', origin)
                 res.setHeader('Vary', 'Origin')
                 res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-                res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+                res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Xaventra-Probe')
             }
             if (method === 'OPTIONS') {
                 if (origin === undefined) { json(res, 405, { error: 'Method not allowed' }); return }
@@ -215,7 +216,11 @@ export function startRestApi(
                 // channel "telegram"/"cli" used to inherit owner rights. The
                 // fields stay accepted for compatibility but are ignored.
                 const channel = REST_API_CHANNEL
-                const from = process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
+                // 2.89: a technical probe (rollout smoke test) declares itself and gets its own
+                // identity: never the owner, no session log, no handoff, no memory.
+                const probe = String(req.headers['x-xaventra-probe'] ?? '').trim() === '1'
+                const from = probe ? TECHNICAL_PROBE_PRINCIPAL
+                    : process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
 
                 // CL-07: the REST entry runs the full pipeline with tools; on a
                 // node without the Main fence it is refused (enforce) or logged.

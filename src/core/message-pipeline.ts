@@ -18,6 +18,7 @@ import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { containsHttpUrl, isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance, mentionsEnvironment } from './request-capabilities.js'
 import { createProgressNotice } from './progress-notice.js'
+import { isTechnicalProbe } from './channel-name.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
 /**
@@ -504,8 +505,10 @@ async function handleMessageInScope(
     }
     // 2.87 Paket P: `/telefon passwort …` wie Anmelde-Befehle nie protokollieren (auch nicht im Konsolen-Log).
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback|telefon\s+(?:passwort|ari-passwort))\b/i.test(content.trim())
+    // 2.89: rollout probes never enter the session log, the handoff or the memory.
+    const technicalProbe = isTechnicalProbe(channel, from)
     console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
-    if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'user', content)
+    if (!isSensitiveAuthCommand && !technicalProbe) logSession(canonicalUser, channel, 'user', content)
 
     // Track user activity for Dreaming/Idle systems
     try {
@@ -699,7 +702,7 @@ async function handleMessageInScope(
     // 2.88 Kanalwechsel-Übergabe: who keeps this exchange (the principal, and
     // for an owner-number phone call also the owner, marked unverified).
     let handoffTargetsForTurn: Array<{ principalId: string; channel: string; unverified?: boolean }> = []
-    if (senderAuthorized && !isSensitiveAuthCommand && !content.trimStart().startsWith('/')) {
+    if (senderAuthorized && !isSensitiveAuthCommand && !technicalProbe && !content.trimStart().startsWith('/')) {
         try {
             const { handoffTargets, recordHandoff } = await import('./conversation-handoff.js')
             handoffTargetsForTurn = await handoffTargets({ channel, from, principalId, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
@@ -710,7 +713,7 @@ async function handleMessageInScope(
     // is logged to the session and to the cross-channel handoff log.
     const answer = async (text: string, step?: string): Promise<void> => {
         await replyFn(text)
-        logSession(canonicalUser, channel, 'assistant', text)
+        if (!technicalProbe) logSession(canonicalUser, channel, 'assistant', text)
         if (handoffTargetsForTurn.length) {
             try { (await import('./conversation-handoff.js')).recordHandoff(handoffTargetsForTurn, 'assistant', text) }
             catch (error) { stageFailure('Kanalwechsel-Übergabe (Antwort)', error) }
@@ -1545,6 +1548,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
     // Auto-Observer: Inject known facts into system prompt
     // ============================================
     const isSystemMessage = isSystemAuthored
+    if (technicalProbe) memoryDecision = { ...memoryDecision, observe: false }
     if (!isSystemMessage) try {
 
         // Observe user message for fact extraction — skip system injections

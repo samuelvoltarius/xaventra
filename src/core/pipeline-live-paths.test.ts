@@ -252,10 +252,10 @@ describe('2 — WhatsApp/Discord pass the chat: groups are groups', () => {
 })
 
 // ---------------------------------------------------------------------------
-async function post(port: number, body: unknown, token?: string): Promise<{ status: number; body: any }> {
+async function post(port: number, body: unknown, token?: string, extra: Record<string, string> = {}): Promise<{ status: number; body: any }> {
     return new Promise((resolve, reject) => {
         const req = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: '/v1/message', headers: {
-            'Content-Type': 'application/json', ...(token !== undefined ? { Authorization: `Bearer ${token}` } : {}),
+            'Content-Type': 'application/json', ...(token !== undefined ? { Authorization: `Bearer ${token}` } : {}), ...extra,
         } }, res => {
             let data = ''
             res.on('data', chunk => { data += chunk })
@@ -292,6 +292,25 @@ describe('3 — owner over REST only with proof; wakeword and mobile mesh never 
         await post((server.address() as any).port, { content: 'Wie geht es dir heute?', from: '1001', channel: 'telegram' })
         expect(lastAgentCall().userId).toBe('rest-api:local')
         expect(fixtures.permissions.get('rest-api:rest-api:local')?.permission).not.toBe('owner')
+    }, 20000)
+
+    it('a rollout probe (X-Xaventra-Probe) has its own identity: not the owner, nothing in the owner handoff', async () => {
+        const token = 'x'.repeat(24)
+        vi.stubEnv('NOVA_API_TOKEN', token)
+        server = await startRestApi({ enabled: true, port: 0, host: '127.0.0.1' }, entry as any, () => ({}))
+        const port = (server.address() as any).port
+        const res = await post(port, { content: 'Reiner Text-Echotest PROBE-4711' }, token, { 'X-Xaventra-Probe': '1' })
+        expect(res.status).toBe(200)
+        expect(lastAgentCall().userId).toBe('rest-api:probe')
+        expect(fixtures.permissions.get('rest-api:rest-api:probe')?.permission).not.toBe('owner')
+        expect(fixtures.permissions.get('rest-api:rest-api:token')).toBeUndefined()
+        // the owner on another channel sees nothing of the probe
+        await send('desktop', 'desktop:owner', 'Was hatten wir zuletzt besprochen?')
+        expect(String(lastAgentCall().systemPrompt)).not.toContain('PROBE-4711')
+        // Gegenprobe: the same token without the probe header is the owner and is remembered
+        await post(port, { content: 'Notiz ohne Probe NOTE-0815' }, token)
+        await send('desktop', 'desktop:owner', 'Was hatten wir zuletzt besprochen?')
+        expect(String(lastAgentCall().systemPrompt)).toContain('NOTE-0815')
     }, 20000)
 
     it('wakeword (local microphone) and mobile mesh have no owner proof and keep their own identity', async () => {
