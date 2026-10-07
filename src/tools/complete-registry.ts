@@ -1451,9 +1451,25 @@ export const systemHelperTools: NovaTool[] = [
             const { execFileSync } = await import('node:child_process')
             const isWin = process.platform === 'win32'
             try {
-                const output = isWin
-                    ? execFileSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf-8', timeout: 10_000, windowsHide: true })
-                    : execFileSync('ps', ['aux'], { encoding: 'utf-8', timeout: 10_000 })
+                let output: string
+                if (isWin) output = execFileSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf-8', timeout: 10_000, windowsHide: true })
+                else {
+                    try { output = execFileSync('ps', ['aux'], { encoding: 'utf-8', timeout: 10_000 }) }
+                    catch (error: any) {
+                        // Slim containers (worker images, the repair sandbox) have no ps: read /proc directly.
+                        if (error?.code !== 'ENOENT' || process.platform !== 'linux') throw error
+                        const { readdirSync, readFileSync } = await import('node:fs')
+                        const rows = ['PID COMMAND']
+                        for (const pid of readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
+                            try {
+                                const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf-8').split('\0').filter(Boolean).join(' ')
+                                    || readFileSync(`/proc/${pid}/comm`, 'utf-8').trim()
+                                rows.push(`${pid} ${cmd}`)
+                            } catch { /* the process ended meanwhile */ }
+                        }
+                        output = rows.join('\n')
+                    }
+                }
                 const filter = String(params.filter ?? '').trim().toLowerCase()
                 const lines = output.split(/\r?\n/).filter(line => line.trim() && (!filter || line.toLowerCase().includes(filter)))
                 return { success: true, output: lines.join('\n').slice(0, 3000) }
