@@ -1,4 +1,4 @@
-import { authorizeToolExecution, ToolAuthorizationError } from './tool-authorization.js'
+import { authorizeToolExecution, isGovernedReadOnlyRun, ToolAuthorizationError } from './tool-authorization.js'
 import type { ExecutionKernel } from '../core/execution-kernel.js'
 import { assertMissionFenceForContent, executionScopeForContent, makeIdempotencyKey,
     prepareToolCompensation, deriveToolCompensation, type IdempotencyStore } from '../core/execution-control.js'
@@ -28,9 +28,7 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
         try {
             args = await authorizeToolExecution(name, args, {
                 userId, authUserId, channel, requestText: content,
-                governedReadOnly: (channel === 'benchmark' || options.internal)
-                    && kernel.contract.allowedChanges.readOnly
-                    && kernel.contract.allowedChanges.externalSideEffects === false,
+                governedReadOnly: isGovernedReadOnlyRun({ channel, internal: options.internal, allowedChanges: kernel.contract.allowedChanges }),
             })
         } catch (error) {
             if (error instanceof ToolAuthorizationError) options.block(false)

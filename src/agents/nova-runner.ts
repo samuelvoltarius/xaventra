@@ -594,8 +594,15 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         // especially important for benchmark planners: an explicit [] means
         // planning-only, never "fall back to every routed tool".
         const denied = new Set(deniedTools)
-        const relevantTools = selectContractTools(kernel.contract.allowedChanges.allowedTools,
+        const contractSelected = selectContractTools(kernel.contract.allowedChanges.allowedTools,
             restrictWorkerTools(contractTools, tools), [...denied])
+        // 2.89: a governed read-only run (self-goal, internal diagnostic, benchmark) is offered
+        // only the tools its policy lets run — never one that tool-authorization would block.
+        const { isGovernedReadOnlyRun, isGovernedReadOnlyTool } = await import('./tool-authorization.js')
+        const governedReadOnlyRun = isGovernedReadOnlyRun({ channel, internal: isInternalRequest, allowedChanges: kernel.contract.allowedChanges })
+        const relevantTools = governedReadOnlyRun
+            ? contractSelected.filter((tool: any) => isGovernedReadOnlyTool(tool.name))
+            : contractSelected
         if (historyOnly) {
             const priorEvidence = historyEvidenceMessages(session.history, sessionIdentity(userId, scope), channel, id => outcomeLedger.getRun(id))
             // Keep the current user request last; old tool evidence is neither a

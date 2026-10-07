@@ -1446,18 +1446,17 @@ export const systemHelperTools: NovaTool[] = [
             { name: 'filter', type: 'string', description: 'Prozessname-Filter', required: false },
         ],
         handler: async (params) => {
-            const { execSync } = await import('node:child_process')
+            // 2.89: only reads the process table — no shell, the filter is matched here
+            // (it used to be pasted into a shell pipe). Allowed in read-only automation runs.
+            const { execFileSync } = await import('node:child_process')
             const isWin = process.platform === 'win32'
             try {
-                let output: string
-                if (isWin) {
-                    const filter = params.filter ? `| findstr /i "${params.filter}"` : ''
-                    output = execSync(`tasklist /FO CSV /NH ${filter}`, { encoding: 'utf-8', timeout: 10_000 })
-                } else {
-                    const filter = params.filter ? `| grep -i "${params.filter}"` : ''
-                    output = execSync(`ps aux ${filter}`, { encoding: 'utf-8', timeout: 10_000 })
-                }
-                return { success: true, output: output.trim().slice(0, 3000) }
+                const output = isWin
+                    ? execFileSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf-8', timeout: 10_000, windowsHide: true })
+                    : execFileSync('ps', ['aux'], { encoding: 'utf-8', timeout: 10_000 })
+                const filter = String(params.filter ?? '').trim().toLowerCase()
+                const lines = output.split(/\r?\n/).filter(line => line.trim() && (!filter || line.toLowerCase().includes(filter)))
+                return { success: true, output: lines.join('\n').slice(0, 3000) }
             } catch (err: any) {
                 return { success: false, error: err.message }
             }

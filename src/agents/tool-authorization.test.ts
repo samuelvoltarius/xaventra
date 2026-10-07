@@ -131,3 +131,18 @@ describe('runner common tool authorization', () => {
         expect(mocks.allowed).not.toHaveBeenCalled()
     })
 })
+
+describe('2.89: governed read-only runs — one list for offer and execution', () => {
+    it('process_list is allowed (it only reads), port_scan stays blocked', async () => {
+        const { isGovernedReadOnlyTool } = await import('./tool-authorization.js')
+        expect(isGovernedReadOnlyTool('process_list')).toBe(true)
+        expect(isGovernedReadOnlyTool('port_scan')).toBe(false)
+        const automated = { ...authority, authUserId: 'owner', governedReadOnly: true, requestText: '[SELF-GOAL] Prozesse prüfen' }
+        await expect(authorizeToolExecution('process_list', { filter: 'node' }, automated)).resolves.toMatchObject({ filter: 'node' })
+        await expect(authorizeToolExecution('port_scan', {}, automated)).rejects.toThrow('Read-only automation policy blocked tool: port_scan')
+    })
+    it('the runner offers a governed read-only run only tools of that list', () => {
+        expect(runnerSource).toMatch(/isGovernedReadOnlyRun\(\{ channel, internal: isInternalRequest/)
+        expect(runnerSource).toMatch(/contractSelected\.filter\(\(tool: any\) => isGovernedReadOnlyTool\(tool\.name\)\)/)
+    })
+})

@@ -1,13 +1,35 @@
 import { checkTool } from '../tools/tool-policy.js'
 import { isConversationOnly, isHistoryOnlyRequest } from '../core/action-intent.js'
 
-const governedReadOnlyTools = new Set([
+/**
+ * Tools a governed read-only run (autonomy self-goals, internal diagnostics, benchmark)
+ * may run. 2.89: process_list joins (it only reads the process table); port_scan stays
+ * out. The same set decides what such a run is OFFERED (nova-runner) — the model never
+ * sees a tool this policy would block (live: 5× port_scan / process_list blocked).
+ */
+const governedReadOnlyTools: ReadonlySet<string> = new Set([
     'read_file', 'list_directory', 'codebase_search', 'find_files',
     'mesh_status', 'mesh_nodes', 'nova_capabilities', 'nova_introspect', 'health_status',
     'find_capability', 'resolve_capability', 'list_sessions', 'mission_config',
     'list_reminders', 'list_sub_agents', 'nova_trace_stats',
     'blue_asset_inventory', 'environment_inventory', 'mesh_services',
+    'process_list',
 ])
+
+export function isGovernedReadOnlyTool(name: string): boolean {
+    return governedReadOnlyTools.has(name)
+}
+
+/** One rule for "is this a governed read-only run?" — used for the offer and for execution. */
+export function isGovernedReadOnlyRun(input: {
+    channel: string
+    internal: boolean
+    allowedChanges: { readOnly?: boolean; externalSideEffects?: boolean }
+}): boolean {
+    return (input.channel === 'benchmark' || input.internal)
+        && input.allowedChanges.readOnly === true
+        && input.allowedChanges.externalSideEffects === false
+}
 
 const toolPolicyManagementTools = new Set(['set_tool_policy', 'list_tool_policies'])
 
@@ -53,7 +75,7 @@ async function authorize(name: string, args: Record<string, unknown>, authority:
         }
     }
     if (governedReadOnly) {
-        if (!governedReadOnlyTools.has(name)) throw new Error(`Read-only automation policy blocked tool: ${name}`)
+        if (!isGovernedReadOnlyTool(name)) throw new Error(`Read-only automation policy blocked tool: ${name}`)
         if (['blue_asset_inventory', 'environment_inventory', 'mesh_services'].includes(name)) {
             const { isToolAllowed, getToolRestrictionMessage } = await import('../users/multi-user-middleware.js')
             if (!authUserId || !isToolAllowed(authUserId, name, channel)) throw new Error(getToolRestrictionMessage(authUserId, name, channel))
