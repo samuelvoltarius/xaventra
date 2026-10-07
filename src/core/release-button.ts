@@ -452,6 +452,13 @@ export function createReleasePromoteExecutor(deps: ReleaseButtonDeps): CardExecu
         async reject() {
             return { ok: true, message: 'Abgelehnt — nichts ausgelöst.' }
         },
+        // 2.89: closed once this commit was dispatched (any way) or the reference is invalid.
+        // Whether the branch still points here is re-checked on GitHub right before the dispatch.
+        isStillOpen(card) {
+            const target = parseRef(card.aktion.ref)
+            if (!target) return false
+            try { return !loadState(deps.statePath).dispatched[target.sha] } catch { return true }
+        },
     }
 }
 

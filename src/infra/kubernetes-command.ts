@@ -177,6 +177,8 @@ export function createKubernetesCardExecutors(deps: ClusterDeps = {}): CardExecu
             } catch (error) { return { ok: false, message: safe(error) } }
         },
         async reject() { return { ok: true, message: 'Abgelehnt — an Kubernetes wurde nichts gesendet.' } },
+        // 2.89: closed when the stored preview is gone (the cluster is read again before applying).
+        isStillOpen(card) { return loadPlan(deps, card.aktion.ref) !== null },
     }
     const restart: CardExecutor = {
         kind: K8S_CARD.restart.kind,
@@ -194,6 +196,8 @@ export function createKubernetesCardExecutors(deps: ClusterDeps = {}): CardExecu
             } catch (error) { return { ok: false, message: safe(error) } }
         },
         async reject() { return { ok: true, message: 'Abgelehnt — an Kubernetes wurde nichts gesendet.' } },
+        // 2.89: a restart is never „done elsewhere“ — the workload is checked against the policy on the press.
+        isStillOpen: () => true,
     }
     return [update, restart]
 }

@@ -36,7 +36,7 @@ beforeEach(() => {
     executed = []
     for (const kind of ['test-intern', 'drucken', 'email-senden']) {
         unregisterCardExecutor(kind)
-        registerCardExecutor({
+        registerCardExecutor({ isStillOpen: () => true,
             kind,
             allowAlways: () => true,
             async execute(card, answer) { executed.push({ id: card.id, answer }); return { ok: true, message: 'ausgeführt' } },
@@ -156,7 +156,7 @@ describe('"Immer erlauben"', () => {
 
     it('is not offered when the executor has no standing permission', () => {
         unregisterCardExecutor('test-intern')
-        registerCardExecutor({ kind: 'test-intern', async execute() { return { ok: true, message: 'x' } } })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'test-intern', async execute() { return { ok: true, message: 'x' } } })
         expect(labels(newCard()).some(text => /Immer/.test(text))).toBe(false)
     })
 })

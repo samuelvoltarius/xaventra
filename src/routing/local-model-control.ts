@@ -219,6 +219,8 @@ export function createOllamaPullExecutor(deps: { port: OllamaPort; dataDir?: str
             update(card.aktion.ref, { status: 'abgelehnt' })
             return { ok: true, message: 'Abgelehnt — nichts gezogen.' }
         },
+        // 2.89: closed once the pull request is no longer open (pulled, failed, declined, gone).
+        isStillOpen(card) { return readJsonList<PullRequestEntry>(pullFile(deps.dataDir)).find(item => item.id === card.aktion.ref)?.status === 'offen' },
     }
 }
 
@@ -369,6 +371,8 @@ export function createVllmSwitchCardExecutor(deps: { resolveRuntime: VllmRuntime
             updatePlan(card.aktion.ref, { status: 'abgelehnt' }, deps.dataDir)
             return { ok: true, message: 'Abgelehnt — vLLM bleibt unverändert.' }
         },
+        // 2.89: closed once the plan is no longer „geplant“ (running, done, rolled back, declined, gone).
+        isStillOpen(card) { return readVllmPlans({ dataDir: deps.dataDir }).find(item => item.id === card.aktion.ref)?.status === 'geplant' },
     }
 }
 

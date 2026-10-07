@@ -17,7 +17,7 @@ beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'decisions-wiring-'))
     opts = { dataDir: dir, now: () => T0, ledger: null }
     unregisterCardExecutor('test-dauer')
-    registerCardExecutor({ kind: 'test-dauer', allowAlways: () => true, async execute() { return { ok: true, message: 'ok' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'test-dauer', allowAlways: () => true, async execute() { return { ok: true, message: 'ok' } } })
 })
 afterEach(() => {
     _setDecisionMainCheckForTest(null)

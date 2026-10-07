@@ -30,7 +30,7 @@ function fakeTelegram() {
 beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'card-bundle-l-'))
     t = Date.parse('2026-10-06T10:00:00.000Z')
-    registerCardExecutor({ kind: 'geraet-verbinden', impact: 'intern', async execute() { return { ok: true, message: 'verbunden' } }, async reject() { return { ok: true, message: 'nein' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'geraet-verbinden', impact: 'intern', async execute() { return { ok: true, message: 'verbunden' } }, async reject() { return { ok: true, message: 'nein' } } })
 })
 afterEach(() => { unregisterCardExecutor('geraet-verbinden'); rmSync(dir, { recursive: true, force: true }) })
 

@@ -31,7 +31,7 @@ const data = (answer: string) => `ac:${card.buttons.find(button => button.answer
 beforeEach(() => {
     executed = []
     unregisterCardExecutor('tg-test')
-    registerCardExecutor({ kind: 'tg-test', async execute(c) { executed.push(c.id); return { ok: true, message: 'erledigt' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'tg-test', async execute(c) { executed.push(c.id); return { ok: true, message: 'erledigt' } } })
     const created = createApprovalCard({ art: 'tg-test', titel: 'Telegram-Test', beleg: 'b', vorschlag: 'v', aktion: { kind: 'tg-test', ref: 'r1' } })
     if (!created.ok) throw new Error(created.reason)
     card = created.card

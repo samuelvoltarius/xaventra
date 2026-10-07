@@ -265,7 +265,7 @@ describe('Even G2 HUD feed', () => {
 
     it('tap = Ja: only with token, only once, through answerApprovalCard', async () => {
         const execute = vi.fn(async () => ({ ok: true, message: 'erledigt' }))
-        registerCardExecutor({ kind: 'g2-test', execute })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'g2-test', execute })
         const created = card()
         const { url } = await start(deps())
         const answer = (body: unknown, token: string | null = TOKEN) => fetch(`${url}/hud/answer`, {
@@ -288,7 +288,7 @@ describe('Even G2 HUD feed', () => {
 
     it('double tap = Nein rejects the card without running it', async () => {
         const execute = vi.fn(async () => ({ ok: true, message: 'erledigt' }))
-        registerCardExecutor({ kind: 'g2-test', execute })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'g2-test', execute })
         const created = card()
         const result = await answerCardFromG2(created.id, 'nein', { ownerIds: [OWNER], dataDir, ledger: null })
         expect(result.status).toBe(200)
@@ -297,7 +297,7 @@ describe('Even G2 HUD feed', () => {
     })
 
     it('never "immer" from the glasses; physical cards offer only ja/nein', async () => {
-        registerCardExecutor({ kind: 'drucken-test', impact: 'physisch', allowAlways: () => true, execute: async () => ({ ok: true, message: 'x' }) })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'drucken-test', impact: 'physisch', allowAlways: () => true, execute: async () => ({ ok: true, message: 'x' }) })
         const created = card('drucken-test', 'drucken-test')
         expect(created.wirkung).toBe('physisch')
         const hud = buildHudSnapshot({ status: 'x', openCards: [created] })

@@ -151,6 +151,8 @@ export function createPeerSelfHealExecutor(): CardExecutor {
         async reject(card) {
             return { ok: true, message: `Vorschlag von ${card.node} abgelehnt und vermerkt.` }
         },
+        // The worker's proposal is only recorded here; nothing on the Main settles it elsewhere.
+        isStillOpen: () => true,
     }
 }
 
@@ -228,7 +230,11 @@ export function offerCard(input: NewCardInput, opts: CardStoreOptions & { delive
     return { ok: true, card: result.card, created: result.created, message: `🔘 Karte „${result.card.titel}“ ${result.created ? 'geschickt' : 'erneut geschickt'} — bitte dort Ja oder Nein drücken.` }
 }
 
+/** Tests registered their own builtin deps (registerBuiltinCardExecutors): production wiring stays out. */
+let builtinsOverridden = false
+/** Production wiring finished without any failing group. */
 let builtinsRegistered = false
+let builtinsRunning: Promise<void> | null = null
 
 /** Registers install / self-heal / peer / patch executors. Tests pass their own deps. */
 export function registerBuiltinCardExecutors(deps: BuiltinExecutorDeps): void {
@@ -237,63 +243,81 @@ export function registerBuiltinCardExecutors(deps: BuiltinExecutorDeps): void {
     registerCardExecutor(createSelfHealExecutor(deps.selfHealDataDir))
     registerCardExecutor(createPeerSelfHealExecutor())
     registerCardExecutor(createPatchExecutor(deps.patchProposals))
-    builtinsRegistered = true
+    builtinsOverridden = true
 }
 
-/** Production wiring (idempotent). */
-export async function ensureBuiltinCardExecutors(): Promise<void> {
-    if (builtinsRegistered) return
-    const { defaultInstallDeps } = await import('../install/install-queue.js')
-    const { getNovaDataDir } = await import('./data-root.js')
-    const { getPatchProposals } = await import('../synthesis/self-evolution.js')
-    registerBuiltinCardExecutors({ installDeps: () => defaultInstallDeps(), selfHealDataDir: () => getNovaDataDir(), patchProposals: () => getPatchProposals(200) })
-    const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js')
-    registerThoughtCardExecutor()
+/** One group of executors; registration is idempotent (a second run replaces the same kinds). */
+type ExecutorGroup = { name: string; register: () => void | Promise<void> }
+
+const BUILTIN_GROUPS: ExecutorGroup[] = [
+    { name: 'Installieren/Selbstheilung/Patch', async register() {
+        const { defaultInstallDeps } = await import('../install/install-queue.js')
+        const { getNovaDataDir } = await import('./data-root.js')
+        const { getPatchProposals } = await import('../synthesis/self-evolution.js')
+        registerCardExecutor(createInstallExecutor(() => defaultInstallDeps()))
+        registerCardExecutor(createInstallRollbackExecutor(() => defaultInstallDeps()))
+        registerCardExecutor(createSelfHealExecutor(() => getNovaDataDir()))
+        registerCardExecutor(createPeerSelfHealExecutor())
+        registerCardExecutor(createPatchExecutor(() => getPatchProposals(200)))
+    } },
+    { name: 'Gedanken', async register() { const { registerThoughtCardExecutor } = await import('./planner-card-bridge.js'); registerThoughtCardExecutor() } },
     // Release-Knopf (Phase 6a): refuses every press while autonomy.releaseButton is off.
-    const { registerReleaseButtonExecutor } = await import('./release-button.js')
-    registerReleaseButtonExecutor()
-
+    { name: 'Release-Knopf', async register() { const { registerReleaseButtonExecutor } = await import('./release-button.js'); registerReleaseButtonExecutor() } },
     // Phase 6b: Verantwortung übernehmen (Ja/Nein) and Missions-Schritt (Ja = genau dieser Schritt).
-    const { getResponsibilityRuntime } = await import('./responsibility-runtime.js')
-    const { createResponsibilityCardExecutor } = await import('./responsibilities.js')
-    const { createMissionCardExecutor } = await import('./missions.js')
-    registerCardExecutor(createResponsibilityCardExecutor(() => getResponsibilityRuntime()?.responsibilities ?? null))
-    registerCardExecutor(createMissionCardExecutor(() => getResponsibilityRuntime()?.missions ?? null))
-
+    { name: 'Verantwortungen/Missionen', async register() {
+        const { getResponsibilityRuntime } = await import('./responsibility-runtime.js')
+        const { createResponsibilityCardExecutor } = await import('./responsibilities.js')
+        const { createMissionCardExecutor } = await import('./missions.js')
+        registerCardExecutor(createResponsibilityCardExecutor(() => getResponsibilityRuntime()?.responsibilities ?? null))
+        registerCardExecutor(createMissionCardExecutor(() => getResponsibilityRuntime()?.missions ?? null))
+    } },
     // Phase 6d: Ollama pull (after Ja) and vLLM switch (plan only, executor unwired).
-    const { registerModelControlExecutors } = await import('../routing/local-model-control.js')
-    registerModelControlExecutors(registerCardExecutor)
-
+    { name: 'Modellsteuerung', async register() { const { registerModelControlExecutors } = await import('../routing/local-model-control.js'); registerModelControlExecutors(registerCardExecutor) } },
     // Phase 6c: Proxmox kinds (pve-*); each re-checks pool/tag/protection/cap before its single write.
-    const { registerProxmoxCardExecutors } = await import('../infra/proxmox-command.js')
-    registerProxmoxCardExecutors()
-
+    { name: 'Proxmox', async register() { const { registerProxmoxCardExecutors } = await import('../infra/proxmox-command.js'); registerProxmoxCardExecutors() } },
     // 2.85 Paket A: „Verbinden“ (one card = approval of the connection config).
-    const { registerConnectCardExecutor } = await import('../connections/connect-flow.js')
-    registerConnectCardExecutor()
-
+    { name: 'Verbinden', async register() { const { registerConnectCardExecutor } = await import('../connections/connect-flow.js'); registerConnectCardExecutor() } },
     // 2.88: Tresor-Freigabe (entry × service) and Proxmox setup (fingerprint, pool) — each only after the owner's Ja.
-    const { registerFreigabeExecutor } = await import('../secrets/tresor-cards.js')
-    registerFreigabeExecutor()
-    const { registerProxmoxSetupExecutors } = await import('../infra/proxmox-setup.js')
-    registerProxmoxSetupExecutors()
+    { name: 'Tresor', async register() { const { registerFreigabeExecutor } = await import('../secrets/tresor-cards.js'); registerFreigabeExecutor() } },
+    { name: 'Proxmox-Einrichtung', async register() { const { registerProxmoxSetupExecutors } = await import('../infra/proxmox-setup.js'); registerProxmoxSetupExecutors() } },
     // 2.88: „Soll ich es lernen?“ (Ja = Lernauftrag im Hintergrund, Nein = 30 Tage keine Frage).
-    const { registerLearnCardExecutor } = await import('../learning/capability-learning.js')
-    await registerLearnCardExecutor()
-
+    { name: 'Lernen', async register() { const { registerLearnCardExecutor } = await import('../learning/capability-learning.js'); await registerLearnCardExecutor() } },
     // 2.85.11 Paket L: „Gerät verbinden“ (HA login, Hue pairing, Tuya lokal/Cloud, Matter) — one card per device.
-    const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')
-    const deviceDeps = await productionDeviceConnectDeps()
-    registerCardExecutor(createDeviceConnectExecutor(deviceDeps))
-
+    { name: 'Gerät verbinden', async register() {
+        const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')
+        registerCardExecutor(createDeviceConnectExecutor(await productionDeviceConnectDeps()))
+    } },
     // 2.86 Paket N: preview → Ja → switch, „Rückgängig“, retry when reachable, room question, routines.
-    const { createSchaltExecutor, productionSchaltDeps } = await import('../sensing/device-switch.js')
-    const schaltDeps = await productionSchaltDeps()
-    registerCardExecutor(createSchaltExecutor(schaltDeps))
-
+    { name: 'Schalten', async register() {
+        const { createSchaltExecutor, productionSchaltDeps } = await import('../sensing/device-switch.js')
+        registerCardExecutor(createSchaltExecutor(await productionSchaltDeps()))
+    } },
     // 2.87 Paket P: Anruf an eine fremde Nummer (extern, kostet Guthaben) — erst das Ja wählt.
-    const { createTelefonCardExecutor } = await import('../voice/telefon-ausgang.js')
-    registerCardExecutor(createTelefonCardExecutor())
+    { name: 'Telefon', async register() { const { createTelefonCardExecutor } = await import('../voice/telefon-ausgang.js'); registerCardExecutor(createTelefonCardExecutor()) } },
+]
+
+/**
+ * Production wiring (idempotent). 2.89: „registered“ only after EVERY group succeeded —
+ * a failing group is logged on its own, the others are still registered, and the next
+ * call tries again (before, one failed import left the flag set and cards without
+ * executor forever).
+ */
+export async function ensureBuiltinCardExecutors(groups: ExecutorGroup[] = BUILTIN_GROUPS): Promise<{ failed: string[] }> {
+    if (builtinsOverridden || (builtinsRegistered && groups === BUILTIN_GROUPS)) return { failed: [] }
+    if (builtinsRunning && groups === BUILTIN_GROUPS) { await builtinsRunning; return { failed: builtinsRegistered ? [] : ['läuft'] } }
+    const failed: string[] = []
+    const run = (async () => {
+        for (const group of groups) {
+            try { await group.register() } catch (error) {
+                failed.push(group.name)
+                console.warn(`[Knopf-Karten] Ausführer „${group.name}“ nicht registriert: ${short((error as Error)?.message || error, 200)}`)
+            }
+        }
+        if (!failed.length && groups === BUILTIN_GROUPS) builtinsRegistered = true
+    })()
+    if (groups === BUILTIN_GROUPS) builtinsRunning = run
+    try { await run } finally { if (groups === BUILTIN_GROUPS) builtinsRunning = null }
+    return { failed }
 }
 
 // ---------------------------------------------------------------------------

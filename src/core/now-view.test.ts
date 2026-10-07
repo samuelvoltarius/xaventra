@@ -15,7 +15,7 @@ beforeEach(() => {
     clock = Date.parse('2026-10-01T10:00:00Z')
     opts = { dataDir: mkdtempSync(join(tmpdir(), 'now-view-')), now: () => clock, ledger: { recordApproval: vi.fn() } }
     unregisterCardExecutor('nv-test')
-    registerCardExecutor({ kind: 'nv-test', async execute() { return { ok: true, message: 'ok' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'nv-test', async execute() { return { ok: true, message: 'ok' } } })
 })
 
 describe('/jetzt', () => {

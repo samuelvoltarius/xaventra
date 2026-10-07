@@ -66,7 +66,7 @@ describe('Telegram kurz mit Knöpfen', () => {
     it('a press in the device bundle answers that device, edits the bundle and reports the result once', async () => {
         const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
         await ensureBuiltinCardExecutors() // production executors first; the fake below replaces the device one
-        registerCardExecutor({ kind: 'geraet-verbinden', async execute() { return { ok: true, message: 'Bitte hier anmelden: http://ha.example.com:8123/auth' } } })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'geraet-verbinden', async execute() { return { ok: true, message: 'Bitte hier anmelden: http://ha.example.com:8123/auth' } } })
         const make = (ref: string, kurz: string) => createApprovalCard({ art: 'geraet-verbinden', titel: `${kurz}?`, beleg: 'b', vorschlag: 'v', aktion: { kind: 'geraet-verbinden', ref }, buendel: 'geraete', kurz } as any)
         make('dev-00000000f1', 'Home Assistant'); make('dev-00000000f2', 'Hue Bridge')
         const { instance, bot } = adapter()

@@ -94,7 +94,7 @@ describe('evaluateAction — L3 never automatic, never a button', () => {
             if (entry.level !== 'L3') continue
             const card = createApprovalCard({ art: kind, titel: kind, beleg: '-', vorschlag: '-', aktion: { kind, ref: 'x1' } }, { dataDir, ledger: null })
             expect(card.ok, kind).toBe(false)
-            expect(() => registerCardExecutor({ kind, async execute() { return { ok: true, message: '' } } }), kind).toThrow(/Nie-Liste/)
+            expect(() => registerCardExecutor({ isStillOpen: () => true, kind, async execute() { return { ok: true, message: '' } } }), kind).toThrow(/Nie-Liste/)
         }
     })
 })

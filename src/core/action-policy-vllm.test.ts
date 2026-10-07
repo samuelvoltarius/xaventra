@@ -39,13 +39,13 @@ describe('Aktions-Policy: vLLM-Wechsel', () => {
         const opts = { dataDir: mkdtempSync(join(tmpdir(), 'policy-vllm-')), ledger: null }
         expect(createApprovalCard({ art: 'vllm-stoppen', titel: 'x', beleg: 'x', vorschlag: 'x', aktion: { kind: 'vllm-stoppen', ref: 'r1' } }, opts).ok).toBe(false)
         expect(createApprovalCard({ art: 'modell-wechsel', titel: 'x', beleg: 'x', vorschlag: 'x', aktion: { kind: 'vllm-wechsel', ref: 'r2' }, effects: ['vllm:stoppen'] }, opts).ok).toBe(false)
-        expect(() => registerCardExecutor({ kind: 'vllm-stoppen', execute: async () => ({ ok: true, message: '' }) })).toThrow(/Nie-Liste/)
+        expect(() => registerCardExecutor({ isStillOpen: () => true, kind: 'vllm-stoppen', execute: async () => ({ ok: true, message: '' }) })).toThrow(/Nie-Liste/)
     })
 
     it('nie „Immer erlauben“ — auch wenn ein Ausführer es anbieten wollte', () => {
         const opts = { dataDir: mkdtempSync(join(tmpdir(), 'policy-vllm-')), ledger: null }
         expect(isNurEinzelnesJa('vllm-wechsel')).toBe(true)
-        registerCardExecutor({ kind: 'vllm-wechsel', allowAlways: () => true, execute: async () => ({ ok: true, message: '' }) })
+        registerCardExecutor({ isStillOpen: () => true, kind: 'vllm-wechsel', allowAlways: () => true, execute: async () => ({ ok: true, message: '' }) })
         const card = createApprovalCard({ art: 'modell-wechsel', titel: 'x', beleg: 'x', vorschlag: 'x', aktion: { kind: 'vllm-wechsel', ref: 'v0123456789ab' } }, opts)
         if (!card.ok) throw new Error(card.reason)
         expect(card.card.buttons.map(button => button.answer)).toEqual(['ja', 'nein', 'spaeter'])

@@ -89,7 +89,8 @@ describe('Proxmox ohne Config (2.88)', () => {
         const old = cardOf(dir, FINGERPRINT_KIND)!
         const other = FP.replace(/^10/, 'AA')
         await speichereProxmoxZugang({ token: fakeToken() }, { ...deps, tlsProbe: async () => ({ fingerprint: other }) })
-        expect((await press(dir, old)).message).toMatch(/geändert/)
+        // 2.89: the old card closes itself (its fingerprint is no longer the stored one) — nothing confirmed.
+        expect((await press(dir, old)).message).toMatch(/erledigt/)
         expect(readProxmoxAppSetup({ dataDir: dir })?.bestaetigt).toBe(false)
     })
 

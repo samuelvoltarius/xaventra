@@ -33,8 +33,8 @@ const press = (data: string) => answerApprovalCard(data, { userId: '111', ownerI
 beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'question-queue-'))
     t = Date.parse('2026-10-06T10:00:00.000Z')
-    registerCardExecutor({ kind: 'install', impact: 'intern', async execute() { return { ok: true, message: 'installiert' } }, async reject() { return { ok: true, message: 'nein' } } })
-    registerCardExecutor({ kind: 'geraet-verbinden', impact: 'intern', async execute() { return { ok: true, message: 'verbunden' } }, async reject() { return { ok: true, message: 'nein' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'install', impact: 'intern', async execute() { return { ok: true, message: 'installiert' } }, async reject() { return { ok: true, message: 'nein' } } })
+    registerCardExecutor({ isStillOpen: () => true, kind: 'geraet-verbinden', impact: 'intern', async execute() { return { ok: true, message: 'verbunden' } }, async reject() { return { ok: true, message: 'nein' } } })
 })
 afterEach(() => { unregisterCardExecutor('install'); unregisterCardExecutor('geraet-verbinden'); rmSync(dir, { recursive: true, force: true }) })
 

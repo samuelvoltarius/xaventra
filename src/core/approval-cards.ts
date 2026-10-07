@@ -27,7 +27,7 @@
  *   (`isStandingExcluded`) also decide whether „Immer erlauben“ exists at all.
  *
  * API for other modules (e.g. the planner):
- *   registerCardExecutor({ kind, execute, reject?, allowAlways?, isStillOpen?, impact? })
+ *   registerCardExecutor({ kind, execute, isStillOpen, reject?, allowAlways?, impact? })  (2.89: isStillOpen required)
  *   createApprovalCard({ art, titel, beleg, vorschlag, aktion: { kind, ref }, ablaufMs?, effects?, wirkung?, dedupeKey?, node?, quelle? })
  *     -> { ok: true, card, created } | { ok: false, reason }
  *   The Main delivers new cards to Telegram (approval-card-sources.ts,
@@ -157,8 +157,13 @@ export interface CardExecutor {
     standingSubject?: (card: ApprovalCard) => string | null | undefined
     execute(card: ApprovalCard, answer: 'ja' | 'immer', ctx: CardDecisionContext): Promise<CardExecutionResult>
     reject?(card: ApprovalCard, ctx: CardDecisionContext): Promise<CardExecutionResult>
-    /** false when the underlying proposal was settled elsewhere (e.g. /setup approve). */
-    isStillOpen?(card: ApprovalCard): boolean
+    /**
+     * false when the underlying matter was settled elsewhere (e.g. /setup approve, the
+     * service got connected, the job is gone). 2.89: REQUIRED — a card closes itself
+     * (maintenance and on the press) instead of acting on something that is done.
+     * Executors whose matter can only be judged at execution time say so explicitly.
+     */
+    isStillOpen(card: ApprovalCard): boolean
 }
 
 export interface CardLedger { recordApproval(runId: string, approval: Record<string, unknown>): void }
@@ -242,6 +247,8 @@ const executors = new Map<string, CardExecutor>()
 
 export function registerCardExecutor(executor: CardExecutor): void {
     if (!executor || !KIND_PATTERN.test(String(executor.kind))) throw new Error('Ungültige Karten-Aktionsart')
+    // 2.89: every executor says when its card is settled (no card may act on something already done).
+    if (typeof executor.isStillOpen !== 'function') throw new Error(`Karten-Ausführer ${executor.kind} ohne isStillOpen`)
     if (neverListReason({ art: executor.kind, aktion: { kind: executor.kind, ref: 'x' } })) throw new Error('Nie-Liste: kein Ausführer erlaubt')
     executors.set(executor.kind, executor)
 }

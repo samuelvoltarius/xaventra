@@ -217,6 +217,12 @@ export function createProxmoxSetupExecutors(deps: SetupDeps = {}): CardExecutor[
             return { ok: true, message: `Bestätigt. ${check.text}` }
         },
         async reject() { return { ok: true, message: 'Nicht bestätigt — ich verbinde mich nicht mit diesem Server.' } },
+        // 2.89: closed once this fingerprint is confirmed, or when the stored setup has another one.
+        isStillOpen(card) {
+            const setup = readProxmoxAppSetup(deps)
+            const fp = normalizeFingerprint(card.aktion.ref)
+            return Boolean(setup && fp && setup.fingerprint === fp && !setup.bestaetigt)
+        },
     }, {
         kind: POOL_KIND, impact: 'infra', allowAlways: () => false,
         async execute() {
@@ -225,6 +231,9 @@ export function createProxmoxSetupExecutors(deps: SetupDeps = {}): CardExecutor[
             return { ok: check.ok, message: check.text }
         },
         async reject() { return { ok: true, message: 'Gut, ohne Pool sehe ich nur zu und steuere nichts.' } },
+        // 2.89: closed when the Proxmox setup is gone or uses another pool; whether the pool exists
+        // is read from Proxmox on the press (it lives there, not here).
+        isStillOpen(card) { const setup = readProxmoxAppSetup(deps); return Boolean(setup && setup.pool === card.aktion.ref) },
     }]
 }
 

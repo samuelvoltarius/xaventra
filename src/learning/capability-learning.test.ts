@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // im Hintergrund (a Rezept → b Verbindung → c Paket → d Code-Vorschlag),
 // Selbsttest, Übernahme, Messung mit Rückrollen, Lernschleife.
 
-import { answerApprovalCard, createApprovalCard, listApprovalCards, registerCardExecutor, unregisterCardExecutor, type ApprovalCard, type CardStoreOptions } from '../core/approval-cards.js'
+import { answerApprovalCard, createApprovalCard, listApprovalCards, maintainApprovalCards, registerCardExecutor, unregisterCardExecutor, type ApprovalCard, type CardStoreOptions } from '../core/approval-cards.js'
 import {
     assessCapability, capabilityGate, capabilityHonestyPrompt, capabilityReplyGate, capabilityLearningTick, createLearnCardExecutor, detectCapabilityRequest, handleCapabilityRequest,
     HONEST_NO, LEARN_CARD_KIND, learnedCapabilities, listLearnJobs, offerLearningAfterReply, rateSource, replyOffersLearning, searchQueryFor,
@@ -116,6 +116,16 @@ describe('ehrliche Antwort mit Lern-Angebot', () => {
         expect(cards[0].direktAt).toBeTruthy()
         expect(cards[0].buttons.map(button => button.answer).sort()).toEqual(['ja', 'nein', 'spaeter'])
         expect(job().status).toBe('angeboten')
+    })
+
+    it('2.89: die Lernkarte schließt sich selbst, sobald die Fähigkeit inzwischen da ist (echte Kartenpflege)', async () => {
+        let jetzt: CapabilityInventory | null = null
+        deps = makeDeps({ inventoryNow: () => jetzt })
+        await handleCapabilityRequest('Kannst du mir ein Fax schicken?', owner, deps)
+        const [card] = learnCards()
+        expect(maintainApprovalCards(opts).settled).toEqual([])
+        jetzt = { ...inventory, tools: [...inventory.tools, 'fax_send'] }
+        expect(maintainApprovalCards(opts).settled.map(item => item.id)).toEqual([card.id])
     })
 
     it('kann ich → nicht abgefangen (normaler Weg antwortet)', async () => {

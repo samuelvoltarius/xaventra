@@ -51,6 +51,7 @@ import { sideEffectsDisabled } from '../core/side-effects.js'
 import type { SoftwareCapability } from '../install/software-candidates.js'
 import type { SearchHit, WebSearchPort } from '../install/software-freshness.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { connectedConnectorIds } from '../connections/connection-state.js'
 
 // ---------------------------------------------------------------------------
 // Felder, für die „kann ich / kann ich nicht“ ohne Modell belastbar ist
@@ -294,6 +295,11 @@ export interface LearnDeps {
     dataDir?: string
     now?: () => number
     inventory(): Promise<CapabilityInventory>
+    /**
+     * 2.89: the latest inventory without waiting (card maintenance is synchronous): a
+     * „Soll ich es lernen?“ card closes itself once the ability is there. null = not known yet.
+     */
+    inventoryNow?(): CapabilityInventory | null
     search: WebSearchPort | null
     /** MCP-Verzeichnis (Community, ungeprüft; nur gelesen). */
     directory(query: string): Array<{ name: string; title?: string }>
@@ -468,7 +474,12 @@ export function createLearnCardExecutor(getDeps: () => LearnDeps): CardExecutor 
             return { ok: Boolean(job), message: 'Okay, ich lerne es nicht.' }
         },
         isStillOpen(card) {
-            return getLearnJob(card.aktion.ref, getDeps())?.status === 'angeboten'
+            const deps = getDeps()
+            const job = getLearnJob(card.aktion.ref, deps)
+            if (job?.status !== 'angeboten') return false
+            // 2.89: closed when the ability is there by now (connected, a tool, learned elsewhere).
+            const inventory = deps.inventoryNow?.() ?? null
+            return !(inventory && assessCapability(`Kannst du ${job.topic}?`, inventory).status === 'kann')
         },
     }
 }
@@ -692,6 +703,19 @@ export async function capabilityLearningTick(deps: LearnDeps): Promise<{ learned
 // Produktion
 // ---------------------------------------------------------------------------
 
+/** 2.89: the last collected inventory (tools of the registry) for the synchronous card check. */
+let lastInventory: CapabilityInventory | null = null
+
+/** The latest inventory: tools as last collected, connections and learned abilities read now. */
+function inventoryNow(dataDir?: string): CapabilityInventory | null {
+    if (!lastInventory) return null
+    let connected = lastInventory.connected
+    try { connected = connectedConnectorIds(dataDir) } catch { /* keep the last */ }
+    const toolSet = new Set(lastInventory.tools)
+    const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
+    return { tools: lastInventory.tools, connected, learned }
+}
+
 async function collectInventory(dataDir?: string): Promise<CapabilityInventory> {
     const tools: string[] = []
     try {
@@ -700,14 +724,12 @@ async function collectInventory(dataDir?: string): Promise<CapabilityInventory> 
     } catch { /* leeres Register: dann entscheidet nur, was belegt ist */ }
     // 2.89: „verbunden“ kommt aus der einen Verbindungs-Wahrheit (konfiguriertes HA eingeschlossen).
     let connected = new Set<string>()
-    try {
-        const { connectedConnectorIds } = await import('../connections/connection-state.js')
-        connected = connectedConnectorIds(dataDir)
-    } catch { /* keine Verbindungen */ }
+    try { connected = connectedConnectorIds(dataDir) } catch { /* keine Verbindungen */ }
     const toolSet = new Set(tools)
     // Ein gelerntes Werkzeug gilt nur, solange es im Register steht.
     const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
-    return { tools, connected, learned }
+    lastInventory = { tools, connected, learned }
+    return lastInventory
 }
 
 async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResult> {
@@ -746,6 +768,7 @@ async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResul
 export function defaultLearnDeps(): LearnDeps {
     return {
         inventory: () => collectInventory(),
+        inventoryNow: () => inventoryNow(),
         search: { async search(query) { const { createGovernedWebSearch } = await import('../install/software-freshness.js'); return createGovernedWebSearch().search(query) } },
         // Nur der Cache des MCP-Verzeichnisses, nie das Netz.
         directory: query => { try { return directorySearch?.(query) ?? [] } catch { return [] } },

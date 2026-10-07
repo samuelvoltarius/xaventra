@@ -73,7 +73,7 @@ describe('Knopf-Karten in the Desktop app', () => {
         opts = { dataDir: mkdtempSync(join(tmpdir(), 'desktop-views-cards-')), ledger: { recordApproval: vi.fn() } }
         executed = []
         unregisterCardExecutor('desktop-test')
-        registerCardExecutor({
+        registerCardExecutor({ isStillOpen: () => true,
             kind: 'desktop-test',
             async execute(card, answer) { executed.push(`${card.id}:${answer}`); return { ok: true, message: 'ausgeführt' } },
             async reject(card) { executed.push(`${card.id}:nein`); return { ok: true, message: 'abgelehnt' } },
