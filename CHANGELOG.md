@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — Vorschau 2.89.0 (in Arbeit)
+## [Unreleased] — Vorschau (in Arbeit)
 
 - **Xaventra World:** one question about weather, traffic, cameras, flights,
   satellites, earthquakes or fires near a place or along a route; she picks
@@ -11,7 +11,100 @@
   companion app, a call assistant that takes notes, meeting notes, desktop
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
-- Small fixes from the first night with 2.88.
+
+## [2.89.0] — 2026-10-07
+
+**One truth, everything reachable.** Most features were already built, but
+the model often could not reach the right tool, and the same question
+(connected? can I? which node? internet? which model?) had many answers in
+many places. 2.89 fixes both, and tests every live sentence over the real
+message entry, not only single functions.
+
+Tools reach the model:
+
+- Every registered tool has a way to the model. Word stems, compound words
+  and everyday phrases now match ("erinnere", "Wohnzimmerlicht", "Heizung auf
+  21 Grad", "recherchiere"); filler words no longer pull in tool groups.
+- Tools join a running request when needed: loading a tool group really adds
+  it, and a call to a registered tool that was not offered is allowed when
+  role and policy allow it.
+- Owner chats get enough room by default (more tool rounds, longer tool and
+  run time, bigger answers), not only in the NovaOS mode. One place sets these
+  limits.
+- One failed tool no longer ends the whole run: the model sees the error and
+  goes on. A stop says why (rounds, time, budget) in one plain sentence, never
+  as raw tool output.
+- Retries keep the room, bot, chosen model, blocked tools and workspace.
+- Typing errors such as "verbinen" still reach the connect tools.
+- New read-only tool for the project status.
+
+Messages and channels:
+
+- A short "still working" note again, at most once, in chat channels only;
+  the app, dashboard and REST answers stay clean.
+- Steps run in a fixed order: project status before memory recall, rules in
+  plain words and capability questions before follow-up questions, learned
+  corrections never in groups.
+- Every early answer lands in the session and in the cross-channel handoff.
+- Slash-command buttons only go to Telegram; the app and REST get text.
+  Telegram buttons for activity and desktop work again (channel names are
+  compared in one way).
+- WhatsApp and Discord pass group chats correctly.
+- Owner notices need the Main, not Telegram; without a transport they become
+  an app notification. Cards can be answered without a Telegram owner.
+- A REST request with the valid API token is the owner. Rollout probes
+  (header `X-Xaventra-Probe: 1`) get their own identity: never the owner, no
+  session log, no handoff, no memory.
+- System messages never take the user shortcut; mission actions only run for
+  the whole, non-negated sentence ("brich den Auftrag bitte nicht ab" does
+  nothing).
+- A self-goal that failed twice is paused.
+- Contradictions in the system prompt are removed (no `ssh_command` to other
+  nodes, the honesty sentence instead of building a skill, paths and commands
+  of this platform).
+- Stage failures are logged in short, redacted form instead of being
+  swallowed.
+
+One connection truth:
+
+- One function answers "is this connected?" for services, devices, Home
+  Assistant per instance, keyed devices and paired bridges. The device list,
+  the Verbindungen page, smart devices, cards, the learning question and the
+  connect question all ask it. "Set up" alone no longer counts as connected.
+- "Ist X verbunden?" is answered from it: yes, waiting (with the missing step)
+  or no — never a guess by the model.
+- An old connect card never resets a connected service, and every card
+  closes itself once it is settled.
+
+One capability and node truth:
+
+- One inventory answers "can I?" (tools, connections, node skills, cloud
+  keys, the active model, what was learned, tools that keep failing) and one
+  "missing" list for setup, the learning question and node views.
+- One view of the nodes (online window, GPU facts, skills) for node status,
+  node lists, the runtime question and routing; one source for the active
+  model and provider.
+- One internet check for the prompt, node registration and the question
+  "Hast du Internet?", which is now answered from that check.
+- One tool-health store in the data folder.
+
+Integration fixes:
+
+- Background and automation runs that may only read are offered only the
+  tools they may run (live, every call was blocked and the run stopped). The
+  process list is allowed and runs without a shell; the port scan stays
+  blocked.
+- The capability inventory reads connections from the one connection truth.
+- The answer cache was removed: it never hit and could only have served old
+  answers.
+
+Tests:
+
+- An acceptance harness runs the live sentences over the real message entry
+  with the real tool registry and router; only the model is scripted. A guard
+  maps every early exit of the message pipeline to such a scenario. All
+  scenarios pass.
+- A flaky witness test on Windows is now deterministic.
 
 ## [2.88.3] — 2026-10-07
 
