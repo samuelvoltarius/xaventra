@@ -7,8 +7,9 @@
 {{- if contains "PRIVATE KEY" $ext.publicKey -}}
 {{- fail "externalMain.publicKey enthält einen PRIVATEN Schlüssel — nur den öffentlichen eintragen." -}}
 {{- end -}}
-{{- if not (or (hasPrefix "ws://" $ext.url) (hasPrefix "wss://" $ext.url)) -}}
-{{- fail "externalMain.url muss mit ws:// (nur Tailscale-Adresse) oder wss:// beginnen." -}}
+{{- $tailscaleWs := `^ws://100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(:[0-9]{1,5})?(/.*)?$` -}}
+{{- if not (or (hasPrefix "wss://" $ext.url) (regexMatch $tailscaleWs $ext.url)) -}}
+{{- fail "externalMain.url: ws:// nur mit Tailscale-Adresse (CGNAT-Bereich 100.64/10), sonst wss://." -}}
 {{- end -}}
 {{- end -}}
 {{- if not (or .Values.config.existingSecret .Values.config.existingConfigMap .Values.config.fromRuntime) }}

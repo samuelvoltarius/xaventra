@@ -73,7 +73,7 @@ coordinationCA:
 # in a PRIVATE values file, never in Git.
 externalMain:
   nodeId: ""
-  # ws://<tailnet-address>:9091 or wss://... (only Tailscale/TLS paths are accepted).
+  # wss://... or ws://<Tailscale IP, range 100.64/10>:9091 (ws:// to any other host is refused).
   url: ""
   # PUBLIC key of the Main (PEM). Never a private key.
   publicKey: ""

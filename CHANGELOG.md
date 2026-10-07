@@ -103,7 +103,8 @@ Kubernetes:
 - Kubernetes chart (0.2.0): workers run as a DaemonSet only on labelled nodes,
   with no host network, tolerations for slow WAN links, sandbox containers
   only with the kata-clh runtime class, and a narrow control scope without
-  secrets or exec. The chart contains no main node.
+  secrets or exec. The chart contains no main node. A pinned external main
+  accepts ws:// only to Tailscale addresses (100.64.0.0/10), otherwise wss://.
 
 Tests:
 

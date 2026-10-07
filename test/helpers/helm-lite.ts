@@ -452,6 +452,7 @@ export class HelmLite {
             case 'empty': return isEmpty(a[0])
             case 'ternary': return isEmpty(a[2]) ? a[1] : a[0]
             case 'sha256sum': return createHash('sha256').update(str(a[0])).digest('hex')
+            case 'regexMatch': return new RegExp(str(a[0])).test(str(a[1]))
             case 'hasPrefix': return str(a[1]).startsWith(str(a[0]))
             case 'join': return (Array.isArray(a[1]) ? a[1] : []).map(str).join(str(a[0]))
             // Sprig: deepCopy returns an independent copy; set mutates the dict and returns it.

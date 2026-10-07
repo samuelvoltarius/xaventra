@@ -161,8 +161,9 @@ Die Worker brauchen nur ausgehende Verbindungen: zur Main über ihre
 Tailscale-Adresse bzw. `wss://` und zum Koordinationsdienst. Pod-Verkehr nach
 außen läuft über den Knoten (NAT); die Gegenseite sieht die Knoten-Adresse.
 
-- `externalMain.nodeId`, `externalMain.url` (`ws://<Tailscale-Adresse>:9091` oder
-  `wss://…`) und `externalMain.publicKey` (nur der **öffentliche** Schlüssel)
+- `externalMain.nodeId`, `externalMain.url` (`wss://…` allgemein; `ws://` nur mit
+  Tailscale-IP (Bereich 100.64/10, `ws://<Tailscale-IP>:9091`) — Hostnamen und
+  andere Adressen werden abgelehnt) und `externalMain.publicKey` (nur der **öffentliche** Schlüssel)
   ergänzen die Worker-Konfiguration um genau einen festen Peer. Diese Werte sind
   Topologie und gehören in eine **private** values-Datei.
 - Die Main muss den Workern vertrauen: ein `nodeIdPrefix`-Eintrag (mit
