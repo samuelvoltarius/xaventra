@@ -484,31 +484,24 @@ export async function runSelfDoctor(): Promise<DoctorRunResult> {
     try {
         const { getOnlineModels, getProbeStatusSummary } = await import('../llm/capability-probe.js')
         const online = getOnlineModels()
-        const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
-        const graphOnline = getCapabilityGraph().getSnapshot().nodes.flatMap(node => node.runtimes).filter(runtime =>
-            runtime.status === 'running'
-            && ['llm', 'vllm', 'ollama', 'lmstudio', 'openai-compatible'].includes(runtime.type.toLowerCase())
-            && Date.now() - Date.parse(runtime.verifiedAt) < 15 * 60_000)
+        // 2.89 Paket C: provider, local reachability and fresh mesh runtimes come from the
+        // ONE place (llm/active-runtime.ts). Before: another env variable (NOVA_LLM_PROVIDER),
+        // a hard-coded provider list and a 15-minute window of its own.
+        let persisted: any = {}
+        try {
+            const configPath = resolveConfigPath()
+            persisted = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf-8')) : {}
+        } catch { /* config unavailable */ }
+        const { describeActiveRuntime } = await import('../llm/active-runtime.js')
+        const runtime = await describeActiveRuntime({ config: persisted, registry: null })
+        const graphOnline = runtime.meshRuntimes
         const noOnlineModelsId = stableId(['llm-no-online-models'])
         const noLocalModelsId = stableId(['llm-no-local-models'])
-        if (online.length === 0 && graphOnline.length === 0) {
+        if (online.length === 0 && graphOnline.length === 0 && runtime.reachable !== true) {
             // Is a cloud provider configured as primary? Then local being down
             // is at most a warning (lost fast fallback), never critical.
-            let cloudPrimary = false
-            let providerName = 'unknown'
-            try {
-                const configPath = resolveConfigPath()
-                const persisted = existsSync(configPath)
-                    ? JSON.parse(readFileSync(configPath, 'utf-8'))
-                    : {}
-                providerName = String(
-                    persisted.provider
-                    || persisted.preferredProvider
-                    || process.env.NOVA_LLM_PROVIDER
-                    || 'unknown',
-                ).toLowerCase()
-                cloudPrimary = new Set(['minimax', 'openai', 'anthropic', 'openrouter', 'groq', 'openai-codex']).has(providerName)
-            } catch { /* config unavailable — fall back to critical */ }
+            const providerName = runtime.provider === 'none' ? 'unknown' : runtime.provider
+            const cloudPrimary = runtime.kind === 'cloud'
 
             if (cloudPrimary) {
                 const resolved = resolveFinding(

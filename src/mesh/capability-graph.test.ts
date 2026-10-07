@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { CapabilityGraph, capabilityRuntimeAvailable } from './capability-graph.js'
 import type { CapabilityGraphNode } from './capability-graph.js'
+import { NODE_OFFLINE_AFTER_MS } from './mesh-node-lifecycle.js'
 
 describe('CapabilityGraph', () => {
     it('enforces heartbeat, expiry and runtime-local capabilities without a prune pass', () => {
@@ -20,7 +21,7 @@ describe('CapabilityGraph', () => {
         expect(graph.findCandidates({ capability: 'llm' })).toHaveLength(1)
         expect(graph.findCandidates({ capability: 'embedding' })).toEqual([])
         const runtime = node.runtimes[0]
-        expect(capabilityRuntimeAvailable(node, runtime, Date.parse(now) + 75_001)).toBe(false)
+        expect(capabilityRuntimeAvailable(node, runtime, Date.parse(now) + NODE_OFFLINE_AFTER_MS + 1)).toBe(false)
         expect(capabilityRuntimeAvailable({ ...node, lastHeartbeat: 'invalid' }, runtime)).toBe(false)
         expect(capabilityRuntimeAvailable(node, { ...runtime, expiresAt: now })).toBe(false)
         expect(capabilityRuntimeAvailable(node, { ...runtime, expiresAt: 'invalid' })).toBe(false)

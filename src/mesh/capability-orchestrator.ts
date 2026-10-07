@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CapabilityGraphSnapshot, CapabilityRuntime, CapabilityGraphNode } from './capability-graph.js'
 import { getCapabilityGraph, capabilityNodeOnline, capabilityRuntimeAvailable, capabilityRuntimeTombstoned } from './capability-graph.js'
+import { configuredCloudProviders } from '../llm/active-runtime.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'capabilities')
 
@@ -280,49 +281,19 @@ export async function probeNode(name: string, address: string): Promise<MeshNode
 }
 
 // Discover cloud provider capabilities
-export function discoverCloudCapabilities(): CloudProvider[] {
-    const providers: CloudProvider[] = []
-
-    // OpenAI (via API key or OAuth)
-    const hasOpenAI = !!process.env.OPENAI_API_KEY
-    providers.push({
-        name: 'openai',
-        available: hasOpenAI,
-        apiKey: hasOpenAI,
-        capabilities: [
-            { name: 'llm', provider: 'auto', quality: 9, cost: 'cheap', speed: 'fast', available: hasOpenAI },
-            { name: 'vision', provider: 'auto', quality: 9, cost: 'cheap', speed: 'fast', available: hasOpenAI },
-            { name: 'embedding', provider: 'text-embedding-004', quality: 9, cost: 'cheap', speed: 'fast', available: hasOpenAI },
-        ],
-    })
-
-    // OpenAI (best quality)
-    const hasOpenAIAuth = !!process.env.OPENAI_API_KEY
-    providers.push({
-        name: 'openai',
-        available: hasOpenAIAuth,
-        apiKey: hasOpenAIAuth,
-        capabilities: [
-            { name: 'llm', provider: 'openai', quality: 10, cost: 'cheap', speed: 'fast', available: hasOpenAIAuth },
-            { name: 'vision', provider: 'openai', quality: 10, cost: 'cheap', speed: 'fast', available: hasOpenAIAuth },
-        ],
-    })
-
-    // MiniMax
-    const hasMinimax = !!process.env.MINIMAX_API_KEY
-    if (hasMinimax) {
-        providers.push({
-            name: 'minimax',
-            available: true,
-            apiKey: true,
-            capabilities: [
-                { name: 'tts', provider: 'minimax-tts', quality: 9, cost: 'cheap', speed: 'fast', available: true },
-                { name: 'llm', provider: 'minimax', quality: 7, cost: 'cheap', speed: 'fast', available: true },
-            ],
-        })
-    }
-
-    return providers
+export function discoverCloudCapabilities(config: unknown = (globalThis as any).__novaState?.config): CloudProvider[] {
+    // 2.89 Paket C: which cloud providers are set up comes from the ONE place
+    // (llm/active-runtime.ts). Before: a fixed list here (OpenAI twice, wrong embedding model,
+    // no Gemini/Anthropic). Presence of a key only; "embedding" is NOT claimed for a cloud
+    // provider that is not the memory's embedding source (memory embeds locally only).
+    return configuredCloudProviders(config).map(view => ({
+        name: view.name,
+        available: view.keyPresent,
+        apiKey: view.keyPresent,
+        capabilities: view.capabilities
+            .filter(name => name !== 'embedding')
+            .map((name): NodeCapability => ({ name, provider: view.name, quality: view.active ? 9 : 8, cost: 'cheap', speed: 'fast', available: view.keyPresent })),
+    }))
 }
 
 // ============================================

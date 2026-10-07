@@ -18,6 +18,7 @@ import type {
 } from './types.js'
 import { probeGpuRuntime, type GpuRuntimeStatus } from './gpu-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { describeActiveRuntime } from '../llm/active-runtime.js'
 
 
 const NOVA_DIR = process.cwd()
@@ -292,36 +293,26 @@ async function checkPorts(config: Record<string, unknown> | null): Promise<Check
 // 5. LLM Provider checks
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** OpenAI-compatible local runtime (vLLM, llama.cpp server, LM Studio …) behind providers.local. */
-async function probeOpenAiCompatible(baseUrl: string, fetchImpl: typeof fetch): Promise<{ reachable: boolean; models?: string[] }> {
-    try {
-        const base = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')
-        const res = await fetchImpl(`${base}/v1/models`, { signal: AbortSignal.timeout(3000) })
-        if (!res.ok) return { reachable: false }
-        const data = await res.json() as { data?: Array<{ id?: string }> }
-        return { reachable: true, models: (data.data || []).map(m => String(m.id || '')).filter(Boolean) }
-    } catch {
-        return { reachable: false }
-    }
-}
-
 export async function checkProviders(config: Record<string, unknown> | null, deps: { fetch?: typeof fetch } = {}): Promise<CheckResult> {
     const cfg = config as any
-    const provider: string = cfg?.provider || process.env.NOVA_PROVIDER || ''
     const issues: DoctorIssue[] = []
     const fetchImpl = deps.fetch || fetch
+
+    // 2.89 Paket C: the provider and its reachability come from the ONE place
+    // (llm/active-runtime.ts): config provider + NOVA_PROVIDER, vLLM/local/Ollama
+    // endpoints probed the same way everywhere (before: `vllm` was not checked here).
+    const runtime = await describeActiveRuntime({ config: cfg || {}, fetchImpl, registry: null, meshRuntimes: [] })
+    const provider: string = runtime.provider === 'none' ? '' : runtime.provider
 
     // 2.87.1 (live 07.10.): provider "local" with providers.local.baseUrl is a
     // configured OpenAI-compatible runtime (vLLM on the Spark). Probing Ollama on
     // localhost instead reported "Das KI-Programm antwortet nicht" while vLLM ran.
-    const localBase: string = cfg?.providers?.local?.enabled !== false ? String(cfg?.providers?.local?.baseUrl || '') : ''
-    if ((!provider || provider === 'local') && localBase) {
-        const local = await probeOpenAiCompatible(localBase, fetchImpl)
-        if (local.reachable) {
-            const count = local.models?.length ?? 0
-            return { ok: true, label: 'LLM Provider', status: `Lokales Modell ✅ (${count} Modell${count !== 1 ? 'e' : ''}: ${local.models?.slice(0, 3).join(', ') || 'keine'})`, issues }
+    if (runtime.kind === 'local' && (runtime.endpointStyle === 'openai' || (provider !== 'ollama' && !runtime.endpoint))) {
+        if (runtime.reachable) {
+            const count = runtime.localModels.length
+            return { ok: true, label: 'LLM Provider', status: `Lokales Modell ✅ (${count} Modell${count !== 1 ? 'e' : ''}: ${runtime.localModels.slice(0, 3).join(', ') || 'keine'})`, issues }
         }
-        issues.push(issue('LOCAL_LLM_UNREACHABLE', 'error', `Lokales Modell nicht erreichbar (${localBase})`,
+        issues.push(issue('LOCAL_LLM_UNREACHABLE', 'error', `Lokales Modell nicht erreichbar (${runtime.endpoint || 'keine Adresse eingetragen'})`,
             { type: 'info', hint: 'Läuft der lokale Modell-Dienst? Unter „Verbindungen“ siehst du den Stand.', safe: false }))
         return { ok: false, label: 'LLM Provider', status: 'Lokales Modell ❌', issues }
     }
@@ -333,10 +324,9 @@ export async function checkProviders(config: Record<string, unknown> | null, dep
         ))
     }
 
-    if (provider === 'ollama' || !provider || provider === 'local') {
-        // Actually probe Ollama (best-effort, 3s timeout)
-        const ollamaBase = cfg?.ollama?.baseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-        const ollamaResult = await probeOllama(ollamaBase, fetchImpl)
+    if (runtime.kind === 'local' && runtime.endpointStyle === 'ollama') {
+        const ollamaBase = runtime.endpoint || 'http://localhost:11434'
+        const ollamaResult = { reachable: runtime.reachable === true, models: runtime.localModels }
         if (!ollamaResult.reachable) {
             issues.push(issue('OLLAMA_UNREACHABLE', 'error',
                 `Ollama nicht erreichbar (${ollamaBase})`,
@@ -444,22 +434,6 @@ export async function recommendedOllamaPull(memoryGb: number): Promise<string | 
     const [{ chooseFirstStartModel }, { ollamaModelRef }] = await Promise.all([import('../onboarding/first-start-doctor.js'), import('../install/install-catalog.js')])
     const catalogId = chooseFirstStartModel({ memoryGb })
     return catalogId ? `ollama pull ${ollamaModelRef(catalogId.slice('ollama-model:'.length))}` : null
-}
-
-async function probeOllama(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<{ reachable: boolean; models?: string[] }> {
-    try {
-        const res = await fetchImpl(`${baseUrl}/api/tags`, {
-            signal: AbortSignal.timeout(3000),
-        })
-        if (!res.ok) return { reachable: false }
-        const data = await res.json() as { models?: Array<{ name: string }> }
-        return {
-            reachable: true,
-            models: (data.models || []).map(m => m.name),
-        }
-    } catch {
-        return { reachable: false }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

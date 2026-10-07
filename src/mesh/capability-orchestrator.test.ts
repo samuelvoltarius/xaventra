@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CapabilityGraph, type CapabilityGraphSnapshot } from './capability-graph.js'
+import { NODE_OFFLINE_AFTER_MS } from './mesh-node-lifecycle.js'
 import { findBestCapability, getCapabilityMap, getMissingCapabilities, initCapabilityOrchestrator, nodesFromCapabilityGraph, suggestInstallation } from './capability-orchestrator.js'
 
 const evidence = vi.hoisted(() => ({ snapshot: null as CapabilityGraphSnapshot | null }))
@@ -78,7 +79,7 @@ describe('live capability projection', () => {
             const runtime = node.runtimes[0]
             if (failure === 'stopped') runtime.status = 'stopped'
             if (failure === 'offline') node.status = 'offline'
-            if (failure === 'heartbeat expired') node.lastHeartbeat = new Date(now.getTime() - 75_001).toISOString()
+            if (failure === 'heartbeat expired') node.lastHeartbeat = new Date(now.getTime() - NODE_OFFLINE_AFTER_MS - 1).toISOString()
             if (failure === 'probe expired') runtime.verifiedAt = new Date(now.getTime() - 300_001).toISOString()
             if (failure === 'explicit expiry') runtime.expiresAt = now.toISOString()
             if (failure === 'invalid time') runtime.verifiedAt = 'invalid'

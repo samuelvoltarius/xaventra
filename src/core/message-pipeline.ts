@@ -1713,7 +1713,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     codexRoute = Boolean(codex.available && codex.authenticated && codex.preferred)
                     codexNode = codex.nodeId || ''
                 } catch { /* Codex is optional. */ }
-                lines.push(`Konfiguriertes Runtime-Modell: ${provider}/${model}.`)
+                // 2.89 Paket C: provider, model and "antwortet es?" from the ONE place (llm/active-runtime.ts).
+                const { describeActiveRuntime, formatActiveRuntime } = await import('../llm/active-runtime.js')
+                const active = await describeActiveRuntime({
+                    config: (globalThis as any).__novaState?.config,
+                    client: { providerId: provider === 'unbekannt' ? undefined : provider, modelId: model === 'unbekannt' ? undefined : model },
+                })
+                lines.push(...formatActiveRuntime(active))
                 const identity = await state.llm?.runtimeModelIdentity?.()
                 lines.push(identity?.model
                     ? `Der konfigurierte Server meldet für diesen Alias: ${identity.model}.`

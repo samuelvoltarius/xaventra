@@ -1834,9 +1834,10 @@ export async function formatMeshServices(): Promise<string> {
     try {
         const { getCapabilityGraph } = await import('./capability-graph.js')
         const snapshot = getCapabilityGraph().getSnapshot()
-        const cutoff = Date.now() - 10 * 60_000
+        // 2.89: same "running right now" rule as everywhere (capability-graph.ts), not a 10-minute cutoff of its own.
+        const { capabilityRuntimeAvailable } = await import('./capability-graph.js')
         const runtimes = snapshot.nodes.flatMap(node => node.runtimes
-            .filter(runtime => runtime.status === 'running' && Date.parse(runtime.verifiedAt) >= cutoff)
+            .filter(runtime => capabilityRuntimeAvailable(node, runtime))
             .map(runtime => ({ node: node.hostname, ...runtime })))
         if (runtimes.length) {
             lines.push('', `🤖 *Laufende AI-Runtimes (${runtimes.length}):*`)
