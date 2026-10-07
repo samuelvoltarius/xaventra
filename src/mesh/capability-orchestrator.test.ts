@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CapabilityGraphSnapshot } from './capability-graph.js'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CapabilityGraph, type CapabilityGraphSnapshot } from './capability-graph.js'
 import { findBestCapability, getCapabilityMap, getMissingCapabilities, initCapabilityOrchestrator, nodesFromCapabilityGraph, suggestInstallation } from './capability-orchestrator.js'
 
 const evidence = vi.hoisted(() => ({ snapshot: null as CapabilityGraphSnapshot | null }))
@@ -109,5 +112,86 @@ describe('live capability projection', () => {
         const suggestion = suggestInstallation('stt')!
         expect(suggestion).toContain('kein aktuell erreichbarer')
         expect(suggestion).not.toMatch(/jetson|pip install|nova-stt-server/)
+    })
+})
+
+describe('local runtimes reach the projection (live 2.88.1: vLLM and whisper on the main node)', () => {
+    const stamp = now.toISOString()
+    const scan = {
+        lastScan: stamp, scanDurationMs: 5, services: [
+            { id: 'vllm@localhost:8000', name: 'vllm', type: 'llm', provider: 'vllm', host: '127.0.0.1', port: 8000, endpoint: 'http://127.0.0.1:8000',
+                models: ['chat-a', 'chat-b'], status: 'running', lastSeen: stamp, sourceNode: 'local' },
+            { id: 'whisper@localhost:9000', name: 'whisper-gpu', type: 'stt', provider: 'whisper', host: '127.0.0.1', port: 9000, endpoint: 'http://127.0.0.1:9000',
+                models: ['whisper-small'], status: 'running', lastSeen: stamp, sourceNode: 'local' },
+            { id: 'ollama@localhost:11434', name: 'ollama', type: 'llm', provider: 'ollama', host: '127.0.0.1', port: 11434, endpoint: 'http://127.0.0.1:11434',
+                models: [], status: 'installed', lastSeen: stamp, sourceNode: 'local' },
+        ],
+    } as any
+    const selfMesh = [{
+        node_id: 'main-node', hostname: 'main-node', ip: '192.0.2.5', platform: 'linux', version: '1', tools_count: 1, status: 'online', capabilities: [], last_heartbeat: stamp,
+    }] as any
+
+    it('keeps local runtimes on the main node although NOVA_NODE_ID is not set (scanner passes the real node id)', () => {
+        const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
+        // Main node without NOVA_NODE_ID: the id comes from the registry, never undefined.
+        graph.ingest(scan, selfMesh, 'main-node')
+        evidence.snapshot = graph.getSnapshot()
+        expect(getMissingCapabilities()).not.toContain('llm')
+        expect(getMissingCapabilities()).not.toContain('stt')
+        expect(findBestCapability(request)?.nodeName).toBe('main-node')
+    })
+
+    it('does not drop a scanner-only local node as unknown when no node id was passed', () => {
+        const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
+        graph.ingest(scan, [], undefined)
+        evidence.snapshot = graph.getSnapshot()
+        expect(getMissingCapabilities()).not.toContain('llm')
+        expect(getMissingCapabilities()).not.toContain('stt')
+    })
+
+    it('recognises OpenAI-compatible and whisper runtimes by their own type names, not only "llm"/"stt"', () => {
+        evidence.snapshot = {
+            version: 1, updatedAt: stamp, tombstones: [], nodes: [{
+                id: 'main-node', hostname: 'main-node', status: 'online', lastHeartbeat: stamp, updatedAt: stamp, capabilities: [],
+                runtimes: [
+                    { id: 'a', name: 'vllm', type: 'vllm', endpoint: 'http://192.0.2.5:8000', status: 'running', models: ['chat-a'], capabilities: ['vllm', 'vllm'], verifiedAt: stamp, verificationSource: 'mesh-heartbeat' },
+                    { id: 'b', name: 'whisper-server', type: 'whisper', endpoint: 'http://192.0.2.5:9000', status: 'running', models: [], capabilities: ['whisper', 'whisper-server'], verifiedAt: stamp, verificationSource: 'mesh-heartbeat' },
+                    { id: 'c', name: 'ollama', type: 'ollama', endpoint: 'http://192.0.2.5:11434', status: 'installed', models: [], capabilities: ['ollama'], verifiedAt: stamp, verificationSource: 'mesh-heartbeat' },
+                ],
+            }],
+        }
+        expect(getMissingCapabilities()).not.toContain('llm')
+        expect(getMissingCapabilities()).not.toContain('stt')
+        expect(suggestInstallation('llm')).toMatch(/bereits verfuegbar: main-node\/chat-a/)
+    })
+
+    it('does not offer "ollama already installed" for a capability a running local runtime stands for after restart', async () => {
+        // Boot with the persisted graph: running runtimes are not yet re-verified (older than 5 min).
+        const old = new Date(now.getTime() - 3_600_000).toISOString()
+        const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
+        graph.ingest({ ...scan, services: scan.services.map((service: any) => ({ ...service, lastSeen: old })) }, [{ ...selfMesh[0], last_heartbeat: stamp }], 'main-node')
+        evidence.snapshot = graph.getSnapshot()
+        const lines: string[] = []
+        const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.join(' ')) })
+        await initCapabilityOrchestrator()
+        log.mockRestore()
+        const text = lines.join(' | ')
+        expect(text).not.toMatch(/llm: ollama/)
+        expect(text).not.toMatch(/Missing:.*\b(llm|stt)\b/)
+    })
+    it('counter-check: a stopped runtime stays missing and is not reported as pending', async () => {
+        evidence.snapshot = {
+            version: 1, updatedAt: stamp, tombstones: [], nodes: [{
+                id: 'main-node', hostname: 'main-node', status: 'online', lastHeartbeat: stamp, updatedAt: stamp, capabilities: [],
+                runtimes: [{ id: 'a', name: 'vllm', type: 'llm', endpoint: 'http://192.0.2.5:8000', status: 'stopped', models: ['chat-a'], capabilities: ['llm'], verifiedAt: stamp, verificationSource: 'probe' }],
+            }],
+        }
+        const lines: string[] = []
+        const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { lines.push(args.join(' ')) })
+        await initCapabilityOrchestrator()
+        log.mockRestore()
+        const text = lines.join(' | ')
+        expect(text).toMatch(/Missing:.*\bllm\b/)
+        expect(text).not.toContain('Noch nicht neu bestaetigt')
     })
 })

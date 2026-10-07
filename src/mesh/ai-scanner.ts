@@ -1401,11 +1401,13 @@ async function performAIScan(options?: AIScanOptions): Promise<AIScanResult> {
     // The scanner remains the discovery authority. The persistent graph only
     // normalizes its verified findings together with mesh heartbeats.
     try {
-        const [{ getCapabilityGraph }, { discoverNodes }] = await Promise.all([
+        const [{ getCapabilityGraph }, { discoverNodes, getLocalNodeId }] = await Promise.all([
             import('./capability-graph.js'),
             import('./mesh-registry.js'),
         ])
-        getCapabilityGraph().ingest(result, await discoverNodes(), process.env.NOVA_NODE_ID)
+        // The main node has no NOVA_NODE_ID: its id comes from the registry, otherwise its own
+        // vLLM/whisper end up on a nameless "local" node that the projection drops.
+        getCapabilityGraph().ingest(result, await discoverNodes(), process.env.NOVA_NODE_ID?.trim() || getLocalNodeId())
         const { syncCapabilityGraphOnce } = await import('./capability-graph-sync.js')
         await syncCapabilityGraphOnce()
     } catch { /* capability graph is best-effort during bootstrap */ }

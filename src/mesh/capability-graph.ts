@@ -488,7 +488,8 @@ export class CapabilityGraph {
             const nodeId = matched?.id || hintedNode || (isLocalService ? (localNodeId || 'local') : service.host)
             const node = matched || byId.get(nodeId) || {
                 id: nodeId, hostname: hintedNode || service.host, host: service.host,
-                status: 'unknown' as const, capabilities: [], runtimes: [], updatedAt: now,
+                // This node's own probe just answered: a scanner-only local node is online (age-checked via updatedAt).
+                status: isLocalService ? 'online' as const : 'unknown' as const, capabilities: [], runtimes: [], updatedAt: now,
             }
             const runtime = runtimeFromService(service)
             const index = node.runtimes.findIndex(item => sameRuntime(item, runtime))
