@@ -150,7 +150,8 @@ try {
     assert.ok(reply.runId, 'Reply is missing its real Outcome run ID')
     const run = await api(`/trust/runs/${reply.runId}`)
     assert.equal(run.status, 200, 'The same Desktop principal cannot open its own Outcome')
-    assert.equal(run.body.userId, `desktop:${info.principal}`)
+    // 2.88: with a configured Telegram owner the Desktop owner runs as that one owner principal.
+    assert.equal(run.body.userId, info.ownerPrincipal || `desktop:${info.principal}`)
     assert.equal(run.body.validation.success, true)
     assert.equal(run.body.status, 'completed')
     if (fullDaemon) {
@@ -181,7 +182,7 @@ try {
   })
   await check('scoped memory and Trust lists match execution identity without widening access', async () => {
     const memory = (await api('/memory')).body
-    assert.equal(memory.scope, `user:desktop:${info.principal}`)
+    assert.equal(memory.scope, `user:${info.ownerPrincipal || `desktop:${info.principal}`}`)
     assert.ok(memory.records.some(record => record.content.includes('OWN_SCOPED_MEMORY_731')))
     assert.ok(!memory.records.some(record => record.content.includes('OTHER_SCOPED_MEMORY_912')))
     const foreign = await api('/memory', {}, 'different-user')
