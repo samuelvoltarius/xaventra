@@ -292,10 +292,39 @@ async function checkPorts(config: Record<string, unknown> | null): Promise<Check
 // 5. LLM Provider checks
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function checkProviders(config: Record<string, unknown> | null): Promise<CheckResult> {
+/** OpenAI-compatible local runtime (vLLM, llama.cpp server, LM Studio …) behind providers.local. */
+async function probeOpenAiCompatible(baseUrl: string, fetchImpl: typeof fetch): Promise<{ reachable: boolean; models?: string[] }> {
+    try {
+        const base = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')
+        const res = await fetchImpl(`${base}/v1/models`, { signal: AbortSignal.timeout(3000) })
+        if (!res.ok) return { reachable: false }
+        const data = await res.json() as { data?: Array<{ id?: string }> }
+        return { reachable: true, models: (data.data || []).map(m => String(m.id || '')).filter(Boolean) }
+    } catch {
+        return { reachable: false }
+    }
+}
+
+export async function checkProviders(config: Record<string, unknown> | null, deps: { fetch?: typeof fetch } = {}): Promise<CheckResult> {
     const cfg = config as any
     const provider: string = cfg?.provider || process.env.NOVA_PROVIDER || ''
     const issues: DoctorIssue[] = []
+    const fetchImpl = deps.fetch || fetch
+
+    // 2.87.1 (live 07.10.): provider "local" with providers.local.baseUrl is a
+    // configured OpenAI-compatible runtime (vLLM on the Spark). Probing Ollama on
+    // localhost instead reported "Das KI-Programm antwortet nicht" while vLLM ran.
+    const localBase: string = cfg?.providers?.local?.enabled !== false ? String(cfg?.providers?.local?.baseUrl || '') : ''
+    if ((!provider || provider === 'local') && localBase) {
+        const local = await probeOpenAiCompatible(localBase, fetchImpl)
+        if (local.reachable) {
+            const count = local.models?.length ?? 0
+            return { ok: true, label: 'LLM Provider', status: `Lokales Modell ✅ (${count} Modell${count !== 1 ? 'e' : ''}: ${local.models?.slice(0, 3).join(', ') || 'keine'})`, issues }
+        }
+        issues.push(issue('LOCAL_LLM_UNREACHABLE', 'error', `Lokales Modell nicht erreichbar (${localBase})`,
+            { type: 'info', hint: 'Läuft der lokale Modell-Dienst? Unter „Verbindungen“ siehst du den Stand.', safe: false }))
+        return { ok: false, label: 'LLM Provider', status: 'Lokales Modell ❌', issues }
+    }
 
     if (!provider || provider === 'local') {
         issues.push(issue('LLM_PROVIDER_NOT_SET', 'warning',
@@ -307,7 +336,7 @@ async function checkProviders(config: Record<string, unknown> | null): Promise<C
     if (provider === 'ollama' || !provider || provider === 'local') {
         // Actually probe Ollama (best-effort, 3s timeout)
         const ollamaBase = cfg?.ollama?.baseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-        const ollamaResult = await probeOllama(ollamaBase)
+        const ollamaResult = await probeOllama(ollamaBase, fetchImpl)
         if (!ollamaResult.reachable) {
             issues.push(issue('OLLAMA_UNREACHABLE', 'error',
                 `Ollama nicht erreichbar (${ollamaBase})`,
@@ -417,9 +446,9 @@ export async function recommendedOllamaPull(memoryGb: number): Promise<string | 
     return catalogId ? `ollama pull ${ollamaModelRef(catalogId.slice('ollama-model:'.length))}` : null
 }
 
-async function probeOllama(baseUrl: string): Promise<{ reachable: boolean; models?: string[] }> {
+async function probeOllama(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<{ reachable: boolean; models?: string[] }> {
     try {
-        const res = await fetch(`${baseUrl}/api/tags`, {
+        const res = await fetchImpl(`${baseUrl}/api/tags`, {
             signal: AbortSignal.timeout(3000),
         })
         if (!res.ok) return { reachable: false }

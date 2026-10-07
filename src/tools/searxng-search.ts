@@ -156,6 +156,18 @@ export function getSearXNGUrl(): string | null {
     try { return getDiscoveredSearxngUrl() } catch { return null }
 }
 
+/**
+ * 2.87.1: the own SearXNG (configured or found in the network) answers a plain
+ * web search first. null = no SearXNG or no results, so the caller falls back.
+ */
+export async function searchViaOwnSearxng(query: string, count = 5): Promise<{ query: string; results: Array<{ title: string; url: string; snippet: string }>; source: 'searxng' } | null> {
+    const baseUrl = getSearXNGUrl()
+    if (!baseUrl || !query.trim()) return null
+    const found = await searxngSearch(query, baseUrl, { count })
+    if (found.error || !found.results?.length) return null
+    return { query, source: 'searxng', results: found.results.slice(0, count).map((r: any) => ({ title: String(r.title || ''), url: String(r.url || ''), snippet: String(r.content || r.snippet || '') })) }
+}
+
 // ============================================
 // Tool Definition
 // ============================================

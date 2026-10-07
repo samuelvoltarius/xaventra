@@ -1993,9 +1993,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
         if ((result as any).incompleteSynthesis) {
             // No post-timeout repair/fact-check or unsupported completion claim.
-            const { incompleteToolResponse } = await import('./tool-evidence-response.js')
-            supervised.content = incompleteToolResponse(successfulExecutions.map((item: any) =>
-                typeof item.result === 'string' ? item.result : JSON.stringify(item.result)))
+            const { incompleteExecutionsResponse } = await import('./tool-evidence-response.js')
+            supervised.content = incompleteExecutionsResponse(successfulExecutions)
         }
         const fulfillmentToolCount = kernelState
             ? (kernelState.fulfilled ? 1 : 0)

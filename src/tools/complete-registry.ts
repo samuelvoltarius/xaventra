@@ -917,7 +917,7 @@ export const systemTools: NovaTool[] = [
 export const browserTools: NovaTool[] = [
     {
         name: 'web_search',
-        description: 'Sucht im Internet mit DuckDuckGo (kein API-Key nötig)',
+        description: 'Sucht im Internet: zuerst über die eigene SearXNG (privat, kein Schlüssel), sonst DuckDuckGo',
         category: 'browser',
         parameters: [
             { name: 'query', type: 'string', description: 'Suchanfrage', required: true },
@@ -926,6 +926,11 @@ export const browserTools: NovaTool[] = [
         handler: async (params) => {
             const query = encodeURIComponent(params.query as string)
             const count = (params.count as number) || 5
+            try {
+                const { searchViaOwnSearxng } = await import('./searxng-search.js')
+                const own = await searchViaOwnSearxng(String(params.query || ''), count)
+                if (own) return own
+            } catch { /* fall back to DuckDuckGo */ }
 
             try {
                 const response = await fetch(

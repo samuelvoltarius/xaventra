@@ -4,7 +4,7 @@ Generated from authoritative source. Do not edit by hand.
 
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
-| tools.json | 228 | `779c1acec479a9da7c41653ff3085ea77650698e71cb70f1cd8a8a9a2da3481d` |
+| tools.json | 228 | `94c42e7103f4d6cdfa62aaeebcc9886e2e3db4d51d4e34f711b3ec8411c69e7b` |
 | config.json | 0 | `441fb2792fcb3df81a94b00e9d70a2bc459034b6ffb093f9e38a2b67fd899bec` |
 | persistence.json | 361 | `dc3accefa2aa55b477be96b1db4aee6851bf5ab8411318c966d92db3f0307c86` |
 | modules.json | 888 | `b5216102904fa1524b8c2382a90cbc8711b43710c1f6320be19f8144cbfbe765` |

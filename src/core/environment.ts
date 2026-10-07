@@ -115,6 +115,18 @@ function getShell(): string {
 // Main Detection
 // ============================================
 
+/**
+ * 2.87.1 (live 07.10.2026): a systemd service with NoNewPrivileges cannot use ping
+ * (file capability), so the prompt said "Internet: nicht erreichbar" and Xaventra told
+ * the owner she had no internet. Ping first, then a plain TCP connection on 443 with
+ * this very Node binary — no extra privileges needed.
+ */
+export function probeInternetSync(os: string, run: (command: string) => void): boolean {
+    try { run(os === 'windows' ? 'ping -n 1 -w 2000 8.8.8.8' : 'ping -c 1 -W 2 8.8.8.8'); return true } catch { /* ping unavailable or blocked */ }
+    const script = "const s=require('net').connect(443,'1.1.1.1');s.setTimeout(2500);s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"
+    try { run(`"${process.execPath}" -e "${script}"`); return true } catch { return false }
+}
+
 export function detectEnvironment(forceRefresh = false): NovaEnvironment {
     if (!forceRefresh) {
         const cached = loadCachedEnv()
@@ -162,12 +174,7 @@ export function detectEnvironment(forceRefresh = false): NovaEnvironment {
     }
 
     // Quick network check
-    try {
-        execSync(os === 'windows' ? 'ping -n 1 -w 2000 8.8.8.8' : 'ping -c 1 -W 2 8.8.8.8', {
-            timeout: 3000, windowsHide: true, stdio: 'pipe',
-        })
-        env.networkReachable = true
-    } catch { /* offline */ }
+    env.networkReachable = probeInternetSync(os, command => { execSync(command, { timeout: 4000, windowsHide: true, stdio: 'pipe' }) })
 
     console.log(`[Environment] ✅ ${env.os}/${env.arch} | SSH:${env.hasSSH} Key:${env.hasSSHKey} | Choco:${env.hasChoco} Scoop:${env.hasScoop} | Docker:${env.hasDocker} | Net:${env.networkReachable}`)
 

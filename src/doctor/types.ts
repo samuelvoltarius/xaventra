@@ -22,6 +22,7 @@ export type IssueCode =
     | 'LLM_PROVIDER_NOT_SET'
     | 'LLM_API_KEY_MISSING'
     | 'OLLAMA_UNREACHABLE'
+    | 'LOCAL_LLM_UNREACHABLE'
     | 'OLLAMA_NO_MODELS'
     // Channels
     | 'TELEGRAM_ENABLED_NO_TOKEN'

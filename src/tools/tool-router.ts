@@ -78,6 +78,14 @@ const SKILL_PACKS: SkillPack[] = [
         tools: ['web_search', 'google_search', 'searxng_search', 'browser_search', 'fetch_url'],
     },
     {
+        // 2.87.1: without this pack Home Assistant / light questions reached the model with
+        // the 5 core tools only (live 07.10.). Keywords are whole words, so common typos are listed.
+        name: 'smart-home', description: 'Home Assistant, Lichter, Steckdosen und Sensoren lesen oder schalten',
+        keywords: ['home assistant', 'homeassistant', 'homeassist', 'homeassit', 'homeasistant', 'home-assistant', 'hass', 'smart home', 'smarthome',
+            'licht', 'lichter', 'lampe', 'lampen', 'steckdose', 'steckdosen', 'heizung', 'thermostat', 'sensor', 'sensoren', 'hue', 'tuya', 'rollo', 'rollladen'],
+        tools: ['hass_status', 'hass_list', 'hass_get', 'hass_turn_on', 'hass_turn_off', 'hass_toggle', 'environment_inventory'],
+    },
+    {
         name: 'personal-memory', description: 'Persönliche Erinnerungen speichern oder abrufen',
         keywords: ['erinnerst', 'erinnerung', 'merk dir', 'merken', 'vergiss', 'memory', 'gedächtnis', 'über mich'],
         tools: ['remember', 'recall', 'update_memory', 'update_user_profile', 'kg_search'],

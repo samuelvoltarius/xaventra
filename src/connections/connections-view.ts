@@ -198,6 +198,19 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
         tv: 'erkannt; Steuerbarkeit noch ungeprüft', geraet: 'erkannt; Typ und Steuerbarkeit noch ungeprüft',
     }
     const konsolidiert = consolidateDevices(records as any, ctx)
+    // 2.87.1: a device that needs a private key (Tuya, ESPHome, Matter, Shelly cloud) is only
+    // "verbunden" once that access is stored — an approved way alone is not a connection.
+    const access = await import('../sensing/smart-device-access.js')
+    const KEYED = new Set(['tuya-announcements', 'esphome-native', 'matter-ip', 'shelly-readonly'])
+    const accessReady = (g: { dienste: Array<{ id: string }> }) => g.dienste.every(dienst => {
+        const record = records.find((r: any) => r.id === dienst.id) as any
+        if (!record || !KEYED.has(String(record.hardware?.connector || ''))) return true
+        try {
+            const matter = access.getMatterAccess(dataDir, record)
+            return Boolean(access.getTuyaLocalAccess(dataDir, record) || access.getTuyaCloudAccess(dataDir, record) || access.getEspHomeAccess(dataDir, record)
+                || access.getShellyCloudAccess(dataDir, record) || (matter && matter.state === 'connected'))
+        } catch { return false }
+    })
     for (const g of konsolidiert.geraete) {
         if (g.status === 'abgelehnt') continue
         const primary = records.find((record: any) => record.id === g.primaryId) as any
@@ -210,7 +223,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             wirkung: typed ? known.wirkung : GERAET_WIRKUNG[g.art] || GERAET_WIRKUNG.geraet,
             fund: `im Netz ${primary.host}:${primary.port}${g.adressen.length > 1 ? ` (+${g.adressen.length - 1} weitere Adresse${g.adressen.length > 2 ? 'n' : ''})` : ''}`,
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : g.status === 'eingerichtet',
+            verbunden: connectorId ? connectedIds.has(connectorId) : g.status === 'eingerichtet' && accessReady(g),
             geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
         })
     }

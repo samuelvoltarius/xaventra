@@ -33,6 +33,28 @@ yet do — running on your own hardware, private by default.
   active main; she scales her own workers through a narrow interface limited
   to her own namespace — no raw cluster shell.
 
+## [2.87.1] — 2026-10-07
+
+Fixes from the first night with 2.87.0:
+
+- Questions about Home Assistant, lights, plugs or sensors now get the Home
+  Assistant tools (also with common typos); before she guessed tool packs and
+  ended with a page of tool catalogue in the chat.
+- An unfinished answer never shows tool catalogues or self-descriptions; when
+  nothing useful is left she says so in one sentence.
+- The self-check asks the configured local model (for example vLLM) instead of
+  a fixed Ollama address — no more "Das KI-Programm antwortet nicht" while the
+  model is running.
+- "Do you have internet?" is checked with a normal connection when ping is not
+  allowed for the service; the prompt no longer claims there is no internet.
+- Web search asks the own SearXNG first and uses DuckDuckGo only as a fallback.
+- A connection question asked before a device got connected closes itself
+  (Home Assistant was offered again although it was connected).
+- Devices that need a private key (Tuya, ESPHome, Matter, Shelly cloud) count
+  as connected only once the key is stored.
+- Node screenshots report per node which picture arrived instead of "no
+  picture was transferred".
+
 ## [2.87.0] — 2026-10-07
 
 Übersichtlich und erreichbar: the device list fits on one page, the local

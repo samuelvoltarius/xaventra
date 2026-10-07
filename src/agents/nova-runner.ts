@@ -29,7 +29,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse, environmentOverviewResponse, wantsTechnicalDetails } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, incompleteExecutionsResponse, environmentOverviewResponse, wantsTechnicalDetails } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
 import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
@@ -1664,12 +1664,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 })
                 if (!finalContent.trim()) {
                     incompleteSynthesis = true
-                    finalContent = incompleteToolResponse(toolExecutions.filter(item => item.success).map(item => item.result))
+                    finalContent = incompleteExecutionsResponse(toolExecutions)
                 }
             } catch (error) {
                 incompleteSynthesis = true
                 if (!policyBlocked && !failureEscalationContent) {
-                    finalContent = incompleteToolResponse(toolExecutions.filter(item => item.success).map(item => item.result))
+                    finalContent = incompleteExecutionsResponse(toolExecutions)
                 }
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')

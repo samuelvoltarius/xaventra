@@ -25,14 +25,20 @@ export interface ResponseToolExecution {
 export function nodeScreenshotResponse(executions: ResponseToolExecution[]): string {
     const inventory = executions.filter(item => item.success === true
         && ['mesh_nodes', 'mesh_status', 'mesh_services'].includes(item.toolName || item.name || ''))
-    const details = inventory.length ? verifiedToolEvidenceResponse(inventory)
-        : 'Die Node-Fähigkeiten wurden in diesem Lauf noch nicht durch aktuelle Mesh-Werkzeuge verifiziert.'
+    // 2.87.1: a screenshot request is not a capability question — no "not verified" line without inventory.
+    const details = inventory.length ? verifiedToolEvidenceResponse(inventory) : ''
     const capture = [...executions].reverse().find(item => (item.toolName || item.name) === 'mesh_screenshot')
     let result = capture?.result
-    if (typeof result === 'string') { try { result = JSON.parse(result) } catch { /* policy denial remains text */ } }
+    if (typeof result === 'string') {
+        // The runner prefixes unverified results ("❌ Ergebnis nicht verifiziert: … Rohdaten: {…}").
+        const marker = 'Rohdaten: '
+        const raw = result.includes(marker) ? result.slice(result.indexOf(marker) + marker.length) : result
+        try { result = JSON.parse(raw) } catch { /* policy denial remains text */ }
+    }
     const rows = result && typeof result === 'object' && Array.isArray((result as any).captures) ? (result as any).captures.slice(0, 16) : []
     const receipts = rows.map((row: any) => `${safeResult(row.nodeId, 100)}: ${row.captured === true ? 'Bild aufgenommen' : 'kein Bild aufgenommen'}; ${row.delivered === true ? 'Bildzustellung bestätigt' : 'keine Bildzustellung bestätigt'}${row.error ? ` — ${safeResult(row.error, 400)}` : ''}`).join('\n')
-    return `${details}\n\n${receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)}`
+    const body = receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)
+    return details ? `${details}\n\n${body}` : body
 }
 
 const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([
@@ -80,6 +86,19 @@ export function incompleteToolResponse(results: string[]): string {
     return details
         ? `Die Aufgabe ist noch nicht vollständig ausgewertet. Bisherige Tool-Beobachtungen (keine abschließende Antwort):\n\n${details}`
         : 'Die Aufgabe ist nicht abgeschlossen: Es liegen keine verwertbaren inhaltlichen Ergebnisse vor. Eine technische Erfolgsbestätigung allein reicht dafür nicht.'
+}
+
+/** Tools that describe Xaventra herself (catalogues, skill packs, self-introspection).
+ * Their output helps the model choose; it is never an answer for the owner (2.87.1). */
+export const META_TOOL_NAMES: ReadonlySet<string> = new Set(['load_skill_pack', 'nova_introspect', 'list_skill_packs', 'tool_search'])
+
+/** Incomplete turn: keep real findings, drop meta-tool output; short when nothing is left. */
+export function incompleteExecutionsResponse(executions: ReadonlyArray<{ toolName?: string; name?: string; success?: boolean; result?: unknown }>): string {
+    const findings = executions
+        .filter(item => item.success !== false && !META_TOOL_NAMES.has(String(item.toolName || item.name || '')))
+        .map(item => typeof item.result === 'string' ? item.result : JSON.stringify(item.result ?? ''))
+    if (findings.length === 0) return 'Damit bin ich noch nicht fertig geworden – ich habe zu viele Zwischenschritte gebraucht. Sag „weiter“, dann mache ich weiter, oder frag mich etwas genauer.'
+    return incompleteToolResponse(findings)
 }
 
 /** Current, verified read-only results already contain the human-facing report.

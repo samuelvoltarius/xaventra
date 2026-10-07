@@ -70,6 +70,15 @@ export function isDeviceConnected(dataDir: string, geraet: Geraet, records: Devi
     return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)))
 }
 
+/** One device record already connected through its way (Home Assistant connection, Hue key, approved route). */
+export function isRecordConnected(dataDir: string, record: DeviceRecord): boolean {
+    if (record.type === 'homeassistant') {
+        try { return loadConnections({ dataDir }).some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') } catch { return false }
+    }
+    if (hueKey(dataDir, record.id)) return true
+    return record.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, record))
+}
+
 /**
  * 2.86 Paket N (Grundsatz Alfred 06.10.: Nutzer sind keine Techniker): genau EIN
  * Alltagssatz für den einen unvermeidbaren Schritt, keine Fachwörter.
@@ -260,6 +269,9 @@ export function createDeviceConnectExecutor(deps: DeviceConnectDeps | (() => Dev
             const records = loadDevices(d.dataDir)
             const record = records.find(r => r.id === match[1])
             if (!record || ['abgelehnt', 'aus'].includes(record.status)) return false
+            // 2.87.1: a question asked before the device got connected (e.g. Home Assistant
+            // login finished later) closes itself instead of returning in every bundle.
+            if (isRecordConnected(d.dataDir, record)) return false
             // a lokal/Cloud pair: once a way was chosen for this device, the other button closes
             if (match[2]) {
                 try { const routes = readRoutes(d.dataDir); const chosen = routes[match[1]]; if (chosen && chosen.route !== match[2]) return false } catch { /* keep open */ }

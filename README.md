@@ -33,7 +33,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.87.0 preview** (device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
+Current source candidate: **2.87.1 preview** (2.87.1: Home Assistant questions routed correctly, honest internet and model checks, own SearXNG first, stale device questions close themselves; 2.87.0: device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked

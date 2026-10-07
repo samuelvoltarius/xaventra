@@ -792,6 +792,11 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
         handler: async (params) => {
             const query = params.query as string
             const count = Math.min((params.count as number) || 5, 10)
+            try {
+                const { searchViaOwnSearxng } = await import('./searxng-search.js')
+                const own = await searchViaOwnSearxng(String(query || ''), count)
+                if (own) return own
+            } catch { /* fall back to DuckDuckGo */ }
 
             // Use DuckDuckGo's instant answer API (no key needed)
             const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
