@@ -534,12 +534,38 @@ export function hardwareFromMeshNode(node: {
     }
 }
 
+/**
+ * Mesh-Gehirn 2.88: the hardware view of a node strength profile (signed
+ * node profile + live facts), so the mesh brain uses this one catalog
+ * instead of its own model list.
+ */
+export function hardwareFromStrength(node: {
+    ramGB: number
+    cpus: number
+    gpu: { name: string | null; backend: string; vramGB?: number; unified: boolean; viaVllm: boolean }
+    modelMemoryGB: number
+}): HardwareProfile {
+    const name = String(node.gpu.name || '')
+    const backend = node.gpu.backend
+    const hasGpu = Boolean(node.gpu.name) && (['cuda', 'metal', 'rocm'].includes(backend) || node.gpu.viaVllm || node.gpu.unified)
+    return {
+        ramGb: node.ramGB,
+        // Unified memory (GB10, Apple): the model memory is the usable "VRAM".
+        vramGb: node.gpu.vramGB || (hasGpu && node.gpu.unified ? node.modelMemoryGB : undefined),
+        cpuCores: node.cpus,
+        hasGpu,
+        gpuType: !hasGpu ? undefined : backend === 'metal' ? 'metal' : backend === 'rocm' ? 'rocm' : /nvidia|gb10|gh200|orin|jetson/i.test(name) || backend === 'cuda' ? 'cuda' : 'integrated',
+        isJetson: /jetson|orin/i.test(name) && node.ramGB <= 16,
+    }
+}
+
 export default {
     getRecommendations,
     formatRecommendations,
     formatNodeTopology,
     detectHardwareTier,
     hardwareFromMeshNode,
+    hardwareFromStrength,
     CATALOG,
     CATALOG_DATE,
     DEPRECATED_MODELS,

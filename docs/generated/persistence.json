@@ -762,6 +762,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/mesh-git.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/mesh-llm-proxy.ts",
       "path": ".nova-data"
     },
@@ -795,6 +799,10 @@
     },
     {
       "owner": "src/mesh/node-intelligence.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/mesh/node-strengths.ts",
       "path": ".nova-data"
     },
     {
@@ -1160,6 +1168,18 @@
     {
       "owner": "src/memory/workflow-episode-store.ts",
       "path": ".nova-data/memory/workflow-episodes.json"
+    },
+    {
+      "owner": "src/mesh/mesh-git.ts",
+      "path": ".nova-data/mesh-git"
+    },
+    {
+      "owner": "src/mesh/mesh-git.ts",
+      "path": ".nova-data/mesh-git/.isolation"
+    },
+    {
+      "owner": "src/mesh/mesh-git.ts",
+      "path": ".nova-data/mesh-git/.tmp"
     },
     {
       "owner": "src/mesh/mesh-identity.ts",

@@ -1927,13 +1927,55 @@
     {
       "name": "mesh_recommendations",
       "category": "mesh",
-      "description": "Zeigt Installationsempfehlungen für alle Mesh-Nodes — was sollte wo installiert werden und warum.",
+      "description": "Zeigt Modell-Tipps je Mesh-Knoten (aus dem einen Modellkatalog) — nur Vorschläge, nichts wird installiert.",
       "parameters": []
+    },
+    {
+      "name": "mesh_repo_task",
+      "category": "mesh",
+      "description": "Führt eine Aufgabe an einem Git-Repository auf dem passenden Mesh-Knoten aus: derselbe Repo-Stand reist über den signierten Mesh-Weg hin, das Ergebnis kommt als eigener Zweig mesh/<knoten>/<arbeit> zurück (main bleibt unverändert). Ohne mesh_node wählt Xaventra den Knoten nach Stärken.",
+      "parameters": [
+        {
+          "name": "repo",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "task",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "mesh_node",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "source_path",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "branch",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "tools",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "timeout_seconds",
+          "type": "number",
+          "required": false
+        }
+      ]
     },
     {
       "name": "mesh_route",
       "category": "mesh",
-      "description": "Zeigt welcher Node am besten für einen bestimmten Task geeignet ist.",
+      "description": "Welcher Knoten macht eine Aufgabe am besten, mit kurzem Grund. task = Aufgabe in eigenen Worten ODER Fähigkeit: grosse-modelle, llm, code, embedding, bilder, vision, stt, tts, medien, speicher, rechnen.",
       "parameters": [
         {
           "name": "task",
@@ -1945,7 +1987,7 @@
     {
       "name": "mesh_scan",
       "category": "mesh",
-      "description": "Scannt alle Nodes im Mesh — entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfügbar ist.",
+      "description": "Zeigt was im Mesh verfügbar ist: Stärken je Knoten plus Modell-Tipps aus dem Katalog. Nur lesend, kein SSH, keine Installation.",
       "parameters": [
         {
           "name": "force",
@@ -1981,6 +2023,12 @@
       "name": "mesh_status",
       "category": "system",
       "description": "Zeigt die aktuelle Betriebsansicht der Nova-Nodes. Historische und tombstoned Geräte werden bewusst ausgeblendet.",
+      "parameters": []
+    },
+    {
+      "name": "mesh_strengths",
+      "category": "mesh",
+      "description": "Beantwortet „Was kann welcher Knoten/Node/Rechner?“ in einer kurzen Liste: Stärken je Knoten (GPU, Speicher, geladene Modelle, Platte, online/offline). Nur lesend, aus den signierten Knotenprofilen.",
       "parameters": []
     },
     {

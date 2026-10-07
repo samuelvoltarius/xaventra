@@ -6,6 +6,7 @@ export type MeshEnvelopeKind =
     | 'tool.request' | 'agent.request' | 'mission.request'
     | 'exchange.request' | 'exchange.response'
     | 'capture.request' | 'capture.response'
+    | 'git.request' | 'git.response'
     | 'codex.status.request' | 'codex.complete.request'
     | 'update.release'
     | 'run.progress' | 'run.evidence' | 'run.checkpoint' | 'run.result' | 'run.cancel'
@@ -176,6 +177,15 @@ export interface ResultPayload {
     evidence: EvidencePayload[]
 }
 
+/**
+ * Kinds that never go through the outbox, Supabase or the relay: only a live
+ * direct (encrypted: TLS, Tailscale, loopback) or local connection. Camera
+ * images and repository bundles must not rest in a shared store.
+ */
+export function isEphemeralMeshKind(kind: unknown): boolean {
+    return typeof kind === 'string' && (kind.startsWith('capture.') || kind.startsWith('git.'))
+}
+
 export const COORDINATED_KINDS = new Set<MeshEnvelopeKind>(['mission.request'])
 
 export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
@@ -184,6 +194,7 @@ export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
         'exchange.request', 'exchange.response',
         'capture.request', 'capture.response',
+        'git.request', 'git.response',
         'run.checkpoint', 'run.result', 'run.cancel',
     ]).has(value as MeshEnvelopeKind)
 }

@@ -1,6 +1,7 @@
 import { isIP } from 'node:net'
 import { WebSocket, WebSocketServer } from 'ws'
 import { MeshIdentity } from './mesh-identity.js'
+import { isEphemeralMeshKind } from './transport-contracts.js'
 import type { MeshAck, MeshEnvelope, MeshHandler, MeshPeer, MeshPrincipal, MeshTransport, MeshTransportHealth } from './transport-contracts.js'
 
 interface DirectConfig {
@@ -115,8 +116,8 @@ export class DirectMeshTransport implements MeshTransport {
                 await this.connect(peer)
             }
             const socket = this.sockets.get(peerId)!
-            if (envelope.kind.startsWith('capture.') && !this.encryptedSockets.has(socket)) {
-                return this.ack(envelope.id, peerId, 'rejected', 'capture requires TLS, Tailscale or loopback')
+            if (isEphemeralMeshKind(envelope.kind) && !this.encryptedSockets.has(socket)) {
+                return this.ack(envelope.id, peerId, 'rejected', `${envelope.kind} requires TLS, Tailscale or loopback`)
             }
             return await this.sendOnSocket(peerId, socket, envelope)
         } catch (error) {
@@ -191,7 +192,7 @@ export class DirectMeshTransport implements MeshTransport {
         if (this.stopped) return
         let envelope: MeshEnvelope
         try { envelope = JSON.parse(raw) as MeshEnvelope } catch { socket.close(1007, 'invalid JSON'); return }
-        if (typeof envelope.kind === 'string' && envelope.kind.startsWith('capture.') && !this.encryptedSockets.has(socket)) { socket.close(1008, 'capture requires encrypted transport'); return }
+        if (isEphemeralMeshKind(envelope.kind) && !this.encryptedSockets.has(socket)) { socket.close(1008, `${String(envelope.kind).slice(0, 40)} requires encrypted transport`); return }
         try {
             for (const handler of this.handlers) await handler(envelope)
             if (this.stopped) return

@@ -32,6 +32,45 @@ credential fields as well as URL user information and secret query parameters.
 Only public status such as `available` or `authenticated` may be shared. Local
 credentials remain scoped to the user and node that owns them.
 
+## Mesh brain: who can do what, and where a task goes
+
+Every node gets a strength profile without any configuration
+(`src/mesh/node-strengths.ts`). It is derived only from data the mesh already
+signs: the node profile (cores, RAM, GPU and VRAM, services, tools), the
+Capability Graph (running runtimes and their loaded models), the live load on
+the 30 s heartbeat (CPU per core, free RAM, cached GPU utilisation, free disk)
+and the measured heartbeat round trip (latency). A peer without a signed
+heartbeat for three minutes counts as offline.
+
+`rankNodes(skill, nodes)` is pure and deterministic and returns one short
+human reason, for example `gpu-box: GPU frei, Modell qwen3 geladen`. The task
+router (`mesh-router.ts`), the prompt hint, `spawn_subagent mesh_node="auto"`,
+`mesh_route` and `mesh_scan` all use this one source; there is no fixed node
+list, no ping and no SSH. Model advice comes from the one catalog
+(`model-recommender.ts`); nothing is installed automatically.
+
+The owner question "Was kann welcher Knoten?" is answered by `mesh_strengths`
+as one line per node.
+
+## Mesh Git: work data travels with the task
+
+The Main keeps bare repositories under `<data dir>/mesh-git/<name>.git`
+(`src/mesh/mesh-git.ts`). `mesh_repo_task` publishes a local repository (or
+uses the mesh repo's `main`), sends exactly that commit as a bounded git
+bundle (8 MB) to the chosen or strongest node, lets a subagent work in
+`mesh-work/<id>` there, takes the changes back as a bundle and stores them as
+branch `mesh/<node>/<id>`. `main` is never changed by a node; the work
+directory is always removed afterwards.
+
+Transport is the existing signed mesh path only: typed `git.request` /
+`git.response`, Main fence, privileged roles, and like camera captures only
+over a live encrypted direct or local connection (never outbox, Supabase or
+relay). No node needs a git server, SSH key or extra port. git runs without
+shell, prompts, global/system config, hooks or network protocols. Bundle hash,
+ancestry from the delivered commit and a secret scan of the change are checked
+on both sides. A delegated agent gets read tools by default; write tools only
+where `mesh.security.allowedTools` already allows them.
+
 ## Architecture
 
 Nova's mesh distributes intelligence across multiple edge devices via Tailscale VPN:

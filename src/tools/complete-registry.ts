@@ -1919,63 +1919,93 @@ export const ttsTools: NovaTool[] = [
 
 export const meshBrainTools: NovaTool[] = [
     {
+        name: 'mesh_strengths',
+        description: 'Beantwortet „Was kann welcher Knoten/Node/Rechner?“ in einer kurzen Liste: Stärken je Knoten (GPU, Speicher, geladene Modelle, Platte, online/offline). Nur lesend, aus den signierten Knotenprofilen.',
+        category: 'mesh',
+        parameters: [],
+        handler: async () => {
+            const { collectNodeStrengths, formatStrengthList } = await import('../mesh/node-strengths.js')
+            return formatStrengthList(await collectNodeStrengths())
+        },
+    },
+    {
         name: 'mesh_scan',
-        description: 'Scannt alle Nodes im Mesh — entdeckt Hardware, GPU, RAM, installierte Tools und Ollama-Modelle. Erstellt Empfehlungen was wo installiert werden sollte. Aufrufen wenn du wissen willst was im Netzwerk verfügbar ist.',
+        description: 'Zeigt was im Mesh verfügbar ist: Stärken je Knoten plus Modell-Tipps aus dem Katalog. Nur lesend, kein SSH, keine Installation.',
         category: 'mesh',
         parameters: [
-            { name: 'force', type: 'boolean', description: 'Erzwingt neuen Scan auch wenn Cache noch frisch ist', required: false },
+            { name: 'force', type: 'boolean', description: 'Neu zusammenstellen, auch wenn der letzte Stand noch frisch ist', required: false },
         ],
         handler: async (params) => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
-            const config = JSON.parse(readFileSync(resolveConfigPath(), 'utf-8'))
-            const nodes = (config.nodes || []).filter((n: any) => n.enabled !== false)
             if (!params.force) {
                 const cached = brain.load()
                 if (cached) return cached.summary
             }
-            const snap = await brain.scan(nodes)
+            const snap = await brain.scan()
             return snap.summary
         },
     },
     {
         name: 'mesh_recommendations',
-        description: 'Zeigt Installationsempfehlungen für alle Mesh-Nodes — was sollte wo installiert werden und warum.',
+        description: 'Zeigt Modell-Tipps je Mesh-Knoten (aus dem einen Modellkatalog) — nur Vorschläge, nichts wird installiert.',
         category: 'mesh',
         parameters: [],
         handler: async () => {
             const { getMeshBrain } = await import('../mesh/mesh-brain.js')
             const brain = getMeshBrain()
-            const snap = brain.load()
-            if (!snap) return 'Kein Mesh-Scan vorhanden. Bitte zuerst mesh_scan ausführen.'
+            if (!brain.load()) await brain.scan()
             const recs = brain.getAllRecommendations()
-            if (recs.length === 0) return 'Keine Empfehlungen — alles optimal konfiguriert!'
+            if (recs.length === 0) return 'Keine Modell-Tipps — passt so.'
             return recs.map(({ node, rec }) =>
                 `[${rec.priority.toUpperCase()}] ${node}: ${rec.tool} — ${rec.reason}${rec.installCmd ? `\n  → ${rec.installCmd}` : ''}`
             ).join('\n\n')
         },
     },
     {
-        name: 'mesh_route',
-        description: 'Zeigt welcher Node am besten für einen bestimmten Task geeignet ist.',
+        name: 'mesh_repo_task',
+        description: 'Führt eine Aufgabe an einem Git-Repository auf dem passenden Mesh-Knoten aus: derselbe Repo-Stand reist über den signierten Mesh-Weg hin, das Ergebnis kommt als eigener Zweig mesh/<knoten>/<arbeit> zurück (main bleibt unverändert). Ohne mesh_node wählt Xaventra den Knoten nach Stärken.',
         category: 'mesh',
         parameters: [
-            { name: 'task', type: 'string', description: 'Task-Typ: large-llm, fast-llm, embedding, image-generation, stt-voice, media-convert, cuda-inference', required: true },
+            { name: 'repo', type: 'string', description: 'Name des Mesh-Repos (a-z, 0-9, - und _)', required: true },
+            { name: 'task', type: 'string', description: 'Was am Repo getan werden soll', required: true },
+            { name: 'mesh_node', type: 'string', description: 'Optional: Knoten-ID; leer oder "auto" = passender Knoten', required: false },
+            { name: 'source_path', type: 'string', description: 'Optional: lokales Git-Repository, dessen aktueller Stand vorher ins Mesh-Repo übernommen wird', required: false },
+            { name: 'branch', type: 'string', description: 'Optional: Ausgangszweig im Mesh-Repo (Standard main)', required: false },
+            { name: 'tools', type: 'string', description: 'Optional: Kommagetrennte Werkzeuge für den Knoten (Standard: nur lesen; Schreiben nur, wo die Mesh-Richtlinie es erlaubt)', required: false },
+            { name: 'timeout_seconds', type: 'number', description: 'Optional: Zeitlimit (Standard 600)', required: false },
+        ],
+        handler: async (params: Record<string, unknown>) => {
+            const { formatRepoTaskResult, runRepoTaskOnNode } = await import('../mesh/mesh-repo-task.js')
+            const result = await runRepoTaskOnNode({
+                repo: String(params.repo || ''),
+                task: String(params.task || ''),
+                node: params.mesh_node ? String(params.mesh_node) : undefined,
+                sourcePath: params.source_path ? String(params.source_path) : undefined,
+                ref: params.branch ? String(params.branch) : undefined,
+                tools: params.tools ? String(params.tools).split(',').map(tool => tool.trim()).filter(Boolean) : undefined,
+                timeoutMs: (Number(params.timeout_seconds) || 600) * 1000,
+                parent: await subagentParentIdentity(params),
+            })
+            return formatRepoTaskResult(result)
+        },
+    },
+    {
+        name: 'mesh_route',
+        description: 'Welcher Knoten macht eine Aufgabe am besten, mit kurzem Grund. task = Aufgabe in eigenen Worten ODER Fähigkeit: grosse-modelle, llm, code, embedding, bilder, vision, stt, tts, medien, speicher, rechnen.',
+        category: 'mesh',
+        parameters: [
+            { name: 'task', type: 'string', description: 'Aufgabe in Worten oder Fähigkeit (z. B. "bilder", "Video umwandeln")', required: true },
         ],
         handler: async (params) => {
-            const { getMeshBrain } = await import('../mesh/mesh-brain.js')
-            const brain = getMeshBrain()
-            const snap = brain.load()
-            if (!snap) return 'Kein Mesh-Scan. Bitte mesh_scan ausführen.'
-            const route = brain.getBestNodeFor(params.task as string)
-            if (!route) return `Kein Node gefunden für Task: ${params.task}`
-            const lines = [
-                `Task: ${route.task}`,
-                `→ Bester Node: ${route.bestNode}`,
-                `   Grund: ${route.reason}`,
-            ]
-            if (route.fallback) lines.push(`   Fallback: ${route.fallback} (wenn ${route.bestNode} nicht verfügbar)`)
-            else lines.push(`   Fallback: keiner verfügbar`)
+            const { taskToSkill } = await import('../mesh/mesh-brain.js')
+            const { rankNodesLive, shortReason, skillForTask } = await import('../mesh/node-strengths.js')
+            const task = String(params.task || '')
+            const skill = taskToSkill(task) || skillForTask(task)
+            if (!skill) return 'Dafür braucht es keinen besonderen Knoten — läuft hier.'
+            const ranking = await rankNodesLive(skill)
+            const lines = [`${ranking.label} → ${shortReason(ranking)}`]
+            if (ranking.ranked[1]) lines.push(`Danach: ${ranking.ranked[1].nodeId}`)
             return lines.join('\n')
         },
     },
@@ -3148,23 +3178,32 @@ export const ALL_TOOLS: NovaTool[] = [
             { name: 'task', type: 'string', description: 'Was soll der Subagent tun? Klare, fokussierte Aufgabenbeschreibung.', required: true },
             { name: 'tools', type: 'string', description: 'Kommagetrennte Tool-Namen (optional). Standard: alle sicheren Tools.', required: false },
             { name: 'timeout_seconds', type: 'number', description: 'Timeout in Sekunden (Standard: 60)', required: false },
-            { name: 'mesh_node', type: 'string', description: 'Optional: Name des Mesh-Nodes (z.B. "MacMini") für Remote-Delegation', required: false },
+            { name: 'mesh_node', type: 'string', description: 'Optional: Knoten-ID für Remote-Delegation, oder "auto" = der passende Knoten nach Stärken (GPU, Modelle, Last, Latenz)', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
                 const { spawnSubagent } = await import('../agents/subagent-orchestrator.js')
                 const tools = params.tools ? String(params.tools).split(',').map(t => t.trim()) : undefined
+                // Mesh-Gehirn 2.88: "auto" picks the node from the signed strength profiles, with the reason.
+                let meshNode = params.mesh_node ? String(params.mesh_node) : undefined
+                let placement = ''
+                if (meshNode === 'auto') {
+                    const { routeTask } = await import('../mesh/mesh-router.js')
+                    const decision = await routeTask(String(params.task))
+                    meshNode = decision.isLocal ? undefined : decision.nodeId
+                    placement = `Knoten: ${decision.isLocal ? 'hier' : decision.nodeId} (${decision.reason})\n`
+                }
                 const result = await spawnSubagent({
                     task: String(params.task),
                     tools,
                     timeoutMs: (Number(params.timeout_seconds) || 60) * 1000,
-                    meshNode: params.mesh_node ? String(params.mesh_node) : undefined,
+                    meshNode,
                     ...(await subagentParentIdentity(params)),
                 })
                 if (result.status === 'completed') {
-                    return `✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
+                    return `${placement}✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
                 } else {
-                    return `⚠️ Subagent ${result.id}: ${result.status}${result.error ? ' — ' + result.error : ''}`
+                    return `${placement}⚠️ Subagent ${result.id}: ${result.status}${result.error ? ' — ' + result.error : ''}`
                 }
             } catch (err) {
                 return `Subagent-Fehler: ${err}`

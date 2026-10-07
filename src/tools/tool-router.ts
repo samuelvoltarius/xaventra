@@ -111,7 +111,7 @@ const SKILL_PACKS: SkillPack[] = [
         name: 'mesh-network',
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
         keywords: ['mesh', 'node', 'nodes', 'knoten', 'edge', 'deploy', 'jetson', 'pi5', 'raspberry', 'delegate'],
-        tools: ['mesh_status', 'mesh_nodes', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send', 'mesh_screenshot'],
+        tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths', 'mesh_route', 'mesh_repo_task', 'mesh_deploy', 'mesh_delegate', 'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send', 'mesh_screenshot'],
     },
     {
         name: 'docker',
@@ -387,7 +387,7 @@ export function getRelevantTools(
 
     // ── FILTERED MODE (weak models) ─────────────────────────────────────────────
     const includedToolNames = new Set<string>(CORE_TOOLS)
-    const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes'] : []
+    const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes', 'mesh_strengths'] : []
     if (mentionsEnvironment(primaryMessage)) liveTools.push('environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes')
     if (/\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(primaryMessage)) liveTools.push('parcel_track')
     if (containsTailnetUrl(primaryMessage)) liveTools.push('mesh_inspect_url', 'mesh_services')
