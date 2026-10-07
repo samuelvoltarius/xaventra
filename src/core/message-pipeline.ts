@@ -89,6 +89,9 @@ export function getMinutesSinceLastSelfThink(): number {
 
 
 // Pre-load hot-path modules at startup to avoid first-call latency
+/** Deterministic fast paths whose answer is a live measurement, not a static text. */
+const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness'])
+
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
     const minimalModules = [
@@ -843,6 +846,20 @@ async function handleMessageInScope(
                 )
                 if (response) {
                     if (response !== '__HANDLED__') await answer(response)
+                    // 2.89 Abnahme: fast-path answers that come from a live probe carry that probe as
+                    // evidence in the Desktop room (Internet, Docker, mesh/system status). Static answers
+                    // (identity, capabilities, lists) stay without evidence — no proof is claimed.
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: true }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
                     traceStep(`fast-path:${deterministic.reason}`)
                     console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
                     return true
