@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fixtures = vi.hoisted(() => ({ agent: vi.fn(), cache: vi.fn(), capture: vi.fn(), photo: vi.fn(), fallback: vi.fn(), permission: 'user' }))
+const fixtures = vi.hoisted(() => ({ agent: vi.fn(), capture: vi.fn(), photo: vi.fn(), fallback: vi.fn(), permission: 'user' }))
 vi.mock('../users/multi-user-middleware.js', () => ({
     initMultiUser: () => undefined,
     checkAuth: () => ({ allowed: true, permission: fixtures.permission, isNewUser: false, user: {} }),
@@ -16,7 +16,6 @@ vi.mock('./soul.js', () => ({
     parseOnboardingResponse: () => ({}), saveSoul: () => undefined, getOnboardingConfirmation: () => '',
 }))
 vi.mock('../agents/nova-runner.js', () => ({ runNovaAgent: fixtures.agent, clearSession: () => undefined }))
-vi.mock('../llm/response-cache.js', () => ({ getCachedResponse: fixtures.cache, cacheResponse: vi.fn() }))
 vi.mock('../layers/L12-anti-hallucination.js', () => ({ validateWithLLM: vi.fn(async () => ({ honest: false, issues: ['fixture synthesis failure'] })) }))
 vi.mock('../tools/skill-builder.js', () => ({ noteForgeNeed: () => ({ queued: false }) }))
 vi.mock('../layers/subconscious-reflector.js', () => ({ recordActivity: () => undefined }))
@@ -30,7 +29,6 @@ beforeEach(() => {
     vi.clearAllMocks()
     fixtures.permission = 'user'
     ;(globalThis as any).__novaLastMsg = {}
-    fixtures.cache.mockReturnValue('STALE CACHED ANSWER')
     fixtures.agent.mockResolvedValue({
         content: 'Im Werkzeugkatalog stehen verfügbare Funktionen.',
         toolsExecuted: ['nova_capabilities'], sessionId: 'fixture-session',
@@ -53,7 +51,6 @@ async function run(content: string, reply?: (text: string) => Promise<void>) {
 
 describe('actual message pipeline with scripted agent, no network or capture', () => {
     it('propagates a transport failure without running the agent again or a plain fallback', async () => {
-        fixtures.cache.mockReturnValue(null)
         const send = vi.fn().mockRejectedValue(new Error('EFATAL: fixture fetch failed'))
         await expect(run('Beschreibe die vorhandenen Belege', send)).rejects.toMatchObject({ name: 'ReplyDeliveryError' })
         expect(fixtures.agent).toHaveBeenCalledTimes(1)
@@ -61,7 +58,6 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(fixtures.fallback).not.toHaveBeenCalled()
     }, 15000)
     it('delivers verified partial results without a post-timeout fact-check', async () => {
-        fixtures.cache.mockReturnValue(null)
         const { validateWithLLM } = await import('../layers/L12-anti-hallucination.js')
         vi.mocked(validateWithLLM).mockClear()
         fixtures.agent.mockResolvedValue({ incompleteSynthesis: true, content: 'unverified final claim', sessionId: 'fixture-session',
@@ -92,7 +88,6 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(replies.at(-1)).toContain('fixture-node online')
         expect(replies.at(-1)).not.toContain('voll steuerbar')
         expect(replies.at(-1)).not.toContain('Kein Internet')
-        expect(fixtures.cache).not.toHaveBeenCalled()
     }, 15000)
     it('retains verified node capabilities alongside the capture limitation after fact-check fallback', async () => {
         fixtures.agent.mockResolvedValue({ content: 'Alle Bilder gesendet.', sessionId: 'fixture-session', toolsExecuted: ['mesh_nodes', 'nova_capabilities'],
@@ -127,14 +122,12 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(identity).toHaveBeenCalledOnce()
         expect(fixtures.agent).toHaveBeenCalledWith(expect.objectContaining({ content: question,
             systemPrompt: expect.stringContaining('fixture/Measured-Model') }))
-        expect(fixtures.cache).not.toHaveBeenCalled()
     }, 15000)
 
     it('adds current-state guidance to the short node correction and bypasses stale replies', async () => {
         await run('ns1 sorry')
         expect(fixtures.agent).toHaveBeenCalledWith(expect.objectContaining({
             systemPrompt: expect.stringContaining('ungeprüft'), content: 'ns1 sorry' }))
-        expect(fixtures.cache).not.toHaveBeenCalled()
     }, 15000)
 
     it.each(['send mir mal einen screnn schots von allen nodes bitte',
@@ -146,6 +139,5 @@ describe('actual message pipeline with scripted agent, no network or capture', (
         expect(replies.at(-1)).not.toContain('RAW CATALOG')
         expect(fixtures.capture).not.toHaveBeenCalled()
         expect(fixtures.photo).not.toHaveBeenCalled()
-        expect(fixtures.cache).not.toHaveBeenCalled()
     }, 15000)
 })

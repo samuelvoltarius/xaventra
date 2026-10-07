@@ -111,7 +111,6 @@ nova-core/
 │   ├── llm/                       # LLM provider adapters + Nova Doctor engine
 │   │   ├── adapters/              # Provider-specific implementations
 │   │   ├── router.ts              # Smart routing + fallback chain
-│   │   ├── response-cache.ts      # Response caching
 │   │   ├── llama-engine.ts        # node-llama-cpp wrapper — lädt GGUF in-process
 │   │   └── download-models.ts     # Hardware-adaptiver GGUF-Downloader (GitHub Releases)
 │   │

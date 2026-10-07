@@ -1,7 +1,7 @@
 /**
  * Nova — LLM Layer Tests
  *
- * Covers: models (SEED_MODELS, ModelCatalog), response-cache,
+ * Covers: models (SEED_MODELS, ModelCatalog),
  *         model-fallback, model-perf-db
  *
  * Run: npm test
@@ -85,78 +85,6 @@ describe('Models Catalog', async () => {
         const catalog = getModelCatalog()
         const models = await catalog.getModelsByCapability('chat')
         expect(Array.isArray(models)).toBe(true)
-    })
-})
-
-// ============================================
-// Response Cache
-// ============================================
-
-describe('Response Cache', async () => {
-    const { getCachedResponse, cacheResponse, getCacheStats, clearCache, configureCache, invalidateMatching } = await import('./response-cache.js')
-
-    beforeEach(() => {
-        clearCache()
-    })
-
-    it('clearCache: does not throw', () => {
-        expect(() => clearCache()).not.toThrow()
-    })
-
-    it('getCachedResponse: returns null on miss', () => {
-        const result = getCachedResponse('sys', [{ role: 'user', content: 'test xyz 99999' }])
-        expect(result).toBeNull()
-    })
-
-    it('cacheResponse: stores and retrieves response', () => {
-        const sys = 'You are Nova.'
-        const msgs = [{ role: 'user', content: 'cache-test-unique-42' }]
-        const response = 'This is the cached answer.'
-        cacheResponse(sys, msgs, response, 'gpt-4o')
-        const cached = getCachedResponse(sys, msgs)
-        expect(cached).toBe(response)
-    })
-
-    it('getCachedResponse: miss after clearCache', () => {
-        const sys = 'sys'
-        const msgs = [{ role: 'user', content: 'clear-test-777' }]
-        cacheResponse(sys, msgs, 'answer', 'gpt-4o')
-        clearCache()
-        const cached = getCachedResponse(sys, msgs)
-        expect(cached).toBeNull()
-    })
-
-    it('getCacheStats: returns CacheStats structure', () => {
-        const stats = getCacheStats()
-        expect(typeof stats.entries).toBe('number')
-        expect(typeof stats.hits).toBe('number')
-        expect(typeof stats.misses).toBe('number')
-        // hitRate is a string like '0%' or '75%'
-        expect(stats.hitRate).toBeDefined()
-        expect(typeof stats.tokensSaved).toBe('number')
-        expect(typeof stats.enabled).toBe('boolean')
-    })
-
-    it('getCacheStats: hits counter increases after cache hit', () => {
-        const sys = 'sys2'
-        const msgs = [{ role: 'user', content: 'hitrate-test-unique-123' }]
-        cacheResponse(sys, msgs, 'This is a valid cached response over 20 chars', 'gpt-4o')
-        const before = getCacheStats().hits
-        getCachedResponse(sys, msgs)  // hit
-        const after = getCacheStats().hits
-        expect(after).toBeGreaterThan(before)
-    })
-
-    it('configureCache: updates config without throwing', () => {
-        expect(() => configureCache({ enabled: true, maxEntries: 100 })).not.toThrow()
-    })
-
-    it('invalidateMatching: removes matching entries', () => {
-        const sys = 'sys3'
-        cacheResponse(sys, [{ role: 'user', content: 'invalidate-me-999' }], 'This response contains xyz pattern', 'gpt-4o')
-        const removed = invalidateMatching('xyz pattern')
-        expect(typeof removed).toBe('number')
-        expect(removed).toBeGreaterThanOrEqual(1)
     })
 })
 

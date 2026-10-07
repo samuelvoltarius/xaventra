@@ -18,7 +18,7 @@ import { isNovaSystemAuthored } from './system-message.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
-import { containsHttpUrl, isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance, mentionsEnvironment } from './request-capabilities.js'
+import { isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance } from './request-capabilities.js'
 import { createProgressNotice } from './progress-notice.js'
 import { isTechnicalProbe } from './channel-name.js'
 import { redactSecrets } from '../security/secret-redaction.js'
@@ -109,14 +109,6 @@ export async function preloadPipelineModules(): Promise<void> {
     const modules = profile === 'full' ? fullModules : profile === 'off' ? [] : minimalModules
     await Promise.allSettled(modules.map(m => import(m)))
     console.log(`[Pipeline] Preload profile=${profile}: ${modules.length} modules`)
-
-    // Clear response cache on every startup — prevents stale error responses
-    // from previous failed sessions being served as valid answers
-    try {
-        const { clearCache } = await import('../llm/response-cache.js')
-        clearCache()
-        console.log('[Pipeline] Response cache cleared (fresh start)')
-    } catch { /* non-critical */ }
 }
 
 // ============================================
@@ -212,8 +204,7 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
 
 /**
  * Last turns of this user's session log on this channel (read from the file
- * tail only). Used for the response-cache key, so "und das zweite?" in a
- * different conversation never returns an old answer.
+ * tail only), per user and channel.
  */
 export function recentSessionTurns(user: string, channel: string, limit = 12): Array<{ role: string; content: string }> {
     try {
@@ -247,14 +238,6 @@ export function recentSessionTurns(user: string, channel: string, limit = 12): A
     } catch {
         return []
     }
-}
-
-/** Cache-key messages: prior turns plus the current message exactly once. */
-export function responseCacheMessages(user: string, channel: string, content: string): Array<{ role: string; content: string }> {
-    const turns = recentSessionTurns(user, channel)
-    const last = turns[turns.length - 1]
-    const prior = last && last.role === 'user' && last.content === content.slice(0, 2000) ? turns.slice(0, -1) : turns
-    return [...prior, { role: 'user', content }]
 }
 
 export interface MessageExecutionOptions {
@@ -1739,7 +1722,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // path so their other clauses are answered rather than silently dropped.
         const measuredModelContext = !question && !isSystemAuthored ? await runtimeModelContext(content, state.llm) : ''
         systemPrompt += measuredModelContext
-        const requiresFreshRuntimeEvidence = Boolean(measuredModelContext) || mentionsEnvironment(content) || containsHttpUrl(content) || detectActionIntent(content).kind === 'screenshot'
         const asksModel = question?.model
         const asksNovaVersion = question?.version
         const asksNovaIdentity = question?.identity
@@ -1793,35 +1775,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 }
             }
             await answer(lines.join('\n'))
-            return
-        }
-
-        // ============================================
-        // Response Cache — Check before LLM call
-        // ============================================
-        let cachedResponse: string | null = null
-        // Computed once: lookup and store must use the same history.
-        const cacheKeyMessages = responseCacheMessages(canonicalUser, channel, content)
-        try {
-            const { getCachedResponse } = await import('../llm/response-cache.js')
-            if (!requiresFreshRuntimeEvidence) cachedResponse = getCachedResponse(systemPrompt, cacheKeyMessages)
-            if (cachedResponse) {
-                console.log(`[Pipeline] ✅ Cache HIT — skipping LLM call`)
-            }
-        } catch (err) { console.debug('[Pipeline] response cache not available:', err) }
-
-        // If cache hit and no image (images need fresh processing)
-        if (cachedResponse && !image) {
-            const result = {
-                content: cachedResponse,
-                toolsExecuted: [] as string[],
-                sessionId: 'cache-hit',
-                toolExecutions: [],
-            }
-
-            // Skip straight to response delivery
-            await answer(result.content)
-            console.log(`[Nova][${channel}]Cache - Antwort gesendet(${result.content.length} chars)`)
             return
         }
 
@@ -2359,13 +2312,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 }
             } catch { /* learning non-critical */ }
 
-            // Cache successful response for future identical queries
-            try {
-                const { cacheResponse } = await import('../llm/response-cache.js')
-                if (!(result as any).error && result.validation?.success === true && !detectActionIntent(content).requiresTool) {
-                    if (!requiresFreshRuntimeEvidence) cacheResponse(systemPrompt, cacheKeyMessages, finalContent, routedModel || 'default')
-                }
-            } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
             console.log(`[Nova] [${channel}] Antwort gesendet (${supervised.content.length} chars, ${result.toolsExecuted.length} tools, Session: ${result.sessionId.slice(0, 8)}...)`)
 
             // Task Tracker: mark task as complete

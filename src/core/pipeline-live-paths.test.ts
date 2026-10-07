@@ -56,7 +56,6 @@ vi.mock('./soul.js', () => ({
     parseOnboardingResponse: () => ({}), saveSoul: () => undefined, getOnboardingConfirmation: () => '',
 }))
 vi.mock('../agents/nova-runner.js', () => ({ runNovaAgent: fixtures.agent, clearSession: () => undefined }))
-vi.mock('../llm/response-cache.js', () => ({ getCachedResponse: () => null, cacheResponse: vi.fn() }))
 vi.mock('../layers/L12-anti-hallucination.js', () => ({ validateWithLLM: vi.fn(async () => ({ honest: true, issues: [] })) }))
 vi.mock('../tools/skill-builder.js', () => ({ noteForgeNeed: () => ({ queued: false }) }))
 vi.mock('../layers/subconscious-reflector.js', () => ({ recordActivity: () => undefined }))
