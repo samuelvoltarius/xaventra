@@ -37,6 +37,8 @@ export interface RoomMessage {
         durationMs: number
         tools: Array<{ name: string; success: boolean }>
         action?: { requiresTool: boolean; kind: string; fulfilled: boolean; awaitingApproval: boolean; phase: string }
+        /** 2.89: routing/status notices of the run (kept apart from the answer text). */
+        notices?: string[]
     }
 }
 

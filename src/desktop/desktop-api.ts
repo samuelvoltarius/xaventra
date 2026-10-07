@@ -425,6 +425,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                         verifiedEvidence: outcome?.verifiedEvidence || 0,
                         evidence: outcome ? {
                             durationMs: outcome.durationMs, tools: outcome.tools, action: outcome.action,
+                            ...(outcome.notices?.length ? { notices: outcome.notices } : {}),
                         } : undefined,
                     })
                     return { botId, message: stored, external: false }
