@@ -379,6 +379,13 @@ export async function runAuthorizedScreenshotFallback(
     return { path: imgPath, size: screenshotResult.size }
 }
 
+/** An execution that only carries an abort signal (daemon /cancel wrapper) — a normal user message. */
+export function isCancellationOnlyExecution(execution: MessageExecutionOptions | undefined): boolean {
+    if (!execution) return false
+    const keys = Object.keys(execution).filter(key => (execution as any)[key] !== undefined)
+    return keys.length > 0 && keys.every(key => key === 'abortSignal')
+}
+
 /**
  * 2.88.1 (live 07.10.2026): app messages always carry an execution object for their
  * cancellation deadline (desktopCancellationOnly). The capability gate ("Soll ich es
@@ -408,7 +415,9 @@ async function handleMessageInScope(
     // Desktop ingress carries cancellation out-of-band, never as model text.
     const desktopAbort = channel.toLowerCase() === 'desktop'
         ? (await import('../desktop/desktop-agent-context.js')).getDesktopAbortSignal() : undefined
-    const desktopCancellationOnly = Boolean(desktopAbort && !execution)
+    // 2.88.2: the daemon entry wraps every normal message in a cancellation-only execution
+    // (/cancel). That is a user message, not an agent contract — see isCancellationOnlyExecution.
+    const desktopCancellationOnly = Boolean(desktopAbort && !execution) || isCancellationOnlyExecution(execution)
     const requestAbortSignal = desktopAbort && execution?.abortSignal
         ? AbortSignal.any([desktopAbort, execution.abortSignal]) : desktopAbort || execution?.abortSignal
     if (desktopAbort && !content.trimStart().startsWith('/')) execution = { ...execution, abortSignal: requestAbortSignal }
