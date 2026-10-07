@@ -37,20 +37,20 @@ Betreiber-Konfiguration. Ohne diesen Abschnitt existieren die Routen nicht und X
 {
   "vllm": {
     "ticketPublicKeyFile": "/etc/xaventra-host/vllm-ticket.pub",
-    "user": { "uid": 1000, "gid": 998, "home": "/home/tgbrutus", "name": "tgbrutus" },
-    "script": "/home/tgbrutus/spark-models.sh",
+    "user": { "uid": 1000, "gid": 998, "home": "/home/jdoe", "name": "jdoe" },
+    "script": "/home/jdoe/spark-models.sh",
     "targets": ["coder", "qwen27", "qwen35", "ornith", "ornith15", "flash", "nano", "nemotron"]
   }
 }
 ```
 
-- `uid` = tgbrutus, `gid` = Gruppe mit Docker-Zugriff (z. B. `docker`, `getent group docker`). Node setzt
+- `uid` = jdoe, `gid` = Gruppe mit Docker-Zugriff (z. B. `docker`, `getent group docker`). Node setzt
   beim Benutzerwechsel **keine Zusatzgruppen**; deshalb muss die Docker-Gruppe die primäre gid des Aufrufs sein.
 - Der Agent startet nur `[<script>, "switch", <ziel>]` ohne Shell, in eigener Sitzung (wie `setsid … &`),
   Ausgabe nach `<stateDir>/vllm/switch-<ticket>.log`. Er wartet nie auf den Start.
 - Gelesen werden (ohne Symlinks zu folgen) `~/.spark-current-model` und `~/.spark-model-ids`
   (`ziel=id`, `ziel id` oder `ziel: id` je Zeile). Geschrieben wird nur `~/.spark-stage-saved-target`
-  (Inhalt: altes Ziel, nur wenn noch keine Marke existiert, gehört danach tgbrutus). Entfernt wird nur die
+  (Inhalt: altes Ziel, nur wenn noch keine Marke existiert, gehört danach jdoe). Entfernt wird nur die
   **eigene** Marke; eine Marke von Alfreds eigener Wartung bleibt immer stehen.
 - `freigeben` nach Abschluss; der Wächter `~/vllm-guard.sh` übernimmt danach wieder.
 
@@ -63,7 +63,7 @@ getrennt signiert (`xaventra-vllm-ticket:`).
 ### sudoers
 
 Im Standardaufbau ist **kein sudoers-Eintrag nötig**: der Host-Agent ist root und wechselt für den Aufruf
-selbst auf uid/gid von tgbrutus. Xaventra setzt sudoers nie (Nie-Liste), und `sudo` steht auf der
+selbst auf uid/gid von jdoe. Xaventra setzt sudoers nie (Nie-Liste), und `sudo` steht auf der
 Befehls-Nie-Liste des Host-Agenten — ein sudo-basierter Aufruf ist in diesem Bau nicht vorgesehen. Wer den
 Host-Agenten künftig ohne root betreiben will, muss das als eigene Owner-Entscheidung neu planen.
 
