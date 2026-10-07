@@ -13,6 +13,24 @@
   boards and sensors.
 - Small fixes from the first night with 2.88.
 
+## [2.88.2] — 2026-10-07
+
+Honest and robust:
+
+- An answer that claims "I tested / checked it" while no tool ran in that turn
+  is marked as unchecked.
+- "Kannst du dich mit X verbinden?" is answered from the own connection list
+  ("Ja — … ist schon verbunden") instead of asking for an address.
+- A request the local model rejects (HTTP 4xx) no longer blocks that model;
+  stored conversation turns are sent as plain chat messages.
+- Node strengths show a GPU only with real evidence; a server's display chip is
+  not a GPU. Running local models and speech services (vLLM, Whisper, …) count
+  as available capabilities.
+- The same local service is listed once ("auf diesem Rechner").
+- Two Home Assistant instances with different identities stay separate, and a
+  connection counts only for the instance it belongs to.
+- The learning question's decisions and errors are logged visibly.
+
 ## [2.88.1] — 2026-10-07
 
 Fixes from the first hour with 2.88.0:
