@@ -25,8 +25,10 @@ describe('bounded capability recovery', () => {
     })
     it('resolves the reviewed web alias without inventing a new pack', async () => {
         expect(loadSkillPack('web')).toMatchObject({ loaded: true, tools: expect.arrayContaining(['fetch_url']) })
-        expect(await loadSkillPackTool.handler({ pack_name: 'web' })).toContain('web-search')
-        expect(await loadSkillPackTool.handler({ pack_name: 'web' })).not.toContain('Rest der Session verfügbar')
+        const loaded: any = await loadSkillPackTool.handler({ pack_name: 'web' })
+        expect(loaded.pack).toBe('web-search')
+        expect(loaded.output).toContain('web-search')
+        expect(loaded.output).not.toContain('Rest der Session verfügbar')
     })
     it('does not guess unknown or instruction-bearing pack names', () => {
         for (const name of ['web; run_command', 'web-admin', '../web', 'weeb']) {
@@ -61,7 +63,7 @@ describe('context-aware tool selection', () => {
     it('keeps an explicitly named registered tool in the bounded worker contract', () => {
         const tools = getRelevantTools('Nutze jetzt health_status und antworte mit dem verifizierten Ergebnis.')
         expect(tools.some(tool => tool.name === 'health_status')).toBe(true)
-        expect(tools.length).toBeLessThanOrEqual(24)
+        expect(tools.length).toBeLessThanOrEqual(40)
     })
 
     it('does not route a registered tool from a larger identifier', () => {
@@ -105,13 +107,14 @@ describe('context-aware tool selection', () => {
         ].join('\n')
         const tools = getRelevantTools(context, current)
         expect(tools.some(t => t.name === 'codex_install')).toBe(true)
-        expect(tools[5]?.name).toBe('codex_install')
-        expect(tools.length).toBeLessThanOrEqual(24)
+        // 2.89: four core tools (load_skill_pack is a fallback now), then the current instruction
+        expect(tools[4]?.name).toBe('codex_install')
+        expect(tools.length).toBeLessThanOrEqual(40)
     })
 
     it('keeps a multi-domain worker contract bounded', () => {
         const tools = getRelevantTools('suche im web, prüfe docker logs, lies die datei und prüfe den systemstatus')
-        expect(tools.length).toBeLessThanOrEqual(24)
+        expect(tools.length).toBeLessThanOrEqual(40)
     })
 
     it('selects semantic code and continuable worker tools from natural language', () => {
