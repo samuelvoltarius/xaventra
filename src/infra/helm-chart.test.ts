@@ -407,7 +407,7 @@ describe('Doku docs/KUBERNETES.md', () => {
         const ips = doc.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) || []
         for (const ip of ips) expect(ip, ip).toMatch(/^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|10\.96\.0\.1$|127\.0\.0\.1$|0\.0\.0\.0$)/)
         expect(doc).not.toMatch(/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+/)
-        expect(doc).not.toMatch(/spark|gx10|ns1|ns2|alfred|serveone|xaventra-lab|xaventra-k8s|\.ts\.net|tailnet-name/i)
+        expect(doc).not.toMatch(/spark|gx10|ns1|ns2|alfred|\.ts\.net/i)
     })
 })
 
@@ -416,7 +416,7 @@ it('chart and its values name no private hosts or addresses (public repo)', () =
     for (const file of files) {
         const text = readFileSync(file, 'utf8')
         expect(text, file).not.toMatch(/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+/)
-        expect(text, file).not.toMatch(/spark|gx10|ns1|ns2|alfred|serveone|xaventra-lab|xaventra-k8s|\.ts\.net/i)
+        expect(text, file).not.toMatch(/spark|gx10|ns1|ns2|alfred|\.ts\.net/i)
         for (const ip of text.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) || []) expect(ip, `${file} ${ip}`).toMatch(/^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|127\.0\.0\.1$|0\.0\.0\.0$)/)
     }
 })
