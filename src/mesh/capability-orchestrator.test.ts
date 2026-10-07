@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CapabilityGraph, type CapabilityGraphSnapshot } from './capability-graph.js'
+import { NODE_OFFLINE_AFTER_MS } from './mesh-node-lifecycle.js'
 import { findBestCapability, getCapabilityMap, getMissingCapabilities, initCapabilityOrchestrator, nodesFromCapabilityGraph, suggestInstallation } from './capability-orchestrator.js'
 
 const evidence = vi.hoisted(() => ({ snapshot: null as CapabilityGraphSnapshot | null }))
@@ -13,6 +14,10 @@ vi.mock('./capability-graph.js', async importOriginal => ({
         pruneStale: () => structuredClone(evidence.snapshot!),
     }),
 }))
+
+// 2.89: the "Fehlend" list comes from the capability inventory (node-strengths), which also asks the signed
+// profiles of this machine; the test has no profile, only the graph nodes below.
+vi.mock('../install/software-scout.js', () => ({ collectScoutNodes: async () => [] }))
 
 const now = new Date('2026-09-06T16:00:00Z')
 const request = { capability: 'llm', preferLocal: true, preferQuality: false }
@@ -51,11 +56,11 @@ describe('live capability projection', () => {
         evidence.snapshot = inventory()
         expect(getCapabilityMap()).toContain('worker-a')
         expect(findBestCapability(request)?.nodeName).toBe('worker-a')
-        expect(getMissingCapabilities()).not.toContain('llm')
+        expect(await getMissingCapabilities()).not.toContain('llm')
         expect(fetch).not.toHaveBeenCalled()
     })
 
-    it('keeps runtime names, every model and installed-only status distinct', () => {
+    it('keeps runtime names, every model and installed-only status distinct', async () => {
         evidence.snapshot = inventory()
         const map = getCapabilityMap()
         expect(map).toContain('vLLM')
@@ -63,7 +68,7 @@ describe('live capability projection', () => {
         expect(map).not.toContain('Ollama: chat-a')
         expect(map).toContain('installed')
         expect(map).toContain('embed-a')
-        expect(getMissingCapabilities()).toContain('embedding')
+        expect(await getMissingCapabilities()).toContain('embedding')
         expect(findBestCapability({ ...request, capability: 'embedding' })).toBeNull()
         expect(nodesFromCapabilityGraph(evidence.snapshot)[0].capabilities.filter(c => c.name === 'llm').map(c => c.provider))
             .toEqual(['chat-a', 'chat-b'])
@@ -78,14 +83,14 @@ describe('live capability projection', () => {
             const runtime = node.runtimes[0]
             if (failure === 'stopped') runtime.status = 'stopped'
             if (failure === 'offline') node.status = 'offline'
-            if (failure === 'heartbeat expired') node.lastHeartbeat = new Date(now.getTime() - 75_001).toISOString()
+            if (failure === 'heartbeat expired') node.lastHeartbeat = new Date(now.getTime() - NODE_OFFLINE_AFTER_MS - 1).toISOString()
             if (failure === 'probe expired') runtime.verifiedAt = new Date(now.getTime() - 300_001).toISOString()
             if (failure === 'explicit expiry') runtime.expiresAt = now.toISOString()
             if (failure === 'invalid time') runtime.verifiedAt = 'invalid'
             if (failure === 'future time') runtime.verifiedAt = new Date(now.getTime() + 300_000).toISOString()
             if (failure === 'tombstone') evidence.snapshot.tombstones = [{ id: runtime.id, deletedAt: now.toISOString() }]
             expect(findBestCapability(request)).toBeNull()
-            expect(getMissingCapabilities()).toContain('llm')
+            expect(await getMissingCapabilities()).toContain('llm')
             expect(fetch).not.toHaveBeenCalled()
         },
     )
@@ -131,25 +136,25 @@ describe('local runtimes reach the projection (live 2.88.1: vLLM and whisper on 
         node_id: 'main-node', hostname: 'main-node', ip: '192.0.2.5', platform: 'linux', version: '1', tools_count: 1, status: 'online', capabilities: [], last_heartbeat: stamp,
     }] as any
 
-    it('keeps local runtimes on the main node although NOVA_NODE_ID is not set (scanner passes the real node id)', () => {
+    it('keeps local runtimes on the main node although NOVA_NODE_ID is not set (scanner passes the real node id)', async () => {
         const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
         // Main node without NOVA_NODE_ID: the id comes from the registry, never undefined.
         graph.ingest(scan, selfMesh, 'main-node')
         evidence.snapshot = graph.getSnapshot()
-        expect(getMissingCapabilities()).not.toContain('llm')
-        expect(getMissingCapabilities()).not.toContain('stt')
+        expect(await getMissingCapabilities()).not.toContain('llm')
+        expect(await getMissingCapabilities()).not.toContain('stt')
         expect(findBestCapability(request)?.nodeName).toBe('main-node')
     })
 
-    it('does not drop a scanner-only local node as unknown when no node id was passed', () => {
+    it('does not drop a scanner-only local node as unknown when no node id was passed', async () => {
         const graph = new CapabilityGraph(join(mkdtempSync(join(tmpdir(), 'nova-cap-')), 'graph.json'))
         graph.ingest(scan, [], undefined)
         evidence.snapshot = graph.getSnapshot()
-        expect(getMissingCapabilities()).not.toContain('llm')
-        expect(getMissingCapabilities()).not.toContain('stt')
+        expect(await getMissingCapabilities()).not.toContain('llm')
+        expect(await getMissingCapabilities()).not.toContain('stt')
     })
 
-    it('recognises OpenAI-compatible and whisper runtimes by their own type names, not only "llm"/"stt"', () => {
+    it('recognises OpenAI-compatible and whisper runtimes by their own type names, not only "llm"/"stt"', async () => {
         evidence.snapshot = {
             version: 1, updatedAt: stamp, tombstones: [], nodes: [{
                 id: 'main-node', hostname: 'main-node', status: 'online', lastHeartbeat: stamp, updatedAt: stamp, capabilities: [],
@@ -160,8 +165,8 @@ describe('local runtimes reach the projection (live 2.88.1: vLLM and whisper on 
                 ],
             }],
         }
-        expect(getMissingCapabilities()).not.toContain('llm')
-        expect(getMissingCapabilities()).not.toContain('stt')
+        expect(await getMissingCapabilities()).not.toContain('llm')
+        expect(await getMissingCapabilities()).not.toContain('stt')
         expect(suggestInstallation('llm')).toMatch(/bereits verfuegbar: main-node\/chat-a/)
     })
 

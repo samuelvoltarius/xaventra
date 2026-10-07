@@ -1189,9 +1189,11 @@ export const evolutionTools: NovaTool[] = [
         category: 'system',
         parameters: [],
         handler: async () => {
-            const { getCapabilityMap, getMissingCapabilities } = await import('../mesh/capability-orchestrator.js')
+            const { getCapabilityMap } = await import('../mesh/capability-orchestrator.js')
             const map = getCapabilityMap()
-            const missing = getMissingCapabilities()
+            // 2.89: the one "Fehlend" list (capability inventory); embedding is only "there" with a real source.
+            const { capabilityInventory, describeMissing } = await import('../learning/capability-inventory.js')
+            const missing = describeMissing(await capabilityInventory({ light: true }))
             return map + (missing.length > 0 ? `\n\nFehlend: ${missing.join(', ')}` : '\n\nAlle Capabilities verfuegbar!')
         },
     },
@@ -1927,10 +1929,10 @@ export const meshBrainTools: NovaTool[] = [
             { name: 'task', type: 'string', description: 'Aufgabe in Worten oder Fähigkeit (z. B. "bilder", "Video umwandeln")', required: true },
         ],
         handler: async (params) => {
-            const { taskToSkill } = await import('../mesh/mesh-brain.js')
             const { rankNodesLive, shortReason, skillForTask } = await import('../mesh/node-strengths.js')
             const task = String(params.task || '')
-            const skill = taskToSkill(task) || skillForTask(task)
+            // 2.89: one skillForTask (skill names, old task names and free text).
+            const skill = skillForTask(task)
             if (!skill) return 'Dafür braucht es keinen besonderen Knoten — läuft hier.'
             const ranking = await rankNodesLive(skill)
             const lines = [`${ranking.label} → ${shortReason(ranking)}`]
@@ -2696,10 +2698,9 @@ const meshTools: NovaTool[] = [
         category: 'system',
         parameters: [],
         handler: async () => {
-            const { getAvailableNodes } = await import('../mesh/mesh-registry.js')
-            const nodes = await getAvailableNodes()
-            if (nodes.length === 0) return 'Keine verfügbaren Nodes im Mesh. Nur ich bin aktiv.'
-            return nodes.map(n => `?? ${n.hostname} (${n.node_id}) — ${n.capabilities?.join(', ')}`).join('\n')
+            // 2.89: the same node list as every other answer (node-strengths: signed profile, registry, graph; one online window).
+            const { collectNodeStrengths, formatAvailableNodes } = await import('../mesh/node-strengths.js')
+            return formatAvailableNodes(await collectNodeStrengths())
         },
     },
     {

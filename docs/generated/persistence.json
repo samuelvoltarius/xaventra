@@ -350,6 +350,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/tool-health-store.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/daemon.ts",
       "path": ".nova-data"
     },
@@ -1394,6 +1398,10 @@
       "path": ".nova-data/thought-actions.json"
     },
     {
+      "owner": "src/core/tool-health-store.ts",
+      "path": ".nova-data/tool-health.json"
+    },
+    {
       "owner": "src/core/upstream-update-command.ts",
       "path": ".nova-data/upstream-updates"
     },
@@ -1463,10 +1471,6 @@
     },
     {
       "owner": "src/memory/capabilities-store-scope.test.ts",
-      "path": ".nova-learning"
-    },
-    {
-      "owner": "src/memory/capabilities-store.ts",
       "path": ".nova-learning"
     },
     {

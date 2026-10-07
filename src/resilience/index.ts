@@ -116,7 +116,7 @@ export class Layer0Controller {
         llmProcess: () => Promise<string>,
     ): Promise<{ response: string; source: 'llm' | 'fallback' | 'layer0' }> {
         // First check if we're in fallback mode
-        if (!this.fallback.isOnline()) {
+        if (!this.fallback.isReady()) {
             return {
                 response: this.getFallbackResponse(message),
                 source: 'fallback',

@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { platform, arch, totalmem, cpus, hostname } from 'node:os'
 import { execSync } from 'node:child_process'
 import { nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
+import { hardwarePhrase } from '../mesh/node-strengths.js'
 
 // ============================================
 // Types
@@ -31,8 +32,11 @@ export interface HardwareDetails {
     cpuModel: string
     cpuCores: number
     ramGb: number
+    /** A GPU with compute evidence (nvidia-smi). A plain display adapter is NOT in here (2.89). */
     gpuModel: string | null
     gpuVram: string | null
+    /** Display adapter name (wmic) when no GPU was proven: named, never called a GPU. */
+    displayAdapter: string | null
     osName: string
     hostname: string
 }
@@ -159,6 +163,7 @@ export function detectHardwareDetails(): HardwareDetails {
 
     let gpuModel: string | null = null
     let gpuVram: string | null = null
+    let displayAdapter: string | null = null
 
     // Try nvidia-smi for GPU detection (Windows + Linux)
     try {
@@ -168,8 +173,9 @@ export function detectHardwareDetails(): HardwareDetails {
         gpuModel = nvidia.name || null
         gpuVram = nvidia.memoryTotalMb ? `${nvidia.memoryTotalMb} MiB` : null
     } catch {
-        // No NVIDIA GPU or nvidia-smi not available
-        // Try wmic on Windows as fallback
+        // No NVIDIA GPU or nvidia-smi not available.
+        // 2.89: wmic lists every display adapter (also the basic one of a VM or a server board).
+        // That is a display, not a GPU for models: it is kept apart and never reported as GPU.
         if (os === 'win32') {
             try {
                 const wmicOut = execSync(
@@ -177,8 +183,8 @@ export function detectHardwareDetails(): HardwareDetails {
                     { timeout: 3000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
                 ).trim()
                 const match = wmicOut.match(/Name=(.+)/i)
-                if (match) gpuModel = match[1].trim()
-            } catch { /* no GPU info available */ }
+                if (match) displayAdapter = match[1].trim()
+            } catch { /* no adapter info available */ }
         }
     }
 
@@ -187,9 +193,9 @@ export function detectHardwareDetails(): HardwareDetails {
             : os === 'linux' ? 'Linux'
                 : os
 
-    cachedHardware = { cpuModel, cpuCores, ramGb, gpuModel, gpuVram, osName, hostname: host }
+    cachedHardware = { cpuModel, cpuCores, ramGb, gpuModel, gpuVram, displayAdapter, osName, hostname: host }
 
-    console.log(`[HAL] Hardware: ${cpuModel} (${cpuCores} cores), ${ramGb}GB RAM, GPU: ${gpuModel || 'None'} (${gpuVram || 'N/A'})`)
+    console.log(`[HAL] Hardware: ${cpuModel} (${cpuCores} cores), ${ramGb}GB RAM, GPU: ${gpuModel || 'None'} (${gpuVram || 'N/A'})${displayAdapter ? `, display adapter: ${displayAdapter}` : ''}`)
 
     return cachedHardware
 }
@@ -198,13 +204,15 @@ export function detectHardwareDetails(): HardwareDetails {
  * Get a human-readable one-liner of the host hardware for Nova's persona
  */
 export function getHardwareSummary(): string {
+    // 2.89: the words come from the one hardware phrase of node-strengths.ts (same decision "GPU only with
+    // compute evidence" as mesh_nodes and the node list); this module only reads this machine.
     const hw = detectHardwareDetails()
-    const parts = [hw.cpuModel, `${hw.ramGb}GB RAM`]
-    if (hw.gpuModel) {
-        parts.push(`${hw.gpuModel}${hw.gpuVram ? ` (${hw.gpuVram})` : ''}`)
-    }
-    parts.push(hw.osName)
-    return parts.join(', ')
+    const vramMb = Number(String(hw.gpuVram || '').match(/\d+/)?.[0] || 0)
+    return hardwarePhrase({
+        cpuLabel: hw.cpuModel, cpus: hw.cpuCores, ramGB: hw.ramGb,
+        gpu: { name: hw.gpuModel, backend: hw.gpuModel ? 'cuda' : 'cpu', vramGB: vramMb > 0 ? Math.round(vramMb / 1024) : undefined },
+        displayAdapter: hw.displayAdapter, os: hw.osName,
+    })
 }
 
 // ============================================

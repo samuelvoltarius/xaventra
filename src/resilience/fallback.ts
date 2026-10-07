@@ -14,13 +14,18 @@ import type { IncomingMessage } from '../core/types.js'
 // Types
 // ============================================
 
-export type OperationMode = 'online' | 'degraded' | 'offline'
+/**
+ * 2.89: this is the answering mode of Xaventra (LLM + channel), NOT the internet.
+ * "ready" used to be called "online" and read like an internet answer. The internet
+ * question has one place: core/environment.ts hasInternet().
+ */
+export type OperationMode = 'ready' | 'degraded' | 'offline'
 
 export interface FallbackState {
     mode: OperationMode
     llmConnected: boolean
     channelsConnected: string[]
-    lastOnlineTime?: number
+    lastReadyTime?: number
     offlineReason?: string
 }
 
@@ -75,8 +80,8 @@ export class FallbackManager {
         this.updateMode()
 
         if (connected) {
-            this.state.lastOnlineTime = Date.now()
-            console.log('[Nova Fallback] LLM connected - going online')
+            this.state.lastReadyTime = Date.now()
+            console.log('[Nova Fallback] LLM connected - ready')
         } else {
             this.state.offlineReason = 'LLM disconnected'
             console.log('[Nova Fallback] LLM disconnected - entering fallback mode')
@@ -97,7 +102,7 @@ export class FallbackManager {
 
     private updateMode(): void {
         if (this.state.llmConnected && this.state.channelsConnected.length > 0) {
-            this.state.mode = 'online'
+            this.state.mode = 'ready'
         } else if (this.state.channelsConnected.length > 0) {
             this.state.mode = 'degraded'
         } else {
@@ -113,8 +118,9 @@ export class FallbackManager {
         return this.state.mode
     }
 
-    isOnline(): boolean {
-        return this.state.mode === 'online'
+    /** LLM and channel are there (not an internet statement). */
+    isReady(): boolean {
+        return this.state.mode === 'ready'
     }
 
     // ============================================
@@ -170,7 +176,7 @@ export class FallbackManager {
 
         // Mode
         const modeEmoji = {
-            online: '🟢',
+            ready: '🟢',
             degraded: '🟡',
             offline: '🔴',
         }[this.state.mode]
@@ -186,8 +192,8 @@ export class FallbackManager {
         }
 
         // Last online
-        if (this.state.lastOnlineTime) {
-            const ago = Math.round((Date.now() - this.state.lastOnlineTime) / 1000)
+        if (this.state.lastReadyTime) {
+            const ago = Math.round((Date.now() - this.state.lastReadyTime) / 1000)
             status += `**Letzte Verbindung:** vor ${ago}s\n`
         }
 

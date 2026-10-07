@@ -13,94 +13,22 @@ import { collectNodeStrengths, formatStrengthList, rankNodes, shortReason, skill
 // Types
 // ============================================
 
-export type MeshTaskType =
-    | 'llm_query'        // LLM inference (needs internet/OpenAI)
-    | 'media_convert'    // ffmpeg transcoding
-    | 'image_analysis'   // opencv / vision
-    | 'ml_inference'     // local ML model (ollama, etc.)
-    | 'embedding'        // text embedding generation
-    | 'adb_command'      // Android Debug Bridge (TV/Beamer control)
-    | 'file_transfer'    // move files between nodes
-    | 'code_execution'   // run scripts (python, node, bash)
-    | 'system_command'   // OS-level commands
-    | 'general'          // fallback — run locally
-
 export interface RoutingDecision {
     nodeId: string
     nodeName: string
     /** One short human line: "gpu-box: GPU frei, Modell geladen". */
     reason: string
     score: number
-    taskType: MeshTaskType
     skill: Skill | null
     isLocal: boolean       // true = run on current node
     ranking?: NodeRanking
 }
 
 // ============================================
-// Task Type Detection (from message content)
-// ============================================
-
-export const detectMeshTaskType = (content: string): MeshTaskType => {
-    const lower = content.toLowerCase()
-
-    // ADB / TV / Beamer
-    if (/\b(tv|fernseher|beamer|projektor|adb|hdmi|chromecast)\b/.test(lower)) {
-        return 'adb_command'
-    }
-
-    // Media conversion
-    if (/\b(konvertier|convert|transcode|ffmpeg|video.*umwandeln|audio.*extract|mp4|mkv|wav|compress)\b/.test(lower)) {
-        return 'media_convert'
-    }
-
-    // Image analysis
-    if (/\b(bild.*analys|image.*analy|gesichtserkennung|face.*detect|object.*detect|opencv)\b/.test(lower)) {
-        return 'image_analysis'
-    }
-
-    // ML inference
-    if (/\b(ollama|llama|inference|modell.*lokal|local.*model|embeddings?|vektori)\b/.test(lower)) {
-        return 'ml_inference'
-    }
-
-    // Embedding
-    if (/\b(embedding|einbetten|vektorisier|rag.*index)\b/.test(lower)) {
-        return 'embedding'
-    }
-
-    // File transfer
-    if (/\b(transfer|übertrag|kopier.*auf|send.*to.*node|scp|rsync)\b/.test(lower)) {
-        return 'file_transfer'
-    }
-
-    // Code execution
-    if (/\b(führ.*aus|execute|run.*script|python.*run|node.*run|bash.*run)\b/.test(lower)) {
-        return 'code_execution'
-    }
-
-    // System command
-    if (/\b(system|uptime|disk|speicher|temperatur|cpu|ram|neustarten|restart)\b/.test(lower)) {
-        return 'system_command'
-    }
-
-    return 'general'
-}
-
-// ============================================
 // Routing (Mesh-Gehirn 2.88): one source, node-strengths.ts
 // ============================================
-
-const TASK_SKILL: Partial<Record<MeshTaskType, Skill>> = {
-    media_convert: 'medien',
-    image_analysis: 'vision',
-    ml_inference: 'llm',
-    embedding: 'embedding',
-    code_execution: 'code',
-}
-
-/** Which strength a message needs: wording first, then the legacy task type. */
-export const skillForContent = (content: string): Skill | null => skillForTask(content) || TASK_SKILL[detectMeshTaskType(content)] || null
+// 2.89: one skillForTask (node-strengths.ts) decides which strength a task needs; the former
+// detectMeshTaskType / skillForContent / TASK_SKILL tables here are gone.
 
 /**
  * Picks the node for a task from the signed strength profiles and says why in
@@ -112,16 +40,16 @@ export const routeTask = async (
     forceLocal = false,
     strengths?: readonly NodeStrength[],
 ): Promise<RoutingDecision> => {
-    const taskType = detectMeshTaskType(content)
-    const skill = skillForContent(content)
-    const local = (reason: string, score: number): RoutingDecision => ({ nodeId: localId(strengths), nodeName: localId(strengths), reason, score, taskType, skill, isLocal: true })
+    const skill = skillForTask(content)
+    const local = (reason: string, score: number): RoutingDecision => ({ nodeId: localId(strengths), nodeName: localId(strengths), reason, score, skill, isLocal: true })
     if (forceLocal || !skill) return local(forceLocal ? 'lokal angefordert' : 'normale Aufgabe — läuft hier', 100)
-    const nodes = strengths || await collectNodeStrengths()
+    // Hot path (every message that needs a skill): no Supabase request here, registry from the local file and direct mesh.
+    const nodes = strengths || await collectNodeStrengths(Date.now(), { registryRemote: false })
     const ranking = rankNodes(skill, nodes)
     const best = ranking.ranked[0]
     if (!best) return local(shortReason(ranking), 0)
     console.log(`[MeshRouter] ${skill} → ${best.nodeId} (${shortReason(ranking)})`)
-    return { nodeId: best.nodeId, nodeName: best.nodeId, reason: shortReason(ranking), score: best.score, taskType, skill, isLocal: best.local, ranking }
+    return { nodeId: best.nodeId, nodeName: best.nodeId, reason: shortReason(ranking), score: best.score, skill, isLocal: best.local, ranking }
 }
 
 function localId(strengths?: readonly NodeStrength[]): string {
@@ -156,6 +84,5 @@ export const getRoutingDiagnostics = async (): Promise<string> => formatStrength
 export default {
     routeTask,
     executeRemote,
-    detectMeshTaskType,
     getRoutingDiagnostics,
 }

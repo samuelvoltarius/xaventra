@@ -49,6 +49,8 @@ import { topicSimilarity, topicTokens } from '../core/decisions.js'
 import { isInfrastructureFailure } from '../core/infrastructure-failure.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import type { SoftwareCapability } from '../install/software-candidates.js'
+import type { Skill } from '../mesh/node-strengths.js'
+import type { CapabilityInventory, LearnedCapability } from './capability-inventory.js'
 import type { SearchHit, WebSearchPort } from '../install/software-freshness.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { connectedConnectorIds } from '../connections/connection-state.js'
@@ -67,6 +69,10 @@ export interface CapabilityDomain {
     tools: RegExp
     /** Geprüfte Connectoren, die das Feld abdecken (src/connections). */
     connectors?: readonly string[]
+    /** Werkzeuge, die nur über die Verbindung eines Connectors laufen (ohne Verbindung zählen sie nicht). */
+    connectorTools?: RegExp
+    /** Was ein Knoten im Mesh können muss, damit das Feld geht (node-strengths). */
+    meshSkill?: Skill
     /** Software-Fähigkeit des Werkzeugkastens (src/install). */
     software?: SoftwareCapability
     /** Ein Satz zum Ausprobieren nach dem Lernen. */
@@ -81,16 +87,16 @@ export const CAPABILITY_DOMAINS: readonly CapabilityDomain[] = Object.freeze([
     { id: 'sms', label: 'SMS senden', words: W('(?<![\\p{L}])(sms|simse\\p{L}*|kurznachricht\\p{L}*)(?![\\p{L}])'), tools: /^(sms[_-]|send_sms)/, beispiel: 'Schick eine SMS an …' },
     { id: 'musik', label: 'Musik abspielen', words: W('(?<![\\p{L}])spotify(?![\\p{L}])|(?<![\\p{L}])(abspiel|spiel)\\p{L}*[^.?!]{0,40}(musik|lied|song|playlist|radio)|(musik|lied|song|playlist)\\p{L}*[^.?!]{0,40}(abspiel|spiel)'), tools: /^(spotify[_-]|music[_-]|media_play|sonos[_-]|hass_service$)/, beispiel: 'Spiel meine Lieblings-Playlist' },
     { id: 'mail-senden', label: 'E-Mails senden', words: W('(?<![\\p{L}])(schick|send|verschick)\\p{L}*[^.?!]{0,50}(?<![\\p{L}])(e-?mail|mail)s?(?![\\p{L}])|(?<![\\p{L}])(e-?mail|mail)s?(?![\\p{L}])[^.?!]{0,50}(schick|send|verschick)'), tools: /^(send_email|email_send|mail_send|gmail_send|smtp[_-])/, beispiel: 'Schick eine Mail an …' },
-    { id: 'mail-lesen', label: 'Mails lesen', words: W('(?<![\\p{L}])(e-?mails?|mails?|postfach|posteingang)(?![\\p{L}])'), tools: /^(gmail|mail_|email_|imap[_-])/, connectors: ['gmail'], beispiel: 'Was ist heute an Mails gekommen?' },
-    { id: 'kalender', label: 'Kalender lesen', words: W('(?<![\\p{L}])kalender\\p{L}*|(?<![\\p{L}])(meine|welche|nächsten|naechsten|heutigen|morgigen)\\s+(termine?|besprechungen)(?![\\p{L}])'), tools: /^(calendar|kalender)/, connectors: ['google-calendar'], beispiel: 'Was steht morgen im Kalender?' },
-    { id: 'bild', label: 'Bilder erzeugen', words: W('(?<![\\p{L}])(bild|foto|logo|grafik|illustration)\\p{L}*[^.?!]{0,40}(erzeug|generier|erstell|mal|zeichn)|(?<![\\p{L}])(mal|zeichne)\\p{L}*[^.?!]{0,30}(bild|logo)'), tools: /^(generate_image|minimax_image_gen|image_gen)/, beispiel: 'Mal mir ein Bild von einem Leuchtturm' },
+    { id: 'mail-lesen', label: 'Mails lesen', words: W('(?<![\\p{L}])(e-?mails?|mails?|postfach|posteingang)(?![\\p{L}])'), tools: /^(gmail|mail_|email_|imap[_-])/, connectors: ['gmail'], connectorTools: /^gmail/, beispiel: 'Was ist heute an Mails gekommen?' },
+    { id: 'kalender', label: 'Kalender lesen', words: W('(?<![\\p{L}])kalender\\p{L}*|(?<![\\p{L}])(meine|welche|nächsten|naechsten|heutigen|morgigen)\\s+(termine?|besprechungen)(?![\\p{L}])'), tools: /^(calendar|kalender)/, connectors: ['google-calendar'], connectorTools: /^(calendar|kalender)/, beispiel: 'Was steht morgen im Kalender?' },
+    { id: 'bild', label: 'Bilder erzeugen', words: W('(?<![\\p{L}])(bild|foto|logo|grafik|illustration)\\p{L}*[^.?!]{0,40}(erzeug|generier|erstell|mal|zeichn)|(?<![\\p{L}])(mal|zeichne)\\p{L}*[^.?!]{0,30}(bild|logo)'), tools: /^(generate_image|minimax_image_gen|image_gen)/, meshSkill: 'bilder', beispiel: 'Mal mir ein Bild von einem Leuchtturm' },
     { id: 'video', label: 'Videos erzeugen', words: W('(?<![\\p{L}])video\\p{L}*[^.?!]{0,40}(erzeug|generier|erstell)'), tools: /^(minimax_video_start|generate_video|video_gen)/, beispiel: 'Erzeug ein kurzes Video von …' },
-    { id: 'stt', label: 'Sprachnachrichten abschreiben', words: W('(?<![\\p{L}])(sprachnachricht|sprachmemo|audio|aufnahme)\\p{L}*[^.?!]{0,40}(abschreib|transkrib|verschrift|als text)|transkrib'), tools: /^(transcribe_audio|stt[_-]|whisper)/, software: 'stt', beispiel: 'Schreib mir die Sprachnachricht ab' },
-    { id: 'tts', label: 'Vorlesen', words: W('(?<![\\p{L}])(vorlesen|vorles|laut vor)|(?<![\\p{L}])lies\\p{L}*[^.?!]{0,30}(?<![\\p{L}])vor(?![\\p{L}])'), tools: /^(speak|minimax_tts|tts[_-])/, software: 'tts', beispiel: 'Lies mir die Nachricht vor' },
-    { id: 'vision', label: 'Bilder lesen', words: W('(?<![\\p{L}])(text|schrift)(?![\\p{L}])[^.?!]{0,30}(bild|foto|scan|screenshot)|(?<![\\p{L}])ocr(?![\\p{L}])|(erkenn|beschreib)\\p{L}*[^.?!]{0,30}(bild|foto)'), tools: /^(analyze_image|screen_analyze|minimax_vision|ocr[_-]|vision[_-])/, software: 'vision', beispiel: 'Was steht auf diesem Foto?' },
-    { id: 'github', label: 'GitHub lesen', words: W('(?<![\\p{L}])(github|issues?|pull requests?)(?![\\p{L}])'), tools: /^(github|gh_)/, connectors: ['github'], beispiel: 'Welche Issues sind offen?' },
-    { id: 'fotos', label: 'Fotos durchsuchen', words: W('(?<![\\p{L}])(meine|unsere)\\s+(fotos|bilder|alben)(?![\\p{L}])|(?<![\\p{L}])immich(?![\\p{L}])'), tools: /^immich/, connectors: ['immich'], beispiel: 'Zeig mir Fotos vom Urlaub' },
-    { id: 'dokumente', label: 'Dokumente suchen', words: W('(?<![\\p{L}])paperless(?![\\p{L}])|(?<![\\p{L}])(meine|die)\\s+(rechnung|rechnungen|dokumente)(?![\\p{L}])'), tools: /^paperless/, connectors: ['paperless'], beispiel: 'Such die Stromrechnung vom März' },
+    { id: 'stt', label: 'Sprachnachrichten abschreiben', words: W('(?<![\\p{L}])(sprachnachricht|sprachmemo|audio|aufnahme)\\p{L}*[^.?!]{0,40}(abschreib|transkrib|verschrift|als text)|transkrib'), tools: /^(transcribe_audio|stt[_-]|whisper)/, software: 'stt', meshSkill: 'stt', beispiel: 'Schreib mir die Sprachnachricht ab' },
+    { id: 'tts', label: 'Vorlesen', words: W('(?<![\\p{L}])(vorlesen|vorles|laut vor)|(?<![\\p{L}])lies\\p{L}*[^.?!]{0,30}(?<![\\p{L}])vor(?![\\p{L}])'), tools: /^(speak|minimax_tts|tts[_-])/, software: 'tts', meshSkill: 'tts', beispiel: 'Lies mir die Nachricht vor' },
+    { id: 'vision', label: 'Bilder lesen', words: W('(?<![\\p{L}])(text|schrift)(?![\\p{L}])[^.?!]{0,30}(bild|foto|scan|screenshot)|(?<![\\p{L}])ocr(?![\\p{L}])|(erkenn|beschreib)\\p{L}*[^.?!]{0,30}(bild|foto)'), tools: /^(analyze_image|screen_analyze|minimax_vision|ocr[_-]|vision[_-])/, software: 'vision', meshSkill: 'vision', beispiel: 'Was steht auf diesem Foto?' },
+    { id: 'github', label: 'GitHub lesen', words: W('(?<![\\p{L}])(github|issues?|pull requests?)(?![\\p{L}])'), tools: /^(github|gh_)/, connectors: ['github'], connectorTools: /^(github|gh_)/, beispiel: 'Welche Issues sind offen?' },
+    { id: 'fotos', label: 'Fotos durchsuchen', words: W('(?<![\\p{L}])(meine|unsere)\\s+(fotos|bilder|alben)(?![\\p{L}])|(?<![\\p{L}])immich(?![\\p{L}])'), tools: /^immich/, connectors: ['immich'], connectorTools: /^immich/, beispiel: 'Zeig mir Fotos vom Urlaub' },
+    { id: 'dokumente', label: 'Dokumente suchen', words: W('(?<![\\p{L}])paperless(?![\\p{L}])|(?<![\\p{L}])(meine|die)\\s+(rechnung|rechnungen|dokumente)(?![\\p{L}])'), tools: /^paperless/, connectors: ['paperless'], connectorTools: /^paperless/, beispiel: 'Such die Stromrechnung vom März' },
 ] satisfies CapabilityDomain[])
 
 export function findDomain(text: string): CapabilityDomain | undefined {
@@ -127,19 +133,14 @@ export function detectCapabilityRequest(text: unknown): CapabilityRequest | null
 // Inventar und Urteil
 // ---------------------------------------------------------------------------
 
-export interface LearnedCapability { signature: string; topic: string; domainId?: string; tools: string[] }
-export interface CapabilityInventory {
-    /** Namen im Werkzeug-Register (inkl. aktiver Schmiede-Werkzeuge). */
-    tools: readonly string[]
-    /** Verbundene Connectoren (Status „verbunden“). */
-    connected: ReadonlySet<string>
-    /** Gelernte Fähigkeiten, die noch gelten. */
-    learned: readonly LearnedCapability[]
-}
+// 2.89: the inventory is built in ONE place (capability-inventory.ts); the gate only judges.
+export type { CapabilityInventory, LearnedCapability } from './capability-inventory.js'
 
 export type CapabilityVerdict =
     | { status: 'kann'; via: string[] }
-    | { status: 'kann-nicht'; domain: CapabilityDomain; topic: string }
+    | { status: 'kann-nicht'; domain: CapabilityDomain; topic: string; broken?: string[] }
+    /** The tool is registered, but the connection behind it is not connected (not a thing to learn). */
+    | { status: 'kann-nicht-verbunden'; domain: CapabilityDomain; topic: string; connector: string }
     | { status: 'unklar'; topic: string }
 
 const SAME_TOPIC = 0.75
@@ -151,11 +152,22 @@ export function assessCapability(text: string, inventory: CapabilityInventory): 
     const learned = inventory.learned.find(item => (domain && item.domainId === domain.id) || topicSimilarity(tokens, topicTokens(item.topic)) >= SAME_TOPIC)
     if (learned) return { status: 'kann', via: learned.tools.length ? [...learned.tools] : [`gelernt:${learned.signature}`] }
     if (!domain) return { status: 'unklar', topic }
-    const tools = inventory.tools.filter(name => domain.tools.test(name))
-    if (tools.length) return { status: 'kann', via: tools.slice(0, 5) }
-    const connected = (domain.connectors || []).filter(id => inventory.connected.has(id))
+    const connectors = domain.connectors || []
+    const connected = connectors.filter(id => inventory.connected.has(id))
+    const registered = inventory.tools.filter(name => domain.tools.test(name))
+    // A registered tool counts only if it works here (one tool-health store) and, when it runs
+    // through a connector, only while that connection is connected.
+    const broken = registered.filter(name => inventory.brokenTools?.has(name))
+    const needsConnection = (name: string) => Boolean(domain.connectorTools?.test(name)) && connectors.length > 0 && !connected.length
+    const working = registered.filter(name => !inventory.brokenTools?.has(name) && !needsConnection(name))
+    if (working.length) return { status: 'kann', via: working.slice(0, 5) }
+    // Another node can do it (Whisper on a different machine is "can": stt).
+    const nodes = domain.meshSkill ? inventory.mesh?.get(domain.meshSkill) || [] : []
+    if (nodes.length) return { status: 'kann', via: nodes.slice(0, 5).map(id => `knoten:${id}`) }
     if (connected.length) return { status: 'kann', via: connected.map(id => `verbindung:${id}`) }
-    return { status: 'kann-nicht', domain, topic }
+    const unconnected = registered.find(name => !inventory.brokenTools?.has(name) && needsConnection(name))
+    if (unconnected) return { status: 'kann-nicht-verbunden', domain, topic, connector: connectors[0] }
+    return { status: 'kann-nicht', domain, topic, ...(broken.length ? { broken: broken.slice(0, 5) } : {}) }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +444,15 @@ async function offerFor(topic: string, domain: CapabilityDomain | undefined, ctx
     return HONEST_NO
 }
 
+/** The tool is there but its connection is not: say that (no "Soll ich es lernen?" - nothing to learn). */
+async function notConnectedReply(connector: string, ctx: LearnContext): Promise<string> {
+    let title = connector
+    try { title = (await import('../connections/connector-catalog.js')).findConnector(connector)?.title || connector } catch { /* title stays the id */ }
+    return ctx.permission === 'owner'
+        ? `Das Werkzeug dafür habe ich, aber die Verbindung zu ${title} steht noch nicht. Sag „Verbinde dich mit ${title}“, dann richte ich sie ein.`
+        : `Dafür ist die Verbindung zu ${title} noch nicht eingerichtet.`
+}
+
 /**
  * Pipeline-Eingang (vor dem Modell): eine Fähigkeitsfrage/Bitte, für die belastbar
  * kein Werkzeug da ist, bekommt sofort die ehrliche Antwort. Sonst `handled: false`.
@@ -441,6 +462,7 @@ export async function handleCapabilityRequest(text: string, ctx: LearnContext, d
     if (!request) return { handled: false }
     const verdict = assessCapability(text, await deps.inventory())
     console.log(`[Lernen] Fähigkeits-Frage „${request.topic.slice(0, 60)}“ → ${verdict.status}`)
+    if (verdict.status === 'kann-nicht-verbunden') return { handled: true, reply: await notConnectedReply(verdict.connector, ctx) }
     if (verdict.status !== 'kann-nicht') return { handled: false }
     return { handled: true, reply: await offerFor(verdict.topic, verdict.domain, ctx, deps) }
 }
@@ -703,32 +725,25 @@ export async function capabilityLearningTick(deps: LearnDeps): Promise<{ learned
 // Produktion
 // ---------------------------------------------------------------------------
 
-/** 2.89: the last collected inventory (tools of the registry) for the synchronous card check. */
+/** 2.89: the last collected inventory for the synchronous card check. */
 let lastInventory: CapabilityInventory | null = null
 
-/** The latest inventory: tools as last collected, connections and learned abilities read now. */
+/** The latest inventory: everything as last collected, connections and learned abilities read now. */
 function inventoryNow(dataDir?: string): CapabilityInventory | null {
     if (!lastInventory) return null
     let connected = lastInventory.connected
+    // The one connection truth (Paket B), read fresh: a card closes as soon as the service is connected.
     try { connected = connectedConnectorIds(dataDir) } catch { /* keep the last */ }
     const toolSet = new Set(lastInventory.tools)
-    const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
-    return { tools: lastInventory.tools, connected, learned }
+    let learned = lastInventory.learned
+    try { learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name))) } catch { /* keep the last */ }
+    return { ...lastInventory, connected, learned }
 }
 
+// 2.89: no own inventory here any more - capabilityInventory() is the one source.
 async function collectInventory(dataDir?: string): Promise<CapabilityInventory> {
-    const tools: string[] = []
-    try {
-        const { getToolRegistry } = await import('../tools/complete-registry.js')
-        for (const tool of getToolRegistry().getAll()) if (tool?.name) tools.push(tool.name)
-    } catch { /* leeres Register: dann entscheidet nur, was belegt ist */ }
-    // 2.89: „verbunden“ kommt aus der einen Verbindungs-Wahrheit (konfiguriertes HA eingeschlossen).
-    let connected = new Set<string>()
-    try { connected = connectedConnectorIds(dataDir) } catch { /* keine Verbindungen */ }
-    const toolSet = new Set(tools)
-    // Ein gelerntes Werkzeug gilt nur, solange es im Register steht.
-    const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
-    lastInventory = { tools, connected, learned }
+    const { capabilityInventory } = await import('./capability-inventory.js')
+    lastInventory = await capabilityInventory({ dataDir })
     return lastInventory
 }
 

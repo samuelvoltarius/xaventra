@@ -146,7 +146,7 @@ describe('FallbackManager', async () => {
     it('should start in offline mode', () => {
         const fallback = new FallbackManager()
         expect(fallback.getMode()).toBe('offline')
-        expect(fallback.isOnline()).toBe(false)
+        expect(fallback.isReady()).toBe(false)
     })
 
     it('should track LLM connection', () => {
@@ -155,8 +155,8 @@ describe('FallbackManager', async () => {
         fallback.setLLMConnected(true)
         fallback.addChannel('telegram')
 
-        expect(fallback.getMode()).toBe('online')
-        expect(fallback.isOnline()).toBe(true)
+        expect(fallback.getMode()).toBe('ready')
+        expect(fallback.isReady()).toBe(true)
     })
 
     it('should enter degraded mode', () => {

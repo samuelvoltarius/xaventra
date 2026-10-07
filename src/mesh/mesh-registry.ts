@@ -20,6 +20,7 @@ import { hostname, networkInterfaces, uptime } from 'os'
 import * as nodeOs from 'node:os'
 import { execSync } from 'child_process'
 import { locateProgram } from '../startup/environment-scanner.js'
+import { hasInternet } from '../core/environment.js'
 import { cachedNvidiaQuery, nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 import {
     isActiveNode,
@@ -129,6 +130,8 @@ export interface MeshNode {
 export interface DiscoverNodesOptions {
     includeHistorical?: boolean
     activeOnly?: boolean
+    /** false = no Supabase request (local file + signed direct mesh only). Default true. */
+    remote?: boolean
 }
 
 export interface TaskDelegation {
@@ -511,7 +514,7 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
     // Each node registers itself on startup via registerNode() → supabaseSync()
 
     // Fetch remote nodes from Supabase
-    try {
+    if (options.remote !== false) try {
         const res = await fetch(`${SUPABASE_URL}/${TABLE}?select=*`, {
             method: 'GET',
             headers: {
@@ -1370,7 +1373,7 @@ export async function failTask(taskId: string, error: string): Promise<void> {
 // Full Node Self-Scan (Hardware + Software)
 // ============================================
 
-function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, software: NodeSoftware } {
+export function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, software: NodeSoftware } {
     const caps: string[] = ['chat', 'tools', 'memory']
     // Owner decision (2.88): with succession on, only explicitly allowed nodes are main-eligible.
     if (!isNodeMainEligible()) {
@@ -1594,8 +1597,9 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     // SSH client
     if (locateProgram('ssh')) caps.push('ssh')
 
-    // Internet connectivity (quick DNS check)
-    try { execSync(process.platform === 'win32' ? 'ping -n 1 -w 1000 8.8.8.8' : 'ping -c 1 -W 1 8.8.8.8', { stdio: 'pipe', timeout: 3000 }); caps.push('internet') } catch { }
+    // Internet: the one question (core/environment.ts hasInternet: ping, then TCP 443).
+    // Ping alone said "no internet" under NoNewPrivileges although HTTPS worked.
+    if (hasInternet()) caps.push('internet')
 
     // OpenCV (via python import check)
     if (pythonVersion) {
@@ -1790,14 +1794,25 @@ export async function formatMeshNodes(options: { includeHistorical?: boolean } =
     if (preferred) msg += `⚡ Compute/Failover: *${preferred.hostname || preferred.nodeId}* (\`${preferred.nodeId}\`)\n`
     msg += '\n'
 
+    // 2.89: online/offline and what a node can do come from the one node view (node-strengths.ts:
+    // signed profile + these registry rows + graph, one online window), not from this list alone.
+    const { collectNodeStrengths, reportedFromRegistryNode, SKILL_LABELS } = await import('./node-strengths.js')
+    const strengthById = new Map<string, Awaited<ReturnType<typeof collectNodeStrengths>>[number]>()
+    try {
+        for (const strength of await collectNodeStrengths(Date.now(), { registry: nodes.map(reportedFromRegistryNode) })) strengthById.set(strength.nodeId, strength)
+    } catch { /* lifecycle alone */ }
+
     for (const n of nodes) {
         const isMe = n.node_id === NODE_ID
+        const strength = strengthById.get(n.node_id)
         const lifecycle = n.lifecycle_state || 'offline'
-        const statusIcon = lifecycle === 'active' ? '🟢' : lifecycle === 'offline' ? '🔴' : lifecycle === 'retired' ? '⚫' : '🚫'
+        const online = strength ? strength.online : lifecycle === 'active'
+        const statusIcon = lifecycle === 'retired' ? '⚫' : lifecycle === 'tombstoned' ? '🚫' : online ? '🟢' : '🔴'
         const lastBeat = new Date(n.last_heartbeat)
         const ago = Math.max(0, Math.round((Date.now() - lastBeat.getTime()) / 1000))
         const agoText = ago < 60 ? `${ago}s` : ago < 3600 ? `${Math.round(ago / 60)}min` : ago < 86400 ? `${Math.round(ago / 3600)}h` : `${Math.round(ago / 86400)}d`
-        msg += `${statusIcon} *${n.hostname}*${isMe ? ' (ich)' : ''} — ${lifecycle}\n`
+        msg += `${statusIcon} *${n.hostname}*${isMe ? ' (ich)' : ''} — ${lifecycle === 'active' || lifecycle === 'offline' ? (online ? 'active' : 'offline') : lifecycle}\n`
+        if (strength && online && strength.skills.length) msg += `   Kann: ${strength.skills.filter(skill => skill !== 'rechnen' || strength.skills.length === 1).map(skill => SKILL_LABELS[skill]).join(', ')}\n`
         msg += `   ID: \`${n.node_id}\` | ${n.platform} | Tools: ${n.tools_count}\n`
         msg += `   Heartbeat: vor ${agoText}\n`
         if (n.superseded_by) msg += `   Ersetzt durch: \`${n.superseded_by}\`\n`
@@ -1832,9 +1847,10 @@ export async function formatMeshServices(): Promise<string> {
     try {
         const { getCapabilityGraph } = await import('./capability-graph.js')
         const snapshot = getCapabilityGraph().getSnapshot()
-        const cutoff = Date.now() - 10 * 60_000
+        // 2.89: same "running right now" rule as everywhere (capability-graph.ts), not a 10-minute cutoff of its own.
+        const { capabilityRuntimeAvailable } = await import('./capability-graph.js')
         const runtimes = snapshot.nodes.flatMap(node => node.runtimes
-            .filter(runtime => runtime.status === 'running' && Date.parse(runtime.verifiedAt) >= cutoff)
+            .filter(runtime => capabilityRuntimeAvailable(node, runtime))
             .map(runtime => ({ node: node.hostname, ...runtime })))
         if (runtimes.length) {
             lines.push('', `🤖 *Laufende AI-Runtimes (${runtimes.length}):*`)

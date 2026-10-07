@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
 import { getRecommendations, hardwareFromStrength } from './model-recommender.js'
 import {
-    collectNodeStrengths, formatStrengthList, rankNodes, shortReason, SKILLS,
+    collectNodeStrengths, formatStrengthList, rankNodes, shortReason, skillForTask, SKILLS,
     type NodeStrength, type Skill,
 } from './node-strengths.js'
 
@@ -51,23 +51,6 @@ export interface MeshSnapshot {
     nodes: MeshNodeEntry[]
     summary: string
     routingTable: RoutingEntry[]
-}
-
-/** Old task names of the mesh_route tool → skill. */
-export const LEGACY_TASKS: Record<string, Skill> = {
-    'large-llm': 'grosse-modelle',
-    'fast-llm': 'llm',
-    'embedding': 'embedding',
-    'image-generation': 'bilder',
-    'stt-voice': 'stt',
-    'media-convert': 'medien',
-    'cuda-inference': 'llm',
-}
-
-export function taskToSkill(task: string): Skill | null {
-    const key = String(task || '').trim().toLowerCase()
-    if ((SKILLS as readonly string[]).includes(key)) return key as Skill
-    return LEGACY_TASKS[key] || null
 }
 
 function installedModels(node: NodeStrength): string[] {
@@ -160,7 +143,7 @@ export class MeshBrain {
 
     /** Best node for a skill or an old task name ("large-llm" …). */
     getBestNodeFor(task: string): RoutingEntry | null {
-        const skill = taskToSkill(task)
+        const skill = skillForTask(task)
         if (!skill) return null
         return this.snapshot?.routingTable.find(entry => entry.task === skill) || null
     }
