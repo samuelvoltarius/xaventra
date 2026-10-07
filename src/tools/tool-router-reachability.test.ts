@@ -67,8 +67,16 @@ describe('everyday German requests reach the right tool (real registry)', () => 
         ['Prüf dich selbst, was ist kaputt?', 'self_doctor'],
         ['Suche im Internet nach dem Wetter in Salzburg', 'web_search'],
         ['Richte die Spracheingabe ein', 'voice_setup'],
+        // 2.89 live (07.10.): typing errors of „verbinden“ still reach the connect tools.
+        ['paperless kannst du dich mit dem verbinen ?', 'dienst_verbinden'],
+        ['kannst du dich mit paperless verbiden', 'dienst_finden'],
+        ['koppel dich mit dem NAS', 'dienst_verbinden'],
     ])('„%s“ → %s', (request, tool) => {
         expect(names(request)).toContain(tool)
+    })
+
+    it('Gegenprobe: „verbieten“ is no connect request', () => {
+        expect(names('Ich verbiete dir das Licht anzumachen')).not.toContain('dienst_verbinden')
     })
 
     it('stems and compounds match, whole words stay whole (Gegenprobe)', () => {

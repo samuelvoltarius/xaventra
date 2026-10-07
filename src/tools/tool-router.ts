@@ -396,7 +396,8 @@ const LIVE_ROUTES: readonly LiveRoute[] = [
     { name: 'parcel', tools: ['parcel_track'], applies: text => /\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(text) },
     // 2.88: plain words instead of slash commands (VMs, connecting services, the password vault).
     { name: 'proxmox', tools: ['proxmox_vm'], applies: text => /\b(proxmox|vms?|snapshots?|virtuelle\w*)\b|-vm\b/i.test(text) },
-    { name: 'connect', tools: ['dienst_finden', 'dienst_verbinden'], applies: text => /\b(verbind\w*|anbind\w*|connect\w*)\b/i.test(text) },
+    // 2.89: typing errors of „verbinden“ (verbinen, verbiden) and „koppeln“ count too — not „verbieten“.
+    { name: 'connect', tools: ['dienst_finden', 'dienst_verbinden'], applies: text => /\b(verbi[nd]\w*|verbund\w*|anbind\w*|connect\w*|kopp(?:e)?l\w*)\b/i.test(text) },
     { name: 'vault', tools: ['zugaenge_liste', 'anmelden_mit_zugang', 'zugang_freigabe_anfragen'],
         applies: text => /\b(passw(?:o|ö)rt\w*|zug(?:a|ä)ng\w*|tresor|anmeld\w*|einlogg\w*|login)\b|melde dich/i.test(text) },
     { name: 'tailnet', tools: ['mesh_inspect_url', 'mesh_services'], applies: text => containsTailnetUrl(text) },
