@@ -6,6 +6,7 @@
 
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
+import { isChannel } from './channel-name.js'
 import { consumeSetupConfirmation, issueSetupConfirmation, setupActionTarget, setupConfirmationPrincipal, setupPlanTarget } from './setup-confirmation.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
@@ -183,7 +184,7 @@ function commandRoleDenial(cmd: string, permission: string): string | null {
  * no answer at all. Every other channel gets the text.
  */
 async function telegramForRequest(principalContext?: PrincipalContext): Promise<any | null> {
-    if (String(principalContext?.channel || '').trim().toLowerCase() !== 'telegram') return null
+    if (!isChannel(principalContext?.channel, 'telegram')) return null
     const { getTelegramAdapter } = await import('../channels/telegram.js')
     return getTelegramAdapter()
 }
@@ -3588,7 +3589,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             const view = await sammleAktivitaet()
             const text = aktivitaetText(view)
             const ownerId = String(principalContext?.rawUserId || '').trim()
-            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId) && ownerId === String(from)) {
+            if (isChannel(principalContext?.channel, 'telegram') && /^\d{1,20}$/.test(ownerId) && ownerId === String(from)) {
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
                 const { aktivitaetKnoepfe } = await import('../sehen/telegram-sehen.js')
@@ -3616,7 +3617,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? 'â
             const desktopDirect = await import('../desktop-direct/runtime.js')
             if (!desktopDirect.isDesktopDirectActive()) return desktopDirect.DESKTOP_DIRECT_OFF_TEXT
             const ownerId = String(principalContext?.rawUserId || '').trim()
-            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId)) {
+            if (isChannel(principalContext?.channel, 'telegram') && /^\d{1,20}$/.test(ownerId)) {
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
                 const picker = desktopDirect.desktopPicker(ownerId)
