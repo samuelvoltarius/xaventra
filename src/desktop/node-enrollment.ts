@@ -5,6 +5,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { discoverNodes } from '../mesh/mesh-registry.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
 import { resolveNodeLifecycle } from '../mesh/mesh-node-lifecycle.js'
+import { nodeMainEligible } from '../mesh/node-strengths.js'
 
 export type EnrollmentRole = 'worker' | 'standby'
 export type EnrollmentRuntime = 'docker' | 'systemd'
@@ -62,7 +63,7 @@ export class NodeEnrollmentService {
                 lifecycle: resolveNodeLifecycle({ lastHeartbeat: node.last_heartbeat, lifecycleState: node.lifecycle_state }),
                 status: node.status, lastHeartbeat: node.last_heartbeat, hardware: node.hardware,
                 capabilities: node.capabilities, runtimes: capability?.runtimes || [],
-                tools: node.tools_count, mainEligible: !['nova-workstation', 'nova-worker-a', 'nova-worker-b', 'nova-pi5'].includes(node.node_id),
+                tools: node.tools_count, mainEligible: nodeMainEligible(node.capabilities),
             }
         })
         return { nodes, enrollments: [...this.entries.values()].map(item => structuredClone(item)), observedAt: new Date().toISOString() }

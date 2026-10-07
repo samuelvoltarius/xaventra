@@ -1794,14 +1794,25 @@ export async function formatMeshNodes(options: { includeHistorical?: boolean } =
     if (preferred) msg += `⚡ Compute/Failover: *${preferred.hostname || preferred.nodeId}* (\`${preferred.nodeId}\`)\n`
     msg += '\n'
 
+    // 2.89: online/offline and what a node can do come from the one node view (node-strengths.ts:
+    // signed profile + these registry rows + graph, one online window), not from this list alone.
+    const { collectNodeStrengths, reportedFromRegistryNode, SKILL_LABELS } = await import('./node-strengths.js')
+    const strengthById = new Map<string, Awaited<ReturnType<typeof collectNodeStrengths>>[number]>()
+    try {
+        for (const strength of await collectNodeStrengths(Date.now(), { registry: nodes.map(reportedFromRegistryNode) })) strengthById.set(strength.nodeId, strength)
+    } catch { /* lifecycle alone */ }
+
     for (const n of nodes) {
         const isMe = n.node_id === NODE_ID
+        const strength = strengthById.get(n.node_id)
         const lifecycle = n.lifecycle_state || 'offline'
-        const statusIcon = lifecycle === 'active' ? '🟢' : lifecycle === 'offline' ? '🔴' : lifecycle === 'retired' ? '⚫' : '🚫'
+        const online = strength ? strength.online : lifecycle === 'active'
+        const statusIcon = lifecycle === 'retired' ? '⚫' : lifecycle === 'tombstoned' ? '🚫' : online ? '🟢' : '🔴'
         const lastBeat = new Date(n.last_heartbeat)
         const ago = Math.max(0, Math.round((Date.now() - lastBeat.getTime()) / 1000))
         const agoText = ago < 60 ? `${ago}s` : ago < 3600 ? `${Math.round(ago / 60)}min` : ago < 86400 ? `${Math.round(ago / 3600)}h` : `${Math.round(ago / 86400)}d`
-        msg += `${statusIcon} *${n.hostname}*${isMe ? ' (ich)' : ''} — ${lifecycle}\n`
+        msg += `${statusIcon} *${n.hostname}*${isMe ? ' (ich)' : ''} — ${lifecycle === 'active' || lifecycle === 'offline' ? (online ? 'active' : 'offline') : lifecycle}\n`
+        if (strength && online && strength.skills.length) msg += `   Kann: ${strength.skills.filter(skill => skill !== 'rechnen' || strength.skills.length === 1).map(skill => SKILL_LABELS[skill]).join(', ')}\n`
         msg += `   ID: \`${n.node_id}\` | ${n.platform} | Tools: ${n.tools_count}\n`
         msg += `   Heartbeat: vor ${agoText}\n`
         if (n.superseded_by) msg += `   Ersetzt durch: \`${n.superseded_by}\`\n`

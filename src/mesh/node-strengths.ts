@@ -627,6 +627,14 @@ async function graphViews(snapshot: import('./capability-graph.js').CapabilityGr
     return { graph, reported }
 }
 
+/** One registry row (Supabase, local file, direct mesh) as a report. */
+export function reportedFromRegistryNode(node: { node_id: string; hostname?: string; platform?: string; version?: string; capabilities?: string[]; hardware?: ReportedHardware; software?: ReportedNode['software']; last_heartbeat?: string }): ReportedNode {
+    return {
+        id: node.node_id, hostname: node.hostname, platform: node.platform, version: node.version, capabilities: node.capabilities,
+        hardware: node.hardware, software: node.software, lastSeen: Date.parse(String(node.last_heartbeat || '')) || undefined, source: 'registry',
+    }
+}
+
 let registryMemo: { at: number; nodes: ReportedNode[] } | null = null
 const REGISTRY_MEMO_MS = 30_000
 
@@ -635,10 +643,7 @@ async function readRegistryNodes(now: number, remote: boolean): Promise<Reported
     let nodes: ReportedNode[] = []
     try {
         const { discoverNodes } = await import('./mesh-registry.js')
-        nodes = (await discoverNodes({ remote })).map(node => ({
-            id: node.node_id, hostname: node.hostname, platform: node.platform, version: node.version, capabilities: node.capabilities,
-            hardware: node.hardware, software: node.software, lastSeen: Date.parse(node.last_heartbeat) || undefined, source: 'registry' as const,
-        }))
+        nodes = (await discoverNodes({ remote })).map(reportedFromRegistryNode)
     } catch { /* registry optional (offline, no Supabase) */ }
     if (remote) registryMemo = { at: now, nodes }
     return nodes

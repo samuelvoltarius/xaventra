@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { NodeProfile } from '../core/node-profile.js'
-import { buildSnapshot, recommendationsFor, taskToSkill } from './mesh-brain.js'
+import { buildSnapshot, recommendationsFor } from './mesh-brain.js'
+import { skillForTask as taskToSkill } from './node-strengths.js'
 import { getRecommendations, hardwareFromStrength } from './model-recommender.js'
 import { deriveStrength } from './node-strengths.js'
 

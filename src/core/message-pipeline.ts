@@ -1322,8 +1322,9 @@ Du läufst auf: ${hwSummary}
     // Also without the word "mesh": "erzeuge ein Bild" needs the GPU node. The
     // block only appears when another node fits better (or the owner asks about the mesh).
     try {
-        const { routeTask, skillForContent } = await import('../mesh/mesh-router.js')
-        if (skillForContent(content)) {
+        const { routeTask } = await import('../mesh/mesh-router.js')
+        const { skillForTask } = await import('../mesh/node-strengths.js')
+        if (skillForTask(content)) {
             const decision = await routeTask(content)
             if (!decision.isLocal) {
                 systemPrompt += `
@@ -1716,7 +1717,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 // 2.89 Paket C: provider, model and "antwortet es?" from the ONE place (llm/active-runtime.ts).
                 const { describeActiveRuntime, formatActiveRuntime } = await import('../llm/active-runtime.js')
                 const active = await describeActiveRuntime({
-                    config: (globalThis as any).__novaState?.config,
+                    config: state.config ?? (globalThis as any).__novaState?.config,
                     client: { providerId: provider === 'unbekannt' ? undefined : provider, modelId: model === 'unbekannt' ? undefined : model },
                 })
                 lines.push(...formatActiveRuntime(active))
@@ -1731,20 +1732,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
             if (asksMeshRuntime) {
                 try {
-                    const { discoverNodes } = await import('../mesh/mesh-registry.js')
-                    const nodes = await discoverNodes()
-                    const now = Date.now()
-                    lines.push(nodes.length === 0 ? 'Mesh: keine Nodes in der Registry gefunden.' : `Mesh: ${nodes.length} Node(s) aus Registry/Supabase gelesen:`)
-                    for (const node of nodes.slice(0, 12)) {
-                        const last = node.last_heartbeat ? Math.round((now - new Date(node.last_heartbeat).getTime()) / 1000) : -1
-                        const age = last >= 0 ? `${last}s alt` : 'Heartbeat unbekannt'
-                        const ip = node.ip ? ` ${node.ip}` : ''
-                        const models = node.software?.ollama_models?.slice(0, 3).join(', ')
-                        const modelText = models ? ` | Ollama: ${models}${(node.software?.ollama_models?.length || 0) > 3 ? ', ...' : ''}` : ''
-                        lines.push(`- ${node.hostname || node.node_id}${ip}: ${node.status}, v${node.version || '?'}, ${age}${modelText}`)
-                    }
+                    // 2.89 Paket C: the same node view as mesh_nodes / mesh_status / "Was kann welcher Knoten?"
+                    // (node-strengths: signed profile + registry + graph, one online window).
+                    const { collectNodeStrengths, formatMeshRuntimeLines } = await import('../mesh/node-strengths.js')
+                    lines.push(...formatMeshRuntimeLines((await collectNodeStrengths()).slice(0, 12)))
                 } catch (err) {
-                    lines.push(`Mesh: Registry konnte nicht gelesen werden (${err instanceof Error ? err.message : String(err)}).`)
+                    lines.push(`Mesh: Knotenliste konnte nicht gelesen werden (${err instanceof Error ? err.message : String(err)}).`)
                 }
             }
             await replyFn(lines.join('\n'))
