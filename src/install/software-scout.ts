@@ -26,7 +26,7 @@
  * successor is no longer "Katalogeintrag nötig" for the owner: it is collected for the
  * weekly Katalogpflege task to Claude (software-freshness.ts), flushed on every tick.
  */
-import { ONLINE_WINDOW_MS } from '../mesh/node-strengths.js'
+import { deriveStrength, ONLINE_WINDOW_MS, type Skill } from '../mesh/node-strengths.js'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -133,11 +133,17 @@ export function capabilityPresence(profile: NodeProfile, capability: SoftwareCap
     const service = running.find(item => (byType[capability] || []).includes(item.type))
     if (service) return `${service.name} läuft`
     if (capability === 'llm' && profile.gpu?.viaVllm) return 'vLLM läuft'
+    // 2.89: the same skill decision as the capability inventory (node-strengths), e.g. a vision model by name.
+    const skill = ({ stt: 'stt', tts: 'tts', vision: 'vision', embedding: 'embedding', llm: 'llm' } as Partial<Record<SoftwareCapability, Skill>>)[capability]
+    if (skill && deriveStrength({ nodeId: profile.nodeId, profile, local: true }).skills.includes(skill) && running.length) return `${running[0].name} läuft`
     const byTool: Partial<Record<SoftwareCapability, string[]>> = { media: ['ffmpeg'], browser: ['playwright_browsers'], desktop: ['display'], tts: ['edge_tts'] }
     const tool = (byTool[capability] || []).find(name => profile.tools?.includes(name))
     if (tool) return tool === 'edge_tts' ? 'edge-tts (Online-Dienst)' : `${tool} vorhanden`
     return null
 }
+
+/** 105.8 -> "106 GB"; unknown -> "?". */
+const gbText = (value: number | undefined | null) => (typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)} GB` : '?')
 
 function installedOn(candidate: SoftwareCandidate, profile: NodeProfile): string | null {
     const tool = candidate.detect?.tools?.find(name => profile.tools?.includes(name))
@@ -362,7 +368,7 @@ export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_P
             out.push(softwareIdea(summary.capability, candidate, fit.nodeId,
                 `Könnte ${CAPABILITY_LABEL[summary.capability]} (${candidate.title} auf ${fit.nodeId}), bisher kein Bedarf gesehen`,
                 `${CAPABILITY_LABEL[summary.capability]} fehlt im Mesh, aber in den letzten 14 Tagen ist kein Owner-Lauf daran gescheitert und kein Bedarf gemeldet. Platz allein ist kein Grund.`,
-                [`Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`]))
+                [`Profil ${fit.nodeId}: ${gbText(fit.freeMemGB)} RAM frei, ${gbText(fit.freeDiskGB)} Platte frei`]))
             continue
         }
         if (cards >= max) continue
@@ -378,7 +384,7 @@ export function gapThoughts(analysis: MeshSoftwareAnalysis, max = MAX_THOUGHTS_P
         out.push({
             kind: 'software-scout:luecke', capability: summary.capability, candidateId: candidate.id, nodeId: fit.nodeId,
             title, text: `${CAPABILITY_LABEL[summary.capability]} fehlt im Mesh. ${candidate.benefit}`,
-            evidence: [...need.evidence.map(item => `Bedarf: ${item}`), `Profil ${fit.nodeId}: ${fit.freeMemGB ?? '?'} GB RAM frei, ${fit.freeDiskGB ?? '?'} GB Platte frei`, ...fit.notes, ...elsewhere.map(item => `nicht auf ${item.nodeId}: ${item.reasons[0]}`)],
+            evidence: [...need.evidence.map(item => `Bedarf: ${item}`), `Profil ${fit.nodeId}: ${gbText(fit.freeMemGB)} RAM frei, ${gbText(fit.freeDiskGB)} Platte frei`, ...fit.notes, ...elsewhere.map(item => `nicht auf ${item.nodeId}: ${item.reasons[0]}`)],
             proposal, permission: 'fragen', dedupeKey: `software-scout:${summary.capability}:${candidate.id}:${fit.nodeId}`,
         })
     }
@@ -546,6 +552,12 @@ export async function collectScoutNodes(options: { measureLoad?: boolean } = {})
     try {
         const { getSearXNGUrl } = await import('../tools/searxng-search.js')
         const presence = localPresence({ searxngUrl: getSearXNGUrl() })
+        try {
+            // 2.89: a running model that the capability probe proved to see images counts as vision (not only a vlm service).
+            const { getOnlineModels } = await import('../llm/capability-probe.js')
+            const seeing = getOnlineModels().find(model => model.online && model.supportsVision)
+            if (seeing) presence.vision = `${seeing.model} (Probe: kann Bilder)`
+        } catch { /* probe cache optional */ }
         if (Object.keys(presence).length) nodes[0].presence = presence
     } catch { /* optional */ }
     if (options.measureLoad && local.gpu?.viaVllm) {
