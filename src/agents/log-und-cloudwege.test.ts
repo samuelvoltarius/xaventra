@@ -84,8 +84,13 @@ describe('Prompt: kein siebter Lernblock, Negativ-Gedächtnis bleibt', () => {
             tools: ['run_command'], examples: [], successCount: 9, lastUsed: 1, firstLearned: 1, category: 'audio' }])
         writeFileSync(join(learningDir(), 'capabilities.json'), legacy)
         const store = await import('../memory/capabilities-store.js')
-        store.recordUnavailable('browser_open', 'chromium not found')
-        store.recordUnavailable('browser_open', 'chromium not found')
+        // Two separate failing calls (one call is never counted twice: the registry and the runner both see it).
+        vi.useFakeTimers({ toFake: ['Date'] })
+        try {
+            store.recordUnavailable('browser_open', 'chromium not found')
+            vi.setSystemTime(Date.now() + 10_000)
+            store.recordUnavailable('browser_open', 'chromium not found')
+        } finally { vi.useRealTimers() }
 
         for (const permission of ['owner', 'guest']) {
             const prompt = store.getCapabilitiesPrompt({ permission })

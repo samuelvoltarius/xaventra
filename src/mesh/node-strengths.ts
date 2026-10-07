@@ -623,8 +623,16 @@ export async function collectNodeStrengths(now = Date.now(), sources: StrengthSo
                 hardware: node.hardware as GraphHardwareLike | undefined,
                 runtimes: node.runtimes.map(runtime => ({ name: runtime.name, type: runtime.type, models: runtime.models, available: capabilityRuntimeAvailable(node, runtime, now) })),
             })
+            // A runtime counts as running only while the graph's own freshness rule says so (stale = stopped).
             if (!sources.graphNodes) graphReported.push({
-                id: node.id, hostname: node.hostname, capabilities: node.capabilities, hardware: node.hardware, software: node.software,
+                id: node.id, hostname: node.hostname, capabilities: node.capabilities, hardware: node.hardware,
+                software: {
+                    ...(node.software ? { ffmpeg: node.software.ffmpeg, git: node.software.git } : {}),
+                    ai_services: node.runtimes.map(runtime => ({
+                        name: runtime.name, type: runtime.type, models: runtime.models,
+                        status: capabilityRuntimeAvailable(node, runtime, now) ? 'running' : runtime.status === 'running' ? 'stopped' : runtime.status,
+                    })),
+                },
                 lastSeen: Date.parse(node.lastHeartbeat || node.updatedAt) || undefined, source: 'graph',
             })
         }

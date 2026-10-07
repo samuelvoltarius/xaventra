@@ -10,6 +10,7 @@
  * Philosophy: Don't wait for the user - BE PROACTIVE!
  */
 
+import { loadToolHealth, recordToolOutcome, type ToolHealthEntry } from '../core/tool-health-store.js'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { diskLevel } from '../core/resource-thresholds.js'
@@ -29,20 +30,8 @@ interface SelfCheckState {
     lastSelfCheck: number
 }
 
-// Tool Health Tracking
-export interface ToolHealthEntry {
-    name: string
-    status: 'healthy' | 'degraded' | 'broken'
-    successCount: number
-    failureCount: number
-    emptyResultCount: number
-    consecutiveFailures: number
-    consecutiveEmpty: number
-    lastSuccess: number
-    lastFailure: number
-    lastDiagnosis: string | null
-    repairedAt: number | null
-}
+// Tool Health Tracking: one store for the whole system (2.89, core/tool-health-store.ts).
+export type { ToolHealthEntry } from '../core/tool-health-store.js'
 
 interface SelfCheckResult {
     ok: boolean
@@ -76,8 +65,6 @@ class SelfCheckManager extends EventEmitter {
     private readonly MAX_CONSECUTIVE_SILENCES = 3
     private notifyCallback?: (message: string) => Promise<void>
     private toolFailures: Map<string, number> = new Map()
-    private toolHealth: Map<string, ToolHealthEntry> = new Map()
-    private readonly TOOL_HEALTH_FILE = join(process.cwd(), '.nova-data', 'tool-health.json')
     private lastL0Health: any = null  // Cached L0 health status for bridge
 
     constructor() {
@@ -93,8 +80,6 @@ class SelfCheckManager extends EventEmitter {
             }
         } catch { /* fresh start */ }
 
-        // Load persisted tool health
-        this.loadToolHealth()
     }
 
     private persistTasks(): void {
@@ -244,64 +229,9 @@ class SelfCheckManager extends EventEmitter {
     // Tool Health Store (Persistent)
     // ============================================
 
-    private getOrCreateHealth(toolName: string): ToolHealthEntry {
-        let entry = this.toolHealth.get(toolName)
-        if (!entry) {
-            entry = {
-                name: toolName,
-                status: 'healthy',
-                successCount: 0,
-                failureCount: 0,
-                emptyResultCount: 0,
-                consecutiveFailures: 0,
-                consecutiveEmpty: 0,
-                lastSuccess: 0,
-                lastFailure: 0,
-                lastDiagnosis: null,
-                repairedAt: null,
-            }
-            this.toolHealth.set(toolName, entry)
-        }
-        return entry
-    }
-
     private updateToolHealth(toolName: string, outcome: 'success' | 'failure' | 'empty'): void {
-        const entry = this.getOrCreateHealth(toolName)
-        const now = Date.now()
-
-        if (outcome === 'success') {
-            entry.successCount++
-            entry.lastSuccess = now
-            entry.consecutiveFailures = 0
-            entry.consecutiveEmpty = 0
-            // Auto-heal: if was degraded/broken and now succeeds, mark healthy
-            if (entry.status !== 'healthy') {
-                console.log(`[L15 ToolHealth] ✅ "${toolName}" recovered → healthy`)
-                entry.status = 'healthy'
-                entry.repairedAt = now
-            }
-        } else if (outcome === 'failure') {
-            entry.failureCount++
-            entry.lastFailure = now
-            entry.consecutiveFailures++
-            if (entry.consecutiveFailures >= 5) {
-                entry.status = 'broken'
-                entry.lastDiagnosis = `${entry.consecutiveFailures} consecutive failures since ${new Date(entry.lastSuccess || now).toISOString()}`
-            } else if (entry.consecutiveFailures >= 3) {
-                entry.status = 'degraded'
-            }
-        } else if (outcome === 'empty') {
-            entry.emptyResultCount++
-            entry.consecutiveEmpty++
-            if (entry.consecutiveEmpty >= 5) {
-                entry.status = 'broken'
-                entry.lastDiagnosis = `${entry.consecutiveEmpty} consecutive empty results — tool likely blocked or misconfigured`
-            } else if (entry.consecutiveEmpty >= 3) {
-                entry.status = 'degraded'
-                entry.lastDiagnosis = `${entry.consecutiveEmpty} empty results in a row`
-            }
-        }
-
+        const { entry, before } = recordToolOutcome(toolName, outcome)
+        if (outcome === 'success' && before !== 'healthy') console.log(`[L15 ToolHealth] ✅ "${toolName}" recovered → healthy`)
         // Emit events for broken tools
         if (entry.status === 'broken') {
             console.log(`[L15 ToolHealth] 🚨 "${toolName}" is BROKEN: ${entry.lastDiagnosis}`)
@@ -310,32 +240,6 @@ class SelfCheckManager extends EventEmitter {
             console.log(`[L15 ToolHealth] ⚠️ "${toolName}" is DEGRADED: ${entry.lastDiagnosis}`)
             this.emit('tool-degraded', { toolName, diagnosis: entry.lastDiagnosis, entry })
         }
-
-        this.persistToolHealth()
-    }
-
-    private loadToolHealth(): void {
-        try {
-            if (existsSync(this.TOOL_HEALTH_FILE)) {
-                const data = JSON.parse(readFileSync(this.TOOL_HEALTH_FILE, 'utf-8')) as ToolHealthEntry[]
-                for (const entry of data) {
-                    this.toolHealth.set(entry.name, entry)
-                }
-                const degraded = data.filter(e => e.status !== 'healthy')
-                if (degraded.length > 0) {
-                    console.log(`[L15 ToolHealth] Loaded health data: ${degraded.length} tools degraded/broken`)
-                }
-            }
-        } catch { /* fresh start */ }
-    }
-
-    private persistToolHealth(): void {
-        try {
-            const dir = join(process.cwd(), '.nova-data')
-            if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-            const data = [...this.toolHealth.values()]
-            writeFileSync(this.TOOL_HEALTH_FILE, JSON.stringify(data, null, 2))
-        } catch { /* non-critical */ }
     }
 
     /**
@@ -347,7 +251,7 @@ class SelfCheckManager extends EventEmitter {
         const isFresh = (entry: ToolHealthEntry) =>
             entry.lastFailure > 0 && Date.now() - entry.lastFailure < 60 * 60 * 1000
 
-        for (const [, entry] of this.toolHealth) {
+        for (const entry of loadToolHealth()) {
             if (entry.status === 'broken' && isFresh(entry)) {
                 issues.push(`🚨 "${entry.name}" ist KAPUTT (${entry.lastDiagnosis}). NUTZE ALTERNATIVES TOOL!`)
             } else if (entry.status === 'degraded' && isFresh(entry)) {
@@ -362,7 +266,7 @@ class SelfCheckManager extends EventEmitter {
 
     /** Get all tool health entries */
     getToolHealthStatus(): ToolHealthEntry[] {
-        return [...this.toolHealth.values()]
+        return loadToolHealth()
     }
 
     // Mark that we're waiting for user input

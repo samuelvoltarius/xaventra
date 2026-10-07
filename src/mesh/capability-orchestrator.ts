@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { CapabilityGraphSnapshot, CapabilityRuntime, CapabilityGraphNode } from './capability-graph.js'
 import { getCapabilityGraph, capabilityNodeOnline, capabilityRuntimeAvailable, capabilityRuntimeTombstoned } from './capability-graph.js'
 import { configuredCloudProviders } from '../llm/active-runtime.js'
+import { gpuFacts } from './node-strengths.js'
 
 const DATA_DIR = join(process.cwd(), '.nova-data', 'capabilities')
 
@@ -101,10 +102,14 @@ function runtimeQuality(runtime: CapabilityRuntime): number {
 }
 
 function mapHardware(node: CapabilityGraphNode): MeshNode['hardware'] {
+    // 2.89: "has a GPU" is the one decision of node-strengths (gpuFacts); a display adapter name is no GPU.
     const hardware = node.hardware
+    const viaVllm = node.runtimes.some(runtime => runtime.status === 'running' && /vllm/i.test(`${runtime.type} ${runtime.name}`))
+    const backend = node.capabilities.some(cap => /^(cuda|nvidia)$/i.test(cap)) ? 'cuda' : 'cpu'
+    const gpu = gpuFacts({ name: hardware?.gpu ?? null, backend, viaVllm, vramGB: hardware?.gpu_vram_mb ? Math.round(hardware.gpu_vram_mb / 1024) : undefined })
     return {
-        gpu: Boolean(hardware?.gpu),
-        gpuType: hardware?.gpu,
+        gpu: gpu.has,
+        gpuType: gpu.name ?? undefined,
         ramGB: Number(hardware?.ram_gb || 0),
         arch: hardware?.arch || 'unknown',
     }
@@ -162,123 +167,11 @@ function refreshCapabilityProjection(): void {
 }
 
 // ============================================
-// Discovery — Probe what each node has
+// Discovery
 // ============================================
-
-export async function probeNode(name: string, address: string): Promise<MeshNode> {
-    const node: MeshNode = {
-        name,
-        address,
-        hardware: { gpu: false, ramGB: 0, arch: 'unknown' },
-        capabilities: [],
-        ollamaModels: [],
-        lastProbed: new Date().toISOString(),
-        online: false,
-    }
-
-    // 1. Check if node is reachable
-    try {
-        const resp = await fetch(`http://${address}:11434/api/tags`, {
-            signal: AbortSignal.timeout(5000),
-        })
-        if (resp.ok) {
-            node.online = true
-            const data = await resp.json() as any
-
-            // List all Ollama models
-            if (data.models) {
-                node.ollamaModels = data.models.map((m: any) => m.name || m.model)
-
-                // Derive capabilities from installed models
-                for (const model of node.ollamaModels) {
-                    const modelLC = model.toLowerCase()
-
-                    // Vision models
-                    if (modelLC.includes('moondream') || modelLC.includes('llava') || modelLC.includes('bakllava')) {
-                        node.capabilities.push({
-                            name: 'vision',
-                            provider: model,
-                            quality: modelLC.includes('llava') ? 7 : 5,
-                            cost: 'free',
-                            speed: 'medium',
-                            available: true,
-                        })
-                    }
-
-                    // LLM models
-                    if (modelLC.includes('llama') || modelLC.includes('mistral') || modelLC.includes('gemma') ||
-                        modelLC.includes('qwen') || modelLC.includes('phi') || modelLC.includes('deepseek')) {
-                        node.capabilities.push({
-                            name: 'llm',
-                            provider: model,
-                            quality: modelLC.includes('70b') ? 8 : modelLC.includes('13b') ? 6 : 5,
-                            cost: 'free',
-                            speed: modelLC.includes('70b') ? 'slow' : 'fast',
-                            available: true,
-                        })
-                    }
-
-                    // Embedding models
-                    if (modelLC.includes('nomic') || modelLC.includes('embed') || modelLC.includes('mxbai')) {
-                        node.capabilities.push({
-                            name: 'embedding',
-                            provider: model,
-                            quality: 6,
-                            cost: 'free',
-                            speed: 'fast',
-                            available: true,
-                        })
-                    }
-                }
-            }
-        }
-    } catch { /* node offline */ }
-
-    // 2. Check for whisper (STT)
-    try {
-        const resp = await fetch(`http://${address}:8765/health`, {
-            signal: AbortSignal.timeout(3000),
-        })
-        if (resp.ok) {
-            node.capabilities.push({
-                name: 'stt',
-                provider: 'whisper',
-                quality: 8,
-                cost: 'free',
-                speed: 'medium',
-                available: true,
-            })
-        }
-    } catch { /* no whisper */ }
-
-    // 3. Check for TTS
-    try {
-        const resp = await fetch(`http://${address}:8766/health`, {
-            signal: AbortSignal.timeout(3000),
-        })
-        if (resp.ok) {
-            node.capabilities.push({
-                name: 'tts',
-                provider: 'piper',
-                quality: 7,
-                cost: 'free',
-                speed: 'fast',
-                available: true,
-            })
-        }
-    } catch { /* no tts */ }
-
-    // 4. Hardware detection from node name
-    if (name === 'jetson' || name.includes('orin')) {
-        node.hardware = { gpu: true, gpuType: 'orin-nano', ramGB: 8, arch: 'arm64' }
-    } else if (name === 'pi5') {
-        node.hardware = { gpu: false, ramGB: 8, arch: 'arm64' }
-    } else if (name === 'master') {
-        node.hardware = { gpu: true, gpuType: 'desktop', ramGB: 32, arch: 'x64' }
-    }
-
-    return node
-}
+// 2.89: the former probeNode(name, address) probed fixed ports on a node and guessed the
+// hardware from the node NAME (jetson / pi5 / master). Nodes, hardware and online come from
+// ONE source: mesh/node-strengths.ts (signed profile, registry, capability graph). No probing here.
 
 // Discover cloud provider capabilities
 export function discoverCloudCapabilities(config: unknown = (globalThis as any).__novaState?.config): CloudProvider[] {

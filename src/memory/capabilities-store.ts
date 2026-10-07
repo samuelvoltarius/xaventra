@@ -7,17 +7,21 @@
  * 2.84.0: Die Erfolgsliste ("DEINE GELERNTEN FAEHIGKEITEN") ist entfallen. Sie
  * lernte aus jedem nicht geworfenen Werkzeugaufruf VOR der Validierung und war
  * ein siebter Lernblock im Prompt neben den Prozeduren, die nur aus
- * verifizierten Laeufen lernen (learning/procedure-store.ts). Ihr Abgleich ueber
- * den Supabase-Learning-Hub ist ebenfalls weg; Wissen zwischen Knoten geht nur
- * ueber L22. Eine vorhandene `.nova-learning/capabilities.json` bleibt liegen,
- * wird aber weder gelesen noch geschrieben.
+ * verifizierten Laeufen lernen (learning/procedure-store.ts). Eine vorhandene
+ * `.nova-learning/capabilities.json` bleibt liegen, wird aber weder gelesen
+ * noch geschrieben.
+ *
+ * 2.89 (Paket C): kein eigener Speicher mehr. Dieses Modul ist nur noch die Sicht
+ * "was geht hier nicht" auf den EINEN Werkzeug-Gesundheitsspeicher
+ * (core/tool-health-store.ts, `<Datenordner>/tool-health.json`), den auch L15 und
+ * das Faehigkeits-Inventar lesen. Frueher: `.nova-learning/unavailable.json` neben
+ * `.nova-data/tool-health.json`, beide unter process.cwd(), ohne voneinander zu wissen.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { redactSecrets } from '../security/secret-redaction.js'
-
-const CAPABILITIES_DIR = '.nova-learning'
+import {
+    clearToolFailures, isToolUnavailable, loadToolHealth, noteToolFailure,
+} from '../core/tool-health-store.js'
 
 export interface CapabilityPromptOptions {
     /** Role of the prompt recipient. Failure texts only for 'owner'. */
@@ -40,9 +44,6 @@ export function getCapabilitiesPrompt(options: CapabilityPromptOptions = {}): st
 // ============================================
 // Negativ-Gedaechtnis — was auf DIESER Maschine nicht geht
 // ============================================
-// Ohne das probiert Nova bei jeder Frage neu, ob ein Browser existiert,
-// scheitert wieder und vergisst es wieder. Erfolge allein reichen nicht:
-// erst das Wissen "hier fehlt X" macht aus einem Fehlversuch eine Lehre.
 
 export interface UnavailableCapability {
     tool: string
@@ -54,66 +55,33 @@ export interface UnavailableCapability {
     resolved?: boolean     // nach erfolgreichem Nachruesten wieder frei
 }
 
-const UNAVAILABLE_FILE = 'unavailable.json'
-
-function getUnavailablePath(): string {
-    const dir = join(process.cwd(), CAPABILITIES_DIR)
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    return join(dir, UNAVAILABLE_FILE)
-}
-
+/** Alle Werkzeuge, die hier nicht gehen (aus dem einen Gesundheitsspeicher). */
 export function loadUnavailable(): UnavailableCapability[] {
-    const path = getUnavailablePath()
-    if (!existsSync(path)) return []
-    try {
-        return JSON.parse(readFileSync(path, 'utf-8'))
-    } catch {
-        return []
-    }
+    return loadToolHealth().filter(isToolUnavailable).map(entry => ({
+        tool: entry.name,
+        reason: entry.reason || entry.lastDiagnosis || 'Werkzeug meldete Fehlschlag',
+        ...(entry.hint ? { hint: entry.hint } : {}),
+        failCount: Math.max(entry.consecutiveFailures, entry.status === 'healthy' ? 0 : 1),
+        firstFailed: entry.lastFailure,
+        lastFailed: entry.lastFailure,
+    }))
 }
 
 /** Merkt sich, dass ein Werkzeug auf dieser Maschine nicht funktioniert. */
 export function recordUnavailable(tool: string, reason: string, hint?: string): void {
-    try {
-        const list = loadUnavailable()
-        const now = Date.now()
-        const found = list.find(u => u.tool === tool)
-        if (found) {
-            found.failCount++
-            found.lastFailed = now
-            found.reason = redactSecrets(reason).slice(0, 300)
-            if (hint) found.hint = hint
-            found.resolved = false
-        } else {
-            list.push({
-                tool,
-                reason: redactSecrets(reason).slice(0, 300),
-                hint,
-                failCount: 1,
-                firstFailed: now,
-                lastFailed: now,
-            })
-        }
-        writeFileSync(getUnavailablePath(), JSON.stringify(list, null, 2))
-    } catch { /* Lernen darf den Lauf nie zum Absturz bringen */ }
+    try { noteToolFailure(tool, { reason, hint }) } catch { /* Lernen darf den Lauf nie zum Absturz bringen */ }
 }
 
 /** Nach erfolgreichem Nachruesten wieder freigeben. */
 export function clearUnavailable(tool: string): void {
-    try {
-        const list = loadUnavailable()
-        const found = list.find(u => u.tool === tool)
-        if (!found) return
-        found.resolved = true
-        writeFileSync(getUnavailablePath(), JSON.stringify(list, null, 2))
-    } catch { /* egal */ }
+    try { clearToolFailures(tool) } catch { /* egal */ }
 }
 
 export function getUnavailablePrompt(options: CapabilityPromptOptions = {}): string {
     const isOwner = options.permission === 'owner'
-    // Erst ab dem zweiten Fehlschlag als "geht hier nicht" melden — ein
+    // Erst ab dem zweiten Fehlschlag in Folge als "geht hier nicht" melden — ein
     // einzelner Fehler kann ein Netzaussetzer oder ein Tippfehler sein.
-    const list = loadUnavailable().filter(u => !u.resolved && u.failCount >= 2)
+    const list = loadUnavailable()
     if (list.length === 0) return ''
 
     let p = `
