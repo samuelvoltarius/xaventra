@@ -1878,7 +1878,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 && canonicalUser !== 'nova-self'
                 && canonicalUser !== 'Nova-Autonomy',
             reply: replyFn,
-            onProgress: messageContext?.onProgress,
+            onProgress: messageContext?.onProgress ?? (await import('../desktop/desktop-agent-context.js')).getDesktopProgressSink(),
         })
 
         try {
