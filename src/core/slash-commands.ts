@@ -127,7 +127,7 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     { command: 'waechter', description: '🛡️ Wächter: Messwerte & Erreichbarkeit (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'geraete', description: '📱 Geräte, Konten, Ruhezeiten (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'vms', description: '🖥️ Proxmox-Gäste, eigene VMs, Karten (Owner)', gruppe: 'Wahrnehmen' },
-    { command: 'cluster', description: '☸️ Kubernetes: Status, Skalieren, Chart-Update per Karte (Owner)', gruppe: 'Wahrnehmen' },
+    { command: 'cluster', description: '☸️ Kubernetes: Status, Logs, Neustart, Chart-Update per Karte (Owner)', gruppe: 'Wahrnehmen' },
     { command: 'nodes', description: '🌐 Mesh-Nodes anzeigen/verwalten', gruppe: 'Wahrnehmen' },
     { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)', gruppe: 'Wahrnehmen' },
     // System

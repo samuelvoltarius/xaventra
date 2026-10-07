@@ -81,7 +81,8 @@ export interface MeshTrustConfig {
 }
 
 // ---------------------------------------------------------------------------
-// P19 (2.88): workload peers for scalable Kubernetes worker Deployments.
+// P19 (2.88), P21 (2.89): workload peers for Kubernetes worker DaemonSets
+// (node id = <prefix><kubernetes node name>, one per labelled node).
 // One explicit entry `{ nodeIdPrefix: "<release>-worker-general-", publicKey, roles }`
 // in mesh.direct.peers. Never TOFU (key required), never a wildcard, same role
 // rules as a named peer; an exact named peer always wins.

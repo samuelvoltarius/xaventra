@@ -1545,15 +1545,19 @@ async function startDaemon() {
     }
 
     // ============================================
-    // Kubernetes (2.88 P19): only in a pod with chart control enabled.
-    // Fixed API actions in the own namespace; the autoscaler acts only while
-    // this process holds the Main lease. Never kubectl.
+    // Kubernetes (2.88 P19, 2.89 P21): in a pod with chart control enabled, or
+    // on the external Main with infra.kubernetes.server configured. Fixed API
+    // actions in the own namespace, writes only with the Main lease; workers
+    // are DaemonSets, so there is no autoscaler. Never kubectl.
     // ============================================
-    if (!isNodeOnly && process.env.KUBERNETES_SERVICE_HOST) {
+    if (!isNodeOnly) {
         try {
-            const { startClusterControl } = await import('./infra/kubernetes-command.js')
-            const result = await startClusterControl({ log: line => console.log(line) })
-            console.log(`[Nova] ${result.started ? '✓' : '⏭️'} Kubernetes-Steuerung: ${result.reason}`)
+            const { kubernetesControlConfigured } = await import('./infra/kubernetes.js')
+            if (kubernetesControlConfigured()) {
+                const { startClusterControl } = await import('./infra/kubernetes-command.js')
+                const result = await startClusterControl({ log: line => console.log(line) })
+                console.log(`[Nova] ${result.started ? '✓' : '⏭️'} Kubernetes-Steuerung: ${result.reason}`)
+            }
         } catch (err) {
             console.warn(`[Nova] Kubernetes-Steuerung nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
         }
