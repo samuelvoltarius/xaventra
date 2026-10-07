@@ -118,8 +118,10 @@ function identityTokens(r: DeviceRecord, ctx: KonsolidierungsKontext): string[] 
     const uuid = str(r.evidence?.uuid).toLowerCase()
     if (r.type === 'homeassistant' && /^[a-f0-9-]{8,64}$/.test(uuid)) tokens.push(`ha:${uuid}`)
     // 2.86.1 (c): the same instance without a uuid — instance name + version on two addresses.
+    // 2.88.2: ONLY as a substitute when there is no uuid; two instances with different uuids
+    // ("Home", same version) must never be merged through the name.
     const ort = str(r.evidence?.location_name).toLowerCase(), version = str(r.evidence?.version)
-    if (r.type === 'homeassistant' && ort && /^\d{4}\.\d{1,2}\.\d{1,3}/.test(version)) tokens.push(`ha:name:${ort}|${version}`)
+    if (r.type === 'homeassistant' && !uuid && ort && /^\d{4}\.\d{1,2}\.\d{1,3}/.test(version)) tokens.push(`ha:name:${ort}|${version}`)
     // 2.86.1 (2): the same mDNS name (WLAN + LAN, „(2)“ suffix) with the same model id is one device.
     const base = r.via === 'mdns' ? basisName(r.name) : ''
     const modell = (str(r.evidence?.model) || str(r.evidence?.md) || (r.hardware?.certainty === 'confirmed' ? str(r.hardware.model) : '')).toLowerCase()
@@ -143,6 +145,32 @@ function identityTokens(r: DeviceRecord, ctx: KonsolidierungsKontext): string[] 
     // Same machine: the LAN address (a tailnet address maps to its LAN twin).
     if (isIP(r.host) === 4) tokens.push(`host:${ctx.aliase?.[r.host] || r.host}`)
     return tokens
+}
+
+/** 2.88.2: host of a Home Assistant connection record (basis, else the http transport) — only IPv4 literals are evaluable. */
+export function haConnectionHost(c: { basis?: string; transport?: { art: string; url?: string } }): string | null {
+    for (const raw of [c.basis, c.transport?.art === 'http' ? c.transport.url : undefined]) {
+        if (typeof raw !== 'string' || !raw) continue
+        try { const host = new URL(raw).hostname; if (isIP(host) === 4) return host } catch { /* next */ }
+    }
+    return null
+}
+
+/**
+ * 2.88.2: is THIS Home Assistant instance (its addresses) the one a connection belongs to?
+ * A connection with an evaluable address connects only the instance that has that address
+ * (a tailnet address counts through its LAN twin). Without an evaluable address the
+ * connection is conservative: it counts only when exactly ONE instance exists.
+ */
+export function haConnectedFor(connections: ReadonlyArray<{ connectorId: string; status: string; basis?: string; transport?: { art: string; url?: string } }>,
+    adressen: readonly string[], instanzen: number, aliase: Record<string, string> = {}): boolean {
+    const mine = new Set(adressen.flatMap(a => [a, aliase[a]].filter(Boolean) as string[]))
+    return connections.some(c => {
+        if (c.connectorId !== 'home-assistant' || c.status !== 'verbunden') return false
+        const host = haConnectionHost(c)
+        if (!host) return instanzen === 1
+        return mine.has(host) || mine.has(aliase[host] || '')
+    })
 }
 
 const KEY_RANK = ['ha:', 'hue:', 'tuya:', 'matter:', 'upnp:', 'mac:', 'id:', 'name:', 'host:']

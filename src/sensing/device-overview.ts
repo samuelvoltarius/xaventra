@@ -10,7 +10,6 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadConnections } from '../connections/connection-store.js'
 import { DETAILS_TRENNER, OWNER_PAGE_CHARS, ownerText } from '../core/owner-text.js'
 import type { Geraet, Konsolidierung } from './device-consolidation.js'
 import { loadDevices, type DeviceRecord } from './device-registry.js'
@@ -161,9 +160,8 @@ export async function ownerGeraeteAntworten(dataDir: string, deps: { kick?: () =
     const ctx = await defaultConsolidationContext(dataDir)
     const k = await loadConsolidatedDevices(dataDir, ctx)
     const records = loadDevices(dataDir)
-    let connections: ReturnType<typeof loadConnections> = []
-    try { connections = loadConnections({ dataDir }) } catch { connections = [] }
-    const verbunden = (g: Geraet) => g.art === 'homeassistant' ? connections.some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') : isDeviceConnected(dataDir, g, records)
+    // 2.88.2: Home Assistant is connected per instance (address of the connection), not as soon as any HA is connected.
+    const verbunden = (g: Geraet) => isDeviceConnected(dataDir, g, records)
     const text = geraeteUeberblick(dataDir, k, verbunden)
     const details = geraeteDetails(dataDir, k, verbunden)
     try {
