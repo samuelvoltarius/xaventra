@@ -499,7 +499,6 @@ html.novaos-standard button { font-size: 16px !important; }
   .call-button { width: 100%; }
   .toast { left: 12px; right: 12px; bottom: 76px; max-width: none; }
 }
-=======
 /* 2.86 Paket M „Geführt“: Cockpit „Heute“ (4 Ampel-Kacheln), Einrichtung, Beispielsätze, Tipp, Hilfe */
 .cockpit { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 0 0 16px; }
 .cockpit-tile { box-shadow: var(--shadow); color: var(--text); border: 1px solid var(--border); border-left-width: 6px; border-radius: var(--radius); padding: 12px 14px; background: var(--surface); }
@@ -525,4 +524,19 @@ html.novaos-standard button { font-size: 16px !important; }
 .cockpit-more { margin-top: 16px; }
 .cockpit + .section, .section + .setup-list, .section + .examples, .section + .tip, .section + .help { margin-top: 16px; }
 .cockpit-more > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
-/* =====================================================
+/* (2.88: offener Kommentar-Rest aus dem Merge 2.86 entfernt) */
+/* 2.88 „Sehen und lenken“: Ihr Computer (Live-Bild), Aktivität, Regeln */
+.sehen-bild { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; display: grid; place-items: center; min-height: 160px; }
+.sehen-bild img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; }
+.sehen-bild img:not([src]) { min-height: 160px; }
+.sehen-bild.steuerbar img { cursor: crosshair; }
+.form.inline { grid-template-columns: minmax(0, 1fr) auto; align-items: end; margin-top: 8px; }
+.form.inline button + button { margin-left: 4px; }
+.segmented { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.segmented button { min-height: 28px; padding: 3px 10px; font-size: 12.5px; }
+.activity-row .row-title .pill, .rule-row .row-sub .pill { margin-right: 4px; }
+@media (max-width: 720px) {
+  .form.inline { grid-template-columns: 1fr; }
+  .screen-row, .activity-row, .rule-row { grid-template-columns: 1fr; }
+  .screen-row .row-side, .activity-row .row-side, .rule-row .row-side { justify-content: flex-start; }
+}

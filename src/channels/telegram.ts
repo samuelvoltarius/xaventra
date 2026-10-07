@@ -527,6 +527,20 @@ export class TelegramAdapter implements ChannelAdapter {
             await this.handleGuidedPress(query)
             return
         }
+        if (typeof data === 'string' && data.startsWith('ak:')) {
+            // 2.88: „Was ich gerade tue“ — Stopp/Später (owner, private chat, single-use token).
+            const userId = String(query.from?.id ?? '')
+            const chatId = query.message?.chat?.id !== undefined ? String(query.message.chat.id) : ''
+            let text = '❌ Gerade nicht möglich.'
+            try {
+                await this.requireLiveAuthority('activity control')
+                const { drueckeAktivitaet } = await import('../sehen/telegram-sehen.js')
+                const result = await drueckeAktivitaet(data, { userId, ownerIds: this.getOwnerChatIds(), chatId, privateChat: query.message?.chat?.type === 'private' })
+                text = result.ok ? `✓ ${result.message}` : result.message
+            } catch { /* answer below */ }
+            try { await this.bot.answerCallbackQuery(query.id, { text: text.slice(0, 190), show_alert: text.length > 120 }) } catch { /* ignore */ }
+            return
+        }
         const chatId = query.message?.chat?.id?.toString()
         const userId = query.from?.id?.toString() ?? ''
         const retired = retiredApprovalHint(data)

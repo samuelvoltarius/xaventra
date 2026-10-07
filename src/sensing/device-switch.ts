@@ -90,6 +90,12 @@ export interface SchaltDeps {
     /** Anmeldung abgelaufen: die Verbinden-Karte des Geräts (Standard: device-connect). */
     neuVerbinden?: (deviceId: string) => Promise<{ ok: boolean; message: string }>
     timeZone?: string
+    /**
+     * 2.88 „Regeln in Klartext“: hat der Owner „Lichter darfst du ohne Frage
+     * schalten“ gesagt? (Standard: core/decisions.ts lichtOhneFrage). Gilt nur,
+     * wenn JEDES Ziel eine Lampe ist; Rückgängig bleibt.
+     */
+    lichtOhneFrage?: () => boolean | Promise<boolean>
 }
 
 const nowOf = (deps: SchaltDeps) => (deps.now || Date.now)()
@@ -386,8 +392,21 @@ export async function sagSchalten(deps: SchaltDeps, text: string, principal: str
         return card ? `Vorschau: ${plan.satz} Bitte auf der Karte Ja oder Nein.` : 'Die Vorschau konnte ich nicht schicken — nichts gespeichert.'
     }
     const plan = neuerPlan(deps, { art: 'schalten', owner: principal, ziele, satz: vorschauSatz(ziele) })
+    if (ziele.length && ziele.every(z => z.art === 'licht') && await lichtRegel(deps)) {
+        // Owner-Regel „Lichter ohne Frage“: derselbe Schaltweg wie nach dem Ja (Freigabe/Fingerabdruck dort), ohne Vorschau-Karte.
+        const result = await beantworteJa(deps, plan.id, principal)
+        return `${result.message} (Deine Regel: Lichter ohne Frage.)`.trim()
+    }
     const card = await vorschauKarte(deps, plan)
     return card ? `${plan.satz} Bitte auf der Karte Ja oder Nein.` : 'Die Vorschau konnte ich nicht schicken — nichts geschaltet.'
+}
+
+async function lichtRegel(deps: SchaltDeps): Promise<boolean> {
+    try {
+        if (deps.lichtOhneFrage) return (await deps.lichtOhneFrage()) === true
+        const { lichtOhneFrage } = await import('../core/decisions.js')
+        return lichtOhneFrage({ dataDir: deps.dataDir })
+    } catch { return false }
 }
 
 /** Routinen-Liste mit je einem Knopf „Beenden“ (Bündel `routinen`). */

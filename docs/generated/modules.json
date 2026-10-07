@@ -2798,6 +2798,7 @@
         "../security/blue-team.js",
         "../security/red-team.js",
         "../security/secret-redaction.js",
+        "../sehen/sehen-api.js",
         "../sensing/smart-access-api.js",
         "../synthesis/self-evolution.js",
         "../tools/skill-builder.js",
@@ -6193,6 +6194,48 @@
     {
       "module": "src/security/token-compare.ts",
       "imports": [
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/sehen/aktivitaet.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sehen/bildschirm.ts",
+      "imports": [
+        "../desktop-direct/pause.js",
+        "../security/secret-redaction.js",
+        "./aktivitaet.js",
+        "node:crypto"
+      ]
+    },
+    {
+      "module": "src/sehen/regeln.ts",
+      "imports": [
+        "../core/action-policy.js",
+        "../core/decisions.js"
+      ]
+    },
+    {
+      "module": "src/sehen/sehen-api.ts",
+      "imports": [
+        "../core/decisions.js",
+        "./aktivitaet.js",
+        "./bildschirm.js",
+        "express"
+      ]
+    },
+    {
+      "module": "src/sehen/telegram-sehen.ts",
+      "imports": [
+        "./aktivitaet.js",
         "node:crypto"
       ]
     },

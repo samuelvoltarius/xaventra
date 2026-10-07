@@ -51,6 +51,7 @@ import { registerZugaengeApi } from './zugaenge-api.js'
 import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
 import { registerGuidedApi } from '../guided/guided-api.js'
+import { registerSehenApi } from '../sehen/sehen-api.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -603,6 +604,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     registerTelefonApi(app, { ownerOnly, resolveHandler: resolveMessageHandler })
     // 2.88: Verbindungen → Proxmox (one token, fingerprint card) and Passwort-Tresor (ids only), owner only.
     registerZugaengeApi(app, { ownerOnly })
+    // 2.88 „Sehen und lenken“: Ihr Computer (Bildschirme), Aktivität, Regeln in Klartext — owner only.
+    registerSehenApi(app, { ownerOnly, principal })
     // 2.86 Paket M „Geführt“: Einrichtungs-Checkliste, Beispielsätze, Tipp, „Ich komm nicht weiter“.
     registerGuidedApi(app, { ownerOnly, owner: async req => `desktop:${(await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req))}` })
     registerSmartAccessApi(app, { ownerOnly, authoritative: desktopControlPlaneAuthoritative, root: getNovaDataDir,

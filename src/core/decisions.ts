@@ -59,7 +59,7 @@ import { existsSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
-import { AKTIONSARTEN, isNieAktionsart, isPhysischOderExtern, setDecisionConstraintProvider, type DecisionConstraint } from './action-policy.js'
+import { AKTIONSARTEN, isNieAktionsart, isPhysischOderExtern, isStandingExcluded, setDecisionConstraintProvider, setOwnerAllowanceProvider, type DecisionConstraint } from './action-policy.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
 // ---------------------------------------------------------------------------
@@ -70,6 +70,14 @@ export type DecisionStatus = 'aktiv' | 'rueckfrage' | 'ersetzt' | 'widerrufen' |
 export type DecisionSourceKind = 'owner-nachricht' | 'knopf' | 'mission' | 'delegation' | 'befehl' | 'messung'
 export type DecisionPolarity = 'pos' | 'neg' | 'nur'
 export type DecisionEffect = 'strenger' | 'lockernd' | 'neutral'
+
+/**
+ * 2.88 „Regeln in Klartext“: what a binding owner decision does in the policy.
+ * 'fragen'/'nie' only tighten (DecisionConstraint). 'erlauben' only exists for
+ * kinds that may ever run without a card (isStandingExcluded = false) and, as
+ * the one physical exception, for switching lights (`nur: 'licht'`).
+ */
+export interface DecisionRule { mode: 'fragen' | 'nie' | 'erlauben'; arten: string[]; nur?: 'licht' }
 
 export interface DecisionSource { art: DecisionSourceKind; von: string; kanal?: string; ref?: string }
 
@@ -93,7 +101,7 @@ export interface Decision {
     wirkung: DecisionEffect
     wirksam: boolean
     nichtWirksamGrund?: string
-    constraint?: { mode: 'fragen' | 'nie'; arten: string[] }
+    constraint?: DecisionRule
     bestaetigtAt?: string
 }
 
@@ -113,7 +121,7 @@ export interface ParsedDirective {
     wirkung: DecisionEffect
     wirksam: boolean
     nichtWirksamGrund?: string
-    constraint?: { mode: 'fragen' | 'nie'; arten: string[] }
+    constraint?: DecisionRule
     ausdruecklich: boolean
 }
 
@@ -158,6 +166,12 @@ const PAST = /\b(hat|hatte|hattest|war|waren|wurde|wurden|habe|haben)\b[^.]*\b(n
 const NEG = /\b(nie|niemals|nicht|kein|keine|keinen|keinem|keiner|verboten|unterlass\w*)\b/
 const ONLY = /\bnur\b/
 /** „ohne Knopf/Frage …“ — verschärfend nur zusammen mit einer Verneinung („nie ohne Knopf“). */
+/** 2.88: „X darfst du ohne Frage …“, „musst nicht fragen“, „frag mich vorher“ are rules even without „immer/nie/ab jetzt“. */
+const PERMISSION_MARKER = /(darfst|kannst|sollst|einfach)\b[^.]*\bohne (vorher )?(zu )?(frage|fragen|r(ü|ue)ckfrage|nachfrage|mich zu fragen)\b|\bohne (vorher )?(zu )?(fragen|r(ü|ue)ckfrage|nachfrage|mich zu fragen)\b|(musst|brauchst) (mich )?nicht (mehr )?(zu )?(fragen|nachfragen)|\bfrag(e)? (mich )?(vorher|zuerst|immer)\b/
+/** 2.88: lights are the one physical kind an owner rule may allow without a card. */
+const LICHT = /\b(licht|lichter|lichtern|lampe|lampen|leuchte|leuchten|beleuchtung)\b/
+const ANDERE_GERAETE = /heizung|klima|steckdose|t(ü|ue)r|schloss|\btor\b|garage|alarm|herd|ofen|druck|kamera|rollo|jalousie|ventil|sirene|\bauto\b/
+const ZUGANG = /passw|kennwort|secret|token|api-?key|schl(ü|ue)ssel|zugangsdaten|credential|anmeldedaten/
 const OHNE_ASK = /ohne (vorher )?(zu )?(knopf|karte|frage|fragen|r(ü|ue)ckfrage|freigabe|best(ä|ae)tigung|mich zu fragen)/
 const ASK_ALWAYS = /(immer (vorher )?(fragen|nachfragen|r(ü|ue)ckfrage)|nur (mit|nach) (knopf|karte|freigabe|r(ü|ue)ckfrage|best(ä|ae)tigung)|frag(e)? (mich )?(immer|vorher))/
 const PERMISSIVE = /(ohne (zu )?(fragen|frage|r(ü|ue)ckfrage|knopf|karte|freigabe|best(ä|ae)tigung)|nicht (mehr )?(nach)?fragen|kein(en)? knopf|automatisch|selbst(st(ä|ae)ndig)?|du entscheidest|entscheide (du )?selbst|das entscheidest du|immer erlauben|darfst|einfach (machen|tun|erledigen))/
@@ -188,6 +202,7 @@ const STOPWORDS = new Set([
 
 /** Keyword stems per known action kind (only for tightening constraints). */
 const KIND_KEYWORDS: ReadonlyArray<[string, RegExp]> = [
+    ['daten-loeschen', /l(ö|oe)sch|delete|wipe|purge/],
     ['drucken', /druck|print|plott/],
     ['schalten', /schalt|licht|heizung|klima|steckdose|home-?assistant/],
     ['dienst-neustart', /neustart|neu starten|restart|neu gestartet/],
@@ -297,14 +312,16 @@ function isDirectiveSentence(sentence: string): boolean {
     const t = lower(sentence).trim()
     if (t.length < 6 || t.includes('?')) return false
     if (QUESTION_START.test(t) || NARRATIVE.test(t) || PAST.test(t)) return false
-    return STRONG_MARKER.test(t) || WEAK_MARKER.test(t)
+    return STRONG_MARKER.test(t) || WEAK_MARKER.test(t) || PERMISSION_MARKER.test(t)
 }
 
 function fixedLimit(text: string): string | null {
     const t = lower(text)
-    if (isNieAktionsart(t)) return 'Nie-Liste'
+    // 2.88: the most concrete reason first (the owner reads it on the rules page).
+    if (ZUGANG.test(t)) return 'Zugang'
     if (LOESCHEN.test(t)) return 'Löschen'
     if (GELD.test(t)) return 'Geld'
+    if (isNieAktionsart(t)) return 'Nie-Liste'
     if (isPhysischOderExtern(t)) return 'physisch/extern'
     return null
 }
@@ -333,8 +350,17 @@ export function classifyDirective(sentence: string, now: number, reasonHint?: st
     let wirksam = true
     let nichtWirksamGrund: string | undefined
     if (wirkung === 'lockernd') {
-        const limit = fixedLimit(t)
-        if (limit) { wirksam = false; nichtWirksamGrund = `nicht wirksam: feste Grenze (${limit})` }
+        // 2.88: lights only — the rest of the sentence must not touch any other fixed limit.
+        const ohneLicht = t.replace(new RegExp(LICHT.source, 'g'), ' ').replace(/schalt\w*|an- und aus|ein- und aus|\ban\b|\baus\b/g, ' ')
+        if (LICHT.test(t) && !ANDERE_GERAETE.test(t) && !fixedLimit(ohneLicht)) constraint = { mode: 'erlauben', arten: ['schalten'], nur: 'licht' }
+        else {
+            const limit = fixedLimit(t)
+            if (limit) { wirksam = false; nichtWirksamGrund = `nicht wirksam: feste Grenze (${limit})` }
+            else {
+                const arten = [...new Set(KIND_KEYWORDS.filter(([, pattern]) => pattern.test(t)).map(([kind]) => kind).filter(kind => AKTIONSARTEN[kind] && !isStandingExcluded(kind)))]
+                if (arten.length) constraint = { mode: 'erlauben', arten }
+            }
+        }
     }
     return {
         text: clip(body.replace(/[.!]+$/, ''), MAX_TEXT),
@@ -699,9 +725,41 @@ export function activeConstraints(opts: DecisionOptions = {}): DecisionConstrain
     const now = nowOf(opts)
     const items = readItems(opts)
         .filter(item => item.status === 'aktiv' && item.bindend && item.wirksam && item.constraint && (!item.gueltigBis || Date.parse(item.gueltigBis) >= now))
-        .map(item => ({ id: item.id, mode: item.constraint!.mode, arten: item.constraint!.arten, text: item.text }))
+        .filter(item => item.constraint!.mode === 'fragen' || item.constraint!.mode === 'nie')
+        .map(item => ({ id: item.id, mode: item.constraint!.mode as 'fragen' | 'nie', arten: item.constraint!.arten, text: item.text }))
     constraintCache = { mtime, file, items }
     return items
+}
+
+/**
+ * 2.88 „Regeln in Klartext“: owner rules that allow a kind without asking.
+ * Only binding, active, effective owner decisions; a kind that may never run
+ * without a card (isStandingExcluded) is dropped again here, whatever is stored.
+ */
+export function activeAllowances(opts: DecisionOptions = {}): Array<{ id: string; arten: string[]; nur?: 'licht'; text: string }> {
+    const now = nowOf(opts)
+    return readItems(opts)
+        .filter(item => item.status === 'aktiv' && item.bindend && item.wirksam && item.wirkung === 'lockernd' && item.constraint?.mode === 'erlauben'
+            && (!item.gueltigBis || Date.parse(item.gueltigBis) >= now))
+        .map(item => item.constraint!.nur === 'licht'
+            ? { id: item.id, arten: ['schalten'], nur: 'licht' as const, text: item.text }
+            : { id: item.id, arten: item.constraint!.arten.filter(kind => !isStandingExcluded(kind)), text: item.text })
+        .filter(item => item.arten.length > 0)
+}
+
+/** 2.88: true while an owner rule lets Xaventra switch lights without a preview card. */
+export function lichtOhneFrage(opts: DecisionOptions = {}): boolean {
+    return activeAllowances(opts).some(item => item.nur === 'licht')
+}
+
+/** 2.88: 'fragen' | 'nie' | 'erlauben' of one sentence (null = not a rule). */
+export function directiveMode(text: unknown, now = Date.now()): DecisionRule['mode'] | null {
+    const parsed = classifyDirective(String(text ?? ''), now)
+    if (parsed.constraint) return parsed.constraint.mode
+    if (parsed.wirkung === 'lockernd') return 'erlauben'
+    if (parsed.wirkung !== 'strenger') return null
+    const t = lower(text)
+    return ASK_ALWAYS.test(t) || (NEG.test(t) && OHNE_ASK.test(t)) ? 'fragen' : 'nie'
 }
 
 /** Entries created (or ended) in a window — for the evening report. */
@@ -967,6 +1025,8 @@ export function handleEntscheidungenCommand(args: string, principal: { permissio
 /** Called once by the daemon. Workers record nothing; the policy reads constraints everywhere. */
 export async function startDecisionMemory(options: { nodeOnly: boolean }): Promise<{ started: boolean; reason: string }> {
     setDecisionConstraintProvider(() => activeConstraints())
+    // 2.88: owner rules „ohne Frage“ (never for excluded kinds; the policy checks again).
+    setOwnerAllowanceProvider(() => activeAllowances().filter(item => !item.nur).flatMap(item => item.arten))
     if (options.nodeOnly) {
         mainCheck = () => false
         return { started: false, reason: 'Mesh-Worker: Entscheidungen führt nur der Main' }

@@ -42,6 +42,8 @@ export const UI_FILES: Readonly<Record<string, string>> = Object.freeze({
     'telefon.js': 'text/javascript; charset=utf-8',
     'zugaenge.js': 'text/javascript; charset=utf-8',
     'cockpit.js': 'text/javascript; charset=utf-8',
+    // 2.88 „Sehen und lenken“: Ihr Computer, Aktivität, Regeln.
+    'sehen.js': 'text/javascript; charset=utf-8',
     'styles.css': 'text/css; charset=utf-8',
     // 2.86 Paket O: Anrufen + installierbare Web-App (Handy über das Tailnet).
     'anruf.js': 'text/javascript; charset=utf-8',
