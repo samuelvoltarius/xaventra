@@ -42,4 +42,43 @@ describe('2.86.1 a: Dienste eigener Knoten', () => {
             ['Spracherkennung auf spark', 'hilfsdienst'], ['Bilder erzeugen auf spark', 'hilfsdienst'],
         ])
     })
+    it('one entry for the same service reached as localhost and as the own host name / own address (live 2.88.1 SearXNG)', () => {
+        const ownHosts = ['main-host', '203.0.113.7']
+        const list = buildLlmConnectionList({ ownHosts, services: [
+            { id: 'a', name: 'searxng', type: 'search', endpoint: 'http://127.0.0.1:8888', models: [], status: 'running', sourceNode: 'local', host: '127.0.0.1' },
+            { id: 'b', name: 'searxng', type: 'search', endpoint: 'http://main-host:8888', models: [], status: 'running', sourceNode: 'main-host', host: 'main-host' },
+            { id: 'c', name: 'searxng', type: 'search', endpoint: 'http://203.0.113.7:8888', models: [], status: 'running', sourceNode: 'main-host', host: '203.0.113.7' },
+        ] }, null, {}, {})
+        const search = list.filter(item => item.kategorie === 'suche')
+        expect(search.map(item => item.title)).toEqual(['SearXNG auf diesem Rechner'])
+    })
+
+    it('the same order the other way round still gives one entry named "auf diesem Rechner"', () => {
+        const list = buildLlmConnectionList({ ownHosts: ['main-host'], services: [
+            { id: 'b', name: 'searxng', type: 'search', endpoint: 'http://main-host:8888', models: [], status: 'running', sourceNode: 'main-host', host: 'main-host' },
+            { id: 'a', name: 'searxng', type: 'search', endpoint: 'http://localhost:8888', models: [], status: 'running', sourceNode: 'local', host: 'localhost' },
+        ] }, null, {}, {})
+        expect(list.filter(item => item.kategorie === 'suche').map(item => item.title)).toEqual(['SearXNG auf diesem Rechner'])
+    })
+
+    it('counter-check: a real second instance on another machine, or another port, stays its own entry', () => {
+        const list = buildLlmConnectionList({ ownHosts: ['main-host', '203.0.113.7'], services: [
+            { id: 'a', name: 'searxng', type: 'search', endpoint: 'http://127.0.0.1:8888', models: [], status: 'running', sourceNode: 'local', host: '127.0.0.1' },
+            { id: 'b', name: 'searxng', type: 'search', endpoint: 'http://main-host:8888', models: [], status: 'running', sourceNode: 'main-host', host: 'main-host' },
+            { id: 'c', name: 'searxng', type: 'search', endpoint: 'http://198.51.100.9:8888', models: [], status: 'running', sourceNode: 'nas', host: '198.51.100.9' },
+            { id: 'd', name: 'searxng', type: 'search', endpoint: 'http://203.0.113.7:8080', models: [], status: 'running', sourceNode: 'main-host', host: '203.0.113.7' },
+            { id: 'e', name: 'searxng', type: 'search', endpoint: 'http://198.51.100.10:8888', models: [], status: 'running', sourceNode: 'worker', host: '198.51.100.10' },
+        ] }, null, {}, {})
+        expect(list.filter(item => item.kategorie === 'suche').map(item => item.title)).toEqual([
+            'SearXNG auf diesem Rechner', 'SearXNG auf nas', 'SearXNG auf diesem Rechner', 'SearXNG auf worker',
+        ])
+    })
+
+    it('helper services (speech) of the own machine are merged the same way', () => {
+        const list = buildLlmConnectionList({ ownHosts: ['main-host'], services: [
+            { id: 'a', name: 'whisper-gpu', type: 'stt', endpoint: 'http://127.0.0.1:8017', models: [], status: 'running', sourceNode: 'local', host: '127.0.0.1' },
+            { id: 'b', name: 'whisper-gpu', type: 'stt', endpoint: 'http://main-host:8017', models: [], status: 'running', sourceNode: 'main-host', host: 'main-host' },
+        ] }, null, {}, {})
+        expect(list.filter(item => item.kategorie === 'hilfsdienst').map(item => item.title)).toEqual(['Spracherkennung auf diesem Rechner'])
+    })
 })

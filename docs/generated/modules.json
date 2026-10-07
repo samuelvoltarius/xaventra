@@ -4669,6 +4669,7 @@
         "../core/data-root.js",
         "node:crypto",
         "node:fs",
+        "node:os",
         "node:path"
       ]
     },

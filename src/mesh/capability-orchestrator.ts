@@ -68,8 +68,19 @@ interface CapabilityMatch {
 let nodes: MeshNode[] = []
 let cloudProviders: CloudProvider[] = []
 
+// Heartbeats and configured runtimes carry the runtime's own name as type ("vllm", "whisper", "lm-studio").
+const LLM_RUNTIME = /^(llm|vllm|ollama|lm[-_ ]?studio|llama[-_. ]?cpp|llamacpp|llama[-_]?server|koboldcpp|openai[-_ ]?compatible|local)$/i
+const STT_RUNTIME = /^(stt|whisper|whisper[-_.]?cpp|whisper[-_]?server|whisper[-_]?gpu|faster[-_]?whisper|vosk|parakeet)$/i
+const TTS_RUNTIME = /^(tts|piper|kokoro|xtts|f5[-_]?tts)$/i
+
 function capabilityNames(runtime: CapabilityRuntime): string[] {
     const names = new Set(runtime.capabilities || [])
+    // The runtime name only counts when the type is generic; "embeddings" on a runtime named Ollama stays an embedding.
+    const typed = ['embeddings', 'embedding', 'image', 'search', 'vlm', 'tts', 'stt'].includes(String(runtime.type))
+    const labels = [runtime.type, ...(typed ? [] : [runtime.name])].map(value => String(value || '').trim())
+    if (labels.some(label => LLM_RUNTIME.test(label))) names.add('llm')
+    if (labels.some(label => STT_RUNTIME.test(label))) names.add('stt')
+    if (labels.some(label => TTS_RUNTIME.test(label))) names.add('tts')
     if (runtime.type === 'llm') names.add('llm')
     if (runtime.type === 'vlm' || runtime.type === 'image') names.add('vision')
     if (runtime.type === 'embeddings') names.add('embedding')
@@ -434,6 +445,20 @@ export function getMissingCapabilities(): string[] {
     return allNeeded.filter(n => !allAvailable.has(n))
 }
 
+/** Online node with a runtime that is marked running but whose last proof is too old (not re-confirmed yet). */
+function unconfirmedRunning(capability: string): { node: string; runtime: string } | null {
+    for (const node of nodes) {
+        if (!node.online) continue
+        for (const runtime of node.runtimes || []) {
+            if (runtime.status !== 'running' || runtime.available) continue
+            const provides = node.capabilities.some(cap => cap.name === capability
+                && (runtime.models.length ? runtime.models.includes(cap.provider) : cap.provider === runtime.name))
+            if (provides) return { node: node.name, runtime: runtime.name }
+        }
+    }
+    return null
+}
+
 // Suggest where to install a missing capability
 export function suggestInstallation(capability: string): string | null {
     refreshCapabilityProjection()
@@ -442,6 +467,10 @@ export function suggestInstallation(capability: string): string | null {
     if (available) return `${capability} bereits verfuegbar: ${available.nodeName}/${available.provider}. Vor Neuinstallation vorhandenen Kandidaten pruefen.`
 
     const online = nodes.filter(node => node.online)
+    // A runtime that ran at the last look but is not re-confirmed yet (restart, first scan pending)
+    // is not "installed ollama": wait for the scan, do not point at another runtime or an install.
+    const pending = unconfirmedRunning(capability)
+    if (pending) return `${capability}: ${pending.runtime} auf ${pending.node} lief laut letztem Stand, ist aber noch nicht neu bestaetigt. Naechsten Scan abwarten, nicht neu installieren.`
     for (const node of online) {
         const providers = new Set(node.capabilities.filter(cap => cap.name === capability).map(cap => cap.provider))
         const installed = node.runtimes?.find(runtime =>
@@ -494,7 +523,9 @@ export async function initCapabilityOrchestrator(): Promise<void> {
     console.log(`[Capabilities]   Cloud: ${cloudCount} providers available`)
 
     // Report missing capabilities
-    const missing = getMissingCapabilities()
+    const unconfirmed = getMissingCapabilities().filter(name => unconfirmedRunning(name))
+    if (unconfirmed.length > 0) console.log(`[Capabilities] ⏳ Noch nicht neu bestaetigt (lief beim letzten Stand, wartet auf den ersten Scan): ${unconfirmed.join(', ')}`)
+    const missing = getMissingCapabilities().filter(name => !unconfirmed.includes(name))
     if (missing.length > 0) {
         console.log(`[Capabilities] ⚠️ Missing: ${missing.join(', ')}`)
         for (const m of missing) {

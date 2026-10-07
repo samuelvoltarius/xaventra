@@ -75,6 +75,8 @@ const EMBED = /embed|nomic|bge|mxbai|e5-|gte-|minilm/i
 const VISION_MODEL = /llava|moondream|-vl\b|vl:|vl-|vision/i
 const CODE_MODEL = /coder|devstral|starcoder|codestral|codellama/i
 const UNIFIED_GPU = /\b(GB10|GB200|GH200|Grace|Thor|Orin|Jetson|Apple)\b/i
+/** Model tag names a size ("llama-70b-q4", "qwen3:32b"); 30 B and up counts as big. */
+const isBigModel = (model: string) => [...String(model).matchAll(/(?:^|[^a-z0-9.])(\d{2,3})b(?![a-z])/gi)].some(match => Number(match[1]) >= 30)
 const LLM_TYPES = new Set(['llm', 'vllm', 'ollama', 'lmstudio', 'llamacpp', 'llama-cpp', 'vlm'])
 
 export interface GraphRuntimeLike { name: string; type: string; models?: string[]; available?: boolean }
@@ -94,11 +96,17 @@ export interface StrengthInput {
 
 export function deriveStrength(input: StrengthInput, now = Date.now()): NodeStrength {
     const profile = input.profile
-    const gpuName = profile.gpu?.name ?? null
+    const reportedName = profile.gpu?.name ?? null
     const backend = lower(profile.gpu?.backend || 'cpu')
     const viaVllm = profile.gpu?.viaVllm === true
     const graphVram = Number(input.graphHardware?.gpu_vram_mb || 0)
-    const vramGB = profile.gpu?.vramGB || (graphVram > 0 ? Math.round(graphVram / 1024) : undefined)
+    const reportedVram = profile.gpu?.vramGB || (graphVram > 0 ? Math.round(graphVram / 1024) : undefined)
+    // The profile "GPU name" is also set for plain display adapters (server board graphics, VM display).
+    // Only own compute evidence counts: VRAM, a GPU backend with a name, vLLM on this node, or unified-memory silicon.
+    const hasGpu = Boolean(reportedVram) || viaVllm || backend === 'metal'
+        || (Boolean(reportedName) && (['cuda', 'rocm'].includes(backend) || UNIFIED_GPU.test(String(reportedName))))
+    const gpuName = hasGpu ? reportedName : null
+    const vramGB = hasGpu ? reportedVram : undefined
     const unified = backend === 'metal' || (Boolean(gpuName) && UNIFIED_GPU.test(String(gpuName)) && !vramGB) || (viaVllm && !vramGB)
     const ramGB = Math.max(0, Number(profile.ramGB) || 0)
     const memory: Pick<NodeStrength, 'modelMemoryGB' | 'modelMemoryHow'> = unified
@@ -201,6 +209,10 @@ function assess(skill: Skill, node: NodeStrength, options: RankOptions): Assessm
     switch (skill) {
         case 'grosse-modelle': {
             if (node.modelMemoryGB < 24) return { score: 0, reasons, excluded: `zu wenig Speicher für große Modelle (${node.modelMemoryGB} GB ${node.modelMemoryHow})` }
+            // Without GPU memory only a really running big model counts; plain RAM size alone claims nothing.
+            if (node.modelMemoryHow === 'RAM' && !running(node, isLlm).some(service => service.models.some(isBigModel))) {
+                return { score: 0, reasons, excluded: 'keine GPU und kein großes Modell geladen' }
+            }
             score += Math.min(200, node.modelMemoryGB)
             if (gpu) { score += 30; reasons.push(gpuPhrase(node)) }
             reasons.push(`${node.modelMemoryGB} GB ${node.modelMemoryHow}`)

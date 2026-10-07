@@ -107,3 +107,37 @@ describe('Mesh-Gehirn: Owner-Frage „was kann welcher Node?“', () => {
         expect(lines).toHaveLength(5)
     })
 })
+
+describe('Mesh-Gehirn: GPU und große Modelle nur mit belegter eigener GPU', () => {
+    const serverVga = (over: Partial<StrengthInput> = {}): StrengthInput => ({
+        nodeId: 'plain-server', local: false, lastSeen: NOW - 20_000,
+        // Display adapter text of a server board (not a compute GPU): name set, backend cpu, no VRAM.
+        profile: profile({ cpus: 32, ramGB: 128, gpu: { name: '03:00.0 VGA compatible controller: Example BMC Graphics', backend: 'cpu', viaVllm: false } }),
+        load: { diskFreeGB: 500 }, ...over,
+    })
+
+    it('does not call a display adapter without VRAM a GPU, and keeps large models out', () => {
+        const node = deriveStrength(serverVga(), NOW)
+        expect(node.skills).not.toContain('grosse-modelle')
+        const list = formatStrengthList([node], NOW)
+        expect(list).not.toMatch(/GPU/)
+        expect(list).not.toContain('große Modelle')
+        expect(list).toContain('32 Kerne, 128 GB RAM')
+    })
+
+    it('does not take a VM or NAS without any GPU info for a GPU node', () => {
+        const vm = deriveStrength({ nodeId: 'vm', local: false, lastSeen: NOW - 1_000, profile: profile({ cpus: 6, ramGB: 64 }) }, NOW)
+        expect(vm.skills).not.toContain('grosse-modelle')
+        expect(formatStrengthList([vm], NOW)).not.toMatch(/GPU/)
+    })
+
+    it('still reports a real GPU, unified memory and a RAM-only node running a big model', () => {
+        const real = deriveStrength({ ...serverVga(), nodeId: 'real', profile: profile({ ramGB: 64, gpu: { name: 'NVIDIA RTX 4090', backend: 'cuda', viaVllm: false, vramGB: 24 } }) }, NOW)
+        expect(real.skills).toContain('grosse-modelle')
+        expect(formatStrengthList([real], NOW)).toContain('GPU')
+        const big = deriveStrength({ ...serverVga(), nodeId: 'big-cpu', graphRuntimes: [{ name: 'llama.cpp', type: 'llamacpp', models: ['llama-70b-q4'], available: true }] }, NOW)
+        expect(big.skills).toContain('grosse-modelle')
+        const small = deriveStrength({ ...serverVga(), nodeId: 'small-cpu', graphRuntimes: [{ name: 'ollama', type: 'ollama', models: ['qwen3:8b'], available: true }] }, NOW)
+        expect(small.skills).not.toContain('grosse-modelle')
+    })
+})
