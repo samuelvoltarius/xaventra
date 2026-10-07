@@ -111,6 +111,35 @@ Each bypass found reduces the security score. Results saved to `.nova-data/red-t
 
 ---
 
+## Passwort-Tresor als Secret-Broker (2.88, `src/secrets/credential-broker.ts`)
+
+- Das Modell kennt nur einen Kurznamen (`credential_id`, z. B. `github-main`),
+  nie einen Wert. Werkzeuge fordern beim Broker an; der Broker prüft die
+  Owner-Freigabe für **diesen Eintrag und diesen Dienst** (Host bzw. Host:Port),
+  liest den Wert aus dem Backend und setzt ihn direkt beim Ziel ein
+  (Login-Felder im Browser, `Authorization` pro Anfrage bei Token-Connectoren).
+  Das Werkzeug hält nichts dauerhaft.
+- Backends austauschbar: Datei (0600 in 0700), Bitwarden/Vaultwarden-CLI `bw`
+  (entsperrte Sitzung `BW_SESSION`), 1Password-CLI `op read`; gestartet mit
+  `execFile` und festem Argument-Array, Verweise vorher geprüft, keine Shell.
+- Jeder ausgegebene Wert wird für `redactSecrets` registriert (Logs, Gedanken,
+  Karten, Gedächtnis, Modell-Kontext) — auch ohne Schlüsselname.
+- Freigabe für einen weiteren Dienst nur per Karte (`tresor-freigabe`, Wirkung
+  extern, nie „Immer“). Passwörter ändern hat keinen Weg (Nie-Liste
+  „Zugangsdaten ändern“).
+
+## MCP-Verzeichnis: Discovery, eigene Prüfung (2.88, `src/connections/registry-vetting.ts`)
+
+Das offizielle MCP-Verzeichnis liefert nur Kandidaten. Xaventra prüft selbst:
+Herausgeber (Namensraum), Quelle (Repository bei bekanntem Code-Hoster, gleicher
+Besitzer), feste Version, https-Endpunkt, nötige Anmeldung, Hinweise auf
+Schreiben/Ausführen. Ergebnis: **geprüft** (steht im Katalog, normale Regeln),
+**nicht geprüft** (zuerst nur lesend, Schreibwerkzeuge einzeln per Owner) oder
+**unbekannt** (nur per Karte verbindbar, dann fragt jedes Werkzeug — auch
+Lesen; nichts davon läuft lokal, Pakete werden nie installiert). Verbindungen
+aus dem Verzeichnis sind auf die freigegebene Version gepinnt; eine neue
+Version stuft sie auf „unbekannt“ zurück, bis der Owner neu verbindet.
+
 ## Security Events Flow
 
 ```

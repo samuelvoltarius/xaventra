@@ -6,7 +6,7 @@ import { answerApprovalCard, listApprovalCards } from '../core/approval-cards.js
 import { BUILTIN_CONNECTORS, loadConnectorCatalog, type ConnectorManifest } from './connector-catalog.js'
 import { getConnection, loadConnections, readConnectionSecrets, connectionSecretsPath } from './connection-store.js'
 import {
-    allowConnectionTool, beginLogin, completeLoginAndConnect, connectAndTest, connectFromApproval, disconnectConnection, requestConnect, submitAccess, type ConnectDeps, type ConnectionGateway,
+    allowConnectionTool, applyVersionsDrift, beginLogin, completeLoginAndConnect, connectAndTest, connectFromApproval, disconnectConnection, requestConnect, submitAccess, type ConnectDeps, type ConnectionGateway,
 } from './connect-flow.js'
 import { haBearerFetch, startLogin } from './connector-login.js'
 
@@ -262,6 +262,26 @@ describe('Verbinden = eine Karte (2.85 Paket A, Punkt 4)', () => {
         expect(readConnectionSecrets(paperless.id, { dataDir: dir2 }).zugang).toEqual({ PAPERLESS_URL: 'http://paperless.example.com:8000', PAPERLESS_TOKEN: 'pl-token' })
     })
 
+    it('2.88: a token connector can take a vault reference; the Bearer comes per request from the broker', async () => {
+        const dir = tmp()
+        const { speichereEintrag } = await import('../secrets/credential-broker.js')
+        // Assembled so secret scanners do not mistake the fixture for a credential.
+        const value = ['n8n', 'aus', 'dem', 'tresor', '1'].join('-')
+        speichereEintrag({ id: 'n8n-haus', quelle: 'datei', dienste: ['n8n.example.com:5678'], geheim: value }, { dataDir: dir })
+        const deps = depsFor(dir, { foundServices: (type: string) => type === 'n8n' ? ['http://n8n.example.com:5678'] : [] })
+        await pressJa(dir, ((await requestConnect({ connectorId: 'n8n' }, deps)) as any).card.id)
+        const record = loadConnections({ dataDir: dir })[0]
+        expect((await submitAccess(record.id, { N8N_MCP_TOKEN: 'tresor:gibts-nicht' }, deps)).message).toMatch(/Tresor/)
+        expect((await submitAccess(record.id, { N8N_MCP_TOKEN: 'tresor:n8n-haus' }, deps)).ok).toBe(true)
+        const secrets = readConnectionSecrets(record.id, { dataDir: dir })
+        expect(JSON.stringify(secrets)).not.toContain(value)
+        expect(secrets.zugangRef).toEqual({ N8N_MCP_TOKEN: 'n8n-haus' })
+        const { connectionServerConfig } = await import('../mcp/mcp-runtime.js')
+        const config = await connectionServerConfig(getConnection(record.id, { dataDir: dir })!, deps)
+        expect(config.headers).toBeUndefined()
+        expect(typeof config.fetch).toBe('function')
+    })
+
     it('community: only over an https remote, never from a package; tools are allowed one by one', async () => {
         const dir = tmp()
         const cachePath = join(dir, 'registry.json')
@@ -279,5 +299,40 @@ describe('Verbinden = eine Karte (2.85 Paket A, Punkt 4)', () => {
         expect(record).toMatchObject({ trust: 'community', status: 'verbunden', transport: { art: 'http', url: 'https://mcp.example.com/wetter' } })
         expect((await allowConnectionTool(record.id, 'set_alarm', deps)).ok).toBe(true)
         expect(getConnection(record.id, { dataDir: dir })!.erlaubteWerkzeuge).toEqual(['set_alarm'])
+    })
+
+    it('2.88: own check decides the level, the approved version is pinned, a new version un-pins it', async () => {
+        const dir = tmp()
+        const cachePath = join(dir, 'registry.json')
+        const { writeFileSync } = await import('node:fs')
+        const entries = (version: string) => [
+            { name: 'io.github.example/wetter', title: 'Wetter', description: 'Liest Wetterdaten', version, repository: 'https://github.com/example/wetter', remotes: [{ type: 'streamable-http', url: 'https://mcp.example.com/wetter', auth: false }], packages: [], trust: 'community' },
+            { name: 'io.example/shell', title: 'Shell', description: 'Execute shell commands', version: 'latest', remotes: [{ type: 'streamable-http', url: 'https://mcp.example.com/shell', auth: false }], packages: [], trust: 'community' },
+        ]
+        writeFileSync(cachePath, JSON.stringify({ version: 1, fetchedAt: 1, complete: true, entries: entries('1.0.0') }))
+        const deps = depsFor(dir, { directoryCachePath: cachePath })
+        const clean = await requestConnect({ connectorId: 'io.github.example/wetter' }, deps)
+        expect((clean as any).card.beleg).toMatch(/zuerst nur lesend/)
+        const shell = await requestConnect({ connectorId: 'io.example/shell' }, deps)
+        expect((shell as any).card.beleg).toMatch(/jedes Werkzeug fragt/)
+        await pressJa(dir, (clean as any).card.id)
+        await pressJa(dir, (shell as any).card.id)
+        const wetter = getConnection('c-io-github-example-wetter', { dataDir: dir })!
+        expect(wetter).toMatchObject({ version: '1.0.0', pruefung: 'community', status: 'verbunden' })
+        expect(getConnection('c-io-example-shell', { dataDir: dir })).toMatchObject({ pruefung: 'unbekannt' })
+        await allowConnectionTool(wetter.id, 'set_alarm', deps)
+        // Same version: nothing changes.
+        expect(applyVersionsDrift(deps)).toEqual([])
+        writeFileSync(cachePath, JSON.stringify({ version: 1, fetchedAt: 2, complete: true, entries: entries('2.0.0') }))
+        expect(applyVersionsDrift(deps).map(item => item.neu)).toEqual(['2.0.0'])
+        const drifted = getConnection(wetter.id, { dataDir: dir })!
+        expect(drifted).toMatchObject({ pruefung: 'unbekannt', versionNeu: '2.0.0', erlaubteWerkzeuge: [] })
+        // Reported once; the owner can connect the new version again (new card).
+        expect(applyVersionsDrift(deps)).toEqual([])
+        const again = await requestConnect({ connectorId: 'io.github.example/wetter' }, deps)
+        expect(again.ok).toBe(true)
+        await pressJa(dir, (again as any).card.id)
+        expect(getConnection(wetter.id, { dataDir: dir })).toMatchObject({ version: '2.0.0', pruefung: 'community' })
+        expect(getConnection(wetter.id, { dataDir: dir })!.versionNeu).toBeUndefined()
     })
 })

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { getRelevantTools, matchesSkillKeyword, loadSkillPack, loadSkillPackTool } from './tool-router.js'
 
 describe('bounded capability recovery', () => {
+    it.each([
+        ['starte meine Test-VM', 'proxmox_vm'], ['mach einen Snapshot vor dem Update', 'proxmox_vm'],
+        ['verbinde dich mit Jellyfin', 'dienst_finden'], ['melde dich mit meinem GitHub-Zugang an', 'anmelden_mit_zugang'],
+    ])('2.88: offers the plain-word tool for „%s“', (request, tool) => {
+        expect(getRelevantTools(request).some(item => item.name === tool)).toBe(true)
+    })
     it.each(['Verfolge DHL 12345678', 'Prüfe 17TRACK AB123456789CD'])('exposes the dedicated parcel adapter for provider-only wording: %s', request => {
         expect(getRelevantTools(request).some(tool => tool.name === 'parcel_track')).toBe(true)
     })

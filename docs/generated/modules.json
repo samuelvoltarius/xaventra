@@ -1260,6 +1260,7 @@
         "./connector-catalog.js",
         "./connector-login.js",
         "./registry-directory.js",
+        "./registry-vetting.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -1318,6 +1319,7 @@
         "./connector-login.js",
         "./icon-cache.js",
         "./registry-directory.js",
+        "./registry-vetting.js",
         "node:fs",
         "node:path"
       ]
@@ -1388,6 +1390,13 @@
         "./connector-catalog.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/connections/registry-vetting.ts",
+      "imports": [
+        "./connector-catalog.js",
+        "./registry-directory.js"
       ]
     },
     {
@@ -2784,6 +2793,7 @@
         "./topic-room-store.js",
         "./voice-api.js",
         "./werkzeugkasten-view.js",
+        "./zugaenge-api.js",
         "express",
         "node:crypto",
         "node:fs",
@@ -2892,6 +2902,15 @@
       "imports": [
         "../install/toolbox.js",
         "./desktop-views.js"
+      ]
+    },
+    {
+      "module": "src/desktop/zugaenge-api.ts",
+      "imports": [
+        "../infra/proxmox-app-store.js",
+        "../infra/proxmox-setup.js",
+        "../secrets/credential-broker.js",
+        "express"
       ]
     },
     {
@@ -3789,10 +3808,40 @@
       "imports": []
     },
     {
+      "module": "src/infra/proxmox-app-store.ts",
+      "imports": [
+        "../connections/connection-store.js",
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/proxmox-chat.ts",
+      "imports": [
+        "./proxmox-command.js",
+        "./proxmox.js"
+      ]
+    },
+    {
       "module": "src/infra/proxmox-command.ts",
       "imports": [
         "../core/approval-cards.js",
         "./proxmox.js"
+      ]
+    },
+    {
+      "module": "src/infra/proxmox-setup.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/data-root.js",
+        "./proxmox-app-store.js",
+        "./proxmox.js",
+        "node:fs",
+        "node:net",
+        "node:path",
+        "node:tls"
       ]
     },
     {
@@ -5974,6 +6023,24 @@
       "imports": []
     },
     {
+      "module": "src/secrets/credential-broker.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/secrets/tresor-cards.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "./credential-broker.js"
+      ]
+    },
+    {
       "module": "src/security/assurance-cli.ts",
       "imports": [
         "./assurance-gate.js"
@@ -6317,6 +6384,7 @@
         "node:dgram",
         "node:net",
         "node:os",
+        "node:tls",
         "node:util"
       ]
     },
@@ -6464,6 +6532,7 @@
     {
       "module": "src/sensing/runtime.ts",
       "imports": [
+        "../infra/proxmox-app-store.js",
         "../infra/proxmox.js",
         "../runtime/service-runtime.js",
         "./accounts.js",
@@ -7012,6 +7081,7 @@
         "./ssh-tool.js",
         "./tavily-search.js",
         "./tool-result-quality.js",
+        "./verbinden-tools.js",
         "./vision-tool.js",
         "node:fs",
         "node:os",
@@ -7388,6 +7458,12 @@
         "./complete-registry.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/verbinden-tools.ts",
+      "imports": [
+        "./complete-registry.js"
       ]
     },
     {

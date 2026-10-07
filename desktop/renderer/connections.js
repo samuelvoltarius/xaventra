@@ -23,6 +23,17 @@
   const img = (h, src, label) => src ? `<img src="${h.attr(src)}" width="28" height="28" alt="" aria-hidden="true">` : `<span class="pill" aria-hidden="true">${h.esc(String(label || '?').slice(0, 2))}</span>`
   const where = (h, klasse) => klasse === 'cloud' ? '<span class="pill info">Cloud · nichts Privates</span>' : klasse === 'lokal' ? '<span class="pill good">lokal</span>' : ''
 
+  function stufePill(h, stufe) {
+    return stufe === 'unbekannt' ? '<span class="pill bad">unbekannt – fragt bei allem</span>' : '<span class="pill warn">nicht geprüft</span>'
+  }
+
+  // 2.88: found, but no checked connector → matching entries from the (checked) directory.
+  function directoryHints(h, item) {
+    const list = item.verzeichnis || []
+    if (!list.length || item.verbunden) return ''
+    return `<div class="row-sub">Passend im MCP-Verzeichnis: ${list.map(entry => `${h.esc(entry.title)} ${stufePill(h, entry.stufe)} <button class="link-button" data-conn-connect="${h.attr(entry.connectorId)}">Verbinden</button>${cardButtons(h, entry.connectorId)}`).join(' · ')}</div>`
+  }
+
   function cardButtons(h, connectorId) {
     const cardId = local.cards[connectorId]
     if (!cardId) return ''
@@ -51,7 +62,7 @@
     const items = data.gefunden || []
     const rows = items.map(item => `<div class="row"><div>${img(h, item.icon, item.title)}<div class="row-title">${h.esc(item.title)}</div>
       <div class="row-sub">${h.esc(item.fund)} · ${h.esc(item.wirkung)}${item.geraet?.dienste > 1 ? ` · ${Number(item.geraet.dienste)} Dienste` : ''}</div>${item.connectorId ? cardButtons(h, item.connectorId) : item.geraet ? cardButtons(h, `geraet:${item.geraet.id}`) : ''}
-      ${item.geraet?.verbinden === 'hue' && !item.verbunden ? '<div class="row-sub">Vor dem Ja die runde Taste an der Bridge drücken.</div>' : ''}</div>
+      ${item.geraet?.verbinden === 'hue' && !item.verbunden ? '<div class="row-sub">Vor dem Ja die runde Taste an der Bridge drücken.</div>' : ''}${directoryHints(h, item)}</div>
       <div class="row-side">${where(h, item.datenklasse)}${item.verbunden ? `<span class="pill good">${item.connectorId ? 'verbunden' : 'in Nutzung'}</span>`
         : item.connectorId ? `<button class="primary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button>` : deviceButtons(h, item)}</div></div>`).join('')
     return `<section class="section" aria-labelledby="conn-found"><div class="section-head"><h2 id="conn-found">${h.icon('eye')}Gefunden</h2><span class="section-note">selbst entdeckt – sie fragt deswegen nicht</span></div>
@@ -69,9 +80,11 @@
           : `<div class="toolbar"><button class="secondary" data-conn-connect="${h.attr(item.connectorId)}">Verbinden</button></div>`}
         ${cardButtons(h, item.connectorId)}</div>`).join('')}</article>`).join('')
     const results = local.results
-    const resultRows = results ? (results.length ? results.map(item => `<div class="row"><div>${img(h, local.icons[item.name] || item.iconData, item.title)}<div class="row-title">${h.esc(item.title)} <span class="pill warn">nicht geprüft</span></div>
-      <div class="row-sub">${h.esc(item.description || item.name)}${item.remotes?.length ? '' : ' · nur als Paket – wird nie automatisch installiert'}</div>${cardButtons(h, item.name)}</div>
-      <div class="row-side">${item.remotes?.length ? `<button class="secondary" data-conn-connect="${h.attr(item.name)}">Verbinden (nur lesen)</button>` : ''}</div></div>`).join('')
+    // 2.88: every hit carries Xaventra's own check (Stufe, Herausgeber, Version, Netz).
+    const resultRows = results ? (results.length ? results.map(item => `<div class="row"><div>${img(h, local.icons[item.name] || item.iconData, item.title)}<div class="row-title">${h.esc(item.title)} ${stufePill(h, item.pruefung?.stufe)}</div>
+      <div class="row-sub">${h.esc(item.description || item.name)}${item.remotes?.length ? '' : ' · nur als Paket – wird nie automatisch installiert'}</div>
+      ${item.pruefung ? `<div class="row-sub">Von ${h.esc(item.pruefung.herausgeber || '?')}${item.pruefung.version ? `, Version ${h.esc(item.pruefung.version)}` : ''}${(item.pruefung.gruende || []).length ? ` · ${h.esc(item.pruefung.gruende.join('; '))}` : ''}</div>` : ''}${cardButtons(h, item.name)}</div>
+      <div class="row-side">${item.remotes?.length ? `<button class="secondary" data-conn-connect="${h.attr(item.name)}">${item.pruefung?.stufe === 'unbekannt' ? 'Verbinden (fragt bei allem)' : 'Verbinden (nur lesen)'}</button>` : ''}</div></div>`).join('')
       : '<div class="section-body"><div class="empty-note">Nichts gefunden.</div></div>') : ''
     return `<section class="section" aria-labelledby="conn-possible"><div class="section-head"><h2 id="conn-possible">${h.icon('grid')}Möglich</h2><span class="section-note">geprüfter Katalog · lokal oder Cloud</span></div>
       <div class="tiles">${tiles}</div>
@@ -106,7 +119,7 @@
       <div class="head-actions">${local.at ? `<span class="stamp">Stand ${h.esc(new Date(local.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }))}</span>` : ''}<button class="icon-button" data-conn-refresh title="Aktualisieren" aria-label="Aktualisieren">${h.icon('refresh')}</button></div></header>`
     if (local.error && !local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body"><div class="empty-note">${h.icon('alert')}<span>${h.esc(local.error)}</span></div></div></div></div></div>`
     if (!local.data) return `<div class="page"><div class="page-inner">${head}<div class="section"><div class="section-body" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div></div></div></div>`
-    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${smartSection(h)}${connectedSection(h, local.data)}${window.XaventraTelefon ? window.XaventraTelefon.section(h) : ''}${possibleSection(h, local.data)}
+    return `<div class="page"><div class="page-inner">${head}${foundSection(h, local.data)}${smartSection(h)}${connectedSection(h, local.data)}${window.XaventraTelefon ? window.XaventraTelefon.section(h) : ''}${window.XaventraZugaenge ? window.XaventraZugaenge.section(h) : ''}${possibleSection(h, local.data)}
       <p class="section-note">Kommt die Anmeldung auf einem anderen Gerät zurück? <button class="link-button" data-conn-paste>Rückkehr-Adresse einfügen</button></p></div></div>`
   }
 
@@ -330,6 +343,7 @@
       await load(h, true)
     })
     window.XaventraTelefon?.mount(h)
+    window.XaventraZugaenge?.mount(h)
     void load(h)
   }
 

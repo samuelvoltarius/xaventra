@@ -1038,6 +1038,20 @@ async function runConnectionsPhase(): Promise<void> {
         const { refreshDirectoryIfDue } = await import('../connections/registry-directory.js')
         const refreshed = await refreshDirectoryIfDue({ isMain })
         if (refreshed?.ok) console.log(`[Autonomy] MCP-Verzeichnis: ${refreshed.entries} Einträge (${refreshed.complete ? 'vollständig' : 'Teil'})`)
+        // 2.88: version pin — a new directory version makes the connection strict again (every tool asks).
+        if (isMain && refreshed?.ok) {
+            const { applyVersionsDrift } = await import('../connections/connect-flow.js')
+            const drift = applyVersionsDrift()
+            if (drift.length) {
+                const { addThought } = await import('../planner/index.js')
+                for (const item of drift) addThought({
+                    source: 'verbindungen', kind: 'ereignis', severity: 'info', permission: 'selbst',
+                    title: `${item.title}: neue Version`.slice(0, 160),
+                    evidence: `${item.title} hat jetzt Version ${item.neu} (freigegeben war ${item.gepinnt}). Bis du es in „Verbindungen“ neu verbindest, fragt mich jedes Werkzeug davon.`.slice(0, 300),
+                    signature: `verbindung:version:${item.connectionId}:${item.neu}`.slice(0, 200),
+                })
+            }
+        }
     } catch (err) {
         console.debug(`[Autonomy] MCP-Verzeichnis non-critical error: ${err}`)
     }

@@ -95,6 +95,23 @@
       ]
     },
     {
+      "name": "anmelden_mit_zugang",
+      "category": "browser",
+      "description": "Füllt auf der gerade offenen Anmeldeseite im Browser Benutzername und Passwort aus dem Tresor aus (credential_id aus zugaenge_liste). Das Passwort sieht dabei niemand; die Seite muss für diesen Eintrag freigegeben sein (sonst zugang_freigabe_anfragen). Danach selbst auf „Anmelden“ klicken.",
+      "parameters": [
+        {
+          "name": "credential_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "requestText",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "auto_fix",
       "category": "system",
       "description": "Versucht automatisch Build-Fehler zu fixen (tsc errors parsen, LLM fix, verify)",
@@ -967,6 +984,30 @@
       "parameters": [
         {
           "name": "path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "dienst_finden",
+      "category": "other",
+      "description": "Sucht Dienste zum Verbinden, passend zum Wunsch des Owners („verbinde dich mit meinem Wetterdienst“): zuerst geprüfter Katalog, dann das offizielle MCP-Verzeichnis (zwischengespeichert, offline nutzbar). Jeder Treffer mit Kurzsatz und Prüfstufe (geprüft / nicht geprüft = zuerst nur lesend / unbekannt = jedes Werkzeug fragt). Verbindet nichts.",
+      "parameters": [
+        {
+          "name": "wunsch",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "dienst_verbinden",
+      "category": "other",
+      "description": "Legt EINE Karte „X verbinden?“ für einen Dienst aus dienst_finden an. Verbunden wird erst nach dem Ja des Owners; nicht geprüfte Dienste zuerst nur lesend, unbekannte fragen bei jedem Werkzeug. Pakete aus dem Verzeichnis werden nie installiert.",
+      "parameters": [
+        {
+          "name": "dienst",
           "type": "string",
           "required": true
         }
@@ -2546,6 +2587,33 @@
       ]
     },
     {
+      "name": "proxmox_vm",
+      "category": "system",
+      "description": "Proxmox im Gespräch: „status“ und „snapshots“ lesen; „starten“, „herunterfahren“ (sauber), „snapshot“ und „zuruecksetzen“ legen EINE Karte an — ausgeführt wird erst nach dem Ja, nur für VMs im Pool xaventra. Hart stoppen, Snapshots löschen, Migration gibt es nie.",
+      "parameters": [
+        {
+          "name": "aktion",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "vm",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "snapshot",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "requestText",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "pull_update",
       "category": "system",
       "description": "Kompatibilitätsname: In-place-Git-Updates sind gesperrt. Verwende check_updates und /update prepare mit exakter Release-ID.",
@@ -3527,6 +3595,29 @@
         },
         {
           "name": "content",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "zugaenge_liste",
+      "category": "security",
+      "description": "Zeigt die Einträge im Passwort-Tresor als Kurznamen (credential_id, z. B. „github-main“) mit den Diensten, für die der Owner sie freigegeben hat. Zeigt nie ein Passwort oder Token.",
+      "parameters": []
+    },
+    {
+      "name": "zugang_freigabe_anfragen",
+      "category": "security",
+      "description": "Fragt den Owner per Karte, ob ein Tresor-Eintrag auch für einen weiteren Dienst eingesetzt werden darf. Ändert nichts vor dem Ja. Passwörter ändern macht nur der Owner selbst.",
+      "parameters": [
+        {
+          "name": "credential_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "dienst",
           "type": "string",
           "required": true
         }

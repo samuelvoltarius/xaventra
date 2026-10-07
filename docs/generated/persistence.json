@@ -470,7 +470,11 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/infra/kubernetes-command.ts",
+      "owner": "src/infra/proxmox-app-store.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/infra/proxmox-setup.ts",
       "path": ".nova-data"
     },
     {
@@ -766,10 +770,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/mesh/mesh-git.test.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/mesh/mesh-llm-proxy.ts",
       "path": ".nova-data"
     },
@@ -806,19 +806,11 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/mesh/node-strengths.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/mesh/quorum-witness.ts",
       "path": ".nova-data"
     },
     {
       "owner": "src/mesh/relay-server.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/mesh/succession-runtime.test.ts",
       "path": ".nova-data"
     },
     {
@@ -875,6 +867,10 @@
     },
     {
       "owner": "src/runtime/mission-workspace.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/secrets/credential-broker.ts",
       "path": ".nova-data"
     },
     {
@@ -1178,18 +1174,6 @@
       "path": ".nova-data/memory/workflow-episodes.json"
     },
     {
-      "owner": "src/mesh/mesh-git.ts",
-      "path": ".nova-data/mesh-git"
-    },
-    {
-      "owner": "src/mesh/mesh-git.ts",
-      "path": ".nova-data/mesh-git/.isolation"
-    },
-    {
-      "owner": "src/mesh/mesh-git.ts",
-      "path": ".nova-data/mesh-git/.tmp"
-    },
-    {
       "owner": "src/mesh/mesh-identity.ts",
       "path": ".nova-data/mesh-identity"
     },
@@ -1316,10 +1300,6 @@
     {
       "owner": "src/core/soul.ts",
       "path": ".nova-data/soul.md"
-    },
-    {
-      "owner": "src/mesh/succession-runtime.ts",
-      "path": ".nova-data/succession"
     },
     {
       "owner": "src/thinking/idea-run.ts",

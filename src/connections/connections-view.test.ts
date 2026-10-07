@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { collectConnections, formatConnectionsText, listConnections, registerConnectionSource, unregisterConnectionSource, type ViewDeps } from './connections-view.js'
+import { collectConnections, formatConnectionsText, listConnections, registerConnectionSource, searchCommunity, unregisterConnectionSource, type ViewDeps } from './connections-view.js'
 import { registerConnectionsApi } from './connections-api.js'
 import { saveConnection, writeConnectionSecrets, type ConnectionRecord } from './connection-store.js'
 import { detectDeterministicCommand } from '../core/deterministic-query.js'
@@ -48,6 +48,21 @@ describe('Verbindungen: Gefunden / Möglich / Verbunden (2.85 Paket A, Punkt 6)'
         ] }))
         expect(view.gefunden.find(item => item.title === 'n8n')).toMatchObject({ connectorId: 'n8n', fund: 'im Netz 192.168.1.40:5678', datenklasse: 'lokal' })
         expect(view.gefunden.find(item => item.title === 'Jellyfin')!.connectorId).toBeUndefined()
+    })
+
+    it('2.88: a found service without checked connector gets matching directory suggestions (checked, offline from cache)', async () => {
+        const dir = tmp()
+        const { writeFileSync } = await import('node:fs')
+        const cachePath = join(dir, 'registry.json')
+        writeFileSync(cachePath, JSON.stringify({ version: 1, fetchedAt: 1, complete: true, entries: [
+            { name: 'io.github.example/jellyfin-mcp', title: 'Jellyfin MCP', description: 'Liest Filme und Serien aus Jellyfin', version: '1.0.0', repository: 'https://github.com/example/jellyfin-mcp', remotes: [{ type: 'streamable-http', url: 'https://mcp.example.com/jellyfin', auth: true }], packages: [], trust: 'community' },
+            { name: 'io.example/wetter', title: 'Wetter', description: 'Wetter', version: '1.0.0', remotes: [], packages: [], trust: 'community' },
+        ] }))
+        const view = await collectConnections(deps(dir, { directoryCachePath: cachePath, devices: () => [{ type: 'jellyfin', host: '192.0.2.41', port: 8096, status: 'gefunden' }] }))
+        const jelly = view.gefunden.find(item => item.title === 'Jellyfin')!
+        expect(jelly.verzeichnis).toEqual([expect.objectContaining({ connectorId: 'io.github.example/jellyfin-mcp', stufe: 'community', verbindbar: true })])
+        const results = searchCommunity('jellyfin', { directoryCachePath: cachePath })
+        expect(results[0].pruefung).toMatchObject({ stufe: 'community', herausgeber: 'github.com/example', brauchtZugang: true })
     })
 
     it('other packages dock their finds (KI-Modelle, Suche/Hilfsdienste) without scanning here', async () => {

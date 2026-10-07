@@ -47,6 +47,7 @@ import { onboardingBootstrap, registerOnboardingClaim, registerOnboardingRoutes 
 import { registerLlmConnectionsApi } from './llm-connections-api.js'
 import { registerConnectionsApi } from '../connections/connections-api.js'
 import { registerTelefonApi } from './telefon-api.js'
+import { registerZugaengeApi } from './zugaenge-api.js'
 import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
 import { registerGuidedApi } from '../guided/guided-api.js'
@@ -600,6 +601,8 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
     registerConnectionsApi(app, { ownerOnly })
     // 2.87 Paket P: Verbindungen → Telefon (SIP-Zugang, Telefonanlage), owner only.
     registerTelefonApi(app, { ownerOnly, resolveHandler: resolveMessageHandler })
+    // 2.88: Verbindungen → Proxmox (one token, fingerprint card) and Passwort-Tresor (ids only), owner only.
+    registerZugaengeApi(app, { ownerOnly })
     // 2.86 Paket M „Geführt“: Einrichtungs-Checkliste, Beispielsätze, Tipp, „Ich komm nicht weiter“.
     registerGuidedApi(app, { ownerOnly, owner: async req => `desktop:${(await desktopCardOwnerIds())[0] || desktopExecutionPrincipal(principal(req))}` })
     registerSmartAccessApi(app, { ownerOnly, authoritative: desktopControlPlaneAuthoritative, root: getNovaDataDir,

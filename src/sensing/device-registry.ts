@@ -22,6 +22,8 @@ import type { HardwareIdentity } from './hardware-recognition.js'
 export type DeviceType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu' | 'homeassistant'
     // 2.85 Paket A: self-hosted services with an MCP connector (found quietly, connected via „Verbindungen“).
     | 'n8n' | 'paperless' | 'immich' | 'jellyfin' | 'nextcloud' | 'networkservice' | 'networkdevice'
+    // 2.88: Proxmox VE (port 8006, own CA) — connected in „Verbindungen → Proxmox“ with one token.
+    | 'proxmox'
 export type DeviceStatus = 'gefunden' | 'eingerichtet' | 'abgelehnt' | 'aus'
 
 export interface DeviceRecord {
@@ -69,6 +71,7 @@ export const DEVICE_LABEL: Record<DeviceType, string> = {
     nextcloud: 'Nextcloud (Dateien)',
     networkservice: 'Netzwerkdienst (Typ und Steuerbarkeit ungeprüft)',
     networkdevice: 'LAN-Gerät (Nachbartabelle, Online-Status und Steuerbarkeit ungeprüft)',
+    proxmox: 'Proxmox VE (VMs)',
 }
 
 export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'port'>): string {
@@ -165,7 +168,7 @@ export function setDeviceStatus(dataDir: string, id: string, status: 'abgelehnt'
  * 2.85 Paket A: services that are only listed under „Gefunden“ in „Verbindungen“ —
  * never auto-monitored, never asked about (Bedarfsregel: finding alone never asks).
  */
-export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud', 'networkservice', 'networkdevice'])) as ReadonlySet<DeviceType>
+export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud', 'networkservice', 'networkdevice', 'proxmox'])) as ReadonlySet<DeviceType>
 
 /** Types a read-only adapter can watch without any credential. */
 export const AUTO_MONITOR_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['moonraker'])) as ReadonlySet<DeviceType>

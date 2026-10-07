@@ -4,11 +4,13 @@
  * - Ziele nur aus ./net-scope.ts (eigene private Subnetze, max /24, Tailnet nur
  *   mit eigenem Tailnet-Interface). Jede Adresse — auch aus mDNS — passiert
  *   `scanTargetAllowed` direkt vor dem Verbindungsaufbau.
- * - Feste 19-Port-Liste: SSH/HTTPS/SMB/RDP, IPP/JetDirect, RTSP/MQTT,
+ * - Feste 20-Port-Liste: SSH/HTTPS/SMB/RDP, IPP/JetDirect, RTSP/MQTT,
  *   Moonraker 7125, OctoPrint 80/5000, PrusaLink 80,
  *   MQTT 8883 (nur TCP-Connect, kein MQTT-Login oder Bambu-Nachweis), Home Assistant 8123;
  *   2.85: n8n 5678, Paperless-ngx 8000, Immich 2283, Jellyfin 8096,
  *   Nextcloud 80 (/status.php) — still gemeldet, nur unter „Verbindungen“.
+ *   2.88: Proxmox VE 8006 — nur am Aussteller des Zertifikats (TLS-Handshake,
+ *   nichts gesendet); die Adresse schlägt „Verbindungen → Proxmox“ vor.
  * - Erkennung über öffentliche, unauthentifizierte GET-Pfade; keine Logins,
  *   keine API-Keys, keine Schreibzugriffe.
  * - Rate-Limit (Verbindungen/s), begrenzte Parallelität, harte Gesamtzeit.
@@ -18,6 +20,7 @@
  */
 
 import { Socket } from 'node:net'
+import { connect as tlsConnect } from 'node:tls'
 import { matterTargetAllowed, matterInterfaceNames, localMatterRoutes } from './matter-scope.js'
 import { networkInterfaces } from 'node:os'
 import { createSocket } from 'node:dgram'
@@ -32,14 +35,17 @@ import { cleanText } from './ports.js'
 import type { SsdpDescription } from './ssdp.js'
 import { identifyHardware } from './hardware-recognition.js'
 
-export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096])
+export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096, 8006])
 
 export interface HttpProbeResult { status: number; server?: string; body: string }
+export interface TlsCertInfo { issuer?: string; subject?: string }
 
 export interface DiscoveryDeps {
     interfaces?: InterfaceMap
     tcpProbe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>
     httpProbe?: (url: string, timeoutMs: number, signal?: AbortSignal) => Promise<HttpProbeResult | null>
+    /** 2.88: certificate issuer/subject of a TLS port (handshake only, nothing sent). */
+    tlsProbe?: (host: string, port: number, timeoutMs: number) => Promise<TlsCertInfo | null>
     mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }>>
     ssdpBrowse?: (timeoutMs: number) => Promise<SsdpDescription[]>
     tuyaBrowse?: (timeoutMs: number) => Promise<DeviceCandidate[]>
@@ -116,9 +122,32 @@ export async function realHttpProbe(url: string, timeoutMs: number, signal?: Abo
     } catch { return null }
 }
 
+/** 2.88: TLS handshake only — read issuer/subject of the certificate, send nothing, close. */
+export function realTlsProbe(host: string, port: number, timeoutMs: number): Promise<TlsCertInfo | null> {
+    return new Promise(resolve => {
+        let done = false
+        // Only to read the (usually self-signed) certificate; no data is written.
+        const socket = tlsConnect({ host, port, rejectUnauthorized: false, ALPNProtocols: ['http/1.1'] })
+        const finish = (value: TlsCertInfo | null) => { if (!done) { done = true; socket.destroy(); resolve(value) } }
+        socket.setTimeout(timeoutMs, () => finish(null))
+        socket.once('secureConnect', () => {
+            const cert = socket.getPeerCertificate()
+            const name = (part: any) => part ? [part.O, part.OU, part.CN].flat().filter(Boolean).join(' / ').slice(0, 120) : undefined
+            finish({ issuer: name(cert?.issuer), subject: name(cert?.subject) })
+        })
+        socket.once('error', () => finish(null))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Fingerprints (pure)
 // ---------------------------------------------------------------------------
+
+/** 2.88: Proxmox VE ships a certificate issued by its own cluster CA. */
+export function identifyTls(port: number, cert: TlsCertInfo | null): DeviceType | null {
+    if (!cert || port !== 8006) return null
+    return /PVE Cluster Manager CA|Proxmox Virtual Environment/i.test(`${cert.issuer || ''} ${cert.subject || ''}`) ? 'proxmox' : null
+}
 
 export function identifyHttp(port: number, path: string, result: HttpProbeResult | null): DeviceType | null {
     if (!result) return null
@@ -255,6 +284,7 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const sleep = deps.sleep || ((ms: number) => new Promise<void>(resolve => { const t = setTimeout(resolve, ms); t.unref?.() }))
     const tcpProbe = deps.tcpProbe || realTcpProbe
     const httpProbe = deps.httpProbe || realHttpProbe
+    const tlsProbe = deps.tlsProbe || realTlsProbe
     const startedAt = now()
     const deadline = startedAt + options.deadlineMs
     const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
@@ -340,6 +370,16 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
             if (!open) { progress.set(hostIndex, portIndex + 1); continue }
             if (port === 8883) {
                 add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'TLS/MQTT-Port offen; kein Beleg für einen Bambu-Drucker' } })
+                progress.set(hostIndex, portIndex + 1)
+                continue
+            }
+            if (port === 8006) {
+                const cert = await limiter.run(() => tlsProbe(host, port, probeTimeout))
+                if (cert === undefined) return
+                const type = identifyTls(port, cert ?? null)
+                add(type
+                    ? { type, host, port, via: 'tcp', evidence: { quelle: 'TLS-Zertifikat', port, aussteller: cleanText(cert?.issuer || '', 80) } }
+                    : { type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'Erreichbar, keine bestätigte Dienstkennung oder Steuerfreigabe' } })
                 progress.set(hostIndex, portIndex + 1)
                 continue
             }

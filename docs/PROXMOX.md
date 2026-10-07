@@ -82,7 +82,29 @@ Cloud-Images, ohne Zeitzone/docker-Gruppe).
 
 Empfänger begrenzen das Feld (`sanitizeNodeProfile`).
 
-## Einrichtung
+## Einrichtung ohne Config (2.88)
+
+Der einfache Weg — keine Config-Datei, keine Umgebungsvariable:
+
+1. In Proxmox einen API-Token anlegen (die App zeigt die 3 Schritte unter
+   „Verbindungen → Proxmox“: Pool `xaventra`, Token mit „Privilegien trennen“,
+   Rollen PVEAuditor auf `/` und PVEVMAdmin auf `/pool/xaventra`).
+2. In der App Token einfügen. Die Adresse schlägt die Netzwerkerkennung vor
+   (Port 8006, erkannt am Zertifikat der Proxmox-CA).
+3. Xaventra liest den TLS-Fingerabdruck selbst (nur Handshake, nichts
+   gesendet) und zeigt Anfang und Ende auf **einer** Karte. Nach dem Ja ist
+   Lesen und Steuern im Pool sofort aktiv — ohne Neustart. Fehlt der Pool,
+   kommt eine Karte mit den Schritten; Xaventra legt ihn nicht selbst an.
+
+Der Token liegt in `<data>/secrets/connections/c-proxmox-adapter.json`
+(0600), Adresse und Fingerabdruck in `<data>/connections/proxmox.json`.
+`infra.proxmox` aus der Config und `XAVENTRA_PVE_TOKEN` funktionieren weiter
+und haben Vorrang; `infra.proxmox.enabled: false` schaltet auch den App-Weg ab.
+Steuern geht danach im Gespräch („starte meine Test-VM“, „mach einen Snapshot
+vor dem Update“, Werkzeug `proxmox_vm`) — jede Änderung bleibt eine Karte, die
+Regeln oben gelten unverändert.
+
+## Einrichtung über Config (Fachweg)
 
 ### 1. Rechte auf dem Proxmox-Host
 

@@ -52,6 +52,33 @@ describe('Desktop-Ansicht „Verbindungen“ (2.85 Paket A, Punkt 6)', () => {
         })
     })
 
+    it('2.88: found services show checked directory matches; Proxmox and Tresor are wired as their own file', () => {
+        expect(DASHBOARD_UI_FILES).toContain('zugaenge.js')
+        expect(file('src/dashboard/server.ts')).toContain(`'zugaenge.js': 'text/javascript; charset=utf-8'`)
+        const html = file('desktop/renderer/index.html')
+        expect(html.indexOf('zugaenge.js')).toBeGreaterThan(0)
+        expect(html.indexOf('zugaenge.js')).toBeLessThan(html.indexOf('connections.js'))
+        const sandbox: any = { window: {}, document: {}, Date, Number, String, Object, Promise, encodeURIComponent, URLSearchParams }
+        runInNewContext(file('desktop/renderer/connections.js'), sandbox)
+        const ui = sandbox.window.XaventraConnections
+        const esc = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' } as any)[char])
+        const h = { esc, attr: esc, icon: () => '', toast: () => undefined, fail: () => undefined, rerender: () => undefined, api: {} }
+        const data = {
+            gefunden: [{ id: 'geraet:jellyfin:192.0.2.41:8096', title: 'Jellyfin', fund: 'im Netz 192.0.2.41:8096', wirkung: 'gefunden', verbunden: false, icon: null,
+                verzeichnis: [{ connectorId: 'io.github.example/jellyfin-mcp', title: 'Jellyfin MCP', satz: 'Filme', stufe: 'community', verbindbar: true, icon: null }, { connectorId: 'io.example/jelly-shell', title: 'Jelly Shell', satz: 'x', stufe: 'unbekannt', verbindbar: true, icon: null }] }],
+            moeglich: { gruppen: [], verzeichnis: { anzahl: 2 } }, verbunden: [],
+        }
+        let rendered = ''
+        sandbox.document.querySelector = () => ({ querySelector: () => null, querySelectorAll: () => [] })
+        return new Promise<void>(resolve => {
+            ui.mount({ ...h, api: { get: async () => data }, rerender: () => { rendered = ui.view(h); resolve() } })
+        }).then(() => {
+            expect(rendered).toContain('Passend im MCP-Verzeichnis: Jellyfin MCP')
+            expect(rendered).toContain('data-conn-connect="io.github.example/jellyfin-mcp"')
+            expect(rendered).toContain('unbekannt – fragt bei allem')
+        })
+    })
+
     it('Owner-Entscheidung 02.10.: Werkzeugkasten und Verbindungen stehen in der Hauptleiste, nicht unter „Mehr“', () => {
         const app = file('desktop/renderer/app.js')
         const block = (name: string) => {

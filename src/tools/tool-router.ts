@@ -390,6 +390,10 @@ export function getRelevantTools(
     const liveTools = mentionsMesh(primaryMessage) ? ['mesh_status', 'mesh_nodes', 'mesh_strengths'] : []
     if (mentionsEnvironment(primaryMessage)) liveTools.push('environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes')
     if (/\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(primaryMessage)) liveTools.push('parcel_track')
+    // 2.88: plain words instead of slash commands (VMs, connecting services, the password vault).
+    if (/\b(proxmox|vms?|snapshots?|virtuelle\w*)\b|-vm\b/i.test(primaryMessage)) liveTools.push('proxmox_vm')
+    if (/\b(verbind\w*|anbind\w*|connect\w*)\b/i.test(primaryMessage)) liveTools.push('dienst_finden', 'dienst_verbinden')
+    if (/\b(passw(?:o|ö)rt\w*|zug(?:a|ä)ng\w*|tresor|anmeld\w*|einlogg\w*|login)\b|melde dich/i.test(primaryMessage)) liveTools.push('zugaenge_liste', 'anmelden_mit_zugang', 'zugang_freigabe_anfragen')
     if (containsTailnetUrl(primaryMessage)) liveTools.push('mesh_inspect_url', 'mesh_services')
     if (primaryIntent.kind === 'screenshot') liveTools.push('desktop_screenshot')
     for (const name of liveTools) includedToolNames.add(name)

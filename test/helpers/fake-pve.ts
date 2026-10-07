@@ -19,7 +19,7 @@ export interface FakeGuest {
 
 const G = 1024 ** 3
 
-export function createFakePve(options: { guests?: FakeGuest[]; pool?: number[]; snapshots?: Record<number, string[]>; nodeMem?: [number, number]; taskPolls?: number; exitstatus?: string; nextid?: number } = {}) {
+export function createFakePve(options: { guests?: FakeGuest[]; pool?: number[]; snapshots?: Record<number, string[]>; nodeMem?: [number, number]; taskPolls?: number; exitstatus?: string; nextid?: number; noPool?: boolean } = {}) {
     const guests: FakeGuest[] = options.guests || [
         { vmid: 104, name: 'fremd-vm', type: 'qemu', status: 'running', mac: '02:00:00:00:01:04' },
         { vmid: 110, name: 'xaventra-lab', type: 'qemu', status: 'running', mac: '02:00:00:00:01:10', tags: 'xaventra-lab', protection: 1 },
@@ -50,6 +50,7 @@ export function createFakePve(options: { guests?: FakeGuest[]; pool?: number[]; 
         }
         if (method === 'GET' && path === '/cluster/nextid') return respond(String(options.nextid ?? 160))
         if (method === 'GET' && path === '/pools?poolid=xaventra') {
+            if (options.noPool) return respond([])
             return respond([{ poolid: 'xaventra', members: guests.filter(g => pool.has(g.vmid)).map(g => ({ vmid: g.vmid, type: g.type, node: FAKE_NODE, id: `${g.type}/${g.vmid}` })) }])
         }
         let match = /^\/nodes\/pve1\/(qemu|lxc)\/(\d+)\/config$/.exec(path)

@@ -596,6 +596,21 @@ export class ProxmoxClient {
         return new Set(members.filter((m: any) => m?.type === 'qemu' || m?.type === 'lxc').map((m: any) => Number(m.vmid)).filter(isValidVmid))
     }
 
+    /**
+     * 2.88: does the pool exist (and can this token see it)? `false` = missing; a
+     * missing right (403) is reported as an error, not as „missing“.
+     */
+    async poolExists(): Promise<boolean> {
+        let data: any
+        try { data = await this.call({ method: 'GET', path: `/pools?poolid=${encodeURIComponent(this.config.pool)}` }) } catch (error) {
+            const message = String((error as Error)?.message || error)
+            if (/\(403\)|401/.test(message)) throw error
+            return false
+        }
+        const list = Array.isArray(data) ? data : data ? [data] : []
+        return list.some((item: any) => item?.poolid === this.config.pool)
+    }
+
     async listSnapshots(guest: Pick<ProxmoxGuest, 'vmid' | 'node' | 'type'>): Promise<ProxmoxSnapshot[]> {
         const data = await this.call({ method: 'GET', path: `${guestPath(guest)}/snapshot` })
         return (Array.isArray(data) ? data : []).filter((item: any) => item?.name && item.name !== 'current').slice(0, 100).map((item: any) => ({
@@ -851,13 +866,41 @@ export function readProxmoxRawConfig(): unknown {
 
 export type ProxmoxRuntime = { ok: true; client: ProxmoxClient; config: ProxmoxConfig } | { ok: false; reason: string }
 
-export async function loadProxmoxRuntime(options: { rawConfig?: unknown; env?: NodeJS.ProcessEnv; transport?: ProxmoxTransport; log?: (line: string) => void; sleep?: (ms: number) => Promise<void> } = {}): Promise<ProxmoxRuntime> {
-    const raw = options.rawConfig === undefined ? readProxmoxRawConfig() : options.rawConfig
+/** 2.88: what the owner set up in the app (confirmed fingerprint + token in the 0600 secrets file). */
+export type ProxmoxAppSource = () => { url: string; fingerprint: string; pool: string; token: string } | null
+
+/**
+ * The effective config: `infra.proxmox` from the config file, or — when that is
+ * not switched on and not explicitly off (`enabled: false`) — the app setup with
+ * a fingerprint the owner confirmed. Limits/create settings of the file still apply.
+ */
+export function effectiveProxmoxConfig(raw: unknown, app: ProxmoxAppSource | null = null): ProxmoxConfig {
     const config = parseProxmoxConfig(raw)
+    if (config.enabled) return config
+    const explicitOff = raw && typeof raw === 'object' && (raw as Record<string, unknown>).enabled === false
+    const setup = !explicitOff && app ? app() : null
+    if (!setup) return config
+    const base = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    return parseProxmoxConfig({ ...base, enabled: true, url: setup.url, fingerprint: setup.fingerprint, pool: setup.pool })
+}
+
+async function defaultAppSource(): Promise<ProxmoxAppSource> {
+    const { confirmedProxmoxApp } = await import('./proxmox-app-store.js')
+    return () => confirmedProxmoxApp()
+}
+
+export async function loadProxmoxRuntime(options: { rawConfig?: unknown; env?: NodeJS.ProcessEnv; transport?: ProxmoxTransport; log?: (line: string) => void; sleep?: (ms: number) => Promise<void>; app?: ProxmoxAppSource | null } = {}): Promise<ProxmoxRuntime> {
+    const raw = options.rawConfig === undefined ? readProxmoxRawConfig() : options.rawConfig
+    // 2.88: no restart needed — the app setup is read again on every call.
+    const app = options.app === undefined ? await defaultAppSource() : options.app
+    const config = effectiveProxmoxConfig(raw, app)
     if (!config.enabled) return { ok: false, reason: config.reason || 'Proxmox aus' }
     const env = options.env || process.env
-    if (!env[PVE_TOKEN_ENV]) return { ok: false, reason: `${PVE_TOKEN_ENV} ist nicht gesetzt` }
-    const token = parseProxmoxToken(env[PVE_TOKEN_ENV])
+    // The env token wins (existing installs); otherwise the token the owner entered in the app.
+    const appToken = app ? app()?.token : undefined
+    const tokenValue = env[PVE_TOKEN_ENV] || appToken
+    if (!tokenValue) return { ok: false, reason: `${PVE_TOKEN_ENV} ist nicht gesetzt` }
+    const token = parseProxmoxToken(tokenValue)
     if (!token) return { ok: false, reason: `${PVE_TOKEN_ENV} hat nicht das Format USER@REALM!TOKENID=SECRET (Wert wird nicht angezeigt)` }
     return { ok: true, config, client: new ProxmoxClient({ config, token, transport: options.transport, log: options.log, sleep: options.sleep }) }
 }
