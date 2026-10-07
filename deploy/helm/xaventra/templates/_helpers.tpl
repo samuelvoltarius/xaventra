@@ -42,13 +42,21 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{/* Downward API + chart facts for the in-cluster detection: dict "root" $ "workload" <name> */}}
+{{/* Version the readiness probe expects (empty = no comparison): dict "root" $ "image" <map> */}}
+{{- define "xaventra.expectedVersion" -}}
+{{- $img := .root.Values.image -}}
+{{- if $img.version -}}
+{{- $img.version -}}
+{{- else if not (default $img.digest .image.digest) -}}
+{{- default (default .root.Chart.AppVersion $img.tag) .image.tag -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Downward API + chart facts for the in-cluster detection. Pod/node first:
+     NOVA_NODE_ID may reference them with $(...).
+     dict "root" $ "workload" <name> "nodeId" <value with $(VARS)> */}}
 {{- define "xaventra.podEnv" -}}
 - name: XAVENTRA_POD_NAME
-  valueFrom:
-    fieldRef:
-      fieldPath: metadata.name
-- name: NOVA_NODE_ID
   valueFrom:
     fieldRef:
       fieldPath: metadata.name
@@ -60,6 +68,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   valueFrom:
     fieldRef:
       fieldPath: spec.nodeName
+- name: NOVA_NODE_ID
+  value: {{ .nodeId | quote }}
 - name: XAVENTRA_K8S_WORKLOAD
   value: {{ .workload | quote }}
 - name: XAVENTRA_K8S_RELEASE
@@ -92,7 +102,27 @@ exec:
     - {{ printf "fetch('http://127.0.0.1:%v/v1/health').then(function(r){process.exit(r.ok?0:1)},function(){process.exit(1)})" . | quote }}
 {{- end -}}
 
-{{/* Node placement: dict "placement" <map> "affinity" <map> "tolerations" <list> "wan" <bool> */}}
+{{/* Worker readiness like the Docker worker swap: authenticated GET /v1/status on
+     loopback, version must equal XAVENTRA_EXPECTED_VERSION when that is set.
+     The token stays inside the container (env from the Secret). Arg: port */}}
+{{- define "xaventra.statusProbe" -}}
+exec:
+  command:
+    - node
+    - -e
+    - {{ printf "var t=process.env.NOVA_API_TOKEN,v=process.env.XAVENTRA_EXPECTED_VERSION;fetch('http://127.0.0.1:%v/v1/status',{headers:t?{Authorization:'Bearer '+t}:{},signal:AbortSignal.timeout(6000)}).then(function(r){return r.ok?r.json():Promise.reject(r.status)}).then(function(j){process.exit(!v||(j&&j.version===v)?0:1)},function(){process.exit(1)})" . | quote }}
+{{- end -}}
+
+{{/* Split-brain guard: fails when one of the ports answers on the node's own
+     address (status.hostIP) — e.g. an old Docker worker with host network.
+     It cannot see listeners bound only to the host's loopback; the node labels
+     stay the main protection (docs/KUBERNETES.md). */}}
+{{- define "xaventra.hostPortGuardScript" -}}
+var net=require('net'),h=process.env.XAVENTRA_HOST_IP,ports=String(process.env.XAVENTRA_GUARD_PORTS||'').split(',').filter(Boolean).map(Number),busy=[],left=ports.length;function fin(){if(--left>0)return;if(busy.length){console.error('Xaventra: Port '+busy.join(',')+' auf diesem Knoten ist belegt - laeuft hier noch ein Docker-Worker? Start verweigert (Split-Brain-Schutz). Erst den Docker-Worker stoppen, dann neu starten.');process.exit(1)}console.log('Xaventra: Knoten frei ('+ports.join(',')+')');process.exit(0)}if(!h||!left){console.error('Xaventra: Knoten-Adresse oder Ports fehlen - Start verweigert');process.exit(1)}ports.forEach(function(p){var done=false,s=net.connect({host:h,port:p});function end(b){if(done)return;done=true;if(b)busy.push(p);s.destroy();fin()}s.setTimeout(2000,function(){end(false)});s.on('connect',function(){end(true)});s.on('error',function(){end(false)})})
+{{- end -}}
+
+{{/* Node placement for the optional in-cluster Main:
+     dict "placement" <map> "affinity" <map> "tolerations" <list> "wan" <bool> */}}
 {{- define "xaventra.placement" -}}
 {{- if .placement.require }}
 nodeSelector:
@@ -121,16 +151,24 @@ tolerations:
   {{- toYaml .tolerations | nindent 2 }}
   {{- end }}
   {{- if .wan }}
-  - key: node.kubernetes.io/unreachable
-    operator: Exists
-    effect: NoExecute
-    tolerationSeconds: 900
-  - key: node.kubernetes.io/not-ready
-    operator: Exists
-    effect: NoExecute
-    tolerationSeconds: 900
+  {{- include "xaventra.wanTolerations" . | nindent 2 }}
   {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/* WAN taint + generous unreachable/not-ready tolerations (15 min). */}}
+{{- define "xaventra.wanTolerations" -}}
+- key: xaventra.ai/wan
+  operator: Exists
+  effect: PreferNoSchedule
+- key: node.kubernetes.io/unreachable
+  operator: Exists
+  effect: NoExecute
+  tolerationSeconds: 900
+- key: node.kubernetes.io/not-ready
+  operator: Exists
+  effect: NoExecute
+  tolerationSeconds: 900
 {{- end -}}
 
 {{/* Volume source of xaventra.config.json */}}

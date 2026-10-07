@@ -4,8 +4,12 @@
 # WAS ausgeführt wird (Modell, Werkzeug, Daten, Freigabe). Die Main-Führung
 # bestimmen ausschließlich Xaventras eigene Lease, Witness-Epoche und Fencing.
 #
-# Never put secrets into this file. API keys, tokens and mesh keys come from
-# Secrets you create yourself (kubectl, External Secrets Operator, Vault, ...).
+# Standard: NUR Worker im Cluster. Die Main läuft außerhalb (nativ, z. B. auf dem
+# GPU-Rechner); die Worker verbinden sich von sich aus zu ihr.
+#
+# Never put secrets or topology (addresses, host names) into this file. API keys,
+# tokens, mesh keys and the coordination CA come from Secrets you create
+# yourself; real addresses belong into a PRIVATE values file.
 
 nameOverride: ""
 fullnameOverride: ""
@@ -15,56 +19,218 @@ image:
   # Empty = Chart appVersion. A release digest (sha256:...) wins over the tag.
   tag: ""
   digest: ""
+  # Version the readiness probe expects from GET /v1/status. Empty: the tag (or
+  # appVersion). With a digest and no version: no version comparison.
+  version: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
-# xaventra.config.json for Main and workers (the same file on every node).
+# xaventra.config.json of the workers.
 config:
   # Secret with key xaventra.config.json — use this when the file holds anything secret.
   existingSecret: ""
   # ConfigMap with key xaventra.config.json.
   existingConfigMap: ""
+  # true: keep the xaventra.config.json that already lies in the node's /runtime
+  # (a migrated Docker worker). Nothing is mounted over it. Check listenHost first:
+  # a Tailscale address of the host does not exist inside the pod.
+  fromRuntime: false
   # Otherwise this NON-SECRET object is rendered into a ConfigMap as JSON.
   # Mesh peers carry only PUBLIC keys. Tokens/API keys belong into secrets.existingSecret.
   values:
     mesh:
-      mode: direct
       direct:
         enabled: true
+        # Inside the pod; reachable from nobody but the pod itself (no hostNetwork,
+        # no Service, NetworkPolicy denies ingress). The worker dials the Main.
         listenHost: "0.0.0.0"
         port: 9091
-        # Pod-to-pod traffic is not Tailscale/TLS. Envelopes stay signed, the
-        # NetworkPolicies below limit who can connect, and screen captures keep
-        # requiring an encrypted path. Prefer a CNI with transparent encryption.
-        allowInsecureLan: true
-        # Add the Main's public key here (and on the Main: one nodeIdPrefix entry per worker workload).
+        allowInsecureLan: false
         peers: []
-    dashboard:
-      enabled: true
-      host: "0.0.0.0"
-      port: 3011
-      publicHosts: []
     server:
       enabled: true
-      host: "0.0.0.0"
+      # Loopback inside the pod: the readiness probe asks GET /v1/status here.
+      host: "127.0.0.1"
       port: 18789
 
 secrets:
-  # Secret with environment variables (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, NOVA_API_TOKEN, ...).
-  # Backend is exchangeable: plain kubectl, External Secrets Operator or Vault Agent
-  # only have to produce a Secret with this name (docs/KUBERNETES.md).
+  # Secret with environment variables (NOVA_API_TOKEN, NOVA_MESH_SUPABASE_URL,
+  # NOVA_MESH_SUPABASE_KEY, LLM keys, ...). Created by pipe, never shown
+  # (docs/KUBERNETES.md). The chart's worker invariants (NOVA_NODE_ONLY,
+  # NOVA_NODE_ID, NOVA_MAIN_ELIGIBLE, ...) always win over values in it.
   existingSecret: ""
+
+# CA of the coordination service (e.g. a self-hosted database behind your own CA).
+coordinationCA:
+  # Secret name only; the key below holds the PEM. Empty = nothing mounted.
+  existingSecret: ""
+  key: ca.crt
+  # Same path as the Docker workers, so an env value pointing there keeps working.
+  mountPath: /run/secrets/coordination-ca.crt
+
+# The Main outside the cluster. Leave empty when the worker config (or the
+# coordination service) already knows it. Values here are topology: set them
+# in a PRIVATE values file, never in Git.
+externalMain:
+  nodeId: ""
+  # ws://<tailnet-address>:9091 or wss://... (only Tailscale/TLS paths are accepted).
+  url: ""
+  # PUBLIC key of the Main (PEM). Never a private key.
+  publicKey: ""
+  roles:
+    - system
+    - worker
 
 mesh:
   directPort: 9091
   # NOVA_FENCING_MODE: observe | enforce
   fencingMode: observe
 
-# The Main: exactly one active instance.
+# Where workers may run. Kubernetes never decides this alone:
+# - only nodes with <label>=true (the owner sets it, node by node);
+# - never nodes with <excludeLabel> (mark nodes that still run a Docker worker);
+# - before start an init check refuses to run when a mesh/REST port already
+#   answers on the node's own address (an old Docker worker with host network).
+workerNodes:
+  label: xaventra.ai/worker
+  excludeLabel: xaventra.ai/docker-worker
+  hostPortGuard:
+    enabled: true
+    ports:
+      - 9091
+      - 18789
+  # Every runtimeHostPath must lie below this fixed directory.
+  runtimeRoot: /var/lib/xaventra
+
+# Worker workloads. Each one is a DaemonSet: at most ONE pod per eligible node,
+# a stable mesh identity per node (<nodeIdPrefix>-<node name>) and its own
+# /runtime per node (hostPath below workerNodes.runtimeRoot). More workers =
+# label one more node; there is no replica count and no autoscaling.
+workers:
+  general:
+    enabled: true
+    name: worker-general
+    # worker: rollout restart without a card. optional: restart only with a card.
+    controlRole: worker
+    # true = runs foreign or generated code (sandbox rules below apply).
+    sandbox: false
+    # Mesh node id = <nodeIdPrefix>-<node name>. Empty = <fullname>-<name>.
+    nodeIdPrefix: ""
+    # Optional Secret with key identity.json (workload key, nodeId = nodeIdPrefix).
+    # Empty: every node creates its own key in its /runtime (pin each one at the Main).
+    identitySecret: ""
+    # Must exist on the node (owner 1000:1000, mode 0700) — never created by the chart.
+    runtimeHostPath: /var/lib/xaventra/runtime
+    # Extra hard node labels besides workerNodes.label, e.g. { "xaventra.ai/general": "true" }.
+    require: {}
+    tolerations: []
+    # Tolerate the WAN taint and unreachable/not-ready for 15 min.
+    wanTolerations: true
+    readOnlyRootFilesystem: true
+    # status = GET /v1/status (authenticated, version checked); mesh = TCP on the mesh port.
+    readiness: status
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    nodeOptions: "--max-old-space-size=3072"
+    env: {}
+    image: {}
+  voice:
+    enabled: false
+    name: voice
+    controlRole: optional
+    sandbox: false
+    nodeIdPrefix: ""
+    identitySecret: ""
+    runtimeHostPath: /var/lib/xaventra/voice/runtime
+    require:
+      xaventra.ai/gpu: "true"
+    tolerations: []
+    wanTolerations: true
+    readOnlyRootFilesystem: true
+    readiness: status
+    # GPU count (nvidia.com/gpu); 0 = none.
+    gpus: 0
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 6Gi
+    nodeOptions: "--max-old-space-size=2048"
+    env: {}
+    image: {}
+  # Tool sandbox / Forge / code execution / foreign MCP servers: refused until
+  # sandbox.runtimeClassActive=true (Kata Containers with Cloud Hypervisor).
+  toolSandbox:
+    enabled: false
+    name: tool-sandbox
+    controlRole: optional
+    sandbox: true
+    nodeIdPrefix: ""
+    identitySecret: ""
+    runtimeHostPath: /var/lib/xaventra/tool-sandbox/runtime
+    require: {}
+    tolerations: []
+    wanTolerations: true
+    readOnlyRootFilesystem: true
+    readiness: status
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    nodeOptions: "--max-old-space-size=1536"
+    env: {}
+    image: {}
+  # Desktop + browser in a pod. Needs an image with a display server and a
+  # browser (the default image has none) and nodes labelled for it.
+  browserComputer:
+    enabled: false
+    name: browser-computer
+    controlRole: optional
+    sandbox: false
+    nodeIdPrefix: ""
+    identitySecret: ""
+    runtimeHostPath: /var/lib/xaventra/browser-computer/runtime
+    require:
+      xaventra.ai/desktop: "true"
+    tolerations: []
+    wanTolerations: true
+    # Browsers write to their profile and caches.
+    readOnlyRootFilesystem: false
+    shmSizeLimit: 1Gi
+    readiness: status
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 6Gi
+    nodeOptions: "--max-old-space-size=2048"
+    env: {}
+    image: {}
+
+# Isolation for workloads with sandbox: true (tool sandbox, Forge, code
+# execution, foreign MCP servers). The chart refuses them until the RuntimeClass
+# exists in the cluster AND you switch it on here. The name is fixed.
+sandbox:
+  runtimeClassName: kata-clh
+  runtimeClassActive: false
+
+# Optional: a Main inside the cluster (off by default — the Main normally runs
+# natively outside). Exactly one active instance; warm candidates lead only
+# through Xaventra's own lease/witness epoch/fencing, never through Kubernetes.
 main:
-  # Additional warm Main candidates (StatefulSet replicas beyond the first).
-  # They lead ONLY through Xaventra's own lease/witness epoch/fencing, never
-  # through Kubernetes. Needs a shared lease coordinator (leaseCoordinator).
+  enabled: false
   warmCandidates: 0
   # "witness" or "supabase" — required when warmCandidates > 0.
   leaseCoordinator: ""
@@ -76,14 +242,11 @@ main:
   dashboard:
     port: 3011
   placement:
-    # Hard requirement (nodeSelector), e.g. { "xaventra.ai/general": "true" }.
     require: {}
-    # Soft preference (preferred node affinity).
     prefer:
       xaventra.ai/general: "true"
   affinity: {}
   tolerations: []
-  # Generous tolerations for home/WAN nodes (unreachable/not-ready for 15 min).
   wanTolerations: false
   resources:
     requests:
@@ -102,141 +265,13 @@ main:
   env: {}
   podAnnotations: {}
 
-# Worker workloads (Deployments). Every replica joins the mesh under its own
-# pod name and signs with the workload key from `identitySecret`
-# (key identity.json, made with `npm run mesh:identity`, see docs).
-workers:
-  general:
-    enabled: true
-    name: worker-general
-    controlRole: worker
-    identitySecret: ""
-    replicas:
-      min: 1
-      max: 4
-    # Xaventra scales between min and max by open tasks (cooldown below).
-    autoscale: true
-    placement:
-      require: {}
-      prefer:
-        xaventra.ai/general: "true"
-    affinity: {}
-    tolerations: []
-    wanTolerations: false
-    readOnlyRootFilesystem: true
-    resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
-      limits:
-        cpu: "2"
-        memory: 2Gi
-    runtimeSizeLimit: 2Gi
-    nodeOptions: "--max-old-space-size=1536"
-    env: {}
-    image: {}
-  voice:
-    enabled: false
-    name: voice
-    controlRole: optional
-    identitySecret: ""
-    replicas:
-      min: 1
-      max: 1
-    autoscale: false
-    placement:
-      require: {}
-      prefer:
-        xaventra.ai/gpu: "true"
-    affinity: {}
-    tolerations: []
-    wanTolerations: false
-    readOnlyRootFilesystem: true
-    # GPU count (nvidia.com/gpu); 0 = none.
-    gpus: 0
-    resources:
-      requests:
-        cpu: 500m
-        memory: 1Gi
-      limits:
-        cpu: "4"
-        memory: 6Gi
-    runtimeSizeLimit: 4Gi
-    nodeOptions: "--max-old-space-size=2048"
-    env: {}
-    image: {}
-  toolSandbox:
-    enabled: false
-    name: tool-sandbox
-    controlRole: optional
-    identitySecret: ""
-    replicas:
-      min: 1
-      max: 2
-    autoscale: false
-    placement:
-      require: {}
-      prefer:
-        xaventra.ai/general: "true"
-    affinity: {}
-    tolerations: []
-    wanTolerations: false
-    readOnlyRootFilesystem: true
-    resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
-      limits:
-        cpu: "2"
-        memory: 2Gi
-    runtimeSizeLimit: 2Gi
-    nodeOptions: "--max-old-space-size=1536"
-    env: {}
-    image: {}
-  # Desktop + browser in a pod. Needs an image with a display server and a
-  # browser (the default image has none) and nodes labelled for it.
-  browserComputer:
-    enabled: false
-    name: browser-computer
-    controlRole: optional
-    identitySecret: ""
-    replicas:
-      min: 1
-      max: 1
-    autoscale: false
-    placement:
-      require:
-        xaventra.ai/desktop: "true"
-      prefer:
-        xaventra.ai/browser: "true"
-    affinity: {}
-    tolerations: []
-    wanTolerations: false
-    # Browsers write to their profile and caches.
-    readOnlyRootFilesystem: false
-    shmSizeLimit: 1Gi
-    resources:
-      requests:
-        cpu: "1"
-        memory: 2Gi
-      limits:
-        cpu: "4"
-        memory: 6Gi
-    runtimeSizeLimit: 4Gi
-    nodeOptions: "--max-old-space-size=2048"
-    env: {}
-    image: {}
-
-# Xaventra controls its own release through a narrow API adapter (never kubectl):
-# read status/events/logs, scale own workers within min/max, restart own
-# workers; Main restart, chart updates and removals only with a card.
+# Xaventra steers its own release through a narrow API adapter (never kubectl):
+# read status/events/logs, rollout-restart own worker DaemonSets; restart of the
+# Main/optional workloads and chart updates (image tag, resources) only with a
+# card. The account is the ServiceAccount <fullname>-control: mounted in an
+# in-cluster Main, or used by the external Main with a token you create by pipe.
 control:
   enabled: true
-  autoscale:
-    tasksPerWorker: 4
-    cooldownSeconds: 300
-    idleMinutes: 15
-    intervalSeconds: 60
 
 serviceAccount:
   annotations: {}
@@ -267,7 +302,7 @@ probes:
     failureThreshold: 4
   readiness:
     periodSeconds: 15
-    timeoutSeconds: 5
+    timeoutSeconds: 8
     failureThreshold: 3
 
 service:
@@ -276,7 +311,7 @@ service:
 ingress:
   enabled: false
   className: ""
-  # e.g. xaventra.example.com — also add it to config.values.dashboard.publicHosts.
+  # e.g. xaventra.example.com — only with main.enabled.
   host: ""
   # Name of an existing TLS Secret (never its content).
   tlsSecretName: ""
@@ -284,20 +319,24 @@ ingress:
 
 networkPolicy:
   enabled: true
-  # Extra peers allowed to reach the Main's mesh port (e.g. direct mesh nodes at home):
+  # Extra peers allowed to reach an in-cluster Main's mesh port:
   # - ipBlock: { cidr: 198.51.100.0/24 }
   meshFrom: []
-  # Who may reach API and dashboard (e.g. the ingress controller namespace):
+  # Who may reach an in-cluster Main's API and dashboard:
   # - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
   apiFrom: []
-  # The tool sandbox may only talk to DNS and the Main's mesh port.
-  lockToolSandboxEgress: true
+  # Sandbox workloads may only resolve names, reach an in-cluster Main's mesh
+  # port and these extra destinations (e.g. the external Main):
+  # - ipBlock: { cidr: 192.0.2.10/32 }
+  lockSandboxEgress: true
+  sandboxEgressTo: []
 
 # Managed / one namespace per customer: install one release per customer
 # namespace (helm install kunde-a ... -n kunde-a).
 tenant:
   enabled: false
-  # Render the Namespace (with Pod Security "restricted") into this release.
+  # Render the Namespace into this release. Pod Security: enforce "privileged"
+  # only because workers use a hostPath /runtime; warn/audit stay "restricted".
   createNamespace: false
   name: ""
   resourceQuota:

@@ -1,6 +1,9 @@
 {{- if .Values.ingress.enabled }}
+{{- if not .Values.main.enabled }}
+{{- fail "ingress.enabled braucht main.enabled=true: ohne Main im Cluster gibt es kein Dashboard zum Veröffentlichen." }}
+{{- end }}
 {{- $full := include "xaventra.fullname" . -}}
-{{- $host := required "ingress.host fehlt (z. B. xaventra.example.com; auch in config.values.dashboard.publicHosts eintragen)" .Values.ingress.host -}}
+{{- $host := required "ingress.host fehlt (z. B. xaventra.example.com; auch in dashboard.publicHosts der Main eintragen)" .Values.ingress.host -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

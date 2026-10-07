@@ -8,8 +8,11 @@ metadata:
   labels:
     {{- include "xaventra.labels" . | nindent 4 }}
     xaventra.ai/tenant: {{ default .Release.Namespace .Values.tenant.name | quote }}
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/warn: restricted
+    # Workers keep their /runtime in a hostPath (one fixed Xaventra directory per
+    # node), which every stricter Pod Security level forbids. Everything else in
+    # the chart meets "restricted"; audit reports deviations.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
 ---
 {{- end }}
 # Upper bounds for this customer's namespace.

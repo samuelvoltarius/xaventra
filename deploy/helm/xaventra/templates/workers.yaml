@@ -1,12 +1,37 @@
 {{- $full := include "xaventra.fullname" . -}}
+{{- $nodes := .Values.workerNodes -}}
+{{- if not $nodes.label -}}
+{{- fail "workerNodes.label darf nicht leer sein: Worker laufen nur auf Knoten, die der Owner ausdrücklich freigibt (z. B. xaventra.ai/worker=true)." -}}
+{{- end -}}
+{{- if not (hasPrefix "/" $nodes.runtimeRoot) -}}
+{{- fail "workerNodes.runtimeRoot muss ein absoluter Pfad sein (z. B. /var/lib/xaventra)." -}}
+{{- end -}}
+{{- $paths := list -}}
 {{- range $key, $w := .Values.workers }}
 {{- if $w.enabled }}
-{{- if gt (int $w.replicas.min) (int $w.replicas.max) }}
-{{- fail (printf "workers.%s.replicas: min darf nicht größer als max sein" $key) }}
+{{- if or (not (hasPrefix (printf "%s/" $nodes.runtimeRoot) $w.runtimeHostPath)) (contains ".." $w.runtimeHostPath) }}
+{{- fail (printf "workers.%s.runtimeHostPath muss unter %s/ liegen (fester Xaventra-Pfad, ohne ..)." $key $nodes.runtimeRoot) }}
 {{- end }}
+{{- if has $w.runtimeHostPath $paths }}
+{{- fail (printf "workers.%s.runtimeHostPath ist schon an eine andere Workload vergeben: jeder Worker braucht sein eigenes /runtime." $key) }}
+{{- end }}
+{{- $paths = append $paths $w.runtimeHostPath }}
+{{- if and $w.sandbox (not $.Values.sandbox.runtimeClassActive) }}
+{{- fail (printf "workers.%s ist eine Sandbox-Workload (Werkzeug-Sandbox, Forge, Code-Ausführung, fremde MCP-Server) und läuft nur mit runtimeClassName %s. Erst Kata Containers (kata-clh) im Cluster einrichten und prüfen, dann sandbox.runtimeClassActive=true setzen." $key $.Values.sandbox.runtimeClassName) }}
+{{- end }}
+{{- if and $w.sandbox (ne $.Values.sandbox.runtimeClassName "kata-clh") }}
+{{- fail "sandbox.runtimeClassName muss kata-clh sein (Kata Containers mit Cloud Hypervisor) — andere Laufzeiten sind für Sandbox-Workloads nicht freigegeben." }}
+{{- end }}
+{{- if not (has $w.readiness (list "status" "mesh")) }}
+{{- fail (printf "workers.%s.readiness: status oder mesh." $key) }}
+{{- end }}
+{{- $prefix := default (printf "%s-%s" $full $w.name) $w.nodeIdPrefix }}
 ---
+# One pod per eligible node, never more: a stable mesh identity and an own
+# /runtime per node. No replicas, no autoscaling, no surge (two pods with the
+# same identity on one node would split the mesh).
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: {{ $full }}-{{ $w.name }}
   labels:
@@ -14,18 +39,12 @@ metadata:
     xaventra.ai/component: worker
     xaventra.ai/workload: {{ $w.name }}
 spec:
-  {{- if not $w.autoscale }}
-  replicas: {{ $w.replicas.min }}
-  {{- else }}
-  # No replicas field: Xaventra scales between replicas.min and replicas.max
-  # (control.json), and helm upgrade does not reset it.
-  {{- end }}
   revisionHistoryLimit: 3
-  strategy:
+  updateStrategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       {{- include "xaventra.selectorLabels" $ | nindent 6 }}
@@ -37,28 +56,90 @@ spec:
         xaventra.ai/component: worker
         xaventra.ai/workload: {{ $w.name }}
       annotations:
-        checksum/config: {{ toJson $.Values.config | sha256sum }}
+        checksum/config: {{ toJson (list $.Values.config $.Values.externalMain) | sha256sum }}
     spec:
       serviceAccountName: {{ $full }}-worker
       automountServiceAccountToken: false
       enableServiceLinks: false
-      terminationGracePeriodSeconds: 30
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      terminationGracePeriodSeconds: 60
+      {{- if $w.sandbox }}
+      runtimeClassName: {{ $.Values.sandbox.runtimeClassName }}
+      {{- end }}
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
         {{- toYaml $.Values.podSecurityContext | nindent 8 }}
-      {{- include "xaventra.placement" (dict "placement" $w.placement "affinity" $w.affinity "tolerations" $w.tolerations "wan" $w.wanTolerations) | nindent 6 }}
+      nodeSelector:
+        {{ $nodes.label }}: "true"
+        {{- range $k, $v := $w.require }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+      {{- if $nodes.excludeLabel }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: {{ $nodes.excludeLabel }}
+                    operator: DoesNotExist
+      {{- end }}
+      {{- if or $w.tolerations $w.wanTolerations }}
+      tolerations:
+        {{- if $w.tolerations }}
+        {{- toYaml $w.tolerations | nindent 8 }}
+        {{- end }}
+        {{- if $w.wanTolerations }}
+        {{- include "xaventra.wanTolerations" $ | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if $nodes.hostPortGuard.enabled }}
+      initContainers:
+        - name: host-port-guard
+          image: {{ include "xaventra.image" (dict "root" $ "image" $w.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command:
+            - node
+            - -e
+            - {{ include "xaventra.hostPortGuardScript" $ | quote }}
+          env:
+            - name: XAVENTRA_HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: XAVENTRA_GUARD_PORTS
+              value: {{ join "," $nodes.hostPortGuard.ports | quote }}
+          securityContext:
+            {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      {{- end }}
       containers:
         - name: xaventra
           image: {{ include "xaventra.image" (dict "root" $ "image" $w.image) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          workingDir: /runtime
           securityContext:
             {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
             readOnlyRootFilesystem: {{ $w.readOnlyRootFilesystem }}
+          {{- if $.Values.secrets.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.secrets.existingSecret }}
+          {{- end }}
+          # env wins over envFrom: these invariants cannot be overridden by the Secret.
           env:
-            {{- include "xaventra.podEnv" (dict "root" $ "workload" $w.name) | nindent 12 }}
+            {{- include "xaventra.podEnv" (dict "root" $ "workload" $w.name "nodeId" (printf "%s-$(XAVENTRA_K8S_NODE_NAME)" $prefix)) | nindent 12 }}
             - name: NOVA_NODE_ONLY
               value: "true"
             - name: NOVA_NO_TELEGRAM
@@ -71,6 +152,13 @@ spec:
               value: "false"
             - name: NODE_OPTIONS
               value: {{ $w.nodeOptions | quote }}
+            - name: XAVENTRA_EXPECTED_VERSION
+              value: {{ include "xaventra.expectedVersion" (dict "root" $ "image" $w.image) | quote }}
+            {{- if $.Values.coordinationCA.existingSecret }}
+            # Node trusts the coordination CA in addition to the public roots.
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ $.Values.coordinationCA.mountPath | quote }}
+            {{- end }}
             {{- if $w.identitySecret }}
             - name: XAVENTRA_MESH_IDENTITY_FILE
               value: "/etc/xaventra/mesh-identity/identity.json"
@@ -79,11 +167,6 @@ spec:
             - name: {{ $name }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- if $.Values.secrets.existingSecret }}
-          envFrom:
-            - secretRef:
-                name: {{ $.Values.secrets.existingSecret }}
-          {{- end }}
           ports:
             - name: mesh
               containerPort: {{ $.Values.mesh.directPort }}
@@ -97,7 +180,11 @@ spec:
             timeoutSeconds: {{ $.Values.probes.liveness.timeoutSeconds }}
             failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
           readinessProbe:
+            {{- if eq $w.readiness "status" }}
+            {{- include "xaventra.statusProbe" $.Values.config.values.server.port | nindent 12 }}
+            {{- else }}
             {{- include "xaventra.tcpProbe" $.Values.mesh.directPort | nindent 12 }}
+            {{- end }}
             periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}
             timeoutSeconds: {{ $.Values.probes.readiness.timeoutSeconds }}
             failureThreshold: {{ $.Values.probes.readiness.failureThreshold }}
@@ -112,12 +199,20 @@ spec:
           volumeMounts:
             - name: runtime
               mountPath: /runtime
+            {{- if not $.Values.config.fromRuntime }}
             - name: config
               mountPath: /runtime/xaventra.config.json
               subPath: xaventra.config.json
               readOnly: true
+            {{- end }}
             - name: tmp
               mountPath: /tmp
+            {{- if $.Values.coordinationCA.existingSecret }}
+            - name: coordination-ca
+              mountPath: {{ $.Values.coordinationCA.mountPath }}
+              subPath: {{ $.Values.coordinationCA.key }}
+              readOnly: true
+            {{- end }}
             {{- if $w.identitySecret }}
             - name: mesh-identity
               mountPath: /etc/xaventra/mesh-identity
@@ -128,14 +223,27 @@ spec:
               mountPath: /dev/shm
             {{- end }}
       volumes:
+        {{- if not $.Values.config.fromRuntime }}
         {{- include "xaventra.configVolume" $ | nindent 8 }}
-        # Workers keep no state of their own: scalable replicas, nothing to lose.
+        {{- end }}
+        # Own state per node: a fixed Xaventra directory on the node. It must
+        # exist (owner 1000:1000, mode 0700); the chart never creates it.
         - name: runtime
-          emptyDir:
-            sizeLimit: {{ $w.runtimeSizeLimit }}
+          hostPath:
+            path: {{ $w.runtimeHostPath }}
+            type: Directory
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi
+        {{- if $.Values.coordinationCA.existingSecret }}
+        - name: coordination-ca
+          secret:
+            secretName: {{ $.Values.coordinationCA.existingSecret }}
+            defaultMode: 292
+            items:
+              - key: {{ $.Values.coordinationCA.key }}
+                path: {{ $.Values.coordinationCA.key }}
+        {{- end }}
         {{- if $w.identitySecret }}
         - name: mesh-identity
           secret:
