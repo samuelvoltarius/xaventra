@@ -300,6 +300,8 @@ async function haRestTest(record: ConnectionRecord, deps: ConnectDeps): Promise<
 export async function connectAndTest(connectionId: string, deps: ConnectDeps = defaultDeps()): Promise<{ ok: boolean; message: string }> {
     const record = getConnection(connectionId, deps)
     if (!record) return { ok: false, message: 'Unbekannte Verbindung.' }
+    // 2.89: taken over from the configuration — reached with the configured token, nothing to test here.
+    if (record.herkunft === 'konfiguriert') return { ok: true, message: `${record.title} ist über die Konfiguration verbunden.` }
     const haLogin = record.connectorId === 'home-assistant' && record.auth === 'ha-login'
     // 2.86.1 (d): a Home Assistant already known to run without its MCP integration is tested directly.
     if (haLogin && record.weg === 'rest') return haRestTest(record, deps)

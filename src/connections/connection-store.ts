@@ -57,6 +57,11 @@ export interface ConnectionRecord {
     pruefung?: 'community' | 'unbekannt'
     /** 2.88: the directory lists a newer version than the approved one (set once; cleared by connecting again). */
     versionNeu?: string
+    /**
+     * 2.89: migrated from the configuration (HASS_URL / xaventra.config.json): counts only
+     * while that configuration exists (connection-state.ts); the token stays there.
+     */
+    herkunft?: 'konfiguriert'
 }
 
 export interface StoreOptions { dataDir?: string; now?: () => number }

@@ -189,6 +189,10 @@ async function startDaemon() {
     try {
         const { registerConnectionDocks } = await import('./connections/connection-docks.js')
         registerConnectionDocks()
+        // 2.89: a Home Assistant configured via HASS_URL / xaventra.config.json becomes one
+        // connections.json entry („konfiguriert“) — one connection truth (connection-state.ts).
+        const { migrateConfiguredHomeAssistant } = await import('./connections/connection-state.js')
+        if (migrateConfiguredHomeAssistant()) console.log('[Nova] Home Assistant aus der Konfiguration unter „Verbindungen“ übernommen')
     } catch (error) {
         console.warn(`[Nova] Verbindungen andocken fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`)
     }
