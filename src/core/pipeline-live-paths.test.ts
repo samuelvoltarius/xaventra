@@ -516,6 +516,29 @@ describe('9 — Dashboard/Desktop: status lines never mix into the room answer',
 })
 
 // ---------------------------------------------------------------------------
+describe('prompt without contradictions (review 1.8)', () => {
+    it('the assembled system prompt never says „ssh_command direkt“ or „build_skill“ for a missing tool', async () => {
+        await send('Telegram', '1001', 'Wie geht es dir heute?')
+        const prompt = String(lastAgentCall().systemPrompt)
+        expect(prompt).toContain('## HANDELN')
+        expect(prompt).not.toContain('ssh_command direkt')
+        expect(prompt).not.toMatch(/Kein passendes Tool\? → build_skill/)
+        expect(prompt).toContain('nie ssh_command')
+    }, 20000)
+
+    it('the workspace block follows the platform: Linux paths and commands on a Linux Main', async () => {
+        const { workspacePromptBlock } = await import('./message-pipeline.js')
+        const linux = workspacePromptBlock('/home/xaventra/nova-workspace', '/opt/xaventra', 'linux')
+        expect(linux).toContain('/home/xaventra/nova-workspace/projekte/')
+        expect(linux).not.toContain('dir /s')
+        expect(linux).not.toContain('\\')
+        const windows = workspacePromptBlock('C:\\Users\\x\\nova-workspace', 'C:\\xaventra', 'win32')
+        expect(windows).toContain('C:\\Users\\x\\nova-workspace\\projekte\\')
+        expect(windows).toContain('dir /s')
+    })
+})
+
+// ---------------------------------------------------------------------------
 describe('8 — mission engine and project resume do not depend on the autonomy loop', () => {
     it('initMissionEngine and the project resume sit outside the autonomy-loop try', () => {
         const daemon = readFileSync(fileURLToPath(new URL('../daemon.ts', import.meta.url)), 'utf8')

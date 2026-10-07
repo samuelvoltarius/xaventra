@@ -314,6 +314,49 @@ export function agentFailureDisposition(error: unknown, parentSignal?: AbortSign
     return 'fallback'
 }
 
+/**
+ * 2.89 Paket E: the workspace block uses this machine's path separator and a
+ * command example of this platform (before: `dir /s` and `\\` on a Linux Main).
+ */
+export function workspacePromptBlock(wsRoot: string, cwd: string, platform: NodeJS.Platform | string): string {
+    const windows = platform === 'win32'
+    const sep = windows ? '\\' : '/'
+    const dir = (name: string) => `${wsRoot.replace(/[\\/]+$/, '')}${sep}${name}${sep}`
+    const listExample = windows ? '"dir /s *.pdf"' : `"find ${wsRoot} -name '*.pdf'" oder "ls -la"`
+    return `\n\n## DEIN ARBEITSVERZEICHNIS & DATEISYSTEM (KRITISCH)
+Dein Workspace: ${wsRoot}
+Dein CWD (process.cwd()): ${cwd}
+
+Ordnerstruktur:
+- ${dir('projekte')}  → Für alle Projekte und Code
+- ${dir('scripts')}   → Für Skripte und Automatisierungen
+- ${dir('bilder')}    → Für generierte Bilder und Screenshots
+- ${dir('skills')}    → Für gelernte Skills und Vorlagen
+- ${dir('downloads')} → Für heruntergeladene Dateien & empfangene Telegram-Dateien
+
+⚠️ ANTI-HALLUZINATION — DU MUSST DAS WISSEN:
+1. Du HAST vollen Zugriff auf das Dateisystem. Du kannst Dateien lesen, schreiben, suchen und erstellen.
+2. Nutze find_files mit path="${cwd}" oder "${wsRoot}" um Dateien zu finden.
+3. Nutze run_command mit Befehlen wie ${listExample} um Ordner zu durchsuchen.
+4. Sage NIEMALS "ich habe keinen Arbeitsordner" oder "ich kann nicht auf Dateien zugreifen" — das ist UNWAHR.
+5. Wenn der User nach Dateien fragt, SUCHE AKTIV mit find_files oder run_command — warte nicht auf Tool-Ergebnisse die nie kommen.
+6. Speichere NIEMALS Dateien in ${cwd} direkt — das ist Source-Code! Nutze ${wsRoot}.\n`
+}
+
+/**
+ * Compact action rules. 2.89: no contradictions with the MESH block (never
+ * ssh_command for another node) and the honesty rule (no tool → the honest
+ * sentence and the learn question; building happens only after the owner's Ja).
+ */
+export const ACTION_RULES_PROMPT = `\n\n## HANDELN
+Wenn eine Aufgabe ein Tool braucht → sofort aufrufen. Nicht ankündigen — tun.
+Nichts wissen? → Tool aufrufen und nachschauen. Niemals raten oder erfinden.
+Aufgabe auf einem anderen Knoten? → signierter Mesh-Weg (spawn_subagent mit mesh_node), nie ssh_command. Datei schicken? → send_file.
+Auftrag starten? → start_mission Tool aufrufen, nicht schreiben.
+Kein passendes Tool? → der Ehrlichkeitssatz aus „Ehrlich bei Fähigkeiten“; gebaut wird erst nach dem Ja des Owners.
+Ausdrücklich eine neue Fähigkeit gewünscht? → recherchieren, build_skill aufrufen, Freigabe abwarten, danach real testen.
+Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungeprüfte Textantworten lernen.`
+
 /** Per-message transport facts supplied by the channel adapter. */
 export interface MessageContext {
     /** Real conversation/chat id of this message (e.g. a Telegram group id). */
@@ -1408,35 +1451,11 @@ Passender Knoten: dieser (${decision.reason}).`
             if (!existsSync(p)) try { mkdirSync(p, { recursive: true }) } catch { /* ok */ }
         }
 
-        systemPrompt += `\n\n## DEIN ARBEITSVERZEICHNIS & DATEISYSTEM (KRITISCH)
-Dein Workspace: ${wsRoot}
-Dein CWD (process.cwd()): ${process.cwd()}
-
-Ordnerstruktur:
-- ${wsRoot}\\\\projekte\\\\  → Für alle Projekte und Code
-- ${wsRoot}\\\\scripts\\\\   → Für Skripte und Automatisierungen  
-- ${wsRoot}\\\\bilder\\\\    → Für generierte Bilder und Screenshots
-- ${wsRoot}\\\\skills\\\\    → Für gelernte Skills und Vorlagen
-- ${wsRoot}\\\\downloads\\\\ → Für heruntergeladene Dateien & empfangene Telegram-Dateien
-
-⚠️ ANTI-HALLUZINATION — DU MUSST DAS WISSEN:
-1. Du HAST vollen Zugriff auf das Dateisystem. Du kannst Dateien lesen, schreiben, suchen und erstellen.
-2. Nutze find_files mit path="${process.cwd()}" oder "${wsRoot}" um Dateien zu finden.
-3. Nutze runcommand mit Befehlen wie "dir /s *.pdf" oder "ls -la" um Ordner zu durchsuchen.
-4. Sage NIEMALS "ich habe keinen Arbeitsordner" oder "ich kann nicht auf Dateien zugreifen" — das ist UNWAHR.
-5. Wenn der User nach Dateien fragt, SUCHE AKTIV mit find_files oder runcommand — warte nicht auf Tool-Ergebnisse die nie kommen.
-6. Speichere NIEMALS Dateien in ${process.cwd()} direkt — das ist Source-Code! Nutze ${wsRoot}.\n`
+        systemPrompt += workspacePromptBlock(wsRoot, process.cwd(), process.platform)
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
     // Compact action rules — replaces 120-line ANTI-HALLUZINATION + PARTNER-MODUS block
-    systemPrompt += `\n\n## HANDELN
-Wenn eine Aufgabe ein Tool braucht → sofort aufrufen. Nicht ankündigen — tun.
-Nichts wissen? → Tool aufrufen und nachschauen. Niemals raten oder erfinden.
-Remote-Aktion? → ssh_command direkt. Datei schicken? → send_file.
-Auftrag starten? → start_mission Tool aufrufen, nicht schreiben.
-Kein passendes Tool? → build_skill aufrufen und einen reviewbaren Vorschlag erzeugen. Nicht nur erklären.
-Neue Fähigkeit/Skill gewünscht? → recherchieren, build_skill aufrufen, Freigabe abwarten, danach real testen.
-Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungeprüfte Textantworten lernen.`
+    systemPrompt += ACTION_RULES_PROMPT
 
 
     // ============================================
