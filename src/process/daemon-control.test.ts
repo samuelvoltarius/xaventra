@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -117,6 +117,18 @@ describe('instance-scoped daemon lifecycle', () => {
         save(path, { ...value, padding: 'x'.repeat(5000) })
         await expect(stopLocalDaemon(path)).rejects.toThrow('Invalid local daemon control record')
         save(path, value)
+    })
+
+    it('a record that names this very process (container PID 1 after a restart) is stale, not a live owner', async () => {
+        const path = root()
+        mkdirSync(join(path, '.nova-data'), { recursive: true })
+        save(path, { version: 1, root: realpathSync.native(path), pid: process.pid, instanceId: '11111111-1111-4111-a111-111111111111', port: 4242, token: 'a'.repeat(64) })
+        const control = await startDaemonControl(path, vi.fn())
+        controls.push(control)
+        expect(record(path).pid).toBe(process.pid)
+        expect(record(path).instanceId).not.toBe('11111111-1111-4111-a111-111111111111')
+        // Gegenprobe: a second start while the first one is really listening is still refused.
+        await expect(startDaemonControl(path, vi.fn())).rejects.toThrow('already owns')
     })
 
     it('does not overwrite live ownership or remove a replacement marker', async () => {
