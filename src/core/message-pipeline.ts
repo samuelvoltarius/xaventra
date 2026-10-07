@@ -736,10 +736,17 @@ async function handleMessageInScope(
     // 30.08.2026. Schlimmer noch: die naechste Nachricht wurde dann als
     // Namensantwort gelesen — Nova hiess ploetzlich "Brutus", nach ihrem
     // eigenen Beispielsatz.
+    // 2.89.1: Fragen („hast du Internet?“) und alles, was der deterministische
+    // Schnellweg erkennt, sind ebenfalls Auftraege — die Vorstellung frisst sie nicht.
+    const { detectDeterministicCommand: erkenneSchnellweg } = await import('./deterministic-query.js')
     const wirktWieAuftrag = (text: string): boolean => {
         const t = text.toLowerCase()
         if (t.includes('du heißt') || t.includes('du bist')
             || t.includes('dein name') || t.includes('nenne dich')) return false
+        const trimmed = t.trim()
+        if (trimmed.endsWith('?')
+            || /^(hast du|kannst du|bist du|ist|sind|gibt es|wie|was|wer|wo|wann|warum|wieso|weshalb|welche[rsmn]?|wieviel|wie viel|kann|darf|funktioniert|laeuft|läuft)/.test(trimmed)) return true
+        try { if (erkenneSchnellweg(text)) return true } catch { /* Erkennung ist optional */ }
         return /\b(installier|richte|mach|erstell|leg an|zeig|oeffne|öffne|starte|such|find|lade|kopier|loesch|lösch|schreib|repariere|verbinde|update|aktualisier)/.test(t)
             || t.trim().split(/\s+/).length >= 4
     }
