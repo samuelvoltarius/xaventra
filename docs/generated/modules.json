@@ -1634,6 +1634,12 @@
       "imports": []
     },
     {
+      "module": "src/core/conversation-handoff.ts",
+      "imports": [
+        "../memory/channel-handoff.js"
+      ]
+    },
+    {
       "module": "src/core/correction-detector.ts",
       "imports": [
         "../memory/memory-governance.js",
@@ -2162,6 +2168,23 @@
         "../mesh/fence.js",
         "./proactive-policy.js",
         "./quiet-hours.js"
+      ]
+    },
+    {
+      "module": "src/core/projects-runtime.ts",
+      "imports": [
+        "./data-root.js",
+        "./projects.js"
+      ]
+    },
+    {
+      "module": "src/core/projects.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./atomic-storage.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -4832,6 +4855,17 @@
       "module": "src/memory/capabilities-store.ts",
       "imports": [
         "../security/secret-redaction.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/memory/channel-handoff.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../security/secret-redaction.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]
@@ -7538,8 +7572,19 @@
       ]
     },
     {
+      "module": "src/users/owner-accounts.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "node:crypto",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/users/principal-id.ts",
-      "imports": []
+      "imports": [
+        "./owner-accounts.js"
+      ]
     },
     {
       "module": "src/users/store.ts",

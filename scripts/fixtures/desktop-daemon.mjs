@@ -157,6 +157,8 @@ const ready = setInterval(async () => {
       headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(2000) })
     if (!response.ok || !(await response.json()).controlPlane?.authoritative) return
     clearInterval(ready)
-    process.send?.({ endpoint: `http://127.0.0.1:${port}`, principal, roomId: room.id, allowed, forbidden, fullDaemon: true, pid: process.pid, model, activationCountFile })
+    // 2.88: the token-checked Desktop owner shares the one owner principal (configured Telegram owner).
+    const ownerPrincipal = config.channels?.telegram?.allowFrom?.[0] ? String(config.channels.telegram.allowFrom[0]) : undefined
+    process.send?.({ endpoint: `http://127.0.0.1:${port}`, principal, ownerPrincipal, roomId: room.id, allowed, forbidden, fullDaemon: true, pid: process.pid, model, activationCountFile })
   } catch { /* readiness deadline belongs to the parent */ }
 }, 200)

@@ -1,3 +1,5 @@
+import { linkedOwnerPrincipal } from './owner-accounts.js'
+
 export interface PrincipalConfig {
     userPrincipals?: Record<string, string>
 }
@@ -18,12 +20,18 @@ function clean(value: unknown): string {
  * deliberately ignored: changing a person's name must never move their data.
  * Cross-channel identities can be linked explicitly through userPrincipals:
  * { "telegram:123": "sample", "discord:456": "sample" }.
+ * Without such a mapping, a confirmed owner account (users/owner-accounts.ts:
+ * configured owner, trusted ingress or link code) resolves to the one
+ * canonical owner principal. Everyone else keeps their own identity.
  */
-export function resolvePrincipalId(config: PrincipalConfig | null | undefined, channel: string, rawUserId: string): string {
+export function resolvePrincipalId(config: PrincipalConfig | null | undefined, channel: string, rawUserId: string, options: { ownerLinks?: boolean } = {}): string {
     const raw = clean(rawUserId)
     const normalizedChannel = clean(channel).toLowerCase() || 'unknown'
     const mappings = config?.userPrincipals || {}
-    return clean(mappings[`${normalizedChannel}:${raw}`] || mappings[raw] || raw)
+    const mapped = clean(mappings[`${normalizedChannel}:${raw}`] || mappings[raw])
+    if (mapped) return mapped
+    if (options.ownerLinks === false) return raw
+    return clean(linkedOwnerPrincipal(normalizedChannel, raw) || raw)
 }
 
 export function principalScope(principalId: string): string {

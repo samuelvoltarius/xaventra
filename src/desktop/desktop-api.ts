@@ -641,9 +641,15 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
 
     app.get('/api/desktop/memory', (req, res) => {
         const ownerScope = `user:${desktopExecutionPrincipal(principal(req))}`
+        // 2.88: after the Desktop owner joined the one owner principal, its own
+        // earlier Desktop facts stay visible (the requester's own legacy scope only).
+        const ownScope = `user:desktop:${principal(req)}`
         const governance = getMemoryGovernanceCoordinator()
         const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100))
-        const records = governance.list({ scope: ownerScope }).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
+        const scoped = governance.list({ scope: ownerScope })
+        const legacy = ownScope === ownerScope ? [] : governance.list({ scope: ownScope })
+        const records = [...new Map([...scoped, ...legacy].map(record => [record.id, record])).values()]
+            .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
         res.json({ scope: ownerScope, stats: governance.getStats(), records })
     })
 }

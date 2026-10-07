@@ -1254,6 +1254,10 @@
       "path": ".nova-data/patterns.json"
     },
     {
+      "owner": "src/core/projects-runtime.ts",
+      "path": ".nova-data/projekte"
+    },
+    {
       "owner": "src/core/tool-failure-escalation.ts",
       "path": ".nova-data/recovery/tool-failure-escalations.json"
     },
@@ -1280,6 +1284,10 @@
     {
       "owner": "src/memory/session-summarizer.ts",
       "path": ".nova-data/sessions"
+    },
+    {
+      "owner": "src/memory/channel-handoff.ts",
+      "path": ".nova-data/sessions/handoff"
     },
     {
       "owner": "src/learning/routine-skills.ts",
@@ -1340,6 +1348,10 @@
     {
       "owner": "src/supervisor/supervisor-autofix-safety.test.ts",
       "path": ".nova-data/users.json"
+    },
+    {
+      "owner": "src/users/owner-accounts.ts",
+      "path": ".nova-data/users/owner-accounts.json"
     },
     {
       "owner": "src/voice/voice-prefs.ts",

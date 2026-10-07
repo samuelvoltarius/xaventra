@@ -222,7 +222,8 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
     const backgroundLearningEnabled = !isBenchmarkRun && !isDiagnosticRun && !sideEffectsDisabled()
     const isInternalRequest = isNovaSystemAuthored({ from: authUserId, canonicalUser: userId, content })
     const scope = { conversationId, botId }
-    const session = getSession(userId, channel, scope)
+    // 2.88: a channel account that just joined the owner principal keeps its own earlier room history.
+    const session = getSession(userId, channel, scope, authUserId)
     const routingContext = buildToolTaskContext(session.history, content)
     const kernel = new ExecutionKernel(
         content,
@@ -1983,13 +1984,20 @@ Du kannst Tools verwenden um Dateien zu lesen, Befehle auszuführen und im Inter
 /**
  * Restore the exact principal × room × bot session. Cross-channel identity
  * must already be established by the canonical principal resolver.
+ * `legacyUserId` (2.88): the requester's own raw identity. When an owner
+ * account was just linked to the one owner principal, its earlier session in
+ * this room is carried over once instead of starting empty. Only the same
+ * requester's own checkpoint is ever read.
  */
-export function getSession(userId: string, channel: string, scope: SessionScope = {}): AgentContext {
+export function getSession(userId: string, channel: string, scope: SessionScope = {}, legacyUserId?: string): AgentContext {
     const identity = sessionIdentity(userId, scope)
     const key = sessionKey(identity)
     if (!sessions.has(key)) {
         const ctx = createAgentContext(userId, channel)
         ctx.history = sessionCheckpoints.load(identity)
+        if (!ctx.history.length && legacyUserId && legacyUserId !== userId) {
+            ctx.history = sessionCheckpoints.load(sessionIdentity(legacyUserId, scope))
+        }
         sessions.set(key, ctx)
     }
     // Update channel on existing session (user may switch channels)

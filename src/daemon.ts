@@ -1991,6 +1991,9 @@ async function startDaemon() {
                 state: state as any,
             })
             console.log('[Nova] ✓ Mission Engine aktiv (autonome Task-Chains bereit)')
+            // 2.88 Projekte: offene Hintergrund-Projekte nach einem Neustart weiterführen.
+            void import('./core/projects-runtime.js').then(({ getProjectCoordinator }) => getProjectCoordinator())
+                .catch(error => console.log(`[Nova] ⚠ Projekte nicht verfügbar: ${error}`))
         } catch (err) {
             console.log(`[Nova] ⚠ Mission Engine nicht verfügbar: ${err}`)
         }
