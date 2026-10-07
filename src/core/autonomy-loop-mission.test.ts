@@ -15,7 +15,7 @@ vi.mock('./autonomous-executor.js', () => ({
     getMissionQueue: () => executorState.queue,
 }))
 vi.mock('../intelligence/autonomy-engine.js', () => ({
-    getSelfGoalEngine: () => ({ getNextGoal: () => nextGoal.value, completeGoal: () => { }, failGoal: () => { } }),
+    getSelfGoalEngine: () => ({ getNextGoal: () => nextGoal.value, completeGoal: () => { }, failGoal: () => { }, recordGoalFailure: () => ({ failures: 1, paused: false }) }),
 }))
 import { setAutonomyThinkCallback, triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
 import { setThinkingConfig } from '../thinking/thinking-runtime.js'

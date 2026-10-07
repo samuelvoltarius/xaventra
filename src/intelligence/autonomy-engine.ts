@@ -32,7 +32,8 @@ export interface SelfGoal {
     id: string
     goal: string
     reason: string
-    status: 'pending' | 'in-progress' | 'done' | 'skipped'
+    /** 'paused' (2.89): stopped after repeated failed runs; never picked again by itself. */
+    status: 'pending' | 'in-progress' | 'done' | 'skipped' | 'paused'
     createdAt: number
     completedAt?: number
     result?: string
@@ -79,10 +80,13 @@ interface ConsolidationResult {
 // ============================================
 
 const SELF_GOAL_PRIORITY = 30
+/** 2.89: a self-goal that failed this often is paused. */
+export const SELF_GOAL_MAX_FAILURES = 2
 
 function toSelfGoal(goal: NovaGoal): SelfGoal {
     const status: SelfGoal['status'] = goal.status === 'completed' ? 'done'
-        : goal.status === 'cancelled' || goal.status === 'failed' ? 'skipped' : 'pending'
+        : goal.status === 'cancelled' || goal.status === 'failed' ? 'skipped'
+            : goal.status === 'blocked' ? 'paused' : 'pending'
     const finished = status !== 'pending'
     return {
         id: goal.id, goal: goal.title, reason: goal.reason || '', status,
@@ -284,6 +288,27 @@ Antworte NUR mit einem JSON-Array.`
     completeGoal(goalId: string, result: string): void {
         const updated = getGoalManager().update(goalId, { status: 'completed', result })
         if (updated) console.log(`[Autonomy] ✅ Goal completed: "${updated.title}"`)
+    }
+
+    /**
+     * 2.89 (journal: 40 of 77 runs were failing self-goals): a failed run is
+     * counted on the goal itself (survives a restart); after SELF_GOAL_MAX_FAILURES
+     * the goal is paused instead of being retried every cycle.
+     */
+    recordGoalFailure(goalId: string, reason: string): { failures: number; paused: boolean } {
+        const manager = getGoalManager()
+        const current = manager.list(SELF_GOAL_OWNER).find(goal => goal.id === goalId)
+        if (!current) return { failures: 0, paused: false }
+        const previous = Number(/^Fehlversuch (\d+)\//.exec(String(current.result || ''))?.[1] || 0)
+        const failures = previous + 1
+        const short = String(reason || 'unbekannt').replace(/\s+/g, ' ').slice(0, 160)
+        if (failures >= SELF_GOAL_MAX_FAILURES) {
+            manager.update(goalId, { status: 'blocked', result: `Pausiert nach ${failures} Fehlversuchen: ${short}` })
+            console.warn(`[Autonomy] Self-goal pausiert nach ${failures} Fehlversuchen: "${current.title}"`)
+            return { failures, paused: true }
+        }
+        manager.update(goalId, { result: `Fehlversuch ${failures}/${SELF_GOAL_MAX_FAILURES}: ${short}` })
+        return { failures, paused: false }
     }
 
     skipGoal(goalId: string, reason: string, quiet = false): void {

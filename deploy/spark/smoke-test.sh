@@ -6,7 +6,8 @@ const response = await fetch('http://100.64.0.10:18789/v1/message', {
   method: 'POST',
   headers: {
     authorization: 'Bearer ' + process.env.NOVA_API_TOKEN,
-    'content-type': 'application/json'
+    'content-type': 'application/json',
+    'x-xaventra-probe': '1'
   },
   body: JSON.stringify({
     content: 'Antworte exakt mit NOVA_SPARK_OK',

@@ -6,6 +6,7 @@
 
 import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
+import { isChannel } from './channel-name.js'
 import { consumeSetupConfirmation, issueSetupConfirmation, setupActionTarget, setupConfirmationPrincipal, setupPlanTarget } from './setup-confirmation.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
@@ -176,6 +177,23 @@ function commandRoleDenial(cmd: string, permission: string): string | null {
 // Command Handler
 // ============================================
 
+/**
+ * 2.89 Paket E: Telegram buttons only when the request came from Telegram.
+ * Before, /help, /status, /models … sent buttons as soon as a Telegram adapter
+ * existed and returned __HANDLED__ — the Desktop, REST or WhatsApp request got
+ * no answer at all. Every other channel gets the text.
+ */
+async function telegramForRequest(principalContext?: PrincipalContext): Promise<any | null> {
+    if (!isChannel(principalContext?.channel, 'telegram')) return null
+    const { getTelegramAdapter } = await import('../channels/telegram.js')
+    return getTelegramAdapter()
+}
+
+/** A failed button message is not swallowed: logged, and the caller answers with text. */
+function telegramButtonsFailed(error: unknown): void {
+    console.warn(`[Befehle] Telegram-Knöpfe nicht gesendet — Antwort als Text: ${String((error as Error)?.message || error).replace(/\s+/g, ' ').slice(0, 160)}`)
+}
+
 export async function handleCommand(
     cmd: string,
     args: string,
@@ -265,8 +283,7 @@ export async function handleCommand(
         {
             // Try Telegram buttons first
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendWithButtons(from, '✨ *Xaventra* — Was möchtest du tun?', [
                         [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '🧠 Layers', callback_data: 'cmd_layers' }],
@@ -284,7 +301,7 @@ export async function handleCommand(
                     ])
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             // Fallback: text-only help from the one menu (2.86)
             return formatCommandMenu()
@@ -312,8 +329,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
 
             // Try Telegram buttons
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendWithButtons(from, layerText, [
                         [{ text: '🔄 Refresh', callback_data: 'cmd_layers' }, { text: '🛡️ Layer 0 Details', callback_data: 'cmd_layer0' }],
@@ -321,7 +337,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                     ])
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             return layerText
         }
@@ -419,15 +435,14 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
 
             // Try Telegram buttons
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendWithButtons(from, healthMon.formatStatus(), [
                         [{ text: '🔄 Refresh', callback_data: 'cmd_health' }],
                     ])
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             return healthMon.formatStatus()
         }
@@ -478,13 +493,12 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
 
             // Try Telegram interactive model selector (provider → model → switch)
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendModelSelector(from, undefined, modelPrincipalId)
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             // Fallback: text-based listing (non-Telegram channels)
             const grouped: Record<string, string[]> = {}
@@ -591,8 +605,7 @@ _Ändern mit: /persona Du heißt XY und bist ein ..._`
 
                 // Try Telegram buttons
                 try {
-                    const { getTelegramAdapter } = await import('../channels/telegram.js')
-                    const tg = getTelegramAdapter()
+                    const tg = await telegramForRequest(principalContext)
                     if (tg) {
                         await tg.sendWithButtons(from, personaText, [
                             [{ text: '🤖 Nova (Standard)', callback_data: 'persona_nova' }, { text: '👨‍💼 Business', callback_data: 'persona_business' }],
@@ -601,7 +614,7 @@ _Ändern mit: /persona Du heißt XY und bist ein ..._`
                         ])
                         return '__HANDLED__'
                     }
-                } catch { /* non-Telegram */ }
+                } catch (error) { telegramButtonsFailed(error) }
 
                 return personaText
             }
@@ -741,8 +754,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 
                 // Try Telegram buttons
                 try {
-                    const { getTelegramAdapter } = await import('../channels/telegram.js')
-                    const tg = getTelegramAdapter()
+                    const tg = await telegramForRequest(principalContext)
                     if (tg) {
                         await tg.sendWithButtons(from, learnText, [
                             [{ text: '📸 Screenshot', callback_data: 'learn_screenshot' }, { text: '📄 PDF Parse', callback_data: 'learn_pdf_parse' }],
@@ -751,7 +763,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                         ])
                         return '__HANDLED__'
                     }
-                } catch { /* non-Telegram */ }
+                } catch (error) { telegramButtonsFailed(error) }
 
                 return learnText
             }
@@ -960,8 +972,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 
             // Try Telegram buttons
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendWithButtons(from, statusText, [
                         [{ text: '🔄 Refresh', callback_data: 'cmd_status' }, { text: '🤖 Modell', callback_data: 'cmd_models' }],
@@ -969,7 +980,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                     ])
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             return statusText
         }
@@ -1047,8 +1058,7 @@ Dann: /llm local`
 /llm model <name> - Modell wechseln`
 
             try {
-                const { getTelegramAdapter } = await import('../channels/telegram.js')
-                const tg = getTelegramAdapter()
+                const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendWithButtons(from, llmHelpText, [
                         [{ text: '🔗 Ollama verbinden', callback_data: 'llm_local' }, { text: '🔍 LLMs scannen', callback_data: 'llm_scan' }],
@@ -1057,7 +1067,7 @@ Dann: /llm local`
                     ])
                     return '__HANDLED__'
                 }
-            } catch { /* non-Telegram */ }
+            } catch (error) { telegramButtonsFailed(error) }
 
             return llmHelpText
         }
@@ -1203,8 +1213,7 @@ Dann: /llm local`
 
                 // Try Telegram buttons
                 try {
-                    const { getTelegramAdapter } = await import('../channels/telegram.js')
-                    const tg = getTelegramAdapter()
+                    const tg = await telegramForRequest(principalContext)
                     if (tg) {
                         await tg.sendWithButtons(from, memText, [
                             [{ text: '🔄 Refresh', callback_data: 'cmd_memory' }, { text: '🔍 Suchen', callback_data: 'memory_search' }],
@@ -1212,7 +1221,7 @@ Dann: /llm local`
                         ])
                         return '__HANDLED__'
                     }
-                } catch { /* non-Telegram */ }
+                } catch (error) { telegramButtonsFailed(error) }
 
                 return memText
             } catch {
@@ -1790,8 +1799,7 @@ Gebaut für Xaventra contributors 🌶️`
                 // Send with inline buttons for safe fixes
                 const safeFixes = report.issues.filter(i => i.fix?.safe)
                 try {
-                    const { getTelegramAdapter } = await import('../channels/telegram.js')
-                    const tg = getTelegramAdapter()
+                    const tg = await telegramForRequest(principalContext)
                     if (tg && from) {
                         const buttons: Array<Array<{ text: string; callback_data: string }>> = []
 
@@ -1810,7 +1818,7 @@ Gebaut für Xaventra contributors 🌶️`
                         await tg.sendWithButtons(from, text, buttons)
                         return '__HANDLED__'
                     }
-                } catch { /* no Telegram — fall through to plain text */ }
+                } catch (error) { telegramButtonsFailed(error) }
 
                 return text
             } catch (err) {
@@ -3581,7 +3589,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const view = await sammleAktivitaet()
             const text = aktivitaetText(view)
             const ownerId = String(principalContext?.rawUserId || '').trim()
-            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId) && ownerId === String(from)) {
+            if (isChannel(principalContext?.channel, 'telegram') && /^\d{1,20}$/.test(ownerId) && ownerId === String(from)) {
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
                 const { aktivitaetKnoepfe } = await import('../sehen/telegram-sehen.js')
@@ -3609,7 +3617,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             const desktopDirect = await import('../desktop-direct/runtime.js')
             if (!desktopDirect.isDesktopDirectActive()) return desktopDirect.DESKTOP_DIRECT_OFF_TEXT
             const ownerId = String(principalContext?.rawUserId || '').trim()
-            if (principalContext?.channel === 'telegram' && /^\d{1,20}$/.test(ownerId)) {
+            if (isChannel(principalContext?.channel, 'telegram') && /^\d{1,20}$/.test(ownerId)) {
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
                 const picker = desktopDirect.desktopPicker(ownerId)

@@ -113,9 +113,13 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
     // Mission control. A new mission requires an explicit autonomy verb; plain
     // requests continue through the normal execution kernel.
     if (/\b(?:wie weit|status)\b.*\b(?:mission|auftrag)\b/.test(text)) return route('mission', 'status', 'mission-status')
-    if (/\b(?:pausiere|pause)\b.*\b(?:mission|auftrag)\b/.test(text)) return route('mission', 'pause', 'mission-pause', 'controlled-action')
-    if (/\b(?:setze|führe|fuehre)\b.*\b(?:mission|auftrag)\b.*\b(?:fort|weiter)\b/.test(text)) return route('mission', 'resume', 'mission-resume', 'controlled-action')
-    if (/\b(?:stoppe|beende|brich)\b.*\b(?:mission|auftrag)\b/.test(text)) return route('mission', 'stop', 'mission-stop', 'controlled-action')
+    // 2.89: actions only for the whole, anchored sentence and never when negated —
+    // „brich den Auftrag bitte nicht ab“ or „ich will den Auftrag nicht beenden“ is no stop.
+    const negated = /\b(?:nicht|nie|niemals|kein|keine|keinen)\b/.test(text)
+    const target = String.raw`(?:die |den |meine |meinen |unsere |unseren |diese |diesen )?(?:mission|auftrag)`
+    if (!negated && new RegExp(String.raw`^(?:bitte )?(?:pausiere|pause) ${target}(?: bitte)?$`).test(text)) return route('mission', 'pause', 'mission-pause', 'controlled-action')
+    if (!negated && new RegExp(String.raw`^(?:bitte )?(?:setze|führe|fuehre) ${target} (?:(?:weiter )?fort|weiter)(?: bitte)?$`).test(text)) return route('mission', 'resume', 'mission-resume', 'controlled-action')
+    if (!negated && new RegExp(String.raw`^(?:bitte )?(?:stoppe|beende|brich) ${target}(?: bitte)?(?: ab)?$`).test(text)) return route('mission', 'stop', 'mission-stop', 'controlled-action')
     const mission = text.match(/^(?:starte|erstelle|übernimm|uebernimm)\s+(?:eine\s+)?(?:autonome\s+)?(?:mission|auftrag)\s*(?:mit dem ziel|für|fuer|:)\s+(.+)$/)
     if (mission?.[1]) return route('mission', mission[1].trim(), 'mission-start', 'controlled-action')
 

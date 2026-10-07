@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
     AgentDeadlineError,
     agentFailureDisposition,
-    createProgressGate,
     runWithAbortDeadline,
 } from './message-pipeline.js'
 
@@ -65,17 +64,5 @@ describe('agent deadline and cancellation', () => {
             expect(args).toContain('abortSignal: agentSignal')
         }
         expect(source).not.toContain("reject(new Error('[Timeout] runNovaAgent exceeded 300s'))")
-    })
-})
-
-describe('progress messages', () => {
-    it('drops progress after the final answer phase has started', async () => {
-        const send = vi.fn(async () => undefined)
-        const gate = createProgressGate(send)
-        await gate.send('step 1')
-        gate.close()
-        await gate.send('late step')
-        expect(send).toHaveBeenCalledTimes(1)
-        expect(send).toHaveBeenCalledWith('step 1')
     })
 })

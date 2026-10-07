@@ -19,6 +19,20 @@ import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type Pri
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { containsHttpUrl, isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance, mentionsEnvironment } from './request-capabilities.js'
+import { createProgressNotice } from './progress-notice.js'
+import { isTechnicalProbe } from './channel-name.js'
+import { redactSecrets } from '../security/secret-redaction.js'
+
+/**
+ * 2.89 Paket E: a failed user-relevant stage is logged (short context, never the
+ * message text or a secret) instead of vanishing in console.debug.
+ */
+export function stageFailure(stage: string, error: unknown): string {
+    const detail = redactSecrets(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200)
+    const line = `[Pipeline] ${stage} fehlgeschlagen: ${detail}`
+    console.warn(line)
+    return line
+}
 
 
 // State and handler types
@@ -303,23 +317,58 @@ export function agentFailureDisposition(error: unknown, parentSignal?: AbortSign
     return 'fallback'
 }
 
-/** Progress heartbeats/step updates stop once the final answer phase begins. */
-export function createProgressGate(send: (message: string) => Promise<void>) {
-    let closed = false
-    return {
-        async send(message: string): Promise<void> {
-            if (closed) return
-            await send(message)
-        },
-        close(): void { closed = true },
-        get closed(): boolean { return closed },
-    }
+/**
+ * 2.89 Paket E: the workspace block uses this machine's path separator and a
+ * command example of this platform (before: `dir /s` and `\\` on a Linux Main).
+ */
+export function workspacePromptBlock(wsRoot: string, cwd: string, platform: NodeJS.Platform | string): string {
+    const windows = platform === 'win32'
+    const sep = windows ? '\\' : '/'
+    const dir = (name: string) => `${wsRoot.replace(/[\\/]+$/, '')}${sep}${name}${sep}`
+    const listExample = windows ? '"dir /s *.pdf"' : `"find ${wsRoot} -name '*.pdf'" oder "ls -la"`
+    return `\n\n## DEIN ARBEITSVERZEICHNIS & DATEISYSTEM (KRITISCH)
+Dein Workspace: ${wsRoot}
+Dein CWD (process.cwd()): ${cwd}
+
+Ordnerstruktur:
+- ${dir('projekte')}  → Für alle Projekte und Code
+- ${dir('scripts')}   → Für Skripte und Automatisierungen
+- ${dir('bilder')}    → Für generierte Bilder und Screenshots
+- ${dir('skills')}    → Für gelernte Skills und Vorlagen
+- ${dir('downloads')} → Für heruntergeladene Dateien & empfangene Telegram-Dateien
+
+⚠️ ANTI-HALLUZINATION — DU MUSST DAS WISSEN:
+1. Du HAST vollen Zugriff auf das Dateisystem. Du kannst Dateien lesen, schreiben, suchen und erstellen.
+2. Nutze find_files mit path="${cwd}" oder "${wsRoot}" um Dateien zu finden.
+3. Nutze run_command mit Befehlen wie ${listExample} um Ordner zu durchsuchen.
+4. Sage NIEMALS "ich habe keinen Arbeitsordner" oder "ich kann nicht auf Dateien zugreifen" — das ist UNWAHR.
+5. Wenn der User nach Dateien fragt, SUCHE AKTIV mit find_files oder run_command — warte nicht auf Tool-Ergebnisse die nie kommen.
+6. Speichere NIEMALS Dateien in ${cwd} direkt — das ist Source-Code! Nutze ${wsRoot}.\n`
 }
+
+/**
+ * Compact action rules. 2.89: no contradictions with the MESH block (never
+ * ssh_command for another node) and the honesty rule (no tool → the honest
+ * sentence and the learn question; building happens only after the owner's Ja).
+ */
+export const ACTION_RULES_PROMPT = `\n\n## HANDELN
+Wenn eine Aufgabe ein Tool braucht → sofort aufrufen. Nicht ankündigen — tun.
+Nichts wissen? → Tool aufrufen und nachschauen. Niemals raten oder erfinden.
+Aufgabe auf einem anderen Knoten? → signierter Mesh-Weg (spawn_subagent mit mesh_node), nie ssh_command. Datei schicken? → send_file.
+Auftrag starten? → start_mission Tool aufrufen, nicht schreiben.
+Kein passendes Tool? → der Ehrlichkeitssatz aus „Ehrlich bei Fähigkeiten“; gebaut wird erst nach dem Ja des Owners.
+Ausdrücklich eine neue Fähigkeit gewünscht? → recherchieren, build_skill aufrufen, Freigabe abwarten, danach real testen.
+Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungeprüfte Textantworten lernen.`
 
 /** Per-message transport facts supplied by the channel adapter. */
 export interface MessageContext {
     /** Real conversation/chat id of this message (e.g. a Telegram group id). */
     chatId?: string
+    /**
+     * 2.89: side sink for progress/status lines on channels that collect the
+     * answer (Desktop, Dashboard, REST). Never mixed into the answer itself.
+     */
+    onProgress?: (status: string) => void
 }
 
 /**
@@ -458,8 +507,10 @@ async function handleMessageInScope(
     }
     // 2.87 Paket P: `/telefon passwort …` wie Anmelde-Befehle nie protokollieren (auch nicht im Konsolen-Log).
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback|telefon\s+(?:passwort|ari-passwort))\b/i.test(content.trim())
+    // 2.89: rollout probes never enter the session log, the handoff or the memory.
+    const technicalProbe = isTechnicalProbe(channel, from)
     console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
-    if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'user', content)
+    if (!isSensitiveAuthCommand && !technicalProbe) logSession(canonicalUser, channel, 'user', content)
 
     // Track user activity for Dreaming/Idle systems
     try {
@@ -570,7 +621,7 @@ async function handleMessageInScope(
                 principalId = resolvePrincipalId((state as any).config, channel, from, { ownerLinks: false })
                 principalContext.principalId = principalId
             }
-        } catch (error) { console.debug(`[Pipeline] owner accounts unavailable: ${error}`) }
+        } catch (error) { stageFailure('Owner-Konten', error) }
 
         // 5. Message Coalescing — batch rapid-fire messages
         if (mu.shouldCoalesce(chatId, from)) {
@@ -647,18 +698,43 @@ async function handleMessageInScope(
                 await replyFn(link.reply)
                 return
             }
-        } catch (error) { console.debug(`[Pipeline] owner link unavailable: ${error}`) }
+        } catch (error) { stageFailure('Kanal-Verknüpfung', error) }
     }
 
     // 2.88 Kanalwechsel-Übergabe: who keeps this exchange (the principal, and
     // for an owner-number phone call also the owner, marked unverified).
     let handoffTargetsForTurn: Array<{ principalId: string; channel: string; unverified?: boolean }> = []
-    if (senderAuthorized && !isSensitiveAuthCommand && !content.trimStart().startsWith('/')) {
+    if (senderAuthorized && !isSensitiveAuthCommand && !technicalProbe && !content.trimStart().startsWith('/')) {
         try {
             const { handoffTargets, recordHandoff } = await import('./conversation-handoff.js')
             handoffTargetsForTurn = await handoffTargets({ channel, from, principalId, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
             recordHandoff(handoffTargetsForTurn, 'user', content)
-        } catch (error) { console.debug(`[Pipeline] handoff unavailable: ${error}`) }
+        } catch (error) { stageFailure('Kanalwechsel-Übergabe', error) }
+    }
+    // 2.89: one way to answer — every answer of this turn (early paths included)
+    // is logged to the session and to the cross-channel handoff log.
+    const answer = async (text: string, step?: string): Promise<void> => {
+        await replyFn(text)
+        if (!technicalProbe) logSession(canonicalUser, channel, 'assistant', text)
+        if (handoffTargetsForTurn.length) {
+            try { (await import('./conversation-handoff.js')).recordHandoff(handoffTargetsForTurn, 'assistant', text) }
+            catch (error) { stageFailure('Kanalwechsel-Übergabe (Antwort)', error) }
+        }
+        if (step) traceStep(step)
+    }
+    // 2.88 reply gate (honesty sentence → learn card) + 2.88.2 claim guard, shared by the
+    // agent answer and the plain-model fallback. Only successful tool runs count as evidence.
+    const guardReply = async (text: string, successfulToolRuns: number): Promise<string> => {
+        let guarded = text
+        try {
+            const { capabilityReplyGate } = await import('../learning/capability-learning.js')
+            guarded = await capabilityReplyGate(content, guarded, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
+        } catch (error) { stageFailure('Antwort-Prüfung (Fähigkeiten)', error) }
+        try {
+            const { guardUnverifiedClaims } = await import('./unverified-claims.js')
+            guarded = guardUnverifiedClaims(guarded, successfulToolRuns)
+        } catch (error) { stageFailure('Behauptungs-Prüfung', error) }
+        return guarded
     }
 
     // ============================================
@@ -720,7 +796,8 @@ async function handleMessageInScope(
     // Slash Commands (Layer 2) — EARLY EXIT, no prompt assembly needed
     // ============================================
     if (content.startsWith('/')) {
-        if (execution) throw new Error('Mesh agent requests cannot invoke slash commands')
+        // 2.89: a cancellation-only execution (daemon entry, Even-G2) is a user message, not a mesh contract.
+        if (execution && !isCancellationOnlyExecution(execution)) throw new Error('Mesh agent requests cannot invoke slash commands')
         const [cmd, ...args] = content.slice(1).split(' ')
         const cmdResponse = await handleCommandFn(cmd.toLowerCase(), args.join(' '), from, principalContext)
         if (cmdResponse) {
@@ -746,10 +823,22 @@ async function handleMessageInScope(
         return
     }
 
+    // 2.89 Reihenfolge: „Was machen meine Projekte?“ is the owner's project status,
+    // not a memory recall — the project stage answers it before the fast path.
+    const ownerDirect = !isSystemAuthored && !image && principalContext.permission === 'owner' && isGroupMessage === false
+    let projectStatusFirst = false
+    if (ownerDirect) {
+        try { projectStatusFirst = (await import('./projects.js')).isProjectStatusQuestion(content) }
+        catch (error) { stageFailure('Projekt-Status-Erkennung', error) }
+    }
     // Read-only natural-language fast path. It reuses the same command
     // handlers and RBAC context as slash commands, but avoids prompt assembly,
     // model latency and fragile tool selection for common live-status queries.
-    if (!execution || desktopCancellationOnly) {
+    // true = answered.
+    const runFastPath = async (): Promise<boolean> => {
+        if (execution && !desktopCancellationOnly) return false
+        // 2.89: system messages (self-goals, reminders, heartbeat) never take a user shortcut.
+        if (isSystemAuthored) return false
         try {
             const { detectDeterministicCommand } = await import('./deterministic-query.js')
             const detected = detectDeterministicCommand(content)
@@ -763,27 +852,26 @@ async function handleMessageInScope(
                     principalContext,
                 )
                 if (response) {
-                    if (response !== '__HANDLED__') {
-                        await replyFn(response)
-                        logSession(canonicalUser, channel, 'assistant', response)
-                    }
+                    if (response !== '__HANDLED__') await answer(response)
                     traceStep(`fast-path:${deterministic.reason}`)
                     console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
-                    return
+                    return true
                 }
             }
         } catch (error) {
-            console.debug(`[Pipeline] deterministic fast-path unavailable: ${error}`)
+            if (error instanceof ReplyDeliveryError) throw error
+            stageFailure('Schnellweg', error)
         }
+        return false
     }
+    if (!projectStatusFirst && await runFastPath()) return
 
     // 2.88 Projekte: „Kümmer dich um X und nebenbei um Y" starts parallel
     // background projects; „Wie steht's?" lists them; later messages (any
     // channel of the owner) are assigned to the right project. Owner only,
     // direct conversation only, never for system messages.
     let projectHint = ''
-    if ((!execution || desktopCancellationOnly) && !isSystemAuthored && !image && principalContext.permission === 'owner'
-        && isGroupMessage === false && !content.trimStart().startsWith('/')) {
+    if ((!execution || desktopCancellationOnly) && ownerDirect && !content.trimStart().startsWith('/')) {
         try {
             const { getProjectCoordinator } = await import('./projects-runtime.js')
             const turn = await (await getProjectCoordinator()).handleTurn({
@@ -791,62 +879,26 @@ async function handleMessageInScope(
                 channel, text: content, auftraggeber: { channel, rawId: from },
             })
             if (turn.reply) {
-                await replyFn(turn.reply)
-                logSession(canonicalUser, channel, 'assistant', turn.reply)
-                const { recordHandoff } = await import('./conversation-handoff.js')
-                recordHandoff(handoffTargetsForTurn, 'assistant', turn.reply)
-                traceStep('projects:handled')
+                await answer(turn.reply, 'projects:handled')
                 return
             }
             projectHint = turn.hint || ''
         } catch (error) {
-            console.debug(`[Pipeline] projects unavailable: ${error}`)
+            if (error instanceof ReplyDeliveryError) throw error
+            stageFailure('Projekte', error)
         }
     }
+    // No project to list → the question takes the normal fast path (memory recall).
+    if (projectStatusFirst && await runFastPath()) return
 
-    // Resolve ambiguity before prompt assembly. The gate uses only the
-    // existing user-scoped continuity store and never guesses a destructive
-    // target. A reply resumes the original request without a slash command.
-    if (!isSystemAuthored && !image) {
-        try {
-            const { evaluateClarification } = await import('./clarification-gate.js')
-            const clarification = evaluateClarification(principalId, content)
-            if (clarification.action === 'ask') {
-                await replyFn(clarification.question || 'Welche Angabe fehlt noch?')
-                traceStep('clarification:requested')
-                return
-            }
-            if (clarification.action === 'cancel') {
-                await replyFn('Okay, ich habe die offene Aufgabe abgebrochen.')
-                traceStep('clarification:cancelled')
-                return
-            }
-            content = clarification.content
-        } catch (error) {
-            console.debug(`[Pipeline] clarification gate unavailable: ${error}`)
-        }
-    }
-
-    // Coalescing and the Clarification Gate may have reconstructed a richer
-    // request. Allocate cognition and memory from that authoritative request,
-    // not from the short follow-up answer that resumed it.
-    contextPolicy = selectContextPolicy(content, Boolean(image))
-    memoryDecision = decideMemoryTurn(content)
-
-    // Learned corrections are considered only after ambiguity and identity
-    // gates. They cannot consume a clarification reply or bypass RBAC.
-    try {
-        const le = (state as any).learningCoordinator || (state as any).learning
-        if (le?.processUserMessage && !isSystemAuthored) {
-            const learned = le.processUserMessage(content, { channel, userId: principalId })
-            if (learned && learned.confidence >= 0.9 && learned.source === 'correction') {
-                console.log(`[LearningEngine] Using learned ${learned.source} response (confidence: ${learned.confidence})`)
-                await replyFn(learned.response)
-                logSession(canonicalUser, channel, 'assistant', learned.response)
-                return
-            }
-        }
-    } catch { /* learning non-critical */ }
+    // 2.89 Reihenfolge: an owner rule in plain words („ab jetzt …“) is recognised and
+    // stored BEFORE the clarification gate — a follow-up question must never swallow it.
+    // Only the owner, never groups or system messages; writes only on the Main.
+    let observedDecisions: import('./decisions.js').ObserveResult | null = null
+    if (ownerDirect) try {
+        const { observeOwnerMessage } = await import('./decisions.js')
+        observedDecisions = observeOwnerMessage({ text: content, permission: principalContext.permission, principalId, channel, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
+    } catch (error) { stageFailure('Regeln (Klartext)', error) }
 
     // 2.88 „Was ich nicht kann, lerne ich“: a capability question/request for which the
     // real inventory has no tool, connection or learned skill gets the honest answer
@@ -862,15 +914,14 @@ async function handleMessageInScope(
                 const view: any = await collectConnections()
                 const entries = [...(view.gefunden || []).map((g: any) => ({ title: String(g.title || ''), verbunden: g.verbunden === true })),
                     ...(view.verbunden || []).map((v: any) => ({ title: String(v.title || ''), verbunden: true }))]
-                const answer = answerConnectQuestion(content, entries)
-                if (answer) {
-                    await replyFn(answer)
-                    logSession(canonicalUser, channel, 'assistant', answer)
-                    traceStep('connect:already-connected')
+                const connectAnswer = answerConnectQuestion(content, entries)
+                if (connectAnswer) {
+                    await answer(connectAnswer, 'connect:already-connected')
                     return
                 }
             }
         } catch (error) {
+            if (error instanceof ReplyDeliveryError) throw error
             console.warn(`[Verbindungen] Verbindungs-Frage nicht beantwortbar: ${error instanceof Error ? error.message : String(error)}`)
         }
     }
@@ -880,15 +931,63 @@ async function handleMessageInScope(
             const { capabilityGate } = await import('../learning/capability-learning.js')
             const gate = await capabilityGate(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
             if (gate.handled && gate.reply) {
-                await replyFn(gate.reply)
-                logSession(canonicalUser, channel, 'assistant', gate.reply)
-                traceStep('capability:honest-no')
+                await answer(gate.reply, 'capability:honest-no')
                 return
             }
         } catch (error) {
+            if (error instanceof ReplyDeliveryError) throw error
             // 2.88.2: was console.debug — live the gate failed invisibly in the app (no learning card).
             console.warn(`[Lernen] Fähigkeits-Prüfung fehlgeschlagen: ${error instanceof Error ? error.stack || error.message : String(error)}`)
         }
+    }
+
+    // Resolve ambiguity before prompt assembly. The gate uses only the
+    // existing user-scoped continuity store and never guesses a destructive
+    // target. A reply resumes the original request without a slash command.
+    // 2.89 Reihenfolge: after rules, the connect question and the capability gate —
+    // a follow-up question must not swallow any of them.
+    if (!isSystemAuthored && !image) {
+        try {
+            const { evaluateClarification } = await import('./clarification-gate.js')
+            const clarification = evaluateClarification(principalId, content)
+            if (clarification.action === 'ask') {
+                await answer(clarification.question || 'Welche Angabe fehlt noch?', 'clarification:requested')
+                return
+            }
+            if (clarification.action === 'cancel') {
+                await answer('Okay, ich habe die offene Aufgabe abgebrochen.', 'clarification:cancelled')
+                return
+            }
+            content = clarification.content
+        } catch (error) {
+            if (error instanceof ReplyDeliveryError) throw error
+            stageFailure('Rückfrage', error)
+        }
+    }
+
+    // Coalescing and the Clarification Gate may have reconstructed a richer
+    // request. Allocate cognition and memory from that authoritative request,
+    // not from the short follow-up answer that resumed it.
+    contextPolicy = selectContextPolicy(content, Boolean(image))
+    memoryDecision = decideMemoryTurn(content)
+
+    // Learned corrections are considered only after ambiguity, identity, the
+    // owner-only gates above and the group check. They cannot consume a
+    // clarification reply or bypass RBAC, and never answer inside a group
+    // (2.89: a correction learned in private must not speak for a group).
+    try {
+        const le = (state as any).learningCoordinator || (state as any).learning
+        if (le?.processUserMessage && !isSystemAuthored) {
+            const learned = le.processUserMessage(content, { channel, userId: principalId })
+            if (isGroupMessage === false && learned && learned.confidence >= 0.9 && learned.source === 'correction') {
+                console.log(`[LearningEngine] Using learned ${learned.source} response (confidence: ${learned.confidence})`)
+                await answer(learned.response, 'learning:correction')
+                return
+            }
+        }
+    } catch (error) {
+        if (error instanceof ReplyDeliveryError) throw error
+        stageFailure('Gelernte Korrekturen', error)
     }
 
     // Reload SOUL.md on every message (L24 changes take effect immediately)
@@ -1137,19 +1236,18 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
     } catch (err) { console.debug('[Pipeline] trace insights not available:', err) }
 
     // Kausales Gedächtnis (Phase 8): owner instructions in a direct chat are
-    // remembered without a command; matching decisions join the context.
-    // Only the owner, never groups or system messages; writes only on the Main.
+    // remembered without a command (observed above, before the clarification
+    // gate); matching decisions join the context.
     if (principalContext.permission === 'owner' && isGroupMessage === false && !isSystemAuthored) try {
-        const { observeOwnerMessage, buildDecisionContext } = await import('./decisions.js')
-        const observed = observeOwnerMessage({ text: content, permission: principalContext.permission, principalId, channel, isGroup: isGroupMessage, systemAuthored: isSystemAuthored })
-        const decisionBlock = buildDecisionContext(content, observed)
+        const { buildDecisionContext } = await import('./decisions.js')
+        const decisionBlock = buildDecisionContext(content, observedDecisions)
         if (decisionBlock) systemPrompt += decisionBlock
-    } catch (err) { console.debug('[Pipeline] decisions not available:', err) }
+    } catch (err) { stageFailure('Regeln (Kontext)', err) }
     // 2.85 Paket A: an owner request about a service that is not connected is a recorded need
     // (connector + time only, never the text). Three in 14 days → one „verbinden?“ question.
     if (principalContext.permission === 'owner' && isGroupMessage === false && !isSystemAuthored) try {
         (await import('../connections/connection-demand.js')).noteOwnerRequest(content)
-    } catch { /* a missing signal only means: no question */ }
+    } catch (err) { stageFailure('Verbindungs-Bedarf', err) }
 
     // ============================================
     // Known hosts are inventory data, never an authorization grant.
@@ -1336,35 +1434,11 @@ Passender Knoten: dieser (${decision.reason}).`
             if (!existsSync(p)) try { mkdirSync(p, { recursive: true }) } catch { /* ok */ }
         }
 
-        systemPrompt += `\n\n## DEIN ARBEITSVERZEICHNIS & DATEISYSTEM (KRITISCH)
-Dein Workspace: ${wsRoot}
-Dein CWD (process.cwd()): ${process.cwd()}
-
-Ordnerstruktur:
-- ${wsRoot}\\\\projekte\\\\  → Für alle Projekte und Code
-- ${wsRoot}\\\\scripts\\\\   → Für Skripte und Automatisierungen  
-- ${wsRoot}\\\\bilder\\\\    → Für generierte Bilder und Screenshots
-- ${wsRoot}\\\\skills\\\\    → Für gelernte Skills und Vorlagen
-- ${wsRoot}\\\\downloads\\\\ → Für heruntergeladene Dateien & empfangene Telegram-Dateien
-
-⚠️ ANTI-HALLUZINATION — DU MUSST DAS WISSEN:
-1. Du HAST vollen Zugriff auf das Dateisystem. Du kannst Dateien lesen, schreiben, suchen und erstellen.
-2. Nutze find_files mit path="${process.cwd()}" oder "${wsRoot}" um Dateien zu finden.
-3. Nutze runcommand mit Befehlen wie "dir /s *.pdf" oder "ls -la" um Ordner zu durchsuchen.
-4. Sage NIEMALS "ich habe keinen Arbeitsordner" oder "ich kann nicht auf Dateien zugreifen" — das ist UNWAHR.
-5. Wenn der User nach Dateien fragt, SUCHE AKTIV mit find_files oder runcommand — warte nicht auf Tool-Ergebnisse die nie kommen.
-6. Speichere NIEMALS Dateien in ${process.cwd()} direkt — das ist Source-Code! Nutze ${wsRoot}.\n`
+        systemPrompt += workspacePromptBlock(wsRoot, process.cwd(), process.platform)
     } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
 
     // Compact action rules — replaces 120-line ANTI-HALLUZINATION + PARTNER-MODUS block
-    systemPrompt += `\n\n## HANDELN
-Wenn eine Aufgabe ein Tool braucht → sofort aufrufen. Nicht ankündigen — tun.
-Nichts wissen? → Tool aufrufen und nachschauen. Niemals raten oder erfinden.
-Remote-Aktion? → ssh_command direkt. Datei schicken? → send_file.
-Auftrag starten? → start_mission Tool aufrufen, nicht schreiben.
-Kein passendes Tool? → build_skill aufrufen und einen reviewbaren Vorschlag erzeugen. Nicht nur erklären.
-Neue Fähigkeit/Skill gewünscht? → recherchieren, build_skill aufrufen, Freigabe abwarten, danach real testen.
-Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungeprüfte Textantworten lernen.`
+    systemPrompt += ACTION_RULES_PROMPT
 
 
     // ============================================
@@ -1437,8 +1511,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         if (correctedExchange && correction.message) {
             console.log(`[L7 Learning] Correction handled: ${correction.message}`)
-            await replyFn(correction.message)
-            logSession(canonicalUser, channel, 'assistant', correction.message)
+            await answer(correction.message)
             return
         }
 
@@ -1455,6 +1528,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
     // Auto-Observer: Inject known facts into system prompt
     // ============================================
     const isSystemMessage = isSystemAuthored
+    if (technicalProbe) memoryDecision = { ...memoryDecision, observe: false }
     if (!isSystemMessage) try {
 
         // Observe user message for fact extraction — skip system injections
@@ -1482,7 +1556,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         })
         if (userContext) systemPrompt += '\n\n' + userContext
     } catch (err) {
-        // Observer not critical - continue without it
+        // Not fatal, but never silent: without it the answer lacks what Xaventra knows.
+        stageFailure('Gedächtnis-Kontext', err)
     }
 
     // 2.88: what this same person said on another channel moments ago, and
@@ -1492,7 +1567,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const { getChannelHandoffLog } = await import('../memory/channel-handoff.js')
         const handoff = getChannelHandoffLog().prompt(principalId, handoffTargetsForTurn[0].channel)
         if (handoff) systemPrompt += '\n\n' + handoff
-    } catch (error) { console.debug(`[Pipeline] handoff prompt unavailable: ${error}`) }
+    } catch (error) { stageFailure('Kanalwechsel-Kontext', error) }
     if (projectHint) systemPrompt += '\n\n' + projectHint
 
     // P8 Routine-Skills: passt die Owner-Anfrage zu einem gespeicherten Skill,
@@ -1509,7 +1584,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             routineSkillApplied = routineHint.skillId
             console.log(`[Skills] Routine-Skill geladen: ${routineHint.skillId}`)
         }
-    } catch (err) { console.debug('[Pipeline] routine skills not available:', err) }
+    } catch (err) { stageFailure('Routine-Skills', err) }
 
     // ============================================
     // L6 Cold Storage: Inject USER.md + MEMORY.md into system prompt
@@ -1721,8 +1796,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     lines.push(`Mesh: Registry konnte nicht gelesen werden (${err instanceof Error ? err.message : String(err)}).`)
                 }
             }
-            await replyFn(lines.join('\n'))
-            logSession(canonicalUser, channel, 'assistant', lines.join('\n'))
+            await answer(lines.join('\n'))
             return
         }
 
@@ -1750,8 +1824,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             // Skip straight to response delivery
-            await replyFn(result.content)
-            logSession(canonicalUser, channel, 'assistant', result.content)
+            await answer(result.content)
             console.log(`[Nova][${channel}]Cache - Antwort gesendet(${result.content.length} chars)`)
             return
         }
@@ -1843,30 +1916,20 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             deniedTools: desktopBot?.deniedTools,
             workspaceId: desktopContext?.workspaceId,
         }
-        let lastProgress = 'LLM/Tools laufen'
-        // Progress is closed as soon as the main agent run settles, so a late
-        // step update or heartbeat can never arrive after the final answer.
-        const progress = createProgressGate(replyFn)
+        // 2.89 Paket E: progress is a side channel (progress-notice.ts). Chat channels
+        // get at most ONE short message after ~20 s; collecting channels (Desktop,
+        // Dashboard, REST, voice, mesh) never get status lines in the answer.
+        // Closed as soon as the main agent run settles, so nothing arrives after the answer.
         const progressStartedAt = Date.now()
-        const progressChannel = channel.toLowerCase()
-        const shouldSendProgress =
-            !execution &&
-            !isSystemMessage &&
-            !['internal', 'voice'].includes(progressChannel) &&
-            canonicalUser !== 'nova-self' &&
-            canonicalUser !== 'Nova-Autonomy'
-        const progressTimer = shouldSendProgress
-            ? setInterval(async () => {
-                const elapsed = Math.round((Date.now() - progressStartedAt) / 1000)
-                if (progress.closed) return
-                try {
-                    await progress.send(`⏳ Ich arbeite noch (${elapsed}s): ${lastProgress}`)
-                } catch (err) {
-                    console.log(`[Pipeline] Progress heartbeat failed: ${err} `)
-                }
-            }, 25_000)
-            : null
-        if (progressTimer?.unref) progressTimer.unref()
+        const progress = createProgressNotice({
+            channel,
+            enabled: (!execution || isCancellationOnlyExecution(execution))
+                && !isSystemMessage
+                && canonicalUser !== 'nova-self'
+                && canonicalUser !== 'Nova-Autonomy',
+            reply: replyFn,
+            onProgress: messageContext?.onProgress,
+        })
 
         try {
             traceStep('agent:start')
@@ -1878,7 +1941,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     onStepUpdate: async (status: string) => {
                         if (progress.closed || agentSignal.aborted) return
                         try {
-                            lastProgress = status
+                            progress.update(status)
                             // Zentrale Fortschrittsdatei fuer ALLE Oberflaechen.
                             // Ohne die zeigt Nova Desktop nur zeitgeratene Saetze
                             // ("Nova versteht den Auftrag und plant") und die
@@ -1892,9 +1955,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                                         String(status).replace(/\s+/g, ' ').slice(0, 160))
                                 } catch { /* Anzeige darf den Lauf nie stoppen */ }
                             }
-                            await progress.send(status)
                         } catch (err) {
-                            console.log(`[Pipeline] Step update delivery failed: ${err} `)
+                            stageFailure('Fortschritt', err)
                         }
                     },
                 }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
@@ -1911,7 +1973,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             throw err
         } finally {
             progress.close()
-            if (progressTimer) clearInterval(progressTimer)
         }
 
         // ============================================
@@ -2252,29 +2313,18 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         })),
                         verifiedEvidence: successfulExecutions.length,
                         action: (result as any).actionState,
+                        // 2.89: routing notices stay with the run, never inside the room answer.
+                        ...(progress.notices.length ? { notices: progress.notices } : {}),
                     })
                 } catch (error) {
                     console.debug(`[Desktop] outcome projection unavailable: ${error}`)
                 }
             }
 
-            // 2.88: the model used the honesty sentence → the same learn card (or the honest status).
-            if (!isSystemMessage) try {
-                const { capabilityReplyGate } = await import('../learning/capability-learning.js')
-                finalContent = await capabilityReplyGate(content, finalContent, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
-            } catch (error) { console.debug(`[Pipeline] capability reply gate unavailable: ${error}`) }
+            // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.
+            if (!isSystemMessage) finalContent = await guardReply(finalContent, successfulExecutions.length)
 
-            // 2.88.2: "habe … getestet / Verbindung steht" only with a tool in this run.
-            if (!isSystemMessage) try {
-                const { guardUnverifiedClaims } = await import('./unverified-claims.js')
-                finalContent = guardUnverifiedClaims(finalContent, successfulExecutions.length + failedExecutions.length)
-            } catch (error) { console.debug(`[Pipeline] unverified-claim guard unavailable: ${error}`) }
-
-            await replyFn(finalContent)
-            logSession(canonicalUser, channel, 'assistant', finalContent)
-            if (handoffTargetsForTurn.length) {
-                try { (await import('./conversation-handoff.js')).recordHandoff(handoffTargetsForTurn, 'assistant', finalContent) } catch { /* best effort */ }
-            }
+            await answer(finalContent)
 
             // Conversation continuity may retain only outcomes that crossed
             // the authoritative execution/evidence gate. Model prose alone is
@@ -2434,8 +2484,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             const fallbackMsg = result.content && result.content.includes('Loop')
                 ? 'Ich bin in eine Schleife geraten und konnte die Anfrage nicht verarbeiten. Bitte formuliere es anders oder versuche es erneut.'
                 : 'Entschuldigung, ich konnte keine Antwort generieren. Bitte versuche es erneut.'
-            await replyFn(fallbackMsg)
-            logSession(canonicalUser, channel, 'assistant', fallbackMsg)
+            await answer(fallbackMsg)
         }
 
     } catch (err) {
@@ -2471,14 +2520,27 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             return
         }
 
-        // Fallback to simple LLM call if agent runner fails
+        // 2.89: a system message (self-goal, reminder) gets no plain-model stand-in —
+        // its caller must see that the run failed (self-goals pause after 2 failures).
+        if (isSystemAuthored) {
+            await replyFn(`Fehler aufgetreten: ${redactSecrets(String((err as Error)?.message || err)).replace(/\s+/g, ' ').slice(0, 160)}`)
+            return
+        }
+
+        // Fallback to simple LLM call if agent runner fails.
+        // 2.89: it runs no tools, so it passes the same reply gate and claim guard
+        // with zero evidence (no unchecked "habe getestet" from the plain model).
         try {
             const response = await state.llm.complete([
                 { role: 'system', content: loadSoul() },
                 { role: 'user', content }
             ])
-            await replyFn(response.content)
+            const { sanitizeInternalOutboundArtifacts } = await import('./outbound-content-guard.js')
+            let fallbackText = sanitizeInternalOutboundArtifacts(String(response?.content || ''))
+            if (!isSystemAuthored) fallbackText = await guardReply(fallbackText, 0)
+            await answer(fallbackText)
         } catch (fallbackErr) {
+            if (fallbackErr instanceof ReplyDeliveryError) throw fallbackErr
             console.error(`[Nova] [${channel}] Fallback Fehler: ${fallbackErr}`)
             // LAST RESORT: always reply something, never go silent
             try {

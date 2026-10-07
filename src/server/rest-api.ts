@@ -23,6 +23,7 @@
 
 import { createServer, IncomingMessage, ServerResponse, type Server } from 'node:http'
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { TECHNICAL_PROBE_PRINCIPAL } from '../core/channel-name.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,13 +103,35 @@ function json(res: ServerResponse, status: number, data: unknown): void {
     res.end(body)
 }
 
+/**
+ * 2.89 Paket E: a request that carried the valid NOVA_API_TOKEN is the owner's
+ * own access (same proof standard as the token-checked Desktop app). Only the
+ * token principal is promoted — the open loopback principal never is
+ * (reconcileConfiguredOwner demotes it again).
+ */
+export async function grantRestTokenOwner(principal: string): Promise<void> {
+    if (principal !== REST_API_TOKEN_PRINCIPAL) return
+    const users = await import('../users/multi-user-middleware.js')
+    users.initMultiUser()
+    if (users.getUserPermission(principal, REST_API_CHANNEL) === 'owner') return
+    users.getOrCreateUser(principal, REST_API_CHANNEL)
+    users.setUserPermission(principal, 'owner')
+}
+
+export interface RestApiOptions {
+    /** Grants the owner role to the token principal (default: multi-user middleware). */
+    grantTokenOwner?: (principal: string) => Promise<void> | void
+}
+
 // ─── Server factory ───────────────────────────────────────────────────────────
 
 export function startRestApi(
     config: RestApiConfig,
     handleMessage: MessageHandler,
     getStatus: () => Record<string, unknown>,
+    options: RestApiOptions = {},
 ): Promise<Server> {
+    const grantTokenOwner = options.grantTokenOwner || grantRestTokenOwner
     return new Promise((resolve, reject) => {
         const apiToken = process.env.NOVA_API_TOKEN
         if (!apiToken && !['127.0.0.1', '::1', 'localhost'].includes(config.host)) {
@@ -139,7 +162,7 @@ export function startRestApi(
                 res.setHeader('Access-Control-Allow-Origin', origin)
                 res.setHeader('Vary', 'Origin')
                 res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-                res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+                res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Xaventra-Probe')
             }
             if (method === 'OPTIONS') {
                 if (origin === undefined) { json(res, 405, { error: 'Method not allowed' }); return }
@@ -193,7 +216,11 @@ export function startRestApi(
                 // channel "telegram"/"cli" used to inherit owner rights. The
                 // fields stay accepted for compatibility but are ignored.
                 const channel = REST_API_CHANNEL
-                const from = process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
+                // 2.89: a technical probe (rollout smoke test) declares itself and gets its own
+                // identity: never the owner, no session log, no handoff, no memory.
+                const probe = String(req.headers['x-xaventra-probe'] ?? '').trim() === '1'
+                const from = probe ? TECHNICAL_PROBE_PRINCIPAL
+                    : process.env.NOVA_API_TOKEN ? REST_API_TOKEN_PRINCIPAL : REST_API_LOCAL_PRINCIPAL
 
                 // CL-07: the REST entry runs the full pipeline with tools; on a
                 // node without the Main fence it is refused (enforce) or logged.
@@ -203,6 +230,13 @@ export function startRestApi(
                 } catch (error) {
                     json(res, 503, { error: 'Not the active Main node (fenced)', detail: String((error as Error)?.message || error).slice(0, 200) })
                     return
+                }
+
+                // The owner role follows only the verified token (checkAuth above), never the body.
+                if (process.env.NOVA_API_TOKEN && from === REST_API_TOKEN_PRINCIPAL) {
+                    try { await grantTokenOwner(from) } catch (error) {
+                        console.warn(`[RestAPI] Owner-Recht für Token-Zugang nicht gesetzt: ${String((error as Error)?.message || error).slice(0, 160)}`)
+                    }
                 }
 
                 let response = ''

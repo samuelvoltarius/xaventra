@@ -48,6 +48,11 @@ import { loadSkillPack, toolExpansionPolicy } from '../tools/tool-router.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
 import { noteVoiceToolDone, speakableClient } from '../voice/voice-turn-stream.js'
 
+/** 2.89 Paket E: a failed optional runner stage is logged (short, redacted, no message text) — never silent. */
+function runnerStageFailure(stage: string, error: unknown): void {
+    console.warn('[Nova Agent] ' + stage + ' fehlgeschlagen: ' + redactSecrets(String((error as Error)?.message || error)).replace(/\s+/g, ' ').slice(0, 200))
+}
+
 // ============================================
 // Timeout Helper — prevents Nova from blocking forever
 // ============================================
@@ -449,7 +454,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 meshDelegation = { host: meshModel.sourceHost, model: meshModel.id }
                 console.log(`[Nova Agent] 🌐 Mesh delegation: ${meshModel.sourceHost}/${meshModel.id}`)
             }
-        } catch { /* non-critical */ }
+        } catch (error) { runnerStageFailure('Mesh-Delegation', error) }
 
         // === TRACE: Start recording this agent invocation ===
         const _traceRecorder = getTraceRecorder()
@@ -728,7 +733,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 })
                 console.log(`[L7] Injected few-shot examples for ${fewShotParts.length} tools`)
             }
-        } catch { /* L7 not critical */ }
+        } catch (error) { runnerStageFailure('Gelernte Tool-Beispiele', error) }
 
         // === Prozeduren (ein Speicher, learning/procedure-store.ts): bekannte Lösung ===
         // 2.83.0: die abgerufene Prozedur meldet nach der Validierung ihren Nutzen zurück.
@@ -743,7 +748,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 messages.push({ role: 'system', content: block })
                 console.log(`[Prozeduren] Bekannte Lösung geladen: ${known.problem.slice(0, 60)}`)
             }
-        } catch { /* procedures are not critical */ }
+        } catch (error) { runnerStageFailure('Prozeduren (Abruf)', error) }
 
         // Hard-abort guard: bail before even starting the LLM call if already cancelled
         if (abortSignal?.aborted) {
@@ -1220,7 +1225,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     result,
                                     permission: getUserPermission(authUserId, channel),
                                 })
-                            } catch { /* Lernen darf den Lauf nie stoppen */ }
+                            } catch (error) { runnerStageFailure('Fähigkeits-Lernen', error) }
                         }
 
                         // Format tool result nicely for user - AVOID JSON!
@@ -1415,7 +1420,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                 })
                                 if (actionIntent.requiresTool && effectiveSuccess) actionLifecycle.markLearned()
                             }
-                        } catch { /* learning is non-critical */ }
+                        } catch (error) { runnerStageFailure('Tool-Lernen (Erfolg)', error) }
 
                         console.log(`[Nova Agent] Tool result (${call.name}): ${resultStr.slice(0, 200)}...`)
 
@@ -1601,7 +1606,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                     verified: true,
                                     timestamp: Date.now(),
                                 })
-                            } catch { /* learning is non-critical */ }
+                            } catch (error) { runnerStageFailure('Tool-Lernen (Fehler)', error) }
                         }
 
                         toolResults.push(`❌ **${call.name}** Fehler: ${err}`)
@@ -1725,7 +1730,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     const { missingToolFailures } = await import('../tools/skill-builder.js')
                     const known = new Set(getToolRegistry().getAll().map(tool => tool.name))
                     missingTools.push(...missingToolFailures(error, name => known.has(name)))
-                } catch { /* the forge need hook is optional */ }
+                } catch (error) { runnerStageFailure('Werkzeug-Bedarf', error) }
                 console.warn('[Xaventra Agent] SDK loop stopped safely:', String(error))
             }
         }
@@ -1858,7 +1863,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         costUsd: usageCost.totalUsd,
                         channel, validation: taskValidation,
                     })
-                } catch { /* episodic learning is non-critical */ }
+                } catch (error) { runnerStageFailure('Episoden-Lernen', error) }
             }
         } else if (!taskValidation.awaitingApproval) {
             const reasons = taskValidation.criteria.filter(item => !item.success).map(item => item.reason).filter(Boolean)
@@ -1896,7 +1901,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             try {
                 const { getProcedureStore } = await import('../learning/procedure-store.js')
                 getProcedureStore().recordProcedureOutcome(recalledProcedure.problem, userId, taskValidation.success, kernel.contract.id)
-            } catch { /* procedures are not critical */ }
+            } catch (error) { runnerStageFailure('Prozeduren (Ergebnis)', error) }
         }
 
         // Add to history

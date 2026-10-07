@@ -65,6 +65,20 @@ export function telegramQueueKey(msg: { id?: unknown }, chatId: unknown): string
     return `tg:${String(chatId ?? 'unknown')}:${raw || `local-${Date.now()}`}`
 }
 
+/**
+ * 2.89 Paket E: transport facts of a WhatsApp/Discord message. A group message
+ * carries the group (or channel) id as chatId, so the pipeline treats it as a
+ * group (no owner projects, no rules, no private learning). A direct message
+ * keeps the sender as chat — Discord also sets a DM channel id as groupId, so
+ * only `isGroup` decides.
+ */
+export function adapterMessageContext(msg: { from?: unknown; isGroup?: unknown; groupId?: unknown }): import('./message-pipeline.js').MessageContext | undefined {
+    const groupId = String(msg?.groupId ?? '').trim()
+    if (msg?.isGroup === true && groupId) return { chatId: groupId }
+    const from = String(msg?.from ?? '').trim()
+    return from ? { chatId: from } : undefined
+}
+
 /** Retry interval for inbound updates deferred because authority could not be verified. */
 export const TELEGRAM_AUTHORITY_RETRY_MS = 15_000
 
@@ -74,6 +88,17 @@ export async function verifyTelegramAuthority(
     const checker = verify || (await import('../mesh/leader-election.js')).verifyLiveServiceLeadership
     if (!(await checker('nova-main'))) return false
     return checker('telegram')
+}
+
+/**
+ * 2.89 Paket E: the card loop (expiry, re-delivery, sync, guided tick) belongs to
+ * the Main, not to Telegram. Started by the Main control plane and — as before —
+ * by the Telegram channel; idempotent, never on a worker (checked inside).
+ */
+export function startOwnerCardLoop(): void {
+    if (process.env.NOVA_NO_SIDE_EFFECTS === '1') return
+    void import('./approval-card-sources.js').then(module => module.startApprovalCardLoop())
+        .catch(error => console.warn(`[Knopf-Karten] Schleife nicht gestartet: ${String((error as Error)?.message || error).slice(0, 160)}`))
 }
 
 // ============================================
@@ -337,7 +362,8 @@ async function startTelegramOnce(
     // Knopf-Karten (CL-10): only the Main with live Telegram authority delivers;
     // every tick re-checks the authority, workers never start the loop.
     if (process.env.NOVA_NO_SIDE_EFFECTS !== '1') {
-        void import('./approval-card-sources.js').then(module => module.startApprovalCardLoop()).catch(() => { /* optional */ })
+        // 2.89: the loop also starts with the Main control plane (daemon.ts), without Telegram; idempotent.
+        startOwnerCardLoop()
         // Planner (CL-09) speaks through this one port: briefings as text,
         // "fragen" thoughts as Knopf-Karten. Each delivery re-checks authority.
         void Promise.all([import('../planner/index.js'), import('./planner-card-bridge.js')])
@@ -581,7 +607,7 @@ export async function startWhatsApp(
                     to: msg.groupId || msg.from,
                     content: reply,
                 })
-            })
+            }, undefined, undefined, adapterMessageContext(msg))
         })
 
         await adapter.connect()
@@ -636,7 +662,7 @@ export async function startDiscord(
                     to: msg.groupId || msg.from,
                     content: reply,
                 })
-            })
+            }, undefined, undefined, adapterMessageContext(msg))
         })
 
         await adapter.connect()

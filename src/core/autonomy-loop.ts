@@ -883,46 +883,7 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
                 return report
             }
             const { getSelfGoalEngine } = await import('../intelligence/autonomy-engine.js')
-            const engine = getSelfGoalEngine()
-            const goal = engine.getNextGoal()
-            if (goal) {
-                console.log(`[Autonomy] 🎯 Executing goal: "${goal.goal}"`)
-                const goalPrompt = [
-                    `[SELF-GOAL] Nova führt eine selbst gesetzte Aufgabe aus:`,
-                    ``,
-                    `Ziel: ${goal.goal}`,
-                    goal.reason ? `Kontext: ${goal.reason}` : '',
-                    ``,
-                    `Führe diese Aufgabe jetzt aus. Nutze alle verfügbaren Tools.`,
-                    `Wenn du fertig bist, fasse das Ergebnis in 1-2 Sätzen zusammen.`,
-                    `Markiere am Ende: GOAL_DONE: <kurze Ergebnis-Zusammenfassung>`,
-                    `SICHERHEIT: Nur interner Read-only Scope. Keine Kaeufe, Verkaeufe, Zahlungen, Logins, Secrets, Deploys, Restarts oder Datei-/Systemaenderungen ohne expliziten User-Befehl.`,
-                    `SICHERHEIT: Sende keine proaktive Nachricht an den User; dieser Lauf wird intern erfasst.`,
-                ].filter(Boolean).join('\n')
-
-                // Execute goal through Nova's main pipeline — capture actual output
-                const rawOutput = await thinkFn(goalPrompt)
-
-                // Validate: did we get a meaningful response?
-                const isEmpty = !rawOutput || rawOutput.trim().length < 10
-                if (isEmpty) {
-                    console.log(`[Autonomy] ⚠ Goal lieferte leere Antwort — nicht als erledigt markiert: "${goal.goal}"`)
-                    // Don't complete — will retry next cycle
-                    return report
-                }
-
-                // Extract GOAL_DONE summary if Nova included it.
-                // Guard: only match when GOAL_DONE: appears at the start of a line
-                // (not mid-sentence), and the summary is at least 10 chars — prevents
-                // accidental extraction when the model mentions the marker in prose.
-                const doneLine = rawOutput.match(/^GOAL_DONE:\s*(.{10,})/m)
-                const goalResult = doneLine
-                    ? doneLine[1].trim()
-                    : rawOutput.slice(0, 200).replace(/\n/g, ' ')
-
-                engine.completeGoal(goal.id, goalResult)
-                console.log(`[Autonomy] ✅ Goal abgeschlossen: "${goal.goal}" → ${goalResult.slice(0, 80)}`)
-            }
+            await runSelfGoalStep(getSelfGoalEngine(), thinkFn)
         } catch (err) {
             console.log(`[Autonomy] ⚠ Goal execution failed: ${err}`)
         }
@@ -930,6 +891,71 @@ async function runAutonomyCycle(): Promise<AutonomyReport> {
 
     console.log(`[Autonomy] ✅ Cycle complete: ${evaluation.summary}`)
     return report
+}
+
+/**
+ * 2.89: why a self-goal run failed (null = usable result). An empty answer, the
+ * governed stop or the pipeline's failure texts are failures; GOAL_DONE never is.
+ */
+export function selfGoalFailure(rawOutput: string | null | undefined): string | null {
+    const text = String(rawOutput || '').trim()
+    if (text.length < 10) return 'leere Antwort'
+    if (/^GOAL_DONE:\s*.{10,}/m.test(text)) return null
+    const failure = /Governed tool execution stopped|ist aber fehlgeschlagen|Fehler aufgetreten|Zeitlimit überschritten|wurde abgebrochen|konnte keine Antwort|nicht abgeschlossen|noch nicht fertig geworden|in eine Schleife geraten/i.exec(text)
+    return failure ? failure[0] : null
+}
+
+export interface SelfGoalEngineLike {
+    getNextGoal(): { id: string; goal: string; reason?: string } | null
+    completeGoal(goalId: string, result: string): void
+    recordGoalFailure(goalId: string, reason: string): { failures: number; paused: boolean }
+}
+
+/** One self-goal run: done on a usable result, counted (and paused after 2) on failure. */
+export async function runSelfGoalStep(engine: SelfGoalEngineLike, think: (prompt: string) => Promise<string>): Promise<'none' | 'done' | 'failed' | 'paused'> {
+    const goal = engine.getNextGoal()
+    if (!goal) return 'none'
+    console.log(`[Autonomy] 🎯 Executing goal: "${goal.goal}"`)
+    const goalPrompt = [
+        `[SELF-GOAL] Nova führt eine selbst gesetzte Aufgabe aus:`,
+        ``,
+        `Ziel: ${goal.goal}`,
+        goal.reason ? `Kontext: ${goal.reason}` : '',
+        ``,
+        `Führe diese Aufgabe jetzt aus. Nutze alle verfügbaren Tools.`,
+        `Wenn du fertig bist, fasse das Ergebnis in 1-2 Sätzen zusammen.`,
+        `Markiere am Ende: GOAL_DONE: <kurze Ergebnis-Zusammenfassung>`,
+        `SICHERHEIT: Nur interner Read-only Scope. Keine Kaeufe, Verkaeufe, Zahlungen, Logins, Secrets, Deploys, Restarts oder Datei-/Systemaenderungen ohne expliziten User-Befehl.`,
+        `SICHERHEIT: Sende keine proaktive Nachricht an den User; dieser Lauf wird intern erfasst.`,
+    ].filter(Boolean).join('\n')
+
+    // Execute goal through Nova's main pipeline — capture actual output
+    let rawOutput = ''
+    try {
+        rawOutput = await think(goalPrompt)
+    } catch (error) {
+        rawOutput = `Fehler aufgetreten: ${String((error as Error)?.message || error).slice(0, 120)}`
+    }
+
+    const failure = selfGoalFailure(rawOutput)
+    if (failure) {
+        const counted = engine.recordGoalFailure(goal.id, failure)
+        console.log(`[Autonomy] ⚠ Goal nicht erledigt (${failure}) — Fehlversuch ${counted.failures}${counted.paused ? ', pausiert' : ''}: "${goal.goal}"`)
+        return counted.paused ? 'paused' : 'failed'
+    }
+
+    // Extract GOAL_DONE summary if Nova included it.
+    // Guard: only match when GOAL_DONE: appears at the start of a line
+    // (not mid-sentence), and the summary is at least 10 chars — prevents
+    // accidental extraction when the model mentions the marker in prose.
+    const doneLine = rawOutput.match(/^GOAL_DONE:\s*(.{10,})/m)
+    const goalResult = doneLine
+        ? doneLine[1].trim()
+        : rawOutput.slice(0, 200).replace(/\n/g, ' ')
+
+    engine.completeGoal(goal.id, goalResult)
+    console.log(`[Autonomy] ✅ Goal abgeschlossen: "${goal.goal}" → ${goalResult.slice(0, 80)}`)
+    return 'done'
 }
 
 let doctorCaseVerifierRegistered = false

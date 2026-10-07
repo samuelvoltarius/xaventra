@@ -26,6 +26,8 @@ export interface DesktopAgentOutcome {
     tools: Array<{ name: string; success: boolean }>
     verifiedEvidence: number
     action?: { requiresTool: boolean; kind: string; fulfilled: boolean; awaitingApproval: boolean; phase: string }
+    /** 2.89: routing/status notices of this run — shown with the run, never inside the answer text. */
+    notices?: string[]
 }
 
 const storage = new AsyncLocalStorage<DesktopAgentContext>()

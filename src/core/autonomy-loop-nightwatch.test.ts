@@ -13,7 +13,7 @@ vi.mock('./message-pipeline.js', () => ({
 }))
 vi.mock('./autonomous-executor.js', () => ({ getActiveMission: () => null, getMissionQueue: () => [] }))
 vi.mock('../intelligence/autonomy-engine.js', () => ({
-    getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }),
+    getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { }, recordGoalFailure: () => ({ failures: 1, paused: false }) }),
 }))
 import { triggerAutonomyCheck, updateAutonomyConfig } from './autonomy-loop.js'
 import { setThinkingConfig } from '../thinking/thinking-runtime.js'

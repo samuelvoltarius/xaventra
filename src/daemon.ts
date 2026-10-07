@@ -1446,13 +1446,15 @@ async function startDaemon() {
                     source: notice.source, summary: notice.content.slice(0, 500), severity: notice.severity,
                     confidence: notice.confidence, dedupeKey: notice.dedupeKey, evidenceRefs: notice.evidenceRefs,
                 }),
-                // CL-07: one fenced path. Without a live Main/Telegram fence a
-                // non-Main records nothing (the real Main raises its own).
+                // CL-07: one fenced path. Without a live Main fence a non-Main
+                // records nothing (the real Main raises its own). 2.89: Telegram is
+                // NOT required — without it the notice becomes a thought / app
+                // notification on the Main instead of being dropped.
                 authority: async () => {
                     const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('./mesh/leader-election.js')
-                    if (await verifyLiveServiceLeadership(MAIN_SERVICE) && await verifyLiveServiceLeadership('telegram')) return true
+                    if (await verifyLiveServiceLeadership(MAIN_SERVICE)) return true
                     const { hasValidFence } = await import('./mesh/fence.js')
-                    return hasValidFence(MAIN_SERVICE) && hasValidFence('telegram')
+                    return hasValidFence(MAIN_SERVICE)
                 },
                 plannerActive: () => plannerConfigured,
                 addThought,
@@ -1725,19 +1727,6 @@ async function startDaemon() {
         // Nachtwache); sending the summary too would repeat them. Declining here
         // makes the loop log honestly; the report stays in autonomy-reports.
         const notifyFn = async (_message: string): Promise<boolean> => false
-        // Mission Engine (/mission) progress: its own trusted source 'mission-engine'
-        // (code-generated, owner-started missions). Before 2.82.0 it went out as
-        // 'autonomy-loop', which the governed path always dropped.
-        const missionNotifyFn = async (message: string) => {
-            const governed = (state as any).sendGovernedProactive
-            if (governed) {
-                await governed(message, 'mission-engine', 'warning', 0.9)
-                return
-            }
-            // Fail closed until the fenced proactive path is ready.
-            console.log(`[Autonomy] Governed notifier unavailable; notification retained in report: ${message.slice(0, 160)}`)
-        }
-
         const autonomyCfg = (config as any).autonomy || {}
         // Nachtwache is opt-in: autonomy.nightwatch.enabled=true plus a private
         // probe config (default .nova-data/nightwatch.json, see docs/NIGHTWATCH.md).
@@ -1979,28 +1968,43 @@ async function startDaemon() {
             console.log(`[Xaventra] Doctor investigation worker unavailable: ${err}`)
         }
 
-        // === Mission Engine (Autonomous Task Chaining) ===
-        try {
-            const { initMissionEngine } = await import('./core/autonomous-executor.js')
-            initMissionEngine({
-                handleMessage: async (ch: string, from: string, content: string, replyFn: (msg: string) => Promise<void>, st: any) => {
-                    return _handleMessage(ch, from, content, replyFn, st || state as any, handleCommand)
-                },
-                notifyFn: missionNotifyFn,
-                llm: state.llm,
-                state: state as any,
-            })
-            console.log('[Nova] ✓ Mission Engine aktiv (autonome Task-Chains bereit)')
-            // 2.88 Projekte: offene Hintergrund-Projekte nach einem Neustart weiterführen.
-            void import('./core/projects-runtime.js').then(({ getProjectCoordinator }) => getProjectCoordinator())
-                .catch(error => console.log(`[Nova] ⚠ Projekte nicht verfügbar: ${error}`))
-        } catch (err) {
-            console.log(`[Nova] ⚠ Mission Engine nicht verfügbar: ${err}`)
-        }
-
     } catch (err) {
         console.log(`[Nova] ⚠ Autonomy Loop nicht verfügbar: ${err}`)
     }
+
+    // === Mission Engine (Autonomous Task Chaining) + project resume ===
+    // 2.89 Paket E: own try — a failing autonomy loop must not take /mission
+    // and the resume of open background projects with it.
+    try {
+        // Mission Engine (/mission) progress: its own trusted source 'mission-engine'
+        // (code-generated, owner-started missions). Before 2.82.0 it went out as
+        // 'autonomy-loop', which the governed path always dropped.
+        const missionNotifyFn = async (message: string) => {
+            const governed = (state as any).sendGovernedProactive
+            if (governed) {
+                await governed(message, 'mission-engine', 'warning', 0.9)
+                return
+            }
+            // Fail closed until the fenced proactive path is ready.
+            console.log(`[Autonomy] Governed notifier unavailable; notification retained in report: ${message.slice(0, 160)}`)
+        }
+        const { initMissionEngine } = await import('./core/autonomous-executor.js')
+        initMissionEngine({
+            handleMessage: async (ch: string, from: string, content: string, replyFn: (msg: string) => Promise<void>, st: any) => {
+                return _handleMessage(ch, from, content, replyFn, st || state as any, handleCommand)
+            },
+            notifyFn: missionNotifyFn,
+            llm: state.llm,
+            state: state as any,
+        })
+        console.log('[Nova] ✓ Mission Engine aktiv (autonome Task-Chains bereit)')
+    } catch (err) {
+        console.warn(`[Nova] ⚠ Mission Engine nicht verfügbar: ${err}`)
+    }
+    // 2.88 Projekte: offene Hintergrund-Projekte nach einem Neustart weiterführen —
+    // unabhängig von Autonomy-Loop und Mission Engine.
+    void import('./core/projects-runtime.js').then(({ getProjectCoordinator }) => getProjectCoordinator())
+        .catch(error => console.warn(`[Nova] ⚠ Projekte nicht verfügbar: ${error}`))
 
     // Register in Nova Mesh Network (auto-discovery)
     try {
@@ -2047,6 +2051,11 @@ async function startDaemon() {
             const { startMissionRecoveryWatcher: startNativeMissionRecovery } = await import('./core/autonomous-executor.js')
             startNativeMissionRecovery()
             console.log('[Nova] Native Mission-Recovery-Watcher active')
+            // 2.89 Paket E: card loop (expiry, re-delivery, sync) with the Main, not only with Telegram.
+            if (!isNodeOnly) {
+                const { startOwnerCardLoop } = await import('./core/daemon-channels.js')
+                startOwnerCardLoop()
+            }
             try {
                 const { getSessionContinuityStore } = await import('./memory/session-summarizer.js')
                 const hydratedContinuity = await withControlPlaneTimeout(
@@ -2106,6 +2115,8 @@ async function startDaemon() {
             stopCodexContinuityMonitor()
             const { suspendMissionForLeadershipLoss } = await import('./core/autonomous-executor.js')
             suspendMissionForLeadershipLoss()
+            const { stopApprovalCardLoop } = await import('./core/approval-card-sources.js')
+            stopApprovalCardLoop()
             console.warn('[Nova] Main-Lease verloren: Release-Autorität gestoppt')
             watchForServiceLeadership(MAIN_SERVICE, activateMainControlPlane)
         })

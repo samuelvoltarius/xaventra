@@ -90,7 +90,11 @@ export function incompleteToolResponse(results: string[]): string {
 
 /** Tools that describe Xaventra herself (catalogues, skill packs, self-introspection).
  * Their output helps the model choose; it is never an answer for the owner (2.87.1). */
-export const META_TOOL_NAMES: ReadonlySet<string> = new Set(['load_skill_pack', 'nova_introspect', 'list_skill_packs', 'tool_search'])
+export const META_TOOL_NAMES: ReadonlySet<string> = new Set([
+    'load_skill_pack', 'nova_introspect', 'list_skill_packs', 'tool_search',
+    // 2.89: graph search and self-statistics are raw internals, never the owner's answer on an aborted run.
+    'kg_search', 'nova_capabilities', 'nova_trace_stats',
+])
 
 /** Incomplete turn: keep real findings, drop meta-tool output; short when nothing is left. */
 export function incompleteExecutionsResponse(executions: ReadonlyArray<{ toolName?: string; name?: string; success?: boolean; result?: unknown }>): string {
