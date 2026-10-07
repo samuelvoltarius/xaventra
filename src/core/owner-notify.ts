@@ -18,6 +18,9 @@
  *   - Nur wenn der Planer ausdrücklich aus ist (autonomy.planner.enabled=false),
  *     geht eine vertrauenswürdige Meldung direkt über den Transport (gleiche
  *     Ruhezeit-Definition); sonst nie.
+ *   - 2.89: Telegram ist keine Voraussetzung. Die Autorität ist die des Mains;
+ *     ohne Telegram (kein Transport) wird eine vertrauenswürdige Meldung ein
+ *     Gedanke = App-Benachrichtigung statt „verworfen“.
  */
 import type { NewThought, ThoughtSeverity } from '../planner/thoughts.js'
 
@@ -35,12 +38,12 @@ export interface OwnerNotice {
 export interface OwnerNotifyDeps {
     /** Records the event (audit) and judges trust: trusted producer or explicit evidence. */
     ingest(notice: OwnerNotice): { actionable: boolean; reason: string }
-    /** Live Main/Telegram authority (or a valid fence) on this node. */
+    /** Live Main authority (or a valid Main fence) on this node. Telegram is not required (2.89). */
     authority(): Promise<boolean>
     /** False only when the planner is switched off in the config. */
     plannerActive(): boolean
     addThought(input: NewThought): { thought: { id: string }; deduped: boolean }
-    /** Fallback transport while the planner is off (ProactiveMessenger). */
+    /** Fallback transport while the planner is off (ProactiveMessenger); false = not delivered (e.g. no Telegram). */
     transport(notice: OwnerNotice): Promise<boolean>
     log?(line: string): void
 }
@@ -90,8 +93,8 @@ export async function notifyOwner(notice: OwnerNotice, deps: OwnerNotifyDeps): P
     try { live = await deps.authority() } catch { live = false }
     if (!live) {
         // The real Main raises its own; a worker never collects thoughts it cannot deliver.
-        deps.log?.(`[Meldung] ${notice.source}: keine Main/Telegram-Autorität auf diesem Knoten — nicht gemeldet`)
-        return { route: 'verworfen', reason: 'keine Main/Telegram-Autorität' }
+        deps.log?.(`[Meldung] ${notice.source}: keine Main-Autorität auf diesem Knoten — nicht gemeldet`)
+        return { route: 'verworfen', reason: 'keine Main-Autorität' }
     }
     if (deps.plannerActive()) {
         const input = noticeToThought(notice, verdict.actionable)
@@ -104,5 +107,13 @@ export async function notifyOwner(notice: OwnerNotice, deps: OwnerNotifyDeps): P
         deps.log?.(`[Meldung] ${notice.source}: ${verdict.reason} (Planer aus, kein Bericht)`)
         return { route: 'verworfen', reason: verdict.reason }
     }
-    return (await deps.transport(notice)) ? { route: 'transport', reason: 'Planer aus' } : { route: 'verworfen', reason: 'Transport hat nicht zugestellt' }
+    let delivered = false
+    try { delivered = await deps.transport(notice) } catch (error) {
+        deps.log?.(`[Meldung] ${notice.source}: Transport fehlgeschlagen (${String((error as Error)?.message || error).slice(0, 120)})`)
+    }
+    if (delivered) return { route: 'transport', reason: 'Planer aus' }
+    // 2.89: no Telegram (or it failed) → the notice stays as a thought the app shows.
+    deps.addThought(noticeToThought(notice, true))
+    deps.log?.(`[Meldung] ${notice.source}: kein Telegram-Transport — als App-Benachrichtigung abgelegt`)
+    return { route: 'gedanke', reason: 'kein Transport — App-Benachrichtigung' }
 }

@@ -100,7 +100,20 @@ describe('früher stumm verworfene Quellen', () => {
         expect(store.list()).toHaveLength(0)
     })
 
-    it('ohne Main/Telegram-Autorität wird nichts gesammelt', async () => {
+    it('2.89 Planer aus und kein Telegram: vertrauenswürdige Meldung wird App-Benachrichtigung statt „verworfen“', async () => {
+        const d = deps({ plannerActive: () => false, transport: vi.fn(async () => false) } as any)
+        const result = await notifyOwner(disk, d)
+        expect(result.route).toBe('gedanke')
+        expect(store.list()).toHaveLength(1)
+        expect(store.list()[0]).toMatchObject({ source: 'health-monitor', kind: 'ereignis' })
+        // a throwing transport (Telegram gone mid-way) ends the same way
+        const thrown = deps({ plannerActive: () => false, transport: vi.fn(async () => { throw new Error('ETELEGRAM: 401') }) } as any)
+        expect((await notifyOwner({ ...disk, dedupeKey: 'health:disk-2' }, thrown)).route).toBe('gedanke')
+        // unconfirmed sources stay out while the planner is off (unchanged)
+        expect((await notifyOwner({ content: 'x', source: 'self-thinking', severity: 'info', confidence: 0.85 }, d)).route).toBe('verworfen')
+    })
+
+    it('ohne Main-Autorität wird nichts gesammelt', async () => {
         const d = deps({ authority: async () => false })
         expect((await notifyOwner(disk, d)).route).toBe('verworfen')
         expect(store.list()).toHaveLength(0)
