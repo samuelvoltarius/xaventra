@@ -70,7 +70,7 @@ export interface ConnectQuestionDeps {
     /** The one connection truth for every consolidated device of a kind. */
     geraete: (art: GeraetArt) => Array<{ titel: string; stand: Verbindungsstand }>
     /** Helper services without a connector (registered sources: SearXNG, local models). */
-    quellen?: () => ReadonlyArray<{ title: string; verbunden: boolean }>
+    quellen?: () => ReadonlyArray<{ title: string; verbunden: boolean; /** Entered, but a short probe found no answer. */ nichtErreichbar?: boolean }>
 }
 
 /** What the question is about: a catalog connector, a device kind, or nothing known. */
@@ -108,10 +108,29 @@ export function answerConnectQuestion(text: string, deps: ConnectQuestionDeps): 
         return frage === 'status' && geraete.length ? nochNicht(geraete[0].titel) : null
     }
     // A helper service without a connector (SearXNG, a local model): its own source decides.
-    const hit = (deps.quellen?.() || []).find(entry => entry.verbunden === true && norm(entry.title).split(' ').includes(target.split(' ')[0]) && norm(entry.title).includes(target))
+    const matches = (entry: { title: string }) => norm(entry.title).split(' ').includes(target.split(' ')[0]) && norm(entry.title).includes(target)
+    const quellen = deps.quellen?.() || []
+    const down = quellen.find(entry => entry.nichtErreichbar === true && matches(entry))
+    if (down) return `${down.title} ist bei mir eingetragen, aber gerade nicht erreichbar. Sobald der Dienst wieder antwortet, suche ich wieder darüber.`
+    const hit = quellen.find(entry => entry.verbunden === true && matches(entry))
     if (!hit) return null
     const nutzen = /searx|such/i.test(hit.title) ? ' Ich suche schon darüber.' : ' Ich nutze es schon.'
     return `Ja — ${hit.title} ist schon verbunden.${nutzen}`
+}
+
+/** The configured SearXNG (env / config), probed briefly: reachable = in use, else „eingetragen, nicht erreichbar“. */
+async function searxngQuelle(): Promise<{ title: string; verbunden: boolean; nichtErreichbar?: boolean } | null> {
+    try {
+        const { getSearXNGUrl } = await import('../tools/searxng-search.js')
+        const url = getSearXNGUrl()
+        if (!url || !/^https?:\/\//i.test(url)) return null
+        try {
+            await fetch(url, { method: 'GET', signal: AbortSignal.timeout(2500), redirect: 'manual' })
+            return { title: 'SearXNG', verbunden: true }
+        } catch {
+            return { title: 'SearXNG', verbunden: false, nichtErreichbar: true }
+        }
+    } catch { return null }
 }
 
 /** Production: the same answer from the real stores (catalog, connections, devices, sources). */
@@ -124,13 +143,19 @@ export async function answerConnectQuestionLive(text: string, options: { dataDir
     const dataDir = options.dataDir || getNovaDataDir()
     const kontext = standKontext(dataDir)
     const connectors = getConnectorCatalog().entries.map(entry => ({ name: entry.name, title: entry.title }))
-    let quellen: Array<{ title: string; verbunden: boolean }> = []
+    let quellen: Array<{ title: string; verbunden: boolean; nichtErreichbar?: boolean }> = []
     if (!connectQuestionZiel(target, connectors)) {
         // Only helper sources (no connector, no device, no account): SearXNG, local models.
         const { collectConnections } = await import('./connections-view.js')
         const view = await collectConnections({ dataDir })
         quellen = view.gefunden.filter(item => !item.connectorId && !item.geraet && !item.id.startsWith('konto:') && !item.id.startsWith('geraet:'))
             .map(item => ({ title: item.title, verbunden: item.verbunden === true }))
+        // 2.89.1: the SearXNG entered in the environment / config (the one web-search URL) counts
+        // like a found helper service, even when the connection view did not list it.
+        if (!quellen.some(item => /searx/i.test(item.title))) {
+            const searx = await searxngQuelle()
+            if (searx) quellen.push(searx)
+        }
     }
     return answerConnectQuestion(text, {
         connectors,

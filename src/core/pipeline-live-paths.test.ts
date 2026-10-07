@@ -586,6 +586,29 @@ describe('9 — Dashboard/Desktop: status lines never mix into the room answer',
 })
 
 // ---------------------------------------------------------------------------
+describe('SearXNG from the environment counts as a connection (2.89.1)', () => {
+    it('„searxng kannst du dich mit dem verbinen ?“ → already connected, deterministic, no model; unreachable → honest', async () => {
+        const { createServer } = await import('node:http')
+        const searx = createServer((_req, res) => { res.end('ok') })
+        await new Promise<void>(resolve => searx.listen(0, '127.0.0.1', resolve))
+        try {
+            vi.stubEnv('NOVA_SEARXNG_URL', `http://127.0.0.1:${(searx.address() as any).port}`)
+            const replies = await send('Telegram', '1001', 'searxng kannst du dich mit dem verbinen ?')
+            expect(replies).toHaveLength(1)
+            expect(replies[0]).toMatch(/^Ja — SearXNG ist schon verbunden\. Ich suche schon darüber\./)
+            expect(fixtures.agent).not.toHaveBeenCalled()
+        } finally {
+            searx.closeAllConnections?.()
+            await new Promise<void>(resolve => searx.close(() => resolve()))
+        }
+        // Closed port: entered, but not reachable — said honestly, still no model.
+        const replies = await send('Telegram', '1001', 'searxng kannst du dich mit dem verbinen ?')
+        expect(replies[0]).toMatch(/eingetragen, aber gerade nicht erreichbar/)
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    }, 30000)
+})
+
+// ---------------------------------------------------------------------------
 describe('prompt without contradictions (review 1.8)', () => {
     it('the assembled system prompt never says „ssh_command direkt“ or „build_skill“ for a missing tool', async () => {
         await send('Telegram', '1001', 'Wie geht es dir heute?')
