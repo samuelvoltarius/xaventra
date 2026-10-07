@@ -9,7 +9,7 @@
  *
  * capabilityInventory() joins the real sources, each read once:
  *  - the tool register (what is callable),
- *  - the connection status (Paket B: the one connection truth; read via readConnections),
+ *  - the connection status (Paket B: connectionState(), read via readConnections),
  *  - mesh skills (mesh/node-strengths.ts: what online nodes can do now, one online window),
  *  - the one tool-health store (a registered tool that keeps failing does not count),
  *  - cloud providers with a key and the active runtime (llm/active-runtime.ts),
@@ -102,7 +102,7 @@ export function describeMissing(inventory: CapabilityInventory): string[] {
 export interface InventoryDeps {
     dataDir?: string
     tools?: () => Promise<string[]> | string[]
-    /** Paket B: the one connection state. Default: the connection store status field. */
+    /** Paket B: the one connection state. Default: connectionState() per connector (readConnections). */
     connections?: () => Promise<Map<string, string>> | Map<string, string>
     strengths?: () => Promise<readonly NodeStrength[]>
     toolHealth?: () => readonly ToolHealthEntry[]
@@ -118,14 +118,25 @@ export interface InventoryDeps {
     now?: number
 }
 
-/** Connection statuses by connector id. Paket B swaps this one function for connectionState(). */
+/**
+ * Connection statuses by connector id, from the one connection truth (Paket B:
+ * connections/connection-state.ts). "verbunden" only when connectionState() says so
+ * (configured Home Assistant included, an HA_URL alone is not enough); otherwise the
+ * stored record status, so "not connected" stays apart from "unknown".
+ */
 async function readConnections(dataDir?: string): Promise<Map<string, string>> {
     const out = new Map<string, string>()
     try {
-        const { loadConnections } = await import('../connections/connection-store.js')
-        for (const record of loadConnections(dataDir ? { dataDir } : {})) out.set(record.connectorId, record.status)
+        const { standKontext, connectionState } = await import('../connections/connection-state.js')
+        const ctx = dataDir ? standKontext(dataDir) : standKontext()
+        const ids = new Set<string>(['home-assistant', ...ctx.connections.map(record => record.connectorId)])
+        for (const id of ids) {
+            if (connectionState(ctx.dataDir, { connectorId: id }, ctx).zustand === 'verbunden') { out.set(id, 'verbunden'); continue }
+            const stored = ctx.connections.filter(record => record.connectorId === id)
+            const record = stored.find(item => item.status !== 'getrennt' && item.status !== 'verbunden') || stored[0]
+            if (record) out.set(id, record.status === 'verbunden' ? 'getrennt' : record.status)
+        }
     } catch { /* no connections */ }
-    if (process.env.HASS_URL && process.env.HASS_TOKEN) out.set('home-assistant', 'verbunden')
     return out
 }
 
