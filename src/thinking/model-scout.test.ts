@@ -156,14 +156,14 @@ describe('Phase 3 Modell-Scout', () => {
 
 describe('Phase 3 Prüfsatz', () => {
     const PRIVATE = [
-        doctorCase('a', 'Mail an alfred.aigner@example.com scheitert', 'SMTP antwortet nicht'),
-        doctorCase('b', 'Spark 100.86.70.71 antwortet nicht', 'Port 8000 zu'),
-        doctorCase('c', 'Datei fehlt', 'C:\\Users\\alf_a\\Documents\\steuer.pdf nicht lesbar'),
+        doctorCase('a', 'Mail an jane.doe@example.com scheitert', 'SMTP antwortet nicht'),
+        doctorCase('b', 'Spark 100.64.0.10 antwortet nicht', 'Port 8000 zu'),
+        doctorCase('c', 'Datei fehlt', 'C:\\Users\\jdoe\\Documents\\steuer.pdf nicht lesbar'),
         doctorCase('d', 'Login', 'token=ghp_abcdefghijklmnopqrstuvwxyz0123456789 abgelehnt'),
         doctorCase('e', 'Rückruf', 'Kunde unter +43 664 1234567 erreichen'),
         doctorCase('f', 'Konto', 'IBAN AT61 1904 3002 3457 3201 prüfen'),
         doctorCase('g', 'Link', 'https://intern.example.org/rechnung/77 lädt nicht'),
-        doctorCase('h', 'Home', 'Pfad /home/tgbrutus/.ssh/config fehlt'),
+        doctorCase('h', 'Home', 'Pfad /home/jdoe/.ssh/config fehlt'),
     ]
     const CLEAN = doctorCase('z', 'Success rate is 7.0% across 748 traces', 'Werkzeug web_search scheitert in 31 von 40 Fällen')
 
@@ -173,7 +173,7 @@ describe('Phase 3 Prüfsatz', () => {
         expect(probes.length).toBeGreaterThan(5)
         for (const probe of probes) expect(containsPrivateContent(probe.prompt), probe.prompt).toBeNull()
         const text = JSON.stringify(probes)
-        for (const leak of ['alfred', '100.86', 'alf_a', 'ghp_', '664', 'AT61', 'intern.example', 'tgbrutus']) expect(text).not.toContain(leak)
+        for (const leak of ['jane.doe', '100.64', 'jdoe', 'ghp_', '664', 'AT61', 'intern.example']) expect(text).not.toContain(leak)
     })
 
     it('uses real doctor cases with measurements masked', () => {

@@ -8,7 +8,7 @@ import { dashboardTokenFromHeaders, isAllowedDashboardHost, isLoopbackAddress, i
 describe('dashboard access guard', () => {
     it('recognises loopback peers only', () => {
         for (const ip of ['127.0.0.1', '127.5.6.7', '::1', '::ffff:127.0.0.1']) expect(isLoopbackAddress(ip), ip).toBe(true)
-        for (const ip of ['100.86.70.71', '192.168.0.2', '::ffff:10.0.0.1', '', undefined, '1127.0.0.1']) expect(isLoopbackAddress(ip as any), String(ip)).toBe(false)
+        for (const ip of ['100.64.0.10', '192.168.0.2', '::ffff:10.0.0.1', '', undefined, '1127.0.0.1']) expect(isLoopbackAddress(ip as any), String(ip)).toBe(false)
     })
 
     it('accepts only loopback Host headers (DNS rebinding)', () => {

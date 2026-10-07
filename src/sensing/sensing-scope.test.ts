@@ -10,7 +10,7 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
             eth0: [{ address: '10.4.7.9', netmask: '255.0.0.0', family: 'IPv4', internal: false }],
             wan: [{ address: '8.8.4.4', netmask: '255.255.255.0', family: 'IPv4', internal: false }],
             lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
-            ts0: [{ address: '100.86.70.71', netmask: '255.255.255.255', family: 'IPv4', internal: false }],
+            ts0: [{ address: '100.64.0.10', netmask: '255.255.255.255', family: 'IPv4', internal: false }],
             ll: [{ address: '169.254.3.4', netmask: '255.255.0.0', family: 'IPv4', internal: false }],
         })
         expect(scope.subnets).toHaveLength(1)
@@ -70,14 +70,14 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
     it('ermittelt Tailnet-Adressen selbst, prüft sie aber vor jedem Probe', async () => {
         const probed: string[] = []
         const report = await discoverDevices({ deadlineMs: 1000, ratePerSec: 200, concurrency: 2, maxHosts: 2, mdns: false, tailnetHosts: [] }, {
-            interfaces: { ts: [{ address: '100.86.70.71', netmask: '255.255.255.255', family: 'IPv4', internal: false }] },
-            tailnetPeers: async () => ['100.73.189.71', '8.8.8.8'],
+            interfaces: { ts: [{ address: '100.64.0.10', netmask: '255.255.255.255', family: 'IPv4', internal: false }] },
+            tailnetPeers: async () => ['100.64.0.71', '8.8.8.8'],
             tcpProbe: async host => { probed.push(host); return false }, httpProbe: async () => null,
         })
-        expect(probed).toContain('100.73.189.71')
+        expect(probed).toContain('100.64.0.71')
         expect(probed).not.toContain('8.8.8.8')
         expect(report.rejected).toContainEqual(expect.objectContaining({ host: '8.8.8.8' }))
-        expect(tailnetPeerAddresses({ Peer: { p: { TailscaleIPs: ['100.73.189.71', '8.8.8.8', 'fd7a::1'], DNSName: 'private' } } })).toEqual(['100.73.189.71'])
+        expect(tailnetPeerAddresses({ Peer: { p: { TailscaleIPs: ['100.64.0.71', '8.8.8.8', 'fd7a::1'], DNSName: 'private' } } })).toEqual(['100.64.0.71'])
     })
     it('2.88: erkennt Proxmox an Port 8006 nur am Zertifikat (Handshake, kein Login)', async () => {
         const tls: string[] = []

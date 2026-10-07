@@ -21,7 +21,7 @@ describe('R2 T6: browser navigation only to public http(s) targets', () => {
         'http://localhost:18789/',
         'http://169.254.169.254/latest/meta-data/',
         'http://192.168.1.1/',
-        'http://100.86.70.71:3301/',
+        'http://100.64.0.10:3301/',
         'javascript:alert(1)',
         'chrome://settings',
         '',

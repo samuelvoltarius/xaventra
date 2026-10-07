@@ -74,7 +74,7 @@ describe('SSRF Guard', async () => {
     // H5: this module used to be the only tested guard although fetch_url uses
     // src/resilience/ssrf-guard.ts. Both must reject the same bypass forms.
     it.each([
-        'http://[::1]/', 'http://[::ffff:7f00:1]/', 'http://[::ffff:127.0.0.1]/', 'http://100.86.70.71/',
+        'http://[::1]/', 'http://[::ffff:7f00:1]/', 'http://[::ffff:127.0.0.1]/', 'http://100.64.0.10/',
         'http://100.127.0.1/', 'http://[fd00::1]/', 'http://[fe80::1]/', 'http://sub.localhost/', 'file:///etc/passwd',
     ])('blocks %s in the legacy and the wired (resilience) guard', async url => {
         const wired = await import('../resilience/ssrf-guard.js')

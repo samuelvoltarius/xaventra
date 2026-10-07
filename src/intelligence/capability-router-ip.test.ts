@@ -32,7 +32,7 @@ describe('R2 L6: mesh node ip never reaches a shell', () => {
     })
 
     it('calls ssh with an argument list for a valid ip', async () => {
-        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 16 }, ip: '100.86.70.71' }]
+        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 16 }, ip: '100.64.0.10' }]
         child.execFileSync.mockImplementation(() => Buffer.from('ok'))
 
         const resolution = await resolveCapability(CAPABILITIES.whisper())
@@ -40,7 +40,7 @@ describe('R2 L6: mesh node ip never reaches a shell', () => {
         expect(resolution.runRemotely).toBe(true)
         const sshCall = child.execFileSync.mock.calls.find(call => (call as unknown[])[0] === 'ssh') as unknown[] | undefined
         expect(sshCall).toBeDefined()
-        expect(sshCall![1]).toContain('xaventra@100.86.70.71')
+        expect(sshCall![1]).toContain('xaventra@100.64.0.10')
         expect(child.execSync.mock.calls.some(call => String((call as unknown[])[0]).includes('ssh'))).toBe(false)
     })
 })

@@ -34,7 +34,7 @@ describe('R2 R1/A8: register_llm_provider', () => {
         'https://127.0.0.1:18789/v1',
         'https://169.254.169.254/latest',
         'https://192.168.1.10/v1',
-        'https://100.86.70.71:8000/v1',
+        'https://100.64.0.10:8000/v1',
         'file:///etc/passwd',
     ])('refuses base_url %s even with owner approval', async (base_url) => {
         const result = await approved({ name: 'fresh', api_key: 'k', base_url })

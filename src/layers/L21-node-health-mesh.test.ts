@@ -28,7 +28,7 @@ const { getNodeHealthMonitor, configNodeCoveredByMesh } = await import('./L21-no
 
 function nasMeshNode(status: 'online' | 'offline' = 'online') {
     return {
-        node_id: 'xaventra-nas', hostname: 'f6a1c0ffee12', ip: '100.86.40.9', platform: 'linux', version: '2.80.0',
+        node_id: 'xaventra-nas', hostname: 'f6a1c0ffee12', ip: '100.64.0.40', platform: 'linux', version: '2.80.0',
         tools_count: 1, status, capabilities: [], last_heartbeat: new Date().toISOString(),
     }
 }
@@ -63,7 +63,7 @@ describe('L21 uses the signed mesh heartbeat for mesh nodes (Hotfix 2.80.1, Befu
     it('recognises the config entry by name, node id suffix, address or update-node mapping', () => {
         const node = nasMeshNode()
         expect(configNodeCoveredByMesh({ name: 'Nas', host: 'admin@192.168.1.20' }, [node])).toBe(true)
-        expect(configNodeCoveredByMesh({ name: 'storage', host: 'admin@100.86.40.9' }, [node])).toBe(true)
+        expect(configNodeCoveredByMesh({ name: 'storage', host: 'admin@100.64.0.40' }, [node])).toBe(true)
         expect(configNodeCoveredByMesh({ name: 'storage', host: 'admin@10.0.0.9' }, [node], [{ nodeId: 'xaventra-nas', name: 'storage' }])).toBe(true)
         expect(configNodeCoveredByMesh({ name: 'Pi5', host: 'pi@100.64.0.21' }, [node])).toBe(false)
         expect(configNodeCoveredByMesh({ name: 'as', host: 'pi@100.64.0.21' }, [node])).toBe(false)

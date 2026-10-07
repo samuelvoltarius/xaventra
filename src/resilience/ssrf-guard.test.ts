@@ -14,7 +14,7 @@ const BLOCKED = [
     'http://[64:ff9b::7f00:1]/', 'http://[2002:7f00:1::]/',
     'http://[fd00::1]/', 'http://[fc00::1]/', 'http://[fd00::ec2:254]/', 'http://[fe80::1]/', 'http://[fec0::1]/', 'http://[ff02::1]/',
     'http://10.0.0.1/', 'http://172.16.0.1/', 'http://172.31.255.255/', 'http://192.168.1.1/',
-    'http://100.64.0.1/', 'http://100.86.70.71/', 'http://100.127.255.255/',
+    'http://100.64.0.1/', 'http://100.64.0.10/', 'http://100.127.255.255/',
     'http://169.254.169.254/latest/meta-data/', 'http://metadata.google.internal/', 'http://metadata.azure.com/',
     'http://224.0.0.1/', 'http://255.255.255.255/',
     'file:///etc/passwd', 'ftp://example.com/', 'gopher://example.com/', 'not a url',
@@ -49,7 +49,7 @@ describe('resilience SSRF guard (H5)', () => {
     })
 
     it('blocks names that resolve to IPv4-mapped or Tailscale addresses', async () => {
-        for (const address of ['::ffff:10.0.0.1', '100.86.70.71', 'fd7a:115c:a1e0::1']) {
+        for (const address of ['::ffff:10.0.0.1', '100.64.0.10', 'fd7a:115c:a1e0::1']) {
             const result = await checkUrlResolved('https://name.example/', { lookup: async () => [{ address, family: address.includes(':') ? 6 : 4 }] })
             expect(result.allowed, address).toBe(false)
         }

@@ -85,7 +85,7 @@ describe('MCP gateway applies the connector policy', () => {
     })
 
     it('plain HTTP only to private LAN/Tailnet hosts and only when the connector allows it', async () => {
-        expect(['192.168.1.5', '10.0.0.2', '172.20.1.1', '100.86.1.2', 'homeassistant.local'].every(isPrivateLanHost)).toBe(true)
+        expect(['192.168.1.5', '10.0.0.2', '172.20.1.1', '100.64.1.2', 'homeassistant.local'].every(isPrivateLanHost)).toBe(true)
         expect(['example.com', '8.8.8.8', '172.32.0.1', '100.128.0.1', '192.169.0.1'].some(isPrivateLanHost)).toBe(false)
         const client = new MCPClient()
         await expect(client.connectServer({ name: 'x', transport: 'http', url: 'http://example.com/api/mcp', allowLanHttp: true })).rejects.toThrow(/HTTPS/)
