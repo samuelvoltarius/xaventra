@@ -72,3 +72,17 @@ describe('one internet question', () => {
         expect((manager as unknown as Record<string, unknown>).isOnline).toBeUndefined()
     })
 })
+
+describe('2.89 integration: the „Hast du Internet?“ answer comes from hasInternet()', () => {
+    it('yes and no from the same probe, for every role (no owner lock)', async () => {
+        const { handleCommand } = await import('./slash-commands.js')
+        const state: any = { tools: { getAll: () => [] }, config: {} }
+        pingBlocked = true; httpsWorks = true
+        expect(await handleCommand('internet', '', 'u1', state, [], { permission: 'user', channel: 'desktop', principalId: 'u1' } as any)).toMatch(/^Ja/)
+        const { resetInternetProbe } = await import('./environment.js')
+        resetInternetProbe()
+        httpsWorks = false
+        expect(await handleCommand('internet', '', 'g1', state, [], { permission: 'guest', channel: 'desktop', principalId: 'g1' } as any)).toMatch(/^Nein/)
+        httpsWorks = true
+    })
+})

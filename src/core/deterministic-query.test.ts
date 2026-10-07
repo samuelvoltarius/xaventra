@@ -76,3 +76,23 @@ describe('2.89: mission actions only for the whole sentence, never negated', () 
         expect(detectDeterministicCommand(input)?.risk).not.toBe('controlled-action')
     })
 })
+
+describe('2.89: „Hast du Internet?“ is answered from the one internet question', () => {
+    it.each([
+        'Hast du Internet?',
+        'hast du gerade internet',
+        'Hast du eine Internetverbindung?',
+        'Bist du online?',
+        'Geht dein Internet?',
+        'Ist das Internet erreichbar?',
+    ])('%s → internet', input => {
+        expect(detectDeterministicCommand(input)).toMatchObject({ command: 'internet', reason: 'internet-status', risk: 'read-only' })
+    })
+    it.each([
+        'Such im Internet nach dem Wetter',
+        'Hast du im Internet etwas über Salzburg gefunden?',
+        'Wie schnell ist mein Internet?',
+    ])('not the status question: %s', input => {
+        expect(detectDeterministicCommand(input)?.command).not.toBe('internet')
+    })
+})

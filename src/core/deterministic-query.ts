@@ -42,6 +42,12 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         && /docker/.test(text)) return route('docker', 'list', 'local-docker-inventory')
 
     if (/^(?:wer|was) bist du$/.test(text)) return route('identity', '', 'identity')
+    // 2.89: „Hast du Internet?“ from the one internet question (core/environment.ts hasInternet),
+    // never a model claim. Only the whole status question — searches „im Internet“ stay with the model.
+    if (/^(?:hast du|habt ihr)(?: gerade| jetzt| noch| überhaupt| ueberhaupt)? (?:internet|(?:eine )?internetverbindung|internetzugang|(?:eine )?verbindung (?:zum|ins) internet)$/.test(text)
+        || /^bist du (?:gerade |jetzt |noch )?online$/.test(text)
+        || /^(?:geht|funktioniert) (?:dein |das |euer )?internet(?: gerade| noch| jetzt)?$/.test(text)
+        || /^ist (?:das )?internet (?:da|erreichbar|verfügbar|verfuegbar)$/.test(text)) return route('internet', '', 'internet-status')
     if (/^(?:was kannst du(?: alles)?|welche fähigkeiten hast du|what can you do)$/.test(text)) return route('capabilities', '', 'registered-capabilities')
     if (/^(?:welche rechte habe ich|welche rolle habe ich)$/.test(text)) return route('whoami', '', 'principal-role')
     // 2.85 Paket D: Werkzeugkasten as a normal question (read-only short list, no new command).

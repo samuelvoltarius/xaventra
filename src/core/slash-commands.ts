@@ -71,6 +71,8 @@ const COMMAND_MINIMUM_ROLE: Readonly<Record<string, CommandRole>> = Object.freez
     // Read-only self-description / help, own session reset.
     help: 'guest', hilfe: 'guest', befehle: 'guest', commands: 'guest',
     identity: 'guest', whoami: 'guest', capabilities: 'guest', info: 'guest',
+    // 2.89: „Hast du Internet?“ — the one measured answer, harmless for every role.
+    internet: 'guest',
     clear: 'guest', reset: 'guest',
     // Principal-scoped or read-only status; handlers keep their own finer checks.
     status: 'user', layers: 'user', memory: 'user', think: 'user',
@@ -223,6 +225,13 @@ export async function handleCommand(
             return '🏠 Das Hauptmenü mit Knöpfen (Status · Braucht mich · Geräte · Bericht · Mehr) öffnest du in Telegram mit /menu.'
         case 'identity':
             return XAVENTRA_IDENTITY
+        case 'internet': {
+            // 2.89 Paket C: the one internet question (ping, then TCP 443; 60 s memo).
+            const { hasInternet } = await import('./environment.js')
+            return hasInternet()
+                ? 'Ja, ich habe Internet.'
+                : 'Nein, gerade habe ich kein Internet. Ich arbeite lokal weiter; Websuche und Cloud-Modelle gehen erst wieder, wenn die Verbindung zurück ist.'
+        }
         case 'whoami':
             return `Deine Rolle in dieser Sitzung: ${requestPermission}. Persönliche Erinnerungen sind davon getrennt; aus einer fehlenden Erinnerung folgt keine andere Berechtigung.`
         case 'capabilities':
