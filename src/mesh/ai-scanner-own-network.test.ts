@@ -61,10 +61,10 @@ describe('KI-Scanner: Phase eigenes Netz', () => {
 
     it('öffentliche oder fremde Adressen werden nie angefasst; Tailnet nur mit eigenem Interface', async () => {
         const net = fakeNet({}, {})
-        const report = await scanOwnNetworkAIServices({ ...opts, maxHosts: 4, tailnetHosts: ['8.8.8.8', '100.70.0.5', '10.9.9.9'] }, net.deps)
+        const report = await scanOwnNetworkAIServices({ ...opts, maxHosts: 4, tailnetHosts: ['8.8.8.8', '100.64.7.5', '10.9.9.9'] }, net.deps)
         const hosts = new Set(net.tcp.map(entry => entry.split(':')[0]))
-        for (const forbidden of ['8.8.8.8', '100.70.0.5', '10.9.9.9']) expect(hosts.has(forbidden)).toBe(false)
-        expect(report.rejected.map(item => item.host).sort()).toEqual(['10.9.9.9', '100.70.0.5', '8.8.8.8'])
+        for (const forbidden of ['8.8.8.8', '100.64.7.5', '10.9.9.9']) expect(hosts.has(forbidden)).toBe(false)
+        expect(report.rejected.map(item => item.host).sort()).toEqual(['10.9.9.9', '100.64.7.5', '8.8.8.8'])
         expect([...hosts].every(host => host.startsWith('192.168.50.'))).toBe(true)
     })
 

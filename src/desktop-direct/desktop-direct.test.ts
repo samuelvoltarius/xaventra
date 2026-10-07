@@ -117,8 +117,8 @@ describe('one-time link: single use, expiry, binding', () => {
         const store = newStore()
         const picker = store.createPicker(OWNER)
         const press = store.press(buttonFor(picker.keyboard, 'Spark – Übernehmen'), { userId: OWNER, ownerIds: [OWNER] })
-        const result = store.redeemLink(tokenOf(press.link!.url), '100.101.102.103')
-        expect(result.session).toMatchObject({ mode: 'control', ownerId: OWNER, sourceIp: '100.101.102.103' })
+        const result = store.redeemLink(tokenOf(press.link!.url), '100.64.102.103')
+        expect(result.session).toMatchObject({ mode: 'control', ownerId: OWNER, sourceIp: '100.64.102.103' })
         expect(result.session!.desktop.id).toBe('spark')
         // A view-only desktop never offers control.
         expect(picker.keyboard.flat().some(button => button.text.includes('Kiosk – Übernehmen'))).toBe(false)
@@ -167,7 +167,7 @@ describe('owner only', () => {
 
 describe('source address', () => {
     it('accepts loopback and 100.64.0.0/10 only', () => {
-        for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.64.0.1', '100.127.255.254', '::ffff:100.100.1.2']) expect(isAllowedDesktopSource(ip)).toBe(true)
+        for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '100.64.0.1', '100.127.255.254', '::ffff:100.64.100.2']) expect(isAllowedDesktopSource(ip)).toBe(true)
         for (const ip of ['', '192.168.1.5', '10.0.0.1', '100.63.255.255', '100.128.0.1', '203.0.113.9', '::ffff:192.0.2.1', 'fd7a:115c:a1e0::1']) expect(isAllowedDesktopSource(ip)).toBe(false)
     })
 
@@ -194,7 +194,7 @@ describe('source address', () => {
         expect(store.checkLink(token)).toBe('ok')
         expect(readFileSync(join(dataDir, 'desktop-sessions.jsonl'), 'utf8')).toContain('fremde-ip')
         // The same request from the tailnet is served.
-        const { req, res } = fakeExchange('100.90.1.2', `/desktop/s/${token}`)
+        const { req, res } = fakeExchange('100.64.90.2', `/desktop/s/${token}`)
         server.emit('request', req, res)
         expect(res.status).toBe(200)
     })

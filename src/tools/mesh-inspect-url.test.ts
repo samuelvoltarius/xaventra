@@ -6,9 +6,9 @@ import { selectContextPolicy } from '../core/context-policy.js'
 
 const now = Date.now()
 const url = 'https://voice.tail12345.ts.net/'
-const peer = { DNSName: 'voice.tail12345.ts.net.', Online: true, TailscaleIPs: ['100.70.0.2'] }
+const peer = { DNSName: 'voice.tail12345.ts.net.', Online: true, TailscaleIPs: ['100.64.7.2'] }
 const status = { BackendState: 'Running', Peer: { peer } }
-const node = { node_id: 'worker-1', hostname: 'node-one', ip: '100.70.0.2', status: 'online' as const, last_heartbeat: new Date(now).toISOString() }
+const node = { node_id: 'worker-1', hostname: 'node-one', ip: '100.64.7.2', status: 'online' as const, last_heartbeat: new Date(now).toISOString() }
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), status: vi.fn(), nodes: vi.fn() }))
 vi.mock('node:child_process', async original => ({ ...await original<typeof import('node:child_process')>(), execFile: (_file: string, _args: string[], _options: unknown, cb: Function) => cb(null, { stdout: JSON.stringify(mocks.status()) }) }))
 vi.mock('../startup/environment-scanner.js', () => ({ locateProgram: () => '/usr/bin/tailscale' }))
@@ -44,7 +44,7 @@ describe('mesh landing page inspection boundary', () => {
         expect(bindMeshLandingPage(url, status, [node], now)).toMatchObject({ address: node.ip, node })
         expect(bindMeshLandingPage(url, status, [{ ...node, status: 'busy' }], now).node.status).toBe('busy')
     })
-    it.each(['http://voice.tail12345.ts.net/', 'https://voice.tail12345.ts.net:8443/', 'https://voice.tail12345.ts.net/admin', 'https://voice.tail12345.ts.net/?action=delete', 'https://voice.tail12345.ts.net/#x', 'https://owner:secret@voice.tail12345.ts.net/', 'https://100.70.0.2/', 'https://voice.tail12345.ts.net.evil.test/'])('rejects an unscoped target %s', target => {
+    it.each(['http://voice.tail12345.ts.net/', 'https://voice.tail12345.ts.net:8443/', 'https://voice.tail12345.ts.net/admin', 'https://voice.tail12345.ts.net/?action=delete', 'https://voice.tail12345.ts.net/#x', 'https://owner:secret@voice.tail12345.ts.net/', 'https://100.64.7.2/', 'https://voice.tail12345.ts.net.evil.test/'])('rejects an unscoped target %s', target => {
         expect(() => bindMeshLandingPage(target, status, [node], now)).toThrow()
     })
     it('fails closed on stopped tailscale, offline or ambiguous peers and stale mesh evidence', () => {

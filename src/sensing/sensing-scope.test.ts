@@ -28,8 +28,8 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
         }
         expect(scanTargetAllowed('192.168.1.77', scope).allowed).toBe(true)
         // Tailnet only with an own tailnet interface.
-        expect(scanTargetAllowed('100.101.1.2', scope).allowed).toBe(false)
-        expect(scanTargetAllowed('100.101.1.2', ownSubnets({ ...lan, ts: [{ address: '100.64.0.5', netmask: '255.255.255.255', family: 'IPv4', internal: false }] })).allowed).toBe(true)
+        expect(scanTargetAllowed('100.64.9.2', scope).allowed).toBe(false)
+        expect(scanTargetAllowed('100.64.9.2', ownSubnets({ ...lan, ts: [{ address: '100.64.0.5', netmask: '255.255.255.255', family: 'IPv4', internal: false }] })).allowed).toBe(true)
     })
 
     it('öffentliche Adressen bleiben gesperrt, selbst wenn ein Scope sie fälschlich enthielte', () => {
@@ -39,9 +39,9 @@ describe('Selbst-Erkennung: Scan bleibt in eigenen privaten Netzen', () => {
     })
 
     it('nimmt konfigurierte Zusatz-Hosts nur, wenn sie im eigenen Netz liegen', () => {
-        const plan = scanHosts(ownSubnets(lan), ['1.1.1.1', '192.168.50.3', '100.70.0.1', '192.168.1.9'], 10)
+        const plan = scanHosts(ownSubnets(lan), ['1.1.1.1', '192.168.50.3', '100.64.7.1', '192.168.1.9'], 10)
         expect(plan.hosts[0]).toBe('192.168.1.9')
-        expect(plan.rejected.map(item => item.host).sort()).toEqual(['1.1.1.1', '100.70.0.1', '192.168.50.3'])
+        expect(plan.rejected.map(item => item.host).sort()).toEqual(['1.1.1.1', '100.64.7.1', '192.168.50.3'])
         expect(plan.hosts).toHaveLength(10)
         expect(plan.truncated).toBe(true)
     })
