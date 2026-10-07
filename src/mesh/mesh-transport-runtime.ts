@@ -248,7 +248,7 @@ export function currentMainMeshFence(): MeshFence | undefined {
     if (!fence) return undefined
     return {
         service: fence.service, epoch: fence.epoch, token: fence.token,
-        authority: fence.coordinator === 'witness' ? 'witness' : fence.coordinator === 'local' ? 'static' : 'supabase',
+        authority: fence.coordinator === 'witness' || fence.coordinator === 'emergency' ? 'witness' : fence.coordinator === 'local' ? 'static' : 'supabase',
     }
 }
 
@@ -534,6 +534,21 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             result = makeResult(envelope.id, true, await captureEnrolledNode(getLocalNodeId(), check))
         } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
         await router.send(envelope.sourceNode, router.create('capture.response', envelope.sourceNode, result, { ttlMs: 30_000 }))
+        return
+    }
+    if (envelope.kind === 'succession.response') {
+        const { receiveSuccessionResponse } = await import('./succession-runtime.js')
+        receiveSuccessionResponse(envelope.sourceNode, envelope.payload as ResultPayload)
+        return
+    }
+    if (envelope.kind === 'succession.request') {
+        const { handleSuccessionRequest } = await import('./succession-runtime.js')
+        let result: ResultPayload
+        try {
+            const outcome = await handleSuccessionRequest(envelope.payload as any, envelope.sourceNode)
+            result = makeResult(envelope.id, outcome.success, outcome.result, outcome.error)
+        } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
+        await router.send(envelope.sourceNode, router.create('succession.response', envelope.sourceNode, result, { ttlMs: 15_000 }))
         return
     }
     if (envelope.kind === 'exchange.response') {

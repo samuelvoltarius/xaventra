@@ -13,6 +13,7 @@ import { getLocalNodeId, type MeshNode } from './mesh-registry.js'
 import { recordMainRole } from '../infra/telemetry.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { adoptFence, dropFence, getFenceStatus, getHeldFence, markFenceSuspect, monoNow } from './fence.js'
+import { isNodeMainEligible } from './succession-config.js'
 
 
 type SupabaseConfig = { url: string; key: string }
@@ -24,7 +25,9 @@ export type LeaseDecision = {
     epoch?: number
     fencingToken?: string
     leaseExpiresAt?: string
-    coordinator?: 'local' | 'supabase' | 'witness'
+    coordinator?: 'local' | 'supabase' | 'witness' | 'emergency'
+    /** false = not enough coordinator votes answered (no majority reachable → safe mode). */
+    quorumReachable?: boolean
     /** The coordinator positively reported a different current holder. */
     heldByOther?: boolean
     /** Monotonic (performance.now) local deadline; never later than the real expiry. */
@@ -47,6 +50,8 @@ const takeoverTimers = new Map<string, ReturnType<typeof setInterval>>()
 const leadershipTakeoverHandlers = new Map<string, Set<() => Promise<void> | void>>()
 const renewalMisses = new Map<string, number>()
 const leadershipLostHandlers = new Map<string, Set<() => Promise<void> | void>>()
+/** Persistent hooks run after this process adopted a lease (start or takeover), before channels start. */
+const leadershipAcquiredHandlers = new Map<string, Set<(epoch: number) => Promise<void> | void>>()
 const leaseUnavailableWarnings = new Map<string, { status: number; lastLoggedAt: number; failures: number }>()
 const LEASE_WARNING_INTERVAL_MS = 5 * 60_000
 /** One id per process start: two processes on one node never share a lease (CL-07). */
@@ -117,6 +122,12 @@ export async function checkLiveFence(service: string): Promise<{ valid: boolean;
     // The witness protocol has no read-only endpoint; its local deadline is
     // bounded by the quorum certificate (min expiry - 1 s).
     if (fence.coordinator === 'witness') return { valid: true, reason: 'witness lease within quorum deadline' }
+    if (fence.coordinator === 'emergency') {
+        const { isEmergencyTermValid } = await import('./succession-runtime.js')
+        return isEmergencyTermValid(fence.epoch)
+            ? { valid: true, reason: 'owner-confirmed emergency Main within its time' }
+            : { valid: false, reason: 'emergency term ended' }
+    }
     const configFile = readCoordinatorConfigFile()
     if (configFile.status === 'unreadable') return { valid: false, reason: 'coordinator config unreadable' }
     const config = loadSupabaseConfig(configFile)
@@ -202,7 +213,8 @@ export async function checkRemoteFence(service: string, epoch: number, holderNod
     }
 }
 
-function nodeStrength(node: any): number {
+/** Deterministic hardware strength (takeover preference and succession ranking). */
+export function nodeStrength(node: any): number {
     const hw = node.hardware || {}
     const caps = new Set<string>(node.capabilities || [])
     let score = 0
@@ -215,8 +227,9 @@ function nodeStrength(node: any): number {
     return score
 }
 
+/** Owner decision (2.88): with succession on, only explicitly allowed nodes; otherwise the legacy default. */
 export function isMainLeadershipEligible(env: NodeJS.ProcessEnv = process.env): boolean {
-    return String(env.NOVA_MAIN_ELIGIBLE || 'true').toLowerCase() !== 'false'
+    return isNodeMainEligible(env)
 }
 
 export function selectPreferredTakeoverNode(nodes: MeshNode[], now = Date.now()): PreferredTakeoverNode | null {
@@ -420,6 +433,30 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
         return { leader: false, reason: `coordinator config unreadable; coordinator unknown, split-brain guard (${configFile.error.slice(0, 160)})` }
     }
 
+    // 2.88 Main succession: the Main authority (and channels bound to it) go
+    // through the succession runtime: before a vacancy takeover the replicated
+    // journal is read and the epoch floor raised; an owner-confirmed emergency
+    // term is honoured only while no majority is reachable.
+    if (service === MAIN_SERVICE || (MAIN_BOUND_SERVICES as readonly string[]).includes(service)) {
+        const succession = await import('./succession-runtime.js')
+        if (succession.isSuccessionActive()) {
+            if (!getHeldFence(MAIN_SERVICE) && !succession.hasEmergencyGrant()) {
+                if (!(await isPreferredTakeoverCandidate())) {
+                    return { leader: false, reason: 'a stronger main-eligible node has takeover priority (succession)' }
+                }
+                const guard = await succession.beforeMainAcquire()
+                if (!guard.allow) return { leader: false, reason: guard.reason, quorumReachable: guard.quorumReachable }
+            }
+            const decision = await acquireCoordinatorLease(service, configFile)
+            return succession.reconcileLeaseDecision(service, decision)
+        }
+    }
+    return acquireCoordinatorLease(service, configFile)
+}
+
+async function acquireCoordinatorLease(service: string, configFile: CoordinatorConfigFile): Promise<LeaseDecision> {
+    const standbyNode = process.env.NOVA_TELEGRAM_MODE === 'standby'
+        || (service === 'telegram' && process.env.NOVA_NODE_ONLY === 'true')
     // Coordinator choice is explicit. Nodes must never silently mix a Witness
     // quorum with Supabase because two independent authorities could each elect
     // a leader. Witness mode therefore fails closed when fewer than two votes
@@ -466,7 +503,7 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
                 console.warn(`[Leader] Lease table unavailable for ${service} (${res.status}); exclusive service remains stopped`
                     + (warning.failures > 1 ? `; ${warning.failures} failed checks` : ''))
             }
-            return { leader: false, reason: `lease table unavailable (${res.status}); split-brain guard` }
+            return { leader: false, quorumReachable: false, reason: `lease table unavailable (${res.status}); split-brain guard` }
         }
         const recoveredFailures = noteLeaseCoordinatorHealthy(service)
         if (recoveredFailures > 1) {
@@ -523,7 +560,7 @@ async function acquireServiceLeaseDecision(service: string): Promise<LeaseDecisi
                 || Boolean(lease.holder_instance_id && lease.holder_instance_id !== LOCAL_INSTANCE_ID),
         }
     } catch (err) {
-        return { leader: false, reason: `lease check failed; split-brain guard (${err})` }
+        return { leader: false, quorumReachable: false, reason: `lease check failed; split-brain guard (${err})` }
     }
 }
 
@@ -548,6 +585,7 @@ export async function shouldStartExclusiveService(service: string): Promise<bool
     adoptLease(service, decision)
     console.log(`[Leader] Starting ${service}: ${decision.reason}`)
     startLeaseRenewal(service)
+    await runLeadershipAcquiredHandlers(service, decision.epoch || 0)
     return true
 }
 
@@ -759,6 +797,55 @@ export async function releaseHeldLeasesForShutdown(timeoutMs = 5_000): Promise<s
     return released
 }
 
+/** Persistent: runs after every start/takeover of `service` by this process (not on renewals). */
+export function onLeadershipAcquired(service: string, handler: (epoch: number) => Promise<void> | void): () => void {
+    if (!leadershipAcquiredHandlers.has(service)) leadershipAcquiredHandlers.set(service, new Set())
+    leadershipAcquiredHandlers.get(service)!.add(handler)
+    return () => leadershipAcquiredHandlers.get(service)?.delete(handler)
+}
+
+async function runLeadershipAcquiredHandlers(service: string, epoch: number): Promise<void> {
+    for (const handler of leadershipAcquiredHandlers.get(service) || []) {
+        try { await handler(epoch) } catch (error) { console.warn(`[Leader] ${service} acquired handler failed: ${error}`) }
+    }
+}
+
+/** Succession: give up nova-main (and its sub-leases) when this node must not act as Main. */
+export async function relinquishMainLeadership(reason: string): Promise<void> {
+    await relinquishLeadership(MAIN_SERVICE, reason)
+}
+
+/**
+ * Read-only view of the Main lease holder (never acquires or renews).
+ * Witness: majority of peeks; Supabase: the lease row.
+ */
+export async function peekMainLease(): Promise<{ majorityReachable: boolean; holder?: { nodeId: string; epoch: number } }> {
+    const { resolveWitnessAuthority, peekWitnessQuorum } = await import('./witness-quorum.js')
+    if (resolveWitnessAuthority(MAIN_SERVICE)) {
+        const view = await peekWitnessQuorum(MAIN_SERVICE)
+        if (!view) return { majorityReachable: false }
+        return { majorityReachable: view.reachable >= view.majority, holder: view.holder ? { nodeId: view.holder.nodeId, epoch: view.holder.epoch } : undefined }
+    }
+    const configFile = readCoordinatorConfigFile()
+    if (configFile.status !== 'ok') return { majorityReachable: false }
+    const config = loadSupabaseConfig(configFile)
+    if (!config.url || !config.key) {
+        // Explicit single-node: this node is the whole mesh.
+        return configDeclaresSingleNode(configFile.raw) ? { majorityReachable: true } : { majorityReachable: false }
+    }
+    try {
+        const res = await fetch(`${config.url}/${LEASE_TABLE}?service=eq.${encodeURIComponent(MAIN_SERVICE)}&select=*`, {
+            method: 'GET', headers: headers(config.key), signal: AbortSignal.timeout(5000),
+        })
+        if (!res.ok) return { majorityReachable: false }
+        const lease = ((await res.json()) as Array<{ holder_node_id?: string; epoch?: number; expires_at?: string }>)[0]
+        if (!lease || isExpired(lease.expires_at) || !lease.holder_node_id) return { majorityReachable: true }
+        return { majorityReachable: true, holder: { nodeId: lease.holder_node_id, epoch: Number(lease.epoch || 0) } }
+    } catch {
+        return { majorityReachable: false }
+    }
+}
+
 export function onLeadershipLost(service: string, handler: () => Promise<void> | void): () => void {
     if (!leadershipLostHandlers.has(service)) leadershipLostHandlers.set(service, new Set())
     leadershipLostHandlers.get(service)!.add(handler)
@@ -797,6 +884,7 @@ export function watchForServiceLeadership(
         takeoverTimers.delete(service)
         adoptLease(service, decision)
         startLeaseRenewal(service)
+        await runLeadershipAcquiredHandlers(service, decision.epoch || 0)
         console.log(`[Leader] Taking over ${service}: ${decision.reason}`)
         recordMainRole({ event: 'lease.takeover', service, leader: true, coordinator: decision.coordinator })
         for (const handler of takeLeadershipTakeoverHandlers(service)) {

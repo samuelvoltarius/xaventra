@@ -30,6 +30,9 @@ const REQUEST_ROLES: Partial<Record<MeshEnvelopeKind, readonly MeshRole[]>> = {
     'capture.request': ['system', 'owner', 'admin'],
     'codex.status.request': ['system', 'owner', 'admin'],
     'codex.complete.request': ['system', 'owner', 'admin'],
+    // 2.88 Main succession (journal replication, share release): node-to-node only.
+    'succession.request': ['system'],
+    'succession.response': ['system'],
 }
 
 /** Tools whose arguments name filesystem locations; mesh callers stay inside the workspace. */
@@ -125,6 +128,9 @@ export class MeshPolicy {
             ? { accepted: true } : { accepted: false, reason: 'invalid_exchange_request' }
         if (envelope.kind === 'git.request') return validGitRequest(envelope.payload) && envelope.targetNode !== '*'
             ? { accepted: true } : { accepted: false, reason: 'invalid_git_request' }
+        if ((envelope.kind === 'succession.request' || envelope.kind === 'succession.response') && envelope.targetNode === '*') {
+            return { accepted: false, reason: 'succession_requires_target' }
+        }
         if (envelope.kind === 'agent.request') return this.verifyAgent(envelope, peer)
         if (envelope.kind === 'run.cancel') return this.verifyRunCancel(envelope)
         if (envelope.kind === 'codex.status.request') return this.verifyCodexStatus(envelope)

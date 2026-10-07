@@ -82,6 +82,11 @@ function unseal<T>(content: string): T | null {
     }
 }
 
+/** 32-byte key material shared by all nodes (2.88 succession journal); null without HA key. */
+export function haStateKeyMaterial(): Buffer | null {
+    return encryptionKey()
+}
+
 export function isHaStateKeyConfigured(): boolean {
     return encryptionKey() !== null
 }

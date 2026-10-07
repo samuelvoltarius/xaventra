@@ -93,6 +93,12 @@ export class QuorumWitnessStore {
         }
     }
 
+    /** Read-only copy of the stored lease (live or expired); never mutates (2.88 succession). */
+    peek(service: string): WitnessLease | null {
+        const lease = this.state.leases[service]
+        return lease ? { ...lease } : null
+    }
+
     private currentLease(service: string, nodeId: string, epoch: number, now = Date.now()): WitnessLease | null {
         const lease = this.state.leases[service]
         return lease && lease.holderNodeId === nodeId && lease.epoch === epoch && Date.parse(lease.expiresAt) > now
@@ -176,7 +182,7 @@ export function createQuorumWitnessServer(options: {
             res.end(JSON.stringify({ ok: true, witnessId: options.witnessId }))
             return
         }
-        if (req.method !== 'POST' || !['/v1/lease/acquire', '/v1/checkpoint/write', '/v1/checkpoint/read'].includes(req.url || '')) {
+        if (req.method !== 'POST' || !['/v1/lease/acquire', '/v1/lease/peek', '/v1/checkpoint/write', '/v1/checkpoint/read'].includes(req.url || '')) {
             res.writeHead(404).end()
             return
         }
@@ -218,6 +224,10 @@ export function createQuorumWitnessServer(options: {
                     ttlMs: Number(input.ttlMs || 90_000), requestId: String(input.requestId),
                     proposedEpoch: Number(input.proposedEpoch || 0),
                 })
+            } else if (req.url === '/v1/lease/peek') {
+                // Read-only: lets share holders and the succession check who
+                // holds the Main lease without voting or renewing.
+                result = { requestId: input.requestId, witnessId: options.witnessId, lease: store.peek(String(input.service)) }
             } else if (req.url === '/v1/checkpoint/write') {
                 if (!input.id || typeof input.epoch !== 'number' || !Number.isSafeInteger(input.epoch)) throw new Error('missing required checkpoint fields')
                 result = { requestId: input.requestId, checkpoint: store.writeCheckpoint({

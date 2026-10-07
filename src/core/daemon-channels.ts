@@ -109,7 +109,12 @@ async function startTelegramOnce(
     }
 
     // Do not acquire the shared lease when this node cannot start the bot.
-    if (!config?.enabled || !config.token) {
+    // 2.88 succession: a main-eligible node without its own token may still
+    // take over; the token comes from the secret vault once it is the
+    // legitimate Main (never earlier).
+    const { successionCanProvide } = await import('../mesh/succession-runtime.js')
+    const tokenFromVault = !config?.token && config?.enabled !== false && successionCanProvide('TELEGRAM_BOT_TOKEN')
+    if ((!config?.enabled || !config.token) && !tokenFromVault) {
         console.log('[Nova] Telegram nicht konfiguriert')
         return
     }
@@ -162,6 +167,19 @@ async function startTelegramOnce(
         console.warn(`[Nova] HA-Hydrierung übersprungen: ${error}`)
     }
 
+    let botToken = config?.token || ''
+    if (!botToken) {
+        const { waitForSuccessionMain, getSuccessionSecret } = await import('../mesh/succession-runtime.js')
+        await waitForSuccessionMain()
+        botToken = getSuccessionSecret('TELEGRAM_BOT_TOKEN') || ''
+        if (!botToken) {
+            console.warn('[Nova] Telegram wartet: Schlüssel ist auf diesem Main noch nicht freigegeben')
+            stopLeaseRenewal('telegram')
+            watchForServiceLeadership(MAIN_SERVICE, () => startTelegram(config, messageHandler, state))
+            return
+        }
+    }
+
     const { createTelegramAdapter } = await import('../channels/telegram.js')
     // Loaded before the adapter exists so the poll listener can persist
     // synchronously (before the update is acknowledged by the next poll).
@@ -176,7 +194,7 @@ async function startTelegramOnce(
     const inFlight = new Set<string>()
 
     const adapter = createTelegramAdapter({
-        token: config.token,
+        token: botToken,
         allowFrom: config.allowFrom || [],
         groupPolicy: 'mention-only',
         verifyAuthority: verifyTelegramAuthority,
@@ -372,6 +390,7 @@ async function startTelegramOnce(
         })
     }
     console.log(`[Nova] ✓ Telegram verbunden: @${adapter.getUsername()}`)
+    void sendSuccessionMoveNotice(adapter, state).catch(() => { /* best effort */ })
 
     if (failoverMessages.length > 0) {
         const existing = Array.isArray(state._pendingReplayMessages) ? state._pendingReplayMessages : []
@@ -501,6 +520,29 @@ async function startTelegramOnce(
     } catch (err) {
         console.log(`[Nova] L15 Notify-Callback nicht verfügbar: ${err}`)
     }
+}
+
+/**
+ * 2.88 succession: after a takeover the new Main says once where it moved
+ * ("Ich bin jetzt auf X umgezogen, alles da."). Only with live Telegram
+ * authority; the notice is consumed only when a chat is known.
+ */
+export async function sendSuccessionMoveNotice(
+    adapter: any,
+    state: ChannelsState,
+    verify?: (service: string) => Promise<boolean>,
+): Promise<boolean> {
+    const globalState = (globalThis as any).__novaState
+    const chatId = state.adminChatId || state.lastActiveChatId || globalState?.adminChatId || globalState?.lastActiveChatId
+    if (!chatId) return false
+    const { takeSuccessionMoveNotice } = await import('../mesh/succession-runtime.js')
+    if (!(await verifyTelegramAuthority(verify))) return false
+    const notice = takeSuccessionMoveNotice()
+    if (!notice) return false
+    if (adapter?.bot?.sendMessage) await adapter.bot.sendMessage(String(chatId), notice)
+    else await adapter.send({ to: String(chatId), content: notice })
+    logRuntimeEvent({ event: 'succession.move.announced', channel: 'Telegram', success: true })
+    return true
 }
 
 // ============================================

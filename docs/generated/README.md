@@ -4,10 +4,10 @@ Generated from authoritative source. Do not edit by hand.
 
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
-| tools.json | 230 | `4f159e82a8ee34e35f869eb6b23c48329074f6677e0da93812437b2f9d70cae0` |
+| tools.json | 228 | `779c1acec479a9da7c41653ff3085ea77650698e71cb70f1cd8a8a9a2da3481d` |
 | config.json | 0 | `441fb2792fcb3df81a94b00e9d70a2bc459034b6ffb093f9e38a2b67fd899bec` |
-| persistence.json | 366 | `77ce92d2e654c9bcad79b836c0d316adb18d5c0573919a862014a8ecd14971d0` |
-| modules.json | 891 | `5422caa84118e96ea5d0f1cb38573b26abdb73b4b3b7535ddf69d0c431517a60` |
+| persistence.json | 363 | `c5a3a7e114f9312a4f209bb202b9774eb0f921ac82c8e9e60d46e716173b0164` |
+| modules.json | 895 | `50a41a94babe3a247e749a33e2628369bef31260901a30c9fa4b9bed71c49d83` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
 | install-catalog.json | 14 | `9248a1a6085920111a44f42672e5d94ab9690b2fa0ab88f74d0d4053512df059` |
 | software-candidates.json | 18 | `abe3e02f517a52d374a2378b58c3861c80942cd27abe716655121f5dd91fc0d3` |

@@ -24,7 +24,8 @@ export interface HeldFence {
     service: string
     epoch: number
     token: string
-    coordinator: 'local' | 'supabase' | 'witness'
+    /** emergency = owner-confirmed emergency Main (2.88 succession, no majority). */
+    coordinator: 'local' | 'supabase' | 'witness' | 'emergency'
     nodeId: string
     instanceId: string
     /** performance.now() deadline; undefined = no expiry (single-node). */
