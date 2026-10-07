@@ -35,6 +35,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
+import { hostname, networkInterfaces } from 'node:os'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 
@@ -397,6 +398,27 @@ export interface ListInputs {
     registry?: { endpoints: RegistryEndpointLike[] } | null
     codex?: { authenticated: boolean; available: boolean } | null
     includeMasks?: boolean
+    /** Names and addresses of this machine (tests); default: loopback, host name, own interface addresses. */
+    ownHosts?: string[]
+}
+
+/** Loopback, the own host name and every own interface address (Tailnet included), lower case. */
+export function ownMachineHosts(): Set<string> {
+    const own = new Set<string>(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+    try { own.add(hostname().toLowerCase()) } catch { /* optional */ }
+    const nodeId = process.env.NOVA_NODE_ID?.trim().toLowerCase()
+    if (nodeId) own.add(nodeId)
+    try {
+        for (const list of Object.values(networkInterfaces())) for (const entry of list || []) own.add(entry.address.toLowerCase())
+    } catch { /* optional */ }
+    return own
+}
+
+function endpointHostPort(service: { endpoint: string; host?: string }): { host: string; port: string } {
+    try {
+        const url = new URL(service.endpoint)
+        return { host: url.hostname.replace(/^\[|\]$/g, '').toLowerCase(), port: url.port || (url.protocol === 'https:' ? '443' : '80') }
+    } catch { return { host: String(service.host || '').toLowerCase(), port: '' } }
 }
 
 /** 2.86.1 (a): helper services in plain words. */
@@ -427,16 +449,30 @@ const sameHost = (a?: string, b?: string) => {
 export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike | null, status: StatusFile, env: NodeJS.ProcessEnv): LlmConnection[] {
     const list: LlmConnection[] = []
     const seen = new Set<string>()
+    const own = inputs.ownHosts ? new Set(inputs.ownHosts.map(item => item.toLowerCase())) : ownMachineHosts()
+    // The same service reached as localhost, own host name or own (Tailnet) address is ONE service of this machine.
+    // Another machine (other address, other name) or another port stays its own entry.
+    const isOwn = (service: ScanServiceLike) => {
+        const { host } = endpointHostPort(service)
+        const node = String(service.sourceNode || '').toLowerCase()
+        return service.sourceNode === 'local' || own.has(host) || own.has(String(service.host || '').toLowerCase()) || (node !== '' && own.has(node))
+    }
+    const keyOf = (service: ScanServiceLike) => {
+        if (!isOwn(service)) return `${service.name}@${service.endpoint}`
+        const { port } = endpointHostPort(service)
+        return port ? `${service.name}@lokal:${port}` : `${service.name}@${service.endpoint}`
+    }
     for (const service of inputs.services || []) {
         const search = service.type === 'search'
+        const ownService = isOwn(service)
         if (service.status !== 'running') {
             // Installed but stopped: a quiet finding. Xaventra never starts or installs it by itself.
-            if (!['llm', 'vlm'].includes(service.type) || service.sourceNode !== 'local' && service.host !== 'localhost') continue
-            const key = `${service.name}@${service.endpoint}`
+            if (!['llm', 'vlm'].includes(service.type) || !ownService) continue
+            const key = keyOf(service)
             if (seen.has(key)) continue
             seen.add(key)
             list.push({
-                id: `lokal:${key}`, kategorie: 'ki-modelle', title: `${RUNTIME_TITLE[service.name] || service.name} auf diesem Rechner — installiert, aber aus`,
+                id: `lokal:${service.name}@${service.endpoint}`, kategorie: 'ki-modelle', title: `${RUNTIME_TITLE[service.name] || service.name} auf diesem Rechner — installiert, aber aus`,
                 status: 'gefunden', datenklasse: 'lokal', nutzbar: false,
                 wirkung: 'Installiert, läuft aber nicht — wird nicht von selbst gestartet; erst nach dem Start nutzbar.',
                 endpoint: service.endpoint, node: service.sourceNode, modelle: [],
@@ -445,19 +481,19 @@ export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike |
         }
         // 2.86.1 (a): helper services of own machines (speech, images) are listed too — in plain words.
         if (!search && HILFSDIENST_TITEL[service.type]) {
-            const key = `${service.name}@${service.endpoint}`
+            const key = keyOf(service)
             if (seen.has(key)) continue
             seen.add(key)
-            const where = service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
+            const where = ownService ? 'auf diesem Rechner' : service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
             list.push({
-                id: `lokal:${key}`, kategorie: 'hilfsdienst', title: `${HILFSDIENST_TITEL[service.type].titel} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
+                id: `lokal:${service.name}@${service.endpoint}`, kategorie: 'hilfsdienst', title: `${HILFSDIENST_TITEL[service.type].titel} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
                 wirkung: HILFSDIENST_TITEL[service.type].wirkung, endpoint: service.endpoint, node: service.sourceNode, modelle: [...(service.models || [])],
             })
             continue
         }
         if (!search && !['llm', 'vlm', 'embeddings'].includes(service.type)) continue
         if (service.name === 'ollama-embeddings') continue
-        const key = `${service.name}@${service.endpoint}`
+        const key = keyOf(service)
         if (seen.has(key)) continue
         seen.add(key)
         const belegt = new Set<string>()
@@ -469,9 +505,9 @@ export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike |
             guessedCapabilities(model).forEach(item => vermutet.add(item))
         }
         const label = RUNTIME_TITLE[service.name] || service.name
-        const where = service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
+        const where = ownService ? 'auf diesem Rechner' : service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
         list.push({
-            id: `lokal:${key}`, kategorie: search ? 'suche' : 'ki-modelle', title: `${label} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
+            id: `lokal:${service.name}@${service.endpoint}`, kategorie: search ? 'suche' : 'ki-modelle', title: `${label} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
             wirkung: search ? 'Private Websuche ohne Key — wird vor Cloud-Suchen genutzt' : `${(service.models || []).length} lokale Modelle — privat, ohne Frage nutzbar`,
             endpoint: service.endpoint, node: service.sourceNode, modelle: [...(service.models || [])],
             ...(search ? {} : { faehigkeiten: { belegt: [...belegt].sort(), vermutet: [...vermutet].filter(item => !belegt.has(item)).sort() } }),
