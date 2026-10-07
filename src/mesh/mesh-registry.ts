@@ -20,6 +20,7 @@ import { hostname, networkInterfaces, uptime } from 'os'
 import * as nodeOs from 'node:os'
 import { execSync } from 'child_process'
 import { locateProgram } from '../startup/environment-scanner.js'
+import { hasInternet } from '../core/environment.js'
 import { cachedNvidiaQuery, nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 import {
     isActiveNode,
@@ -1370,7 +1371,7 @@ export async function failTask(taskId: string, error: string): Promise<void> {
 // Full Node Self-Scan (Hardware + Software)
 // ============================================
 
-function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, software: NodeSoftware } {
+export function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, software: NodeSoftware } {
     const caps: string[] = ['chat', 'tools', 'memory']
     // Owner decision (2.88): with succession on, only explicitly allowed nodes are main-eligible.
     if (!isNodeMainEligible()) {
@@ -1594,8 +1595,9 @@ function scanNodeCapabilities(): { caps: string[], hardware: NodeHardware, softw
     // SSH client
     if (locateProgram('ssh')) caps.push('ssh')
 
-    // Internet connectivity (quick DNS check)
-    try { execSync(process.platform === 'win32' ? 'ping -n 1 -w 1000 8.8.8.8' : 'ping -c 1 -W 1 8.8.8.8', { stdio: 'pipe', timeout: 3000 }); caps.push('internet') } catch { }
+    // Internet: the one question (core/environment.ts hasInternet: ping, then TCP 443).
+    // Ping alone said "no internet" under NoNewPrivileges although HTTPS worked.
+    if (hasInternet()) caps.push('internet')
 
     // OpenCV (via python import check)
     if (pythonVersion) {

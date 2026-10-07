@@ -127,6 +127,28 @@ export function probeInternetSync(os: string, run: (command: string) => void): b
     try { run(`"${process.execPath}" -e "${script}"`); return true } catch { return false }
 }
 
+/**
+ * 2.89 (Paket C): THE one internet question. Every place that wants to know "is the
+ * internet there?" (environment prompt, mesh registration, leader score) asks this
+ * function: ping first, then TCP 443 (probeInternetSync). The answer is remembered for
+ * 60 s so asking from several places does not mean several probes.
+ */
+const INTERNET_MEMO_MS = 60_000
+let internetMemo: { at: number; ok: boolean } | null = null
+
+export function hasInternet(options: { force?: boolean; now?: number; os?: string; run?: (command: string) => void } = {}): boolean {
+    const now = options.now ?? Date.now()
+    if (!options.force && internetMemo && now - internetMemo.at < INTERNET_MEMO_MS) return internetMemo.ok
+    const os = options.os ?? (platform() === 'win32' ? 'windows' : platform() === 'darwin' ? 'mac' : 'linux')
+    const run = options.run ?? ((command: string) => { execSync(command, { timeout: 4000, windowsHide: true, stdio: 'pipe' }) })
+    const ok = probeInternetSync(os, run)
+    internetMemo = { at: now, ok }
+    return ok
+}
+
+/** Test hook: forget the remembered answer. */
+export function resetInternetProbe(): void { internetMemo = null }
+
 export function detectEnvironment(forceRefresh = false): NovaEnvironment {
     if (!forceRefresh) {
         const cached = loadCachedEnv()
@@ -174,7 +196,7 @@ export function detectEnvironment(forceRefresh = false): NovaEnvironment {
     }
 
     // Quick network check
-    env.networkReachable = probeInternetSync(os, command => { execSync(command, { timeout: 4000, windowsHide: true, stdio: 'pipe' }) })
+    env.networkReachable = hasInternet({ force: forceRefresh, os })
 
     console.log(`[Environment] ✅ ${env.os}/${env.arch} | SSH:${env.hasSSH} Key:${env.hasSSHKey} | Choco:${env.hasChoco} Scoop:${env.hasScoop} | Docker:${env.hasDocker} | Net:${env.networkReachable}`)
 
