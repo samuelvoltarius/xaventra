@@ -39,7 +39,8 @@ describe('one tool-health store', () => {
 
     it('Gegenprobe: a single failure is no verdict; clearing forgets it', () => {
         recordUnavailable('sms_send', 'gateway down')
-        expect(loadUnavailable()).toEqual([])
+        // one failure is remembered, but it is no "does not work here" statement in the prompt
+        expect(getCapabilitiesPrompt({ permission: 'owner' })).toBe('')
         recordToolOutcome('sms_send', 'failure', {}, Date.now() + 60_000)
         expect(loadUnavailable().map(item => item.tool)).toEqual(['sms_send'])
         clearToolFailures('sms_send')
