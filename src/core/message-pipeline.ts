@@ -2544,6 +2544,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             return
         }
 
+        // 2.89: a system message (self-goal, reminder) gets no plain-model stand-in —
+        // its caller must see that the run failed (self-goals pause after 2 failures).
+        if (isSystemAuthored) {
+            await replyFn(`Fehler aufgetreten: ${redactSecrets(String((err as Error)?.message || err)).replace(/\s+/g, ' ').slice(0, 160)}`)
+            return
+        }
+
         // Fallback to simple LLM call if agent runner fails.
         // 2.89: it runs no tools, so it passes the same reply gate and claim guard
         // with zero evidence (no unchecked "habe getestet" from the plain model).

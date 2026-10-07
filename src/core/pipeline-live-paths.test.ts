@@ -479,6 +479,13 @@ describe('7 — no silent failures; claims only with successful tools', () => {
         expect(reply).toMatch(/noch nicht fertig/)
     }, 20000)
 
+    it('a failing self-goal run reports the failure instead of a plain-model stand-in', async () => {
+        fixtures.agent.mockRejectedValue(new Error('Governed tool execution stopped'))
+        const replies = await send('Telegram', 'Nova-Autonomy', 'Prüfe die Logs auf Warnungen')
+        expect(replies).toEqual(['Fehler aufgetreten: Governed tool execution stopped'])
+        expect(state.llm.complete).not.toHaveBeenCalled()
+    }, 20000)
+
     it('the plain-model fallback passes the claim guard too', async () => {
         fixtures.agent.mockRejectedValue(new Error('provider 500'))
         state.llm.complete.mockResolvedValue({ content: 'Ich habe es geprüft, curl funktioniert.' })

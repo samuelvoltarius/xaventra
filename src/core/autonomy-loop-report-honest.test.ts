@@ -10,7 +10,7 @@ vi.mock('../doctor/failure-research-coordinator.js', () => ({ getFailureResearch
 vi.mock('./message-pipeline.js', () => ({ getIdleMinutes: () => 0, getMinutesSinceLastSelfThink: () => 0, trackSelfThink: () => { } }))
 vi.mock('./autonomous-executor.js', () => ({ getActiveMission: () => null, getMissionQueue: () => [] }))
 vi.mock('../intelligence/autonomy-engine.js', () => ({
-    getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }),
+    getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { }, recordGoalFailure: () => ({ failures: 1, paused: false }) }),
 }))
 // A notifiable finding of the loop (2.82.0: the Nachtwache no longer runs in the loop; the self-heal phase does).
 vi.mock('../doctor/self-heal-runtime.js', () => ({

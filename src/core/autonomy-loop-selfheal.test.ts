@@ -8,7 +8,7 @@ vi.mock('./autonomy-authority.js', () => ({ hasGlobalAutonomyAuthority: () => au
 vi.mock('../doctor/failure-research-coordinator.js', () => ({ getFailureResearchCoordinator: () => ({ investigateNext: async () => null }) }))
 vi.mock('./message-pipeline.js', () => ({ getIdleMinutes: () => 0, getMinutesSinceLastSelfThink: () => 0, trackSelfThink: () => { } }))
 vi.mock('./autonomous-executor.js', () => ({ getActiveMission: () => null, getMissionQueue: () => [] }))
-vi.mock('../intelligence/autonomy-engine.js', () => ({ getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { } }) }))
+vi.mock('../intelligence/autonomy-engine.js', () => ({ getSelfGoalEngine: () => ({ getNextGoal: () => null, completeGoal: () => { }, failGoal: () => { }, recordGoalFailure: () => ({ failures: 1, paused: false }) }) }))
 vi.mock('./croner-scheduler.js', () => ({ getCronerScheduler: () => ({ schedule: async () => { } }) }))
 vi.mock('../doctor/self-heal-runtime.js', () => ({
     // 2.82.0: the loop uses the one self-heal trigger like Wächter and missions.
