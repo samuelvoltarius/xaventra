@@ -26,9 +26,8 @@ describe('pipeline passes the principal role to role-gated context', () => {
         expect(pipelineSource).toMatch(/\.getConsolidationContext\(viewer\)/)
     })
 
-    it('response cache lookup and store use the conversation history (R2 UEB-21)', () => {
-        expect(pipelineSource).toContain('getCachedResponse(systemPrompt, cacheKeyMessages)')
-        expect(pipelineSource).toContain('cacheResponse(systemPrompt, cacheKeyMessages, finalContent')
+    it('no response cache answers for another conversation (2.89: the cache is removed)', () => {
+        expect(pipelineSource).not.toContain('response-cache')
         expect(pipelineSource).not.toContain("const messages = [{ role: 'user', content }]")
     })
 

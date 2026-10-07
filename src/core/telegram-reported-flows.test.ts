@@ -125,8 +125,8 @@ describe('reported Telegram conversation regressions', () => {
         expect(source).toContain('await runtimeModelContext(content, state.llm)')
         expect(source).toContain('applySystemPromptBudget(systemPrompt, MAX_SYSTEM_PROMPT, content)')
         expect(source).toContain('systemPrompt += liveEvidenceGuidance(content)')
-        expect(source).toContain('if (!requiresFreshRuntimeEvidence) cachedResponse = getCachedResponse(')
-        expect(source).toContain('if (!requiresFreshRuntimeEvidence) cacheResponse(')
+        // 2.89: no response cache any more — fresh evidence can never be replaced by an old answer.
+        expect(source).not.toContain('getCachedResponse(')
         expect(source.indexOf('finalContent = isNodeScreenshotRequest(content)')).toBeGreaterThan(source.indexOf('validateWithLLM(supervised.content'))
     })
 })
