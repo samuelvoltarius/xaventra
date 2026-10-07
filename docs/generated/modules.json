@@ -1832,6 +1832,7 @@
       "module": "src/core/hardware-role.ts",
       "imports": [
         "../doctor/nvidia-smi.js",
+        "../mesh/node-strengths.js",
         "node:child_process",
         "node:fs",
         "node:os"
@@ -2043,6 +2044,7 @@
       "module": "src/core/node-profile.ts",
       "imports": [
         "../infra/kubernetes-node.js",
+        "../mesh/node-strengths.js",
         "./resource-thresholds.js",
         "node:fs",
         "node:os",
@@ -2364,6 +2366,7 @@
         "../doctor/gpu-runtime.js",
         "../install/install-queue.js",
         "../mesh/capability-graph.js",
+        "../mesh/node-strengths.js",
         "../startup/environment-scanner.js",
         "../voice/voice-setup.js",
         "./config-validator.js",
@@ -2574,6 +2577,15 @@
         "./typed-tool-recovery.js",
         "node:crypto",
         "node:fs"
+      ]
+    },
+    {
+      "module": "src/core/tool-health-store.ts",
+      "imports": [
+        "../security/secret-redaction.js",
+        "./data-root.js",
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -2889,6 +2901,7 @@
         "../mesh/capability-graph.js",
         "../mesh/mesh-node-lifecycle.js",
         "../mesh/mesh-registry.js",
+        "../mesh/node-strengths.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -3074,6 +3087,7 @@
       "module": "src/doctor/collect.ts",
       "imports": [
         "../config/config-path.js",
+        "../llm/active-runtime.js",
         "./gpu-runtime.js",
         "./types.js",
         "dotenv/config",
@@ -3991,6 +4005,7 @@
         "../core/autonomy-defaults.js",
         "../core/data-root.js",
         "../core/node-profile.js",
+        "../mesh/node-strengths.js",
         "./install-catalog.js",
         "./install-queue.js",
         "./software-candidates.js",
@@ -4277,6 +4292,7 @@
       "module": "src/layers/L15-self-check.ts",
       "imports": [
         "../core/resource-thresholds.js",
+        "../core/tool-health-store.js",
         "./L9-idle-learning.js",
         "node:events",
         "node:fs",
@@ -4465,6 +4481,14 @@
       ]
     },
     {
+      "module": "src/learning/capability-inventory.ts",
+      "imports": [
+        "../core/tool-health-store.js",
+        "../llm/active-runtime.js",
+        "../mesh/node-strengths.js"
+      ]
+    },
+    {
       "module": "src/learning/capability-learning.ts",
       "imports": [
         "../core/action-policy.js",
@@ -4476,7 +4500,9 @@
         "../core/side-effects.js",
         "../install/software-candidates.js",
         "../install/software-freshness.js",
+        "../mesh/node-strengths.js",
         "../security/secret-redaction.js",
+        "./capability-inventory.js",
         "node:crypto",
         "node:fs",
         "node:path"
@@ -4574,6 +4600,12 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/llm/active-runtime.ts",
+      "imports": [
+        "../routing/model-registry.js"
       ]
     },
     {
@@ -4864,9 +4896,8 @@
     {
       "module": "src/memory/capabilities-store.ts",
       "imports": [
-        "../security/secret-redaction.js",
-        "node:fs",
-        "node:path"
+        "../core/tool-health-store.js",
+        "../security/secret-redaction.js"
       ]
     },
     {
@@ -5124,6 +5155,7 @@
         "../llm/capability-probe.js",
         "../llm/model-perf-db.js",
         "./ai-scanner.js",
+        "./mesh-node-lifecycle.js",
         "./mesh-registry.js",
         "node:fs",
         "node:path"
@@ -5132,7 +5164,9 @@
     {
       "module": "src/mesh/capability-orchestrator.ts",
       "imports": [
+        "../llm/active-runtime.js",
         "./capability-graph.js",
+        "./node-strengths.js",
         "node:fs",
         "node:path"
       ]
@@ -5293,6 +5327,7 @@
       "module": "src/mesh/mesh-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/environment.js",
         "../doctor/nvidia-smi.js",
         "../startup/environment-scanner.js",
         "./mesh-node-lifecycle.js",
@@ -5420,7 +5455,8 @@
     {
       "module": "src/mesh/node-strengths.ts",
       "imports": [
-        "../core/node-profile.js"
+        "../core/node-profile.js",
+        "./mesh-node-lifecycle.js"
       ]
     },
     {
@@ -6961,6 +6997,13 @@
       "imports": []
     },
     {
+      "module": "src/test-utils/capability-truth-fixture.ts",
+      "imports": [
+        "../core/node-profile.js",
+        "../mesh/capability-graph.js"
+      ]
+    },
+    {
       "module": "src/test-utils/channel-plugins.ts",
       "imports": [
         "../plugins/registry.js"
@@ -7440,6 +7483,7 @@
       "module": "src/tools/scan-now-tool.ts",
       "imports": [
         "../core/tool-abort-scope.js",
+        "../mesh/node-strengths.js",
         "./complete-registry.js"
       ]
     },

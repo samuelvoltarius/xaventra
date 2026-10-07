@@ -796,11 +796,10 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Nodes
             let nodeStatus = ''
             try {
-                const { getNodeHealthMonitor } = await import('../layers/L21-node-health.js')
-                const snapshots = getNodeHealthMonitor().getLastSnapshots()
-                const online = snapshots.filter((n: any) => n.status === 'online').length
-                const total = snapshots.length
-                nodeStatus = `\n📡 Nodes: ${online}/${total} online`
+                // 2.89: the same node view and online window as mesh_nodes / mesh_status (node-strengths.ts).
+                const { collectNodeStrengths } = await import('../mesh/node-strengths.js')
+                const strengths = await collectNodeStrengths()
+                nodeStatus = `\n📡 Nodes: ${strengths.filter(n => n.online).length}/${strengths.length} online`
             } catch { /* ok */ }
 
             // Tools

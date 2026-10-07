@@ -55,9 +55,9 @@ export interface UnavailableCapability {
     resolved?: boolean     // nach erfolgreichem Nachruesten wieder frei
 }
 
-/** Alle Werkzeuge, die hier nicht gehen (aus dem einen Gesundheitsspeicher). */
+/** Alle Werkzeuge mit Fehlschlaegen in Folge (aus dem einen Gesundheitsspeicher). */
 export function loadUnavailable(): UnavailableCapability[] {
-    return loadToolHealth().filter(isToolUnavailable).map(entry => ({
+    return loadToolHealth().filter(entry => entry.consecutiveFailures > 0 || entry.status !== 'healthy').map(entry => ({
         tool: entry.name,
         reason: entry.reason || entry.lastDiagnosis || 'Werkzeug meldete Fehlschlag',
         ...(entry.hint ? { hint: entry.hint } : {}),
@@ -81,7 +81,8 @@ export function getUnavailablePrompt(options: CapabilityPromptOptions = {}): str
     const isOwner = options.permission === 'owner'
     // Erst ab dem zweiten Fehlschlag in Folge als "geht hier nicht" melden — ein
     // einzelner Fehler kann ein Netzaussetzer oder ein Tippfehler sein.
-    const list = loadUnavailable()
+    const unavailable = new Set(loadToolHealth().filter(isToolUnavailable).map(entry => entry.name))
+    const list = loadUnavailable().filter(item => unavailable.has(item.tool))
     if (list.length === 0) return ''
 
     let p = `

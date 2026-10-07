@@ -43,7 +43,8 @@ export const routeTask = async (
     const skill = skillForTask(content)
     const local = (reason: string, score: number): RoutingDecision => ({ nodeId: localId(strengths), nodeName: localId(strengths), reason, score, skill, isLocal: true })
     if (forceLocal || !skill) return local(forceLocal ? 'lokal angefordert' : 'normale Aufgabe — läuft hier', 100)
-    const nodes = strengths || await collectNodeStrengths()
+    // Hot path (every message that needs a skill): no Supabase request here, registry from the local file and direct mesh.
+    const nodes = strengths || await collectNodeStrengths(Date.now(), { registryRemote: false })
     const ranking = rankNodes(skill, nodes)
     const best = ranking.ranked[0]
     if (!best) return local(shortReason(ranking), 0)
