@@ -1,8 +1,21 @@
 # Changelog
 
-## [Unreleased] — Vorschau 2.88.0 (in Arbeit)
+## [Unreleased] — Vorschau 2.89.0 (in Arbeit)
 
-Goal: a personal agent that can do almost anything — and learns what it cannot
+- **Xaventra World:** one question about weather, traffic, cameras, flights,
+  satellites, earthquakes or fires near a place or along a route; she picks
+  checked open-data sources herself (Austria first), names them, respects
+  their licences and rate limits, and warns on her own when something happens.
+  Only cameras that their operators publish openly.
+- **Mehr Alltag:** office documents (Word, Excel, PowerPoint, PDF), a phone
+  companion app, a call assistant that takes notes, meeting notes, desktop
+  helpers on nodes with a screen, maps and routes, music, a maker helper for
+  boards and sensors.
+- Small fixes from the first night with 2.88.
+
+## [2.88.0] — 2026-10-07
+
+A personal agent that can do almost anything — and learns what it cannot
 yet do — running on your own hardware, private by default.
 
 - **Ihr Computer:** watch her desktop and browser live in the app; take over
@@ -28,10 +41,13 @@ yet do — running on your own hardware, private by default.
   reason, Git repositories and work data travel along.
 - **Main-Nachfolge mit vollem Wissen:** state journaled to other nodes, the
   best-suited node takes over, never two mains; without a majority a safe mode
-  plus an owner emergency code.
+  plus an owner emergency code. Off by default until the owner chooses the
+  main-capable nodes.
 - **Kubernetes (optional):** a Helm chart with workers as a deployment and one
   active main; she scales her own workers through a narrow interface limited
   to her own namespace — no raw cluster shell.
+- Also: app rooms wait up to 110 s for an answer instead of 30 s; a paired Hue
+  bridge shows as connected.
 
 ## [2.87.1] — 2026-10-07
 

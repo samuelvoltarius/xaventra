@@ -206,6 +206,14 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     // "verbunden" once that access is stored — an approved way alone is not a connection.
     const access = await import('../sensing/smart-device-access.js')
     const KEYED = new Set(['tuya-announcements', 'esphome-native', 'matter-ip', 'shelly-readonly'])
+    // 2.88 (live 07.10.): a Hue bridge is two records (one "gefunden", one "eingerichtet" with the
+    // pairing key); the merged status picked the first and showed a paired bridge as not connected.
+    const { hueKey } = await import('../sensing/direct-smart-devices.js')
+    const deviceConnected = (g: { status: string; dienste: Array<{ id: string }> }) => {
+        if (g.dienste.some(dienst => Boolean(hueKey(dataDir, dienst.id)))) return true
+        const eingerichtet = g.status === 'eingerichtet' || g.dienste.some(dienst => (records.find((r: any) => r.id === dienst.id) as any)?.status === 'eingerichtet')
+        return eingerichtet && accessReady(g)
+    }
     const accessReady = (g: { dienste: Array<{ id: string }> }) => g.dienste.every(dienst => {
         const record = records.find((r: any) => r.id === dienst.id) as any
         if (!record || !KEYED.has(String(record.hardware?.connector || ''))) return true
@@ -227,7 +235,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             wirkung: typed ? known.wirkung : GERAET_WIRKUNG[g.art] || GERAET_WIRKUNG.geraet,
             fund: `im Netz ${primary.host}:${primary.port}${g.adressen.length > 1 ? ` (+${g.adressen.length - 1} weitere Adresse${g.adressen.length > 2 ? 'n' : ''})` : ''}`,
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : g.status === 'eingerichtet' && accessReady(g),
+            verbunden: connectorId ? connectedIds.has(connectorId) : deviceConnected(g),
             geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
         })
     }

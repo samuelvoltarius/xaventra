@@ -33,7 +33,7 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.87.1 preview** (2.87.1: Home Assistant questions routed correctly, honest internet and model checks, own SearXNG first, stale device questions close themselves; 2.87.0: device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
+Current source candidate: **2.88.0 preview** (2.88.0: watch and take over her computer, activity list, rules in plain words, several projects from one conversation, one memory across channels, "shall I learn it?", checked connectors from the MCP registry, a password vault the model never sees, Proxmox with one token, mesh brain, main succession (off by default), Kubernetes chart; 2.87.1: 2.87.1: Home Assistant questions routed correctly, honest internet and model checks, own SearXNG first, stale device questions close themselves; 2.87.0: device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
@@ -52,13 +52,10 @@ Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
-**Next version (preview, 2.88.0 in progress).** An agent that can do almost
-anything and learns the rest: watch and take over her own computer, one
-activity list, rules in plain words, several projects from one conversation,
-one memory across Telegram, app and phone, "I can't do that yet — shall I
-learn it?", connectors from the MCP registry, a password vault the model never
-sees, a mesh brain with main succession, and an optional Kubernetes chart.
-Details: [CHANGELOG → Unreleased](CHANGELOG.md).
+**Next version (preview, 2.89.0 in progress).** Xaventra World — weather,
+traffic, cameras, flights, satellites and alerts for any place from checked
+open data — plus office documents, a phone companion app, a call and meeting
+assistant and desktop helpers. Details: [CHANGELOG → Unreleased](CHANGELOG.md).
 
 ## Why Xaventra
 

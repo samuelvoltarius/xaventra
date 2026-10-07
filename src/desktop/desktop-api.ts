@@ -61,8 +61,14 @@ type MessageHandler = (message: string, channel: string) => Promise<string>
  *  mehrstufige Werkzeugketten. Der Nutzer sah dort "Bot fehlgeschlagen:
  *  Bot-Lauf nach 30 Sekunden beendet", waehrend Nova noch arbeitete.
  *  Ausserhalb von NovaOS bleibt es bei 30 s. */
-const DESKTOP_BOT_TIMEOUT_MS = Number(process.env.NOVA_DESKTOP_BOT_TIMEOUT_MS)
-    || (process.env.NOVA_OS_MODE === 'true' ? 2_400_000 : 30_000)
+/*  2.88 (live 07.10.2026): „Such kurz, wie das Wetter morgen wird" = Suche, Seite
+ *  abrufen, lokales Modell schreibt — das dauert länger als 30 s, die App wartet
+ *  aber bis zu 120 s. Der Server-Standard liegt knapp darunter (110 s), damit die
+ *  klare Abbruchmeldung noch vor dem Zeitlimit der App ankommt. */
+export function desktopBotTimeoutMs(env: Record<string, string | undefined> = process.env): number {
+    return Number(env.NOVA_DESKTOP_BOT_TIMEOUT_MS) || (env.NOVA_OS_MODE === 'true' ? 2_400_000 : 110_000)
+}
+const DESKTOP_BOT_TIMEOUT_MS = desktopBotTimeoutMs()
 
 export async function withDesktopBotTimeout<T>(work: Promise<T> | ((signal: AbortSignal) => Promise<T>), timeoutMs = DESKTOP_BOT_TIMEOUT_MS): Promise<T> {
     let timer: NodeJS.Timeout | undefined
