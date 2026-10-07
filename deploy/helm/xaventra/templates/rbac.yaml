@@ -5,18 +5,6 @@
 {{- $workerNames = append $workerNames (printf "%s-%s" $full $w.name) -}}
 {{- end -}}
 {{- end -}}
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{ $full }}-main
-  labels:
-    {{- include "xaventra.labels" . | nindent 4 }}
-  {{- with .Values.serviceAccount.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-automountServiceAccountToken: false
----
 # Workers never talk to the Kubernetes API.
 apiVersion: v1
 kind: ServiceAccount
@@ -27,8 +15,22 @@ metadata:
 automountServiceAccountToken: false
 {{- if .Values.control.enabled }}
 ---
+# Xaventra's own control account. Used by an in-cluster Main (mounted) or by
+# the external Main with a short-lived token created by pipe (docs/KUBERNETES.md).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-control
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+---
 # Only the own namespace. No secrets, no pods/exec|attach|portforward|proxy,
-# no delete, no create, nothing cluster-wide. Writes only on own objects.
+# no delete, no create, nothing cluster-wide. Writes only on named own objects.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -43,29 +45,31 @@ rules:
     resources: ["events"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "replicasets"]
+    resources: ["daemonsets", "statefulsets"]
     verbs: ["get", "list", "watch"]
   {{- if $workerNames }}
-  # resourceNames is never empty here: an empty list would mean "all objects".
+  # Rollout restart (template annotation) and card-approved chart updates of the
+  # own worker DaemonSets. resourceNames is never empty here: an empty list
+  # would mean "all objects".
   - apiGroups: ["apps"]
-    resources: ["deployments", "deployments/scale"]
+    resources: ["daemonsets"]
     resourceNames:
       {{- range $name := $workerNames }}
       - {{ $name | quote }}
       {{- end }}
-    verbs: ["get", "patch"]
+    verbs: ["patch"]
   {{- end }}
+  {{- if .Values.main.enabled }}
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     resourceNames: [{{ printf "%s-main" $full | quote }}]
     verbs: ["patch"]
+  {{- end }}
+  # The control policy of this release (read only).
   - apiGroups: [""]
     resources: ["configmaps"]
     resourceNames: [{{ printf "%s-control" $full | quote }}]
-    verbs: ["get", "patch"]
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -79,6 +83,6 @@ roleRef:
   name: {{ $full }}-control
 subjects:
   - kind: ServiceAccount
-    name: {{ $full }}-main
+    name: {{ $full }}-control
     namespace: {{ .Release.Namespace }}
 {{- end }}

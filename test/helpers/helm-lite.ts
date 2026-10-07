@@ -452,6 +452,11 @@ export class HelmLite {
             case 'empty': return isEmpty(a[0])
             case 'ternary': return isEmpty(a[2]) ? a[1] : a[0]
             case 'sha256sum': return createHash('sha256').update(str(a[0])).digest('hex')
+            case 'hasPrefix': return str(a[1]).startsWith(str(a[0]))
+            case 'join': return (Array.isArray(a[1]) ? a[1] : []).map(str).join(str(a[0]))
+            // Sprig: deepCopy returns an independent copy; set mutates the dict and returns it.
+            case 'deepCopy': return a[0] === undefined ? undefined : JSON.parse(JSON.stringify(a[0]))
+            case 'set': { if (!a[0] || typeof a[0] !== 'object') throw new HelmLiteError(`${file}: set on non-dict`); a[0][str(a[1])] = a[2]; return a[0] }
             case 'fail': throw new HelmLiteError(`fail: ${str(a[0])}`)
             case 'required': if (isEmpty(a[1]) && a[1] !== false && a[1] !== 0) throw new HelmLiteError(`required: ${str(a[0])}`); return a[1]
             default: throw new HelmLiteError(`${file}: unsupported function ${name}`)

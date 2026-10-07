@@ -1,5 +1,9 @@
+{{- if .Values.main.enabled -}}
 {{- $full := include "xaventra.fullname" . -}}
 {{- $main := .Values.main -}}
+{{- if not (or .Values.config.existingSecret .Values.config.existingConfigMap) -}}
+{{- fail "main.enabled braucht eine vollständige eigene Konfiguration (config.existingSecret oder config.existingConfigMap): die mitgelieferte Konfiguration ist nur für Worker." -}}
+{{- end -}}
 {{- if and (gt (int $main.warmCandidates) 0) (not (has $main.leaseCoordinator (list "witness" "supabase"))) -}}
 {{- fail "main.warmCandidates > 0 braucht main.leaseCoordinator=witness oder supabase: warme Kandidaten führen nur über Xaventras Lease/Witness/Fencing, nie über Kubernetes." -}}
 {{- end -}}
@@ -35,7 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ $full }}-main
+      serviceAccountName: {{ $full }}-control
       automountServiceAccountToken: {{ .Values.control.enabled }}
       enableServiceLinks: false
       terminationGracePeriodSeconds: {{ $main.terminationGracePeriodSeconds }}
@@ -54,7 +58,7 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
             readOnlyRootFilesystem: true
           env:
-            {{- include "xaventra.podEnv" (dict "root" . "workload" "main") | nindent 12 }}
+            {{- include "xaventra.podEnv" (dict "root" . "workload" "main" "nodeId" "$(XAVENTRA_POD_NAME)") | nindent 12 }}
             - name: NOVA_MAIN_ELIGIBLE
               value: {{ ternary "true" "false" $main.mainEligible | quote }}
             {{- if .Values.control.enabled }}
@@ -144,3 +148,4 @@ spec:
           requests:
             storage: {{ index $main.persistence $volume }}
     {{- end }}
+{{- end }}

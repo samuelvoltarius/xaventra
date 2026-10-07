@@ -1,16 +1,16 @@
 /**
- * /cluster (Owner), the Kubernetes Knopf-Karten and the worker autoscaler
- * (2.88, Paket P19).
+ * /cluster (Owner) and the Kubernetes Knopf-Karten (2.88 P19, 2.89 P21).
  *
  * - Read: status, events, logs — no card.
- * - Scale an own worker Deployment within min/max, rollout-restart an own
- *   worker — no card (bounded and reversible), but only with the Main lease.
- * - Restart of the Main or an optional workload, every chart update (diff
- *   preview first) and everything that switches something off — Knopf-Karte,
- *   runs only after the owner's Ja; the executor re-reads the cluster first.
+ * - Rollout-restart an own worker DaemonSet — no card (bounded and
+ *   reversible), but only with the Main lease.
+ * - Restart of the Main or an optional workload and every chart update (image
+ *   tag, resources; diff preview first) — Knopf-Karte, runs only after the
+ *   owner's Ja; the executor re-reads the cluster first.
+ * - No scaling and no autoscaler: workers are DaemonSets, one pod per node the
+ *   owner labelled. Switching workers on/off or adding nodes is the owner's
+ *   job (helm, node labels); /cluster explains it and sends nothing.
  * - Workers (NOVA_NODE_ONLY=true) never act and never talk to the owner.
- * - Autoscaler: many open tasks → more workers, idle → fewer, inside the
- *   chart's min/max with a cooldown. Only the lease-holding Main scales.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,7 +20,7 @@ import {
 import type { NodeProfile } from '../core/node-profile.js'
 import { formatLabelSuggestions } from './kubernetes-node.js'
 import {
-    KUBERNETES_NEVER, loadKubernetesRuntime, parseChartChanges, readKubernetesRawConfig,
+    KUBERNETES_NEVER, loadKubernetesRuntime, parseChartChanges, readKubernetesRawConfig, scaleExplanation,
     type ChartPlan, type ClusterEvent, type ClusterStatus, type KubernetesRuntime,
 } from './kubernetes.js'
 
@@ -32,8 +32,6 @@ export interface ClusterDeps {
     now?: () => number
     /** Main lease check before every write (default: the nova-main fence, live). */
     fence?: (effect: string) => Promise<FenceVerdict>
-    /** Open tasks for the autoscaler (default: command lanes + pending task queue). */
-    openTasks?: () => number
     /** Node profiles for label suggestions (default: own profile + mesh peers). */
     profiles?: () => Promise<Array<{ nodeId: string; profile: NodeProfile | null }>>
     log?: (line: string) => void
@@ -46,9 +44,9 @@ export const K8S_CARD = Object.freeze({
 
 const isWorker = (deps: ClusterDeps) => deps.nodeOnly ?? process.env.NOVA_NODE_ONLY === 'true'
 const runtimeOf = (deps: ClusterDeps) => (deps.runtime || (() => loadKubernetesRuntime({ rawConfig: readKubernetesRawConfig() })))()
-const nowOf = (deps: ClusterDeps) => (deps.now || Date.now)()
 const safe = (error: unknown) => String((error as Error)?.message || error).slice(0, 240)
 const WORKER_ONLY_TEXT = 'Kubernetes-Steuerung gibt es nur am Main (Worker handeln nicht und schreiben dem Owner nicht).'
+const DEFAULT_WORKER_LABEL = 'xaventra.ai/worker'
 
 async function defaultFence(effect: string): Promise<FenceVerdict> {
     try {
@@ -84,12 +82,14 @@ function loadPlan(deps: ClusterDeps, id: string): ChartPlan | null {
 export function formatClusterStatus(status: ClusterStatus, events: ClusterEvent[]): string {
     const lines = [`*Kubernetes* — Namespace ${status.namespace}, Release ${status.release} (Kubernetes entscheidet WO, Xaventra WAS)`]
     for (const w of status.workloads) {
-        const bounds = w.role === 'main' ? 'Führung über Xaventras Lease' : `${w.min}–${w.max}${w.autoscale ? ', automatisch' : ''}`
-        lines.push(`${w.found ? (w.ready >= w.desired && w.desired > 0 ? '🟢' : w.desired === 0 ? '⚫' : '🟡') : '❔'} *${w.name}* (${w.kind}) — ${w.ready}/${w.desired} bereit, Grenzen ${bounds}${w.image ? ` — ${w.image}` : ''}`)
+        const where = w.role === 'main' ? 'Führung über Xaventras Lease' : `je Knoten mit ${status.workerNodeLabel}=true`
+        const icon = !w.found ? '❔' : w.desired === 0 ? '⚫' : w.ready >= w.desired ? '🟢' : '🟡'
+        lines.push(`${icon} *${w.name}* (${w.kind}) — ${w.ready}/${w.desired} bereit${w.kind === 'DaemonSet' && w.updated < w.desired ? `, ${w.updated} aktuell` : ''}, ${where}${w.image ? ` — ${w.image}` : ''}`)
+        if (w.found && w.kind === 'DaemonSet' && w.desired === 0) lines.push(`   (noch kein Knoten freigegeben: ${status.workerNodeLabel}=true setzt der Owner)`)
     }
     if (status.pods.length) {
         lines.push('', 'Pods:')
-        for (const pod of status.pods) lines.push(`• ${pod.name} — ${pod.phase}${pod.ready ? '' : ', nicht bereit'}${pod.restarts ? `, ${pod.restarts} Neustarts` : ''}${pod.node ? `, Node ${pod.node}` : ''}`)
+        for (const pod of status.pods) lines.push(`• ${pod.name} — ${pod.phase}${pod.ready ? '' : ', nicht bereit'}${pod.restarts ? `, ${pod.restarts} Neustarts` : ''}${pod.node ? `, Knoten ${pod.node}` : ''}`)
     }
     const warnings = events.filter(event => event.type === 'Warning')
     if (warnings.length) {
@@ -115,12 +115,11 @@ export async function proposeChartUpdate(input: string, deps: ClusterDeps = {}, 
     if (!('lines' in plan)) return { ok: false, message: `${plan.message} Keine Karte.` }
     savePlan(deps, plan)
     registerKubernetesCardExecutors(deps)
-    const removing = plan.removes.length > 0
     const result = createApprovalCard({
         art: 'kubernetes',
-        titel: options.titel || (removing ? `Kubernetes: ${plan.removes.join(', ')} abschalten (entfernt Workload)` : `Kubernetes: Chart-Update (${plan.lines.length} Änderung${plan.lines.length === 1 ? '' : 'en'})`),
+        titel: options.titel || `Kubernetes: Chart-Update (${plan.lines.length} Änderung${plan.lines.length === 1 ? '' : 'en'})`,
         beleg: [`Namespace ${runtime.policy.namespace}, Release ${runtime.policy.release}.`, 'Vorschau (vorher → nachher):', ...plan.lines.map(line => `• ${line}`)].join('\n'),
-        vorschlag: `${K8S_CARD.update.label}. Vor dem Anwenden liest Xaventra den Cluster neu; hat er sich geändert, passiert nichts. Rückweg: dieselben Werte zurück per /cluster update (wieder mit Karte)${removing ? '; abgeschaltete Workloads mit <name>.enabled=true wieder einschalten (Daten-PVCs bleiben)' : ''}.`,
+        vorschlag: `${K8S_CARD.update.label}. Vor dem Anwenden liest Xaventra den Cluster neu; hat er sich geändert, passiert nichts. Kubernetes tauscht die Worker-Pods Knoten für Knoten. Rückweg: dieselben Werte zurück per /cluster update (wieder mit Karte).`,
         aktion: { kind: K8S_CARD.update.kind, ref: plan.id },
         wirkung: 'infra',
         effects: [K8S_CARD.update.effect],
@@ -131,7 +130,7 @@ export async function proposeChartUpdate(input: string, deps: ClusterDeps = {}, 
     if (result.ok === false) return { ok: false, message: `Keine Karte: ${result.reason}` }
     return {
         ok: true, card: result.card,
-        message: result.created ? `🔘 Karte erstellt (${removing ? 'entfernt Workload' : 'Chart-Update'}). Angewendet wird erst nach deinem Ja.\n${plan.lines.map(line => `• ${line}`).join('\n')}` : '🔘 Diese Karte liegt schon offen.',
+        message: result.created ? `🔘 Karte erstellt (Chart-Update). Angewendet wird erst nach deinem Ja.\n${plan.lines.map(line => `• ${line}`).join('\n')}` : '🔘 Diese Karte liegt schon offen.',
     }
 }
 
@@ -145,7 +144,7 @@ export async function proposeRestart(workload: string, deps: ClusterDeps = {}): 
     const result = createApprovalCard({
         art: 'kubernetes',
         titel: `Kubernetes: ${w.name} neu starten`,
-        beleg: `${w.kind} ${w.object} in ${runtime.policy.namespace}. ${w.role === 'main' ? 'Die Main ist kurz weg; Telegram/Dashboard sind während des Tauschs nicht erreichbar. Die Führung übernimmt danach wieder, wer Xaventras Lease hält.' : 'Optionale Workload; Kubernetes tauscht die Pods.'}`,
+        beleg: `${w.kind} ${w.object} in ${runtime.policy.namespace}. ${w.role === 'main' ? 'Die Main ist kurz weg; Telegram/Dashboard sind während des Tauschs nicht erreichbar. Die Führung übernimmt danach wieder, wer Xaventras Lease hält.' : 'Optionale Workload; Kubernetes tauscht den Pod je Knoten.'}`,
         vorschlag: `${K8S_CARD.restart.label} (rollout restart). Rückweg: keiner nötig — Daten und Werte bleiben.`,
         aktion: { kind: K8S_CARD.restart.kind, ref: w.name },
         wirkung: 'infra',
@@ -209,102 +208,21 @@ export function registerKubernetesCardExecutors(deps: ClusterDeps = {}, options:
     }
 }
 
-// ---------------------------------------------------------------------------
-// Autoscaler
-// ---------------------------------------------------------------------------
-
-export interface ScaleInput {
-    replicas: number; min: number; max: number; openTasks: number; tasksPerWorker: number
-    now: number; lastChangeAt: number; cooldownMs: number; idleSince: number | null; idleMs: number
-}
-
-/** Pure decision. Up: enough workers for the open tasks. Down: one step after idling. */
-export function decideWorkerScale(input: ScaleInput): { target: number; reason: string } | null {
-    const { replicas, min, max } = input
-    if (replicas < min) return { target: min, reason: 'unter dem Minimum' }
-    if (replicas > max) return { target: max, reason: 'über dem Maximum' }
-    if (input.now - input.lastChangeAt < input.cooldownMs) return null
-    const wanted = Math.min(max, Math.max(min, Math.ceil(Math.max(0, input.openTasks) / Math.max(1, input.tasksPerWorker))))
-    if (wanted > replicas) return { target: wanted, reason: `${input.openTasks} offene Aufgaben` }
-    if (input.openTasks === 0 && input.idleSince !== null && input.now - input.idleSince >= input.idleMs && replicas > min) {
-        return { target: replicas - 1, reason: `Leerlauf seit ${Math.round((input.now - input.idleSince) / 60_000)} min` }
-    }
-    return null
-}
-
-async function defaultOpenTasks(): Promise<number> {
-    let total = 0
-    try { total += (await import('../process/command-queue.js')).getTotalQueueSize() } catch { /* optional */ }
-    try { total += (await import('../core/tasks.js')).getTaskQueue().getPendingTasks().length } catch { /* optional */ }
-    return total
-}
-
-export class ClusterAutoscaler {
-    private readonly lastChange = new Map<string, number>()
-    private idleSince: number | null = null
-    private timer: ReturnType<typeof setInterval> | null = null
-
-    constructor(private readonly deps: ClusterDeps = {}) {}
-
-    async tick(): Promise<Array<{ workload: string; target: number; reason: string }>> {
-        if (isWorker(this.deps)) return []
-        const runtime = await runtimeOf(this.deps)
-        if (runtime.ok === false) return []
-        const auto = Object.values(runtime.policy.workloads).filter(w => w.autoscale)
-        if (!auto.length) return []
-        const now = nowOf(this.deps)
-        const open = this.deps.openTasks ? this.deps.openTasks() : await defaultOpenTasks()
-        if (open > 0) this.idleSince = null
-        else if (this.idleSince === null) this.idleSince = now
-        let status: ClusterStatus
-        try { status = await runtime.client.status() } catch (error) { this.deps.log?.(`[Kubernetes] Autoskalierung: Status nicht lesbar (${safe(error)})`); return [] }
-        const done: Array<{ workload: string; target: number; reason: string }> = []
-        for (const w of auto) {
-            const live = status.workloads.find(item => item.name === w.name)
-            if (!live?.found) continue
-            const decision = decideWorkerScale({
-                replicas: live.desired, min: w.min, max: w.max, openTasks: open, tasksPerWorker: runtime.policy.autoscale.tasksPerWorker,
-                now, lastChangeAt: this.lastChange.get(w.name) ?? 0, cooldownMs: runtime.policy.autoscale.cooldownSeconds * 1000,
-                idleSince: this.idleSince, idleMs: runtime.policy.autoscale.idleMinutes * 60_000,
-            })
-            if (!decision || decision.target === live.desired) continue
-            // Only the lease-holding Main scales; a standby or split Main stays still.
-            const fence = await fenced(this.deps, 'k8s:autoscale')
-            if (!fence.ok) return done
-            try {
-                const result = await runtime.client.scaleWorker(w.name, decision.target, `Autoskalierung: ${decision.reason}`)
-                if (result.ok) { this.lastChange.set(w.name, now); done.push({ workload: w.name, ...decision }) }
-            } catch (error) { this.deps.log?.(`[Kubernetes] Autoskalierung ${w.name}: ${safe(error)}`) }
-        }
-        return done
-    }
-
-    start(intervalMs = 60_000): void {
-        if (this.timer) return
-        this.timer = setInterval(() => { void this.tick().catch(() => undefined) }, intervalMs)
-        this.timer.unref?.()
-    }
-
-    stop(): void { if (this.timer) clearInterval(this.timer); this.timer = null }
-}
-
-/** Daemon hook: starts the autoscaler only in a pod with chart control enabled. */
-export async function startClusterControl(deps: ClusterDeps = {}): Promise<{ started: boolean; reason: string; autoscaler?: ClusterAutoscaler }> {
+/** Daemon hook (Main only): registers the card executors so card answers work after a restart. No autoscaler. */
+export async function startClusterControl(deps: ClusterDeps = {}): Promise<{ started: boolean; reason: string }> {
     if (isWorker(deps)) return { started: false, reason: 'Worker' }
     const runtime = await runtimeOf(deps)
     if (runtime.ok === false) return { started: false, reason: runtime.reason }
     registerKubernetesCardExecutors(deps)
-    const autoscaler = new ClusterAutoscaler(deps)
-    const auto = Object.values(runtime.policy.workloads).filter(w => w.autoscale).map(w => `${w.name} ${w.min}–${w.max}`)
-    if (auto.length) autoscaler.start(runtime.policy.autoscale.intervalSeconds * 1000)
-    return { started: true, reason: auto.length ? `Autoskalierung: ${auto.join(', ')}` : 'Steuerung aktiv, keine Autoskalierung', autoscaler }
+    const workers = Object.values(runtime.policy.workloads).filter(w => w.kind === 'DaemonSet').map(w => w.name)
+    return { started: true, reason: `Steuerung aktiv (Namespace ${runtime.policy.namespace}; Worker-DaemonSets: ${workers.join(', ') || 'keine'}; keine Auto-Skalierung)` }
 }
 
 // ---------------------------------------------------------------------------
 // /cluster
 // ---------------------------------------------------------------------------
 
-const NEVER_WORDS = /^(exec|shell|sh|bash|attach|portforward|port-forward|proxy|secret|secrets|token|kubectl|helm|namespace|namespaces|ns|delete|loeschen|löschen|entfernen|drain|cordon|taint|pvc|rbac|node-labels-setzen)$/i
+const NEVER_WORDS = /^(exec|shell|sh|bash|attach|portforward|port-forward|proxy|secret|secrets|token|kubectl|helm|namespace|namespaces|ns|delete|loeschen|löschen|entfernen|drain|cordon|taint|label|pvc|rbac|node-labels-setzen)$/i
 
 async function defaultProfiles(): Promise<Array<{ nodeId: string; profile: NodeProfile | null }>> {
     const { collectNodeProfile } = await import('../core/node-profile.js')
@@ -320,10 +238,9 @@ async function defaultProfiles(): Promise<Array<{ nodeId: string; profile: NodeP
 export const CLUSTER_HELP = [
     '/cluster — Workloads, Pods, Warnungen (lesend)',
     '/cluster events · /cluster logs <pod> [zeilen]',
-    '/cluster skalieren <worker> <anzahl> — innerhalb der Chart-Grenzen, ohne Karte',
     '/cluster neustart <workload> — eigene Worker sofort, Main/optionale per Karte',
-    '/cluster update image.tag=… <workload>.resources.limits.memory=… <workload>.min|max=… — Vorschau + Karte',
-    '/cluster abschalten <workload> — Karte (entfernt die Workload; Daten bleiben)',
+    '/cluster update image.tag=… <workload>.resources.limits.memory=… — Vorschau + Karte',
+    '/cluster skalieren · /cluster abschalten — erklärt nur: Worker sind DaemonSets (ein Pod je freigegebenem Knoten), Knoten freigeben macht der Owner',
     '/cluster labels — Node-Label-Vorschläge (nur Ausgabe)',
     `Nie: ${KUBERNETES_NEVER.join('; ')}.`,
 ].join('\n')
@@ -337,22 +254,16 @@ export async function handleClusterCommand(args: string, deps: ClusterDeps = {})
     if (isWorker(deps)) return WORKER_ONLY_TEXT
     if (sub === 'labels') return formatLabelSuggestions(await (deps.profiles || defaultProfiles)())
     if (sub === 'update') return answer(await proposeChartUpdate(parts.slice(1).join(' '), deps))
-    if (sub === 'abschalten') {
-        const workload = String(parts[1] || '').toLowerCase()
-        if (!workload) return 'Bitte Workload angeben, z. B. /cluster abschalten voice'
-        return answer(await proposeChartUpdate(`${workload}.enabled=false`, deps))
+    if (sub === 'skalieren' || sub === 'scale' || sub === 'abschalten') {
+        // No API call at all: there is nothing Xaventra may scale or switch off.
+        const runtime = await runtimeOf(deps)
+        const label = runtime.ok ? runtime.policy.workerNodeLabel : DEFAULT_WORKER_LABEL
+        const off = sub === 'abschalten' ? ' Eine Workload ganz abschalten: helm upgrade mit workers.<name>.enabled=false (Owner).' : ''
+        return `ℹ️ ${scaleExplanation({ workerNodeLabel: label })}${off}`
     }
     const runtime = await runtimeOf(deps)
     if (runtime.ok === false) return `Kubernetes-Steuerung ist aus: ${runtime.reason}. Einrichtung: docs/KUBERNETES.md`
     try {
-        if (sub === 'skalieren' || sub === 'scale') {
-            const workload = String(parts[1] || '').toLowerCase()
-            const replicas = Number(parts[2])
-            if (!workload || !Number.isInteger(replicas)) return 'Format: /cluster skalieren worker-general 3'
-            const fence = await fenced(deps, 'k8s:scale')
-            if (!fence.ok) return `❌ Keine Main-Lease (${fence.reason}) — nichts geändert.`
-            return answer(await runtime.client.scaleWorker(workload, replicas))
-        }
         if (sub === 'neustart' || sub === 'restart') {
             const workload = String(parts[1] || '').toLowerCase()
             const w = runtime.policy.workloads[workload]

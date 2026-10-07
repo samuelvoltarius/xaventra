@@ -1,3 +1,4 @@
+{{- if .Values.main.enabled -}}
 {{- $full := include "xaventra.fullname" . -}}
 # Headless service of the Main StatefulSet: stable DNS per Main pod for the
 # mesh (<full>-main-0.<full>-main-headless.<namespace>.svc). Not-ready pods
@@ -60,3 +61,4 @@ spec:
       port: {{ .Values.main.api.port }}
       targetPort: api
     {{- end }}
+{{- end }}

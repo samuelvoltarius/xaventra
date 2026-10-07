@@ -98,6 +98,13 @@ Integration fixes:
 - The answer cache was removed: it never hit and could only have served old
   answers.
 
+Kubernetes:
+
+- Kubernetes chart (0.2.0): workers run as a DaemonSet only on labelled nodes,
+  with no host network, tolerations for slow WAN links, sandbox containers
+  only with the kata-clh runtime class, and a narrow control scope without
+  secrets or exec. The chart contains no main node.
+
 Tests:
 
 - An acceptance harness runs the live sentences over the real message entry

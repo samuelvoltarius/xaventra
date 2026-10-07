@@ -2,17 +2,32 @@ Xaventra {{ .Chart.AppVersion }} — Release {{ .Release.Name }} in Namespace {{
 
 Kubernetes entscheidet, WO Xaventra läuft. WAS ausgeführt wird und wer Main ist,
 entscheidet Xaventra selbst (Lease, Witness-Epoche, Fencing).
+{{- if not .Values.main.enabled }}
+Die Main läuft außerhalb des Clusters; die Worker verbinden sich selbst zu ihr.
+{{- end }}
 
-Mesh-Adresse der Main für Worker (in mesh.direct.peers eintragen, mit dem
-öffentlichen Schlüssel der Main):
-  ws://{{ include "xaventra.fullname" . }}-main-0.{{ include "xaventra.fullname" . }}-main-headless.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mesh.directPort }}
+Worker (DaemonSet, ein Pod je freigegebenem Knoten):
 {{- range $key, $w := .Values.workers }}
-{{- if and $w.enabled (not $w.identitySecret) }}
-
-ACHTUNG: workers.{{ $key }}.identitySecret fehlt. Ohne Workload-Schlüssel tritt
-{{ $w.name }} dem Mesh nicht bei (docs/KUBERNETES.md, „Worker-Schlüssel“).
+{{- if $w.enabled }}
+  {{ $w.name }} — nur Knoten mit {{ $.Values.workerNodes.label }}=true{{ if $.Values.workerNodes.excludeLabel }}, nie mit {{ $.Values.workerNodes.excludeLabel }}{{ end }}
+    Mesh-ID je Knoten: {{ default (printf "%s-%s" (include "xaventra.fullname" $) $w.name) $w.nodeIdPrefix }}-<Knotenname>
+    /runtime je Knoten: {{ $w.runtimeHostPath }} (muss existieren, Besitzer 1000:1000, 0700)
+{{- if not $w.identitySecret }}
+    Hinweis: kein identitySecret — jeder Knoten erzeugt seinen Schlüssel im eigenen
+    /runtime; den öffentlichen Schlüssel je Knoten an der Main eintragen.
 {{- end }}
 {{- end }}
+{{- end }}
 
-Steuerung durch Xaventra: {{ if .Values.control.enabled }}an (nur dieser Namespace, keine Secrets, kein exec){{ else }}aus{{ end }}.
+Freigeben (Owner, je Knoten, erst NACH dem Abschalten eines Docker-Workers dort):
+  kubectl label node <knoten> {{ .Values.workerNodes.label }}=true
+Zurück:
+  kubectl label node <knoten> {{ .Values.workerNodes.label }}-
+{{- if not .Values.secrets.existingSecret }}
+
+ACHTUNG: secrets.existingSecret fehlt — ohne Umgebungs-Secret erreicht der Worker
+weder Koordination noch Main (docs/KUBERNETES.md, „Secrets per Pipe“).
+{{- end }}
+
+Steuerung durch Xaventra: {{ if .Values.control.enabled }}an (Konto {{ include "xaventra.fullname" . }}-control; nur dieser Namespace, keine Secrets, kein exec){{ else }}aus{{ end }}.
 Owner-Befehl: /cluster

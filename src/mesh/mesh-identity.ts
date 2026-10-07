@@ -42,9 +42,9 @@ export class MeshIdentity {
     private readonly privateKey: string
 
     /**
-     * `sharedFile` (env XAVENTRA_MESH_IDENTITY_FILE, P19): the owner-provided
+     * `sharedFile` (env XAVENTRA_MESH_IDENTITY_FILE, P19/P21): the owner-provided
      * key of one Kubernetes worker WORKLOAD, mounted read-only from a Secret.
-     * Every replica signs with it under its own node id (`<workload>-<pod>`);
+     * Every DaemonSet pod signs with it under its own node id (`<prefix>-<node>`);
      * the Main trusts them via one pinned `nodeIdPrefix` peer entry. Read only,
      * nothing is generated or written; a mismatch fails closed.
      */
