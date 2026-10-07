@@ -48,3 +48,26 @@ describe('"Kannst du dich mit X verbinden?" answers from the one connection trut
         expect(answerConnectQuestion('Wie wird das Wetter?', deps())).toBeNull()
     })
 })
+
+describe('2.89: "Ist X verbunden?" is answered from the same truth — yes and no', () => {
+    it.each([
+        ['Ist Home Assistant verbunden?', 'home assistant'],
+        ['ist mein home assistant schon verbunden', 'home assistant'],
+        ['Bist du mit Gmail verbunden?', 'gmail'],
+        ['Ist die Hue Bridge eingerichtet?', 'hue bridge'],
+    ])('reads the status target from %s', (text, target) => {
+        expect(connectQuestionTarget(text)).toBe(target)
+    })
+    it('connected / waiting / not connected — never a model guess', () => {
+        expect(answerConnectQuestion('Ist Home Assistant verbunden?', deps())).toBe('Ja — Home Assistant ist verbunden.')
+        expect(answerConnectQuestion('Ist n8n verbunden?', deps())).toMatch(/^n8n ist angefangen, aber noch nicht fertig: Zugang fehlt noch/)
+        expect(answerConnectQuestion('Bist du mit Gmail verbunden?', deps())).toMatch(/^Nein — Gmail ist noch nicht verbunden\./)
+        expect(answerConnectQuestion('Ist die Hue Bridge verbunden?', deps())).toMatch(/^Nein — Hue Bridge ist noch nicht verbunden\./)
+        expect(answerConnectQuestion('Ist SearXNG verbunden?', deps())).toMatch(/^Ja — SearXNG auf diesem Rechner ist schon verbunden/)
+    })
+    it('unknown target or no device of that kind → normal path (Gegenprobe)', () => {
+        expect(answerConnectQuestion('Ist Spotify verbunden?', deps())).toBeNull()
+        expect(answerConnectQuestion('Ist der Drucker verbunden?', deps())).toBeNull()
+        expect(answerConnectQuestion('Ist das Kabel richtig verbunden mit dem Router?', deps())).toBeNull()
+    })
+})

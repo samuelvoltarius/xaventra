@@ -888,6 +888,7 @@ async function handleMessageInScope(
     // at once („Nein, das kann ich noch nicht. Soll ich es lernen?“ + Ja/Nein card for
     // the owner) — no model, no excuse. Anything the inventory can do runs as before.
     // 2.88.2: "Kannst du dich mit X verbinden?" → first the own connection list (owner only).
+    // 2.89: "Ist X verbunden?" too — yes, waiting or no, from the one connection truth.
     if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })
         && principalContext.permission === 'owner' && !(requestIsGroup || isGroupMessage === true)) {
         try {
@@ -896,7 +897,7 @@ async function handleMessageInScope(
                 // 2.89: connector / device kind + the one connection truth (no title substring).
                 const connectAnswer = await answerConnectQuestionLive(content)
                 if (connectAnswer) {
-                    await answer(connectAnswer, 'connect:already-connected')
+                    await answer(connectAnswer, connectAnswer.startsWith('Ja — ') ? 'connect:already-connected' : 'connect:status')
                     return
                 }
             }

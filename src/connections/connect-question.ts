@@ -3,6 +3,9 @@
  * own connection list. Already connected → say so at once (no model, no URL question).
  * Not connected or unknown → null, the normal path (dienst_finden / dienst_verbinden).
  *
+ * 2.89: „Ist X verbunden?“ / „Bist du mit X verbunden?“ is answered from the same truth,
+ * yes and no (a plain no only for a known connector or a found device).
+ *
  * 2.89: the target is resolved to a catalog connector or a device kind, and the answer
  * comes from the one connection truth (connection-state.ts) — never from a title
  * substring of whatever list happened to be at hand (a „wartet auf Anmeldung“ entry
@@ -19,17 +22,36 @@ const PATTERNS = [
     /^\s*verbinde?\s+dich\s+(?:mit|an|zu)\s+(?:dem|der|den|meinem|meiner)?\s*(.+?)\s*[.!?]*\s*$/iu,
 ]
 
+/** 2.89: "Ist X verbunden?" / "Bist du mit X verbunden?" — a status question, answered yes AND no. */
+const STATUS_PATTERNS = [
+    /^\s*(?:ist|sind)\s+(?:mein(?:e|en)?\s+|unser(?:e)?\s+|der\s+|die\s+|das\s+)?(.+?)\s+(?:schon\s+|jetzt\s+|noch\s+|eigentlich\s+|wirklich\s+)*(?:verbunden|angebunden|eingerichtet|gekoppelt)\s*[?!.]*\s*$/iu,
+    /^\s*bist\s+du\s+(?:schon\s+|jetzt\s+|eigentlich\s+)*(?:mit|an)\s+(?:dem|der|den|meinem|meiner|meinen)?\s*(.+?)\s+(?:verbunden|gekoppelt)\s*[?!.]*\s*$/iu,
+]
+
 const norm = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
-export function connectQuestionTarget(text: string): string | null {
+const cleanTarget = (raw: string) => norm(raw).replace(/^(?:dem|der|den)\s+/, '')
+const usable = (target: string) => Boolean(target) && target.length <= 60 && !/^(?:dem|der|den|ihm|ihr|es|das|alles)$/.test(target)
+
+/** The question and its target: "verbinden" (can you connect?) or "status" (is it connected?). */
+export function parseConnectQuestion(text: string): { target: string; frage: 'verbinden' | 'status' } | null {
     const value = String(text || '').trim()
     if (!value || value.length > 200) return null
     for (const pattern of PATTERNS) {
         const match = pattern.exec(value)
-        const target = match ? norm(match[1]).replace(/^(?:dem|der|den)\s+/, '') : ''
-        if (target && target.length <= 60 && !/^(?:dem|der|den|ihm|ihr)$/.test(target)) return target
+        const target = match ? cleanTarget(match[1]) : ''
+        if (usable(target)) return { target, frage: 'verbinden' }
+    }
+    for (const pattern of STATUS_PATTERNS) {
+        const match = pattern.exec(value)
+        const target = match ? cleanTarget(match[1]) : ''
+        if (usable(target)) return { target, frage: 'status' }
     }
     return null
+}
+
+export function connectQuestionTarget(text: string): string | null {
+    return parseConnectQuestion(text)?.target ?? null
 }
 
 /** Device kinds the owner names in everyday words (the consolidated device art). */
@@ -62,23 +84,28 @@ export function connectQuestionZiel(target: string, connectors: ConnectQuestionD
 
 const weiter = (titel: string, grund: string) => `${titel} ist angefangen, aber noch nicht fertig: ${grund}. Unter „Verbindungen“ geht es mit einem Knopf weiter.`
 
+const nochNicht = (titel: string) => `Nein — ${titel} ist noch nicht verbunden. Wenn du willst, sag einfach „Verbinde dich mit ${titel}“.`
+
 export function answerConnectQuestion(text: string, deps: ConnectQuestionDeps): string | null {
-    const target = connectQuestionTarget(text)
-    if (!target) return null
+    const parsed = parseConnectQuestion(text)
+    if (!parsed) return null
+    const { target, frage } = parsed
     const ziel = connectQuestionZiel(target, deps.connectors)
     if (ziel && 'connectorId' in ziel) {
         const stand = deps.connector(ziel.connectorId)
-        if (stand.zustand === 'verbunden') return `Ja — ${ziel.title} ist schon verbunden. Ich nutze es schon.`
+        if (stand.zustand === 'verbunden') return frage === 'status' ? `Ja — ${ziel.title} ist verbunden.` : `Ja — ${ziel.title} ist schon verbunden. Ich nutze es schon.`
         if (stand.zustand === 'wartet') return weiter(ziel.title, stand.grund)
-        return null
+        // "Kannst du dich verbinden?" goes on to the connect tools; "Ist es verbunden?" gets the plain no.
+        return frage === 'status' ? nochNicht(ziel.title) : null
     }
     if (ziel && 'art' in ziel) {
         const geraete = deps.geraete(ziel.art)
         const verbunden = geraete.find(item => item.stand.zustand === 'verbunden')
-        if (verbunden) return `Ja — ${verbunden.titel} ist schon verbunden.`
+        if (verbunden) return frage === 'status' ? `Ja — ${verbunden.titel} ist verbunden.` : `Ja — ${verbunden.titel} ist schon verbunden.`
         const wartet = geraete.find(item => item.stand.zustand === 'wartet')
         if (wartet) return weiter(wartet.titel, wartet.stand.grund)
-        return null
+        // No device of that kind found: nothing to say from the truth → normal path.
+        return frage === 'status' && geraete.length ? nochNicht(geraete[0].titel) : null
     }
     // A helper service without a connector (SearXNG, a local model): its own source decides.
     const hit = (deps.quellen?.() || []).find(entry => entry.verbunden === true && norm(entry.title).split(' ').includes(target.split(' ')[0]) && norm(entry.title).includes(target))
