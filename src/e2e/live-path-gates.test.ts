@@ -2,7 +2,8 @@
  * 2.89 Paket D — Wächter: every exit of message-pipeline.ts BEFORE the agent (each
  * early `return` of handleMessageInScope up to `traceStep('context:complete')`) is
  * one gate. Each gate here has
- *   - an anchor in the source (its early return is the first bare `return` after it),
+ *   - an anchor in the source (its early return is the first bare `return` on or after it,
+ *     `if (…) return` included),
  *   - a marker (trace step, log line or reply) and
  *   - a scenario over the REAL daemon entry that runs through it.
  * A new early exit without an entry in GATES fails the static check: no new gate may
@@ -88,22 +89,29 @@ export const GATES: Gate[] = [
         run: h => owner(h, '/gibtsnicht'),
     },
     {
-        id: 'fast-path', anchor: 'traceStep(`fast-path:${deterministic.reason}`)',
+        id: 'fast-path', anchor: 'if (!projectStatusFirst && await runFastPath()) return',
         marker: { trace: 'fast-path:identity' },
         run: h => owner(h, 'Wer bist du?'),
     },
     {
-        id: 'projects', anchor: "traceStep('projects:handled')",
+        // 2.89 E: a project status question is asked to the projects first; with no
+        // project to list it falls through to the same read-only fast path.
+        id: 'fast-path-after-projects', anchor: 'if (projectStatusFirst && await runFastPath()) return',
+        marker: { trace: 'fast-path:memory-recall' },
+        run: h => owner(h, 'Was machen meine Projekte?'),
+    },
+    {
+        id: 'projects', anchor: "await answer(turn.reply, 'projects:handled')",
         marker: { trace: 'projects:handled' },
         run: h => owner(h, 'Kümmer dich um die Steuerunterlagen und nebenbei um den Gartenplan'),
     },
     {
-        id: 'clarification-ask', anchor: "traceStep('clarification:requested')",
+        id: 'clarification-ask', anchor: "'clarification:requested')",
         marker: { trace: 'clarification:requested' },
         run: h => owner(h, 'Installiere das bitte'),
     },
     {
-        id: 'clarification-cancel', anchor: "traceStep('clarification:cancelled')",
+        id: 'clarification-cancel', anchor: "'clarification:cancelled')",
         marker: { trace: 'clarification:cancelled' },
         run: async h => { await owner(h, 'Installiere das bitte'); return owner(h, 'abbrechen') },
     },
@@ -117,12 +125,12 @@ export const GATES: Gate[] = [
         },
     },
     {
-        id: 'connect-already', anchor: "traceStep('connect:already-connected')",
+        id: 'connect-already', anchor: "await answer(connectAnswer, ",
         marker: { trace: 'connect:already-connected' }, options: { searxng: true },
         run: h => owner(h, 'searxng kannst du dich mit dem verbinen ?'),
     },
     {
-        id: 'capability-no', anchor: "traceStep('capability:honest-no')",
+        id: 'capability-no', anchor: "await answer(gate.reply, 'capability:honest-no')",
         marker: { trace: 'capability:honest-no' },
         run: h => owner(h, 'Kannst du ein Fax senden?'),
     },
@@ -145,15 +153,6 @@ export const GATES: Gate[] = [
         marker: { reply: /Xaventra läuft hier auf v\d/ },
         run: h => owner(h, 'Welche Version läuft hier?'),
     },
-    {
-        id: 'cache-hit', anchor: 'Cache - Antwort gesendet',
-        marker: { log: /Cache HIT/ },
-        dead: 'Review 1.7: the cache key contains the minute-exact time of the prompt, so the cache never hits (live: 0 Cache HIT). Decide in 2.89: remove the cache or key it without the clock.',
-        run: async h => {
-            await owner(h, 'Erzähl mir einen kurzen Witz über Katzen', [{ text: 'Warum sitzt die Katze am Rechner? Sie jagt die Maus.' }])
-            return owner(h, 'Erzähl mir einen kurzen Witz über Katzen', [{ text: 'Noch einer: Katzen haben neun Leben.' }])
-        },
-    },
 ]
 
 // ---------------------------------------------------------------------------
@@ -172,12 +171,14 @@ function pipelineRegion(): { lines: string[]; start: number } {
 describe('Wächter: gates before the agent in message-pipeline.ts', () => {
     it('every early return before the agent belongs to exactly one gate with a live-path scenario', () => {
         const { lines, start } = pipelineRegion()
-        const returns = lines.map((line, index) => (/^\s*return\s*$/.test(line) ? index : -1)).filter(index => index >= 0)
+        // A bare `return` on its own line or at the end of a guard (`if (…) return`). Returns
+        // with a value belong to nested helpers (e.g. runFastPath) and are not exits.
+        const returns = lines.map((line, index) => (/(?:^|[\s)])return\s*$/.test(line) ? index : -1)).filter(index => index >= 0)
         const claimed = new Map<number, string>()
         for (const gate of GATES) {
             const anchors = lines.map((line, index) => (line.includes(gate.anchor) ? index : -1)).filter(index => index >= 0)
             expect(anchors, `gate ${gate.id}: anchor not found (or not unique) — was the gate moved? Update GATES.`).toHaveLength(1)
-            const exit = returns.find(index => index > anchors[0])
+            const exit = returns.find(index => index >= anchors[0])
             expect(exit, `gate ${gate.id}: no early return after its anchor`).toBeDefined()
             expect(claimed.get(exit!), `gate ${gate.id} and ${claimed.get(exit!)} claim the same exit (line ${start + exit! + 1})`).toBeUndefined()
             claimed.set(exit!, gate.id)

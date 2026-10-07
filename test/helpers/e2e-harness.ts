@@ -11,7 +11,7 @@
  * code. Around it sit only recording transports and a simulated environment:
  *   - Telegram: the real adapter object, its network methods record instead of send;
  *   - Desktop: the desktop-api path (runWithDesktopAgentContext + abort signal);
- *   - REST: channel `rest-api`, sender `rest-api:token` (valid owner token);
+ *   - REST: the real REST server on a loopback port (bearer token → `rest-api:token`, owner grant);
  *   - network: closed (fetch rejects) except explicit environment routes
  *     (e.g. a SearXNG instance on searxng.example.com).
  * The production profile is the default: the test-mode switches that make
@@ -182,7 +182,8 @@ export interface E2EHarness {
     notices: string[]
     telegram(text: string, script?: ScriptStep[], opts?: TurnOptions & { from?: string; chatId?: string }): Promise<TurnResult>
     desktop(text: string, script?: ScriptStep[], opts?: TurnOptions & { timeoutMs?: number }): Promise<TurnResult>
-    rest(text: string, script?: ScriptStep[], opts?: TurnOptions): Promise<TurnResult>
+    /** Through the real REST server; `probe` sends the rollout-probe header (X-Xaventra-Probe: 1). */
+    rest(text: string, script?: ScriptStep[], opts?: TurnOptions & { probe?: boolean }): Promise<TurnResult>
     /** Several messages at the same time (one capture), e.g. a burst that coalesces. */
     burst(items: Array<{ channel: string; from: string; text: string; messageContext?: any; delayMs?: number }>, script?: ScriptStep[]): Promise<TurnResult>
     /** Any other channel exactly as the daemon entry receives it. */
@@ -424,9 +425,29 @@ export async function createE2EHarness(options: HarnessOptions = {}): Promise<E2
                 return result
             } finally { clearTimeout(timer) }
         },
-        rest(text, script = [], opts = {}) {
-            // rest-api.ts POST /v1/message with a valid bearer token: channel rest-api, sender rest-api:token
-            return harness.send('rest-api', 'rest-api:token', text, script, opts)
+        async rest(text, script = [], opts = {}) {
+            // 2.89: the REAL REST server (rest-api.ts) on a loopback port, as daemon.ts wires it:
+            // POST /v1/message with the bearer token → token principal, owner grant, daemon entry.
+            const { startRestApi } = await src('server/rest-api.js')
+            const server = await startRestApi({ enabled: true, port: 0, host: '127.0.0.1' },
+                (channel: string, from: string, content: string, reply: (text: string) => Promise<void>) => entry(channel, from, content, reply),
+                () => ({ version: 'e2e' }))
+            try {
+                return await turn(text, script, opts.fallback, async reply => {
+                    const port = (server.address() as net.AddressInfo).port
+                    const response = await realFetch(`http://127.0.0.1:${port}/v1/message`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${REST_TOKEN}`, 'Content-Type': 'application/json', ...(opts.probe ? { 'X-Xaventra-Probe': '1' } : {}) },
+                        body: JSON.stringify({ content: text }),
+                    })
+                    const body: any = await response.json()
+                    if (!response.ok) throw new Error(`REST ${response.status}: ${body?.error || ''}`)
+                    if (body?.response) await reply(String(body.response))
+                    return body
+                })
+            } finally {
+                await new Promise(resolve => server.close(() => resolve(undefined)))
+            }
         },
         module: (path: string) => src(path),
         async close() {

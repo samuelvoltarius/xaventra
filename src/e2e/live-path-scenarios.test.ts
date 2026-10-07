@@ -7,9 +7,9 @@
  * Every scenario checks: which tools the model was offered, no raw text / catalog in
  * the answer, never „Die Aufgabe ist nicht abgeschlossen", and the expected card/answer.
  *
- * Scenarios that are still red on 2.88.3 are `it.fails` with the package that fixes
- * them (A tools/router/rounds, B connection truth, C capability truth, E pipeline).
- * When a package lands, its `it.fails` turns red — then flip it to `it`.
+ * The scenarios that were red on 2.88.3 are named after the package that fixed them
+ * (A tools/router/rounds, B connection truth, C capability truth, E pipeline). Since the
+ * 2.89 integration every scenario is a plain `it` — none may stay red.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -37,7 +37,7 @@ function expectClean(result: TurnResult): void {
 const T = 60_000
 
 describe('Paket D — live sentences over the real entry: answers', () => {
-    it.fails('[2.89 A] „homeassit sollte schon laufen" — Home Assistant tools offered, the model answers after its check (A: tool error ends the run)', async () => {
+    it('[2.89 A] „homeassit sollte schon laufen" — Home Assistant tools offered, the model answers after its check (A: tool error ends the run)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('homeassit sollte schon laufen', [
             { tool: 'hass_status' }, { text: 'Home Assistant ist noch nicht verbunden — ich richte es ein, wenn du willst.' },
@@ -48,13 +48,15 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expect(result.final).toContain('Home Assistant ist noch nicht verbunden')
     }, T)
 
-    it.fails('[2.89 B] „Ist Home Assistant verbunden?" — answered from the one connection truth, no model guess (B)', async () => {
+    it('[2.89 B] „Ist Home Assistant verbunden?" — answered from the one connection truth, no model guess (B)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Ist Home Assistant verbunden?', [{ text: 'Ja, Home Assistant ist verbunden.' }])
         expectClean(result)
         // Nothing is connected in this fresh environment: the answer must say so, whatever the model claims.
         expect(result.final).toMatch(/nicht verbunden|noch nicht/i)
         expect(result.final).not.toMatch(/^Ja, Home Assistant ist verbunden/)
+        expect(result.trace).toContain('connect:status')
+        expect(result.rounds).toHaveLength(0)
     }, T)
 
     it('„Kannst du ein Fax senden?" — honest no + learning card for the owner, no model', async () => {
@@ -79,7 +81,7 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expect(result.rounds).toHaveLength(0)
     }, T)
 
-    it.fails('[2.89 A] „paperless kannst du dich mit dem verbinen ?" (typo, not connected) — connect tools offered (A: stems/typos)', async () => {
+    it('[2.89 A] „paperless kannst du dich mit dem verbinen ?" (typo, not connected) — connect tools offered (A: stems/typos)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('paperless kannst du dich mit dem verbinen ?', [
             { tool: 'dienst_finden', args: { name: 'paperless' } }, { text: 'Ich habe Paperless noch nicht gefunden.' },
@@ -99,7 +101,7 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expect(result.final).toContain('Hier ist, was jeder Knoten kann.')
     }, T)
 
-    it.fails('[2.89 A] „Welche VMs laufen auf meinem Proxmox?" — proxmox_vm offered; an unreachable Proxmox ends in a plain answer, not a stop (A)', async () => {
+    it('[2.89 A] „Welche VMs laufen auf meinem Proxmox?" — proxmox_vm offered; an unreachable Proxmox ends in a plain answer, not a stop (A)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Welche VMs laufen auf meinem Proxmox?', [
             { tool: 'proxmox_vm', args: { action: 'list' } }, { text: 'Proxmox ist noch nicht verbunden — unter „Verbindungen → Proxmox" reicht ein Token.' },
@@ -132,7 +134,7 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expect(status.final).toMatch(/Gartenplan/)
     }, T)
 
-    it.fails('[2.89 A] „Erinnere mich in 10 Minuten an den Kuchen" — set_reminder offered and the reminder stored (A: router)', async () => {
+    it('[2.89 A] „Erinnere mich in 10 Minuten an den Kuchen" — set_reminder offered and the reminder stored (A: router)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Erinnere mich in 10 Minuten an den Kuchen', [
             { tool: 'set_reminder', args: { message: 'Kuchen', time: 'in 10 min' } }, { text: 'Ich erinnere dich in 10 Minuten an den Kuchen.' },
@@ -142,7 +144,7 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expectClean(result)
     }, T)
 
-    it.fails('[2.89 A] „Heizung auf 21 Grad" — a Home Assistant service call (climate) is offered (A: hass_service unreachable)', async () => {
+    it('[2.89 A] „Heizung auf 21 Grad" — a Home Assistant service call (climate) is offered (A: hass_service unreachable)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Heizung auf 21 Grad', [
             { tool: 'hass_service', args: { domain: 'climate', service: 'set_temperature', data: { temperature: 21 } } },
@@ -185,10 +187,16 @@ describe('Paket D — live sentences over the real entry: answers', () => {
         expect(result.final).toMatch(/kein(e)? (Bild|Bilddatei)/i)
     }, T)
 
-    it.fails('[2.89 C] „hast du Internet?" — answered from one measured source, not a model claim (C)', async () => {
+    it('[2.89 C] „hast du Internet?" — answered from one measured source, not a model claim (C)', async () => {
         const e2e = await harness()
+        // The network of this harness is closed: the one internet probe (core/environment.ts) is
+        // answered offline here, without a real ping. The model claims the opposite.
+        const environment = await e2e.module('core/environment.js')
+        expect(environment.hasInternet({ force: true, run: () => { throw new Error('e2e harness: network closed') } })).toBe(false)
         const result = await e2e.telegram('hast du Internet?', [{ text: 'Ja, Internet geht.' }], { fallback: 'Ja, Internet geht.' })
         expectClean(result)
+        expect(result.trace).toContain('fast-path:internet-status')
+        expect(result.final).toMatch(/^Nein, gerade habe ich kein Internet/)
         // Either a check ran in this turn or a measured source answered — never the bare model claim.
         const measured = result.executedTools.length > 0 || result.trace.some(step => step.startsWith('fast-path:') || step.startsWith('capability:'))
         expect(measured, `tools=${result.executedTools} trace=${result.trace}`).toBe(true)
@@ -215,7 +223,7 @@ describe('Paket D — channels: /status and /aktivitaet from the app and from Te
         expect(result.buttons[0].text).toMatch(/Status/)
     }, T)
 
-    it.fails('[2.89 E] /status from the app — a text answer, no Telegram buttons (E: slash buttons only for Telegram)', async () => {
+    it('[2.89 E] /status from the app — a text answer, no Telegram buttons (E: slash buttons only for Telegram)', async () => {
         const e2e = await harness()
         const result = await e2e.desktop('/status')
         expect(result.error).toBeUndefined()
@@ -232,7 +240,7 @@ describe('Paket D — channels: /status and /aktivitaet from the app and from Te
         expect(result.final).toMatch(/Gartenplan/)
     }, T)
 
-    it.fails('[2.89 E] /aktivitaet from Telegram — stop/later buttons for the running project (E: channel "Telegram" vs "telegram")', async () => {
+    it('[2.89 E] /aktivitaet from Telegram — stop/later buttons for the running project (E: channel "Telegram" vs "telegram")', async () => {
         const e2e = await harness({ seed: root => { seedPausedAuftrag(root) } })
         const result = await e2e.telegram('/aktivitaet')
         expect(result.error).toBeUndefined()
@@ -255,16 +263,23 @@ describe('Paket D — channels: /status and /aktivitaet from the app and from Te
         expect(result.final).toMatch(/Soll ich es lernen\?/)
     }, T)
 
-    it.fails('[2.89 E] REST with the owner token is the owner: „Kümmer dich um …" starts projects (E: REST never owner)', async () => {
+    it('[2.89 E] REST with the owner token is the owner: „Kümmer dich um …" starts projects (E: REST never owner)', async () => {
         const e2e = await harness()
         const result = await e2e.rest('Kümmer dich um die Steuerunterlagen und nebenbei um den Gartenplan')
         expectClean(result)
         expect(result.trace).toContain('projects:handled')
     }, T)
+
+    it('[2.89 E] a REST rollout probe (X-Xaventra-Probe: 1) is never the owner: no projects, no owner session', async () => {
+        const e2e = await harness()
+        const result = await e2e.rest('Kümmer dich um die Steuerunterlagen und nebenbei um den Gartenplan', [{ text: 'Echo.' }], { probe: true })
+        expect(result.error).toBeUndefined()
+        expect(result.trace).not.toContain('projects:handled')
+    }, T)
 })
 
 describe('Paket D — runs: rounds, errors, progress, stop words', () => {
-    it.fails('[2.89 A] a task with 5 tool rounds finishes with the model answer (no stop after 3) (A: round limits)', async () => {
+    it('[2.89 A] a task with 5 tool rounds finishes with the model answer (no stop after 3) (A: round limits)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Mach bitte nacheinander fünf kleine Prüfungen für meinen Wochenplan und fasse sie dann zusammen', [
             { tool: 'get_current_time' },
@@ -279,7 +294,7 @@ describe('Paket D — runs: rounds, errors, progress, stop words', () => {
         expect(result.final).toContain('Zusammenfassung: alle fünf Prüfungen sind erledigt.')
     }, T)
 
-    it.fails('[2.89 A] a tool error in the middle of a run — the run goes on and the model answers (A: one error is not the end)', async () => {
+    it('[2.89 A] a tool error in the middle of a run — the run goes on and the model answers (A: one error is not the end)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Schau nach ob Home Assistant läuft und sag mir danach die Uhrzeit', [
             { tool: 'hass_status' },
@@ -291,7 +306,7 @@ describe('Paket D — runs: rounds, errors, progress, stop words', () => {
         expect(result.final).toContain('die Uhrzeit habe ich dir trotzdem geholt')
     }, T)
 
-    it.fails('[2.89 E] a 30 s run shows exactly one sign of life before the answer (E: progress dead with cancellation-only execution)', async () => {
+    it('[2.89 E] a 30 s run shows exactly one sign of life before the answer (E: progress dead with cancellation-only execution)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('Erzähl mir ausführlich, wie ein Fahrrad funktioniert', [
             { delayMs: 30_000, then: { text: 'Ein Fahrrad wandelt Muskelkraft über Kette und Ritzel in Bewegung um.' } },
@@ -302,7 +317,7 @@ describe('Paket D — runs: rounds, errors, progress, stop words', () => {
         expect(result.replies.indexOf(signs[0])).toBeLessThan(result.replies.length - 1)
     }, 90_000)
 
-    it.fails('[2.89 E] „brich den Auftrag bitte nicht ab" does NOT stop the project (E: anchored effect patterns, negation)', async () => {
+    it('[2.89 E] „brich den Auftrag bitte nicht ab" does NOT stop the project (E: anchored effect patterns, negation)', async () => {
         const e2e = await harness({ seed: root => { seedPausedAuftrag(root) } })
         const result = await e2e.telegram('brich den Auftrag bitte nicht ab', [{ text: 'Keine Sorge, ich mache weiter.' }])
         expect(result.error).toBeUndefined()
@@ -310,5 +325,24 @@ describe('Paket D — runs: rounds, errors, progress, stop words', () => {
         const { getMissionData } = await e2e.module('core/autonomous-executor.js')
         expect(getMissionData().active?.status).not.toBe('cancelled')
         expect(getMissionData().active).not.toBeNull()
+    }, T)
+
+    it('[2.89 Integration] a read-only self-goal is offered only allowed tools: process_list yes, port_scan never', async () => {
+        const e2e = await harness()
+        // daemon.ts autonomy loop: handleMessage('Telegram', 'Nova-Autonomy', selfPrompt, …, { systemAuthored: true })
+        const result = await e2e.send('Telegram', 'Nova-Autonomy', '[SELF-GOAL] Prüfe, welche Prozesse und offenen Ports auf diesem Rechner laufen, und fasse es kurz zusammen.', [
+            { tool: 'process_list', args: { filter: 'node' } },
+            { text: 'Es laufen die üblichen Dienste.' },
+        ], { execution: { systemAuthored: true } })
+        expect(result.error).toBeUndefined()
+        expect(result.offeredTools.length).toBeGreaterThan(0)
+        expect(result.offeredTools).toContain('process_list')
+        expect(result.offeredTools).not.toContain('port_scan')
+        expect(result.executedTools).toContain('process_list')
+        // Live before: „Read-only automation policy blocked tool: process_list“ → the whole run stopped.
+        expect(result.logs.some(line => /Read-only automation policy blocked tool|Governed tool execution stopped/.test(line)), result.logs.filter(line => /blocked|stopped/.test(line)).join(' | ')).toBe(false)
+        // Every offered tool is one the read-only policy lets run.
+        const { isGovernedReadOnlyTool } = await e2e.module('agents/tool-authorization.js')
+        expect(result.offeredTools.filter((name: string) => !isGovernedReadOnlyTool(name))).toEqual([])
     }, T)
 })
