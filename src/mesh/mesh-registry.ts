@@ -130,6 +130,8 @@ export interface MeshNode {
 export interface DiscoverNodesOptions {
     includeHistorical?: boolean
     activeOnly?: boolean
+    /** false = no Supabase request (local file + signed direct mesh only). Default true. */
+    remote?: boolean
 }
 
 export interface TaskDelegation {
@@ -512,7 +514,7 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
     // Each node registers itself on startup via registerNode() → supabaseSync()
 
     // Fetch remote nodes from Supabase
-    try {
+    if (options.remote !== false) try {
         const res = await fetch(`${SUPABASE_URL}/${TABLE}?select=*`, {
             method: 'GET',
             headers: {

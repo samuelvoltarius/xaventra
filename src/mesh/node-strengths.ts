@@ -588,54 +588,73 @@ export function nodeMainEligible(capabilities: readonly string[] | undefined): b
 export interface StrengthSources {
     /** Registry rows (Supabase + local file + direct mesh), already read. Default: discoverNodes() (memoised 30 s). */
     registry?: ReportedNode[]
-    /** Capability-graph nodes. Default: the live graph. */
-    graphNodes?: ReportedNode[]
+    /** false = registry from the local file and the signed direct mesh only, no Supabase request. Default true. */
+    registryRemote?: boolean
+    /** No local profile and no peers (cheap view for scans with side effects off): only the reports below. */
+    skipScout?: boolean
+    /** More reports (e.g. nodes named in the config), joined like registry rows. */
+    extra?: ReportedNode[]
+    /** Capability-graph snapshot. Default: the live graph. */
+    snapshot?: import('./capability-graph.js').CapabilityGraphSnapshot
+}
+
+/** One reading of a graph snapshot: runtimes per node (for signed profiles) and reports for graph-only nodes. */
+async function graphViews(snapshot: import('./capability-graph.js').CapabilityGraphSnapshot, now: number): Promise<{ graph: Map<string, { runtimes: GraphRuntimeLike[]; hardware?: GraphHardwareLike }>; reported: ReportedNode[] }> {
+    const { capabilityRuntimeAvailable, capabilityRuntimeTombstoned } = await import('./capability-graph.js')
+    const graph = new Map<string, { runtimes: GraphRuntimeLike[]; hardware?: GraphHardwareLike }>()
+    const reported: ReportedNode[] = []
+    const tombstones = new Map((snapshot.tombstones || []).map(item => [item.id, item]))
+    for (const rawNode of snapshot.nodes) {
+        // A removed runtime (tombstone) is gone, not just "stopped".
+        const node = { ...rawNode, runtimes: rawNode.runtimes.filter(runtime => !capabilityRuntimeTombstoned(runtime, tombstones.get(runtime.id))) }
+        graph.set(node.id, {
+            hardware: node.hardware as GraphHardwareLike | undefined,
+            runtimes: node.runtimes.map(runtime => ({ name: runtime.name, type: runtime.type, models: runtime.models, available: capabilityRuntimeAvailable(node, runtime, now) })),
+        })
+        // A runtime counts as running only while the graph's own freshness rule says so (stale = stopped).
+        reported.push({
+            id: node.id, hostname: node.hostname, capabilities: node.capabilities, hardware: node.hardware,
+            software: {
+                ...(node.software ? { ffmpeg: node.software.ffmpeg, git: node.software.git } : {}),
+                ai_services: node.runtimes.map(runtime => ({
+                    name: runtime.name, type: runtime.type, models: runtime.models,
+                    status: capabilityRuntimeAvailable(node, runtime, now) ? 'running' : runtime.status === 'running' ? 'stopped' : runtime.status,
+                })),
+            },
+            lastSeen: Date.parse(node.lastHeartbeat || node.updatedAt) || undefined, source: 'graph',
+        })
+    }
+    return { graph, reported }
 }
 
 let registryMemo: { at: number; nodes: ReportedNode[] } | null = null
 const REGISTRY_MEMO_MS = 30_000
 
-async function readRegistryNodes(now: number): Promise<ReportedNode[]> {
-    if (registryMemo && now - registryMemo.at < REGISTRY_MEMO_MS) return registryMemo.nodes
+async function readRegistryNodes(now: number, remote: boolean): Promise<ReportedNode[]> {
+    if (remote && registryMemo && now - registryMemo.at < REGISTRY_MEMO_MS) return registryMemo.nodes
     let nodes: ReportedNode[] = []
     try {
         const { discoverNodes } = await import('./mesh-registry.js')
-        nodes = (await discoverNodes({ activeOnly: false })).map(node => ({
+        nodes = (await discoverNodes({ remote })).map(node => ({
             id: node.node_id, hostname: node.hostname, platform: node.platform, version: node.version, capabilities: node.capabilities,
             hardware: node.hardware, software: node.software, lastSeen: Date.parse(node.last_heartbeat) || undefined, source: 'registry' as const,
         }))
     } catch { /* registry optional (offline, no Supabase) */ }
-    registryMemo = { at: now, nodes }
+    if (remote) registryMemo = { at: now, nodes }
     return nodes
 }
 
 export function resetNodeStrengthMemo(): void { registryMemo = null }
 
 export async function collectNodeStrengths(now = Date.now(), sources: StrengthSources = {}): Promise<NodeStrength[]> {
-    const { collectScoutNodes } = await import('../install/software-scout.js')
-    const scoutNodes = await collectScoutNodes().catch(() => [])
-    const graph = new Map<string, { runtimes: GraphRuntimeLike[]; hardware?: GraphHardwareLike }>()
-    const graphReported: ReportedNode[] = [...(sources.graphNodes || [])]
+    const scoutNodes = sources.skipScout ? [] : await (await import('../install/software-scout.js')).collectScoutNodes().catch(() => [])
+    let graph = new Map<string, { runtimes: GraphRuntimeLike[]; hardware?: GraphHardwareLike }>()
+    let graphReported: ReportedNode[] = []
     try {
-        const { getCapabilityGraph, capabilityRuntimeAvailable } = await import('./capability-graph.js')
-        for (const node of getCapabilityGraph().getSnapshot().nodes) {
-            graph.set(node.id, {
-                hardware: node.hardware as GraphHardwareLike | undefined,
-                runtimes: node.runtimes.map(runtime => ({ name: runtime.name, type: runtime.type, models: runtime.models, available: capabilityRuntimeAvailable(node, runtime, now) })),
-            })
-            // A runtime counts as running only while the graph's own freshness rule says so (stale = stopped).
-            if (!sources.graphNodes) graphReported.push({
-                id: node.id, hostname: node.hostname, capabilities: node.capabilities, hardware: node.hardware,
-                software: {
-                    ...(node.software ? { ffmpeg: node.software.ffmpeg, git: node.software.git } : {}),
-                    ai_services: node.runtimes.map(runtime => ({
-                        name: runtime.name, type: runtime.type, models: runtime.models,
-                        status: capabilityRuntimeAvailable(node, runtime, now) ? 'running' : runtime.status === 'running' ? 'stopped' : runtime.status,
-                    })),
-                },
-                lastSeen: Date.parse(node.lastHeartbeat || node.updatedAt) || undefined, source: 'graph',
-            })
-        }
+        const snapshot = sources.snapshot ?? (await import('./capability-graph.js')).getCapabilityGraph().getSnapshot()
+        const views = await graphViews(snapshot, now)
+        graph = views.graph
+        graphReported = views.reported
     } catch { /* graph optional */ }
     let peers: Record<string, { load?: NodeLiveLoad }> = {}
     let trips: Record<string, { ms: number; at: number }> = {}
@@ -663,7 +682,7 @@ export async function collectNodeStrengths(now = Date.now(), sources: StrengthSo
     // Nodes without a signed profile (Supabase registry, direct mesh, graph only) join as input:
     // before, mesh_nodes / mesh_status listed them while "what can which node do" never saw them.
     const known = new Set(strengths.map(node => node.nodeId))
-    const registry = sources.registry ?? await readRegistryNodes(now)
+    const registry = [...(sources.registry ?? await readRegistryNodes(now, sources.registryRemote !== false)), ...(sources.extra || [])]
     const registryIds = new Set(registry.map(node => node.id))
     for (const reported of [...registry, ...graphReported.filter(node => !registryIds.has(node.id))]) {
         if (!reported.id || known.has(reported.id)) continue

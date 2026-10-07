@@ -1261,9 +1261,11 @@ export const evolutionTools: NovaTool[] = [
         category: 'system',
         parameters: [],
         handler: async () => {
-            const { getCapabilityMap, getMissingCapabilities } = await import('../mesh/capability-orchestrator.js')
+            const { getCapabilityMap } = await import('../mesh/capability-orchestrator.js')
             const map = getCapabilityMap()
-            const missing = getMissingCapabilities()
+            // 2.89: the one "Fehlend" list (capability inventory); embedding is only "there" with a real source.
+            const { capabilityInventory, describeMissing } = await import('../learning/capability-inventory.js')
+            const missing = describeMissing(await capabilityInventory({ light: true }))
             return map + (missing.length > 0 ? `\n\nFehlend: ${missing.join(', ')}` : '\n\nAlle Capabilities verfuegbar!')
         },
     },

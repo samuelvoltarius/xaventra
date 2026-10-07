@@ -111,6 +111,10 @@ export interface InventoryDeps {
     runtime?: () => Promise<CapabilityInventory['runtime']>
     embedding?: () => Promise<EmbeddingSource> | EmbeddingSource
     voiceReady?: boolean
+    /** Probe the configured local endpoint (network). Default off: reachability evidence comes from the graph and heartbeats. */
+    probeRuntime?: boolean
+    /** Only mesh / cloud / runtime / embedding (for the "Fehlend" list): no register, connection or learning reads. */
+    light?: boolean
     now?: number
 }
 
@@ -125,28 +129,35 @@ async function readConnections(dataDir?: string): Promise<Map<string, string>> {
     return out
 }
 
+/** The one "Fehlend" list, read live (self-setup, mesh_capabilities, orchestrator, prompt). */
+export async function currentMissingCapabilities(deps: InventoryDeps = {}): Promise<CoreCapability[]> {
+    return missingCapabilities(await capabilityInventory({ light: true, ...deps }))
+}
+
 export async function capabilityInventory(deps: InventoryDeps = {}): Promise<CapabilityInventory> {
     const now = deps.now ?? Date.now()
     let tools: string[] = []
     try {
-        if (deps.tools) tools = [...await deps.tools()]
+        if (deps.light) tools = []
+        else if (deps.tools) tools = [...await deps.tools()]
         else {
             const { getToolRegistry } = await import('../tools/complete-registry.js')
             for (const tool of getToolRegistry().getAll()) if (tool?.name) tools.push(tool.name)
         }
     } catch { /* empty register: only what is proven counts */ }
 
-    const connections = await Promise.resolve(deps.connections ? deps.connections() : readConnections(deps.dataDir)).catch(() => new Map<string, string>())
+    const connections = deps.light ? new Map<string, string>()
+        : await Promise.resolve(deps.connections ? deps.connections() : readConnections(deps.dataDir)).catch(() => new Map<string, string>())
     const connected = new Set([...connections].filter(([, status]) => status === 'verbunden').map(([id]) => id))
 
     const store = await import('../core/tool-health-store.js')
     let health: readonly ToolHealthEntry[] = []
-    try { health = deps.toolHealth ? deps.toolHealth() : store.loadToolHealth() } catch { /* no health data */ }
+    try { health = deps.light ? [] : deps.toolHealth ? deps.toolHealth() : store.loadToolHealth() } catch { /* no health data */ }
     const brokenTools = new Set(health.filter(store.isToolUnavailable).map(entry => entry.name))
 
     const mesh = new Map<Skill, string[]>()
     try {
-        const strengths = deps.strengths ? await deps.strengths() : await (await import('../mesh/node-strengths.js')).collectNodeStrengths(now)
+        const strengths = deps.strengths ? await deps.strengths() : await (await import('../mesh/node-strengths.js')).collectNodeStrengths(now, { registryRemote: false })
         for (const node of strengths) {
             if (!node.online) continue
             for (const skill of node.skills) mesh.set(skill, [...(mesh.get(skill) || []), node.nodeId])
@@ -155,7 +166,8 @@ export async function capabilityInventory(deps: InventoryDeps = {}): Promise<Cap
 
     let learned: LearnedCapability[] = []
     try {
-        if (deps.learned) learned = [...await deps.learned()]
+        if (deps.light) learned = []
+        else if (deps.learned) learned = [...await deps.learned()]
         else {
             const { learnedCapabilities } = await import('./capability-learning.js')
             const toolSet = new Set(tools)
@@ -172,7 +184,7 @@ export async function capabilityInventory(deps: InventoryDeps = {}): Promise<Cap
         if (deps.runtime) runtime = await deps.runtime()
         else {
             const { describeActiveRuntime } = await import('../llm/active-runtime.js')
-            const active = await describeActiveRuntime({ registry: null, meshRuntimes: [], timeoutMs: 1500 })
+            const active = await describeActiveRuntime({ registry: null, meshRuntimes: [], timeoutMs: 1500, probe: deps.probeRuntime === true })
             runtime = { provider: active.provider, kind: active.kind, reachable: active.reachable, keyPresent: active.keyPresent }
         }
     } catch { /* no runtime view */ }

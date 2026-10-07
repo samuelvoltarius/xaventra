@@ -9,6 +9,7 @@ import { probeGpuRuntime, type GpuRuntimeBackend, type GpuRuntimeStatus } from '
 import type { CapabilityGraphSnapshot } from '../mesh/capability-graph.js'
 import { capabilityNodeOnline, capabilityRuntimeAvailable } from '../mesh/capability-graph.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { gpuFacts, modelKinds, type ReportedNode } from '../mesh/node-strengths.js'
 import type { InstallQueueDeps, InstallTargetNode } from '../install/install-queue.js'
 
 
@@ -200,15 +201,31 @@ async function probeOllama(endpoint: string): Promise<{ online: boolean; latency
     return { online: true, latencyMs: result.ms ?? undefined, models }
 }
 
+/**
+ * 2.89: a GPU is claimed only with compute evidence (gpuFacts, node-strengths.ts). Before, the whole
+ * hardware JSON was searched for the letters "gpu" - the key name alone made every node a GPU node -
+ * and a display adapter counted as GPU. Models are classified by the one model-name table (modelKinds).
+ */
+export function gpuCapabilityOf(node: any): 'gpu' | 'metal' | null {
+    const hardware = (node?.hardware || {}) as Record<string, unknown>
+    const name = String(hardware.gpu ?? hardware.gpuName ?? '').trim()
+    const vramMb = Number(hardware.gpu_vram_mb ?? 0)
+    const vramGB = Number(hardware.vramGB ?? hardware.vram_gb ?? (vramMb > 0 ? Math.round(vramMb / 1024) : 0)) || undefined
+    const metal = /^apple\b|\bapple m\d|\bmetal\b/i.test(name)
+    const backend = metal ? 'metal' : /nvidia|cuda|rtx|gtx|jetson|tesla|quadro|a100|h100/i.test(name) ? 'cuda' : 'cpu'
+    const facts = gpuFacts({ name: name || null, backend, vramGB, viaVllm: Boolean(node?.services?.vllm) })
+    return !facts.has ? null : metal ? 'metal' : 'gpu'
+}
+
 function capabilitiesFromNode(node: any, ollamaModels: string[]): string[] {
     const caps = new Set<string>()
     if (ollamaModels.length > 0 || node.services?.ollama) caps.add('ollama')
-    if (ollamaModels.some((m: string) => /embed|nomic|mxbai/i.test(m))) caps.add('embedding')
-    if (ollamaModels.some((m: string) => /llama|mistral|gemma|qwen|phi|deepseek|gpt-oss/i.test(m))) caps.add('llm')
-    if (ollamaModels.some((m: string) => /llava|moondream|bakllava|vision/i.test(m))) caps.add('vision')
-    const hw = JSON.stringify(node.hardware || node).toLowerCase()
-    if (/nvidia|cuda|jetson|rtx|gpu/.test(hw)) caps.add('gpu')
-    if (/apple|m3|m4|metal/.test(hw)) caps.add('metal')
+    const kinds = ollamaModels.map(modelKinds)
+    if (kinds.some(kind => kind.embedding)) caps.add('embedding')
+    if (kinds.some(kind => kind.llm)) caps.add('llm')
+    if (kinds.some(kind => kind.vision)) caps.add('vision')
+    const gpu = gpuCapabilityOf(node)
+    if (gpu) caps.add(gpu)
     if (node.runtime) caps.add(String(node.runtime))
     return [...caps].sort()
 }
@@ -303,6 +320,8 @@ function setupNodesFromCapabilityGraph(snapshot?: CapabilityGraphSnapshot): Mesh
                 if (runtime.type === 'image' || runtime.type === 'vlm') capabilities.add('vision')
                 if (runtime.type === 'stt' || runtime.type === 'tts') capabilities.add(runtime.type)
             }
+            const gpu = gpuCapabilityOf({ hardware: { gpu: node.hardware?.gpu, gpu_vram_mb: node.hardware?.gpu_vram_mb }, services: running.some(runtime => /vllm/i.test(`${runtime.type} ${runtime.name}`)) ? { vllm: 'running' } : {} })
+            if (gpu) capabilities.add(gpu)
             const normalized = [...capabilities].map(value => String(value).toLowerCase())
             const setupNode: MeshSetupNode = {
                 name: node.id || node.hostname,
@@ -499,20 +518,14 @@ export async function runSelfSetupScan(options: SelfSetupOptions = {}): Promise<
         } catch { /* setup remains available with configured-node evidence */ }
     }
     const meshNodes = mergeSetupNodes(configuredNodes, setupNodesFromCapabilityGraph(snapshot))
-    const availableCapabilities = new Set(meshNodes.filter(node => node.online).flatMap(node => node.capabilities))
-    // Nova always has the deterministic local hash embedding fallback. Voice
-    // capabilities are requirements only when voice is enabled; vision is a
-    // requirement only when explicitly configured. Optional features are not
-    // reported as broken merely because they are not installed.
-    availableCapabilities.add('embedding')
-    if (config.voice?.enabled && voice.ok) {
-        availableCapabilities.add('stt')
-        availableCapabilities.add('tts')
-    }
+    // 2.89: the "Fehlend" list is the one list of the capability inventory (mesh skills, cloud keys,
+    // a real embedding source) - the same one mesh_capabilities shows. Before, "embedding" was always
+    // counted as there because of the hash makeshift. Voice counts as there when local voice is ready.
+    // Voice is a requirement only when enabled; vision only when explicitly configured.
     const requiredCapabilities = new Set<string>(['llm', 'embedding'])
     if (config.voice?.enabled) { requiredCapabilities.add('stt'); requiredCapabilities.add('tts') }
     if (config.vision?.enabled || config.imageGeneration?.enabled) requiredCapabilities.add('vision')
-    const missingCapabilities = [...requiredCapabilities].filter(cap => !availableCapabilities.has(cap))
+    const missingCapabilities = await inventoryMissing(meshNodes, requiredCapabilities, Boolean(config.voice?.enabled && voice.ok), snapshot, Boolean(options.skipNetwork || sideEffectsDisabled()))
     const localCandidates = meshNodes
         .filter(n => n.online && n.capabilities.includes('llm'))
         .flatMap(n => n.modelCandidates !== undefined
@@ -553,6 +566,24 @@ export async function runSelfSetupScan(options: SelfSetupOptions = {}): Promise<
     state.summary = formatSummary(state)
     writeState(state)
     return state
+}
+
+/** Configured nodes that the strengths do not know yet join as reports (online + probed models). */
+function configuredAsReported(meshNodes: MeshSetupNode[], now: number): ReportedNode[] {
+    return meshNodes.filter(node => node.role !== 'capability-graph').map(node => ({
+        id: node.name, hostname: node.name, capabilities: node.capabilities,
+        software: { ai_services: node.online && (node.ollamaModels.length || node.services.ollama) ? [{ name: 'ollama', type: 'llm', status: 'running', models: node.ollamaModels }] : [] },
+        lastSeen: node.online ? now : undefined, source: 'registry' as const,
+    }))
+}
+
+async function inventoryMissing(meshNodes: MeshSetupNode[], required: Set<string>, voiceReady: boolean, snapshot?: CapabilityGraphSnapshot, cheap = false): Promise<string[]> {
+    const { currentMissingCapabilities } = await import('../learning/capability-inventory.js')
+    const missing = await currentMissingCapabilities({
+        voiceReady,
+        strengths: async () => (await import('../mesh/node-strengths.js')).collectNodeStrengths(Date.now(), { registryRemote: false, extra: configuredAsReported(meshNodes, Date.now()), skipScout: cheap, ...(snapshot ? { snapshot } : {}) }),
+    })
+    return missing.filter(cap => required.has(cap))
 }
 
 function mergePatch(base: any, patch: any): any {

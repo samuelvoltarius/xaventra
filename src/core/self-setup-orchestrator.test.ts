@@ -84,7 +84,8 @@ describe('SelfSetupOrchestrator', () => {
             node: 'nova-spark', model: 'Qwen3.5-122B', endpoint: 'http://100.64.0.10:8000',
         })
         expect(state.mesh.missingCapabilities).not.toContain('llm')
-        expect(state.mesh.missingCapabilities).not.toContain('embedding')
+        // 2.89: the hash makeshift is no embedding source; without a model on a node it is honestly missing.
+        expect(state.mesh.missingCapabilities).toContain('embedding')
     })
 
     it('queues a gated repair and requires a GPU smoke-test after execution', async () => {

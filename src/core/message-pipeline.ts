@@ -1068,7 +1068,7 @@ async function handleMessageInScope(
             systemPrompt += '\n\n' + capMap
         }
         const { isExplicitSelfSetupRequest } = await import('./self-setup-orchestrator.js')
-        const missing = isExplicitSelfSetupRequest(content) ? getMissingCapabilities() : []
+        const missing = isExplicitSelfSetupRequest(content) ? await getMissingCapabilities() : []
         if (missing.length > 0) {
             systemPrompt += `\n\nExplizit angefragte, derzeit nicht verifizierte Capabilities: ${missing.join(', ')}. Nutze self_setup_plan für einen belegten Plan; behaupte niemals weitere fehlende Fähigkeiten. auto_provision ist abgeschaltet; installieren kann nur der Owner mit /setup apply.`
         }

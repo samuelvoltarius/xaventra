@@ -289,24 +289,12 @@ export function getCapabilityMap(): string {
     return lines.join('\n')
 }
 
-// What capabilities are MISSING across all nodes?
-export function getMissingCapabilities(): string[] {
-    refreshCapabilityProjection()
-    const allNeeded = ['vision', 'tts', 'stt', 'llm', 'embedding']
-    const allAvailable = new Set<string>()
-
-    for (const node of nodes) {
-        for (const cap of node.capabilities) {
-            if (cap.available) allAvailable.add(cap.name)
-        }
-    }
-    for (const cloud of cloudProviders) {
-        for (const cap of cloud.capabilities) {
-            if (cap.available) allAvailable.add(cap.name)
-        }
-    }
-
-    return allNeeded.filter(n => !allAvailable.has(n))
+// What capabilities are MISSING? 2.89: the one list of the capability inventory
+// (learning/capability-inventory.ts) - mesh skills, cloud keys, a real embedding source.
+// Before: this file had its own list, self-setup another, and embedding counted as always there.
+export async function getMissingCapabilities(): Promise<string[]> {
+    const { currentMissingCapabilities } = await import('../learning/capability-inventory.js')
+    return currentMissingCapabilities()
 }
 
 /** Online node with a runtime that is marked running but whose last proof is too old (not re-confirmed yet). */
@@ -387,9 +375,10 @@ export async function initCapabilityOrchestrator(): Promise<void> {
     console.log(`[Capabilities]   Cloud: ${cloudCount} providers available`)
 
     // Report missing capabilities
-    const unconfirmed = getMissingCapabilities().filter(name => unconfirmedRunning(name))
+    const allMissing = await getMissingCapabilities()
+    const unconfirmed = allMissing.filter(name => unconfirmedRunning(name))
     if (unconfirmed.length > 0) console.log(`[Capabilities] ⏳ Noch nicht neu bestaetigt (lief beim letzten Stand, wartet auf den ersten Scan): ${unconfirmed.join(', ')}`)
-    const missing = getMissingCapabilities().filter(name => !unconfirmed.includes(name))
+    const missing = allMissing.filter(name => !unconfirmed.includes(name))
     if (missing.length > 0) {
         console.log(`[Capabilities] ⚠️ Missing: ${missing.join(', ')}`)
         for (const m of missing) {
