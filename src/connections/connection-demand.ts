@@ -24,6 +24,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
+import { connectedConnectorIds, verbindungsFrageKey, verbindungsFrageOffen } from './connection-state.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { OutcomeRunView } from '../core/outcome-ledger.js'
 import { ownerKernelRun } from '../core/validator-failure-escalation.js'
@@ -142,16 +143,9 @@ export function matchRequestWords(text: string): string[] {
     return manifests().filter(manifest => (manifest.bedarf?.woerter || []).length && WORD(manifest.bedarf!.woerter!.join('|')).test(value)).map(manifest => manifest.name)
 }
 
-/** Default: connected = approved connections + the legacy Home Assistant env/config (the tools already work). */
+/** Default: connected = what the one connection truth calls „verbunden“ (connection-state.ts; configured HA included). */
 function defaultConnected(): Set<string> {
-    const out = new Set<string>()
-    try {
-        const file = getNovaDataDir('connections', 'connections.json')
-        const raw = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
-        for (const item of Array.isArray(raw?.connections) ? raw.connections : []) if (item?.status === 'verbunden' && typeof item.connectorId === 'string') out.add(item.connectorId)
-    } catch { /* none */ }
-    if (process.env.HASS_URL && process.env.HASS_TOKEN) out.add('home-assistant')
-    return out
+    return connectedConnectorIds()
 }
 
 /** Signal 3: an owner request about a service that is not connected (connector + time only). Never throws. */
@@ -204,6 +198,8 @@ export interface DemandTickDeps {
     /** Services found on the network/in own accounts (evidence only; never a reason on its own). */
     found?: () => string[] | Promise<string[]>
     sink?: ConnectionDemandSink
+    /** 2.89: is a question with this key already open (card or thought)? Default: connection-state `verbindungsFrageOffen`. */
+    questionOpen?: (key: string) => boolean | Promise<boolean>
 }
 
 /** The rule: a failure → question; ≥3 requests in 14 days → question; found alone → nothing. */
@@ -226,11 +222,14 @@ export async function runConnectionDemandTick(deps: DemandTickDeps): Promise<{ e
         // A self-hosted service is only proposed from words when it was actually found here
         // (a failed owner request is enough on its own).
         if (manifest.findet?.geraet && !item.failures && !found.has(id)) continue
+        // 2.89: one question per thing — the device card / „verbinden?“ card share this key.
+        const dedupeKey = verbindungsFrageKey({ connectorId: id })
+        if (await (deps.questionOpen || (key => verbindungsFrageOffen(key, { now })))(dedupeKey)) continue
         const proposal: ConnectionProposal = {
             kind: 'connect', connectorId: id, title: `${manifest.title} verbinden?`,
             text: `Damit ${manifest.wirkung.replace(/^kann dann /, 'kann ich dann ')}.`,
             proposal: `Verbinden? Ja richtet ${manifest.title} ein${manifest.auth_typ === 'oauth' || manifest.auth_typ === 'ha-login' ? '; danach einmal anmelden' : ''}.`,
-            dedupeKey: `verbindung:bedarf:${id}`,
+            dedupeKey,
             evidence: [...item.evidence.map(text => `Bedarf: ${text}`), ...(found.has(id) ? [`${manifest.title} im Netz gefunden`] : [])],
         }
         await sink.emit(proposal)

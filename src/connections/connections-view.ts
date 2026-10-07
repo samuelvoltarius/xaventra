@@ -23,6 +23,7 @@ import {
     getConnectorCatalog, KATEGORIE_LABEL, resolveConnectorIcon, type ConnectorCapability, type ConnectorKategorie, type ConnectorManifest,
 } from './connector-catalog.js'
 import { loadConnections, type ConnectionRecord, type ConnectionStatus } from './connection-store.js'
+import { connectionState, standKontext, type Verbindungsstand, type Verbindungszustand } from './connection-state.js'
 import { readDirectoryCache, searchDirectory, type CommunityEntry } from './registry-directory.js'
 import { pruefeEintrag, vorschlaegeFuer, type Pruefung, type Vorschlag } from './registry-vetting.js'
 import { cachedIcon } from './icon-cache.js'
@@ -46,6 +47,9 @@ export interface FoundItem {
     datenklasse?: 'lokal' | 'cloud'
     icon?: string | null
     verbunden: boolean
+    /** 2.89: the one connection truth (connection-state.ts): verbunden | wartet | gefunden + reason. */
+    zustand?: Verbindungszustand
+    grund?: string
     /** Paket L: one real device (consolidated); `verbinden` = its connect way (button in the view). */
     geraet?: { id: string; verbinden: 'homeassistant' | 'hue' | 'tuya' | 'matter' | null; dienste: number }
     /** 2.88: no checked connector — matching entries from the (cached, checked) MCP directory. */
@@ -180,15 +184,14 @@ function hinweisFor(manifest: ConnectorManifest, deps: ViewDeps): string | undef
 export async function collectConnections(deps: ViewDeps = {}): Promise<ConnectionsOverview> {
     const dataDir = deps.dataDir || getNovaDataDir()
     const catalog = getConnectorCatalog()
-    const connections = (deps.connections || (() => loadConnections({ dataDir })))().filter(record => record.status !== 'getrennt')
-    const connectedIds = new Set(connections.filter(record => record.status === 'verbunden').map(record => record.connectorId))
-    const pendingIds = new Set(connections.filter(record => record.status !== 'verbunden').map(record => record.connectorId))
+    const alle = (deps.connections || (() => loadConnections({ dataDir })))()
+    const connections = alle.filter(record => record.status !== 'getrennt')
     const manifestOf = (id: string) => catalog.entries.find(entry => entry.name === id)
 
     const gefunden: FoundItem[] = []
     // Paket L: one entry per real device (device-consolidation.ts) — Home Assistant over LAN
     // and tailnet once, the Hue bridge once; container/own-machine noise and bare ports left out.
-    const { consolidateDevices, defaultConsolidationContext, haConnectedFor } = await import('../sensing/device-consolidation.js')
+    const { consolidateDevices, defaultConsolidationContext } = await import('../sensing/device-consolidation.js')
     const raw = ((deps.devices || (() => defaultDevices(dataDir)))() || []).filter((device: any) => device && typeof device.host === 'string' && typeof device.type === 'string')
     const records = raw.map((device: any, index: number) => ({
         id: typeof device.id === 'string' ? device.id : `dev-${index.toString(16).padStart(10, '0')}`, name: String(device.name || ''), via: device.via || 'tcp',
@@ -202,30 +205,11 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
         tv: 'erkannt; Steuerbarkeit noch ungeprüft', geraet: 'erkannt; Typ und Steuerbarkeit noch ungeprüft',
     }
     const konsolidiert = consolidateDevices(records as any, ctx)
-    // 2.87.1: a device that needs a private key (Tuya, ESPHome, Matter, Shelly cloud) is only
-    // "verbunden" once that access is stored — an approved way alone is not a connection.
-    const access = await import('../sensing/smart-device-access.js')
-    const KEYED = new Set(['tuya-announcements', 'esphome-native', 'matter-ip', 'shelly-readonly'])
-    // 2.88 (live 07.10.): a Hue bridge is two records (one "gefunden", one "eingerichtet" with the
-    // pairing key); the merged status picked the first and showed a paired bridge as not connected.
-    const { hueKey } = await import('../sensing/direct-smart-devices.js')
-    const deviceConnected = (g: { status: string; dienste: Array<{ id: string }> }) => {
-        if (g.dienste.some(dienst => Boolean(hueKey(dataDir, dienst.id)))) return true
-        const eingerichtet = g.status === 'eingerichtet' || g.dienste.some(dienst => (records.find((r: any) => r.id === dienst.id) as any)?.status === 'eingerichtet')
-        return eingerichtet && accessReady(g)
-    }
-    const accessReady = (g: { dienste: Array<{ id: string }> }) => g.dienste.every(dienst => {
-        const record = records.find((r: any) => r.id === dienst.id) as any
-        if (!record || !KEYED.has(String(record.hardware?.connector || ''))) return true
-        try {
-            const matter = access.getMatterAccess(dataDir, record)
-            return Boolean(access.getTuyaLocalAccess(dataDir, record) || access.getTuyaCloudAccess(dataDir, record) || access.getEspHomeAccess(dataDir, record)
-                || access.getShellyCloudAccess(dataDir, record) || (matter && matter.state === 'connected'))
-        } catch { return false }
-    })
-    // 2.88.2: Home Assistant counts as connected per instance (the connection's address), not as soon as any HA is.
-    const haInstanzen = konsolidiert.geraete.filter(g => g.art === 'homeassistant').length
-    const haConnected = (g: { adressen: string[] }) => haConnectedFor(connections, g.adressen, haInstanzen, (ctx as any).aliase || {})
+    // 2.89: „verbunden?“ comes from the one connection truth (connection-state.ts) — Home Assistant
+    // per instance, the Hue key per device, way AND key for Tuya/ESPHome/Matter/Shelly.
+    const kontext = standKontext(dataDir, { connections: alle, devices: records as any, aliase: (ctx as any).aliase || {} })
+    const stand = (value: Verbindungsstand) => ({ verbunden: value.zustand === 'verbunden', zustand: value.zustand, grund: value.grund })
+    const connectorStand = (connectorId: string) => connectionState(dataDir, { connectorId }, kontext)
     for (const g of konsolidiert.geraete) {
         if (g.status === 'abgelehnt') continue
         const primary = records.find((record: any) => record.id === g.primaryId) as any
@@ -238,7 +222,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             wirkung: typed ? known.wirkung : GERAET_WIRKUNG[g.art] || GERAET_WIRKUNG.geraet,
             fund: `im Netz ${primary.host}:${primary.port}${g.adressen.length > 1 ? ` (+${g.adressen.length - 1} weitere Adresse${g.adressen.length > 2 ? 'n' : ''})` : ''}`,
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : g.verbinden ? { datenklasse: 'lokal' as const } : {}),
-            verbunden: g.art === 'homeassistant' ? haConnected(g) : connectorId ? connectedIds.has(connectorId) : deviceConnected(g),
+            ...stand(connectionState(dataDir, { geraet: g }, kontext)),
             geraet: { id: g.primaryId, verbinden: g.verbinden, dienste: g.dienste.length },
         })
     }
@@ -253,7 +237,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             id: `geraet:${dienst.typ}:${dienst.adresse}:${dienst.port}`, title: `${dienst.titel} ${eigeneAdressen.has(dienst.adresse) ? 'auf deinem Rechner' : 'auf einem deiner Rechner'}`,
             kategorie: 'hilfsdienste', wirkung: known.wirkung, fund: `im Netz ${dienst.adresse}:${dienst.port}`,
             ...(connectorId ? { connectorId, datenklasse: 'lokal' as const, icon: resolveConnectorIcon(manifestOf(connectorId)!) } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : dienst.status === 'eingerichtet',
+            ...stand(connectorId ? connectorStand(connectorId) : connectionState(dataDir, { record: records.find((r: any) => r.id === dienst.id) as any }, kontext)),
         })
     }
     for (const account of deps.accounts ? deps.accounts() : await defaultAccounts(dataDir)) {
@@ -263,7 +247,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
             id: `konto:${account.kind}:${account.label}`, title: manifest?.title || 'E-Mail-Konto', kategorie: manifest?.kategorie || 'kommunikation',
             wirkung: manifest?.wirkung || 'wird vom Mail-Sensor lesend genutzt', fund: `eigenes Konto ${account.label}`,
             ...(manifest ? { connectorId: manifest.name, datenklasse: manifest.datenklasse, icon: resolveConnectorIcon(manifest) } : {}),
-            verbunden: connectorId ? connectedIds.has(connectorId) : false,
+            ...(connectorId ? stand(connectorStand(connectorId)) : { verbunden: false, zustand: 'gefunden' as const, grund: 'nicht verbunden' }),
         })
     }
     // 2.88: what was found but has no checked connector → matching directory entries (cache only, checked).
@@ -312,7 +296,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
         kategorie: kategorie as ViewKategorie, label: KATEGORIE_LABEL[kategorie],
         eintraege: catalog.entries.filter(entry => entry.kategorie === kategorie).map(entry => ({
             connectorId: entry.name, title: entry.title, wirkung: entry.wirkung, datenklasse: entry.datenklasse, auth: entry.auth_typ, trust: 'geprueft' as const,
-            icon: resolveConnectorIcon(entry), status: connectedIds.has(entry.name) ? 'verbunden' as const : pendingIds.has(entry.name) ? 'wartet' as const : 'moeglich' as const,
+            icon: resolveConnectorIcon(entry), status: ({ verbunden: 'verbunden', wartet: 'wartet', gefunden: 'moeglich' } as const)[connectorStand(entry.name).zustand],
             ...(hinweisFor(entry, deps) ? { hinweis: hinweisFor(entry, deps) } : {}),
         })),
     })).filter(group => group.eintraege.length)
@@ -325,7 +309,8 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     }
     const cache = readDirectoryCache(deps.directoryCachePath)
 
-    const verbunden: ConnectedItem[] = [...connections.map(record => {
+    // 2.89: a record taken over from the configuration counts only while that configuration exists.
+    const verbunden: ConnectedItem[] = [...connections.filter(record => record.herkunft !== 'konfiguriert' || connectionState(dataDir, { verbindung: record }, kontext).zustand === 'verbunden').map(record => {
         const manifest = record.trust === 'geprueft' ? manifestOf(record.connectorId) : undefined
         return {
             id: record.id, connectorId: record.connectorId, title: record.title, status: record.status, trust: record.trust, datenklasse: record.datenklasse,

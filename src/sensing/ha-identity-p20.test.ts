@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { consolidateDevices } from './device-consolidation.js'
-import { isDeviceConnected, isRecordConnected } from './device-connect.js'
+import { connectionState } from '../connections/connection-state.js'
+import type { Geraet } from './device-consolidation.js'
+
+// 2.89: the one connection truth replaces isDeviceConnected/isRecordConnected (same rules).
+const isDeviceConnected = (dir: string, geraet: Geraet, devices: DeviceRecord[]) => connectionState(dir, { geraet }, { devices }).zustand === 'verbunden'
+const isRecordConnected = (dir: string, record: DeviceRecord, devices: DeviceRecord[]) => connectionState(dir, { record }, { devices }).zustand === 'verbunden'
 import { collectConnections } from '../connections/connections-view.js'
 import { saveConnection, type ConnectionRecord } from '../connections/connection-store.js'
 import type { DeviceRecord } from './device-registry.js'
@@ -57,8 +62,8 @@ describe('2.88.2: verbunden nur die passende HA-Instanz', () => {
     })
     it('isRecordConnected: gleiche Regel pro Datensatz', () => {
         const dir = tmp(); const list = two(); saveConnection(conn('http://192.0.2.30:8123'), { dataDir: dir })
-        expect(isRecordConnected(dir, list[0])).toBe(true)
-        expect(isRecordConnected(dir, list[1])).toBe(false)
+        expect(isRecordConnected(dir, list[0], list)).toBe(true)
+        expect(isRecordConnected(dir, list[1], list)).toBe(false)
     })
     it('die zweite Adresse derselben Instanz (Tailnet) zählt als ihre Adresse', () => {
         const dir = tmp(); n = 0

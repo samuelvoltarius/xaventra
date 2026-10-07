@@ -3,6 +3,7 @@ import { loadDevices, sensingDeviceFingerprint, type Approver } from './device-r
 import { approvedSmartRoute } from './smart-device-route.js'
 import { getTuyaLocalAccess, submitTuyaLocalAccess, getEspHomeAccess, submitEspHomeAccess, getTuyaCloudAccess, getShellyCloudAccess, submitSmartCloudAccess, getMatterAccess, submitMatterAccess, beginMatterAttempt, finishMatterAttempt, matterFabricPath } from './smart-device-access.js'
 import { readMatterPeer } from './matter-client.js'
+import { accessStored, connectionState, standKontext } from '../connections/connection-state.js'
 import { currentSmartFunctions, switchSupported, proposeSmartSwitch, confirmSmartSwitch } from './smart-control.js'
 import { executeSmartSwitch } from './smart-control-http.js'
 
@@ -17,10 +18,15 @@ export function registerSmartAccessApi(app: Express, options: {
         if (!options.ownerOnly(req, res)) return
         res.setHeader('Cache-Control', 'no-store')
         const root = options.root()
-        res.json({ devices: loadDevices(root).filter(d => ['tuya-announcements', 'esphome-native', 'shelly-readonly', 'matter-ip', 'hue-readonly', 'tasmota-readonly'].includes(d.hardware?.connector)).map(d => ({
+        const all = loadDevices(root)
+        // 2.89: the one connection truth — the same state as the device list and „Verbindungen“.
+        const kontext = standKontext(root, { devices: all })
+        res.json({ devices: all.filter(d => ['tuya-announcements', 'esphome-native', 'shelly-readonly', 'matter-ip', 'hue-readonly', 'tasmota-readonly'].includes(d.hardware?.connector)).map(d => ({
             id: d.id, name: d.name, fingerprint: sensingDeviceFingerprint(d), route: approvedSmartRoute(root, d),
             protocol: d.hardware?.connector === 'matter-ip' ? 'matter' : d.hardware?.connector === 'esphome-native' ? 'esphome' : d.hardware?.connector === 'shelly-readonly' ? 'shelly' : d.hardware?.connector === 'hue-readonly' ? 'hue' : d.hardware?.connector === 'tasmota-readonly' ? 'tasmota' : 'tuya',
-            accessStored: Boolean(getTuyaLocalAccess(root, d) || getEspHomeAccess(root, d) || getTuyaCloudAccess(root, d) || getShellyCloudAccess(root, d) || getMatterAccess(root, d)),
+            // Hue pairing key included; Matter counts only once its access is connected.
+            accessStored: accessStored(root, d),
+            ...(({ zustand, grund }) => ({ zustand, grund, verbunden: zustand === 'verbunden' }))(connectionState(root, { record: d }, kontext)),
             ...(d.hardware?.connector === 'matter-ip' ? { accessState: getMatterAccess(root, d)?.state || 'missing' } : {}),
             controls: currentSmartFunctions(root, d).filter(f => switchSupported(d, f, approvedSmartRoute(root, d) || '')).map(f => ({ id: f.id, name: f.name, kind: f.kind })),
             // Not raw private access. Only the schema needed for an owner form.

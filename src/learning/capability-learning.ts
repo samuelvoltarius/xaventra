@@ -698,12 +698,12 @@ async function collectInventory(dataDir?: string): Promise<CapabilityInventory> 
         const { getToolRegistry } = await import('../tools/complete-registry.js')
         for (const tool of getToolRegistry().getAll()) if (tool?.name) tools.push(tool.name)
     } catch { /* leeres Register: dann entscheidet nur, was belegt ist */ }
-    const connected = new Set<string>()
+    // 2.89: „verbunden“ kommt aus der einen Verbindungs-Wahrheit (konfiguriertes HA eingeschlossen).
+    let connected = new Set<string>()
     try {
-        const { loadConnections } = await import('../connections/connection-store.js')
-        for (const record of loadConnections(dataDir ? { dataDir } : {})) if (record.status === 'verbunden') connected.add(record.connectorId)
+        const { connectedConnectorIds } = await import('../connections/connection-state.js')
+        connected = connectedConnectorIds(dataDir)
     } catch { /* keine Verbindungen */ }
-    if (process.env.HASS_URL && process.env.HASS_TOKEN) connected.add('home-assistant')
     const toolSet = new Set(tools)
     // Ein gelerntes Werkzeug gilt nur, solange es im Register steht.
     const learned = learnedCapabilities({ dataDir }).filter(item => !item.tools.length || item.tools.some(name => toolSet.has(name)))
@@ -725,9 +725,10 @@ async function defaultProbe(job: LearnJob, dataDir?: string): Promise<ProbeResul
         return tool.counters.successes > 0 ? { result: 'ok', detail: 'erster echter Aufruf erfolgreich' } : { result: 'warten' }
     }
     if (job.weg === 'verbindung' && job.ref) {
-        const { loadConnections } = await import('../connections/connection-store.js')
+        const [{ connectionState }, { loadConnections }] = await Promise.all([import('../connections/connection-state.js'), import('../connections/connection-store.js')])
+        const stand = connectionState(dataDir || (await import('../core/data-root.js')).getNovaDataDir(), { connectorId: job.ref })
+        if (stand.zustand === 'verbunden') return { result: 'ok', detail: stand.grund }
         const record = loadConnections(dataDir ? { dataDir } : {}).find(item => item.connectorId === job.ref)
-        if (record?.status === 'verbunden') return { result: 'ok', detail: record.letzterTest?.ok ? `verbunden, ${record.letzterTest.werkzeuge} Werkzeuge getestet` : 'verbunden' }
         if (record?.status === 'fehler') return { result: 'fehler', detail: record.letzterTest?.fehler || 'Verbindung fehlgeschlagen' }
         return { result: 'warten' }
     }
@@ -830,14 +831,14 @@ let offerCardSync: ((input: NewCardInput) => { ok: boolean; card?: ApprovalCard 
 /** Lädt die Module der Produktions-Ports (einmal, idempotent). */
 export async function prepareLearnDeps(): Promise<LearnDeps> {
     if (!offerCardSync) {
-        const [{ searchDirectory }, { matchRequestWords }, { findConnector }, { loadConnections }, forge, cards] = await Promise.all([
+        const [{ searchDirectory }, { matchRequestWords }, { findConnector }, { connectedConnectorIds }, forge, cards] = await Promise.all([
             import('../connections/registry-directory.js'), import('../connections/connection-demand.js'), import('../connections/connector-catalog.js'),
-            import('../connections/connection-store.js'), import('../tools/skill-builder.js'), import('../core/approval-card-sources.js'),
+            import('../connections/connection-state.js'), import('../tools/skill-builder.js'), import('../core/approval-card-sources.js'),
         ])
         directorySearch = query => searchDirectory(query, { limit: 3 }).map(entry => ({ name: entry.name, title: entry.title }))
         connectorCandidates = (topic, domain) => {
             const ids = new Set([...(domain?.connectors || []), ...matchRequestWords(topic)])
-            const connected = new Set(loadConnections().filter(item => item.status === 'verbunden').map(item => item.connectorId))
+            const connected = connectedConnectorIds()
             return [...ids].filter(id => findConnector(id) && !connected.has(id))
         }
         recipeBuilderReady = () => forge.hasForgeModel()

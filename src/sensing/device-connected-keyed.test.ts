@@ -4,8 +4,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./smart-device-route.js', async importOriginal => ({ ...(await importOriginal<any>()), approvedSmartRoute: () => 'local' }))
-import { isRecordConnected } from './device-connect.js'
+import { connectionState } from '../connections/connection-state.js'
 import type { DeviceRecord } from './device-registry.js'
+
+// 2.89: the one connection truth (connection-state.ts) replaces isRecordConnected.
+const isRecordConnected = (dir: string, record: DeviceRecord) => connectionState(dir, { record }, { devices: [record] }).zustand === 'verbunden'
 
 // 2.88.1 (live 07.10.2026): the device list said "Tuya-Gerät — verbunden" while the
 // connections view (2.87.1) correctly said not connected: the local way was approved,

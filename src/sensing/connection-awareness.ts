@@ -1,5 +1,7 @@
 import type { MCPServer } from '../mcp/mcp-client.js'
 import type { ConnectionRecord } from '../connections/connection-store.js'
+import { connectionState, type Verbindungsstand } from '../connections/connection-state.js'
+import { getNovaDataDir } from '../core/data-root.js'
 import { connectorToolVerdict } from '../connections/connector-policy.js'
 import { cleanText } from './ports.js'
 import { redactSecrets } from '../security/secret-redaction.js'
@@ -8,7 +10,9 @@ type NodeView = { name: string; address: string; online: boolean; capabilities: 
 
 /** Display only canonical snapshots. No connections, probes, resource reads or
  * tool calls: catalog presence must never become an execution permission. */
-export function connectionAwareness(nodes: NodeView[], servers: MCPServer[], connections: ConnectionRecord[], registeredTools: Set<string>): string {
+export function connectionAwareness(nodes: NodeView[], servers: MCPServer[], connections: ConnectionRecord[], registeredTools: Set<string>,
+    // 2.89: „verbunden?“ from the one connection truth (connection-state.ts).
+    stand: (record: ConnectionRecord) => Verbindungsstand = record => connectionState(getNovaDataDir(), { verbindung: record }, { connections })): string {
     const safe = (value: string, limit = 100) => cleanText(redactSecrets(String(value || '')), limit)
     const labels: Record<string, string> = { llm: 'Sprachmodell', vision: 'Bildanalyse', tts: 'Sprachausgabe', stt: 'Spracherkennung', embedding: 'semantische Suche', code: 'Code-Modell', tools: 'Werkzeug-Modell' }
     const lines = ['Node-Fähigkeiten aus dem aktuellen Capability-Bestand:']
@@ -29,7 +33,7 @@ export function connectionAwareness(nodes: NodeView[], servers: MCPServer[], con
     for (const server of servers.slice(0, 12)) {
         const record = connections.find(c => c.id.slice(2) === server.name)
         if (record) known.add(record.id)
-        const live = server.connected && (!record || record.status === 'verbunden')
+        const live = server.connected && (!record || stand(record).zustand === 'verbunden')
         const tools = live ? server.tools.filter(tool => !record || connectorToolVerdict(tool, record).sichtbar).slice(0, 6) : []
         lines.push(`${safe(record?.title || server.name)}: ${live ? 'MCP-Transport verbunden' : 'nicht aktuell verbunden'}${record ? `; Zugang: ${safe(record.status)}` : '; Aufrufrechte separat prüfen'}.`)
         for (const tool of tools) {
@@ -41,7 +45,8 @@ export function connectionAwareness(nodes: NodeView[], servers: MCPServer[], con
         if (live && server.tools.length > 6) lines.push('  Werkzeugübersicht gekürzt.')
     }
     for (const record of connections.filter(c => !known.has(c.id)).slice(0, 12)) {
-        lines.push(`${safe(record.title)}: Zugang ${safe(record.status)}; kein aktueller MCP-Transport belegt${record.status.startsWith('wartet-') || record.status === 'abgelaufen' ? '; Anmeldung/Zugang über den bestehenden Verbindungsdialog erforderlich' : ''}.`)
+        const jetzt = stand(record)
+        lines.push(`${safe(record.title)}: Zugang ${safe(record.status)}; kein aktueller MCP-Transport belegt${jetzt.zustand === 'wartet' ? `; ${safe(jetzt.grund)} — Anmeldung/Zugang über den bestehenden Verbindungsdialog erforderlich` : ''}.`)
     }
     if (!servers.length && !connections.length) lines.push('Keine MCP-Verbindung im aktuellen Bestand. Ein LAN-Fund ist noch keine MCP-Verbindung.')
     const bound = (part: string[], limit: number) => {

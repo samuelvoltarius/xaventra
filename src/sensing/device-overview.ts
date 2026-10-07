@@ -10,6 +10,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Verbindungsstand } from '../connections/connection-state.js'
 import { DETAILS_TRENNER, OWNER_PAGE_CHARS, ownerText } from '../core/owner-text.js'
 import type { Geraet, Konsolidierung } from './device-consolidation.js'
 import { loadDevices, type DeviceRecord } from './device-registry.js'
@@ -58,45 +59,48 @@ function teileText(z: { lampen?: number; schalter?: number; sensoren?: number })
     return [z.lampen ? plural(z.lampen, 'Lampe', 'Lampen') : '', z.schalter ? plural(z.schalter, 'Schalter', 'Schalter') : '', z.sensoren ? plural(z.sensoren, 'Sensor', 'Sensoren') : ''].filter(Boolean).join(', ')
 }
 
-export type GeraeteZustand = 'wartet' | 'verbunden' | 'gefunden'
+export type GeraeteZustand = Verbindungsstand['zustand']
 
-/** Zustand + Nutzen eines Geräts in wenigen Worten. */
-export function geraetZeile(dataDir: string, g: Geraet, records: DeviceRecord[], verbunden: boolean): { zustand: GeraeteZustand; text: string } {
+const GEFUNDEN: Verbindungsstand = { zustand: 'gefunden', grund: 'nicht verbunden' }
+const standOf = (stand: (g: Geraet) => Verbindungsstand, g: Geraet): Verbindungsstand => { try { return stand(g) || GEFUNDEN } catch { return GEFUNDEN } }
+
+/**
+ * Zustand + Nutzen eines Geräts in wenigen Worten. 2.89: der Zustand kommt
+ * unverändert aus der einen Verbindungs-Wahrheit (connection-state.ts) — die Liste
+ * entscheidet nichts selbst („eingerichtet“ allein ist nicht verbunden).
+ * `offen` = es gibt etwas zu tun (wartet, oder gefunden mit Verbindungsweg).
+ */
+export function geraetZeile(dataDir: string, g: Geraet, records: DeviceRecord[], stand: Verbindungsstand): { zustand: GeraeteZustand; text: string; offen: boolean } {
     const titel = alltagsTitel(g)
-    if (g.art === 'drucker') {
-        const an = records.some(r => g.dienste.some(d => d.id === r.id) && r.status === 'eingerichtet')
-        return an ? { zustand: 'verbunden', text: `${titel} — ich sehe seinen Fortschritt` } : { zustand: 'gefunden', text: `${titel} — gefunden` }
+    if (stand.zustand === 'verbunden') {
+        if (g.art === 'drucker') return { zustand: 'verbunden', text: `${titel} — ich sehe seinen Fortschritt`, offen: false }
+        const teile = g.art === 'homeassistant' ? teileText(zaehleHa(dataDir))
+            : teileText(zaehleDirekt(dataDir, new Set(records.filter(r => g.dienste.some(d => d.id === r.id) || r.host === g.dienste[0]?.adresse.split(':')[0]).map(r => r.id))))
+        return { zustand: 'verbunden', text: `${titel} — verbunden${teile ? `: ich sehe ${teile}` : ''}`, offen: false }
     }
-    if (g.verbinden && !verbunden) return { zustand: 'wartet', text: `${titel} — wartet aufs Verbinden` }
-    if (verbunden && g.art === 'homeassistant') {
-        const teile = teileText(zaehleHa(dataDir))
-        return { zustand: 'verbunden', text: `${titel} — verbunden${teile ? `: ich sehe ${teile}` : ''}` }
-    }
-    if (verbunden) {
-        const teile = teileText(zaehleDirekt(dataDir, new Set(records.filter(r => g.dienste.some(d => d.id === r.id) || r.host === g.dienste[0]?.adresse.split(':')[0]).map(r => r.id))))
-        return { zustand: 'verbunden', text: `${titel} — verbunden${teile ? `: ich sehe ${teile}` : ''}` }
-    }
-    return { zustand: g.status === 'eingerichtet' ? 'verbunden' : 'gefunden', text: `${titel} — ${g.status === 'eingerichtet' ? 'verbunden, nur lesen' : 'gefunden'}` }
+    if (stand.zustand === 'wartet') return { zustand: 'wartet', text: `${titel} — wartet: ${ownerText(stand.grund)}`, offen: true }
+    if (g.verbinden) return { zustand: 'gefunden', text: `${titel} — gefunden, noch nicht verbunden`, offen: true }
+    return { zustand: 'gefunden', text: `${titel} — gefunden`, offen: false }
 }
 
 /**
- * Die Owner-Antwort auf Geräte-Fragen. `istVerbunden` prüft je Gerät den
- * bestehenden Verbindungsweg (Standard: device-connect `isDeviceConnected`).
+ * Die Owner-Antwort auf Geräte-Fragen. `stand` liefert je Gerät den Verbindungsstand
+ * (Produktion: connection-state `connectionState`).
  */
-export function geraeteUeberblick(dataDir: string, k: Konsolidierung, istVerbunden: (g: Geraet) => boolean, max = OWNER_PAGE_CHARS): string {
+export function geraeteUeberblick(dataDir: string, k: Konsolidierung, stand: (g: Geraet) => Verbindungsstand, max = OWNER_PAGE_CHARS): string {
     const records = loadDevices(dataDir)
     const sichtbar = k.geraete.filter(g => g.status !== 'abgelehnt' && g.status !== 'aus')
     if (!sichtbar.length) return '🟢 Ich habe in deinem Netz noch keine Geräte gefunden. Ich suche von selbst weiter und sage Bescheid, sobald ich etwas finde.'
-    const zeilen = sichtbar.map(g => geraetZeile(dataDir, g, records, (() => { try { return istVerbunden(g) } catch { return false } })()))
-    const wartet = zeilen.filter(z => z.zustand === 'wartet').length
-    const kopf = `${wartet ? '🟡' : '🟢'} Ich kenne ${plural(sichtbar.length, 'Gerät', 'Geräte')} in deinem Netz${wartet ? ` — ${wartet === 1 ? 'eins wartet' : `${wartet} warten`} aufs Verbinden` : ''}.`
-    const fuss = wartet ? 'Verbinden: je ein Knopf in der Nachricht „Geräte gefunden“.' : ''
+    const zeilen = sichtbar.map(g => geraetZeile(dataDir, g, records, standOf(stand, g)))
+    const offen = zeilen.filter(z => z.offen).length
+    const kopf = `${offen ? '🟡' : '🟢'} Ich kenne ${plural(sichtbar.length, 'Gerät', 'Geräte')} in deinem Netz${offen ? ` — ${offen === 1 ? 'eins ist' : `${offen} sind`} noch nicht verbunden` : ''}.`
+    const fuss = offen ? 'Verbinden: je ein Knopf in der Nachricht „Geräte gefunden“.' : ''
     const out = [kopf]
     const reserve = fuss.length + 40
     let rest = zeilen.length
-    // Wartende zuerst (dort ist etwas zu tun), dann verbundene, dann Funde.
-    const rang: Record<GeraeteZustand, number> = { wartet: 0, verbunden: 1, gefunden: 2 }
-    for (const zeile of [...zeilen].sort((a, b) => rang[a.zustand] - rang[b.zustand])) {
+    // Offene zuerst (dort ist etwas zu tun), dann verbundene, dann Funde.
+    const rang = (z: { zustand: GeraeteZustand; offen: boolean }) => z.offen ? 0 : z.zustand === 'verbunden' ? 1 : 2
+    for (const zeile of [...zeilen].sort((a, b) => rang(a) - rang(b))) {
         const line = `• ${zeile.text}`
         if (out.join('\n').length + 1 + line.length > max - reserve) break
         out.push(line); rest--
@@ -126,7 +130,7 @@ export function suchStand(dataDir: string): string {
     return `Letzte Suche: ${r.scannedHosts} Adressen, ${r.probes} Prüfungen – ${r.partial ? 'Teilsuche, nicht das ganze Netz' : 'Suchlauf fertig'}.`
 }
 
-export function geraeteDetails(dataDir: string, k: Konsolidierung, istVerbunden: (g: Geraet) => boolean, max = DETAILS_MAX_CHARS): string {
+export function geraeteDetails(dataDir: string, k: Konsolidierung, stand: (g: Geraet) => Verbindungsstand, max = DETAILS_MAX_CHARS): string {
     const records = loadDevices(dataDir)
     const sichtbar = k.geraete.filter(g => g.status !== 'abgelehnt' && g.status !== 'aus')
     const suche = suchStand(dataDir)
@@ -135,11 +139,11 @@ export function geraeteDetails(dataDir: string, k: Konsolidierung, istVerbunden:
     const fuss = [suche, 'Mehr zu jedem Gerät steht in der App unter „Verbindungen“.'].filter(Boolean).join('\n')
     let rest = sichtbar.length
     for (const g of sichtbar) {
-        const zustand = geraetZeile(dataDir, g, records, (() => { try { return istVerbunden(g) } catch { return false } })()).zustand
+        const jetzt = standOf(stand, g)
         const weg = [...g.dienste].sort((a, b) => (WEG_RANG[a.via] ?? 9) - (WEG_RANG[b.via] ?? 9))[0]?.via || 'tcp'
         const adressen = g.adressen.filter(ip => !ip.includes(':')).slice(0, 2)
-        const stand = zustand === 'verbunden' ? 'verbunden' : zustand === 'wartet' ? 'wartet aufs Verbinden' : 'nur gefunden'
-        const line = `• ${alltagsTitel(g)}: ${adressen.length ? `${adressen.join(' und ')} · ` : ''}${WEG_TEXT[weg] || WEG_TEXT.tcp} · ${stand}`
+        const text = jetzt.zustand === 'verbunden' ? 'verbunden' : jetzt.zustand === 'wartet' ? `wartet: ${ownerText(jetzt.grund)}` : 'nur gefunden'
+        const line = `• ${alltagsTitel(g)}: ${adressen.length ? `${adressen.join(' und ')} · ` : ''}${WEG_TEXT[weg] || WEG_TEXT.tcp} · ${text}`
         if (out.join('\n').length + 1 + line.length > max - fuss.length - 40) break
         out.push(line); rest--
     }
@@ -156,18 +160,19 @@ export async function ownerGeraeteAntwort(dataDir: string, deps: { kick?: () => 
 /** 2.86.1: die Owner-Liste (eine Nachricht) und ihre kurzen „Details“ (höchstens zwei Seiten). */
 export async function ownerGeraeteAntworten(dataDir: string, deps: { kick?: () => void | Promise<void> } = {}): Promise<{ text: string; details: string }> {
     const { loadConsolidatedDevices, defaultConsolidationContext } = await import('./device-consolidation.js')
-    const { isDeviceConnected, offerDeviceConnections, DEVICE_BUNDLE } = await import('./device-connect.js')
+    const { offerDeviceConnections, DEVICE_BUNDLE } = await import('./device-connect.js')
+    const { connectionState, standKontext } = await import('../connections/connection-state.js')
     const ctx = await defaultConsolidationContext(dataDir)
     const k = await loadConsolidatedDevices(dataDir, ctx)
-    const records = loadDevices(dataDir)
-    // 2.88.2: Home Assistant is connected per instance (address of the connection), not as soon as any HA is connected.
-    const verbunden = (g: Geraet) => isDeviceConnected(dataDir, g, records)
-    const text = geraeteUeberblick(dataDir, k, verbunden)
-    const details = geraeteDetails(dataDir, k, verbunden)
+    // 2.89: the one connection truth (Home Assistant per instance, Hue key per device, way AND key).
+    const kontext = standKontext(dataDir)
+    const stand = (g: Geraet) => connectionState(dataDir, { geraet: g }, kontext)
+    const text = geraeteUeberblick(dataDir, k, stand)
+    const details = geraeteDetails(dataDir, k, stand)
     try {
         const { created } = await offerDeviceConnections({ dataDir, ctx })
         const { requestBundleResend } = await import('../core/card-bundle.js')
-        if (created || /wartet|warten/.test(text.split('\n')[0])) requestBundleResend(DEVICE_BUNDLE, { dataDir })
+        if (created || /noch nicht verbunden/.test(text.split('\n')[0])) requestBundleResend(DEVICE_BUNDLE, { dataDir })
         if (deps.kick) await deps.kick()
         else { const { runApprovalCardTick } = await import('../core/approval-card-sources.js'); void runApprovalCardTick() }
     } catch { /* die Liste gilt auch ohne Karte */ }

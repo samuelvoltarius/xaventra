@@ -75,15 +75,17 @@ const STATUS_GRUND: Record<ConnectionStatus, string> = {
 function safe<T>(fn: () => T, fallback: T): T { try { return fn() } catch { return fallback } }
 
 /**
- * The configured Home Assistant (HASS_URL/HASS_TOKEN or `homeassistant.url/token` in
- * xaventra.config.json) — the address only, never the token.
+ * The configured Home Assistant (the sensing adapter's url + token, HASS_URL/HASS_TOKEN or
+ * `homeassistant.url/token` in xaventra.config.json — resolveHaConnection) — the address
+ * only, never the token.
  */
 export function configuredHomeAssistantUrl(options: { env?: NodeJS.ProcessEnv; config?: unknown } = {}): string | null {
     let config = options.config
     if (config === undefined) {
         try { const path = resolveConfigPath(); config = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null } catch { config = null }
     }
-    try { return resolveHaConnection({}, config, options.env || process.env)?.url || null } catch { return null }
+    const adapter = (config as any)?.autonomy?.sensing?.adapters?.homeassistant
+    try { return resolveHaConnection(adapter && typeof adapter === 'object' ? adapter : {}, config, options.env || process.env)?.url || null } catch { return null }
 }
 
 /**
@@ -228,8 +230,8 @@ function deviceState(geraet: Pick<Geraet, 'art' | 'adressen' | 'dienste'>, membe
     }
     const keyed = members.filter(r => KEYED_CONNECTORS.has(String(r.hardware?.connector || '')))
     if (keyed.length) {
-        if (keyed.some(r => Boolean(approvedSmartRoute(dataDir, r)) && hasKey(dataDir, r))) return { zustand: 'verbunden', grund: 'Weg freigegeben, Schlüssel gespeichert' }
-        if (keyed.some(r => Boolean(approvedSmartRoute(dataDir, r)))) return { zustand: 'wartet', grund: geraet.art === 'matter' ? 'Code vom Gerät fehlt noch' : 'Schlüssel fehlt noch' }
+        if (keyed.some(r => Boolean(approvedSmartRoute(dataDir, r)) && hasKey(dataDir, r))) return { zustand: 'verbunden', grund: 'Weg freigegeben, Code gespeichert' }
+        if (keyed.some(r => Boolean(approvedSmartRoute(dataDir, r)))) return { zustand: 'wartet', grund: geraet.art === 'matter' ? 'Code vom Gerät fehlt noch' : geraet.art === 'tuya' ? 'Code aus der Tuya-App fehlt noch' : 'Zugangscode fehlt noch' }
         if (keyed.some(r => r.status === 'eingerichtet' || Boolean(selectedSmartRoute(dataDir, r)))) return { zustand: 'wartet', grund: 'Weg noch nicht freigegeben' }
         return { zustand: 'gefunden', grund: 'nicht verbunden' }
     }
