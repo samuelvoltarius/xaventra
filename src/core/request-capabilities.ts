@@ -44,6 +44,9 @@ export function isEnvironmentOverview(text: string): boolean {
         .replace(/^(und\s+)?welceh\b/i, '$1welche')
     return mentionsEnvironment(question) && /^(?:und\s+)?(?:bitte\s+)?(?:was\b|welche[nrs]?\b|(?:siehst|erkennst|findest)\s+du\b|prüfe\b|pruefe\b|ermittle\b|suche\b|scanne\b|im\s+(?:local|lokalen?)\s+netzwerk)/i.test(question)
         && !mentionsScreenshot(question) && !containsHttpUrl(question)
+        // 2.88.1: VM/container questions belong to proxmox_vm, "which node can what" to mesh_strengths.
+        && !/\b(?:proxmox|vms?|virtuelle\w*|container|gäste|gaeste)\b/i.test(question)
+        && !/\b(?:welche[rs]?\s+(?:knoten|node)\s+kann|was\s+kann\s+welche[rs]?\s+(?:knoten|node)|stärken|staerken)\b/i.test(question)
         && !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|schalt\w*|koppel\w*|übertrag\w*|upload\w*|download\w*)\b/i.test(question)
 }
 

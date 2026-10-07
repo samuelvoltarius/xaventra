@@ -379,6 +379,15 @@ export async function runAuthorizedScreenshotFallback(
     return { path: imgPath, size: screenshotResult.size }
 }
 
+/**
+ * 2.88.1 (live 07.10.2026): app messages always carry an execution object for their
+ * cancellation deadline (desktopCancellationOnly). The capability gate ("Soll ich es
+ * lernen?") checked `!execution` and was therefore skipped for every app message.
+ */
+export function capabilityGateApplies(input: { isSystemAuthored: boolean; image: boolean; execution: boolean; desktopCancellationOnly: boolean }): boolean {
+    return !input.isSystemAuthored && !input.image && (!input.execution || input.desktopCancellationOnly)
+}
+
 export async function handleMessage(...args: Parameters<typeof handleMessageInScope>): ReturnType<typeof handleMessageInScope> {
     // One LLM-principal scope per message (Codex only for the owner).
     const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
@@ -832,7 +841,7 @@ async function handleMessageInScope(
     // real inventory has no tool, connection or learned skill gets the honest answer
     // at once („Nein, das kann ich noch nicht. Soll ich es lernen?“ + Ja/Nein card for
     // the owner) — no model, no excuse. Anything the inventory can do runs as before.
-    if (!isSystemAuthored && !image && !execution) {
+    if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })) {
         try {
             const { capabilityGate } = await import('../learning/capability-learning.js')
             const gate = await capabilityGate(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })

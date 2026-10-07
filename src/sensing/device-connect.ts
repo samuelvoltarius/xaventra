@@ -31,6 +31,7 @@ import { identifyHardware } from './hardware-recognition.js'
 import { identifyHttp, type HttpProbeResult } from './discovery.js'
 import { approvedSmartRoute, chooseSmartRoute, type SmartRoute } from './smart-device-route.js'
 import { hueKey } from './direct-smart-devices.js'
+import { getEspHomeAccess, getMatterAccess, getShellyCloudAccess, getTuyaCloudAccess, getTuyaLocalAccess } from './smart-device-access.js'
 import { nutzenSatz } from './device-words.js'
 
 export const DEVICE_CONNECT_KIND = 'geraet-verbinden'
@@ -67,7 +68,7 @@ export function isDeviceConnected(dataDir: string, geraet: Geraet, records: Devi
         try { return loadConnections({ dataDir }).some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') } catch { return false }
     }
     if (geraet.art === 'hue') return members.some(r => Boolean(hueKey(dataDir, r.id)))
-    return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)))
+    return members.some(r => r.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, r)) && keyedAccessReady(dataDir, r))
 }
 
 /** One device record already connected through its way (Home Assistant connection, Hue key, approved route). */
@@ -76,7 +77,18 @@ export function isRecordConnected(dataDir: string, record: DeviceRecord): boolea
         try { return loadConnections({ dataDir }).some(c => c.connectorId === 'home-assistant' && c.status === 'verbunden') } catch { return false }
     }
     if (hueKey(dataDir, record.id)) return true
-    return record.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, record))
+    return record.status === 'eingerichtet' && Boolean(approvedSmartRoute(dataDir, record)) && keyedAccessReady(dataDir, record)
+}
+
+const KEYED_CONNECTORS = new Set(['tuya-announcements', 'esphome-native', 'matter-ip', 'shelly-readonly'])
+/** 2.88.1: devices that need a private key are connected only once it is stored (an approved way alone is not enough). */
+export function keyedAccessReady(dataDir: string, record: DeviceRecord): boolean {
+    if (!KEYED_CONNECTORS.has(String((record as any).hardware?.connector || ''))) return true
+    try {
+        const matter = getMatterAccess(dataDir, record)
+        return Boolean(getTuyaLocalAccess(dataDir, record) || getTuyaCloudAccess(dataDir, record) || getEspHomeAccess(dataDir, record)
+            || getShellyCloudAccess(dataDir, record) || (matter && matter.state === 'connected'))
+    } catch { return false }
 }
 
 /**

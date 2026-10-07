@@ -6358,6 +6358,7 @@
         "./direct-smart-devices.js",
         "./discovery.js",
         "./hardware-recognition.js",
+        "./smart-device-access.js",
         "./smart-device-route.js",
         "node:fs",
         "node:path"

@@ -13,6 +13,18 @@
   boards and sensors.
 - Small fixes from the first night with 2.88.
 
+## [2.88.1] — 2026-10-07
+
+Fixes from the first hour with 2.88.0:
+
+- "Welche VMs laufen auf meinem Proxmox?" and "Was kann welcher Knoten?" now
+  reach the Proxmox and node-strength tools instead of the device list.
+- The device list no longer calls a device connected when its private key
+  (for example the Tuya local key) is still missing — same answer as under
+  Verbindungen.
+- "Kannst du …?" in the app now also offers "Soll ich es lernen?" (it was only
+  active in chat channels).
+
 ## [2.88.0] — 2026-10-07
 
 A personal agent that can do almost anything — and learns what it cannot
