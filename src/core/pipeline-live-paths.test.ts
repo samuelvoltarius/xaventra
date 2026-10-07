@@ -463,6 +463,22 @@ describe('7 — no silent failures; claims only with successful tools', () => {
         expect(reply).toBe('Ich habe die Verbindung getestet, Verbindung steht.')
     }, 20000)
 
+    it('an aborted run never hands raw kg_search / self-statistics text to the user', async () => {
+        fixtures.agent.mockResolvedValue(agentResult('halb fertig', {
+            incompleteSynthesis: true,
+            toolsExecuted: ['kg_search', 'nova_capabilities', 'nova_trace_stats'],
+            toolExecutions: [
+                { toolName: 'kg_search', success: true, result: 'RAW-GRAPH node:42 edge:7 {"entity":"x"}' },
+                { toolName: 'nova_capabilities', success: true, result: 'RAW-CATALOG 255 tools' },
+                { toolName: 'nova_trace_stats', success: true, result: 'RAW-TRACE p95=812ms' },
+            ],
+            actionState: { requiresTool: false, kind: 'none', fulfilled: true },
+        }))
+        const [reply] = await send('Telegram', '1001', 'Was weißt du alles über mein Gartenprojekt und wie läuft es?')
+        expect(reply).not.toMatch(/RAW-/)
+        expect(reply).toMatch(/noch nicht fertig/)
+    }, 20000)
+
     it('the plain-model fallback passes the claim guard too', async () => {
         fixtures.agent.mockRejectedValue(new Error('provider 500'))
         state.llm.complete.mockResolvedValue({ content: 'Ich habe es geprüft, curl funktioniert.' })
