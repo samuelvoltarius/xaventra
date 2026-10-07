@@ -115,6 +115,21 @@ function rightsSummary(manifest: Pick<ConnectorManifest, 'capabilities'>): strin
     return `${reads} lesende Werkzeuge laufen selbst; ${asks} schreibende/schaltende fragen dich jedes Mal${caps.includes('loeschen') ? '; Löschen macht sie nie' : ''}.`
 }
 
+/**
+ * Connected and nothing to renew: a pinned directory connection whose directory lists a
+ * newer version (`versionNeu`) may be connected again on purpose (new check, new card).
+ */
+function isConnectedRecord(record: ConnectionRecord | undefined): boolean {
+    return Boolean(record && record.status === 'verbunden' && !record.versionNeu)
+}
+
+/** 2.89 B0: is the request of this card still something to do (exists, service not connected meanwhile)? */
+function isConnectRequestOpen(requestId: string, deps: ConnectDeps): boolean {
+    const request = readRequests(deps).find(item => item.id === requestId)
+    if (!request) return false
+    return !isConnectedRecord(getConnection(connectionIdFor(request.connectorId), deps))
+}
+
 export type RequestResult = { ok: true; message: string; card: ApprovalCard; created: boolean } | { ok: false; message: string }
 
 /** Owner pressed „Verbinden“ (desktop, Telegram) or a need was found: one card. */
@@ -127,7 +142,7 @@ export async function requestConnect(input: { connectorId: string; basis?: strin
     const connectorId = manifest?.name || community!.name
     const existing = getConnection(connectionIdFor(connectorId), deps)
     // 2.88: a pinned directory connection with a new version may be connected again (new check, new card).
-    if (existing && existing.status === 'verbunden' && !existing.versionNeu) return { ok: false, message: `${existing.title} ist schon verbunden.` }
+    if (isConnectedRecord(existing)) return { ok: false, message: `${existing!.title} ist schon verbunden.` }
     const pruefung = community ? pruefeEintrag(community, catalog) : undefined
     let basis: string | undefined
     let ordner: string | undefined
@@ -190,6 +205,10 @@ export async function establishConnection(requestId: string, approvedBy: string,
     const request = requests.find(item => item.id === requestId)
     if (!request) return { ok: false, message: 'Diese Anfrage gibt es nicht mehr — nichts eingerichtet.' }
     writeRequests(requests.filter(item => item.id !== requestId), deps)
+    // 2.89 B0: an old card never resets a connection that is connected meanwhile
+    // (saveConnection would overwrite „verbunden“ with „wartet-auf-anmeldung“).
+    const existing = getConnection(connectionIdFor(request.connectorId), deps)
+    if (isConnectedRecord(existing)) return { ok: true, message: `${existing!.title} ist schon verbunden — nichts geändert.` }
     // Resolved again from the release catalog / the cache — never from the card text.
     const manifest = request.community ? undefined : findConnector(request.connectorId, deps.catalog || getConnectorCatalog())
     const community = request.community ? findDirectoryEntry(request.connectorId, deps.directoryCachePath) : undefined
@@ -208,7 +227,7 @@ export async function connectFromApproval(connectorId: string, approvedBy: strin
     const manifest = findConnector(connectorId, deps.catalog || getConnectorCatalog())
     if (!manifest) return { ok: false, message: 'Diesen Dienst gibt es nicht im geprüften Katalog — nichts eingerichtet.' }
     const existing = getConnection(connectionIdFor(manifest.name), deps)
-    if (existing?.status === 'verbunden') return { ok: true, message: `${manifest.title} ist schon verbunden.` }
+    if (isConnectedRecord(existing)) return { ok: true, message: `${manifest.title} ist schon verbunden.` }
     const basis = foundBasis(manifest, deps)
     if (manifest.transport.art === 'http' && manifest.transport.url.startsWith('{basis}') && !basis) {
         return { ok: false, message: `${manifest.title}: keine Adresse gefunden — bitte in „Verbindungen“ mit Adresse verbinden.` }
@@ -390,6 +409,8 @@ export function createConnectCardExecutor(deps: ConnectDeps = defaultDeps()): Ca
             writeRequests(readRequests(deps).filter(item => item.id !== card.aktion.ref), deps)
             return { ok: true, message: 'Nicht verbunden; ich frage danach nicht von selbst wieder.' }
         },
+        // 2.89 B0: closed when the request is gone or the service got connected meanwhile.
+        isStillOpen(card) { return isConnectRequestOpen(card.aktion.ref, deps) },
     }
 }
 

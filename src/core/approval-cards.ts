@@ -254,6 +254,12 @@ export function getCardExecutor(kind: string): CardExecutor | undefined {
     return executors.get(kind)
 }
 
+/** false only when the card's executor says its matter was settled elsewhere (an error keeps it open). */
+function stillOpen(card: ApprovalCard): boolean {
+    const executor = executors.get(card.aktion.kind)
+    try { return executor?.isStillOpen ? executor.isStillOpen(card) !== false : true } catch { return true }
+}
+
 function alwaysAllowed(card: ApprovalCard): boolean {
     if (card.wirkung !== 'intern') return false
     // Fixed in code: some kinds only ever run with a single "Ja" (e.g. vllm-wechsel).
@@ -532,6 +538,14 @@ export async function answerApprovalCard(callbackData: string, presser: { userId
         await record(refused, opts, { refused: 'nie-liste' })
         return { ok: false, code: 'nie-liste', message: never, card: refused }
     }
+    // 2.89 B0: a card whose matter was settled elsewhere (service connected meanwhile, job
+    // gone …) closes itself on the press — nothing is executed, not even a „Nein“.
+    if (!stillOpen(card)) {
+        const settled = consume({ status: 'erledigt', result: { ok: false, message: 'Hat sich schon erledigt — nichts ausgeführt.' } })
+        noteThought({ quelle: card.quelle, titel: card.titel, status: 'erledigt' }, opts)
+        await record(settled, opts, { refused: 'erledigt' })
+        return { ok: false, code: 'verbraucht', message: 'Hat sich schon erledigt — nichts ausgeführt.', card: settled }
+    }
     if (button.answer === 'immer' && !alwaysAllowed(card)) {
         // Never consume here: the token should not exist for such a card at all.
         return { ok: false, code: 'nicht-erlaubt', message: '„Immer erlauben“ gibt es für diese Aktionsart nicht.', card }
@@ -607,10 +621,7 @@ export function maintainApprovalCards(opts: CardStoreOptions = {}): { expired: A
             return cards[index]
         }
         if (now > Date.parse(card.expiresAt)) { expired.push(retire('abgelaufen')); continue }
-        const executor = executors.get(card.aktion.kind)
-        let open = true
-        try { open = executor?.isStillOpen ? executor.isStillOpen(card) !== false : true } catch { open = true }
-        if (!open) { settled.push(retire('erledigt')); continue }
+        if (!stillOpen(card)) { settled.push(retire('erledigt')); continue }
         if (card.status === 'spaeter' && card.resendAt && now >= Date.parse(card.resendAt)) {
             cards[index] = { ...card, status: 'offen', buttons: issueButtons(card), resendAt: undefined, messages: [], deliveredAt: undefined }
             resurfaced.push(cards[index])
