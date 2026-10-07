@@ -14,7 +14,10 @@ import { NODE_LABEL_KEYS, detectKubernetes } from './kubernetes-node.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const CHART = join(ROOT, 'deploy/helm/xaventra')
-const chart = new HelmLite(CHART)
+// The repair sandbox (src/synthesis/patch-sandbox.ts) snapshots no deploy/ files;
+// there the chart checks are skipped, everywhere else they run.
+const CHART_PRESENT = existsSync(join(CHART, 'Chart.yaml'))
+const chart = (CHART_PRESENT ? new HelmLite(CHART) : null) as HelmLite
 const IDS = { workers: { general: { identitySecret: 'xv-worker-general-identity' } } }
 type Obj = Record<string, any>
 
@@ -27,6 +30,8 @@ const one = (objects: Obj[], kind: string, name: string) => {
 const podSpecs = (objects: Obj[]) => objects.filter(o => ['StatefulSet', 'Deployment'].includes(o.kind)).map(o => ({ name: o.metadata.name, spec: o.spec.template.spec, labels: o.spec.template.metadata.labels }))
 const ALL_OPTIONAL = { workers: { voice: { enabled: true, gpus: 1, identitySecret: 'v' }, toolSandbox: { enabled: true, identitySecret: 't' }, browserComputer: { enabled: true, identitySecret: 'b' }, general: { identitySecret: 'g' } } }
 
+if (!CHART_PRESENT) it.skip('Helm-Chart fehlt in diesem Abbild (Reparatur-Sandbox)', () => {})
+else describe('Helm-Chart deploy/helm/xaventra', () => {
 describe('Chart: Grundgerüst', () => {
     const objects = chart.objects({ values: IDS })
 
@@ -266,7 +271,7 @@ describe('helm-lite selbst', () => {
     })
 })
 
-const helm = spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0
+const helm = CHART_PRESENT && spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0
 describe.skipIf(!helm)('echtes helm (nur wenn installiert, z. B. CI)', () => {
     it('lints and templates with the test values; output parses and matches helm-lite kinds', () => {
         const set = ['--set', 'workers.general.identitySecret=xv-worker-general-identity']
@@ -294,4 +299,5 @@ describe('Doku docs/KUBERNETES.md', () => {
 it('chart directory contains only chart files', () => {
     expect(readdirSync(CHART).sort()).toEqual(['Chart.yaml', 'templates', 'values.yaml'])
     expect(existsSync(join(CHART, 'templates', 'NOTES.txt'))).toBe(true)
+})
 })
