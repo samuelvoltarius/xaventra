@@ -1256,6 +1256,7 @@
         "../core/approval-cards.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "./connection-state.js",
         "./connection-store.js",
         "./connector-catalog.js",
         "./connector-login.js",
@@ -1268,7 +1269,10 @@
     },
     {
       "module": "src/connections/connect-question.ts",
-      "imports": []
+      "imports": [
+        "../sensing/device-consolidation.js",
+        "./connection-state.js"
+      ]
     },
     {
       "module": "src/connections/connection-demand.ts",
@@ -1278,6 +1282,7 @@
         "../core/outcome-ledger.js",
         "../core/validator-failure-escalation.js",
         "../install/software-demand.js",
+        "./connection-state.js",
         "./connector-catalog.js",
         "node:fs",
         "node:path"
@@ -1290,6 +1295,23 @@
         "../onboarding/connections-port.js",
         "./connection-demand.js",
         "./connections-view.js"
+      ]
+    },
+    {
+      "module": "src/connections/connection-state.ts",
+      "imports": [
+        "../config/config-path.js",
+        "../core/data-root.js",
+        "../sensing/adapters/homeassistant.js",
+        "../sensing/device-consolidation.js",
+        "../sensing/device-registry.js",
+        "../sensing/direct-smart-devices.js",
+        "../sensing/smart-device-access.js",
+        "../sensing/smart-device-route.js",
+        "./connection-store.js",
+        "./connector-catalog.js",
+        "node:crypto",
+        "node:fs"
       ]
     },
     {
@@ -1318,6 +1340,7 @@
       "module": "src/connections/connections-view.ts",
       "imports": [
         "../core/data-root.js",
+        "./connection-state.js",
         "./connection-store.js",
         "./connector-catalog.js",
         "./connector-login.js",
@@ -4467,6 +4490,7 @@
     {
       "module": "src/learning/capability-learning.ts",
       "imports": [
+        "../connections/connection-state.js",
         "../core/action-policy.js",
         "../core/approval-cards.js",
         "../core/atomic-storage.js",
@@ -6349,8 +6373,10 @@
     {
       "module": "src/sensing/connection-awareness.ts",
       "imports": [
+        "../connections/connection-state.js",
         "../connections/connection-store.js",
         "../connections/connector-policy.js",
+        "../core/data-root.js",
         "../mcp/mcp-client.js",
         "../security/secret-redaction.js",
         "./ports.js"
@@ -6359,15 +6385,13 @@
     {
       "module": "src/sensing/device-connect.ts",
       "imports": [
-        "../connections/connection-store.js",
+        "../connections/connection-state.js",
         "../core/approval-cards.js",
         "./device-consolidation.js",
         "./device-registry.js",
         "./device-words.js",
-        "./direct-smart-devices.js",
         "./discovery.js",
         "./hardware-recognition.js",
-        "./smart-device-access.js",
         "./smart-device-route.js",
         "node:fs",
         "node:path"
@@ -6394,6 +6418,7 @@
     {
       "module": "src/sensing/device-overview.ts",
       "imports": [
+        "../connections/connection-state.js",
         "../core/owner-text.js",
         "./device-consolidation.js",
         "./device-registry.js",
@@ -6514,6 +6539,7 @@
       "module": "src/sensing/ha-inventory.ts",
       "imports": [
         "../connections/connect-flow.js",
+        "../connections/connection-state.js",
         "../connections/connection-store.js",
         "../connections/connector-login.js",
         "../core/atomic-storage.js",
@@ -6636,6 +6662,7 @@
     {
       "module": "src/sensing/runtime.ts",
       "imports": [
+        "../connections/connection-state.js",
         "../infra/proxmox-app-store.js",
         "../infra/proxmox.js",
         "../runtime/service-runtime.js",
@@ -6678,6 +6705,7 @@
     {
       "module": "src/sensing/smart-access-api.ts",
       "imports": [
+        "../connections/connection-state.js",
         "./device-registry.js",
         "./matter-client.js",
         "./smart-control-http.js",
