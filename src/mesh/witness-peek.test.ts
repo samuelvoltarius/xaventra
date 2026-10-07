@@ -23,10 +23,19 @@ async function witnesses() {
     return endpoints
 }
 
+// Windows-CI flake (2.88.3 main, run 37629605403): the first acquire of a fresh worker
+// (cold fetch/undici, three witness servers writing their state files) took longer than
+// the 500 ms request budget, so a perfectly healthy majority counted as unreachable.
+// The request budget is a production knob, not the property under test: live witnesses
+// get a budget no healthy local server can miss, dead ones stay dead (refused ports
+// are null whatever the budget). Production timeouts are unchanged.
+const LIVE_BUDGET_MS = 10_000
+const DEAD_BUDGET_MS = 5_000
+
 describe('2.88 read-only witness view and epoch floor', () => {
     it('peeks the majority holder without voting and reports an unreachable majority', async () => {
         const endpoints = await witnesses()
-        const config: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints, timeoutMs: 500 }
+        const config: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints, timeoutMs: LIVE_BUDGET_MS }
         const lease = await acquireWitnessQuorumLease('nova-main', 30_000, config, 'node-a')
         expect(lease.leader).toBe(true)
         expect(lease.quorumReachable).toBe(true)
@@ -36,7 +45,7 @@ describe('2.88 read-only witness view and epoch floor', () => {
         expect((await peekWitnessQuorum('nova-main', config))?.holder?.epoch).toBe(lease.epoch)
 
         const dead = (index: number) => ({ ...endpoints[index], url: `http://127.0.0.1:${index + 1}` })
-        const cut: WitnessQuorumConfig = { mode: 'witness', witnesses: [dead(0), dead(1), endpoints[2]], timeoutMs: 300 }
+        const cut: WitnessQuorumConfig = { mode: 'witness', witnesses: [dead(0), dead(1), endpoints[2]], timeoutMs: DEAD_BUDGET_MS }
         const denied = await acquireWitnessQuorumLease('nova-main', 30_000, cut, 'node-b')
         expect(denied.leader).toBe(false)
         expect(denied.quorumReachable).toBe(false)
@@ -44,17 +53,17 @@ describe('2.88 read-only witness view and epoch floor', () => {
         expect(partial?.reachable).toBe(1)
         expect(partial?.holder).toBeUndefined()
         // A forged witness id is ignored.
-        const forged: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints.map(item => ({ ...item, id: `${item.id}-x` })), timeoutMs: 300 }
+        const forged: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints.map(item => ({ ...item, id: `${item.id}-x` })), timeoutMs: LIVE_BUDGET_MS }
         expect((await peekWitnessQuorum('nova-main', forged))?.reachable).toBe(0)
-    }, 15_000)
+    }, 60_000)
 
     it('a raised epoch floor puts the next term above it', async () => {
         const endpoints = await witnesses()
-        const config: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints, timeoutMs: 500 }
+        const config: WitnessQuorumConfig = { mode: 'witness', witnesses: endpoints, timeoutMs: LIVE_BUDGET_MS }
         raiseWitnessEpochFloor('nova-main', 12)
         const lease = await acquireWitnessQuorumLease('nova-main', 30_000, config, 'node-b')
         expect(lease.leader).toBe(true)
         expect(lease.epoch).toBeGreaterThanOrEqual(12)
         expect(lease.fencingToken).toBe(`nova-main:q${lease.epoch}:node-b`)
-    }, 15_000)
+    }, 60_000)
 })
