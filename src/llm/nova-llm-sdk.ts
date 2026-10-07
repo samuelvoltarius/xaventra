@@ -1342,8 +1342,10 @@ function isBlacklisted(model: string, baseUrl: string): boolean {
     return !!entry && entry.failures >= SESSION_BLACKLIST_THRESHOLD
 }
 
-export function classifyLocalModelFailure(message: string): 'transient-timeout' | 'hard-failure' | 'soft-failure' {
+export function classifyLocalModelFailure(message: string): 'transient-timeout' | 'hard-failure' | 'soft-failure' | 'request-error' {
     if (/timeout|timed out|aborted due to timeout/i.test(message)) return 'transient-timeout'
+    // 2.88.2: a 4xx means this request was rejected (format, validation) — the model itself works.
+    if (/LLM API error \(4\d\d\)/.test(message) && !/out.of.memory|cuda/i.test(message)) return 'request-error'
     const isOOM = /out.of.memory|oom|cuda.*out|memory.*insufficient|model.*too.large/i.test(message)
     const isCrash = /abort|sigkill|killed|process.*exit|mlx.*error|runtime.*error/i.test(message)
     const isCorrupt = /hash.*mismatch|corrupt|invalid.*model|unexpected.*end/i.test(message)

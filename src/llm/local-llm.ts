@@ -38,6 +38,34 @@ export interface LocalLLMMessage {
  * internal `image` field was sent as-is and silently ignored: live 30.09.2026
  * the Spark vLLM read test images correctly but never received a screenshot.
  */
+/**
+ * 2.88.2 (live 07.10.2026): stored history entries carried extra fields and, for tool
+ * turns, non-text content; vLLM rejected one such request with HTTP 400. Only plain
+ * chat fields go out, and every content is text (the image stays for the vision path).
+ */
+export function toCleanChatMessages(messages: Array<Record<string, any>>): Array<Record<string, any>> {
+    const text = (value: unknown): string => {
+        if (typeof value === 'string') return value
+        if (value === null || value === undefined) return ''
+        if (Array.isArray(value)) return value.map(part => typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '').filter(Boolean).join('\n')
+        try { return JSON.stringify(value) } catch { return String(value) }
+    }
+    return messages.map(message => {
+        const clean: Record<string, any> = { role: message.role, content: text(message.content) }
+        if (Array.isArray(message.tool_calls) && message.tool_calls.length) clean.tool_calls = message.tool_calls
+        if (typeof message.tool_call_id === 'string') clean.tool_call_id = message.tool_call_id
+        if (typeof message.name === 'string' && message.role === 'tool') clean.name = message.name
+        if (message.image?.data) clean.image = message.image
+        return clean
+    })
+}
+
+/** Shape of a request for diagnosis — roles, content kinds and sizes only, never content. */
+export function describeChatShape(messages: Array<Record<string, any>>, tools: Array<{ name?: string }> = []): string {
+    const kinds = messages.map(m => `${m.role}:${Array.isArray(m.content) ? 'parts' : m.content === null ? 'null' : typeof m.content}${typeof m.content === 'string' ? `(${m.content.length})` : ''}${m.tool_calls ? '+calls' : ''}`)
+    return `${kinds.join(' ')} | tools=${tools.length}`
+}
+
 export function toOpenAIChatMessages(messages: Array<Record<string, any>>): Array<Record<string, any>> {
     return messages.map(message => {
         const { image, ...rest } = message
@@ -466,7 +494,7 @@ export class LocalLLM {
                 headers,
                 body: JSON.stringify({
                     model: this.config.model,
-                    messages: toOpenAIChatMessages(normalizedMessages as any),
+                    messages: toOpenAIChatMessages(toCleanChatMessages(normalizedMessages as any)),
                     ...(Number.isInteger(options.maxTokens) && options.maxTokens > 0 ? { max_tokens: Math.min(options.maxTokens, 65536) } : {}),
                     ...(options.reasoningEffort === 'none' && /qwen/i.test(this.config.model)
                         ? { chat_template_kwargs: { enable_thinking: false } } : {}),
@@ -493,7 +521,7 @@ export class LocalLLM {
                         throw new Error(`LLM API error (${response.status}): ${retryError}`)
                     }
                 } else {
-                    throw new Error(`LLM API error (${response.status}): ${error}`)
+                    throw ((response.status >= 400 && response.status < 500 ? console.warn(`[LocalLLM] Request rejected (${response.status}), shape: ${describeChatShape(toCleanChatMessages(normalizedMessages as any), tools)}`) : undefined), new Error(`LLM API error (${response.status}): ${error}`))
                 }
             } else {
                 throw new Error(`LLM API error (${response.status}): ${error}`)
@@ -613,7 +641,7 @@ export class LocalLLM {
                 headers,
                 body: JSON.stringify({
                     model: this.config.model,
-                    messages: toOpenAIChatMessages(normalizedMessages as any),
+                    messages: toOpenAIChatMessages(toCleanChatMessages(normalizedMessages as any)),
                     stream: true,
                 }),
                 signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? 55_000),

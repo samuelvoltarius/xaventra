@@ -434,6 +434,7 @@ export async function handleCapabilityRequest(text: string, ctx: LearnContext, d
     const request = detectCapabilityRequest(text)
     if (!request) return { handled: false }
     const verdict = assessCapability(text, await deps.inventory())
+    console.log(`[Lernen] Fähigkeits-Frage „${request.topic.slice(0, 60)}“ → ${verdict.status}`)
     if (verdict.status !== 'kann-nicht') return { handled: false }
     return { handled: true, reply: await offerFor(verdict.topic, verdict.domain, ctx, deps) }
 }

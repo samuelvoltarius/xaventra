@@ -841,6 +841,29 @@ async function handleMessageInScope(
     // real inventory has no tool, connection or learned skill gets the honest answer
     // at once („Nein, das kann ich noch nicht. Soll ich es lernen?“ + Ja/Nein card for
     // the owner) — no model, no excuse. Anything the inventory can do runs as before.
+    // 2.88.2: "Kannst du dich mit X verbinden?" → first the own connection list (owner only).
+    if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })
+        && principalContext.permission === 'owner' && !(requestIsGroup || isGroupMessage === true)) {
+        try {
+            const { connectQuestionTarget, answerConnectQuestion } = await import('../connections/connect-question.js')
+            if (connectQuestionTarget(content)) {
+                const { collectConnections } = await import('../connections/connections-view.js')
+                const view: any = await collectConnections()
+                const entries = [...(view.gefunden || []).map((g: any) => ({ title: String(g.title || ''), verbunden: g.verbunden === true })),
+                    ...(view.verbunden || []).map((v: any) => ({ title: String(v.title || ''), verbunden: true }))]
+                const answer = answerConnectQuestion(content, entries)
+                if (answer) {
+                    await replyFn(answer)
+                    logSession(canonicalUser, channel, 'assistant', answer)
+                    traceStep('connect:already-connected')
+                    return
+                }
+            }
+        } catch (error) {
+            console.warn(`[Verbindungen] Verbindungs-Frage nicht beantwortbar: ${error instanceof Error ? error.message : String(error)}`)
+        }
+    }
+
     if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })) {
         try {
             const { capabilityGate } = await import('../learning/capability-learning.js')
@@ -852,7 +875,8 @@ async function handleMessageInScope(
                 return
             }
         } catch (error) {
-            console.debug(`[Pipeline] capability gate unavailable: ${error}`)
+            // 2.88.2: was console.debug — live the gate failed invisibly in the app (no learning card).
+            console.warn(`[Lernen] Fähigkeits-Prüfung fehlgeschlagen: ${error instanceof Error ? error.stack || error.message : String(error)}`)
         }
     }
 
@@ -2258,6 +2282,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 const { capabilityReplyGate } = await import('../learning/capability-learning.js')
                 finalContent = await capabilityReplyGate(content, finalContent, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
             } catch (error) { console.debug(`[Pipeline] capability reply gate unavailable: ${error}`) }
+
+            // 2.88.2: "habe … getestet / Verbindung steht" only with a tool in this run.
+            if (!isSystemMessage) try {
+                const { guardUnverifiedClaims } = await import('./unverified-claims.js')
+                finalContent = guardUnverifiedClaims(finalContent, successfulExecutions.length + failedExecutions.length)
+            } catch (error) { console.debug(`[Pipeline] unverified-claim guard unavailable: ${error}`) }
 
             await replyFn(finalContent)
             logSession(canonicalUser, channel, 'assistant', finalContent)

@@ -1267,6 +1267,10 @@
       ]
     },
     {
+      "module": "src/connections/connect-question.ts",
+      "imports": []
+    },
+    {
       "module": "src/connections/connection-demand.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -2587,6 +2591,10 @@
       "imports": [
         "zod/v3"
       ]
+    },
+    {
+      "module": "src/core/unverified-claims.ts",
+      "imports": []
     },
     {
       "module": "src/core/update-activation.ts",
