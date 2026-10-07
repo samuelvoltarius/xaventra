@@ -13,6 +13,13 @@
   boards and sensors.
 - Small fixes from the first night with 2.88.
 
+## [2.88.3] — 2026-10-07
+
+- Normal messages were treated like internal agent jobs at one gate, so the
+  learning question ("Soll ich es lernen?"), the connection question, projects
+  from one conversation and the quick read-only answers never ran in real use.
+  They now do, in every channel.
+
 ## [2.88.2] — 2026-10-07
 
 Honest and robust:
