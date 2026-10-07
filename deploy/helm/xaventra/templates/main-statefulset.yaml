@@ -1,0 +1,146 @@
+{{- $full := include "xaventra.fullname" . -}}
+{{- $main := .Values.main -}}
+{{- if and (gt (int $main.warmCandidates) 0) (not (has $main.leaseCoordinator (list "witness" "supabase"))) -}}
+{{- fail "main.warmCandidates > 0 braucht main.leaseCoordinator=witness oder supabase: warme Kandidaten führen nur über Xaventras Lease/Witness/Fencing, nie über Kubernetes." -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-main
+  labels:
+    {{- include "xaventra.labels" . | nindent 4 }}
+    xaventra.ai/component: main
+    xaventra.ai/workload: main
+spec:
+  # One active Main. Extra replicas are warm candidates; who leads is decided
+  # by Xaventra's lease/witness epoch/fencing, never by Kubernetes.
+  replicas: {{ add 1 (int $main.warmCandidates) }}
+  serviceName: {{ $full }}-main-headless
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "xaventra.selectorLabels" . | nindent 6 }}
+      xaventra.ai/component: main
+  template:
+    metadata:
+      labels:
+        {{- include "xaventra.selectorLabels" . | nindent 8 }}
+        xaventra.ai/component: main
+        xaventra.ai/workload: main
+      annotations:
+        checksum/config: {{ toJson .Values.config | sha256sum }}
+        {{- with $main.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ $full }}-main
+      automountServiceAccountToken: {{ .Values.control.enabled }}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ $main.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- include "xaventra.placement" (dict "placement" $main.placement "affinity" $main.affinity "tolerations" $main.tolerations "wan" $main.wanTolerations) | nindent 6 }}
+      containers:
+        - name: xaventra
+          image: {{ include "xaventra.image" (dict "root" . "image" (dict)) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+            readOnlyRootFilesystem: true
+          env:
+            {{- include "xaventra.podEnv" (dict "root" . "workload" "main") | nindent 12 }}
+            - name: NOVA_MAIN_ELIGIBLE
+              value: {{ ternary "true" "false" $main.mainEligible | quote }}
+            {{- if .Values.control.enabled }}
+            - name: XAVENTRA_K8S_CONTROL_FILE
+              value: "/etc/xaventra/cluster/control.json"
+            {{- end }}
+            {{- range $key, $value := $main.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.secrets.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.existingSecret }}
+          {{- end }}
+          ports:
+            - name: mesh
+              containerPort: {{ .Values.mesh.directPort }}
+            - name: dashboard
+              containerPort: {{ $main.dashboard.port }}
+            {{- if $main.api.enabled }}
+            - name: api
+              containerPort: {{ $main.api.port }}
+            {{- end }}
+          startupProbe:
+            {{- include "xaventra.tcpProbe" .Values.mesh.directPort | nindent 12 }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            {{- include "xaventra.tcpProbe" .Values.mesh.directPort | nindent 12 }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            {{- if $main.api.enabled }}
+            {{- include "xaventra.restHealthProbe" $main.api.port | nindent 12 }}
+            {{- else }}
+            {{- include "xaventra.tcpProbe" .Values.mesh.directPort | nindent 12 }}
+            {{- end }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml $main.resources | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: /runtime
+            - name: memory
+              mountPath: /runtime/.nova-vector-memory
+            - name: workspaces
+              mountPath: /runtime/.nova-data/mission-workspaces
+            - name: config
+              mountPath: /runtime/xaventra.config.json
+              subPath: xaventra.config.json
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.control.enabled }}
+            - name: control
+              mountPath: /etc/xaventra/cluster
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- include "xaventra.configVolume" . | nindent 8 }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        {{- if .Values.control.enabled }}
+        - name: control
+          configMap:
+            name: {{ $full }}-control
+        {{- end }}
+  volumeClaimTemplates:
+    {{- range $volume := list "state" "memory" "workspaces" }}
+    - metadata:
+        name: {{ $volume }}
+        labels:
+          {{- include "xaventra.selectorLabels" $ | nindent 10 }}
+          xaventra.ai/component: main
+      spec:
+        accessModes:
+          - {{ $main.persistence.accessMode }}
+        {{- if $main.persistence.storageClass }}
+        storageClassName: {{ $main.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ index $main.persistence $volume }}
+    {{- end }}

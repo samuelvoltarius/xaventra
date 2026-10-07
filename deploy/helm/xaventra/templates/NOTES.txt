@@ -1,0 +1,18 @@
+Xaventra {{ .Chart.AppVersion }} — Release {{ .Release.Name }} in Namespace {{ .Release.Namespace }}.
+
+Kubernetes entscheidet, WO Xaventra läuft. WAS ausgeführt wird und wer Main ist,
+entscheidet Xaventra selbst (Lease, Witness-Epoche, Fencing).
+
+Mesh-Adresse der Main für Worker (in mesh.direct.peers eintragen, mit dem
+öffentlichen Schlüssel der Main):
+  ws://{{ include "xaventra.fullname" . }}-main-0.{{ include "xaventra.fullname" . }}-main-headless.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mesh.directPort }}
+{{- range $key, $w := .Values.workers }}
+{{- if and $w.enabled (not $w.identitySecret) }}
+
+ACHTUNG: workers.{{ $key }}.identitySecret fehlt. Ohne Workload-Schlüssel tritt
+{{ $w.name }} dem Mesh nicht bei (docs/KUBERNETES.md, „Worker-Schlüssel“).
+{{- end }}
+{{- end }}
+
+Steuerung durch Xaventra: {{ if .Values.control.enabled }}an (nur dieser Namespace, keine Secrets, kein exec){{ else }}aus{{ end }}.
+Owner-Befehl: /cluster

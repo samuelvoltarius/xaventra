@@ -2023,6 +2023,7 @@
     {
       "module": "src/core/node-profile.ts",
       "imports": [
+        "../infra/kubernetes-node.js",
         "./resource-thresholds.js",
         "node:fs",
         "node:os",
@@ -3752,6 +3753,35 @@
         "node:fs",
         "node:http",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/kubernetes-command.ts",
+      "imports": [
+        "../core/approval-cards.js",
+        "../core/node-profile.js",
+        "./kubernetes-node.js",
+        "./kubernetes.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/infra/kubernetes-node.ts",
+      "imports": [
+        "../core/node-profile.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/infra/kubernetes.ts",
+      "imports": [
+        "../config/config-path.js",
+        "../security/secret-redaction.js",
+        "./kubernetes-node.js",
+        "node:crypto",
+        "node:fs",
+        "node:https"
       ]
     },
     {

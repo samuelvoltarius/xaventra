@@ -1545,6 +1545,21 @@ async function startDaemon() {
     }
 
     // ============================================
+    // Kubernetes (2.88 P19): only in a pod with chart control enabled.
+    // Fixed API actions in the own namespace; the autoscaler acts only while
+    // this process holds the Main lease. Never kubectl.
+    // ============================================
+    if (!isNodeOnly && process.env.KUBERNETES_SERVICE_HOST) {
+        try {
+            const { startClusterControl } = await import('./infra/kubernetes-command.js')
+            const result = await startClusterControl({ log: line => console.log(line) })
+            console.log(`[Nova] ${result.started ? '✓' : '⏭️'} Kubernetes-Steuerung: ${result.reason}`)
+        } catch (err) {
+            console.warn(`[Nova] Kubernetes-Steuerung nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
+        }
+    }
+
+    // ============================================
     // Even G2 (Phase 5a): off unless channels.evenG2.enabled=true and
     // NOVA_EVEN_G2_TOKEN; Main only, loopback only (docs/EVEN_G2.md).
     // ============================================

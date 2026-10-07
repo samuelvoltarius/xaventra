@@ -76,6 +76,54 @@ export interface MeshTrustConfig {
      */
     allowTofu?: boolean
     allowedTools?: string[]
+    /** P19: replicas of one Kubernetes worker workload, trusted by prefix + one pinned key. */
+    workloadPeers?: WorkloadPeer[]
+}
+
+// ---------------------------------------------------------------------------
+// P19 (2.88): workload peers for scalable Kubernetes worker Deployments.
+// One explicit entry `{ nodeIdPrefix: "<release>-worker-general-", publicKey, roles }`
+// in mesh.direct.peers. Never TOFU (key required), never a wildcard, same role
+// rules as a named peer; an exact named peer always wins.
+// ---------------------------------------------------------------------------
+
+export interface WorkloadPeer { nodeIdPrefix: string; publicKey: string; roles: MeshRole[]; allowedTools?: string[] }
+const WORKLOAD_PREFIX = /^[a-z0-9][a-z0-9-]{1,61}-$/
+const WORKLOAD_POD_SUFFIX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+const KNOWN_ROLES: readonly MeshRole[] = ['system', 'owner', 'admin', 'worker', 'observer']
+
+export function parseWorkloadPeers(raw: unknown): WorkloadPeer[] {
+    if (!Array.isArray(raw)) return []
+    return raw.flatMap((entry: any): WorkloadPeer[] => {
+        if (!entry || typeof entry !== 'object' || entry.nodeId) return []
+        const nodeIdPrefix = String(entry.nodeIdPrefix ?? '')
+        const publicKey = typeof entry.publicKey === 'string' ? entry.publicKey : ''
+        if (!WORKLOAD_PREFIX.test(nodeIdPrefix) || !publicKey.trim()) return []
+        const roles = Array.isArray(entry.roles) ? entry.roles.filter((role: unknown): role is MeshRole => KNOWN_ROLES.includes(role as MeshRole)) : []
+        return [{ nodeIdPrefix, publicKey, roles: roles.length ? roles : [...DEFAULT_PEER_ROLES],
+            ...(Array.isArray(entry.allowedTools) ? { allowedTools: entry.allowedTools.map(String) } : {}) }]
+    })
+}
+
+/** The synthesized peer for one replica node id, or null. */
+export function workloadPeerFor(nodeId: string, entries: readonly WorkloadPeer[] = []): MeshPeer | null {
+    for (const entry of entries) {
+        if (!nodeId.startsWith(entry.nodeIdPrefix)) continue
+        if (!WORKLOAD_POD_SUFFIX.test(nodeId.slice(entry.nodeIdPrefix.length))) continue
+        return { nodeId, transport: 'direct', status: 'unknown', publicKey: entry.publicKey, roles: [...entry.roles], ...(entry.allowedTools ? { allowedTools: [...entry.allowedTools] } : {}) }
+    }
+    return null
+}
+
+/** Replica pods come and go; their peer state is dropped after `maxAgeMs` silence. Named peers stay. */
+export function pruneEphemeralPeerStates<T extends { lastSeen?: number }>(states: Record<string, T>, entries: readonly WorkloadPeer[], now = Date.now(), maxAgeMs = 24 * 3600_000): Record<string, T> {
+    const out: Record<string, T> = {}
+    for (const [nodeId, state] of Object.entries(states)) {
+        const ephemeral = workloadPeerFor(nodeId, entries) !== null
+        if (ephemeral && !(now - Number(state?.lastSeen || 0) < maxAgeMs)) continue
+        out[nodeId] = state
+    }
+    return out
 }
 
 /** Node ids of configured peers that have no usable `publicKey` (migration warning). */
@@ -101,7 +149,7 @@ export class MeshPolicy {
         }
         if (envelope.targetNode !== '*' && envelope.targetNode !== this.localNodeId) return { accepted: false, reason: 'wrong_target' }
         if (!MeshIdentity.verify(envelope)) return { accepted: false, reason: 'invalid_signature' }
-        const peer = this.config.peers.find(item => item.nodeId === envelope.sourceNode)
+        const peer = this.findPeer(envelope.sourceNode)
         const trust = this.trustedKey(envelope, peer)
         if (!trust.accepted) return trust
         // Authenticate against the trusted key itself, not just the key the envelope carries.
@@ -161,7 +209,7 @@ export class MeshPolicy {
             if (options.requireLocalTarget && envelope.targetNode !== this.localNodeId) return { accepted: false, reason: 'wrong_target' }
             if (options.requireUnexpired && !(envelope.expiresAt >= (options.now ?? Date.now()))) return { accepted: false, reason: 'expired' }
             if (!MeshIdentity.verify(envelope)) return { accepted: false, reason: 'invalid_signature' }
-            const peer = this.config.peers.find(item => item.nodeId === envelope.sourceNode)
+            const peer = this.findPeer(envelope.sourceNode)
             if (envelope.sourceNode !== this.localNodeId && !peer?.publicKey?.trim()) {
                 return { accepted: false, reason: peer ? 'missing_peer_key' : 'untrusted_node' }
             }
@@ -180,6 +228,11 @@ export class MeshPolicy {
         } catch {
             return { accepted: false, reason: 'invalid_schema' }
         }
+    }
+
+    /** Exact named peer first, then a P19 workload prefix entry. */
+    private findPeer(nodeId: string): MeshPeer | undefined {
+        return this.config.peers.find(item => item.nodeId === nodeId) || workloadPeerFor(nodeId, this.config.workloadPeers) || undefined
     }
 
     private trustedKey(envelope: MeshEnvelope, peer?: MeshPeer): { accepted: true; key: string; pin?: boolean } | { accepted: false; reason: string } {
