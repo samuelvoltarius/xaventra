@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request as httpRequest, type Server } from 'node:http'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fixtures = vi.hoisted(() => ({
     agent: vi.fn(),
@@ -163,6 +163,14 @@ beforeEach(() => {
 })
 afterEach(() => { setProgressFirstAfterForTests(null); vi.unstubAllEnvs() })
 afterAll(() => { setOwnerAccountRegistry(null); setChannelHandoffLog(null); setProjectCoordinator(null); cwd.mockRestore() })
+// Warm-up: the first pipeline run loads many modules lazily (several seconds on a cold
+// CI runner); timing-sensitive cases must not pay for that inside their own budget.
+beforeAll(async () => {
+    state = { config, llm: { modelId: 'alias', providerId: 'local', complete: vi.fn(async () => ({ content: 'plain' })) },
+        tools: { execute: vi.fn(), getAll: () => [], getStats: () => ({ total: 0 }) }, channels: {}, startTime: Date.now() }
+    fixtures.agent.mockResolvedValue(agentResult('warm'))
+    await entry('Telegram', 'warmup-user', 'Hallo, wie geht es dir?', async () => undefined)
+}, 120000)
 
 async function send(channel: string, from: string, content: string, execution?: any, messageContext?: any) {
     const replies: string[] = []
@@ -359,8 +367,8 @@ describe('5 — the card loop starts without Telegram', () => {
     it('startOwnerCardLoop starts the approval card loop (no Telegram adapter needed)', async () => {
         vi.stubEnv('NOVA_NO_SIDE_EFFECTS', '0')
         channels.startOwnerCardLoop()
-        await vi.waitFor(() => expect(fixtures.cardLoop).toHaveBeenCalledTimes(1))
-    })
+        await vi.waitFor(() => expect(fixtures.cardLoop).toHaveBeenCalledTimes(1), { timeout: 15000 })
+    }, 20000)
 
     it('Gegenprobe: with side effects disabled nothing starts', async () => {
         vi.stubEnv('NOVA_NO_SIDE_EFFECTS', '1')
