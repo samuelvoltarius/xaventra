@@ -63,6 +63,12 @@ export function detectActionIntent(input: string): ActionIntent {
     const text = actionRequestText(input).toLowerCase().replace(/\s+/g, ' ').trim()
     if (isEnvironmentOverview(input)) return { requiresTool: true, kind: 'system-state' }
     if (/\b(?:verfolg\w*|track\w*|paketstatus|sendungsstatus)\b.{0,80}\b(?:[a-z0-9-]{4,40})\b|\b(?:wo|status|prüfe|pruefe)\b.{0,60}\b(?:paket|sendung|trackingnummer)\b/i.test(text)) return { requiresTool: true, kind: 'web' }
+    // 2.88 (live 2.87.0: „Ist Home Assistant verbunden?“ → „Ja — verbunden.“ with no tool):
+    // the state of a connection, device or service is only ever answered from a reading.
+    if (/^(?:ist|sind)\b(?!.{0,40}\b(?:das wort|der begriff|bedeutet)\b).{1,60}\b(?:verbunden|angebunden|erreichbar|online|offline|eingerichtet|gekoppelt|angemeldet|eingeschaltet|ausgeschaltet)\b/.test(text)
+        || /\bverbindung(?:en)?\b.{0,40}\b(?:aktiv|status|steht|stehen|klappt|funktioniert)\b|\b(?:welche|wie viele)\b.{0,20}\bverbindungen\b|\b(?:funktioniert|klappt|steht)\b.{0,20}\bverbindung\b/.test(text)) {
+        return { requiresTool: true, kind: 'system-state' }
+    }
     const explicitFileTargets = inferRequiredToolTargets(text)
         .filter(target => !/^https?:\/\//.test(target))
 
@@ -144,6 +150,9 @@ export function responseClaimsCompletedAction(response: string): boolean {
 }
 
 export function honestNoToolResponse(kind: ActionIntent['kind']): string {
+    if (kind === 'system-state') {
+        return 'Das weiß ich gerade nicht sicher — ich konnte es nicht nachprüfen. Frag mich gleich noch einmal, dann prüfe ich es.'
+    }
     if (kind === 'screenshot') {
         return 'Ich konnte den Screenshot nicht zuverlässig erstellen oder senden. Es wurde keine Bilddatei übertragen.'
     }

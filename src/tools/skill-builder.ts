@@ -66,7 +66,7 @@ export interface ForgeFetchFixture { url: string; method?: string; status?: numb
 export interface ForgeTestCase { name: string; params: Record<string, unknown>; fetch?: ForgeFetchFixture[]; files?: Record<string, string>; expect: ForgeExpectation }
 export interface ForgeVersion { version: number; code: string; codeHash: string; manifest: ForgeManifest; tests: ForgeTestCase[]; parameters: ForgeParameter[]; replacedAt: string; reason: string }
 export interface ForgeTestReport { at: string; codeHash: string; passed: number; total: number; failures: string[] }
-export interface ForgeCounters { calls: number; successes: number; failures: number; consecutiveFailures: number; lastUsedAt?: string; lastError?: string }
+export interface ForgeCounters { calls: number; successes: number; failures: number; consecutiveFailures: number; lastUsedAt?: string; lastError?: string; /** 2.88: Summe der Laufzeiten (ms) für die Messung nach dem Lernen. */ totalMs?: number }
 export interface SkillForgeEvidence { stage: string; evidenceRef: string; verifiedAt: string }
 /** 2.83.0: Routine-Skill, dessen allgemeinen Schritt dieses Werkzeug ersetzen soll. */
 export interface ForgeAdoptTarget { skillId: string; from: string }
@@ -823,9 +823,10 @@ async function callerPermission(params: Record<string, unknown>): Promise<string
     } catch { return 'guest' }
 }
 
-function recordRun(id: string, ok: boolean, error?: string): SkillProposal | null {
+function recordRun(id: string, ok: boolean, error?: string, ms?: number): SkillProposal | null {
     return mutate(id, item => {
         item.counters.calls++
+        if (typeof ms === 'number' && Number.isFinite(ms) && ms >= 0) item.counters.totalMs = (item.counters.totalMs || 0) + Math.round(ms)
         item.counters.lastUsedAt = nowIso()
         if (ok) { item.counters.successes++; item.counters.consecutiveFailures = 0; item.counters.lastError = undefined }
         else { item.counters.failures++; item.counters.consecutiveFailures++; item.counters.lastError = clip(error, 300) }
@@ -858,15 +859,38 @@ export async function runForgeTool(id: string, rawParams: Record<string, unknown
         const refusal = await ownerApprovalRefusal(rawParams, forgeToolName(proposal), approvalDetailOf(params))
         if (refusal) return { success: false, error: refusal, needsApproval: true }
     }
+    const started = Date.now()
     const result = await runInForgeSandbox({
         code: proposal.code, params, manifest: proposal.manifest, timeoutMs: 20_000,
         fetchHandler: createManifestFetch(proposal.manifest), readFileHandler: createManifestReadFile(proposal.manifest),
     })
-    const after = recordRun(proposal.id, result.ok, result.error)
+    const after = recordRun(proposal.id, result.ok, result.error, Date.now() - started)
     if (!result.ok && after && after.counters.consecutiveFailures >= DISABLE_AFTER_FAILURES) await handleRepeatedFailure(after)
     return result.ok
         ? { success: true, werkzeug: forgeToolName(proposal), version: proposal.version, result: result.value }
         : { success: false, werkzeug: forgeToolName(proposal), error: result.error }
+}
+
+/**
+ * 2.88 Lernen: Selbsttest mit einem echten Beispiel. Nur für aktive, lesende
+ * Werkzeuge: ein echter Lauf in der Sandbox mit den Parametern des ersten
+ * Testfalls (Netz/Dateien nur laut Manifest). Mit Wirkung nie — dort zählt der
+ * erste echte Aufruf des Owners.
+ */
+export async function selfTestForgeTool(id: string): Promise<{ ok: boolean; detail: string }> {
+    const proposal = getForgeTool(id)
+    if (!proposal || proposal.status !== 'active') return { ok: false, detail: `Werkzeug ist nicht aktiv (${proposal?.status || 'unbekannt'})` }
+    if (proposal.manifest.wirkung !== 'lesend') return { ok: false, detail: 'Selbsttest nur für lesende Werkzeuge' }
+    const support = sandboxSupport()
+    if (!support.ok) return { ok: false, detail: support.reason || 'keine Sandbox' }
+    const params = Object.fromEntries(Object.entries(proposal.tests[0]?.params || {}).filter(([key]) => !INJECTED_PARAMS.has(key)))
+    const started = Date.now()
+    const result = await runInForgeSandbox({
+        code: proposal.code, params, manifest: proposal.manifest, timeoutMs: 20_000,
+        fetchHandler: createManifestFetch(proposal.manifest), readFileHandler: createManifestReadFile(proposal.manifest),
+    })
+    recordRun(proposal.id, result.ok, result.error, Date.now() - started)
+    return result.ok ? { ok: true, detail: `Beispiel lief (${forgeToolName(proposal)})` } : { ok: false, detail: clip(result.error || 'Fehler', 200) }
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,7 +1065,7 @@ export function forgeBuildsLeftToday(now = Date.now()): number {
 }
 
 /** Einen Bau im gemeinsamen Tageslimit vermerken; false = Limit erreicht. */
-function reserveBuild(signature: string, kind: 'neue-version', now: number): boolean {
+function reserveBuild(signature: string, kind: 'neue-version' | 'owner-wunsch', now: number): boolean {
     const file = readNeeds()
     file.needs = file.needs.filter(item => now - Date.parse(item.at) < NEED_WINDOW_MS)
     if (buildsWithinDay(file, now) >= MAX_BUILDS_PER_DAY) return false
@@ -1057,6 +1081,21 @@ function resumeDeferredRevision(now: number): void {
     if (!due?.pendingRevision) return
     const { mode, reason } = due.pendingRevision
     void reviseTool(due.id, reason, { mode, now: () => now }).catch(() => undefined)
+}
+
+/**
+ * 2.88 Lernen („Was ich nicht kann, lerne ich“, Weg a): ein Bau auf Owner-Ja.
+ * Gleiches Tageslimit, gleiches Lern-Modell, gleiche Prüfung/Sandbox/Aktivierung
+ * wie jeder Bau; `deferred` = Limit erreicht (kein Fehlschlag des Ansatzes).
+ */
+export async function buildToolForLearning(input: { request: string; why: string; ownerId: string; signature: string; now?: number }): Promise<BuildResult & { deferred?: boolean }> {
+    if (isAutonomyWorker()) return { proposal: null, message: 'Worker bauen keine Werkzeuge — nur der Main.' }
+    if (!forgeModel) return { proposal: null, message: 'kein lokales Lern-Modell' }
+    const now = input.now ?? Date.now()
+    const signature = createHash('sha256').update(`${input.ownerId}\0lernen\0${input.signature}`).digest('hex').slice(0, 24)
+    if (!reserveBuild(signature, 'owner-wunsch', now)) return { proposal: null, message: `Tageslimit ${MAX_BUILDS_PER_DAY} Werkzeug-Bauten erreicht`, deferred: true }
+    const draft = await generateToolDraft({ request: input.request, ownerId: input.ownerId, origin: 'owner' })
+    return buildTool({ ...draft, why: draft.why || clip(input.why, 300) })
 }
 
 /**

@@ -277,6 +277,9 @@ export async function ensureBuiltinCardExecutors(): Promise<void> {
     registerFreigabeExecutor()
     const { registerProxmoxSetupExecutors } = await import('../infra/proxmox-setup.js')
     registerProxmoxSetupExecutors()
+    // 2.88: „Soll ich es lernen?“ (Ja = Lernauftrag im Hintergrund, Nein = 30 Tage keine Frage).
+    const { registerLearnCardExecutor } = await import('../learning/capability-learning.js')
+    await registerLearnCardExecutor()
 
     // 2.85.11 Paket L: „Gerät verbinden“ (HA login, Hue pairing, Tuya lokal/Cloud, Matter) — one card per device.
     const { createDeviceConnectExecutor, productionDeviceConnectDeps } = await import('../sensing/device-connect.js')

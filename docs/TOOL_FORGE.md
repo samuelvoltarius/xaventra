@@ -152,3 +152,26 @@ ausgeführt** — es gibt keine unsichere Ausweichlösung.
 - Die Doppel-Einstiege `create_tool`, `create_runtime_tool`, `list_custom_tools` und die
   L8-Codeerzeugung (`/learn` lief ins Leere) sind entfernt; alles geht durch dieses
   Register.
+
+## Lernen auf Nachfrage (2.88)
+
+„Was ich nicht kann, lerne ich“ (`src/learning/capability-learning.ts`):
+
+- Fragt jemand „Kannst du …?“ oder bittet um etwas, prüft Xaventra ohne Modell gegen das
+  echte Inventar (Werkzeug-Register inkl. Schmiede, verbundene Dienste, Gelerntes). Fehlt
+  es belegbar, antwortet sie: „Nein, das kann ich noch nicht. Soll ich es lernen?“ — der
+  Owner bekommt dazu eine Karte (Ja/Nein). Passt kein festes Feld, gilt im Prompt dieselbe
+  Ehrlichkeitsregel; nutzt das Modell den Satz, folgt dieselbe Karte.
+- Ja = Lernauftrag im Hintergrund (Gedanke „Lernt: …“): vorhandenes Werkzeug? → geprüfter
+  Connector-Katalog und MCP-Verzeichnis → Websuche (Suchkette inkl. SearXNG). Quellen werden
+  bewertet (https, Projekt-/Doku-Quelle, Pflege, Lizenz); Anleitungen mit `curl | sh` & Co.
+  werden verworfen. Aus dem Netz wird nie etwas ausgeführt.
+- Umsetzung in fester Reihenfolge: (a) Werkzeug aus der Schmiede (Sandbox, Tests, gleiches
+  Tageslimit; lesend selbst aktiv, mit Wirkung Karte), (b) geprüfte Verbindung (Karte),
+  (c) Software über Werkzeugkasten/Install-Katalog (Karte, signiertes Ticket),
+  (d) nur ein notierter Code-Vorschlag für PATCH_GATE — nie angewendet.
+- Selbsttest mit echtem Beispiel (lesend: ein Sandbox-Lauf; mit Wirkung: der erste echte
+  Erfolg), dann „Gelernt: X. Probier mal: …“. Scheitert es: ehrlich, was fehlt; höchstens
+  2 Versuche, 7 Tage Pause, ein Nein gilt 30 Tage; Infrastrukturfehler zählen nicht.
+- Danach misst der Autonomie-Takt weiter (Fehlerrate, Laufzeit gegen den Stand bei der
+  Übernahme). Wird es schlechter, wird das Werkzeug abgeschaltet und kurz gemeldet.
