@@ -33,14 +33,15 @@ export async function spokenSystemStatus(): Promise<string> {
 }
 
 /** Dieselben Owner-IDs wie die App beim Beantworten von Karten (desktop-api). */
+/** 2.89: Telegram owner ids plus every confirmed owner account (owner-accounts.ts) — no Telegram needed. */
 async function cardOwnerIds(): Promise<string[]> {
+    const [{ cardOwnerIdentities }, { getNovaState }] = await Promise.all([import('../users/owner-accounts.js'), import('../core/nova-state.js')])
+    let telegram: string[] = []
     try {
         const { getTelegramAdapter } = await import('../channels/telegram.js')
-        const ids = getTelegramAdapter()?.getOwnerChatIds?.() || []
-        if (ids.length) return ids
+        telegram = getTelegramAdapter()?.getOwnerChatIds?.() || []
     } catch { /* Konfiguration als Rückfall */ }
-    const [{ numericOwnerIds }, { getNovaState }] = await Promise.all([import('../channels/even-g2-runtime.js'), import('../core/nova-state.js')])
-    return numericOwnerIds(getNovaState().config)
+    return [...new Set([...telegram, ...cardOwnerIdentities(getNovaState().config)])]
 }
 
 export async function productionQuickDeps(): Promise<VoiceQuickDeps> {

@@ -483,11 +483,22 @@ export function formatCardText(card: ApprovalCard): string {
     return lines.join('\n')
 }
 
-/** Owner = numeric Telegram id listed in allowFrom (usernames never count). Shared with /desktop buttons. */
+/** 2.89: a confirmed owner account (`channel:rawId`, owner-accounts.ts) — never a Telegram one (those are numeric only). */
+const OWNER_ACCOUNT_KEY = /^(?!telegram:)[a-z0-9][a-z0-9-]{0,39}:\S{1,200}$/
+
+/**
+ * Owner = numeric Telegram id listed in allowFrom (usernames never count), or — 2.89 —
+ * a confirmed owner account `channel:rawId` (owner-accounts.ts `cardOwnerIdentities`):
+ * cards are answerable without Telegram. Exact match only. Shared with /desktop buttons.
+ */
 export function isCardOwner(userId: string, ownerIds: readonly string[]): boolean {
     const id = String(userId ?? '').trim()
-    if (!/^\d{1,20}$/.test(id)) return false
-    return ownerIds.some(entry => /^\d{1,20}$/.test(String(entry).trim()) && String(entry).trim() === id)
+    const numeric = /^\d{1,20}$/.test(id)
+    if (!numeric && !OWNER_ACCOUNT_KEY.test(id)) return false
+    return ownerIds.some(entry => {
+        const owner = String(entry).trim()
+        return owner === id && (numeric ? /^\d{1,20}$/.test(owner) : OWNER_ACCOUNT_KEY.test(owner))
+    })
 }
 
 function updateCard(id: string, patch: Partial<ApprovalCard>, opts: CardStoreOptions): ApprovalCard | undefined {

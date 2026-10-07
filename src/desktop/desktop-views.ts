@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { getNovaDataDir } from '../core/data-root.js'
-import { answerApprovalCard, listApprovalCards, type ApprovalCard, type CardAnswer, type CardStoreOptions } from '../core/approval-cards.js'
+import { answerApprovalCard, isCardOwner, listApprovalCards, type ApprovalCard, type CardAnswer, type CardStoreOptions } from '../core/approval-cards.js'
 
 export interface ViewOptions extends CardStoreOptions { dataDir?: string; now?: () => number }
 
@@ -82,18 +82,22 @@ export function publicCard(card: ApprovalCard): DesktopCard {
 /**
  * Owner answers a card in the Desktop app. Exactly the Telegram/Even-G2 path:
  * the card's own single-use button token goes through answerApprovalCard with
- * a configured numeric owner id; the first answer consumes every button.
+ * an owner identity; the first answer consumes every button. 2.89: the owner
+ * identities are the confirmed owner accounts (owner-accounts.ts
+ * `cardOwnerIdentities`), not only a numeric Telegram id — `presserId` is the
+ * account that pressed (e.g. the token-checked App account).
  */
-export async function answerCardFromDesktop(cardId: string, answer: unknown, opts: CardStoreOptions & { ownerIds: readonly string[] }): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerCardFromDesktop(cardId: string, answer: unknown, opts: CardStoreOptions & { ownerIds: readonly string[]; presserId?: string }): Promise<{ status: number; body: Record<string, unknown> }> {
     if (!['ja', 'nein', 'spaeter', 'immer'].includes(String(answer))) return { status: 400, body: { ok: false, error: 'Antwort muss ja, nein, spaeter oder immer sein.' } }
     if (!DESKTOP_CARD_ID.test(String(cardId ?? ''))) return { status: 404, body: { ok: false, error: 'Unbekannte Karte.' } }
-    const ownerIds = (opts.ownerIds || []).map(item => String(item).trim()).filter(item => /^\d{1,20}$/.test(item))
-    if (!ownerIds.length) return { status: 403, body: { ok: false, error: 'Kein Owner konfiguriert (channels.telegram.allowFrom).' } }
+    const ownerIds = (opts.ownerIds || []).map(item => String(item).trim()).filter(item => isCardOwner(item, [item]))
+    if (!ownerIds.length) return { status: 403, body: { ok: false, error: 'Kein bestätigtes Owner-Konto (Telegram-Owner oder App mit Owner-Zugang).' } }
+    const presser = opts.presserId && ownerIds.includes(String(opts.presserId).trim()) ? String(opts.presserId).trim() : ownerIds[0]
     const card = listApprovalCards(opts).find(item => item.id === cardId)
     if (!card) return { status: 404, body: { ok: false, error: 'Unbekannte Karte.' } }
     const button = card.status === 'offen' ? card.buttons.find(item => item.answer === answer) : undefined
     if (!button) return { status: 409, body: { ok: false, error: card.status === 'offen' ? 'Diese Antwort gibt es für die Karte nicht.' : 'Karte wurde bereits beantwortet.', karte: publicCard(card) } }
-    const result = await answerApprovalCard(`ac:${button.token}`, { userId: ownerIds[0], ownerIds, via: 'desktop' }, opts)
+    const result = await answerApprovalCard(`ac:${button.token}`, { userId: presser, ownerIds, via: 'desktop' }, opts)
     const status = result.ok ? 200
         : result.code === 'verbraucht' ? 409
             : result.code === 'abgelaufen' ? 410
