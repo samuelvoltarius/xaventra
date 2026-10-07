@@ -1,3 +1,4 @@
+import { runtimeProfile } from './runtime-profile.js'
 import { actionRequestText, isConversationOnly } from './action-intent.js'
 import { mentionsEnvironment } from './request-capabilities.js'
 
@@ -158,21 +159,23 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
         // google.at") oft ein mehrstufiger Systemvorgang: apt update, install,
         // Verifikation — oder Browser starten, laden, lesen. Mit 60 s / 4 Aufrufen
         // im schnellen Modus bricht das mit "timeout budget exceeded" ab, obwohl
-        // Nova alles richtig macht. Ausserhalb von NovaOS bleiben die Budgets wie
-        // gehabt, damit Chat-Antworten dort schnell bleiben.
+        // Nova alles richtig macht. Ausserhalb von NovaOS gelten kleinere, aber
+        // fuer mehrstufige Auftraege ausreichende Budgets (2.89).
         // These are generation allowances, shared across the native run. An
         // optional caller maxTokens remains a separate input+output ceiling.
-        executionBudget: process.env.NOVA_OS_MODE === 'true'
+        executionBudget: runtimeProfile() === 'novaos'
             ? (cognitiveMode === 'fast'
                 ? { timeoutMs: 600_000, maxToolCalls: 12, maxOutputTokens: 4_096 }
                 : cognitiveMode === 'balanced'
                     ? { timeoutMs: 1_200_000, maxToolCalls: 30, maxOutputTokens: 8_192 }
                     : { timeoutMs: 2_400_000, maxToolCalls: 60, maxOutputTokens: 16_384 })
+            // 2.89: the normal Main got 60 s / 4 calls even for a simple
+            // device task with a check afterwards; NovaOS stays the upper bound.
             : cognitiveMode === 'fast'
-                ? { timeoutMs: 60_000, maxToolCalls: 4, maxOutputTokens: 1_024 }
+                ? { timeoutMs: 180_000, maxToolCalls: 8, maxOutputTokens: 2_048 }
                 : cognitiveMode === 'balanced'
-                    ? { timeoutMs: 180_000, maxToolCalls: 12, maxOutputTokens: 3_072 }
-                    : { timeoutMs: 300_000, maxToolCalls: 24, maxOutputTokens: 6_144 },
+                    ? { timeoutMs: 600_000, maxToolCalls: 24, maxOutputTokens: 4_096 }
+                    : { timeoutMs: 900_000, maxToolCalls: 40, maxOutputTokens: 8_192 },
         reasons: reasons.length ? reasons : ['ordinary lookup'],
     }
 }

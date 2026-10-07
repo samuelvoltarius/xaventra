@@ -77,6 +77,18 @@ export class ExecutionKernel {
         return this.worker.getTools().filter(tool => allowed.has(tool.name))
     }
 
+    /** 2.89: tools loaded on demand (load_skill_pack, or a call to a registered
+     * tool that was not offered) join the running contract. The caller has
+     * checked role and policy; budgets, lifecycle gates and authorization
+     * still govern every call. Returns the newly added names. */
+    admitTools(names: readonly string[]): string[] {
+        const allowed = this.contract.allowedChanges.allowedTools
+        const added = [...new Set(names)].filter(name => typeof name === 'string' && name && !allowed.includes(name))
+        allowed.push(...added)
+        if (added.length) recordExecutionStage({ stage: 'contract.tools-admitted', success: true, intent: this.intent.kind })
+        return added
+    }
+
     /** Gate every execution path before effects, including recovery and retries.
      * Post-validation alone cannot undo work performed beyond its budget. */
     assertCanExecute(toolName: string): void {

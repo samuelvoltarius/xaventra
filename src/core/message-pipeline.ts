@@ -5,6 +5,8 @@
  * and the main handleMessage function.
  */
 
+import { runtimeProfile } from './runtime-profile.js'
+import { standardOperatingModePrompt } from './operating-mode-prompt.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, openSync, readSync, fstatSync, closeSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -908,7 +910,7 @@ async function handleMessageInScope(
     // fuer browser- und desktopfaehig und ruft browser_*/desktop_* ins Leere.
     // Kein fest verdrahteter Text: auf einer Maschine MIT Browser steht hier
     // entsprechend, dass er da ist.
-    if (process.env.NOVA_OS_MODE === 'true') {
+    if (runtimeProfile() === 'novaos') {
         try {
             // scanEnvironment() statt getEnvironmentMap(): die Messung vom
             // Systemstart veraltet, sobald Nova selbst etwas installiert.
@@ -953,36 +955,14 @@ async function handleMessageInScope(
                     + `Rueckgabewerte. Kurz und dicht, keine Erklaerschleifen. Zeig was du\n`
                     + `ausgefuehrt hast, wenn es der Nachvollziehbarkeit dient.`
             } else {
-                systemPrompt += `\n\n## BEDIENMODUS: STANDARD\n`
-                    + `Der Mensch ist kein Techniker. Erklaere in normaler Sprache, was du\n`
-                    + `getan hast und was dabei herauskam — **keine Befehle, keine Pfade,\n`
-                    + `keine Fehlercodes, keine Rohdaten** in der Antwort. Kein Fachjargon:\n`
-                    + `nicht "Locale", sondern "Sprache des Systems". Nicht "Repository",\n`
-                    + `sondern "Paketquelle".\n`
-                    + `Antworte in zwei bis vier Saetzen.\n\n`
-                    + `**Keine unnötigen technischen Rückfragen.** Wer diesen\n`
-                    + `Modus nutzt, kann Auswahlfragen nicht beantworten — "XFCE, GNOME oder\n`
-                    + `LXQt?" ist fuer ihn keine Frage, sondern eine Sackgasse.\n`
-                    + `Bei bereits autorisierten, reversiblen Routine-Details entscheide selbst. Nimm die naheliegendste, sparsamste,\n`
-                    + `verbreitetste Variante, sag in EINEM Satz was du genommen hast und\n`
-                    + `warum, und mach es dann. Danach erwaehnst du beilaeufig, dass es\n`
-                    + `aenderbar ist, falls es ihm nicht passt.\n`
-                    + `Beispiel: statt "Welchen Desktop willst du?" → "Ich nehme XFCE, das ist\n`
-                    + `schlank und laeuft ueberall. Moment, ich installiere es." Und dann tun.\n\n`
-                    + `Frage immer bei fehlender Freigabe, Anmeldung oder Kopplung, bei der Wahl\n`
-                    + `lokal/Hersteller-Cloud und vor neuen Kosten oder unwiderruflichem Datenverlust.\n`
-                    + `Diese Entscheidungen trifft der Mensch; keine Zugangsdaten im Chat erfragen.\n\n`
-                    + `Wenn etwas nicht ging: EIN Satz was nicht ging, EIN Satz was du\n`
-                    + `stattdessen innerhalb der bestehenden Freigabe tun kannst. Keine neue Wirkung\n`
-                    + `oder Cloud-Verbindung ohne die erforderliche Nutzerentscheidung.\n\n`
-                    + `**Hoere nie mit einer Ankuendigung auf.** Saetze wie "Jetzt\n`
-                    + `installiere ich X:" oder "Ich pruefe das kurz:" duerfen nicht das\n`
-                    + `Ende deiner Antwort sein — dann sitzt der Mensch da und muss dich\n`
-                    + `anstupsen. Fuehre die Kette bis zum Ende durch und melde erst dann,\n`
-                    + `was tatsaechlich herausgekommen ist. Scheitert ein Zwischenschritt,\n`
-                    + `loese ihn selbst und mach weiter.`
+                systemPrompt += standardOperatingModePrompt()
             }
         } catch { /* keine Modusdatei — dann neutral */ }
+    }
+    // 2.89: the live Main is not NovaOS. Its owner still gets the same plain
+    // language rules (core/runtime-profile.ts, profile owner-assistant).
+    else if (runtimeProfile() === 'owner-assistant' && !isSystemAuthored && principalContext.permission === 'owner') {
+        systemPrompt += standardOperatingModePrompt()
     }
 
     // Negativ-Gedaechtnis: was auf dieser Maschine nicht geht. Die Erfolgsliste
@@ -1790,11 +1770,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         // Run the full agent with a hard cap to prevent infinite blocking.
         // Ops tasks may include SSH/SCP/restart checks, so keep this above per-tool slow timeouts.
-        // NovaOS: ein Installationsauftrag kann mehrere Werkzeugaufrufe
-        // hintereinander brauchen (apt update, install, verify). 300 s reichen
-        // dafuer nicht. Ausserhalb von NovaOS bleibt es bei 300 s.
-        const TOTAL_TIMEOUT = Number(process.env.NOVA_AGENT_TIMEOUT_MS)
-            || (process.env.NOVA_OS_MODE === 'true' ? 2_400_000 : 300_000)
+        // 2.89: one source (core/run-limits.ts): 15 min normal, 40 min NovaOS,
+        // NOVA_AGENT_TIMEOUT_MS overrides.
+        const { runLimits } = await import('./run-limits.js')
+        const TOTAL_TIMEOUT = runLimits().totalTimeoutMs
 
         // Task Tracker: start tracking this task. The id lets a concurrent
         // request's completion leave this task alone.
@@ -1836,6 +1815,34 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const executionTools = execution?.allowedTools && state.tools
             ? state.tools.getAll().filter((tool: any) => execution.allowedTools!.includes(tool.name))
             : undefined
+        // 2.89: ONE parameter set for the agent run and every retry below, so a
+        // retry keeps the room/bot/model/denied tools/workspace and the real
+        // system prompt (before, retries fell back to loadSoul() and state.llm).
+        const agentRunBase = {
+            userId: principalId,
+            authUserId: from,
+            channel,
+            content,
+            image,
+            systemPrompt,
+            llm: llmForCall,
+            tools: executionTools,
+            conversationId: desktopContext?.roomId,
+            botId: desktopBot?.id,
+            preferredNodeIds: desktopContext?.preferredNodeIds,
+            modelOverride: desktopContext?.modelMode === 'pinned' && desktopContext.pinnedModel
+                ? {
+                    model: desktopContext.pinnedModel,
+                    provider: desktopContext.pinnedProvider || desktopBot?.modelPolicy.provider,
+                    nodeId: desktopContext.pinnedNodeId,
+                    baseUrl: desktopContext.pinnedEndpoint,
+                }
+                : desktopBot?.modelPolicy.mode === 'pinned' && desktopBot.modelPolicy.model
+                    ? { model: desktopBot.modelPolicy.model, provider: desktopBot.modelPolicy.provider }
+                    : undefined,
+            deniedTools: desktopBot?.deniedTools,
+            workspaceId: desktopContext?.workspaceId,
+        }
         let lastProgress = 'LLM/Tools laufen'
         // Progress is closed as soon as the main agent run settles, so a late
         // step update or heartbeat can never arrive after the final answer.
@@ -1866,14 +1873,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             execution?.abortSignal?.throwIfAborted()
             result = await runWithAbortDeadline(agentSignal =>
                 runNovaAgent({
-                    userId: principalId,
-                    authUserId: from,
-                    channel,
-                    content,
-                    image,
-                    systemPrompt,
-                    llm: llmForCall,
-                    tools: executionTools,
+                    ...agentRunBase,
                     abortSignal: agentSignal,
                     onStepUpdate: async (status: string) => {
                         if (progress.closed || agentSignal.aborted) return
@@ -1897,21 +1897,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                             console.log(`[Pipeline] Step update delivery failed: ${err} `)
                         }
                     },
-                    conversationId: desktopContext?.roomId,
-                    botId: desktopBot?.id,
-                    preferredNodeIds: desktopContext?.preferredNodeIds,
-                    modelOverride: desktopContext?.modelMode === 'pinned' && desktopContext.pinnedModel
-                        ? {
-                            model: desktopContext.pinnedModel,
-                            provider: desktopContext.pinnedProvider || desktopBot?.modelPolicy.provider,
-                            nodeId: desktopContext.pinnedNodeId,
-                            baseUrl: desktopContext.pinnedEndpoint,
-                        }
-                        : desktopBot?.modelPolicy.mode === 'pinned' && desktopBot.modelPolicy.model
-                            ? { model: desktopBot.modelPolicy.model, provider: desktopBot.modelPolicy.provider }
-                            : undefined,
-                    deniedTools: desktopBot?.deniedTools,
-                    workspaceId: desktopContext?.workspaceId,
                 }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
             // Orchestrator: Task completed successfully
@@ -1983,14 +1968,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
             // Retry the agent call
             const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
-                userId: principalId,
-                authUserId: from,
-                channel,
-                content,
-                image,
-                systemPrompt: loadSoul(),
-                llm: state.llm,
-                tools: executionTools,
+                ...agentRunBase,
                 abortSignal: agentSignal,
             }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
 
@@ -2039,14 +2017,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 try {
                     const { runNovaAgent } = await import('../agents/nova-runner.js')
                     const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
-                        userId: principalId,
-                        authUserId: from,
-                        channel,
-                        content,
-                        image,
-                        systemPrompt: systemPrompt + '\n\n🚨 PFLICHT: Beantworte die Anfrage indem du JETZT die passenden Tools über den Function-Call-Mechanismus aufrufst. Gib KEINE Ankündigung wie "ich check das" — RUF DIE TOOLS AUF und liefere das Ergebnis. Für Uhrzeit: get_current_time. Für offene Programme/Fenster: run_command oder ein Desktop-Tool.',
-                        llm: state.llm,
-                        tools: executionTools,
+                        ...agentRunBase,
+                        systemPrompt: agentRunBase.systemPrompt + '\n\n🚨 PFLICHT: Beantworte die Anfrage indem du JETZT die passenden Tools über den Function-Call-Mechanismus aufrufst. Gib KEINE Ankündigung wie "ich check das" — RUF DIE TOOLS AUF und liefere das Ergebnis. Für Uhrzeit: get_current_time. Für offene Programme/Fenster: run_command oder ein Desktop-Tool.',
                         abortSignal: agentSignal,
                     }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
                     const retryExecutedTools = retryResult.toolsExecuted?.length || 0

@@ -66,7 +66,7 @@ describe('next-level infrastructure', () => {
         const fast = selectContextPolicy('Wie spät ist es?')
         expect(fast.mode).toBe('lean')
         expect(fast.cognitiveMode).toBe('fast')
-        expect(fast.executionBudget.maxToolCalls).toBe(4)
+        expect(fast.executionBudget.maxToolCalls).toBe(8) // 2.89: owner-assistant profile
         const deep = selectContextPolicy('Analysiere die Architektur dieses Projekts und vergleiche alle Komponenten.')
         expect(deep.mode).toBe('deep')
         expect(deep.longTermMemory).toBe(true)

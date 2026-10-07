@@ -16,6 +16,13 @@ export interface NovaAgentsModelOptions {
     timeoutMs?: number
     beforeCall?: (messages: LLMMessage[], tools: ToolDefinition[]) => Promise<void>
     afterCall?: (response: LLMResponse) => Promise<void>
+    /** 2.89: the SDK agent may carry more (admissible) tools than the model
+     * sees. Only tools for which this returns true are offered; default all. */
+    isOffered?: (name: string) => boolean
+    /** 2.89: the model called registered tools that were not offered. Returns
+     * the names admitted into the running request (role/policy checked by the
+     * caller); everything else stays outside the contract. */
+    admitTools?: (names: string[]) => string[]
 }
 
 function contentText(content: unknown): string {
@@ -87,7 +94,9 @@ export class NovaAgentsModel implements Model {
     async getResponse(request: ModelRequest): Promise<ModelResponse> {
         const client = this.options.client || await createNovaLLMClient({ model: this.modelName, role: 'chat' })
         const messages = inputToMessages(request.systemInstructions, request.input)
-        const tools = request.modelSettings.toolChoice === 'none' ? [] : serializedToolsToNova(request)
+        const carried = request.modelSettings.toolChoice === 'none' ? [] : serializedToolsToNova(request)
+        const visible = () => this.options.isOffered ? carried.filter(tool => this.options.isOffered!(tool.name)) : carried
+        let tools = visible()
         const complete = async (input: LLMMessage[]) => {
             if (request.signal?.aborted) throw new Error('AbortError: agent model call cancelled')
             await this.options.beforeCall?.(input, tools)
@@ -127,8 +136,20 @@ export class NovaAgentsModel implements Model {
         this.initialResponse = undefined
         response ||= await complete(messages)
         const responses = [response]
-        const offered = new Set(tools.map(tool => tool.name))
+        let offered = new Set(tools.map(tool => tool.name))
         const outsideNames = () => [...new Set((response!.toolCalls || []).map(call => String(call.name || '')).filter(name => !offered.has(name)))]
+        // 2.89: a registered tool the SDK agent carries but the model was not
+        // offered is admitted (caller checks role/policy) instead of aborting.
+        // Unknown names stay outside and reach the forge as „fehlt“.
+        const admitOutside = () => {
+            if (!this.options.admitTools) return
+            const carriedNames = new Set(carried.map(tool => tool.name))
+            const candidates = outsideNames().filter(name => carriedNames.has(name))
+            if (!candidates.length || !this.options.admitTools(candidates).length) return
+            tools = visible()
+            offered = new Set(tools.map(tool => tool.name))
+        }
+        admitOutside()
         const outsideContract = () => outsideNames().length > 0
         // 2.84.0: the error names the requested tools (bounded, name characters
         // only) so the forge can see a missing tool; nothing is executed.
@@ -143,6 +164,7 @@ export class NovaAgentsModel implements Model {
                 content: 'The previous proposed tool batch was not executed because it contained a tool absent from this turn. Replan using ONLY the function tools supplied with this request. For a URL use an available HTTP/search tool. Do not invent tools or expand permissions. Return the requested results after tool execution.',
             }])
             responses.push(response)
+            admitOutside()
             if (outsideContract()) throw new Error(`Model repeated a tool outside the offered contract after one correction: ${named()}`)
         }
         if (request.signal?.aborted) throw new Error('AbortError: agent model call cancelled')
