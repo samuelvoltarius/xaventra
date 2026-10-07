@@ -789,6 +789,8 @@ async function handleMessageInScope(
     // true = answered.
     const runFastPath = async (): Promise<boolean> => {
         if (execution && !desktopCancellationOnly) return false
+        // 2.89: system messages (self-goals, reminders, heartbeat) never take a user shortcut.
+        if (isSystemAuthored) return false
         try {
             const { detectDeterministicCommand } = await import('./deterministic-query.js')
             const detected = detectDeterministicCommand(content)

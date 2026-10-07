@@ -89,6 +89,10 @@ vi.mock('../channels/whatsapp.js', () => ({
 vi.mock('../channels/discord.js', () => ({
     DiscordAdapter: class { send = vi.fn(async () => undefined); onMessage(handler: any) { fixtures.adapters.discord = handler } async connect() {} async disconnect() {} },
 }))
+vi.mock('../sehen/aktivitaet.js', () => ({
+    sammleAktivitaet: async () => ({ eintraege: [{ id: 'a1', titel: 'Backup prüfen', aktionen: ['stopp', 'spaeter'] }] }),
+    aktivitaetText: () => 'Gerade aktiv: Backup prüfen',
+}))
 vi.mock('../dashboard/server.js', () => ({
     startDashboard: async () => 'http://127.0.0.1:0',
     setNovaMessageHandler: (handler: any) => { fixtures.dashboardHandler = handler },
@@ -319,6 +323,34 @@ describe('4 — Telegram buttons only for Telegram', () => {
         expect(replies).toHaveLength(1)
         expect(replies[0]).toMatch(/\/status/)
         expect(warn.mock.calls.flat().join(' ')).toMatch(/\[Befehle\] Telegram-Knöpfe nicht gesendet/)
+    }, 20000)
+})
+
+describe('4b — channel names are compared case-insensitively (adapter says „Telegram“)', () => {
+    it('/aktivitaet from Telegram gets its stop/later buttons', async () => {
+        fixtures.tg = fakeTelegram()
+        expect(await send('Telegram', '1001', '/aktivitaet')).toEqual([])
+        expect(fixtures.tg.sendWithButtons).toHaveBeenCalledWith('1001', 'Gerade aktiv: Backup prüfen', expect.any(Array))
+    }, 20000)
+
+    it('Gegenprobe: /aktivitaet from the Desktop is text', async () => {
+        fixtures.tg = fakeTelegram()
+        expect(await send('desktop', 'desktop:owner', '/aktivitaet')).toEqual(['Gerade aktiv: Backup prüfen'])
+        expect(fixtures.tg.sendWithButtons).not.toHaveBeenCalled()
+    }, 20000)
+})
+
+describe('2b — system messages never take the user fast path', () => {
+    it('a self-goal „Beende den Auftrag“ does not stop a mission', async () => {
+        await send('Telegram', 'Nova-Autonomy', 'Beende den Auftrag')
+        expect(commandSpy).not.toHaveBeenCalledWith('mission', expect.anything())
+    }, 20000)
+
+    it('Gegenprobe: the owner saying it does; the negated sentence does not', async () => {
+        await send('Telegram', '1001', 'Brich den Auftrag bitte nicht ab')
+        expect(commandSpy).not.toHaveBeenCalledWith('mission', expect.anything())
+        await send('Telegram', '1001', 'Beende den Auftrag')
+        expect(commandSpy).toHaveBeenCalledWith('mission', 'stop')
     }, 20000)
 })
 

@@ -53,3 +53,26 @@ describe('natural command routing', () => {
         expect(detectDeterministicCommand(input)).toBeNull()
     })
 })
+
+describe('2.89: mission actions only for the whole sentence, never negated', () => {
+    it.each([
+        ['Beende den Auftrag', 'stop'],
+        ['Brich die Mission ab', 'stop'],
+        ['Stoppe die Mission bitte', 'stop'],
+        ['Pausiere den Auftrag', 'pause'],
+        ['Führe den Auftrag fort', 'resume'],
+    ])('%s → %s', (input, args) => {
+        expect(detectDeterministicCommand(input)).toMatchObject({ command: 'mission', args, risk: 'controlled-action' })
+    })
+
+    it.each([
+        'Brich den Auftrag bitte nicht ab',
+        'Beende den Auftrag nicht',
+        'Ich will die Mission heute noch nicht beenden',
+        'Wann beende ich am besten den Auftrag für die Küche?',
+        'Kannst du die Mission später pausieren, wenn der Download fertig ist?',
+        'Führe den Auftrag bitte nicht weiter fort',
+    ])('no action: %s', input => {
+        expect(detectDeterministicCommand(input)?.risk).not.toBe('controlled-action')
+    })
+})
