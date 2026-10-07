@@ -47,6 +47,7 @@
     "check:release": "tsx src/dev/release-readiness.ts",
     "check:assurance": "tsx src/security/assurance-cli.ts",
     "catalogs:generate": "tsx src/dev/generate-runtime-catalogs.ts",
+    "check:infra-leaks": "node scripts/check-infra-leaks.mjs --check",
     "check:catalogs": "tsx src/dev/generate-runtime-catalogs.ts --check",
     "sbom:generate": "node scripts/generate-sbom.mjs",
     "release:deploy": "tsx src/dev/deploy-current-release.ts",

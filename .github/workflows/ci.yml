@@ -9,6 +9,19 @@ permissions:
   contents: read
 
 jobs:
+  infra-leaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reject internal infrastructure values
+        run: node scripts/check-infra-leaks.mjs --check
+        env:
+          # Optional private denylist; empty for forks, then only the generic rule applies.
+          XAVENTRA_LEAK_DENYLIST: ${{ secrets.XAVENTRA_LEAK_DENYLIST }}
   docker-repair:
     runs-on: ubuntu-latest
     timeout-minutes: 15
