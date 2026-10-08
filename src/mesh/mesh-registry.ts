@@ -320,7 +320,7 @@ export async function registerNode(toolsCount: number = 97): Promise<void> {
         hostname: hostname(),
         ip: tailscaleIp,
         platform: getPlatformLabel(),
-        version: (() => { try { return JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')).version } catch { return '0.0.0' } })(),
+        version: (() => { try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')).version } catch { return '0.0.0' } })(),
         tools_count: toolsCount,
         status: 'online',
         capabilities: caps,
@@ -608,7 +608,8 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
                 hostname: String(modern?.hostname || legacy?.hostname || updateNames.get(nodeId) || nodeId),
                 ip,
                 platform: String(modern?.platform || legacy?.platform || 'unknown'),
-                version: '?',
+                // The signed node profile carries the peer's own version (a worker has no Supabase row).
+                version: String(peerState.profile?.version || '?').slice(0, 30),
                 tools_count: Array.isArray(peerState.tools?.tools) ? peerState.tools.tools.length : 0,
                 status: peerState.status === 'busy' ? 'busy' : peerState.status === 'online' ? 'online' : 'offline',
                 capabilities: Array.isArray(modern?.capabilities) ? modern.capabilities.map(String) : Array.isArray(legacy?.capabilities) ? legacy.capabilities.map(String) : [],
