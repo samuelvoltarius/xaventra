@@ -23,7 +23,8 @@ export function mentionsMesh(text: string): boolean {
 }
 
 export function mentionsEnvironment(text: string): boolean {
-    return mentionsMesh(text) || /\b(?:netzwerk|netz|lan|tailnet|hardware|geräte|geraete|devices|home\s*assistant|hue|tuya|shelly|esphome|matter|tasmota|smart[- ]?home|lampen|steckdosen)\b/i.test(text)
+    return mentionsMesh(text) || isMeshWideInventoryRequest(text)
+        || /\b(?:netzwerk|netz|lan|tailnet|hardware|geräte|geraete|devices|home\s*assistant|hue|tuya|shelly|esphome|matter|tasmota|smart[- ]?home|lampen|steckdosen)\b/i.test(text)
 }
 
 /** Ignore only complete, bounded prohibitions, never an effect hidden after one.
@@ -36,7 +37,41 @@ export function inventoryRequestText(text: string): string {
     }).join('\n')
 }
 
+/**
+ * 2.89.4 (live): „Mach eine Inventur, sag mir was wo läuft und was wir wo noch
+ * installieren können“ — a mesh-wide READ-ONLY question. No target to clarify,
+ * all nodes; the inventory tools cover it. A real effect in the same request
+ * („installiere X“, „kopiere …“) still prevents the shortcut. Install-capability
+ * wording („… installieren können“) is a question, not an install order.
+ */
+export function isMeshWideInventoryRequest(text: string): boolean {
+    const value = String(text ?? '').trim()
+    if (!value || value.startsWith('/') || containsHttpUrl(value) || mentionsScreenshot(value)) return false
+    const question = inventoryRequestText(value)
+    const shape = /\binventur\w*/i.test(question)
+        || /\bwas\b[^.?!]{0,50}\bwo\b[^.?!]{0,30}\b(?:läuft|laufen|installier\w*)/i.test(question)
+        || /\bwo\b[^.?!]{0,40}\b(?:läuft|laufen)\b/i.test(question) && /\b(?:was|wo)\b/i.test(question)
+        || /\binstallier\w*\s+k[öo]nnen\b/i.test(question)
+        || /\bk[öo]nnen\s+(?:wir|sie|man|ich)\b[^.?!]{0,40}\binstallier/i.test(question)
+    if (!shape) return false
+    // Drop only the inventory-shaped clauses; any remaining effect blocks.
+    const residual = question.split(/(?:,\s*|\s+und\s+|[;.\n]+)/i).filter(clause => {
+        const part = clause.trim()
+        if (!part) return false
+        if (/\binventur\w*/i.test(part)) return false
+        if (/\binstallier\w*\s+k[öo]nnen\b/i.test(part)) return false
+        if (/\bk[öo]nnen\s+(?:wir|sie|man|ich)\b[^.?!]{0,40}\binstallier/i.test(part)) return false
+        if (/\bwas\b[^.?!]{0,50}\bwo\b[^.?!]{0,30}\b(?:läuft|laufen|installier\w*)/i.test(part)) return false
+        if (/\bwo\b[^.?!]{0,40}\b(?:läuft|laufen)\b/i.test(part)) return false
+        if (/\b(?:sag(?:e)?|schick(?:e)?|send(?:e)?|zeig(?:e)?)\s+(?:mir\s+)?(?:was|welche[nrs]?|wo)\b/i.test(part)) return false
+        return true
+    }).join(' ')
+    return !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|schalt\w*|koppel\w*|übertrag\w*|upload\w*|download\w*)\b/i.test(residual)
+}
+
 export function isEnvironmentOverview(text: string): boolean {
+    // Mesh-wide inventory is already read-only and all-nodes.
+    if (isMeshWideInventoryRequest(text)) return true
     // "send mir was ..." requests a textual overview, not a file transfer.
     // Strip only this bounded reporting prefix; any later effect verb still
     // prevents the shortcut. Never turn mixed actions into read-only inventory.

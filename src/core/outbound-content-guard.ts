@@ -28,5 +28,9 @@ export function sanitizeInternalOutboundArtifacts(value: unknown): string {
         .replace(/^\s*(?:analysis|reasoning)\s*:[^\n]*(?:\n|$)/gim, '')
         .replace(/^.*\brm\s+-rf\b.*$/gim, '⚠️ Destruktiver Löschbefehl unterdrückt – zuerst Diagnose, Sicherung und Freigabe erforderlich.')
         .replace(/^.*\bRemove-Item\b.*-(?:Recurse|Force)\b.*$/gim, '⚠️ Destruktiver Löschbefehl unterdrückt – zuerst Diagnose, Sicherung und Freigabe erforderlich.')
+        // 2.89.4: internal escalation vocabulary never reaches a user channel.
+        .replace(/verifiziert\s+fehlgeschlagen/gi, 'nicht gelungen')
+        .replace(/(?:eine\s+)?begrenzte\s+Doctor-Diagnose\s+ist\s+bereits\s+vorgemerkt/gi, 'ich habe die Ursache intern vorgemerkt und prüfen lassen')
+        .replace(/(?:eine\s+)?begrenzte\s+Doctor-Diagnose\s+(?:habe\s+ich\s+)?vorgemerkt/gi, 'ich habe die Ursache intern zur Prüfung vorgemerkt')
     return text.replace(/\n{3,}/g, '\n\n').trim()
 }

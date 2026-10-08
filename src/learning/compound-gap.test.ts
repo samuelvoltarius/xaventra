@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findCompoundGaps, runLimitGapNote, compoundGapGate } from './capability-learning.js'
+import { findCompoundGaps, runLimitGapNote, compoundGapGate, hasMatchingRegisteredTool } from './capability-learning.js'
 import type { CapabilityInventory } from './capability-inventory.js'
 
 const inventory = (tools: string[] = [], learned: CapabilityInventory['learned'] = []): CapabilityInventory => ({ tools, connected: new Set(), learned } as CapabilityInventory)
@@ -31,5 +31,20 @@ describe('2.89.3 Teilauftrag ohne Fähigkeit', () => {
         expect(await compoundGapGate('Wie spät ist es und kannst du mir ein Fax schicken?', { principalId: 'x', isGroup: true })).toBeNull()
         expect(await compoundGapGate('Wie spät ist es und kannst du mir ein Fax schicken?', { principalId: 'x' })).toBeNull()
         expect(await runLimitGapNote('Luftqualität in Wien', { principalId: 'x' })).toBe('')
+    })
+})
+
+// 2.89.4: a gap only when the registry / router packs really have no matching tool.
+describe('Werkzeuglücke nur ohne registriertes Werkzeug', () => {
+    const inventoryTools = (tools: string[]) => inventory(tools)
+
+    it('mesh-wide inventory is covered by the inventory tools', () => {
+        const covered = inventoryTools(['environment_inventory', 'mesh_status', 'mesh_strengths'])
+        expect(hasMatchingRegisteredTool('Mach eine Inventur, sag mir was wo läuft und was wir wo noch installieren können', covered)).toBe(true)
+        expect(hasMatchingRegisteredTool('Mach eine Inventur, sag mir was wo läuft und was wir wo noch installieren können', inventoryTools([]))).toBe(false)
+    })
+
+    it('fax is still a real gap without a fax tool', () => {
+        expect(hasMatchingRegisteredTool('Schick ein Fax an 01 234567', inventoryTools(['web_search', 'read_file']))).toBe(false)
     })
 })

@@ -54,6 +54,7 @@ import type { CapabilityInventory, LearnedCapability } from './capability-invent
 import type { SearchHit, WebSearchPort } from '../install/software-freshness.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { connectedConnectorIds } from '../connections/connection-state.js'
+import { isEnvironmentOverview, isMeshWideInventoryRequest } from '../core/request-capabilities.js'
 
 // ---------------------------------------------------------------------------
 // Felder, für die „kann ich / kann ich nicht“ ohne Modell belastbar ist
@@ -168,6 +169,24 @@ export function assessCapability(text: string, inventory: CapabilityInventory): 
     const unconnected = registered.find(name => !inventory.brokenTools?.has(name) && needsConnection(name))
     if (unconnected) return { status: 'kann-nicht-verbunden', domain, topic, connector: connectors[0] }
     return { status: 'kann-nicht', domain, topic, ...(broken.length ? { broken: broken.slice(0, 5) } : {}) }
+}
+
+const INVENTORY_COVERING = /^(?:environment_inventory|mesh_status|mesh_nodes|mesh_services|mesh_strengths|mesh_capabilities|scan_now|nova_capabilities|nova_introspect|health_status|system_info)$/
+
+/**
+ * 2.89.4: Werkzeuglücke only when NOTHING matching is registered. Registry and
+ * router packs first — a mesh-wide inventory request is covered by the inventory
+ * tools even without a capability domain.
+ */
+export function hasMatchingRegisteredTool(text: string, inventory: CapabilityInventory): boolean {
+    const verdict = assessCapability(text, inventory)
+    if (verdict.status === 'kann' || verdict.status === 'kann-nicht-verbunden') return true
+    try {
+        if (isMeshWideInventoryRequest(text) || isEnvironmentOverview(text)) {
+            return inventory.tools.some(name => INVENTORY_COVERING.test(name))
+        }
+    } catch { /* classification only */ }
+    return false
 }
 
 // ---------------------------------------------------------------------------
@@ -464,6 +483,9 @@ export async function handleCapabilityRequest(text: string, ctx: LearnContext, d
     console.log(`[Lernen] Fähigkeits-Frage „${request.topic.slice(0, 60)}“ → ${verdict.status}`)
     if (verdict.status === 'kann-nicht-verbunden') return { handled: true, reply: await notConnectedReply(verdict.connector, ctx) }
     if (verdict.status !== 'kann-nicht') return { handled: false }
+    // 2.89.4: registry / router packs first — a registered match is never a gap.
+    const inventory = await deps.inventory()
+    if (hasMatchingRegisteredTool(text, inventory)) return { handled: false }
     return { handled: true, reply: await offerFor(verdict.topic, verdict.domain, ctx, deps) }
 }
 
@@ -503,7 +525,10 @@ export function findCompoundGaps(text: string, inventory: CapabilityInventory): 
         const domain = findDomain(clause)
         if (domain && REQUESTISH.test(clause)) {
             const verdict = assessCapability(clause, inventory)
-            if (verdict.status === 'kann-nicht') { gaps.push({ clause: clip(clause, 160), topic: verdict.topic, domain }); continue }
+            // 2.89.4: only a real gap — registry / router packs first.
+            if (verdict.status === 'kann-nicht' && !hasMatchingRegisteredTool(clause, inventory)) {
+                gaps.push({ clause: clip(clause, 160), topic: verdict.topic, domain }); continue
+            }
         }
         kept.push(clause)
     }
@@ -546,7 +571,12 @@ export async function runLimitGapNote(request: string, ctx: LearnContext & { isG
     if (!deps && sideEffectsDisabled()) return ''
     const topic = clip(redactSecrets(request), 160)
     if (!topic) return ''
-    try { return await gapSentence('', topic, findDomain(topic), ctx, deps || await prepareLearnDeps()) } catch { return '' }
+    try {
+        const live = deps || await prepareLearnDeps()
+        // 2.89.4: only when the registry / router packs really have no matching tool.
+        if (hasMatchingRegisteredTool(request, await live.inventory())) return ''
+        return await gapSentence('', topic, findDomain(topic), ctx, live)
+    } catch { return '' }
 }
 
 // ---------------------------------------------------------------------------

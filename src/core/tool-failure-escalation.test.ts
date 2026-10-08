@@ -75,7 +75,9 @@ describe('typed tool failure escalation', () => {
         }, { store, continuity, doctor })!
 
         expect(decision.record).toMatchObject({ classification: 'unknown', state: 'doctor-queued', toolName: 'health_status' })
-        expect(decision.content).toContain('Doctor-Diagnose')
+        // 2.89.4: internal escalation vocabulary never reaches the user.
+        expect(decision.content).not.toMatch(/verifiziert fehlgeschlagen|Doctor-Diagnose/i)
+        expect(decision.content).toContain('nicht gelungen')
         expect(doctor.list()).toHaveLength(1)
         const raw = readFileSync(paths.storePath, 'utf8')
         expect(raw).not.toContain(fakeToken)

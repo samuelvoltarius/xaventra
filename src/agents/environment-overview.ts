@@ -1,4 +1,4 @@
-import { isEnvironmentOverview, inventoryRequestText } from '../core/request-capabilities.js'
+import { isEnvironmentOverview, isMeshWideInventoryRequest, inventoryRequestText } from '../core/request-capabilities.js'
 
 /** A bounded read-only plan, narrowed by the frozen tool contract. The normal
  * executor still owns authorization, Main fences, verification and receipts. */
@@ -10,7 +10,13 @@ export function environmentOverviewPlan(input: {
     if (input.permission !== 'owner' || input.internal || input.hasImage || input.constrained || (!fresh && !isEnvironmentOverview(input.content))) return null
     const names = fresh ? ['scan_now', 'environment_inventory', 'mesh_status'] : ['environment_inventory', 'mesh_status']
     if (!names.every(name => input.tools.some(tool => tool.name === name))) return null
-    return names.map(name => ({ name, arguments: name === 'scan_now' ? { was: 'geraete' } : {} }))
+    const calls = names.map(name => ({ name, arguments: name === 'scan_now' ? { was: 'geraete' } as Record<string, unknown> : {} }))
+    // 2.89.4: "was wir wo noch installieren können" also needs node strengths.
+    if (/\binstallier/i.test(input.content) && isMeshWideInventoryRequest(input.content)
+        && input.tools.some(tool => tool.name === 'mesh_strengths')) {
+        calls.push({ name: 'mesh_strengths', arguments: {} })
+    }
+    return calls
 }
 
 /** Only an explicit fresh, read-only discovery request gets an active scan. */

@@ -29,6 +29,13 @@ describe('outbound content guard', () => {
         expect(sanitizeInternalOutboundArtifacts('Remove-Item .nova-data -Recurse -Force'))
             .toContain('Freigabe')
     })
+
+    it('rewrites internal escalation vocabulary (2.89.4)', () => {
+        const text = sanitizeInternalOutboundArtifacts(
+            'Die Aktion ist verifiziert fehlgeschlagen. Eine begrenzte Doctor-Diagnose ist bereits vorgemerkt; es wurde keine Änderung ausgeführt.')
+        expect(text).not.toMatch(/verifiziert fehlgeschlagen|Doctor-Diagnose/i)
+        expect(text).toContain('nicht gelungen')
+    })
 })
 
 describe('visible text before a think block (R2 NZ-32)', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEnvironmentOverview } from './request-capabilities.js'
+import { isEnvironmentOverview, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
@@ -35,5 +35,34 @@ describe('environment overview stays separate from action requests', () => {
             'send mir was du im LAN findest und verbinde dich mit dem NAS',
             'zeige mir welche nodes es gibt und starte ns2', 'sende mir welche Geräte es gibt und konfiguriere sie',
             'send mir was im Netzwerk ist und screenshots von jedem', 'welche nodes gibt es? prüfe https://example.org']) expect(isEnvironmentOverview(text)).toBe(false)
+    })
+})
+
+// 2.89.4 (live): "Mach eine Inventur, sag mir was wo läuft und was wir wo noch
+// installieren können" — mesh-wide read-only inventory, no target clarification.
+describe('mesh-wide inventory stays read-only and all-nodes', () => {
+    it('recognizes Inventur / was läuft wo / installieren können as inventory', () => {
+        for (const text of [
+            'Mach eine Inventur, sag mir was wo läuft und was wir wo noch installieren können',
+            'sag mir was wo läuft',
+            'was wir wo noch installieren können',
+            'Mach eine Inventur',
+        ]) {
+            expect(isMeshWideInventoryRequest(text)).toBe(true)
+            expect(isEnvironmentOverview(text)).toBe(true)
+            expect(mentionsEnvironment(text)).toBe(true)
+            expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'system-state' })
+        }
+    })
+
+    it('still refuses a real effect next to the inventory question', () => {
+        for (const text of [
+            'Mach eine Inventur und installiere Docker',
+            'Mach eine Inventur und kopiere bericht.txt an ns1',
+            'was wo läuft und starte ns2',
+        ]) {
+            expect(isMeshWideInventoryRequest(text)).toBe(false)
+            expect(isEnvironmentOverview(text)).toBe(false)
+        }
     })
 })

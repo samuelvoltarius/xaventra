@@ -17,6 +17,13 @@ describe('bounded deterministic owner inventory', () => {
     it('plans only stored discovery and current Mesh status, never a scan or a write', () => {
         expect(environmentOverviewPlan(input)).toEqual([{ name: 'environment_inventory', arguments: {} }, { name: 'mesh_status', arguments: {} }])
     })
+    it('adds mesh_strengths for the install-capability half of a mesh-wide inventory (2.89.4)', () => {
+        const content = 'Mach eine Inventur, sag mir was wo läuft und was wir wo noch installieren können'
+        expect(environmentOverviewPlan({ ...input, content, tools: [...input.tools, { name: 'mesh_strengths' }] })).toEqual([
+            { name: 'environment_inventory', arguments: {} }, { name: 'mesh_status', arguments: {} },
+            { name: 'mesh_strengths', arguments: {} },
+        ])
+    })
     it('cannot broaden a restricted tool contract or disclose owner data to another principal', () => {
         for (const patch of [{ permission: 'user' }, { permission: 'guest' }, { internal: true }, { hasImage: true },
             { constrained: true }, { tools: [] }, { tools: [{ name: 'mesh_status' }] },

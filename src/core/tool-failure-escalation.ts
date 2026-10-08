@@ -115,7 +115,7 @@ function existingDecision(record: ToolFailureEscalationRecord): ToolFailureEscal
         deduplicated: true,
         content: record.state === 'awaiting-user' && record.question
             ? record.question
-            : 'Die Aktion ist verifiziert fehlgeschlagen. Eine begrenzte Doctor-Diagnose ist bereits vorgemerkt; es wurde keine Änderung ausgeführt.',
+            : 'Die Aktion ist nicht gelungen. Ich habe die Ursache intern vorgemerkt und prüfen lassen; es wurde keine Änderung ausgeführt.',
     }
 }
 
@@ -194,7 +194,7 @@ export function escalateVerifiedToolFailures(input: {
     store.put(base)
     return {
         record: structuredClone(base), deduplicated: false,
-        content: 'Die Aktion ist verifiziert fehlgeschlagen. Ich habe eine begrenzte Doctor-Diagnose vorgemerkt; es wurde keine Änderung ausgeführt.',
+        content: 'Die Aktion ist nicht gelungen. Ich habe die Ursache intern zur Prüfung vorgemerkt; es wurde keine Änderung ausgeführt.',
     }
 }
 

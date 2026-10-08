@@ -24,7 +24,7 @@ import { getToolRegistry } from './complete-registry.js'
 import { hasMiniMaxKey } from './minimax-tools.js'
 import { detectActionIntent, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
-import { compoundRemainder, containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
+import { compoundRemainder, containsTailnetUrl, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to the model
@@ -399,8 +399,10 @@ interface LiveRoute {
 const WEATHER_WORDS = /(?<![\p{L}])(?:wetter\p{L}*|\p{L}*wetter|weather|forecast|regen\p{L}*|regnet\p{L}*|schneit|schnee\p{L}*|gewitter\p{L}*|niederschlag\p{L}*|sonnig\p{L}*|bewölk\p{L}*|bewoelk\p{L}*|vorhersage\p{L}*)(?![\p{L}])/iu
 
 const LIVE_ROUTES: readonly LiveRoute[] = [
-    { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) },
-    { name: 'environment', tools: ['environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes'], applies: text => mentionsEnvironment(text) },
+    { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) || isMeshWideInventoryRequest(text) },
+    // 2.89.4: mesh-wide inventory ("Inventur", "was läuft wo", "was … installieren können")
+    // must reach the model with the inventory tools, including mesh_strengths.
+    { name: 'environment', tools: ['environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsEnvironment(text) },
     // 2.89.3: Wetterfragen bekommen das Wetter-Werkzeug (live: ohne es wich das Modell auf Websuche/Shell aus).
     { name: 'weather', tools: ['weather'], applies: text => WEATHER_WORDS.test(text) },
     { name: 'parcel', tools: ['parcel_track'], applies: text => /\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(text) },

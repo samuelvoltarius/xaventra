@@ -1194,10 +1194,19 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     if (BEHELF_TOOLS.has(call.name) && toolAdmission.admitted.some(item => item.name === call.name && item.reason === 'model-call')) {
                         behelfCalls++
                         if (behelfCalls > MAX_BEHELF_CALLS) {
-                            const gap = new Error('Capability gap: the run kept to makeshift tools instead of a matching tool')
+                            // 2.89.4: only a REAL gap — registry / router packs first.
+                            let realGap = true
+                            try {
+                                const { hasMatchingRegisteredTool } = await import('../learning/capability-learning.js')
+                                const { capabilityInventory } = await import('../learning/capability-inventory.js')
+                                realGap = !hasMatchingRegisteredTool(content, await capabilityInventory({ light: false }))
+                            } catch { realGap = true }
+                            const gap = new Error(realGap
+                                ? 'Capability gap: the run kept to makeshift tools instead of a matching tool'
+                                : 'Run stopped: the run kept repeating makeshift tools')
                             runLimitError ??= gap
-                            capabilityGap = true
-                            console.warn(`[Nova Agent] Capability gap after ${behelfCalls - 1} makeshift calls (${call.name}) - run closed with a learn offer`)
+                            if (realGap) capabilityGap = true
+                            console.warn(`[Nova Agent] ${realGap ? 'Capability gap' : 'Makeshift loop'} after ${behelfCalls - 1} makeshift calls (${call.name})`)
                             throw gap
                         }
                     }
