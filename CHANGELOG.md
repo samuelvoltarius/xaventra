@@ -12,7 +12,7 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-## [2.89.1] — unreleased
+## [2.89.1] — 2026-10-08
 
 Kubernetes pilot fixes found on the first real cluster:
 
@@ -23,6 +23,15 @@ Kubernetes pilot fixes found on the first real cluster:
   container the working directory is `/runtime`; the daemon reported
   "dist/daemon.js missing" and `Version: 0.0.0`, so `/v1/status` could never
   match the chart's readiness version check.
+- **Worker version in the node list.** Direct-mesh workers showed version `?` in
+  `/api/desktop/nodes`; the version now comes from the signed node profile.
+- **Progress for web search.** `tavily_search` and any other `*_search` tool now show
+  "suche im Web …" (only memory and code search keep their own labels).
+- **Home Assistant not set up.** "homeassit sollte schon laufen" now starts with
+  `hass_status`; when it reports "not connected" the run answers honestly
+  ("under Verbindungen koppeln") and refuses shell searches for it.
+- **Docs.** README presents "Xaventra 2"; the version rule (patch = fixes,
+  minor = large block, major = breaking) is in CONTRIBUTING.
 - **Image docs.** The registry only has per-architecture `build-<commit>-<arch>`
   tags; `docs/KUBERNETES.md` explains how to take the digest from the signed
   release asset, and that `workers.<w>.require` is optional.
