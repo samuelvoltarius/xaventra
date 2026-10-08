@@ -11,6 +11,11 @@
  *    returns the live status line and open Knopf-Karten as short texts;
  *    `POST /hud/answer { cardId, answer: 'ja' | 'nein' }` (tap / double tap)
  *    goes through `answerApprovalCard`.
+ * 3. Voice for the HUD app: `POST /hud/voice` takes the G2 microphone audio
+ *    (16 kHz / 16 bit / mono, raw PCM or WAV), transcribes it with the
+ *    existing Xaventra STT and either answers the shown card with a strict
+ *    ja/nein recognizer or hands the sentence to the agent like `POST /`.
+ *    Speech never confirms a card that needs an explicit confirm step.
  *
  * Rules (fixed in code):
  * - Off by default (`channels.evenG2.enabled=true` plus `NOVA_EVEN_G2_TOKEN`).
@@ -44,12 +49,30 @@ const MAX_QUESTION_CHARS = 2_000
 const DEFAULT_MAX_RUN_MS = 10 * 60_000
 const MAX_LONG_POLL_MS = 25_000
 
+/** G2 microphone format: 16 kHz, 16 bit, mono. */
+export const VOICE_SAMPLE_RATE = 16_000
+export const VOICE_BYTES_PER_SECOND = VOICE_SAMPLE_RATE * 2
+export const VOICE_MAX_SECONDS = 20
+/** Total body cap (PCM plus WAV header slack). */
+export const VOICE_MAX_BODY_BYTES = 700_000
+/** Below this the clip is a tap, not speech. */
+export const VOICE_MIN_BYTES = Math.round(VOICE_BYTES_PER_SECOND * 0.3)
+export const DEFAULT_STT_TIMEOUT_MS = 12_000
+const MAX_TRANSCRIPT_CHARS = 500
+
 export interface EvenG2Settings { port: number; allowOrigins: string[] }
 export interface EvenG2Resolution { start: boolean; reason: string; settings?: EvenG2Settings; token?: string }
 
 export interface HudCard { id: string; titel: string; text: string; wirkung: string; antworten: Array<'ja' | 'nein'>; gueltigBis: string }
 export interface HudSnapshot { version: string; status: string; cards: HudCard[]; at: string }
 export interface CardAnswerHttp { status: number; body: Record<string, unknown> }
+
+/** Thrown by `EvenG2Deps.transcribe` when no speech recognition is reachable. */
+export class EvenG2SttUnavailableError extends Error {
+    constructor(message = 'Spracherkennung nicht verfügbar.') { super(message) }
+}
+
+export type VoiceAction = 'answered_ja' | 'answered_nein' | 'needs_confirm' | 'message' | 'none'
 
 export interface EvenG2Deps {
     token: string
@@ -61,6 +84,13 @@ export interface EvenG2Deps {
     fence(effect: string): Promise<void>
     hudSnapshot(): Promise<HudSnapshot>
     answerCard(cardId: string, answer: 'ja' | 'nein'): Promise<CardAnswerHttp>
+    /**
+     * Speech to text for /hud/voice. Gets a 16 kHz mono PCM16 WAV; returns the
+     * transcript, throws `EvenG2SttUnavailableError` when no STT is reachable.
+     * Missing = voice disabled (503).
+     */
+    transcribe?(wav: Buffer, opts: { durationSec: number; signal: AbortSignal }): Promise<string>
+    sttTimeoutMs?: number
     allowOrigins?: string[]
     now?: () => number
     budgetMs?: number
@@ -177,6 +207,107 @@ function completion(model: unknown, content: string): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// voice
+// ---------------------------------------------------------------------------
+
+export class VoiceInputError extends Error {
+    constructor(readonly status: number, message: string) { super(message) }
+}
+
+function wavFromPcm(pcm: Buffer): Buffer {
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0, 'ascii'); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8, 'ascii')
+    header.write('fmt ', 12, 'ascii'); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22)
+    header.writeUInt32LE(VOICE_SAMPLE_RATE, 24); header.writeUInt32LE(VOICE_BYTES_PER_SECOND, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34)
+    header.write('data', 36, 'ascii'); header.writeUInt32LE(pcm.length, 40)
+    return Buffer.concat([header, pcm])
+}
+
+const isWav = (buffer: Buffer) => buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WAVE'
+
+/** Only 16 kHz / 16 bit / mono PCM is accepted; returns the PCM payload. */
+function pcmFromWav(buffer: Buffer): Buffer {
+    if (buffer.length < 44 || !isWav(buffer)) throw new VoiceInputError(400, 'Kein gültiges WAV.')
+    let offset = 12
+    let formatOk = false
+    while (offset + 8 <= buffer.length) {
+        const id = buffer.toString('ascii', offset, offset + 4)
+        const size = buffer.readUInt32LE(offset + 4)
+        const body = offset + 8
+        if (id === 'fmt ') {
+            if (size < 16 || body + 16 > buffer.length) throw new VoiceInputError(400, 'Kein gültiges WAV.')
+            const format = buffer.readUInt16LE(body)
+            const channels = buffer.readUInt16LE(body + 2)
+            const rate = buffer.readUInt32LE(body + 4)
+            const bits = buffer.readUInt16LE(body + 14)
+            if (format !== 1 || channels !== 1 || rate !== VOICE_SAMPLE_RATE || bits !== 16) throw new VoiceInputError(400, 'WAV muss 16 kHz, 16 Bit, mono (PCM) sein.')
+            formatOk = true
+        } else if (id === 'data') {
+            if (!formatOk) throw new VoiceInputError(400, 'Kein gültiges WAV.')
+            // streamed WAVs may declare 0 or a too large size: take what arrived
+            const end = size === 0 || body + size > buffer.length ? buffer.length : body + size
+            return buffer.subarray(body, end)
+        }
+        offset = body + size + (size % 2)
+    }
+    throw new VoiceInputError(400, 'WAV ohne Audiodaten.')
+}
+
+/** Validates the request body and returns PCM16 plus its length in seconds. Throws VoiceInputError (400/413/415). */
+export function parseVoiceAudio(body: Buffer, contentTypeHeader: string): { pcm: Buffer; durationSec: number } {
+    const [type, ...params] = String(contentTypeHeader || '').split(';').map(part => part.trim())
+    const mime = (type || '').toLowerCase()
+    let pcm: Buffer
+    if (['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(mime)) {
+        pcm = pcmFromWav(body)
+    } else if (mime === 'application/octet-stream' || mime === 'audio/l16') {
+        const options = new Map(params.map(param => { const [key, ...value] = param.split('='); return [key.trim().toLowerCase(), value.join('=').trim()] as const }))
+        const rate = options.get('rate'), channels = options.get('channels')
+        if ((rate && Number(rate) !== VOICE_SAMPLE_RATE) || (channels && Number(channels) !== 1)) throw new VoiceInputError(400, 'Audio muss 16 kHz, 16 Bit, mono sein.')
+        // a WAV sent as raw bytes is still a WAV (checked), never PCM noise
+        pcm = isWav(body) ? pcmFromWav(body) : body
+    } else {
+        throw new VoiceInputError(415, 'Content-Type muss audio/wav, audio/L16 oder application/octet-stream sein.')
+    }
+    if (pcm.length % 2 !== 0) pcm = pcm.subarray(0, pcm.length - 1)
+    if (pcm.length < VOICE_MIN_BYTES) throw new VoiceInputError(400, 'Aufnahme zu kurz oder leer.')
+    if (pcm.length > VOICE_MAX_SECONDS * VOICE_BYTES_PER_SECOND) throw new VoiceInputError(413, `Aufnahme zu lang (höchstens ${VOICE_MAX_SECONDS} Sekunden).`)
+    return { pcm, durationSec: pcm.length / VOICE_BYTES_PER_SECOND }
+}
+
+const YES_WORDS = new Set(['ja', 'jo', 'jawohl', 'yes', 'yep', 'yeah', 'okay', 'ok', 'genehmigt', 'genehmige', 'genehmigen', 'mach', 'machs', 'freigeben', 'freigabe', 'freigegeben', 'einverstanden'])
+const NO_WORDS = new Set(['nein', 'no', 'nee', 'nö', 'noe', 'nope', 'stopp', 'stop', 'ablehnen', 'abbrechen', 'abgelehnt', 'nicht', 'kein', 'keine', 'niemals', 'nie'])
+const NEUTRAL_WORDS = new Set(['bitte', 'doch', 'gerne', 'gern', 'mal', 'es', 'das'])
+const MAX_DECISION_TOKENS = 3
+
+const speechTokens = (transcript: string): string[] =>
+    String(transcript ?? '').toLocaleLowerCase('de').replace(/ß/g, 'ss').replace(/\blehne\s+ab\b/g, 'ablehnen')
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+
+/**
+ * Strict yes/no recognizer for spoken card answers. Only very short utterances
+ * made of yes-words (or only no-words) count; mixed, unknown or longer
+ * speech yields null so nothing is answered by accident.
+ */
+export function recognizeYesNo(transcript: string): 'ja' | 'nein' | null {
+    const tokens = speechTokens(transcript)
+    if (!tokens.length || tokens.length > MAX_DECISION_TOKENS) return null
+    let yes = false, no = false
+    for (const token of tokens) {
+        if (YES_WORDS.has(token)) yes = true
+        else if (NO_WORDS.has(token)) no = true
+        else if (!NEUTRAL_WORDS.has(token)) return null
+    }
+    if (yes === no) return null
+    return yes ? 'ja' : 'nein'
+}
+
+/** A real sentence or question (not a stray word): goes to the agent even while a card is open. */
+export function looksLikeSentence(transcript: string): boolean {
+    return speechTokens(transcript).length > MAX_DECISION_TOKENS || /\?/.test(String(transcript ?? ''))
+}
+
+// ---------------------------------------------------------------------------
 // HUD feed
 // ---------------------------------------------------------------------------
 
@@ -233,6 +364,22 @@ function readBody(req: IncomingMessage): Promise<string> {
             chunks.push(chunk)
         })
         req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+        req.on('error', reject)
+    })
+}
+
+function readBodyBuffer(req: IncomingMessage, max: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        let size = 0
+        let failed = false
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => {
+            if (failed) return
+            size += chunk.length
+            if (size > max) { failed = true; reject(new BodyTooLarge()); req.resume(); return }
+            chunks.push(chunk)
+        })
+        req.on('end', () => { if (!failed) resolve(Buffer.concat(chunks)) })
         req.on('error', reject)
     })
 }
@@ -350,11 +497,91 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         json(res, result.status, result.body, headers)
     }
 
+    const handleVoice = async (req: IncomingMessage, res: ServerResponse, url: URL, headers: Record<string, string>) => {
+        const transcribe = deps.transcribe
+        if (!transcribe) { req.resume(); json(res, 503, { error: 'Spracherkennung nicht verfügbar.' }, headers); return }
+        const declared = Number(req.headers['content-length'])
+        if (Number.isFinite(declared) && declared > VOICE_MAX_BODY_BYTES) { req.resume(); json(res, 413, { error: 'Aufnahme zu groß.' }, headers); return }
+        let audio: { pcm: Buffer; durationSec: number }
+        try {
+            audio = parseVoiceAudio(await readBodyBuffer(req, VOICE_MAX_BODY_BYTES), String(req.headers['content-type'] || ''))
+        } catch (error) {
+            if (error instanceof BodyTooLarge) json(res, 413, { error: 'Aufnahme zu groß.' }, headers)
+            else if (error instanceof VoiceInputError) json(res, error.status, { error: error.message }, headers)
+            else json(res, 400, { error: 'Anfrage unlesbar.' }, headers)
+            return
+        }
+        if (await fenced(res, 'even-g2:voice', headers)) return
+
+        // STT with a hard time limit; the audio is neither logged nor stored here.
+        const controller = new AbortController()
+        let timer: ReturnType<typeof setTimeout> | undefined
+        let transcript = ''
+        try {
+            const timeout = new Promise<never>((_, reject) => {
+                timer = setTimeout(() => { controller.abort(); reject(new Error('stt-timeout')) }, Math.max(10, deps.sttTimeoutMs ?? DEFAULT_STT_TIMEOUT_MS))
+                timer.unref?.()
+            })
+            const heard = transcribe(wavFromPcm(audio.pcm), { durationSec: audio.durationSec, signal: controller.signal })
+            heard.catch(() => undefined)
+            transcript = String(await Promise.race([heard, timeout]) ?? '').replace(/\s+/g, ' ').trim()
+        } catch (error) {
+            if ((error as Error)?.message === 'stt-timeout') {
+                console.warn('[EvenG2] Spracherkennung: Zeitlimit')
+                json(res, 504, { error: 'Spracherkennung hat zu lange gebraucht.' }, headers)
+            } else {
+                console.warn(`[EvenG2] Spracherkennung nicht verfügbar: ${error instanceof EvenG2SttUnavailableError ? 'kein Dienst' : short((error as Error)?.message || error, 80)}`)
+                json(res, 503, { error: 'Spracherkennung nicht verfügbar.' }, headers)
+            }
+            return
+        } finally {
+            if (timer) clearTimeout(timer)
+        }
+        transcript = transcript.slice(0, MAX_TRANSCRIPT_CHARS)
+        const reply = (status: number, action: VoiceAction, extra: { cardId?: string; reply?: string } = {}) => {
+            const body: Record<string, unknown> = { transcript, action }
+            if (extra.cardId) body.cardId = extra.cardId
+            if (extra.reply) body.reply = formatForG2(extra.reply)
+            json(res, status, body, headers)
+        }
+        if (!transcript) { reply(200, 'none'); return }
+
+        // pending card: the one the HUD shows (optional ?cardId=), else the first open one
+        const wanted = url.searchParams.get('cardId') || ''
+        const open = (await deps.hudSnapshot()).cards
+        const card = wanted ? open.find(item => item.id === wanted) : open[0]
+        if (card) {
+            const decision = recognizeYesNo(transcript)
+            if (decision === 'ja') {
+                // outward / physical / infrastructure effects: the HUD asks for an explicit tap
+                if (card.wirkung !== 'intern') { reply(200, 'needs_confirm', { cardId: card.id }); return }
+                const result = await deps.answerCard(card.id, 'ja')
+                const message = typeof result.body.message === 'string' ? result.body.message : ''
+                reply(result.status, result.status === 200 ? 'answered_ja' : 'none', { cardId: card.id, reply: message })
+                return
+            }
+            if (decision === 'nein') {
+                const result = await deps.answerCard(card.id, 'nein')
+                const message = typeof result.body.message === 'string' ? result.body.message : ''
+                reply(result.status, result.status === 200 ? 'answered_nein' : 'none', { cardId: card.id, reply: message })
+                return
+            }
+            if (!looksLikeSentence(transcript)) { reply(200, 'none', { cardId: card.id }); return }
+        } else if (wanted && !looksLikeSentence(transcript)) {
+            // the displayed card is gone (answered elsewhere / expired): a stray word never becomes a command
+            reply(200, 'none'); return
+        }
+
+        // no card (or a real sentence): new user message, exactly like POST /
+        const answer = await run(transcript.slice(0, MAX_QUESTION_CHARS)).result
+        reply(200, 'message', { reply: answer })
+    }
+
     return (req, res) => {
         const url = new URL(req.url || '/', 'http://127.0.0.1')
         const path = url.pathname.replace(/\/+$/, '') || '/'
         const method = req.method || 'GET'
-        const isHud = path === '/hud' || path === '/hud/answer'
+        const isHud = path === '/hud' || path === '/hud/answer' || path === '/hud/voice'
         const headers = isHud ? cors(req) : {}
         void (async () => {
             if (method === 'GET' && path === '/health') { json(res, 200, { ok: true }); return }
@@ -368,6 +595,7 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
             if (method === 'POST' && (path === '/' || path === '/v1/chat/completions')) { await handleAsk(req, res); return }
             if (method === 'GET' && path === '/hud') { await handleHud(req, res, url, headers); return }
             if (method === 'POST' && path === '/hud/answer') { await handleAnswer(req, res, headers); return }
+            if (method === 'POST' && path === '/hud/voice') { await handleVoice(req, res, url, headers); return }
             req.resume()
             json(res, 404, { error: 'Not found' }, headers)
         })().catch(error => {

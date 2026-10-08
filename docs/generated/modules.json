@@ -553,7 +553,10 @@
       "module": "src/channels/even-g2-runtime.ts",
       "imports": [
         "../core/approval-cards.js",
-        "./even-g2.js"
+        "./even-g2.js",
+        "node:fs/promises",
+        "node:os",
+        "node:path"
       ]
     },
     {
