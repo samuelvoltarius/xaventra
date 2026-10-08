@@ -71,8 +71,19 @@ describe('everyday German requests reach the right tool (real registry)', () => 
         ['paperless kannst du dich mit dem verbinen ?', 'dienst_verbinden'],
         ['kannst du dich mit paperless verbiden', 'dienst_finden'],
         ['koppel dich mit dem NAS', 'dienst_verbinden'],
+        // 2.89.4: Kubernetes/Pods/Cluster reach cluster_status (never SSH).
+        ['Welche Pods laufen im Cluster?', 'cluster_status'],
+        ['Was läuft in Kubernetes?', 'cluster_status'],
+        ['Zeig mir den Cluster-Status', 'cluster_status'],
     ])('„%s“ → %s', (request, tool) => {
         expect(names(request)).toContain(tool)
+    })
+
+    it('2.89.4: Kubernetes questions never offer SSH/shell fallback', () => {
+        for (const request of ['Welche Pods laufen im Cluster?', 'Was läuft in Kubernetes?', 'Zeig mir den Cluster-Status']) {
+            expect(names(request)).not.toContain('ssh_command')
+            expect(names(request)).not.toContain('run_command')
+        }
     })
 
     it('Gegenprobe: „verbieten“ is no connect request', () => {

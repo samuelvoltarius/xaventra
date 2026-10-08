@@ -2374,6 +2374,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 const { environmentOverviewResponse, wantsTechnicalDetails } = await import('./tool-evidence-response.js')
                 finalContent = sanitizeInternalOutboundArtifacts(environmentOverviewResponse((result as any).toolExecutions || [], { technisch: wantsTechnicalDetails(content) }))
             }
+            // 2.89.4: Kubernetes status answers carry node/pod facts only from cluster_status.
+            if (!isSystemMessage && principalContext.permission === 'owner' && !(result as any).responseConstraints?.length) {
+                const { isKubernetesStatusQuestion, kubernetesStatusResponse } = await import('../agents/kubernetes-status-plan.js')
+                if (isKubernetesStatusQuestion(content)) {
+                    finalContent = sanitizeInternalOutboundArtifacts(kubernetesStatusResponse((result as any).toolExecutions || []))
+                }
+            }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content)) : screenshotFailureResponse(failedExecutions)
                 try {

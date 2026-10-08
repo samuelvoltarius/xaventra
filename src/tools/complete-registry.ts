@@ -33,6 +33,7 @@ import { parcelTrackTool } from './parcel-track-tool.js'
 import { weatherTool } from './weather.js'
 import { projectsStatusTool } from './projects-tool.js'
 import { verbindenTools } from './verbinden-tools.js'
+import { clusterTools } from './cluster-tools.js'
 import { printerTools } from './3dprinter.js'
 import { minimaxTools } from './minimax-tools.js'
 import { blueTeamTools } from './blue-team-tools.js'
@@ -2993,6 +2994,8 @@ export const ALL_TOOLS: NovaTool[] = [
     projectsStatusTool,
     // 2.88: Dienste finden/verbinden, Passwort-Tresor (nur Kurznamen), Proxmox im Gespräch.
     ...verbindenTools,
+    // 2.89.4: Kubernetes lesen (Fakten nur aus der API), nie SSH/kubectl.
+    ...clusterTools,
     ...printerTools,
     ...minimaxTools,
     apiKeyTool,

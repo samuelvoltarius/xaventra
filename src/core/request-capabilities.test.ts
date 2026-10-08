@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEnvironmentOverview, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
+import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
@@ -35,6 +35,36 @@ describe('environment overview stays separate from action requests', () => {
             'send mir was du im LAN findest und verbinde dich mit dem NAS',
             'zeige mir welche nodes es gibt und starte ns2', 'sende mir welche Geräte es gibt und konfiguriere sie',
             'send mir was im Netzwerk ist und screenshots von jedem', 'welche nodes gibt es? prüfe https://example.org']) expect(isEnvironmentOverview(text)).toBe(false)
+    })
+})
+
+// 2.89.4 (live): Kubernetes/Pod/Cluster questions belong to cluster_status,
+// never the device-inventory shortcut and never SSH.
+describe('Kubernetes questions stay on cluster_status', () => {
+    it('recognizes K8s/Pods/Cluster as Kubernetes and not as inventory', () => {
+        for (const text of [
+            'Welche Pods laufen im Cluster?',
+            'Was läuft in Kubernetes?',
+            'Zeig mir den Cluster-Status',
+            'Welche Pods sind auf welchem Knoten?',
+            'k8s status',
+        ]) {
+            expect(isKubernetesQuestion(text)).toBe(true)
+            expect(isKubernetesStatusQuestion(text)).toBe(true)
+            expect(isEnvironmentOverview(text)).toBe(false)
+        }
+    })
+
+    it('effects stay out of the status plan but keep the Kubernetes route', () => {
+        for (const text of ['Starte worker-general neu', 'Führe kubectl get pods per SSH aus']) {
+            expect(isKubernetesQuestion(text)).toBe(true)
+            expect(isKubernetesStatusQuestion(text)).toBe(false)
+        }
+    })
+
+    it('Podcast and mesh inventory stay out of the Kubernetes route', () => {
+        expect(isKubernetesQuestion('Hör dir den neuen Podcast an')).toBe(false)
+        expect(isKubernetesQuestion('Welche Geräte findest du im Netzwerk?')).toBe(false)
     })
 })
 

@@ -11,6 +11,9 @@ describe('device-inventory shortcut leaves VM and node-strength questions to the
         'Welche Container laufen auf Proxmox?',
         'Was kann welcher Knoten?',
         'Welcher Node kann was am besten?',
+        // 2.89.4: Kubernetes/Pods belong to cluster_status, not the inventory shortcut.
+        'Welche Pods laufen im Cluster?',
+        'Was läuft in Kubernetes?',
     ])('%s → not the inventory shortcut', question => {
         expect(isEnvironmentOverview(question)).toBe(false)
     })

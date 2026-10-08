@@ -46,6 +46,7 @@ import { selectContractTools } from './tool-contract-selection.js'
 import { ToolAdmission } from './tool-admission.js'
 import { toolProgressLabel, THINKING_LABEL } from '../core/tool-progress-label.js'
 import { homeAssistantStatusPlan, SHELL_SEARCH_TOOLS, HASS_NOT_CONNECTED_HINT } from './home-assistant-status-plan.js'
+import { kubernetesStatusPlan, kubernetesStatusResponse, isK8sShellFallback, K8S_NO_SSH_HINT, isKubernetesQuestion } from './kubernetes-status-plan.js'
 import { limitStopNotice, runLimits, toolTimeoutMs } from '../core/run-limits.js'
 import { loadSkillPack, toolExpansionPolicy } from '../tools/tool-router.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
@@ -714,7 +715,12 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const overviewPlan = environmentOverviewPlan({ content, permission: getUserPermission(authUserId, channel),
             internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
         if (overviewPlan) forcedToolResponse = { content: '', toolCalls: overviewPlan, finishReason: 'tool_calls' }
-        const hassPlan = overviewPlan ? null : homeAssistantStatusPlan({ content, permission: getUserPermission(authUserId, channel),
+        // 2.89.4: Kubernetes status questions start with cluster_status; node/pod facts
+        // come only from that tool result (no model paraphrase, no SSH).
+        const k8sPlan = overviewPlan ? null : kubernetesStatusPlan({ content, permission: getUserPermission(authUserId, channel),
+            internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
+        if (k8sPlan) forcedToolResponse = { content: '', toolCalls: k8sPlan, finishReason: 'tool_calls' }
+        const hassPlan = overviewPlan || k8sPlan ? null : homeAssistantStatusPlan({ content, permission: getUserPermission(authUserId, channel),
             internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
         if (hassPlan) forcedToolResponse = { content: '', toolCalls: hassPlan, finishReason: 'tool_calls' }
         let hassNotConnected = false
@@ -1189,6 +1195,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     const callId = nextToolEvidenceId(call)
                     if (hassNotConnected && SHELL_SEARCH_TOOLS.has(call.name)) {
                         toolResults.push(`⚠️ ${call.name}: ${HASS_NOT_CONNECTED_HINT}`)
+                        continue
+                    }
+                    // 2.89.4: never discover Kubernetes facts via SSH/shell (configured or not).
+                    if (isKubernetesQuestion(content) && isK8sShellFallback(call.name)) {
+                        toolResults.push(`⚠️ ${call.name}: ${K8S_NO_SSH_HINT}`)
                         continue
                     }
                     if (BEHELF_TOOLS.has(call.name) && toolAdmission.admitted.some(item => item.name === call.name && item.reason === 'model-call')) {
@@ -1765,6 +1776,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         await executeSdkTool({ ...call, id: `${kernel.contract.id}:overview:${index}` })
                     }
                     finalContent = environmentOverviewResponse(toolExecutions, { technisch: wantsTechnicalDetails(content) })
+                } else if (k8sPlan) {
+                    // 2.89.4: node/pod facts only from the cluster_status API result.
+                    for (const [index, call] of k8sPlan.entries()) {
+                        if (abortSignal?.aborted) throw new Error('AbortError: cluster status dispatch cancelled')
+                        await executeSdkTool({ ...call, id: `${kernel.contract.id}:k8s:${index}` })
+                    }
+                    finalContent = kubernetesStatusResponse(toolExecutions)
                 } else finalContent = await runGovernedSdkLoop({
                     messages: messages as any,
                     tools: [...toolDefinitions, ...admissibleDefinitions].map(definition => ({ ...definition, parameters: { ...definition.parameters, required: [...definition.parameters.required] } })),

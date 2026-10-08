@@ -24,7 +24,7 @@ import { getToolRegistry } from './complete-registry.js'
 import { hasMiniMaxKey } from './minimax-tools.js'
 import { detectActionIntent, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
-import { compoundRemainder, containsTailnetUrl, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
+import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to the model
@@ -413,6 +413,8 @@ const LIVE_ROUTES: readonly LiveRoute[] = [
     { name: 'vault', tools: ['zugaenge_liste', 'anmelden_mit_zugang', 'zugang_freigabe_anfragen'],
         applies: text => /\b(passw(?:o|ö)rt\w*|zug(?:a|ä)ng\w*|tresor|anmeld\w*|einlogg\w*|login)\b|melde dich/i.test(text) },
     { name: 'tailnet', tools: ['mesh_inspect_url', 'mesh_services'], applies: text => containsTailnetUrl(text) },
+    // 2.89.4: Kubernetes/Pods/Cluster get cluster_status (facts from the API only).
+    { name: 'kubernetes', tools: ['cluster_status'], applies: text => isKubernetesQuestion(text) },
     { name: 'screenshot', tools: ['desktop_screenshot'], applies: (_text, intent) => intent.kind === 'screenshot' },
 ]
 
@@ -424,6 +426,11 @@ function routeExclusions(primaryMessage: string, intent: ActionIntent): Set<stri
     const capture = intent.kind === 'screenshot' || SKILL_PACKS.some(pack => (pack.name === 'desktop-capture' || pack.name === 'computer-use')
         && pack.keywords.some(keyword => matchesSkillKeyword(primaryMessage, keyword)))
     if (capture) excluded.add('send_file')
+    // 2.89.4: Kubernetes facts only from cluster_status — never SSH/shell fallback.
+    if (isKubernetesQuestion(primaryMessage)) {
+        excluded.add('ssh_command')
+        excluded.add('run_command')
+    }
     return excluded
 }
 
