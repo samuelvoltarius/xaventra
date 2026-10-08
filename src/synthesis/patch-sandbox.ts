@@ -40,7 +40,7 @@ export type PatchSnapshot = Record<string, string>
  * suite with two workers; the grown suite needs more than three minutes per
  * command in the rollback phase (2.83.0). Operators may only shorten a command.
  */
-export const REPAIR_SANDBOX_LIMITS = Object.freeze({ commandDefaultMs: 300_000, commandMaxMs: 300_000, commandMinMs: 1000, totalBudgetMs: 1_500_000 })
+export const REPAIR_SANDBOX_LIMITS = Object.freeze({ commandDefaultMs: 480_000, commandMaxMs: 480_000, commandMinMs: 1000, totalBudgetMs: 2_100_000 })
 
 export function repairSandboxCommandTimeout(value: string | undefined): number {
     const timeout = Number(value || REPAIR_SANDBOX_LIMITS.commandDefaultMs)
