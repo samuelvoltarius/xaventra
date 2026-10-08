@@ -15,7 +15,7 @@
  * per SSH abgefragt; keine neue Verbindung.
  */
 import type { NodeLiveLoad, NodeProfile } from '../core/node-profile.js'
-import { NODE_OFFLINE_AFTER_MS } from './mesh-node-lifecycle.js'
+import { NODE_OFFLINE_AFTER_MS, isHeartbeatFresh } from './mesh-node-lifecycle.js'
 
 export const SKILLS = [
     'grosse-modelle', 'llm', 'code', 'embedding', 'bilder', 'vision', 'stt', 'tts', 'medien', 'speicher', 'rechnen',
@@ -158,7 +158,7 @@ export function deriveStrength(input: StrengthInput, now = Date.now()): NodeStre
 
     const graphDisk = input.graphHardware?.disk_free_gb
     const diskFree = input.load?.diskFreeGB ?? (graphDisk !== undefined && Number.isFinite(Number(graphDisk)) ? Number(graphDisk) : undefined)
-    const online = input.local || (typeof input.lastSeen === 'number' && now - input.lastSeen <= ONLINE_WINDOW_MS)
+    const online = input.local || (typeof input.lastSeen === 'number' && isHeartbeatFresh(input.lastSeen, now))
     const node: NodeStrength = {
         nodeId: input.nodeId,
         ...(profile.hostname ? { hostname: profile.hostname } : {}),

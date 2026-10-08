@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { discoverNodes } from '../mesh/mesh-registry.js'
 import { getCapabilityGraph } from '../mesh/capability-graph.js'
-import { resolveNodeLifecycle } from '../mesh/mesh-node-lifecycle.js'
+import { describeLastSeen, isHeartbeatFresh, resolveNodeLifecycle } from '../mesh/mesh-node-lifecycle.js'
 import { nodeMainEligible } from '../mesh/node-strengths.js'
 
 export type EnrollmentRole = 'worker' | 'standby'
@@ -58,10 +58,15 @@ export class NodeEnrollmentService {
         const graphById = new Map(graph.nodes.map(node => [node.id, node]))
         const nodes = registry.map(node => {
             const capability = graphById.get(node.node_id)
+            const lifecycle = resolveNodeLifecycle({ lastHeartbeat: node.last_heartbeat, lifecycleState: node.lifecycle_state })
+            // One freshness rule for every source (Supabase row, local file, direct peer): stale = offline, whatever the stored status says.
+            const online = lifecycle === 'active' && isHeartbeatFresh(node.last_heartbeat) && node.status !== 'offline'
             return {
                 id: node.node_id, name: node.hostname, host: node.ip, version: node.version,
-                lifecycle: resolveNodeLifecycle({ lastHeartbeat: node.last_heartbeat, lifecycleState: node.lifecycle_state }),
-                status: node.status, lastHeartbeat: node.last_heartbeat, hardware: node.hardware,
+                lifecycle, online,
+                status: online ? node.status : 'offline',
+                statusText: online ? `online ${node.version || ''}`.trim() : `offline (zuletzt gesehen ${describeLastSeen(node.last_heartbeat)})`,
+                lastHeartbeat: node.last_heartbeat, hardware: node.hardware,
                 capabilities: node.capabilities, runtimes: capability?.runtimes || [],
                 tools: node.tools_count, mainEligible: nodeMainEligible(node.capabilities),
             }

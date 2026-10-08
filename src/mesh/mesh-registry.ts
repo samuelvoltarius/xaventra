@@ -23,7 +23,9 @@ import { locateProgram } from '../startup/environment-scanner.js'
 import { hasInternet } from '../core/environment.js'
 import { cachedNvidiaQuery, nvidiaStaticInfo } from '../doctor/nvidia-smi.js'
 import {
+    describeLastSeen,
     isActiveNode,
+    isHeartbeatFresh,
     isNodeVisibleByDefault,
     resolveNodeLifecycle,
     type MeshNodeLifecycle,
@@ -540,7 +542,8 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
                         capabilities: rn.capabilities || [],
                         hardware: rn.hardware || undefined,
                         software: rn.software || undefined,
-                        last_heartbeat: rn.last_heartbeat || rn.updated_at || new Date().toISOString(),
+                        // Never invent a heartbeat: a row without one (or only a bumped updated_at) is not "just seen".
+                        last_heartbeat: rn.last_heartbeat || '',
                         registered_at: rn.registered_at || rn.created_at || new Date().toISOString(),
                         lifecycle_state: rn.lifecycle_state,
                         lifecycle_changed_at: rn.lifecycle_changed_at,
@@ -552,10 +555,10 @@ export async function discoverNodes(options: DiscoverNodesOptions = {}): Promise
                 } else {
                     // Update local with fresher remote data if available
                     const local = nodeMap.get(rn.node_id)!
-                    const remoteTime = new Date(rn.last_heartbeat || rn.updated_at || 0).getTime()
+                    const remoteTime = new Date(rn.last_heartbeat || 0).getTime()
                     const localTime = new Date(local.last_heartbeat).getTime()
                     if (remoteTime > localTime) {
-                        local.last_heartbeat = rn.last_heartbeat || rn.updated_at
+                        local.last_heartbeat = rn.last_heartbeat
                         local.status = rn.status || local.status
                         local.tools_count = rn.tools_count || local.tools_count
                     }
@@ -668,7 +671,7 @@ export function addRemoteNode(nodeId: string, ip: string, sshUser: string = 'roo
         tools_count: 0,
         status: 'offline',
         capabilities: [],
-        last_heartbeat: new Date().toISOString(),
+        last_heartbeat: '', // registered by hand, never heard from: not online until it reports itself
     }
     if (existing >= 0) {
         data.nodes[existing] = { ...data.nodes[existing], ...node }
@@ -1809,13 +1812,10 @@ export async function formatMeshNodes(options: { includeHistorical?: boolean } =
         const lifecycle = n.lifecycle_state || 'offline'
         const online = strength ? strength.online : lifecycle === 'active'
         const statusIcon = lifecycle === 'retired' ? '⚫' : lifecycle === 'tombstoned' ? '🚫' : online ? '🟢' : '🔴'
-        const lastBeat = new Date(n.last_heartbeat)
-        const ago = Math.max(0, Math.round((Date.now() - lastBeat.getTime()) / 1000))
-        const agoText = ago < 60 ? `${ago}s` : ago < 3600 ? `${Math.round(ago / 60)}min` : ago < 86400 ? `${Math.round(ago / 3600)}h` : `${Math.round(ago / 86400)}d`
         msg += `${statusIcon} *${n.hostname}*${isMe ? ' (ich)' : ''} — ${lifecycle === 'active' || lifecycle === 'offline' ? (online ? 'active' : 'offline') : lifecycle}\n`
         if (strength && online && strength.skills.length) msg += `   Kann: ${strength.skills.filter(skill => skill !== 'rechnen' || strength.skills.length === 1).map(skill => SKILL_LABELS[skill]).join(', ')}\n`
         msg += `   ID: \`${n.node_id}\` | ${n.platform} | Tools: ${n.tools_count}\n`
-        msg += `   Heartbeat: vor ${agoText}\n`
+        msg += `   Heartbeat: ${online ? describeLastSeen(n.last_heartbeat) : `zuletzt gesehen ${describeLastSeen(n.last_heartbeat)}`}\n`
         if (n.superseded_by) msg += `   Ersetzt durch: \`${n.superseded_by}\`\n`
         if (n.tombstone_reason) msg += `   Grund: ${n.tombstone_reason}\n`
         if (n.active_mission && lifecycle === 'active') msg += `   🎯 Mission: ${n.active_mission}\n`
@@ -1872,17 +1872,16 @@ export async function formatNodeDetail(target: string): Promise<string> {
     if (!node) return `❌ Node "${target}" nicht gefunden.`
 
     const isMe = node.node_id === NODE_ID
-    const statusIcon = node.status === 'online' ? '🟢' : node.status === 'busy' ? '🟡' : '🔴'
-    const lastBeat = new Date(node.last_heartbeat)
-    const ago = Math.round((Date.now() - lastBeat.getTime()) / 1000)
+    const fresh = isHeartbeatFresh(node.last_heartbeat)
+    const statusIcon = !fresh ? '🔴' : node.status === 'online' ? '🟢' : node.status === 'busy' ? '🟡' : '🔴'
 
     let msg = `${statusIcon} *Node: ${node.hostname}*${isMe ? ' (this node)' : ''}\n\n`
     msg += `🆔 ID: \`${node.node_id}\`\n`
     msg += `💻 Platform: ${node.platform}\n`
     msg += `📦 Version: ${node.version}\n`
     msg += `🔧 Tools: ${node.tools_count}\n`
-    msg += `📡 Status: ${node.status}\n`
-    msg += `💓 Heartbeat: vor ${ago}s\n`
+    msg += `📡 Status: ${fresh ? node.status : 'offline'}\n`
+    msg += `💓 Heartbeat: ${fresh ? describeLastSeen(node.last_heartbeat) : `zuletzt gesehen ${describeLastSeen(node.last_heartbeat)}`}\n`
     if (node.ip) msg += `🌐 IP: ${node.ip}\n`
     if (node.ssh_user) msg += `👤 SSH: ${node.ssh_user}@${node.ip}:${node.ssh_port || 22}\n`
     if (node.registered_at) msg += `📅 Registriert: ${new Date(node.registered_at).toLocaleString('de-DE')}\n`

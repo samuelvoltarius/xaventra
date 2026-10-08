@@ -6,7 +6,7 @@ import type { MeshNode } from './mesh-registry.js'
 import { getAllModelStats } from '../llm/model-perf-db.js'
 import { getOutcomeLedger } from '../core/outcome-ledger.js'
 import { readProbeResults } from '../llm/capability-probe.js'
-import { NODE_OFFLINE_AFTER_MS } from './mesh-node-lifecycle.js'
+import { NODE_OFFLINE_AFTER_MS, isHeartbeatFresh } from './mesh-node-lifecycle.js'
 
 export interface CapabilityRuntime {
     id: string
@@ -102,8 +102,7 @@ export function capabilityNodeOnline(node: CapabilityGraphNode, now = Date.now()
     if (node.status !== 'online' && node.status !== 'busy') return false
     // A scanner-only local node has no heartbeat; use its observed update time.
     // 2.89: one online window for the whole mesh (mesh-node-lifecycle.ts), not 75 s here.
-    const age = now - Date.parse(node.lastHeartbeat || node.updatedAt)
-    return Number.isFinite(age) && age >= -30_000 && age <= NODE_OFFLINE_AFTER_MS
+    return isHeartbeatFresh(node.lastHeartbeat || node.updatedAt, now)
 }
 
 export function capabilityRuntimeAvailable(

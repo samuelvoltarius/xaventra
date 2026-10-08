@@ -12,6 +12,26 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.2] — unreleased
+
+### Fixed
+
+- **Node list shows only live nodes as online.** A deleted worker could still
+  appear as "online" because a registry row without a heartbeat was given the
+  current time, and `updated_at` was accepted as a heartbeat. Now there is one
+  freshness rule (`isHeartbeatFresh`, the existing 5-minute mesh window) used by
+  the Supabase registry, the Direct-Mesh peer state, the node strengths and the
+  capability graph. Stale or heartbeat-less entries are "offline (zuletzt gesehen
+  vor ...)" in `/api/desktop/nodes`, `mesh_status` and the node detail text; a
+  node added by hand is not online until it reports itself.
+- **"Screenshot of all nodes" answers for every node.** `mesh_screenshot` with
+  all nodes now returns one line per known node: the picture, or a plain reason
+  (headless / capture not enabled, offline since ..., no capture channel). Raw
+  errors such as "Error: Error: Node capture not enrolled" are translated.
+- **Short follow-ups after a deterministic answer.** The agent history now holds
+  the receipt the user actually received, so "Was ist mit dem lab?" right after a
+  screenshot answer refers to it instead of the model's replaced text.
+
 ## [2.89.1] — 2026-10-08
 
 Kubernetes pilot fixes found on the first real cluster:
