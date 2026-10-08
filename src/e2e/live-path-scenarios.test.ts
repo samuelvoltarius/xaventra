@@ -11,14 +11,14 @@
  * (A tools/router/rounds, B connection truth, C capability truth, E pipeline). Since the
  * 2.89 integration every scenario is a plain `it` — none may stay red.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
     createE2EHarness, OWNER_TELEGRAM_ID, rawOrCatalogLeak, seedPausedAuftrag,
     type E2EHarness, type HarnessOptions, type TurnResult,
 } from '../../test/helpers/e2e-harness.js'
 
 let h: E2EHarness | undefined
-afterEach(async () => { await h?.close(); h = undefined })
+afterEach(async () => { await h?.close(); h = undefined; vi.unstubAllEnvs() })
 async function harness(options: HarnessOptions = {}): Promise<E2EHarness> {
     h = await createE2EHarness(options)
     return h
@@ -360,5 +360,72 @@ describe('Paket D — runs: rounds, errors, progress, stop words', () => {
         // Every offered tool is one the read-only policy lets run.
         const { isGovernedReadOnlyTool } = await e2e.module('agents/tool-authorization.js')
         expect(result.offeredTools.filter((name: string) => !isGovernedReadOnlyTool(name))).toEqual([])
+    }, T)
+})
+
+// 2.89.4 item 6 — live 09.10.2026: „Auf welchem Node…" for an inventory and a DHL
+// shipment number (the question even arrived BEFORE the message: stale pending).
+// Reports and package tracking have no effect target; tracking looks the shipment up.
+describe('2.89.4 — reports and package tracking never ask for a node', () => {
+    it('„Mach eine Inventur von allem, was du so kannst" — answered, no node question', async () => {
+        const e2e = await harness()
+        const result = await e2e.telegram('Mach eine Inventur von allem, was du so kannst', [
+            { tool: 'nova_capabilities' },
+            { text: 'Hier ist meine Inventur der Fähigkeiten.' },
+        ])
+        expect(result.error, String(result.error)).toBeUndefined()
+        expect(result.final).not.toMatch(/Auf welchem Node/)
+        expect(result.rounds.length).toBeGreaterThan(0)
+        expectClean(result)
+    }, T)
+
+    // Number freely invented from documentation test data (RFC 5737 192.0.2.0/24).
+    const TRACKING = '192020250'
+
+    it(`„…trackst, Sendungsnummer ${TRACKING}" — no node question, parcel_track with fake fetch`, async () => {
+        vi.stubEnv('XAVENTRA_DHL_TRACKING_API_KEY', 'x'.repeat(32))
+        const e2e = await harness({
+            routes: [{
+                match: /api-eu\.dhl\.com\/track\/shipments/,
+                respond: () => ({ json: { shipments: [{
+                    id: TRACKING,
+                    status: { statusCode: 'transit', description: 'Sendung ist unterwegs', timestamp: '2026-10-05T10:00:00Z' },
+                    service: 'Express',
+                }] } }),
+            }],
+        })
+        const text = `ich hätte gerne, dass du dieses DHL-Express-Paket trackst, Sendungsnummer ${TRACKING}`
+        const result = await e2e.telegram(text, [
+            { tool: 'parcel_track', args: { number: TRACKING, provider: 'dhl' } },
+            { text: `Dein DHL-Paket ${TRACKING} ist unterwegs.` },
+        ])
+        expect(result.error, String(result.error)).toBeUndefined()
+        expect(result.final).not.toMatch(/Auf welchem Node/)
+        expect(result.offeredTools).toContain('parcel_track')
+        expect(result.executedTools).toContain('parcel_track')
+        expectClean(result)
+    }, T)
+
+    it(`„Verfolge DHL ${TRACKING}" — no node question, web lookup with fake fetch when no tracking API is set`, async () => {
+        vi.stubEnv('XAVENTRA_DHL_TRACKING_API_KEY', '')
+        vi.stubEnv('XAVENTRA_17TRACK_TOKEN', '')
+        const e2e = await harness({
+            routes: [{
+                match: /duckduckgo\.com/,
+                respond: () => ({ json: {
+                    AbstractText: `DHL Sendung ${TRACKING}: Unterwegs, Zustellung erwartet 07.10.2026`,
+                    AbstractURL: `https://www.dhl.de/de/privatkunden/dhl-sendungsverfolgung.html?piececode=${TRACKING}`,
+                    RelatedTopics: [],
+                } }),
+            }],
+        })
+        const result = await e2e.telegram(`Verfolge DHL ${TRACKING}`, [
+            { tool: 'web_search', args: { query: `DHL Sendungsverfolgung ${TRACKING}` } },
+            { text: `Sendung ${TRACKING} ist unterwegs.` },
+        ])
+        expect(result.error, String(result.error)).toBeUndefined()
+        expect(result.final).not.toMatch(/Auf welchem Node/)
+        expect(result.executedTools).toContain('web_search')
+        expectClean(result)
     }, T)
 })

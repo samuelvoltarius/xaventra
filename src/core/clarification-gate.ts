@@ -24,8 +24,23 @@ const IMPERSONAL_REFERENCE = /\b(?:(?:wie\s+spät|wie\s+viel\s+uhr)\s+ist\s+es|w
 // 2.89.3: "das Wetter", "dieses Bild" - a determiner before a capitalised noun is no unresolved reference
 // (live: "Wie spät ist es und wie ist das Wetter in Wien?" was answered with "Worauf genau bezieht sich das?").
 const DETERMINER_BEFORE_NOUN = /\b(?:[Dd]as|[Dd]ies(?:e[rsnm]?)?)\s+(?=[A-ZÄÖÜ][a-zäöüß]{2,})/g
-const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send\w*|schick\w*|service\s+(?:start|stop|restart))\b/i
+// 2.89.4: only operations that change a machine ask for that machine. `send/schick`
+// match the verbs alone — never compounds like "Sendungsnummer" (live 09.10.: the
+// DHL number alone triggered "Auf welchem Node…"). Reports to the requester
+// ("schick mir den Status", "sende mir eine Inventur") are not machine actions.
+const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send(?:e(?:n|r|st)?)?|schick\w*|service\s+(?:start|stop|restart))\b/i
+const REPORT_TO_REQUESTER = /\b(?:send(?:e(?:n|r|st)?)?|schick\w*)\s+(?:mir|uns)\b.{0,50}\b(?:inventur|status|bericht|übersicht|liste|zusammenfassung|was|welche[nrs]?)\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
+/** Several machines that could each run the action — only then a target question helps. */
+function hasSeveralCandidateTargets(): boolean {
+    try {
+        const nodes = getCapabilityGraph().getSnapshot().nodes
+            .filter(node => node.status !== 'offline' && node.status !== 'unknown')
+        // Empty graph = unknown world: keep the question for real machine actions.
+        // Exactly one known machine = no question (decide alone).
+        return nodes.length !== 1
+    } catch { return true }
+}
 
 // Only this bounded local capture + reply shape supplies its own referents.
 // A second operation, another recipient or unspecified capture stays gated.
@@ -44,6 +59,17 @@ function hasExplicitReadUrlReference(text: string): boolean {
         && !HIGH_IMPACT.test(actionRequestText(text))
         && targets.length === 1 && /^https?:\/\//i.test(targets[0])
 }
+
+/** "auf dem Spark", "ns1", "hier" — a slot fill for a target question, never a new order. */
+function looksLikeTargetAnswer(text: string): boolean {
+    const value = String(text || '').trim()
+    if (!value || value.length > 60) return false
+    return /^(?:auf|an|nach|zu|von|im|in|am|dem|der|den|hier|lokal(?:en)?|dort|remote)\b/i.test(value)
+        || /^(?:main|spark|node|host|server|ns\d+|pi\d*|jetson|localhost|cloud)(?:\s+\w{1,20})?[.!]?$/i.test(value)
+}
+
+/** A fresh command ("Mach eine Inventur…", "Verfolge DHL…") — not a slot fill. */
+const IMPERATIVE_ORDER = /^(?:bitte\s+)?(?:mach\w*|erstel+l\w*|installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|starte?\b|stoppe?\b|sende?\b|schick\w*|verfolg\w*|track\w*|prüf\w*|pruefe?\b|zeige?\b|liste\w*|suche?\b|recherchier\w*|schreib\w*|lies\b|öffne?\b|oeffne?\b|deploy\w*|restart\w*)/i
 
 function continuationEvidence(principalId: string, content: string): string[] {
     const summary = getSessionContinuityStore().getSummary(principalId)
@@ -94,12 +120,23 @@ export function evaluateClarification(principalId: string, content: string): Cla
         if (isConversationOnly(text) || SOCIAL.test(text) || SMALL_TALK.test(text)) {
             return { action: 'continue', content: text, missingFields: [], confidence: 1, evidence: ['conversation does not resume pending action'] }
         }
-        const restored = store.consumePendingClarification(principalId)!
-        return {
-            action: 'continue',
-            content: `${restored.originalRequest}\n\n[Nutzer-Klärung: ${text}]`,
-            reason: 'resuming the original request with the user answer',
-            missingFields: [], confidence: 1, evidence: ['durable user-scoped clarification'],
+        // 2.89.4: a NEW order is not the answer to "on which node?". Live 09.10.
+        // the target question of an earlier request appeared before "Mach eine
+        // Inventur…" and would have glued the two together. Drop the old
+        // question and answer this turn on its own.
+        const newTextIsOrder = !looksLikeTargetAnswer(text)
+            && (detectActionIntent(text).requiresTool || IMPERATIVE_ORDER.test(text))
+        if (newTextIsOrder && (pending.missingFields.includes('target') || pending.question === 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?')) {
+            store.clearPendingClarification(principalId)
+            pending = undefined
+        } else {
+            const restored = store.consumePendingClarification(principalId)!
+            return {
+                action: 'continue',
+                content: `${restored.originalRequest}\n\n[Nutzer-Klärung: ${text}]`,
+                reason: 'resuming the original request with the user answer',
+                missingFields: [], confidence: 1, evidence: ['durable user-scoped clarification'],
+            }
         }
     }
 
@@ -141,7 +178,11 @@ export function evaluateClarification(principalId: string, content: string): Cla
     const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text) || isResolvedNodeScreenshotReply(text)
     const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, '').replace(DETERMINER_BEFORE_NOUN, ''))
         && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply
-    const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply
+    // 2.89.4: a target question only when the order is an action ON a machine AND
+    // more than one machine is in question. Otherwise decide alone (Main / best node).
+    const missingTarget = HIGH_IMPACT.test(requestText) && !REPORT_TO_REQUESTER.test(requestText)
+        && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply
+        && hasSeveralCandidateTargets()
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
         // Outcome-derived route reliability is diagnostic metadata, not an
         // unresolved user fact. Keep it stored; a new observation still needs
