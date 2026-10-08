@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const vm = require('node:vm')
 
-// 2.88 „Sehen und lenken“: Ihr Computer, Aktivität, Regeln — eine Datei für
+// 2.88 „Sehen und lenken“: Dein Computer, Aktivität, Regeln — eine Datei für
 // Desktop-App und Web-App. Daten nur escaped, Knöpfe in Alltagssprache.
 
 function loadSehen(responses) {
@@ -21,7 +21,7 @@ function loadSehen(responses) {
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
-test('Ihr Computer: Bildschirme mit Zuschauen / Übernehmen / Stoppen / Anderes Ziel', async () => {
+test('Dein Computer: Bildschirme mit Zuschauen / Übernehmen / Stoppen / Anderes Ziel', async () => {
   const { sehen, h } = loadSehen({ '/api/desktop/bildschirme': {
     bildschirme: [
       { id: 'node:spark-a', name: 'spark-a', art: 'sitzung', zustand: 'bereit', zustandText: 'bereit', lokal: false, zuschauen: 'bild', eingabeErlaubt: false, linkSteuern: false, uebernommen: false, gestoppt: false, tut: 'Projekt: Website 4/7' },
@@ -31,7 +31,7 @@ test('Ihr Computer: Bildschirme mit Zuschauen / Übernehmen / Stoppen / Anderes 
   sehen.view('computer', h)
   await tick()
   const html = sehen.view('computer', h)
-  assert.match(html, /Ihr Computer/)
+  assert.match(html, /Dein Computer/)
   assert.match(html, /data-sehen-watch="node:spark-a"/)
   assert.match(html, /data-aktion="uebernehmen"/)
   assert.match(html, /data-aktion="stoppen"/)
