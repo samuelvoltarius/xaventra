@@ -115,14 +115,10 @@ function createOpenAIProvider(): MediaProvider {
             const key = apiKey()
             if (!key) throw new Error('OPENAI_API_KEY nicht gesetzt')
 
-            const data = readFileSync(filePath)
-            const base64 = data.toString('base64')
-            const ext = extname(filePath).toLowerCase().replace('.', '')
-            const mimeMap: Record<string, string> = {
-                jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-                gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
-            }
-            const mime = mimeMap[ext] || 'image/jpeg'
+            const { prepareVisionImageFile } = await import('./image-prepare.js')
+            const prepared = await prepareVisionImageFile(filePath)
+            const base64 = prepared.data
+            const mime = prepared.mimeType
 
             const body = JSON.stringify({
                 model: 'auto',
@@ -207,14 +203,10 @@ function createAnthropicProvider(): MediaProvider {
             const key = apiKey()
             if (!key) throw new Error('ANTHROPIC_API_KEY nicht gesetzt')
 
-            const data = readFileSync(filePath)
-            const base64 = data.toString('base64')
-            const ext = extname(filePath).toLowerCase().replace('.', '')
-            const mimeMap: Record<string, string> = {
-                jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-                gif: 'image/gif', webp: 'image/webp',
-            }
-            const mediaType = mimeMap[ext] || 'image/jpeg'
+            const { prepareVisionImageFile } = await import('./image-prepare.js')
+            const prepared = await prepareVisionImageFile(filePath)
+            const base64 = prepared.data
+            const mediaType = prepared.mimeType
 
             const body = JSON.stringify({
                 model: 'claude-sonnet-4-20250514',
@@ -368,6 +360,9 @@ function createLocalWhisperProvider(): MediaProvider {
 // Uses the already-connected daemon LLM — no API keys needed!
 // ============================================
 
+/** analyze_image: no thinking, short answer, at most two local candidates of 35 s each (below the 90 s tool limit). */
+export const IMAGE_CALL_OPTIONS = { timeoutMs: 35_000, maxAttempts: 2, maxTokens: 900, reasoningEffort: 'none' as const }
+
 function createNovaLLMProvider(): MediaProvider {
     return {
         id: 'nova-llm',
@@ -380,22 +375,17 @@ function createNovaLLMProvider(): MediaProvider {
             const llm = (globalThis as any).__novaState?.llm
             if (!llm) throw new Error('Nova LLM nicht verfügbar')
 
-            const data = readFileSync(filePath)
-            const base64Data = data.toString('base64')
-            const ext = extname(filePath).toLowerCase().replace('.', '')
-            const mimeMap: Record<string, string> = {
-                jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-                gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
-            }
-            const mime = mimeMap[ext] || 'image/jpeg'
+            const { prepareVisionImageFile } = await import('./image-prepare.js')
+            const prepared = await prepareVisionImageFile(filePath)
 
             const messages = [{
                 role: 'user' as const,
                 content: prompt || 'Beschreibe dieses Bild detailliert.',
-                image: { data: base64Data, mimeType: mime },
+                image: { data: prepared.data, mimeType: prepared.mimeType },
             }]
 
-            const response = await llm.complete(messages)
+            // Bounded: one picture description must finish well inside the 90 s tool limit.
+            const response = await llm.complete(messages, undefined, IMAGE_CALL_OPTIONS)
             const text = response?.content || response?.text || ''
 
             return {

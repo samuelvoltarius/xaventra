@@ -50,6 +50,20 @@ export function isEnvironmentOverview(text: string): boolean {
         && !/\b(?:installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|kopier\w*|verschieb\w*|starte?|stoppe?|beende|deploy\w*|update\w*|aktualisier\w*|konfigurier\w*|send\w*|schick\w*|mach\w*|führe?\w*|execute\w*|backup\w*|verbinde|connect|steuere|schalt\w*|koppel\w*|übertrag\w*|upload\w*|download\w*)\b/i.test(question)
 }
 
+/**
+ * 2.89.3: a request with a second task ("... und wenn du schon dabei bist Google nach mir"). Live 08.10.2026
+ * the router saw only the screenshot half and the second half was dropped without a word.
+ * Returns the text of the second task, or null when the request is a single task.
+ */
+const COMPOUND_MARKER = /\b(?:und\s+)?(?:wenn|falls)\s+du\s+schon\s+dabei\s+bist\b|\b(?:und\s+)?(?:au(?:ß|ss)erdem|zus(?:ä|ae)tzlich|danach|anschlie(?:ß|ss)end)\b|\bund\s+(?:dann|auch|noch)\b|\bund\s+(?=(?:google|googl|such|recherchier|finde|öffne|oeffne|erz(?:ä|ae)hl|sag|lies|wie|was|wann|wo|wer)\w*)/i
+
+export function compoundRemainder(text: string): string | null {
+    const match = COMPOUND_MARKER.exec(String(text || ''))
+    if (!match) return null
+    const rest = String(text).slice(match.index + match[0].length).replace(/^[\s,.;:-]+/, '').trim()
+    return rest.length >= 4 ? rest : null
+}
+
 /** A node target must not silently become the daemon's local desktop. */
 export function isNodeScreenshotRequest(text: string): boolean {
     // Separate mixed tasks: "Screenshot vom Desktop und zeige die Nodes"

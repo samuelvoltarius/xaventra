@@ -2137,7 +2137,12 @@ export const mediaProviderTools: NovaTool[] = [
         ],
         handler: async (params) => {
             const { processMedia } = await import('../media/media-providers.js')
-            return await processMedia(params.path as string, 'image', { prompt: params.prompt as string, provider: params.provider as string })
+            // 2.89.3: a path the model garbled maps to the stored inbox picture it means.
+            const { resolveInboxImagePath } = await import('../core/inbox-media.js')
+            const requested = String(params.path || '')
+            const resolved = resolveInboxImagePath(requested)
+            if (!resolved) throw new Error(`Bilddatei nicht gefunden: ${requested.slice(0, 200)}`)
+            return await processMedia(resolved, 'image', { prompt: params.prompt as string, provider: params.provider as string })
         },
     },
     {

@@ -120,3 +120,22 @@ describe('TelegramPresentationSession in status-card mode', () => {
         expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^❌/))
     })
 })
+
+describe('LiveStatusCard closing line (2.89.3)', () => {
+    it('is short, has no internal counters and says "Fertig" / "Abgebrochen"', async () => {
+        const ok = transport()
+        const done = new LiveStatusCard(ok)
+        await done.update('⏳ Ich arbeite noch daran (20 s) …')
+        vi.advanceTimersByTime(167_000)
+        await done.finish(true)
+        expect(ok.edit).toHaveBeenLastCalledWith(42, '✅ Fertig · 167 s')
+        const bad = transport()
+        const failed = new LiveStatusCard(bad)
+        await failed.update('⏳ Ich arbeite noch daran (20 s) …')
+        await failed.update('⚙️ Schritt 1/3: x')
+        await failed.finish(false)
+        const text = String(bad.edit.mock.calls.at(-1)?.[1])
+        expect(text).toMatch(/^❌ Abgebrochen · \d+ s$/)
+        expect(text).not.toMatch(/Statusmeldung|Schritte/)
+    })
+})

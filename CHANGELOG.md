@@ -12,6 +12,35 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.3] — 2026-10-08
+
+### Fixed
+
+- **A picture sent over Telegram is answered, not left in silence.** Live 08.10.2026: a
+  photo plus "what do you see?" ended in a missing-file error, a 90 second image tool
+  timeout and over two minutes without an answer. The causes: the incoming-picture block
+  could be cut by the prompt budget so the model guessed the file path (the block is now
+  protected and a garbled inbox path is mapped to the stored picture); the picture went to
+  the vision model at full size (every vision call now gets at most 1536 px on the long
+  edge, JPEG) with a bounded, non-thinking call; the main model already saw the picture
+  and still called the image tool (it is no longer offered, and the prompt says the picture
+  is already there).
+- **Unreachable servers and tools without a key are skipped.** A local model server that
+  does not answer is skipped for five minutes instead of being asked with every model on
+  every call, and a model that timed out is not asked again on the same server under
+  another address. Tools of a provider without a configured key (MiniMax) are not offered.
+- **Honest signs of life.** Telegram gets a second short message after about 90 seconds
+  that says in plain words what is going on (never more than two), and a picture turn that
+  hits its limit (six minutes) always ends with an honest answer and an offer to retry.
+  A request with two tasks ("send me screenshots ... and while you are at it google me")
+  now offers the tools of both parts, answers both, and says openly which part it did not
+  manage instead of dropping it. "Wie spät ist es und wie ist das Wetter in Wien?" is no
+  longer answered with a clarifying question ("das" before a noun is no reference).
+  Screenshot lines are short ("ns1: Server ohne Bildschirm – kein Bild möglich"), nodes with
+  a picture first.
+  The closing line of the status message is short ("Fertig" / "Abgebrochen" and the time)
+  without internal counters.
+
 ## [2.89.2] — 2026-10-08
 
 ### Fixed

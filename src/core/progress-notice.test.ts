@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createProgressNotice, progressGoesToChat, PROGRESS_FIRST_AFTER_MS } from './progress-notice.js'
+import { createProgressNotice, progressGoesToChat, PROGRESS_FIRST_AFTER_MS, PROGRESS_SECOND_AFTER_MS } from './progress-notice.js'
 
 afterEach(() => { vi.useRealTimers() })
 
 describe('progress notice (2.89 Paket E)', () => {
-    it('chat: exactly one message after ~20 s, no matter how many steps', async () => {
+    it('chat: one message after ~20 s and one more after ~90 s, no matter how many steps', async () => {
         vi.useFakeTimers()
         const reply = vi.fn(async () => undefined)
         const notice = createProgressNotice({ channel: 'Telegram', enabled: true, reply, now: () => Date.now() })
@@ -12,9 +12,9 @@ describe('progress notice (2.89 Paket E)', () => {
         await vi.advanceTimersByTimeAsync(PROGRESS_FIRST_AFTER_MS - 1)
         expect(reply).not.toHaveBeenCalled()
         await vi.advanceTimersByTimeAsync(5 * 60_000)
-        expect(reply).toHaveBeenCalledTimes(1)
+        expect(reply).toHaveBeenCalledTimes(2)
         expect(String((reply.mock.calls[0] as unknown[])[0])).toMatch(/^⏳ Ich arbeite noch daran/)
-        expect(notice.sent).toBe(1)
+        expect(notice.sent).toBe(2)
     })
 
     it('a routing notice becomes the text of the one message and is kept for the run', async () => {
@@ -99,5 +99,41 @@ describe('side-channel heartbeat (2.89)', () => {
         expect(seen).toEqual([])
         expect(notice.notices).toEqual([])
         notice.close()
+    })
+})
+
+describe('progress notice 2.89.3: second lifesign', () => {
+    it('the second message comes at ~90 s in plain words, never a third', async () => {
+        vi.useFakeTimers()
+        const reply = vi.fn(async (_text: string) => undefined)
+        const notice = createProgressNotice({ channel: 'Telegram', enabled: true, reply, now: () => Date.now(), activity: 'ich werte gerade das Bild aus …' })
+        await vi.advanceTimersByTimeAsync(PROGRESS_FIRST_AFTER_MS)
+        expect(reply).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(PROGRESS_SECOND_AFTER_MS - PROGRESS_FIRST_AFTER_MS - 1)
+        expect(reply).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(reply).toHaveBeenCalledTimes(2)
+        expect(reply.mock.calls[1][0]).toMatch(/^⏳ Das dauert länger \(90 s\) — ich werte gerade das Bild aus …$/)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(reply).toHaveBeenCalledTimes(2)
+        expect(notice.sent).toBe(2)
+    })
+
+    it('an answer before 90 s cancels the second message', async () => {
+        vi.useFakeTimers()
+        const reply = vi.fn(async () => undefined)
+        const notice = createProgressNotice({ channel: 'telegram', enabled: true, reply })
+        await vi.advanceTimersByTimeAsync(PROGRESS_FIRST_AFTER_MS)
+        notice.close()
+        await vi.advanceTimersByTimeAsync(5 * 60_000)
+        expect(reply).toHaveBeenCalledTimes(1)
+    })
+
+    it('collecting channels get no second message either', async () => {
+        vi.useFakeTimers()
+        const reply = vi.fn(async () => undefined)
+        createProgressNotice({ channel: 'desktop', enabled: true, reply })
+        await vi.advanceTimersByTimeAsync(5 * 60_000)
+        expect(reply).not.toHaveBeenCalled()
     })
 })

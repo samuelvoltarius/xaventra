@@ -135,6 +135,8 @@ export interface AgentResponse {
     /** True when the incomplete-run text is already a short honest sentence (no raw tool data). */
     incompleteAnswerReady?: boolean
     content: string
+    /** The model text before a failed verification replaced it (2.89.3). */
+    modelContent?: string
     /** Canonical Outcome Ledger run for this invocation. */
     runId?: string
     /** The kernel, never model prose, is the completion authority. */
@@ -1056,6 +1058,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         const nextToolEvidenceId = (call: { id?: string; name: string }) =>
             String(call.id || `${kernel.contract.id}:tool:${++toolEvidenceSequence}:${call.name}`)
         let finalContent = response.content || ''
+        // 2.89.3: the model's own text before a failed verification replaces it (a compound request still needs its second half).
+        let modelContentBeforeVerdict = ''
         let incompleteSynthesis = false
         let incompleteAnswerReady = false
         let policyBlocked = false
@@ -1934,6 +1938,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             }
             if (!policyBlocked && !failureEscalationContent && !incompleteSynthesis
                 && kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
+                modelContentBeforeVerdict = finalContent
                 finalContent = `Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: ${reasons.join('; ') || taskValidation.violations.join('; ') || 'Erfolgsnachweis fehlt.'}`
             }
         }
@@ -1992,6 +1997,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         _traceRecorder.finish(_traceId, { success: taskValidation.success, responseContent: finalContent })
         return {
             content: finalContent,
+            modelContent: modelContentBeforeVerdict || undefined,
             incompleteSynthesis,
             incompleteAnswerReady,
             runId: kernel.contract.id,

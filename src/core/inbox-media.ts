@@ -6,7 +6,7 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 export const INBOX_MEDIA_MAX_AGE_MS = 7 * 24 * 3600 * 1000
 export const INBOX_MEDIA_MAX_TOTAL_BYTES = 200 * 1024 * 1024
@@ -52,13 +52,46 @@ export function storeInboxImage(image: { data: string; mimeType?: string }, now 
 }
 
 /**
+ * A model may garble a long path it was told (live 08.10.2026: ".../inbox-media/2026-10-08/18-37-08_8e5046.jpg"
+ * instead of ".../inbox-media/2026-10-08-9b96758e5046.jpg"). A path that does not exist is mapped to the
+ * stored picture it clearly means: same file name, same trailing hash, or - for any path inside an
+ * inbox-media folder - the newest picture of the last hour. Anything else stays unresolved (null).
+ */
+export function resolveInboxImagePath(requested: string, now = Date.now(), dir = inboxMediaDir()): string | null {
+    const wanted = String(requested || '').trim()
+    if (!wanted) return null
+    if (existsSync(wanted)) return wanted
+    const slashed = wanted.split(String.fromCharCode(92)).join('/')
+    if (!/inbox-media/i.test(slashed) || !existsSync(dir)) return null
+    const files = readdirSync(dir).map(name => {
+        const path = join(dir, name)
+        try { const stat = statSync(path); return stat.isFile() ? { name, path, mtime: stat.mtimeMs } : null } catch { return null }
+    }).filter((file): file is { name: string; path: string; mtime: number } => file !== null).sort((a, b) => b.mtime - a.mtime)
+    if (files.length === 0) return null
+    const name = basename(slashed)
+    const exact = files.find(file => file.name === name)
+    if (exact) return exact.path
+    const tail = /([0-9a-f]{6,12})\.[a-z0-9]+$/i.exec(name)?.[1]?.toLowerCase()
+    if (tail) {
+        const byHash = files.find(file => file.name.toLowerCase().replace(/\.[a-z0-9]+$/, '').endsWith(tail))
+        if (byHash) return byHash.path
+    }
+    const recent = files.find(file => now - file.mtime <= 3600_000)
+    return recent ? recent.path : null
+}
+
+/**
  * Prompt block for a stored incoming picture: the file path serves tools that need a path, e.g.
  * `astro_plate_solve` (skill pack "astro", not routed for a bare "Was ist das?").
+ * `seesImage`: the active model already receives the picture in this call - no tool is needed to look at it.
  */
-export function inboxImagePromptBlock(path: string): string {
+export function inboxImagePromptBlock(path: string, seesImage = false): string {
+    const direct = seesImage
+        ? '\nDas Bild liegt dir bereits vor - antworte direkt darauf. analyze_image ist für dieses Bild nicht nötig.'
+        : ''
     return `
 
 ## Eingehendes Bild
-Das Bild dieser Nachricht liegt als Datei unter ${path}. Werkzeuge, die einen Dateipfad brauchen, nutzen diesen Pfad.
+Das Bild dieser Nachricht liegt als Datei unter ${path}. Werkzeuge, die einen Dateipfad brauchen, nutzen genau diesen Pfad.${direct}
 Bei Astrofotos (Nebel, Galaxie, Sternfeld): Skill-Pack "astro" mit load_skill_pack laden und astro_plate_solve mit image_path=${path} aufrufen, bevor ein Objekt als Tatsache genannt wird.`
 }

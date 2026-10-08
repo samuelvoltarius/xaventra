@@ -21,6 +21,9 @@ const CANCEL = /^(?:abbrechen|stopp?|vergiss es|cancel|never mind)$/i
 const SOCIAL = /^(?:hallo|hi|hey|guten (?:morgen|abend|tag)|danke|ok(?:ay)?|super|perfekt)[!. ]*$/i
 const AMBIGUOUS_REFERENCE = /\b(?:das|dies|dort|da|ihn|sie|es|that|this|there|it)\b/i
 const IMPERSONAL_REFERENCE = /\b(?:(?:wie\s+spät|wie\s+viel\s+uhr)\s+ist\s+es|what\s+time\s+is\s+it)\b/gi
+// 2.89.3: "das Wetter", "dieses Bild" - a determiner before a capitalised noun is no unresolved reference
+// (live: "Wie spät ist es und wie ist das Wetter in Wien?" was answered with "Worauf genau bezieht sich das?").
+const DETERMINER_BEFORE_NOUN = /\b(?:[Dd]as|[Dd]ies(?:e[rsnm]?)?)\s+(?=[A-ZÄÖÜ][a-zäöüß]{2,})/g
 const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send\w*|schick\w*|service\s+(?:start|stop|restart))\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
 
@@ -136,7 +139,7 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // destination. Multiple targets and unrelated actions still require context.
     const explicitReadTarget = hasExplicitReadUrlReference(text)
     const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text) || isResolvedNodeScreenshotReply(text)
-    const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, ''))
+    const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, '').replace(DETERMINER_BEFORE_NOUN, ''))
         && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply
     const missingTarget = HIGH_IMPACT.test(requestText) && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {

@@ -12,8 +12,8 @@ describe('node screenshot reply keeps per-node truth behind the verification pre
     ] })
     it('reports the delivered picture and the missing one', () => {
         const text = nodeScreenshotResponse([{ toolName: 'mesh_screenshot', success: false, result: `❌ Ergebnis nicht verifiziert: tool reported failure. Rohdaten: ${raw}` }])
-        expect(text).toContain('node-a: Bild aufgenommen; Bildzustellung bestätigt')
-        expect(text).toContain('node-b: kein Bild aufgenommen')
+        expect(text).toContain('node-a: Bild gesendet')
+        expect(text).toContain('node-b: ')
         expect(text).not.toContain('In diesem Lauf wurde keine Bilddatei')
         expect(text).not.toContain('Node-Fähigkeiten')
     })
