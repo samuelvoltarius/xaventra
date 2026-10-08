@@ -14,6 +14,8 @@
 export interface StatusCardTransport {
     send(text: string): Promise<number | null>
     edit(messageId: number, text: string): Promise<void>
+    /** 2.89.4: remove the card after the answer arrived (the ✅ line looked like an empty reply). */
+    delete?(messageId: number): Promise<void>
 }
 
 export interface StatusCardOptions {
@@ -111,6 +113,36 @@ export class LiveStatusCard {
         const head = ok ? `✅ Fertig · ${seconds} s` : `❌ Abgebrochen · ${seconds} s`
         const tail = detail ? `\n${String(detail).trim().slice(0, 300)}` : ''
         await this.edit(`${head}${tail}`)
+    }
+
+    /**
+     * 2.89.4: after the real answer is delivered the card is removed — "✅ Fertig · N s"
+     * stood in the chat BEFORE the answer and read like an empty reply. If the
+     * delete fails the card is left standing briefly (last resort: the closing line).
+     */
+    async dismiss(): Promise<'deleted' | 'kept'> {
+        if (this.messageId === null || this.disabled || this.finished) {
+            this.finished = true
+            if (this.timer) { clearTimeout(this.timer); this.timer = null }
+            this.pending = null
+            active.delete(this.id)
+            return 'deleted'
+        }
+        const messageId = this.messageId
+        this.finished = true
+        if (this.timer) { clearTimeout(this.timer); this.timer = null }
+        this.pending = null
+        active.delete(this.id)
+        if (this.transport.delete) {
+            try {
+                await this.transport.delete(messageId)
+                return 'deleted'
+            } catch { /* leave it standing briefly */ }
+        }
+        // Fallback: one short closing line, then nothing more from this card.
+        const seconds = Math.max(0, Math.round((this.now() - this.startedAt) / 1000))
+        try { await this.transport.edit(messageId, `✅ Fertig · ${seconds} s`) } catch { /* ignore */ }
+        return 'kept'
     }
 
     private async edit(text: string): Promise<void> {

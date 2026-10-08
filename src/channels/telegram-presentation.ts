@@ -99,7 +99,8 @@ export function isTelegramFailureReply(text: string): boolean {
 
 /** One inbound request owns one visible lifecycle: progress is edited in place,
  * then removed before the final/clarification/error response is delivered
- * (or, in status-card mode, finished with ✅/❌ and kept). */
+ * (status-card mode 2.89.4: the card is deleted after the answer arrived; a
+ * failure keeps one ❌ line with the reason). */
 export class TelegramPresentationSession {
     private progressMessageId: number | null = null
     private lastProgress = ''
@@ -121,6 +122,7 @@ export class TelegramPresentationSession {
                 this.card ||= new LiveStatusCard({
                     send: body => this.adapter.sendProgress(this.chatId, body),
                     edit: (messageId, body) => this.adapter.editMessage(this.chatId, messageId, body),
+                    delete: messageId => this.adapter.deleteMessage(this.chatId, messageId),
                 }, { minIntervalMs: this.options.minEditIntervalMs ?? 2_000, chatId: this.chatId, startedAt: this.startedAt })
                 await this.card.update(text)
                 return 'progress'
@@ -128,7 +130,10 @@ export class TelegramPresentationSession {
             try {
                 await this.adapter.send({ channel: 'telegram', to: this.chatId, content: text })
                 this.answerDelivered = !isTelegramFailureReply(text)
-                await this.finishProgress(!isTelegramFailureReply(text))
+                // 2.89.4: remove the progress card after the answer — "✅ Fertig" before the
+                // answer read like an empty reply. A failure keeps one ❌ line with the reason.
+                if (this.answerDelivered) await this.dismissProgress()
+                else await this.finishProgress(false)
             } catch (error) {
                 await this.finishProgress(false)
                 throw error
@@ -152,15 +157,25 @@ export class TelegramPresentationSession {
     }
 
     /** End of the request: status-card mode finishes the card (✅/❌), otherwise the bubble is removed. */
-    async finishProgress(ok: boolean): Promise<void> {
+    async finishProgress(ok: boolean, detail?: string): Promise<void> {
         if (!this.options.statusCard) return this.clearProgress()
         const card = this.card
         if (!card || card.isFinished) return
-        await card.finish(ok)
+        await card.finish(ok, detail)
+    }
+
+    /** 2.89.4: delete the card after the answer; if delete fails it stays briefly. */
+    async dismissProgress(): Promise<void> {
+        const card = this.card
+        if (!card) return
+        await card.dismiss()
     }
 
     async clearProgress(): Promise<void> {
-        if (this.options.statusCard) return this.finishProgress(this.answerDelivered)
+        if (this.options.statusCard) {
+            if (this.answerDelivered) return this.dismissProgress()
+            return this.finishProgress(this.answerDelivered)
+        }
         if (this.progressMessageId === null) return
         const messageId = this.progressMessageId
         this.progressMessageId = null

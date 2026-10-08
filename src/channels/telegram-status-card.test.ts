@@ -11,6 +11,7 @@ afterEach(() => { vi.useRealTimers() })
 const transport = () => ({
     send: vi.fn(async (_text: string) => 42 as number | null),
     edit: vi.fn(async (_id: number, _text: string) => undefined),
+    delete: undefined as undefined | ((messageId: number) => Promise<void>),
 })
 
 describe('LiveStatusCard', () => {
@@ -77,7 +78,7 @@ describe('TelegramPresentationSession in status-card mode', () => {
         deleteMessage: vi.fn(async () => undefined),
     })
 
-    it('keeps the card and marks it ✅ only after the final answer is sent', async () => {
+    it('removes the card after the answer so "✅ Fertig" never stands before the reply (2.89.4)', async () => {
         const a = adapter()
         const session = new TelegramPresentationSession(a, 'chat', { statusCard: true, minEditIntervalMs: 2_000 })
         await session.deliver('⚙️ Schritt 2/3: screenshot')
@@ -86,12 +87,24 @@ describe('TelegramPresentationSession in status-card mode', () => {
         await session.deliver('Hier ist der Screenshot.')
         await session.finishProgress(true)
         expect(a.sendProgress).toHaveBeenCalledOnce()
-        expect(a.deleteMessage).not.toHaveBeenCalled()
-        expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^✅/))
+        expect(a.deleteMessage).toHaveBeenCalledWith('chat', 42)
+        // The ✅ line is not written before the answer — the card is gone.
+        expect(a.editMessage).not.toHaveBeenCalledWith('chat', 42, expect.stringMatching(/^✅/))
         expect(a.send).toHaveBeenCalledOnce()
-        expect(a.editMessage.mock.invocationCallOrder.at(-1)).toBeGreaterThan(a.send.mock.invocationCallOrder[0])
-        expect(a.editMessage.mock.calls.at(-1)?.[2]).not.toContain('Zuletzt:')
+        expect(a.deleteMessage.mock.invocationCallOrder.at(-1)).toBeGreaterThan(a.send.mock.invocationCallOrder[0])
     })
+
+    it('keeps a short ✅ line only when deleteMessage fails (2.89.4 fallback)', async () => {
+        const a = adapter()
+        a.deleteMessage.mockRejectedValue(new Error('message to delete not found'))
+        const session = new TelegramPresentationSession(a, 'chat', { statusCard: true, minEditIntervalMs: 2_000 })
+        await session.deliver('⚙️ Schritt 1/1: antwort')
+        vi.advanceTimersByTime(2_500)
+        await session.deliver('Alles erledigt.')
+        expect(a.deleteMessage).toHaveBeenCalledWith('chat', 42)
+        expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^✅ Fertig · \d+ s$/))
+    })
+
     it('never labels cleanup after progress-only output as answer delivery', async () => {
         const a = adapter()
         const session = new TelegramPresentationSession(a, 'chat', { statusCard: true })
@@ -99,6 +112,7 @@ describe('TelegramPresentationSession in status-card mode', () => {
         await session.clearProgress()
         expect(a.send).not.toHaveBeenCalled()
         expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^❌/))
+        expect(a.deleteMessage).not.toHaveBeenCalled()
     })
 
     it('does not claim success if final delivery fails and measures from request creation', async () => {
@@ -137,5 +151,33 @@ describe('LiveStatusCard closing line (2.89.3)', () => {
         const text = String(bad.edit.mock.calls.at(-1)?.[1])
         expect(text).toMatch(/^❌ Abgebrochen · \d+ s$/)
         expect(text).not.toMatch(/Statusmeldung|Schritte/)
+    })
+})
+
+describe('LiveStatusCard.dismiss (2.89.4)', () => {
+    it('deletes the card message after the answer arrived', async () => {
+        const t = transport()
+        t.delete = vi.fn(async (_id: number) => undefined) as any
+        const card = new LiveStatusCard(t)
+        await card.update('⚙️ Schritt 1/2: a')
+        await expect(card.dismiss()).resolves.toBe('deleted')
+        expect(t.delete).toHaveBeenCalledWith(42)
+        expect(card.isFinished).toBe(true)
+        expect(listActiveStatusCards().length).toBe(0)
+    })
+
+    it('falls back to one ✅ line when delete is missing or fails', async () => {
+        const missing = transport()
+        const withoutDelete = new LiveStatusCard(missing)
+        await withoutDelete.update('⏳ a')
+        await expect(withoutDelete.dismiss()).resolves.toBe('kept')
+        expect(missing.edit).toHaveBeenLastCalledWith(42, expect.stringMatching(/^✅ Fertig · \d+ s$/))
+
+        const failing = transport()
+        failing.delete = vi.fn(async () => { throw new Error('message to delete not found') }) as any
+        const card = new LiveStatusCard(failing)
+        await card.update('⏳ a')
+        await expect(card.dismiss()).resolves.toBe('kept')
+        expect(failing.edit).toHaveBeenLastCalledWith(42, expect.stringMatching(/^✅ Fertig · \d+ s$/))
     })
 })
