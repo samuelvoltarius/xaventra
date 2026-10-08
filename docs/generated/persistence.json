@@ -802,6 +802,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/mesh-node-freshness.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/mesh-policy-requests.test.ts",
       "path": ".nova-data"
     },

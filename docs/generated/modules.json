@@ -2621,6 +2621,7 @@
     {
       "module": "src/core/tool-evidence-response.ts",
       "imports": [
+        "../mesh/capture-reason.js",
         "../security/secret-redaction.js",
         "./owner-text.js",
         "./request-capabilities.js"
@@ -5244,6 +5245,10 @@
       ]
     },
     {
+      "module": "src/mesh/capture-reason.ts",
+      "imports": []
+    },
+    {
       "module": "src/mesh/direct-mesh-transport.ts",
       "imports": [
         "./mesh-identity.js",
@@ -7475,6 +7480,7 @@
       "imports": [
         "../core/data-root.js",
         "../core/lifecycle-policy.js",
+        "../mesh/capture-reason.js",
         "../users/multi-user-middleware.js",
         "./complete-registry.js",
         "node:crypto",
