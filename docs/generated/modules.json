@@ -123,6 +123,7 @@
         "../core/tool-abort-scope.js",
         "../core/tool-evidence-response.js",
         "../core/tool-failure-escalation.js",
+        "../core/tool-progress-label.js",
         "../core/tool-task-context.js",
         "../core/typed-tool-recovery.js",
         "../doctor/tool-contract.js",
@@ -2222,7 +2223,9 @@
     },
     {
       "module": "src/core/progress-notice.ts",
-      "imports": []
+      "imports": [
+        "./tool-progress-label.js"
+      ]
     },
     {
       "module": "src/core/projects-runtime.ts",
@@ -2646,6 +2649,10 @@
         "node:fs",
         "node:path"
       ]
+    },
+    {
+      "module": "src/core/tool-progress-label.ts",
+      "imports": []
     },
     {
       "module": "src/core/tool-task-context.ts",
