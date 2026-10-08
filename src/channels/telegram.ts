@@ -115,6 +115,10 @@ export class TelegramAdapter implements ChannelAdapter {
     private voiceCapture = new Map<string, string[]>()
     // Per-chat message queue to prevent concurrent LLM API calls (prevents 403 rate-limiting)
     private messageQueue = new Map<string, Promise<void>>()
+    /** 2.89.4: newest user message_id per chat (updated when the update arrives, not when it is processed). */
+    private latestUserMessageId = new Map<string, number>()
+    /** 2.89.4: message_id currently being answered — the reply anchor when the chat has already moved on. */
+    private answeringMessageId = new Map<string, number>()
 
     constructor(config: TelegramConfig) {
         this.config = {
@@ -1321,23 +1325,50 @@ export class TelegramAdapter implements ChannelAdapter {
      */
     async sendWithButtons(chatId: string, text: string, buttons: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
         if (!this.bot) return
+        // 2.89.4: same reply anchor as send() — a queued answer must not look shifted.
+        const reply_to_message_id = this.replyAnchorFor(chatId)
         try {
             await this.bot.sendMessage(chatId, text, {
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: buttons }
+                reply_markup: { inline_keyboard: buttons },
+                reply_to_message_id,
             })
         } catch (err: any) {
             // Markdown failed → try plain text
             if (err.message?.includes("can't parse entities")) {
                 await this.bot.sendMessage(chatId, text.replace(/[*_`\[\]]/g, ''), {
-                    reply_markup: { inline_keyboard: buttons }
+                    reply_markup: { inline_keyboard: buttons },
+                    reply_to_message_id,
                 })
             }
         }
     }
 
+    /** 2.89.4: remember the newest user message_id of this chat (arrival time, not processing time). */
+    private noteUserMessage(msg: any): void {
+        const chatId = String(msg?.chat?.id ?? '')
+        const messageId = Number(msg?.message_id)
+        if (!chatId || !Number.isSafeInteger(messageId)) return
+        const latest = this.latestUserMessageId.get(chatId)
+        if (latest === undefined || messageId > latest) this.latestUserMessageId.set(chatId, messageId)
+    }
+
+    /**
+     * 2.89.4: when the user already sent a newer message while this one was still
+     * running, the answer is sent as a reply to the triggering message — otherwise
+     * queued answers look shifted onto the newest input.
+     */
+    private replyAnchorFor(chatId: string): number | undefined {
+        const key = String(chatId)
+        const answering = this.answeringMessageId.get(key)
+        const latest = this.latestUserMessageId.get(key)
+        if (answering === undefined || latest === undefined || latest <= answering) return undefined
+        return answering
+    }
+
     /** Synchronous 'message' listener: persist first, then process per chat. */
     private onRawMessage(msg: any): void {
+        this.noteUserMessage(msg)
         this.persistInboundSync(msg)
         const chatId = String(msg?.chat?.id || 'unknown')
         if (/^\/(?:log|status|cancel)\s*$/i.test(String(msg.text || '').trim())) {
@@ -1391,6 +1422,20 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     private async handleMessage(msg: any): Promise<void> {
+        this.noteUserMessage(msg)
+        const replyAnchorChat = String(msg?.chat?.id ?? '')
+        const replyAnchorId = Number(msg?.message_id)
+        if (replyAnchorChat && Number.isSafeInteger(replyAnchorId)) this.answeringMessageId.set(replyAnchorChat, replyAnchorId)
+        try {
+            await this.processMessage(msg)
+        } finally {
+            if (replyAnchorChat && this.answeringMessageId.get(replyAnchorChat) === replyAnchorId) {
+                this.answeringMessageId.delete(replyAnchorChat)
+            }
+        }
+    }
+
+    private async processMessage(msg: any): Promise<void> {
         // A durably persisted update is never dropped here: without live
         // authority it is handed on (without Bot API effects) so the runtime can
         // defer it. Unpersisted updates keep the fail-closed drop.
@@ -1524,6 +1569,11 @@ export class TelegramAdapter implements ChannelAdapter {
             throw new Error('Telegram not connected')
         }
         this.noteVoiceAnswer(msg.to, sanitizeInternalOutboundArtifacts(msg.content))
+        // 2.89.4: an explicit replyTo wins; otherwise answer the triggering message when
+        // the user already sent a newer one (otherwise queued answers look shifted).
+        const replyTo = msg.replyTo
+            ? parseInt(msg.replyTo)
+            : this.replyAnchorFor(String(msg.to))
 
         // Sanitize content for Telegram
         let cleanContent = this.sanitizeForTelegram(formatTelegramMessage(sanitizeInternalOutboundArtifacts(msg.content)))
@@ -1544,7 +1594,7 @@ export class TelegramAdapter implements ChannelAdapter {
         if (cleanContent.length > 600 && this.getOwnerChatIds().includes(String(msg.to))) {
             const { pagedView } = await import('./telegram-pages.js')
             const view = pagedView(String(msg.to), cleanContent)
-            const options = { reply_markup: { inline_keyboard: view.keyboard }, reply_to_message_id: msg.replyTo ? parseInt(msg.replyTo) : undefined }
+            const options = { reply_markup: { inline_keyboard: view.keyboard }, reply_to_message_id: replyTo }
             try {
                 await this.bot.sendMessage(msg.to, view.text, { parse_mode: 'Markdown', ...options })
             } catch (err: any) {
@@ -1578,7 +1628,7 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 await this.bot.sendMessage(msg.to, chunk, {
                     parse_mode: 'Markdown',
-                    reply_to_message_id: i === 0 && msg.replyTo ? parseInt(msg.replyTo) : undefined,
+                    reply_to_message_id: i === 0 ? replyTo : undefined,
                 })
             } catch (err: any) {
                 // If Markdown parsing fails, try plain text
@@ -1587,7 +1637,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     // No parse_mode: retain identifiers and code exactly. Removing
                     // underscores corrupted tool names in the October 3 report.
                     await this.bot.sendMessage(msg.to, chunk.replace(/\\([_*`\[\]])/g, '$1'), {
-                        reply_to_message_id: i === 0 && msg.replyTo ? parseInt(msg.replyTo) : undefined,
+                        reply_to_message_id: i === 0 ? replyTo : undefined,
                     })
                 } else {
                     throw err
