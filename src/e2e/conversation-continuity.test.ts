@@ -9,7 +9,7 @@
  *  - A restart (config change) must not lose the last minutes.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createE2EHarness, OWNER_TELEGRAM_ID, type E2EHarness, type HarnessOptions, type TurnResult } from '../../test/helpers/e2e-harness.js'
 
@@ -66,6 +66,48 @@ describe('2.89.2 conversation continuity over the real entry', () => {
         expect(seen).toContain(received.slice(0, 60))
         expect(seen).not.toContain('Alle Bilder gesendet.')
         expect(seen).toContain('Werkzeuge: mesh_screenshot')
+    }, T)
+
+    // 2.89.2 (live 08.10.2026): the tool note of the history was copied by the model into the answer,
+    // and "Was ist mit dem lab ?" after a screenshot of all nodes lost its reference.
+    const meshSeed = (root: string) => {
+        const beat = new Date().toISOString()
+        const node = (id: string) => ({ node_id: id, hostname: id, platform: 'linux', version: '2.89.2', tools_count: 1, status: 'online', capabilities: [], last_heartbeat: beat })
+        mkdirSync(join(root, '.nova-data'), { recursive: true })
+        writeFileSync(join(root, '.nova-data', 'mesh.json'), JSON.stringify({ nodes: [node('lab'), node('xaventra-ns1')], tasks: [] }))
+    }
+
+    it('(f) screenshot of all nodes (lab: no capture) then "Was ist mit dem lab ?": the prompt names the lab result and says it refers to it', async () => {
+        const e2e = await harness({ seed: meshSeed })
+        const first = await owner(e2e, 'Send mir einen Screenshot von allen nodes und Main', [
+            { tool: 'mesh_screenshot', args: { node_id: 'all' } }, { text: 'Alle Bilder gesendet.' },
+        ])
+        expect(first.error).toBeUndefined()
+        expect(first.final).toMatch(/lab/)
+        const second = await owner(e2e, 'Was ist mit dem lab ?', [{ text: 'Zum lab liegt kein Bild vor.' }])
+        expect(second.error).toBeUndefined()
+        const seen = prompt(second)
+        expect(seen).toMatch(/Hinweis zum Gesprächszusammenhang/)
+        expect(seen).toMatch(/sehr wahrscheinlich auf deine vorige Antwort/)
+        const hint = second.rounds[0].messages.map(m => String(m.content)).find(c => c.startsWith('Hinweis zum Gesprächszusammenhang')) || ''
+        expect(hint).toContain('lab')
+        // The tool digest is context on the request side, never an assistant line that looks like answer text.
+        const history = second.rounds[0].messages
+        expect(history.filter(m => m.role === 'assistant').map(m => String(m.content)).join(' ')).not.toMatch(/Verlaufsnotiz|\(Kontext:/)
+        expect(second.final).not.toMatch(/Verlaufsnotiz|nicht an den Nutzer gesendet|\(Kontext:/)
+    }, T)
+
+    it('(g) the model copies the internal note into its answer: the user never sees it', async () => {
+        const e2e = await harness()
+        await owner(e2e, 'Send mir einen Screenshot von allen nodes und Main', [{ tool: 'mesh_screenshot', args: {} }, { text: 'Alle Bilder gesendet.' }])
+        const second = await owner(e2e, 'Was ist mit dem lab ?', [{ text: ['Zum lab liegt kein Bild vor.', '', '[Verlaufsnotiz, nicht an den Nutzer gesendet — Werkzeuge: mesh_screenshot fehlgeschlagen]', '(Kontext: zuvor ausgeführt — Werkzeuge: x)'].join('\n') }])
+        expect(second.error).toBeUndefined()
+        expect(second.replies.join(' ')).not.toMatch(/Verlaufsnotiz|nicht an den Nutzer gesendet|\(Kontext:/)
+        expect(second.final).toContain('Zum lab liegt kein Bild vor.')
+        const runner = await e2e.module('agents/nova-runner.js')
+        const { resolvePrincipalId } = await e2e.module('users/principal-id.js')
+        const ownerId = resolvePrincipalId(e2e.state.config, 'Telegram', OWNER_TELEGRAM_ID)
+        expect(JSON.stringify(runner.getSession(ownerId, 'Telegram').history.at(-1))).not.toMatch(/Verlaufsnotiz/)
     }, T)
 
     it('(b2) an early deterministic answer (fast path, no agent run) is part of the next prompt', async () => {

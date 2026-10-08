@@ -10,6 +10,7 @@ import { readOnlyFailureContinues } from '../core/action-lifecycle.js'
 import { getLoopDetector } from '../tools/loop-detection.js'
 import { getTraceRecorder } from '../learning/trace.js'
 import { getPluginManager } from '../plugins/plugin-sdk.js'
+import { followUpHint } from './follow-up-hint.js'
 import { isConversationalClosure, isHistoryOnlyRequest, toolProvidesActionEvidence } from '../core/action-intent.js'
 import { buildToolTaskContext } from '../core/tool-task-context.js'
 import { ExecutionKernel } from '../core/execution-kernel.js'
@@ -568,6 +569,11 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
             }
         }
 
+        // 2.89.2: a short follow-up refers to the answer just given (session history, not yet holding this message).
+        if (!isInternalRequest) {
+            const hint = followUpHint(content, session.history)
+            if (hint) messages.push({ role: 'system', content: hint })
+        }
         // Add current message
         if (image) {
             messages.push({
@@ -2180,11 +2186,12 @@ export function syncDeliveredTurn(userId: string, channel: string, turn: Deliver
         ? `
 [${turn.imageNote}; Inhalt laut Antwort: ${redactSecrets(delivered).replace(/\s+/g, ' ').slice(0, 220)}]`
         : ''
-    const notes = turn.toolNote ? `
-
-[Verlaufsnotiz, nicht an den Nutzer gesendet — ${turn.toolNote}]` : ''
-    const userContent = `${turn.request}${image}`.slice(0, HISTORY_NOTE_LIMIT * 4)
-    const assistantContent = `${delivered}${notes}`
+    // The tool digest is context for the next turn, kept on the request side of the exchange: appended to
+    // the assistant entry it looked like answer text and a model copied it to the user (live 08.10.2026).
+    const context = turn.toolNote ? `
+(Kontext: zuvor ausgeführt — ${turn.toolNote})` : ''
+    const userContent = `${turn.request}${image}${context}`.slice(0, HISTORY_NOTE_LIMIT * 4)
+    const assistantContent = delivered
     let index = -1
     if (turn.runId) {
         for (let i = session.history.length - 1; i >= 0; i--) {

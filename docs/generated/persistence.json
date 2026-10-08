@@ -470,6 +470,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/e2e/conversation-continuity.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/guided/guided-store.ts",
       "path": ".nova-data"
     },

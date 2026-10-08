@@ -16,6 +16,13 @@
 
 ### Fixed
 
+- **Internal context lines no longer reach the user.** Live acceptance 08.10.2026:
+  a model copied the history line "[Verlaufsnotiz …]" into its answer. The tool
+  digest of a turn is now context on the request side of the history
+  ("(Kontext: zuvor ausgeführt — …)"), never text that looks like an answer, and
+  one cleaning step removes such lines from every message before delivery, log,
+  history and handoff. A short follow-up ("Was ist mit dem lab ?") now also gets
+  a plain hint that it refers to the previous answer, with that answer attached.
 - **Conversation continuity (a follow-up now knows what came before).** Live
   08.10.2026: "Was sagst du zu dem Foto ?" after a photo answered "Ich sehe kein
   Foto", and "Was ist mit dem lab ?" after a node screenshot ignored it. Cause: the

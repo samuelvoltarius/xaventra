@@ -56,6 +56,10 @@
       ]
     },
     {
+      "module": "src/agents/follow-up-hint.ts",
+      "imports": []
+    },
+    {
       "module": "src/agents/governed-sdk-loop.ts",
       "imports": [
         "../llm/nova-llm-sdk.js",
@@ -141,6 +145,7 @@
         "../tools/tool-router.js",
         "../voice/voice-turn-stream.js",
         "./environment-overview.js",
+        "./follow-up-hint.js",
         "./history-evidence.js",
         "./home-assistant-status-plan.js",
         "./response-repair.js",
@@ -1884,6 +1889,10 @@
       "imports": []
     },
     {
+      "module": "src/core/history-note-filter.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/image-identification.ts",
       "imports": [
         "../learning/capability-learning.js",
@@ -1958,6 +1967,7 @@
         "./action-intent.js",
         "./channel-name.js",
         "./context-policy.js",
+        "./history-note-filter.js",
         "./operating-mode-prompt.js",
         "./progress-notice.js",
         "./reply-delivery-error.js",

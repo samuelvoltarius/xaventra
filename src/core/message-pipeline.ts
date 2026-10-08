@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
 import { ReplyDeliveryError, protectReplyDelivery } from './reply-delivery-error.js'
+import { stripInternalHistoryNotes, withoutInternalNotes } from './history-note-filter.js'
 import { selectContextPolicy } from './context-policy.js'
 import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 import { isNovaSystemAuthored } from './system-message.js'
@@ -461,6 +462,7 @@ async function handleMessageInScope(
     requestAbortSignal?.throwIfAborted()
     execution?.abortSignal?.throwIfAborted()
     replyFn = protectReplyDelivery(replyFn)
+    replyFn = withoutInternalNotes(replyFn)
     let trackedTaskId: string | undefined
     traceStep('input:accepted')
     let contextPolicy = selectContextPolicy(content, Boolean(image))
@@ -717,6 +719,9 @@ async function handleMessageInScope(
         } catch (error) { stageFailure('Gesprächsverlauf', error) }
     }
     const answer = async (text: string, step?: string): Promise<void> => {
+        // 2.89.2: internal context lines never reach the user, the log, the history or the handoff.
+        const cleaned = stripInternalHistoryNotes(text)
+        text = text.trim() && !cleaned.trim() ? 'Ich habe dazu keine eigene Antwort formuliert.' : cleaned
         await replyFn(text)
         if (!technicalProbe) logSession(canonicalUser, channel, 'assistant', text)
         await syncSessionTurn(text)
