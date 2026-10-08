@@ -12,6 +12,40 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.4] — 2026-10-09
+
+### Changed (Desktop)
+
+- **Seven main areas instead of nineteen equal menu targets.** The rail is
+  Heute · Unterhaltung · Anrufen · Arbeit · Geräte · Verbindungen · Gedächtnis
+  plus Mehr and Einstellungen. Activity is a tab under Work, screens a tab
+  under Devices ("Dein Computer"), toolbox and rules sit under Mehr. Old
+  section ids (`computer`, `bildschirme`, `aktivitaet`, `memory`) still open
+  the matching tab. The owner decision of 2026-10-02 to keep the toolbox in
+  the rail is superseded by the "few main areas" brief; card approval for
+  install/remove is unchanged.
+- **A running Auftrag shows its live step** on Heute and under Arbeit by
+  polling the existing `GET /api/desktop/fortschritt` every five seconds —
+  no new route, no second progress path.
+- **Errors say what to do next.** Owner lock, timeout and unreachable Main
+  get a German sentence and a next step; unknown failures never dump raw
+  server English. Empty states no longer mention config keys
+  (`autonomy.planner`, `desktop.direct.enabled`).
+- **No internal jargon on the surface.** English run/module/model/node/enrollment
+  status is translated; "Evidence/Tool/Evidenzstatus" is plain German;
+  "PATCH_GATE freigeben" is "Patch freigeben (geprüft)" with a one-line help
+  text. Raw node ids, run ids and file paths are `nur-experte`.
+- **Missing but existing API capabilities surfaced:** rename a room
+  (`PATCH /rooms/:id`) and "Verbindung prüfen" for external agents
+  (`POST /external-agents/:id/health`).
+- **Accessible:** tab lists with `role=tablist/tab`, `aria-selected` and arrow
+  keys; dialogs return focus to the opener; a visible live-step line.
+
+### Fixed (Desktop)
+
+- Broken CSS comment (2.86 package O) repaired; unused `.badge-row`,
+  `.fact-list`, `.fact-kind` removed.
+
 ## [2.89.3] — 2026-10-08
 
 ### Fixed

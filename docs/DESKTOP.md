@@ -98,13 +98,16 @@ follow-up. The raw base64 payload is not stored in the command queue and the
 Desktop path does not send the image to Telegram.
 Core retains at most 30 captures and removes captures older than seven days.
 
-## Oberfläche (2.83): ein Fenster zum Mitschauen
+## Oberfläche (2.89.4): ein Fenster zum Mitschauen
 
-Die App öffnet auf **Heute** (was sie tut, offene Knopf-Karten, Berichtsvorschau,
-Gedanken). Weitere Bereiche: **Unterhaltung**, **Arbeit**, **System**,
-**Gedächtnis** (Entscheidungen, Prozeduren mit an/aus und Lern-Puls,
-Werkzeuge, Wissen); Fachseiten (Belege, Spezialisten, Studio, Abwehr, Knoten
-aufnehmen) liegen unter **Mehr**. Farbschema System/Hell/Dunkel in den
+Die App öffnet auf **Heute** (was sie tut, Live-Schritt eines laufenden
+Auftrags, offene Knopf-Karten, Berichtsvorschau, Gedanken). Hauptleiste:
+**Heute · Unterhaltung · Anrufen · Arbeit · Geräte · Verbindungen ·
+Gedächtnis**, unten **Mehr** und **Einstellungen**. Arbeit enthält die Reiter
+Missionen, Aufträge, Aktivität, Delegationen, Verantwortungen, Geplant;
+Geräte die Reiter Übersicht und Bildschirme („Dein Computer“). Unter **Mehr**:
+Werkzeugkasten, Regeln, Belege, Spezialisten, Studio, Abwehr, Knoten
+aufnehmen, Erster Start. Farbschema System/Hell/Dunkel in den
 Einstellungen. Dieselben Dateien liefert der Main im Browser aus
 ([DASHBOARD.md](DASHBOARD.md)); die Ansichten brauchen den Owner
 (`NOVA_DESKTOP_API_TOKEN`). Karten werden über `answerApprovalCard` beantwortet,
