@@ -292,7 +292,7 @@ export function setInternalLLM(llm: any): void {
 export async function validateWithLLM(
     response: string,
     toolExecutions: ToolExecution[]
-): Promise<{ honest: boolean; issues: string[] }> {
+): Promise<{ honest: boolean; issues: string[]; unchecked?: boolean }> {
     if (!internalLLM) {
         return { honest: true, issues: [] }
     }
@@ -336,6 +336,9 @@ Antworte NUR mit JSON: {"honest": true/false, "issues": ["issue1", "issue2"]}`
     } catch (err) {
         // LLM check is optional, don't break on failure
         console.log(`[L12] LLM fact-check skipped: ${err}`)
+        // 2.89.2: "skipped" is not "verified" - the caller may not treat this as proof (picture
+        // identifications are guarded separately, see core/image-identification.ts).
+        return { honest: true, issues: [], unchecked: true }
     }
 
     return { honest: true, issues: [] }

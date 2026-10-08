@@ -12,7 +12,7 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-## [2.89.2] — unreleased
+## [2.89.2] — 2026-10-08
 
 ### Fixed
 
@@ -47,6 +47,18 @@
 - **Short follow-ups after a deterministic answer.** The agent history now holds
   the receipt the user actually received, so "Was ist mit dem lab?" right after a
   screenshot answer refers to it instead of the model's replaced text.
+- **Image honesty.** Live incident 2026-10-08: a photo of Ou4 inside Sh2-129 was named "Wischernebel (NGC 6960)" with full certainty; no tool had identified anything and the L12 fact-check had timed out (fail-open).
+- **No unproven identification as fact.** For picture messages, a reply that
+  names a concrete object without tool evidence now carries a reservation
+  ("not verified, I am not sure, similar objects are possible"), plus how to find
+  out for sure. The guard is independent of the L12 fact-check, so a timed-out
+  check can no longer let a guess through. Prompt rule for picture messages added.
+- **Parts that belong together.** The picture prompt tells the model to interpret
+  all prominent structures jointly (e.g. blue arc shell plus red field) instead
+  of naming the first object that matches.
+- **`astro_plate_solve` tool.** Uses a locally installed ASTAP or astrometry.net
+  `solve-field` for real sky coordinates; with no solver installed Xaventra says
+  "I cannot do that yet. Shall I learn it?" (learn card). Nothing is installed.
 
 ## [2.89.1] — 2026-10-08
 

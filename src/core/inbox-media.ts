@@ -50,3 +50,15 @@ export function storeInboxImage(image: { data: string; mimeType?: string }, now 
         return path
     } catch { return null }
 }
+
+/**
+ * Prompt block for a stored incoming picture: the file path serves tools that need a path, e.g.
+ * `astro_plate_solve` (skill pack "astro", not routed for a bare "Was ist das?").
+ */
+export function inboxImagePromptBlock(path: string): string {
+    return `
+
+## Eingehendes Bild
+Das Bild dieser Nachricht liegt als Datei unter ${path}. Werkzeuge, die einen Dateipfad brauchen, nutzen diesen Pfad.
+Bei Astrofotos (Nebel, Galaxie, Sternfeld): Skill-Pack "astro" mit load_skill_pack laden und astro_plate_solve mit image_path=${path} aufrufen, bevor ein Objekt als Tatsache genannt wird.`
+}

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, utimesSync, existsSync, readdirSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { INBOX_MEDIA_MAX_AGE_MS, inboxMediaDir, pruneInboxMedia, storeInboxImage } from './inbox-media.js'
+import { INBOX_MEDIA_MAX_AGE_MS, inboxMediaDir, inboxImagePromptBlock, pruneInboxMedia, storeInboxImage } from './inbox-media.js'
 
 let root = ''
 let previous = ''
@@ -26,5 +26,15 @@ describe('inbox media', () => {
         expect(pruneInboxMedia()).toBe(0)
         expect(existsSync(old)).toBe(false)
         expect(existsSync(fresh)).toBe(true)
+    })
+})
+
+describe('inbox image prompt', () => {
+    it('hands the stored path to plate solving', () => {
+        const path = storeInboxImage({ data: Buffer.from('astro-bytes').toString('base64'), mimeType: 'image/jpeg' })!
+        const block = inboxImagePromptBlock(path)
+        expect(block).toContain(`image_path=${path}`)
+        expect(block).toContain('astro_plate_solve')
+        expect(block).toContain('load_skill_pack')
     })
 })

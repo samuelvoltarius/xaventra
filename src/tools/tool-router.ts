@@ -134,6 +134,11 @@ const SKILL_PACKS: SkillPack[] = [
         tools: ['hass_status', 'hass_list', 'hass_get', 'hass_turn_on', 'hass_turn_off', 'hass_toggle', 'hass_service', 'environment_inventory'],
     },
     {
+        name: 'astro', description: 'Astrofotos sicher bestimmen: Plate-Solving (Himmelskoordinaten) mit lokal installiertem ASTAP oder astrometry.net',
+        keywords: ['plate*', 'platesolv*', 'astrometr*', 'astap', 'nebel*', '*nebel', 'galaxie*', 'sternhaufen', 'himmelsobjekt*', 'astrofoto*', 'sternbild*'],
+        tools: ['astro_plate_solve'],
+    },
+    {
         name: 'printer', description: 'Drucker und 3D-Druck: Status, Dateien, Slicen, Druck starten/pausieren, CAD-Modelle erzeugen',
         keywords: ['druck*', '3d-druck*', '3d druck', '*drucker', 'filament*', 'slice*', 'slicer', 'gcode', 'g-code', 'stl', 'cad',
             'klipper', 'moonraker', 'bambu', 'creality', 'prusa', 'düse', 'nozzle'],

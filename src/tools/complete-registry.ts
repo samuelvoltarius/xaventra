@@ -23,6 +23,7 @@ import { capabilityTool } from './capability-tool.js'
 import { browserUseTools } from './browser-use.js'
 import { ownerApprovalRefusal } from './owner-approval.js'
 import { homeAssistantTools } from './homeassistant.js'
+import { astroPlateSolveTools } from './astro-plate-solve.js'
 import { scanNowTool } from './scan-now-tool.js'
 import { meshInspectUrlTool } from './mesh-inspect-url.js'
 import { meshExchangeTools } from './mesh-exchange-tools.js'
@@ -2974,6 +2975,7 @@ export const ALL_TOOLS: NovaTool[] = [
     ...browserUseTools,
     ...agentPatternTools,
     ...homeAssistantTools,
+    ...astroPlateSolveTools,
     scanNowTool,
     meshInspectUrlTool,
     ...meshExchangeTools,
