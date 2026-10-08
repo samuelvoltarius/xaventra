@@ -3,7 +3,7 @@
  * tool name: unknown tools get a neutral sentence.
  */
 const LABELS: Array<[RegExp, string]> = [
-    [/web_search|brave_search|google_search|browser_search|searxng|news_search/, 'suche im Web …'],
+    [/(?<!kg|code|self)_search|^search$|searx|tavily|duckduckgo|web_research|news_/, 'suche im Web …'],
     [/browser|fetch_url|web_fetch|read_url|scrape/, 'lese eine Webseite …'],
     [/mesh|node|environment_inventory|scan_now|health|status/, 'prüfe Knoten und Systeme …'],
     [/hass|home_assistant|light|climate|switch|device/, 'frage dein Zuhause ab …'],
