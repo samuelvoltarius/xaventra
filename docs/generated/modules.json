@@ -4474,6 +4474,7 @@
     {
       "module": "src/layers/L6-session-summary.ts",
       "imports": [
+        "../core/history-note-filter.js",
         "../memory/tool-result-pruner.js",
         "../security/secret-redaction.js",
         "node:crypto",
@@ -4880,6 +4881,7 @@
         "./providers/minimax.js",
         "./sse-completion.js",
         "./token-usage.js",
+        "./well-formed-text.js",
         "node:events",
         "node:fs",
         "node:path"
@@ -4934,6 +4936,10 @@
     },
     {
       "module": "src/llm/token-usage.ts",
+      "imports": []
+    },
+    {
+      "module": "src/llm/well-formed-text.ts",
       "imports": []
     },
     {
