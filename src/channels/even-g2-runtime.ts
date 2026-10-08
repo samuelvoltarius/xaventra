@@ -4,7 +4,10 @@
  * and Telegram. Main only — the daemon does not call this on a worker and
  * startEvenG2Channel refuses there as well.
  */
-import { EVEN_G2_CHANNEL, EVEN_G2_PRINCIPAL, answerCardFromG2, buildHudSnapshot, formatForG2, startEvenG2Channel, type EvenG2Deps, type EvenG2Server } from './even-g2.js'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { EVEN_G2_CHANNEL, EVEN_G2_PRINCIPAL, EvenG2SttUnavailableError, answerCardFromG2, buildHudSnapshot, formatForG2, startEvenG2Channel, type EvenG2Deps, type EvenG2Server } from './even-g2.js'
 import type { ApprovalCard } from '../core/approval-cards.js'
 
 export type EvenG2MessageHandler = (
@@ -66,6 +69,21 @@ export function createEvenG2RuntimeDeps(token: string, hooks: EvenG2RuntimeHooks
             const more = snapshot.tasks.length > 1 ? ` (+${snapshot.tasks.length - 1})` : ''
             const status = task ? `${task.label}${more}` : snapshot.queue.length ? `Wartet: ${snapshot.queue[0]}` : 'Bereit — keine laufende Aufgabe'
             return buildHudSnapshot({ status: formatForG2(status, 120), openCards: snapshot.openCards })
+        },
+        async transcribe(wav, { durationSec }) {
+            // Same STT chain as Telegram voice notes (voice service, whisper-gpu, local whisper); never a cloud service.
+            // The local whisper fallback needs a file: a private temp file that is removed right away.
+            const { transcribeVoiceNote } = await import('./telegram-voice.js')
+            const dir = await mkdtemp(join(tmpdir(), 'xaventra-g2-'))
+            const file = join(dir, 'sprache.wav')
+            try {
+                await writeFile(file, wav, { mode: 0o600 })
+                const heard = await transcribeVoiceNote(wav, 'audio/wav', file, durationSec)
+                if (!heard || heard.zuLang) throw new EvenG2SttUnavailableError()
+                return heard.text
+            } finally {
+                await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+            }
         },
         async answerCard(cardId, answer) {
             const { ensureBuiltinCardExecutors } = await import('../core/approval-card-sources.js')
