@@ -882,7 +882,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // containing effect tools plus the self-learning fallback.
         if (actionIntent.requiresTool && (!response.toolCalls || response.toolCalls.length === 0)) {
             const compactActionTools = toolDefinitions.filter(tool =>
-                toolProvidesActionEvidence(tool.name)
+                toolProvidesActionEvidence(tool.name, actionIntent.kind)
                 || ['find_capability', 'resolve_capability', 'build_skill'].includes(tool.name)
             )
             if (compactActionTools.length > 0) {

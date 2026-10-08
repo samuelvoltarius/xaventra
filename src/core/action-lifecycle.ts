@@ -1,4 +1,4 @@
-import { toolProvidesActionEvidence } from './action-intent.js'
+import { toolProvidesActionEvidence, type ActionIntent } from './action-intent.js'
 
 export type ActionPhase = 'discover' | 'resolve' | 'execute' | 'verify' | 'learn' | 'awaiting_approval' | 'failed'
 
@@ -27,7 +27,7 @@ export class ActionLifecycle {
         phase: 'discover', discovered: [], attempted: [], verified: [], failures: [],
     }
 
-    record(toolName: string, success: boolean): void {
+    record(toolName: string, success: boolean, intentKind?: ActionIntent['kind']): void {
         if (DISCOVERY.has(toolName)) {
             this.snapshot.discovered.push(toolName)
             this.snapshot.phase = success ? 'resolve' : 'failed'
@@ -45,7 +45,7 @@ export class ActionLifecycle {
 
         this.snapshot.attempted.push(toolName)
         this.snapshot.phase = 'execute'
-        if (success && toolProvidesActionEvidence(toolName)) {
+        if (success && toolProvidesActionEvidence(toolName, intentKind)) {
             this.snapshot.verified.push(toolName)
             this.snapshot.phase = 'verify'
         } else if (!success) {

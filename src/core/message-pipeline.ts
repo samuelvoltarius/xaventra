@@ -2210,6 +2210,56 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
         }
 
+        // 2.89.4 (live 09.10. 00:51): a pure action order answered with only
+        // screenshots/status ("kein Browserfenster geöffnet") is looking, not acting.
+        // ONE forced run with a handlungswerkzeug; otherwise an honest sentence.
+        // The later evidence gate must not overwrite that sentence.
+        let actionObservationClosed = false
+        const actionOnlyIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
+        if (!isSystemMessage && !image && !(result as any).error
+            && actionOnlyIntent.requiresTool
+            && actionOnlyIntent.kind !== 'screenshot'
+            && actionOnlyIntent.kind !== 'system-state') {
+            const { observationOnlyRun, describesScreenWithoutActing, SCREEN_ONLY_ACTION_REPLY } = await import('./unverified-claims.js')
+            if (observationOnlyRun(result.toolsExecuted || [])) {
+                console.log(`[Pipeline] Nur Beobachtung bei Handlungsauftrag ("${content.slice(0, 50)}") — ein Handlungswerkzeug-Nachforderungslauf`)
+                try {
+                    const { runNovaAgent } = await import('../agents/nova-runner.js')
+                    const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
+                        ...agentRunBase,
+                        systemPrompt: agentRunBase.systemPrompt + '\n\nPFLICHT: Der Auftrag verlangt eine Handlung (öffnen, klicken, tippen), keine reine Bild- oder Statusbeschreibung. Rufe JETZT ein Handlungswerkzeug auf (desktop_control oder desktop_input) und liefere das Ergebnis. Ein Screenshot allein ist keine Handlung.',
+                        abortSignal: agentSignal,
+                    }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
+                    const retryNames = retryResult.toolsExecuted || []
+                    const retryActed = retryNames.some((name: string) => toolProvidesActionEvidence(name, actionOnlyIntent.kind))
+                    if (retryActed && retryResult.content?.trim()) {
+                        supervised.content = retryResult.content
+                        ;(result as any).toolsExecuted = retryNames
+                        ;(result as any).toolExecutions = (retryResult as any).toolExecutions || []
+                        ;(result as any).screenshotPath = retryResult.screenshotPath
+                        // The retry kernel fulfilled the order — keep that for the evidence gate.
+                        if ((retryResult as any).actionState) (result as any).actionState = (retryResult as any).actionState
+                        else if ((result as any).actionState) {
+                            ;(result as any).actionState = { ...(result as any).actionState, fulfilled: true }
+                        }
+                        actionObservationClosed = true
+                    } else {
+                        supervised.content = describesScreenWithoutActing(retryResult.content || supervised.content || '')
+                            || observationOnlyRun(retryNames)
+                            ? SCREEN_ONLY_ACTION_REPLY
+                            : honestNoToolResponse(actionOnlyIntent.kind)
+                        actionObservationClosed = true
+                    }
+                } catch (retryErr) {
+                    if (execution?.abortSignal?.aborted) throw retryErr
+                    supervised.content = describesScreenWithoutActing(supervised.content || '')
+                        ? SCREEN_ONLY_ACTION_REPLY
+                        : honestNoToolResponse(actionOnlyIntent.kind)
+                    actionObservationClosed = true
+                }
+            }
+        }
+
         // Deterministic fallback for screenshots. Some providers acknowledge
         // the request without a tool call, others wander into introspection
         // and stop there (live 01.10.2026). Whatever else ran: without a
@@ -2295,7 +2345,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         } catch (err) { console.debug('[Pipeline] forge need hook failed:', err) }
         const { authoritativeDiagnosticResponse, screenshotFailureResponse, nodeScreenshotResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
-        if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
+        if (authoritativeDiagnostic && !actionObservationClosed) supervised.content = authoritativeDiagnostic
         if ((result as any).incompleteSynthesis && (result as any).incompleteAnswerReady && String(result.content || '').trim()) {
             // 2.89: the runner already produced a short honest sentence; never swap it for raw findings.
             supervised.content = result.content
@@ -2306,11 +2356,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         }
         const fulfillmentToolCount = kernelState
             ? (kernelState.fulfilled ? 1 : 0)
-            : successfulExecutions.filter((execution: any) => toolProvidesActionEvidence(execution.toolName)).length
+            : successfulExecutions.filter((execution: any) => toolProvidesActionEvidence(execution.toolName, actionIntent.kind)).length
         const skillProposalCreated = kernelState
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
-        if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
+        if (actionObservationClosed) {
+            // 2.89.4: the screenshot-is-not-action gate already closed this honestly.
+        } else if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
             supervised.content = isNodeScreenshotRequest(content) ? await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content) : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {

@@ -30,3 +30,29 @@ export function announcesUnperformedAction(text: string): boolean {
 }
 
 export const ANNOUNCED_BUT_NOT_DONE_REPLY = 'Das konnte ich gerade nicht nachsehen. Magst du es noch einmal versuchen?'
+
+/**
+ * 2.89.4 (live 09.10. 00:51–00:53): „dann mach es auf und versuch es nochmal“ (DHL on
+ * the workstation) ended twice in a screen description after desktop_screenshot alone.
+ * Looking is not acting: only captures/status in a pure action run is no fulfillment.
+ */
+export const OBSERVATION_ONLY_TOOL_NAMES = new Set([
+    'desktop_screenshot', 'screen_capture', 'screen_analyze', 'analyze_image',
+    'desktop_status', 'mesh_screenshot', 'webcam_capture', 'minimax_vision',
+    'browser_screenshot', 'browser_status',
+])
+
+/** True when every tool of this run only looked (screenshot/status). */
+export function observationOnlyRun(toolNames: readonly string[]): boolean {
+    const names = toolNames.map(name => String(name || '')).filter(Boolean)
+    return names.length > 0 && names.every(name => OBSERVATION_ONLY_TOOL_NAMES.has(name))
+}
+
+/** A reply that only describes the screen instead of reporting the requested action. */
+export function describesScreenWithoutActing(text: string): boolean {
+    const value = String(text ?? '').trim()
+    if (!value || value.length > 400) return false
+    return /(?:kein\w*\s+(?:browserfenster|browser|fenster|programm|app)\w*\b.{0,40}(?:offen|geoeffnet|geöffnet|sichtbar)|(?:leerer?|leeren)\s+(?:desktop|bildschirm)|ich\s+(?:sehe|erkenne)\s+(?:nur|keinen|leeren)|auf\s+(?:dem\s+)?(?:desktop|bildschirm)\s+(?:ist|sind)\b.{0,40}(?:leer|nichts|kein))/iu.test(value)
+}
+
+export const SCREEN_ONLY_ACTION_REPLY = 'Ich habe nur auf den Bildschirm geschaut, aber nichts geöffnet oder bedient. Das war keine Handlung. Magst du es noch einmal versuchen — dann öffne oder bediene ich wirklich etwas.'

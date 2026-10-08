@@ -26,4 +26,12 @@ describe('ActionLifecycle', () => {
         expect(lifecycle.isAwaitingApproval()).toBe(true)
         expect(lifecycle.canLearn('build_skill', true)).toBe(false)
     })
+
+    it('2.89.4: a screenshot never fulfills a pure action order', () => {
+        const lifecycle = new ActionLifecycle()
+        lifecycle.record('desktop_screenshot', true, 'device-action')
+        expect(lifecycle.isFulfilled()).toBe(false)
+        lifecycle.record('desktop_control', true, 'device-action')
+        expect(lifecycle.isFulfilled()).toBe(true)
+    })
 })
