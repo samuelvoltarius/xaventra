@@ -6,6 +6,26 @@ export interface ActionIntent {
     kind: 'screenshot' | 'image-generation' | 'system-state' | 'file' | 'web' | 'device-action' | 'generic-action' | 'none'
 }
 
+/**
+ * `\b` is ASCII-only: a word starting with ö/ä/ü has no word boundary before it
+ * (`\w` is `[A-Za-z0-9_]`), so `\boffne` never matches „öffne“. Use a letter-class
+ * boundary instead. Also cover „öffnen“ (the common plural/infinitive form).
+ */
+const W_START = '(?:^|[^\\p{L}\\p{N}_])'
+const W_END = '(?:$|[^\\p{L}\\p{N}_])'
+const OPEN_VERB = `${W_START}(?:[oö]ffne(?:n)?|oeffne(?:n)?)${W_END}`
+
+/**
+ * 2.89.4 (live 09.10. 00:51): Handlungsaufträge auf dem virtuellen Arbeitsplatz —
+ * „mach es auf“, „öffne … auf deinem Arbeitsplatz“, „versuch es im Browser auf
+ * deinem Rechner“, „klick“, „tipp ein“, „Computer-Use“.
+ */
+export const WORKSTATION_ACTION = /(^|[^\p{L}\p{N}_])(mach\w*\s+(?:es|das|den|die|sie|ihn|ein\w*)\b.{0,25}\bauf|aufmach\w*|(?:[oö]ffne(?:n)?|oeffne(?:n)?)\s.{0,50}(?:arbeitsplatz|arbeitsdesktop|desktop|rechner|browser|firefox|chrome)|(?:versuch\w*|probier\w*)\s.{0,50}(?:im\s+browser|auf\s+(?:deinem\s+)?(?:desktop|arbeitsplatz|arbeitsdesktop|rechner|computer))|computer[\s-]?use|tipp\w*\s+(?:ein|auf|in)|tipp\w*\s.{0,40}\sein)([^\p{L}\p{N}_]|$)/iu
+
+export function isWorkstationAction(text: string): boolean {
+    return WORKSTATION_ACTION.test(String(text || ''))
+}
+
 /** Narrow speech-act projection, not a general language parser or an authority
  * grant. Clear operational announcements/explanations must reach the model as
  * conversation. Unrecognized clauses retain the existing evidence requirements.
@@ -90,8 +110,14 @@ export function detectActionIntent(input: string): ActionIntent {
         || /\b(?:welche|wie viele|zeige|zeig)\b.{0,25}\bnodes?\b.{0,30}\b(?:online|aktiv|erreichbar|laufen|status)\b/i.test(text)) {
         return { requiresTool: true, kind: 'system-state' }
     }
-    if (/\b(?:lies|lese|read|öffne|open|vergleiche|compare)\b.{0,80}\b(?:datei(?:en)?|files?|ordner|verzeichnisse?)\b/i.test(text)
-        || (/\b(?:lies|lese|read|öffne|open|vergleiche|compare)\b/i.test(text) && explicitFileTargets.length > 0)
+    // 2.89.4: a workstation order is a device action even when a path-like token
+    // appears — „öffne die Seite auf deinem Arbeitsplatz“ is not a file task.
+    if (isWorkstationAction(text)) return { requiresTool: true, kind: 'device-action' }
+
+    if (new RegExp(`${OPEN_VERB}.{0,80}\\b(?:datei(?:en)?|files?|ordner|verzeichnisse?)\\b`, 'i').test(text)
+        || (new RegExp(OPEN_VERB, 'iu').test(text) && explicitFileTargets.length > 0)
+        || /\b(?:lies|lese|read|open|vergleiche|compare)\b.{0,80}\b(?:datei(?:en)?|files?|ordner|verzeichnisse?)\b/i.test(text)
+        || (/\b(?:lies|lese|read|open|vergleiche|compare)\b/i.test(text) && explicitFileTargets.length > 0)
         || /\b(datei(?:en)?|ordner|verzeichnis)\b.{0,40}\b(auflisten|anzeigen|lesen|schreiben|erstellen|l[oö]schen|kopieren|verschieben|senden)\b/i.test(text)
         || /\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b.{0,55}\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|durchsuch\w*)\b/i.test(text)
         || /\b(?:prüf\w*|lies|les\w*|such\w*|find\w*|analysier\w*|zeig\w*|schau\w*|durchsuch\w*)\b.{0,55}\b(?:projekt|workspace|codebase|repo(?:sitory)?)\b/i.test(text)) {
@@ -104,7 +130,11 @@ export function detectActionIntent(input: string): ActionIntent {
         || /\b(?:check|prüfe|pruefe|teste|fetch|abrufen)\b.{0,100}(?:\burl\b|https?:\/\/)/i.test(text)) {
         return { requiresTool: true, kind: 'web' }
     }
-    if (/\b(klick|tippe|maus|cursor|[oö]ffne|starte|beende|schlie(?:ß|ss)e|installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|f[uü]hre .{0,20}aus|restart|neustart|sende|schicke)\b/i.test(text)) {
+    // 2.89.4 (live 09.10. 00:51): „dann mach es auf und versuch es nochmal“ (DHL on the
+    // workstation) is an action order. „mach … auf“, „öffne …“, „versuch es im Browser“
+    // and Computer-Use need a tool that acts, not only a capture.
+    if (new RegExp(`${OPEN_VERB}.{0,60}\\b(?:arbeitsplatz|arbeitsdesktop|desktop|rechner|browser|firefox|chrome|computer)\\b`, 'iu').test(text)
+        || new RegExp(`${W_START}(?:klick\\w*|tippe\\w*|maus|cursor|starte|beende|schlie(?:ß|ss)en?|installier\\w*|deinstallier\\w*|l[oö]sch\\w*|loesch\\w*|entfern\\w*|f[uü]hre .{0,20}aus|restart|neustart|sende|schicke)${W_END}`, 'iu').test(text)) {
         return { requiresTool: true, kind: 'device-action' }
     }
     // 2.89.3: "was machst du den ganzen Tag?" asks about the assistant, it is no order (no tool forced).
@@ -140,10 +170,22 @@ const NON_FULFILLING_TOOLS = new Set([
     'research_capability_plan', 'research_all_capabilities',
 ])
 
+/** Looking is not acting. A capture or a status read is evidence for a screenshot
+ * or a state question — never for an order that opens, clicks or types
+ * (live 09.10.2026: desktop_screenshot alone described an empty desktop). */
+export const OBSERVATION_ONLY_TOOLS = new Set([
+    'desktop_screenshot', 'screen_capture', 'screen_analyze', 'analyze_image',
+    'desktop_status', 'mesh_screenshot', 'webcam_capture', 'minimax_vision',
+    'browser_screenshot', 'browser_status',
+])
+
 /** Discovery, diagnosis and planning are useful progress, but not evidence that
- * the requested side effect was completed. */
-export function toolProvidesActionEvidence(toolName: string): boolean {
-    return !NON_FULFILLING_TOOLS.has(toolName)
+ * the requested side effect was completed. Screenshots and status reads only
+ * fulfill a screenshot/state request — never a pure action order. */
+export function toolProvidesActionEvidence(toolName: string, kind?: ActionIntent['kind']): boolean {
+    if (NON_FULFILLING_TOOLS.has(toolName)) return false
+    if (kind && kind !== 'screenshot' && kind !== 'system-state' && OBSERVATION_ONLY_TOOLS.has(toolName)) return false
+    return true
 }
 
 export function responseClaimsCompletedAction(response: string): boolean {

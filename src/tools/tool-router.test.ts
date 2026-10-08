@@ -22,6 +22,20 @@ describe('bounded capability recovery', () => {
         const names=getRelevantTools('Kannst du computer use nutzen und mit der Maus klicken?').map(t=>t.name)
         expect(names).toContain('desktop_input')
         expect(names).toContain('desktop_screenshot')
+        // 2.89.4: Handlungsaufträge brauchen Steuerwerkzeuge, nicht nur Aufnahmen.
+        expect(names).toContain('desktop_control')
+        expect(names).toContain('desktop_workspace')
+    })
+    it.each([
+        'Sie hat Computer-Use … dann mach es auf und versuch es nochmal',
+        'öffne die Seite auf deinem Arbeitsplatz',
+        'öffnen den Browser auf deinem Desktop',
+        'versuch es im Browser auf deinem Rechner',
+        'tipp die Sendungsnummer ein und klick auf Suchen',
+    ])('2.89.4: offers desktop_control (+ desktop_workspace) for the workstation action „%s“', request => {
+        const names = getRelevantTools(request).map(tool => tool.name)
+        expect(names).toContain('desktop_control')
+        expect(names).toContain('desktop_workspace')
     })
     it('resolves the reviewed web alias without inventing a new pack', async () => {
         expect(loadSkillPack('web')).toMatchObject({ loaded: true, tools: expect.arrayContaining(['fetch_url']) })

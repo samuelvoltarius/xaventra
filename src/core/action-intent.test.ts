@@ -95,6 +95,24 @@ describe('action intent evidence gate', () => {
         expect(toolProvidesActionEvidence('send_file')).toBe(true)
     })
 
+    it('2.89.4: workstation action orders are device actions (live: „dann mach es auf und versuch es nochmal“)', () => {
+        expect(detectActionIntent('Sie hat Computer-Use … dann mach es auf und versuch es nochmal')).toEqual({
+            requiresTool: true, kind: 'device-action',
+        })
+        expect(detectActionIntent('öffne die Seite auf deinem Arbeitsplatz').kind).toBe('device-action')
+        expect(detectActionIntent('öffnen den Browser auf deinem Desktop').kind).toBe('device-action')
+        expect(detectActionIntent('versuch es im Browser auf deinem Rechner').kind).toBe('device-action')
+    })
+
+    it('2.89.4: a screenshot is not fulfillment of a pure action order', () => {
+        expect(toolProvidesActionEvidence('desktop_screenshot', 'device-action')).toBe(false)
+        expect(toolProvidesActionEvidence('desktop_status', 'device-action')).toBe(false)
+        expect(toolProvidesActionEvidence('desktop_control', 'device-action')).toBe(true)
+        expect(toolProvidesActionEvidence('desktop_input', 'device-action')).toBe(true)
+        expect(toolProvidesActionEvidence('desktop_screenshot', 'screenshot')).toBe(true)
+        expect(toolProvidesActionEvidence('desktop_screenshot')).toBe(true)
+    })
+
     it('2.88: status questions about connections, devices and services need tool evidence (live: „Ja — verbunden.“ without any tool)', () => {
         for (const question of [
             'Ist Home Assistant verbunden? Antworte kurz.',
