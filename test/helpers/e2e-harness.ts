@@ -97,6 +97,10 @@ export interface HarnessOptions {
     routes?: EnvironmentRoute[]
     /** A SearXNG instance on this machine, already in use (connection list + search route). */
     searxng?: boolean
+    /** Reuse the runtime root of an earlier harness (a restart: files stay, memory is fresh). */
+    reuseRoot?: string
+    /** Keep the runtime root on close (for a later `reuseRoot`). */
+    keepRoot?: boolean
 }
 
 const LIVE_UNSET = ['NOVA_OS_MODE', 'NOVA_ALL_TOOLS', 'NOVA_MAX_TOOL_ROUNDS', 'NOVA_AGENT_TIMEOUT_MS', 'NOVA_NODE_ONLY', 'NOVA_NO_TELEGRAM', 'NOVA_SEARXNG_URL']
@@ -235,7 +239,7 @@ export async function createE2EHarness(options: HarnessOptions = {}): Promise<E2
     const previousCwd = process.cwd()
     const previousEnv: Record<string, string | undefined> = {}
     for (const key of [...LIVE_UNSET, ...TEST_SWITCHES, 'NOVA_RUNTIME_ROOT', 'NOVA_API_TOKEN']) previousEnv[key] = process.env[key]
-    const root = mkdtempSync(join(tmpdir(), 'xv-e2e-'))
+    const root = options.reuseRoot || mkdtempSync(join(tmpdir(), 'xv-e2e-'))
     for (const dir of ['.nova-data', '.nova-learning', '.nova-test-tmp']) mkdirSync(join(root, dir), { recursive: true })
     const config = baseConfig(options.config)
     writeFileSync(join(root, 'xaventra.config.json'), JSON.stringify(config, null, 2))
@@ -462,7 +466,7 @@ export async function createE2EHarness(options: HarnessOptions = {}): Promise<E2
             delete (globalThis as any).__novaState
             process.chdir(previousCwd)
             for (const [key, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
-            try { rmSync(root, { recursive: true, force: true, maxRetries: 3 }) } catch { /* Windows may keep a handle on a temp dir */ }
+            if (!options.keepRoot) try { rmSync(root, { recursive: true, force: true, maxRetries: 3 }) } catch { /* Windows may keep a handle on a temp dir */ }
         },
     }
     return harness

@@ -228,8 +228,11 @@ export async function processSessionForLLM(
     const existing = loadSummary(userId)
     const existingSummaryText = existing?.summary || null
 
-    // Calculate token budget for hot context (leave room for summary + system prompt)
-    const summaryReserve = existingSummaryText ? estimateTokens(existingSummaryText) + 200 : 0
+    // Calculate token budget for hot context (leave room for summary + system prompt).
+    // 2.89.2: the summary may take at most 40 % of the budget. Before, a long summary
+    // (live: 9 378 chars) shrank the room for the recent exchanges, and with none
+    // left the follow-up ("Was sagst du zu dem Foto?") was answered without context.
+    const summaryReserve = existingSummaryText ? Math.min(estimateTokens(existingSummaryText) + 200, Math.floor(tokenBudget * 0.4)) : 0
     const hotBudget = tokenBudget - summaryReserve
 
     // Walk backwards through history to fill hot context.
@@ -238,20 +241,34 @@ export async function processSessionForLLM(
     // current question ("disk space" → returns old folder listing). A focused
     // window of recent messages keeps the model on the CURRENT task.
     // Older messages are compressed into the summary below.
-    const MAX_HOT_MESSAGES = 14  // ~7 exchanges — enough memory, sharp focus
+    // 2.89.2: the last MIN_HOT_MESSAGES (6 exchanges) are always kept, each shortened
+    // to HOT_FLOOR_CHARS if the token budget cannot hold them in full; the owner's
+    // conversation is never dropped completely.
+    const MAX_HOT_MESSAGES = 20  // 10 exchanges
+    const MIN_HOT_MESSAGES = 12  // 6 exchanges, guaranteed
+    const HOT_FLOOR_CHARS = 700
     const prunedHistory = pruneToolMessages(history)
     const hotMessages: Array<{ role: string; content: string }> = []
     let hotTokens = 0
     let splitIndex = history.length
 
     for (let i = history.length - 1; i >= 0; i--) {
-        const msgTokens = estimateTokens(prunedHistory[i].content) + 10
-        if (hotTokens + msgTokens > hotBudget || hotMessages.length >= MAX_HOT_MESSAGES) {
+        const full = prunedHistory[i].content
+        const msgTokens = estimateTokens(full) + 10
+        const guaranteed = hotMessages.length < MIN_HOT_MESSAGES
+        if (hotMessages.length >= MAX_HOT_MESSAGES || (!guaranteed && hotTokens + msgTokens > hotBudget)) {
             splitIndex = i + 1
             break
         }
-        hotTokens += msgTokens
-        hotMessages.unshift(prunedHistory[i])
+        let entry = prunedHistory[i]
+        let cost = msgTokens
+        if (guaranteed && hotTokens + msgTokens > hotBudget && full.length > HOT_FLOOR_CHARS) {
+            const head = Math.ceil(HOT_FLOOR_CHARS * 0.7)
+            entry = { ...entry, content: `${full.slice(0, head)} […] ${full.slice(-(HOT_FLOOR_CHARS - head))}` }
+            cost = estimateTokens(entry.content) + 10
+        }
+        hotTokens += cost
+        hotMessages.unshift(entry)
         if (i === 0) splitIndex = 0
     }
 
@@ -260,7 +277,9 @@ export async function processSessionForLLM(
     let summaryMessage: { role: 'system'; content: string } | null = null
     let summarized = false
 
-    if (coldMessages.length > 5) {
+    // 2.89.2: the foreground path summarizes extractively at no cost, so even a few cold
+    // messages are summarized instead of silently falling out of both views.
+    if (coldMessages.length > 5 || (!allowRefresh && coldMessages.length > 0)) {
         // We have messages to summarize
         try {
             let unsummarized = coldMessages

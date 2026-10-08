@@ -16,6 +16,22 @@
 
 ### Fixed
 
+- **Conversation continuity (a follow-up now knows what came before).** Live
+  08.10.2026: "Was sagst du zu dem Foto ?" after a photo answered "Ich sehe kein
+  Foto", and "Was ist mit dem lab ?" after a node screenshot ignored it. Cause: the
+  agent history held only the request text and the model's own draft. A picture
+  attachment, the tool results and every answer that the pipeline replaced or
+  that never reached the agent (fast paths, gates, fallbacks) were missing. Now
+  the one session history (`syncDeliveredTurn`, called from the pipeline's single
+  `answer()` path) stores the answer the user really received, a note that a
+  picture was attached with a short description from the answer, and a bounded
+  tool digest; early answers are appended as a normal exchange. The hot window
+  keeps the last 6 exchanges guaranteed (up to 10), the summary may take at most
+  40 % of the budget, and cold messages are always summarized extractively.
+  System actors (`Nova-Autonomy`, `nova-self`, `system`) can never be mapped onto
+  a person principal and no longer overwrite the "last active user". End-to-end
+  tests over the Telegram entry cover photo, screenshot, early answer, a
+  SELF-GOAL run in between, restart and prompt-budget pressure.
 - **Node list shows only live nodes as online.** A deleted worker could still
   appear as "online" because a registry row without a heartbeat was given the
   current time, and `updated_at` was accepted as a heartbeat. Now there is one

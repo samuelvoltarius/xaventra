@@ -1884,6 +1884,14 @@
       "imports": []
     },
     {
+      "module": "src/core/inbox-media.ts",
+      "imports": [
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/index.ts",
       "imports": [
         "./message-bus.js",

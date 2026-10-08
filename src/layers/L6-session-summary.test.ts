@@ -6,7 +6,7 @@ vi.mock('../llm/nova-llm-sdk.js', () => ({
     createNovaLLMClient: async () => ({ complete }),
 }))
 
-import { buildForegroundSummary, processSessionForLLM, summarizeMessages } from './L6-session-summary.js'
+import { buildForegroundSummary, clearSessionSummary, processSessionForLLM, saveSummary, summarizeMessages } from './L6-session-summary.js'
 
 describe('L6 session summary latency contract', () => {
     beforeEach(() => {
@@ -46,8 +46,26 @@ describe('L6 session summary latency contract', () => {
         const result = await processSessionForLLM(`latency-test-${Date.now()}`, 'test', history, 12_000, false)
 
         expect(result.summaryMessage?.content).toContain('Spark ist der Main')
-        expect(result.hotMessages).toHaveLength(14)
+        expect(result.hotMessages).toHaveLength(20)
         expect(result.summarized).toBe(false)
         expect(complete).not.toHaveBeenCalled()
+    })
+})
+
+describe('2.89.2 the recent conversation is never squeezed out', () => {
+    it('keeps the last 6 exchanges even when a huge summary and long answers exhaust the token budget', async () => {
+        const id = `floor-test-${Date.now()}`
+        saveSummary({ userId: id, channel: 'test', summary: 'Alter Kontext. '.repeat(3000), messagesCompressed: 40, lastUpdated: new Date().toISOString() })
+        try {
+            const history = Array.from({ length: 30 }, (_, index) => ({
+                role: index % 2 === 0 ? 'user' : 'assistant',
+                content: index % 2 === 0 ? `Frage ${index}` : `Antwort ${index}: ${'Ausführlicher Text. '.repeat(400)}`,
+                timestamp: index,
+            }))
+            const result = await processSessionForLLM(id, 'test', history, 4_000, false)
+            expect(result.hotMessages.length).toBeGreaterThanOrEqual(12)
+            expect(result.hotMessages.at(-1)?.content).toContain('Antwort 29')
+            expect(result.hotMessages.at(-2)?.content).toBe('Frage 28')
+        } finally { clearSessionSummary(id) }
     })
 })

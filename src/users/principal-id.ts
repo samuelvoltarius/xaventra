@@ -11,6 +11,8 @@ export interface PrincipalContext {
     permission?: 'owner' | 'admin' | 'user' | 'guest' | 'blocked'
 }
 
+const SYSTEM_ACTORS = new Set(['nova-autonomy', 'nova-self', 'system'])
+
 function clean(value: unknown): string {
     return String(value || '').trim()
 }
@@ -26,6 +28,9 @@ function clean(value: unknown): string {
  */
 export function resolvePrincipalId(config: PrincipalConfig | null | undefined, channel: string, rawUserId: string, options: { ownerLinks?: boolean } = {}): string {
     const raw = clean(rawUserId)
+    // 2.89.2: autonomy and system actors are never a person: no alias, mapping or owner link
+    // may move them into the owner principal (and with it the owner's conversation history).
+    if (SYSTEM_ACTORS.has(raw.toLowerCase())) return raw
     const normalizedChannel = clean(channel).toLowerCase() || 'unknown'
     const mappings = config?.userPrincipals || {}
     const mapped = clean(mappings[`${normalizedChannel}:${raw}`] || mappings[raw])

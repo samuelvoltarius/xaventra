@@ -542,7 +542,8 @@ async function handleMessageInScope(
     }
 
     // Track last active user for L15 proactive messaging
-    ; (state as any).lastActiveUserId = canonicalUser
+    // Autonomy and system runs are not the user: they must never become "the active user".
+    if (!isSystemAuthored) (state as any).lastActiveUserId = canonicalUser
 
     // Notify L15 that user sent a message
     try {
@@ -699,9 +700,26 @@ async function handleMessageInScope(
     }
     // 2.89: one way to answer — every answer of this turn (early paths included)
     // is logged to the session and to the cross-channel handoff log.
+    // 2.89.2: what the next turn is answered from. Filled once the agent run is known;
+    // early answers (fast paths, gates) leave it empty and are appended as a plain exchange.
+    const turnSync: { runId?: string; imageNote?: string; toolNote?: string } = {}
+    let inboxImagePath: string | null = null
+    const syncSessionTurn = async (text: string): Promise<void> => {
+        const recordable = senderAuthorized && !isSystemAuthored && !technicalProbe && !isSensitiveAuthCommand
+            && !content.trimStart().startsWith('/') && text.trim().length > 0
+        if (recordable) try {
+            const [{ syncDeliveredTurn }, { getDesktopAgentContext }] = await Promise.all([
+                import('../agents/nova-runner.js'), import('../desktop/desktop-agent-context.js'),
+            ])
+            const room = getDesktopAgentContext()
+            syncDeliveredTurn(principalId, channel, { request: content, delivered: text, ...turnSync },
+                room ? { conversationId: room.roomId, botId: room.botId } : {}, from)
+        } catch (error) { stageFailure('Gesprächsverlauf', error) }
+    }
     const answer = async (text: string, step?: string): Promise<void> => {
         await replyFn(text)
         if (!technicalProbe) logSession(canonicalUser, channel, 'assistant', text)
+        await syncSessionTurn(text)
         if (handoffTargetsForTurn.length) {
             try { (await import('./conversation-handoff.js')).recordHandoff(handoffTargetsForTurn, 'assistant', text) }
             catch (error) { stageFailure('Kanalwechsel-Übergabe (Antwort)', error) }
@@ -1848,6 +1866,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         // Size-guard: cap systemPrompt — vLLM 122B still needs to stay fast
         // 16k chars ≈ 4k tokens for system, leaving ample room for chat history + response
+        // 2.89.2: the owner's picture is also a file, so tools and follow-ups can reach it.
+        if (image && !isSystemAuthored && principalContext.permission === 'owner' && isGroupMessage === false) try {
+            const { storeInboxImage } = await import('./inbox-media.js')
+            inboxImagePath = storeInboxImage(image)
+            if (inboxImagePath) systemPrompt += `
+
+## Eingehendes Bild
+Das Bild dieser Nachricht liegt als Datei unter ${inboxImagePath}. Werkzeuge, die einen Dateipfad brauchen, nutzen diesen Pfad.`
+        } catch (error) { stageFailure('Bild-Ablage', error) }
         const MAX_SYSTEM_PROMPT = contextPolicy.maxPromptChars
         if (systemPrompt.length > MAX_SYSTEM_PROMPT) {
             console.log(`[Pipeline] ⚠️ systemPrompt too large: ${systemPrompt.length} chars, capping to ${MAX_SYSTEM_PROMPT}`)
@@ -2305,6 +2332,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.
             if (!isSystemMessage) finalContent = await guardReply(finalContent, successfulExecutions.length)
 
+            turnSync.runId = (result as any).runId
+            if (image) turnSync.imageNote = `Bild angehängt (${image.mimeType || 'image'}, ${Math.max(1, Math.round(String(image.data || '').length * 0.75 / 1024))} KB${inboxImagePath ? `, Datei: ${inboxImagePath}` : ''})`
+            try {
+                const { toolDigestForHistory } = await import('../agents/nova-runner.js')
+                const digest = toolDigestForHistory([...successfulExecutions, ...failedExecutions])
+                const parts = [digest, screenshotDelivered ? 'Screenshot wurde als Bild gesendet' : ''].filter(Boolean)
+                if (parts.length) turnSync.toolNote = parts.join('; ')
+            } catch (error) { stageFailure('Gesprächsverlauf (Werkzeuge)', error) }
             await answer(finalContent)
 
             // Conversation continuity may retain only outcomes that crossed

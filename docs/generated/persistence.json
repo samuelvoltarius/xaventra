@@ -238,6 +238,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/inbox-media.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/lifecycle-policy.ts",
       "path": ".nova-data"
     },

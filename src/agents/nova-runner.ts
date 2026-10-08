@@ -2140,10 +2140,77 @@ export function replaceLastAssistantInHistory(userId: string, channel: string, t
     return false
 }
 
+/** One line per tool, bounded: what a follow-up needs ("lab: kein Bild"), never raw dumps. */
+export function toolDigestForHistory(executions: Array<{ toolName?: string; name?: string; success?: boolean; result?: unknown }>): string {
+    const lines = executions.slice(-4).map(execution => {
+        const name = String(execution.toolName || execution.name || 'tool')
+        const result = redactSecrets(typeof execution.result === 'string' ? execution.result : (() => { try { return JSON.stringify(execution.result ?? '') } catch { return '' } })())
+            .replace(/\s+/g, ' ').trim().slice(0, 160)
+        return `${name} ${execution.success ? 'ok' : 'fehlgeschlagen'}${result ? `: ${result}` : ''}`
+    })
+    return lines.length ? `Werkzeuge: ${lines.join(' | ')}`.slice(0, 700) : ''
+}
+
+export interface DeliveredTurn {
+    /** The user's request as the pipeline saw it. */
+    request: string
+    /** The text the user actually received. */
+    delivered: string
+    /** Run of the agent turn that is amended; without it (early answers) the exchange is appended. */
+    runId?: string
+    /** Compact note for a picture sent with the request, e.g. "Bild angehängt (image/jpeg, 180 KB)". */
+    imageNote?: string
+    /** Bounded tool digest (toolDigestForHistory) and delivery facts such as "Screenshot als Bild gesendet". */
+    toolNote?: string
+}
+
+const HISTORY_NOTE_LIMIT = 1100
+
+/**
+ * 2.89.2 Gesprächs-Kontinuität: the session history is what the next turn is answered from. It must
+ * hold the answer the user received (not the model's replaced draft), the fact that a picture was
+ * attached (with a short description taken from the answer) and a short digest of tool results.
+ * Early deterministic answers (fast paths, gates) that never reach the agent run are appended.
+ */
+export function syncDeliveredTurn(userId: string, channel: string, turn: DeliveredTurn, scope: SessionScope = {}, legacyUserId?: string): void {
+    const session = getSession(userId, channel, scope, legacyUserId)
+    const delivered = String(turn.delivered || '').trim()
+    if (!delivered) return
+    const image = turn.imageNote
+        ? `
+[${turn.imageNote}; Inhalt laut Antwort: ${redactSecrets(delivered).replace(/\s+/g, ' ').slice(0, 220)}]`
+        : ''
+    const notes = turn.toolNote ? `
+
+[Verlaufsnotiz, nicht an den Nutzer gesendet — ${turn.toolNote}]` : ''
+    const userContent = `${turn.request}${image}`.slice(0, HISTORY_NOTE_LIMIT * 4)
+    const assistantContent = `${delivered}${notes}`
+    let index = -1
+    if (turn.runId) {
+        for (let i = session.history.length - 1; i >= 0; i--) {
+            if (session.history[i].role === 'assistant' && session.history[i].runId === turn.runId) { index = i; break }
+        }
+    }
+    if (index >= 0) {
+        session.history[index] = { ...session.history[index], content: assistantContent }
+        const before = session.history[index - 1]
+        if (before?.role === 'user') session.history[index - 1] = { ...before, content: userContent }
+    } else {
+        const now = Date.now()
+        session.history.push({ role: 'user', content: userContent, timestamp: now }, { role: 'assistant', content: assistantContent, timestamp: now + 1 })
+        if (session.history.length > 200) session.history = session.history.slice(-200)
+    }
+    if (channel !== 'benchmark') {
+        try { sessionCheckpoints.save(sessionIdentity(userId, scope), session.history) }
+        catch (error) { console.warn(`[Nova Agent] Session checkpoint unavailable: ${String(error)}`) }
+    }
+}
+
 export default {
     runNovaAgent,
     createAgentContext,
     getSession,
     clearSession,
     addToHistory,
+    syncDeliveredTurn,
 }
