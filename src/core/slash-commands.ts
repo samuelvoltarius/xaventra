@@ -934,14 +934,23 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             let meshSection = ''
             try {
                 // 2.82.0: endpoints and nodes from the capability graph only; cloud models are not nodes.
+                // 2.89.4: ghost nodes / dead endpoints — freshness and phantom rules in status-endpoints.
                 let graphNodes: import('../mesh/capability-graph.js').CapabilityGraphNode[] = []
+                let graphTombstones: import('../mesh/capability-graph.js').CapabilityTombstone[] = []
                 try {
                     const { getCapabilityGraph } = await import('../mesh/capability-graph.js')
-                    graphNodes = getCapabilityGraph().getSnapshot().nodes
+                    const snapshot = getCapabilityGraph().getSnapshot()
+                    graphNodes = snapshot.nodes
+                    graphTombstones = snapshot.tombstones || []
                 } catch { /* graph optional */ }
+                let localNodeId: string | null = null
+                try {
+                    const { getLocalNodeId } = await import('../mesh/mesh-registry.js')
+                    localNodeId = getLocalNodeId()
+                } catch { /* identity optional */ }
                 const { formatEndpointSection } = await import('./status-endpoints.js')
                 const cloudModels = availableLLMs.filter(entry => !entry.local).map(entry => entry.model)
-                meshSection = formatEndpointSection(graphNodes, configModel, cloudModels)
+                meshSection = formatEndpointSection(graphNodes, configModel, cloudModels, { localNodeId, tombstones: graphTombstones })
             } catch { /* mesh info optional */ }
 
             // Phase 7 Wächter: compact lines, owner only (infrastructure details).
