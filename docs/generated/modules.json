@@ -2771,7 +2771,8 @@
         "dotenv/config",
         "node:fs",
         "node:os",
-        "node:path"
+        "node:path",
+        "node:url"
       ]
     },
     {
