@@ -16,7 +16,11 @@ fullnameOverride: ""
 
 image:
   repository: ghcr.io/samuelvoltarius/xaventra
-  # Empty = Chart appVersion. A release digest (sha256:...) wins over the tag.
+  # Registry tags: only build-<commit>-x64 / build-<commit>-arm64 (one per
+  # architecture, no <version> tag). Prefer the release digest of ONE architecture
+  # (docs/KUBERNETES.md, "Image holen"); it wins over the tag. For mixed
+  # architectures use workers.<w>.require { kubernetes.io/arch: ... } plus a
+  # per-workload image.digest.
   tag: ""
   digest: ""
   # Version the readiness probe expects from GET /v1/status. Empty: the tag (or
@@ -35,9 +39,14 @@ config:
   # (a migrated Docker worker). Nothing is mounted over it. Check listenHost first:
   # a Tailscale address of the host does not exist inside the pod.
   fromRuntime: false
-  # Otherwise this NON-SECRET object is rendered into a ConfigMap as JSON.
+  # Otherwise this NON-SECRET object is rendered into a ConfigMap as JSON. It is
+  # a complete worker config: the daemon refuses to start without name/provider
+  # (src/core/config-validator.ts). A test validates the rendered default.
   # Mesh peers carry only PUBLIC keys. Tokens/API keys belong into secrets.existingSecret.
   values:
+    name: Xaventra Worker
+    provider: openai
+    model: gpt-4o
     mesh:
       direct:
         enabled: true
@@ -121,7 +130,9 @@ workers:
     identitySecret: ""
     # Must exist on the node (owner 1000:1000, mode 0700) — never created by the chart.
     runtimeHostPath: /var/lib/xaventra/runtime
-    # Extra hard node labels besides workerNodes.label, e.g. { "xaventra.ai/general": "true" }.
+    # OPTIONAL extra hard node labels besides workerNodes.label (default: none;
+    # the owner's xaventra.ai/worker=true alone releases a node). Example:
+    # { "xaventra.ai/general": "true" } or { "kubernetes.io/arch": "arm64" }.
     require: {}
     tolerations: []
     # Tolerate the WAN taint and unreachable/not-ready for 15 min.

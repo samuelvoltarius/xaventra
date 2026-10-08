@@ -20,7 +20,8 @@ import { installGlobalLogger } from './core/nova-logger.js'
 installGlobalLogger()
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, statSync, readdirSync, unlinkSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
 import { hasConflictingDaemonPid } from './core/pid-guard.js'
 
@@ -29,13 +30,15 @@ import { hasConflictingDaemonPid } from './core/pid-guard.js'
 // ============================================
 ;(function checkBuildFreshness() {
     try {
-        const distEntry = join(process.cwd(), 'dist', 'daemon.js')
+        // The installation (this file's package root), NOT the cwd: a container runs with cwd=/runtime.
+        const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+        const distEntry = join(appRoot, 'dist', 'daemon.js')
         if (!existsSync(distEntry)) {
             console.warn('[Nova] ⚠️  dist/daemon.js missing — run "npm run build" before starting')
             return
         }
         const distMtime = statSync(distEntry).mtimeMs
-        const srcDir = join(process.cwd(), 'src')
+        const srcDir = join(appRoot, 'src')
         let newestSrc = 0
         const scan = (dir: string) => {
             try {
@@ -273,7 +276,8 @@ async function startDaemon() {
     let novaVersion = '0.0.0'
     let gitHash = ''
     try {
-        const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'))
+        // Package root of the installation, not the cwd (a container's cwd is /runtime, which has no package.json).
+        const pkg = JSON.parse(readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'package.json'), 'utf-8'))
         novaVersion = pkg.version || '0.0.0'
     } catch { /* ok */ }
     try {

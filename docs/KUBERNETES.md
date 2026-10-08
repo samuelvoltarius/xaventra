@@ -80,7 +80,11 @@ keine Main im Cluster läuft.
 ### Platzierung
 
 - `nodeSelector`: `xaventra.ai/worker: "true"` (fest, nicht abschaltbar) plus
-  Zusatz-Labels je Workload (`workers.<w>.require`).
+  Zusatz-Labels je Workload (`workers.<w>.require`). Für `worker-general` ist
+  `require` standardmäßig **leer**: Wer in seiner values-Datei z. B.
+  `xaventra.ai/general: "true"` verlangt, schränkt bewusst auf entsprechend
+  gelabelte Knoten ein — ohne dieses Label bleibt der Pod `Pending`
+  (`kubectl describe` zeigt „didn't match Pod's node affinity/selector“).
 - Harte Ausschluss-Affinität: nie auf Knoten mit `xaventra.ai/docker-worker`
   (Wert egal). Damit markiert der Owner Knoten, auf denen noch ein Docker-Worker
   läuft — doppelter Schutz neben dem fehlenden Freigabe-Label.
@@ -154,6 +158,37 @@ hostPID/hostIPC, keine hostPorts. NetworkPolicy: **niemand** verbindet sich zu
 Worker-Pods (die Worker wählen selbst die Main an und antworten über diese
 Verbindung). Sandbox-Workloads: Ausgang nur DNS plus
 `networkPolicy.sandboxEgressTo`.
+
+## Image und Konfiguration der Worker
+
+**Image-Layout** (`deploy/update/Dockerfile`): Anwendung unter `/app`
+(`ENTRYPOINT node /app/dist/daemon.js`), `WORKDIR /runtime` (leer, gehört
+UID 1000). Das Chart setzt deshalb **keinen** Startbefehl, `workingDir` bleibt
+`/runtime`, und der hostPath unter `/runtime` überdeckt nichts von der
+Anwendung. Seit 2.89.1 liest der Daemon Version und `dist/` aus dem
+Installationsverzeichnis, nicht aus dem Arbeitsverzeichnis (früher meldete er im
+Container „dist/daemon.js missing“ und „Version: 0.0.0“, und die
+Bereitschaftsprüfung auf `/v1/status` konnte die Version nie bestätigen).
+
+**Konfiguration:** `config.values` ist eine vollständige Worker-Konfiguration
+(`name`, `provider`, `model`, `mesh`, `server`). Ohne `provider` bricht der
+Daemon ab („provider fehlt“). Soll die ganze Datei aus einem Secret kommen
+(Schlüssel `xaventra.config.json`), `config.existingSecret` setzen — dann
+rendert das Chart keine ConfigMap.
+
+**Image holen:** Die Registry hat keinen `<version>`-Tag, nur
+`build-<commit>-x64` und `build-<commit>-arm64`. Der Digest steht signiert im
+Release: das Asset `xaventra-<version>-linux-<arch>.tar.gz` enthält
+`container.json` mit dem Feld `image` (`ghcr.io/samuelvoltarius/xaventra@sha256:…`).
+
+```bash
+gh release download v<version> -R samuelvoltarius/xaventra -p 'xaventra-<version>-linux-x64.tar.gz' -O - | tar -xzO container.json
+```
+
+Den Teil ab `sha256:` als `image.digest` eintragen und `image.version: "<version>"`
+setzen (sonst gibt es bei Digest keinen Versionsvergleich). Der Digest gilt für
+**eine** Architektur; bei gemischten Knoten je Architektur eine Workload mit
+`require: { kubernetes.io/arch: … }` und eigenem `image.digest`.
 
 ## Verbindung zur externen Main
 

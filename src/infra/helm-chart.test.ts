@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { runInNewContext } from 'node:vm'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { HelmLite, HelmLiteError } from '../../test/helpers/helm-lite.js'
 import { parseControlPolicy } from './kubernetes.js'
 import { detectKubernetes } from './kubernetes-node.js'
+import { validateConfig } from '../core/config-validator.js'
 
 // P19/P21: structural checks of deploy/helm/xaventra without the helm binary
 // (test/helpers/helm-lite.ts renders the chart). When helm IS installed (CI
@@ -403,11 +405,96 @@ describe.skipIf(!helm)('echtes helm (nur wenn installiert, z. B. CI)', () => {
     })
 })
 
+describe('Chart: echtes Image und gültige Konfiguration (P22)', () => {
+    const configOf = (objects: Obj[]) => JSON.parse(one(objects, 'ConfigMap', 'xv-xaventra-config').data['xaventra.config.json'])
+    const validate = (config: Obj) => {
+        const dir = mkdtempSync(join(tmpdir(), 'xv-config-'))
+        const saved = process.env.NOVA_NODE_ONLY
+        try {
+            const file = join(dir, 'xaventra.config.json')
+            writeFileSync(file, JSON.stringify(config))
+            process.env.NOVA_NODE_ONLY = 'true'
+            return validateConfig(file)
+        } finally {
+            if (saved === undefined) delete process.env.NOVA_NODE_ONLY; else process.env.NOVA_NODE_ONLY = saved
+            rmSync(dir, { recursive: true, force: true })
+        }
+    }
+
+    it('the default rendered worker config passes the real config validator (provider, name, model)', () => {
+        const config = configOf(chart.objects({}))
+        expect(config).toMatchObject({ name: expect.any(String), provider: expect.any(String), model: expect.any(String) })
+        const result = validate(config)
+        expect(result.errors).toEqual([])
+        expect(result.valid).toBe(true)
+        // the former pilot config (mesh + server only) is exactly what the daemon refused
+        expect(validate({ mesh: config.mesh, server: config.server }).errors.join()).toMatch(/provider fehlt/)
+    })
+
+    it('provider and model can be set through values; the external Main peer is still added', () => {
+        const config = configOf(chart.objects({ values: { config: { values: { provider: 'ollama', model: 'llama3.1' } }, externalMain: { nodeId: 'main-1', url: 'wss://main.example.com', publicKey: ['-----BEGIN PUBLIC KEY-----', 'abc', '-----END PUBLIC KEY-----'].join(String.fromCharCode(10)) } } }))
+        expect(config).toMatchObject({ provider: 'ollama', model: 'llama3.1' })
+        expect(config.mesh.direct.peers).toHaveLength(1)
+        expect(validate(config).valid).toBe(true)
+    })
+
+    it('config.existingSecret mounts the whole config from the Secret and renders no ConfigMap config', () => {
+        const objects = chart.objects({ values: { config: { existingSecret: 'xv-config' } } })
+        expect(objects.some(o => o.kind === 'ConfigMap' && o.metadata.name === 'xv-xaventra-config')).toBe(false)
+        const spec = worker(objects).spec.template.spec
+        expect(spec.volumes.find((v: Obj) => v.name === 'config').secret).toMatchObject({ secretName: 'xv-config' })
+    })
+
+    it('command, workingDir and mounts match the real image layout (deploy/update/Dockerfile)', () => {
+        const dockerfile = readFileSync(join(ROOT, 'deploy/update/Dockerfile'), 'utf8')
+        const entrypoint = JSON.parse(/^ENTRYPOINT (\[.*\])$/m.exec(dockerfile)![1]) as string[]
+        const workdir = [...dockerfile.matchAll(/^WORKDIR (\S+)$/gm)].map(m => m[1])
+        const app = workdir[0]
+        const runtime = workdir[workdir.length - 1]
+        expect(entrypoint).toEqual(['node', `${app}/dist/daemon.js`])
+        const container = worker(chart.objects({ values: ALL_WORKERS })).spec.template.spec.containers[0]
+        // The image's own entrypoint starts the daemon; the chart must not replace it with something else.
+        expect(container.command).toBeUndefined()
+        expect(container.args).toBeUndefined()
+        expect(container.workingDir).toBe(runtime)
+        for (const w of podSpecs(chart.objects({ values: ALL_WORKERS }))) {
+            for (const m of w.spec.containers[0].volumeMounts as Obj[]) {
+                // no mount may hide the application directory (dist/, node_modules)
+                expect(m.mountPath === app || m.mountPath.startsWith(`${app}/`) || app.startsWith(`${m.mountPath}/`) || m.mountPath === '/', `${w.name}:${m.mountPath}`).toBe(false)
+            }
+            expect(w.spec.containers[0].volumeMounts.find((m: Obj) => m.name === 'runtime').mountPath).toBe(runtime)
+        }
+    })
+
+    it('the daemon reads version and dist/ from the installation, not from the cwd (/runtime in the container)', () => {
+        const daemon = readFileSync(join(ROOT, 'src/daemon.ts'), 'utf8')
+        expect(daemon).not.toMatch(/join\(process\.cwd\(\),\s*'package\.json'\)/)
+        expect(daemon).not.toMatch(/join\(process\.cwd\(\),\s*'dist',\s*'daemon\.js'\)/)
+        expect(daemon).toMatch(/fileURLToPath\(import\.meta\.url\)/)
+    })
+
+    it('an image digest wins over the tag, a per-workload digest wins over the root one; version check only with an explicit version', () => {
+        const d1 = `sha256:${'a'.repeat(64)}`
+        const d2 = `sha256:${'b'.repeat(64)}`
+        const container = (values: Obj, name?: string) => worker(chart.objects({ values }), name).spec.template.spec.containers[0]
+        expect(container({ image: { tag: '2.89.0', digest: d1 } }).image).toBe(`ghcr.io/samuelvoltarius/xaventra@${d1}`)
+        expect(envOf(container({ image: { digest: d1 } })).XAVENTRA_EXPECTED_VERSION).toBe('')
+        expect(envOf(container({ image: { digest: d1, version: '2.89.0' } })).XAVENTRA_EXPECTED_VERSION).toBe('2.89.0')
+        const mixed = chart.objects({ values: { image: { digest: d1 }, workers: { voice: { enabled: true, image: { digest: d2 } } } } })
+        expect(worker(mixed).spec.template.spec.containers[0].image).toContain(d1)
+        expect(worker(mixed, 'xv-xaventra-voice').spec.template.spec.containers[0].image).toContain(d2)
+    })
+
+    it('worker-general requires no extra node label by default (only xaventra.ai/worker)', () => {
+        expect(worker(chart.objects({})).spec.template.spec.nodeSelector).toEqual({ 'xaventra.ai/worker': 'true' })
+    })
+})
+
 describe('Doku docs/KUBERNETES.md', () => {
     const doc = readFileSync(join(ROOT, 'docs/KUBERNETES.md'), 'utf8')
     it('covers the required topics', () => {
         for (const topic of [/Kubernetes entscheidet, WO/, /etcd/, /Control Plane/, /Toleranz/i, /direkte Mesh-Node/i, /GPU/, /External Secrets|Vault/, /Proxmox/, /Join-Token/, /ResourceQuota/, /\/cluster/,
-            /DaemonSet/, /hostNetwork/, /xaventra\.ai\/worker=true/, /Split-Brain/, /kata-clh/, /per Pipe/i, /Rückweg/, /nie direkt auf/i, /Auto-Skalierung/]) expect(doc).toMatch(topic)
+            /DaemonSet/, /hostNetwork/, /xaventra\.ai\/worker=true/, /Split-Brain/, /kata-clh/, /per Pipe/i, /Rückweg/, /nie direkt auf/i, /Auto-Skalierung/, /container\.json/, /image\.digest/, /provider fehlt/]) expect(doc).toMatch(topic)
     })
     it('names no private hosts or addresses (public repo)', () => {
         const ips = doc.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) || []

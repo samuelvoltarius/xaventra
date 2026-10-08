@@ -12,6 +12,21 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.1] — unreleased
+
+Kubernetes pilot fixes found on the first real cluster:
+
+- **Helm chart renders a valid worker config.** The default `config.values`
+  now carries `name`, `provider` and `model` (the daemon refused to start with
+  "provider fehlt"); a test runs the real config validator on the rendered file.
+- **Version and `dist/` come from the installation, not the cwd.** In the
+  container the working directory is `/runtime`; the daemon reported
+  "dist/daemon.js missing" and `Version: 0.0.0`, so `/v1/status` could never
+  match the chart's readiness version check.
+- **Image docs.** The registry only has per-architecture `build-<commit>-<arch>`
+  tags; `docs/KUBERNETES.md` explains how to take the digest from the signed
+  release asset, and that `workers.<w>.require` is optional.
+
 ## [2.89.0] — 2026-10-07
 
 **One truth, everything reachable.** Most features were already built, but
