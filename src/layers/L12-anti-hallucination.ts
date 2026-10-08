@@ -289,13 +289,32 @@ export function setInternalLLM(llm: any): void {
  * Sends Nova's response + actual tool outputs to local LLM
  * and asks it to check for inconsistencies.
  */
+/**
+ * 2.89.3: names and figures of a short answer that all stand in the recent conversation are grounded
+ * (live: "Mein Hund heißt Bruno" -> "wie hieß mein Hund?" -> "Bruno" was corrected as invented).
+ */
+export function groundedInConversation(response: string, history: readonly string[] = []): boolean {
+    const past = history.join('\n').toLowerCase()
+    if (!past || !response || response.length > 300) return false
+    const proper: string[] = []
+    for (const sentence of response.split(/(?<=[.!?])\s+|\n+/)) {
+        const words = sentence.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || []
+        words.forEach((word, index) => {
+            if (/^\p{N}+$/u.test(word) || (index > 0 && /^\p{Lu}/u.test(word) && word.length >= 3)) proper.push(word.toLowerCase())
+        })
+    }
+    return proper.length > 0 && proper.every(word => past.includes(word))
+}
+
 export async function validateWithLLM(
     response: string,
-    toolExecutions: ToolExecution[]
+    toolExecutions: ToolExecution[],
+    conversation: readonly string[] = [],
 ): Promise<{ honest: boolean; issues: string[]; unchecked?: boolean }> {
     if (!internalLLM) {
         return { honest: true, issues: [] }
     }
+    if (groundedInConversation(response, conversation)) return { honest: true, issues: [] }
 
     try {
         const toolSummary = toolExecutions.map(t =>
@@ -306,7 +325,7 @@ export async function validateWithLLM(
 
 TOOL-ERGEBNISSE (Wahrheit):
 ${toolSummary || 'Keine Tools verwendet.'}
-
+${conversation.length ? `\nGESPRÄCHSVERLAUF (gilt ebenfalls als Beleg; ein leeres Tool-Ergebnis wie "keine Treffer" widerlegt keine Aussage, die hier steht):\n${conversation.join('\n').slice(0, 1800)}\n` : ''}
 AI-ANTWORT (zu prüfen):
 ${response.slice(0, 500)}
 

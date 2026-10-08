@@ -472,6 +472,15 @@ const sessionLoadedPacks = new Set<string>()
 // 2.89: 3 packs / 24 tools let a context pack evict the relevant one. The
 // best pack of the current instruction is now always complete (see ordering).
 const MAX_ACTIVE_PACKS = 4
+
+/**
+ * 2.89.3 (live 08.10. 21:38): a long pasted text (provider info) activated four packs by accidental words (self-evolution,
+ * self-setup, llm-management, web search: 31 tools) and the model call timed out. The instruction of a long message
+ * is at its start or its end; the middle is material, not a request.
+ */
+export function packScoringText(text: string): string {
+    return text.length > 600 ? `${text.slice(0, 300)}\n${text.slice(-300)}` : text
+}
 const MAX_WORKER_TOOLS = 40
 
 /** Reviewed aliases only; never derive tools from arbitrary text. */
@@ -624,7 +633,7 @@ export function getRelevantTools(
         sum + (matchesSkillKeyword(text, keyword) ? keywordWeight(keyword) : 0), 0)
 
     const rankedPacks = SKILL_PACKS
-        .map(pack => ({ pack, primaryScore: intentBonus(pack) + score(pack, primaryMessage), contextScore: score(pack, userMessage) }))
+        .map(pack => ({ pack, primaryScore: intentBonus(pack) + score(pack, packScoringText(primaryMessage)), contextScore: score(pack, packScoringText(userMessage)) }))
         .filter(candidate => candidate.contextScore > 0 || candidate.primaryScore > 0)
         .sort((a, b) =>
             Number(b.primaryScore > 0) - Number(a.primaryScore > 0)

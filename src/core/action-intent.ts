@@ -107,7 +107,9 @@ export function detectActionIntent(input: string): ActionIntent {
     if (/\b(klick|tippe|maus|cursor|[oö]ffne|starte|beende|schlie(?:ß|ss)e|installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|f[uü]hre .{0,20}aus|restart|neustart|sende|schicke)\b/i.test(text)) {
         return { requiresTool: true, kind: 'device-action' }
     }
-    if (/\b(mach\w*|erstel+l\w*|[aä]nder\w*|aktualisier\w*|konfigurier\w*)\b.{0,60}\b(jetzt|bitte|mir|das|die|den)\b/i.test(text)) {
+    // 2.89.3: "was machst du den ganzen Tag?" asks about the assistant, it is no order (no tool forced).
+    if (!/\b(?:was|wie|wo|warum|wieso)\s+(?:machst|tust|treibst|machen)\s+(?:du|ihr)\b/i.test(text)
+        && /\b(mach\w*|erstel+l\w*|[aä]nder\w*|aktualisier\w*|konfigurier\w*)\b.{0,60}\b(jetzt|bitte|mir|das|die|den)\b/i.test(text)) {
         return { requiresTool: true, kind: 'generic-action' }
     }
     return { requiresTool: false, kind: 'none' }
@@ -156,5 +158,5 @@ export function honestNoToolResponse(kind: ActionIntent['kind']): string {
     if (kind === 'screenshot') {
         return 'Ich konnte den Screenshot nicht zuverlässig erstellen oder senden. Es wurde keine Bilddatei übertragen.'
     }
-    return 'Ich konnte die angeforderte Aktion nicht zuverlässig ausführen. Es wurde kein passendes Tool erfolgreich ausgeführt.'
+    return 'Das habe ich gerade nicht hinbekommen und nichts verändert. Magst du es noch einmal versuchen oder etwas anders sagen?'
 }

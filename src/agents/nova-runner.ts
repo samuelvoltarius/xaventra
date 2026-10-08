@@ -71,6 +71,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     })
 }
 
+/** 2.89.3 (live 08.10.: a long pasted text with 31 tools hit the fixed 45 s / 60 s limits on a healthy, empty server):
+ * the primary call gets more time for a larger prompt or a larger tool set, at most 150 s. */
+export function primaryLlmTimeoutMs(promptChars: number, toolCount: number): number {
+    const extra = Math.max(0, Math.ceil((promptChars - 12_000) / 10_000)) * 15_000 + (toolCount > 20 ? 15_000 : 0)
+    return Math.min(150_000, 60_000 + extra)
+}
 const TIMEOUT_LLM = 60_000      // 60s for primary LLM call (local/mesh models can need a cold-start)
 // Per-tool timeouts by tool kind, tool rounds and the run deadline come from
 // one place (core/run-limits.ts, 2.89). NovaOS keeps its larger values; the
@@ -622,9 +628,13 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         // only the tools its policy lets run — never one that tool-authorization would block.
         const { isGovernedReadOnlyRun, isGovernedReadOnlyTool } = await import('./tool-authorization.js')
         const governedReadOnlyRun = isGovernedReadOnlyRun({ channel, internal: isInternalRequest, allowedChanges: kernel.contract.allowedChanges })
-        const relevantTools = governedReadOnlyRun
+        const governedTools = governedReadOnlyRun
             ? contractSelected.filter((tool: any) => isGovernedReadOnlyTool(tool.name))
             : contractSelected
+        // 2.89.3 (Gespraechstest): small talk and questions about what was just said are answered from the conversation;
+        // memory / introspection tools are not offered first (the model may still reach for them if the history lacks it).
+        const { withoutFirstChoiceLookups } = await import('../core/conversation-turn.js')
+        const relevantTools = withoutFirstChoiceLookups(content, governedTools as any[]) as typeof governedTools
         if (historyOnly) {
             const priorEvidence = historyEvidenceMessages(session.history, sessionIdentity(userId, scope), channel, id => outcomeLedger.getRun(id))
             // Keep the current user request last; old tool evidence is neither a
@@ -823,7 +833,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // Every native planning, follow-up and repair round shares one budget.
         // Do not mutate the global/shared client used by other users or runs.
         llmClient = kernel.inference.wrap(llmClient)
-        llmClient = cancellableCompletion(llmClient, abortSignal, TIMEOUT_LLM)
+        const primaryTimeoutMs = primaryLlmTimeoutMs(JSON.stringify(messages).length, toolDefinitions.length)
+        llmClient = cancellableCompletion(llmClient, abortSignal, primaryTimeoutMs)
         // Generate response WITH TOOLS!
         _traceRecorder.llmCallStart(_traceId)
         // Race the LLM call against the hard abort signal so a hung initial call doesn't
@@ -833,6 +844,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             toolChoice: actionIntent.requiresTool ? 'required' as const : 'auto' as const,
             maxTokens: isBenchmarkRun ? 256 : kernel.cognition.executionBudget.maxOutputTokens,
             reasoningEffort,
+            ...(primaryTimeoutMs > TIMEOUT_LLM ? { timeoutMs: primaryTimeoutMs } : {}),
         }
         // 2.87 Paket P: in einem Sprach-Zug sind nur diese Runde und die Folgerunden
         // nach Werkzeugen sprechbar (wortweise an den Phrasenpuffer); sonst unverändert.
@@ -840,13 +852,13 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         if (onStepUpdate && !forcedToolResponse) { try { await onStepUpdate(THINKING_LABEL) } catch { /* non-critical */ } }
         let response = forcedToolResponse || await (abortSignal
             ? Promise.race([
-                withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call'),
+                withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), primaryTimeoutMs, 'Primary LLM call'),
                 new Promise<never>((_, reject) => {
                     if (abortSignal.aborted) { reject(new Error('AbortError: hard cancel')) }
                     else { abortSignal.addEventListener('abort', () => reject(new Error('AbortError: hard cancel')), { once: true }) }
                 }),
             ])
-            : withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call')
+            : withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), primaryTimeoutMs, 'Primary LLM call')
         ) as any
         if (reasoningEffort !== 'none' && isReasoningOnlyResponse(response)) {
             console.warn(`[Nova Agent] Reasoning-only response (${response.finishReason || 'unknown'}); retrying once without reasoning`)
@@ -2082,7 +2094,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             const minimaxUnavailable = providerHealth?.minimax?.status === 'degraded'
             userMessage = actionIntent.kind === 'image-generation'
                 ? `Ich konnte die Bildgenerierung nicht starten: ${minimaxUnavailable ? 'MiniMax ist wegen des Quota-Limits gesperrt und die lokalen Modelle/Netzdienste haben nicht rechtzeitig geantwortet.' : 'Das Planungsmodell und die lokalen Fallbacks haben nicht rechtzeitig geantwortet.'}`
-                : 'Die Anfrage hat zu lange gedauert; die verfügbaren Modell-Routen haben nicht rechtzeitig geantwortet.'
+                : 'Das hat zu lange gedauert, ich war nicht rechtzeitig fertig. Versuch es bitte gleich noch einmal.'
         } else if (errStr.includes('All models failed')) {
             userMessage = 'Alle verfügbaren Modelle sind gerade nicht erreichbar. Ich versuche es gleich nochmal.'
         }

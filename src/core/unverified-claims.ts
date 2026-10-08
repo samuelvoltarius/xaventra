@@ -16,3 +16,17 @@ export function guardUnverifiedClaims(reply: string, toolRuns: number): string {
     if (NEGATED.test(around) && !/curl|verbindung\s+steht/i.test(match[0])) return reply
     return `${UNVERIFIED_NOTE}\n\n${reply}`
 }
+
+/**
+ * 2.89.3: an answer that only ANNOUNCES an action ("Ich rufe kurz die aktuelle Zeit ab ...", "einen Moment") although no
+ * tool ran in this run. Short, no figures - a real answer contains its result.
+ */
+const ANNOUNCED_ACTION = /(?:^|[^\p{L}])ich\s+(?:rufe|ruf|schaue|schau|sehe|seh|prüfe|prüf|pruefe|hole|hol|suche|such|frage|lade|lese|checke|check|ermittle|rechne)\b[^.?!\n]{0,70}?\b(?:ab|nach|kurz|gleich|jetzt|mal|aus|an)\b|(?:^|[^\p{L}])(?:einen\s+moment|moment\s+bitte|einen\s+augenblick|gleich\s+nachgesehen)(?![\p{L}])/iu
+
+export function announcesUnperformedAction(text: string): boolean {
+    const value = String(text ?? '').trim()
+    if (!value || value.length > 220 || /\d/.test(value)) return false
+    return ANNOUNCED_ACTION.test(value)
+}
+
+export const ANNOUNCED_BUT_NOT_DONE_REPLY = 'Das konnte ich gerade nicht nachsehen. Magst du es noch einmal versuchen?'
