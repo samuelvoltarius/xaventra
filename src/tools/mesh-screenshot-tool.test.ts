@@ -4,6 +4,7 @@ vi.mock('../core/lifecycle-policy.js', () => ({ getExecutionPolicyContext: () =>
 vi.mock('../users/multi-user-middleware.js', () => ({ getUserPermission: () => fixture.role }))
 vi.mock('../mesh/mesh-transport-runtime.js', () => ({ currentCaptureNodes: () => ['spark', 'worker'], requestNodeCapture: fixture.capture }))
 vi.mock('./send-file-tool.js', () => ({ executeSendFile: fixture.send }))
+vi.mock('../mesh/mesh-registry.js', () => ({ discoverNodes: async () => [] }))
 import { meshScreenshotTool } from './mesh-screenshot-tool.js'
 beforeEach(() => {
     fixture.role = 'owner'; fixture.context.channel = 'telegram'; vi.clearAllMocks()

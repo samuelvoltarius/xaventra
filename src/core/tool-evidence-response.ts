@@ -1,4 +1,5 @@
 import { redactSecrets } from '../security/secret-redaction.js'
+import { captureReason } from '../mesh/capture-reason.js'
 import { NODE_SCREENSHOT_LIMITATION } from './request-capabilities.js'
 import { DETAILS_TRENNER, OWNER_PAGE_CHARS } from './owner-text.js'
 
@@ -36,7 +37,7 @@ export function nodeScreenshotResponse(executions: ResponseToolExecution[]): str
         try { result = JSON.parse(raw) } catch { /* policy denial remains text */ }
     }
     const rows = result && typeof result === 'object' && Array.isArray((result as any).captures) ? (result as any).captures.slice(0, 16) : []
-    const receipts = rows.map((row: any) => `${safeResult(row.nodeId, 100)}: ${row.captured === true ? 'Bild aufgenommen' : 'kein Bild aufgenommen'}; ${row.delivered === true ? 'Bildzustellung bestätigt' : 'keine Bildzustellung bestätigt'}${row.error ? ` — ${safeResult(row.error, 400)}` : ''}`).join('\n')
+    const receipts = rows.map((row: any) => `${safeResult(row.nodeId, 100)}: ${row.captured === true ? 'Bild aufgenommen' : 'kein Bild aufgenommen'}; ${row.delivered === true ? 'Bildzustellung bestätigt' : 'keine Bildzustellung bestätigt'}${row.reason || row.error ? ` — ${safeResult(row.reason || captureReason(row.error), 400)}` : ''}`).join('\n')
     const body = receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)
     return details ? `${details}\n\n${body}` : body
 }

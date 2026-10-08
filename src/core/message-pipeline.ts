@@ -2228,6 +2228,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse([...successfulExecutions, ...failedExecutions])) : screenshotFailureResponse(failedExecutions)
+                try {
+                    const { replaceLastAssistantInHistory } = await import('../agents/nova-runner.js')
+                    replaceLastAssistantInHistory(principalId, channel, finalContent, { conversationId: desktopContext?.roomId, botId: desktopBot?.id })
+                } catch { /* history sync is best effort */ }
             }
 
             // Internal provider reasoning is never a channel artifact. Verbose

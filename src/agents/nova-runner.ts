@@ -2124,6 +2124,22 @@ export function addToHistory(userId: string, channel: string, message: AgentMess
     if (channel !== 'benchmark') sessionCheckpoints.save(sessionIdentity(userId, scope), session.history)
 }
 
+/**
+ * A deterministic answer (e.g. the per-node screenshot receipt) replaces the model's text after the run.
+ * The agent history must hold what the user actually received, or a short follow-up
+ * ("Was ist mit dem lab?") is answered from text the user never saw.
+ */
+export function replaceLastAssistantInHistory(userId: string, channel: string, text: string, scope: SessionScope = {}): boolean {
+    const session = getSession(userId, channel, scope)
+    for (let i = session.history.length - 1; i >= 0; i--) {
+        if (session.history[i].role !== 'assistant') continue
+        session.history[i] = { ...session.history[i], content: text }
+        if (channel !== 'benchmark') sessionCheckpoints.save(sessionIdentity(userId, scope), session.history)
+        return true
+    }
+    return false
+}
+
 export default {
     runNovaAgent,
     createAgentContext,

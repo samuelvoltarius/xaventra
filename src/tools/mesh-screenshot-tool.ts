@@ -5,6 +5,7 @@ import { getRuntimeRoot } from '../core/data-root.js'
 import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 import { getUserPermission } from '../users/multi-user-middleware.js'
 import type { NovaTool } from './complete-registry.js'
+import { captureReason } from '../mesh/capture-reason.js'
 
 export const meshScreenshotTool: NovaTool = {
     name: 'mesh_screenshot', category: 'mesh',
@@ -28,6 +29,18 @@ export const meshScreenshotTool: NovaTool = {
         const nodes = target === 'all' ? known : known.includes(target) ? [target] : []
         if (!nodes.length) return { success: false, captured: false, delivered: false, error: 'No fresh known capture target' }
         const captures: Array<Record<string, unknown>> = []
+        if (target === 'all') {
+            // Every known node gets a line: nodes without a fresh capture channel say why, they are never left out.
+            try {
+                const { discoverNodes } = await import('../mesh/mesh-registry.js')
+                const { describeLastSeen, isHeartbeatFresh } = await import('../mesh/mesh-node-lifecycle.js')
+                for (const node of await discoverNodes({})) {
+                    if (known.includes(node.node_id)) continue
+                    captures.push({ nodeId: node.node_id, captured: false, delivered: false,
+                        reason: isHeartbeatFresh(node.last_heartbeat) ? 'kein aktueller Aufnahme-Kanal zu diesem Knoten' : `offline (zuletzt gesehen ${describeLastSeen(node.last_heartbeat)})` })
+                }
+            } catch { /* registry optional: known nodes are still captured */ }
+        }
         for (const nodeId of nodes) {
             let row: Record<string, unknown> = { nodeId, captured: false, delivered: false }
             try {
@@ -54,9 +67,9 @@ export const meshScreenshotTool: NovaTool = {
                     const { executeSendFile } = await import('./send-file-tool.js')
                     const result = await executeSendFile({ path, caption: `Mesh-Screenshot: ${nodeId}`, chat_id: context.authUserId })
                     row.delivered = /^✅ (?:Foto|Dokument) gesendet:/.test(result)
-                    if (!row.delivered) row.error = 'Capture succeeded, but image delivery was not verified'
+                    if (!row.delivered) { row.error = 'Capture succeeded, but image delivery was not verified'; row.reason = captureReason(row.error) }
                 }
-            } catch (error) { row.error = String(error).slice(0, 400) }
+            } catch (error) { row.error = String(error).slice(0, 400); row.reason = captureReason(error instanceof Error ? error.message : error) }
             captures.push(row)
         }
         // Pixels stay out of model text, shared queues, audit results and caches.
