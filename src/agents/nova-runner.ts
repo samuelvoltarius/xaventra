@@ -44,6 +44,7 @@ import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../cor
 import { selectContractTools } from './tool-contract-selection.js'
 import { ToolAdmission } from './tool-admission.js'
 import { toolProgressLabel, THINKING_LABEL } from '../core/tool-progress-label.js'
+import { homeAssistantStatusPlan, SHELL_SEARCH_TOOLS, HASS_NOT_CONNECTED_HINT } from './home-assistant-status-plan.js'
 import { limitStopNotice, runLimits, toolTimeoutMs } from '../core/run-limits.js'
 import { loadSkillPack, toolExpansionPolicy } from '../tools/tool-router.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
@@ -685,6 +686,10 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const overviewPlan = environmentOverviewPlan({ content, permission: getUserPermission(authUserId, channel),
             internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
         if (overviewPlan) forcedToolResponse = { content: '', toolCalls: overviewPlan, finishReason: 'tool_calls' }
+        const hassPlan = overviewPlan ? null : homeAssistantStatusPlan({ content, permission: getUserPermission(authUserId, channel),
+            internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
+        if (hassPlan) forcedToolResponse = { content: '', toolCalls: hassPlan, finishReason: 'tool_calls' }
+        let hassNotConnected = false
         if (isExplicitCodexInstallRequest(content) && toolDefinitions.some((tool: any) => tool.name === 'codex_install')) {
             console.log('[Nova Doctor] Deterministic repair path: explicit Codex installation -> codex_install')
             forcedToolResponse = {
@@ -1146,6 +1151,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
                 for (const call of response.toolCalls) {
                     const callId = nextToolEvidenceId(call)
+                    if (hassNotConnected && SHELL_SEARCH_TOOLS.has(call.name)) {
+                        toolResults.push(`⚠️ ${call.name}: ${HASS_NOT_CONNECTED_HINT}`)
+                        continue
+                    }
                     console.log(`[Nova Agent] Tool call: ${call.name}`)
                     // 2.89: a sign of life at EVERY tool start (side channel), not only in batches.
                     if (onStepUpdate) { try { await onStepUpdate(toolProgressLabel(call.name)) } catch { /* status update non-critical */ } }
@@ -1199,6 +1208,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         noteVoiceToolDone(call.name, !(result && typeof result === 'object' && (result as any).success === false))
                         try { const { getSelfCheckManager } = await import('../layers/L15-self-check.js'); getSelfCheckManager().toolCallFinished() } catch { }
                         toolsExecuted.push(call.name)
+                        if (call.name === 'hass_status' && /"connected"\s*:\s*false/.test(_resultStr)) hassNotConnected = true
 
                         // === Task Tracker: advance step ===
                         try {

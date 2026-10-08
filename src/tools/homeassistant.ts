@@ -14,6 +14,7 @@
  * Slash commands: /hass list, /hass status <entity>, /hass <domain>.<service> <entity>
  */
 
+import { HASS_NOT_CONNECTED_HINT } from '../agents/home-assistant-status-plan.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { ownerApprovalRefusal } from './owner-approval.js'
 import { join } from 'node:path'
@@ -267,7 +268,7 @@ export const homeAssistantTools: NovaTool[] = [
                 const cfg = getHassConfig()
                 return { connected: true, message: status.message, url: cfg?.url }
             } catch (err) {
-                return { connected: false, error: String(err) }
+                return { connected: false, error: String(err), hinweis: HASS_NOT_CONNECTED_HINT }
             }
         },
     },

@@ -40,10 +40,12 @@ describe('Paket D — live sentences over the real entry: answers', () => {
     it('[2.89 A] „homeassit sollte schon laufen" — Home Assistant tools offered, the model answers after its check (A: tool error ends the run)', async () => {
         const e2e = await harness()
         const result = await e2e.telegram('homeassit sollte schon laufen', [
-            { tool: 'hass_status' }, { text: 'Home Assistant ist noch nicht verbunden — ich richte es ein, wenn du willst.' },
+            { tool: 'run_command', args: { command: 'docker ps' } }, { text: 'Home Assistant ist noch nicht verbunden — ich richte es ein, wenn du willst.' },
         ])
         expect(result.offeredTools).toContain('hass_status')
-        expect(result.executedTools).toContain('hass_status')
+        // 2.89.1: hass_status runs FIRST (deterministic); a following shell search is refused.
+        expect(result.executedTools[0]).toBe('hass_status')
+        expect(result.executedTools).not.toContain('run_command')
         expectClean(result)
         expect(result.final).toContain('Home Assistant ist noch nicht verbunden')
     }, T)
