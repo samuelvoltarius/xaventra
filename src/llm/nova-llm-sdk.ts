@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { FailoverError, classifyFailoverReason, resolveFailoverStatus } from './model-fallback.js'
 import { recordModelCall, isModelDisabled, claimModelRecoveryProbe } from './model-perf-db.js'
+import { sameEndpoint } from './local-llm.js'
 import { CLIENT_METADATA_JSON, USER_AGENT, API_CLIENT } from '../core/client-identity.js'
 import { CodexCLIAdapter, isCodexAvailable, isCodexAuthenticated } from './codex-cli-adapter.js'
 import { MiniMaxLLM, createMiniMaxLLM } from './providers/minimax.js'
@@ -1353,6 +1354,37 @@ export function classifyLocalModelFailure(message: string): 'transient-timeout' 
     return isOOM || isCrash || isCorrupt ? 'hard-failure' : 'soft-failure'
 }
 
+// 2.89.3: server health. Live 08.10.2026 every call re-tried the tailnet Ollama 100.73.189.71:11434
+// (offline) with all three of its models ("fetch failed" x3) before the 120 s state limit was reached.
+// A server that cannot be reached is skipped for 5 minutes (then one half-open try).
+const UNREACHABLE_HOLD_MS = 5 * 60_000
+const unreachableServers = new Map<string, number>()
+
+function serverKey(baseUrl: string): string {
+    try { return new URL(baseUrl).host.toLowerCase() } catch { return baseUrl.toLowerCase() }
+}
+
+/** The server did not answer at all (connection refused/unreachable/unknown host), as opposed to a slow or failing model. */
+export function isConnectionFailure(message: string): boolean {
+    return /fetch failed|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ECONNRESET|socket hang up|getaddrinfo/i.test(message)
+}
+
+export function markServerUnreachable(baseUrl: string, now = Date.now()): void {
+    unreachableServers.set(serverKey(baseUrl), now + UNREACHABLE_HOLD_MS)
+}
+
+export function isServerUnreachable(baseUrl: string, now = Date.now()): boolean {
+    const key = serverKey(baseUrl)
+    const until = unreachableServers.get(key)
+    if (until === undefined) return false
+    if (now >= until) { unreachableServers.delete(key); return false }
+    return true
+}
+
+export function resetServerHealthForTests(): void { unreachableServers.clear() }
+
+function stripV1(baseUrl: string): string { return baseUrl.replace(/\/v1\/?$/, '') }
+
 const CLOUD_PROVIDER_IDS = new Set(['openai', 'openai-codex', 'minimax', 'anthropic', 'claude', 'openrouter', 'groq'])
 
 /** A resolver pick counts as cloud when its provider is a cloud API or its endpoint is not local. */
@@ -1496,7 +1528,7 @@ class LocalLLMProvider extends LLMProvider {
         // hang for minutes). Other local endpoints stay; never a cloud failover.
         const discovered = allCandidates.filter(candidate => !vllmSwitchBlocks(candidate.baseUrl))
         if (allCandidates.length && !discovered.length) throw new Error(vllmSwitchBusyMessage())
-        let candidates = discovered.filter(candidate => !isBlacklisted(candidate.model, candidate.baseUrl))
+        let candidates = discovered.filter(candidate => !isServerUnreachable(candidate.baseUrl) && !isBlacklisted(candidate.model, candidate.baseUrl))
         let recovering = false
         if (!candidates.length) {
             // Never override a known permanent exclusion. Prefer ordinary
@@ -1510,9 +1542,17 @@ class LocalLLMProvider extends LLMProvider {
         let lastError: unknown
 
         const maxAttempts = Math.max(1, Math.min(candidates.length, options?.maxAttempts ?? candidates.length))
-        for (let i = 0; i < maxAttempts; i++) {
+        // Within one call: a server that did not answer is not asked again, and a model that timed out is not
+        // asked again on the same server under another address (localhost = the machine's own tailnet address).
+        const deadServers: string[] = []
+        const timedOut: Array<{ baseUrl: string; model: string }> = []
+        let tried = 0
+        for (let i = 0; i < candidates.length && tried < maxAttempts; i++) {
             options?.signal?.throwIfAborted()
             const candidate = candidates[i]
+            if (deadServers.some(url => serverKey(url) === serverKey(candidate.baseUrl))) continue
+            if (timedOut.some(entry => entry.model === candidate.model && sameEndpoint(stripV1(entry.baseUrl), stripV1(candidate.baseUrl)))) continue
+            tried++
 
             try {
                 // vLLM/large models (122B) need longer timeout for heavy system prompts
@@ -1546,6 +1586,13 @@ class LocalLLMProvider extends LLMProvider {
 
                 // Classify failure type for blacklisting
                 const failureClass = classifyLocalModelFailure(errMsg)
+                if (isConnectionFailure(errMsg)) {
+                    deadServers.push(candidate.baseUrl)
+                    markServerUnreachable(candidate.baseUrl)
+                    console.log(`[LocalLLM] ${serverKey(candidate.baseUrl)} nicht erreichbar - 5 Minuten übersprungen`)
+                } else if (failureClass === 'transient-timeout') {
+                    timedOut.push({ baseUrl: candidate.baseUrl, model: candidate.model })
+                }
                 if (failureClass === 'hard-failure') {
                     // Hard failures — blacklist immediately (don't waste 2 attempts)
                     recordFailure(`${candidate.baseUrl}|${candidate.model}`, errMsg)

@@ -1904,6 +1904,12 @@
       ]
     },
     {
+      "module": "src/core/image-turn.ts",
+      "imports": [
+        "../llm/capability-probe.js"
+      ]
+    },
+    {
       "module": "src/core/inbox-media.ts",
       "imports": [
         "node:crypto",
@@ -4879,6 +4885,7 @@
         "../voice/voice-turn-stream.js",
         "./codex-cli-adapter.js",
         "./endpoint-trust.js",
+        "./local-llm.js",
         "./model-fallback.js",
         "./model-perf-db.js",
         "./providers/minimax.js",
@@ -4970,6 +4977,13 @@
         "../core/config.js",
         "../tools/complete-registry.js",
         "./mcp-client.js"
+      ]
+    },
+    {
+      "module": "src/media/image-prepare.ts",
+      "imports": [
+        "node:fs",
+        "node:path"
       ]
     },
     {
@@ -7361,6 +7375,7 @@
         "./tool-result-quality.js",
         "./verbinden-tools.js",
         "./vision-tool.js",
+        "./weather.js",
         "node:fs",
         "node:os",
         "node:path"
@@ -7736,7 +7751,8 @@
         "../core/action-intent.js",
         "../core/request-capabilities.js",
         "../core/tool-evidence-binding.js",
-        "./complete-registry.js"
+        "./complete-registry.js",
+        "./minimax-tools.js"
       ]
     },
     {
@@ -7759,6 +7775,13 @@
         "node:child_process",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/weather.ts",
+      "imports": [
+        "../core/tool-abort-scope.js",
+        "./complete-registry.js"
       ]
     },
     {

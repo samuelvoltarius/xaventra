@@ -7,8 +7,10 @@
  * the status lines into the stored answer.
  *
  * Now (one rule for every channel):
- *   - Chat channels (Telegram, WhatsApp, Discord, …) get at most ONE short
- *     message, and only when the run takes longer than ~20 s.
+ *   - Chat channels (Telegram, WhatsApp, Discord, …) get a short message when
+ *     the run takes longer than ~20 s and - 2.89.3 - ONE more after ~90 s that
+ *     says in plain words what is going on. Never more than two, never part
+ *     of the answer.
  *   - Every other channel never receives progress through the reply function;
  *     an optional side sink (MessageContext.onProgress) gets the raw status.
  *   - Routing notices (not plain step labels) are kept for the run outcome.
@@ -20,6 +22,14 @@ const CHAT_PROGRESS_CHANNELS = new Set(['telegram', 'whatsapp', 'discord', 'slac
 
 export const PROGRESS_FIRST_AFTER_MS = 20_000
 let firstAfterOverride: number | null = null
+/** 2.89.3: the one follow-up lifesign of a long run (measured from the start of the run). */
+export const PROGRESS_SECOND_AFTER_MS = 90_000
+let secondAfterOverride: number | null = null
+
+/** Test hook: shorter second-progress delay (null = default). */
+export function setProgressSecondAfterForTests(ms: number | null): void {
+    secondAfterOverride = ms
+}
 /** Side channel: latest status is repeated at least this often while the run is alive. */
 export const PROGRESS_HEARTBEAT_MS = 10_000
 let heartbeatOverride: number | null = null
@@ -52,6 +62,10 @@ export interface ProgressNoticeOptions {
     /** Side sink for non-chat channels (never the answer). */
     onProgress?: (status: string) => void
     firstAfterMs?: number
+    /** Delay of the second (last) chat message, measured from the start of the run (default 90 s). */
+    secondAfterMs?: number
+    /** What the run is doing in plain words, e.g. "ich werte gerade das Bild aus …" (second message). */
+    activity?: string
     /** Side-channel heartbeat interval (default 10 s). */
     heartbeatMs?: number
     now?: () => number
@@ -61,7 +75,7 @@ export interface ProgressNotice {
     update(status: string): void
     close(): void
     readonly closed: boolean
-    /** Number of progress messages sent through the reply function (0 or 1). */
+    /** Number of progress messages sent through the reply function (0, 1 or 2). */
     readonly sent: number
     /** Routing notices of this run (e.g. "Codex ist gerade nicht erreichbar – ich arbeite lokal weiter."). */
     readonly notices: string[]
@@ -76,6 +90,7 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
     let closed = false
     let sent = 0
     let timer: ReturnType<typeof setTimeout> | null = null
+    let secondTimer: ReturnType<typeof setTimeout> | null = null
     let heartbeat: ReturnType<typeof setInterval> | null = null
     let latestStatus = ''
 
@@ -101,9 +116,24 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
         }
     }
 
+    const fireSecond = async (): Promise<void> => {
+        secondTimer = null
+        if (closed || sent !== 1) return
+        sent = 2
+        const seconds = Math.max(1, Math.round((now() - startedAt) / 1000))
+        const what = options.activity || latestNotice || 'ich bin noch dran …'
+        try {
+            await options.reply(`⏳ Das dauert länger (${seconds} s) — ${what}`)
+        } catch (error) {
+            console.warn(`[Fortschritt] Zweiter Hinweis nicht zugestellt (${options.channel}): ${error instanceof Error ? error.message : String(error)}`)
+        }
+    }
+
     if (chat) {
         timer = setTimeout(() => { void fire() }, options.firstAfterMs ?? firstAfterOverride ?? PROGRESS_FIRST_AFTER_MS)
         timer.unref?.()
+        secondTimer = setTimeout(() => { void fireSecond() }, options.secondAfterMs ?? secondAfterOverride ?? PROGRESS_SECOND_AFTER_MS)
+        secondTimer.unref?.()
     }
 
     if (options.enabled && !chat && options.onProgress) {
@@ -129,6 +159,8 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
             closed = true
             if (timer) clearTimeout(timer)
             timer = null
+            if (secondTimer) clearTimeout(secondTimer)
+            secondTimer = null
             if (heartbeat) clearInterval(heartbeat)
             heartbeat = null
         },

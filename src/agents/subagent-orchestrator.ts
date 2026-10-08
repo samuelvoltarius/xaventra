@@ -158,7 +158,7 @@ export async function resolveParentIdentity(task: SubagentTask): Promise<{ userI
 
 const SAFE_DEFAULT_TOOLS = new Set([
     'web_search', 'browser_search', 'fetch_url', 'read_file', 'list_directory',
-    'run_python', 'calculate', 'get_weather', 'get_time',
+    'run_python', 'calculate', 'get_weather', 'weather', 'get_time',
     'memory_recall', 'memory_store',
     'mesh_scan', 'mesh_route',
     'get_system_info', 'read_url',

@@ -106,8 +106,9 @@ export class LiveStatusCard {
         active.delete(this.id)
         if (this.messageId === null || this.disabled) return
         const seconds = Math.max(0, Math.round((this.now() - this.startedAt) / 1000))
-        const steps = this.maxStep > 0 ? `${this.maxStep} Schritte` : `${this.updates} Statusmeldungen`
-        const head = ok ? `✅ Antwort gesendet · ${steps} · ${seconds} s` : `❌ Abgebrochen · ${steps} · ${seconds} s`
+        // 2.89.3: short and without internal counters ("1 Statusmeldungen" confused the owner); the card
+        // is only closed after the answer was delivered, so "Fertig" is true when it is read.
+        const head = ok ? `✅ Fertig · ${seconds} s` : `❌ Abgebrochen · ${seconds} s`
         const tail = detail ? `\n${String(detail).trim().slice(0, 300)}` : ''
         await this.edit(`${head}${tail}`)
     }

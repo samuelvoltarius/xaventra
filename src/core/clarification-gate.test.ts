@@ -250,3 +250,15 @@ describe('ClarificationGate', () => {
         expect(evaluateClarification('user:a', 'Wie spät ist es und prüfe das').action).toBe('ask')
     })
 })
+
+describe('ClarificationGate 2.89.3: determiner is no reference', () => {
+    it.each([
+        'Wie spät ist es und wie ist das Wetter in Wien?',
+        'Wie ist das Wetter in Salzburg?',
+    ])('asks nothing for „%s“', text => {
+        expect(evaluateClarification('user:determiner', text)).toMatchObject({ action: 'continue', content: text })
+    })
+    it('still asks for a bare reference', () => {
+        expect(evaluateClarification('user:bare-ref', 'Mach das noch mal').action).not.toBe('continue')
+    })
+})

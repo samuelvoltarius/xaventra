@@ -38,6 +38,14 @@ function getMiniMaxKey(): string {
     return process.env.MINIMAX_API_KEY || ''
 }
 
+let keyCheck: { at: number; present: boolean } | null = null
+/** True when a MiniMax key is configured (cached for 60 s). Tools without a key are not offered to the model. */
+export function hasMiniMaxKey(now = Date.now()): boolean {
+    if (keyCheck && now - keyCheck.at < 60_000) return keyCheck.present
+    keyCheck = { at: now, present: Boolean(getMiniMaxKey()) }
+    return keyCheck.present
+}
+
 function headers(): Record<string, string> {
     return {
         'Authorization': `Bearer ${getMiniMaxKey()}`,

@@ -21,9 +21,10 @@
  */
 
 import { getToolRegistry } from './complete-registry.js'
+import { hasMiniMaxKey } from './minimax-tools.js'
 import { detectActionIntent, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
-import { containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
+import { compoundRemainder, containsTailnetUrl, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to the model
@@ -395,9 +396,13 @@ interface LiveRoute {
     applies: (primaryMessage: string, intent: ActionIntent) => boolean
 }
 
+const WEATHER_WORDS = /(?<![\p{L}])(?:wetter\p{L}*|\p{L}*wetter|weather|forecast|regen\p{L}*|regnet\p{L}*|schneit|schnee\p{L}*|gewitter\p{L}*|niederschlag\p{L}*|sonnig\p{L}*|bewölk\p{L}*|bewoelk\p{L}*|vorhersage\p{L}*)(?![\p{L}])/iu
+
 const LIVE_ROUTES: readonly LiveRoute[] = [
     { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) },
     { name: 'environment', tools: ['environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes'], applies: text => mentionsEnvironment(text) },
+    // 2.89.3: Wetterfragen bekommen das Wetter-Werkzeug (live: ohne es wich das Modell auf Websuche/Shell aus).
+    { name: 'weather', tools: ['weather'], applies: text => WEATHER_WORDS.test(text) },
     { name: 'parcel', tools: ['parcel_track'], applies: text => /\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(text) },
     // 2.88: plain words instead of slash commands (VMs, connecting services, the password vault).
     { name: 'proxmox', tools: ['proxmox_vm'], applies: text => /\b(proxmox|vms?|snapshots?|virtuelle\w*)\b|-vm\b/i.test(text) },
@@ -542,6 +547,17 @@ function dynamicMatches(allTools: readonly RegisteredTool[], primaryMessage: str
 }
 
 /**
+ * 2.89.3: a tool whose provider has no key configured is not offered at all. Live 08.10.2026 the model
+ * picked minimax_vision, lost seconds to "API Key nicht konfiguriert" and then told the owner the image tools failed.
+ */
+/** Tools the sealed node-screenshot contract never gets, not even for a second task. */
+const SCREENSHOT_CONTRACT_BLOCKED = new Set(['desktop_screenshot', 'screen_capture', 'send_file', 'ssh_command', 'webcam_capture'])
+
+function credentialMissing(name: string): boolean {
+    return name.startsWith('minimax_') && !hasMiniMaxKey()
+}
+
+/**
  * Get relevant tools for a given user message.
  *
  * 1. CORE tools
@@ -560,7 +576,14 @@ export function getRelevantTools(
 
     // Only the source-bound capture protocol may fulfill a node screenshot.
     if (isNodeScreenshotRequest(primaryMessage)) {
-        return [...CORE_TOOLS, 'mesh_status', 'mesh_nodes', 'mesh_services', 'mesh_screenshot'].map(name => registry.get(name))
+        const base = [...CORE_TOOLS, 'mesh_status', 'mesh_nodes', 'mesh_services', 'mesh_screenshot']
+        // 2.89.3: a second task of the same request ("und wenn du schon dabei bist Google nach mir") gets its own
+        // tools, but never another way to take or send the screenshot itself.
+        const rest = compoundRemainder(primaryMessage)
+        const extra = rest && !isNodeScreenshotRequest(rest)
+            ? getRelevantTools(rest, rest).map(tool => tool.name).filter(name => !SCREENSHOT_CONTRACT_BLOCKED.has(name))
+            : []
+        return [...new Set([...base, ...extra])].map(name => registry.get(name))
             .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
     }
 
@@ -627,7 +650,7 @@ export function getRelevantTools(
         ...rankedPacks.filter(candidate => candidate.primaryScore <= 0).flatMap(candidate => candidate.pack.tools),
     ]
     const relevant = [...new Set(prioritizedNames)]
-        .filter(name => !excluded.has(name))
+        .filter(name => !excluded.has(name) && !credentialMissing(name))
         .map(name => registry.get(name))
         .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
         .slice(0, MAX_WORKER_TOOLS)

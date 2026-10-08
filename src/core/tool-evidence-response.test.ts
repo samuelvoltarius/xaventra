@@ -6,8 +6,8 @@ describe('screenshot failure evidence', () => {
         const text = nodeScreenshotResponse([{ toolName: 'mesh_screenshot', success: false, result: { captures: [
             { nodeId: 'spark', captured: true, delivered: true }, { nodeId: 'worker', captured: false, delivered: false, error: 'headless' },
         ] } }])
-        expect(text).toContain('spark: Bild aufgenommen; Bildzustellung bestätigt')
-        expect(text).toContain('worker: kein Bild aufgenommen; keine Bildzustellung bestätigt — keine Bildschirmaufnahme möglich')
+        expect(text).toContain('spark: Bild gesendet')
+        expect(text).toContain('worker: Server ohne Bildschirm – kein Bild möglich')
         expect(text).not.toContain('In diesem Lauf wurde keine Bilddatei')
     })
     it('preserves the actual pre-execution policy denial', () => {

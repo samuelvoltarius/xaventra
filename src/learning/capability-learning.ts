@@ -473,6 +473,82 @@ export async function offerLearningAfterReply(request: string, ctx: LearnContext
     return { reply: await offerFor(topic, findDomain(topic) || findDomain(request), ctx, deps) }
 }
 
+
+// ---------------------------------------------------------------------------
+// 2.89.3 Werkzeuglücke mitten im Auftrag
+// ---------------------------------------------------------------------------
+// Live 08.10.2026: „Wie spät ist es und wie ist das Wetter in Wien?“ — für einen Teil fehlte das Werkzeug, das Modell
+// wich auf Websuche/Shell aus und lief ins Budget. Owner: sie soll erkennen, dass ihr das Werkzeug fehlt. Ein Teilauftrag
+// ohne Fähigkeit wird ehrlich abgeschlossen („dafür habe ich kein eigenes Werkzeug“), der Rest läuft normal, und die
+// vorhandene Lernfrage (dieselbe Karte wie bei „Kannst du ein Fax senden?“) wird angeboten. Nie autonomes Bauen:
+// nur Angebot + Eintrag, nach „Ja“ greift der bestehende Lern-Ablauf (Schmiede/PATCH_GATE).
+
+const CLAUSE_SPLIT = /\s+(?:und|sowie)\s+|[;\n]+|(?<=[.!?])\s+/iu
+const REQUESTISH = /(?<![\p{L}])(?:kannst|könntest|koenntest|kannste)\s+du(?![\p{L}])|(?<![\p{L}])bitte(?![\p{L}])|(?<![\p{L}])(?:schick|send|verschick|ruf|spiel|erstell|erzeug|generier|zeig|lies|schreib|transkribier|zeichne|such|trag|buch|bestell)\p{L}*/iu
+
+export interface CompoundGap { clause: string; topic: string; domain: CapabilityDomain }
+
+/**
+ * Teilaufträge einer zusammengesetzten Bitte, für die das Inventar belastbar kein Werkzeug hat.
+ * `rest` ist der Auftrag ohne diese Teile (null, wenn nichts Eigenes übrig bleibt — dann gilt der Einzel-Weg).
+ */
+export function findCompoundGaps(text: string, inventory: CapabilityInventory): { rest: string; gaps: CompoundGap[] } | null {
+    const value = String(text ?? '').trim()
+    if (!value || value.startsWith('/') || value.length > 600) return null
+    const clauses = value.split(CLAUSE_SPLIT).map(part => part.trim()).filter(Boolean)
+    if (clauses.length < 2) return null
+    const kept: string[] = []
+    const gaps: CompoundGap[] = []
+    for (const clause of clauses) {
+        const domain = findDomain(clause)
+        if (domain && REQUESTISH.test(clause)) {
+            const verdict = assessCapability(clause, inventory)
+            if (verdict.status === 'kann-nicht') { gaps.push({ clause: clip(clause, 160), topic: verdict.topic, domain }); continue }
+        }
+        kept.push(clause)
+    }
+    const rest = kept.join(' und ').replace(/[\s,]+$/, '')
+    if (!gaps.length || rest.length < 4 || !/\p{L}{2}/u.test(rest)) return null
+    return { rest, gaps }
+}
+
+/** One honest sentence + the one learn question (or the honest state of an earlier try). */
+async function gapSentence(label: string, topic: string, domain: CapabilityDomain | undefined, ctx: LearnContext, deps: LearnDeps): Promise<string> {
+    const reply = await offerFor(topic, domain, ctx, deps)
+    const lead = label ? `Für ${label} habe ich kein eigenes Werkzeug.` : 'Dafür habe ich kein eigenes Werkzeug.'
+    return reply === HONEST_NO
+        ? `${lead} Soll ich es lernen? Dann suche ich mir einen sicheren Weg und baue das Werkzeug dafür.`
+        : `${lead} ${reply}`
+}
+
+/**
+ * Pipeline-Eingang vor dem Modell: zusammengesetzte Bitte mit einem Teil ohne Fähigkeit →
+ * `rest` (was das Modell bearbeitet) und `note` (ehrlicher Satz + Lernfrage, wird der Antwort angehängt).
+ */
+export async function compoundGapGate(text: string, ctx: LearnContext & { isGroup?: boolean; systemAuthored?: boolean }, deps?: LearnDeps): Promise<{ rest: string; note: string } | null> {
+    if (ctx.isGroup || ctx.systemAuthored) return null
+    if (!deps && sideEffectsDisabled()) return null
+    const live = deps || await prepareLearnDeps()
+    const found = findCompoundGaps(text, await live.inventory())
+    if (!found) return null
+    console.log(`[Lernen] Teilauftrag ohne Werkzeug: ${found.gaps.map(gap => gap.domain.id).join(', ')}`)
+    const notes: string[] = []
+    for (const gap of found.gaps) notes.push(await gapSentence(`„${gap.domain.label}“`, gap.topic, gap.domain, ctx, live))
+    return { rest: found.rest, note: notes.join('\n') }
+}
+
+/**
+ * Lauf an einer Grenze (Werkzeug-Budget, Zeitdeckel, wiederholtes Ausweichen auf Behelfe): ehrlicher Satz + dieselbe
+ * Lernfrage zum Auftrag. Leer, wenn nichts angeboten werden kann (Gruppe, System, Tests ohne Ports).
+ */
+export async function runLimitGapNote(request: string, ctx: LearnContext & { isGroup?: boolean; systemAuthored?: boolean }, deps?: LearnDeps): Promise<string> {
+    if (ctx.isGroup || ctx.systemAuthored) return ''
+    if (!deps && sideEffectsDisabled()) return ''
+    const topic = clip(redactSecrets(request), 160)
+    if (!topic) return ''
+    try { return await gapSentence('', topic, findDomain(topic), ctx, deps || await prepareLearnDeps()) } catch { return '' }
+}
+
 // ---------------------------------------------------------------------------
 // Karte
 // ---------------------------------------------------------------------------

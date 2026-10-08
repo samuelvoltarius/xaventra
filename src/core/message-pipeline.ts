@@ -21,8 +21,15 @@ import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance } from './request-capabilities.js'
 import { createProgressNotice } from './progress-notice.js'
+
 import { isTechnicalProbe } from './channel-name.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+
+/** Upper bound of one picture turn (2.89.3). */
+export const IMAGE_TURN_TIMEOUT_MS = 360_000
+let imageTurnTimeoutOverride: number | null = null
+/** Test hook: shorter picture-turn deadline (null = default). */
+export function setImageTurnTimeoutForTests(ms: number | null): void { imageTurnTimeoutOverride = ms }
 
 /**
  * 2.89 Paket E: a failed user-relevant stage is logged (short context, never the
@@ -259,6 +266,14 @@ export class AgentDeadlineError extends Error {
         super(message)
         this.name = 'AgentDeadlineError'
     }
+}
+
+/** Answer of a node-screenshot request; with a second task in the same request the second half is answered too. */
+async function nodeScreenshotAnswer(content: string, executions: any[], modelText: string): Promise<string> {
+    const { nodeScreenshotResponse, compoundNodeScreenshotResponse } = await import('./tool-evidence-response.js')
+    const { compoundRemainder } = await import('./request-capabilities.js')
+    const rest = compoundRemainder(content)
+    return rest ? compoundNodeScreenshotResponse(executions, rest, modelText) : nodeScreenshotResponse(executions)
 }
 
 /**
@@ -731,6 +746,9 @@ async function handleMessageInScope(
         }
         if (step) traceStep(step)
     }
+    // 2.89.3 Werkzeuglücke: honest sentence + learn question for a part of the request that no tool can do;
+    // appended to whatever answer the rest of the request gets (see guardReply).
+    let pendingGapNote = ''
     // 2.88 reply gate (honesty sentence → learn card) + 2.88.2 claim guard, shared by the
     // agent answer and the plain-model fallback. Only successful tool runs count as evidence.
     const guardReply = async (text: string, successfulToolRuns: number, toolRuns: Array<{ toolName?: string; result?: unknown }> = []): Promise<string> => {
@@ -758,9 +776,12 @@ async function handleMessageInScope(
             const { guardUnverifiedClaims } = await import('./unverified-claims.js')
             guarded = guardUnverifiedClaims(guarded, successfulToolRuns)
         } catch (error) { stageFailure('Behauptungs-Prüfung', error) }
-        return imageLearnTail ? `${guarded}
+        const withTail = imageLearnTail ? `${guarded}
 
 ${imageLearnTail}` : guarded
+        return pendingGapNote ? `${withTail}
+
+${pendingGapNote}` : withTail
     }
 
     // ============================================
@@ -788,7 +809,7 @@ ${imageLearnTail}` : guarded
             || t.includes('dein name') || t.includes('nenne dich')) return false
         const trimmed = t.trim()
         if (trimmed.endsWith('?')
-            || /^(hast du|kannst du|bist du|ist|sind|gibt es|wie|was|wer|wo|wann|warum|wieso|weshalb|welche[rsmn]?|wieviel|wie viel|kann|darf|funktioniert|laeuft|läuft)/.test(trimmed)) return true
+            || /^(hast du|kannst du|bist du|ist|sind|gibt es|wie|was|wer|wo|wann|warum|wieso|weshalb|welche[rsmn]?|wieviel|wie viel|kann|darf|funktioniert|laeuft|läuft)\b/.test(trimmed)) return true
         try { if (erkenneSchnellweg(text)) return true } catch { /* Erkennung ist optional */ }
         return /\b(installier|richte|mach|erstell|leg an|zeig|oeffne|öffne|starte|such|find|lade|kopier|loesch|lösch|schreib|repariere|verbinde|update|aktualisier)/.test(t)
             || t.trim().split(/\s+/).length >= 4
@@ -983,6 +1004,25 @@ ${imageLearnTail}` : guarded
             if (error instanceof ReplyDeliveryError) throw error
             // 2.88.2: was console.debug — live the gate failed invisibly in the app (no learning card).
             console.warn(`[Lernen] Fähigkeits-Prüfung fehlgeschlagen: ${error instanceof Error ? error.stack || error.message : String(error)}`)
+        }
+    }
+
+    // 2.89.3 (live 08.10.: "Wie spät ist es und wie ist das Wetter in Wien?" — no tool for one part, the model
+    // reached for web search / shell until the budget ran out): a part of a compound request that the real
+    // inventory cannot do is closed honestly at once, with the one learn question; the model gets only the rest.
+    if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })
+        && !(requestIsGroup || isGroupMessage === true)) {
+        try {
+            const { compoundGapGate } = await import('../learning/capability-learning.js')
+            const compound = await compoundGapGate(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup })
+            if (compound) {
+                pendingGapNote = compound.note
+                content = compound.rest
+                traceStep('capability:compound-gap')
+            }
+        } catch (error) {
+            if (error instanceof ReplyDeliveryError) throw error
+            console.warn(`[Lernen] Teilauftrags-Prüfung fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`)
         }
     }
 
@@ -1865,7 +1905,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // 2.89: one source (core/run-limits.ts): 15 min normal, 40 min NovaOS,
         // NOVA_AGENT_TIMEOUT_MS overrides.
         const { runLimits } = await import('./run-limits.js')
-        const TOTAL_TIMEOUT = runLimits().totalTimeoutMs
+        // 2.89.3: a picture turn gets an honest answer after at most 6 minutes, never a 15-minute silence.
+        const TOTAL_TIMEOUT = image && (!execution || isCancellationOnlyExecution(execution)) && !isSystemAuthored
+            ? Math.min(runLimits().totalTimeoutMs, imageTurnTimeoutOverride ?? IMAGE_TURN_TIMEOUT_MS)
+            : runLimits().totalTimeoutMs
 
         // Task Tracker: start tracking this task. The id lets a concurrent
         // request's completion leave this task alone.
@@ -1894,11 +1937,25 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // Size-guard: cap systemPrompt — vLLM 122B still needs to stay fast
         // 16k chars ≈ 4k tokens for system, leaving ample room for chat history + response
         // 2.89.2: the owner's picture is also a file, so tools and follow-ups can reach it.
+        // 2.89.3: the model already sees this picture -> say so and do not offer analyze_image for it.
+        let modelSeesImage = false
+        if (image) try {
+            const { activeModelSeesImages } = await import('./image-turn.js')
+            modelSeesImage = activeModelSeesImages((llmForCall as any)?.modelId)
+        } catch (error) { stageFailure('Bild-Fähigkeit', error) }
         if (image && !isSystemAuthored && principalContext.permission === 'owner' && isGroupMessage === false) try {
             const { storeInboxImage, inboxImagePromptBlock } = await import('./inbox-media.js')
             inboxImagePath = storeInboxImage(image)
-            if (inboxImagePath) systemPrompt += inboxImagePromptBlock(inboxImagePath)
+            if (inboxImagePath) systemPrompt += inboxImagePromptBlock(inboxImagePath, modelSeesImage)
         } catch (error) { stageFailure('Bild-Ablage', error) }
+        // 2.89.3: every vision call gets the picture at most 1536 px on the long edge (the stored file stays original).
+        let imageForModel = image
+        if (image) try {
+            const { prepareVisionImage } = await import('../media/image-prepare.js')
+            const prepared = await prepareVisionImage(image)
+            if (prepared.resized) console.log(`[Pipeline] Bild für Modell verkleinert: ${Math.round(prepared.originalBytes / 1024)} KB -> ${Math.round(prepared.bytes / 1024)} KB`)
+            imageForModel = { data: prepared.data, mimeType: prepared.mimeType }
+        } catch (error) { stageFailure('Bild-Verkleinern', error) }
         const MAX_SYSTEM_PROMPT = contextPolicy.maxPromptChars
         if (systemPrompt.length > MAX_SYSTEM_PROMPT) {
             console.log(`[Pipeline] ⚠️ systemPrompt too large: ${systemPrompt.length} chars, capping to ${MAX_SYSTEM_PROMPT}`)
@@ -1921,7 +1978,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             authUserId: from,
             channel,
             content,
-            image,
+            image: imageForModel,
             systemPrompt,
             llm: llmForCall,
             tools: executionTools,
@@ -1938,7 +1995,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 : desktopBot?.modelPolicy.mode === 'pinned' && desktopBot.modelPolicy.model
                     ? { model: desktopBot.modelPolicy.model, provider: desktopBot.modelPolicy.provider }
                     : undefined,
-            deniedTools: desktopBot?.deniedTools,
+            deniedTools: modelSeesImage
+                ? [...new Set([...(desktopBot?.deniedTools ?? []), 'analyze_image'])]
+                : desktopBot?.deniedTools,
             workspaceId: desktopContext?.workspaceId,
         }
         // 2.89 Paket E: progress is a side channel (progress-notice.ts). Chat channels
@@ -1953,6 +2012,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 && canonicalUser !== 'nova-self'
                 && canonicalUser !== 'Nova-Autonomy',
             reply: replyFn,
+            activity: image ? 'ich werte gerade das Bild aus …' : undefined,
             onProgress: messageContext?.onProgress ?? (await import('../desktop/desktop-agent-context.js')).getDesktopProgressSink(),
         })
 
@@ -2223,7 +2283,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             ? kernelState.awaitingApproval
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
         if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
-            supervised.content = isNodeScreenshotRequest(content) ? nodeScreenshotResponse([...successfulExecutions, ...failedExecutions]) : screenshotFailureResponse(failedExecutions)
+            supervised.content = isNodeScreenshotRequest(content) ? await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content) : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
                 supervised.content = 'Ich habe selbst einen konkreten Skill-Vorschlag erstellt. Er wartet gemäß PATCH_GATE auf deine Freigabe; die angeforderte Aktion ist noch nicht ausgeführt.'
@@ -2278,7 +2338,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 finalContent = sanitizeInternalOutboundArtifacts(environmentOverviewResponse((result as any).toolExecutions || [], { technisch: wantsTechnicalDetails(content) }))
             }
             if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
-                finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(nodeScreenshotResponse([...successfulExecutions, ...failedExecutions])) : screenshotFailureResponse(failedExecutions)
+                finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content)) : screenshotFailureResponse(failedExecutions)
                 try {
                     const { replaceLastAssistantInHistory } = await import('../agents/nova-runner.js')
                     replaceLastAssistantInHistory(principalId, channel, finalContent, { conversationId: desktopContext?.roomId, botId: desktopBot?.id })
@@ -2351,6 +2411,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 } catch (error) {
                     console.debug(`[Desktop] outcome projection unavailable: ${error}`)
                 }
+            }
+
+            // 2.89.3: the run stopped at a limit while the model kept to makeshift tools → say what is missing + learn question.
+            if ((result as any).capabilityGap && !pendingGapNote && !isSystemMessage) {
+                try {
+                    const { runLimitGapNote } = await import('../learning/capability-learning.js')
+                    pendingGapNote = await runLimitGapNote(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
+                    if (pendingGapNote) traceStep('capability:limit-gap')
+                } catch (error) { stageFailure('Werkzeuglücke', error) }
             }
 
             // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.
@@ -2542,13 +2611,17 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         if (disposition === 'cancelled') {
             if (execution?.abortSignal?.aborted) throw err
             try {
-                await replyFn('Die Anfrage wurde abgebrochen. Bitte versuche es erneut.')
+                await replyFn(image
+                    ? 'Die Bildauswertung wurde abgebrochen. Soll ich es noch einmal versuchen?'
+                    : 'Die Anfrage wurde abgebrochen. Bitte versuche es erneut.')
             } catch { /* nothing more to do */ }
             return
         }
         if (disposition === 'timeout') {
             try {
-                await replyFn('Die Anfrage hat das Zeitlimit überschritten und wurde abgebrochen.')
+                await replyFn(image
+                    ? 'Die Bildauswertung hat zu lange gedauert und wurde abgebrochen. Soll ich es noch einmal versuchen?'
+                    : 'Die Anfrage hat das Zeitlimit überschritten und wurde abgebrochen.')
             } catch { /* nothing more to do */ }
             return
         }

@@ -49,6 +49,7 @@ const TOOL_REPEAT_LIMITS: Record<string, number> = {
     search: 2,
     codebase_search: 2,
     get_weather: 2,
+    weather: 2,
 }
 
 // Tools that are expected to be slow (don't timeout-warn on these)

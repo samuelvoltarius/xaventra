@@ -110,8 +110,8 @@ describe('actual message pipeline with scripted agent, no network or capture', (
                 { nodeId: 'spark', captured: true, delivered: true }, { nodeId: 'nas', captured: false, delivered: false, error: 'No enrolled graphical adapter' },
             ] } }], actionState: { requiresTool: true, kind: 'screenshot', fulfilled: false } })
         const { replies } = await run('send mir einen Screenshot von allen nodes')
-        expect(replies.at(-1)).toContain('spark: Bild aufgenommen; Bildzustellung bestätigt')
-        expect(replies.at(-1)).toContain('nas: kein Bild aufgenommen; keine Bildzustellung bestätigt')
+        expect(replies.at(-1)).toContain('spark: Bild gesendet')
+        expect(replies.at(-1)).toMatch(/nas: (?:kein Bild möglich|Server ohne Bildschirm)/)
         expect(replies.at(-1)).not.toContain('Alle Bilder gesendet')
         expect(fixtures.capture).not.toHaveBeenCalled()
     }, 15000)
