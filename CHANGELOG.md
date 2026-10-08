@@ -12,6 +12,31 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.4] — 2026-10-09
+
+### Fixed
+
+- **The progress card is deleted after the answer.** Live 09.10.2026: "✅ Fertig · N s"
+  stood before the reply and read like an empty answer. The Live-Statuskarte is removed
+  once the answer is delivered; it is never left as a "✅" line in front of the text.
+- **An answer is a reply to the triggering message.** When the chat already moved on
+  while one request was still running, the answer anchors to that older message
+  (reply_to_message_id) instead of looking shifted onto the newest input.
+- **Workstation action orders reach the control tools.** Live 09.10. 00:51: "Sie hat
+  Computer-Use … dann mach es auf und versuch es nochmal" (DHL on the virtual
+  workstation) only ever got desktop_screenshot. "mach es auf", "öffne … auf deinem
+  Arbeitsplatz", "versuch es im Browser", "klick", "tipp ein" and Computer-Use now
+  offer desktop_control (+ desktop_workspace) and are classified as device actions —
+  including "öffne/öffnen", which never matched before (`\b` cannot sit before `ö`).
+- **A screenshot is not a handlung.** A pure action order answered with only captures
+  or status reads ("kein Browserfenster geöffnet — der Desktop ist leer") is looking,
+  not acting: one forced retry with a real action tool, otherwise an honest sentence
+  instead of another screen description.
+- **Web pages on the workstation follow a fixed flow.** Open the browser (Firefox),
+  call the URL — tracking pages first as the direct URL with the tracking number —
+  wait and check the load with a screenshot, click the field, type, Enter, then send
+  the result screenshot.
+
 ## [2.89.3] — 2026-10-08
 
 ### Fixed
