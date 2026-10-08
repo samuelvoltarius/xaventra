@@ -21,6 +21,15 @@ npm run check:catalogs
 npm run check:assurance
 ```
 
+## Version rule
+
+- **Patch** (`2.89.x`): fixes only, no new features.
+- **Minor** (`2.x.0`): only for a large, coherent block of new capability.
+- **Major** (`3.0.0`): only for a breaking change (data, API or config that needs migration).
+
+Public text (README, website) says "Xaventra 2"; the exact version appears only in
+status, update and diagnostic sections and in the changelog.
+
 ## Pull-request contract
 
 A pull request must explain:

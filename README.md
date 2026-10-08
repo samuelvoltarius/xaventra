@@ -7,13 +7,10 @@
 > A governed, self-hosted autonomous agent operating system with verifiable
 > tool execution, durable user-scoped memory and a resilient multi-node mesh.
 
-2.85.11 (deployed with 2.85.10's fixes) adds smart-device inventory routing and explicit
-connection questions, coupled Desktop cancellation and bounded discovery,
-first-run `/status` access, and [parcel tracking](docs/PARCEL_TRACKING.md).
-It retains request-wide inference cancellation and independent Telegram
-`/log` / `/status` / `/cancel` controls. Verified partial findings survive
-interrupted synthesis; delivery errors do not replay tools or inference.
-This is not universal hardware or parcel-provider acceptance. See [Autonomy Guide](docs/AUTONOMY_GUIDE.md).
+**Xaventra 2** is a personal assistant that runs on your own machines: you talk to it in
+plain words (desktop app, browser, Telegram, voice), it uses your devices, files, mail and
+smart home, and it tells you honestly what it did and what it could not. Details of the
+current build are under [Status and versions](#status-and-versions).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14B8A6.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-4F7CFF.svg)](package.json)
@@ -33,7 +30,9 @@ The project was previously named **Nova**. Compatibility identifiers such as
 stable during the first public migration release. See
 [BRAND_MIGRATION.md](BRAND_MIGRATION.md).
 
-Current source candidate: **2.89.0 preview** (2.89.0: one truth, everything reachable — every tool reachable for the model, enough room for owner chats, one failed tool no longer ends a run, one answer to "connected?", "can I?", "which node?" and "internet?", clean answers in the app and REST, and every live sentence tested over the real message entry; 2.88.3: learning question, connection question, projects and quick answers active in real use; 2.88.2: 2.88.2: unchecked claims marked, connect questions from the own list, local model never blocked on a rejected request, honest node strengths, per-instance Home Assistant; 2.88.1: 2.88.1: Proxmox and node questions reach their tools, keyed devices only connected with their key, "shall I learn it?" in the app; 2.88.0: 2.88.0: watch and take over her computer, activity list, rules in plain words, several projects from one conversation, one memory across channels, "shall I learn it?", checked connectors from the MCP registry, a password vault the model never sees, Proxmox with one token, mesh brain, main succession (off by default), Kubernetes chart; 2.87.1: 2.87.1: Home Assistant questions routed correctly, honest internet and model checks, own SearXNG first, stale device questions close themselves; 2.87.0: device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
+## Status and versions
+
+Current source candidate: **2.89.1** (patch release on 2.89.0; 2.89.0 preview: 2.89.0: one truth, everything reachable — every tool reachable for the model, enough room for owner chats, one failed tool no longer ends a run, one answer to "connected?", "can I?", "which node?" and "internet?", clean answers in the app and REST, and every live sentence tested over the real message entry; 2.88.3: learning question, connection question, projects and quick answers active in real use; 2.88.2: 2.88.2: unchecked claims marked, connect questions from the own list, local model never blocked on a rejected request, honest node strengths, per-instance Home Assistant; 2.88.1: 2.88.1: Proxmox and node questions reach their tools, keyed devices only connected with their key, "shall I learn it?" in the app; 2.88.0: 2.88.0: watch and take over her computer, activity list, rules in plain words, several projects from one conversation, one memory across channels, "shall I learn it?", checked connectors from the MCP registry, a password vault the model never sees, Proxmox with one token, mesh brain, main succession (off by default), Kubernetes chart; 2.87.1: 2.87.1: Home Assistant questions routed correctly, honest internet and model checks, own SearXNG first, stale device questions close themselves; 2.87.0: device list on one page, the local model always stays on, local speech recognition for voice messages, streaming spoken answers and prepared phone calls; 2.86.0: one question at a time, guided setup, plain-language device control with preview and undo, voice messages and hands-free calls, phone web app; 2.85.12: security update of the MCP SDK and sharp; 2.85.11: a failure memory that expires per build and never remembers timeouts; bounded hardware hypotheses and
 identity-bound owner connection offers, verified inventory delivery without
 model-dependent reporting rounds, background network awareness,
 broader resumable discovery, enrolled node screenshots and verified node exchange; production activation tracked
@@ -52,7 +51,7 @@ Candidate implementation, isolated
 acceptance, signed publication, production activation and user acceptance are
 separate states. Full-product [RC gates](docs/RELEASE_PLAN.md) remain open.
 
-**Next version (preview, 2.89.0 in progress).** Xaventra World — weather,
+**Next minor version (preview).** Xaventra World — weather,
 traffic, cameras, flights, satellites and alerts for any place from checked
 open data — plus office documents, a phone companion app, a call and meeting
 assistant and desktop helpers. Details: [CHANGELOG → Unreleased](CHANGELOG.md).

@@ -47,8 +47,9 @@ authoritative source files and required evidence.
 
 ## Evidence status
 
-The current source candidate is the 2.78.57 preview, based on published 2.78.56;
-see the baseline's [verification record](./VERIFICATION_2.78.56.md). Candidate
+The current source candidate is Xaventra 2.89.1 (patch release on 2.89.0); exact versions and
+per-release evidence are in the [changelog](../CHANGELOG.md). The older baseline's
+[verification record](./VERIFICATION_2.78.56.md) remains available. Candidate
 guides describe source
 that may not yet be signed, published or activated. Tests and isolated fixtures
 do not imply production enrollment, successful Telegram screenshot delivery or
