@@ -746,6 +746,9 @@ async function handleMessageInScope(
         }
         if (step) traceStep(step)
     }
+    // 2.89.3 Werkzeuglücke: honest sentence + learn question for a part of the request that no tool can do;
+    // appended to whatever answer the rest of the request gets (see guardReply).
+    let pendingGapNote = ''
     // 2.88 reply gate (honesty sentence → learn card) + 2.88.2 claim guard, shared by the
     // agent answer and the plain-model fallback. Only successful tool runs count as evidence.
     const guardReply = async (text: string, successfulToolRuns: number, toolRuns: Array<{ toolName?: string; result?: unknown }> = []): Promise<string> => {
@@ -773,9 +776,12 @@ async function handleMessageInScope(
             const { guardUnverifiedClaims } = await import('./unverified-claims.js')
             guarded = guardUnverifiedClaims(guarded, successfulToolRuns)
         } catch (error) { stageFailure('Behauptungs-Prüfung', error) }
-        return imageLearnTail ? `${guarded}
+        const withTail = imageLearnTail ? `${guarded}
 
 ${imageLearnTail}` : guarded
+        return pendingGapNote ? `${withTail}
+
+${pendingGapNote}` : withTail
     }
 
     // ============================================
@@ -998,6 +1004,25 @@ ${imageLearnTail}` : guarded
             if (error instanceof ReplyDeliveryError) throw error
             // 2.88.2: was console.debug — live the gate failed invisibly in the app (no learning card).
             console.warn(`[Lernen] Fähigkeits-Prüfung fehlgeschlagen: ${error instanceof Error ? error.stack || error.message : String(error)}`)
+        }
+    }
+
+    // 2.89.3 (live 08.10.: "Wie spät ist es und wie ist das Wetter in Wien?" — no tool for one part, the model
+    // reached for web search / shell until the budget ran out): a part of a compound request that the real
+    // inventory cannot do is closed honestly at once, with the one learn question; the model gets only the rest.
+    if (capabilityGateApplies({ isSystemAuthored, image: Boolean(image), execution: Boolean(execution), desktopCancellationOnly })
+        && !(requestIsGroup || isGroupMessage === true)) {
+        try {
+            const { compoundGapGate } = await import('../learning/capability-learning.js')
+            const compound = await compoundGapGate(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup })
+            if (compound) {
+                pendingGapNote = compound.note
+                content = compound.rest
+                traceStep('capability:compound-gap')
+            }
+        } catch (error) {
+            if (error instanceof ReplyDeliveryError) throw error
+            console.warn(`[Lernen] Teilauftrags-Prüfung fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`)
         }
     }
 
@@ -2386,6 +2411,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 } catch (error) {
                     console.debug(`[Desktop] outcome projection unavailable: ${error}`)
                 }
+            }
+
+            // 2.89.3: the run stopped at a limit while the model kept to makeshift tools → say what is missing + learn question.
+            if ((result as any).capabilityGap && !pendingGapNote && !isSystemMessage) {
+                try {
+                    const { runLimitGapNote } = await import('../learning/capability-learning.js')
+                    pendingGapNote = await runLimitGapNote(content, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
+                    if (pendingGapNote) traceStep('capability:limit-gap')
+                } catch (error) { stageFailure('Werkzeuglücke', error) }
             }
 
             // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.

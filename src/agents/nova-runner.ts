@@ -130,7 +130,17 @@ export interface AgentRunParams {
     diagnostic?: boolean
 }
 
+/** Tools the model uses as a makeshift when no matching tool exists (shell, web search, scripts). */
+const BEHELF_TOOLS: ReadonlySet<string> = new Set([
+    ...SHELL_SEARCH_TOOLS, 'ssh_command', 'system_executor', 'execute_python', 'run_python', 'code_runtime_run',
+    'web_search', 'google_search', 'searxng_search', 'brave_search', 'tavily_search', 'browser_search', 'fetch_url',
+])
+/** Makeshift calls tolerated per run (admitted by the model, not offered by the router); the next one closes the run. */
+const MAX_BEHELF_CALLS = 3
+
 export interface AgentResponse {
+    /** 2.89.3: the run ended at a limit or kept to makeshift tools - a part of the request has no matching tool. */
+    capabilityGap?: boolean
     incompleteSynthesis?: boolean
     /** True when the incomplete-run text is already a short honest sentence (no raw tool data). */
     incompleteAnswerReady?: boolean
@@ -1054,6 +1064,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // 2.84.0 Punkt 4: tools the model asked for that exist in no registry.
         // Reported to the forge's need hook only — never ledger evidence.
         const missingTools: NonNullable<AgentResponse['toolExecutions']> = []
+        // 2.89.3 Werkzeuglücke: the model reaches for makeshift tools (shell, web search, scripts) that the router did not
+        // offer for this request. Repeated, that is a missing tool, not a reason to keep trying until the budget is gone.
+        let behelfCalls = 0
+        let capabilityGap = false
         let toolEvidenceSequence = 0
         const nextToolEvidenceId = (call: { id?: string; name: string }) =>
             String(call.id || `${kernel.contract.id}:tool:${++toolEvidenceSequence}:${call.name}`)
@@ -1164,6 +1178,16 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     if (hassNotConnected && SHELL_SEARCH_TOOLS.has(call.name)) {
                         toolResults.push(`⚠️ ${call.name}: ${HASS_NOT_CONNECTED_HINT}`)
                         continue
+                    }
+                    if (BEHELF_TOOLS.has(call.name) && toolAdmission.admitted.some(item => item.name === call.name && item.reason === 'model-call')) {
+                        behelfCalls++
+                        if (behelfCalls > MAX_BEHELF_CALLS) {
+                            const gap = new Error('Capability gap: the run kept to makeshift tools instead of a matching tool')
+                            runLimitError ??= gap
+                            capabilityGap = true
+                            console.warn(`[Nova Agent] Capability gap after ${behelfCalls - 1} makeshift calls (${call.name}) - run closed with a learn offer`)
+                            throw gap
+                        }
                     }
                     console.log(`[Nova Agent] Tool call: ${call.name}`)
                     // 2.89: a sign of life at EVERY tool start (side channel), not only in batches.
@@ -1772,6 +1796,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // 2.89: say which limit stopped the run (rounds, deadline, call
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
+                if (notice && !policyBlocked && behelfCalls >= 2) capabilityGap = true
                 if (!policyBlocked) finalContent = await finishUnfinished(notice)
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')
@@ -2012,6 +2037,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             screenshotPath,
             screenshotDelivered: !!screenshotPath && deliveredScreenshots.has(screenshotPath),
             toolExecutions: missingTools.length ? [...toolExecutions, ...missingTools] : toolExecutions,
+            ...(capabilityGap ? { capabilityGap: true } : {}),
             actionState: {
                 requiresTool: actionIntent.requiresTool,
                 kind: actionIntent.kind,

@@ -128,7 +128,13 @@ function messageText(value: any): string {
 /** A model call belongs to the agent run when the scenario text is one of its user turns. */
 function isAgentCall(messages: Array<{ role: string; content: any }>, current: string): boolean {
     if (!current) return false
-    return messages.some(message => message.role === 'user' && messageText(message.content).includes(current))
+    // 2.89.3: the pipeline may hand the model only part of the request (a part without a tool is closed honestly
+    // before the model runs) - that part is the beginning of what the user wrote.
+    return messages.some(message => {
+        if (message.role !== 'user') return false
+        const text = messageText(message.content)
+        return text.includes(current) || (text.trim().length >= 8 && current.startsWith(text.trim()))
+    })
 }
 
 /** The one fake: a model that follows a script and records what it was offered. */

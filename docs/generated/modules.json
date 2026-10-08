@@ -7372,6 +7372,7 @@
         "./tool-result-quality.js",
         "./verbinden-tools.js",
         "./vision-tool.js",
+        "./weather.js",
         "node:fs",
         "node:os",
         "node:path"
@@ -7771,6 +7772,13 @@
         "node:child_process",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/weather.ts",
+      "imports": [
+        "../core/tool-abort-scope.js",
+        "./complete-registry.js"
       ]
     },
     {

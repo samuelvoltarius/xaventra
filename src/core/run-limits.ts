@@ -84,6 +84,9 @@ export function limitStopNotice(error: unknown, limits: RunLimits = runLimits())
     if (/deadline exceeded|timeout budget|Task execution deadline/i.test(text)) {
         return 'Die Zeitgrenze für diese Aufgabe ist abgelaufen — sie ist noch nicht fertig.'
     }
+    if (/Capability gap/i.test(text)) {
+        return 'Für einen Teil dieser Aufgabe habe ich kein passendes Werkzeug — ich habe ihn nicht weiter mit Behelfen versucht.'
+    }
     if (/tool-call budget exhausted/i.test(text)) {
         return 'Die erlaubte Anzahl an Werkzeugaufrufen für diese Aufgabe ist aufgebraucht — sie ist noch nicht fertig.'
     }

@@ -38,6 +38,19 @@
   longer answered with a clarifying question ("das" before a noun is no reference).
   Screenshot lines are short ("ns1: Server ohne Bildschirm – kein Bild möglich"), nodes with
   a picture first.
+- **A missing tool is recognised and offered, not worked around.** Live 08.10.2026: "What time
+  is it and what is the weather in Vienna?" had no weather tool; the model tried web search
+  and the shell until the tool budget or the time cap ended the run. Now (1) there is a
+  keyless `weather` tool (Open-Meteo through the SSRF-checked client: current conditions
+  plus today and tomorrow) with its own router route; (2) a part of a compound request that
+  no tool can do ("... and send a fax to ...") is closed honestly at once ("For 'send faxes'
+  I have no tool of my own. Shall I learn it?") with the same learn card as "Can you send a
+  fax?", while the rest is answered normally; (3) if the model keeps reaching for makeshift
+  tools (shell, web search, scripts the router did not offer) more than three times, or a
+  run ends at the tool or time limit after makeshift calls, the run stops with the honest
+  sentence and the learn offer instead of silence. Nothing is built on its own: the offer
+  and the entry only; a "yes" starts the existing learning flow (forge / PATCH_GATE).
+  Two-part requests get the tool budget per part (8 each, at most 16).
   The closing line of the status message is short ("Fertig" / "Abgebrochen" and the time)
   without internal counters.
 

@@ -396,9 +396,13 @@ interface LiveRoute {
     applies: (primaryMessage: string, intent: ActionIntent) => boolean
 }
 
+const WEATHER_WORDS = /(?<![\p{L}])(?:wetter\p{L}*|\p{L}*wetter|weather|forecast|regen\p{L}*|regnet\p{L}*|schneit|schnee\p{L}*|gewitter\p{L}*|niederschlag\p{L}*|sonnig\p{L}*|bewölk\p{L}*|bewoelk\p{L}*|vorhersage\p{L}*)(?![\p{L}])/iu
+
 const LIVE_ROUTES: readonly LiveRoute[] = [
     { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) },
     { name: 'environment', tools: ['environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes'], applies: text => mentionsEnvironment(text) },
+    // 2.89.3: Wetterfragen bekommen das Wetter-Werkzeug (live: ohne es wich das Modell auf Websuche/Shell aus).
+    { name: 'weather', tools: ['weather'], applies: text => WEATHER_WORDS.test(text) },
     { name: 'parcel', tools: ['parcel_track'], applies: text => /\b(paket|sendung|trackingnummer|tracking|parcel|shipment|dhl|17track)\b/i.test(text) },
     // 2.88: plain words instead of slash commands (VMs, connecting services, the password vault).
     { name: 'proxmox', tools: ['proxmox_vm'], applies: text => /\b(proxmox|vms?|snapshots?|virtuelle\w*)\b|-vm\b/i.test(text) },

@@ -3494,6 +3494,18 @@
       ]
     },
     {
+      "name": "weather",
+      "category": "other",
+      "description": "Aktuelles Wetter und Vorhersage für heute und morgen für einen Ort (Temperatur, Regen, Wind) über Open-Meteo, ohne Schlüssel. Für jede Wetterfrage dieses Werkzeug nehmen, nicht die Websuche und nicht die Shell.",
+      "parameters": [
+        {
+          "name": "ort",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "web_search",
       "category": "browser",
       "description": "Sucht im Internet: zuerst über die eigene SearXNG (privat, kein Schlüssel), sonst DuckDuckGo",

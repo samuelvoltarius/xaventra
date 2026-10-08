@@ -1,6 +1,6 @@
 import { runtimeProfile } from './runtime-profile.js'
 import { actionRequestText, isConversationOnly } from './action-intent.js'
-import { mentionsEnvironment } from './request-capabilities.js'
+import { compoundRemainder, mentionsEnvironment } from './request-capabilities.js'
 
 export type CognitiveMode = 'fast' | 'balanced' | 'deep' | 'research'
 
@@ -45,6 +45,12 @@ const AMBIGUOUS = /\b(?:das|dies|dort|da|ihn|sie|es|that|this|there|it)\b/i
 const MULTI_STEP = /\b(?:zuerst|danach|anschließend|anschliessend|gleichzeitig|mehrere|alle|komplett|end-to-end|1\s*[-–]\s*10)\b/i
 const HIGH_STAKES = /\b(?:produktion|production|security|sicherheit|medizin|recht|finanz|deployment|datenbank|credential|oauth|token|kritisch)\w*/i
 
+/** 8 tool calls per part, at most 16: a two-part request must not run into the one-part budget. */
+const COMPOUND_MAX_TOOL_CALLS = 16
+function compoundBudget<T extends { maxToolCalls: number }>(compound: boolean, budget: T): T {
+    return compound && budget.maxToolCalls < COMPOUND_MAX_TOOL_CALLS ? { ...budget, maxToolCalls: COMPOUND_MAX_TOOL_CALLS } : budget
+}
+
 function clamp(value: number): number {
     return Math.max(0, Math.min(1, value))
 }
@@ -79,6 +85,8 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     const hardware = hasImage || HARDWARE.test(lower)
     const multiStep = MULTI_STEP.test(lower) || (text.match(/[\n;]+/g)?.length || 0) >= 2
     const highStakes = HIGH_STAKES.test(lower)
+    // 2.89.3: two tasks in one request ("Wie spät ist es und wie ist das Wetter?") get the budget per part.
+    const compound = compoundRemainder(text) !== null
 
     const uncertainty = clamp(
         (UNCERTAIN.test(lower) ? 0.45 : 0)
@@ -163,7 +171,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
         // fuer mehrstufige Auftraege ausreichende Budgets (2.89).
         // These are generation allowances, shared across the native run. An
         // optional caller maxTokens remains a separate input+output ceiling.
-        executionBudget: runtimeProfile() === 'novaos'
+        executionBudget: compoundBudget(compound, runtimeProfile() === 'novaos'
             ? (cognitiveMode === 'fast'
                 ? { timeoutMs: 600_000, maxToolCalls: 12, maxOutputTokens: 4_096 }
                 : cognitiveMode === 'balanced'
@@ -175,7 +183,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
                 ? { timeoutMs: 180_000, maxToolCalls: 8, maxOutputTokens: 2_048 }
                 : cognitiveMode === 'balanced'
                     ? { timeoutMs: 600_000, maxToolCalls: 24, maxOutputTokens: 4_096 }
-                    : { timeoutMs: 900_000, maxToolCalls: 40, maxOutputTokens: 8_192 },
+                    : { timeoutMs: 900_000, maxToolCalls: 40, maxOutputTokens: 8_192 }),
         reasons: reasons.length ? reasons : ['ordinary lookup'],
     }
 }
