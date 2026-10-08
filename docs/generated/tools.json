@@ -112,6 +112,18 @@
       ]
     },
     {
+      "name": "astro_plate_solve",
+      "category": "other",
+      "description": "Bestimmt per Plate-Solving (lokal installiertes ASTAP oder astrometry.net solve-field) die exakten Himmelskoordinaten eines Astrofotos. Nur so lässt sich ein Himmelsobjekt auf einem Bild belegen. Ohne installierten Solver ehrlich „kann ich noch nicht“.",
+      "parameters": [
+        {
+          "name": "image_path",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "auto_fix",
       "category": "system",
       "description": "Versucht automatisch Build-Fehler zu fixen (tsc errors parsen, LLM fix, verify)",

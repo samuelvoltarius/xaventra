@@ -710,8 +710,23 @@ async function handleMessageInScope(
     }
     // 2.88 reply gate (honesty sentence → learn card) + 2.88.2 claim guard, shared by the
     // agent answer and the plain-model fallback. Only successful tool runs count as evidence.
-    const guardReply = async (text: string, successfulToolRuns: number): Promise<string> => {
+    const guardReply = async (text: string, successfulToolRuns: number, toolRuns: Array<{ toolName?: string; result?: unknown }> = []): Promise<string> => {
         let guarded = text
+        // 2.89.2: an unproven picture identification gets the reservation — independent of L12
+        // (a timed-out fact-check must not let a guessed name through).
+        let imageLearnTail = ''
+        if (image && !isSystemAuthored) {
+            try {
+                const { guardImageIdentificationParts, imageEvidenceFrom, PLATE_SOLVE_TOPIC } = await import('./image-identification.js')
+                const parts = guardImageIdentificationParts({ hasImage: true, question: content, reply: guarded, evidence: imageEvidenceFrom(toolRuns) })
+                guarded = parts.body
+                if (parts.learnTail) {
+                    // The honest sentence becomes the learn card (topic: plate solving), appended to the reservation.
+                    const { capabilityReplyGate } = await import('../learning/capability-learning.js')
+                    imageLearnTail = `${parts.learnLead} ${await capabilityReplyGate(PLATE_SOLVE_TOPIC, parts.learnTail, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })}`
+                }
+            } catch (error) { stageFailure('Bild-Identifikation', error) }
+        }
         try {
             const { capabilityReplyGate } = await import('../learning/capability-learning.js')
             guarded = await capabilityReplyGate(content, guarded, { principalId, permission: principalContext.permission, isGroup: requestIsGroup || isGroupMessage === true })
@@ -720,7 +735,9 @@ async function handleMessageInScope(
             const { guardUnverifiedClaims } = await import('./unverified-claims.js')
             guarded = guardUnverifiedClaims(guarded, successfulToolRuns)
         } catch (error) { stageFailure('Behauptungs-Prüfung', error) }
-        return guarded
+        return imageLearnTail ? `${guarded}
+
+${imageLearnTail}` : guarded
     }
 
     // ============================================
@@ -1083,6 +1100,11 @@ async function handleMessageInScope(
     if (!isSystemAuthored) try {
         const { capabilityHonestyPrompt } = await import('../learning/capability-learning.js')
         systemPrompt += '\n\n' + capabilityHonestyPrompt()
+    } catch { /* nicht kritisch */ }
+    // 2.89.2: picture questions — no unproven identification as fact, interpret all parts together.
+    if (image && !isSystemAuthored) try {
+        const { imageAnswerRulePrompt } = await import('./image-identification.js')
+        systemPrompt += '\n\n' + imageAnswerRulePrompt()
     } catch { /* nicht kritisch */ }
 
     // Desktop Bot Mode is a scoped projection of the canonical prompt path.
@@ -2299,7 +2321,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.
-            if (!isSystemMessage) finalContent = await guardReply(finalContent, successfulExecutions.length)
+            if (!isSystemMessage) finalContent = await guardReply(finalContent, successfulExecutions.length, successfulExecutions)
 
             await answer(finalContent)
 

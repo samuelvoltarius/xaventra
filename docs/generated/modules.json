@@ -1884,6 +1884,14 @@
       "imports": []
     },
     {
+      "module": "src/core/image-identification.ts",
+      "imports": [
+        "../learning/capability-learning.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/index.ts",
       "imports": [
         "./message-bus.js",
@@ -7189,6 +7197,18 @@
       "imports": []
     },
     {
+      "module": "src/tools/astro-plate-solve.ts",
+      "imports": [
+        "../core/image-identification.js",
+        "../learning/capability-learning.js",
+        "./complete-registry.js",
+        "node:child_process",
+        "node:fs",
+        "node:path",
+        "node:util"
+      ]
+    },
+    {
       "module": "src/tools/blue-team-tools.ts",
       "imports": [
         "../security/blue-team.js",
@@ -7274,6 +7294,7 @@
         "../mesh/fence.js",
         "./3dprinter.js",
         "./api-key-tool.js",
+        "./astro-plate-solve.js",
         "./blue-team-tools.js",
         "./brave-search.js",
         "./browser-use.js",
