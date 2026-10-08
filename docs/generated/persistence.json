@@ -810,6 +810,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/mesh-registry-peer-version.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/mesh-registry.ts",
       "path": ".nova-data"
     },

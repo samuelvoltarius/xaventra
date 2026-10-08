@@ -86,6 +86,10 @@
       ]
     },
     {
+      "module": "src/agents/home-assistant-status-plan.ts",
+      "imports": []
+    },
+    {
       "module": "src/agents/nova-model-provider.ts",
       "imports": [
         "../llm/nova-llm-sdk.js",
@@ -138,6 +142,7 @@
         "../voice/voice-turn-stream.js",
         "./environment-overview.js",
         "./history-evidence.js",
+        "./home-assistant-status-plan.js",
         "./response-repair.js",
         "./session-checkpoints.js",
         "./tool-admission.js",
@@ -7403,6 +7408,7 @@
     {
       "module": "src/tools/homeassistant.ts",
       "imports": [
+        "../agents/home-assistant-status-plan.js",
         "../config/config-path.js",
         "./complete-registry.js",
         "./owner-approval.js",
