@@ -72,3 +72,32 @@ describe('progress notice (2.89 Paket E)', () => {
         warn.mockRestore()
     })
 })
+
+describe('side-channel heartbeat (2.89)', () => {
+    it('repeats the latest status about every 10 s on non-chat channels, falls back to „arbeite noch …“, stops on close()', async () => {
+        vi.useFakeTimers()
+        const seen: string[] = []
+        const notice = createProgressNotice({ channel: 'desktop', enabled: true, reply: async () => undefined, onProgress: s => seen.push(s) })
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(seen).toEqual(['arbeite noch …'])
+        notice.update('suche im Web …')
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(seen).toEqual(['arbeite noch …', 'suche im Web …', 'suche im Web …', 'suche im Web …', 'suche im Web …'])
+        notice.close()
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(seen).toHaveLength(5)
+        expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('chat channels get no heartbeat, plain tool labels are not kept as notices', async () => {
+        vi.useFakeTimers()
+        const seen: string[] = []
+        const reply = vi.fn(async () => undefined)
+        const notice = createProgressNotice({ channel: 'telegram', enabled: true, reply, onProgress: s => seen.push(s) })
+        notice.update('suche im Web …')
+        await vi.advanceTimersByTimeAsync(15_000)
+        expect(seen).toEqual([])
+        expect(notice.notices).toEqual([])
+        notice.close()
+    })
+})

@@ -585,6 +585,61 @@ describe('9 — Dashboard/Desktop: status lines never mix into the room answer',
     }, 30000)
 })
 
+describe('2.89 live acceptance: sign of life and no raw fallback', () => {
+    it('Desktop room: a long single-tool run still shows a fresh step in /api/desktop/fortschritt while it runs', async () => {
+        vi.stubEnv('NOVA_DESKTOP_API_TOKEN', '')
+        const { default: express } = await import('express')
+        const { registerDesktopApi } = await import('../desktop/desktop-api.js')
+        const { setProgressHeartbeatForTests } = await import('./progress-notice.js')
+        setProgressHeartbeatForTests(40)
+        const app = express(); app.use(express.json())
+        registerDesktopApi(app, () => async (content: string) => {
+            let answer = ''
+            await entry('desktop', 'desktop:owner', content, async text => { answer = text })
+            return answer
+        })
+        const server = app.listen(0, '127.0.0.1')
+        await new Promise<void>(resolve => server.once('listening', resolve))
+        const endpoint = `http://127.0.0.1:${(server.address() as any).port}/api/desktop`
+        const headers = { 'Content-Type': 'application/json', 'x-nova-principal': 'owner' }
+        const during: any[] = []
+        try {
+            const room = await (await fetch(endpoint + '/rooms', { method: 'POST', headers, body: JSON.stringify({ title: 'Herzschlag', botIds: ['nova'] }) })).json() as any
+            fixtures.agent.mockImplementation(async (params: any) => {
+                // one tool per round, slow model in between: only ONE status, then silence
+                await params.onStepUpdate('suche im Web …')
+                await new Promise(resolve => setTimeout(resolve, 30))
+                during.push(await (await fetch(`${endpoint}/fortschritt?room=${room.id}`, { headers })).json())
+                await new Promise(resolve => setTimeout(resolve, 200))
+                during.push(await (await fetch(`${endpoint}/fortschritt?room=${room.id}`, { headers })).json())
+                return agentResult('Fertig.')
+            })
+            const posted = await (await fetch(`${endpoint}/rooms/${room.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: 'Fasse bitte die Lage zusammen' }) })).json() as any
+            expect(posted.replies[0].message.content).toBe('Fertig.')
+            expect(during[0].schritt).toBe('suche im Web …')
+            expect(during[1].schritt).toBe('suche im Web …')
+            expect(Date.parse(during[1].seit)).toBeGreaterThan(Date.parse(during[0].seit))
+        } finally {
+            setProgressHeartbeatForTests(null)
+            server.closeAllConnections()
+            await new Promise<void>(resolve => server.close(() => resolve()))
+        }
+    }, 30000)
+
+    it('an exhausted run hands the user the short honest sentence, never raw findings', async () => {
+        const sentence = 'Ich bin mit dieser Aufgabe noch nicht ganz fertig geworden und kann dir dazu gerade keine verlässliche Zusammenfassung geben. Sag „weiter“, dann mache ich an der Stelle weiter.'
+        fixtures.agent.mockResolvedValue(agentResult(sentence, {
+            incompleteSynthesis: true, incompleteAnswerReady: true,
+            toolsExecuted: ['web_search'],
+            toolExecutions: [{ toolName: 'web_search', success: true, result: JSON.stringify({ results: [{ title: 'RAW-TITLE', url: 'https://example.org/raw', content: 'RAW-CONTENT' }] }) }],
+            actionState: { requiresTool: false, kind: 'none', fulfilled: true },
+        }))
+        const [reply] = await send('Telegram', '1001', 'Mach bitte nacheinander fünf kleine Prüfungen für meinen Wochenplan und fasse sie dann zusammen')
+        expect(reply).toBe(sentence)
+        expect(reply).not.toMatch(/RAW-|Tool-Beobachtungen|nicht vollständig ausgewertet/)
+    }, 20000)
+})
+
 // ---------------------------------------------------------------------------
 describe('SearXNG from the environment counts as a connection (2.89.1)', () => {
     it('„searxng kannst du dich mit dem verbinen ?“ → already connected, deterministic, no model; unreachable → honest', async () => {

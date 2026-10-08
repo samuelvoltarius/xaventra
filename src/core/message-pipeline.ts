@@ -2157,7 +2157,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const { authoritativeDiagnosticResponse, screenshotFailureResponse, nodeScreenshotResponse } = await import('./tool-evidence-response.js')
         const authoritativeDiagnostic = authoritativeDiagnosticResponse(successfulExecutions)
         if (authoritativeDiagnostic) supervised.content = authoritativeDiagnostic
-        if ((result as any).incompleteSynthesis) {
+        if ((result as any).incompleteSynthesis && (result as any).incompleteAnswerReady && String(result.content || '').trim()) {
+            // 2.89: the runner already produced a short honest sentence; never swap it for raw findings.
+            supervised.content = result.content
+        } else if ((result as any).incompleteSynthesis) {
             // No post-timeout repair/fact-check or unsupported completion claim.
             const { incompleteExecutionsResponse } = await import('./tool-evidence-response.js')
             supervised.content = incompleteExecutionsResponse(successfulExecutions)

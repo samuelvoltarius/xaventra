@@ -29,7 +29,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse, incompleteExecutionsResponse, environmentOverviewResponse, wantsTechnicalDetails, META_TOOL_NAMES } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, incompleteExecutionsResponse, unfinishedRunNotice, exhaustionSynthesisPrompt, environmentOverviewResponse, wantsTechnicalDetails, META_TOOL_NAMES } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
 import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
@@ -43,6 +43,7 @@ import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
 import { ToolAdmission } from './tool-admission.js'
+import { toolProgressLabel, THINKING_LABEL } from '../core/tool-progress-label.js'
 import { limitStopNotice, runLimits, toolTimeoutMs } from '../core/run-limits.js'
 import { loadSkillPack, toolExpansionPolicy } from '../tools/tool-router.js'
 import { withToolAbortSignal, DISCOVERY_TOOL_MS } from '../core/tool-abort-scope.js'
@@ -72,7 +73,7 @@ const TIMEOUT_LLM = 60_000      // 60s for primary LLM call (local/mesh models c
 // Per-tool timeouts by tool kind, tool rounds and the run deadline come from
 // one place (core/run-limits.ts, 2.89). NovaOS keeps its larger values; the
 // normal Main no longer stops after 3 rounds / 30 s per tool.
-const TIMEOUT_FOLLOWUP = 30_000 // 30s for follow-up LLM calls
+const TIMEOUT_FOLLOWUP = 60_000 // 60s for follow-up LLM calls (live 2.89: a 30s limit cut the summary round of a 5-step task on a slow local model)
 
 function timeoutForTool(name: string): number {
     if (name === 'scan_now') return DISCOVERY_TOOL_MS
@@ -129,6 +130,8 @@ export interface AgentRunParams {
 
 export interface AgentResponse {
     incompleteSynthesis?: boolean
+    /** True when the incomplete-run text is already a short honest sentence (no raw tool data). */
+    incompleteAnswerReady?: boolean
     content: string
     /** Canonical Outcome Ledger run for this invocation. */
     runId?: string
@@ -811,6 +814,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // 2.87 Paket P: in einem Sprach-Zug sind nur diese Runde und die Folgerunden
         // nach Werkzeugen sprechbar (wortweise an den Phrasenpuffer); sonst unverändert.
         const speakingClient = speakableClient(llmClient)
+        if (onStepUpdate && !forcedToolResponse) { try { await onStepUpdate(THINKING_LABEL) } catch { /* non-critical */ } }
         let response = forcedToolResponse || await (abortSignal
             ? Promise.race([
                 withTimeout(speakingClient.complete(messages, toolDefinitions, primaryOptions), TIMEOUT_LLM, 'Primary LLM call'),
@@ -1042,6 +1046,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             String(call.id || `${kernel.contract.id}:tool:${++toolEvidenceSequence}:${call.name}`)
         let finalContent = response.content || ''
         let incompleteSynthesis = false
+        let incompleteAnswerReady = false
         let policyBlocked = false
         let checkpointUnreplicated = false
         let awaitingPolicyApproval = false
@@ -1142,6 +1147,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 for (const call of response.toolCalls) {
                     const callId = nextToolEvidenceId(call)
                     console.log(`[Nova Agent] Tool call: ${call.name}`)
+                    // 2.89: a sign of life at EVERY tool start (side channel), not only in batches.
+                    if (onStepUpdate) { try { await onStepUpdate(toolProgressLabel(call.name)) } catch { /* status update non-critical */ } }
                     toolsUsed.push(call.name)
 
                     // === Loop Detection v2 ===
@@ -1200,16 +1207,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             advanceStep(call.name, true)
                         } catch { /* non-critical */ }
 
-                        // === Status Update: notify user between tool steps ===
-                        const totalTools = response.toolCalls.length
-                        const currentIdx = response.toolCalls.indexOf(call)
-                        if (onStepUpdate && totalTools >= 2 && currentIdx < totalTools - 1) {
-                            const nextTool = response.toolCalls[currentIdx + 1]
-                            const stepLabel = `⚙️ Schritt ${currentIdx + 2}/${totalTools}: ${nextTool?.name || 'Weiter'}...`
-                            try {
-                                await onStepUpdate(stepLabel)
-                            } catch { /* status update non-critical */ }
-                        }
+                        // === Status Update: back to waiting for the model ===
+                        if (onStepUpdate) { try { await onStepUpdate(THINKING_LABEL) } catch { /* status update non-critical */ } }
 
                         // Record successful tool call for learning
                         if (backgroundLearningEnabled) correctionDetector?.recordToolCall?.(call.name, call.arguments || {}, result, content, userId)
@@ -1663,6 +1662,32 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 failureEscalationContent = escalation?.content
                 console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
             }
+            // 2.89: out of rounds/time/model patience -> ONE last model call without tools
+            // over the results so far; only if that fails a short honest sentence (no raw data).
+            const finishUnfinished = async (notice = ''): Promise<string> => {
+                if (isDiagnosticRun || contract) {
+                    // Bound runs (outer contract, Doctor diagnosis) keep strict one-call semantics and their evidence text.
+                    incompleteSynthesis = true
+                    const hasFindings = toolExecutions.some(item => item.success !== false && !META_TOOL_NAMES.has(String(item.toolName || '')))
+                    const body = failureEscalationContent || (hasFindings || !notice ? incompleteExecutionsResponse(toolExecutions) : 'Sag „weiter“, dann mache ich an der Stelle weiter.')
+                    return notice ? `${notice}\n\n${body}` : body
+                }
+                incompleteAnswerReady = true
+                if (failureEscalationContent) return notice ? `${notice}\n\n${failureEscalationContent}` : failureEscalationContent
+                let summary = ''
+                try {
+                    const prompt = policyBlocked || abortSignal?.aborted ? '' : exhaustionSynthesisPrompt(toolExecutions)
+                    if (prompt) {
+                        const out = await kernel.inference.summarize(() => withTimeout(speakableClient(llmClient).complete(
+                            [...messages, { role: 'user', content: prompt }] as any, [],
+                            { maxTokens: kernel.cognition.executionBudget.maxOutputTokens, reasoningEffort: 'none' } as any), TIMEOUT_LLM, 'Final synthesis')) as any
+                        if (!(out?.toolCalls?.length)) summary = String(out?.content || '').trim()
+                    }
+                } catch (error) { console.warn('[Xaventra Agent] Final synthesis failed:', String(error)) }
+                if (summary) { incompleteSynthesis = false; return notice ? `${notice}\n\n${summary}` : summary }
+                incompleteSynthesis = true
+                return notice ? `${notice}\n\n${unfinishedRunNotice()}` : unfinishedRunNotice()
+            }
             try {
                 const { runGovernedSdkLoop } = await import('./governed-sdk-loop.js')
                 const configuredRounds = runLimits().maxToolRounds
@@ -1719,20 +1744,15 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 if (!finalContent.trim()) {
                     incompleteSynthesis = true
                     escalateRunFailures()
-                    finalContent = failureEscalationContent || incompleteExecutionsResponse(toolExecutions)
+                    finalContent = await finishUnfinished()
                 }
             } catch (error) {
                 incompleteSynthesis = true
                 escalateRunFailures()
-                if (!policyBlocked) finalContent = failureEscalationContent || incompleteExecutionsResponse(toolExecutions)
                 // 2.89: say which limit stopped the run (rounds, deadline, call
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
-                if (notice) {
-                    const hasFindings = toolExecutions.some(item => item.success !== false && !META_TOOL_NAMES.has(String(item.toolName || '')))
-                    const body = failureEscalationContent || (hasFindings ? incompleteExecutionsResponse(toolExecutions) : 'Sag „weiter“, dann mache ich an der Stelle weiter.')
-                    finalContent = `${notice}\n\n${body}`
-                }
+                if (!policyBlocked) finalContent = await finishUnfinished(notice)
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')
                     const known = new Set(getToolRegistry().getAll().map(tool => tool.name))
@@ -1957,6 +1977,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         return {
             content: finalContent,
             incompleteSynthesis,
+            incompleteAnswerReady,
             runId: kernel.contract.id,
             validation: taskValidation,
             responseConstraints: kernel.contract.responseConstraints,

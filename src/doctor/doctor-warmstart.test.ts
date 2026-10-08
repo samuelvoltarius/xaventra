@@ -150,9 +150,9 @@ describe('Doctor: Diagnose ohne Katalog', () => {
 })
 
 describe('Doctor: Folge-Timeout für Diagnose-Läufe', () => {
-    it('Diagnose-Lauf: 60 s statt 30 s, gedeckelt durch die Restzeit des Vertrags', () => {
+    it('Diagnose-Lauf: gedeckelt durch die Restzeit des Vertrags (Folge-Timeout 60 s)', () => {
         const contract = { budget: { timeoutMs: 90_000, maxToolCalls: 6, maxOutputTokens: 6_000 } }
-        expect(sdkFollowupTimeoutMs(undefined, 0, 10_000)).toBe(30_000)
+        expect(sdkFollowupTimeoutMs(undefined, 0, 10_000)).toBe(60_000)
         expect(sdkFollowupTimeoutMs(contract, 0, 10_000)).toBe(60_000)
         expect(sdkFollowupTimeoutMs(contract, 0, 70_000)).toBe(20_000)
         expect(sdkFollowupTimeoutMs(contract, 0, 95_000)).toBe(1)

@@ -15,6 +15,8 @@ export class InferenceBudget {
     private estimated = false
     private pending = false
     private stopped = false
+    private bonus = 0
+    private summaryOutput = 0
     private clients = new WeakMap<object, any>()
 
     constructor(private readonly budget: TaskBudget) {}
@@ -30,9 +32,25 @@ export class InferenceBudget {
 
     assertCanExecute(): void {
         if (this.stopped || this.pending
-            || this.total > (this.budget.maxTokens ?? Infinity)
-            || this.output > (this.budget.maxOutputTokens ?? Infinity)) {
+            || this.total > (this.budget.maxTokens ?? Infinity) + this.bonus
+            || this.output > (this.budget.maxOutputTokens ?? Infinity) + this.bonus) {
             throw new Error('Inference budget stopped this run; no further tools may execute')
+        }
+    }
+
+    /** 2.89: ONE tool-free model call after a failed/timed-out or exhausted run (final summary).
+     * The failure flag only guards tool effects. The summary gets its own small allowance on top of
+     * the run allowance (a timed-out call reserves all that is left) and is accounted separately,
+     * so it neither starves nor fakes a budget violation of the run itself. The stopped state is restored. */
+    async summarize<T>(run: () => Promise<T>, allowance = 1_024): Promise<T> {
+        const before = { stopped: this.stopped, input: this.input, output: this.output, total: this.total }
+        this.stopped = false
+        this.bonus = allowance
+        try { return await run() } finally {
+            this.summaryOutput += Math.max(0, this.output - before.output)
+            this.input = before.input; this.output = before.output; this.total = before.total
+            this.bonus = 0
+            this.stopped = this.stopped || before.stopped
         }
     }
 
@@ -59,8 +77,8 @@ export class InferenceBudget {
         const promptBound = Buffer.byteLength(JSON.stringify({ messages, tools }), 'utf8')
             + messages.length * 64 + 1024
         const maxTokens = Math.floor(Math.min(options.maxTokens ?? 8192,
-            (this.budget.maxOutputTokens ?? Infinity) - this.output,
-            (this.budget.maxTokens ?? Infinity) - this.total - promptBound))
+            (this.budget.maxOutputTokens ?? Infinity) + this.bonus - this.output,
+            (this.budget.maxTokens ?? Infinity) + this.bonus - this.total - promptBound))
         if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) {
             this.stopped = true
             throw new Error('Inference token budget exhausted before model call')
@@ -81,7 +99,7 @@ export class InferenceBudget {
                 this.total += usage.totalTokens - promptBound - maxTokens
                 measured = true
                 // A non-compliant provider must not authorize effects from its reply.
-                if (usage.completionTokens > maxTokens || this.total > (this.budget.maxTokens ?? Infinity)) {
+                if (usage.completionTokens > maxTokens || this.total > (this.budget.maxTokens ?? Infinity) + this.bonus) {
                     this.stopped = true
                     throw new Error('Provider exceeded the admitted inference budget')
                 }

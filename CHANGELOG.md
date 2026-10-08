@@ -122,6 +122,13 @@ Fixes from the live acceptance run:
 - A daemon control record or PID file that names the current process (PID 1 after a container restart) is treated as stale instead of blocking the start.
 - Unconfigured mesh transports (no relay or Supabase set up) read "nicht eingerichtet" in the services view instead of "unhealthy".
 
+
+Live-acceptance fixes (second round):
+
+- The progress side channel now shows a plain-words status at every tool start and while waiting for the model, plus a heartbeat about every 10 s on non-chat channels; chat channels still get at most one message.
+- When rounds, time or a model call run out, one last tool-free model call summarises the results so far (own small token allowance); only if that fails the user gets one short honest sentence instead of raw tool data.
+- Follow-up model calls get 60 s instead of 30 s, so the summary round of a multi-step task on a slow local model is no longer cut off.
+
 ## [2.88.3] — 2026-10-07
 
 - Normal messages were treated like internal agent jobs at one gate, so the

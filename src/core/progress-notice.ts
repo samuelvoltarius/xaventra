@@ -14,10 +14,20 @@
  *   - Routing notices (not plain step labels) are kept for the run outcome.
  */
 
+import { isToolProgressLabel } from './tool-progress-label.js'
+
 const CHAT_PROGRESS_CHANNELS = new Set(['telegram', 'whatsapp', 'discord', 'slack', 'matrix', 'signal', 'teams', 'cli'])
 
 export const PROGRESS_FIRST_AFTER_MS = 20_000
 let firstAfterOverride: number | null = null
+/** Side channel: latest status is repeated at least this often while the run is alive. */
+export const PROGRESS_HEARTBEAT_MS = 10_000
+let heartbeatOverride: number | null = null
+
+/** Test hook: shorter side-channel heartbeat (null = default). */
+export function setProgressHeartbeatForTests(ms: number | null): void {
+    heartbeatOverride = ms
+}
 
 /** Test hook: shorter first-progress delay for live-path tests (null = default). */
 export function setProgressFirstAfterForTests(ms: number | null): void {
@@ -31,7 +41,7 @@ export function progressGoesToChat(channel: string): boolean {
 
 /** Runner step labels (tool sequence) are not notices worth keeping. */
 function isStepLabel(status: string): boolean {
-    return /^\s*(?:⚙️|🔄|🔍|📥|🛠️)/u.test(status)
+    return /^\s*(?:⚙️|🔄|🔍|📥|🛠️)/u.test(status) || isToolProgressLabel(status)
 }
 
 export interface ProgressNoticeOptions {
@@ -42,6 +52,8 @@ export interface ProgressNoticeOptions {
     /** Side sink for non-chat channels (never the answer). */
     onProgress?: (status: string) => void
     firstAfterMs?: number
+    /** Side-channel heartbeat interval (default 10 s). */
+    heartbeatMs?: number
     now?: () => number
 }
 
@@ -64,6 +76,15 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
     let closed = false
     let sent = 0
     let timer: ReturnType<typeof setTimeout> | null = null
+    let heartbeat: ReturnType<typeof setInterval> | null = null
+    let latestStatus = ''
+
+    const emit = (value: string): void => {
+        if (!options.onProgress) return
+        try { options.onProgress(value) } catch (error) {
+            console.warn(`[Fortschritt] Seitenkanal fehlgeschlagen (${options.channel}): ${error instanceof Error ? error.message : String(error)}`)
+        }
+    }
 
     const fire = async (): Promise<void> => {
         timer = null
@@ -85,6 +106,13 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
         timer.unref?.()
     }
 
+    if (options.enabled && !chat && options.onProgress) {
+        // Lebenszeichen: a long silent model/tool call must not look like a hang.
+        heartbeat = setInterval(() => { if (!closed) emit(latestStatus || 'arbeite noch …') },
+            options.heartbeatMs ?? heartbeatOverride ?? PROGRESS_HEARTBEAT_MS)
+        heartbeat.unref?.()
+    }
+
     return {
         update(status: string): void {
             if (closed || !options.enabled) return
@@ -94,16 +122,15 @@ export function createProgressNotice(options: ProgressNoticeOptions): ProgressNo
                 latestNotice = value
                 if (!notices.includes(value)) notices.push(value)
             }
-            if (!chat && options.onProgress) {
-                try { options.onProgress(value) } catch (error) {
-                    console.warn(`[Fortschritt] Seitenkanal fehlgeschlagen (${options.channel}): ${error instanceof Error ? error.message : String(error)}`)
-                }
-            }
+            latestStatus = value
+            if (!chat) emit(value)
         },
         close(): void {
             closed = true
             if (timer) clearTimeout(timer)
             timer = null
+            if (heartbeat) clearInterval(heartbeat)
+            heartbeat = null
         },
         get closed() { return closed },
         get sent() { return sent },

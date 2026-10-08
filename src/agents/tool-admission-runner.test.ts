@@ -19,11 +19,17 @@ const { ToolAdmission } = await import('./tool-admission.js')
 type Call = { name: string; arguments: Record<string, unknown> }
 const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
 
-function scriptedLlm(steps: Array<Call[] | string>) {
+function scriptedLlm(steps: Array<Call[] | string>, final?: { text?: string; fail?: boolean }, failAtTurn?: number) {
     const offered: string[][] = []
     let turn = 0
     const complete = vi.fn(async (_messages: unknown, tools: Array<{ name: string }> = []) => {
         offered.push(tools.map(tool => tool.name))
+        // 2.89: the last-resort summary call carries no tools at all.
+        if (final && tools.length === 0) {
+            if (final.fail) throw new Error('Timeout: model request exceeded deadline')
+            return { content: final.text || '', usage }
+        }
+        if (failAtTurn !== undefined && turn >= failAtTurn) throw new Error('Timeout: model request exceeded deadline')
         const step = steps[Math.min(turn++, steps.length - 1)]
         return typeof step === 'string'
             ? { content: step, usage }
@@ -44,11 +50,11 @@ beforeAll(async () => {
 afterEach(() => { fixtures.denied.clear(); printerHandler.mockClear() })
 
 let serial = 0
-async function run(content: string, steps: Array<Call[] | string>) {
+async function run(content: string, steps: Array<Call[] | string>, final?: { text?: string; fail?: boolean }, failAtTurn?: number, onStepUpdate?: (status: string) => Promise<void>) {
     const user = `admission-owner-${process.pid}-${serial++}`
-    const scripted = scriptedLlm(steps)
+    const scripted = scriptedLlm(steps, final, failAtTurn)
     clearSession(user, 'telegram')
-    const result = await runNovaAgent({ userId: user, authUserId: user, channel: 'telegram', content, llm: scripted.llm as any, abortSignal: new AbortController().signal } as any)
+    const result = await runNovaAgent({ userId: user, authUserId: user, channel: 'telegram', content, llm: scripted.llm as any, abortSignal: new AbortController().signal, onStepUpdate } as any)
     return { result, ...scripted }
 }
 
@@ -130,9 +136,51 @@ describe('runner path: a run that hits the round limit says so (2.89 Punkt 4)', 
     it('names the limit instead of a vague answer', async () => {
         process.env.NOVA_MAX_TOOL_ROUNDS = '2'
         const steps: Call[][] = [0, 1, 2, 3, 4].map(index => [{ name: 'printer_status', arguments: { printer: `p${index}` } }])
-        const { result } = await run('Wie geht es meinem Drucker?', steps)
+        const { result } = await run('Wie geht es meinem Drucker?', steps, { text: 'Der Drucker ist bereit (Bett 60 °C); weitere Prüfungen fehlen noch.' })
         expect(result.content).toContain('2 Arbeitsschritten angehalten')
-        expect(result.content).toContain('Drucker bereit')
+        expect(result.content).toContain('Der Drucker ist bereit')
+        expect(result.incompleteSynthesis).toBe(false)
+    }, 30_000)
+
+    it('when the last summary call fails too: one short honest sentence, no raw data, no internal words', async () => {
+        process.env.NOVA_MAX_TOOL_ROUNDS = '2'
+        const steps: Call[][] = [0, 1, 2, 3, 4].map(index => [{ name: 'printer_status', arguments: { printer: `p${index}` } }])
+        const { result } = await run('Wie geht es meinem Drucker?', steps, { fail: true })
+        expect(result.content).toContain('2 Arbeitsschritten angehalten')
+        expect(result.content).toMatch(/noch nicht ganz fertig/)
+        expect(result.content).not.toMatch(/Drucker bereit|Tool-Beobachtungen|ausgewertet/)
+        expect(result.incompleteSynthesis).toBe(true)
+        expect(result.incompleteAnswerReady).toBe(true)
+    }, 30_000)
+})
+
+describe('runner path: five small checks in a row (live case 2.89)', () => {
+    const five: Call[][] = [0, 1, 2, 3, 4].map(index => [{ name: 'printer_status', arguments: { printer: `woche-${index}` } }])
+
+    it('the model times out on the summary round: a last tool-free call still produces the summary, not raw observations', async () => {
+        const { result } = await run('Mach bitte nacheinander fünf kleine Prüfungen für meinen Wochenplan und fasse sie dann zusammen', five,
+            { text: 'Zusammenfassung: alle fünf Prüfungen liefen, der Drucker ist bereit.' }, 5)
+        expect(printerHandler).toHaveBeenCalledTimes(5)
+        expect(result.content).toBe('Zusammenfassung: alle fünf Prüfungen liefen, der Drucker ist bereit.')
+        expect(result.content).not.toMatch(/Tool-Beobachtungen|nicht vollständig ausgewertet/)
+        expect(result.incompleteSynthesis).toBe(false)
+    }, 30_000)
+
+    it('Gegenprobe: all five steps run without early abort (no loop detection) and a normal summary needs no extra call', async () => {
+        const { result, complete } = await run('Mach bitte nacheinander fünf kleine Prüfungen für meinen Wochenplan und fasse sie dann zusammen',
+            [...five, 'Alles geprüft.'])
+        expect(printerHandler).toHaveBeenCalledTimes(5)
+        expect(complete).toHaveBeenCalledTimes(6)
+        expect(result.content).toBe('Alles geprüft.')
+    }, 30_000)
+
+    it('the side channel gets a plain-words sign of life at EVERY tool start and while waiting for the model', async () => {
+        const seen: string[] = []
+        await run('Mach bitte nacheinander fünf kleine Prüfungen für meinen Wochenplan und fasse sie dann zusammen',
+            [...five, 'Alles geprüft.'], undefined, undefined, async status => { seen.push(status) })
+        expect(seen.filter(status => status === 'denke nach …').length).toBeGreaterThanOrEqual(6)
+        expect(seen.filter(status => status !== 'denke nach …')).toHaveLength(5)
+        expect(seen.join(' ')).not.toMatch(/printer_status|Schritt \d+\/\d+/)
     }, 30_000)
 })
 

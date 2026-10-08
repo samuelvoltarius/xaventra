@@ -84,3 +84,18 @@ describe('per-run inference budget', () => {
         expect(raw.complete).toBe(original)
     })
 })
+
+describe('summarize (2.89): one last tool-free call after a failed round', () => {
+    it('is allowed after a timed-out call, stays inside its own small allowance, and restores the stopped state', async () => {
+        const budget = new InferenceBudget({ timeoutMs: 1000, maxToolCalls: 4, maxOutputTokens: 1000 } as any)
+        let n = 0
+        const client = budget.wrap({ complete: async () => { if (n++ === 0) throw new Error('Timeout'); return { content: 'ok', usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 } } } } as any)
+        await expect((client as any).complete([], [], {})).rejects.toThrow('Timeout')
+        expect(() => budget.assertCanExecute()).toThrow()
+        await expect((client as any).complete([], [], {})).rejects.toThrow(/Inference budget stopped/)
+        const out = await budget.summarize(() => (client as any).complete([], [], { maxTokens: 500 }))
+        expect(out.content).toBe('ok')
+        expect(budget.snapshot().outputTokens).toBeLessThanOrEqual(1000)
+        expect(() => budget.assertCanExecute()).toThrow()
+    })
+})
