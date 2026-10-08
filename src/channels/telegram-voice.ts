@@ -16,12 +16,14 @@ export const VOICE_CATALOG_ID = 'sprachdienst:de'
 /** Telegram-Sprachnachrichten sind kurz; längere Antworten werden gekürzt vorgelesen (Text steht ja da). */
 const MAX_SPOKEN_CHARS = 1200
 
-export type VoiceHeard = { text: string; via: 'sprachdienst' | 'whisper' | 'whisper-gpu'; zuLang?: boolean }
+export type VoiceHeard = { text: string; via: 'sprachdienst' | 'whisper' | 'whisper-gpu' | 'openai-audio'; zuLang?: boolean }
 
 /**
  * 1. eigener Sprachdienst (`xaventra-voice`), 2. (2.86.1) `whisper-gpu` im eigenen
  * Netz — lange Nachrichten in Stücken ≤ 30 s, nicht teilbar → `zuLang`,
- * 3. lokales Whisper auf diesem Rechner. Nie ein Cloud-Dienst.
+ * 3. (2.89.4) OpenAI-kompatible STT im eigenen Netz (Env/AI-Scan, z. B. Whisper
+ * unter `/v1/audio/transcriptions`), 4. lokales Whisper auf diesem Rechner.
+ * Nie ein Cloud-Dienst. Lokal vor Cloud.
  */
 export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath?: string, durationSec?: number): Promise<VoiceHeard | null> {
     try {
@@ -51,6 +53,24 @@ export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath
     } catch (error) {
         console.warn(`[Nova Telegram] Spracherkennung: ${String((error as Error)?.message || error).slice(0, 160)}`)
     }
+    // 2.89.4: OpenAI-kompatible STT im eigenen Netz (Pocket-Whisper, LocalAI, …)
+    try {
+        const { discoverOpenAiStt, transcribeWithOpenAiStt } = await import('../voice/openai-audio.js')
+        const stt = await discoverOpenAiStt()
+        if (stt) {
+            try {
+                const { ffmpegConvert } = await import('../voice/voice-service.js')
+                const { WhisperZuLangError } = await import('../voice/whisper-gpu.js')
+                const result = await transcribeWithOpenAiStt(stt.endpoint, audio, mime || 'audio/ogg', { durationSec, convert: ffmpegConvert })
+                if (result.text) return { text: result.text, via: 'openai-audio' }
+            } catch (error) {
+                if (error instanceof WhisperZuLangError) zuLang = true
+                else console.warn(`[Nova Telegram] Spracherkennung (OpenAI-kompatibel): ${String((error as Error)?.message || error).slice(0, 160)}`)
+            }
+        }
+    } catch (error) {
+        console.warn(`[Nova Telegram] Spracherkennung (OpenAI-kompatibel): ${String((error as Error)?.message || error).slice(0, 160)}`)
+    }
     if (!localPath) return zuLang ? { text: '', via: 'whisper-gpu', zuLang: true } : null
     try {
         // Lokales Whisper auf diesem Rechner (alter Weg), nie die Cloud-Variante.
@@ -66,7 +86,22 @@ export function voiceTooLongNotice(): string {
     return '🎤 Deine Sprachnachricht ist mir zu lang – ich kann gerade nur bis etwa 30 Sekunden am Stück anhören. Schick sie mir bitte kürzer oder in Teilen, oder schreib mir.'
 }
 
-export function voiceUnavailableNotice(): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
+export function voiceUnavailableNotice(probed?: { anyStt?: boolean; anyTts?: boolean }): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
+    // 2.89.4: keine Install-Karte, wenn ein Sprachdienst im eigenen Netz antwortet.
+    if (probed?.anyStt) {
+        return {
+            text: '🎤 Ich habe deine Sprachnachricht bekommen. Ein Sprachdienst in deinem Netz antwortet gerade, hat die Nachricht aber nicht verstanden (oder nur leeren Text geliefert). '
+                + 'Schick sie bitte noch einmal kürzer, oder schreib mir.',
+            keyboard: [],
+        }
+    }
+    if (probed?.anyTts) {
+        return {
+            text: '🎤 Antworten vorlesen kann ich schon über einen Sprachdienst in deinem Netz – anhören noch nicht. '
+                + 'Fürs Hören brauche ich zusätzlich Spracherkennung, damit deine Stimme in deinem eigenen Netz bleibt.',
+            keyboard: [[{ text: '🧰 Sprachdienst einrichten', callback_data: VOICE_INSTALL_CALLBACK }]],
+        }
+    }
     return {
         text: '🎤 Ich habe deine Sprachnachricht bekommen, kann sie aber noch nicht anhören. '
             + 'Mit dem lokalen Sprachdienst geht das – deine Stimme bleibt dabei in deinem eigenen Netz. Bis dahin schreib mir bitte.',
@@ -88,7 +123,10 @@ export function shouldReplyByVoice(transcript: string, isOwner: boolean): { spea
     return { speak: request === 'once' || (isOwner && prefs.replyByVoice), voice: prefs.voice }
 }
 
-/** Antworttext → Ogg/Opus über den Sprachdienst; null wenn keiner da ist. */
+/**
+ * Antworttext → Ogg/Opus. 1. eigener Sprachdienst, 2. (2.89.4) OpenAI-kompatible
+ * TTS im eigenen Netz (Pocket-TTS & Co.). Lokal vor Cloud; null wenn keiner da.
+ */
 export async function speakReply(text: string, voice: VoiceName): Promise<Buffer | null> {
     let spoken = cleanForSpeech(text)
     if (!spoken) return null
@@ -96,13 +134,24 @@ export async function speakReply(text: string, voice: VoiceName): Promise<Buffer
     try {
         const { discoverVoiceService, VoiceServiceClient } = await import('../voice/voice-mesh.js')
         const service = await discoverVoiceService()
-        if (!service) return null
-        const audio = await new VoiceServiceClient(service.endpoint).speak(spoken, voice, 'ogg')
-        return audio.audio.length ? audio.audio : null
+        if (service) {
+            const audio = await new VoiceServiceClient(service.endpoint).speak(spoken, voice, 'ogg')
+            if (audio.audio.length) return audio.audio
+        }
     } catch (error) {
         console.warn(`[Nova Telegram] Sprachantwort: ${String((error as Error)?.message || error).slice(0, 160)}`)
-        return null
     }
+    try {
+        const { discoverOpenAiTts, speakWithOpenAiTts } = await import('../voice/openai-audio.js')
+        const tts = await discoverOpenAiTts()
+        if (tts) {
+            const spokenAudio = await speakWithOpenAiTts(tts.endpoint, spoken, { voice, format: 'opus' })
+            return spokenAudio.audio.length ? spokenAudio.audio : null
+        }
+    } catch (error) {
+        console.warn(`[Nova Telegram] Sprachantwort (OpenAI-kompatibel): ${String((error as Error)?.message || error).slice(0, 160)}`)
+    }
+    return null
 }
 
 /** Knopf „Sprachdienst einrichten“: legt die Werkzeugkasten-Karte an (Ja/Nein kommt als eigene Karte). */

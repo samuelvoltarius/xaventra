@@ -12,6 +12,25 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.4] — 2026-10-09
+
+### Fixed
+
+- **Local speech services are connected instead of offered for install.** Live
+  09.10.2026: OpenAI-compatible TTS (`/v1/audio/speech`, e.g. Pocket-TTS) and STT
+  (`/v1/audio/transcriptions`, Whisper; WebSocket stream when present) on the own
+  node are discovered via env and the AI scanner, live-probed, and used before any
+  cloud fallback. Local hosts need no API key. The “Sprachdienst installieren”
+  card only appears when no service answers in this run — a service that answers
+  with empty text gets an honest sentence instead. Status likewise only claims a
+  speech service is there after a live probe.
+- **No node question for reports and package tracking.** Live 09.10.2026: “Auf
+  welchem Node…?” was asked for “Mach eine Inventur…” and for DHL tracking (the
+  number alone matched “send”), and a stale pending question was glued onto the
+  next order. A target is only asked when the order is an action on a machine and
+  several targets are in question; a new order drops the old question instead of
+  resuming it.
+
 ## [2.89.3] — 2026-10-08
 
 ### Fixed

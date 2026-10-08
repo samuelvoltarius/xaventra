@@ -24,6 +24,10 @@ import { ProbeLimiter, realTcpProbe } from '../sensing/discovery.js'
 import { parseSensingConfig } from '../sensing/config.js'
 import { isXaventraVoiceHealth, VOICE_SERVICE_NAME, VOICE_SERVICE_PORT } from '../voice/voice-contract.js'
 import { isWhisperGpuHealth, whisperGpuModels, WHISPER_GPU_NAME, WHISPER_GPU_PORT } from '../voice/whisper-gpu.js'
+import {
+    isOpenAiSttHealth, isPocketTtsHealth, openAiAudioModels,
+    OPENAI_AUDIO_STT_NAME, OPENAI_AUDIO_STT_PORT, POCKET_TTS_NAME, POCKET_TTS_PORT,
+} from '../voice/openai-audio.js'
 
 
 const execAsync = promisify(exec)
@@ -301,6 +305,29 @@ export const AI_SERVICE_PROBES: AIServiceProbe[] = [
         modelsEndpoint: '/health',
         detectFn: isWhisperGpuHealth,
         parseModelsFn: whisperGpuModels,
+    },
+
+    // 2.89.4: OpenAI-kompatible Sprachdienste im eigenen Netz (Pocket-TTS & Co.).
+    // Erkennung über /v1/models — statt „installieren“ anzubieten, wenn sie laufen.
+    {
+        name: POCKET_TTS_NAME,
+        type: 'tts',
+        defaultPort: POCKET_TTS_PORT,
+        healthEndpoint: '/v1/models',
+        modelsEndpoint: '/v1/models',
+        detectFn: isPocketTtsHealth,
+        parseModelsFn: openAiAudioModels,
+        binaries: ['pocket-tts', 'pocket_tts'],
+        systemdServices: ['pocket-tts'],
+    },
+    {
+        name: OPENAI_AUDIO_STT_NAME,
+        type: 'stt',
+        defaultPort: OPENAI_AUDIO_STT_PORT,
+        healthEndpoint: '/v1/models',
+        modelsEndpoint: '/v1/models',
+        detectFn: isOpenAiSttHealth,
+        parseModelsFn: openAiAudioModels,
     },
 
     // === Embedding Servers ===

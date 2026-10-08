@@ -336,13 +336,20 @@ export class TelegramAdapter implements ChannelAdapter {
                 return
             }
             if (!heard) {
+                // 2.89.4: erst live prüfen, ob ein Sprachdienst antwortet — die
+                // Install-Karte kommt nur, wenn keiner da ist.
+                let probed: { anyStt?: boolean; anyTts?: boolean } | undefined
+                try {
+                    const { probeSpeechServices } = await import('../voice/openai-audio.js')
+                    probed = await probeSpeechServices()
+                } catch { /* optional */ }
                 // 2.85: an owner voice message without speech recognition is a recorded need
                 // for the Software-Scout (capability + time only, no content, no user id).
-                if (isOwner) {
+                if (isOwner && !probed?.anyStt) {
                     try { (await import('../install/software-demand.js')).recordCapabilityNeed('stt', 'sprachnachricht-ohne-stt') } catch { /* optional */ }
                 }
-                const notice = voice.voiceUnavailableNotice()
-                await this.bot.sendMessage(chatId, notice.text, isOwner ? { reply_markup: { inline_keyboard: notice.keyboard } } : {})
+                const notice = voice.voiceUnavailableNotice(probed)
+                await this.bot.sendMessage(chatId, notice.text, isOwner && notice.keyboard.length ? { reply_markup: { inline_keyboard: notice.keyboard } } : {})
                 return
             }
             console.log(`[Nova Telegram] Sprachnachricht verstanden (${heard.via})`)
