@@ -1693,6 +1693,12 @@
       ]
     },
     {
+      "module": "src/core/conversation-turn.ts",
+      "imports": [
+        "./action-intent.js"
+      ]
+    },
+    {
       "module": "src/core/correction-detector.ts",
       "imports": [
         "../memory/memory-governance.js",

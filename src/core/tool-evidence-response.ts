@@ -173,6 +173,15 @@ export function authoritativeDiagnosticResponse(executions: ResponseToolExecutio
 
 /** Fail-closed fallback used when L12 detects that prose contradicts Tool
  * Evidence. It contains only verified tool names and redacted actual results. */
+/** A successful tool run with a real result - "no hits" / empty is nothing that could contradict an answer. */
+export function hasUsableToolEvidence(executions: ResponseToolExecution[]): boolean {
+    return executions.some(item => {
+        if (item.success !== true) return false
+        const text = safeResult(item.result, 400)
+        return Boolean(text) && !/keine?\s+(?:treffer|ergebnisse?|einträge|eintraege)|nicht gefunden|no (?:results|matches)/i.test(text)
+    })
+}
+
 export function verifiedToolEvidenceResponse(executions: ResponseToolExecution[]): string {
     const successful = executions.filter(item => item.success === true)
     if (successful.length === 0) return 'Es liegt kein verifiziertes Tool-Ergebnis vor.'

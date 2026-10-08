@@ -123,6 +123,6 @@ describe('action intent evidence gate', () => {
 
     it('returns an explicit non-success response without evidence', () => {
         expect(honestNoToolResponse('screenshot')).toContain('keine Bilddatei übertragen')
-        expect(honestNoToolResponse('device-action')).toContain('kein passendes Tool')
+        expect(honestNoToolResponse('device-action')).toContain('nichts verändert')
     })
 })

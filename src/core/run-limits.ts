@@ -77,7 +77,7 @@ export function toolTimeoutMs(name: string, limits: RunLimits = runLimits()): nu
 export function limitStopNotice(error: unknown, limits: RunLimits = runLimits()): string {
     const text = `${(error as { name?: string })?.name || ''} ${String((error as { message?: unknown })?.message ?? error ?? '')}`
     if (/MaxTurnsExceeded|max turns/i.test(text)) {
-        return `Ich habe nach ${limits.maxToolRounds} Arbeitsschritten angehalten (Obergrenze erreicht) — die Aufgabe ist noch nicht fertig.`
+        return `Das war viel auf einmal: Ich habe nach ${limits.maxToolRounds} Arbeitsschritten angehalten und bin noch nicht fertig. Sag „weiter“, dann mache ich an der Stelle weiter.`
     }
     const tool = text.match(/\[Timeout\] Tool: ([A-Za-z0-9_.-]+) exceeded (\d+)ms/)
     if (tool) return `Das Werkzeug ${tool[1]} hat länger als ${Math.round(Number(tool[2]) / 1000)} s gebraucht und wurde abgebrochen — die Aufgabe ist noch nicht fertig.`

@@ -188,10 +188,11 @@ export function superviseResponse(
     if (options?.preserveValidatedText) return { content, fixes, wasFixed: fixes.length > 0, needsRetry: false, shouldResetSession: false }
 
     // 1. Check for empty response
-    if (!content || content.trim().length < 3) {
+    // 2.89.3: empty means no visible character at all - "56", "Ja", "4", "OK" are complete answers. An empty model
+    // answer is retried at most; the conversation history is never discarded because of it.
+    if (!content || content.replace(/[\p{C}\s]/gu, '').length === 0) {
         fixes.push('Leere Antwort erkannt')
         needsRetry = attempt < 3
-        shouldResetSession = attempt >= 2
         content = ''
     }
 
@@ -200,7 +201,6 @@ export function superviseResponse(
     if (/^\s*\[?Tool:\w+\(/i.test(content) || /^\s*\[?TOOL:\w+\(/.test(content)) {
         fixes.push('Pseudo-Tool-Antwort als Text erkannt')
         needsRetry = attempt < 3
-        shouldResetSession = attempt >= 2
         content = ''
     }
 

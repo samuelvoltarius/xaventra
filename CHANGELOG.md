@@ -51,6 +51,27 @@
   sentence and the learn offer instead of silence. Nothing is built on its own: the offer
   and the entry only; a "yes" starts the existing learning flow (forge / PATCH_GATE).
   Two-part requests get the tool budget per part (8 each, at most 16).
+- **Short answers are answers; the conversation is never thrown away.** "56", "Yes", "4" or "OK"
+  were treated as an empty reply (fewer than 3 characters), retried, and from the second try the
+  whole session history was reset ("Entschuldigung, ich konnte keine Antwort generieren"). Empty now
+  means no visible character at all, and an empty model answer is at most retried, never a reason to
+  drop the history.
+- **Questions about the conversation are answered from it.** "My dog is called Bruno" then "what was
+  my dog called?" ended in "kg_search: Keine Treffer": the memory lookup ran first, and the fact
+  checker corrected the right answer because it did not know the conversation. Now such questions are
+  answered from the history first (memory/introspection tools are not in the first offer, a prompt
+  hint says so), the checker counts names and figures from the last exchanges as evidence, and a
+  correction never replaces an answer with raw tool output ("no hits" is no evidence).
+- **Announced, not done.** "und in Tokio?" answered "Ich rufe kurz die aktuelle Zeit ab ..." without
+  any call. An answer that only announces an action although nothing ran is not delivered: one forced
+  run with the tools, otherwise an honest sentence.
+- **No internal limit texts for people.** "kein passendes Tool erfolgreich", "Obergrenze erreicht" and
+  "Modell-Routen haben nicht rechtzeitig geantwortet" are replaced by short human sentences. "Was machst
+  du den ganzen Tag?" is a question about her, not an order, so no tool is forced.
+- **Long pasted text, slow model.** A long provider text activated four tool packs by accidental words
+  and the model call hit the fixed 45 s / 60 s limits on a healthy server. Long messages are matched on
+  their beginning and end only, and the primary model call gets more time for a larger prompt or tool
+  set (60 s up to 150 s).
   The closing line of the status message is short ("Fertig" / "Abgebrochen" and the time)
   without internal counters.
 

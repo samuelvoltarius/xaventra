@@ -1086,6 +1086,7 @@ ${pendingGapNote}` : withTail
         systemPrompt = buildSystemPromptFromSoul() + '\n\n' + NOVA_PERSONA
     }
     if (!isSystemAuthored) systemPrompt += conversationResponseGuidance(content)
+    if (!isSystemAuthored) systemPrompt += (await import('./conversation-turn.js')).conversationRecallGuidance(content)
     if (!isSystemAuthored) systemPrompt += liveEvidenceGuidance(content)
 
     // Gemessener Systembefund statt Annahmen. Der Environment-Scanner laeuft
@@ -2182,6 +2183,33 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
         }
 
+        // 2.89.3 (Gespraechstest: "und in Tokio?" -> "Ich rufe kurz die aktuelle Zeit ab ..." without any call or result):
+        // an answer that announces an action although nothing ran in this run is not delivered. ONE forced retry with the
+        // tools; if still nothing ran, an honest sentence instead of the empty promise.
+        if (!isSystemMessage && !image && (result.toolsExecuted?.length || 0) === 0 && !(result as any).error) {
+            const announced = (supervised.content || '').trim()
+            const { announcesUnperformedAction, ANNOUNCED_BUT_NOT_DONE_REPLY } = await import('./unverified-claims.js')
+            if (announcesUnperformedAction(announced)) {
+                console.log(`[Pipeline] Angekuendigt, nicht getan ("${announced.slice(0, 50)}") - ein Werkzeug-Nachforderungslauf`)
+                try {
+                    const { runNovaAgent } = await import('../agents/nova-runner.js')
+                    const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
+                        ...agentRunBase,
+                        systemPrompt: agentRunBase.systemPrompt + '\n\nPFLICHT: Die Anfrage verlangt eine Abfrage. Rufe JETZT das passende Werkzeug auf und antworte mit dem Ergebnis. Keine Ankündigung wie "ich rufe kurz ab" ohne Ergebnis.',
+                        abortSignal: agentSignal,
+                    }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
+                    if ((retryResult.toolsExecuted?.length || 0) > 0 && retryResult.content?.trim() && !announcesUnperformedAction(retryResult.content)) {
+                        supervised.content = retryResult.content
+                        ;(result as any).toolsExecuted = retryResult.toolsExecuted || []
+                        ;(result as any).toolExecutions = (retryResult as any).toolExecutions || []
+                    } else supervised.content = ANNOUNCED_BUT_NOT_DONE_REPLY
+                } catch (retryErr) {
+                    if (execution?.abortSignal?.aborted) throw retryErr
+                    supervised.content = ANNOUNCED_BUT_NOT_DONE_REPLY
+                }
+            }
+        }
+
         // Deterministic fallback for screenshots. Some providers acknowledge
         // the request without a tool call, others wander into introspection
         // and stop there (live 01.10.2026). Whatever else ran: without a
@@ -2309,8 +2337,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 const toolExecs = (result as any).toolExecutions || []
                 if (!(result as any).incompleteSynthesis && toolExecs.length > 0 && !(principalContext.permission === 'owner' && isEnvironmentOverview(content) && !(result as any).responseConstraints?.length)) {
                     // 15s timeout on hallucination check — non-critical
+                    // 2.89.3: what stands in the last exchanges of this conversation counts as evidence ("Bruno").
+                    let conversationLines: string[] = []
+                    try {
+                        const { getSession } = await import('../agents/nova-runner.js')
+                        const past = getSession(principalId, channel, { conversationId: desktopContext?.roomId, botId: desktopBot?.id }).history.slice(-9, -1)
+                        conversationLines = past.map((turn: any) => `${turn.role === 'user' ? 'Nutzer' : 'Assistent'}: ${String(turn.content || '').slice(0, 400)}`)
+                    } catch { /* no history: the check runs as before */ }
                     const validation = await Promise.race([
-                        validateWithLLM(supervised.content, toolExecs),
+                        validateWithLLM(supervised.content, toolExecs, conversationLines),
                         new Promise<{ honest: true, issues: [] }>((resolve) =>
                             setTimeout(() => resolve({ honest: true, issues: [] }), 15_000)
                         ),
@@ -2320,8 +2355,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                         // Diagnostics stay in logs/journal and never become user
                         // text. Replace contradicted prose with actual redacted
                         // Tool Evidence instead of sanitizing the same false text.
-                        const { verifiedToolEvidenceResponse } = await import('./tool-evidence-response.js')
-                        finalContent = sanitizeInternalOutboundArtifacts(verifiedToolEvidenceResponse(toolExecs))
+                        const { verifiedToolEvidenceResponse, hasUsableToolEvidence } = await import('./tool-evidence-response.js')
+                        // 2.89.3: raw tool output ("kg_search: Keine Treffer ...") is never the answer; without a real
+                        // result the model text stays (it may come from the conversation).
+                        if (hasUsableToolEvidence(toolExecs)) finalContent = sanitizeInternalOutboundArtifacts(verifiedToolEvidenceResponse(toolExecs))
                         // Record in journal
                         try {
                             const journal = (state as any).journal
