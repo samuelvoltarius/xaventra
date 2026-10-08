@@ -11,6 +11,7 @@
  * NO pi-ai, NO nova, PURE HTTP!
  */
 
+import { wellFormed } from './well-formed-text.js'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -1420,14 +1421,14 @@ class LocalLLMProvider extends LLMProvider {
 
         // Step 1: convert each message preserving tool structure
         const rawMessages = messages.map(m => {
-            const msg: any = { role: m.role, content: m.content || '' }
+            const msg: any = { role: m.role, content: wellFormed(m.content || '') }
 
             // Assistant with tool calls — include tool_calls array (OpenAI format)
             if (m.role === 'assistant' && m.toolCalls?.length) {
                 msg.tool_calls = m.toolCalls.map(tc => ({
                     id: tc.id || `call_${Math.random().toString(36).slice(2, 10)}`,
                     type: 'function',
-                    function: { name: tc.name, arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments) },
+                    function: { name: tc.name, arguments: wellFormed(typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)) },
                 }))
                 if (!msg.content) msg.content = ''
             }

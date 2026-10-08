@@ -6,6 +6,7 @@
  * and injected at the start of each LLM request.
  */
 
+import { withoutContextNote } from '../core/history-note-filter.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -120,7 +121,7 @@ export async function summarizeMessages(
     messages: Array<{ role: string; content: string }>,
     existingSummary?: string
 ): Promise<string> {
-    const safeMessages = pruneToolMessages(messages).map(message => ({ ...message, content: redactSecrets(message.content) }))
+    const safeMessages = pruneToolMessages(messages).map(message => ({ ...message, content: redactSecrets(message.role === 'user' ? withoutContextNote(message.content) : message.content) }))
     const conversation = safeMessages
         .map(m => `${m.role === 'user' ? 'User' : 'Nova'}: ${m.content.slice(0, 500)}`)
         .join('\n')
@@ -176,7 +177,7 @@ function extractiveSummary(
 
     const keyFacts: string[] = []
     for (const msg of messages) {
-        const lines = msg.content.split(/[.\n]/).filter(l => l.trim().length > 10)
+        const lines = (msg.role === 'user' ? withoutContextNote(msg.content) : msg.content).split(/[.\n]/).filter(l => l.trim().length > 10)
         for (const line of lines) {
             if (keyPatterns.some(p => p.test(line))) {
                 const prefix = msg.role === 'user' ? 'User' : 'Nova'

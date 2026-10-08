@@ -26,3 +26,10 @@ export function withoutInternalNotes(send: (text: string) => Promise<void>): (te
         return send(cleaned)
     }
 }
+
+/** The "(Kontext: zuvor ausgeführt — …)" block of a user history entry: context for the next answer, not something the user said. */
+export function withoutContextNote(content: string): string {
+    const text = String(content ?? '')
+    const at = text.search(/\n\(Kontext: zuvor ausgeführt/)
+    return at < 0 ? text : text.slice(0, at)
+}

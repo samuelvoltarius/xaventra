@@ -24,3 +24,11 @@ describe('internal history notes never reach a user', () => {
         expect(sent.join('\n')).not.toMatch(/Verlaufsnotiz/)
     })
 })
+
+import { withoutContextNote } from './history-note-filter.js'
+describe('context note of a user entry', () => {
+    it('is not part of what the user said', () => {
+        expect(withoutContextNote('Was kann welcher Knoten?\n(Kontext: zuvor ausgeführt — Werkzeuge: x ok)')).toBe('Was kann welcher Knoten?')
+        expect(withoutContextNote('Hallo')).toBe('Hallo')
+    })
+})
