@@ -28,6 +28,11 @@
 - **`/ai` never prints the line "HANDLED".** The internal handled marker is filtered everywhere before it can become chat text.
 - **`/mesh scan` answers instead of ending as "Abgebrochen".** A titled or multi-line report is the answer (not progress); an abort always carries one honest sentence.
 - **`/layers` L1 Unified Channels reflects the real adapters.** It reads `state.channels` instead of the never-assigned `state.channelRouter` that always printed ❌.
+- **Proactive notices say it once, in one understandable sentence.** A Tuya-LAN notice no longer repeats title/text/Beleg three times, never cuts mid-sentence with `…`, never shows raw JSON (`{geraet:"",erreichbar:false}`), and names unknown gear as „unbekanntes Gerät im Netz (Tuya)“ with what that means for the owner. Pure info without action need that already came is summarized in the report instead of re-pushed (18× in one live log).
+- **The morning report is a short story, not a counter wall.** Up to three open points as short sentences, then one summary sentence; counters at most as one line. „Fragen warten 39“ vs „Wartet auf dich 31“ is gone — one question number (waiting + queue + bundled) feeds both the traffic-light head and the „Braucht mich“ button. Nothing important reads „Alles ruhig“.
+- **„morgen“ after midnight is the day that is starting.** Live 09.10. 01:12 „morgen gegen 10 Uhr“ planned Saturday instead of Friday. Until 05:00 „morgen“ means today's calendar date; the confirmation always names weekday + date and asks once when the owner might have meant the next day.
+- **Daily tips only for what is really there.** The 07:00 promise „Ich sag dir Bescheid, sobald der Druck fertig ist.“ came without a printer and without a print job. Tips never promise future monitoring, are gated by the capability inventory (a printer tip needs a real printer protocol), stay at most one per day, and can be switched off with „Tipps aus“.
+- **The Claude/Doctor handoff card speaks everyday German.** The live card opened with „Behebe den verifizierten Doctor-Fall … Regressionstest … Auslieferung nur über CI“. The short card now says what is broken (one sentence) and what Ja does; the technical task stays in the agent's `auftrag` and behind „Details“.
 
 ## [2.89.3] — 2026-10-08
 
