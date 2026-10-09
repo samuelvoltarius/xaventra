@@ -40,6 +40,7 @@ export type GuidedAktion =
     | { art: 'einrichtung' }
     | { art: 'hilfe' }
     | { art: 'tipp-nein'; id: string }
+    | { art: 'tipp-alle-aus' }
     | { art: 'frage-zeigen'; cardId: string }
     | { art: 'app'; bereich: string }
 
@@ -111,7 +112,14 @@ export function beispielView(chatId: string, kopf: string, saetze: readonly stri
 }
 
 export function tippView(chatId: string, tipp: { id: string; text: string; knopf: { label: string; satz: string } }, opts: GuidedOptions = {}): { text: string; keyboard: Keyboard } {
-    return { text: `💡 ${tipp.text}`, keyboard: [[guidedButton(chatId, tipp.knopf.label, { art: 'satz', text: tipp.knopf.satz }, opts), guidedButton(chatId, 'Nein danke', { art: 'tipp-nein', id: tipp.id }, opts)]] }
+    return {
+        text: `💡 ${tipp.text}`,
+        keyboard: [
+            [guidedButton(chatId, tipp.knopf.label, { art: 'satz', text: tipp.knopf.satz }, opts), guidedButton(chatId, 'Nein danke', { art: 'tipp-nein', id: tipp.id }, opts)],
+            // 2.89.4: global off switch.
+            [guidedButton(chatId, 'Tipps aus', { art: 'tipp-alle-aus' }, opts)],
+        ],
+    }
 }
 
 /** Extra row under the fixed main menu (Paket L): „Einrichtung“ · „Ich komm nicht weiter“. */

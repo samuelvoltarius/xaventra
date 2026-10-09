@@ -10,7 +10,7 @@
 import { collectChecklist, skipChecklistItem, startChecklistItem, type Checklist, type ChecklistDeps } from './setup-checklist.js'
 import { ichKommNichtWeiter, type HilfeAntwort, type HilfeDeps } from './stuck-helper.js'
 import { angebotsKopf, beispielTyp, connectedEntries, markBeispieleGesendet, noteConnected, type VerbundenerEintrag } from './example-prompts.js'
-import { markTippGesendet, tippAblehnen, tippHeute, tippSchonGesendet, type Tipp } from './daily-tip.js'
+import { markTippGesendet, tippAlleAblehnen, tippAblehnen, tippHeute, tippSchonGesendet, type Tipp } from './daily-tip.js'
 import { beispielView, checklistView, hilfeView, tippView, updatePinnedStatus, type GuidedAktion, type GuidedTelegram, type Keyboard, type PinnedFacts } from './telegram-guided.js'
 import { loadGuidedState, nowOf, type GuidedOptions } from './guided-store.js'
 
@@ -80,6 +80,10 @@ export async function runGuidedAction(aktion: GuidedAktion, ctx: { chatId: strin
         const result = await tippAblehnen(aktion.id, ctx.by, { dataDir: deps.dataDir, now: deps.now, ...(deps.isMain ? { isMain: deps.isMain } : {}) })
         return { ok: result.ok, hinweis: result.ok ? 'Gemerkt.' : result.message, ansicht: result.ok ? { text: `👍 ${result.message}`, keyboard: [], ersetzen: true } : undefined }
     }
+    case 'tipp-alle-aus': {
+        const result = await tippAlleAblehnen(ctx.by, { dataDir: deps.dataDir, now: deps.now, ...(deps.isMain ? { isMain: deps.isMain } : {}) })
+        return { ok: result.ok, hinweis: result.ok ? 'Gemerkt.' : result.message, ansicht: result.ok ? { text: `👍 ${result.message}`, keyboard: [], ersetzen: true } : undefined }
+    }
     case 'frage-zeigen': {
         let ok: boolean
         if (deps.redeliver) ok = deps.redeliver(aktion.cardId)
@@ -137,7 +141,12 @@ async function quietNow(deps: GuidedDeps): Promise<boolean> {
 /** Today's tip for the app (picks one if due; never in quiet hours). */
 export async function currentTip(deps: GuidedDeps = {}, entries?: VerbundenerEintrag[]): Promise<Tipp | null> {
     const list = entries || await (deps.verbunden ? deps.verbunden() : connectedEntries(deps))
-    const picked = await tippHeute({ dataDir: deps.dataDir, now: deps.now, typen: list.map(beispielTyp), timeZone: deps.timeZone, ...(deps.ruhezeit ? { ruhezeit: deps.ruhezeit } : {}) })
+    // 2.89.4: connected types + capability-inventory — never a tip for something that is not there.
+    const picked = await tippHeute({
+        dataDir: deps.dataDir, now: deps.now, typen: list.map(beispielTyp),
+        eintraege: list.map(item => ({ ...(item.id ? { id: item.id } : {}), ...(item.connectorId ? { connectorId: item.connectorId } : {}), ...(item.title ? { title: item.title } : {}) })),
+        timeZone: deps.timeZone, ...(deps.ruhezeit ? { ruhezeit: deps.ruhezeit } : {}),
+    })
     return picked?.tipp || null
 }
 
