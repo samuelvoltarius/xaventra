@@ -221,7 +221,14 @@ export function createThoughtStore(options: { dataDir: string; now?: () => numbe
                     if (evidence) existing.evidence = evidence
                     if (escalated) { existing.importance = importance; existing.rule = rule }
                     const windowOver = !existing.noticedAt || t - Date.parse(existing.noticedAt) >= windowMs
-                    if (OPEN.has(existing.status) && notifiable(existing.importance) && existing.notice !== 'ausstehend' && (escalated || windowOver)) {
+                    // 2.89.4: pure info that already went out is summarized in the next
+                    // report instead of being re-pushed every window (live: 18× gesehen).
+                    if (isPureInfo(existing) && existing.noticedAt && windowOver && !escalated) {
+                        if (existing.notice === 'gemeldet' || existing.notice === 'im-bericht' || existing.notice === 'keine') {
+                            existing.notice = 'zurueckgehalten'
+                            existing.noticeReason = 'wiederholung'
+                        }
+                    } else if (OPEN.has(existing.status) && notifiable(existing.importance) && existing.notice !== 'ausstehend' && (escalated || windowOver)) {
                         existing.notice = 'ausstehend'
                         existing.noticeReason = escalated ? 'hochgestuft' : 'erneut'
                     }
@@ -299,17 +306,38 @@ export function createThoughtStore(options: { dataDir: string; now?: () => numbe
     return store
 }
 
+/** 2.89.4: pure info without need for action — never re-pushed every window after the first notice. */
+function isPureInfo(thought: Pick<Thought, 'kind' | 'permission' | 'importance' | 'title' | 'evidence'>): boolean {
+    return thought.kind === 'ereignis' && thought.permission !== 'fragen'
+        && thought.importance !== 'dringend'
+        && !KRITISCH_WORT.test(`${thought.title} ${thought.evidence || ''}`)
+}
+
+/**
+ * One understandable message: the title once, evidence only when it adds
+ * something, repeats folded into the sentence (2.89.4 live: title/text/Beleg
+ * three times plus raw JSON and „(18× gesehen)“).
+ */
 export function formatThoughtText(thought: Thought): string {
     const mark = thought.importance === 'dringend' ? '‼️' : '⚠️'
-    const lines = [`${mark} ${thought.title}`]
-    if (thought.evidence) lines.push(`Beleg: ${thought.evidence}`)
+    const title = thought.title.trim()
+    const evidence = (thought.evidence || '').trim()
+    const beleg = evidence && !title.includes(evidence) && !evidence.includes(title) ? evidence : ''
+    const wiederholt = thought.seen > 1
+        ? thought.seen === 2 ? ' (schon 2× gesehen)' : ` (zusammengefasst: ${thought.seen}× gesehen)`
+        : ''
+    if (isPureInfo(thought) && wiederholt) return `${mark} ${title}${wiederholt}`
+    const lines = [`${mark} ${title}${wiederholt}`]
+    if (beleg) lines.push(`Beleg: ${beleg}`)
     if (thought.proposal) lines.push(`Vorschlag: ${thought.proposal}`)
-    if (thought.seen > 1) lines.push(`(${thought.seen}× gesehen)`)
     return lines.join('\n')
 }
 
 /** 2.86 Paket M: wording that is critical even without the `dringend` rule (same words as the card loop). */
 const PUSH_AT_ONCE = /sicherheit|security|ausfall|outage|offline|nicht erreichbar|unreachable|down|alarm|kritisch|critical|notfall|einbruch|intrusion|angriff|attack|leck|leak/i
+
+/** 2.89.4: working copy of the critical-wording gate (the legacy literal lost its word bounds). */
+const KRITISCH_WORT = /sicherheit|security|ausfall|outage|offline|nicht erreichbar|unreachable|down|alarm|kritisch|critical|notfall|einbruch|intrusion|angriff|attack|leck|leak/i
 
 export interface ThoughtDeliveryLogEntry {
     at: string
@@ -346,7 +374,7 @@ export async function deliverPendingThoughts(
             }
             // 2.86 Paket M „Bündeln“: while the report is on, only questions and critical things are
             // pushed at once; plain information waits for the next report (listed there, nothing lost).
-            if (options.briefingEnabled && thought.permission !== 'fragen' && !PUSH_AT_ONCE.test(`${thought.title} ${thought.evidence || ''}`)) {
+            if (options.briefingEnabled && thought.permission !== 'fragen' && !KRITISCH_WORT.test(`${thought.title} ${thought.evidence || ''}`)) {
                 result.held++
                 store.markNotice(thought.id, 'zurueckgehalten', 'tagesbericht')
                 continue

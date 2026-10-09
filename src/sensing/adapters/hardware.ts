@@ -3,6 +3,37 @@ import type { DeviceRecord } from '../device-registry.js'
 import { verifyHardwareConnection } from '../hardware-recognition.js'
 import { realTuyaBrowse } from '../tuya-discovery.js'
 
+/**
+ * Owner-facing name for a monitored device (2.89.4). Unknown Tuya LAN gear is
+ * „unbekanntes Gerät im Netz (Tuya)“ — never the long discovery label and never
+ * a technical id.
+ */
+export function deviceDisplayName(device: Pick<DeviceRecord, 'name' | 'hardware'>): string {
+    const label = String(device.hardware?.label || '').trim()
+    const looksKnown = label && !/unbekannt|noch ungeprüft|typ noch|geräteart noch/i.test(label)
+    if (looksKnown) return label
+    const name = String(device.name || '').trim()
+    if (name && !/unbekannt|kompatibel|typ noch/i.test(name)) return name
+    if (device.hardware?.connector === 'tuya-announcements' || device.hardware?.ecosystem === 'tuya') {
+        return 'Unbekanntes Gerät im Netz (Tuya)'
+    }
+    return 'Unbekanntes Gerät im Netz'
+}
+
+/** One plain sentence the owner can read — no protocol essay, no words that look like an outage. */
+export function connectionSentence(device: Pick<DeviceRecord, 'name' | 'hardware'>, reachable: boolean): string {
+    const name = deviceDisplayName(device)
+    const tuya = device.hardware?.connector === 'tuya-announcements' || device.hardware?.ecosystem === 'tuya'
+    if (tuya) {
+        return reachable
+            ? `${name} ist wieder im Netz sichtbar.`
+            : `${name} war im letzten Suchlauf nicht sichtbar – nur keine Anmeldung, für dich ändert sich nichts.`
+    }
+    return reachable
+        ? `${name} ist wieder erreichbar.`
+        : `${name} ist gerade nicht erreichbar.`
+}
+
 /** An approved connection is an identity-bound GET monitor, never a switch endpoint. */
 export function createHardwareAdapter(devices: () => DeviceRecord[]): SensingAdapter {
     return {
@@ -20,12 +51,15 @@ export function createHardwareAdapter(devices: () => DeviceRecord[]): SensingAda
                 const previous = ctx.state[device.id]
                 ctx.state[device.id] = reachable
                 if (previous === reachable) continue
-                events.push({ kind: 'hardware.connection', subject: device.id, severity: reachable ? 'info' as const : 'warning' as const,
+                // 2.89.4: a missed Tuya announcement is info (it does not mean the device is
+                // off); only a real lost connection is a warning. Summary is one sentence.
+                // The hint makes it one owner notice („hoch“), never a repeating alarm.
+                const tuyaMiss = !reachable && (device.hardware?.connector === 'tuya-announcements' || device.hardware?.ecosystem === 'tuya')
+                events.push({ kind: 'hardware.connection', subject: device.id, severity: reachable || tuyaMiss ? 'info' as const : 'warning' as const,
                     dedupeKey: `hardware:${device.id}:${reachable}`, dedupeWindowMs: 60 * 60_000,
-                    summary: `${device.hardware.label}: ${device.hardware.connector === 'tuya-announcements'
-                        ? reachable ? 'öffentliche Tuya-Ankündigung erneut gesehen; kein authentifizierter Direktzugriff' : 'im begrenzten Zeitfenster keine passende Tuya-Ankündigung; daraus folgt nicht, dass das Gerät offline ist'
-                        : reachable ? 'lesende Verbindung und Gerätekennung bestätigt' : 'Verbindung oder Gerätekennung nicht mehr bestätigt; keine Steuerung ausgeführt'}.`,
-                    evidence: { geraet: device.id, erreichbar: reachable },
+                    summary: connectionSentence(device, reachable),
+                    evidence: { geraet: deviceDisplayName(device), erreichbar: reachable },
+                    ...(tuyaMiss ? { hint: { importance: 'hoch' as const, title: connectionSentence(device, reachable) } } : {}),
                 })
             }
             return events

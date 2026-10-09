@@ -89,14 +89,22 @@ export function createPlannerTelegramPort(target: PlannerTelegramTarget): Delive
             // every other owner message is short with „Mehr“ and free of technical ids.
             if (msg.kind === 'briefing' && Array.isArray(msg.sections)) {
                 try { rememberLastReport({ titel: msg.title, kopf: msg.kopf || '', sections: msg.sections }) } catch { /* menu „Bericht“ then shows nothing */ }
-                const fragen = msg.sections.filter(section => ['Wartet auf dich', 'Fragen gesammelt'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
+                // 2.89.4: ONE question number (the briefing's), never a second count that disagrees.
+                const fragen = typeof msg.fragen === 'number'
+                    ? msg.fragen
+                    : msg.sections.filter(section => ['Wartet auf dich', 'Fragen gesammelt'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
                 for (const chatId of chats) {
                     const view = sectionedView(chatId, { kopf: msg.kopf || '', titel: msg.title, sections: msg.sections }, { counts: { fragen } })
                     await target.sendApprovalCard(chatId, view.text, view.keyboard)
                 }
                 return { status: 'zugestellt' } as DeliveryReceipt
             }
-            const text = msg.title && !msg.text.startsWith(msg.title) ? `${msg.title}\n\n${msg.text}` : msg.text
+            // 2.89.4: formatThoughtText already starts with the title (plus a mark).
+            // Prepending it again produced title / ⚠️ title / Beleg … in one message.
+            const bodyHead = msg.text.replace(/^[‼️⚠️]\s+/, '')
+            const text = msg.title && !bodyHead.startsWith(msg.title) && !msg.text.includes(msg.title)
+                ? `${msg.title}\n\n${msg.text}`
+                : msg.text
             const plain = msg.kind === 'erinnerung' ? text : ownerText(text)
             // 2.86 Paket M: every system message starts with a traffic light + one sentence (reminders are the owner's own words).
             const { systemKopf } = await import('../guided/ampel.js')

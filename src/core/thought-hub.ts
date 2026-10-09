@@ -153,6 +153,20 @@ function severityFromLabel(value: string): 'critical' | 'warning' | 'info' {
     return value === 'dringend' || value === 'kritisch' ? 'critical' : value === 'hoch' ? 'warning' : 'info'
 }
 
+/** Owner-facing evidence line: scalar fields as words, never raw JSON. */
+function evidenceLine(evidence: unknown): string {
+    if (!evidence || typeof evidence !== 'object') return ''
+    const parts: string[] = []
+    for (const [key, value] of Object.entries(evidence as Record<string, unknown>).slice(0, 6)) {
+        if (value === null || value === undefined) continue
+        if (typeof value === 'boolean') parts.push(`${key}: ${value ? 'ja' : 'nein'}`)
+        else if (typeof value === 'number') parts.push(`${key}: ${value}`)
+        else if (typeof value === 'string' && value.trim()) parts.push(`${key}: ${value.trim()}`)
+        // nested objects/arrays never reach the owner as JSON
+    }
+    return parts.join(', ')
+}
+
 export function createSensingThoughtSink() {
     return {
         writeThought(thought: any): void {
@@ -164,7 +178,8 @@ export function createSensingThoughtSink() {
             const { thought: stored } = addThought({
                 source: sourceName('wahrnehmen', thought.source),
                 title: String(thought.title || ''),
-                evidence: [thought.summary, thought.evidence ? JSON.stringify(thought.evidence) : ''].filter(Boolean).join(' · '),
+                // 2.89.4: one readable line — never JSON.stringify(evidence) (live: `{geraet:"",…}`).
+                evidence: [thought.summary, evidenceLine(thought.evidence)].filter(Boolean).join(' · '),
                 severity: severityFromLabel(String(thought.importance || '')),
                 kind: thought.action ? 'vorschlag' : 'ereignis',
                 proposal: thought.proposal ? String(thought.proposal) : undefined,
