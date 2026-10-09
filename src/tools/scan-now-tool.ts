@@ -60,7 +60,17 @@ export const scanNowTool: NovaTool = {
         if (services) {
             if (services.ok) {
                 const list: any[] = Array.isArray((services.value as any)?.services) ? (services.value as any).services : []
-                lines.push(`• Dienste: ${list.length} gefunden${list.length ? ` — ${list.slice(0, 8).map(s => `${s.name}${s.status ? ` (${s.status})` : ''}`).join(', ')}` : ''}`)
+                // 2.89.4: this forceFresh scan is a live probe of this run — „läuft“
+                // only for a service that answered; otherwise „nicht erreichbar“.
+                const { recordServiceProbe, serviceRunLabel } = await import('../core/service-run-truth.js')
+                const parts = list.slice(0, 8).map(s => {
+                    const name = String(s.name || s.endpoint || 'dienst')
+                    const answered = s.status === 'running'
+                    recordServiceProbe(name, answered, answered ? String(s.endpoint || '') : String(s.status || ''))
+                    return `${name} (${serviceRunLabel(name, answered)})`
+                })
+                lines.push(`• Dienste: ${list.length} gefunden${list.length ? ` — ${parts.join(', ')}` : ''}`)
+                if (list.length > 8) lines.push(`  (${list.length - 8} weitere; „läuft“ nur mit Sondenantwort in diesem Lauf)`)
             } else lines.push(`• Dienste: fehlgeschlagen (${(services as any).error})`)
         }
         if (want('geraete')) {

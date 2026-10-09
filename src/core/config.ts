@@ -168,10 +168,15 @@ export const NovaConfigSchema = z.object({
     }).default({}),
 
     // APIs for search and other services
+    // Keys themselves live in the 0600 stores (Tresor / auth). The config may
+    // hold a reference (`tresor:…` / `auth:…`) so a restart finds them again.
     apis: z.object({
         brave_search_key: z.string().optional(),
+        brave_search_keyRef: z.string().optional(),
         tavily_key: z.string().optional(),
+        tavily_keyRef: z.string().optional(),
         perplexity_key: z.string().optional(),
+        perplexity_keyRef: z.string().optional(),
     }).default({}),
 
     // Server

@@ -22,6 +22,7 @@
 
 import type { ModelRegistry } from '../routing/model-registry.js'
 import type { InProcessEmbedder } from './local-embedder.js'
+import { parseMeshEndpoint, requiresMeshJob, runNodeLocalModel } from '../mesh/node-local-model.js'
 
 // ============================================
 // Types
@@ -30,10 +31,12 @@ import type { InProcessEmbedder } from './local-embedder.js'
 export type EmbeddingProvider = 'eigen' | 'lokal' | 'openai' | 'openrouter' | 'hash'
 
 export interface LocalEmbeddingEndpoint {
-    /** Ollama-Basis, z. B. http://<knoten>:11434 */
+    /** Lokal: `http://127.0.0.1:11434` · fremder Knoten: `mesh://<knoten>` (nie Peer-HTTP). */
     baseUrl: string
     model: string
     node?: string
+    /** 2.89.4: Modell läuft nur auf `node` — Aufruf als Mesh-Job, nie HTTP von hier. */
+    viaMesh?: boolean
 }
 
 export interface EmbeddingResult {
@@ -112,14 +115,21 @@ const provesEmbedding = (ep: ModelRegistry['endpoints'][number]) => ep.capabilit
  * Privatsphäre `lokal`, nicht `down`, und ein Embedding-Modell (Probe-Beleg
  * oder Modellname). Der Aufruf selbst ist der Nutzbarkeits-Beleg.
  */
-export function localEmbeddersFromRegistry(registry: Pick<ModelRegistry, 'endpoints'>): LocalEmbeddingEndpoint[] {
+export function localEmbeddersFromRegistry(registry: Pick<ModelRegistry, 'endpoints'>, options: { localNodeId?: string } = {}): LocalEmbeddingEndpoint[] {
     const out: LocalEmbeddingEndpoint[] = []
     const ranked = [...(registry?.endpoints || [])]
         .filter(ep => ep.kind === 'ollama' && ep.privacy === 'lokal' && ep.health !== 'down' && Boolean(ep.baseUrl))
         .filter(ep => provesEmbedding(ep) || EMBED_MODEL.test(ep.model))
         .sort((a, b) => (Number(provesEmbedding(b)) - Number(provesEmbedding(a))) || preferenceRank(a.model) - preferenceRank(b.model))
     for (const ep of ranked) {
-        const entry: LocalEmbeddingEndpoint = { baseUrl: ollamaBase(ep.baseUrl!), model: ep.model, ...(ep.node ? { node: ep.node } : {}) }
+        const mesh = parseMeshEndpoint(ep.baseUrl!)
+        const viaMesh = requiresMeshJob({ baseUrl: ep.baseUrl, node: ep.node, localNodeId: options.localNodeId })
+        const entry: LocalEmbeddingEndpoint = {
+            baseUrl: mesh ? ep.baseUrl! : ollamaBase(ep.baseUrl!),
+            model: ep.model,
+            ...(ep.node ? { node: ep.node } : {}),
+            ...(viaMesh ? { viaMesh: true } : {}),
+        }
         if (!out.some(item => item.baseUrl === entry.baseUrl && item.model === entry.model)) out.push(entry)
     }
     return out
@@ -133,18 +143,27 @@ export async function discoverLocalEmbedders(): Promise<LocalEmbeddingEndpoint[]
     if (discoveryCache && Date.now() - discoveryCache.at < DISCOVERY_TTL_MS) return discoveryCache.endpoints
     const endpoints: LocalEmbeddingEndpoint[] = []
     let knownNodes: string[] = []
+    let localNodeId: string | undefined
     try {
         const { collectModelRegistry } = await import('../routing/model-registry.js')
         const registry = await collectModelRegistry()
         knownNodes = [...new Set(registry.endpoints.map(ep => ep.node).filter((node): node is string => Boolean(node)))]
-        endpoints.push(...localEmbeddersFromRegistry(registry))
+        try { localNodeId = (await import('../mesh/mesh-registry.js')).getLocalNodeId() } catch { localNodeId = undefined }
+        endpoints.push(...localEmbeddersFromRegistry(registry, { localNodeId }))
     } catch { /* Register optional */ }
     try {
         const { resolveModel } = await import('../core/model-resolver.js')
         const { classifyPrivacy } = await import('../routing/model-registry.js')
         const resolved = await resolveModel('embedding')
         if (resolved?.endpoint && resolved.provider === 'ollama' && classifyPrivacy('ollama', resolved.endpoint, resolved.host, knownNodes) === 'lokal') {
-            const entry = { baseUrl: ollamaBase(resolved.endpoint), model: resolved.id }
+            const mesh = parseMeshEndpoint(resolved.endpoint)
+            const viaMesh = requiresMeshJob({ baseUrl: resolved.endpoint, node: resolved.host, localNodeId })
+            const entry: LocalEmbeddingEndpoint = {
+                baseUrl: mesh ? resolved.endpoint : ollamaBase(resolved.endpoint),
+                model: resolved.id,
+                ...(resolved.host ? { node: resolved.host } : {}),
+                ...(viaMesh ? { viaMesh: true } : {}),
+            }
             if (!endpoints.some(item => item.baseUrl === entry.baseUrl && item.model === entry.model)) endpoints.push(entry)
         }
     } catch { /* Resolver optional */ }
@@ -165,8 +184,22 @@ const validVector = (value: unknown): number[] | null =>
 /**
  * Ollama: aktuelle API `/api/embed` (`input`, Antwort `embeddings[0]`);
  * nur ein alter Server ohne diesen Pfad (404) bekommt `/api/embeddings`.
+ * 2.89.4: ein fremder Knoten (viaMesh / mesh://) wird als Mesh-Job gerufen —
+ * nie per HTTP an die Peer-Adresse, kein Fallback, kein Warten darauf.
  */
-async function embedWithOllama(text: string, endpoint: LocalEmbeddingEndpoint, timeoutMs: number): Promise<number[] | null> {
+async function embedWithOllama(text: string, endpoint: LocalEmbeddingEndpoint, timeoutMs: number, localNodeId?: string): Promise<number[] | null> {
+    const mesh = parseMeshEndpoint(endpoint.baseUrl)
+    const viaMesh = endpoint.viaMesh === true || Boolean(mesh) || requiresMeshJob({ baseUrl: endpoint.baseUrl, node: endpoint.node, localNodeId })
+    const body = { model: endpoint.model, input: text.slice(0, 8192), truncate: true }
+    if (viaMesh) {
+        const node = mesh?.node || endpoint.node
+        if (!node) return null
+        const data = await runNodeLocalModel<{ embeddings?: number[][] }>(node, { path: '/api/embed', body }, timeoutMs)
+        const vector = validVector(data?.embeddings?.[0])
+        if (vector) return vector
+        const legacy = await runNodeLocalModel<{ embedding?: number[] }>(node, { path: '/api/embeddings', body: { model: endpoint.model, prompt: text.slice(0, 2048) } }, timeoutMs)
+        return validVector(legacy?.embedding)
+    }
     const base = ollamaBase(endpoint.baseUrl)
     const post = (path: string, body: unknown) => fetch(`${base}${path}`, {
         method: 'POST',
@@ -175,7 +208,7 @@ async function embedWithOllama(text: string, endpoint: LocalEmbeddingEndpoint, t
         signal: AbortSignal.timeout(timeoutMs),
     })
     try {
-        const response = await post('/api/embed', { model: endpoint.model, input: text.slice(0, 8192), truncate: true })
+        const response = await post('/api/embed', body)
         if (response.ok) {
             const data = await response.json() as { embeddings?: number[][] }
             return validVector(data.embeddings?.[0])
@@ -260,14 +293,16 @@ export async function embed(text: string, options: EmbedOptions = {}): Promise<E
         if (only) return null
     }
 
-    // 2. Eigenes Mesh-Ollama-Modell.
+    // 2. Eigenes Mesh-Ollama-Modell (lokal per HTTP, fremder Knoten per Mesh-Job).
     if (!only || only.provider === 'lokal') {
         let endpoints: LocalEmbeddingEndpoint[] = []
         try { endpoints = await (options.localEndpoints || discoverLocalEmbedders)() } catch { endpoints = [] }
+        let localNodeId: string | undefined
+        try { localNodeId = (await import('../mesh/mesh-registry.js')).getLocalNodeId() } catch { localNodeId = undefined }
         for (const endpoint of endpoints) {
             const model = normalizeModelName(endpoint.model)
             if (only && model !== only.model) continue
-            const vector = await embedWithOllama(input, endpoint, timeoutMs)
+            const vector = await embedWithOllama(input, endpoint, timeoutMs, localNodeId)
             if (!vector) continue
             if (only && vector.length !== only.dimension) continue
             return done({ vector, embedder: embedderId('lokal', model, vector.length), provider: 'lokal', model, dimension: vector.length })

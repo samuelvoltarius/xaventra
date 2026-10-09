@@ -38,6 +38,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { hostname, networkInterfaces } from 'node:os'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
+import { serviceRunLabel } from '../core/service-run-truth.js'
 
 export type LlmProviderId = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'xai' | 'mistral' | 'groq' | 'deepseek'
 export type LlmLoginWay = 'openrouter-pkce' | 'codex-app-server'
@@ -508,7 +509,8 @@ export function buildLlmConnectionList(inputs: ListInputs, store: KeyStoreLike |
         const where = ownService ? 'auf diesem Rechner' : service.metadata?.source === 'own-network' ? `im eigenen Netz (${service.host || service.sourceNode})` : service.sourceNode && service.sourceNode !== 'local' ? `auf ${service.sourceNode}` : 'auf diesem Rechner'
         list.push({
             id: `lokal:${service.name}@${service.endpoint}`, kategorie: search ? 'suche' : 'ki-modelle', title: `${label} ${where}`, status: 'gefunden', datenklasse: 'lokal', nutzbar: true,
-            wirkung: search ? 'Private Websuche ohne Key — wird vor Cloud-Suchen genutzt' : `${(service.models || []).length} lokale Modelle — privat, ohne Frage nutzbar`,
+            // 2.89.4: „läuft“ nur mit Sondenbeleg aus diesem Lauf — sonst „nicht geprüft“.
+            wirkung: search ? 'Private Websuche ohne Key — wird vor Cloud-Suchen genutzt' : `${(service.models || []).length} lokale Modelle — privat; ${serviceRunLabel(service.name, service.status === 'running')}`,
             endpoint: service.endpoint, node: service.sourceNode, modelle: [...(service.models || [])],
             ...(search ? {} : { faehigkeiten: { belegt: [...belegt].sort(), vermutet: [...vermutet].filter(item => !belegt.has(item)).sort() } }),
         })

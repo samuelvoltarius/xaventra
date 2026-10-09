@@ -73,9 +73,8 @@ export const tavilySearchTool = {
         { name: 'count', type: 'number' as const, description: 'Anzahl Ergebnisse (max 10)', required: false },
     ],
     handler: async (params: Record<string, unknown>) => {
-        const { getNovaConfig } = await import('../core/config.js')
-        const config = getNovaConfig()
-        const apiKey = config.apis?.tavily_key
+        const { resolveServiceApiKey } = await import('../secrets/service-keys.js')
+        const apiKey = await resolveServiceApiKey('tavily')
 
         if (!apiKey) {
             return {
@@ -85,7 +84,7 @@ export const tavilySearchTool = {
                     '1. Gehe zu https://tavily.com/\n' +
                     '2. Erstelle einen Account\n' +
                     '3. Kopiere deinen API Key\n' +
-                    '4. Sag mir: `/apikey tavily DEIN-KEY`\n\n' +
+                    '4. Schick ihn mir im Owner-Direktchat („nimm den Tavily-Key und trag ihn ein“) — ich speichere ihn verschlüsselt und lösche die Nachricht.\n\n' +
                     '(1000 Suchen/Monat kostenlos!)',
             }
         }

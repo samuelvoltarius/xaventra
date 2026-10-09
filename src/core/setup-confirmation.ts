@@ -20,10 +20,25 @@ export const setupPlanTarget = (generatedAt: string) => `all:${generatedAt}`
 
 export function issueSetupConfirmation(principal: string, target: string): string {
     const now = Date.now()
-    for (const [token, entry] of setupConfirmations) if (entry.expiresAt <= now) setupConfirmations.delete(token)
+    for (const [token, entry] of setupConfirmations) {
+        if (entry.expiresAt <= now) { setupConfirmations.delete(token); continue }
+        // 2.89.4: one code step — a second /freigabe for the same target returns
+        // the same live code instead of a new one (the old loop invalidated codes).
+        if (entry.principal === principal && entry.target === target) return token
+    }
     const token = randomBytes(18).toString('base64url')
     setupConfirmations.set(token, { principal, target, expiresAt: now + SETUP_CONFIRMATION_TTL_MS })
     return token
+}
+
+/** Live code for this principal+target, or null. Never creates one. */
+export function findLiveSetupConfirmation(principal: string, target: string): string | null {
+    const now = Date.now()
+    for (const [token, entry] of setupConfirmations) {
+        if (entry.expiresAt <= now) { setupConfirmations.delete(token); continue }
+        if (entry.principal === principal && entry.target === target) return token
+    }
+    return null
 }
 
 export function consumeSetupConfirmation(principal: string, target: string, token: unknown): boolean {

@@ -88,9 +88,12 @@ export function demandFromForgeNeeds(needs: ReadonlyArray<{ tool: string; at: st
 
 // Signal 3: channel signals ------------------------------------------------------------
 
-export type ChannelNeedKind = 'sprachnachricht-ohne-stt'
+export type ChannelNeedKind = 'sprachnachricht-ohne-stt' | 'browser-fehlt' | 'desktop-eingabe-fehlt'
 const CHANNEL_KINDS: Readonly<Record<ChannelNeedKind, { capability: SoftwareCapability; label: string }>> = Object.freeze({
     'sprachnachricht-ohne-stt': { capability: 'stt', label: 'Sprachnachricht ohne Spracherkennung' },
+    // 2.89.4: a missing Chromium / desktop input is a gap (Bedarf), never "unmöglich".
+    'browser-fehlt': { capability: 'browser', label: 'Browser/Chromium fehlt (Eskalationskette)' },
+    'desktop-eingabe-fehlt': { capability: 'desktop', label: 'Desktop-Eingabe fehlt (Computer-Use)' },
 })
 const signalPath = (path?: string) => path || getNovaDataDir('software-scout', 'bedarf-signale.json')
 interface SignalFile { version: 1; signals: Array<{ capability: SoftwareCapability; kind: ChannelNeedKind; at: number }> }

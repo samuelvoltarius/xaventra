@@ -68,4 +68,23 @@ describe('/freigabe', () => {
         expect(await run('evil@https://attacker.example.invalid/v1')).toMatch(/Freigabe/)
         expect(await run('local@https://llm.example.invalid/v1')).toBeNull()
     })
+
+    it('2.89.4: a second /freigabe reuses the same live code (one step for the owner)', async () => {
+        const first = await handleCommand('freigabe', 'save_config apis', 'owner-1', state(), [], principal('owner', 'owner-1'))
+        const second = await handleCommand('freigabe', 'save_config apis', 'owner-1', state(), [], principal('owner', 'owner-1'))
+        expect(codeFrom(first)).toBeTruthy()
+        expect(codeFrom(second)).toBe(codeFrom(first))
+        expect(first).toContain('Schick mir jetzt den Code')
+        expect(second).toContain('denselben Code')
+    })
+
+    it('2.89.4: a failed attempt names the open code step, never a new /freigabe', async () => {
+        const reply = await handleCommand('freigabe', 'printer_start benchy.gcode', 'owner-1', state(), [], principal('owner', 'owner-1'))
+        expect(codeFrom(reply)).toBeTruthy()
+        const refusal = await withExecutionPolicyContext({ userId: 'owner-1', authUserId: 'owner-1', channel: 'telegram' },
+            () => ownerApprovalRefusal({ confirm: 'wrong' }, 'printer_start', 'benchy.gcode'))
+        expect(refusal).toContain('Schick mir jetzt den Code')
+        expect(refusal).toContain('Erneutes /freigabe erzeugt denselben Code')
+        expect(refusal).not.toMatch(/sendet selbst „\/freigabe/)
+    })
 })

@@ -6,6 +6,10 @@
  *
  * Catalog last updated: 2026-05-20
  * Hardware tiers based on available RAM + VRAM
+ *
+ * 2.89.4: the catalog age alone is never evidence for „aktuell“ — that claim
+ * needs a web search (recommendation-truth.ts). A pure-CPU node never gets a
+ * large/xlarge model; install commands only for models that fit this hardware.
  */
 
 // ============================================
@@ -48,6 +52,10 @@ export interface RecommendationResult {
     deprecated: string[]
     listAge: string
     pullCommands: string[]
+    /** 2.89.4: true when large models were dropped (CPU-only node). */
+    cpuOnlyCapped?: boolean
+    /** 2.89.4: system-time stamp + search/stale note for owner-facing text. */
+    freshnessNote?: string
 }
 
 // ============================================
@@ -318,12 +326,18 @@ export function getRecommendations(
 ): RecommendationResult {
     const tier = detectHardwareTier(hw)
     const tierOrder: Array<'nano' | 'small' | 'medium' | 'large' | 'xlarge'> = ['nano', 'small', 'medium', 'large', 'xlarge']
-    const tierIdx = tierOrder.indexOf(tier)
+    // 2.89.4: a pure-CPU node never receives a large model (no GPU/VRAM to hold it).
+    const effectiveTier: typeof tier = !hw.hasGpu && (tier === 'large' || tier === 'xlarge') ? 'medium' : tier
+    const tierIdx = tierOrder.indexOf(effectiveTier)
+    const cpuOnlyCapped = effectiveTier !== tier
 
     // Include current tier + one tier below for flexibility
     const recommended = CATALOG.filter(m => {
         const mTierIdx = tierOrder.indexOf(m.tier)
         if (mTierIdx > tierIdx) return false           // too large for this hardware
+        if (!hw.hasGpu && (m.tier === 'large' || m.tier === 'xlarge')) return false
+        if (m.minVramGb && (!hw.hasGpu || (hw.vramGb || 0) < m.minVramGb)) return false
+        if (hw.ramGb > 0 && hw.ramGb < m.minRamGb) return false
         if (m.type === 'embedding') return true        // embeddings are always small
         return mTierIdx >= Math.max(0, tierIdx - 1)   // current tier + one below
     }).sort((a, b) => {
@@ -357,33 +371,36 @@ export function getRecommendations(
             installed.startsWith(r.family + ':')
         ))
         .filter(r => r.type !== 'embedding' || r.tags.includes('required'))
+        .filter(r => hw.hasGpu || (r.tier !== 'large' && r.tier !== 'xlarge'))
         .map(r => r.model)
 
-    // How stale is our catalog?
+    // Catalog age is a fact, never proof of „aktuell“ (that needs a web search).
     const daysSinceCatalog = Math.round(
         (Date.now() - new Date(CATALOG_DATE).getTime()) / (1000 * 60 * 60 * 24)
     )
-    const listAge = daysSinceCatalog <= 30
-        ? 'aktuell'
-        : daysSinceCatalog <= 90
-            ? `${daysSinceCatalog} Tage alt`
-            : `⚠️ ${daysSinceCatalog} Tage alt — prüfe ollama.com für neue Modelle`
+    const listAge = `Katalogstand ${CATALOG_DATE} (${daysSinceCatalog} Tage) — Aktualität nur mit Websuche`
 
-    const pullCommands = toInstall.map(modelName => {
+    // 2.89.4: install only what fits this hardware (same gate as fitsNodeHardware).
+    const pullCommands = toInstall.flatMap(modelName => {
         const rec = recommended.find(r => r.model === modelName)
-        return rec?.pullCmd ?? `ollama pull ${modelName}`
+        if (!rec) return []
+        if (!hw.hasGpu && (rec.tier === 'large' || rec.tier === 'xlarge')) return []
+        if (rec.minVramGb && (!hw.hasGpu || (hw.vramGb || 0) < rec.minVramGb)) return []
+        return [rec.pullCmd]
     })
 
     return {
         node: nodeName,
         hardware: hw,
-        tier,
+        tier: effectiveTier,
         recommended,
         alreadyInstalled,
         toInstall,
         deprecated,
         listAge,
         pullCommands,
+        ...(cpuOnlyCapped ? { cpuOnlyCapped: true } : {}),
+        freshnessNote: 'mein Wissen kann veraltet sein (ohne Websuche in diesem Lauf)',
     }
 }
 
@@ -405,11 +422,14 @@ export function formatRecommendations(result: RecommendationResult): string {
 
     const hw = result.hardware
     let msg = `🤖 **Modell-Empfehlungen: ${result.node}**\n\n`
-    msg += `${tierEmoji[result.tier]} Tier: **${tierName[result.tier]}**\n`
+    msg += `${tierEmoji[result.tier]} Tier: **${tierName[result.tier]}**${result.cpuOnlyCapped ? ' (CPU-ohne-GPU: keine großen Modelle)' : ''}\n`
     msg += `💻 Hardware: ${hw.ramGb}GB RAM`
     if (hw.vramGb) msg += ` + ${hw.vramGb}GB VRAM`
     if (hw.hasGpu && hw.gpuType) msg += ` (${hw.gpuType.toUpperCase()})`
-    msg += `\n📅 Katalog: ${result.listAge}\n\n`
+    else if (!hw.hasGpu) msg += ` (nur CPU)`
+    msg += `\n📅 ${result.listAge}\n`
+    if (result.freshnessNote) msg += `⚠️ ${result.freshnessNote}\n`
+    msg += '\n'
 
     if (result.recommended.length > 0) {
         msg += `**📦 Empfohlene Modelle:**\n`
@@ -424,9 +444,11 @@ export function formatRecommendations(result: RecommendationResult): string {
         msg += '\n'
     }
 
-    if (result.toInstall.length > 0) {
-        msg += `**⬇️ Noch zu installieren:**\n`
+    if (result.toInstall.length > 0 && result.pullCommands.length > 0) {
+        msg += `**⬇️ Noch zu installieren (passt zu dieser Hardware):**\n`
         msg += `\`\`\`bash\n${result.pullCommands.join('\n')}\n\`\`\`\n\n`
+    } else if (result.recommended.length > 0) {
+        msg += `✅ Empfohlene Modelle passen; kein Install-Angebot ohne passende Hardware.\n\n`
     } else {
         msg += `✅ Alle empfohlenen Modelle sind bereits installiert!\n\n`
     }
@@ -439,7 +461,12 @@ export function formatRecommendations(result: RecommendationResult): string {
         msg += `\nEntfernen: \`ollama rm <model>\`\n\n`
     }
 
-    msg += `_Quelle: Nova Model Catalog ${CATALOG_DATE} — für neueste Modelle: ollama.com/library_`
+    const stamp = new Date().toISOString().slice(0, 10)
+    const note = result.freshnessNote || 'mein Wissen kann veraltet sein'
+    const source = /geprüft mit/i.test(note)
+        ? `Quelle: ${note}`
+        : `Quelle: Nova Model Catalog ${CATALOG_DATE} — ${note}`
+    msg += `_Stand: ${stamp} (Systemzeit) · ${source}_`
     return msg
 }
 

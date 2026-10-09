@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const mu = vi.hoisted(() => ({
     initMultiUser: vi.fn(),
     checkAuth: vi.fn(),
+    getUserPermission: vi.fn(() => 'user'),
     isGroupChat: vi.fn(() => false),
     trackGroupMessage: vi.fn(),
     shouldCoalesce: vi.fn(() => false),

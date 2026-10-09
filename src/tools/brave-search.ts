@@ -61,9 +61,8 @@ export const braveSearchTool = {
         { name: 'count', type: 'number' as const, description: 'Anzahl Ergebnisse (max 10)', required: false },
     ],
     handler: async (params: Record<string, unknown>) => {
-        const { getNovaConfig } = await import('../core/config.js')
-        const config = getNovaConfig()
-        const apiKey = config.apis?.brave_search_key
+        const { resolveServiceApiKey } = await import('../secrets/service-keys.js')
+        const apiKey = await resolveServiceApiKey('brave')
 
         if (!apiKey) {
             return {
@@ -73,7 +72,7 @@ export const braveSearchTool = {
                     '1. Gehe zu https://brave.com/search/api/\n' +
                     '2. Erstelle einen Account\n' +
                     '3. Kopiere deinen API Key\n' +
-                    '4. Sag mir: `/apikey brave DEIN-KEY`\n\n' +
+                    '4. Schick ihn mir im Owner-Direktchat („nimm den Brave-Key und trag ihn ein“) — ich speichere ihn verschlüsselt und lösche die Nachricht.\n\n' +
                     '(2000 Suchen/Monat kostenlos!)',
             }
         }

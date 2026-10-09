@@ -18,8 +18,11 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { sideEffectsDisabled } from './side-effects.js'
+
+const localRequire = createRequire(import.meta.url)
 import { resolveConfigPath } from '../config/config-path.js'
 import { fetchModelList } from '../llm/model-list-cache.js'
 import { atomicWriteJsonSync } from './atomic-storage.js'
@@ -697,17 +700,39 @@ export function validateExternalProviderRegistration(
 function loadExternalProviders(): ExternalProvider[] {
     try {
         if (existsSync(PROVIDERS_FILE)) {
-            return JSON.parse(readFileSync(PROVIDERS_FILE, 'utf-8'))
+            const list = JSON.parse(readFileSync(PROVIDERS_FILE, 'utf-8')) as ExternalProvider[]
+            rehydrateExternalProviderKeysSync(list)
+            return list
         }
     } catch { /* start fresh */ }
     return []
+}
+
+/** Rehydrate provider keys from the 0600 auth store (never from the config file). */
+function rehydrateExternalProviderKeysSync(providers: ExternalProvider[]): void {
+    try {
+        // createRequire keeps this sync on the hot path (package is ESM).
+        const { getOAuthManager } = localRequire('../auth/oauth.js') as typeof import('../auth/oauth.js')
+        const store = getOAuthManager() as unknown as { getProfile(id: string): { key?: string } | null }
+        for (const entry of providers) {
+            if (entry.apiKey) continue
+            const profile = store.getProfile(`llm-provider:${entry.name}`)
+            if (profile?.key) entry.apiKey = profile.key
+        }
+    } catch { /* auth store optional */ }
 }
 
 function saveExternalProviders(providers: ExternalProvider[]): void {
     try {
         const dir = join(process.cwd(), '.nova-data')
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        writeFileSync(PROVIDERS_FILE, JSON.stringify(providers, null, 2))
+        // 2.89.4: the registry keeps a reference, never the clear key.
+        const safe = providers.map(({ apiKey, ...rest }) => ({
+            ...rest,
+            apiKeyRef: `auth:llm-provider:${rest.name}`,
+            apiKey: '',
+        }))
+        writeFileSync(PROVIDERS_FILE, JSON.stringify(safe, null, 2))
     } catch { /* non-critical */ }
 }
 
@@ -759,14 +784,21 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
     }
     saveExternalProviders(providers)
 
-    // Also update xaventra.config.json providers section
+    // Also update xaventra.config.json providers section — 2.89.4: never the
+    // clear key. The value lives in the 0600 auth store; the config only refs it.
     try {
+        const { registerSecretValue } = await import('../security/secret-redaction.js')
+        registerSecretValue(String(provider.apiKey || ''), `llm-provider:${provider.name}`)
+        const { getOAuthManager } = await import('../auth/oauth.js')
+        try {
+            ;(getOAuthManager() as any).setApiKey(`llm-provider:${provider.name}`, provider.name, String(provider.apiKey || ''))
+        } catch { /* auth store optional */ }
         const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             cfg.providers = cfg.providers || {}
             cfg.providers[provider.name] = {
-                apiKey: provider.apiKey,
+                apiKeyRef: `auth:llm-provider:${provider.name}`,
                 baseUrl: provider.baseUrl,
                 enabled: provider.enabled,
             }
@@ -808,7 +840,7 @@ export function removeExternalProvider(name: string): boolean {
 // Legacy helpers — now delegate to ai-scanner
 export function getOllamaModels(): string[] {
     try {
-        const { getLastScanResult } = require('../mesh/ai-scanner.js')
+        const { getLastScanResult } = localRequire('../mesh/ai-scanner.js')
         const scan = getLastScanResult()
         return scan?.services.filter((s: any) => s.name === 'ollama' && s.status === 'running').flatMap((s: any) => s.models) || []
     } catch { return [] }
@@ -816,7 +848,7 @@ export function getOllamaModels(): string[] {
 
 export function getLMStudioModels(): string[] {
     try {
-        const { getLastScanResult } = require('../mesh/ai-scanner.js')
+        const { getLastScanResult } = localRequire('../mesh/ai-scanner.js')
         const scan = getLastScanResult()
         return scan?.services.filter((s: any) => s.name === 'lm-studio' && s.status === 'running').flatMap((s: any) => s.models) || []
     } catch { return [] }

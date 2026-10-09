@@ -28,6 +28,72 @@
 - **`/ai` never prints the line "HANDLED".** The internal handled marker is filtered everywhere before it can become chat text.
 - **`/mesh scan` answers instead of ending as "Abgebrochen".** A titled or multi-line report is the answer (not progress); an abort always carries one honest sentence.
 - **`/layers` L1 Unified Channels reflects the real adapters.** It reads `state.channels` instead of the never-assigned `state.channelRouter` that always printed ❌.
+- **Local speech services are connected instead of offered for install.** Live
+  09.10.2026: OpenAI-compatible TTS (`/v1/audio/speech`, e.g. Pocket-TTS) and STT
+  (`/v1/audio/transcriptions`, Whisper; WebSocket stream when present) on the own
+  node are discovered via env and the AI scanner, live-probed, and used before any
+  cloud fallback. Local hosts need no API key. The “Sprachdienst installieren”
+  card only appears when no service answers in this run — a service that answers
+  with empty text gets an honest sentence instead. Status likewise only claims a
+  speech service is there after a live probe.
+- **No node question for reports and package tracking.** Live 09.10.2026: “Auf
+  welchem Node…?” was asked for “Mach eine Inventur…” and for DHL tracking (the
+  number alone matched “send”), and a stale pending question was glued onto the
+  next order. A target is only asked when the order is an action on a machine and
+  several targets are in question; a new order drops the old question instead of
+  resuming it.
+- **Service corrections are live-checked; “läuft” only with evidence.** Live
+  09.10.2026: “läuft doch schon” / “solltest du schon verbunden sein” were
+  either accepted unverified or answered on another topic. Now such corrections
+  trigger an immediate probe (speech + model runtime): connect what answers, or
+  report the probe result honestly and stay on that topic. In status and
+  inventory answers a service is only “läuft” after a successful probe in this
+  run — otherwise “nicht geprüft” / “nicht erreichbar”. Cloud providers are
+  never claimed “läuft” without a live call.
+- **Node-local model endpoints only via mesh jobs.** A mesh node’s Ollama (or
+  other model server) that only listens on 127.0.0.1 is that node’s capability.
+  Main never calls it over HTTP via the peer address — no fallback attempts, no
+  waiting. The registry stores `mesh://<knoten>` and work is sent as a mesh job
+  to the worker (`ollama-api`), which talks to its own localhost. Previously
+  localhost was rewritten to the peer host and called directly.
+- **Recommendations about “aktuell / neueste / Stand der Technik / Ende &lt;Jahr&gt;”
+  are search-backed and hardware-capped.** Model and software recommendations
+  now run the existing governed web search first and stamp the system date. A
+  catalog age alone is never “aktuell”; without usable search results the answer
+  says honestly “mein Wissen kann veraltet sein”. Per node: GPU/VRAM vs CPU-only
+  — a pure-CPU node never gets a large/xlarge model, and there is no install
+  offer without matching hardware. Inventory questions (“welche Modelle
+  verfügbar?”) stay inventory.
+- **Keys from chat are taken over safely in one owner step.** Live 09.10.2026:
+  an owner DM that carries a key plus purpose (“nimm den und trag ihn ein”)
+  stores the value immediately in the existing 0600 stores (Tresor / auth),
+  masks it in history, journal, logs, LanceDB, Brain and queues, deletes the
+  Telegram message and notes that, tests the key and activates it without a
+  restart. The clear value never reaches the model prompt. Applies to all keys
+  and tokens (tools, model providers, Home Assistant, Proxmox, Tavily, Brave,
+  parcel tracking, …) — not only Tavily. Unclear purpose: exactly one question
+  “Wofür ist der?”. Only owner, only 1:1 chat. `save_config` / `save_api_key` /
+  `/apikey` / `register_llm_provider` write a reference only (`tresor:…` /
+  `auth:…`); the config never holds the clear key. An open approval always
+  names the current code step (“Schick mir jetzt den Code …”) — a second
+  `/freigabe` reuses the same live code instead of issuing a new one.
+- **Own capabilities are checked before “kann ich nicht”.** Live 09.10.2026: DHL
+  tracking on a dynamic search field got “Ich habe kein echtes Maus-Werkzeug …
+  entzieht sich jedem automatischen Zugriff” while URL-parameter lookup,
+  Playwright with waiting/real input and Computer-Use (`desktop_screenshot` +
+  `desktop_input`) all exist. Before any honest “kann ich nicht” the registered
+  inventory is walked as the chain direct link/fetch → browser with waiting and
+  real input → desktop Computer-Use; only after all three does she fail, and she
+  names the tried steps. A missing Chromium is recorded as a gap (Software-Scout
+  demand), never as “unmöglich”. False “kein Maus-Werkzeug / nicht
+  automatisierbar” claims are corrected before the owner reads them.
+- **Chat-key intake and service live-check stay on topic and cannot skip auth.**
+  The key-from-chat branch only touches the user middleware after a key (or a
+  pending purpose) is detected, and a middleware failure falls through to the
+  auth fail-closed gate instead of throwing before it — a key is never handed to
+  the model. A named subject the live-check cannot probe (Home Assistant,
+  Proxmox, …) is no longer answered with speech/model probe lines: those
+  sentences stay with their own tools (e.g. `hass_status`).
 
 ## [2.89.3] — 2026-10-08
 

@@ -7,6 +7,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { redactSecrets } from '../security/secret-redaction.js'
+import { primeChatSecretRedaction } from '../secrets/chat-key-intake.js'
 
 export interface TraceStage {
     name: string
@@ -36,12 +38,14 @@ const MAX_COMPLETED_TRACES = 200
  */
 export function startTrace(channel: string, userId: string, content: string): string {
     const traceId = randomUUID().slice(0, 8)
+    // 2.89.4: a chat-carried secret is registered for redaction before any preview.
+    try { primeChatSecretRedaction(content) } catch { /* redaction is best-effort */ }
     activeTraces.set(traceId, {
         traceId,
         channel,
         userId,
         startTime: Date.now(),
-        contentPreview: content.slice(0, 80),
+        contentPreview: redactSecrets(content).slice(0, 80),
         lastStepAt: Date.now(),
         stages: [],
     })

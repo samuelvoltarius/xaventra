@@ -4,7 +4,7 @@ const TELEGRAM_TOKEN = /\b\d{8,12}:[A-Za-z0-9_-]{25,}\b/g
 // Proxmox API token: USER@REALM!TOKENID=<uuid> (with or without the PVEAPIToken= prefix)
 const PVE_API_TOKEN = /(\b[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g
 const KNOWN_API_TOKEN = /\b(?:tvly-(?:dev|prod)-|sk-(?:proj-)?|gh[pousr]_|xox[baprs]-|AIza)[A-Za-z0-9_-]{16,}\b/g
-const GENERIC_SECRET_ASSIGNMENT = /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passphrase|private[_-]?key)\b\s*[=:]\s*)(["']?)([^\s,;"'}]+)\2/gi
+const GENERIC_SECRET_ASSIGNMENT = /(\b(?:api[_\s-]?key|access[_\s-]?token|refresh[_\s-]?token|token|secret|password|passphrase|private[_\s-]?key)\b\s*[=:]\s*)(["']?)([^\s,;"'}]+)\2/gi
 
 // `sshpass -p <password>` (also -p<password>) on command lines.
 const SSHPASS_PASSWORD = /(\bsshpass\s+(?:-[A-Za-z]+\s+)*-p\s*)(["']?)([^\s"']+)\2/g

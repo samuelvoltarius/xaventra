@@ -185,8 +185,9 @@ export async function describeActiveRuntime(input: ActiveRuntimeInput = {}): Pro
             ? reachable === true ? `${name} läuft lokal und antwortet${count ? ` (${count} Modell${count === 1 ? '' : 'e'})` : ''}.`
                 : reachable === false ? `${name} ist lokal eingestellt, antwortet aber gerade nicht${endpoint ? '' : ' (keine Adresse eingetragen)'}.`
                     : `${name} ist lokal eingestellt (nicht geprüft).`
-            : keyPresent ? `${name} läuft über die Cloud (Schlüssel vorhanden; keine Live-Prüfung).`
-                : `${name} läuft über die Cloud, aber ich finde keinen Schlüssel dafür.`
+            // 2.89.4: cloud is never „läuft“ without a live call in this run.
+            : keyPresent ? `${name}: nicht geprüft (Cloud — kein Live-Aufruf in diesem Lauf; Schlüssel vorhanden).`
+                : `${name}: nicht geprüft (Cloud — kein Schlüssel gefunden).`
 
     return {
         provider, providerSource, model, kind, ...(endpoint ? { endpoint, endpointStyle } : {}), reachable, localModels,

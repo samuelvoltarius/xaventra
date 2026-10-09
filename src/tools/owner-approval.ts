@@ -62,11 +62,16 @@ export async function ownerApprovalRefusal(params: Record<string, unknown>, tool
         if (getUserPermission(authUserId, channel || undefined) !== 'owner') {
             return `❌ ${toolName}: nur der Owner darf das freigeben — nicht ausgeführt.`
         }
-        const { consumeSetupConfirmation, setupConfirmationPrincipal } = await import('../core/setup-confirmation.js')
+        const { consumeSetupConfirmation, setupConfirmationPrincipal, findLiveSetupConfirmation } = await import('../core/setup-confirmation.js')
         const principal = setupConfirmationPrincipal(channel, clean(context.userId) || clean(params.userId) || authUserId)
         const target = toolApprovalTarget(toolName, detail)
         if (consumeSetupConfirmation(principal, target, params.confirm)) return null
-        return `❌ ${toolName} braucht eine ausdrückliche Freigabe des Owners für genau diesen Aufruf. Der Owner sendet selbst „/freigabe ${toolName} ${approvalDetail(detail)}“ und nennt den Einmal-Code. Codes niemals selbst bilden — nicht ausgeführt.`
+        // 2.89.4: when a code is already open, ask for THAT code — never re-send /freigabe.
+        const live = findLiveSetupConfirmation(principal, target)
+        if (live) {
+            return `❌ ${toolName}: ein Einmal-Code für genau diesen Aufruf ist noch offen (5 min). Sage dem Owner: „Schick mir jetzt den Code von der /freigabe-Zeile.“ Erneutes /freigabe erzeugt denselben Code. Codes niemals selbst bilden — nicht ausgeführt.`
+        }
+        return `❌ ${toolName} braucht eine ausdrückliche Freigabe des Owners für genau diesen Aufruf. Der Owner sendet selbst „/freigabe ${toolName} ${approvalDetail(detail)}“ und nennt danach den Einmal-Code in der nächsten Nachricht (nicht nochmal die /freigabe-Zeile). Codes niemals selbst bilden — nicht ausgeführt.`
     } catch (error) {
         return `❌ ${toolName}: Freigabe konnte nicht geprüft werden (${String(error).slice(0, 120)}) — nicht ausgeführt.`
     }

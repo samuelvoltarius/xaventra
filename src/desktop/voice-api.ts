@@ -62,6 +62,25 @@ export async function voiceStatus(discover: Discover = discoverVoiceService) {
     const service = await discover().catch(() => null)
     const einstellung = readVoicePrefs()
     if (!service) {
+        // 2.89.4: auch OpenAI-kompatible Dienste im eigenen Netz zählen (Pocket-TTS, Whisper).
+        let probed: { anyStt?: boolean; anyTts?: boolean } | null = null
+        try {
+            const { probeSpeechServices } = await import('../voice/openai-audio.js')
+            probed = await probeSpeechServices()
+        } catch { probed = null }
+        if (probed?.anyStt || probed?.anyTts) {
+            const kannHoeren = Boolean(probed.anyStt)
+            const kannSprechen = Boolean(probed.anyTts)
+            return {
+                dienst: { gefunden: true, art: 'offen-kompatibel', hoeren: kannHoeren, sprechen: kannSprechen },
+                einstellung,
+                text: kannHoeren && kannSprechen
+                    ? 'Sprachdienste in deinem Netz antworten (OpenAI-kompatibel). Schreiben und Antworten vorlesen gehen. Freisprechen braucht den eigenen Sprachdienst.'
+                    : kannHoeren
+                        ? 'Spracherkennung in deinem Netz antwortet. Anhören geht – Antworten vorlesen fehlt noch.'
+                        : 'Antworten vorlesen geht über einen Sprachdienst in deinem Netz – anhören noch nicht.',
+            }
+        }
         return {
             dienst: { gefunden: false },
             einstellung,

@@ -12,6 +12,7 @@
 import { writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { isPrivateVoiceHost } from '../voice/voice-mesh.js'
 
 // ============================================
 // Types
@@ -101,14 +102,17 @@ export function validateTtsOutputPath(outputPath: unknown): string | null {
 // ============================================
 
 async function openaiTTS(request: TtsRequest, config: TtsConfig['openai']): Promise<TtsResult> {
-    if (!config?.apiKey) {
+    const model = request.model || config?.model || 'tts-1'
+    const voice = request.voice || config?.voice || 'nova'
+    const format = request.format || 'mp3'
+    const baseUrl = (config?.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
+    // 2.89.4: lokale OpenAI-kompatible Dienste (Pocket-TTS, Kokoro, LocalAI)
+    // brauchen keinen API-Key. Cloud weiterhin nur mit Key.
+    let local = false
+    try { local = isPrivateVoiceHost(new URL(baseUrl).hostname) } catch { local = false }
+    if (!config?.apiKey && !local) {
         return { success: false, error: 'OpenAI API Key nicht konfiguriert. Setze OPENAI_API_KEY in xaventra.config.json' }
     }
-
-    const model = request.model || config.model || 'tts-1'
-    const voice = request.voice || config.voice || 'nova'
-    const format = request.format || 'mp3'
-    const baseUrl = (config.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
 
     const outputPath = request.outputPath || getTempPath(format)
 
@@ -119,7 +123,7 @@ async function openaiTTS(request: TtsRequest, config: TtsConfig['openai']): Prom
         const response = await fetch(`${baseUrl}/audio/speech`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${config.apiKey}`,
+                ...(config?.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {}),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -276,9 +280,13 @@ export async function speak(request: TtsRequest): Promise<TtsResult> {
 
     let provider = request.provider
 
-    // Auto-detect provider
+    // Auto-detect provider — 2.89.4: lokal vor Cloud. Ein lokaler
+    // OpenAI-kompatibler Dienst gewinnt auch ohne Key; Cloud nur als Fallback.
     if (!provider) {
-        if (config.openai?.apiKey) provider = 'openai'
+        let localOpenAi = false
+        try { localOpenAi = Boolean(config.openai?.baseUrl && isPrivateVoiceHost(new URL(config.openai.baseUrl).hostname)) } catch { localOpenAi = false }
+        if (localOpenAi) provider = 'openai'
+        else if (config.openai?.apiKey) provider = 'openai'
         else if (config.elevenlabs?.apiKey) provider = 'elevenlabs'
         else provider = 'edge'  // Free fallback
     }
@@ -418,14 +426,16 @@ function ensureTempDir(): void {
 function loadTtsConfig(): TtsConfig {
     const config: TtsConfig = {}
 
-    // OpenAI
+    // OpenAI / OpenAI-kompatibel (auch lokal ohne Key, z. B. Pocket-TTS)
     const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_TTS_API_KEY
-    if (openaiKey) {
+    const openaiBase = process.env.OPENAI_TTS_BASE_URL || process.env.XAVENTRA_TTS_BASE_URL
+        || process.env.POCKET_TTS_URL || process.env.POCKET_TTS_BASE_URL
+    if (openaiKey || openaiBase) {
         config.openai = {
-            apiKey: openaiKey,
+            apiKey: openaiKey || '',
             model: process.env.OPENAI_TTS_MODEL || 'tts-1',
             voice: process.env.OPENAI_TTS_VOICE || 'nova',
-            baseUrl: process.env.OPENAI_TTS_BASE_URL,
+            baseUrl: openaiBase,
         }
     }
 

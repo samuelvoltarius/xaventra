@@ -1,5 +1,7 @@
 import { parseNaturalMemoryForget } from '../memory/memory-quality.js'
 import { parseRoutineSatz, parseSchaltSatz } from '../sensing/device-sentences.js'
+import { isFreshnessQuestion } from '../mesh/recommendation-truth.js'
+import { detectServiceStateCorrection } from './service-run-truth.js'
 
 export type NaturalCommandRisk = 'read-only' | 'controlled-action'
 
@@ -61,6 +63,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /^was ist (?:alles )?verbunden$/.test(text)
         || /^(?:zeig|zeige)(?: mir)? (?:deine |die |alle )?verbindungen$/.test(text)) return route('verbindungen', '', 'connections-list')
 
+    // 2.89.4: service-state corrections („läuft doch schon“, „solltest du schon
+    // verbunden sein“) are live-checked immediately — never accepted unverified,
+    // never answered on another topic.
+    if (detectServiceStateCorrection(input)) return route('dienste', 'live-check', 'service-live-check', 'read-only')
+
     // 2.86 Paket N: „und?“ / „hat's geklappt?“ right after connecting → the stored state of that
     // connection (handler answers '' when nothing ran lately → normal conversation).
     if (/^(?:und|und jetzt|und nun|na und|hat(?:'s|s| es) geklappt|geklappt|fertig|klappt(?:'s|s| es)|und klappt(?:'s|s| es))$/.test(text)) return route('geraete', 'stand', 'connect-progress')
@@ -102,6 +109,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /\bwelche (?:modelle|provider) (?:sind|hast du) (?:verfügbar|aktiv)\b/.test(text)) {
         return route('nodes', 'services', 'mesh-services')
     }
+
+    // 2.89.4: recommendations about „aktuell / neueste / Stand der Technik /
+    // Ende <Jahr>“ always go through a web search + per-node hardware gate.
+    // After the mesh inventory so „welche Modelle auf den Nodes?“ stays inventory.
+    if (isFreshnessQuestion(input)) return route('empfehlung', 'frisch', 'recommendation-freshness', 'read-only')
 
     if (/^(?:wie ist |zeige |gib mir )?(?:dein |der |den )?(?:system ?status|status)(?: jetzt)?$/.test(text)) return route('status', '', 'system-status')
     if (/\b(?:welche|was ist die)\b.*\bnova version\b|\bupdate status\b|\bist ein update\b.*\bverfügbar\b/.test(text)) return route('update', 'status', 'update-status')

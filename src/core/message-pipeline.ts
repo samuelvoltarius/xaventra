@@ -25,6 +25,7 @@ import { createProgressNotice } from './progress-notice.js'
 import { isTechnicalProbe } from './channel-name.js'
 import { commandReplyText } from './slash-commands.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { primeChatSecretRedaction } from '../secrets/chat-key-intake.js'
 
 /** Upper bound of one picture turn (2.89.3). */
 export const IMAGE_TURN_TIMEOUT_MS = 360_000
@@ -99,7 +100,7 @@ export function getMinutesSinceLastSelfThink(): number {
 
 // Pre-load hot-path modules at startup to avoid first-call latency
 /** Deterministic fast paths whose answer is a live measurement, not a static text. */
-const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness'])
+const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check', 'recommendation-freshness'])
 
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
@@ -204,11 +205,14 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
 
         const safeName = user.replace(/[^a-zA-Z0-9_-]/g, '_')
         const logFile = join(sessionDir, `${safeName}.jsonl`)
+        // 2.89.4: a chat-carried secret is registered before any write.
+        try { primeChatSecretRedaction(content) } catch { /* optional */ }
         const entry = JSON.stringify({
             ts: new Date().toISOString(),
             channel,
             role,
-            content: content.slice(0, 2000), // cap at 2000 chars
+            // 2.89.4: never write a raw secret into the session log.
+            content: redactSecrets(content).slice(0, 2000),
         })
         appendFileSync(logFile, entry + '\n')
     } catch { /* logging is non-critical */ }
@@ -367,6 +371,8 @@ Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungepr
 export interface MessageContext {
     /** Real conversation/chat id of this message (e.g. a Telegram group id). */
     chatId?: string
+    /** 2.89.4: channel message id — used to delete a chat-carried secret. */
+    messageId?: number | string
     /**
      * 2.89: side sink for progress/status lines on channels that collect the
      * answer (Desktop, Dashboard, REST). Never mixed into the answer itself.
@@ -509,11 +515,64 @@ async function handleMessageInScope(
             return
         }
     }
+    // 2.89.4: keys from chat (owner DM) — before any log, session, ledger or model.
+    // The value never reaches the model prompt; the Telegram message is deleted.
+    // Cheap detect first: a normal message never touches the user middleware, so a
+    // missing middleware export cannot throw here and skip the auth fail-closed gate.
+    if (!image) {
+        let intakeReply: string | null = null
+        try {
+            const { detectChatSecret, intakeOwnerChatSecret, pendingChatSecret, primeChatSecretRedaction } = await import('../secrets/chat-key-intake.js')
+            primeChatSecretRedaction(content)
+            const principalKey = `${String(channel).toLowerCase()}:${from}`
+            const sawSecret = detectChatSecret(content) !== null
+            const sawPending = pendingChatSecret(principalKey) !== null
+            if (sawSecret || sawPending) {
+                const chatId = resolveConversationChatId(channel, from, messageContext)
+                let isOwner = false
+                let isGroup = true // fail-closed: unknown principal never takes over a key
+                try {
+                    const { getUserPermission, isGroupChat } = await import('../users/multi-user-middleware.js')
+                    isOwner = getUserPermission(from, channel) === 'owner'
+                    isGroup = isGroupChat(chatId, from) === true
+                } catch { /* fail-closed above */ }
+                intakeReply = await intakeOwnerChatSecret(content, {
+                    channel, from, chatId,
+                    messageId: messageContext?.messageId,
+                }, {
+                    isOwner: () => isOwner,
+                    isGroup,
+                    deleteMessage: async (targetChat, messageId) => {
+                        const telegram = (state as any)?.channels?.telegram
+                        if (telegram?.deleteMessage) await telegram.deleteMessage(targetChat, Number(messageId))
+                    },
+                })
+                if (!intakeReply && sawSecret) {
+                    // A key was seen but the intake did not own the message — never hand it to the model.
+                    intakeReply = '🔑 Den Wert habe ich nicht übernommen. Schick ihn im Direktchat mit Zweck, z. B. „Tavily-Key: …“.'
+                }
+            }
+        } catch (error) {
+            // Intake must never break the normal path or the auth gate.
+            console.debug('[Pipeline] chat-key intake unavailable:', error)
+            try {
+                const { detectChatSecret } = await import('../secrets/chat-key-intake.js')
+                if (detectChatSecret(content)) {
+                    intakeReply = '🔑 Den Wert habe ich nicht übernommen. Schick ihn im Direktchat mit Zweck, z. B. „Tavily-Key: …“.'
+                }
+            } catch { /* fall through to auth */ }
+        }
+        if (intakeReply) {
+            console.log(`[Nova] [${channel}] Schlüssel aus dem Chat übernommen (Owner-DM, Wert maskiert)`)
+            await replyFn(intakeReply)
+            return
+        }
+    }
     // 2.87 Paket P: `/telefon passwort …` wie Anmelde-Befehle nie protokollieren (auch nicht im Konsolen-Log).
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback|telefon\s+(?:passwort|ari-passwort))\b/i.test(content.trim())
     // 2.89: rollout probes never enter the session log, the handoff or the memory.
     const technicalProbe = isTechnicalProbe(channel, from)
-    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
+    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : redactSecrets(content).slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
     if (!isSensitiveAuthCommand && !technicalProbe) logSession(canonicalUser, channel, 'user', content)
 
     // Track user activity for Dreaming/Idle systems
@@ -901,6 +960,65 @@ ${pendingGapNote}` : withTail
             // 2.86 Paket N: „und?“ after a connection is only the owner's; everyone else just talks.
             const deterministic = detected && !(detected.reason === 'connect-progress' && principalContext.permission !== 'owner') ? detected : null
             if (deterministic) {
+                // 2.89.4: service-state corrections are live-checked here (probe +
+                // connect or honest result). Stays on that topic; never a different one.
+                if (deterministic.reason === 'service-live-check') {
+                    const { detectServiceStateCorrection, formatServiceCorrectionReply, liveCheckServices } = await import('./service-run-truth.js')
+                    const correction = detectServiceStateCorrection(content)
+                    const check = await liveCheckServices()
+                    await answer(formatServiceCorrectionReply(check, correction, content))
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: check.anyOk }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
+                    traceStep(`fast-path:${deterministic.reason}`)
+                    console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
+                    return true
+                }
+                // 2.89.4: freshness/recommendation questions always search the web,
+                // stamp the system date and filter by per-node hardware.
+                if (deterministic.reason === 'recommendation-freshness') {
+                    const { formatFreshnessRecommendationReply } = await import('../mesh/recommendation-truth.js')
+                    const { hardwareFromStrength } = await import('../mesh/model-recommender.js')
+                    let hardware = { ramGb: 0, hasGpu: false }
+                    let nodeLabel = 'local'
+                    try {
+                        const { collectNodeStrengths } = await import('../mesh/node-strengths.js')
+                        const strengths = await collectNodeStrengths()
+                        const own = strengths.find(item => item.local) || strengths[0]
+                        if (own) {
+                            hardware = hardwareFromStrength(own)
+                            nodeLabel = own.nodeId
+                        }
+                    } catch { /* hardware optional */ }
+                    const reply = await formatFreshnessRecommendationReply({
+                        topic: content,
+                        node: nodeLabel,
+                        hardware,
+                    })
+                    await answer(reply)
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: true }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
+                    traceStep(`fast-path:${deterministic.reason}`)
+                    console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
+                    return true
+                }
                 const response = await handleCommandFn(
                     deterministic.command,
                     deterministic.args,
@@ -1265,7 +1383,8 @@ REGELN:
 - Sage NIEMALS "es ist etwa..." oder "es dürfte ungefähr..." — gib die EXAKTE Zeit an
 - Tageszeit-Kontext: ${getTimeOfDayContext(now)}
 - WICHTIG: Wenn der User über das Jahr ${now.getFullYear()} spricht, ist das JETZT. Sage NICHT "in der Zukunft" oder "geplant für ${now.getFullYear()}". Produkte und Events von ${now.getFullYear()} EXISTIEREN bereits.
-- Dein LLM-Training enthält möglicherweise NICHT die neuesten Infos von ${now.getFullYear()}. Nutze IMMER google_search oder web_search für aktuelle Fakten!`
+- Dein LLM-Training enthält möglicherweise NICHT die neuesten Infos von ${now.getFullYear()}. Nutze IMMER google_search oder web_search für aktuelle Fakten!
+- Empfehlungen zu „aktuell / neueste / Stand der Technik / Ende ${now.getFullYear()}“ (Modelle, Software): IMMER mit Websuche belegen, Datum aus der Systemzeit, Hardware je Knoten (GPU/VRAM vs. CPU-only: kein Großmodell auf purem CPU-Knoten). Ohne Suchergebnis ehrlich „mein Wissen kann veraltet sein“. Kein Install-Angebot ohne passende Hardware.`
 
     // ============================================
     // Self-Knowledge Injection — Nova knows what she has

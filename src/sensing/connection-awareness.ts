@@ -55,6 +55,6 @@ export function connectionAwareness(nodes: NodeView[], servers: MCPServer[], con
     }
     return redactSecrets([
         bound(lines.slice(0, nodeEnd), 1500), bound(lines.slice(nodeEnd, pathsEnd), 700), bound(lines.slice(pathsEnd), 3000),
-        'Katalogeinträge sind Fähigkeitenbeschreibungen, kein Beleg einer erfolgreichen Aktion oder einer erkannten physischen Lampe. Geräte/Entitäten benötigen eine passende autorisierte Abfrage. Keine Verbindung oder Aktion wurde durch diese Übersicht ausgeführt.',
+        'Katalogeinträge sind Fähigkeitenbeschreibungen, kein Beleg einer erfolgreichen Aktion oder einer erkannten physischen Lampe. „Online“ ist ein Heartbeat-Bestand — ein Dienst zählt nur mit Sondenantwort in diesem Lauf als „läuft“, sonst „nicht geprüft“/„nicht erreichbar“. Geräte/Entitäten benötigen eine passende autorisierte Abfrage. Keine Verbindung oder Aktion wurde durch diese Übersicht ausgeführt.',
     ].join('\n\n'))
 }

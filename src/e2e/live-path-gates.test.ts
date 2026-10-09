@@ -37,6 +37,12 @@ export const GATES: Gate[] = [
         run: h => owner(h, `fertig: https://xaventra.example.com/verbindungen/rueckkehr?state=${'a'.repeat(48)}&code=abc123`),
     },
     {
+        // 2.89.4: keys from chat (owner DM) never reach the model; the branch owns the message.
+        id: 'chat-key-intake', anchor: 'Schlüssel aus dem Chat übernommen (Owner-DM, Wert maskiert)',
+        marker: { log: /Schlüssel aus dem Chat übernommen/ },
+        run: h => owner(h, `Hier der Home Assistant API Key: ${'x'.repeat(32)} — nimm den und trag ihn ein`),
+    },
+    {
         id: 'auth-blocked', anchor: "await replyFn(authResult.reason || '🔒 Zugriff verweigert.')",
         marker: { log: /\[MultiUser\] ❌ Blocked/ },
         run: async h => {

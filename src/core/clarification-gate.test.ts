@@ -155,6 +155,41 @@ describe('ClarificationGate', () => {
         expect(result.missingFields).toEqual(['target'])
     })
 
+    // Live 09.10.2026: "Auf welchem Node…" for an inventory and a DHL shipment —
+    // the question arrived even before the inventory message (stale pending).
+    it.each([
+        'Mach eine Inventur von allem, was du so kannst',
+        'ich hätte gerne, dass du dieses DHL-Express-Paket trackst, Sendungsnummer 1234567890',
+        'Verfolge DHL 1234567890',
+        'sende mir eine Inventur der laufenden Dienste',
+        'Schick mir den Status vom Mesh',
+    ])('never asks for an execution target on reports and package tracking: %s', text => {
+        expect(evaluateClarification('user:report', text).action).not.toBe('ask')
+    })
+
+    it('does not glue a new order onto an earlier target question', () => {
+        getSessionContinuityStore().setPendingClarification('user:stale-target', {
+            id: 'old-target', originalRequest: 'Installiere Codex',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now(),
+        })
+        const text = 'Mach eine Inventur von allem, was du so kannst'
+        const result = evaluateClarification('user:stale-target', text)
+        expect(result.action).not.toBe('ask')
+        expect(result.content).toBe(text)
+        expect(result.content).not.toContain('Installiere Codex')
+        expect(getSessionContinuityStore().getSummary('user:stale-target')?.pendingClarification).toBeFalsy()
+    })
+
+    it('still treats a short location phrase as the answer to a pending target question', () => {
+        getSessionContinuityStore().setPendingClarification('user:loc', {
+            id: 'fresh', originalRequest: 'Installiere Codex',
+            question: 'Auf welchem Node, Dienst oder Ziel soll ich das ausführen?',
+            missingFields: ['target'], createdAt: Date.now(),
+        })
+        expect(evaluateClarification('user:loc', 'auf dem Spark').content).toContain('Installiere Codex')
+    })
+
     it('resumes the original task from the next user answer', () => {
         evaluateClarification('user:a', 'Installiere Codex')
         const result = evaluateClarification('user:a', 'auf dem Spark')
