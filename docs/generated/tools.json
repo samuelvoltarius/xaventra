@@ -626,6 +626,18 @@
       "parameters": []
     },
     {
+      "name": "cluster_status",
+      "category": "system",
+      "description": "Kubernetes-Cluster lesen: Workloads, Pods mit Knoten, Warnungen/Events, Logs (Geheimnisse geschwärzt). Fakten zu Nodes und Pods kommen NUR aus diesem Werkzeug (API), nie aus SSH, kubectl oder einer Shell-Suche. Ohne konfigurierten Kubernetes-Zugang: ehrlich „nicht konfiguriert“. Neustart/Chart-Update laufen über /cluster mit Karte.",
+      "parameters": [
+        {
+          "name": "befehl",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "code_outline",
       "category": "file",
       "description": "Zeigt die Struktur einer Code-Datei: Klassen, Funktionen, Interfaces mit Signaturen und Zeilennummern. Unterstützt TS/JS, Python, Go, Rust.",

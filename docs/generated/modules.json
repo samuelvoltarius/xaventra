@@ -94,6 +94,13 @@
       "imports": []
     },
     {
+      "module": "src/agents/kubernetes-status-plan.ts",
+      "imports": [
+        "../core/request-capabilities.js",
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
       "module": "src/agents/nova-model-provider.ts",
       "imports": [
         "../llm/nova-llm-sdk.js",
@@ -148,6 +155,7 @@
         "./follow-up-hint.js",
         "./history-evidence.js",
         "./home-assistant-status-plan.js",
+        "./kubernetes-status-plan.js",
         "./response-repair.js",
         "./session-checkpoints.js",
         "./tool-admission.js",
@@ -1158,6 +1166,7 @@
     {
       "module": "src/channels/telegram-presentation.ts",
       "imports": [
+        "../core/tool-progress-label.js",
         "../core/types.js",
         "./telegram-status-card.js"
       ]
@@ -1989,6 +1998,7 @@
         "./request-capabilities.js",
         "./request-tracer.js",
         "./runtime-profile.js",
+        "./slash-commands.js",
         "./system-message.js",
         "node:fs",
         "node:os",
@@ -2589,7 +2599,8 @@
     {
       "module": "src/core/status-endpoints.ts",
       "imports": [
-        "../mesh/capability-graph.js"
+        "../mesh/capability-graph.js",
+        "../mesh/mesh-node-lifecycle.js"
       ]
     },
     {
@@ -4618,6 +4629,7 @@
         "../core/data-root.js",
         "../core/decisions.js",
         "../core/infrastructure-failure.js",
+        "../core/request-capabilities.js",
         "../core/side-effects.js",
         "../install/software-candidates.js",
         "../install/software-freshness.js",
@@ -7323,6 +7335,13 @@
       ]
     },
     {
+      "module": "src/tools/cluster-tools.ts",
+      "imports": [
+        "../agents/kubernetes-status-plan.js",
+        "./complete-registry.js"
+      ]
+    },
+    {
       "module": "src/tools/code-outline.ts",
       "imports": [
         "node:fs",
@@ -7352,6 +7371,7 @@
         "./browser-use.js",
         "./cad-tool.js",
         "./capability-tool.js",
+        "./cluster-tools.js",
         "./code-outline.js",
         "./code-search.js",
         "./config-tool.js",

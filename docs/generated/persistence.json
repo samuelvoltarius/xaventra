@@ -206,6 +206,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/daemon-telegram-status-card.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/data-root.ts",
       "path": ".nova-data"
     },
@@ -471,6 +475,10 @@
     },
     {
       "owner": "src/e2e/conversation-continuity.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/e2e/status-ghost-nodes.test.ts",
       "path": ".nova-data"
     },
     {
