@@ -93,9 +93,38 @@ function renderPage(store: Store, view: PagesView, index: number, now: number, c
     return { text: view.pages[i], keyboard }
 }
 
+/** Sections that mean "this needs you" — the overview's top 3 come from here, in this order. */
+const BRAUCHT_DICH = ['Wartet auf dich', 'Fragen in der Warteschlange', 'Ohne Antwort abgelaufen', 'Fragen gesammelt'] as const
+
 /**
- * Paket L: a report as ONE short message — traffic light, title, one line per
- * section — with one button per section (its lines, paged) and the main menu.
+ * 2.89.4: the report is a short story, not a counter wall — up to three open
+ * points as short sentences, one summary sentence, counters at most as one
+ * line. Nothing to say = „Alles ruhig“.
+ */
+export function overviewText(input: { kopf: string; titel: string; sections: Array<{ titel: string; zeilen: string[] }> }): string {
+    const braucht = input.sections.filter(section => (BRAUCHT_DICH as readonly string[]).includes(section.titel)).flatMap(section => section.zeilen).filter(Boolean)
+    const erledigt = input.sections.filter(section => ['Erledigt', 'Selbst repariert', 'Installiert'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
+    const gelernt = input.sections.filter(section => ['Neu gemerkt', 'Selbst übernommen', 'Ideen', 'Skills'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
+    const ruhige = input.sections.filter(section => ['Zur Info', 'Zurückgehalten', 'Hintergrundprüfungen', 'Lernkurve'].includes(section.titel)).reduce((sum, section) => sum + section.zeilen.length, 0)
+    const zaehler = [`Erledigt ${erledigt}`, gelernt ? `gemerkt/ideen ${gelernt}` : '', ruhige ? `ruhig/notiert ${ruhige}` : ''].filter(Boolean).join(' · ')
+    if (!braucht.length && !erledigt && !gelernt && !ruhige) {
+        return `${input.kopf}\n${input.titel}\n\nAlles ruhig – nichts Neues.`
+    }
+    if (!braucht.length) {
+        return `${input.kopf}\n${input.titel}\n\nAlles ruhig – nichts, das dich gerade braucht.\n${zaehler}`
+    }
+    const top = braucht.slice(0, 3).map(zeile => `• ${String(zeile).replace(/\s+/g, ' ').trim().slice(0, 140)}`)
+    const rest = braucht.length - top.length
+    const satz = rest > 0
+        ? `Kurz: ${braucht.length === 1 ? '1 Punkt braucht dich' : `${braucht.length} Punkte brauchen dich`} – die ${rest === 1 ? 'weitere steht' : 'weiteren stehen'} in den Abschnitten.`
+        : `Kurz: ${braucht.length === 1 ? 'der eine Punkt braucht dich' : 'mehr braucht dich gerade nicht'}.`
+    return [input.kopf, input.titel, '', ...top, satz, zaehler].join('\n')
+}
+
+/**
+ * Paket L: a report as ONE short message — traffic light, title, up to three
+ * open points, one summary line — with one button per section (its lines,
+ * paged) and the main menu.
  */
 export function sectionedView(chatId: string, input: { kopf: string; titel: string; sections: Array<{ titel: string; zeilen: string[] }> }, opts: PageOptions & { counts?: { fragen?: number } } = {}): { text: string; keyboard: Keyboard } {
     const store = load(opts)
@@ -107,8 +136,7 @@ export function sectionedView(chatId: string, input: { kopf: string; titel: stri
         store.views.push(view)
         overview.links!.push({ label: `${section.titel} (${section.zeilen.length})`.slice(0, 40), viewId: view.id })
     }
-    const summary = input.sections.length ? input.sections.map(section => `${section.titel}: ${section.zeilen.length}`).join('\n') : 'Nichts Neues.'
-    overview.pages = [`${input.kopf}\n${input.titel}\n\n${summary}`.slice(0, OWNER_PAGE_CHARS)]
+    overview.pages = [overviewText(input).slice(0, OWNER_PAGE_CHARS)]
     store.views.push(overview)
     const rendered = renderPage(store, overview, 0, now, opts.counts || {})
     save(store, opts)

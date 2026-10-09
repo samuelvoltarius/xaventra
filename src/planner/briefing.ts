@@ -27,7 +27,8 @@ import { cleanText } from './delivery-port.js'
 import type { JobHandler } from './planner.js'
 import { isOpenThought, type Thought, type ThoughtStore } from './thoughts.js'
 import { formatZoned } from './time.js'
-import { ampelKopf, ownerText } from '../core/owner-text.js'
+import { ownerText } from '../core/owner-text.js'
+import { fragenKopf } from '../guided/ampel.js'
 import type { SuccessTrend, SuccessTrendWindow } from '../routing/outcome-router.js'
 
 export type BriefingKind = 'morgen' | 'abend'
@@ -76,6 +77,8 @@ export interface Briefing {
     sections: Array<{ titel: string; zeilen: string[] }>
     /** Paket L: traffic light + one sentence. */
     kopf: string
+    /** 2.89.4: ONE question count (waiting + queue + bundled) — the head and the menu use the same number. */
+    fragen: number
 }
 
 const MAX_LINES = 5
@@ -183,7 +186,19 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     // 2.84: a held-back thought already listed under „Wartet auf dich“ is not listed a second time
     // (it is still marked `im-bericht` after delivery).
     const waitingIds = new Set(waitingThoughts.map(t => t.id))
-    const held = heldThoughts.filter(t => !waitingIds.has(t.id)).map(t => t.noticeReason === 'tagesbericht' ? t.title : `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`)
+    const held = heldThoughts.filter(t => !waitingIds.has(t.id)).map(t => {
+        if (t.noticeReason === 'tagesbericht') return t.title
+        if (t.noticeReason === 'wiederholung') return `${t.title} (zusammengefasst: ${t.seen}× gesehen)`
+        return `${t.title} (${t.noticeReason === 'tageslimit' ? 'Tageslimit' : 'Ruhezeit'})`
+    })
+    // 2.89.4: pure info (regel:info-nur-bericht) that never gets a push still shows up once
+    // in the report — summarized when the same topic was seen several times.
+    const heldIds = new Set(heldThoughts.map(t => t.id))
+    const zurInfo = thoughts.filter(t => isOpenThought(t) && t.kind === 'ereignis' && t.permission !== 'fragen'
+        && (t.importance === 'normal' || t.importance === 'niedrig')
+        && !waitingIds.has(t.id) && !heldIds.has(t.id))
+        .slice(0, MAX_LINES)
+        .map(t => t.seen > 1 ? `${t.title} (zusammengefasst: ${t.seen}× gesehen)` : t.title)
 
     // Kausales Gedächtnis: what was remembered (or ended) without a command.
     let remembered: string[] = []
@@ -227,6 +242,7 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
         ...section('Ideen', ideas),
         ...section('Skills', skills),
         ...section('Zurückgehalten', held),
+        ...section('Zur Info', zurInfo),
         ...section('Neu gemerkt (Entscheidungen)', remembered),
         ...(curve.length && sources.learning ? ['Erfolgsquote: Vorwoche → diese Woche (je 7 Tage); wechselnder Aufgaben-/Modellmix, kein Lernnachweis.'] : []),
         ...section('Lernkurve', curve),
@@ -238,15 +254,19 @@ export function buildBriefing(kind: BriefingKind, sources: BriefingSources, sinc
     const sections = ([
         ['Wartet auf dich', waiting], ['Fragen in der Warteschlange', queuedLines], ['Ohne Antwort abgelaufen', expired], ['Erledigt', done], ['Selbst repariert', repaired], ['Installiert', installed],
         ['Fragen gesammelt', bundled], ['Selbst übernommen', trustLines], ['Hintergrundprüfungen', background], ['Ideen', ideas], ['Skills', skills],
-        ['Zurückgehalten', held], ['Neu gemerkt', remembered], ['Lernkurve', curve],
+        ['Zurückgehalten', held], ['Zur Info', zurInfo], ['Neu gemerkt', remembered], ['Lernkurve', curve],
     ] as Array<[string, string[]]>).filter(([, items]) => items.length)
         .map(([titel, items]) => ({ titel, zeilen: items.map(item => ownerText(cleanText(item, 300)).replace(/\s+/g, ' ').trim()).filter(Boolean) }))
     const kritisch = thoughts.filter(t => isOpenThought(t) && t.importance === 'dringend').length
+    // 2.89.4: one number with a meaning — everything that waits for the owner
+    // (open questions + the queue behind them + bundled answer cards).
+    const fragen = waiting.length + queued + bundled.length
     return {
         title,
         text: cleanText(text, 3500),
         sections,
-        kopf: ampelKopf({ kritisch, fragen: waiting.length + bundled.length + queued }),
+        kopf: fragenKopf({ kritisch, offen: fragen }),
+        fragen,
         thoughtIds: heldThoughts.map(t => t.id),
         counts: { erledigt: done.length, repariert: repaired.length, installiert: installed.length, wartet: waiting.length, ideen: ideas.length, zurueckgehalten: held.length, skills: skills.length, gemerkt: remembered.length, gesammelt: bundled.length, vertrauen: trustLines.length, lernkurve: curve.length },
     }
@@ -277,7 +297,7 @@ export function createBriefingHandler(options: { kind: BriefingKind; sources: Br
             const c = briefing.counts
             return {
                 summary: `${briefing.title}: erledigt ${c.erledigt}, repariert ${c.repariert}, installiert ${c.installiert}, wartet ${c.wartet}, Ideen ${c.ideen}`,
-                outgoing: { kind: 'briefing', title: briefing.title, text: briefing.text, urgency: 'normal', refs: briefing.thoughtIds, sections: briefing.sections, kopf: briefing.kopf },
+                outgoing: { kind: 'briefing', title: briefing.title, text: briefing.text, urgency: 'normal', refs: briefing.thoughtIds, sections: briefing.sections, kopf: briefing.kopf, ...(typeof briefing.fragen === 'number' ? { fragen: briefing.fragen } : {}) },
             }
         },
         afterDelivery(_job, outgoing, ctx) {
