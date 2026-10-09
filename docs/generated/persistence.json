@@ -190,6 +190,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/chat-key-intake-live.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/config-service.ts",
       "path": ".nova-data"
     },

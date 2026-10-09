@@ -1784,7 +1784,9 @@
       "module": "src/core/deterministic-query.ts",
       "imports": [
         "../memory/memory-quality.js",
-        "../sensing/device-sentences.js"
+        "../mesh/recommendation-truth.js",
+        "../sensing/device-sentences.js",
+        "./service-run-truth.js"
       ]
     },
     {
@@ -1986,6 +1988,7 @@
       "imports": [
         "../config/config-path.js",
         "../memory/memory-quality.js",
+        "../secrets/chat-key-intake.js",
         "../security/secret-redaction.js",
         "../users/principal-id.js",
         "./action-intent.js",
@@ -2049,6 +2052,7 @@
         "./atomic-storage.js",
         "./side-effects.js",
         "node:fs",
+        "node:module",
         "node:path"
       ]
     },
@@ -2368,6 +2372,8 @@
     {
       "module": "src/core/request-tracer.ts",
       "imports": [
+        "../secrets/chat-key-intake.js",
+        "../security/secret-redaction.js",
         "node:async_hooks",
         "node:crypto"
       ]
@@ -2534,6 +2540,12 @@
         "node:crypto",
         "node:fs/promises",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/core/service-run-truth.ts",
+      "imports": [
+        "../security/secret-redaction.js"
       ]
     },
     {
@@ -4612,6 +4624,13 @@
       ]
     },
     {
+      "module": "src/learning/capability-escalation.ts",
+      "imports": [
+        "../install/software-candidates.js",
+        "./capability-inventory.js"
+      ]
+    },
+    {
       "module": "src/learning/capability-inventory.ts",
       "imports": [
         "../core/tool-health-store.js",
@@ -4635,6 +4654,7 @@
         "../install/software-freshness.js",
         "../mesh/node-strengths.js",
         "../security/secret-redaction.js",
+        "./capability-escalation.js",
         "./capability-inventory.js",
         "node:crypto",
         "node:fs",
@@ -4832,6 +4852,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/service-run-truth.js",
         "node:crypto",
         "node:fs",
         "node:os",
@@ -5072,6 +5093,7 @@
     {
       "module": "src/memory/embedding-providers.ts",
       "imports": [
+        "../mesh/node-local-model.js",
         "../routing/model-registry.js",
         "./local-embedder.js"
       ]
@@ -5261,6 +5283,7 @@
         "../sensing/config.js",
         "../sensing/discovery.js",
         "../sensing/net-scope.js",
+        "../voice/openai-audio.js",
         "../voice/voice-contract.js",
         "../voice/whisper-gpu.js",
         "./discovery-probe.js",
@@ -5580,6 +5603,10 @@
       ]
     },
     {
+      "module": "src/mesh/node-local-model.ts",
+      "imports": []
+    },
+    {
       "module": "src/mesh/node-planner.ts",
       "imports": [
         "../config/config-path.js",
@@ -5613,6 +5640,13 @@
         "node:os",
         "node:path",
         "node:url"
+      ]
+    },
+    {
+      "module": "src/mesh/recommendation-truth.ts",
+      "imports": [
+        "../install/software-freshness.js",
+        "./model-recommender.js"
       ]
     },
     {
@@ -6265,6 +6299,12 @@
       "imports": []
     },
     {
+      "module": "src/secrets/chat-key-intake.ts",
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
+    },
+    {
       "module": "src/secrets/credential-broker.ts",
       "imports": [
         "../core/data-root.js",
@@ -6273,6 +6313,12 @@
         "node:crypto",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/secrets/service-keys.ts",
+      "imports": [
+        "../security/secret-redaction.js"
       ]
     },
     {
@@ -7831,6 +7877,7 @@
     {
       "module": "src/tts/text-to-speech.ts",
       "imports": [
+        "../voice/voice-mesh.js",
         "node:fs",
         "node:os",
         "node:path"
@@ -7917,6 +7964,12 @@
     {
       "module": "src/voice/audiosocket.ts",
       "imports": []
+    },
+    {
+      "module": "src/voice/openai-audio.ts",
+      "imports": [
+        "../mesh/ai-scanner.js"
+      ]
     },
     {
       "module": "src/voice/sip-login-check.ts",

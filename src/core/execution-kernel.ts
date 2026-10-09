@@ -104,7 +104,7 @@ export class ExecutionKernel {
         if (validation.success && (!invocation?.callId || this.verifiedToolCalls.has(invocation.callId))) {
             return { success: false, evidence: [], reason: invocation?.callId ? 'duplicate tool call evidence id' : 'tool result lacks execution correlation' }
         }
-        this.lifecycle.record(toolName, validation.success)
+        this.lifecycle.record(toolName, validation.success, this.intent.kind)
         if (validation.success) {
             const directTargets = matchedToolTargets(this.contract.requiredToolTargets || [], invocation!.arguments)
             const argumentValues = ['path', 'file', 'filePath']

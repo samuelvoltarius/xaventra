@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { guardUnverifiedClaims } from './unverified-claims.js'
+import {
+    describesScreenWithoutActing, guardUnverifiedClaims, observationOnlyRun,
+    SCREEN_ONLY_ACTION_REPLY,
+} from './unverified-claims.js'
 
 // 2.88.2 (live 07.10.2026, Telegram 03:00): "Ich habe gerade http://localhost:8080 und
 // http://127.0.0.1:8080 getestet … Die Verbindung steht … (curl funktioniert)" — in that
@@ -23,5 +26,25 @@ describe('claims of checks need a tool in the same run', () => {
     it('flags "geprüft" and "nachgesehen" claims too', () => {
         expect(guardUnverifiedClaims('Ich hab die Config nachgesehen, alles ok.', 0).startsWith('⚠️ Ungeprüft')).toBe(true)
         expect(guardUnverifiedClaims('Habe es eben geprüft: läuft.', 0).startsWith('⚠️ Ungeprüft')).toBe(true)
+    })
+})
+
+// 2.89.4 (live 09.10. 00:51–00:53): "dann mach es auf und versuch es nochmal" (DHL on the
+// workstation) ended twice in "kein Browserfenster geöffnet" after desktop_screenshot alone.
+describe('a screenshot is not a handlung', () => {
+    it('sees a run that only looked', () => {
+        expect(observationOnlyRun(['desktop_screenshot'])).toBe(true)
+        expect(observationOnlyRun(['desktop_screenshot', 'desktop_status'])).toBe(true)
+        expect(observationOnlyRun(['desktop_screenshot', 'desktop_control'])).toBe(false)
+        expect(observationOnlyRun([])).toBe(false)
+    })
+    it('sees a screen description instead of an action report', () => {
+        expect(describesScreenWithoutActing('Kein Browserfenster geöffnet — der Desktop ist leer.')).toBe(true)
+        expect(describesScreenWithoutActing('Ich sehe nur einen leeren Desktop.')).toBe(true)
+        expect(describesScreenWithoutActing('Firefox ist offen und die Sendungsverfolgung zeigt: Zustellung morgen.')).toBe(false)
+    })
+    it('has an honest sentence, not another screen description', () => {
+        expect(SCREEN_ONLY_ACTION_REPLY).toMatch(/keine Handlung|nichts geöffnet/)
+        expect(describesScreenWithoutActing(SCREEN_ONLY_ACTION_REPLY)).toBe(false)
     })
 })

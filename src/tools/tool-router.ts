@@ -22,7 +22,7 @@
 
 import { getToolRegistry } from './complete-registry.js'
 import { hasMiniMaxKey } from './minimax-tools.js'
-import { detectActionIntent, type ActionIntent } from '../core/action-intent.js'
+import { detectActionIntent, isWorkstationAction, WORKSTATION_ACTION, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
@@ -185,9 +185,16 @@ const SKILL_PACKS: SkillPack[] = [
         tools: ['desktop_screenshot', 'desktop_input', 'analyze_image'],
     },
     {
-        name: 'computer-use', description: 'Freigegebenen Desktop per Screenshot, Maus und Tastatur bedienen',
-        keywords: ['computer use', 'computer-use', 'maus', 'tastatur', 'klicken', 'klick', 'tippe', 'scroll'],
-        tools: ['desktop_screenshot', 'desktop_input'],
+        // 2.89.4 (live 09.10. 00:51): „Sie hat Computer-Use … dann mach es auf und versuch es
+        // nochmal" erreichte nur desktop_screenshot und beschrieb den leeren Desktop. Handlungs-
+        // aufträge brauchen desktop_control/desktop_workspace, nicht nur Aufnahmen. Ablauf
+        // Webseite am Arbeitsplatz: Browser öffnen (Firefox), URL, auf Laden warten (Screenshot
+        // prüfen), Feld anklicken, tippen, Enter, Ergebnis-Screenshot. Tracking-Seiten zuerst
+        // die direkte URL mit Sendungsnummer.
+        name: 'computer-use', description: 'Freigegebenen Arbeitsplatz/Desktop bedienen: Programme öffnen (Firefox/Chrome), klicken, tippen, Webseiten aufrufen. Ablauf: Browser öffnen, URL, Laden per Screenshot prüfen, Feld anklicken, tippen, Enter, Ergebnis-Screenshot. Tracking-Seiten zuerst die direkte URL mit Sendungsnummer.',
+        keywords: ['computer use', 'computer-use', 'maus', 'tastatur', 'klicken', 'klick', 'tippe', 'tipp*', 'scroll',
+            'arbeitsplatz', 'arbeitsdesktop', 'firefox', 'auf deinem desktop', 'auf deinem rechner', 'im browser', WORKSTATION_ACTION],
+        tools: ['desktop_control', 'desktop_workspace', 'desktop_status', 'desktop_screenshot', 'desktop_input', 'analyze_image'],
     },
     {
         name: 'nova-desktop-control', description: 'Nova Desktop sicher navigieren, fokussieren und aktualisieren',
@@ -416,6 +423,10 @@ const LIVE_ROUTES: readonly LiveRoute[] = [
     // 2.89.4: Kubernetes/Pods/Cluster get cluster_status (facts from the API only).
     { name: 'kubernetes', tools: ['cluster_status'], applies: text => isKubernetesQuestion(text) },
     { name: 'screenshot', tools: ['desktop_screenshot'], applies: (_text, intent) => intent.kind === 'screenshot' },
+    // 2.89.4: Handlung am Arbeitsplatz — Steuerwerkzeuge, nicht nur Screenshot.
+    { name: 'workstation-action',
+        tools: ['desktop_control', 'desktop_workspace', 'desktop_status', 'desktop_input', 'desktop_screenshot'],
+        applies: text => isWorkstationAction(text) },
 ]
 
 /** Tools a route must never offer, even when another pack lists them. */
@@ -716,6 +727,15 @@ ${getSkillPacksSummary()}
 - \`browser_type(selector, text)\` — Eingabefeld. Mit \`press_enter: true\` abschicken
 - \`browser_extract()\` — Text aus geöffneter Seite lesen (besser als \`fetch_url\` bei SPAs)
 - \`browser_screenshot()\` — Screenshot → \`send_file\` an Telegram
+
+### 🖥️ Webseiten auf dem Arbeitsplatz (Computer-Use)
+1. Browser öffnen (Firefox oder Chrome)
+2. URL aufrufen — bei Tracking-Seiten zuerst die direkte URL mit der Sendungsnummer
+3. Auf Laden warten und das Ergebnis per Screenshot prüfen
+4. Feld anklicken, tippen, Enter
+5. Ergebnis-Screenshot an den Nutzer
+Ein Screenshot allein ist keine Handlung: „mach es auf“ / „klick“ / „tipp ein“ verlangen
+\`desktop_control\` bzw. \`desktop_input\`. Wenn du nur geschaut hast, sag das ehrlich.
 
 ### 🧠 Memory & Wissen
 | Tool | Wann |
