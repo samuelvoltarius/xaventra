@@ -274,7 +274,7 @@ try {
     oneModelTurn: first.llmCalls === 1,
     oneFailedEffect: first.healthCalls === 1,
     noBuildSkillEffect: first.buildSkillCalls === 0,
-    deterministicResponse: String(first.output).includes('Doctor-Diagnose'),
+    deterministicResponse: String(first.output) === 'Die Aktion ist nicht gelungen. Ich habe die Ursache intern zur Prüfung vorgemerkt; es wurde keine Änderung ausgeführt.',
     persistedEscalation: first.records.length === 1 && first.records[0].state === 'doctor-queued',
     persistedDoctorCase: first.doctorCases.length === 1,
     canonicalFailure: first.run?.status === 'failed' && first.run?.validation?.success !== true,
