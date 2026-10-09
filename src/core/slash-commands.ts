@@ -2966,7 +2966,10 @@ Lösung:
 
                             const hwProfile = hardwareFromMeshNode(node)
                             const recs = getRecommendations(label, hwProfile, installedModels)
-                            return formatRecommendations(recs)
+                            const { researchFreshness, freshnessStamp, STALE_NOTE } = await import('../mesh/recommendation-truth.js')
+                            const evidence = await researchFreshness(`Modell-Empfehlungen ${label}`, { hardware: hwProfile })
+                            recs.freshnessNote = evidence.searched && evidence.hits > 0 ? evidence.note : STALE_NOTE
+                            return `${freshnessStamp(evidence)}\n\n${formatRecommendations(recs)}`
 
                         } catch (err: any) {
                             return `❌ Empfehlungen nicht verfügbar: ${err?.message || err}`

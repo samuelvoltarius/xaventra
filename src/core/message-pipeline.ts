@@ -98,7 +98,7 @@ export function getMinutesSinceLastSelfThink(): number {
 
 // Pre-load hot-path modules at startup to avoid first-call latency
 /** Deterministic fast paths whose answer is a live measurement, not a static text. */
-const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check'])
+const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check', 'recommendation-freshness'])
 
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
@@ -921,6 +921,43 @@ ${pendingGapNote}` : withTail
                     console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
                     return true
                 }
+                // 2.89.4: freshness/recommendation questions always search the web,
+                // stamp the system date and filter by per-node hardware.
+                if (deterministic.reason === 'recommendation-freshness') {
+                    const { formatFreshnessRecommendationReply } = await import('../mesh/recommendation-truth.js')
+                    const { hardwareFromStrength } = await import('../mesh/model-recommender.js')
+                    let hardware = { ramGb: 0, hasGpu: false }
+                    let nodeLabel = 'local'
+                    try {
+                        const { collectNodeStrengths } = await import('../mesh/node-strengths.js')
+                        const strengths = await collectNodeStrengths()
+                        const own = strengths.find(item => item.local) || strengths[0]
+                        if (own) {
+                            hardware = hardwareFromStrength(own)
+                            nodeLabel = own.nodeId
+                        }
+                    } catch { /* hardware optional */ }
+                    const reply = await formatFreshnessRecommendationReply({
+                        topic: content,
+                        node: nodeLabel,
+                        hardware,
+                    })
+                    await answer(reply)
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: true }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
+                    traceStep(`fast-path:${deterministic.reason}`)
+                    console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
+                    return true
+                }
                 const response = await handleCommandFn(
                     deterministic.command,
                     deterministic.args,
@@ -1284,7 +1321,8 @@ REGELN:
 - Sage NIEMALS "es ist etwa..." oder "es dürfte ungefähr..." — gib die EXAKTE Zeit an
 - Tageszeit-Kontext: ${getTimeOfDayContext(now)}
 - WICHTIG: Wenn der User über das Jahr ${now.getFullYear()} spricht, ist das JETZT. Sage NICHT "in der Zukunft" oder "geplant für ${now.getFullYear()}". Produkte und Events von ${now.getFullYear()} EXISTIEREN bereits.
-- Dein LLM-Training enthält möglicherweise NICHT die neuesten Infos von ${now.getFullYear()}. Nutze IMMER google_search oder web_search für aktuelle Fakten!`
+- Dein LLM-Training enthält möglicherweise NICHT die neuesten Infos von ${now.getFullYear()}. Nutze IMMER google_search oder web_search für aktuelle Fakten!
+- Empfehlungen zu „aktuell / neueste / Stand der Technik / Ende ${now.getFullYear()}“ (Modelle, Software): IMMER mit Websuche belegen, Datum aus der Systemzeit, Hardware je Knoten (GPU/VRAM vs. CPU-only: kein Großmodell auf purem CPU-Knoten). Ohne Suchergebnis ehrlich „mein Wissen kann veraltet sein“. Kein Install-Angebot ohne passende Hardware.`
 
     // ============================================
     // Self-Knowledge Injection — Nova knows what she has

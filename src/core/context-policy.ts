@@ -35,7 +35,7 @@ export interface ContextPolicy {
 const SOCIAL = /^(?:hallo|hi|hey|guten (?:morgen|abend|tag)|danke|ok(?:ay)?|super|perfekt|test)[!. ]*$/i
 const ACTION = /\b(?:mach|mache|bau|baue|implementier|änder|aender|fix|reparier|installier|deploy|rollout|start|stop|lösch|loesch|send|schick|erstell|schreib|verschieb|aktualisier)\w*/i
 const ANALYSIS = /\b(?:analys|vergleich|bewert|prüf|pruef|audit|debug|architekt|strategie|plan|ursache|warum|erklär|erklaer)\w*/i
-const RESEARCH = /\b(?:recherch|research|online|internet|web|aktuell|neueste|heute|quelle|beleg|dokumentation|docs|github)\w*/i
+const RESEARCH = /\b(?:recherch|research|online|internet|web|aktuell|neueste|stand der technik|state of the art|heute|quelle|beleg|dokumentation|docs|github)\w*/i
 const RECOVERY = /\b(?:fehler|fehlgeschlagen|absturz|crash|resume|fortsetz|wiederherstell|rollback|failover|recovery|offline|timeout)\w*/i
 const MEMORY = /\b(?:erinner|früher|frueher|vorher|zuvor|zuletzt|weitermachen|mach weiter|wo waren wir|was (?:ist|war) offen|memory|wissen|merk(?:e)? dir|speicher|vergiss (?:das )?nie|präferenz|praeferenz|bevorzuge|ziel ist)\w*/i
 const MESH = /\b(?:mesh|node|server|remote|ssh|spark|jetson|pi5?|ns[12]|nas|failover|vllm)\b/i
@@ -115,7 +115,7 @@ export function selectContextPolicy(content: string, hasImage = false): ContextP
     score += Math.round(uncertainty * 16)
     if (isSocial) score = 0
 
-    const researchRequired = isResearch || (/\b(?:aktuell|heute|neueste|preis|version|release)\b/i.test(lower) && !isSocial && !conversationRecall)
+    const researchRequired = isResearch || (/\b(?:aktuell|heute|neueste|stand der technik|ende\s+20\d\d|preis|version|release)\b/i.test(lower) && !isSocial && !conversationRecall)
     const cognitiveMode: CognitiveMode = researchRequired
         ? 'research'
         : score >= 40 ? 'deep'
@@ -196,7 +196,7 @@ export function buildCognitivePrompt(policy: ContextPolicy): string {
             ? `Prüfe intern bis zu ${policy.plannerPaths} sinnvolle Lösungswege und wähle anhand von Evidence, Risiko, Dauer und Rückweg.`
             : 'Antworte direkt und knapp; plane nur, wenn ein Tool wirklich nötig ist.',
         policy.researchRequired
-            ? 'Aktuelle oder veränderliche Behauptungen benötigen frische Primärquellen; kennzeichne Schlussfolgerungen als solche.'
+            ? 'Aktuelle oder veränderliche Behauptungen (aktuell / neueste / Stand der Technik / Ende <Jahr>) immer mit Websuche belegen, Datum aus der Systemzeit nennen. Ohne Suchergebnis ehrlich „mein Wissen kann veraltet sein“. Empfehlungen nur zur Hardware des Knotens (GPU/VRAM vs. CPU-only: kein Großmodell auf purem CPU-Knoten). Kein Install-Angebot ohne passende Hardware.'
             : '',
         policy.uncertainty >= 0.5
             ? 'Löse Unsicherheit zuerst mit vorhandenem Kontext oder read-only Recherche; falls sie entscheidend bleibt, stelle genau eine gezielte Rückfrage.'

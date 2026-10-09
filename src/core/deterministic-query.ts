@@ -1,5 +1,6 @@
 import { parseNaturalMemoryForget } from '../memory/memory-quality.js'
 import { parseRoutineSatz, parseSchaltSatz } from '../sensing/device-sentences.js'
+import { isFreshnessQuestion } from '../mesh/recommendation-truth.js'
 import { detectServiceStateCorrection } from './service-run-truth.js'
 
 export type NaturalCommandRisk = 'read-only' | 'controlled-action'
@@ -108,6 +109,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /\bwelche (?:modelle|provider) (?:sind|hast du) (?:verfügbar|aktiv)\b/.test(text)) {
         return route('nodes', 'services', 'mesh-services')
     }
+
+    // 2.89.4: recommendations about „aktuell / neueste / Stand der Technik /
+    // Ende <Jahr>“ always go through a web search + per-node hardware gate.
+    // After the mesh inventory so „welche Modelle auf den Nodes?“ stays inventory.
+    if (isFreshnessQuestion(input)) return route('empfehlung', 'frisch', 'recommendation-freshness', 'read-only')
 
     if (/^(?:wie ist |zeige |gib mir )?(?:dein |der |den )?(?:system ?status|status)(?: jetzt)?$/.test(text)) return route('status', '', 'system-status')
     if (/\b(?:welche|was ist die)\b.*\bnova version\b|\bupdate status\b|\bist ein update\b.*\bverfügbar\b/.test(text)) return route('update', 'status', 'update-status')

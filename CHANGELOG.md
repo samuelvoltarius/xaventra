@@ -44,6 +44,14 @@
   waiting. The registry stores `mesh://<knoten>` and work is sent as a mesh job
   to the worker (`ollama-api`), which talks to its own localhost. Previously
   localhost was rewritten to the peer host and called directly.
+- **Recommendations about “aktuell / neueste / Stand der Technik / Ende &lt;Jahr&gt;”
+  are search-backed and hardware-capped.** Model and software recommendations
+  now run the existing governed web search first and stamp the system date. A
+  catalog age alone is never “aktuell”; without usable search results the answer
+  says honestly “mein Wissen kann veraltet sein”. Per node: GPU/VRAM vs CPU-only
+  — a pure-CPU node never gets a large/xlarge model, and there is no install
+  offer without matching hardware. Inventory questions (“welche Modelle
+  verfügbar?”) stay inventory.
 
 ## [2.89.3] — 2026-10-08
 
