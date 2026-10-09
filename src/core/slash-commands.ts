@@ -198,6 +198,21 @@ export function commandReplyText(response: string | null | undefined): string | 
     return response
 }
 
+/**
+ * 2.89.4 (live): `/layers` showed „L1 Unified Channels: ❌" while Telegram was
+ * running. It read the never-assigned `state.channelRouter`. L1 is the real
+ * adapters in `state.channels` — only those actually started.
+ */
+export function listRunningChannels(state: Pick<DaemonState, 'channels'> | null | undefined): string[] {
+    const channels = state?.channels
+    if (!channels) return []
+    const names: string[] = []
+    if (channels.telegram) names.push('Telegram')
+    if (channels.whatsapp) names.push('WhatsApp')
+    if (channels.discord) names.push('Discord')
+    return names
+}
+
 async function telegramForRequest(principalContext?: PrincipalContext): Promise<any | null> {
     if (!isChannel(principalContext?.channel, 'telegram')) return null
     const { getTelegramAdapter } = await import('../channels/telegram.js')
@@ -331,7 +346,9 @@ export async function handleCommand(
 
         case 'layers': {
             const coreRuntime = (state as any).coreRuntime
-            const channelRouter = (state as any).channelRouter
+            // 2.89.4: L1 is the real adapters in state.channels (listRunningChannels),
+            // not the never-assigned state.channelRouter that always printed ❌.
+            const runningChannels = listRunningChannels(state)
             const { getProcedureStore } = await import('../learning/procedure-store.js')
             const procedureStats = getProcedureStore().getStats()
 
@@ -344,7 +361,7 @@ L5 LLM Adapters: ${state.llm ? '✅ ' + state.llm.modelId : '❌'}
 L4 Secure Auth: ✅ (TokenManager)
 L3 Core Runtime: ${coreRuntime ? '✅ State: ' + coreRuntime.getStatus().state : '❌'}
 L2 Command Factory: ${state.tools ? '✅ ' + state.tools.getStats().total + ' Tools' : '❌'}
-L1 Unified Channels: ${channelRouter ? '✅ aktiv' : '❌'}
+L1 Unified Channels: ${runningChannels.length ? '✅ ' + runningChannels.join(', ') : '❌'}
 L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
 
 *Uptime:* ${Math.floor((Date.now() - state.startTime) / 60000)} Minuten`
@@ -902,23 +919,22 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
             // Format token count
             const fmtTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`
 
-            // Active channels
-            const channels: string[] = []
-            if (state.channels.telegram) channels.push('Telegram')
-            if (state.channels.whatsapp) channels.push('WhatsApp')
-            if (state.channels.discord) channels.push('Discord')
+            // Active channels — the real adapters, same truth as L1 in /layers (2.89.4)
+            const channels = listRunningChannels(state)
 
-            // Active layers count — keys must match actual state keys set in daemon.ts
+            // Active layers count — keys must match actual state keys set in daemon.ts.
+            // 2.89.4: L1 is the real channel adapters (listRunningChannels), not the
+            // never-assigned state.channelRouter that never counted as active.
             const layerKeys = [
                 'llm', 'tools', 'memory', 'resilience', 'learning',
-                'coreRuntime', 'channelRouter',
+                'coreRuntime',
                 'vision', 'astAnalyzer', 'costTracker',
                 'businessSense', 'antiHallucination',
                 'knowledgeGraph', 'journal', 'intelligence',
                 'securityScanner', 'autonomy', 'lanceMemory',
             ]
-            const activeLayers = layerKeys.filter(k => (state as any)[k]).length
-            const totalLayers = layerKeys.length
+            const activeLayers = layerKeys.filter(k => (state as any)[k]).length + (channels.length ? 1 : 0)
+            const totalLayers = layerKeys.length + 1
 
             // Learning stats: corrections = governed correction memories,
             // rules = active binding owner decisions (decisions.ts).
