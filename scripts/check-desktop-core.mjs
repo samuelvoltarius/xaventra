@@ -123,7 +123,7 @@ try {
     await page.locator('[data-repair-approve="patch_desktop_doctor_fixture"]').click()
     await page.locator('#repair-approval-form input[name="approvalToken"]').fill('desktop-fixture-patch-gate')
     await page.locator('#repair-approval-form button[type="submit"]').click()
-    await page.locator('.toast').filter({ hasText: 'PATCH_GATE angenommen' }).waitFor()
+    await page.locator('.toast').filter({ hasText: 'Reparatur ist freigegeben und wurde angewendet.' }).waitFor()
     const applied = await api('/trust/repairs')
     const terminal = applied.body.proposals.find(item => item.id === 'patch_desktop_doctor_fixture')
     assert.equal(terminal.status, 'applied')
