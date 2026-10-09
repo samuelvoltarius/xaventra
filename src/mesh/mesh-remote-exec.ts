@@ -11,7 +11,7 @@ interface RemoteRequest {
     id: string
     from: string
     to: string
-    type: 'exec' | 'llm' | 'ollama' | 'tool'
+    type: 'exec' | 'llm' | 'ollama' | 'ollama-api' | 'tool'
     payload: any
     timestamp: number
 }

@@ -143,11 +143,11 @@ export async function discoverLocalEmbedders(): Promise<LocalEmbeddingEndpoint[]
     if (discoveryCache && Date.now() - discoveryCache.at < DISCOVERY_TTL_MS) return discoveryCache.endpoints
     const endpoints: LocalEmbeddingEndpoint[] = []
     let knownNodes: string[] = []
+    let localNodeId: string | undefined
     try {
         const { collectModelRegistry } = await import('../routing/model-registry.js')
         const registry = await collectModelRegistry()
         knownNodes = [...new Set(registry.endpoints.map(ep => ep.node).filter((node): node is string => Boolean(node)))]
-        let localNodeId: string | undefined
         try { localNodeId = (await import('../mesh/mesh-registry.js')).getLocalNodeId() } catch { localNodeId = undefined }
         endpoints.push(...localEmbeddersFromRegistry(registry, { localNodeId }))
     } catch { /* Register optional */ }

@@ -58,13 +58,15 @@ export async function transcribeVoiceNote(audio: Buffer, mime: string, localPath
         const { discoverOpenAiStt, transcribeWithOpenAiStt } = await import('../voice/openai-audio.js')
         const stt = await discoverOpenAiStt()
         if (stt) {
+            let WhisperZuLangError: new (...args: any[]) => Error = class extends Error {}
             try {
                 const { ffmpegConvert } = await import('../voice/voice-service.js')
-                const { WhisperZuLangError } = await import('../voice/whisper-gpu.js')
+                ;({ WhisperZuLangError } = await import('../voice/whisper-gpu.js'))
                 const result = await transcribeWithOpenAiStt(stt.endpoint, audio, mime || 'audio/ogg', { durationSec, convert: ffmpegConvert })
                 if (result.text) return { text: result.text, via: 'openai-audio' }
             } catch (error) {
-                if (error instanceof WhisperZuLangError) zuLang = true
+                if (error instanceof WhisperZuLangError
+                    || (error as Error)?.name === 'WhisperZuLangError') zuLang = true
                 else console.warn(`[Nova Telegram] Spracherkennung (OpenAI-kompatibel): ${String((error as Error)?.message || error).slice(0, 160)}`)
             }
         }
