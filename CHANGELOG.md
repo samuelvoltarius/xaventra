@@ -12,6 +12,23 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.4] — 2026-10-09
+
+### Added
+
+- **Even G2 `POST /hud/voice` (#1):** the glasses' microphone is transcribed with the existing Xaventra STT chain and either answers the open approval card (strict ja/nein only; never a card with physical, outward or infrastructure effect) or goes to the agent like `POST /`; the HUD app moved to the Quietglass repo (`apps/even-g2` is gone).
+
+### Fixed
+
+- **A finished request shows its answer, not an empty "✅ Fertig · N s".** The Telegram status card is deleted after the answer; only a failed delete leaves a short ✅ line.
+- **Queued replies no longer look shifted.** When a newer user message arrived while one was still running, the answer is sent as a reply to the triggering message.
+- **Inventory questions are mesh-wide and invent no tool gap.** "Inventur / was läuft wo" uses the inventory tools without a target question, and a tool gap is only claimed when the registry really has no matching tool.
+- **Kubernetes questions get facts from `cluster_status`.** Node and pod facts come only from that API; without Kubernetes access the answer is "nicht konfiguriert" (no SSH/shell fallback).
+- **`/status` lists no ghost nodes or dead endpoints.** Online follows the heartbeat freshness rule, phantom rows from peer snapshots are hidden, and an AI endpoint is "nicht erreichbar" unless its runtime is actually available.
+- **`/ai` never prints the line "HANDLED".** The internal handled marker is filtered everywhere before it can become chat text.
+- **`/mesh scan` answers instead of ending as "Abgebrochen".** A titled or multi-line report is the answer (not progress); an abort always carries one honest sentence.
+- **`/layers` L1 Unified Channels reflects the real adapters.** It reads `state.channels` instead of the never-assigned `state.channelRouter` that always printed ❌.
+
 ## [2.89.3] — 2026-10-08
 
 ### Fixed
