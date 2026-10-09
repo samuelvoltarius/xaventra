@@ -32,15 +32,25 @@ dem Paket, der Main liefert dieselben Dateien im Browser aus
 
 | Bereich | Inhalt | Quelle (vorhandenes Modul) |
 |---|---|---|
-| **Heute** (Start) | Was sie gerade tut, Warteschlange; offene Knopf-Karten mit den Knöpfen der Karte; Vorschau des nächsten Morgen-/Abendberichts; Gedanken (auch verworfene); zuletzt entschieden | `now-view` (`collectJetzt`, `collectGedanken`), `approval-cards`, `planner/briefing` (`buildBriefing`, nur lesend) |
-| **Unterhaltung** | Räume, Chat, Projektordner, Wissenspakete, Modell je Raum (unverändert funktional) | `/api/desktop/rooms*` |
-| **Arbeit** | Missionen (Schritte, Versuch, Übergabe), Aufträge (aktiv + Verlauf), Delegationen mit Prüfung, Verantwortungen (erfüllt/verletzt), „macht sie inzwischen selbst“ (Vertrauensleiter + dauerhafte Erlaubnisse), Geplant (Planer-Jobs) | `responsibility-runtime` (`readArbeitState`), `autonomous-executor`, `delegation`, `action-policy`, `planner` |
-| **System** | Knoten mit Messwerten und 24-h-Verlauf, Erreichbarkeit, Vorausschau (Platte/RAM, Zertifikate, Sicherungen), Nachtwache, Desktops (Ansehen/Übernehmen im eigenen Fenster), VMs, Modelle | `watch` (`getWatchOverview`, Messproben), `desktop-direct`, `infra/proxmox` (`readVmsInventory`), Modellkatalog |
-| **Gedächtnis** | Entscheidungen (kausales Gedächtnis), Werkzeuge der Schmiede (ohne Code), Wissen (Wissenspakete, bestätigte Fakten) | `decisions`, `skill-builder`, Memory-Katalog/-Governance |
+| **Heute** (Start) | Was sie gerade tut (inkl. Live-Schritt eines laufenden Auftrags), Warteschlange; offene Knopf-Karten mit den Knöpfen der Karte; Vorschau des nächsten Morgen-/Abendberichts; Gedanken (auch verworfene); zuletzt entschieden | `now-view` (`collectJetzt`, `collectGedanken`), `approval-cards`, `planner/briefing` (`buildBriefing`, nur lesend), `GET /api/desktop/fortschritt` |
+| **Unterhaltung** | Räume (auch umbenennen), Chat, Projektordner, Wissenspakete, Modell je Raum (unverändert funktional) | `/api/desktop/rooms*` |
+| **Anrufen** | Sprachanruf mit Xaventra (nur Web/Browser) | `anruf.js` |
+| **Arbeit** | Reiter Missionen (Schritte, Versuch, Übergabe), Aufträge (aktiv + Verlauf, Live-Schritt), **Aktivität** (was sie gerade und im Hintergrund tut), Delegationen mit Prüfung, Verantwortungen (erfüllt/verletzt), „macht sie inzwischen selbst“ (Vertrauensleiter + dauerhafte Erlaubnisse), Geplant (Planer-Jobs) | `responsibility-runtime` (`readArbeitState`), `autonomous-executor`, `delegation`, `action-policy`, `planner`, `sehen.js` |
+| **Geräte (System)** | Reiter Übersicht: Knoten mit Messwerten und 24-h-Verlauf, Erreichbarkeit, Vorausschau (Platte/RAM, Zertifikate, Sicherungen), Nachtwache, Desktops (Ansehen/Übernehmen im eigenen Fenster), VMs, Modelle; Reiter **Bildschirme** (vormals „Ihr Computer“) | `watch` (`getWatchOverview`, Messproben), `desktop-direct`, `infra/proxmox` (`readVmsInventory`), Modellkatalog, `sehen.js` |
 | **Verbindungen** (2.85) | Gefunden / Möglich / Verbunden für Dienste (geprüfter Katalog, MCP-Verzeichnis), KI-Modelle (lokal gefunden, Cloud per API-Key oder erlaubter Konto-Anmeldung) und Hilfsdienste (SearXNG) — eine Stelle | `connections-view` (`collectConnections`), Quelle `ki-modelle` aus `llm-connections` (`connection-docks.ts`) |
-| **Werkzeugkasten** (2.85, Owner-Entscheidung 02.10.: Hauptleiste) | Programme, die sie stärker machen: Status, passender Knoten, Bedarf, Installieren/Entfernen über die Karte | `werkzeugkasten-view`, Installationskatalog |
-| **Mehr** | Belege & Reparaturen (Ergebnisakte, Doctor/PATCH_GATE), Spezialisten, Studio, Abwehr, Knoten aufnehmen, Erster Start | bestehende Desktop-Endpunkte |
+| **Gedächtnis** | Reiter Entscheidungen (kausales Gedächtnis), Prozeduren, Werkzeuge der Schmiede (ohne Code), Wissen (Wissenspakete, bestätigte Fakten) | `decisions`, `skill-builder`, Memory-Katalog/-Governance |
+| **Werkzeugkasten** | Programme, die sie dazulernen kann; Installieren/Entfernen nur über Knopf-Karten | `werkzeugkasten.js`, `GET /api/desktop/werkzeugkasten` |
+| **Mehr** | Regeln, Belege & Reparaturen (Ergebnisakte, Doctor mit geprüfter Patch-Freigabe), Spezialisten (mit „Verbindung prüfen“), Studio, Abwehr, Knoten aufnehmen, Erster Start | bestehende Desktop-Endpunkte |
 | **Einstellungen** | Verbindung, Token, Farbschema (System/Hell/Dunkel), Unterhaltung, Projektordner | lokal (Electron) bzw. Browser |
+
+Zur Navigation (2.89.4, Nachtrag 09.10.): Die Hauptleiste hat acht Ziele plus
+„Mehr“ und „Einstellungen“. Die IDs `heute`, `chat`, `arbeit`, `system`,
+`gedaechtnis`, `werkzeugkasten`, `mehr`, `settings`, `trust` bleiben für die
+UI-Prüfung erhalten. Alte Links (`computer`/`bildschirme`, `aktivitaet`,
+`memory`) landen im passenden Reiter. Regeln steht unter „Mehr“ (Auftrag
+„wenige Hauptbereiche“). Der Werkzeugkasten steht in der Hauptleiste
+(Owner-Entscheidung 02.10., bestätigt 09.10.); die Karten-Freigabe für
+Installieren/Entfernen bleibt unverändert.
 
 ## Neue Lese-Endpunkte (nur Owner)
 
@@ -75,9 +85,13 @@ Gateway sendet bewusst `frame-ancestors 'none'`.
 | Spezialisten (Bot-Profile, Hermes/OpenClaw) als Hauptpunkt | Mehr › Spezialisten | Xaventra zieht Spezialisten selbst hinzu; im Alltag nicht nötig. Server-Endpunkte bleiben. |
 | Studio-Module | Mehr › Studio | Startet nur Räume; kein täglicher Blick nötig. |
 | Defense mit Red-Team-Knopf | Mehr › Abwehr | Ein Selbsttest-Knopf ist Bediener-Arbeit; bleibt erreichbar. |
-| Evidence/Trust | Mehr › Belege & Reparaturen | Nachweise für Fachleute; die PATCH_GATE-Freigabe bleibt dort. |
+| Evidence/Trust | Mehr › Belege & Reparaturen | Nachweise für Fachleute; die geprüfte Patch-Freigabe bleibt dort. |
 | Xaventra Nodes (Inventar + Aufnahme) | Knoten-Zustand unter System, Aufnahme unter Mehr | Zustand ist Mitschauen, Aufnahme ist Einrichtung. |
 | Gedächtnis (Assets + Fakten) | Gedächtnis › Wissen | Neben Entscheidungen und Werkzeugen. |
+| Aktivität (2.88) | Arbeit › Aktivität | Was sie tut, gehört zur Arbeit – ein Hauptbereich weniger. |
+| Ihr Computer (2.88) | Geräte › Bildschirme (du-Form: „Dein Computer“) | Bildschirme sind ein Gerät wie Knoten und VMs. |
+| Werkzeugkasten (2.85, kurz unter Mehr in 2.89.4) | wieder in der Hauptleiste | Owner-Entscheidung 02.10., bestätigt 09.10.: der Werkzeugkasten gehört in die Hauptleiste. Nur der Rest der Navigation von 2.89.4 bleibt (Regeln unter Mehr). |
+| Regeln (2.88) | Mehr › Regeln | Klartext-Regeln braucht man selten im Alltag. |
 | Inspector „Kontrollzentrum“ | Seitenleiste „Was gerade passiert“ nur in der Unterhaltung | Weniger Technik (Epochen, Router-Samples) im Blick. |
 
 ## Was entfällt

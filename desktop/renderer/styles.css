@@ -358,7 +358,6 @@ button:disabled { opacity: .5; cursor: not-allowed; filter: none; }
 .badge.good { background: var(--success-soft); color: var(--success); }
 .badge.warn { background: var(--warning-soft); color: var(--warning); }
 .badge.bad { background: var(--danger-soft); color: var(--danger); }
-.badge-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 12.5px; }
 .details dt { color: var(--muted); }
 .details dd { margin: 0; overflow-wrap: anywhere; }
@@ -368,10 +367,6 @@ button:disabled { opacity: .5; cursor: not-allowed; filter: none; }
 .metric strong { font-size: 20px; font-variant-numeric: tabular-nums; }
 .metric span { color: var(--muted); font-size: 12px; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 8px; }
-.fact-list { display: grid; gap: 8px; }
-.fact-list article { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
-.fact-list small { color: var(--muted); }
-.fact-kind { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
 .asset-card.equipped { border-color: var(--accent); }
 .back-link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--accent); font-weight: 600; padding: 0; width: max-content; }
 
@@ -474,6 +469,7 @@ html.novaos-standard button { font-size: 16px !important; }
 .onboarding-pair img { width: 200px; height: 200px; border-radius: var(--radius-sm); background: #fff; padding: 6px; }
 .section-head h2 .badge { margin-right: 2px; }
 
+/* ============================================================
    2.86 Paket O: Anrufen + Handy (Web-App über das Tailnet)
    ============================================================ */
 .call-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; display: grid; gap: 14px; justify-items: start; }
@@ -487,6 +483,14 @@ html.novaos-standard button { font-size: 16px !important; }
 .call-settings { display: grid; gap: 12px; }
 .call-settings select { margin-left: 8px; }
 .switch-row { display: flex; gap: 10px; align-items: center; }
+
+/* Live-Schritt eines laufenden Auftrags (data-live-step) + Reiter + Raumtitel */
+.live-step { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; font-weight: 600; }
+.live-step.hidden { display: none; }
+.tab-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.room-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.room-title-row h1 { min-width: 0; overflow-wrap: anywhere; }
+.live-step .icon, .tab .icon { width: 14px; height: 14px; }
 
 @media (max-width: 720px) {
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100dvh; }
@@ -525,7 +529,7 @@ html.novaos-standard button { font-size: 16px !important; }
 .cockpit + .section, .section + .setup-list, .section + .examples, .section + .tip, .section + .help { margin-top: 16px; }
 .cockpit-more > summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 /* (2.88: offener Kommentar-Rest aus dem Merge 2.86 entfernt) */
-/* 2.88 „Sehen und lenken“: Ihr Computer (Live-Bild), Aktivität, Regeln */
+/* 2.88 „Sehen und lenken“: Dein Computer (Live-Bild), Aktivität, Regeln */
 .sehen-bild { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; display: grid; place-items: center; min-height: 160px; }
 .sehen-bild img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; }
 .sehen-bild img:not([src]) { min-height: 160px; }

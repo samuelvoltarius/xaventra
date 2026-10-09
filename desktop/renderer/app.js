@@ -3,9 +3,9 @@ const api = window.novaDesktop.api
 const WEB = window.novaDesktop.web === true
 
 // Xaventra arbeitet selbstständig. Diese Oberfläche ist ein Fenster zum
-// Mitschauen und Knöpfe-Drücken: Heute (was sie tut, wo sie dich braucht),
-// Unterhaltung, Arbeit, System, Gedächtnis, Verbindungen, Werkzeugkasten.
-// Fachwerkzeuge liegen unter „Mehr“.
+// Mitschauen und Knöpfe-Drücken: acht Hauptbereiche (Heute, Unterhaltung,
+// Anrufen, Arbeit, Geräte, Verbindungen, Gedächtnis, Werkzeugkasten).
+// Regeln und Fachwerkzeuge liegen unter „Mehr“.
 
 const state = {
   section: 'heute',
@@ -33,40 +33,46 @@ const state = {
   viewErrors: {},
   viewLoading: new Set(),
   cardBusy: new Set(),
-  tabs: { arbeit: 'missionen', gedaechtnis: 'entscheidungen' },
+  tabs: { arbeit: 'missionen', gedaechtnis: 'entscheidungen', system: 'uebersicht' },
   showAllThoughts: false,
   showAllCards: false,
   heuteDetails: false,
   refreshTimer: null,
+  fortschrittTimer: null,
+  fortschritt: null,
+  focusTab: null,
+  modalOpener: null,
 }
 
 const NAV_MAIN = [
   ['heute', 'Heute', 'sun'],
   ['chat', 'Unterhaltung', 'message'],
-  // 2.86 Paket O: mit ihr sprechen, ohne Sprechtaste (eigene Datei anruf.js).
   ['anruf', 'Anrufen', 'phone'],
-  // 2.88 „Sehen und lenken“ (eigene Datei sehen.js): was sie tut, ihr Bildschirm, deine Regeln.
-  ['aktivitaet', 'Aktivität', 'activity'],
-  ['computer', 'Ihr Computer', 'monitor'],
   ['arbeit', 'Arbeit', 'briefcase'],
-  ['system', 'System', 'server'],
-  ['gedaechtnis', 'Gedächtnis', 'brain'],
-  ['regeln', 'Regeln', 'scale'],
+  ['system', 'Geräte', 'server'],
   ['verbindungen', 'Verbindungen', 'plug'],
-  // Owner-Entscheidung 02.10.: Werkzeugkasten in die Hauptleiste (Paket D, eigene Datei werkzeugkasten.js).
-  ['werkzeugkasten', 'Werkzeug\u00ADkasten', 'wrench'], // weiches Trennzeichen: passt in die schmale Leiste
+  ['gedaechtnis', 'Gedächtnis', 'brain'],
+  // Owner-Entscheidung 02.10., bestätigt 09.10.: Werkzeugkasten in die Hauptleiste.
+  ['werkzeugkasten', 'Werkzeug\u00ADkasten', 'wrench'], // weiches Trennzeichen (U+00AD): passt in die schmale Leiste
 ]
 const NAV_BOTTOM = [['mehr', 'Mehr', 'grid'], ['settings', 'Einstellungen', 'settings']]
-// Fachseiten unter „Mehr“: bleiben erreichbar, stehen aber nicht im Weg.
+// Fachseiten unter Mehr: bleiben erreichbar, stehen aber nicht im Weg.
 const MORE_PAGES = {
-  trust: { title: 'Belege & Reparaturen', icon: 'fileCheck', text: 'Jeder Arbeitslauf mit Werkzeugen, Prüfung und Kosten. Doctor-Reparaturen, die eine PATCH_GATE-Freigabe brauchen.' },
+  regeln: { title: 'Regeln', icon: 'scale', text: 'Was ich ohne Frage darf, wo ich frage und was nie - in einem Satz.' },
+  trust: { title: 'Belege & Reparaturen', icon: 'fileCheck', text: 'Jeder Arbeitslauf mit Werkzeugen, Prüfung und Kosten. Reparaturen mit geprüftem Patch.' },
   bots: { title: 'Spezialisten', icon: 'users', text: 'Aufgaben-Profile und angebundene Hermes-/OpenClaw-Agenten. Xaventra zieht sie selbst hinzu.' },
   modules: { title: 'Studio', icon: 'sparkles', text: 'Sprache, Sehen, CAD, Druck, Smart Home: Arbeitsräume für einzelne Fähigkeiten.' },
-  security: { title: 'Abwehr', icon: 'shield', text: 'Blue-Team-Vorfälle und der lokale Selbsttest gegen Xaventras eigene Schutzschichten.' },
+  security: { title: 'Abwehr', icon: 'shield', text: 'Vorfälle und der lokale Selbsttest gegen Xaventras eigene Schutzschichten.' },
   nodes: { title: 'Knoten aufnehmen', icon: 'plusCircle', text: 'Neue Geräte ins Netz aufnehmen (verifizierter SSH-Fingerabdruck, Owner-Freigabe).' },
   start: { title: 'Erster Start', icon: 'sparkles', text: 'Was Xaventra beim Einrichten selbst getan hat; Name, Telegram koppeln, gefundene Dienste.' },
 }
-const SECTION_ALIAS = { memory: 'gedaechtnis' }
+// Alte und verschachtelte Ziele landen im passenden Reiter, nicht auf einer zweiten Karte.
+const SECTION_ALIAS = {
+  memory: 'gedaechtnis',
+  computer: 'system',
+  bildschirme: 'system',
+  aktivitaet: 'arbeit',
+}
 const KNOWN_SECTIONS = new Set([...NAV_MAIN.map(([id]) => id), 'mehr', 'settings', ...Object.keys(MORE_PAGES)])
 
 // ── Symbole (eine Linienfamilie, 24er Raster) ───────────────
@@ -104,7 +110,6 @@ const ICONS = {
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
   back: '<path d="M15 18l-6-6 6-6"/>',
-  chevron: '<path d="m9 18 6-6-6-6"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
 }
 function icon(name, cls = '') { return `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name] || ICONS.dot}</svg>` }
@@ -218,6 +223,12 @@ function normalizeSection(section) {
   const value = SECTION_ALIAS[section] || section
   return KNOWN_SECTIONS.has(value) ? value : 'heute'
 }
+function applySectionAlias(section) {
+  if (section === 'computer' || section === 'bildschirme') state.tabs.system = 'bildschirme'
+  if (section === 'aktivitaet') state.tabs.arbeit = 'aktivitaet'
+  if (section === 'memory') state.tabs.gedaechtnis = 'wissen'
+  return normalizeSection(section)
+}
 
 let toastTimer
 function toast(message, error = false) {
@@ -230,18 +241,40 @@ function toast(message, error = false) {
 // Server messages stay English in the API; the UI says what to do, in German.
 const ERROR_TEXT = [
   [/Desktop authentication required|Dashboard token required/i, 'Anmeldung nötig: Trage in den Einstellungen das Desktop-Token des Mains ein.'],
-  [/Owner authorization required|owner access requires/i, 'Nur für den Owner: Dafür braucht es das Desktop-Token des Mains.'],
+  [/Owner authorization required|owner access requires|403/i, 'Nur für den Owner: Dafür braucht es das Desktop-Token des Mains.'],
   [/Zeitüberschreitung|aborted|timed? ?out/i, 'Der Main antwortet nicht rechtzeitig. Später noch einmal versuchen.'],
   [/ECONNREFUSED|Failed to fetch|NetworkError|fetch failed/i, 'Der Main ist nicht erreichbar. Läuft er, und stimmt die Adresse?'],
 ]
 function errorText(error) {
   const raw = String(error?.message || error || '')
   const hit = ERROR_TEXT.find(([pattern]) => pattern.test(raw))
-  return hit ? hit[1] : raw
+  if (hit) return hit[1]
+  if (!raw) return 'Etwas ist schiefgegangen. Noch einmal versuchen.'
+  return raw
+}
+// Immer ein Satz plus nächster Schritt – nie ein roher Server-Englischsatz.
+function problemTip(error) {
+  const known = ERROR_TEXT.some(([pattern]) => pattern.test(String(error?.message || error || '')))
+  if (known || /nur für den owner|noch einmal versuchen|stimmt die adresse/i.test(errorText(error))) return errorText(error)
+  return 'Die Ansicht konnte nicht geladen werden. Noch einmal versuchen – wenn es bleibt, unter „Belege & Reparaturen“ nachsehen.'
 }
 function fail(error) {
   console.error(error)
   toast(errorText(error), true)
+}
+
+// Klartext für Rohstatus aus der API – nie englische Enum-Werte anzeigen.
+const RUN_STATUS = { completed: 'abgeschlossen', failed: 'fehlgeschlagen', running: 'läuft', queued: 'wartet', verified: 'geprüft', pending: 'offen', 'awaiting-approval': 'wartet auf Freigabe' }
+const MODULE_STATUS = { ready: 'bereit', partial: 'teilweise eingerichtet', 'setup-required': 'muss eingerichtet werden', missing: 'fehlt' }
+const MODEL_STATUS = { running: 'bereit', stopped: 'gestoppt', loading: 'wird geladen', error: 'Fehler', degraded: 'eingeschränkt' }
+const BOT_SOURCE = { nova: 'Xaventra', hermes: 'Hermes', openclaw: 'OpenClaw' }
+const NODE_STATUS = { online: 'erreichbar', active: 'erreichbar', offline: 'still', unknown: 'unbekannt', degraded: 'gestört' }
+const ENROLL_STATUS = { draft: 'Entwurf', approved: 'freigegeben', ready: 'vorbereitet', cancelled: 'abgebrochen', verified: 'aufgenommen', failed: 'fehlgeschlagen' }
+const REPAIR_STATUS = { queued: 'wartet auf Freigabe', applied: 'angewendet', 'rolled-back': 'zurückgerollt', blocked: 'gesperrt', failed: 'fehlgeschlagen' }
+const AGENT_HEALTH = { healthy: 'in Ordnung', degraded: 'angeschlagen', offline: 'nicht erreichbar' }
+function statusLabel(value, map) {
+  const key = String(value ?? '')
+  return map[key] || (key ? key : '—')
 }
 
 function applyTheme() {
@@ -326,7 +359,8 @@ async function init() {
 function openCardCount() { return (state.views.heute?.karten || []).filter(card => card.status === 'offen').length }
 function railButton([id, label, glyph]) {
   const active = state.section === id || (id === 'mehr' && MORE_PAGES[state.section])
-  const badge = id === 'heute' && openCardCount() ? `<span class="rail-badge" aria-label="${openCardCount()} offene Fragen">${openCardCount()}</span>` : ''
+  const open = id === 'heute' ? openCardCount() : 0
+  const badge = open ? `<span class="rail-badge" aria-label="${open} offene Fragen">${open}</span>` : ''
   return `<button class="rail-button ${active ? 'active' : ''}" data-section="${id}" title="${attr(label)}" ${active ? 'aria-current="page"' : ''}>${icon(glyph, 'lg')}<span class="label">${esc(label)}</span>${badge}</button>`
 }
 function shell(main) {
@@ -372,7 +406,7 @@ function pageFor(section) {
   if (section === 'security') return subPage('security', securityView())
   if (section === 'nodes') return subPage('nodes', nodesView())
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
-  if (['aktivitaet', 'computer', 'regeln'].includes(section)) return window.XaventraSehen ? window.XaventraSehen.view(section, sehenHelpers()) : loadingBlock('Wird geladen')
+  if (section === 'regeln') return subPage('regeln', window.XaventraSehen ? window.XaventraSehen.view('regeln', sehenHelpers(), { bare: true }) : loadingBlock('Regeln'))
   if (section === 'anruf') return window.XaventraAnruf ? window.XaventraAnruf.view(anrufHelpers()) : loadingBlock('Anrufen')
   if (section === 'werkzeugkasten') return window.Werkzeugkasten ? `<div class="page"><div class="page-inner">${window.Werkzeugkasten.view(werkzeugkastenHelpers())}</div></div>` : loadingBlock('Werkzeugkasten')
   if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
@@ -384,8 +418,12 @@ function pageFor(section) {
 function sehenHelpers() {
   return {
     api, esc, attr, icon, toast, fail, errorText, navigate, openDesktop,
+    problemsNote: list => problemsNote(list),
     rerender: () => {
-      if (!['aktivitaet', 'computer', 'regeln'].includes(state.section) || document.querySelector('.modal')) return
+      const onSehen = state.section === 'regeln'
+        || (state.section === 'arbeit' && state.tabs.arbeit === 'aktivitaet')
+        || (state.section === 'system' && state.tabs.system === 'bildschirme')
+      if (!onSehen || document.querySelector('.modal')) return
       const active = document.activeElement
       if (active && active.tagName === 'INPUT' && active.closest('.page') && active.value) return
       render()
@@ -421,7 +459,15 @@ function render() {
   if (state.section === 'start') window.XaventraOnboarding?.bind(onboardingContext())
   if (state.section === 'verbindungen') window.XaventraConnections?.mount(connectionHelpers())
   if (state.section === 'heute') window.XaventraCockpit?.mount(cockpitHelpers())
-  window.XaventraSehen?.mount(state.section, sehenHelpers())
+  const sehenName = state.section === 'regeln' ? 'regeln'
+    : state.section === 'arbeit' && state.tabs.arbeit === 'aktivitaet' ? 'aktivitaet'
+      : state.section === 'system' && state.tabs.system === 'bildschirme' ? 'bildschirme' : ''
+  window.XaventraSehen?.mount(sehenName, sehenHelpers())
+  if (state.focusTab) {
+    const tabNode = document.querySelector(`[data-tab="${CSS.escape(state.focusTab)}"]`)
+    if (tabNode) tabNode.focus()
+    state.focusTab = null
+  }
   if (['heute', 'arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
   if (state.section === 'system') void ensureView('vms')
   if (state.section === 'werkzeugkasten') void ensureView('werkzeugkasten')
@@ -502,17 +548,47 @@ function updateBadge() {
   rail.querySelector('[data-section="heute"]').addEventListener('click', () => navigate('heute'))
 }
 
+function liveStepHtml() {
+  const step = state.fortschritt?.schritt
+  return step ? `${icon('activity', 'sm')} Gerade: ${esc(step)}` : ''
+}
+function liveStepSpan() {
+  const step = state.fortschritt?.schritt
+  return `<span class="live-step${step ? '' : ' hidden'}" data-live-step ${step ? '' : 'hidden'}>${liveStepHtml()}</span>`
+}
+async function refreshFortschritt() {
+  const before = state.fortschritt?.schritt || ''
+  try {
+    const live = await api.get('/api/desktop/fortschritt')
+    state.fortschritt = typeof live?.schritt === 'string' && live.schritt.trim()
+      ? { schritt: live.schritt.trim().slice(0, 160), seit: live.seit, room: live.room || null }
+      : null
+  } catch { state.fortschritt = null }
+  const after = state.fortschritt?.schritt || ''
+  if (before === after) return
+  document.querySelectorAll('[data-live-step]').forEach(node => {
+    node.innerHTML = liveStepHtml()
+    node.hidden = !after
+  })
+}
 function startRefresh() {
   clearInterval(state.refreshTimer)
+  clearInterval(state.fortschrittTimer)
   state.refreshTimer = setInterval(() => {
     if (document.visibilityState === 'hidden' || !state.bootstrap) return
     void ensureView('heute')
     if (['arbeit', 'system', 'gedaechtnis'].includes(state.section)) void ensureView(state.section)
-    // 2.88: Aktivität und Bildschirme bleiben aktuell, solange die Seite offen ist.
-    if (state.section === 'aktivitaet') void window.XaventraSehen?.load(sehenHelpers(), 'aktivitaet')
-    if (state.section === 'computer') void window.XaventraSehen?.load(sehenHelpers(), 'bildschirme')
+    // Bildschirme und Aktivität bleiben aktuell, solange der Reiter offen ist.
+    if (state.section === 'arbeit' && state.tabs.arbeit === 'aktivitaet') void window.XaventraSehen?.load(sehenHelpers(), 'aktivitaet')
+    if (state.section === 'system' && state.tabs.system === 'bildschirme') void window.XaventraSehen?.load(sehenHelpers(), 'bildschirme')
+    if (state.section === 'regeln') void window.XaventraSehen?.load(sehenHelpers(), 'regeln')
   }, 20_000)
+  state.fortschrittTimer = setInterval(() => {
+    if (document.visibilityState === 'hidden' || !state.bootstrap) return
+    void refreshFortschritt()
+  }, 5000)
   void ensureView('heute')
+  void refreshFortschritt()
 }
 
 // Cockpit „Heute“ (2.86 Paket M) lebt in cockpit.js; ask() schickt einen Satz als normale Nachricht.
@@ -534,7 +610,9 @@ function connectionHelpers() {
 }
 
 function navigate(section) {
-  state.section = normalizeSection(section)
+  const previous = state.section
+  state.section = applySectionAlias(section)
+  if (previous !== state.section) window.XaventraSehen?.leave()
   render()
   document.querySelector('#main-content')?.focus?.({ preventScroll: true })
 }
@@ -544,11 +622,13 @@ function viewState(name) {
   const error = state.viewErrors[name]
   return { data, error, loading: !data && !error }
 }
-function viewErrorBlock(error) {
-  const ownerOnly = /owner authorization|403/i.test(error)
-  return `<div class="section"><div class="section-body"><div class="empty-note">${icon('alert')}<span>${ownerOnly
+function viewErrorBlock(error, name) {
+  const ownerOnly = /owner authorization|owner access requires|403/i.test(String(error || ''))
+  const tip = ownerOnly
     ? 'Diese Ansicht ist nur für den Owner. Trage in den Einstellungen das Desktop-Token des Mains ein.'
-    : `Nicht verfügbar: ${esc(error)}`}</span></div></div></div>`
+    : problemTip(error)
+  const again = name ? ` <button class="link-button" data-refresh="${attr(name)}">Noch einmal versuchen</button>` : ''
+  return `<div class="section"><div class="section-body"><div class="empty-note">${icon('alert')}<span>${esc(tip)}${again}</span></div></div></div>`
 }
 function loadingBlock(label) {
   return `<div class="page"><div class="page-inner"><div class="section"><div class="section-body" aria-busy="true"><span class="sr-only">${esc(label)} …</span><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton tall"></div></div></div></div></div>`
@@ -557,7 +637,7 @@ function skeletonSection(title) {
   return `<section class="section"><div class="section-head"><h2>${esc(title)}</h2></div><div class="section-body" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div></section>`
 }
 function problemsNote(list) {
-  return list?.length ? `<div class="problem-note">Teilweise nicht lesbar: ${esc(list.join(' · '))}</div>` : ''
+  return list?.length ? `<div class="problem-note">Teilweise nicht lesbar: ${esc(list.join(' · '))}. Noch einmal aktualisieren - wenn es bleibt, unter „Belege & Reparaturen“ nachsehen.</div>` : ''
 }
 function pageHead(eyebrow, title, text, name) {
   const at = state.viewAt[name]
@@ -632,16 +712,17 @@ function heuteView() {
   const control = state.bootstrap?.controlPlane || {}
   const head = `<header class="page-head"><div><div class="eyebrow">${esc(new Intl.DateTimeFormat('de-AT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()))}</div><h1>${greeting()}</h1><p>Xaventra arbeitet selbstständig. Hier siehst du, was sie tut – und wo sie dich braucht.</p></div>
     <div class="head-actions">${state.viewAt.heute ? `<span class="stamp">Stand ${esc(fmtClock(state.viewAt.heute))}</span>` : ''}<button class="icon-button" data-refresh="heute" title="Aktualisieren" aria-label="Aktualisieren">${icon('refresh')}</button></div></header>`
-  if (error && !data) return `<div class="page"><div class="page-inner">${head}${viewErrorBlock(error)}</div></div>`
+  if (error && !data) return `<div class="page"><div class="page-inner">${head}${viewErrorBlock(error, 'heute')}</div></div>`
   if (!data) return `<div class="page"><div class="page-inner">${head}<div class="grid-2"><div class="stack">${skeletonSection('Braucht dich')}${skeletonSection('Bericht')}</div><div class="stack">${skeletonSection('Gedanken')}</div></div></div></div>`
   const tasks = data.jetzt?.aufgaben || []
   const queue = data.jetzt?.warteschlange || []
   const open = data.karten || []
   const thoughts = data.gedanken || []
   const shownThoughts = state.showAllThoughts ? thoughts : thoughts.slice(0, 12)
-  const strip = `<section class="now-strip" aria-label="Was sie gerade tut"><span class="pulse ${tasks.length ? 'busy' : ''}" aria-hidden="true"></span>
+  const strip = `<section class="now-strip" aria-label="Was sie gerade tut"><span class="pulse ${tasks.length || state.fortschritt?.schritt ? 'busy' : ''}" aria-hidden="true"></span>
     <div class="now-main"><strong>${tasks.length ? esc(tasks[0].text) : 'Ruhig – gerade keine laufende Aufgabe'}</strong>
       <span>${tasks.length ? `${esc(tasks[0].quelle)} · seit ${esc(relTime(tasks[0].seit).replace(/^vor /, ''))}` : 'Sie beobachtet und meldet sich, wenn etwas zu tun ist.'}${queue.length ? ` · ${queue.length} in der Warteschlange` : ''}</span>
+      ${liveStepSpan()}
       ${tasks.length > 1 || queue.length ? `<ul class="now-list">${tasks.slice(1, 4).map(task => `<li>${esc(task.text)}</li>`).join('')}${queue.slice(0, 3).map(item => `<li>Wartet: ${esc(String(item).replace(/^\[(?:queued|running)\]\s*/, ''))}</li>`).join('')}</ul>` : ''}</div>
     <span class="pill ${control.authoritative ? 'good' : 'bad'}" title="Verbunden mit ${attr(control.hostname || control.nodeId || 'Main')}">${control.authoritative ? 'verbunden' : 'nicht verbunden'}</span></section>`
   // 2.86 Paket M: immer nur EINE Frage zur Zeit — die erste (Warteschlange), der Rest per Klick.
@@ -713,12 +794,22 @@ function missionTile(mission) {
 function auftragTile(auftrag, active = false) {
   return `<article class="tile"><header><div><h3>${esc(auftrag.ziel)}</h3><div class="sub">${esc(fmtTime(auftrag.createdAt))}${auftrag.finishedAt ? ` – ${esc(fmtTime(auftrag.finishedAt))}` : ''}</div></div>${statusPill(auftrag.status)}</header>
     ${auftrag.schritte?.length ? `<ol class="steps">${auftrag.schritte.slice(0, active ? 15 : 5).map(step => `<li>${stepDot(step.status)}<span>${esc(step.text)}</span></li>`).join('')}</ol>` : ''}
+    ${active ? liveStepSpan() : ''}
     ${active && auftrag.fortschritt?.length ? `<p class="row-sub">${esc(auftrag.fortschritt.at(-1))}</p>` : ''}</article>`
+}
+function tabList(area, label, tabs, active) {
+  return `<nav class="tabs" role="tablist" aria-label="${attr(label)}">${tabs.map(([id, tabLabel, count]) => {
+    const on = active === id
+    return `<button type="button" class="tab ${on ? 'active' : ''}" role="tab" id="tab-${attr(area)}-${attr(id)}" aria-controls="panel-${attr(area)}-${attr(id)}" aria-selected="${on ? 'true' : 'false'}" tabindex="${on ? '0' : '-1'}" data-tab="${attr(area)}:${attr(id)}">${esc(tabLabel)}${count ? `<span class="count">${count}</span>` : ''}</button>`
+  }).join('')}</nav>`
+}
+function tabPanel(area, id, body) {
+  return `<div class="tab-panel" role="tabpanel" id="panel-${attr(area)}-${attr(id)}" aria-labelledby="tab-${attr(area)}-${attr(id)}" tabindex="0">${body}</div>`
 }
 function arbeitView() {
   const { data, error } = viewState('arbeit')
   const head = pageHead('Arbeit', 'Woran sie arbeitet', 'Missionen entstehen aus ihren Verantwortungen, Aufträge kommen von dir. Sie plant, führt aus und belegt das Ergebnis selbst.', 'arbeit')
-  if (error && !data) return `<div class="page"><div class="page-inner">${head}${viewErrorBlock(error)}</div></div>`
+  if (error && !data) return `<div class="page"><div class="page-inner">${head}${viewErrorBlock(error, 'arbeit')}</div></div>`
   if (!data) return `<div class="page"><div class="page-inner">${head}${skeletonSection('Missionen')}</div></div>`
   const missions = data.missionen || []
   const activeMissions = missions.filter(item => !['abgeschlossen', 'fehlgeschlagen'].includes(item.status))
@@ -726,6 +817,7 @@ function arbeitView() {
   const auftraege = data.auftraege || {}
   const tabs = [
     ['missionen', 'Missionen', activeMissions.length], ['auftraege', 'Aufträge', (auftraege.aktiv ? 1 : 0)],
+    ['aktivitaet', 'Aktivität', 0],
     ['delegationen', 'Delegationen', (data.delegationen || []).length], ['verantwortungen', 'Verantwortungen', (data.verantwortungen || []).length],
     ['geplant', 'Geplant', (data.geplant || []).filter(job => job.an).length],
   ]
@@ -737,9 +829,13 @@ function arbeitView() {
   } else if (tab === 'auftraege') {
     body = `${auftraege.aktiv ? `<div class="tiles">${auftragTile(auftraege.aktiv, true)}</div>` : `<div class="section"><div class="section-body"><div class="empty-note">Gerade kein laufender Auftrag. Aufträge gibst du ihr in der Unterhaltung.</div></div></div>`}
       ${(auftraege.verlauf || []).length ? `<section class="section"><div class="section-head"><h2>Frühere Aufträge</h2></div><div class="rows">${auftraege.verlauf.map(item => `<div class="row"><div><div class="row-title">${esc(item.ziel)}</div><div class="row-sub">${esc(fmtTime(item.createdAt))} · ${item.schritte?.length || 0} ${item.schritte?.length === 1 ? 'Schritt' : 'Schritte'}</div></div><div class="row-side">${statusPill(item.status)}</div></div>`).join('')}</div></section>` : ''}`
+  } else if (tab === 'aktivitaet') {
+    body = window.XaventraSehen
+      ? window.XaventraSehen.view('aktivitaet', sehenHelpers(), { bare: true })
+      : '<div class="section"><div class="section-body"><div class="empty-note">Aktivität wird geladen …</div></div></div>'
   } else if (tab === 'geplant') {
     const jobs = data.geplant
-    body = jobs === null || jobs === undefined ? `<div class="section"><div class="section-body"><div class="empty-note">Der Planer läuft nicht (autonomy.planner).</div></div></div>`
+    body = jobs === null || jobs === undefined ? `<div class="section"><div class="section-body"><div class="empty-note">Der Planer ist aus. Sag mir, was ich regelmäßig tun soll – dann lege ich es an.</div></div></div>`
       : jobs.length ? `<section class="section"><div class="rows">${jobs.map(job => `<div class="row"><div><div class="row-title">${esc(job.titel)}</div><div class="row-sub">${esc(job.rhythmus)}${job.naechster ? ` · nächstes Mal ${esc(fmtTime(job.naechster))}` : ''}${job.zuletzt ? ` · zuletzt ${esc(relTime(job.zuletzt))}${job.letzterStatus ? ` (${esc(job.letzterStatus)})` : ''}` : ''}</div></div><div class="row-side"><span class="pill ${job.an ? 'good' : ''}">${job.an ? 'an' : 'aus'}</span></div></div>`).join('')}</div></section><p class="section-note">Erinnerungen und Routinen legst du in der Unterhaltung an („erinnere mich morgen um 8 …“).</p>`
         : `<div class="section"><div class="section-body"><div class="empty-note">Nichts geplant.</div></div></div>`
   } else if (tab === 'delegationen') {
@@ -750,7 +846,7 @@ function arbeitView() {
     const list = data.verantwortungen || []
     const trust = data.vertrauen || []
     const granted = data.erlaubt || []
-    body = `${data.an === false ? '<div class="problem-note">Verantwortungen sind ausgeschaltet (autonomy.responsibilities.enabled=false).</div>' : ''}
+    body = `${data.an === false ? '<div class="problem-note">Verantwortungen sind ausgeschaltet. Sag mir, wofür ich sorgen soll – dann richte ich sie ein.</div>' : ''}
       ${list.length ? `<div class="tiles">${list.map(item => {
         const check = item.letztePruefung
         const tone = item.status === 'pausiert' ? ['warn', 'pausiert'] : item.status === 'vorgeschlagen' ? ['info', 'Vorschlag'] : !check ? ['', 'noch nicht gemessen'] : check.erfuellt === true ? ['good', 'erfüllt'] : check.erfuellt === false ? ['bad', 'verletzt'] : ['', 'unbekannt']
@@ -759,8 +855,8 @@ function arbeitView() {
       <section class="section"><div class="section-head"><h2>${icon('scale')}Macht sie inzwischen selbst</h2></div><div class="rows">${trust.length || granted.length ? [...trust.map(item => `<div class="row"><div><div class="row-title">${esc(item.text)}</div><div class="row-sub">nach dreimal Ja ohne Rückweg · seit ${esc(fmtTime(item.seit))}</div></div><div class="row-side"><span class="pill good">selbst</span></div></div>`), ...granted.map(item => `<div class="row"><div><div class="row-title">${esc(item.art)}: ${esc(item.was)}</div><div class="row-sub">dauerhaft erlaubt seit ${esc(fmtTime(item.seit))}</div></div><div class="row-side"><span class="pill info">erlaubt</span></div></div>`)].join('') : '<div class="row"><div class="row-sub">Noch nichts – sie fragt bei allem, was über ihr eigenes System hinausgeht.</div></div>'}</div></section>`
   }
   return `<div class="page"><div class="page-inner">${head}${problemsNote(data.probleme)}
-    <nav class="tabs" aria-label="Arbeit">${tabs.map(([id, label, count]) => `<button class="tab ${tab === id ? 'active' : ''}" data-tab="arbeit:${id}" ${tab === id ? 'aria-current="true"' : ''}>${esc(label)}${count ? `<span class="count">${count}</span>` : ''}</button>`).join('')}</nav>
-    ${body}</div></div>`
+    ${tabList('arbeit', 'Arbeit', tabs, tab)}
+    ${tabPanel('arbeit', tab, body)}</div></div>`
 }
 
 // ── System ──────────────────────────────────────────────────
@@ -790,7 +886,7 @@ function nodeTiles(data) {
     const watch = watched.find(item => item.id === id)
     const online = ['online', 'active'].includes(String(node.status || node.lifecycle)) || (watch && watch.alterMin < 15)
     const disk = watch?.platten?.length ? watch.platten.reduce((a, b) => (b.belegt > a.belegt ? b : a)) : null
-    return `<article class="tile"><header><div><h3>${esc(node.name || id)}</h3><div class="sub node-id">${esc(id)}${node.version ? ` · ${esc(node.version)}` : ''}</div></div><span class="pill ${online ? 'good' : 'bad'}">${online ? 'erreichbar' : 'still'}</span></header>
+    return `<article class="tile"><header><div><h3>${esc(node.name || id)}</h3><div class="sub nur-experte node-id">${esc(id)}${node.version ? ` · ${esc(node.version)}` : ''}</div>${node.version ? `<div class="sub">${esc(node.version)}</div>` : ''}</div><span class="pill ${online ? 'good' : 'bad'}">${online ? 'erreichbar' : 'still'}</span></header>
       ${watch ? `<div class="meters">${meter('Arbeitsspeicher', watch.ram)}${disk ? meter(`Platte ${disk.mount}`, disk.belegt) : ''}${watch.cpu !== null && watch.cpu !== undefined ? `<div class="meter"><span>Last</span><div></div><b>${fmtNumber(watch.cpu, 2)}</b></div>` : ''}${watch.tempC ? `<div class="meter"><span>Temperatur</span><div></div><b>${fmtNumber(watch.tempC)} °C</b></div>` : ''}</div>
         ${sparkline(data?.verlauf?.[id], 'ram', 'Arbeitsspeicher')}
         ${watch.dienstAus?.length ? `<div class="problem-note">Dienst aus: ${esc(watch.dienstAus.join(', '))}</div>` : ''}
@@ -801,9 +897,9 @@ function nodeTiles(data) {
 function vmsSection() {
   const { data, error } = viewState('vms')
   const head = `<div class="section-head"><h2>${icon('layers')}Virtuelle Maschinen</h2>${data?.ok ? `<span class="section-note">Pool ${esc(data.pool || '')}${data.usage ? ` · ${fmtNumber(data.usage.count)} eigene, ${fmtNumber(data.usage.ramGB)} GB RAM belegt` : ''}</span>` : ''}</div>`
-  if (error) return `<section class="section">${head}<div class="section-body"><div class="empty-note">${icon('alert')}${/owner/i.test(error) ? 'Nur für den Owner.' : esc(error)}</div></div></section>`
+  if (error) return `<section class="section">${head}<div class="section-body"><div class="empty-note">${icon('alert')}${esc(/owner/i.test(error) ? 'Nur für den Owner: Trage in den Einstellungen das Desktop-Token des Mains ein.' : problemTip(error))}</div></div></section>`
   if (!data) return skeletonSection('Virtuelle Maschinen')
-  if (!data.ok) return `<section class="section">${head}<div class="section-body"><div class="empty-note">Proxmox ist nicht eingerichtet: ${esc(data.reason || 'aus')}.</div></div></section>`
+  if (!data.ok) return `<section class="section">${head}<div class="section-body"><div class="empty-note">Virtuelle Maschinen sind nicht eingerichtet. Sag mir, wenn ich sie anbinden soll.</div></div></section>`
   const guests = (data.guests || []).filter(guest => !guest.template).sort((a, b) => Number(b.eigene) - Number(a.eigene) || a.vmid - b.vmid)
   return `<section class="section">${head}<div class="rows">${guests.map(guest => `<div class="row"><div><div class="row-title">${esc(guest.name || guest.vmid)} <span class="row-sub">#${guest.vmid}</span></div><div class="row-sub">${esc(guest.type === 'lxc' ? 'Container' : 'VM')} auf ${esc(guest.node)} · ${guest.maxcpu} Kerne · ${gb(guest.maxmem)} RAM · ${gb(guest.maxdisk)}${guest.selbst ? ' · hier läuft Xaventra' : ''}</div></div><div class="row-side">${guest.eigene ? '<span class="pill info">eigene</span>' : ''}<span class="pill ${guest.status === 'running' ? 'good' : ''}">${guest.status === 'running' ? 'läuft' : guest.status === 'stopped' ? 'aus' : esc(guest.status)}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Keine Gäste.</div></div>'}</div>
     <div class="section-body"><p class="section-note">Starten, Stoppen oder neue VMs schlägt sie selbst als Karte vor – die Antwort gibst du unter „Heute“.</p></div></section>`
@@ -814,19 +910,28 @@ function desktopsSection(data) {
   return `<section class="section"><div class="section-head"><h2>${icon('monitor')}Desktops</h2></div>
     ${direct.enabled && direct.desktops.length ? `<div class="rows">${direct.desktops.map(desktop => `<div class="row"><div><div class="row-title">${esc(desktop.label)}</div><div class="row-sub">${desktop.active.length ? `Gerade offen: ${desktop.active.map(mode => mode === 'control' ? 'übernommen' : 'angesehen').join(', ')}` : 'Einmal-Link über das Tailnet, ohne Passwort'}${desktop.agentInput ? ' · Übernehmen pausiert Xaventras Eingaben' : ''}</div></div>
       <div class="row-side"><button class="secondary" data-desktop-open="${attr(desktop.id)}" data-mode="view" ${canOpen ? '' : 'disabled'}>${icon('eye', 'sm')}Ansehen</button>${desktop.allowControl ? `<button class="secondary" data-desktop-open="${attr(desktop.id)}" data-mode="control" ${canOpen ? '' : 'disabled'}>${icon('pointer', 'sm')}Übernehmen</button>` : ''}</div></div>`).join('')}</div>`
-      : `<div class="section-body"><div class="empty-note">Desktop-Direktverbindung ist aus (desktop.direct.enabled).</div></div>`}</section>`
+      : `<div class="section-body"><div class="empty-note">Die direkte Bildschirmverbindung ist aus. Sag mir, wenn ich sie einschalten soll – dann zeige ich dir deine Bildschirme.</div></div>`}</section>`
 }
 function modelsSection() {
   const models = chatModels()
   const active = state.bootstrap?.models?.activeModel
   return `<section class="section"><div class="section-head"><h2>${icon('cpu')}Modelle</h2><span class="section-note">Sie wählt selbst; fixieren kannst du je Raum in der Unterhaltung.</span></div>
-    <div class="rows">${models.map(model => `<div class="row"><div><div class="row-title">${esc(model.id)}</div><div class="row-sub">${esc(model.runtime || model.provider || '')} auf ${esc(model.nodeId || '—')}${model.tokensPerSecond ? ` · ${fmtNumber(model.tokensPerSecond, 1)} tok/s` : ''}${model.toolSamples > 0 ? ` · ${fmtNumber(model.toolSuccessRate * 100)} % Werkzeuge erfolgreich` : ''}</div></div><div class="row-side">${model.id === active ? '<span class="pill info">aktiv</span>' : ''}<span class="pill ${model.status === 'running' ? 'good' : ''}">${model.status === 'running' ? 'bereit' : esc(model.status || '—')}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Keine Modelle gemeldet.</div></div>'}</div></section>`
+    <div class="rows">${models.map(model => `<div class="row"><div><div class="row-title">${esc(model.id)}</div><div class="row-sub">${esc(model.runtime || model.provider || '')} auf ${esc(model.nodeId || '—')}${model.tokensPerSecond ? ` · ${fmtNumber(model.tokensPerSecond, 1)} tok/s` : ''}${model.toolSamples > 0 ? ` · ${fmtNumber(model.toolSuccessRate * 100)} % Werkzeuge erfolgreich` : ''}</div></div><div class="row-side">${model.id === active ? '<span class="pill info">aktiv</span>' : ''}<span class="pill ${model.status === 'running' ? 'good' : ''}">${statusLabel(model.status, MODEL_STATUS)}</span></div></div>`).join('') || '<div class="row"><div class="row-sub">Keine Modelle gemeldet.</div></div>'}</div></section>`
 }
 function systemView() {
   const { data, error } = viewState('system')
   const head = pageHead('System', 'Geräte, Wächter, Maschinen', 'Der Wächter misst alle Knoten, prüft Erreichbarkeit, Zertifikate und Sicherungen und meldet Abweichungen als Gedanken.', 'system')
-  if (error && !data) return `<div class="page"><div class="page-inner">${head}${viewErrorBlock(error)}${modelsSection()}</div></div>`
-  if (!data) return `<div class="page"><div class="page-inner">${head}${skeletonSection('Knoten')}</div></div>`
+  const tab = state.tabs.system
+  const tabs = [['uebersicht', 'Übersicht', 0], ['bildschirme', 'Bildschirme', 0]]
+  const nav = tabList('system', 'Geräte', tabs, tab)
+  if (tab === 'bildschirme') {
+    const body = window.XaventraSehen
+      ? window.XaventraSehen.view('bildschirme', sehenHelpers(), { bare: true })
+      : '<div class="section"><div class="section-body"><div class="empty-note">Bildschirme werden geladen …</div></div></div>'
+    return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('system', tab, body)}</div></div>`
+  }
+  if (error && !data) return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('system', tab, viewErrorBlock(error, 'system') + modelsSection())}</div></div>`
+  if (!data) return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('system', tab, skeletonSection('Knoten'))}</div></div>`
   const watch = data.waechter
   const reach = watch?.erreichbarkeit || []
   const failing = reach.filter(item => !item.ok && !item.nieErreicht)
@@ -836,7 +941,7 @@ function systemView() {
     ...(watch?.sicherungen || []).filter(item => item.schwere !== 'ok').map(item => ({ title: `Sicherung ${item.name}`, sub: item.alterStd === null ? 'keine gefunden' : `zuletzt vor ${fmtNumber(item.alterStd)} Std. (erlaubt ${fmtNumber(item.maxStd)})`, tone: item.schwere === 'critical' ? 'bad' : 'warn', label: 'Sicherung' })),
   ]
   const night = watch?.nachtwache
-  return `<div class="page"><div class="page-inner">${head}${problemsNote(data.probleme)}
+  const body = `${problemsNote(data.probleme)}
     ${watch && !watch.an ? '<div class="problem-note">Der Wächter ist ausgeschaltet – Messwerte können veraltet sein.</div>' : ''}
     <section class="section"><div class="section-head"><h2>${icon('server')}Knoten</h2>${watch?.stand ? `<span class="section-note">letzte Runde ${esc(relTime(watch.stand))}</span>` : ''}</div><div class="section-body">${nodeTiles(data)}</div></section>
     <div class="grid-2"><div class="stack">
@@ -848,8 +953,8 @@ function systemView() {
       ${night ? `<section class="section"><div class="section-head"><h2>${icon('moon')}Nachtwache</h2><span class="section-note">${esc(relTime(night.at))}</span></div><div class="rows">${night.fehler.length ? night.fehler.map(item => `<div class="row"><div><div class="row-title">${esc(item.label)}</div><div class="row-sub">${esc(item.text)}</div></div><div class="row-side"><span class="pill bad">${esc(item.status)}</span></div></div>`).join('') : `<div class="row"><div class="row-sub">Alle ${fmtNumber(night.gesamt)} Prüfungen bestanden.</div></div>`}</div></section>` : ''}
     </div></div>
     ${vmsSection()}
-    ${modelsSection()}
-  </div></div>`
+    ${modelsSection()}`
+  return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('system', tab, body)}</div></div>`
 }
 
 async function openDesktop(desktopId, mode) {
@@ -880,10 +985,10 @@ function gedaechtnisView() {
   const tools = data?.werkzeuge || []
   const procedures = data?.prozeduren || []
   const tabs = [['entscheidungen', 'Entscheidungen', decisions.filter(item => item.status === 'aktiv').length], ['prozeduren', 'Prozeduren', procedures.filter(item => item.status === 'aktiv').length], ['werkzeuge', 'Werkzeuge', tools.filter(item => item.status === 'active').length], ['wissen', 'Wissen', 0]]
-  const nav = `<nav class="tabs" aria-label="Gedächtnis">${tabs.map(([id, label, count]) => `<button class="tab ${tab === id ? 'active' : ''}" data-tab="gedaechtnis:${id}" ${tab === id ? 'aria-current="true"' : ''}>${esc(label)}${count ? `<span class="count">${count}</span>` : ''}</button>`).join('')}</nav>`
-  if (tab === 'wissen') return `<div class="page"><div class="page-inner">${head}${nav}${wissenBody()}</div></div>`
-  if (error && !data) return `<div class="page"><div class="page-inner">${head}${nav}${viewErrorBlock(error)}</div></div>`
-  if (!data) return `<div class="page"><div class="page-inner">${head}${nav}${skeletonSection('Entscheidungen')}</div></div>`
+  const nav = tabList('gedaechtnis', 'Gedächtnis', tabs, tab)
+  if (tab === 'wissen') return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('gedaechtnis', tab, wissenBody())}</div></div>`
+  if (error && !data) return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('gedaechtnis', tab, viewErrorBlock(error, 'gedaechtnis'))}</div></div>`
+  if (!data) return `<div class="page"><div class="page-inner">${head}${nav}${tabPanel('gedaechtnis', tab, skeletonSection('Entscheidungen'))}</div></div>`
   let body
   if (tab === 'entscheidungen') {
     body = decisions.length ? `<section class="section"><div class="rows">${decisions.map(item => {
@@ -911,7 +1016,7 @@ function gedaechtnisView() {
         ${item.status === 'awaiting-approval' && item.karte ? '<div class="row-sub">Die Freigabe-Karte steht unter „Heute“.</div>' : ''}</article>`
     }).join('')}</div>` : `<div class="section"><div class="section-body"><div class="empty-note">Sie hat sich noch kein eigenes Werkzeug gebaut.</div></div></div>`
   }
-  return `<div class="page"><div class="page-inner">${head}${problemsNote(data.probleme)}${nav}${body}</div></div>`
+  return `<div class="page"><div class="page-inner">${head}${problemsNote(data.probleme)}${nav}${tabPanel('gedaechtnis', tab, body)}</div></div>`
 }
 const ASSET_KIND = { 'chat-memory': 'Gesprächswissen', skill: 'Fähigkeit', wiki: 'Dokumentation', 'code-graph': 'Code-Übersicht' }
 const ASSET_STATUS = { active: ['good', 'aktiv'], draft: ['', 'Entwurf'], verified: ['info', 'geprüft'], archived: ['', 'archiviert'] }
@@ -920,7 +1025,7 @@ const FACT_KIND = { fact: 'Fakt', preference: 'Vorliebe', decision: 'Entscheidun
 const FACT_STATUS = { canonical: ['good', 'bestätigt'], candidate: ['', 'Vorschlag'], disputed: ['warn', 'umstritten'], retracted: ['', 'zurückgezogen'] }
 function wissenBody() {
   const { data, error } = viewState('wissen')
-  if (error && !data) return viewErrorBlock(error)
+  if (error && !data) return viewErrorBlock(error, 'wissen')
   if (!data) return skeletonSection('Wissen')
   const { data: memory, catalog } = data
   const room = currentRoom()
@@ -945,24 +1050,24 @@ function subPage(id, content) {
 function botsView() {
   const bots = state.bootstrap.bots || []
   return `<header class="page-head"><div><h1>Spezialisten</h1><p>Aufgaben-Profile von Xaventra sowie angebundene Hermes- und OpenClaw-Agenten. Externe Antworten gelten nie als Werkzeug-Beleg.</p></div><div class="head-actions"><button class="secondary" data-action="add-external">${icon('plus', 'sm')}Agent anbinden</button></div></header>
-    <div class="grid">${bots.map(bot => `<article class="bot-card"><div class="card-title"><div class="avatar" data-color="${attr(bot.color)}">${esc(bot.avatar)}</div><div><h2>${esc(bot.name)}</h2><span class="badge ${bot.source === 'nova' ? 'good' : 'warn'}">${esc(bot.source)}</span></div></div><p class="row-sub">${esc(bot.description)}</p><dl class="details"><dt>Bereich</dt><dd>${esc(bot.specialization)}</dd><dt>Autonomie</dt><dd>${esc(bot.autonomy)}</dd><dt>Modell</dt><dd>${esc(bot.modelPolicy?.mode || 'auto')}</dd><dt>Knoten</dt><dd>${esc(bot.preferredNodeIds?.join(', ') || 'automatisch')}</dd></dl></article>`).join('')}</div>`
+    <div class="grid">${bots.map(bot => `<article class="bot-card"><div class="card-title"><div class="avatar" data-color="${attr(bot.color)}">${esc(bot.avatar)}</div><div><h2>${esc(bot.name)}</h2><span class="badge ${bot.source === 'nova' ? 'good' : 'warn'}">${esc(statusLabel(bot.source, BOT_SOURCE))}</span></div></div><p class="row-sub">${esc(bot.description)}</p><dl class="details"><dt>Bereich</dt><dd>${esc(bot.specialization)}</dd><dt>Autonomie</dt><dd>${esc(bot.autonomy)}</dd><dt>Modell</dt><dd>${esc(bot.modelPolicy?.mode || 'auto')}</dd><dt>Knoten</dt><dd class="nur-experte">${esc(bot.preferredNodeIds?.join(', ') || 'automatisch')}</dd></dl>${bot.externalConnectionId ? `<div class="toolbar"><button class="secondary" data-agent-health="${attr(bot.externalConnectionId)}">${icon('plug', 'sm')}Verbindung prüfen</button></div>` : ''}</article>`).join('')}</div>`
 }
 
 function nodesView() {
   const inventory = state.bootstrap.inventory || { nodes: [], enrollments: [] }
   return `<header class="page-head"><div><h1>Knoten aufnehmen</h1><p>Jeder Xaventra-Knoten läuft auf einem echten Gerät. Neue Knoten sind weder Main-fähig noch Telegram-berechtigt; die Aufnahme braucht einen verifizierten SSH-Fingerabdruck und deine Freigabe.</p></div><div class="head-actions"><button class="primary" data-action="add-node">${icon('plus', 'sm')}Knoten aufnehmen</button></div></header>
-    <div class="grid">${(inventory.nodes || []).map(node => `<article class="node-card"><div class="card-title"><div><h2>${esc(node.name || node.id)}</h2><span class="badge ${['online', 'active'].includes(String(node.status || node.lifecycle)) ? 'good' : 'bad'}">${esc(node.lifecycle || node.status)}</span></div></div><dl class="details"><dt>ID</dt><dd class="mono">${esc(node.id)}</dd><dt>Host</dt><dd>${esc(node.host || '—')}</dd><dt>Version</dt><dd>${esc(node.version || '—')}</dd><dt>Werkzeuge</dt><dd>${fmtNumber(node.tools)}</dd><dt>Laufzeiten</dt><dd>${esc((node.runtimes || []).map(r => `${r.type}:${r.status}`).join(', ') || '—')}</dd><dt>Main</dt><dd>${node.mainEligible ? 'geeignet' : 'gesperrt'}</dd></dl></article>`).join('')}</div>
+    <div class="grid">${(inventory.nodes || []).map(node => `<article class="node-card"><div class="card-title"><div><h2>${esc(node.name || node.id)}</h2><span class="badge ${['online', 'active'].includes(String(node.status || node.lifecycle)) ? 'good' : 'bad'}">${esc(statusLabel(node.lifecycle || node.status, NODE_STATUS))}</span></div></div><dl class="details"><dt>ID</dt><dd class="mono nur-experte">${esc(node.id)}</dd><dt>Host</dt><dd>${esc(node.host || '—')}</dd><dt>Version</dt><dd>${esc(node.version || '—')}</dd><dt>Werkzeuge</dt><dd>${fmtNumber(node.tools)}</dd><dt>Laufzeiten</dt><dd>${esc((node.runtimes || []).map(r => `${r.type}:${r.status}`).join(', ') || '—')}</dd><dt>Main</dt><dd>${node.mainEligible ? 'geeignet' : 'gesperrt'}</dd></dl></article>`).join('')}</div>
     ${(inventory.enrollments || []).length ? `<h2>Offene Aufnahmen</h2><div class="grid">${inventory.enrollments.map(enrollmentCard).join('')}</div>` : ''}`
 }
 
 function modulesView() {
   const modules = state.bootstrap.modules || []
   return `<header class="page-head"><div><h1>Studio</h1><p>Arbeitsräume für einzelne Fähigkeiten. Ein Raum öffnet sich als Unterhaltung mit passenden Spezialisten.</p></div></header>
-    <div class="grid">${modules.map(module => `<article class="bot-card"><div class="card-title"><div class="avatar">${esc(String(module.category || '?').slice(0, 1).toUpperCase())}</div><div><h2>${esc(module.name)}</h2><span class="badge ${module.status === 'ready' ? 'good' : module.status === 'partial' ? 'warn' : 'bad'}">${esc(module.status)}</span></div></div><p class="row-sub">${esc(module.description)}</p><dl class="details"><dt>Bereit</dt><dd>${esc(module.availableTools?.join(', ') || '—')}</dd><dt>Fehlt</dt><dd>${esc(module.missingTools?.join(', ') || 'nichts')}</dd></dl>${module.limitation ? `<p class="row-sub">${esc(module.limitation)}</p>` : ''}<div class="toolbar"><button class="secondary" data-launch-module="${attr(module.id)}">Arbeitsraum öffnen</button></div></article>`).join('') || '<div class="card"><p>Keine Module gemeldet.</p></div>'}</div>`
+    <div class="grid">${modules.map(module => `<article class="bot-card"><div class="card-title"><div class="avatar">${esc(String(module.category || '?').slice(0, 1).toUpperCase())}</div><div><h2>${esc(module.name)}</h2><span class="badge ${module.status === 'ready' ? 'good' : module.status === 'partial' ? 'warn' : 'bad'}">${esc(statusLabel(module.status, MODULE_STATUS))}</span></div></div><p class="row-sub">${esc(module.description)}</p><dl class="details"><dt>Bereit</dt><dd>${esc(module.availableTools?.join(', ') || '—')}</dd><dt>Fehlt</dt><dd>${esc(module.missingTools?.join(', ') || 'nichts')}</dd></dl>${module.limitation ? `<p class="row-sub">${esc(module.limitation)}</p>` : ''}<div class="toolbar"><button class="secondary" data-launch-module="${attr(module.id)}">Arbeitsraum öffnen</button></div></article>`).join('') || '<div class="card"><p>Keine Module gemeldet.</p></div>'}</div>`
 }
 
 function enrollmentCard(entry) {
-  return `<article class="node-card"><div class="card-title"><div><h2>${esc(entry.displayName)}</h2><span class="badge warn">${esc(entry.status)}</span></div></div><dl class="details"><dt>Knoten</dt><dd>${esc(entry.nodeId)}</dd><dt>Ziel</dt><dd>${esc(entry.sshUser)}@${esc(entry.host)}:${entry.sshPort}</dd><dt>Rolle</dt><dd>${esc(entry.role)}</dd><dt>Laufzeit</dt><dd>${esc(entry.runtime)}</dd></dl><div class="toolbar">${entry.status === 'draft' ? `<button class="primary" data-enrollment-action="approve" data-id="${attr(entry.id)}">Freigeben</button>` : ''}${entry.status === 'approved' ? `<button class="primary" data-enrollment-action="ready" data-id="${attr(entry.id)}">Aufnahme vorbereiten</button>` : ''}${!['cancelled', 'verified'].includes(entry.status) ? `<button class="danger-button" data-enrollment-action="cancel" data-id="${attr(entry.id)}">Abbrechen</button>` : ''}</div></article>`
+  return `<article class="node-card"><div class="card-title"><div><h2>${esc(entry.displayName)}</h2><span class="badge warn">${esc(statusLabel(entry.status, ENROLL_STATUS))}</span></div></div><dl class="details"><dt>Knoten</dt><dd class="nur-experte">${esc(entry.nodeId)}</dd><dt>Ziel</dt><dd>${esc(entry.sshUser)}@${esc(entry.host)}:${entry.sshPort}</dd><dt>Rolle</dt><dd>${esc(entry.role)}</dd><dt>Laufzeit</dt><dd>${esc(entry.runtime)}</dd></dl><div class="toolbar">${entry.status === 'draft' ? `<button class="primary" data-enrollment-action="approve" data-id="${attr(entry.id)}">Freigeben</button>` : ''}${entry.status === 'approved' ? `<button class="primary" data-enrollment-action="ready" data-id="${attr(entry.id)}">Aufnahme vorbereiten</button>` : ''}${!['cancelled', 'verified'].includes(entry.status) ? `<button class="danger-button" data-enrollment-action="cancel" data-id="${attr(entry.id)}">Abbrechen</button>` : ''}</div></article>`
 }
 
 function securityView() {
@@ -985,14 +1090,14 @@ async function loadTrust() {
       const activation = item.activation || null
       const complete = ['verified', 'reproductionPassed', 'regressionPassed', 'cleanupVerified', 'rollbackPassed', 'recoveryPassed'].every(key => evidence[key] === true)
       const receipt = activation ? `<dt>Live-Nachweis</dt><dd>${activation.independentlyVerified ? 'unabhängig bestätigt' : esc(activation.status || 'offen')}</dd><dt>Release</dt><dd class="mono">${esc(activation.previousReleaseId || '—')} → ${esc(activation.releaseId || '—')}</dd><dt>Versuch</dt><dd class="mono">${esc(activation.attemptId || '—')}</dd>` : ''
-      return `<article class="run-card repair-card"><div class="card-title"><div><h2>${esc(item.description || item.file)}</h2><span class="badge ${item.status === 'applied' ? 'good' : item.status === 'rolled-back' || item.status === 'blocked' ? 'bad' : 'warn'}">${esc(item.status)}</span></div></div><dl class="details"><dt>Datei</dt><dd class="mono">${esc(item.file)}</dd><dt>Doctor-Fall</dt><dd class="mono">${esc(item.doctorCorrelation?.caseId || '—')}</dd><dt>Sandbox</dt><dd>${evidence.verified ? 'bestanden' : 'offen'}</dd><dt>Reproduktion</dt><dd>${evidence.reproductionPassed ? 'bestanden' : 'offen'}</dd><dt>Regression</dt><dd>${evidence.regressionPassed ? 'bestanden' : 'offen'}</dd><dt>Rollback</dt><dd>${evidence.rollbackPassed ? 'bestanden' : 'offen'}</dd><dt>Recovery</dt><dd>${evidence.recoveryPassed ? 'bestanden' : 'offen'}</dd><dt>Candidate</dt><dd class="mono">${esc(String(evidence.candidateHash || '—').slice(0, 16))}</dd>${receipt}</dl>${item.status === 'queued' ? `<button class="primary full-button" data-repair-approve="${attr(item.id)}" ${!repairs.authoritative || !complete ? 'disabled' : ''}>PATCH_GATE freigeben</button>` : ''}</article>`
+      return `<article class="run-card repair-card"><div class="card-title"><div><h2>${esc(item.description || item.file)}</h2><span class="badge ${item.status === 'applied' ? 'good' : item.status === 'rolled-back' || item.status === 'blocked' ? 'bad' : 'warn'}">${esc(statusLabel(item.status, REPAIR_STATUS))}</span></div></div><dl class="details"><dt>Datei</dt><dd class="mono nur-experte">${esc(item.file)}</dd><dt>Doctor-Fall</dt><dd class="mono nur-experte">${esc(item.doctorCorrelation?.caseId || '—')}</dd><dt>Sandbox</dt><dd>${evidence.verified ? 'bestanden' : 'offen'}</dd><dt>Reproduktion</dt><dd>${evidence.reproductionPassed ? 'bestanden' : 'offen'}</dd><dt>Regression</dt><dd>${evidence.regressionPassed ? 'bestanden' : 'offen'}</dd><dt>Rollback</dt><dd>${evidence.rollbackPassed ? 'bestanden' : 'offen'}</dd><dt>Recovery</dt><dd>${evidence.recoveryPassed ? 'bestanden' : 'offen'}</dd><dt>Candidate</dt><dd class="mono nur-experte">${esc(String(evidence.candidateHash || '—').slice(0, 16))}</dd>${receipt}</dl>${item.status === 'queued' ? `<button class="primary full-button" data-repair-approve="${attr(item.id)}" ${!repairs.authoritative || !complete ? 'disabled' : ''}>Patch freigeben (geprüft)</button><p class="section-note">Der Patch ist sandbox-geprüft und gebunden. Zur Freigabe braucht es einmal den Freigabe-Token.</p>` : ''}</article>`
     }).join('')
     const labels = { total: 'Läufe', running: 'laufen', awaitingApproval: 'warten auf Freigabe', completed: 'fertig', failed: 'fehlgeschlagen', verified: 'geprüft' }
     document.querySelector('#page').innerHTML = subPage('trust', `<header class="page-head"><div><h1>Belege & Reparaturen</h1><p>Keine Selbsteinschätzung: Status, Werkzeuge, Tests, Kosten und Prüfergebnis stammen aus der Ergebnisakte.</p></div></header>
       <div class="metric-grid">${Object.entries(data.summary || {}).map(([key, value]) => `<div class="metric"><strong>${fmtNumber(value)}</strong><span>${esc(labels[key] || key)}</span></div>`).join('')}</div>
       ${repairs ? `<div class="section-heading"><div><div class="eyebrow">Doctor-Selbstreparatur</div><h2>Sandbox-geprüfte Reparaturen</h2></div><span class="badge ${repairs.authoritative ? 'good' : 'bad'}">${repairs.authoritative ? 'Main gefenct' : 'nicht autoritativ'}</span></div><div class="grid repair-grid">${repairCards || '<div class="card"><h3>Keine Doctor-Reparatur wartet</h3></div>'}</div>` : ''}
       <div class="section-heading"><div><div class="eyebrow">Ergebnisakte</div><h2>Arbeitsläufe</h2></div></div>
-      <div class="grid">${(data.runs || []).map(run => `<article class="run-card" data-run-id="${attr(run.runId)}"><div class="card-title"><div><h2>${esc(run.contract?.goal || run.runId)}</h2><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(run.status)}</span></div></div><dl class="details"><dt>Lauf</dt><dd class="mono">${esc(run.runId)}</dd><dt>Modell</dt><dd>${esc(run.model || '—')}</dd><dt>Knoten</dt><dd>${esc(run.node || '—')}</dd><dt>Werkzeuge</dt><dd>${run.tools?.length || 0}</dd><dt>Tests</dt><dd>${run.tests?.length || 0}</dd><dt>Geprüft</dt><dd>${run.validation?.success ? 'ja' : 'nein'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl></article>`).join('') || '<div class="card"><h3>Noch keine Läufe für diesen Benutzer</h3></div>'}</div>`)
+      <div class="grid">${(data.runs || []).map(run => `<article class="run-card" data-run-id="${attr(run.runId)}"><div class="card-title"><div><h2>${esc(run.contract?.goal || run.runId)}</h2><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(statusLabel(run.status, RUN_STATUS))}</span></div></div><dl class="details"><dt>Lauf</dt><dd class="mono nur-experte">${esc(run.runId)}</dd><dt>Modell</dt><dd>${esc(run.model || '—')}</dd><dt>Knoten</dt><dd>${esc(run.node || '—')}</dd><dt>Werkzeuge</dt><dd>${run.tools?.length || 0}</dd><dt>Tests</dt><dd>${run.tests?.length || 0}</dd><dt>Geprüft</dt><dd>${run.validation?.success ? 'ja' : 'nein'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl></article>`).join('') || '<div class="card"><h3>Noch keine Läufe für diesen Benutzer</h3></div>'}</div>`)
     bind()
   } catch (error) { fail(error) }
 }
@@ -1021,7 +1126,7 @@ function topbar(room) {
   const selected = room?.modelMode === 'pinned' ? (room.pinnedRouteId || modelRouteId(routeForRoom(room)) || '') : 'auto'
   const active = routes.find(model => model.id === catalog.activeModel && model.status === 'running')
   return `<header class="topbar">
-    <div class="room-heading"><h1>${esc(room?.title || 'Unterhaltung')}</h1><p>${esc(room?.topic || (isStandardMode() ? 'Ich bin da. Frag mich einfach.' : 'Sag in normaler Sprache, was erreicht werden soll.'))}</p></div>
+    <div class="room-heading"><div class="room-title-row"><h1>${esc(room?.title || 'Unterhaltung')}</h1>${room ? `<button class="ghost" data-action="rename-room">Umbenennen</button>` : ''}</div><p>${esc(room?.topic || (isStandardMode() ? 'Ich bin da. Frag mich einfach.' : 'Sag in normaler Sprache, was erreicht werden soll.'))}</p></div>
     <span class="pill good main-presence" title="Main">${esc(control.hostname || control.nodeId || 'Main')}</span>
     ${room ? `<select class="model-select" id="model-picker" aria-label="Modellwahl" aria-busy="${state.modelSaving.has(room.id)}" ${state.modelSaving.has(room.id) ? 'disabled title="Modellwahl wird gespeichert"' : ''}>
       <option value="auto" ${selected === 'auto' ? 'selected' : ''}>Automatisch · ${esc(active ? modelLabel(active, true) : 'sie wählt selbst')}</option>
@@ -1082,17 +1187,17 @@ function messageView(message) {
   const bot = botById(message.authorId)
   const isUser = message.authorType === 'user'
   const label = isUser ? 'Du' : bot?.name || (message.authorType === 'system' ? 'System' : message.authorId)
-  const origin = bot?.source && bot.source !== 'nova' ? bot.source : message.node
+  const origin = bot?.source && bot.source !== 'nova' ? statusLabel(bot.source, BOT_SOURCE) : message.node
   const evidence = message.evidence
   const actionLabel = evidence?.action?.awaitingApproval ? 'Freigabe nötig'
     : evidence?.action?.requiresTool && !evidence.action.fulfilled ? 'Ergebnis nicht verifiziert'
       : evidence?.action?.fulfilled ? 'Ergebnis verifiziert'
-        : message.verifiedEvidence > 0 ? 'Evidence geprüft'
-          : evidence?.tools?.some(tool => !tool.success) ? 'Tool fehlgeschlagen'
-            : evidence?.action?.requiresTool === false ? 'Keine Tool-Evidence nötig' : 'Evidenzstatus unbekannt'
+        : message.verifiedEvidence > 0 ? 'Ergebnis geprüft'
+          : evidence?.tools?.some(tool => !tool.success) ? 'Werkzeug fehlgeschlagen'
+            : evidence?.action?.requiresTool === false ? 'Kein Werkzeug nötig' : 'Prüfung offen'
   return `<article class="message ${isUser ? 'user' : ''}">
     <div class="avatar" ${bot?.color ? `data-color="${attr(bot.color)}"` : ''}>${esc(isUser ? 'A' : bot?.avatar || '!')}</div>
-    <div class="message-body"><div class="message-head"><span>${esc(label)}</span>${origin ? `<span class="origin">${esc(origin)}</span>` : ''}${message.model ? `<span class="origin">${esc(message.model)}</span>` : ''}<time>${fmtTime(message.createdAt)}</time></div><div class="message-content">${formatMessage(message.content)}</div>${!isUser && (message.runId || evidence) ? `<div class="evidence-strip"><span class="evidence-state ${message.verifiedEvidence > 0 ? 'verified' : ''}">${esc(actionLabel || 'Keine Tool-Evidence nötig')}</span>${evidence?.tools?.map(tool => `<span class="tool-pill ${tool.success ? 'ok' : 'failed'}">${tool.success ? '✓' : '×'} ${esc(tool.name)}</span>`).join('') || ''}${evidence?.durationMs ? `<span>${fmtNumber(evidence.durationMs / 1000, 1)}s</span>` : ''}${message.runId ? `<button class="run-link" data-run-id="${attr(message.runId)}">Beleg ansehen</button>` : ''}</div>` : ''}</div>
+    <div class="message-body"><div class="message-head"><span>${esc(label)}</span>${origin ? `<span class="origin">${esc(origin)}</span>` : ''}${message.model ? `<span class="origin">${esc(message.model)}</span>` : ''}<time>${fmtTime(message.createdAt)}</time></div><div class="message-content">${formatMessage(message.content)}</div>${!isUser && (message.runId || evidence) ? `<div class="evidence-strip"><span class="evidence-state ${message.verifiedEvidence > 0 ? 'verified' : ''}">${esc(actionLabel || 'Kein Werkzeug nötig')}</span>${evidence?.tools?.map(tool => `<span class="tool-pill ${tool.success ? 'ok' : 'failed'}">${tool.success ? '✓' : '×'} ${esc(tool.name)}</span>`).join('') || ''}${evidence?.durationMs ? `<span>${fmtNumber(evidence.durationMs / 1000, 1)}s</span>` : ''}${message.runId ? `<button class="run-link" data-run-id="${attr(message.runId)}">Beleg ansehen</button>` : ''}</div>` : ''}</div>
   </article>`
 }
 
@@ -1136,8 +1241,7 @@ async function applyDesktopCommand(command) {
     const payload = command.payload || {}
     if (command.action === 'navigate') {
       if (!KNOWN_SECTIONS.has(SECTION_ALIAS[payload.section] || payload.section)) throw new Error('Unbekannter Bereich')
-      if (payload.section === 'memory') state.tabs.gedaechtnis = 'wissen'
-      state.section = normalizeSection(payload.section)
+      state.section = applySectionAlias(payload.section)
       render()
     } else if (command.action === 'open_room') {
       const room = roomById(payload.roomId)
@@ -1210,11 +1314,23 @@ function bind() {
     if (name === 'gedaechtnis' && state.tabs.gedaechtnis === 'wissen') await ensureView('wissen', { force: true })
     render()
   }))
-  document.querySelectorAll('[data-tab]').forEach(node => node.addEventListener('click', () => {
-    const [area, tab] = node.dataset.tab.split(':')
-    state.tabs[area] = tab
-    render()
-  }))
+  document.querySelectorAll('[data-tab]').forEach(node => {
+    node.addEventListener('click', () => {
+      const [area, tab] = node.dataset.tab.split(':')
+      state.tabs[area] = tab
+      state.focusTab = node.dataset.tab
+      render()
+    })
+    node.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const list = [...node.closest('[role="tablist"]')?.querySelectorAll('[role="tab"]') || []]
+      const index = list.indexOf(node)
+      if (index < 0) return
+      event.preventDefault()
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : event.key === 'ArrowLeft' ? (index + list.length - 1) % list.length : (index + 1) % list.length
+      list[next].click()
+    })
+  })
   document.querySelector('[data-action="toggle-thoughts"]')?.addEventListener('click', () => { state.showAllThoughts = !state.showAllThoughts; render() })
   document.querySelector('[data-action="toggle-cards"]')?.addEventListener('click', () => { state.showAllCards = !state.showAllCards; render() })
   document.querySelector('.cockpit-more')?.addEventListener('toggle', event => { state.heuteDetails = event.currentTarget.open })
@@ -1236,6 +1352,8 @@ function bind() {
     finally { if (selection === state.roomSelection) { state.roomLoading = null; render() } }
   }))
   document.querySelectorAll('[data-action="new-room"]').forEach(node => node.addEventListener('click', showNewRoom))
+  document.querySelector('[data-action="rename-room"]')?.addEventListener('click', showRenameRoom)
+  document.querySelectorAll('[data-agent-health]').forEach(node => node.addEventListener('click', () => checkAgentHealth(node.dataset.agentHealth, node)))
   document.querySelector('[data-action="add-external"]')?.addEventListener('click', showExternalBot)
   document.querySelector('[data-action="add-node"]')?.addEventListener('click', showNodeEnrollment)
   document.querySelector('[data-action="new-memory-asset"]')?.addEventListener('click', showMemoryAsset)
@@ -1275,13 +1393,13 @@ function bind() {
 }
 
 function showRepairApproval(proposalId) {
-  showModal('Doctor-Reparatur freigeben', `<form class="form" id="repair-approval-form"><p>Die Diagnose ist automatisch. Diese Freigabe autorisiert ausschließlich den bereits gebundenen, sandbox-geprüften Patch. Der Token wird nur für diesen Request übertragen und nicht gespeichert.</p><label>PATCH_GATE Token<input name="approvalToken" type="password" autocomplete="off" required></label><div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Gebundenen Patch freigeben</button></div></form>`)
+  showModal('Doctor-Reparatur freigeben', `<form class="form" id="repair-approval-form"><p>Die Diagnose ist automatisch. Diese Freigabe autorisiert ausschließlich den bereits gebundenen, sandbox-geprüften Patch. Der Token wird nur für diese eine Freigabe übertragen und nicht gespeichert.</p><label>Freigabe-Token<input name="approvalToken" type="password" autocomplete="off" required></label><div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Gebundenen Patch freigeben</button></div></form>`)
   document.querySelector('#repair-approval-form').addEventListener('submit', async event => {
     event.preventDefault()
     const approvalToken = new FormData(event.target).get('approvalToken')
     try {
       await api.post(`/api/desktop/trust/repairs/${encodeURIComponent(proposalId)}/approve`, { approvalToken })
-      closeModal(); await loadTrust(); toast('Reparatur wurde vom PATCH_GATE angenommen.')
+      closeModal(); await loadTrust(); toast('Reparatur ist freigegeben und wurde angewendet.')
     } catch (error) { fail(error) }
   })
 }
@@ -1338,7 +1456,7 @@ async function openRunDetail(runId) {
   try {
     const run = await api.get(`/api/desktop/trust/runs/${encodeURIComponent(runId)}`)
     const tools = run.tools || []
-    showModal('Geprüfter Arbeitslauf', `<div class="run-detail"><div class="run-summary"><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(run.status)}</span><h3>${esc(run.contract?.goal || run.runId)}</h3><p class="mono">${esc(run.runId)}</p></div><dl class="details"><dt>Modell</dt><dd>${esc(run.model || '—')}</dd><dt>Knoten</dt><dd>${esc(run.node || '—')}</dd><dt>Prüfung</dt><dd>${run.validation?.success ? 'bestanden' : 'nicht bestanden'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl><div class="evidence-list">${tools.map(tool => `<article><span class="tool-pill ${tool.success === false ? 'failed' : 'ok'}">${tool.success === false ? '×' : '✓'} ${esc(tool.toolName || tool.tool || 'tool')}</span><p>${esc(String(tool.result || '').slice(0, 500))}</p></article>`).join('') || '<p>Dieser Lauf brauchte keine Werkzeuge.</p>'}</div></div>`)
+    showModal('Geprüfter Arbeitslauf', `<div class="run-detail"><div class="run-summary"><span class="badge ${run.status === 'completed' ? 'good' : run.status === 'failed' ? 'bad' : 'warn'}">${esc(statusLabel(run.status, RUN_STATUS))}</span><h3>${esc(run.contract?.goal || run.runId)}</h3><p class="mono nur-experte">${esc(run.runId)}</p></div><dl class="details"><dt>Modell</dt><dd>${esc(run.model || '—')}</dd><dt>Knoten</dt><dd>${esc(run.node || '—')}</dd><dt>Prüfung</dt><dd>${run.validation?.success ? 'bestanden' : 'nicht bestanden'}</dd><dt>Kosten</dt><dd>$${Number(run.totalCostUsd || 0).toFixed(6)}</dd></dl><div class="evidence-list">${tools.map(tool => `<article><span class="tool-pill ${tool.success === false ? 'failed' : 'ok'}">${tool.success === false ? '×' : '✓'} ${esc(tool.toolName || tool.tool || 'tool')}</span><p>${esc(String(tool.result || '').slice(0, 500))}</p></article>`).join('') || '<p>Dieser Lauf brauchte keine Werkzeuge.</p>'}</div></div>`)
   } catch (error) { fail(error) }
 }
 
@@ -1436,15 +1554,48 @@ async function updateRoomModel(event) {
 
 function showModal(title, body) {
   const root = document.querySelector('#modal-root')
-  const opener = document.activeElement
+  state.modalOpener = document.activeElement && typeof document.activeElement.focus === 'function' ? document.activeElement : null
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${attr(title)}"><div class="modal-head"><h2>${esc(title)}</h2><button class="icon-button" data-close-modal aria-label="Schließen">${icon('x')}</button></div>${body}</section></div>`
   root.querySelectorAll('[data-close-modal]').forEach(node => node.addEventListener('click', closeModal))
   root.querySelector('.modal-backdrop').addEventListener('click', event => { if (event.target.classList.contains('modal-backdrop')) closeModal() })
-  root.querySelector('.modal-backdrop').addEventListener('keydown', event => { if (event.key === 'Escape') closeModal() })
-  root.dataset.opener = opener?.id || ''
+  root.querySelector('.modal-backdrop').addEventListener('keydown', event => { if (event.key === 'Escape') closeModal() }
+  )
   ;(root.querySelector('.modal input, .modal select, .modal textarea, .modal .primary') || root.querySelector('[data-close-modal]'))?.focus()
 }
-function closeModal() { document.querySelector('#modal-root').innerHTML = '' }
+function closeModal() {
+  document.querySelector('#modal-root').innerHTML = ''
+  const opener = state.modalOpener
+  state.modalOpener = null
+  if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus({ preventScroll: true })
+}
+
+function showRenameRoom() {
+  const room = currentRoom()
+  if (!room) return
+  showModal('Raum umbenennen', `<form class="form" id="rename-room-form"><label>Titel<input name="title" required maxlength="120" value="${attr(room.title)}"></label><div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>`)
+  document.querySelector('#rename-room-form').addEventListener('submit', async event => {
+    event.preventDefault()
+    const title = String(new FormData(event.target).get('title') || '').trim()
+    if (!title) return
+    try {
+      const saved = await api.patch(`/api/desktop/rooms/${encodeURIComponent(room.id)}`, { title })
+      const index = state.bootstrap.rooms.findIndex(item => item.id === saved.id)
+      if (index >= 0) state.bootstrap.rooms[index] = saved
+      closeModal(); render(); toast('Raum umbenannt.')
+    } catch (error) { fail(error) }
+  })
+}
+
+async function checkAgentHealth(connectionId, button) {
+  if (!connectionId) return
+  if (button) button.disabled = true
+  try {
+    const result = await api.post(`/api/desktop/external-agents/${encodeURIComponent(connectionId)}/health`, {})
+    const stateText = statusLabel(result?.lastStatus, AGENT_HEALTH)
+    toast(result?.lastStatus === 'healthy' ? `Verbindung ist ${stateText.toLowerCase()}.` : `Verbindung: ${stateText}.`, result?.lastStatus !== 'healthy')
+  } catch (error) { fail(error) }
+  finally { if (button) button.disabled = false }
+}
 
 function showNewRoom() {
   showModal('Neuer Raum', `<form class="form" id="room-form"><label>Titel<input name="title" required maxlength="120" placeholder="z. B. Release 2.83"></label><label>Worum geht es?<textarea name="topic" rows="3" maxlength="500" placeholder="Ziel und Zusammenhang"></textarea></label><p>Xaventra ist die Ansprechpartnerin. Sie wählt Modell und Knoten selbst und zieht Spezialisten nur hinzu, wenn du sie in einer Nachricht auswählst.</p><div class="toolbar"><button class="secondary" type="button" data-close-modal>Abbrechen</button><button class="primary" type="submit">Anlegen</button></div></form>`)

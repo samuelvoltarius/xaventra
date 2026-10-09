@@ -117,6 +117,36 @@
 - **„morgen“ after midnight is the day that is starting.** Live 09.10. 01:12 „morgen gegen 10 Uhr“ planned Saturday instead of Friday. Until 05:00 „morgen“ means today's calendar date; the confirmation always names weekday + date and asks once when the owner might have meant the next day.
 - **Daily tips only for what is really there.** The 07:00 promise „Ich sag dir Bescheid, sobald der Druck fertig ist.“ came without a printer and without a print job. Tips never promise future monitoring, are gated by the capability inventory (a printer tip needs a real printer protocol), stay at most one per day, and can be switched off with „Tipps aus“.
 - **The Claude/Doctor handoff card speaks everyday German.** The live card opened with „Behebe den verifizierten Doctor-Fall … Regressionstest … Auslieferung nur über CI“. The short card now says what is broken (one sentence) and what Ja does; the technical task stays in the agent's `auftrag` and behind „Details“.
+### Changed (Desktop)
+
+- **Eight main areas instead of nineteen equal menu targets.** The rail is
+  Heute · Unterhaltung · Anrufen · Arbeit · Geräte · Verbindungen · Gedächtnis
+  plus Werkzeugkasten, Mehr and Einstellungen. Activity is a tab under Work,
+  screens a tab under Devices ("Dein Computer"), and rules sit under Mehr. Old
+  section ids (`computer`, `bildschirme`, `aktivitaet`, `memory`) still open
+  the matching tab. The toolbox stays in the main rail; card approval for
+  install/remove is unchanged.
+- **A running Auftrag shows its live step** on Heute and under Arbeit by
+  polling the existing `GET /api/desktop/fortschritt` every five seconds —
+  no new route, no second progress path.
+- **Errors say what to do next.** Owner lock, timeout and unreachable Main
+  get a German sentence and a next step; unknown failures never dump raw
+  server English. Empty states no longer mention config keys
+  (`autonomy.planner`, `desktop.direct.enabled`).
+- **No internal jargon on the surface.** English run/module/model/node/enrollment
+  status is translated; "Evidence/Tool/Evidenzstatus" is plain German;
+  "PATCH_GATE freigeben" is "Patch freigeben (geprüft)" with a one-line help
+  text. Raw node ids, run ids and file paths are `nur-experte`.
+- **Missing but existing API capabilities surfaced:** rename a room
+  (`PATCH /rooms/:id`) and "Verbindung prüfen" for external agents
+  (`POST /external-agents/:id/health`).
+- **Accessible:** tab lists with `role=tablist/tab`, `aria-selected` and arrow
+  keys; dialogs return focus to the opener; a visible live-step line.
+
+### Fixed (Desktop)
+
+- Broken CSS comment (2.86 package O) repaired; unused `.badge-row`,
+  `.fact-list`, `.fact-kind` removed.
 
 ## [2.89.3] — 2026-10-08
 

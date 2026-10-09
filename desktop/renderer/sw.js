@@ -4,7 +4,7 @@
 // mit Token und alles außer GET auf dem eigenen Ursprung fasst dieser Worker nie
 // an – die gehen immer direkt ans Netz und landen in keinem Cache.
 'use strict'
-// v5 (2.88): dazu zugaenge.js (Verbindungen → Proxmox, Passwort-Tresor) und sehen.js (Ihr Computer, Aktivität, Regeln).
+// v5 (2.88): dazu zugaenge.js (Verbindungen → Proxmox, Passwort-Tresor) und sehen.js (Dein Computer, Aktivität, Regeln).
 // v3 (2.87): telefon.js. Dieselbe Liste wie DASHBOARD_UI_FILES in src/dev/copy-dashboard-assets.ts (ohne sw.js selbst, Test pwa.test.ts).
 const CACHE = 'xaventra-ui-v5'
 const STATIC = Object.freeze([

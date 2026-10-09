@@ -1,10 +1,11 @@
 // „Sehen und lenken“ (2.88): drei Seiten in einer Datei — dieselbe in der
 // Desktop-App und in der Web-App (bridge.js).
-//   computer    Ihr Computer: Bildschirme, live zusehen, Übernehmen/Zurückgeben,
-//               Stoppen, Anderes Ziel
+//   bildschirme Dein Computer: Bildschirme, live zusehen, Übernehmen/Zurückgeben,
+//               Stoppen, Anderes Ziel (Alias: computer)
 //   aktivitaet  alles, was sie gerade und im Hintergrund tut, mit Stopp/Später/Anders
 //   regeln      Regeln in Klartext: erlauben / fragen / blockieren
-// app.js ruft nur view(section, h) und mount(section, h) auf (h = Helfer).
+// app.js ruft view(section, h, { bare }) und mount(section, h) auf (h = Helfer).
+// Mit bare: true entfällt die Seitenhülle — für Reiter in Arbeit/System.
 // Kein Knopf hier umgeht etwas: alles läuft über /api/desktop/* (nur Owner).
 ;(() => {
   const LIVE_MS = 1500
@@ -32,13 +33,18 @@
     return `<header class="page-head"><div><div class="eyebrow">${h.esc(eyebrow)}</div><h1>${h.esc(title)}</h1><p>${h.esc(text)}</p></div></header>`
   }
   function shell(inner) { return `<div class="page"><div class="page-inner">${inner}</div></div>` }
-  function problems(h, list) { return (list || []).length ? `<div class="empty-note">${h.icon('alert', 'sm')}Teilweise nicht lesbar: ${h.esc(list.join(' · '))}</div>` : '' }
+  function wrap(bare, inner) { return bare ? inner : shell(inner) }
+  function problems(h, list) {
+    if (!(list || []).length) return ''
+    if (typeof h.problemsNote === 'function') return h.problemsNote(list)
+    return `<div class="empty-note">${h.icon('alert', 'sm')}Teilweise nicht lesbar: ${h.esc(list.join(' · '))}. Noch einmal aktualisieren.</div>`
+  }
   function waiting(h, slot, label) {
     if (slot.error && !slot.data) return `<section class="section"><div class="section-body"><div class="empty-note">${h.esc(slot.error)}</div></div></section>`
     return `<section class="section" aria-busy="true"><div class="section-body"><div class="empty-note">${h.esc(label)} …</div></div></section>`
   }
 
-  // ── Ihr Computer ─────────────────────────────────────────
+  // ── Dein Computer (Bildschirme) ───────────────────────────
   function screenRow(h, screen) {
     const watching = local.live === screen.id
     const state = screen.uebernommen ? '<span class="pill warn">du hast übernommen</span>' : screen.gestoppt ? '<span class="pill bad">gestoppt</span>'
@@ -72,17 +78,17 @@
         : screen.uebernommen ? '<p class="section-note">Ich schaue nur zu. Eingaben von hier sind auf diesem Rechner nicht freigegeben.</p>' : ''}</div></section>`
   }
 
-  function computerView(h) {
+  function computerView(h, bare = false) {
     const slot = local.bildschirme
     if (!slot.data && !slot.loading) void load(h, 'bildschirme')
-    const intro = head(h, 'Computer-Session', 'Ihr Computer', 'Desktop, Browser, Terminal und Dateien – auf jedem Rechner mit Bildschirm. Zuschauen, übernehmen, stoppen oder ein anderes Ziel geben.')
-    if (!slot.data) return shell(intro + waiting(h, slot, 'Bildschirme werden gesucht'))
+    const intro = head(h, 'Computer-Session', 'Dein Computer', 'Desktop, Browser, Terminal und Dateien – auf jedem Rechner mit Bildschirm. Zuschauen, übernehmen, stoppen oder ein anderes Ziel geben.')
+    if (!slot.data) return wrap(bare, intro + waiting(h, slot, 'Bildschirme werden gesucht'))
     const d = slot.data
     const rows = (d.bildschirme || []).map(screen => screenRow(h, screen)).join('')
     const none = `<div class="empty-note">Gerade sehe ich keinen Bildschirm. Auf einem Rechner mit Bildschirm muss die Aufnahme einmal am Gerät eingerichtet werden.</div>`
     const paused = d.agentPausiert ? `<div class="empty-note">${h.icon('pointer', 'sm')}Meine Maus und Tastatur sind gerade pausiert.</div>` : ''
     const headless = (d.ohneBildschirm || []).length ? `<p class="section-note">Ohne Bildschirm: ${h.esc(d.ohneBildschirm.join(', '))}</p>` : ''
-    return shell(`${intro}${problems(h, d.probleme)}${liveBlock(h, d.bildschirme)}
+    return wrap(bare, `${intro}${problems(h, d.probleme)}${liveBlock(h, d.bildschirme)}
       <section class="section" aria-labelledby="screens-title"><div class="section-head"><h2 id="screens-title">${h.icon('monitor')}Bildschirme</h2></div>
       <div class="section-body">${paused}<div class="rows">${rows || none}</div>${headless}</div></section>`)
   }
@@ -189,17 +195,17 @@
       <div class="row-sub">${h.esc(item.tut && item.tut !== item.titel ? `${item.titel} · ` : '')}${h.esc(meta.join(' · '))}</div>${anders}</div>
       <div class="row-side"><span class="pill ${STATUS_TONE[item.status] || ''}">${h.esc(item.statusText)}</span>${buttons}</div></div>`
   }
-  function aktivitaetView(h) {
+  function aktivitaetView(h, bare = false) {
     const slot = local.aktivitaet
     if (!slot.data && !slot.loading) void load(h, 'aktivitaet')
     const intro = head(h, 'Sehen und lenken', 'Aktivität', 'Was ich gerade und im Hintergrund tue – mit Status, Rechner und Grund. Stopp, Später oder Anders: du lenkst.')
-    if (!slot.data) return shell(intro + waiting(h, slot, 'Aktivität wird gelesen'))
+    if (!slot.data) return wrap(bare, intro + waiting(h, slot, 'Aktivität wird gelesen'))
     const items = slot.data.eintraege || []
     const now = items.filter(item => item.jetzt)
     const bg = items.filter(item => !item.jetzt)
     const section = (id, title, list, empty) => `<section class="section" aria-labelledby="${id}"><div class="section-head"><h2 id="${id}">${h.icon(id === 'akt-jetzt' ? 'activity' : 'clock')}${h.esc(title)}${list.length ? `<span class="count">${list.length}</span>` : ''}</h2></div>
       <div class="section-body"><div class="rows">${list.map(item => activityRow(h, item)).join('') || `<div class="empty-note">${h.esc(empty)}</div>`}</div></div></section>`
-    return shell(`${intro}${problems(h, slot.data.probleme)}${section('akt-jetzt', 'Gerade', now, 'Gerade arbeite ich an nichts Bestimmtem.')}${section('akt-hinten', 'Im Hintergrund', bg, 'Im Hintergrund läuft nichts.')}`)
+    return wrap(bare, `${intro}${problems(h, slot.data.probleme)}${section('akt-jetzt', 'Gerade', now, 'Gerade arbeite ich an nichts Bestimmtem.')}${section('akt-hinten', 'Im Hintergrund', bg, 'Im Hintergrund läuft nichts.')}`)
   }
   async function activityAction(h, id, body) {
     local.busy.add(id)
@@ -230,7 +236,7 @@
       <div class="row-sub"><span class="pill ${regel.fest ? '' : tone}">${h.esc(regel.fest ? 'feste Grenze' : label)}</span> ${h.esc(regel.bereich)} · ${h.esc(regel.hinweis)}</div></div>
       <div class="row-side"><div class="segmented" role="group" aria-label="Wirkung">${choose}</div><button class="ghost" data-sehen-regel-weg="${h.attr(regel.id)}" ${busy ? 'disabled' : ''}>Entfernen</button></div></div>`
   }
-  function regelnView(h) {
+  function regelnView(h, bare = false) {
     const slot = local.regeln
     if (!slot.data && !slot.loading) void load(h, 'regeln')
     const intro = head(h, 'Sehen und lenken', 'Regeln', 'Sag in einem Satz, was ich ohne Frage darf, wo ich fragen soll und was nie. Das geht auch einfach im Gespräch.')
@@ -240,9 +246,9 @@
       <form class="form inline" data-sehen-regel-form><label>In einem Satz<input name="text" maxlength="300" autocomplete="off" value="${h.attr(local.entwurf)}" placeholder="z. B. Lichter darfst du ohne Frage schalten"></label><button class="primary" type="submit">Merken</button></form>
       <div class="prompt-grid">${examples}</div>
       <p class="section-note">${h.esc(slot.data?.fest || 'Geld, Passwörter und Zugangsdaten, Löschen und die Nie-Liste bleiben immer fest.')}</p></div></section>`
-    if (!slot.data) return shell(intro + form + waiting(h, slot, 'Regeln werden gelesen'))
+    if (!slot.data) return wrap(bare, intro + form + waiting(h, slot, 'Regeln werden gelesen'))
     const rows = (slot.data.regeln || []).map(regel => ruleRow(h, regel)).join('')
-    return shell(`${intro}${form}<section class="section" aria-labelledby="regel-liste"><div class="section-head"><h2 id="regel-liste">${h.icon('shield')}Deine Regeln${(slot.data.regeln || []).length ? `<span class="count">${slot.data.regeln.length}</span>` : ''}</h2></div>
+    return wrap(bare, `${intro}${form}<section class="section" aria-labelledby="regel-liste"><div class="section-head"><h2 id="regel-liste">${h.icon('shield')}Deine Regeln${(slot.data.regeln || []).length ? `<span class="count">${slot.data.regeln.length}</span>` : ''}</h2></div>
       <div class="section-body"><div class="rows">${rows || '<div class="empty-note">Noch keine Regeln. Ohne Regel frage ich bei allem, was etwas verändert.</div>'}</div></div></section>`)
   }
   async function ruleCall(h, id, run) {
@@ -274,16 +280,18 @@
   }
 
   // ── Einstieg für app.js ──────────────────────────────────
-  function view(section, h) {
-    if (section === 'computer') return computerView(h)
-    if (section === 'aktivitaet') return aktivitaetView(h)
-    return regelnView(h)
+  function view(section, h, options) {
+    const bare = options?.bare === true
+    if (section === 'computer' || section === 'bildschirme') return computerView(h, bare)
+    if (section === 'aktivitaet') return aktivitaetView(h, bare)
+    return regelnView(h, bare)
   }
   function mount(section, h) {
     const page = document.querySelector('.page')
-    if (section !== 'computer') stopLive()
-    if (!page) return
-    if (section === 'computer') { void load(h, 'bildschirme'); mountComputer(h, page) }
+    const screens = section === 'computer' || section === 'bildschirme'
+    if (!screens) stopLive()
+    if (!page || !section) return
+    if (screens) { void load(h, 'bildschirme'); mountComputer(h, page) }
     if (section === 'aktivitaet') { void load(h, 'aktivitaet'); mountAktivitaet(h, page) }
     if (section === 'regeln') { void load(h, 'regeln'); mountRegeln(h, page) }
   }

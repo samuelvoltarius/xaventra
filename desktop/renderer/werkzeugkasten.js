@@ -68,7 +68,7 @@
     const { data, error } = h.viewState('werkzeugkasten')
     const head = h.pageHead('Werkzeugkasten', 'Programme, die mir weiterhelfen',
       'Was ich mit einem Knopf dazulernen kann. Installiert wird erst nach deinem „Ja“ auf der Karte – und alles lässt sich wieder entfernen.', 'werkzeugkasten')
-    if (error && !data) return `${head}${h.viewErrorBlock(error)}`
+    if (error && !data) return `${head}${h.viewErrorBlock(error, 'werkzeugkasten')}`
     if (!data) return `${head}${h.skeletonSection('Werkzeuge')}${h.skeletonSection('Werkzeuge')}`
     const all = (data.gruppen || []).flatMap(group => group.eintraege || [])
     const recommended = all.filter(item => item.empfohlen).length
