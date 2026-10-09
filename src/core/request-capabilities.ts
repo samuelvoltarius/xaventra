@@ -48,6 +48,11 @@ export function isMeshWideInventoryRequest(text: string): boolean {
     const value = String(text ?? '').trim()
     if (!value || value.startsWith('/') || containsHttpUrl(value) || mentionsScreenshot(value)) return false
     const question = inventoryRequestText(value)
+    // 2.89.4 merge: „Mach eine Inventur von allem, was du so kannst“ lists what the
+    // assistant can do (capability inventory → the model with nova_capabilities),
+    // not which services run where on the mesh. Only environment-shaped inventories
+    // take the bounded plan; a capability scope never does.
+    if (/\bwas\s+(?:du\s+)?(?:alles\s+)?(?:so\s+)?kann(?:st)?\b|\bwas\s+kannst\s+du\b|\bf(?:ä|ae)higkeiten\b|\bcapabilit(?:y|ies)\b/i.test(question)) return false
     const shape = /\binventur\w*/i.test(question)
         || /\bwas\b[^.?!]{0,50}\bwo\b[^.?!]{0,30}\b(?:läuft|laufen|installier\w*)/i.test(question)
         || /\bwo\b[^.?!]{0,40}\b(?:läuft|laufen)\b/i.test(question) && /\b(?:was|wo)\b/i.test(question)

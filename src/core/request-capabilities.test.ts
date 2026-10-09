@@ -95,4 +95,18 @@ describe('mesh-wide inventory stays read-only and all-nodes', () => {
             expect(isEnvironmentOverview(text)).toBe(false)
         }
     })
+
+    // Live 09.10.2026: „Mach eine Inventur von allem, was du so kannst“ is a
+    // capability inventory (the model answers with nova_capabilities), never the
+    // environment plan — and it must drop a stale target question like any new order.
+    it('a capability inventory is not a mesh-wide environment inventory', () => {
+        for (const text of [
+            'Mach eine Inventur von allem, was du so kannst',
+            'Inventur deiner Fähigkeiten',
+            'was kannst du alles?',
+        ]) {
+            expect(isMeshWideInventoryRequest(text)).toBe(false)
+        }
+        expect(isEnvironmentOverview('Mach eine Inventur von allem, was du so kannst')).toBe(false)
+    })
 })
