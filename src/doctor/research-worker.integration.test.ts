@@ -101,7 +101,10 @@ describe('Doctor investigation through the actual native execution pipeline', ()
             userId: 'Nova-Autonomy', authUserId: 'Nova-Autonomy', channel: 'internal', conversationId: 'doctor:unknown-escalation',
             content: contract.goal, contract, llm, tools: [{ name: 'health_status' }], abortSignal: new AbortController().signal,
         }).then(value => ({ output: value.content || '' })))
-        expect(result.output).toContain('Doctor-Diagnose')
+        // 2.89.4: the user sees one honest sentence, not internal escalation
+        // vocabulary. The escalation itself is the store + Doctor case below.
+        expect(result.output).toContain('Die Aktion ist nicht gelungen')
+        expect(result.output).not.toMatch(/Doctor-Diagnose|verifiziert fehlgeschlagen/i)
         expect(store.list()).toHaveLength(1)
         expect(store.list()[0]).toMatchObject({ classification: 'unknown', state: 'doctor-queued' })
         expect(doctor.list()).toHaveLength(1)
@@ -111,7 +114,9 @@ describe('Doctor investigation through the actual native execution pipeline', ()
     it('a Doctor diagnosis never escalates its own tool failure into a new Doctor case', async () => {
         const { result, store, doctor } = await unknownFailureRun((llm, contract) => createResearchWorker(() => true, llm)
             .execute({ contract, content: contract.goal, caseId: 'unknown-escalation', signal: new AbortController().signal, purpose: 'research' }))
-        expect(result.output).not.toContain('Doctor-Diagnose vorgemerkt')
+        // 2.89.4: no internal escalation vocabulary either; this path queues
+        // nothing (store + Doctor empty below are the real contract).
+        expect(result.output).not.toMatch(/Doctor-Diagnose|verifiziert fehlgeschlagen/i)
         expect(store.list()).toHaveLength(0)
         expect(doctor.list()).toHaveLength(0)
     }, 30_000)
