@@ -303,10 +303,44 @@ function viennaTimeOnDay(now: number, dayOffset: number, h: number, mi: number):
     return guess - zoneOffsetMs(first)
 }
 
+/**
+ * 2.89.4: the owner's words in Vienna time, with weekday and date — never a
+ * bare "09.10., 10:00" that could be yesterday or tomorrow.
+ */
 export function formatReminderTime(t: number): string {
     return new Date(t).toLocaleString('de-DE', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: REMINDER_TIME_ZONE,
+        weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: REMINDER_TIME_ZONE,
     })
+}
+
+/**
+ * 2.89.4: after midnight until 05:00 „morgen“ almost always means the day that
+ * is starting (01:12 „morgen gegen 10 Uhr“ = today 10:00, not tomorrow).
+ * Central rule for every time parser.
+ */
+export function morgenDayOffset(now: number = Date.now()): number {
+    return zonedParts(now).h < 5 ? 0 : 1
+}
+
+/** Confirmation the owner reads back (weekday + date always). */
+export function describeReminderWhen(triggerAt: number, now: number = Date.now()): string {
+    const sameDay = zonedParts(triggerAt).d === zonedParts(now).d
+        && zonedParts(triggerAt).m === zonedParts(now).m
+        && zonedParts(triggerAt).y === zonedParts(now).y
+    return `${sameDay ? 'heute, ' : ''}${formatReminderTime(triggerAt)}`
+}
+
+/**
+ * 2.89.4: after midnight „morgen“ was taken as the day that is starting — say
+ * so, and ask once when the owner might have meant the next calendar day.
+ */
+export function describeMorgenChoice(triggerAt: number, input: string, now: number = Date.now()): string {
+    const base = describeReminderWhen(triggerAt, now)
+    const nightMorgen = /morgen/i.test(input) && !/(?:ü|ue)bermorgen/i.test(input) && morgenDayOffset(now) === 0
+    if (!nightMorgen) return base
+    const p = zonedParts(triggerAt)
+    const other = viennaTimeOnDay(now, 1, p.h, p.mi)
+    return `${base} – oder meintest du ${formatReminderTime(other)}?`
 }
 
 export function parseTimeExpression(input: string | number, minutesParam?: number, now: number = Date.now()): number {
@@ -319,15 +353,17 @@ export function parseTimeExpression(input: string | number, minutesParam?: numbe
         return now + (input * 60 * 1000)
     }
 
-    // R2 T16: "morgen"/"übermorgen" decide the day BEFORE the clock patterns,
-    // otherwise "morgen um 10:30" said at 08:00 fired today.
-    const dayOffset = /(?:ü|ue)bermorgen/i.test(input) ? 2 : /morgen/i.test(input) ? 1 : 0
+    // R2 T16 / 2.89.4: "morgen"/"übermorgen" decide the day BEFORE the clock
+    // patterns. „übermorgen“ is always +2; „morgen“ is +1, except in the night
+    // window 00:00–05:00 where it is the day that is starting (+0).
+    const dayOffset = /(?:ü|ue)bermorgen/i.test(input) ? 2 : /morgen/i.test(input) ? morgenDayOffset(now) : 0
     const valid = (h: number, mi: number) => h >= 0 && h <= 23 && mi >= 0 && mi <= 59
 
     // Try clock time patterns: "10:00", "10 Uhr", "14:30" (Vienna time)
     const clockMatch = input.match(/(\d{1,2}):(\d{2})/)
     const uhrMatch = input.match(/(\d{1,2})\s*[Uu]hr/)
-    const umMatch = dayOffset > 0 ? input.match(/morgen\D*?(\d{1,2})(?!\d)/i) : null
+    // 2.89.4: also "morgen um 10" when „morgen“ is the day that is starting (offset 0).
+    const umMatch = /morgen/i.test(input) ? input.match(/morgen\D*?(\d{1,2})(?!\d)/i) : null
     const clock = clockMatch ? [parseInt(clockMatch[1]), parseInt(clockMatch[2])]
         : uhrMatch ? [parseInt(uhrMatch[1]), 0]
             : umMatch ? [parseInt(umMatch[1]), 0] : null
@@ -391,7 +427,8 @@ export const reminderTool = {
         const channel = (params.channel as string) || context?.channel || 'Telegram'
 
         const id = `rem_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-        const triggerTimeStr = formatReminderTime(triggerAt)
+        // 2.89.4: always name weekday + date; after midnight ask once if „morgen“ was meant as tomorrow.
+        const triggerTimeStr = describeMorgenChoice(triggerAt, timeInput, Date.now())
 
         const reminder: StoredReminder = {
             id,

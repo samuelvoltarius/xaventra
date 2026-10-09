@@ -56,6 +56,8 @@ export interface PlannerOutgoing {
     sections?: Array<{ titel: string; zeilen: string[] }>
     /** Paket L: traffic light + one sentence. */
     kopf?: string
+    /** 2.89.4: one consistent question count (menu button + head). */
+    fragen?: number
 }
 
 export type OutgoingDraft = Omit<PlannerOutgoing, 'id' | 'createdAt' | 'jobId' | 'slot'>
@@ -86,8 +88,15 @@ export function getPlannerDeliveryPort(): DeliveryPort | null {
 
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/g
 
+/** 2.89.4: never cut mid-word — keep whole sentences, else whole words. */
 export function cleanText(value: unknown, max = 4000): string {
-    return redactSecrets(String(value ?? '')).replace(CONTROL, ' ').slice(0, max)
+    const text = redactSecrets(String(value ?? '')).replace(CONTROL, ' ').trim()
+    if (text.length <= max) return text
+    const head = text.slice(0, max)
+    const sentence = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '), head.lastIndexOf('.\n'))
+    if (sentence >= 4) return head.slice(0, sentence + 1).trim()
+    const word = head.lastIndexOf(' ')
+    return (word >= 4 ? head.slice(0, word) : head).trim().replace(/[,;:–-]+$/, '')
 }
 
 /** Never throws. Maps every port behaviour onto a receipt. */

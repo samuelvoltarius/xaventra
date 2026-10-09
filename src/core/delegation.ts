@@ -92,6 +92,11 @@ export interface DelegationRequest {
      * an L2 task then goes out without a second card and records who approved.
      */
     freigabeVon?: string
+    /**
+     * 2.89.4: owner-facing card text (plain German). The technical `auftrag`
+     * stays for the agent and appears only behind „Details“.
+     */
+    karte?: { problem: string; ja: string }
 }
 
 export interface DelegationAnswer {
@@ -726,11 +731,22 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
                 mutate(id, item => { item.freigabeVon = preApproved; setStatus(item, 'wartet-auf-freigabe', preApproved.startsWith('vertrauensleiter:') ? `${approvalLabel(preApproved)}, keine Karte` : `Freigabe ${preApproved} (vorab, Karte des Aufrufers)`) })
             } else if (level.stufe === 'L2') {
                 const createCard: CreateCard = deps.createCard ?? (await import('./approval-cards.js')).createApprovalCard as unknown as CreateCard
+                // 2.89.4: the short card is plain German (what is broken + what Ja does);
+                // the technical task goes only into the Details view (beleg).
+                const problem = clip(request.karte?.problem || `Der Auftrag verlangt Änderungen an Systemen (${level.grund}).`, 240)
+                const ja = clip(request.karte?.ja || `Mit „Ja“ geht der Auftrag an ${AGENT_LABEL[to]}; Erfolgskriterium: ${describeExpectation(erwartet)}.`, 280)
+                const details = [
+                    `Technischer Auftrag an ${AGENT_LABEL[to]}:`,
+                    auftrag.slice(0, 500),
+                    `Erfolgskriterium: ${describeExpectation(erwartet)}.`,
+                    `Frist ${record.fristAt.slice(0, 16).replace('T', ' ')} UTC.`,
+                    record.kontextEntfernt.length ? `Aus dem Kontext entfernt: ${record.kontextEntfernt.join(', ')}.` : '',
+                ].filter(Boolean).join('\n')
                 const card = createCard({
                     art: 'delegation',
                     titel: `Auftrag an ${AGENT_LABEL[to]} senden?`,
-                    beleg: `Der Auftrag verlangt Änderungen an Systemen (${level.grund}). Erfolgskriterium: ${describeExpectation(erwartet)}. Frist ${record.fristAt.slice(0, 16).replace('T', ' ')} UTC.${record.kontextEntfernt.length ? ` Aus dem Kontext entfernt: ${record.kontextEntfernt.join(', ')}.` : ''}`,
-                    vorschlag: auftrag.slice(0, 500),
+                    beleg: details,
+                    vorschlag: `${problem} ${ja}`.slice(0, 500),
                     aktion: { kind: 'delegation', ref: id },
                     ablaufMs: Math.max(60_000, Math.min(24 * 60 * 60_000, fristMs)),
                     dedupeKey: `delegation:${id}`,

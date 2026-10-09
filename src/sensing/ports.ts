@@ -113,7 +113,14 @@ const MAX_TEXT = 300
 /** Defence in depth: every string that leaves the bus is redacted and capped. */
 export function cleanText(value: unknown, max = MAX_TEXT): string {
     const text = redactSecrets(String(value ?? '')).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
-    return text.length > max ? `${text.slice(0, max - 1)}…` : text
+    if (text.length <= max) return text
+    // 2.89.4: never a mid-word „…“ (live: „daraus fo…“). Keep whole sentences;
+    // if none fits, keep whole words of the first one without a dangling cut mark.
+    const head = text.slice(0, max)
+    const sentence = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '), head.lastIndexOf('.\n'))
+    if (sentence >= 4) return head.slice(0, sentence + 1).trim()
+    const word = head.lastIndexOf(' ')
+    return (word >= 4 ? head.slice(0, word) : head).trim().replace(/[,;:–-]+$/, '')
 }
 
 export function cleanEvidence(evidence: Record<string, unknown> | undefined): Evidence {
