@@ -54,7 +54,7 @@ describe('Bericht: wartende Fragen als Zahl', () => {
         const store = createThoughtStore({ dataDir: dir, now: () => t })
         const briefing = buildBriefing('morgen', { dataDir: dir, thoughts: store, runsFile: join(dir, 'runs.jsonl'), timeZone: 'Europe/Vienna', cards: { bundled: () => [], release: () => 0, waiting: () => 3 } } as any, t - 3_600_000, t)
         expect(briefing.sections.find(section => section.titel === 'Fragen in der Warteschlange')?.zeilen).toEqual(['3 Fragen warten – sie kommen einzeln, die wichtigste zuerst.'])
-        expect(briefing.kopf).toBe('🟡 Alles läuft — 3 Fragen warten')
+        expect(briefing.kopf).toBe('🟡 Alles läuft — 1 Frage für dich, 2 danach')
     })
 })
 

@@ -18,13 +18,15 @@ describe('2.89.4 Morgenbericht (realer Telegram-Weg)', () => {
         const turn = await h.telegram('Hallo', [{ text: 'Alles klar.' }])
         expect(turn.error).toBeUndefined()
         const adapter = h!.state.channels.telegram
+        // Simulated Main transport only; the production fence remains unchanged.
+        adapter.hasCardAuthority = async () => true
         const sent: string[] = []
         adapter.sendApprovalCard = async (_chatId: string, text: string) => { sent.push(String(text)); return 1 }
         const briefingMod = await h!.module('planner/briefing.js')
         const thoughts = await h!.module('planner/thoughts.js')
         const planner = await h!.module('planner/index.js')
         const bridge = await h!.module('core/planner-card-bridge.js')
-        const store = planner.getThoughtStore()
+        const store = thoughts.createThoughtStore({ dataDir: h!.root, now: () => Date.parse('2026-10-09T05:00:00.000Z') })
         for (let i = 1; i <= 5; i++) {
             store.add({ source: 'test', title: `Offener Punkt ${i}: Geräte-Name prüfen`, kind: 'vorschlag', permission: 'fragen', signature: `e2e-m-${i}` })
         }
@@ -54,6 +56,7 @@ describe('2.89.4 Morgenbericht (realer Telegram-Weg)', () => {
         h = await createE2EHarness()
         await h.telegram('Hallo', [{ text: 'Alles klar.' }])
         const adapter = h!.state.channels.telegram
+        adapter.hasCardAuthority = async () => true
         const sent: string[] = []
         adapter.sendApprovalCard = async (_chatId: string, text: string) => { sent.push(String(text)); return 1 }
         const briefingMod = await h!.module('planner/briefing.js')

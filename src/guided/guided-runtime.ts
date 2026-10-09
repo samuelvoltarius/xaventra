@@ -13,8 +13,11 @@ import { angebotsKopf, beispielTyp, connectedEntries, markBeispieleGesendet, not
 import { markTippGesendet, tippAlleAblehnen, tippAblehnen, tippHeute, tippSchonGesendet, type Tipp } from './daily-tip.js'
 import { beispielView, checklistView, hilfeView, tippView, updatePinnedStatus, type GuidedAktion, type GuidedTelegram, type Keyboard, type PinnedFacts } from './telegram-guided.js'
 import { loadGuidedState, nowOf, type GuidedOptions } from './guided-store.js'
+import type { CapabilityInventory } from '../learning/capability-inventory.js'
 
 export interface GuidedDeps extends GuidedOptions {
+    /** Optional snapshot for isolated callers; undefined reads the live inventory. */
+    inventory?: CapabilityInventory | null
     checklist?: ChecklistDeps
     hilfe?: HilfeDeps
     /** Connected entries (default: Verbindungen list). */
@@ -146,6 +149,7 @@ export async function currentTip(deps: GuidedDeps = {}, entries?: VerbundenerEin
         dataDir: deps.dataDir, now: deps.now, typen: list.map(beispielTyp),
         eintraege: list.map(item => ({ ...(item.id ? { id: item.id } : {}), ...(item.connectorId ? { connectorId: item.connectorId } : {}), ...(item.title ? { title: item.title } : {}) })),
         timeZone: deps.timeZone, ...(deps.ruhezeit ? { ruhezeit: deps.ruhezeit } : {}),
+        inventory: deps.inventory,
     })
     return picked?.tipp || null
 }

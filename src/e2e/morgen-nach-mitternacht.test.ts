@@ -17,13 +17,19 @@ describe('2.89.4 „morgen“ nach Mitternacht (realer Eingang)', () => {
         h = await createE2EHarness()
         const result = await h.telegram('Erinner mich morgen um 10 Uhr an die Besprechung', [
             { tool: 'set_reminder', args: { message: 'Besprechung', time: 'morgen um 10 Uhr' } },
-            { text: 'Erinnerung gesetzt.' },
+            call => {
+                const result = call.messages.filter(message => message.role === 'tool').at(-1)
+                expect(result).toBeDefined()
+                // Echo the real tool result instead of inventing a confirmation in the fake model.
+                return { text: typeof result!.content === 'string' ? result!.content : JSON.stringify(result!.content) }
+            },
         ])
         expect(result.error).toBeUndefined()
         const visible = [result.final, ...result.replies, ...result.buttons.map(b => b.text)].join('\n')
         expect(visible).toMatch(/Erinnerung gesetzt|Erinnerung/i)
         // weekday + date always; never only "10.10., 10:00"
-        expect(visible).toMatch(/\w{2}, \d{2}\.\d{2}\.|heute, /)
+        expect(result.executedTools).toContain('set_reminder')
+        expect(visible).toMatch(/(?:Mo|Di|Mi|Do|Fr|Sa|So)\.?[,]? \d{2}\.\d{2}\./)
         expect(visible).not.toMatch(/gesetzt für \*\*\d{2}\.\d{2}\.,/)
     }, T)
 

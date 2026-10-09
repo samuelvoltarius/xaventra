@@ -10,6 +10,7 @@ const mu = vi.hoisted(() => ({
     isGroupChat: vi.fn(() => false),
     trackGroupMessage: vi.fn(),
     shouldCoalesce: vi.fn(() => false),
+    hasEntityBuffer: vi.fn(() => false),
     coalesceMessage: vi.fn(async (_chat: string, _from: string, content: string) => content),
     getOnboardingMessage: vi.fn(() => null),
     getUserContextString: vi.fn(() => ''),

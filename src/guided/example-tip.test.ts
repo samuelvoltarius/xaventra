@@ -15,7 +15,7 @@ import { beendeVorgang, starteVorgang, vorgangsEreignisse } from '../sensing/con
 let dir: string
 let t: number
 const HOUR = 60 * 60_000
-const opts = () => ({ dataDir: dir, now: () => t })
+const opts = () => ({ dataDir: dir, now: () => t, inventory: null })
 const ha = { id: 'geraet:homeassistant:192.0.2.10:8123', title: 'Home Assistant', connectorId: 'home-assistant', kategorie: 'zuhause' }
 const ki = { id: 'ki-modelle:local', title: 'Lokales Modell', kategorie: 'ki-modelle' }
 function telegram() {
@@ -31,7 +31,7 @@ function telegram() {
 }
 const quiet = (now: number) => { const h = zonedHour(now, 'Europe/Vienna'); return h >= 22 || h < 7 }
 const guided = (entries: any[], extra: Record<string, unknown> = {}) => ({
-    ...opts(), verbunden: async () => entries, ruhezeit: quiet, kritisch: () => 0,
+    ...opts(), inventory: null, verbunden: async () => entries, ruhezeit: quiet, kritisch: () => 0,
     fragen: async () => ({ frage: null, wartend: 0 }), checklist: { overview: async () => ({ gefunden: [], verbunden: [] }), telegramGekoppelt: () => true },
     isMain: () => true, ...extra,
 })

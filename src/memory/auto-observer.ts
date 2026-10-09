@@ -168,6 +168,19 @@ const DEFAULT_PATTERNS: ExtractionPattern[] = [
         },
     },
     {
+        type: 'relationship',
+        patterns: [
+            // A declarative sentence, not a question, quoted example or a guess.
+            /(?:^|[.!]\s+)((?:Mein|Meine)\s+(Hund|Katze|Partner|Partnerin|Frau|Mann|Sohn|Tochter|Bruder|Schwester)\s+([\p{Lu}][\p{L}-]{1,40})\s+(?:ist|hat|trägt)\s+[^.!?\n]{2,180})(?=[.!]|$)/gu,
+        ],
+        extractor: (match) => /\b(?:vielleicht|vermutlich|wahrscheinlich|wäre|könnte)\b/i.test(match[1])
+            ? '' : `Beziehung: ${match[1].trim()}`,
+        triple: (match) => {
+            const value = tripleValue(match[3])
+            return value ? { predicate: match[2].toLowerCase(), value } : null
+        },
+    },
+    {
         type: 'instruction',
         patterns: [
             /(?:merke?|remember|speicher)\s*(?:dir)?:?\s*(.{5,120})/gi,

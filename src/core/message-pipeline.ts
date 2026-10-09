@@ -489,6 +489,9 @@ async function handleMessageInScope(
     traceStep('input:accepted')
     let contextPolicy = selectContextPolicy(content, Boolean(image))
     let memoryDecision = decideMemoryTurn(content)
+    let entityTurn: import('../intelligence/entity-extractor.js').EntityTurnResolution | undefined
+    let entityMemoryConfirmation = ''
+    let entityTurns: Array<{ content: string; image?: unknown }> | undefined
     // Map channel-specific user IDs to canonical names (from xaventra.config.json)
     const configAliases = (state as any).config?.userAliases || {}
     const canonicalUser = configAliases[from] || from
@@ -688,7 +691,16 @@ async function handleMessageInScope(
         } catch (error) { stageFailure('Owner-Konten', error) }
 
         // 5. Message Coalescing — batch rapid-fire messages
-        if (mu.shouldCoalesce(chatId, from)) {
+        const entityConversation = principalContext.permission === 'owner' && !isGroupMessage && !isSystemAuthored
+            && (Boolean(image) || (/\b(?:nicht ganz|korrektur|das ist nicht|(?:er|sie|es|das) (?:ist|hat|trägt))\b/i.test(content)
+                && !(await import('../intelligence/entity-extractor.js')).isEntityActionOrFeedback(content)))
+        const entityChat = `${channel}:${chatId}`
+        if (entityConversation || mu.hasEntityBuffer(entityChat, from)) {
+            const merged = await mu.coalesceEntityMessage(entityChat, from, content, image)
+            content = merged.content; image = merged.image
+            entityTurns = merged.turns
+            requestAbortSignal?.throwIfAborted()
+        } else if (mu.shouldCoalesce(chatId, from)) {
             content = await mu.coalesceMessage(chatId, from, content)
         } else {
             // Start new coalescing window (but don't wait for the first message)
@@ -708,6 +720,10 @@ async function handleMessageInScope(
         // This must not depend on the slash-command path.
         if (mu.isCoalescedMarker?.(content)) {
             console.log(`[MultiUser] ↪ ${from}: Nachricht in spätere Nachricht zusammengeführt — beendet`)
+            return
+        }
+        if (content === '/__entity_overflow__') {
+            await replyFn('Die Nachrichtenfolge ist zu lang. Bitte teile sie in kleinere Schritte auf; ich habe daraus nichts gespeichert.')
             return
         }
 
@@ -960,6 +976,11 @@ ${pendingGapNote}` : withTail
             // 2.86 Paket N: „und?“ after a connection is only the owner's; everyone else just talks.
             const deterministic = detected && !(detected.reason === 'connect-progress' && principalContext.permission !== 'owner') ? detected : null
             if (deterministic) {
+                if (['service-live-check', 'recommendation-freshness'].includes(deterministic.reason)
+                    && (principalContext.permission !== 'owner' || isGroupMessage !== false || requestIsGroup)) {
+                    await answer('🔒 Diese interne Prüfung ist nur für den Owner im Direktchat verfügbar.')
+                    return true
+                }
                 // 2.89.4: service-state corrections are live-checked here (probe +
                 // connect or honest result). Stays on that topic; never a different one.
                 if (deterministic.reason === 'service-live-check') {
@@ -1176,6 +1197,14 @@ ${pendingGapNote}` : withTail
     // not from the short follow-up answer that resumed it.
     contextPolicy = selectContextPolicy(content, Boolean(image))
     memoryDecision = decideMemoryTurn(content)
+    if (principalContext.permission === 'owner' && isGroupMessage === false && !isSystemAuthored && !technicalProbe) {
+        const { resolveEntityBatch } = await import('../intelligence/entity-extractor.js')
+        entityTurn = resolveEntityBatch(JSON.stringify([channel, principalId, resolveConversationChatId(channel, from, messageContext)]), entityTurns || [{ content, image }])
+        if (entityTurn.question) {
+            await answer(entityTurn.question)
+            return
+        }
+    }
 
     // Learned corrections are considered only after ambiguity, identity, the
     // owner-only gates above and the group check. They cannot consume a
@@ -1209,6 +1238,7 @@ ${pendingGapNote}` : withTail
     if (!isSystemAuthored) systemPrompt += conversationResponseGuidance(content)
     if (!isSystemAuthored) systemPrompt += (await import('./conversation-turn.js')).conversationRecallGuidance(content)
     if (!isSystemAuthored) systemPrompt += liveEvidenceGuidance(content)
+    if (entityTurn) systemPrompt += entityTurn.prompt
 
     // Gemessener Systembefund statt Annahmen. Der Environment-Scanner laeuft
     // beim Start; sein Ergebnis floss bisher nur in den Self-Setup-Orchestrator,
@@ -1418,7 +1448,7 @@ REGELN:
 
 ## SELBST-ERWEITERUNG
 Du kannst deine eigene Config jederzeit erweitern! Nutze das Tool \`config_update\` um neue Felder zu setzen.
-Beispiel: Wenn ein User dir einen API Key gibt, speichere ihn mit config_update in xaventra.config.json.
+Schlüssel werden ausschließlich vom geschützten Owner-Direktchat-Eingang verarbeitet. Schreibe niemals Schlüssel mit config_update in die Konfiguration, den Verlauf oder das Gedächtnis; verwende das private Einrichtungsformular, wenn der Eingang sie nicht erkennt.
 Wenn du neue Fähigkeiten lernst, trage sie in die Config ein.
 ALLES was du in xaventra.config.json schreibst, siehst du beim nächsten Gespräch automatisch hier oben.
 
@@ -1745,6 +1775,27 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
     if (technicalProbe) memoryDecision = { ...memoryDecision, observe: false }
     if (!isSystemMessage) try {
 
+        if (entityTurn?.facts.length) {
+            const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
+            const saved: string[] = []
+            for (const fact of entityTurn.facts) {
+                const text = `${fact.name} ${fact.predicate === 'beschreibung' ? 'ist' : fact.predicate} ${fact.value}`
+                const record = await getMemoryGovernanceCoordinator().record({
+                    scope: `user:${principalId}`, kind: 'context', source: 'conversation-entity',
+                    evidence: entityTurn.correction ? 'correction' : 'user_statement', confidence: 1,
+                    content: text, subject: `entity:${fact.name.toLowerCase()}`, predicate: fact.predicate,
+                    value: fact.value, channel, sessionId: `${channel}:${principalId}`,
+                })
+                if (record && ['verified', 'canonical'].includes(record.status)) saved.push(text)
+            }
+            if (saved.length) {
+                const confirmation = `Jetzt gespeichert: ${saved.join('; ')}.`
+                entityMemoryConfirmation = confirmation
+                systemPrompt += `\n\n${confirmation}\nBestätige diese tatsächlich gespeicherten Angaben im Antworttext, ohne andere Entitäten zu ändern.`
+                if (entityTurn.correction) { await answer(confirmation); return }
+            }
+        }
+
         // Observe user message for fact extraction — skip system injections
         if (memoryDecision.observe) {
             const { getAutoObserver } = await import('../memory/auto-observer.js')
@@ -1769,6 +1820,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             legacySessionNames: [principalId, canonicalUser, from],
         })
         if (userContext) systemPrompt += '\n\n' + userContext
+        if (memoryDecision.observe || memoryDecision.reason === 'recall') {
+            const memoryTools = ['remember', 'recall', 'knowledge_store', 'knowledge_recall', 'kg_remember']
+                .filter(name => state.tools?.get(name))
+            systemPrompt += `\n\n## GEDÄCHTNISWEGE (REGISTRIERT)\n${memoryTools.join(', ') || 'Keine Merk-Werkzeuge registriert.'}\nPersönliche Aussagen werden über den Auto-Observer an Memory Governance gegeben. Behaupte weder eine erfolgreiche Speicherung noch fehlende Speicherfähigkeit ohne Beleg. Prüfe bei Bedarf die registrierten Merk-Werkzeuge; ein nicht angebundener Graph bedeutet nicht, dass alle Speicherwege fehlen. Nutze beim Erinnern den scoped Erinnerungskontext, erfinde keine Fakten.`
+        }
     } catch (err) {
         // Not fatal, but never silent: without it the answer lacks what Xaventra knows.
         stageFailure('Gedächtnis-Kontext', err)
@@ -2642,6 +2698,11 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
             // 2.88 reply gate + 2.88.2 claim guard. 2.89: only SUCCESSFUL tool runs are evidence.
             if (!isSystemMessage) finalContent = await guardReply(finalContent, successfulExecutions.length, successfulExecutions)
+            if (entityMemoryConfirmation && !finalContent.includes(entityMemoryConfirmation)) {
+                // Storage evidence comes from governance, not model wording.
+                if (/kann.{0,35}nicht.{0,30}(?:speichern|merken)|kein.{0,30}(?:Speicher|Merk.Werkzeug)/i.test(finalContent)) finalContent = entityMemoryConfirmation
+                else finalContent = `${finalContent}\n\n${entityMemoryConfirmation}`
+            }
 
             turnSync.runId = (result as any).runId
             if (image) turnSync.imageNote = `Bild angehängt (${image.mimeType || 'image'}, ${Math.max(1, Math.round(String(image.data || '').length * 0.75 / 1024))} KB${inboxImagePath ? `, Datei: ${inboxImagePath}` : ''})`

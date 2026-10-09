@@ -54,7 +54,7 @@ describe('R2 T16 / 2.89.4: "morgen" after midnight is the day that is starting',
     it('names weekday + date and asks once when „morgen“ was taken as today', () => {
         const now = vienna('2026-07-14T23:12:00Z')
         const at = rt.parseTimeExpression('morgen gegen 10 Uhr', undefined, now)
-        expect(rt.formatReminderTime(at)).toMatch(/\w{2}, \d{2}\.\d{2}\./)
+        expect(rt.formatReminderTime(at)).toBe('Mi., 15.07., 10:00')
         expect(rt.describeReminderWhen(at, now)).toContain('heute,')
         expect(rt.describeMorgenChoice(at, 'morgen gegen 10 Uhr', now)).toMatch(/oder meintest du/)
     })

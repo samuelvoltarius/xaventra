@@ -65,7 +65,14 @@ beforeEach(() => {
         }
         return new Response('nope', { status: 404 })
     })
-    vi.stubGlobal('fetch', fetchImpl)
+    // The Telegram transport must deliver audio successfully even when the
+    // speech-service fixture deliberately returns errors or empty transcripts.
+    vi.stubGlobal('fetch', (url: any, init?: any) => {
+        if (String(url) === 'https://api.telegram.org/file/botfixture/voice/file.oga') {
+            return Promise.resolve(new Response(Buffer.from('OggS-fixture'), { status: 200 }))
+        }
+        return fetchImpl(url, init)
+    })
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 

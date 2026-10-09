@@ -7,6 +7,7 @@
 
 import { chmodSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { openCredential, sealCredential, writeCredentialFile } from '../secrets/local-sealed-store.js'
 
 // ============================================
 // Types
@@ -95,6 +96,7 @@ export class OAuthManager {
                     this.store = { version: 1, profiles: parsed }
                 }
 
+                let migrateKeys = false
                 // Auto-infer missing 'type' field for legacy credentials
                 for (const [id, cred] of Object.entries(this.store.profiles)) {
                     const c = cred as unknown as Record<string, unknown>
@@ -112,9 +114,16 @@ export class OAuthManager {
                             if (!c.provider) c.provider = id
                         }
                     }
+                    if (c.type === 'api_key') {
+                        if (typeof c.key !== 'string') throw new Error('Invalid API key credential')
+                        migrateKeys ||= !c.key.startsWith('nova-sealed:')
+                        c.key = openCredential(c.key, this.config.storePath)
+                    }
                 }
+                if (migrateKeys) this.saveStore()
             } catch {
-                this.store = { version: 1, profiles: {} }
+                this.store = null
+                throw new Error('Credential store unavailable; existing data preserved')
             }
         } else {
             this.store = { version: 1, profiles: {} }
@@ -131,8 +140,12 @@ export class OAuthManager {
             mkdirSync(dir, { recursive: true })
         }
 
-        writeFileSync(this.config.storePath, JSON.stringify(this.store, null, 2), { mode: 0o600 })
-        try { chmodSync(this.config.storePath, 0o600) } catch { /* not supported on this filesystem */ }
+        const profiles = Object.fromEntries(Object.entries(this.store.profiles).map(([id, credential]) => [id,
+            credential.type === 'api_key'
+                ? { ...credential, key: sealCredential(credential.key, this.config.storePath) }
+                : credential,
+        ]))
+        writeCredentialFile(this.config.storePath, JSON.stringify({ ...this.store, profiles }, null, 2))
     }
 
     // ============================================
@@ -270,13 +283,18 @@ export class OAuthManager {
      */
     setApiKey(profileId: string, provider: string, key: string, email?: string): void {
         const store = this.loadStore()
+        const previous = store.profiles[profileId]
         store.profiles[profileId] = {
             type: 'api_key',
             provider,
             key,
             email,
         }
-        this.saveStore()
+        try { this.saveStore() } catch (error) {
+            if (previous) store.profiles[profileId] = previous
+            else delete store.profiles[profileId]
+            throw error
+        }
     }
 
     /**

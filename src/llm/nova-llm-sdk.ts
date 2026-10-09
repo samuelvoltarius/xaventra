@@ -186,8 +186,10 @@ export class TokenManager {
     private loadTokens(): void {
         if (existsSync(this.authPath)) {
             const data = JSON.parse(readFileSync(this.authPath, 'utf-8'))
-            for (const [key, value] of Object.entries(data)) {
+            const profiles = data?.profiles && typeof data.profiles === 'object' ? data.profiles : data
+            for (const [key, value] of Object.entries(profiles)) {
                 const v = value as any
+                if (!v || typeof v.access !== 'string' || typeof v.expires !== 'number') continue
                 this.tokens[key] = {
                     access: v.access,
                     refresh: v.refresh,

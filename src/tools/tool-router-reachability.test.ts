@@ -46,6 +46,10 @@ describe('invariant: every registered tool has a way to the model', () => {
 })
 
 describe('everyday German requests reach the right tool (real registry)', () => {
+    it.each(['Mein Hund heißt Bello.', 'Mein Hund Bello ist ein kleiner brauner Mischling.', 'Vergiss nicht: Meine Katze heißt Minka.', 'Kannst du dir das merken?'])('offers registered storage paths for %s', message => {
+        expect(names(message)).toContain('remember')
+        expect(names(message)).toContain('knowledge_store')
+    })
     it.each([
         ['Stell die Heizung auf 21 Grad', 'hass_service'],
         ['Mach die Deckenlampe im Wohnzimmer an', 'hass_turn_on'],

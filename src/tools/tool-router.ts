@@ -22,6 +22,7 @@
 
 import { getToolRegistry } from './complete-registry.js'
 import { hasMiniMaxKey } from './minimax-tools.js'
+import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { detectActionIntent, isWorkstationAction, WORKSTATION_ACTION, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
@@ -154,7 +155,7 @@ const SKILL_PACKS: SkillPack[] = [
     {
         name: 'personal-memory', description: 'Persönliche Erinnerungen speichern oder abrufen, etwas lernen',
         keywords: ['erinnerst', 'erinnerung*', 'merk dir', 'merke', 'merken', 'vergiss', 'memory', 'gedächtnis', 'über mich', 'lern*', 'weißt du noch', 'notier*'],
-        tools: ['remember', 'recall', 'update_memory', 'update_user_profile', 'kg_search', 'kg_remember'],
+        tools: ['remember', 'recall', 'update_memory', 'update_user_profile', 'kg_search', 'kg_remember', 'knowledge_store', 'knowledge_recall'],
     },
     {
         name: 'messages', description: 'Nachrichten verschicken (Telegram) und Dateien zustellen',
@@ -637,7 +638,10 @@ export function getRelevantTools(
 
     // ── FILTERED MODE (default) ─────────────────────────────────────────────
     const excluded = routeExclusions(primaryMessage, primaryIntent)
-    const liveTools = LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)
+    const memoryTurn = decideMemoryTurn(primaryMessage)
+    const memoryTools = (memoryTurn.observe && primaryMessage.length <= 800) || memoryTurn.reason === 'recall'
+        ? ['remember', 'recall', 'knowledge_store', 'knowledge_recall', 'kg_remember'] : []
+    const liveTools = [...memoryTools, ...LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)]
 
     // An explicit registered tool identifier is stronger than a fuzzy pack
     // keyword (`health_status` must not need the pack keyword `health`).

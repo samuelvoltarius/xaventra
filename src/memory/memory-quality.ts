@@ -71,8 +71,8 @@ export function classifyMemoryQuery(query: string): MemoryQueryIntent {
 export function decideMemoryTurn(message: string): MemoryTurnDecision {
     const value = message.trim().toLowerCase()
     const intent = classifyMemoryQuery(message)
-    const explicitMemory = /\b(?:merk(?:e)? dir|merken|speicher(?:e)?|remember|vergiss (?:das )?nie)\b/i.test(value)
-    const personalFact = /\b(?:ich|mein(?:e|er|en|em|es)?|wir|unser(?:e|er|en|em|es)?)\b.{0,90}\b(?:bin|hei(?:ß|ss)e?|habe|hat|mag|liebe|bevorzug|nutze|verwende|arbeite|baue|entwickle|wohne|lebe|gehört|ist|sind)\b/i.test(value)
+    const explicitMemory = /\b(?:merk(?:e)? dir|merken|speicher(?:e)?|remember|vergiss (?:das )?nie|vergiss nicht)\b/i.test(value)
+    const personalFact = /\b(?:ich|mein(?:e|er|en|em|es)?|wir|unser(?:e|er|en|em|es)?)\b.{0,90}\b(?:bin|hei(?:ß|ss)(?:e|t)?|habe|hat|mag|liebe|bevorzug|nutze|verwende|arbeite|baue|entwickle|wohne|lebe|gehört|ist|sind)\b/i.test(value)
     const goalOrRule = /\b(?:ziel ist|mein ziel|unser ziel|wichtig(?: ist)?|ab jetzt|immer|niemals|nie|sollst du|darfst du nicht|nicht ändern)\b/i.test(value)
     const recall = intent !== 'specific'
         || /\b(?:erinner|gemerkt|wei(?:ß|ss)t du|kennst du|mein(?:e|er|en|em|es)?\s+\w+\??$)\b/i.test(value)

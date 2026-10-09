@@ -95,11 +95,21 @@ export function detectServiceStateCorrection(text: unknown): ServiceStateCorrect
     const prefix = String.raw`(?:doch\s+|ja\s+|eigentlich\s+|wohl\s+|schon\s+|bereits\s+|längst\s+|laengst\s+)*`
     const down = new RegExp(String.raw`\b(?:läuft|laeuft|geht|funktioniert)\s+(?:wirklich\s+|gar\s+|ja\s+)?(?:nicht|mehr\s+nicht|noch\s+nicht)|\b(?:ist|bist)\s+(?:noch\s+|ja\s+)?(?:nicht|gar\s+nicht)\s+(?:verbunden|online|erreichbar|aktiv|dabei)|\b(?:solltest|sollte)\s+(?:du\s+)?(?:doch\s+|eigentlich\s+)?(?:nicht|nie)`, 'i').test(value)
     const up = new RegExp(String.raw`\b(?:läuft|laeuft)\s+${prefix}(?:schon|bereits|wieder|längst|laengst)|\b(?:läuft|laeuft)\s+doch\b|\b(?:ist|bist)\s+${prefix}(?:online|verbunden|erreichbar|aktiv|dabei)|\b(?:solltest|sollte)\s+(?:du\s+)?${prefix}(?:verbunden(?:\s+sein)?|online\s+sein|erreichbar\s+sein|laufen|dabei(?:\s+sein)?)|\b(?:du\s+)?(?:bist|sollst)\s+${prefix}(?:verbunden|online|dabei)|\bwarum\s+bist\s+du\s+(?:noch\s+)?(?:nicht|nicht\s+mehr)\s+(?:verbunden|online|dabei)|\b(?:bin|ist)\s+(?:doch\s+)?(?:schon\s+)?(?:eingerichtet|konfiguriert)\b`, 'i').test(value)
-    if (!up && !down) return null
-    if (up && down) return null
+    // A quoted voice notice followed by the owner's correction is common in
+    // Telegram. Require a speech subject; "du hast die Sachen schon" alone is
+    // not evidence that the user is talking about a service.
+    const speechSubject = /\b(?:stt|tts|sprachdienst(?:e)?|spracherkennung|sprachausgabe|whisper|pocket[-_ ]?tts)\b/i.test(value)
+    const localCorrection = speechSubject && !/\?\s*$/.test(value) && !/\b(?:nicht|nie)\b/i.test(value.split(/Du hast/i).at(-1) || '') && (
+        /\bdu\s+hast\s+(?:local|lokal)\b[^.!?]{0,80}\b(?:schon|bereits)\b/i.test(value)
+        || /\b(?:laufen|läuft|laeuft)\b[^.!?]{0,80}\b(?:local|lokal|schon|bereits)\b/i.test(value)
+        || /\b(?:local|lokal|schon|bereits)\b[^.!?]{0,80}\blaufen\b/i.test(value)
+    )
+    const runningClaim = up || localCorrection
+    if (!runningClaim && !down) return null
+    if (runningClaim && down) return null
 
     let subject = ''
-    const named = value.match(/\b(pocket[-_ ]?tts|whisper(?:[-_ ]?gpu)?|xaventra[-_ ]?voice|kokoro|piper|ollama|vllm|lm[-_ ]?studio|searxng|home[-_ ]?assistant|proxmox|telegram|whatsapp|discord|sprachdienst|spracherkennung|sprachausgabe)\b/i)
+    const named = value.match(/\b(pocket[-_ ]?tts|whisper(?:[-_ ]?gpu)?|xaventra[-_ ]?voice|kokoro|piper|ollama|vllm|lm[-_ ]?studio|searxng|home[-_ ]?assistant|proxmox|telegram|whatsapp|discord|sprachdienst(?:e)?|spracherkennung|sprachausgabe|stt|tts)\b/i)
         || value.match(/\b([A-Za-z][\w.-]{1,40})\s+(?:läuft|laeuft|ist|solltest|sollte)\b/i)
         || value.match(/\b(?:von|für|fuer|zum|zur|mit|bei|auf)\s+(?:dem\s+|den\s+|der\s+)?([A-Za-z][\w.-]{1,40})\b/i)
     if (named?.[1]) {
@@ -110,7 +120,7 @@ export function detectServiceStateCorrection(text: unknown): ServiceStateCorrect
     // has its own tools. Never answer about speech/model when the user named those.
     if (subject && !isLiveCheckSubject(subject)) return null
     return {
-        claimRunning: Boolean(up) && !down,
+        claimRunning: Boolean(runningClaim) && !down,
         claimConnected: /\b(?:verbunden|dabei|online|eingerichtet|konfiguriert)\b/i.test(value) || (Boolean(up) && /\b(?:solltest|sollte)\b/i.test(value)),
         subject,
     }
@@ -118,7 +128,7 @@ export function detectServiceStateCorrection(text: unknown): ServiceStateCorrect
 
 /** Subjects `liveCheckServices` can actually probe (speech + model runtime). */
 const LIVE_CHECK_SUBJECTS = new Set([
-    'sprachdienst', 'spracherkennung', 'sprachausgabe', 'sprachmodell', 'sprachdienste',
+    'sprachdienst', 'spracherkennung', 'sprachausgabe', 'sprachmodell', 'sprachdienste', 'stt', 'tts',
     'whisper', 'whispergpu', 'pockettts', 'pocket-tts', 'pocket_tts',
     'xaventravoice', 'xaventra-voice', 'xaventra_voice',
     'kokoro', 'piper', 'ollama', 'vllm', 'lmstudio', 'lm-studio', 'lm_studio',

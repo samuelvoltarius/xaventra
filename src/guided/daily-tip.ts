@@ -58,7 +58,7 @@ export function tippKann(typ: BeispielTyp, ctx: {
     if (typ === 'drucker') {
         // A printer tip needs a real printer connection, not a title match alone.
         const beleg = (ctx.eintraege || []).some(entry => DRUCKER_BELEG.test(`${entry.id || ''} ${entry.connectorId || ''}`.toLowerCase()))
-        if (!beleg && ctx.eintraege?.length) return false
+        if (!beleg) return false
     }
     const inv = ctx.inventory
     if (!inv) return true
@@ -101,7 +101,7 @@ async function defaultQuiet(timeZone: string): Promise<(now: number) => boolean>
 
 function declinedInState(id: string, opts: GuidedOptions): boolean {
     const state = loadGuidedState(opts)
-    return Boolean(state.tipp.gezeigt[`nein:${id}`]) || (id !== 'alle' && state.tipp.gezeigt['nein:alle'])
+    return Boolean(state.tipp.gezeigt[`nein:${id}`]) || (id !== 'alle' && Boolean(state.tipp.gezeigt['nein:alle']))
 }
 
 /** 2.89.4: global off switch („Tipps aus“) in guided state. */
@@ -141,7 +141,10 @@ export async function tippHeute(ctx: TippKontext): Promise<{ tipp: Tipp; neu: bo
     if (ctx.aus || tippsAus(ctx) || declined('alle')) return null
     if (state.tipp.tag === today) {
         const tipp = TIPPS.find(item => item.id === state.tipp.id)
-        return tipp && !declined(tipp.id) ? { tipp, neu: false } : null
+        const inventory = await defaultInventory(ctx)
+        return tipp && !declined(tipp.id)
+            && tippKann(tipp.typ, { typen: ctx.typen, inventory, eintraege: ctx.eintraege })
+            ? { tipp, neu: false } : null
     }
     const quiet = ctx.ruhezeit || await defaultQuiet(timeZone)
     if (quiet(now)) return null

@@ -352,6 +352,7 @@
     {
       "module": "src/auth/oauth.ts",
       "imports": [
+        "../secrets/local-sealed-store.js",
         "node:fs",
         "node:path"
       ]
@@ -3740,6 +3741,7 @@
     {
       "module": "src/guided/daily-tip.ts",
       "imports": [
+        "../learning/capability-inventory.js",
         "../planner/time.js",
         "./example-prompts.js",
         "./guided-store.js"
@@ -3768,6 +3770,7 @@
     {
       "module": "src/guided/guided-runtime.ts",
       "imports": [
+        "../learning/capability-inventory.js",
         "./daily-tip.js",
         "./example-prompts.js",
         "./guided-store.js",
@@ -5849,6 +5852,7 @@
         "../core/decisions.js",
         "../core/owner-text.js",
         "../doctor/self-heal.js",
+        "../guided/ampel.js",
         "../routing/outcome-router.js",
         "./delivery-port.js",
         "./planner.js",
@@ -6309,7 +6313,16 @@
       "imports": [
         "../core/data-root.js",
         "../security/secret-redaction.js",
+        "./local-sealed-store.js",
         "node:child_process",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/secrets/local-sealed-store.ts",
+      "imports": [
         "node:crypto",
         "node:fs",
         "node:path"
@@ -7823,6 +7836,7 @@
         "../core/action-intent.js",
         "../core/request-capabilities.js",
         "../core/tool-evidence-binding.js",
+        "../memory/memory-quality.js",
         "./complete-registry.js",
         "./minimax-tools.js"
       ]

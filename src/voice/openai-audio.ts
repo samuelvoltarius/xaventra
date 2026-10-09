@@ -204,6 +204,8 @@ export function openAiAudioStreamUrl(endpoint: string, hasStream?: boolean): str
 /** Env zuerst, dann AI-Scan — erster Kandidat, der live antwortet. */
 export async function discoverOpenAiAudio(kind: SpeechKind, opts: OpenAiAudioOptions & {
     services?: readonly DiscoveredAIService[]
+    /** Optional credential origin; never carry a key across discovery fallback. */
+    apiKeyEndpoint?: string
 } = {}): Promise<OpenAiAudioCandidate | null> {
     const candidates: OpenAiAudioCandidate[] = []
     for (const endpoint of envSpeechEndpoints(kind)) {
@@ -215,7 +217,11 @@ export async function discoverOpenAiAudio(kind: SpeechKind, opts: OpenAiAudioOpt
         candidates.push({ name: found.name, endpoint: found.endpoint, kind, source: 'ai-scan', sourceNode: found.sourceNode, models: found.models })
     }
     for (const candidate of candidates) {
-        const probe = await probeOpenAiAudio(candidate.endpoint, kind, opts)
+        let scopedKey: string | undefined
+        try {
+            if (opts.apiKeyEndpoint && new URL(opts.apiKeyEndpoint).origin === new URL(candidate.endpoint).origin) scopedKey = opts.apiKey
+        } catch { /* invalid binding is not credential authority */ }
+        const probe = await probeOpenAiAudio(candidate.endpoint, kind, { ...opts, apiKey: scopedKey })
         if (probe.ok) return { ...candidate, models: probe.models.length ? probe.models : candidate.models }
     }
     return null
@@ -273,8 +279,9 @@ export async function speakWithOpenAiTts(
     const format = opts.format || 'opus'
     const timeout = AbortSignal.timeout(opts.timeoutMs ?? 30_000)
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    const key = opts.apiKey || process.env.OPENAI_TTS_API_KEY || process.env.OPENAI_API_KEY
-    // Lokale Dienste brauchen keinen Key; gesetzt wird er trotzdem mitgeschickt.
+    const key = opts.apiKey
+    // Discovery is not credential authority. Only an explicit endpoint caller
+    // can supply a local-service credential; ambient cloud keys stay local.
     if (key) headers.Authorization = `Bearer ${key}`
     const response = await fetchImpl(`${origin}/v1/audio/speech`, {
         method: 'POST',
@@ -357,7 +364,7 @@ export async function probeSpeechServices(opts: OpenAiAudioOptions = {}): Promis
             if (kind === 'stt') {
                 out.anyStt = true
                 out.sttVia = out.sttVia || found.name
-                const probe = await probeOpenAiAudio(found.endpoint, 'stt', opts)
+                const probe = await probeOpenAiAudio(found.endpoint, 'stt', { ...opts, apiKey: undefined })
                 out.sttStream = out.sttStream || probe.stream
             } else {
                 out.anyTts = true

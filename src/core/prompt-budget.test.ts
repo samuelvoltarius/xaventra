@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { applySystemPromptBudget } from './prompt-budget.js'
 
 describe('system prompt budget', () => {
+    it('keeps scoped verified facts and identity resolution intact while dropping background', () => {
+        const memory = '## Verifiziertes Gedächtnis\n- Alpha ist braun.\n- Beta ist grau.'
+        const entity = '## ENTITÄTENBEZUG\nNeues Bild: keine Identität aus älteren Bildern übernehmen.'
+        const result = applySystemPromptBudget(`Identity\n## System-Status\n${'x'.repeat(6000)}\n${memory}\n${entity}`, 500)
+        expect(result.prompt).toContain(memory)
+        expect(result.prompt).toContain(entity)
+        expect(result.prompt.length).toBeLessThanOrEqual(500)
+    })
     it('preserves beginning and critical tail within the hard maximum', () => {
         const input = `IDENTITY-${'a'.repeat(8_000)}-CRITICAL-RULE`
         const result = applySystemPromptBudget(input, 1_000)

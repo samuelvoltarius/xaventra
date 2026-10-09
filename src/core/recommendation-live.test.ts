@@ -11,13 +11,14 @@ const fixtures = vi.hoisted(() => ({
     agent: vi.fn(),
     search: vi.fn(),
     strengths: [] as any[],
+    permission: 'owner', group: false,
 }))
 vi.mock('../users/multi-user-middleware.js', async importOriginal => ({
     ...await importOriginal<typeof import('../users/multi-user-middleware.js')>(),
     initMultiUser: () => undefined,
-    checkAuth: () => ({ allowed: true, permission: 'owner', isNewUser: false, user: {} }),
-    getUserPermission: () => 'owner',
-    isGroupChat: () => false, shouldCoalesce: () => false,
+    checkAuth: () => ({ allowed: true, permission: fixtures.permission, isNewUser: false, user: {} }),
+    getUserPermission: () => fixtures.permission,
+    isGroupChat: () => fixtures.group, shouldCoalesce: () => false,
     coalesceMessage: async (_chat: string, _from: string, text: string) => text,
     getUserContextString: () => '', getGroupContext: () => '', addUserTopic: () => undefined,
 }))
@@ -80,6 +81,7 @@ const cpuNode = {
 beforeAll(() => { vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1') })
 
 beforeEach(() => {
+    fixtures.permission = 'owner'; fixtures.group = false
     fixtures.agent.mockReset()
     fixtures.agent.mockResolvedValue({ content: 'unexpected model answer', toolsExecuted: [], sessionId: 's', toolExecutions: [], actionState: { requiresTool: false, kind: 'none', fulfilled: false } })
     fixtures.search.mockReset()
@@ -90,6 +92,14 @@ beforeEach(() => {
 })
 
 describe('2.89.4: Empfehlungs-Fragen am echten Eingang', () => {
+    it.each(['guest', 'user', 'admin', 'owner-group'])('denies private recommendations for %s', async role => {
+        fixtures.permission = role === 'owner-group' ? 'owner' : role
+        fixtures.group = role === 'owner-group'
+        const text = (await ask('Welche Modelle sind Ende 2026 aktuell?')).join('\n')
+        expect(text).toMatch(/Owner|Direktchat/)
+        expect(fixtures.search).not.toHaveBeenCalled()
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    })
     it('„Ende 2026 aktuell“: Websuche-Beleg, Systemdatum, CPU ohne Großmodell — ohne Modellaufruf', async () => {
         fixtures.search.mockResolvedValue({
             tool: 'browser_search',

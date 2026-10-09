@@ -27,6 +27,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { getNovaDataDir } from '../core/data-root.js'
 import { registerSecretValue } from '../security/secret-redaction.js'
+import { readSecretJson, writeSecretJson } from './local-sealed-store.js'
 
 export type TresorQuelle = 'datei' | 'bitwarden' | '1password'
 export const TRESOR_QUELLEN: readonly TresorQuelle[] = Object.freeze(['datei', 'bitwarden', '1password'])
@@ -150,11 +151,11 @@ export function speichereEintrag(input: EintragEingabe, deps: TresorDeps = {}): 
         }
     } else {
         const geheim = typeof input?.geheim === 'string' ? input.geheim : ''
-        const werte = readJson(werteFile(deps))?.werte || {}
+        const werte = readSecretJson(werteFile(deps))?.werte || {}
         if (!geheim && !werte[id]?.geheim) return { ok: false, feld: 'geheim', meldung: 'Passwort oder Token fehlt.' }
         if (geheim.length > 4096 || /[\u0000\r\n]/.test(geheim)) return { ok: false, feld: 'geheim', meldung: 'Ungültiger Wert.' }
         const benutzer = typeof input?.benutzer === 'string' ? input.benutzer.trim().slice(0, 200) : werte[id]?.benutzer
-        writePrivate(werteFile(deps), { version: 1, werte: { ...werte, [id]: { ...(benutzer ? { benutzer } : {}), geheim: geheim || werte[id].geheim } } }, deps)
+        writeSecretJson(werteFile(deps), { version: 1, werte: { ...werte, [id]: { ...(benutzer ? { benutzer } : {}), geheim: geheim || werte[id].geheim } } })
     }
     saveEintraege([...listeEintraege(deps).filter(item => item.id !== id), eintrag], deps)
     return { ok: true, eintrag: { id, label, quelle, dienste } }
@@ -165,9 +166,9 @@ export function entferneEintrag(id: string, deps: TresorDeps = {}): boolean {
     if (!ID.test(String(id || ''))) return false
     const list = listeEintraege(deps)
     if (!list.some(item => item.id === id)) return false
+    const werte = readSecretJson(werteFile(deps))?.werte
+    if (werte && werte[id]) { delete werte[id]; writeSecretJson(werteFile(deps), { version: 1, werte }) }
     saveEintraege(list.filter(item => item.id !== id), deps)
-    const werte = readJson(werteFile(deps))?.werte
-    if (werte && werte[id]) { delete werte[id]; writePrivate(werteFile(deps), { version: 1, werte }, deps) }
     return true
 }
 
@@ -198,7 +199,7 @@ const defaultExec: ExecLike = (file, args, options) => new Promise(resolve => {
 const dateiBackend: TresorBackend = {
     quelle: 'datei',
     async lese(eintrag, deps) {
-        const wert = readJson(werteFile(deps))?.werte?.[eintrag.id]
+        const wert = readSecretJson(werteFile(deps))?.werte?.[eintrag.id]
         return typeof wert?.geheim === 'string' && wert.geheim ? { ...(typeof wert.benutzer === 'string' && wert.benutzer ? { benutzer: wert.benutzer } : {}), geheim: wert.geheim } : null
     },
 }

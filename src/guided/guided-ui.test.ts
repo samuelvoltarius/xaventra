@@ -109,7 +109,7 @@ describe('/api/desktop/gefuehrt', () => {
             verbunden: [],
         }) as any
         let entries: any[] = []
-        const deps = () => ({ dataDir: dir, verbunden: async () => entries, ruhezeit: () => false, isMain: () => true, checklist: { overview, telegramGekoppelt: () => true, offerDevice }, hilfe: { quellen: async () => ({ frage: { id: 'k000000000001', titel: 'Hue Bridge koppeln?' } }) } })
+        const deps = () => ({ dataDir: dir, inventory: null, verbunden: async () => entries, ruhezeit: () => false, isMain: () => true, checklist: { overview, telegramGekoppelt: () => true, offerDevice }, hilfe: { quellen: async () => ({ frage: { id: 'k000000000001', titel: 'Hue Bridge koppeln?' } }) } })
         const app = express(); app.use(express.json())
         registerGuidedApi(app, { ownerOnly: () => true, deps })
         await withServer(app, async base => {

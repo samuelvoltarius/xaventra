@@ -32,6 +32,16 @@ const owner = (h: E2EHarness, text: string, script: any[] = []) => h.telegram(te
 
 export const GATES: Gate[] = [
     {
+        id: 'entity-overflow', anchor: "await replyFn('Die Nachrichtenfolge ist zu lang.",
+        marker: { reply: /Nachrichtenfolge ist zu lang/ },
+        run: h => owner(h, '/__entity_overflow__'),
+    },
+    {
+        id: 'entity-clarification', anchor: 'await answer(entityTurn.question)',
+        marker: { reply: /Welches Wesen oder Objekt/ },
+        run: h => owner(h, 'Er ist blau.'),
+    },
+    {
         id: 'login-return', anchor: 'await replyFn(owner ? await handlePastedLoginReturn(address)',
         marker: { log: /Anmelde-Rückkehr eingefügt/ },
         run: h => owner(h, `fertig: https://xaventra.example.com/verbindungen/rueckkehr?state=${'a'.repeat(48)}&code=abc123`),

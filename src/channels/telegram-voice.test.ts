@@ -36,8 +36,8 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); delete process.env.NOVA_RUNTIME_ROOT; rmSync(root, { recursive: true, force: true }) })
 
 const OWNER = 222
-function adapter() {
-    const instance = new TelegramAdapter({ token: 'fixture', allowFrom: [String(OWNER)], verifyAuthority: async () => true } as any)
+function adapter(groupPolicy?: string) {
+    const instance = new TelegramAdapter({ token: 'fixture', allowFrom: [String(OWNER)], ...(groupPolicy ? { groupPolicy } : {}), verifyAuthority: async () => true } as any)
     const bot = {
         getFile: vi.fn(async () => ({ file_path: 'voice/file.oga' })),
         sendMessage: vi.fn(async () => ({ message_id: 1 })),
@@ -51,6 +51,39 @@ function adapter() {
 const voiceMsg = () => ({ message_id: 5, date: 1, chat: { id: OWNER, type: 'private' }, from: { id: OWNER }, voice: { file_id: 'f1', mime_type: 'audio/ogg' } })
 
 describe('Telegram-Sprachnachrichten über den Sprachdienst im Mesh', () => {
+    it.each(['dm-not-allowed', 'mention-only', 'deny'])('rejects %s before download or transcription', async policy => {
+        const { instance, bot } = adapter(policy === 'dm-not-allowed' ? undefined : policy)
+        const msg = policy === 'dm-not-allowed'
+            ? { ...voiceMsg(), from: { id: 999 }, chat: { id: 999, type: 'private' } }
+            : { ...voiceMsg(), chat: { id: -333, type: 'supergroup' } }
+        await (instance as any).handleVoiceMessage(msg)
+        expect(bot.getFile).not.toHaveBeenCalled()
+        expect(voice.transcribe).not.toHaveBeenCalled()
+        expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('preserves group provenance and never changes owner voice preferences from a group', async () => {
+        voice.transcribe.mockResolvedValueOnce({ text: 'Antworte ab jetzt immer per Sprache' })
+        const { instance, bot } = adapter('allow')
+        const handler = vi.fn(async () => undefined)
+        instance.onMessage(handler)
+        await (instance as any).handleVoiceMessage({ ...voiceMsg(), chat: { id: -333, type: 'supergroup' } })
+        expect(handler).toHaveBeenCalledWith(expect.objectContaining({ isGroup: true, groupId: '-333', from: String(OWNER) }))
+        expect(readVoicePrefs().replyByVoice).toBe(false)
+        expect(bot.sendVoice).not.toHaveBeenCalled()
+    })
+
+    it('HTTP-Fehler sind kein erfolgreicher Audioempfang und werden nicht transkribiert', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })))
+        const { instance, bot } = adapter()
+        const handler = vi.fn()
+        instance.onMessage(handler)
+        await (instance as any).handleVoiceMessage(voiceMsg())
+        expect(voice.transcribe).not.toHaveBeenCalled()
+        expect(handler).not.toHaveBeenCalled()
+        expect(bot.sendMessage).toHaveBeenCalledWith(String(OWNER), expect.stringContaining('nicht heruntergeladen'))
+    })
+
     it('versteht die Sprachnachricht über den gefundenen Dienst und gibt den Text in die Pipeline', async () => {
         const { instance, bot } = adapter()
         const handler = vi.fn(async () => undefined)
@@ -93,6 +126,8 @@ describe('Telegram-Sprachnachrichten über den Sprachdienst im Mesh', () => {
         const [chatId, text, options] = bot.sendMessage.mock.calls.at(-1) as any
         expect(chatId).toBe(String(OWNER))
         expect(text).toMatch(/Sprachnachricht/)
+        expect(text).toContain('Audiodatei wurde empfangen')
+        expect(text).toContain('kein Beleg für einen fehlenden Empfang')
         expect(text).not.toMatch(/Whisper|STT|Install-Katalog/)
         expect(options.reply_markup.inline_keyboard.flat()).toEqual([expect.objectContaining({ callback_data: 'vo:install' })])
     })

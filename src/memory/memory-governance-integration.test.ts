@@ -5,6 +5,19 @@ import { AutoObserver } from './auto-observer.js'
 import { MemoryGovernanceCoordinator, setMemoryGovernanceCoordinator } from './memory-governance.js'
 
 describe('observer and memory governance integration', () => {
+    it('captures descriptive pet statements but not hypothetical or interrogative ones', async () => {
+        const root = join(process.cwd(), '.nova-test-tmp', `observer-governance-${randomUUID()}`)
+        const governance = new MemoryGovernanceCoordinator(join(root, 'governance'))
+        setMemoryGovernanceCoordinator(governance)
+        const observer = new AutoObserver({ dataDir: join(root, 'observer') })
+        await observer.observe('42', 'Mein Hund Bello ist ein kleiner brauner Mischling.', 'user', 'statement', { permission: 'owner' })
+        expect(governance.getContextForPrompt('user:42', 'mein Hund')).toContain('Bello')
+        const count = governance.getStats()
+        await observer.observe('42', 'Ist mein Hund Fido ein Mischling?', 'user', 'question', { permission: 'owner' })
+        await observer.observe('42', 'Mein Hund Fido ist vielleicht ein Mischling.', 'user', 'guess', { permission: 'owner' })
+        expect(governance.getStats()).toEqual(count)
+        expect(governance.getContextForPrompt('user:other', 'mein Hund')).not.toContain('Bello')
+    })
     it('makes a direct user fact available across the next prompt immediately', async () => {
         const root = join(process.cwd(), '.nova-test-tmp', `observer-governance-${randomUUID()}`)
         const governance = new MemoryGovernanceCoordinator(join(root, 'governance'))

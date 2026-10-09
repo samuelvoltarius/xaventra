@@ -38,6 +38,8 @@ describe('2.89.4 tips never promise the future', () => {
 describe('2.89.4 capability-inventory gate', () => {
     it('a printer tip needs a real printer protocol, not a title match', () => {
         expect(tippKann('drucker', { typen: ['drucker'], eintraege: [fakePrinter] })).toBe(false)
+        expect(tippKann('drucker', { typen: ['drucker'] })).toBe(false)
+        expect(tippKann('drucker', { typen: ['drucker'], eintraege: [] })).toBe(false)
         expect(tippKann('drucker', { typen: ['drucker'], eintraege: [printer] })).toBe(true)
     })
     it('ki and suche only when the tools are there', () => {
@@ -57,6 +59,10 @@ describe('2.89.4 capability-inventory gate', () => {
             ruhezeit: () => false, abgelehnt: () => false, inventory: null,
         })
         expect(real).toMatchObject({ neu: true, tipp: { id: 'drucker-fertig' } })
+        expect(await tippHeute({
+            ...opts(), typen: [], eintraege: [],
+            ruhezeit: () => false, abgelehnt: () => false, inventory: null,
+        })).toBeNull()
     })
 })
 
@@ -78,6 +84,7 @@ describe('2.89.4 global off switch', () => {
         noteConnected([ha], opts())
         const deps = {
             ...opts(), verbunden: async () => [ha], ruhezeit: () => false, kritisch: () => 0,
+            inventory: null,
             fragen: async () => ({ frage: null, wartend: 0 }),
             checklist: { overview: async () => ({ gefunden: [], verbunden: [] }), telegramGekoppelt: () => true },
             isMain: () => true,

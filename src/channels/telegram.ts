@@ -311,10 +311,12 @@ export class TelegramAdapter implements ChannelAdapter {
     }
 
     private async handleVoiceMessage(msg: any): Promise<void> {
+        if (!this.passesInboundPolicy(msg, true)) return
         if (!(await this.acceptInbound())) return
         const chatId = msg.chat.id.toString()
         const userId = msg.from?.id?.toString() ?? ''
-        const isOwner = this.getOwnerChatIds().includes(userId)
+        const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup'
+        const isOwner = !isGroup && chatId === userId && this.getOwnerChatIds().includes(userId)
         const { join } = await import('node:path')
         const { mkdirSync, writeFileSync, unlinkSync } = await import('node:fs')
         const dir = join(process.cwd(), '.nova-voice')
@@ -322,7 +324,15 @@ export class TelegramAdapter implements ChannelAdapter {
         try {
             const fileInfo = await this.bot.getFile(msg.voice.file_id)
             const response = await fetch(`https://api.telegram.org/file/bot${this.config.token}/${fileInfo.file_path}`)
+            if (!response.ok) {
+                await this.bot.sendMessage(chatId, '🎤 Deine Sprachnachricht wurde angekündigt, aber die Audiodatei konnte nicht heruntergeladen werden. Schick sie bitte erneut.')
+                return
+            }
             const audio = Buffer.from(await response.arrayBuffer())
+            if (!audio.length) {
+                await this.bot.sendMessage(chatId, '🎤 Der Download deiner Sprachnachricht war leer. Schick sie bitte erneut.')
+                return
+            }
             mkdirSync(dir, { recursive: true })
             writeFileSync(tempPath, audio, { mode: 0o600 })
 
@@ -349,7 +359,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     try { (await import('../install/software-demand.js')).recordCapabilityNeed('stt', 'sprachnachricht-ohne-stt') } catch { /* optional */ }
                 }
                 const notice = voice.voiceUnavailableNotice(probed)
-                await this.bot.sendMessage(chatId, notice.text, isOwner && notice.keyboard.length ? { reply_markup: { inline_keyboard: notice.keyboard } } : {})
+                await this.bot.sendMessage(chatId, notice.text + '\nDie Audiodatei wurde empfangen und nur vorübergehend zum Transkribieren verwendet. Sie wird anschließend gelöscht, nicht ins Postfach gelegt. Eine fehlende Datei dort ist kein Beleg für einen fehlenden Empfang.', isOwner && notice.keyboard.length ? { reply_markup: { inline_keyboard: notice.keyboard } } : {})
                 return
             }
             console.log(`[Nova Telegram] Sprachnachricht verstanden (${heard.via})`)
@@ -360,7 +370,8 @@ export class TelegramAdapter implements ChannelAdapter {
                 to: chatId,
                 content: heard.text,
                 timestamp: msg.date * 1000,
-                isGroup: false,
+                isGroup,
+                groupId: isGroup ? chatId : undefined,
             }
             if (!this.messageHandler) return
             const reply = voice.shouldReplyByVoice(heard.text, isOwner)
@@ -1423,6 +1434,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const userId = msg.from?.id?.toString() ?? ''
         const username = msg.from?.username ?? ''
         const isGroup = msg.chat?.type === 'group' || msg.chat?.type === 'supergroup'
+        if (isGroup && this.config.groupPolicy === 'deny') return false
 
         // Check allowlist for DMs
         if (!isGroup && this.config.allowFrom?.length) {

@@ -160,6 +160,113 @@ export function getEntitySummary(entities: ExtractedEntities): string {
 
 const sessionContexts = new Map<string, ConversationContext>()
 
+interface MentionedEntity { id: string; name?: string; excluded: string[]; pending: string[] }
+const referents = new Map<string, { recent: MentionedEntity[]; focus?: MentionedEntity }>()
+export interface EntityTurnResolution {
+    question?: string
+    prompt: string
+    facts: Array<{ name: string; predicate: string; value: string }>
+    correction: boolean
+}
+
+/** Conversational identity, not a vision classifier. Only explicit user names
+ * bind an image. This transient map never writes memory or learns from model text. */
+export function isEntityActionOrFeedback(text: string): boolean {
+    return /\b(?:mach|mache|öffne|oeffne|klick|klicke|versuch|versuche|starte|installiere)\b/i.test(text)
+        || /^(?:nein[, ]*)?(?:das|dies) ist (?:falsch|nicht richtig|inkorrekt)[.!\s]*$/i.test(text.trim())
+}
+
+export function resolveEntityTurn(session: string, text: string, image = false): EntityTurnResolution {
+    const state = referents.get(session) || { recent: [] as MentionedEntity[] }
+    if (!referents.has(session) && referents.size >= 256) referents.delete(referents.keys().next().value!)
+    referents.set(session, state)
+    const result: EntityTurnResolution = { prompt: '', facts: [], correction: /nicht ganz|korrektur|sondern|das ist nicht/i.test(text) }
+    // Actions/answer feedback are not entity facts. Keep the action and L7 paths.
+    if (!image && isEntityActionOrFeedback(text)) return result
+    if (image) {
+        const fresh: MentionedEntity = { id: `image-${Date.now()}-${state.recent.length}`, excluded: [], pending: [] }
+        state.recent.push(fresh); state.focus = fresh
+    }
+    // A name is supplied by the user, never guessed from a previous photo.
+    const named = text.match(/(?:^|[.!\n]\s*)(?:Das|Dies|Hier) ist (?!nicht\b)([\p{Lu}][\p{L}\p{N}_-]{1,50})(?=[\s,.!]|$)/u)
+        || text.match(/(?:^|[.!\n]\s*)(?:Mein(?:e|er)?\s+\p{L}+\s+)([\p{Lu}][\p{L}\p{N}_-]{1,50})\s+(?:ist|hat|trägt)\b/u)
+    const uncertain = /\?|\b(?:vielleicht|vermutlich|wahrscheinlich|könnte|wäre|eventuell)\b/i.test(text)
+    if (named && !uncertain) {
+        const name = named[1]
+        if (state.focus?.excluded.some(n => n.toLowerCase() === name.toLowerCase())) {
+            result.question = `Du hattest gesagt, dass das nicht ${name} ist. Welcher Name ist richtig?`
+        } else {
+            const entity = state.focus && !state.focus.name ? state.focus
+                : state.recent.find(e => e.name?.toLowerCase() === name.toLowerCase())
+                    || { id: `name:${name.toLowerCase()}`, name, excluded: [], pending: [] }
+            entity.name = name
+            if (!state.recent.includes(entity)) state.recent.push(entity)
+            state.focus = entity
+            for (const value of entity.pending.splice(0)) result.facts.push({ name, predicate: 'beschreibung', value })
+        }
+    }
+    const denied = text.match(/\b(?:[Dd]as|[Dd]ies|[Ee]r|[Ss]ie|[Ee]s) ist nicht ([\p{Lu}][\p{L}\p{N}_-]{1,50})\b/u)
+    if (denied && state.focus) {
+        state.focus.excluded.push(denied[1])
+        // Disowning an identity never modifies the named entity's old facts.
+        if (state.focus.name?.toLowerCase() === denied[1].toLowerCase()) state.focus.name = undefined
+    }
+    const ordinal = text.match(/\b(?:der|die|das) (erste|zweite|dritte|letzte)\b/i)
+    if (ordinal) {
+        const index = ['erste', 'zweite', 'dritte'].indexOf(ordinal[1].toLowerCase())
+        state.focus = index < 0 ? state.recent.at(-1) : state.recent[index]
+    }
+    const referentialText = named ? text.slice((named.index || 0) + named[0].length) : text
+    const referential = referentialText.match(/\b(?:er|sie|es|das|dies|(?:der|die|das)\s+(?:erste|zweite|dritte|letzte))\s+(ist|hat|trägt)\s+(?!nicht\b)([^.!?\n]{2,180})/i)
+    const mentionedNames = state.recent.filter(e => e.name && text.split(/[^\p{L}\p{N}_-]+/u).includes(e.name))
+    if (referential && !ordinal && new Set(mentionedNames.map(e => e.name)).size > 1) {
+        result.question = 'Welchen der genannten Namen meinst du mit diesem Bezug? Ich speichere die Änderung erst nach deiner Zuordnung.'
+    }
+    const explicit = text.match(/(?:^|[.!\n]\s*)([\p{Lu}][\p{L}\p{N}_-]{1,50})\s+(ist|hat|trägt)\s+(?!nicht\b)([^.!?\n]{2,180})/u)
+    if (explicit && !uncertain && !result.question && !['Das', 'Dies', 'Hier', 'Er', 'Sie', 'Es', 'Mein', 'Meine'].includes(explicit[1])) {
+        const entity = state.recent.find(e => e.name === explicit[1]) || { id: `name:${explicit[1].toLowerCase()}`, name: explicit[1], excluded: [], pending: [] }
+        if (!state.recent.includes(entity)) state.recent.push(entity)
+        state.focus = entity
+        result.facts.push({ name: explicit[1], predicate: explicit[2].toLowerCase(), value: explicit[3].trim() })
+    } else if (referential && !uncertain && !result.question) {
+        const value = referential[2].trim()
+        if (!state.focus?.name) {
+            if (state.focus) state.focus.pending.push(value)
+            result.question ||= 'Welches Wesen oder Objekt meinst du? Bitte nenne den Namen, damit ich die Angabe richtig zuordne.'
+        } else if (!result.question) {
+            result.facts.push({ name: state.focus.name, predicate: referential[1].toLowerCase(), value })
+        }
+    }
+    if (named && state.focus?.name && !uncertain && !result.question) {
+        const description = text.slice((named.index || 0) + named[0].length).match(/^,\s*([^.!?\n]{3,180})/)
+        if (description) result.facts.push({ name: state.focus.name, predicate: 'beschreibung', value: description[1].trim() })
+    }
+    if (denied && !state.focus?.name) result.question ||= 'Wie heißt das gezeigte oder zuletzt genannte Wesen bzw. Objekt? Ich ändere die Angaben zur anderen Entität nicht.'
+    state.recent = state.recent.slice(-20)
+    result.prompt = '\n\n## ENTITÄTENBEZUG\n' + (image ? 'Neues Bild: keine Identität aus älteren Bildern übernehmen. ' : '')
+        + `Zuletzt gemeint: ${state.focus?.name || 'noch nicht benannt'}. `
+        + `Bekannte Namen in diesem Gespräch: ${state.recent.map(e => e.name).filter(Boolean).join(', ') || 'keine'}. `
+        + 'Ordne Merkmale nur der ausdrücklich gemeinten Entität zu. Bei mehreren möglichen Bezügen frage nach; Bildmerkmale allein bestätigen keine Identität. Korrekturen an einer Entität ändern keine andere.'
+    return result
+}
+
+/** Keep image boundaries in a burst; corrections after each photo settle
+ * together before any caller persists the returned facts. */
+export function resolveEntityBatch(session: string, turns: Array<{ content: string; image?: unknown }>): EntityTurnResolution {
+    const groups: Array<{ content: string; image?: unknown }> = []
+    for (const turn of turns) {
+        if (turn.image || !groups.length) groups.push({ ...turn })
+        else groups[groups.length - 1].content += '\n' + turn.content
+    }
+    let result: EntityTurnResolution = { prompt: '', facts: [], correction: false }
+    for (const group of groups) {
+        const next = resolveEntityTurn(session, group.content, Boolean(group.image))
+        result = { ...next, facts: [...result.facts, ...next.facts], correction: result.correction || next.correction }
+    }
+    if (result.question) result.facts = []
+    return result
+}
+
 /**
  * Update context for a session
  */

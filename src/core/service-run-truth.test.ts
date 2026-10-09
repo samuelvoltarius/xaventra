@@ -51,6 +51,9 @@ describe('2.89.4: Nutzer-Korrekturen zu Diensten erkennen', () => {
         ['Du bist doch schon verbunden.', true],
         ['Warum bist du noch nicht verbunden?', true],
         ['Pocket-TTS läuft wieder.', true],
+        ['STT und TTS laufen bereits lokal.', true],
+        ['Hier laufen lokal STT und TTS Dienste.', true],
+        ['Ich habe deine Sprachnachricht bekommen, kann sie aber noch nicht anhören. Mit dem lokalen Sprachdienst geht das. Du hast local die Sachen schon', true],
     ])('%s → Korrektur', text => {
         const found = detectServiceStateCorrection(text)
         expect(found).not.toBeNull()
@@ -68,6 +71,9 @@ describe('2.89.4: Nutzer-Korrekturen zu Diensten erkennen', () => {
         'homeassit sollte schon laufen',
         'Home Assistant sollte schon laufen',
         'Proxmox läuft doch schon',
+        'Du hast local die Sachen schon',
+        'Laufen STT und TTS bereits lokal?',
+        'STT und TTS laufen lokal nicht.',
     ])('%s → keine Korrektur', text => {
         expect(detectServiceStateCorrection(text)).toBeNull()
     })

@@ -17,6 +17,8 @@ const TUYA_SATZ = 'Unbekanntes Gerät im Netz (Tuya) war im letzten Suchlauf nic
 
 async function deliverThroughRealTelegram(sent: string[], steps: number = 1): Promise<void> {
     const adapter = h!.state.channels.telegram
+    // Simulated Main transport only; no real Telegram or lease authority is acquired.
+    adapter.hasCardAuthority = async () => true
     adapter.sendApprovalCard = async (_chatId: string, text: string) => { sent.push(String(text)); return 1 }
     const thoughts = await h!.module('planner/thoughts.js')
     const planner = await h!.module('planner/index.js')

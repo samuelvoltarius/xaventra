@@ -400,6 +400,7 @@ export class MemoryGovernanceCoordinator {
 
         const duplicate = this.store.records.find(record =>
             record.scope === proposal.scope
+            && (!proposal.subject || !record.subject || proposal.subject === record.subject)
             && !['rejected', 'expired', 'superseded'].includes(record.status)
             && (record.fingerprint === hash || memoryRelevance(record.content, content) >= 0.88))
 
@@ -453,6 +454,7 @@ export class MemoryGovernanceCoordinator {
 
         const conflicts = this.store.records.filter(existing => {
             if (existing.scope !== record.scope || existing.kind !== record.kind) return false
+            if (proposal.subject && existing.subject && proposal.subject !== existing.subject) return false
             if (['rejected', 'expired', 'superseded'].includes(existing.status)) return false
             const sameStructuredKey = Boolean(proposal.subject && proposal.predicate && existing.memoryKey === key)
             const similarTopic = memoryRelevance(existing.content, content) >= 0.55

@@ -17,6 +17,7 @@ describe('2.89.4 Claude-Übergabe-Karte (realer Telegram-Weg)', () => {
         h = await createE2EHarness()
         await h.telegram('Hallo', [{ text: 'Alles klar.' }])
         const adapter = h!.state.channels.telegram
+        adapter.hasCardAuthority = async () => true
         const sent: string[] = []
         adapter.sendApprovalCard = async (_chatId: string, text: string) => { sent.push(String(text)); return 1 }
         const handoff = await h!.module('doctor/claude-handoff.js')
@@ -25,7 +26,7 @@ describe('2.89.4 Claude-Übergabe-Karte (realer Telegram-Weg)', () => {
             id: 'nova-e2e', caseId: 'case-e2e-1', title: 'Drucker-Status wird nicht gemeldet',
             observation: 'Statusabfrage liefert kein Ergebnis.',
             report: 'verifiziert, nur lesend erhoben', evidenceRefs: ['doctor:doctor_e2e'],
-            node: 'xaventra-spark', version: '2.89.4', state: 'queued', createdAt: new Date().toISOString(),
+            node: 'node-fixture', version: '2.89.4', state: 'queued', createdAt: new Date().toISOString(),
         }
         const request = handoff.handoffDelegationRequest(record)
         const created = cards.createApprovalCard({
@@ -44,7 +45,7 @@ describe('2.89.4 Claude-Übergabe-Karte (realer Telegram-Weg)', () => {
         const bridge = await h!.module('core/planner-card-bridge.js')
         await bridge.createPlannerTelegramPort(adapter).deliver({
             id: 'out-e2e-karte', kind: 'gedanke', title: card.titel, text: short,
-            urgency: 'normal', createdAt: new Date().toISOString(), thoughtId: 'th-e2e-none', permission: 'nie',
+            urgency: 'normal', createdAt: new Date().toISOString(),
         })
         const message = sent.join('\n')
         expect(message).toContain('Auftrag an Claude senden?')

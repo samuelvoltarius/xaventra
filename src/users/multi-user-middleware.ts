@@ -439,6 +439,47 @@ const messageBuffers: Map<string, MessageBuffer> = new Map()
 
 const COALESCE_WINDOW_MS = 2500 // 2.5 seconds
 
+type ConversationImage = { data: string; mimeType: string }
+let entityWindowMs = 20_000
+export function setEntityWindowForTests(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 1 || ms > 20_000) throw new Error('Invalid entity window')
+    entityWindowMs = ms
+}
+const entityBuffers = new Map<string, {
+    text: string[]; image?: ConversationImage; timer: ReturnType<typeof setTimeout>
+    turns: Array<{ content: string; image?: ConversationImage }>; overflow?: boolean
+    resolve: Array<(value: { content: string; image?: ConversationImage; turns?: Array<{ content: string; image?: ConversationImage }> }) => void>
+}>()
+/** Called only after authentication and secret intake. A bounded window lets
+ * follow-up identity corrections settle before any memory writer runs. */
+export function coalesceEntityMessage(chat: string, user: string, content: string, image?: ConversationImage): Promise<{ content: string; image?: ConversationImage; turns?: Array<{ content: string; image?: ConversationImage }> }> {
+    const key = JSON.stringify([chat, user])
+    return new Promise(resolve => {
+        let buffer = entityBuffers.get(key)
+        if (!buffer) {
+            const fresh: NonNullable<ReturnType<typeof entityBuffers.get>> = { text: [], turns: [], image, timer: undefined as unknown as ReturnType<typeof setTimeout>, resolve: [] }
+            entityBuffers.set(key, fresh); buffer = fresh
+            fresh.timer = setTimeout(() => {
+                entityBuffers.delete(key)
+                const merged = fresh.text.join('\n')
+                fresh.resolve.forEach((done, i) => done(i === fresh.resolve.length - 1 ? { content: fresh.overflow ? '/__entity_overflow__' : merged, image: fresh.image, turns: fresh.turns } : { content: COALESCED_MESSAGE_MARKER }))
+            }, entityWindowMs)
+        }
+        // Never extend the first deadline indefinitely. Limit buffered content.
+        if (buffer.text.length >= 32 || buffer.text.join('').length + content.length > 16_000) {
+            buffer.overflow = true
+            resolve({ content: COALESCED_MESSAGE_MARKER }); return
+        }
+        buffer.text.push(content); if (image) buffer.image = image
+        buffer.turns.push({ content, image })
+        buffer.resolve.push(resolve)
+    })
+}
+
+export function hasEntityBuffer(chat: string, user: string): boolean {
+    return entityBuffers.has(JSON.stringify([chat, user]))
+}
+
 /**
  * Returned to every call whose text was merged into a LATER message of the
  * same burst. It is a slash command that the command layer answers with

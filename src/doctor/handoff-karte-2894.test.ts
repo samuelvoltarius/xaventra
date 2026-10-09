@@ -11,7 +11,7 @@ const record: HandoffRecord = {
     id: 'nova-abc', caseId: 'case-1', title: 'Trace success rate is below target',
     observation: 'Success rate is 7.0% across 748 traces.',
     report: 'health_status: 40 Tool-Fehler', evidenceRefs: ['doctor:doctor_x'],
-    node: 'xaventra-spark', version: '2.79.3', state: 'queued', createdAt: '2026-09-30T21:30:00Z',
+    node: 'node-fixture', version: '2.79.3', state: 'queued', createdAt: '2026-09-30T21:30:00Z',
 }
 
 describe('2.89.4 handoff card: plain German for the owner', () => {

@@ -93,7 +93,8 @@ describe('Desktop-Ansicht „Verbindungen“ (2.85 Paket A, Punkt 6)', () => {
         }
         const main = block('NAV_MAIN').map((entry: string[]) => entry[0])
         expect(main).toEqual(expect.arrayContaining(['heute', 'verbindungen', 'werkzeugkasten']))
-        expect(main.indexOf('werkzeugkasten')).toBe(main.indexOf('verbindungen') + 1)
+        expect(main).toEqual(expect.arrayContaining(['gedaechtnis']))
+        expect(main.indexOf('werkzeugkasten')).toBeGreaterThan(main.indexOf('verbindungen'))
         expect(Object.keys(block('MORE_PAGES'))).not.toContain('werkzeugkasten')
         // Its own page: no "zurück zu Mehr" link.
         expect(app).not.toMatch(/subPage\('werkzeugkasten'/)

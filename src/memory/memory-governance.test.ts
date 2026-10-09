@@ -9,6 +9,20 @@ function coordinator(): MemoryGovernanceCoordinator {
 }
 
 describe('memory governance', () => {
+    it('keeps near-identical descriptions of different entities separate through corrections', () => {
+        const governance = coordinator()
+        const fact = (name: string, value: string, evidence: 'user_statement' | 'correction') => governance.propose({
+            content: `${name} ist ${value}`, scope: 'user:fixture', kind: 'context', source: 'conversation-entity',
+            evidence, confidence: 1, subject: `entity:${name.toLowerCase()}`, predicate: 'ist', value,
+        })!
+        const a = fact('Alpha', 'ein grauer kleiner Hund mit Halsband', 'user_statement')
+        const b = fact('Beta', 'ein grauer kleiner Hund mit Halsband', 'user_statement')
+        expect(a.id).not.toBe(b.id)
+        const correction = fact('Beta', 'ein brauner kleiner Hund mit Halsband', 'correction')
+        expect(governance.get(a.id)?.status).toBe('verified')
+        expect(governance.get(b.id)?.status).toBe('superseded')
+        expect(correction.subject).toBe('entity:beta')
+    })
     it('converges terminal replication without timestamp or audit amplification across restart', async () => {
         const roots = [0, 1].map(() => join(process.cwd(), '.nova-test-tmp', `governance-loop-${randomUUID()}`))
         let nodes = roots.map(root => new MemoryGovernanceCoordinator(root))

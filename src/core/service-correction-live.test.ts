@@ -8,13 +8,13 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fixtures = vi.hoisted(() => ({ agent: vi.fn() }))
+const fixtures = vi.hoisted(() => ({ agent: vi.fn(), permission: 'owner', group: false }))
 vi.mock('../users/multi-user-middleware.js', async importOriginal => ({
     ...await importOriginal<typeof import('../users/multi-user-middleware.js')>(),
     initMultiUser: () => undefined,
-    checkAuth: () => ({ allowed: true, permission: 'owner', isNewUser: false, user: {} }),
-    getUserPermission: () => 'owner',
-    isGroupChat: () => false, shouldCoalesce: () => false,
+    checkAuth: () => ({ allowed: true, permission: fixtures.permission, isNewUser: false, user: {} }),
+    getUserPermission: () => fixtures.permission,
+    isGroupChat: () => fixtures.group, shouldCoalesce: () => false,
     coalesceMessage: async (_chat: string, _from: string, text: string) => text,
     getUserContextString: () => '', getGroupContext: () => '', addUserTopic: () => undefined,
 }))
@@ -58,6 +58,7 @@ async function ask(content: string): Promise<string[]> {
 beforeAll(() => { vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1') })
 
 beforeEach(() => {
+    fixtures.permission = 'owner'; fixtures.group = false
     fixtures.agent.mockReset()
     fixtures.agent.mockResolvedValue({ content: 'unexpected model answer', toolsExecuted: [], sessionId: 's', toolExecutions: [], actionState: { requiresTool: false, kind: 'none', fulfilled: false } })
     resetServiceProbeEvidence()
@@ -66,6 +67,26 @@ beforeEach(() => {
 })
 
 describe('2.89.4: Dienst-Korrekturen am echten Eingang', () => {
+    it('quoted voice notice plus local correction reaches probes, never a learning card', async () => {
+        const fetch = vi.fn(async () => { throw new Error('ECONNREFUSED') })
+        vi.stubGlobal('fetch', fetch)
+        const text = (await ask('Ich habe deine Sprachnachricht bekommen, kann sie aber noch nicht anhören. Mit dem lokalen Sprachdienst geht das. Du hast local die Sachen schon')).join('\n')
+        expect(fetch).toHaveBeenCalled()
+        expect(text).toMatch(/nicht erreichbar|nicht geprüft/)
+        expect(text).not.toMatch(/Soll ich es lernen|verifiziert fehlgeschlagen|keine Audiodatei/)
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    })
+
+    it.each(['guest', 'user', 'admin', 'owner-group'])('denies private probes for %s before any request', async role => {
+        fixtures.permission = role === 'owner-group' ? 'owner' : role
+        fixtures.group = role === 'owner-group'
+        const fetch = vi.fn(async () => new Response('{}'))
+        vi.stubGlobal('fetch', fetch)
+        const text = (await ask('Du solltest doch schon verbunden sein.')).join('\n')
+        expect(text).toMatch(/Owner|Direktchat/)
+        expect(fetch).not.toHaveBeenCalled()
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    })
     it('„läuft doch schon“ wird live geprüft und nicht ungeprüft übernommen', async () => {
         // nichts antwortet
         vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED') }))
