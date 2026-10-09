@@ -1,5 +1,6 @@
 import { parseNaturalMemoryForget } from '../memory/memory-quality.js'
 import { parseRoutineSatz, parseSchaltSatz } from '../sensing/device-sentences.js'
+import { detectServiceStateCorrection } from './service-run-truth.js'
 
 export type NaturalCommandRisk = 'read-only' | 'controlled-action'
 
@@ -60,6 +61,11 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /^(?:welche|was für) verbindungen (?:hast|kennst) du(?: alles)?$/.test(text)
         || /^was ist (?:alles )?verbunden$/.test(text)
         || /^(?:zeig|zeige)(?: mir)? (?:deine |die |alle )?verbindungen$/.test(text)) return route('verbindungen', '', 'connections-list')
+
+    // 2.89.4: service-state corrections („läuft doch schon“, „solltest du schon
+    // verbunden sein“) are live-checked immediately — never accepted unverified,
+    // never answered on another topic.
+    if (detectServiceStateCorrection(input)) return route('dienste', 'live-check', 'service-live-check', 'read-only')
 
     // 2.86 Paket N: „und?“ / „hat's geklappt?“ right after connecting → the stored state of that
     // connection (handler answers '' when nothing ran lately → normal conversation).

@@ -98,7 +98,7 @@ export function getMinutesSinceLastSelfThink(): number {
 
 // Pre-load hot-path modules at startup to avoid first-call latency
 /** Deterministic fast paths whose answer is a live measurement, not a static text. */
-const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness'])
+const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check'])
 
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
@@ -899,6 +899,28 @@ ${pendingGapNote}` : withTail
             // 2.86 Paket N: „und?“ after a connection is only the owner's; everyone else just talks.
             const deterministic = detected && !(detected.reason === 'connect-progress' && principalContext.permission !== 'owner') ? detected : null
             if (deterministic) {
+                // 2.89.4: service-state corrections are live-checked here (probe +
+                // connect or honest result). Stays on that topic; never a different one.
+                if (deterministic.reason === 'service-live-check') {
+                    const { detectServiceStateCorrection, formatServiceCorrectionReply, liveCheckServices } = await import('./service-run-truth.js')
+                    const correction = detectServiceStateCorrection(content)
+                    const check = await liveCheckServices()
+                    await answer(formatServiceCorrectionReply(check, correction, content))
+                    if (LIVE_PROBE_FAST_PATHS.has(deterministic.reason)) {
+                        try {
+                            const { publishDesktopAgentOutcome } = await import('../desktop/desktop-agent-context.js')
+                            publishDesktopAgentOutcome({
+                                node: process.env.NOVA_NODE_ID || 'local',
+                                durationMs: 0,
+                                tools: [{ name: `probe:${deterministic.reason}`, success: check.anyOk }],
+                                verifiedEvidence: 1,
+                            })
+                        } catch { /* outside a Desktop room there is nothing to project */ }
+                    }
+                    traceStep(`fast-path:${deterministic.reason}`)
+                    console.log(`[Nova] [${channel}] Deterministic fast-path: ${deterministic.reason}`)
+                    return true
+                }
                 const response = await handleCommandFn(
                     deterministic.command,
                     deterministic.args,

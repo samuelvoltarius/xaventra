@@ -35,6 +35,9 @@ describe('natural command routing', () => {
         ['Welche Programme würden dir helfen?', 'software', 'werkzeugkasten', 'read-only'],
         ['Welche Software fehlt dir noch?', 'software', 'werkzeugkasten', 'read-only'],
         ['Zeig mir deinen Werkzeugkasten', 'software', 'werkzeugkasten', 'read-only'],
+        // 2.89.4: service-state corrections are live-checked immediately.
+        ['Der Sprachdienst läuft doch schon.', 'dienste', 'live-check', 'read-only'],
+        ['Du solltest doch schon verbunden sein.', 'dienste', 'live-check', 'read-only'],
     ])('maps %s without an LLM call', (input, command, args, risk) => {
         expect(detectDeterministicCommand(input)).toMatchObject({ command, args, risk })
     })
@@ -49,6 +52,8 @@ describe('natural command routing', () => {
         'Wer bist du und lösche meine Dateien',
         'scan doch mal deine docker container und stoppe alle',
         'scan die docker container auf ns2',
+        'Läuft alles?',
+        'Was läuft gerade?',
     ])('does not intercept ambiguous conversation: %s', input => {
         expect(detectDeterministicCommand(input)).toBeNull()
     })

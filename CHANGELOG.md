@@ -30,6 +30,14 @@
   next order. A target is only asked when the order is an action on a machine and
   several targets are in question; a new order drops the old question instead of
   resuming it.
+- **Service corrections are live-checked; “läuft” only with evidence.** Live
+  09.10.2026: “läuft doch schon” / “solltest du schon verbunden sein” were
+  either accepted unverified or answered on another topic. Now such corrections
+  trigger an immediate probe (speech + model runtime): connect what answers, or
+  report the probe result honestly and stay on that topic. In status and
+  inventory answers a service is only “läuft” after a successful probe in this
+  run — otherwise “nicht geprüft” / “nicht erreichbar”. Cloud providers are
+  never claimed “läuft” without a live call.
 
 ## [2.89.3] — 2026-10-08
 
