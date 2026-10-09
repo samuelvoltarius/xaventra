@@ -103,11 +103,11 @@ Core retains at most 30 captures and removes captures older than seven days.
 Die App öffnet auf **Heute** (was sie tut, Live-Schritt eines laufenden
 Auftrags, offene Knopf-Karten, Berichtsvorschau, Gedanken). Hauptleiste:
 **Heute · Unterhaltung · Anrufen · Arbeit · Geräte · Verbindungen ·
-Gedächtnis**, unten **Mehr** und **Einstellungen**. Arbeit enthält die Reiter
-Missionen, Aufträge, Aktivität, Delegationen, Verantwortungen, Geplant;
-Geräte die Reiter Übersicht und Bildschirme („Dein Computer“). Unter **Mehr**:
-Werkzeugkasten, Regeln, Belege, Spezialisten, Studio, Abwehr, Knoten
-aufnehmen, Erster Start. Farbschema System/Hell/Dunkel in den
+Gedächtnis · Werkzeugkasten**, unten **Mehr** und **Einstellungen**. Arbeit
+enthält die Reiter Missionen, Aufträge, Aktivität, Delegationen,
+Verantwortungen, Geplant; Geräte die Reiter Übersicht und Bildschirme
+(„Dein Computer“). Unter **Mehr**: Regeln, Belege, Spezialisten, Studio,
+Abwehr, Knoten aufnehmen, Erster Start. Farbschema System/Hell/Dunkel in den
 Einstellungen. Dieselben Dateien liefert der Main im Browser aus
 ([DASHBOARD.md](DASHBOARD.md)); die Ansichten brauchen den Owner
 (`NOVA_DESKTOP_API_TOKEN`). Karten werden über `answerApprovalCard` beantwortet,

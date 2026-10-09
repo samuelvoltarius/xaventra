@@ -3,9 +3,9 @@ const api = window.novaDesktop.api
 const WEB = window.novaDesktop.web === true
 
 // Xaventra arbeitet selbstständig. Diese Oberfläche ist ein Fenster zum
-// Mitschauen und Knöpfe-Drücken: sieben Hauptbereiche (Heute, Unterhaltung,
-// Anrufen, Arbeit, Geräte, Verbindungen, Gedächtnis). Werkzeugkasten, Regeln
-// und Fachwerkzeuge liegen unter „Mehr“.
+// Mitschauen und Knöpfe-Drücken: acht Hauptbereiche (Heute, Unterhaltung,
+// Anrufen, Arbeit, Geräte, Verbindungen, Gedächtnis, Werkzeugkasten).
+// Regeln und Fachwerkzeuge liegen unter „Mehr“.
 
 const state = {
   section: 'heute',
@@ -52,11 +52,12 @@ const NAV_MAIN = [
   ['system', 'Geräte', 'server'],
   ['verbindungen', 'Verbindungen', 'plug'],
   ['gedaechtnis', 'Gedächtnis', 'brain'],
+  // Owner-Entscheidung 02.10., bestätigt 09.10.: Werkzeugkasten in die Hauptleiste.
+  ['werkzeugkasten', 'Werkzeug\u00ADkasten', 'wrench'], // weiches Trennzeichen (U+00AD): passt in die schmale Leiste
 ]
 const NAV_BOTTOM = [['mehr', 'Mehr', 'grid'], ['settings', 'Einstellungen', 'settings']]
 // Fachseiten unter Mehr: bleiben erreichbar, stehen aber nicht im Weg.
 const MORE_PAGES = {
-  werkzeugkasten: { title: 'Werkzeugkasten', icon: 'wrench', text: 'Programme, die mir weiterhelfen. Installiert wird erst nach deinem Ja.' },
   regeln: { title: 'Regeln', icon: 'scale', text: 'Was ich ohne Frage darf, wo ich frage und was nie - in einem Satz.' },
   trust: { title: 'Belege & Reparaturen', icon: 'fileCheck', text: 'Jeder Arbeitslauf mit Werkzeugen, Prüfung und Kosten. Reparaturen mit geprüftem Patch.' },
   bots: { title: 'Spezialisten', icon: 'users', text: 'Aufgaben-Profile und angebundene Hermes-/OpenClaw-Agenten. Xaventra zieht sie selbst hinzu.' },
@@ -407,7 +408,7 @@ function pageFor(section) {
   if (section === 'trust') return subPage('trust', loadingBlock('Belege werden geladen'))
   if (section === 'regeln') return subPage('regeln', window.XaventraSehen ? window.XaventraSehen.view('regeln', sehenHelpers(), { bare: true }) : loadingBlock('Regeln'))
   if (section === 'anruf') return window.XaventraAnruf ? window.XaventraAnruf.view(anrufHelpers()) : loadingBlock('Anrufen')
-  if (section === 'werkzeugkasten') return subPage('werkzeugkasten', window.Werkzeugkasten ? window.Werkzeugkasten.view(werkzeugkastenHelpers()) : loadingBlock('Werkzeugkasten'))
+  if (section === 'werkzeugkasten') return window.Werkzeugkasten ? `<div class="page"><div class="page-inner">${window.Werkzeugkasten.view(werkzeugkastenHelpers())}</div></div>` : loadingBlock('Werkzeugkasten')
   if (section === 'start') return subPage('start', window.XaventraOnboarding ? window.XaventraOnboarding.page(onboardingContext()) : '')
   return settingsView()
 }
