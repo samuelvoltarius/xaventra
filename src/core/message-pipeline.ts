@@ -23,6 +23,7 @@ import { isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance } 
 import { createProgressNotice } from './progress-notice.js'
 
 import { isTechnicalProbe } from './channel-name.js'
+import { commandReplyText } from './slash-commands.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 
 /** Upper bound of one picture turn (2.89.3). */
@@ -855,12 +856,13 @@ ${pendingGapNote}` : withTail
         const [cmd, ...args] = content.slice(1).split(' ')
         const cmdResponse = await handleCommandFn(cmd.toLowerCase(), args.join(' '), from, principalContext)
         if (cmdResponse) {
-            // __HANDLED__ = command was executed via Telegram buttons (no text reply needed)
-            if (cmdResponse !== '__HANDLED__') {
-                await replyFn(cmdResponse)
-                if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'assistant', cmdResponse)
+            // COMMAND_HANDLED = command was executed via Telegram buttons (no text reply needed)
+            const cmdText = commandReplyText(cmdResponse)
+            if (cmdText) {
+                await replyFn(cmdText)
+                if (!isSensitiveAuthCommand) logSession(canonicalUser, channel, 'assistant', cmdText)
             }
-            // Stop typing indicator (esp. important for __HANDLED__ where send() is skipped)
+            // Stop typing indicator (esp. important for COMMAND_HANDLED where send() is skipped)
             try {
                 const { getTelegramAdapter } = await import('../channels/telegram.js')
                 const tg = getTelegramAdapter()
@@ -906,7 +908,8 @@ ${pendingGapNote}` : withTail
                     principalContext,
                 )
                 if (response) {
-                    if (response !== '__HANDLED__') await answer(response)
+                    const fastPathText = commandReplyText(response)
+                    if (fastPathText) await answer(fastPathText)
                     // 2.89 Abnahme: fast-path answers that come from a live probe carry that probe as
                     // evidence in the Desktop room (Internet, Docker, mesh/system status). Static answers
                     // (identity, capabilities, lists) stay without evidence — no proof is claimed.

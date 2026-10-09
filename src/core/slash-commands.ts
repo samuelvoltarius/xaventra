@@ -185,6 +185,19 @@ function commandRoleDenial(cmd: string, permission: string): string | null {
  * existed and returned __HANDLED__ — the Desktop, REST or WhatsApp request got
  * no answer at all. Every other channel gets the text.
  */
+/** Internal marker: the command already delivered its answer (Telegram buttons). */
+export const COMMAND_HANDLED = '__HANDLED__'
+
+/**
+ * 2.89.4 (live): `/ai` showed the line „HANDLED“. Button callbacks and the
+ * menu forwarded the internal marker as chat text (Telegram Markdown ate the
+ * underscores). Only real text is ever sent to a user.
+ */
+export function commandReplyText(response: string | null | undefined): string | null {
+    if (!response || response === COMMAND_HANDLED) return null
+    return response
+}
+
 async function telegramForRequest(principalContext?: PrincipalContext): Promise<any | null> {
     if (!isChannel(principalContext?.channel, 'telegram')) return null
     const { getTelegramAdapter } = await import('../channels/telegram.js')
@@ -214,7 +227,7 @@ export async function handleCommand(
         case '__coalesced__':
             // Text was merged into the next message of the same burst, which
             // answers it. Finish this request silently (multi-user coalescing).
-            return '__HANDLED__'
+            return COMMAND_HANDLED
         case 'docker': {
             const { dockerInventoryCommand } = await import('./docker-command.js')
             return dockerInventoryCommand(args, state.tools, principalContext)
@@ -308,7 +321,7 @@ export async function handleCommand(
                         [{ text: '📜 Log', callback_data: 'cmd_log' }, { text: '📋 Task', callback_data: 'cmd_task' }],
                         [{ text: '❤️ Heartbeat', callback_data: 'cmd_heartbeat' }, { text: '📋 Alle Befehle', callback_data: 'cmd_helptext' }],
                     ])
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -344,7 +357,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                         [{ text: '🔄 Refresh', callback_data: 'cmd_layers' }, { text: '🛡️ Layer 0 Details', callback_data: 'cmd_layer0' }],
                         [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '⬅️ Menü', callback_data: 'cmd_help' }],
                     ])
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -449,7 +462,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                     await tg.sendWithButtons(from, healthMon.formatStatus(), [
                         [{ text: '🔄 Refresh', callback_data: 'cmd_health' }],
                     ])
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -505,7 +518,7 @@ L0 Resilience: ${state.resilience ? '✅ aktiv' : '❌'}
                 const tg = await telegramForRequest(principalContext)
                 if (tg) {
                     await tg.sendModelSelector(from, undefined, modelPrincipalId)
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -621,7 +634,7 @@ _Ändern mit: /persona Du heißt XY und bist ein ..._`
                             [{ text: '🎨 Kreativ', callback_data: 'persona_creative' }, { text: '💻 DevOps', callback_data: 'persona_devops' }],
                             [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '⬅️ Menü', callback_data: 'cmd_help' }],
                         ])
-                        return '__HANDLED__'
+                        return COMMAND_HANDLED
                     }
                 } catch (error) { telegramButtonsFailed(error) }
 
@@ -770,7 +783,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                             [{ text: '🔍 Web Scrape', callback_data: 'learn_web_scrape' }, { text: '📊 Data Analysis', callback_data: 'learn_data_analysis' }],
                             [{ text: '📋 Lernstatus', callback_data: 'cmd_lernstatus' }, { text: '⬅️ Menü', callback_data: 'cmd_help' }],
                         ])
-                        return '__HANDLED__'
+                        return COMMAND_HANDLED
                     }
                 } catch (error) { telegramButtonsFailed(error) }
 
@@ -995,7 +1008,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
                         [{ text: '🔄 Refresh', callback_data: 'cmd_status' }, { text: '🤖 Modell', callback_data: 'cmd_models' }],
                         [{ text: '🧠 Layers', callback_data: 'cmd_layers' }, { text: '🧹 Clear', callback_data: 'cmd_clear' }],
                     ])
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -1082,7 +1095,7 @@ Dann: /llm local`
                         [{ text: '🤖 Modell wechseln', callback_data: 'cmd_models' }, { text: '📊 Status', callback_data: 'cmd_status' }],
                         [{ text: '⬅️ Menü', callback_data: 'cmd_help' }],
                     ])
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             } catch (error) { telegramButtonsFailed(error) }
 
@@ -1236,7 +1249,7 @@ Dann: /llm local`
                             [{ text: '🔄 Refresh', callback_data: 'cmd_memory' }, { text: '🔍 Suchen', callback_data: 'memory_search' }],
                             [{ text: '📊 Status', callback_data: 'cmd_status' }, { text: '⬅️ Menü', callback_data: 'cmd_help' }],
                         ])
-                        return '__HANDLED__'
+                        return COMMAND_HANDLED
                     }
                 } catch (error) { telegramButtonsFailed(error) }
 
@@ -1833,7 +1846,7 @@ Gebaut für Xaventra contributors 🌶️`
                         }
 
                         await tg.sendWithButtons(from, text, buttons)
-                        return '__HANDLED__'
+                        return COMMAND_HANDLED
                     }
                 } catch (error) { telegramButtonsFailed(error) }
 
@@ -3613,7 +3626,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                 const keyboard = aktivitaetKnoepfe(view, ownerId)
                 if (tg && keyboard.length) {
                     await tg.sendWithButtons(from, text, keyboard)
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             }
             return text
@@ -3640,7 +3653,7 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
                 const picker = desktopDirect.desktopPicker(ownerId)
                 if (tg && picker) {
                     await tg.sendDesktopPicker(from, picker.text, picker.keyboard)
-                    return '__HANDLED__'
+                    return COMMAND_HANDLED
                 }
             }
             return desktopDirect.desktopOverviewText()

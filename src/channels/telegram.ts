@@ -503,6 +503,17 @@ export class TelegramAdapter implements ChannelAdapter {
         }
     }
 
+    /**
+     * 2.89.4: a command that already answered via buttons returns the silent
+     * marker. Forwarding it as chat text showed the line „HANDLED“ (`/ai`,
+     * Markdown ate the underscores). Only real text is ever sent.
+     */
+    private async sendCommandReply(chatId: string | undefined, response: string | null | undefined): Promise<void> {
+        const { commandReplyText } = await import('../core/slash-commands.js')
+        const text = commandReplyText(response)
+        if (text) await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
+    }
+
     private async handleFeedback(query: any): Promise<void> {
         if (!(await this.acceptInbound())) return
         const data = query.data
@@ -747,10 +758,8 @@ export class TelegramAdapter implements ChannelAdapter {
 
                 // Route to handleCommand — chatId is used as 'from' for button responses
                 const response = await handleCommand(cmd, '', chatId!, state, availableLLMs, principal!)
-                if (response) {
-                    // handleCommand returned text (non-Telegram fallback or no-button command)
-                    await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
-                }
+                // 2.89.4: COMMAND_HANDLED is silent — never send it as chat text (`/ai` showed „HANDLED“)
+                await this.sendCommandReply(chatId, response)
                 await this.bot.answerCallbackQuery(query.id)
             } catch (err) {
                 console.log(`[Nova Telegram] Command callback error: ${err}`)
@@ -773,7 +782,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     const { handleCommand } = await import('../core/slash-commands.js')
                     const { availableLLMs } = await import('../core/llm-factory.js')
                     const response = await handleCommand('persona', presets[preset] || preset, chatId!, state, availableLLMs, principal!)
-                    if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
+                    await this.sendCommandReply(chatId, response)
                 }
                 await this.bot.answerCallbackQuery(query.id, { text: `✅ Persona: ${preset}` })
             } catch (err) {
@@ -792,7 +801,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     const { availableLLMs } = await import('../core/llm-factory.js')
                     await this.bot.answerCallbackQuery(query.id, { text: `⏳ Lerne ${skill}...` })
                     const response = await handleCommand('learn', skill, chatId!, state, availableLLMs, principal!)
-                    if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
+                    await this.sendCommandReply(chatId, response)
                 }
             } catch (err) {
                 console.log(`[Nova Telegram] Learn callback error: ${err}`)
@@ -809,7 +818,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     const { handleCommand } = await import('../core/slash-commands.js')
                     const { availableLLMs } = await import('../core/llm-factory.js')
                     const response = await handleCommand('llm', action, chatId!, state, availableLLMs, principal!)
-                    if (response) await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' })
+                    await this.sendCommandReply(chatId, response)
                 }
                 await this.bot.answerCallbackQuery(query.id)
             } catch (err) {
@@ -1264,9 +1273,13 @@ export class TelegramAdapter implements ChannelAdapter {
     private async registerMenuViews(chatId: string, principal: PrincipalContext | null): Promise<void> {
         const pages = await import('./telegram-pages.js')
         pages.registerMenuProvider('status', async () => {
-            const { handleCommand } = await import('../core/slash-commands.js')
+            const { handleCommand, commandReplyText } = await import('../core/slash-commands.js')
             const { availableLLMs } = await import('../core/llm-factory.js')
-            const text = principal ? await handleCommand('status', '', chatId, (globalThis as any).__novaState, availableLLMs, principal) : null
+            // Menu page wants the text. A telegram principal would send buttons and
+            // return the silent marker — which this page used to strip into „HANDLED“.
+            const menuPrincipal = principal ? { ...principal, channel: 'menu' } : null
+            const raw = menuPrincipal ? await handleCommand('status', '', chatId, (globalThis as any).__novaState, availableLLMs, menuPrincipal) : null
+            const text = commandReplyText(raw)
             return { titel: 'Status', text: String(text || 'Status gerade nicht verfügbar.').replace(/[*_`]/g, '') }
         })
         pages.registerMenuProvider('fragen', async () => {
