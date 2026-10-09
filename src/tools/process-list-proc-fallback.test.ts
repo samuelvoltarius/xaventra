@@ -19,7 +19,11 @@ describe('process_list without ps', () => {
         const result = await (getToolRegistry().get('process_list') as any).handler({})
         expect(result.success).toBe(true)
         expect(String(result.output)).toMatch(/^PID COMMAND/)
-        expect(String(result.output)).toContain(String(process.pid))
+        // The unfiltered output is deliberately bounded; a busy CI runner can
+        // place this process beyond that bound. Filtering happens before it.
+        const own = await (getToolRegistry().get('process_list') as any).handler({ filter: `${process.pid} ` })
+        expect(own.success).toBe(true)
+        expect(String(own.output)).toMatch(new RegExp(`^${process.pid} .+`, 'm'))
     }, 20_000)
     it.runIf(process.platform !== 'linux' && process.platform !== 'win32')('elsewhere a missing ps stays an honest error', async () => {
         const { getToolRegistry } = await import('./complete-registry.js')
