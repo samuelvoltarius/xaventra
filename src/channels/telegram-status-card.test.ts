@@ -115,6 +115,16 @@ describe('TelegramPresentationSession in status-card mode', () => {
         expect(a.deleteMessage).not.toHaveBeenCalled()
     })
 
+    // 2.89.4 (live): "❌ Abgebrochen · 6 s" without a reason.
+    it('an abort always carries one honest sentence', async () => {
+        const a = adapter()
+        const session = new TelegramPresentationSession(a, 'chat', { statusCard: true })
+        await session.deliver('⚙️ Schritt 1/2: browser')
+        await session.finishProgress(false)
+        const text = String(a.editMessage.mock.calls.at(-1)?.[2])
+        expect(text).toMatch(/^❌ Abgebrochen · \d+ s\n\S/)
+    })
+
     it('does not claim success if final delivery fails and measures from request creation', async () => {
         const a = adapter()
         const session = new TelegramPresentationSession(a, 'chat', { statusCard: true })
@@ -123,7 +133,9 @@ describe('TelegramPresentationSession in status-card mode', () => {
         vi.advanceTimersByTime(5_000)
         a.send.mockRejectedValueOnce(new Error('delivery failed'))
         await expect(session.deliver('Antwort')).rejects.toThrow('delivery failed')
-        expect(a.editMessage).toHaveBeenLastCalledWith('chat', 42, expect.stringMatching(/^❌.*30 s$/))
+        const text = String(a.editMessage.mock.calls.at(-1)?.[2])
+        expect(text).toMatch(/^❌ Abgebrochen · 30 s/)
+        expect(text).toContain('delivery failed')
     })
 
     it('marks the card ❌ when the task fails', async () => {

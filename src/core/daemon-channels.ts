@@ -319,7 +319,9 @@ async function startTelegramOnce(
             logRuntimeEvent({ event: 'telegram.message.completed', channel: 'Telegram', userId: String(msg.from), messageId: msgId, success: true, durationMs: Date.now() - processingStartedAt })
         } catch (err) {
             // Status card: ❌ instead of a silent removal (clearProgress would mark ✅).
-            await (typeof presentation.finishProgress === 'function' ? presentation.finishProgress(false) : presentation.clearProgress())
+            // 2.89.4: the abort line carries one honest reason, never a bare „Abgebrochen".
+            const abortReason = String((err as Error)?.message || err).replace(/\s+/g, ' ').slice(0, 200)
+            await (typeof presentation.finishProgress === 'function' ? presentation.finishProgress(false, abortReason) : presentation.clearProgress())
                 .catch(() => { /* best effort after failure */ })
             // Delivery may already have happened. Never rerun tools/inference
             // merely because the transport acknowledgment was ambiguous.

@@ -1,4 +1,5 @@
 import type { OutgoingMessage } from '../core/types.js'
+import { isToolProgressLabel } from '../core/tool-progress-label.js'
 import { LiveStatusCard } from './telegram-status-card.js'
 
 export interface TelegramPresentationAdapter {
@@ -78,10 +79,19 @@ export function formatTelegramMessage(input: string): string {
         .trim()
 }
 
+/**
+ * 2.89.4 (live): `/mesh scan` answered `🔍 *Mesh AI Scan* …` and that line was
+ * swallowed as progress — the card then closed as „❌ Abgebrochen" with no
+ * reason. A titled or multi-line report is an answer. Progress is a short plain
+ * lifecycle status (the long-run ⏳ notices, `⚙️ Schritt n/m`, tool labels).
+ */
 export function isTelegramProgress(text: string): boolean {
     const value = String(text || '').trim()
-    return /^(?:⏳|⚙️|🔄|🔍|📥|🛠️)\s*/u.test(value)
+    if (!value) return false
+    if (value.includes('\n') || /[*`]/.test(value)) return false
+    return /^(?:⏳|⚙️\s*Schritt\s+\d+\s*\/)/u.test(value)
         || /^Ich arbeite noch\b/i.test(value)
+        || isToolProgressLabel(value)
 }
 
 export interface TelegramPresentationOptions {
@@ -133,9 +143,9 @@ export class TelegramPresentationSession {
                 // 2.89.4: remove the progress card after the answer — "✅ Fertig" before the
                 // answer read like an empty reply. A failure keeps one ❌ line with the reason.
                 if (this.answerDelivered) await this.dismissProgress()
-                else await this.finishProgress(false)
+                else await this.finishProgress(false, text)
             } catch (error) {
-                await this.finishProgress(false)
+                await this.finishProgress(false, String((error as Error)?.message || error))
                 throw error
             }
             return 'message'
@@ -161,7 +171,8 @@ export class TelegramPresentationSession {
         if (!this.options.statusCard) return this.clearProgress()
         const card = this.card
         if (!card || card.isFinished) return
-        await card.finish(ok, detail)
+        // 2.89.4: an abort always says why — a bare „Abgebrochen · N s" told the owner nothing.
+        await card.finish(ok, detail || (ok ? undefined : 'Keine fertige Antwort angekommen.'))
     }
 
     /** 2.89.4: delete the card after the answer; if delete fails it stays briefly. */
