@@ -5,6 +5,7 @@ import { buildModelRegistry } from '../routing/model-registry.js'
 // Quellen eingebettet (lokal, eigenes Mesh/Tailnet) — nie über eine Cloud-URL,
 // auch nicht mit gesetztem OPENAI_API_KEY.
 const calls: string[] = []
+const meshCalls: Array<{ node: string; type: string; payload: any }> = []
 const fetchStub = vi.fn(async (url: string | URL) => {
     calls.push(String(url))
     // 2.86: aktuelle Ollama-API /api/embed (Antwort `embeddings`).
@@ -13,10 +14,18 @@ const fetchStub = vi.fn(async (url: string | URL) => {
     }
     return new Response(JSON.stringify({ data: [{ embedding: [1, 2, 3] }] }), { status: 200 })
 })
+vi.mock('../mesh/mesh-remote-exec.js', () => ({
+    remoteExec: async (node: string, type: string, payload: any) => {
+        meshCalls.push({ node, type, payload })
+        return { requestId: 'r', from: node, success: true, result: { embeddings: [[0.5, 0.5, 0.5, 0.5]] }, durationMs: 1 }
+    },
+    registerHandler: () => undefined,
+}))
 
 const env = { openai: process.env.OPENAI_API_KEY, openrouter: process.env.OPENROUTER_API_KEY }
 beforeEach(() => {
     calls.length = 0
+    meshCalls.length = 0
     process.env.OPENAI_API_KEY = 'sk-test-nur-platzhalter'
     process.env.OPENROUTER_API_KEY = 'or-test-nur-platzhalter'
     vi.stubGlobal('fetch', fetchStub)
@@ -52,12 +61,13 @@ describe('Einbettung nur aus eigenen Quellen', () => {
         expect(calls.filter(cloud)).toEqual([])
     })
 
-    it('nimmt den eigenen Mesh-Einbetter (Ollama nomic-embed-text) und merkt sich das Modell', async () => {
+    it('nimmt den eigenen Mesh-Einbetter (Ollama nomic-embed-text) als Mesh-Job, nie Peer-HTTP', async () => {
         const { embed } = await import('./embedding-providers.js') as any
         const result = await embed('privater Eintrag', {
-            localEndpoints: async () => [{ baseUrl: 'http://ns.example.com:11434', model: 'nomic-embed-text:latest', node: 'ns' }],
+            localEndpoints: async () => [{ baseUrl: 'mesh://ns', model: 'nomic-embed-text:latest', node: 'ns', viaMesh: true }],
         })
-        expect(calls).toEqual(['http://ns.example.com:11434/api/embed'])
+        expect(calls).toEqual([]) // kein fetch an eine Peer-Adresse
+        expect(meshCalls).toEqual([{ node: 'ns', type: 'ollama-api', payload: { path: '/api/embed', body: { model: 'nomic-embed-text:latest', input: 'privater Eintrag', truncate: true } } }])
         expect(result).toMatchObject({ provider: 'lokal', model: 'nomic-embed-text', dimension: 4, embedder: 'lokal:nomic-embed-text:4' })
     })
 
@@ -68,17 +78,17 @@ describe('Einbettung nur aus eigenen Quellen', () => {
         expect(calls).toEqual([])
     })
 
-    it('Kandidaten nur aus dem Register: lokal, nicht down, Embedding-Modell', async () => {
+    it('Kandidaten nur aus dem Register: lokal, nicht down, Embedding-Modell — Mesh-Job statt Peer-HTTP', async () => {
         const { localEmbeddersFromRegistry } = await import('./embedding-providers.js') as any
         const registry = buildModelRegistry({
             knownNodes: ['ns'],
             ollama: [
-                { node: 'ns', baseUrl: 'http://ns.example.com:11434', models: [{ name: 'nomic-embed-text:latest' }, { name: 'qwen3.5:9b' }] },
+                { node: 'ns', baseUrl: 'mesh://ns', models: [{ name: 'nomic-embed-text:latest' }, { name: 'qwen3.5:9b' }] },
                 { baseUrl: 'http://198.51.100.7:11434', models: [{ name: 'nomic-embed-text:latest' }] },
             ],
         })
-        expect(localEmbeddersFromRegistry(registry)).toEqual([
-            { baseUrl: 'http://ns.example.com:11434', model: 'nomic-embed-text:latest', node: 'ns' },
+        expect(localEmbeddersFromRegistry(registry, { localNodeId: 'main' })).toEqual([
+            { baseUrl: 'mesh://ns', model: 'nomic-embed-text:latest', node: 'ns', viaMesh: true },
         ])
     })
 })

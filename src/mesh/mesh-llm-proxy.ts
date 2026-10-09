@@ -225,7 +225,15 @@ export async function registerLLMHandlers(): Promise<void> {
             return result
         })
 
-        console.log('[LLMProxy] ✅ Handlers registered (llm + ollama)')
+        // 2.89.4: Ollama-API-Proxy (embed/generate) — Worker spricht den eigenen localhost an.
+        try {
+            const { registerNodeLocalModelHandler } = await import('./node-local-model.js')
+            await registerNodeLocalModelHandler()
+        } catch (err) {
+            console.log(`[LLMProxy] ⚠️ node-local-model handler: ${err}`)
+        }
+
+        console.log('[LLMProxy] ✅ Handlers registered (llm + ollama + ollama-api)')
     } catch (err) {
         console.log(`[LLMProxy] ⚠️ Failed to register handlers: ${err}`)
     }

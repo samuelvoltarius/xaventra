@@ -38,6 +38,12 @@
   inventory answers a service is only “läuft” after a successful probe in this
   run — otherwise “nicht geprüft” / “nicht erreichbar”. Cloud providers are
   never claimed “läuft” without a live call.
+- **Node-local model endpoints only via mesh jobs.** A mesh node’s Ollama (or
+  other model server) that only listens on 127.0.0.1 is that node’s capability.
+  Main never calls it over HTTP via the peer address — no fallback attempts, no
+  waiting. The registry stores `mesh://<knoten>` and work is sent as a mesh job
+  to the worker (`ollama-api`), which talks to its own localhost. Previously
+  localhost was rewritten to the peer host and called directly.
 
 ## [2.89.3] — 2026-10-08
 

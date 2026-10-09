@@ -333,19 +333,21 @@ export function graphRuntimeKind(runtime: { type?: string; name?: string; capabi
 }
 
 /**
- * Address of a runtime as seen from THIS node. A node advertises its own
- * service as `localhost`; for another node that means the node's own host.
- * Without a known, non-loopback host the endpoint is not guessed (null).
+ * Address of a runtime as seen from THIS node. Own node: the advertised URL
+ * (localhost is correct here). A service another node only offers on 127.0.0.1
+ * is that node's own capability — never rewritten to the peer host and never
+ * called from Main over HTTP. Handle: `mesh://<knoten>` (mesh job only).
+ * A network address the node itself published stays as published.
  */
 export function graphRuntimeEndpoint(endpoint: string, node: { id: string; host?: string }, localNodeId?: string): string | null {
     let url: URL
     try { url = new URL(endpoint) } catch { return null }
     const host = url.hostname.replace(/^\[|\]$/g, '')
-    if (!LOOPBACK.test(host) || (localNodeId && node.id === localNodeId)) return endpoint
-    const nodeHost = String(node.host || '').trim()
-    if (!nodeHost || LOOPBACK.test(nodeHost) || !/^[A-Za-z0-9.:-]+$/.test(nodeHost)) return null
-    url.hostname = nodeHost.includes(':') ? `[${nodeHost}]` : nodeHost
-    return url.toString().replace(/\/$/, endpoint.endsWith('/') ? '/' : '')
+    if (localNodeId && node.id === localNodeId) return endpoint
+    if (!LOOPBACK.test(host)) return endpoint
+    // Loopback on another node: mesh handle only. Main must not call the peer address.
+    const path = url.pathname && url.pathname !== '/' ? url.pathname : ''
+    return `mesh://${node.id}${path}`
 }
 
 export async function collectModelRegistry(options: { config?: any; userId?: string } = {}): Promise<ModelRegistry> {

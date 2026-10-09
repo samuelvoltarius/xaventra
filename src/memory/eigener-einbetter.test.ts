@@ -12,6 +12,7 @@ import { buildModelRegistry } from '../routing/model-registry.js'
 // gestellt, Ollama über ein eingespritztes fetch.
 
 const calls: Array<{ url: string; body: any }> = []
+const meshCalls: Array<{ node: string; type: string; payload: any }> = []
 let ollamaNewApi = true
 const fetchStub = vi.fn(async (url: string | URL, init?: RequestInit) => {
     const href = String(url)
@@ -23,10 +24,21 @@ const fetchStub = vi.fn(async (url: string | URL, init?: RequestInit) => {
     if (href.endsWith('/api/embeddings')) return new Response(JSON.stringify({ embedding: [0.25, 0.25, 0.25, 0.25] }), { status: 200 })
     return new Response(JSON.stringify({ data: [{ embedding: [1, 2, 3] }] }), { status: 200 })
 })
+vi.mock('../mesh/mesh-remote-exec.js', () => ({
+    remoteExec: async (node: string, type: string, payload: any) => {
+        meshCalls.push({ node, type, payload })
+        if (payload?.path === '/api/embed' && ollamaNewApi) return { requestId: 'r', from: node, success: true, result: { embeddings: [[0.5, 0.5, 0.5, 0.5]] }, durationMs: 1 }
+        if (payload?.path === '/api/embed' && !ollamaNewApi) return { requestId: 'r', from: node, success: false, result: null, error: '404', durationMs: 1 }
+        if (payload?.path === '/api/embeddings') return { requestId: 'r', from: node, success: true, result: { embedding: [0.25, 0.25, 0.25, 0.25] }, durationMs: 1 }
+        return { requestId: 'r', from: node, success: false, result: null, error: 'nope', durationMs: 1 }
+    },
+    registerHandler: () => undefined,
+}))
 
 const env = { openai: process.env.OPENAI_API_KEY }
 beforeEach(() => {
     calls.length = 0
+    meshCalls.length = 0
     ollamaNewApi = true
     process.env.OPENAI_API_KEY = 'sk-test-nur-platzhalter'
     vi.stubGlobal('fetch', fetchStub)
@@ -39,7 +51,7 @@ afterEach(() => {
 const MODEL = 'qwen3-embedding-0.6b-q8_0'
 const vec1024 = Array.from({ length: 1024 }, (_, i) => (i % 7) / 7)
 const eigen = (up = true) => async () => up ? { model: MODEL, embed: async () => vec1024 } : null
-const ollama = async () => [{ baseUrl: 'http://ns.example.com:11434', model: 'nomic-embed-text:latest', node: 'ns' }]
+const ollama = async () => [{ baseUrl: 'mesh://ns', model: 'nomic-embed-text:latest', node: 'ns', viaMesh: true }]
 const testArtifact = (bytes: Buffer) => ({
     name: 'test-embed', filename: 'test-embed.gguf', url: 'https://example.com/test-embed.gguf', sizeBytes: bytes.length,
     sha256: createHash('sha256').update(bytes).digest('hex'), dimension: 4, license: 'Apache-2.0', releasedAt: '2025-06',
@@ -58,6 +70,8 @@ describe('Eigener Einbetter im Prozess (node-llama-cpp)', () => {
         expect((await embed('x', { localEndpoints: ollama, inProcess: eigen() }))?.provider).toBe('eigen')
         expect(calls).toEqual([])
         expect((await embed('x', { localEndpoints: ollama, inProcess: eigen(false) }))?.provider).toBe('lokal')
+        expect(calls).toEqual([]) // Mesh-Job, kein Peer-HTTP
+        expect(meshCalls[0]).toMatchObject({ node: 'ns', type: 'ollama-api' })
         expect((await embed('x', { localEndpoints: async () => [], inProcess: eigen(false) }))?.provider).toBe('hash')
     })
 
@@ -181,11 +195,11 @@ describe('Bezug nur über fest eingetragene Datei mit sha256', () => {
 })
 
 describe('Punkt 4 Rest: aktuelle Ollama-API und Modellliste', () => {
-    it('ruft /api/embed mit input auf', async () => {
+    it('ruft /api/embed mit input auf — als Mesh-Job, nie Peer-HTTP', async () => {
         const { embed } = await import('./embedding-providers.js') as any
         const result = await embed('privater Eintrag', { localEndpoints: ollama, inProcess: eigen(false) })
-        expect(calls.map(call => call.url)).toEqual(['http://ns.example.com:11434/api/embed'])
-        expect(calls[0].body).toMatchObject({ model: 'nomic-embed-text:latest', input: 'privater Eintrag' })
+        expect(calls).toEqual([])
+        expect(meshCalls).toEqual([{ node: 'ns', type: 'ollama-api', payload: { path: '/api/embed', body: { model: 'nomic-embed-text:latest', input: 'privater Eintrag', truncate: true } } }])
         expect(result).toMatchObject({ provider: 'lokal', embedder: 'lokal:nomic-embed-text:4' })
     })
 
@@ -193,7 +207,8 @@ describe('Punkt 4 Rest: aktuelle Ollama-API und Modellliste', () => {
         ollamaNewApi = false
         const { embed } = await import('./embedding-providers.js') as any
         const result = await embed('x', { localEndpoints: ollama, inProcess: eigen(false) })
-        expect(calls.map(call => call.url)).toEqual(['http://ns.example.com:11434/api/embed', 'http://ns.example.com:11434/api/embeddings'])
+        expect(calls).toEqual([])
+        expect(meshCalls.map(call => call.payload.path)).toEqual(['/api/embed', '/api/embeddings'])
         expect(result?.vector).toEqual([0.25, 0.25, 0.25, 0.25])
     })
 
