@@ -65,6 +65,16 @@
   `auth:…`); the config never holds the clear key. An open approval always
   names the current code step (“Schick mir jetzt den Code …”) — a second
   `/freigabe` reuses the same live code instead of issuing a new one.
+- **Own capabilities are checked before “kann ich nicht”.** Live 09.10.2026: DHL
+  tracking on a dynamic search field got “Ich habe kein echtes Maus-Werkzeug …
+  entzieht sich jedem automatischen Zugriff” while URL-parameter lookup,
+  Playwright with waiting/real input and Computer-Use (`desktop_screenshot` +
+  `desktop_input`) all exist. Before any honest “kann ich nicht” the registered
+  inventory is walked as the chain direct link/fetch → browser with waiting and
+  real input → desktop Computer-Use; only after all three does she fail, and she
+  names the tried steps. A missing Chromium is recorded as a gap (Software-Scout
+  demand), never as “unmöglich”. False “kein Maus-Werkzeug / nicht
+  automatisierbar” claims are corrected before the owner reads them.
 
 ## [2.89.3] — 2026-10-08
 

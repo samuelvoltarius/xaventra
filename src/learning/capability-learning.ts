@@ -51,6 +51,7 @@ import { sideEffectsDisabled } from '../core/side-effects.js'
 import type { SoftwareCapability } from '../install/software-candidates.js'
 import type { Skill } from '../mesh/node-strengths.js'
 import type { CapabilityInventory, LearnedCapability } from './capability-inventory.js'
+import { capabilityEscalationPrompt } from './capability-escalation.js'
 import type { SearchHit, WebSearchPort } from '../install/software-freshness.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { connectedConnectorIds } from '../connections/connection-state.js'
@@ -182,7 +183,11 @@ const CODE_NO = 'Nein, das kann ich noch nicht. Dafür braucht es eine Code-Erwe
 
 /** Feste Regel für den Prompt (Modell-Weg, wenn kein Feld passt). */
 export function capabilityHonestyPrompt(): string {
+    // 2.89.4: Kette (Direktlink → Browser → Desktop) vor jeder „kann ich nicht“-Formel.
+    let chain = ''
+    try { chain = capabilityEscalationPrompt() + '\n' } catch { /* ohne Kette nur die alte Formel */ }
     return '## Ehrlich bei Fähigkeiten\n'
+        + chain
         + 'Hast du für eine Bitte kein passendes Werkzeug und kannst sie auch nicht allein mit Wissen oder Text erledigen, '
         + `dann erfinde nichts und such keine Ausrede. Antworte genau: „${HONEST_NO}“`
 }
@@ -993,7 +998,20 @@ export async function capabilityGate(text: string, ctx: LearnContext & { isGroup
 
 /** Nach der Modell-Antwort: Ehrlichkeitsformel → Karte. Liefert den Text, der gesendet wird. */
 export async function capabilityReplyGate(request: string, reply: string, ctx: LearnContext & { isGroup?: boolean; systemAuthored?: boolean }, deps?: LearnDeps): Promise<string> {
-    if (ctx.isGroup || ctx.systemAuthored || !replyOffersLearning(reply)) return reply
+    if (ctx.isGroup || ctx.systemAuthored) return reply
+    // 2.89.4: falsche „unmöglich / kein Maus-Werkzeug“-Behauptungen werden immer korrigiert
+    // (reiner Text — auch in Tests/CI). Die Lernkarte bleibt der separierte zweite Zweig.
+    try {
+        const { rewriteFalseDenial, uiToolViewFromInventory } = await import('./capability-escalation.js')
+        let view = uiToolViewFromInventory(null)
+        try {
+            const inventory = deps ? await deps.inventory() : (sideEffectsDisabled() ? null : await (await import('./capability-inventory.js')).capabilityInventory())
+            if (inventory) view = uiToolViewFromInventory(inventory)
+        } catch { /* leeres Inventar: die Kette bleibt trotzdem benannt */ }
+        const rewritten = rewriteFalseDenial(reply, view)
+        if (rewritten) return rewritten
+    } catch { /* Antwort unverändert */ }
+    if (!replyOffersLearning(reply)) return reply
     if (!deps && sideEffectsDisabled()) return reply
     try { return (await offerLearningAfterReply(request, ctx, deps || await prepareLearnDeps())).reply } catch { return reply }
 }
