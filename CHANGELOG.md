@@ -75,6 +75,13 @@
   names the tried steps. A missing Chromium is recorded as a gap (Software-Scout
   demand), never as “unmöglich”. False “kein Maus-Werkzeug / nicht
   automatisierbar” claims are corrected before the owner reads them.
+- **Chat-key intake and service live-check stay on topic and cannot skip auth.**
+  The key-from-chat branch only touches the user middleware after a key (or a
+  pending purpose) is detected, and a middleware failure falls through to the
+  auth fail-closed gate instead of throwing before it — a key is never handed to
+  the model. A named subject the live-check cannot probe (Home Assistant,
+  Proxmox, …) is no longer answered with speech/model probe lines: those
+  sentences stay with their own tools (e.g. `hass_status`).
 
 ## [2.89.3] — 2026-10-08
 

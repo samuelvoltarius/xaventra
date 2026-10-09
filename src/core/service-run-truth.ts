@@ -106,11 +106,29 @@ export function detectServiceStateCorrection(text: unknown): ServiceStateCorrect
         const candidate = named[1].trim()
         if (!SUBJECT_STOP.has(candidate.toLowerCase())) subject = candidate
     }
+    // A named subject this live-check cannot probe (Home Assistant, Proxmox, …)
+    // has its own tools. Never answer about speech/model when the user named those.
+    if (subject && !isLiveCheckSubject(subject)) return null
     return {
         claimRunning: Boolean(up) && !down,
         claimConnected: /\b(?:verbunden|dabei|online|eingerichtet|konfiguriert)\b/i.test(value) || (Boolean(up) && /\b(?:solltest|sollte)\b/i.test(value)),
         subject,
     }
+}
+
+/** Subjects `liveCheckServices` can actually probe (speech + model runtime). */
+const LIVE_CHECK_SUBJECTS = new Set([
+    'sprachdienst', 'spracherkennung', 'sprachausgabe', 'sprachmodell', 'sprachdienste',
+    'whisper', 'whispergpu', 'pockettts', 'pocket-tts', 'pocket_tts',
+    'xaventravoice', 'xaventra-voice', 'xaventra_voice',
+    'kokoro', 'piper', 'ollama', 'vllm', 'lmstudio', 'lm-studio', 'lm_studio',
+])
+
+function isLiveCheckSubject(subject: string): boolean {
+    const key = subject.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '')
+    const plain = key.replace(/-/g, '')
+    return LIVE_CHECK_SUBJECTS.has(key) || LIVE_CHECK_SUBJECTS.has(plain)
+        || [...LIVE_CHECK_SUBJECTS].some(item => item.replace(/-/g, '') === plain)
 }
 
 export interface LiveCheckOptions {

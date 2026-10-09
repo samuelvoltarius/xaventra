@@ -516,21 +516,51 @@ async function handleMessageInScope(
     }
     // 2.89.4: keys from chat (owner DM) — before any log, session, ledger or model.
     // The value never reaches the model prompt; the Telegram message is deleted.
+    // Cheap detect first: a normal message never touches the user middleware, so a
+    // missing middleware export cannot throw here and skip the auth fail-closed gate.
     if (!image) {
-        const { intakeOwnerChatSecret } = await import('../secrets/chat-key-intake.js')
-        const { getUserPermission, isGroupChat } = await import('../users/multi-user-middleware.js')
-        const chatId = resolveConversationChatId(channel, from, messageContext)
-        const intakeReply = await intakeOwnerChatSecret(content, {
-            channel, from, chatId,
-            messageId: messageContext?.messageId,
-        }, {
-            isOwner: (id, ch) => getUserPermission(id, ch) === 'owner',
-            isGroup: isGroupChat(chatId, from),
-            deleteMessage: async (targetChat, messageId) => {
-                const telegram = (state as any)?.channels?.telegram
-                if (telegram?.deleteMessage) await telegram.deleteMessage(targetChat, Number(messageId))
-            },
-        })
+        let intakeReply: string | null = null
+        try {
+            const { detectChatSecret, intakeOwnerChatSecret, pendingChatSecret, primeChatSecretRedaction } = await import('../secrets/chat-key-intake.js')
+            primeChatSecretRedaction(content)
+            const principalKey = `${String(channel).toLowerCase()}:${from}`
+            const sawSecret = detectChatSecret(content) !== null
+            const sawPending = pendingChatSecret(principalKey) !== null
+            if (sawSecret || sawPending) {
+                const chatId = resolveConversationChatId(channel, from, messageContext)
+                let isOwner = false
+                let isGroup = true // fail-closed: unknown principal never takes over a key
+                try {
+                    const { getUserPermission, isGroupChat } = await import('../users/multi-user-middleware.js')
+                    isOwner = getUserPermission(from, channel) === 'owner'
+                    isGroup = isGroupChat(chatId, from) === true
+                } catch { /* fail-closed above */ }
+                intakeReply = await intakeOwnerChatSecret(content, {
+                    channel, from, chatId,
+                    messageId: messageContext?.messageId,
+                }, {
+                    isOwner: () => isOwner,
+                    isGroup,
+                    deleteMessage: async (targetChat, messageId) => {
+                        const telegram = (state as any)?.channels?.telegram
+                        if (telegram?.deleteMessage) await telegram.deleteMessage(targetChat, Number(messageId))
+                    },
+                })
+                if (!intakeReply && sawSecret) {
+                    // A key was seen but the intake did not own the message — never hand it to the model.
+                    intakeReply = '🔑 Den Wert habe ich nicht übernommen. Schick ihn im Direktchat mit Zweck, z. B. „Tavily-Key: …“.'
+                }
+            }
+        } catch (error) {
+            // Intake must never break the normal path or the auth gate.
+            console.debug('[Pipeline] chat-key intake unavailable:', error)
+            try {
+                const { detectChatSecret } = await import('../secrets/chat-key-intake.js')
+                if (detectChatSecret(content)) {
+                    intakeReply = '🔑 Den Wert habe ich nicht übernommen. Schick ihn im Direktchat mit Zweck, z. B. „Tavily-Key: …“.'
+                }
+            } catch { /* fall through to auth */ }
+        }
         if (intakeReply) {
             console.log(`[Nova] [${channel}] Schlüssel aus dem Chat übernommen (Owner-DM, Wert maskiert)`)
             await replyFn(intakeReply)

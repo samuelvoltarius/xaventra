@@ -63,6 +63,11 @@ describe('2.89.4: Nutzer-Korrekturen zu Diensten erkennen', () => {
         'Mach eine Inventur der Dienste.',
         'Der Update-Lauf ist fertig.',
         'Welche Nova Version ist installiert?',
+        // 2.89.4: a named subject with its own status tools is never this live-check
+        // („homeassit sollte schon laufen“ stays with hass_status, not speech/model).
+        'homeassit sollte schon laufen',
+        'Home Assistant sollte schon laufen',
+        'Proxmox läuft doch schon',
     ])('%s → keine Korrektur', text => {
         expect(detectServiceStateCorrection(text)).toBeNull()
     })
