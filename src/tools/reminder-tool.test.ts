@@ -34,7 +34,7 @@ describe('R2 T15: clock times are Europe/Vienna, independent of the process time
     })
 })
 
-describe('R2 T16: "morgen" is never today', () => {
+describe('R2 T16 / 2.89.4: "morgen" after midnight is the day that is starting', () => {
     it.each([
         ['morgen um 10:30', '2026-07-16T08:30:00Z'],
         ['morgen 10 Uhr', '2026-07-16T08:00:00Z'],
@@ -42,6 +42,21 @@ describe('R2 T16: "morgen" is never today', () => {
         ['übermorgen 9:00', '2026-07-17T07:00:00Z'],
     ])('"%s" said at 08:00 Vienna -> %s', (input, expected) => {
         expect(rt.parseTimeExpression(input, undefined, vienna('2026-07-15T06:00:00Z'))).toBe(vienna(expected))
+    })
+    it.each([
+        ['morgen gegen 10 Uhr', '2026-07-15T08:00:00Z'],   // Fr 09.10. 01:12 → Fr 10:00
+        ['morgen um 10', '2026-07-15T08:00:00Z'],
+    ])('"%s" said at 01:12 Vienna (after midnight) -> the day that is starting', (input, expected) => {
+        const now = vienna('2026-07-14T23:12:00Z') // 01:12 Vienna
+        expect(rt.morgenDayOffset(now)).toBe(0)
+        expect(rt.parseTimeExpression(input, undefined, now)).toBe(vienna(expected))
+    })
+    it('names weekday + date and asks once when „morgen“ was taken as today', () => {
+        const now = vienna('2026-07-14T23:12:00Z')
+        const at = rt.parseTimeExpression('morgen gegen 10 Uhr', undefined, now)
+        expect(rt.formatReminderTime(at)).toMatch(/\w{2}, \d{2}\.\d{2}\./)
+        expect(rt.describeReminderWhen(at, now)).toContain('heute,')
+        expect(rt.describeMorgenChoice(at, 'morgen gegen 10 Uhr', now)).toMatch(/oder meintest du/)
     })
     it('relative delays still work', () => {
         const now = vienna('2026-07-15T06:00:00Z')
