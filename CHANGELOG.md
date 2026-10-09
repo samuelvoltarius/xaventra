@@ -52,6 +52,19 @@
   — a pure-CPU node never gets a large/xlarge model, and there is no install
   offer without matching hardware. Inventory questions (“welche Modelle
   verfügbar?”) stay inventory.
+- **Keys from chat are taken over safely in one owner step.** Live 09.10.2026:
+  an owner DM that carries a key plus purpose (“nimm den und trag ihn ein”)
+  stores the value immediately in the existing 0600 stores (Tresor / auth),
+  masks it in history, journal, logs, LanceDB, Brain and queues, deletes the
+  Telegram message and notes that, tests the key and activates it without a
+  restart. The clear value never reaches the model prompt. Applies to all keys
+  and tokens (tools, model providers, Home Assistant, Proxmox, Tavily, Brave,
+  parcel tracking, …) — not only Tavily. Unclear purpose: exactly one question
+  “Wofür ist der?”. Only owner, only 1:1 chat. `save_config` / `save_api_key` /
+  `/apikey` / `register_llm_provider` write a reference only (`tresor:…` /
+  `auth:…`); the config never holds the clear key. An open approval always
+  names the current code step (“Schick mir jetzt den Code …”) — a second
+  `/freigabe` reuses the same live code instead of issuing a new one.
 
 ## [2.89.3] — 2026-10-08
 

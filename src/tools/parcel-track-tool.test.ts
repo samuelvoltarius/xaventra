@@ -9,7 +9,7 @@ describe('belegbare Paketverfolgung', () => {
         vi.stubEnv('XAVENTRA_DHL_TRACKING_API_KEY', '')
         const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
         const result = await parcelTrackTool.handler({ number: '12345678', provider: 'dhl', requestText: 'Verfolge DHL 12345678' })
-        expect(result.needsSetup).toBe(true); expect(result.question).toContain('nicht im Chat'); expect(fetch).not.toHaveBeenCalled()
+        expect(result.needsSetup).toBe(true); expect(result.question).toContain('Owner-Direktchat'); expect(result.question).toContain('verschlüsselt'); expect(fetch).not.toHaveBeenCalled()
     })
     it('rejects URL numbers and implicit cloud/provider choice', async () => {
         expect((await parcelTrackTool.handler({ number: 'https://host', provider: 'dhl' })).success).toBe(false)

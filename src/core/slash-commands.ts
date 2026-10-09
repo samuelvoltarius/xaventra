@@ -1599,6 +1599,8 @@ Gebaut für Xaventra contributors 🌶️`
 /apikey brave <KEY> — Brave Search (2000 Anfragen/Monat kostenlos)
 /apikey tavily <KEY> — Tavily AI Search (1000/Monat kostenlos)
 
+Noch einfacher: schick den Schlüssel im Direktchat („nimm den Tavily-Key und trag ihn ein“) — ich trage ihn selbst verschlüsselt ein und lösche deine Nachricht.
+
 *Websuche (kein Key — self-hosted):*
 /apikey searxng <URL> — SearXNG Instanz-URL (z.B. http://192.168.1.100:8080)
 
@@ -1619,24 +1621,20 @@ Gebaut für Xaventra contributors 🌶️`
             }
 
             try {
-                const { getNovaConfig, setNovaConfig } = await import('./config.js')
-                const config = getNovaConfig()
-
-                // Initialize apis if not exists
-                if (!config.apis) {
-                    (config as any).apis = {}
-                }
+                const { storeServiceApiKey } = await import('../secrets/service-keys.js')
 
                 switch (provider.toLowerCase()) {
-                    case 'brave':
-                        config.apis.brave_search_key = apiKey
-                        setNovaConfig(config)
-                        return `✅ *Brave Search API Key gespeichert!*\n\nTeste mit: "Suche nach TypeScript Tutorial"`
+                    case 'brave': {
+                        const stored = await storeServiceApiKey('brave', apiKey, { context: 'slash:apikey' })
+                        if (!stored.ok) return `❌ Brave: ${stored.message}`
+                        return `✅ *Brave Search API Key ${stored.message}.*\n\nTeste mit: "Suche nach TypeScript Tutorial"`
+                    }
 
-                    case 'tavily':
-                        config.apis.tavily_key = apiKey
-                        setNovaConfig(config)
-                        return `✅ *Tavily API Key gespeichert!*\n\nTeste mit: "Suche nach AI News"`
+                    case 'tavily': {
+                        const stored = await storeServiceApiKey('tavily', apiKey, { context: 'slash:apikey' })
+                        if (!stored.ok) return `❌ Tavily: ${stored.message}`
+                        return `✅ *Tavily API Key ${stored.message}.*\n\nTeste mit: "Suche nach AI News"`
+                    }
 
                     case 'searxng': {
                         // Validate URL format
@@ -1661,6 +1659,9 @@ Gebaut für Xaventra contributors 🌶️`
                         } catch {
                             testResult = `\n⚠️ Nicht erreichbar. URL korrekt? Firewall offen?`
                         }
+                        const { getNovaConfig, setNovaConfig } = await import('./config.js')
+                        const config = getNovaConfig()
+                        if (!config.apis) (config as any).apis = {}
                         ;(config as any).apis.searxng_url = url
                         setNovaConfig(config)
                         return `✅ *SearXNG URL gespeichert: ${url}*${testResult}\n\nTeste mit: "Suche nach Linux Tips"`
@@ -3354,7 +3355,7 @@ _Deaktivieren: /verbose off_`
             const target = toolApprovalTarget(toolName, detail)
             const token = issueSetupConfirmation(setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from), target)
             return `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
-Nenne den Code im nächsten Auftrag, z. B. „… Freigabecode ${token}“.`
+Schick mir jetzt den Code in der nächsten Nachricht, z. B. „… Freigabecode ${token}“. Erneutes /freigabe erzeugt denselben Code.`
         }
 
         case 'preflight':

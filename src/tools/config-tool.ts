@@ -31,6 +31,49 @@ function touchesProtected(section: string, values: Record<string, unknown>): boo
     return visit(values, 0)
 }
 
+/**
+ * 2.89.4: pull key-like values out of a config write into the 0600 stores.
+ * The config keeps only `«field»Ref`. Never logs the value.
+ */
+async function extractSecretsToStore(section: string, values: Record<string, unknown>): Promise<{
+    cleanValues: Record<string, unknown>
+    storedNotes: string[]
+}> {
+    const cleanValues: Record<string, unknown> = {}
+    const storedNotes: string[] = []
+    for (const [key, val] of Object.entries(values)) {
+        const isSecretField = PROTECTED_KEY.test(key) && typeof val === 'string' && val.length >= 8
+        if (!isSecretField) {
+            cleanValues[key] = val
+            continue
+        }
+        const id = `cfg-${section}-${key}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40)
+        const { registerSecretValue } = await import('../security/secret-redaction.js')
+        registerSecretValue(val, id)
+        try {
+            const { speichereEintrag, dienstVon } = await import('../secrets/credential-broker.js')
+            const dienst = dienstVon(section) || `${section}.local`
+            const saved = speichereEintrag({ id, label: `${section}.${key}`, quelle: 'datei', dienste: [dienst], geheim: val })
+            if (saved.ok) {
+                cleanValues[`${key}Ref`] = `tresor:${id}`
+                storedNotes.push(id)
+                continue
+            }
+        } catch { /* fall through to auth store */ }
+        try {
+            const { getOAuthManager } = await import('../auth/oauth.js')
+            ;(getOAuthManager() as any).setApiKey(id, section, val)
+            cleanValues[`${key}Ref`] = `auth:${id}`
+            storedNotes.push(id)
+        } catch {
+            // Last resort: still never write the clear value into the config.
+            cleanValues[`${key}Ref`] = `ref:${id}`
+            storedNotes.push(`${id} (Wert nicht ablegbar)`)
+        }
+    }
+    return { cleanValues, storedNotes }
+}
+
 
 export const saveConfigTool = {
     name: 'save_config',
@@ -117,26 +160,31 @@ export const saveConfigTool = {
                 config = JSON.parse(raw)
             }
 
+            // 2.89.4: keys/tokens never land in clear in xaventra.config.json.
+            // They go to the existing 0600 stores (Tresor / auth); the config
+            // only keeps a reference. The model never sees the value again.
+            const { cleanValues, storedNotes } = await extractSecretsToStore(sectionKey, values as Record<string, unknown>)
+
             // Merge values into section
             if (!config[sectionKey] || typeof config[sectionKey] !== 'object') {
                 config[sectionKey] = {}
             }
 
             // Deep merge one level
-            for (const [key, val] of Object.entries(values as Record<string, unknown>)) {
+            for (const [key, val] of Object.entries(cleanValues)) {
                 config[sectionKey][key] = val
             }
 
             // Write back atomically: an aborted write must not leave a broken config
             atomicWriteFileSync(configPath, JSON.stringify(config, null, 4))
 
-            console.log(`[save_config] ✅ ${sectionKey} updated:`, Object.keys(values as object).join(', '))
+            console.log(`[save_config] ✅ ${sectionKey} updated:`, Object.keys(cleanValues).join(', '))
 
             return {
                 success: true,
-                message: `✅ Config "${sectionKey}" aktualisiert!`,
+                message: `✅ Config "${sectionKey}" aktualisiert!${storedNotes.length ? ` Schlüssel im verschlüsselten Speicher (${storedNotes.join(', ')}); Config trägt nur die Referenz.` : ''}`,
                 section: sectionKey,
-                updatedKeys: Object.keys(values as object),
+                updatedKeys: Object.keys(cleanValues),
                 hint: 'Neustart nötig damit Änderungen wirken.',
             }
 

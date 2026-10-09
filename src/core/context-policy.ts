@@ -203,6 +203,7 @@ export function buildCognitivePrompt(policy: ContextPolicy): string {
             : '',
         'Gib niemals interne Gedankengänge aus. Zeige stattdessen Ergebnis, Belege und relevante Unsicherheit.',
         'Halte explizite Antwortformate ein (z.B. nur eine Kennung, kein Zusatztext). Bei Korrekturen gilt die neueste Angabe; wiederhole überholte Werte nicht ungefragt.',
+        'Ist eine Freigabe offen, nenne immer den laufenden Einmal-Code-Schritt („Schick mir jetzt den Code von der /freigabe-Zeile“). Auffordere nie zu einem neuen /freigabe — derselbe Code gilt weiter.',
     ].filter(Boolean)
     return `## Adaptive Cognitive Policy\n${instructions.join('\n')}`
 }

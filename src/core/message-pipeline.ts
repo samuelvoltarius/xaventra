@@ -24,6 +24,7 @@ import { createProgressNotice } from './progress-notice.js'
 
 import { isTechnicalProbe } from './channel-name.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { primeChatSecretRedaction } from '../secrets/chat-key-intake.js'
 
 /** Upper bound of one picture turn (2.89.3). */
 export const IMAGE_TURN_TIMEOUT_MS = 360_000
@@ -203,11 +204,14 @@ export function logSession(user: string, channel: string, role: 'user' | 'assist
 
         const safeName = user.replace(/[^a-zA-Z0-9_-]/g, '_')
         const logFile = join(sessionDir, `${safeName}.jsonl`)
+        // 2.89.4: a chat-carried secret is registered before any write.
+        try { primeChatSecretRedaction(content) } catch { /* optional */ }
         const entry = JSON.stringify({
             ts: new Date().toISOString(),
             channel,
             role,
-            content: content.slice(0, 2000), // cap at 2000 chars
+            // 2.89.4: never write a raw secret into the session log.
+            content: redactSecrets(content).slice(0, 2000),
         })
         appendFileSync(logFile, entry + '\n')
     } catch { /* logging is non-critical */ }
@@ -366,6 +370,8 @@ Eine Lösung erst nach erfolgreichem Tool-Test als gelernt speichern. Nie ungepr
 export interface MessageContext {
     /** Real conversation/chat id of this message (e.g. a Telegram group id). */
     chatId?: string
+    /** 2.89.4: channel message id — used to delete a chat-carried secret. */
+    messageId?: number | string
     /**
      * 2.89: side sink for progress/status lines on channels that collect the
      * answer (Desktop, Dashboard, REST). Never mixed into the answer itself.
@@ -508,11 +514,34 @@ async function handleMessageInScope(
             return
         }
     }
+    // 2.89.4: keys from chat (owner DM) — before any log, session, ledger or model.
+    // The value never reaches the model prompt; the Telegram message is deleted.
+    if (!image) {
+        const { intakeOwnerChatSecret } = await import('../secrets/chat-key-intake.js')
+        const { getUserPermission, isGroupChat } = await import('../users/multi-user-middleware.js')
+        const chatId = resolveConversationChatId(channel, from, messageContext)
+        const intakeReply = await intakeOwnerChatSecret(content, {
+            channel, from, chatId,
+            messageId: messageContext?.messageId,
+        }, {
+            isOwner: (id, ch) => getUserPermission(id, ch) === 'owner',
+            isGroup: isGroupChat(chatId, from),
+            deleteMessage: async (targetChat, messageId) => {
+                const telegram = (state as any)?.channels?.telegram
+                if (telegram?.deleteMessage) await telegram.deleteMessage(targetChat, Number(messageId))
+            },
+        })
+        if (intakeReply) {
+            console.log(`[Nova] [${channel}] Schlüssel aus dem Chat übernommen (Owner-DM, Wert maskiert)`)
+            await replyFn(intakeReply)
+            return
+        }
+    }
     // 2.87 Paket P: `/telefon passwort …` wie Anmelde-Befehle nie protokollieren (auch nicht im Konsolen-Log).
     const isSensitiveAuthCommand = /^\/(?:codex\s+login|login(?:\s+(?:openai|codex))?|callback|telefon\s+(?:passwort|ari-passwort))\b/i.test(content.trim())
     // 2.89: rollout probes never enter the session log, the handoff or the memory.
     const technicalProbe = isTechnicalProbe(channel, from)
-    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : content.slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
+    console.log(`[Nova] [${channel}] Nachricht von ${canonicalUser} (${from}): ${isSensitiveAuthCommand ? '[vertraulicher Befehl]' : redactSecrets(content).slice(0, 50)}...${image ? ' [+Bild]' : ''}`)
     if (!isSensitiveAuthCommand && !technicalProbe) logSession(canonicalUser, channel, 'user', content)
 
     // Track user activity for Dreaming/Idle systems

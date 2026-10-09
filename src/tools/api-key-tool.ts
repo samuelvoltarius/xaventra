@@ -1,9 +1,20 @@
 /**
  * API Key Management Tool
- * 
+ *
  * Allows Nova to save API keys when user provides them in natural language.
  * Example: "Here's my Tavily key: tvly-xxx..."
+ *
+ * 2.89.4: same store as the chat-key intake — Tresor 0600 + redaction + env
+ * activation. Never a clear value in xaventra.config.json, never a log excerpt.
  */
+
+const PROVIDER_ALIASES: Record<string, string> = {
+    brave: 'brave',
+    brave_search: 'brave',
+    bravesearch: 'brave',
+    tavily: 'tavily',
+    perplexity: 'perplexity',
+}
 
 export const apiKeyTool = {
     name: 'save_api_key',
@@ -35,50 +46,43 @@ export const apiKeyTool = {
             }
         }
 
+        const serviceId = PROVIDER_ALIASES[provider]
+        if (!serviceId) {
+            return {
+                success: false,
+                error: `Unbekannter Provider: ${provider}`,
+                available: ['brave', 'tavily', 'perplexity'],
+            }
+        }
+
         try {
-            const { getNovaConfig, setNovaConfig } = await import('../core/config.js')
-            const config = getNovaConfig()
-
-            // Initialize apis if not exists
-            if (!config.apis) {
-                (config as any).apis = {}
-            }
-
-            // Map provider names to config keys
-            const keyMapping: Record<string, string> = {
-                'brave': 'brave_search_key',
-                'brave_search': 'brave_search_key',
-                'bravesearch': 'brave_search_key',
-                'tavily': 'tavily_key',
-                'perplexity': 'perplexity_key',
-            }
-
-            const configKey = keyMapping[provider]
-            if (!configKey) {
+            const { storeServiceApiKey } = await import('../secrets/service-keys.js')
+            const { getUserPermission } = await import('../users/multi-user-middleware.js')
+            const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+            const ctx = getExecutionPolicyContext()
+            const owner = ctx.authUserId && getUserPermission(ctx.authUserId, ctx.channel) === 'owner'
+            if (!owner) {
                 return {
                     success: false,
-                    error: `Unbekannter Provider: ${provider}`,
-                    available: ['brave', 'tavily', 'perplexity'],
+                    error: 'API-Schlüssel speichere ich nur für den Owner (Direktchat) — Wert nicht gespeichert.',
                 }
             }
-
-            // Save the key
-            (config.apis as any)[configKey] = key
-            setNovaConfig(config)
-
-            console.log(`[API Key] Saved ${provider} key: ${key.slice(0, 8)}...`)
-
+            const stored = await storeServiceApiKey(serviceId, key, { context: `save_api_key:${serviceId}` })
+            if (!stored.ok) {
+                return { success: false, error: stored.message }
+            }
+            console.log(`[API Key] ${serviceId} im Tresor (${stored.id}) — Wert maskiert`)
             return {
                 success: true,
-                message: `✅ ${provider.charAt(0).toUpperCase() + provider.slice(1)} API Key gespeichert!`,
-                provider,
+                message: `✅ ${serviceId.charAt(0).toUpperCase() + serviceId.slice(1)} API Key ${stored.message}.`,
+                provider: serviceId,
                 hint: 'Du kannst jetzt im Internet suchen!',
             }
-
         } catch (err: any) {
             return {
                 success: false,
-                error: err.message,
+                // Never echo a value that may sit in the error text.
+                error: String(err?.message || err).slice(0, 160),
             }
         }
     },
