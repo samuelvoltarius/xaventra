@@ -108,6 +108,10 @@
   call the URL — tracking pages first as the direct URL with the tracking number —
   wait and check the load with a screenshot, click the field, type, Enter, then send
   the result screenshot.
+- **A capability inventory is not a mesh-wide device inventory.** „Mach eine Inventur
+  von allem, was du so kannst“ lists what the assistant can do and is answered by the
+  model (`nova_capabilities`); only environment-shaped inventories („was wo läuft“,
+  bare „Mach eine Inventur“) take the bounded inventory plan.
 
 ## [2.89.3] — 2026-10-08
 
