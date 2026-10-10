@@ -70,7 +70,13 @@ describe('infra leak check', () => {
         } finally { rmSync(root, { recursive: true, force: true }) }
     })
 
-    it('this repository passes the generic rule', () => {
-        expect(scanRepository(process.env.NOVA_PROJECT_ROOT || process.cwd(), []).findings).toEqual([])
+    it('refuses a source archive without tracked Git metadata', () => {
+        // Repair snapshots intentionally omit .git. The mandatory CI job scans
+        // the full checkout; unit regressions must remain valid inside archives.
+        const root = mkdtempSync(join(tmpdir(), 'leak-archive-'))
+        try {
+            writeFileSync(join(root, 'source.ts'), 'export const value = 1\n')
+            expect(() => scanRepository(root, [])).toThrow()
+        } finally { rmSync(root, { recursive: true, force: true }) }
     })
 })
