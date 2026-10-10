@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- **Memory-wire regression is independent of wall-clock digits.** The legacy mesh test checks private payloads separately from public timestamps and explicitly covers the timestamp collision observed in Main CI; memory shares must still stay local.
 - **Public infrastructure fixtures stay neutral.** The tracked-file infra-leak check rejects non-placeholder tailnet addresses and known private values without logging them. Official branch pushes require the private denylist; all regression jobs depend on this gate. No runtime behavior or production configuration changes.
 - **Voice corrections stay on the service-check path.** Quoted speech notices followed by local STT/TTS corrections are live-probed rather than offered as a missing-tool learning task. Failed or empty Telegram downloads are distinguished from transcription failures; temporary audio cleanup is not misreported as proof that no audio arrived.
 - **Entity corrections respect identity and image boundaries.** Rapid owner-DM messages settle together before storage; new images are not identified from older photos. Ambiguous references ask for a name, explicit entity facts stay separate in governed memory, and confirmed writes receive a storage receipt. Questions and speculation are not promoted to facts.
