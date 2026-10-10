@@ -59,7 +59,7 @@ describe('R2 L2: OPENAI_API_KEY only goes to OpenAI', () => {
         const fetchMock = vi.fn(async () => okChat())
         vi.stubGlobal('fetch', fetchMock)
 
-        await probeModel('http://100.86.70.71:8000/v1', 'qwen')
+        await probeModel('http://100.64.0.10:8000/v1', 'qwen')
         await probeModel('https://evil.example/v1', 'x')
         for (const call of fetchMock.mock.calls) expect(authHeaderOf(call)).toBeUndefined()
 
@@ -97,7 +97,7 @@ describe('R2 L2: OPENAI_API_KEY only goes to OpenAI', () => {
 describe('R2 L3: no silent cloud failover', () => {
     it('isLocalEndpoint separates LAN/Tailscale from public hosts', () => {
         expect(isLocalEndpoint('http://127.0.0.1:8000/v1')).toBe(true)
-        expect(isLocalEndpoint('http://100.86.70.71:8000/v1')).toBe(true)
+        expect(isLocalEndpoint('http://100.64.0.10:8000/v1')).toBe(true)
         expect(isLocalEndpoint('http://192.168.1.20:1234')).toBe(true)
         expect(isLocalEndpoint('http://spark:8000')).toBe(true)
         expect(isLocalEndpoint('https://api.openai.com/v1')).toBe(false)
@@ -122,7 +122,7 @@ describe('R2 L3: no silent cloud failover', () => {
 
     it('model auto stays local when the resolver picks a cloud provider', async () => {
         resolver.next = { id: 'MiniMax-M3', provider: 'minimax', role: 'chat', capabilities: ['chat'], endpoint: 'https://api.minimax.io/v1', apiKey: 'mm-key' }
-        discovery.availableLLMs = [{ provider: 'vllm', model: 'qwen-local', local: true, endpoint: 'http://100.86.70.71:8000/v1' }]
+        discovery.availableLLMs = [{ provider: 'vllm', model: 'qwen-local', local: true, endpoint: 'http://100.64.0.10:8000/v1' }]
 
         const client = await createNovaLLMClient({ isolated: true })
 

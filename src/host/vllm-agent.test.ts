@@ -25,7 +25,7 @@ const launcher = {
     },
 }
 function switcher() {
-    return createHostVllmSwitcher({ nodeId: 'spark', clientId: 'main', stateDir, ticketPublicKey: publicKey, user: { uid: 1000, gid: 998, home, name: 'tgbrutus' }, script: join(home, 'spark-models.sh') }, launcher)
+    return createHostVllmSwitcher({ nodeId: 'spark', clientId: 'main', stateDir, ticketPublicKey: publicKey, user: { uid: 1000, gid: 998, home, name: 'jdoe' }, script: join(home, 'spark-models.sh') }, launcher)
 }
 const marker = () => join(home, '.spark-stage-saved-target')
 

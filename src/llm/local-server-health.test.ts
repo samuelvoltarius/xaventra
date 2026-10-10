@@ -1,5 +1,5 @@
 /**
- * 2.89.3 (live 08.10.2026): an offline tailnet Ollama (100.73.189.71:11434, three models) was asked on
+ * 2.89.3 (live 08.10.2026): an offline tailnet Ollama (100.64.0.10:11434, three models) was asked on
  * every call, and the machine's own vLLM was asked again under "localhost" after it had timed out.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,17 +19,17 @@ const refused = () => Object.assign(new TypeError('fetch failed'), { cause: { co
 describe('server health for local model calls', () => {
     it('classifies "did not answer at all" apart from slow or failing models', () => {
         expect(isConnectionFailure('fetch failed')).toBe(true)
-        expect(isConnectionFailure('connect ECONNREFUSED 100.73.189.71:11434')).toBe(true)
+        expect(isConnectionFailure('connect ECONNREFUSED 100.64.0.10:11434')).toBe(true)
         expect(isConnectionFailure('The operation was aborted due to timeout')).toBe(false)
         expect(isConnectionFailure('LLM API error (500): boom')).toBe(false)
     })
 
     it('an unreachable server is skipped for 5 minutes, then tried again', () => {
         const now = Date.now()
-        markServerUnreachable('http://100.73.189.71:11434', now)
-        expect(isServerUnreachable('http://100.73.189.71:11434', now + 4 * 60_000)).toBe(true)
-        expect(isServerUnreachable('http://100.73.189.71:8000', now + 1000)).toBe(false)
-        expect(isServerUnreachable('http://100.73.189.71:11434', now + 5 * 60_000 + 1)).toBe(false)
+        markServerUnreachable('http://100.64.0.10:11434', now)
+        expect(isServerUnreachable('http://100.64.0.10:11434', now + 4 * 60_000)).toBe(true)
+        expect(isServerUnreachable('http://100.64.0.10:8000', now + 1000)).toBe(false)
+        expect(isServerUnreachable('http://100.64.0.10:11434', now + 5 * 60_000 + 1)).toBe(false)
     })
 
     it('one dead server costs one request, not one per model; the next call does not ask it at all', async () => {

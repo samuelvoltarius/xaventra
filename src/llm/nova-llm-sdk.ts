@@ -1356,7 +1356,7 @@ export function classifyLocalModelFailure(message: string): 'transient-timeout' 
     return isOOM || isCrash || isCorrupt ? 'hard-failure' : 'soft-failure'
 }
 
-// 2.89.3: server health. Live 08.10.2026 every call re-tried the tailnet Ollama 100.73.189.71:11434
+// 2.89.3: server health. Live 08.10.2026 every call re-tried the tailnet Ollama 100.64.0.10:11434
 // (offline) with all three of its models ("fetch failed" x3) before the 120 s state limit was reached.
 // A server that cannot be reached is skipped for 5 minutes (then one half-open try).
 const UNREACHABLE_HOLD_MS = 5 * 60_000

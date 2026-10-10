@@ -12,7 +12,7 @@ const WRITABLE_MOUNTINFO = '22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 r
 
 function profile(overrides: Partial<NodeProfile> = {}): NodeProfile {
     return {
-        schema: 1, nodeId: 'xaventra-spark', hostname: 'gx10-c809', platform: 'linux', arch: 'arm64', version: '2.79.3',
+        schema: 1, nodeId: 'xaventra-spark', hostname: 'node-a', platform: 'linux', arch: 'arm64', version: '2.79.3',
         role: 'main', runtime: 'native', rootReadOnly: true, noNewPrivileges: true, cpus: 20, ramGB: 120,
         gpu: { name: 'NVIDIA GB10', backend: 'cpu', viaVllm: true }, installPath: 'host-agent', tools: ['apt', 'ffmpeg'],
         selfCheck: { status: 'ok', checkedAt: '2026-09-30T21:00:00.000Z', items: [{ id: 'disk-root', label: 'Systemplatte', status: 'ok', detail: '56 % belegt' }] },
@@ -48,8 +48,8 @@ describe('Knotenprofil detection', () => {
     it('counts vLLM as local GPU use only on own addresses (live: ns2 claimed the Spark vLLM)', () => {
         expect(isLoopbackOrLocal('http://127.0.0.1:8000', [])).toBe(true)
         expect(isLoopbackOrLocal('http://0.0.0.0:8000/v1', [])).toBe(true)
-        expect(isLoopbackOrLocal('http://100.86.70.71:8000', ['100.86.70.71'])).toBe(true)
-        expect(isLoopbackOrLocal('http://100.86.70.71:8000', ['100.86.97.15'])).toBe(false)
+        expect(isLoopbackOrLocal('http://100.64.0.10:8000', ['100.64.0.10'])).toBe(true)
+        expect(isLoopbackOrLocal('http://100.64.0.10:8000', ['100.64.0.15'])).toBe(false)
         expect(isLoopbackOrLocal('not a url', [])).toBe(false)
     })
 

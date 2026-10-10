@@ -14,8 +14,8 @@ import type { MeshNode } from './mesh-registry.js'
 // ns2's heartbeat time.
 const NS2 = 'xaventra-ns2'
 const SPARK = 'xaventra-spark'
-const NS2_VLLM = 'http://100.86.97.15:8000'
-const SPARK_VLLM = 'http://100.86.70.71:8000'
+const NS2_VLLM = 'http://100.64.0.15:8000'
+const SPARK_VLLM = 'http://100.64.0.10:8000'
 
 const dataDir = () => join(process.cwd(), '.nova-data')
 const iso = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString()
@@ -26,7 +26,7 @@ function probeRuntime(id: string, endpoint: string, verifiedAt: string): Capabil
 
 function ns2MeshNode(heartbeat: string): MeshNode {
     return {
-        node_id: NS2, hostname: 'ns2', ip: '100.86.97.15', platform: 'linux', version: '2.80.0', tools_count: 1,
+        node_id: NS2, hostname: 'ns2', ip: '100.64.0.15', platform: 'linux', version: '2.80.0', tools_count: 1,
         status: 'online', capabilities: [], last_heartbeat: heartbeat,
         software: { node_version: 'v22', package_managers: [], can_install: [], ai_services: [] },
     }
@@ -34,7 +34,7 @@ function ns2MeshNode(heartbeat: string): MeshNode {
 
 function sparkMeshNode(heartbeat: string): MeshNode {
     return {
-        node_id: SPARK, hostname: 'gx10-c809', ip: '100.86.70.71', platform: 'linux', version: '2.80.0', tools_count: 1,
+        node_id: SPARK, hostname: 'node-a', ip: '100.64.0.10', platform: 'linux', version: '2.80.0', tools_count: 1,
         status: 'online', capabilities: [], last_heartbeat: heartbeat,
         software: { node_version: 'v22', package_managers: [], can_install: [], ai_services: [{ name: 'vllm', type: 'llm', endpoint: SPARK_VLLM, status: 'running', models: ['qwen3.8-flash-next'] }] },
     }
@@ -65,7 +65,7 @@ describe('phantom probe vLLM on ns2 (Hotfix 2.80.1, Befund 3)', () => {
         const old = iso(-2 * 60 * 60_000)
         writeFileSync(join(dataDir(), 'ns2-capability-graph.json'), JSON.stringify({
             version: 1, updatedAt: old, tombstones: [],
-            nodes: [{ id: NS2, hostname: 'ns2', host: '100.86.97.15', status: 'online', lastHeartbeat: old, capabilities: ['llm'], runtimes: [probeRuntime(`vllm@${NS2}:8000`, NS2_VLLM, old)], updatedAt: old }],
+            nodes: [{ id: NS2, hostname: 'ns2', host: '100.64.0.15', status: 'online', lastHeartbeat: old, capabilities: ['llm'], runtimes: [probeRuntime(`vllm@${NS2}:8000`, NS2_VLLM, old)], updatedAt: old }],
         }))
         writeFileSync(join(dataDir(), 'capability-graph.json'), JSON.stringify({ version: 1, updatedAt: old, tombstones: [], nodes: [] }))
 
@@ -136,7 +136,7 @@ describe('phantom probe vLLM on ns2 (Hotfix 2.80.1, Befund 3)', () => {
             version: 1, updatedAt: now, tombstones: [],
             nodes: [
                 { id: NS2, hostname: 'ns2', status: 'online', lastHeartbeat: now, capabilities: [], runtimes: [probeRuntime(`vllm@${NS2}:8000`, NS2_VLLM, now)], updatedAt: now },
-                { id: SPARK, hostname: 'gx10-c809', status: 'online', lastHeartbeat: now, capabilities: [], runtimes: [probeRuntime('old-spark', 'http://100.86.70.71:9999', now)], updatedAt: now },
+                { id: SPARK, hostname: 'node-a', status: 'online', lastHeartbeat: now, capabilities: [], runtimes: [probeRuntime('old-spark', 'http://100.64.0.10:9999', now)], updatedAt: now },
             ],
         }, 'xaventra-ns1')
         const snapshot = graph.getSnapshot()

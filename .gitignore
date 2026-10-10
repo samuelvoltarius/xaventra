@@ -112,3 +112,6 @@ project_files.txt
 
 # Even G2 HUD app: simulator-only defaults
 .env.local
+
+# Private infrastructure denylist for scripts/check-infra-leaks.mjs (never commit)
+.leak-denylist

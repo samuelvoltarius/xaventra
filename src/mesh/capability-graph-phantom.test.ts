@@ -10,8 +10,8 @@ import type { MeshNode } from './mesh-registry.js'
 // on its own IP whose verifiedAt follows ns2's heartbeat.
 const NS2 = 'xaventra-ns2'
 const SPARK = 'xaventra-spark'
-const PHANTOM_ENDPOINT = 'http://100.86.97.15:8000'
-const REAL_ENDPOINT = 'http://100.86.70.71:8000'
+const PHANTOM_ENDPOINT = 'http://100.64.0.15:8000'
+const REAL_ENDPOINT = 'http://100.64.0.10:8000'
 
 function graphFile(): string {
     return join(mkdtempSync(join(tmpdir(), 'nova-cap-phantom-')), 'capability-graph.json')
@@ -32,7 +32,7 @@ function seed(file: string, snapshot: CapabilityGraphSnapshot): CapabilityGraph 
 function ns2MeshNode(heartbeat: string): MeshNode {
     // Matches ns2's mesh.json / Supabase row: software.ai_services = []
     return {
-        node_id: NS2, hostname: 'ns2', ip: '100.86.97.15', platform: 'linux', version: '2.79.0', tools_count: 1,
+        node_id: NS2, hostname: 'ns2', ip: '100.64.0.15', platform: 'linux', version: '2.79.0', tools_count: 1,
         status: 'online', capabilities: [], last_heartbeat: heartbeat,
         software: { node_version: 'v22', package_managers: [], can_install: [], ai_services: [] },
     }
@@ -42,7 +42,7 @@ function phantomOn(graph: CapabilityGraph): CapabilityRuntime[] {
     return graph.getSnapshot().nodes
         .filter(node => node.id === NS2)
         .flatMap(node => node.runtimes)
-        .filter(runtime => runtime.endpoint.startsWith('http://100.86.97.15'))
+        .filter(runtime => runtime.endpoint.startsWith('http://100.64.0.15'))
 }
 
 describe('capability graph phantom runtime (ns2 vLLM that does not exist)', () => {
@@ -68,7 +68,7 @@ describe('capability graph phantom runtime (ns2 vLLM that does not exist)', () =
         const graph = seed(graphFile(), {
             version: 1, updatedAt: old, tombstones: [],
             nodes: [{
-                id: NS2, hostname: 'ns2', host: '100.86.97.15', status: 'online', lastHeartbeat: old,
+                id: NS2, hostname: 'ns2', host: '100.64.0.15', status: 'online', lastHeartbeat: old,
                 capabilities: ['llm', 'vllm'], runtimes: [heartbeatRuntime(NS2, PHANTOM_ENDPOINT, old)], updatedAt: old,
             }],
         })
@@ -83,7 +83,7 @@ describe('capability graph phantom runtime (ns2 vLLM that does not exist)', () =
         const ns2Graph = seed(graphFile(), {
             version: 1, updatedAt: old, tombstones: [],
             nodes: [{
-                id: NS2, hostname: 'ns2', host: '100.86.97.15', status: 'online', lastHeartbeat: old,
+                id: NS2, hostname: 'ns2', host: '100.64.0.15', status: 'online', lastHeartbeat: old,
                 capabilities: ['llm'], runtimes: [heartbeatRuntime(NS2, PHANTOM_ENDPOINT, old)], updatedAt: old,
             }],
         })
@@ -91,11 +91,11 @@ describe('capability graph phantom runtime (ns2 vLLM that does not exist)', () =
             version: 1, updatedAt: earlier, tombstones: [],
             nodes: [
                 {
-                    id: SPARK, hostname: 'gx10-c809', host: '100.86.70.71', status: 'online', lastHeartbeat: earlier,
+                    id: SPARK, hostname: 'node-a', host: '100.64.0.10', status: 'online', lastHeartbeat: earlier,
                     capabilities: ['llm'], runtimes: [heartbeatRuntime(SPARK, REAL_ENDPOINT, earlier)], updatedAt: earlier,
                 },
                 {
-                    id: NS2, hostname: 'ns2', host: '100.86.97.15', status: 'online', lastHeartbeat: earlier,
+                    id: NS2, hostname: 'ns2', host: '100.64.0.15', status: 'online', lastHeartbeat: earlier,
                     capabilities: ['llm'], runtimes: [heartbeatRuntime(NS2, PHANTOM_ENDPOINT, earlier)], updatedAt: earlier,
                 },
             ],

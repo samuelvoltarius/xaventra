@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe('capability router is check-only', () => {
     it.each(Object.keys(CAPABILITIES))('never installs %s locally or on a mesh node', async key => {
-        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 64 }, ip: '100.86.70.71' }]
+        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 64 }, ip: '100.64.0.10' }]
 
         const resolution = await resolveCapability((CAPABILITIES as any)[key]())
 
@@ -40,7 +40,7 @@ describe('capability router is check-only', () => {
     })
 
     it('still routes to a node that already has the capability', async () => {
-        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 64 }, ip: '100.86.70.71' }]
+        mesh.nodes = [{ node_id: 'spark', hostname: 'spark', status: 'online', platform: 'linux', hardware: { ram_gb: 64 }, ip: '100.64.0.10' }]
         child.execFileSync.mockImplementation(() => Buffer.from('ok'))
 
         const resolution = await resolveCapability(CAPABILITIES.whisper())

@@ -48,7 +48,7 @@ describe('Tuya discovery, not credentialed device control', () => {
         expect(parseTuyaAnnouncement(corrupt, observation.ip, interfaces)).toBeNull()
         const badCrc = legacy(); badCrc[25] ^= 1
         expect(parseTuyaAnnouncement(badCrc, observation.ip, interfaces)).toBeNull()
-        for (const sender of ['8.8.8.8', '192.168.1.22', '192.168.2.21', '100.86.70.71']) expect(parseTuyaAnnouncement(packet, sender, interfaces)).toBeNull()
+        for (const sender of ['8.8.8.8', '192.168.1.22', '192.168.2.21', '100.64.0.10']) expect(parseTuyaAnnouncement(packet, sender, interfaces)).toBeNull()
         expect(parseTuyaAnnouncement(packet, observation.ip, { docker0: interfaces.eth0 })).toBeNull()
     })
     it('encodes only fixed device-info request, never a control/provisioning command', () => {

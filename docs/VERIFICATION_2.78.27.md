@@ -5,7 +5,7 @@
 Spark was online. The earlier Tailnet check failed because Tailscale on the
 Windows caller was stopped. Read-only LAN and trusted SSH checks established:
 
-- `gx10-c809` reachable at `192.168.0.94`;
+- `node-a` reachable at `192.0.2.94`;
 - vLLM listening on port 8000 and `/v1/models` returning HTTP 200;
 - `xaventra-spark` 2.78.20 running healthy;
 - internal Xaventra `/v1/health` returning 200 on loopback port 18789.

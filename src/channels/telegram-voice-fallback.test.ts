@@ -26,8 +26,8 @@ beforeEach(() => {
     for (const fn of Object.values(cp)) fn.mockClear()
     router.resolveCapability.mockReset()
     router.resolveCapability.mockResolvedValue({
-        node: { id: 'spark', ip: '100.86.70.71', hostname: 'spark', platform: 'linux' },
-        installed: false, runRemotely: true, sshPrefix: 'ssh -o StrictHostKeyChecking=accept-new xaventra@100.86.70.71',
+        node: { id: 'spark', ip: '100.64.0.10', hostname: 'spark', platform: 'linux' },
+        installed: false, runRemotely: true, sshPrefix: 'ssh -o StrictHostKeyChecking=accept-new xaventra@100.64.0.10',
     })
     vi.stubGlobal('fetch', vi.fn(async () => ({ arrayBuffer: async () => new ArrayBuffer(4) })))
 })

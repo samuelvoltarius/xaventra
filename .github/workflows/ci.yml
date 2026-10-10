@@ -9,7 +9,22 @@ permissions:
   contents: read
 
 jobs:
+  infra-leaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reject internal infrastructure values
+        run: node scripts/check-infra-leaks.mjs --check
+        env:
+          # Optional private denylist; empty for forks, then only the generic rule applies.
+          XAVENTRA_LEAK_DENYLIST: ${{ secrets.XAVENTRA_LEAK_DENYLIST }}
+          XAVENTRA_REQUIRE_LEAK_DENYLIST: ${{ github.event_name == 'push' && github.repository == 'samuelvoltarius/xaventra' && '1' || '0' }}
   docker-repair:
+    needs: infra-leaks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -61,6 +76,7 @@ jobs:
           retention-days: 14
           include-hidden-files: true
   managed-repair:
+    needs: infra-leaks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -84,6 +100,7 @@ jobs:
           retention-days: 14
           include-hidden-files: true
   repair-sandbox:
+    needs: infra-leaks
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -111,6 +128,7 @@ jobs:
           retention-days: 14
           include-hidden-files: true
   verify:
+    needs: infra-leaks
     strategy:
       fail-fast: false
       matrix:
@@ -430,6 +448,7 @@ jobs:
       - run: npm audit --prefix desktop --package-lock-only --audit-level=high
 
   desktop-smoke:
+    needs: infra-leaks
     strategy:
       fail-fast: false
       matrix:

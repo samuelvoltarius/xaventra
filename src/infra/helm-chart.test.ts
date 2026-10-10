@@ -305,9 +305,9 @@ describe('Chart: Main bleibt außerhalb (Standard) — optional im Cluster', () 
 
     it('external Main: one pinned peer (public key only) in the worker config; incomplete or private keys refused', () => {
         const pub = '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA' + 'A'.repeat(43) + '=\n-----END PUBLIC KEY-----\n'
-        const objects = chart.objects({ values: { externalMain: { nodeId: 'main-node', url: 'ws://100.100.1.2:9091', publicKey: pub } } })
+        const objects = chart.objects({ values: { externalMain: { nodeId: 'main-node', url: 'ws://100.64.0.10:9091', publicKey: pub } } })
         const config = JSON.parse(one(objects, 'ConfigMap', 'xv-xaventra-config').data['xaventra.config.json'])
-        expect(config.mesh.direct.peers).toEqual([{ nodeId: 'main-node', url: 'ws://100.100.1.2:9091', publicKey: pub, roles: ['system', 'worker'] }])
+        expect(config.mesh.direct.peers).toEqual([{ nodeId: 'main-node', url: 'ws://100.64.0.10:9091', publicKey: pub, roles: ['system', 'worker'] }])
         expect(config).toMatchObject({ mesh: { direct: { listenHost: '0.0.0.0', port: 9091, allowInsecureLan: false } }, server: { enabled: true, host: '127.0.0.1', port: 18789 } })
         // Defaults stay untouched (deepCopy): a second render has no peer.
         expect(JSON.parse(one(chart.objects({}), 'ConfigMap', 'xv-xaventra-config').data['xaventra.config.json']).mesh.direct.peers).toEqual([])
@@ -318,7 +318,7 @@ describe('Chart: Main bleibt außerhalb (Standard) — optional im Cluster', () 
         expect(urlOf('wss://main.example.com')).not.toThrow()
         expect(urlOf('ws://100.64.0.1:9091')).not.toThrow()
         expect(urlOf('ws://100.127.255.254:9091')).not.toThrow()
-        for (const bad of ['ws://main.example.com', 'ws://main.example.com:9091', 'ws://192.0.2.10:9091', 'ws://100.128.0.1', 'ws://100.63.0.1:9091', 'ws://100.100.1.2.example.com:9091'])
+        for (const bad of ['ws://main.example.com', 'ws://main.example.com:9091', 'ws://192.0.2.10:9091', 'ws://100.128.0.1', 'ws://100.63.0.1:9091', 'ws://100.64.0.10.example.com:9091'])
             expect(urlOf(bad), bad).toThrow(/Tailscale-Adresse \(CGNAT-Bereich 100\.64\/10\)/)
     })
 
