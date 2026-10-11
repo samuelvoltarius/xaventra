@@ -8,7 +8,11 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const fixtures = vi.hoisted(() => ({ agent: vi.fn(), permission: 'owner', group: false }))
+const fixtures = vi.hoisted(() => ({ agent: vi.fn(), permission: 'owner', group: false, collectAi: vi.fn(), testAi: vi.fn() }))
+vi.mock('./ai-service-test.js', async importOriginal => {
+    const actual = await importOriginal<typeof import('./ai-service-test.js')>()
+    return { ...actual, handleAiServiceTestTurn: (channel: string, principal: string, text: string, owner: boolean) => actual.handleAiServiceTestTurn(channel, principal, text, owner, fixtures.collectAi, fixtures.testAi) }
+})
 vi.mock('../users/multi-user-middleware.js', async importOriginal => ({
     ...await importOriginal<typeof import('../users/multi-user-middleware.js')>(),
     initMultiUser: () => undefined,
@@ -59,6 +63,9 @@ beforeAll(() => { vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1') })
 
 beforeEach(() => {
     fixtures.permission = 'owner'; fixtures.group = false
+    fixtures.collectAi.mockReset(); fixtures.testAi.mockReset()
+    fixtures.collectAi.mockResolvedValue([{ node: 'fixture-worker', runtime: { name: 'fixture-model' } }])
+    fixtures.testAi.mockResolvedValue('fixture-worker: Inferenz funktioniert (getestet)')
     fixtures.agent.mockReset()
     fixtures.agent.mockResolvedValue({ content: 'unexpected model answer', toolsExecuted: [], sessionId: 's', toolExecutions: [], actionState: { requiresTool: false, kind: 'none', fulfilled: false } })
     resetServiceProbeEvidence()
@@ -67,6 +74,19 @@ beforeEach(() => {
 })
 
 describe('2.89.4: Dienst-Korrekturen am echten Eingang', () => {
+    it('AI-Dienstcheck → Ja reaches the function test, not LLM or missing-tool fallback', async () => {
+        const offer = (await ask('Mach mir einen Check von allen ai Diensten die auf den nodes laufen')).join('\n')
+        expect(offer).toContain('Antworte mit Ja')
+        expect(fixtures.testAi).not.toHaveBeenCalled()
+        expect((await ask('Ja')).join('\n')).toContain('Inferenz funktioniert (getestet)')
+        expect(fixtures.testAi).toHaveBeenCalledTimes(1)
+        expect(fixtures.agent).not.toHaveBeenCalled()
+    })
+    it.each(['guest', 'user', 'admin', 'owner-group'])('denies AI service tests for %s before collecting private endpoints', async role => {
+        fixtures.permission = role === 'owner-group' ? 'owner' : role; fixtures.group = role === 'owner-group'
+        expect((await ask('Teste alle KI-Dienste')).join('\n')).toContain('Owner')
+        expect(fixtures.collectAi).not.toHaveBeenCalled(); expect(fixtures.testAi).not.toHaveBeenCalled()
+    })
     it('quoted voice notice plus local correction reaches probes, never a learning card', async () => {
         const fetch = vi.fn(async () => { throw new Error('ECONNREFUSED') })
         vi.stubGlobal('fetch', fetch)

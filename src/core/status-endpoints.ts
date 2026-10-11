@@ -108,7 +108,10 @@ export function formatEndpointSection(
             const models = (runtime.models ?? []).filter(model => !isEmbedding(model))
             const isPrimary = models.includes(configModel)
             const modelList = models.slice(0, 3).join(', ') + (models.length > 3 ? ` +${models.length - 3}` : '')
-            endpointLines.push(`  ${isPrimary ? '★' : '○'} ${node.id} ${runtime.type} (${hostPort(runtime.endpoint)}): ${modelList || '–'}${reachable ? '' : ' — nicht erreichbar'}`)
+            // A stale advertisement is no failed network request. Never turn
+            // absence of fresh evidence into an outage claim (5 min vs scan cadence).
+            const unavailable = isNodeOnline(node, localNodeId, now) ? 'nicht aktuell geprüft' : 'Knoten offline; Dienst nicht geprüft'
+            endpointLines.push(`  ${isPrimary ? '★' : '○'} ${node.id} ${runtime.type} (${hostPort(runtime.endpoint)}): ${modelList || '–'}${reachable ? '' : ` — ${unavailable}`}`)
         }
     }
     const cloud = [...new Set(cloudModels)].slice(0, 4)

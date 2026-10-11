@@ -925,6 +925,15 @@ ${pendingGapNote}` : withTail
     // ============================================
     // Slash Commands (Layer 2) — EARLY EXIT, no prompt assembly needed
     // ============================================
+    // Owner-only bounded service tests, including a principal-bound "Ja".
+    // Before slash/LLM routing so clear or any unrelated turn cancels a pending offer.
+    if (!isSystemAuthored && !image && (!execution || desktopCancellationOnly)) {
+        const { handleAiServiceTestTurn } = await import('./ai-service-test.js')
+        const serviceReply = await handleAiServiceTestTurn(channel, canonicalUser, content,
+            principalContext.permission === 'owner' && isGroupMessage === false && !requestIsGroup,
+            undefined, undefined, requestAbortSignal)
+        if (serviceReply !== null) { await answer(serviceReply); return }
+    }
     if (content.startsWith('/')) {
         // 2.89: a cancellation-only execution (daemon entry, Even-G2) is a user message, not a mesh contract.
         if (execution && !isCancellationOnlyExecution(execution)) throw new Error('Mesh agent requests cannot invoke slash commands')

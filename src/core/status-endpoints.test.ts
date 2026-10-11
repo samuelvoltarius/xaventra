@@ -79,7 +79,8 @@ describe('/status: keine Ghost-Knoten, keine toten Endpunkte', () => {
         }] as any[]
         const text = formatEndpointSection(dead, 'qwen', [], { now: NOW, localNodeId: 'main' })
         expect(text).toContain('★ spark vllm (192.0.2.5:8000): qwen\n')
-        expect(text).toContain('○ spark ollama (192.0.2.5:11434): llama3 — nicht erreichbar')
+        expect(text).toContain('○ spark ollama (192.0.2.5:11434): llama3 — nicht aktuell geprüft')
+        expect(text).not.toContain('nicht erreichbar')
         expect(text).toContain('*KI-Endpunkte (2):*')
     })
 
@@ -99,7 +100,7 @@ describe('/status: keine Ghost-Knoten, keine toten Endpunkte', () => {
             ],
         }] as any[]
         const text = formatEndpointSection(dead, 'qwen', [], { now: NOW, localNodeId: 'main' })
-        expect(text).toContain('○ spark ollama (192.0.2.5:11434): llama3 — nicht erreichbar')
+        expect(text).toContain('○ spark ollama (192.0.2.5:11434): llama3 — nicht aktuell geprüft')
         expect(text).toContain('★ spark vllm (192.0.2.5:8000): qwen')
     })
 
