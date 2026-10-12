@@ -4,8 +4,10 @@
  * /status showed ghost nodes and dead endpoints. Only real mesh nodes (heartbeat
  * evidence or this node itself) are listed; the Desktop node-list freshness rule
  * (isHeartbeatFresh) decides online/offline; an AI endpoint is listed as working
- * only when reachable, otherwise marked „nicht erreichbar“; guessed-from-peer
- * phantom rows never appear.
+ * only when reachable, otherwise marked by its real evidence state — „nicht
+ * aktuell geprüft“ (online node, stale evidence) or „Knoten offline; Dienst
+ * nicht geprüft“ — never as a false outage (2.89.5); guessed-from-peer phantom
+ * rows never appear.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -96,18 +98,25 @@ function seedGraph(root: string): void {
 }
 
 function expectGhostFree(text: string): void {
-    // Real fresh node and its reachable endpoint (no "nicht erreichbar" on that line).
+    // Real fresh node and its reachable endpoint (no unproven marker on that line).
     expect(text).toContain(LIVE_NODE)
     const liveLine = text.split('\n').find(line => line.includes(LIVE_ENDPOINT)) || ''
     expect(liveLine).toContain('qwen')
-    expect(liveLine).not.toContain('nicht erreichbar')
-    // Dead endpoint is marked, never shown as working.
+    expect(liveLine).not.toMatch(/nicht|offline/)
+    // Dead endpoint is marked, never shown as working. Absence of fresh evidence
+    // is not an outage claim (2.89.5): online node → „nicht aktuell geprüft“,
+    // and never the old false „nicht erreichbar“.
     expect(text).toContain(DEAD_ENDPOINT)
-    expect(text).toMatch(/nicht erreichbar/)
+    const deadLine = text.split('\n').find(line => line.includes(DEAD_ENDPOINT)) || ''
+    expect(deadLine).toContain('nicht aktuell geprüft')
+    expect(deadLine).not.toContain('nicht erreichbar')
     // Peer-hearsay runtime is gone.
     expect(text).not.toContain(HEARSAY_ENDPOINT)
     // Ghost node (stale heartbeat) is offline, whatever the stored status says.
     expect(text).toContain(`${GHOST_NODE} (offline)`)
+    // Its endpoint row names the offline cause instead of a fabricated probe result.
+    const ghostLine = text.split('\n').find(line => line.includes(GHOST_ENDPOINT)) || ''
+    expect(ghostLine).toContain('Knoten offline; Dienst nicht geprüft')
     // Guessed-from-peer row is never listed.
     expect(text).not.toContain(PHANTOM_NODE)
     expect(text).not.toContain(PHANTOM_ENDPOINT)
