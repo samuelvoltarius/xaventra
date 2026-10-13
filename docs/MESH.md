@@ -88,6 +88,76 @@ CL-07 epochs and fencing; there is no second election.
   sending node), share release, share public key, vault distribution
   (`distributeSecretVault`, acting Main only, verified by each receiver).
 
+## Standby-Main (2.89.6)
+
+A **Standby-Main** is one released worker that is allowed to become Main when
+the Main dies, and that gives the role back as soon as a stronger Main returns.
+It is an owner decision and off by default.
+
+### Configuration
+
+```json
+{
+  "mesh": {
+    "preferStrongestMain": true,
+    "standbyMainNodes": ["node-b"]
+  }
+}
+```
+
+- `mesh.standbyMainNodes` — node ids of the workers that may hold Telegram and
+  Desktop once they own `nova-main`. Empty (default) releases nobody. The list
+  holds node ids only; it never carries tokens.
+- `mesh.preferStrongestMain` (or `NOVA_PREFER_STRONGEST_MAIN=true`) — the
+  planned hand-back described below. Without it a promoted standby keeps the
+  role until it fails.
+- The update activation plan (`src/core/self-update/activation-plan.ts`) is the
+  only place that turns a listed worker into a Standby-Main: it drops the
+  worker locks, sets `NOVA_MAIN_ELIGIBLE=true`, `NOVA_MESH_FAILOVER_MAIN=true`
+  and `NOVA_TELEGRAM_MODE=standby`, and names the Telegram token **key** to
+  copy from the old container. A plan never carries a secret value. Every
+  other worker keeps `NOVA_NODE_ONLY=true`, `NOVA_NO_TELEGRAM=true` and
+  `NOVA_MAIN_ELIGIBLE=false`.
+
+### What a lease-less Standby-Main does not do
+
+On a main-capable node that does not hold the `nova-main` lease, nothing with
+an outward effect runs: no Telegram or WhatsApp/Discord polling, no Dashboard
+or Desktop API, no Even G2 door, no Release watch, no owner card loop and no
+scheduler firing (`mainOnly` jobs). Proactive notices go through the one
+fenced owner path and are recorded nowhere without a live Main fence. Those
+services start only with the lease and stop when it is lost.
+
+### Takeover after a hard failure
+
+The lease TTL is 90 s, renewal every 30 s, with a 10 s safety margin. After a
+hard Main failure the lease expires, then the Standby-Main's takeover poller
+(15 s) acquires it. Expect roughly **1.5–2 minutes** before the owner sees the
+Standby-Main on Telegram again; the shared HA state is restored first, so
+pending messages arrive after the move, not twice.
+
+### Hand-back to the stronger Main
+
+With `preferStrongestMain` on, the promoted node checks every 30 s whether a
+stronger, fresh-heartbeating (≤ 75 s), main-capable node is back. If so, and
+only when no update, mission or outcome run is active, it releases the channel
+leases (`telegram`, `whatsapp`, `discord`, `dashboard`) first and `nova-main`
+last, so the returning Main can reconnect immediately instead of waiting out
+another TTL. A weaker or stale candidate never receives the lease; the
+transactional coordinator decides, and without one the lease is kept.
+
+### Limits
+
+- Exactly one node polls Telegram at a time. An old installation running old
+  code cannot be fenced by the new one — revoke the token if a ghost poller
+  survives a downgrade.
+- Standby takeover is automatic; the reverse move is planned and
+  strength-based, not immediate. During the hand-back there is a short window
+  in which no node holds `nova-main`.
+- A Standby-Main is meant to be a spare, not a second Main: it serves the mesh
+  data plane (event hub, remote exec, LLM proxy, task poller) like any worker
+  while it waits.
+
 ## Capability Graph convergence
 
 The Capability Graph is the canonical shareable inventory of node hardware,

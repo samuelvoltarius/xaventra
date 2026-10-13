@@ -174,6 +174,29 @@ An HA standby uses `NOVA_TELEGRAM_MODE=standby`; that does not authorize
 polling by itself. Credentials are local to each node and are never copied by
 Mesh, Memory, Supabase or release artifacts.
 
+### Standby-Main (2.89.6)
+
+A worker listed in `mesh.standbyMainNodes` is a **Standby-Main**: it may hold
+Telegram once it owns `nova-main`, and it hands the role back to a stronger
+Main. While it waits it never polls.
+
+- **Takeover.** After a hard Main failure the lease expires (TTL 90 s) and the
+  standby's 15 s poller takes over. Expect about **1.5–2 minutes** of silence
+  before Telegram answers again. The shared HA state is restored first, so
+  queued owner messages are delivered once, by the new Main.
+- **Hand-back.** With `mesh.preferStrongestMain` (or
+  `NOVA_PREFER_STRONGEST_MAIN=true`) the promoted node releases the channel
+  leases and then `nova-main` as soon as a stronger, fresh-heartbeating,
+  main-capable node is back and no update, mission or outcome run is active.
+  The returning Main reconnects instead of waiting out another TTL.
+- **Standby mode** (`NOVA_TELEGRAM_MODE=standby`) requires reachable shared HA
+  state before it will poll; without it the takeover is refused and retried.
+  The token comes from the node's own configuration or, with 2.88 succession,
+  from the secret vault after the node is the legitimate Main — never before.
+- **Limits.** Exactly one poller at a time. An installation still running old
+  code cannot be fenced by the new one: if a ghost poller survives a downgrade,
+  revoke the token with BotFather and reinstall it one node at a time.
+
 Every inbound update and outbound Bot API effect revalidates both leases at the
 last possible boundary. This includes direct legacy SDK calls, message chunks,
 edits, files, reactions, typing/progress indicators and proactive sends. Losing

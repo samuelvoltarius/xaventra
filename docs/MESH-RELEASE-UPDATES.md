@@ -61,3 +61,35 @@ checks to force an offline update.
 
 Every active target must receive the identical signed tree. Rebuilding a Docker
 image independently on each host invalidates that guarantee.
+
+## Standby-Main (2.89.6)
+
+`mesh.standbyMainNodes` lists the worker node ids that are released from the
+worker locks by the activation plan, so one of them can take Telegram and
+Desktop over when the Main dies. The list is an owner decision and defaults to
+empty; it holds node ids only.
+
+What the activation plan does differently for a listed container worker:
+
+| | ordinary worker | Standby-Main worker |
+|---|---|---|
+| `NOVA_NODE_ONLY` | `true` | not set |
+| `NOVA_NO_TELEGRAM` | `true` | not set |
+| `NOVA_TELEGRAM_MODE` | `disabled` | `standby` |
+| `NOVA_MAIN_ELIGIBLE` | `false` | `true` |
+| `NOVA_MESH_FAILOVER_MAIN` | `false` | `true` |
+| Telegram token | not carried | **key name** copied from the old container (`envKeysFromOldContainer`) |
+
+Values never appear in a plan. The host agent copies the named keys from the
+old container's environment; the plan only records which keys. NAS and Spark
+profiles stay locked even when they are listed.
+
+With `mesh.preferStrongestMain` (or `NOVA_PREFER_STRONGEST_MAIN=true`) a
+promoted Standby-Main hands the role back to a stronger, fresh-heartbeating,
+main-capable node once no update, mission or outcome run is active: channel
+leases first, `nova-main` last. Takeover after a hard Main failure takes about
+1.5–2 minutes (lease TTL 90 s plus the 15 s takeover poller).
+
+Limits: exactly one Telegram poller at a time; a downgrade that still runs old
+code cannot be fenced and needs a token revocation. During a planned hand-back
+there is a short window in which no node holds `nova-main`.

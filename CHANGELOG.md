@@ -12,6 +12,18 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.6] — 2026-10-13
+
+### Added
+
+- **Standby-Main as an owner decision.** `mesh.standbyMainNodes` lists the worker node ids the update activation plan releases from the worker locks (`NOVA_MAIN_ELIGIBLE`, `NOVA_MESH_FAILOVER_MAIN`, `NOVA_TELEGRAM_MODE=standby`); the plan carries Telegram token key names from the old container, never values, and every other worker stays locked. Takeover after a hard Main failure takes about 1.5–2 minutes; `mesh.preferStrongestMain` hands the role back to a stronger, fresh-heartbeating node once no update, mission or outcome run is active, channel leases first and `nova-main` last.
+
+### Fixed
+
+- **Nothing owner-facing runs on a lease-less standby.** Even G2, Desktop-Direct and the Release watch now follow the existing `nova-main` lease gate (start with the lease, stop on loss, re-arm the watcher), the Dashboard also falls with the Main lease instead of only its own, and the circuit-breaker trip alarm goes through the one fenced owner path — a non-main-capable worker still alarms about its own trip.
+- **A worker without the Main GPU no longer hangs on its local model.** When the configured local runtime is unreachable the fallback chain now reaches the owner-approved cloud models in `fallbackModels`, with the provider key taken from the vault, instead of aborting on a plain error.
+- **Native staging survives memory pressure.** The archive scan/staging budget is 300 s instead of 60 s; the old limit aborted a real ~59 000-file / 236 MB rollout mid-archive. Payload and file budgets still bound what may be scanned.
+
 ## [2.89.5] — 2026-10-12
 
 ### Added
