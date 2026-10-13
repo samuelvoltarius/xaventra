@@ -12,7 +12,7 @@ import {
     unlockVaultWithOwnerCode, unlockVaultWithShares,
 } from './secret-vault.js'
 import { EmergencyCodeGate, createEmergencyCodeRecord, normalizeEmergencyCode } from './emergency-code.js'
-import { isNodeMainEligible, parseSuccessionConfig } from './succession-config.js'
+import { isNodeMainEligible, parseStandbyMainNodes, parseSuccessionConfig } from './succession-config.js'
 
 const keys = deriveJournalKeys('k'.repeat(48))
 const target = (replica: JournalReplica): JournalReplicationTarget => ({ nodeId: replica.nodeId, deliver: async message => replica.append(message) })
@@ -225,5 +225,13 @@ describe('2.88 main eligibility is an owner decision', () => {
         expect(isNodeMainEligible({}, null)).toBe(true)
         expect(isNodeMainEligible({ NOVA_MAIN_ELIGIBLE: 'false' }, null)).toBe(false)
         expect(parseSuccessionConfig({ mesh: { succession: { emergencyMaxMinutes: 99_999 } } }).emergencyMaxMs).toBe(24 * 60 * 60_000)
+    })
+
+    it('reads mesh.standbyMainNodes as an owner node-id list (default empty)', () => {
+        expect(parseStandbyMainNodes(null)).toEqual([])
+        expect(parseStandbyMainNodes({})).toEqual([])
+        expect(parseStandbyMainNodes({ mesh: {} })).toEqual([])
+        expect(parseStandbyMainNodes({ mesh: { standbyMainNodes: 'node-b' } })).toEqual([])
+        expect(parseStandbyMainNodes({ mesh: { standbyMainNodes: ['node-b', ' node-b ', '', 'node-c'] } })).toEqual(['node-b', 'node-c'])
     })
 })

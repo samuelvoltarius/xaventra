@@ -2,6 +2,7 @@
     "mesh": {
         "mode": "standalone",
         "preferStrongestMain": true,
+        "standbyMainNodes": [],
         "direct": {
             "enabled": false,
             "listenHost": "127.0.0.1",

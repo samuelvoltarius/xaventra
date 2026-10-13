@@ -21,7 +21,29 @@ export interface NodeProfile {
     currentVersion: string
     /** Container name on the host (defaults to the node id). */
     container?: string
+    /**
+     * Owner released this worker as the failover Main (`mesh.standbyMainNodes`).
+     * Only a container worker may carry it; NAS and Spark never do.
+     */
+    standbyMain?: boolean
 }
+
+/** Env a worker gets so it can never touch Telegram or the Main lease. */
+const WORKER_LOCK_ENV: Record<string, string> = {
+    NOVA_NODE_ONLY: 'true', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled',
+    NOVA_MAIN_ELIGIBLE: 'false', NOVA_MESH_FAILOVER_MAIN: 'false',
+}
+/**
+ * Standby-Main worker (2.89.6): main-eligible and failover-enabled, channels
+ * NOT locked out. `NOVA_TELEGRAM_MODE=standby` keeps the bot quiet until this
+ * node owns the `nova-main` lease; `NOVA_NODE_ONLY`/`NOVA_NO_TELEGRAM` stay
+ * unset so the takeover can actually start Telegram and the Desktop.
+ */
+const STANDBY_MAIN_ENV: Record<string, string> = {
+    NOVA_MAIN_ELIGIBLE: 'true', NOVA_MESH_FAILOVER_MAIN: 'true', NOVA_TELEGRAM_MODE: 'standby',
+}
+/** Secret-bearing env keys copied from the old container. Names only, never values. */
+const TELEGRAM_TOKEN_ENV_KEYS = ['TELEGRAM_BOT_TOKEN']
 
 export type PlanPhase = 'vorher' | 'sicherung' | 'aktivierung' | 'nachher' | 'rueckweg'
 export type OnFailure = 'abbrechen-ohne-aenderung' | 'rueckweg' | 'stoppen-melden-nicht-wiederholen'
@@ -67,6 +89,7 @@ export const PLAN_INVARIANTS = [
     'Scheitert eine Vorher-Prüfung: keine Änderung. Mehrdeutige Ergebnisse nie blind wiederholen; Receipts/Locks behalten.',
     'Keine Secrets in Plan, Receipt oder Gedanke; Tokens, Memory, Audits, Backups, Drop-ins und Härtung unverändert.',
     'Nur ein Telegram-Konsument (gültiger Lease); Worker laufen mit NOVA_NODE_ONLY und ohne Telegram.',
+    'Standby-Main-Worker (mesh.standbyMainNodes) bleiben main-fähig: erst mit nova-main-Lease laufen Telegram und Desktop, nie gleichzeitig mit dem Main.',
 ]
 
 function architectureLabel(arch: 'x64' | 'arm64'): string { return arch === 'x64' ? 'amd64' : 'arm64' }
@@ -126,8 +149,8 @@ function sparkSteps(release: VerifiedRelease, node: NodeProfile, image: string):
     ]
 }
 
-/** Approved worker swap (worker-swap-2.79.0). */
-function containerSteps(release: VerifiedRelease, node: NodeProfile, image: string, nas: boolean): Draft[] {
+/** Approved worker swap (worker-swap-2.79.0); `standbyMain` releases the worker locks. */
+function containerSteps(release: VerifiedRelease, node: NodeProfile, image: string, nas: boolean, standbyMain: boolean): Draft[] {
     const container = node.container || node.nodeId
     const rollback = `${container}-rollback-${release.version}-from-${node.currentVersion}`
     const backup = `{backupRoot}/${container}-${node.currentVersion}-to-${release.version}-{datum}`
@@ -147,8 +170,14 @@ function containerSteps(release: VerifiedRelease, node: NodeProfile, image: stri
         step('aktivierung', 'set-rollback-restart-no', 'Rollback-Container restart=no', true, { rollback }),
         step('aktivierung', 'run-new-container', 'Neuen Container mit gleichen Mounts, Limits und User starten', true, {
             container, image, network: 'host', readOnly: true, capDrop: 'ALL', noNewPrivileges: true, restart: 'unless-stopped',
-            env: { NOVA_NODE_ONLY: 'true', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled', NOVA_MAIN_ELIGIBLE: 'false', NOVA_MESH_FAILOVER_MAIN: 'false' },
+            env: standbyMain && !nas ? STANDBY_MAIN_ENV : WORKER_LOCK_ENV,
             envFromOldContainer: 'keys-not-from-old-image',
+            ...(standbyMain && !nas ? {
+                // Key names only: the values stay in the old container's env and
+                // are copied by the host agent. A plan never carries a secret.
+                envKeysFromOldContainer: TELEGRAM_TOKEN_ENV_KEYS,
+                telegramMode: 'standby',
+            } : {}),
         }),
         step('nachher', 'probe-container', 'Läuft, 0 Restarts', false, { afterSeconds: 20, running: true, restarts: 0 }),
         step('nachher', 'probe-version', 'Version im Container', false, { version: release.version }),
@@ -160,7 +189,19 @@ function containerSteps(release: VerifiedRelease, node: NodeProfile, image: stri
     ]
 }
 
-export function buildActivationPlan(release: VerifiedRelease, profiles: NodeProfile[]): ActivationPlan {
+export interface ActivationPlanOptions {
+    /** Owner list `mesh.standbyMainNodes` (node ids). Empty = every worker stays locked. */
+    standbyMainNodes?: readonly string[]
+}
+
+function isStandbyMain(profile: NodeProfile, options: ActivationPlanOptions): boolean {
+    // Only a container worker may be released. NAS keeps Telegram off (it is
+    // the shared state node) and the Spark is the Main itself.
+    if (profile.kind !== 'container-worker') return false
+    return profile.standbyMain === true || (options.standbyMainNodes ?? []).includes(profile.nodeId)
+}
+
+export function buildActivationPlan(release: VerifiedRelease, profiles: NodeProfile[], options: ActivationPlanOptions = {}): ActivationPlan {
     if (profiles.filter(p => p.kind === 'native-spark').length > 1) throw Error('Nur ein nativer Spark (Main) pro Plan erlaubt')
     const skipped: ActivationPlan['skipped'] = []
     const due: NodeProfile[] = []
@@ -179,7 +220,7 @@ export function buildActivationPlan(release: VerifiedRelease, profiles: NodeProf
         if (!artifact) throw Error(`Release hat keinen geprüften Deskriptor für ${profile.arch} (${profile.nodeId})`)
         const drafts = profile.kind === 'native-spark'
             ? sparkSteps(release, profile, artifact.image)
-            : containerSteps(release, profile, artifact.image, profile.kind === 'container-nas')
+            : containerSteps(release, profile, artifact.image, profile.kind === 'container-nas', isStandbyMain(profile, options))
         const counters: Partial<Record<PlanPhase, number>> = {}
         return {
             nodeId: profile.nodeId, kind: profile.kind as NodePlan['kind'], fromVersion: profile.currentVersion, toVersion: release.version, hostRestart: false,

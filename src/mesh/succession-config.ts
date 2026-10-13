@@ -77,6 +77,22 @@ export function loadSuccessionConfig(env: NodeJS.ProcessEnv = process.env, raw: 
 }
 
 /**
+ * Owner-declared standby Main workers (`mesh.standbyMainNodes`, default empty).
+ * Exactly these workers are released from the worker locks by the update
+ * activation plan: they may hold Telegram/Desktop once they own `nova-main`.
+ * Every other worker stays locked. The list holds node ids only — never tokens.
+ */
+export function parseStandbyMainNodes(raw: unknown): string[] {
+    const section = (raw as { mesh?: { standbyMainNodes?: unknown } } | null)?.mesh?.standbyMainNodes
+    if (!Array.isArray(section)) return []
+    return [...new Set(section.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 8)
+}
+
+export function loadStandbyMainNodes(raw: unknown = readRawConfig()): string[] {
+    return parseStandbyMainNodes(raw)
+}
+
+/**
  * Single eligibility rule for election, capability advertising and ranking.
  * Succession on: explicit owner permission required (default worker).
  * Succession off: legacy default (eligible unless NOVA_MAIN_ELIGIBLE=false).

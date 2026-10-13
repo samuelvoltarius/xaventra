@@ -5,7 +5,7 @@ Generated from authoritative source. Do not edit by hand.
 | Catalog | Entries | SHA-256 |
 |---|---:|---|
 | tools.json | 235 | `a7ef1dbd454e9dadcc0fc0d577a372a64e0209f67c44f0190898c2559621963d` |
-| config.json | 0 | `441fb2792fcb3df81a94b00e9d70a2bc459034b6ffb093f9e38a2b67fd899bec` |
+| config.json | 0 | `09ecf421b7a6f212972862fcfb1afa14ab1d894df94933ff0c1e7aa016605fe3` |
 | persistence.json | 392 | `f552a1be5744c1aff31a29940f2b5851806696a1b9dd925f391e89ba9068d95d` |
 | modules.json | 960 | `02ed3571aba5ce07149738871787ced782ada80632118dba6cb12f71e050c1b6` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |

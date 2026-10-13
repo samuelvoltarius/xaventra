@@ -78,3 +78,45 @@ describe('activation plan as data (nothing executes)', () => {
         expect(() => buildActivationPlan(release, [...fleet, { nodeId: 'spark2', kind: 'native-spark', arch: 'arm64', currentVersion: '2.80.0' }])).toThrow(/Spark/)
     })
 })
+
+describe('standby-Main profile (mesh.standbyMainNodes, 2.89.6)', () => {
+    const workerEnv = (plan: ReturnType<typeof buildActivationPlan>, nodeId: string) =>
+        plan.nodes.find(n => n.nodeId === nodeId)!.steps.find(s => s.op === 'run-new-container')!.params
+
+    it('releases only the listed worker: main-eligible, failover on, Telegram standby', () => {
+        const plan = buildActivationPlan(release, fleet, { standbyMainNodes: ['xaventra-ns2'] })
+        const standby = workerEnv(plan, 'xaventra-ns2')
+        expect(standby.env).toEqual({
+            NOVA_MAIN_ELIGIBLE: 'true', NOVA_MESH_FAILOVER_MAIN: 'true', NOVA_TELEGRAM_MODE: 'standby',
+        })
+        expect(standby.env).not.toHaveProperty('NOVA_NODE_ONLY')
+        expect(standby.env).not.toHaveProperty('NOVA_NO_TELEGRAM')
+        // Secret KEY names are carried over from the old container — never values.
+        expect(standby.envKeysFromOldContainer).toEqual(['TELEGRAM_BOT_TOKEN'])
+        expect(JSON.stringify(plan)).not.toMatch(/\d{5,16}:[A-Za-z0-9_-]{30,}/)
+    })
+
+    it('keeps every other worker on the worker locks', () => {
+        const plan = buildActivationPlan(release, fleet, { standbyMainNodes: ['xaventra-ns2'] })
+        expect(workerEnv(plan, 'xaventra-ns1').env).toEqual({
+            NOVA_NODE_ONLY: 'true', NOVA_NO_TELEGRAM: 'true', NOVA_TELEGRAM_MODE: 'disabled',
+            NOVA_MAIN_ELIGIBLE: 'false', NOVA_MESH_FAILOVER_MAIN: 'false',
+        })
+        expect(workerEnv(plan, 'xaventra-ns1').envKeysFromOldContainer).toBeUndefined()
+    })
+
+    it('leaves the default (empty list) and the NAS/Spark untouched even when named', () => {
+        expect(workerEnv(buildActivationPlan(release, fleet), 'xaventra-ns2').env).toMatchObject({ NOVA_MAIN_ELIGIBLE: 'false' })
+        const named = buildActivationPlan(release, fleet, { standbyMainNodes: ['xaventra-ns2', 'xaventra-nas', 'xaventra-spark'] })
+        expect(workerEnv(named, 'xaventra-ns2').env).toMatchObject({ NOVA_MAIN_ELIGIBLE: 'true', NOVA_TELEGRAM_MODE: 'standby' })
+        // NAS stays Telegram-off (shared state node) and the Spark is the Main itself.
+        expect(named.nodes.find(n => n.nodeId === 'xaventra-nas')!.steps.some(s => s.op === 'disable-telegram-config')).toBe(true)
+        expect(workerEnv(named, 'xaventra-nas').env).toMatchObject({ NOVA_NODE_ONLY: 'true', NOVA_MAIN_ELIGIBLE: 'false' })
+    })
+
+    it('accepts the flag on the profile itself and stays hash-deterministic', () => {
+        const viaProfile = buildActivationPlan(release, fleet.map(n => n.nodeId === 'xaventra-ns1' ? { ...n, standbyMain: true } : n))
+        const viaOption = buildActivationPlan(release, fleet, { standbyMainNodes: ['xaventra-ns1'] })
+        expect(planHash(viaProfile)).toBe(planHash(viaOption))
+    })
+})

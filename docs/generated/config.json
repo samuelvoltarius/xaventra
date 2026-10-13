@@ -218,6 +218,10 @@
         },
         "allowTofu": "boolean"
       },
+      "standbyMainNodes": {
+        "type": "array",
+        "items": "unknown"
+      },
       "supabase": {
         "table": "string"
       },
