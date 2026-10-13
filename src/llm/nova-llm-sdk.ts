@@ -1383,7 +1383,76 @@ export function isServerUnreachable(baseUrl: string, now = Date.now()): boolean 
     return true
 }
 
-export function resetServerHealthForTests(): void { unreachableServers.clear() }
+export function clearServerUnreachable(baseUrl: string): void { unreachableServers.delete(serverKey(baseUrl)) }
+
+// 2.89.7: a remote endpoint that silently drops packets (powered-off node, firewall DROP) never answers
+// "connection refused" - the first request used to wait its whole 45-55 s budget, on every message, because
+// a timeout was not counted as "server dead". A cheap reachability probe (any HTTP answer counts) decides in
+// a few seconds instead, a dead server is held like a refused one, and its return is detected in the background.
+export const ENDPOINT_PROBE_TIMEOUT_MS = 4_000
+const HEALTHY_HOLD_MS = 60_000
+const RECOVERY_PROBE_EVERY_MS = 15_000
+const healthyServers = new Map<string, number>()
+const recoveryProbes = new Map<string, { at: number; running: boolean }>()
+
+let endpointProbeEnabled = true
+/** Tests of other behaviour count raw fetch calls; they switch the reachability probe off (and back on). */
+export function setEndpointProbeEnabledForTests(enabled: boolean): void { endpointProbeEnabled = enabled }
+
+function isLoopbackUrl(baseUrl: string): boolean {
+    try {
+        const host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase()
+        return host === 'localhost' || host === '::1' || host === '0.0.0.0' || host.endsWith('.localhost') || /^127\./.test(host)
+    } catch { return false }
+}
+
+function markServerHealthy(baseUrl: string, now = Date.now()): void {
+    healthyServers.set(serverKey(baseUrl), now + HEALTHY_HOLD_MS)
+    clearServerUnreachable(baseUrl)
+}
+
+function isServerKnownHealthy(baseUrl: string, now = Date.now()): boolean {
+    const until = healthyServers.get(serverKey(baseUrl))
+    return until !== undefined && now < until
+}
+
+/** True when the server answers HTTP at all (a 401/404 still proves it is up) within `timeoutMs`. */
+export async function probeEndpointReachable(baseUrl: string, timeoutMs = ENDPOINT_PROBE_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
+    const root = baseUrl.replace(/\/+$/, '')
+    const url = /\/v1$/.test(root) ? `${root}/models` : `${root}/v1/models`
+    const deadline = AbortSignal.timeout(timeoutMs)
+    try {
+        const response = await fetch(url, { method: 'GET', signal: signal ? AbortSignal.any([signal, deadline]) : deadline })
+        try { await response.body?.cancel() } catch { /* body already consumed */ }
+        return true
+    } catch {
+        signal?.throwIfAborted()
+        return false
+    }
+}
+
+/**
+ * Non-blocking recovery check for a held server: at most one probe per server every 15 s, never awaited by
+ * the request path. When the endpoint answers again the hold is lifted so the next message goes local.
+ * Returns the probe promise for tests; callers on the request path ignore it.
+ */
+export function scheduleRecoveryProbe(baseUrl: string, now = Date.now()): Promise<boolean> {
+    if (!endpointProbeEnabled) return Promise.resolve(false)
+    const key = serverKey(baseUrl)
+    const state = recoveryProbes.get(key)
+    if (state && (state.running || now - state.at < RECOVERY_PROBE_EVERY_MS)) return Promise.resolve(false)
+    const entry = { at: now, running: true }
+    recoveryProbes.set(key, entry)
+    return probeEndpointReachable(baseUrl).then(up => {
+        if (up) {
+            markServerHealthy(baseUrl)
+            console.log(`[LocalLLM] ${key} antwortet wieder - Sperre aufgehoben`)
+        }
+        return up
+    }).catch(() => false).finally(() => { entry.running = false })
+}
+
+export function resetServerHealthForTests(): void { unreachableServers.clear(); healthyServers.clear(); recoveryProbes.clear() }
 
 function stripV1(baseUrl: string): string { return baseUrl.replace(/\/v1\/?$/, '') }
 
@@ -1422,6 +1491,7 @@ class LocalLLMProvider extends LLMProvider {
     private baseUrl: string
     private model: string
     private apiKey?: string   // set for external cloud providers (MiniMax, Kimi, DeepSeek, etc.)
+    private exclusive = false
 
     constructor(config: ProviderConfig, tokenManager: TokenManager) {
         super(config, tokenManager)
@@ -1429,6 +1499,7 @@ class LocalLLMProvider extends LLMProvider {
         this.baseUrl = (config as any).baseUrl || 'http://localhost:11434'
         this.model = config.model || 'llama3'
         this.apiKey = (config as any).apiKey
+        this.exclusive = Boolean((config as any).exclusive)
     }
 
     private stripProviderReasoning(content: string): string {
@@ -1530,16 +1601,28 @@ class LocalLLMProvider extends LLMProvider {
         // hang for minutes). Other local endpoints stay; never a cloud failover.
         const discovered = allCandidates.filter(candidate => !vllmSwitchBlocks(candidate.baseUrl))
         if (allCandidates.length && !discovered.length) throw new Error(vllmSwitchBusyMessage())
-        let candidates = discovered.filter(candidate => !isServerUnreachable(candidate.baseUrl) && !isBlacklisted(candidate.model, candidate.baseUrl))
+        // 2.89.7: a held (unreachable) server is never asked on the request path; its return is checked in the
+        // background (one cheap probe per 15 s), so the answer neither waits for it nor misses its comeback.
+        const reachable = discovered.filter(candidate => {
+            if (!isServerUnreachable(candidate.baseUrl)) return true
+            void scheduleRecoveryProbe(candidate.baseUrl)
+            return false
+        })
+        let candidates = reachable.filter(candidate => !isBlacklisted(candidate.model, candidate.baseUrl))
         let recovering = false
         if (!candidates.length) {
             // Never override a known permanent exclusion. Prefer ordinary
             // healthy routes; only all-held routes may use one 15s half-open call.
-            const start = discovered.length ? Math.floor(Date.now() / 60_000) % discovered.length : 0
-            const probe = [...discovered.slice(start), ...discovered.slice(0, start)]
+            // Servers that are held as unreachable are not part of this: they have the background probe.
+            const start = reachable.length ? Math.floor(Date.now() / 60_000) % reachable.length : 0
+            const probe = [...reachable.slice(start), ...reachable.slice(0, start)]
                 .find(candidate => !KNOWN_PERMANENT_FAILURES[candidate.model]
                     && claimModelRecoveryProbe(candidate.model))
             if (probe) { candidates = [probe]; recovering = true }
+        }
+        if (!candidates.length && discovered.length && !reachable.length) {
+            const hosts = [...new Set(discovered.map(candidate => serverKey(candidate.baseUrl)))].join(', ')
+            throw new FailoverError(`Lokaler Endpunkt ${hosts} nicht erreichbar (übersprungen, Rückkehr wird geprüft)`, { reason: 'timeout', provider: 'local', model: this.model })
         }
         let lastError: unknown
 
@@ -1555,6 +1638,20 @@ class LocalLLMProvider extends LLMProvider {
             if (deadServers.some(url => serverKey(url) === serverKey(candidate.baseUrl))) continue
             if (timedOut.some(entry => entry.model === candidate.model && sameEndpoint(stripV1(entry.baseUrl), stripV1(candidate.baseUrl)))) continue
             tried++
+
+            // 2.89.7: decide in seconds whether a remote server is there at all, instead of waiting out the
+            // whole request budget (45-55 s) of a node that silently drops packets.
+            if (endpointProbeEnabled && !isLoopbackUrl(candidate.baseUrl) && !isServerKnownHealthy(candidate.baseUrl)) {
+                if (!(await probeEndpointReachable(candidate.baseUrl, ENDPOINT_PROBE_TIMEOUT_MS, options?.signal))) {
+                    options?.signal?.throwIfAborted()
+                    deadServers.push(candidate.baseUrl)
+                    markServerUnreachable(candidate.baseUrl)
+                    lastError = new FailoverError(`${serverKey(candidate.baseUrl)} antwortet nicht (${ENDPOINT_PROBE_TIMEOUT_MS / 1000} s)`, { reason: 'timeout', provider: 'local', model: candidate.model })
+                    console.log(`[LocalLLM] ${serverKey(candidate.baseUrl)} nicht erreichbar (Vorabprüfung) - 5 Minuten übersprungen, Rückkehr wird im Hintergrund geprüft`)
+                    continue
+                }
+                markServerHealthy(candidate.baseUrl)
+            }
 
             try {
                 // vLLM/large models (122B) need longer timeout for heavy system prompts
@@ -1577,6 +1674,7 @@ class LocalLLMProvider extends LLMProvider {
                 )
                 options?.signal?.throwIfAborted()
                 if (result.content || result.toolCalls?.length) sessionFailureMap.delete(`${candidate.baseUrl}|${candidate.model}`)
+                markServerHealthy(candidate.baseUrl)
                 return result
             } catch (err) {
                 // Caller cancellation is not an endpoint failure or permission
@@ -1594,6 +1692,16 @@ class LocalLLMProvider extends LLMProvider {
                     console.log(`[LocalLLM] ${serverKey(candidate.baseUrl)} nicht erreichbar - 5 Minuten übersprungen`)
                 } else if (failureClass === 'transient-timeout') {
                     timedOut.push({ baseUrl: candidate.baseUrl, model: candidate.model })
+                    // A known-healthy remote that now times out may have died meanwhile: re-check at once so the
+                    // next message does not wait the full budget again.
+                    if (endpointProbeEnabled && !isLoopbackUrl(candidate.baseUrl)) {
+                        healthyServers.delete(serverKey(candidate.baseUrl))
+                        if (!(await probeEndpointReachable(candidate.baseUrl, 2_000, options?.signal))) {
+                            deadServers.push(candidate.baseUrl)
+                            markServerUnreachable(candidate.baseUrl)
+                            console.log(`[LocalLLM] ${serverKey(candidate.baseUrl)} nicht erreichbar - 5 Minuten übersprungen`)
+                        }
+                    }
                 }
                 if (failureClass === 'hard-failure') {
                     // Hard failures — blacklist immediately (don't waste 2 attempts)
@@ -1605,7 +1713,7 @@ class LocalLLMProvider extends LLMProvider {
             }
         }
 
-        throw lastError instanceof Error ? lastError : new Error('No local LLM endpoint available')
+        throw lastError instanceof Error ? lastError : new FailoverError('No local LLM endpoint available', { reason: 'timeout', provider: 'local', model: this.model })
     }
 
     private async getFailoverCandidates(): Promise<Array<{ baseUrl: string; model: string; apiKey?: string }>> {
@@ -1646,6 +1754,9 @@ class LocalLLMProvider extends LLMProvider {
         if (isChatModel(this.model) && isLocalhostAvailable(this.baseUrl)) {
             candidates.push({ baseUrl: this.baseUrl, model: this.model, apiKey: this.apiKey })
         }
+        // 2.89.7: an owner-registered provider is called at exactly its own endpoint with its own key - never
+        // widened to resolver or discovery candidates (the prompt must not wander to another server).
+        if (this.exclusive) return candidates
 
         // Priority 1: model-resolver's best pick (may be on a mesh node or external cloud)
         if (process.env.NOVA_SKIP_MODEL_RESOLVER_INIT !== '1') {
@@ -1989,6 +2100,8 @@ export async function createNovaLLMClient(config: {
     apiKey?: string
     /** Per-run client for concurrent rooms/bots; avoids mutating the legacy singleton. */
     isolated?: boolean
+    /** Local-provider only: call exactly `baseUrl` (registered external provider), no failover candidates. */
+    exclusive?: boolean
 }): Promise<NovaLLM> {
     // Every call gets its own client. Reconfiguring the shared singleton here
     // switched the provider under running chats (primary LLM, agent loops)
@@ -2139,6 +2252,7 @@ export async function createNovaLLMClient(config: {
     }
     if (baseUrl) providerConfig.baseUrl = baseUrl
     if (resolvedApiKey) providerConfig.apiKey = resolvedApiKey
+    if (config.exclusive) providerConfig.exclusive = true
 
     llm.configure(providerConfig)
     if (!config.isolated) {

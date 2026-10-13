@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createNovaLLMClient } from './nova-llm-sdk.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createNovaLLMClient, setEndpointProbeEnabledForTests } from './nova-llm-sdk.js'
 import { isModelDisabled, recordModelCall } from './model-perf-db.js'
 import { availableLLMs } from '../core/llm-factory.js'
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); availableLLMs.splice(0) })
+beforeEach(() => setEndpointProbeEnabledForTests(false)) // these tests count raw fetch calls; the probe has its own tests
+afterEach(() => { setEndpointProbeEnabledForTests(true); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); availableLLMs.splice(0) })
 const reply = () => new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }))
 const client = (model: string) => createNovaLLMClient({ provider: 'local', model, baseUrl: 'http://127.0.0.1:8000/v1' })
 function disable(model: string) {

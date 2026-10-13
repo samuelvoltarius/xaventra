@@ -517,9 +517,10 @@ Antworte NUR mit einem JSON-Array. Beispiel:
 
 Bei Unsicherheit oder wenn keine persönlichen Fakten erkennbar sind: []`
 
+            // 2.89.7: background extraction - a dead model endpoint must not pin a socket for 45-55 s.
             const response = await llm.complete([
                 { role: 'user', content: prompt },
-            ])
+            ], undefined, { timeoutMs: 10_000, maxAttempts: 1 })
 
             if (!response.content) return
 

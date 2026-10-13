@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createNovaLLMClient } from './nova-llm-sdk.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createNovaLLMClient, setEndpointProbeEnabledForTests } from './nova-llm-sdk.js'
 
-afterEach(() => {
+beforeEach(() => setEndpointProbeEnabledForTests(false)) // these tests count raw fetch calls; the probe has its own tests
+afterEach(() => { setEndpointProbeEnabledForTests(true);
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
 })

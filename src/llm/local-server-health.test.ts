@@ -3,15 +3,16 @@
  * every call, and the machine's own vLLM was asked again under "localhost" after it had timed out.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createNovaLLMClient, isConnectionFailure, isServerUnreachable, markServerUnreachable, resetServerHealthForTests } from './nova-llm-sdk.js'
+import { createNovaLLMClient, isConnectionFailure, isServerUnreachable, markServerUnreachable, resetServerHealthForTests, setEndpointProbeEnabledForTests } from './nova-llm-sdk.js'
 import { availableLLMs } from '../core/llm-factory.js'
 
 beforeEach(() => {
     vi.stubEnv('NOVA_SKIP_MODEL_RESOLVER_INIT', '1')
     vi.stubEnv('NOVA_OS_MODE', 'false')
     resetServerHealthForTests()
+    setEndpointProbeEnabledForTests(false) // these tests count raw fetch calls; the probe has its own tests
 })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); availableLLMs.splice(0); resetServerHealthForTests() })
+afterEach(() => { setEndpointProbeEnabledForTests(true); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); availableLLMs.splice(0); resetServerHealthForTests() })
 
 const ok = () => new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }))
 const refused = () => Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })
