@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { getMemoryGovernanceCoordinator } from '../memory/memory-governance.js'
 import { loadHosts, saveHosts } from '../tools/ssh-tool-hosts.js'
 import { isInfrastructureFailure } from './infrastructure-failure.js'
+import { redactSecrets } from '../security/secret-redaction.js'
 
 // ============================================
 // Types
@@ -243,7 +244,10 @@ function saveState(): void {
     if (!existsSync(DATA_DIR)) {
         mkdirSync(DATA_DIR, { recursive: true })
     }
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+    // 2.89.5: recorded tool params can carry credentials (e.g. register_llm_provider's
+    // api_key). The state file never keeps them in clear — values the vault knows
+    // become [TRESOR:…] markers, key-named fields are redacted (secret-redaction).
+    writeFileSync(STATE_FILE, redactSecrets(JSON.stringify(state, null, 2)))
 }
 
 // Initialize on load
