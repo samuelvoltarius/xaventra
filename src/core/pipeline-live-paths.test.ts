@@ -397,8 +397,13 @@ describe('5 — the card loop starts without Telegram', () => {
 
     it('the daemon starts it with the Main control plane, stops it on Main loss; owner notices need the Main, not Telegram', () => {
         const daemon = readFileSync(fileURLToPath(new URL('../daemon.ts', import.meta.url)), 'utf8')
-        const lostAt = daemon.indexOf('onLeadershipLost(MAIN_SERVICE, async () => {')
-        const plane = daemon.slice(daemon.indexOf('const activateMainControlPlane = async'), lostAt)
+        // 2.89.6: Even G2, Desktop-Direct and the release watch register their own
+        // Main-loss handlers earlier in the file; anchor on the control plane's one.
+        const planeAt = daemon.indexOf('const activateMainControlPlane = async')
+        expect(planeAt).toBeGreaterThan(-1)
+        const lostAt = daemon.indexOf('onLeadershipLost(MAIN_SERVICE, async () => {', planeAt)
+        expect(lostAt).toBeGreaterThan(planeAt)
+        const plane = daemon.slice(planeAt, lostAt)
         expect(plane).toContain('startOwnerCardLoop()')
         const lost = daemon.slice(lostAt, daemon.indexOf('watchForServiceLeadership(MAIN_SERVICE, activateMainControlPlane)', lostAt))
         expect(lost).toContain('stopApprovalCardLoop()')
