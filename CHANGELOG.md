@@ -12,6 +12,31 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.5] — 2026-10-12
+
+### Added
+
+- **AI service claims rest on a confirmed function test.** Owner-only, bounded
+  service tests (documented in `docs/ai-service-function-tests.md`) probe TTS,
+  STT and chat models over the real path, with a principal-bound "Ja" before
+  anything runs; a clear or unrelated turn cancels the pending offer.
+
+### Fixed
+
+- **`/status` no longer calls stale evidence an outage.** An AI endpoint
+  without a fresh check says "nicht aktuell geprüft" (node online) or "Knoten
+  offline; Dienst nicht geprüft" — absence of evidence is never "nicht
+  erreichbar".
+- **Model provider keys live in the encrypted vault, never in config files.**
+  `register_llm_provider` and `save_config` store apiKeys only in the
+  node-local sealed store; `xaventra.config.json` and the provider list carry
+  `auth:llm-provider:<name>` references, and provider keys already present in
+  clear text migrate automatically at startup (the written config backup
+  carries no keys). Reads restore the key from the vault — proven with a fake
+  key: after migration it exists nowhere in clear text on disk and the
+  provider keeps working. Recorded tool parameters in the correction state are
+  redacted for the same reason.
+
 ## [2.89.4] — 2026-10-09
 
 ### Added
