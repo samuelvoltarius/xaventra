@@ -8,6 +8,7 @@ vi.mock('./telegram-voice.js', () => voice)
 import { createEvenG2RuntimeDeps, numericOwnerIds } from './even-g2-runtime.js'
 import { existsSync } from 'node:fs'
 import { EVEN_G2_CHANNEL, EVEN_G2_PRINCIPAL, EvenG2SttUnavailableError } from './even-g2.js'
+import { runSpeakable, speakableSink } from '../voice/voice-turn-stream.js'
 
 const TOKEN = `g2-test-${'x'.repeat(32)}`
 
@@ -24,6 +25,24 @@ describe('Even G2 runtime wiring', () => {
         expect(context).toEqual({ chatId: EVEN_G2_PRINCIPAL })
         expect(users.getOrCreateUser).toHaveBeenCalledWith(EVEN_G2_PRINCIPAL, EVEN_G2_CHANNEL, 'Even G2')
         expect(users.setUserPermission).toHaveBeenCalledWith(EVEN_G2_PRINCIPAL, 'owner')
+    })
+
+    it('reports the answer as it grows: speakable model rounds and the delivered reply', async () => {
+        const seen: string[] = []
+        const handleMessage = vi.fn(async (_c, _f, _q, reply: (m: string) => Promise<void>) => {
+            runSpeakable(() => {
+                speakableSink()?.onTextDelta('Ich schaue nach …')
+                speakableSink()?.onToolRound(['calendar_search'])
+                speakableSink()?.onTextDelta('Dein ')
+                speakableSink()?.onTextDelta('Termin ist um 14 Uhr.')
+            })
+            await reply('Dein Termin ist um 14 Uhr.')
+        })
+        const deps = createEvenG2RuntimeDeps(TOKEN, { handleMessage, ownerIds: () => ['100200300'], sendTelegram: vi.fn() })
+        const answer = await deps.ask('Wann bin ich frei?', new AbortController().signal, text => seen.push(text))
+        expect(answer).toBe('Dein Termin ist um 14 Uhr.')
+        // the interim round text before a tool run is dropped, the delivered reply wins
+        expect(seen).toEqual(['Ich schaue nach …', '', 'Dein ', 'Dein Termin ist um 14 Uhr.', 'Dein Termin ist um 14 Uhr.'])
     })
 
     it('late answers go to the first Telegram owner, nowhere without owner', async () => {

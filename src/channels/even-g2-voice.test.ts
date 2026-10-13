@@ -74,6 +74,33 @@ const speak = (url: string, body: Buffer, { token = TOKEN as string | null, type
     body: new Uint8Array(body),
 })
 
+const askText = (url: string, body: unknown, { token = TOKEN as string | null, query = '' } = {}) => fetch(`${url}/hud/ask${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token === null ? {} : { Authorization: `Bearer ${token}` }) },
+    body: JSON.stringify(body),
+})
+
+const feed = async (url: string) => {
+    const response = await fetch(`${url}/hud`, { headers: { Authorization: `Bearer ${TOKEN}` } })
+    return response.json() as Promise<{ version: string; status: string; cards: unknown[]; at: string; reply?: { id: string; text: string; done: boolean } }>
+}
+
+/** ask() that hands out its delta callback and a finish function for the test. */
+function streamingAsk() {
+    let emit: ((text: string) => void) | undefined
+    let finish: ((text: string) => void) | undefined
+    const ask = vi.fn((_question: string, _signal: AbortSignal, onDelta?: (text: string) => void) => new Promise<string>(resolve => {
+        emit = text => onDelta?.(text)
+        finish = resolve
+    }))
+    return {
+        ask,
+        emit: (text: string) => emit?.(text),
+        finish: (text: string) => finish?.(text),
+        started: () => Boolean(emit),
+    }
+}
+
 describe('Even G2 /hud/voice: auth and CORS', () => {
     it('401 without or with a wrong token and the STT is never called', async () => {
         const d = deps()
@@ -383,5 +410,269 @@ describe('yes/no recognizer', () => {
         expect(looksLikeSentence('ja nein')).toBe(false)
         expect(looksLikeSentence('wie spät ist es')).toBe(true)
         expect(looksLikeSentence('Wetter?')).toBe(true)
+    })
+})
+
+describe('Even G2 /hud/ask: auth, CORS and limits', () => {
+    it('401 without or with a wrong token and the pipeline never runs', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'nie') })
+        const url = await start(d)
+        expect((await askText(url, { text: 'Hallo' }, { token: null })).status).toBe(401)
+        expect((await askText(url, { text: 'Hallo' }, { token: 'falsch' })).status).toBe(401)
+        expect(d.ask).not.toHaveBeenCalled()
+    })
+
+    it('preflight needs no token and allows Authorization and Content-Type', async () => {
+        const url = await start(deps())
+        const response = await fetch(`${url}/hud/ask`, { method: 'OPTIONS', headers: { Origin: 'https://app.example' } })
+        expect(response.status).toBe(204)
+        expect(response.headers.get('access-control-allow-headers')).toMatch(/authorization/i)
+        expect(response.headers.get('access-control-allow-headers')).toMatch(/content-type/i)
+        expect(response.headers.get('access-control-allow-methods')).toMatch(/POST/)
+    })
+
+    it('answers carry the CORS headers of the allowed origin only', async () => {
+        const server = await startEvenG2Server({ port: 0, allowOrigins: ['https://app.example'] }, deps('ja', { ask: vi.fn(async () => 'ok') }))
+        servers.push(server)
+        const url = `http://127.0.0.1:${(server.server.address() as AddressInfo).port}`
+        const send = (origin: string) => fetch(`${url}/hud/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}`, Origin: origin },
+            body: JSON.stringify({ text: 'Hallo' }),
+        })
+        expect((await send('https://app.example')).headers.get('access-control-allow-origin')).toBe('https://app.example')
+        expect((await send('https://evil.example')).headers.get('access-control-allow-origin')).toBeNull()
+    })
+
+    it('400 for empty and for too long text (over 2000 characters)', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'ok') })
+        const url = await start(d)
+        for (const body of [{}, { text: '' }, { text: '   ' }, { text: 42 }, { text: 'x'.repeat(2_001) }]) {
+            const response = await askText(url, body)
+            expect(response.status, JSON.stringify(body).slice(0, 40)).toBe(400)
+        }
+        const broken = await fetch(`${url}/hud/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` }, body: '{' })
+        expect(broken.status).toBe(400)
+        expect(d.ask).not.toHaveBeenCalled()
+    })
+
+    it('2000 characters are accepted', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'ok') })
+        const response = await askText(await start(d), { text: 'x'.repeat(2_000) })
+        expect(response.status).toBe(200)
+        expect((await response.json()).action).toBe('message')
+    })
+
+    it('503 when the Main fence refuses and the pipeline does not run', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'nie'), fence: vi.fn(async () => { throw Object.assign(new Error('Fenced'), { code: 'FENCED' }) }) })
+        const response = await askText(await start(d), { text: 'Hallo' })
+        expect(response.status).toBe(503)
+        expect(d.ask).not.toHaveBeenCalled()
+    })
+
+    it('neither the text nor the token reach the log', async () => {
+        const logs: string[] = []
+        for (const method of ['log', 'warn', 'error', 'info'] as const) vi.spyOn(console, method).mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(' ')) })
+        const url = await start(deps('ja', { ask: vi.fn(async () => 'irgendeine Antwort') }))
+        await askText(url, { text: 'Mein geheimer Satz' }, { token: 'falsch' })
+        await askText(url, { text: 'Mein geheimer Satz' })
+        const all = logs.join('\n')
+        expect(all).not.toContain(TOKEN)
+        expect(all).not.toContain('geheimer Satz')
+    })
+})
+
+describe('Even G2 /hud/ask: the same decision path as /hud/voice', () => {
+    it('the text becomes a normal user message, answer at most 400 characters', async () => {
+        const long = `**Fett** ${'Ein langer Satz. '.repeat(60)}`
+        const d = deps('ja', { ask: vi.fn(async () => long) })
+        const body = await (await askText(await start(d), { text: 'Was steht heute an?' })).json()
+        expect(body.action).toBe('message')
+        expect(body.transcript).toBe('Was steht heute an?')
+        expect(body.reply.length).toBeLessThanOrEqual(400)
+        expect(body.reply).not.toContain('**')
+        expect(d.ask).toHaveBeenCalledTimes(1)
+        expect((d.ask as any).mock.calls[0][0]).toBe('Was steht heute an?')
+    })
+
+    it('the full text goes to the agent, the echo is at most 500 characters', async () => {
+        const long = `${'Ein langer Text. '.repeat(100)}`.trim()
+        const d = deps('ja', { ask: vi.fn(async () => 'ok') })
+        const body = await (await askText(await start(d), { text: long })).json()
+        expect((d.ask as any).mock.calls[0][0]).toBe(long)
+        expect(body.transcript).toBe(long.slice(0, 500))
+    })
+
+    it('line breaks are collapsed before the pipeline runs', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'ok') })
+        const body = await (await askText(await start(d), { text: 'Wie   spät\nist  es?' })).json()
+        expect(body.transcript).toBe('Wie spät ist es?')
+        expect((d.ask as any).mock.calls[0][0]).toBe('Wie spät ist es?')
+    })
+
+    it('ja and nein as text answer the shown card, exactly like speech', async () => {
+        const execute = vi.fn(async () => ({ ok: true, message: 'erledigt' }))
+        registerCardExecutor({ isStillOpen: () => true, kind: 'g2-test', execute })
+        const created = card()
+        const d = deps('ja', { ask: vi.fn(async () => 'nie') })
+        const url = await start(d)
+        const body = await (await askText(url, { text: 'Ja, bitte' })).json()
+        expect(body).toMatchObject({ transcript: 'Ja, bitte', action: 'answered_ja', cardId: created.id })
+        expect(body.reply.length).toBeLessThanOrEqual(400)
+        expect(execute).toHaveBeenCalledTimes(1)
+        expect(d.answerCard).toHaveBeenCalledWith(created.id, 'ja')
+        expect(listApprovalCards({ dataDir }).find(item => item.id === created.id)!.status).toBe('ja')
+        expect(d.ask).not.toHaveBeenCalled()
+
+        const second = card()
+        const rejected = await (await askText(url, { text: 'nein' })).json()
+        expect(rejected).toMatchObject({ action: 'answered_nein', cardId: second.id })
+        expect(listApprovalCards({ dataDir }).find(item => item.id === second.id)!.status).toBe('nein')
+    })
+
+    it('a physical card by text only asks for the explicit tap', async () => {
+        registerCardExecutor({ isStillOpen: () => true, kind: 'drucken-test', impact: 'physisch', execute: vi.fn(async () => ({ ok: true, message: 'gedruckt' })) })
+        const created = card('drucken-test', 'drucken-test')
+        const body = await (await askText(await start(deps('ja')), { text: 'ja' })).json()
+        expect(body).toEqual({ transcript: 'ja', action: 'needs_confirm', cardId: created.id })
+        expect(listApprovalCards({ dataDir }).find(item => item.id === created.id)!.status).toBe('offen')
+    })
+
+    it('body.cardId binds the answer to the shown card, a real sentence goes to the agent', async () => {
+        registerCardExecutor({ isStillOpen: () => true, kind: 'g2-test', execute: vi.fn(async () => ({ ok: true, message: 'fertig' })) })
+        const first = card()
+        const second = createApprovalCard({ art: 'g2-test', titel: 'Zweite Karte', beleg: 'B', vorschlag: 'V', aktion: { kind: 'g2-test', ref: 'r2' } }, { dataDir })
+        if (!second.ok) throw new Error(second.reason)
+        const d = deps('ja', { ask: vi.fn(async () => 'Antwort') })
+        const url = await start(d)
+        const bound = await (await askText(url, { text: 'ja', cardId: second.card.id })).json()
+        expect(bound).toMatchObject({ action: 'answered_ja', cardId: second.card.id })
+        const query = await (await askText(url, { text: 'ja', cardId: second.card.id }, { query: `?cardId=${first.id}` })).json()
+        expect(query).toMatchObject({ action: 'answered_ja', cardId: first.id })
+        const gone = await (await askText(url, { text: 'vielleicht', cardId: 'kdeadbeef0000' })).json()
+        expect(gone.action).toBe('none')
+        const sentence = await (await askText(url, { text: 'Wie spät ist es denn gerade?' })).json()
+        expect(sentence.action).toBe('message')
+        expect(d.ask).toHaveBeenCalledTimes(1)
+    })
+
+    it('the same text twice runs the pipeline once (dedupe)', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'A') })
+        const url = await start(d)
+        await Promise.all([askText(url, { text: 'Wie wird das Wetter?' }), askText(url, { text: 'Wie wird das Wetter?' })])
+        expect(d.ask).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('Even G2 HUD feed: the running answer', () => {
+    it('publishes reply.text as it grows and sets done at the end', async () => {
+        const stream = streamingAsk()
+        const d = deps('ja', { ask: stream.ask, replyDeltaMs: 0 })
+        const url = await start(d)
+        const asked = askText(url, { text: 'Was steht an?' })
+        await vi.waitFor(() => expect(stream.started()).toBe(true))
+        expect((await feed(url)).reply).toMatchObject({ text: '', done: false })
+        stream.emit('Dein')
+        await vi.waitFor(async () => expect((await feed(url)).reply).toMatchObject({ text: 'Dein', done: false }))
+        stream.emit('Dein Termin um 14 Uhr.')
+        const during = await feed(url)
+        expect(during.reply).toMatchObject({ text: 'Dein Termin um 14 Uhr.', done: false })
+        stream.finish('Dein Termin um 14 Uhr.')
+        const body = await (await asked).json()
+        expect(body).toMatchObject({ transcript: 'Was steht an?', action: 'message', reply: 'Dein Termin um 14 Uhr.' })
+        const done = await feed(url)
+        expect(done.reply).toMatchObject({ text: 'Dein Termin um 14 Uhr.', done: true })
+        expect(done.reply!.id).toBe(during.reply!.id)
+    })
+
+    it('every published delta changes the long-poll version', async () => {
+        const stream = streamingAsk()
+        const d = deps('ja', { ask: stream.ask, replyDeltaMs: 0 })
+        const url = await start(d)
+        const asked = askText(url, { text: 'Zähle' })
+        await vi.waitFor(() => expect(stream.started()).toBe(true))
+        const before = (await feed(url)).version
+        stream.emit('Eins')
+        const afterOne = await feed(url)
+        expect(afterOne.version).not.toBe(before)
+        stream.emit('Eins zwei')
+        const afterTwo = await feed(url)
+        expect(afterTwo.version).not.toBe(afterOne.version)
+        stream.finish('Eins zwei')
+        await asked
+        expect((await feed(url)).version).not.toBe(afterTwo.version)
+    })
+
+    it('deltas are throttled to one new reply.text per 250 ms', async () => {
+        const stream = streamingAsk()
+        let clock = 1_000_000
+        const d = deps('ja', { ask: stream.ask, now: () => clock })
+        const url = await start(d)
+        const asked = askText(url, { text: 'Langsamer Strom' })
+        await vi.waitFor(() => expect(stream.started()).toBe(true))
+        stream.emit('Eins')
+        const first = await feed(url)
+        expect(first.reply).toMatchObject({ text: 'Eins', done: false })
+        stream.emit('Eins zwei')
+        const held = await feed(url)
+        expect(held.reply!.text).toBe('Eins')
+        expect(held.version).toBe(first.version)
+        clock += 300
+        stream.emit('Eins zwei drei')
+        const released = await feed(url)
+        expect(released.reply!.text).toBe('Eins zwei drei')
+        expect(released.version).not.toBe(first.version)
+        stream.finish('Eins zwei drei')
+        await asked
+        expect((await feed(url)).reply).toMatchObject({ text: 'Eins zwei drei', done: true })
+    })
+
+    it('over the time budget: interim reply in the POST, the result in the feed and once in Telegram', async () => {
+        let release: (value: string) => void = () => undefined
+        const d = deps('ja', {
+            budgetMs: 80,
+            replyDeltaMs: 0,
+            ask: vi.fn((_q: string, _s: AbortSignal, onDelta?: (text: string) => void) => new Promise<string>(resolve => {
+                onDelta?.('Das ausführliche Ergebnis.')
+                release = resolve
+            })),
+        })
+        const url = await start(d)
+        const body = await (await askText(url, { text: 'Recherchiere lange' })).json()
+        expect(body.action).toBe('message')
+        expect(body.reply).toMatch(/arbeite dran.*Telegram/i)
+        expect((await feed(url)).reply).toMatchObject({ text: 'Das ausführliche Ergebnis.', done: false })
+        release('Das ausführliche Ergebnis.')
+        await vi.waitFor(async () => expect((await feed(url)).reply).toMatchObject({ text: 'Das ausführliche Ergebnis.', done: true }))
+        await vi.waitFor(() => expect(d.overflow).toHaveBeenCalledWith('Recherchiere lange', 'Das ausführliche Ergebnis.'))
+    })
+
+    it('the feed carries no question, no transcript field and no token', async () => {
+        const d = deps('ja', { ask: vi.fn(async () => 'Nur die Antwort.'), replyDeltaMs: 0 })
+        const url = await start(d)
+        await askText(url, { text: 'Mein geheimer Satz' })
+        const snapshot = await feed(url)
+        const text = JSON.stringify(snapshot)
+        expect(snapshot.reply).toMatchObject({ text: 'Nur die Antwort.', done: true })
+        expect(text).not.toContain('geheimer Satz')
+        expect(text).not.toContain(TOKEN)
+        expect(snapshot).not.toHaveProperty('transcript')
+    })
+
+    it('the reply field goes away again after the round is done and out of the window', async () => {
+        let clock = 1_000_000
+        const stream = streamingAsk()
+        const d = deps('ja', { ask: stream.ask, now: () => clock, dedupeMs: 500, replyDeltaMs: 0 })
+        const url = await start(d)
+        const asked = askText(url, { text: 'Kurze Frage' })
+        await vi.waitFor(() => expect(stream.started()).toBe(true))
+        stream.finish('Kurze Antwort')
+        await asked
+        expect((await feed(url)).reply).toMatchObject({ text: 'Kurze Antwort', done: true })
+        clock += 400
+        expect((await feed(url)).reply).toMatchObject({ done: true })
+        clock += 200
+        expect((await feed(url)).reply).toBeUndefined()
+        expect((await feed(url)).status).toBe('Bereit')
     })
 })

@@ -16,6 +16,22 @@
 
 ### Added
 
+- **`POST /hud/ask` takes typed questions from the HUD app.** JSON
+  `{text, cardId?}` (1–2000 characters) runs the exact decision path of
+  `/hud/voice` after the speech-to-text step — strict ja/nein for the shown
+  card, an explicit tap still required for outward effects, everything else a
+  normal owner message with the same 24 s budget and dedupe. Same bearer
+  token, same Main fence, same answer shape, so the app can parse both with
+  `parseVoice`. Long transcripts from the app's live recognition no longer
+  have to fit into a 20 s WAV (413).
+- **The running answer streams into the HUD feed.** `GET /hud` carries
+  `reply: {id, text, done}` — the answer word by word while it is generated,
+  `done=true` when the round finishes, published at most every 250 ms so the
+  glasses are not flooded. Every published step changes `version`, so the
+  long-poll wakes on each delta. An answer that misses the time budget still
+  gets the interim reply in the POST response and once to Telegram — and now
+  also lands in the feed when it is ready. The question, transcripts, tokens
+  and internal steps never enter the feed.
 - **Standby-Main as an owner decision.** `mesh.standbyMainNodes` lists the worker node ids the update activation plan releases from the worker locks (`NOVA_MAIN_ELIGIBLE`, `NOVA_MESH_FAILOVER_MAIN`, `NOVA_TELEGRAM_MODE=standby`); the plan carries Telegram token key names from the old container, never values, and every other worker stays locked. Takeover after a hard Main failure takes about 1.5–2 minutes; `mesh.preferStrongestMain` hands the role back to a stronger, fresh-heartbeating node once no update, mission or outcome run is active, channel leases first and `nova-main` last.
 
 ### Fixed

@@ -5,12 +5,16 @@ Autonomie-Plan Phase 5a. Die Brille spricht direkt mit Xaventra:
 1. **„Hey Even“-Agent** — die Even-App leitet Sprachfragen an Xaventra weiter, die Antwort
    erscheint als Text auf der Brille.
 2. **HUD-Feed** — eine kleine Even-Hub-App zeigt, woran Xaventra gerade
-   arbeitet, und offene Knopf-Karten. Tap = Ja, Doppeltap = Nein. Die App liegt nicht mehr in
+   arbeitet, offene Knopf-Karten und **die laufende Antwort** (`reply`) Wort für Wort.
+   Tap = Ja, Doppeltap = Nein. Die App liegt nicht mehr in
    diesem Repo, sondern im Quietglass-Repo:
    <https://github.com/samuelvoltarius/quietglass-g2/tree/main/apps/xaventra-hud>
 3. **Sprache** — `POST /hud/voice`: Mikrofon-Audio der Brille wird mit der vorhandenen
    Xaventra-Spracherkennung in Text gewandelt, beantwortet eine offene Karte (nur klares
    Ja/Nein) oder geht als normale Nachricht an den Agenten.
+4. **Getippte Frage** — `POST /hud/ask`: der in der App bereits erkannte Text
+   (lange Aufnahmen der Live-Spracherkennung passen nicht in eine WAV) geht denselben
+   Entscheidungsweg wie `/hud/voice` nach der Spracherkennung.
 
 Beides läuft über **einen** kleinen HTTP-Dienst im Daemon (`src/channels/even-g2.ts`,
 Verdrahtung `src/channels/even-g2-runtime.ts`).
@@ -25,9 +29,10 @@ Verdrahtung `src/channels/even-g2-runtime.ts`).
 | Owner-Token | `Authorization: Bearer <Token>`, Vergleich in konstanter Zeit, Token wird nie geloggt oder zurückgegeben; ohne/falsch → 401, die Pipeline läuft nicht |
 | Doppelte Fragen | die Even-App schickt jede Frage zweimal; gleiche Frage innerhalb 30 s → **ein** Pipeline-Lauf, beide Anfragen bekommen dieselbe Antwort |
 | Antwortform | höchstens 400 Zeichen, ohne Markdown und Emoji, an Satzgrenze gekürzt |
-| Zeitbudget | 24 s (Even-Frist ~28 s). Dauert es länger: „Ich arbeite dran, Ergebnis kommt in Telegram.“ — das Ergebnis geht genau einmal an den Telegram-Owner |
+| Zeitbudget | 24 s (Even-Frist ~28 s). Dauert es länger: „Ich arbeite dran, Ergebnis kommt in Telegram.“ — das Ergebnis geht genau einmal an den Telegram-Owner **und** steht danach fertig im Feed (`reply.done=true`) |
+| Feed-Antwort | die laufende Antwort steht als `reply: {id, text, done}` im Feed; neue Textstände höchstens alle 250 ms; die Frage/das Transcript steht **nie** im Feed, ebenso wenig Token oder interne Zwischenschritte |
 | Pipeline | normale Message-Pipeline, Kanal `even-g2`, Principal `even-g2:owner` mit Owner-Rechten (das Token ist der Owner-Ausweis, wie beim Desktop-Token) |
-| Sprache | `/hud/voice` entscheidet nie allein über Karten mit Wirkung nach außen (siehe unten); die Audiodaten werden weder geloggt noch gespeichert, das Token nie geloggt |
+| Sprache | `/hud/voice` und `/hud/ask` entscheiden nie allein über Karten mit Wirkung nach außen (siehe unten); die Audiodaten werden weder geloggt noch gespeichert, das Token nie geloggt |
 | Karten | nur `ja`/`nein` über `answerApprovalCard`: Owner-Prüfung, Einmal-Token (zweiter Tap → 409), Nie-Liste bekommt nie eine Karte, „Immer erlauben“ gibt es auf der Brille nie; die Knopf-Tokens bleiben auf dem Server, die Brille kennt nur Karten-IDs |
 
 ## Einrichtung (am Main)
@@ -47,7 +52,8 @@ Verdrahtung `src/channels/even-g2-runtime.ts`).
    }
    ```
 
-   `allowOrigins` leer = CORS-Antwort `*` nur für `/hud`, `/hud/answer` und `/hud/voice` (die Even-Hub-App
+   `allowOrigins` leer = CORS-Antwort `*` nur für `/hud`, `/hud/answer`, `/hud/voice` und
+   `/hud/ask` (die Even-Hub-App
    läuft im WebView mit unbekanntem Origin; ohne Bearer-Token liefert der Feed trotzdem nur 401,
    Cookies gibt es nicht). Mit Einträgen wird nur genau dieser Origin erlaubt. `POST /` (Even AI)
    sendet nie CORS-Header.
@@ -122,11 +128,46 @@ sonst spätestens nach `wait` Sekunden.
 {"version":"53186dacc6b60020","status":"Prüft Drucker — Schritt 1/2",
  "cards":[{"id":"k07fadcd8da05","titel":"Neues Modell Z testen?","text":"Modell Z war … Wechseln?",
            "wirkung":"intern","antworten":["ja","nein"],"gueltigBis":"2026-10-02T13:31:25.939Z"}],
+ "reply":{"id":"r3","text":"Dein nächster Termin ist um 14 Uhr.","done":false},
  "at":"2026-10-01T13:31:28.092Z"}
 ```
 
 `status` kommt aus denselben Daten wie `/jetzt` (laufende Statuskarten, aktuelle Aufgabe,
 Mission, Warteschlange). Es werden höchstens 5 offene Karten gezeigt, Texte gekürzt.
+
+#### Feld `reply` — die laufende Antwort
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `reply` | Objekt **oder nicht vorhanden** | fehlt, wenn gerade keine Frage läuft und die letzte Runde aufgeräumt ist |
+| `reply.id` | String | Kennung der Runde (`r1`, `r2`, …), opak, ohne Inhalt der Frage; bleibt über den ganzen Lauf gleich |
+| `reply.text` | String | Antworttext **so weit er schon da ist**, sichtbarer Text ohne Markdown/Emoji, höchstens 400 Zeichen (gleiche Form wie das `reply` einer POST-Antwort); solange noch nichts da ist: leerer String |
+| `reply.done` | Boolean | `false` während die Pipeline läuft; `true` sobald die Runde fertig ist (Antwort, Fehler oder Abbruch nach 10 min) |
+
+**Lebenslauf des Feldes:**
+
+1. **Frage kommt** (`POST /hud/voice`, `POST /hud/ask`, `POST /`): `reply` erscheint mit
+   `done=false`, `text=""`, neuer `id`.
+2. **Antwort entsteht**: `text` wächst. Jeder veröffentlichte Stand ändert `version` —
+   der Long-Poll wacht also bei jedem Stand auf. Damit die Brille nicht geflutet wird,
+   erscheint **höchstens alle 250 ms** ein neuer Textstand: Zwischenstände fallen aus,
+   Textteile gehen dabei nicht verloren (der nächste Stand enthält sie alle) und der
+   fertige Text steht am Ende immer vollständig.
+   Interims-Text vor einer Werkzeugrunde („Ich schaue nach …“) wird bei der Werkzeugrunde
+   verworfen — er ist nicht die Antwort.
+3. **`done=true`**: `text` ist die fertige Antwort, die auch die POST-Antwort bringt
+   (bei Überschreitung des Zeitbudgets eben das Ergebnis nach der Zwischenantwort).
+   Ein leerer fertiger Text steht als `Keine Antwort.` (gleiche Form wie im POST-Body).
+4. **Zurückgesetzt** wird das Feld, wenn eine **neue** Runde startet (neue `id`) oder die
+   Runde fertig ist **und** das Dedupe-Fenster (30 s ab dem Ende der Runde) abgelaufen ist —
+   dann verschwindet `reply` ganz und `version` ändert sich ein letztes Mal.
+
+`version` ist eine Prüfsumme über `status`, `cards` und `reply` (nicht über `at`) und ändert
+sich bei jedem dieser drei Aspekte. `?since=<version>&wait=<s>` hängt also auch an jedem
+Antwort-Delta.
+
+**Nicht im Feed:** die Frage/das Transcript, Sprachdaten, Tokens, Denkspuren, Werkzeugnamen
+und interne Zwischenschritte.
 
 ### `POST /hud/answer`
 
@@ -210,16 +251,74 @@ geloggt.
   Infrastruktur (`needs_confirm`); „Immer erlauben“ gibt es per Sprache nie.
 - Die Nie-Liste gilt unverändert: solche Aktionen bekommen nie eine Karte.
 
+### `POST /hud/ask`
+
+Getippte Frage: die HUD-App hat den Text ihrer Live-Spracherkennung schon fertig
+(Aufnahmen über 20 s passen sonst in kein WAV und scheitern mit 413). Gleiche
+Authentifizierung (Bearer), gleicher Main-Fence und dasselbe CORS wie `/hud/voice`.
+Der Text ist eine normale Nutzernachricht — keine Sonderrechte, dieselbe Pipeline,
+dasselbe Zeitbudget, dieselbe Doppelfrage-Erkennung.
+
+```http
+POST /hud/ask[?cardId=<Karten-ID>]
+Authorization: Bearer <Token>
+Content-Type: application/json
+
+{"text":"Was steht heute an?","cardId":"k07fadcd8da05"}
+```
+
+| Feld | Typ | Regel |
+|---|---|---|
+| `text` | String | Pflicht, 1–2000 Zeichen (sonst 400). Zeilenumbrüche/mehrfache Leerzeichen werden vor der Pipeline auf je ein Leerzeichen gezogen |
+| `cardId` | String | Optional. Gilt wie `?cardId=`; `?cardId=` hat Vorrang. Ohne Angabe die erste offene Karte des Feeds |
+
+| Fall | Status |
+|---|---|
+| Token fehlt oder falsch | 401 (die Pipeline läuft nicht) |
+| kein/falsches JSON, `text` fehlt oder leer | 400 |
+| `text` länger als 2000 Zeichen | 400 |
+| Anfrage über 64 KB | 413 |
+| nicht der aktive Main | 503 |
+
+**Antwort** (200) hat exakt dieselbe Form wie `/hud/voice` (die App parst beide mit
+`parseVoice`):
+
+```json
+{"transcript":"Was steht heute an?","action":"message","reply":"Zwei Termine …"}
+```
+
+`transcript` ist der verarbeitete Text (anzeigehalber höchstens 500 Zeichen; die
+Pipeline bekommt den vollständigen Text, höchstens 2000 Zeichen). `action` und die
+Kartenregeln sind unverändert aus dem Abschnitt `/hud/voice`:
+
+| `action` | Bedeutung |
+|---|---|
+| `answered_ja` / `answered_nein` | Karte beantwortet/abgelehnt (wie `POST /hud/answer`) |
+| `needs_confirm` | „Ja“ verstanden, aber die Karte wirkt nach außen: nichts beantwortet, die App holt den Tap |
+| `message` | an den Agenten; `reply` = Antwort, höchstens 400 Zeichen |
+| `none` | nichts ausgeführt (leer/unklar) |
+
+Kein eigenes Rate-Limit (wie `/hud/voice`); identische Fragen innerhalb von 30 s
+laufen nur einmal (Doppelfrage). Der Feed zeigt die Antwort unter `reply` weiter
+(siehe oben), auch dann, wenn die POST-Antwort nur die Zwischenantwort bringt.
+
 ### `GET /health`
 
 `{"ok":true}` ohne Token, ohne weitere Angaben.
 
 ## Grenzen
 
-- Kein Streaming, keine Bilder, kein Push zur Brille: die Even-App fragt, Xaventra antwortet.
+- Keine Bilder, kein Push zur Brille: die Even-App fragt, Xaventra antwortet.
   Proaktive Meldungen kommen weiter über Telegram; die HUD-App holt sie per Long-Poll.
+  Die **Antwort** läuft dagegen wortweise in den HUD-Feed (Feld `reply`), nicht nur
+  als fertiger Block nach dem Zeitbudget.
 - Dieselbe Frage innerhalb von 30 s bekommt dieselbe Antwort (gewollt wegen der Doppel-Anfrage).
-- Lange Aufgaben laufen weiter (höchstens 10 min), das Ergebnis kommt nur in Telegram.
+- Lange Aufgaben laufen weiter (höchstens 10 min): die POST-Antwort bringt die
+  Zwischenantwort, das Ergebnis geht genau einmal an Telegram **und** steht fertig
+  im Feed (`reply.done=true`).
+- Sichtbarer Antwortstrom nur dort, wo das Modell streamt (OpenAI-kompatible
+  Endpunkte in einer „sprechbaren“ Runde, wie beim Sprachanruf). Sonst erscheint
+  `reply.text` auf einen Schlag zusammen mit `done=true` — die Feldform ist dieselbe.
 - Ohne Telegram-Owner gibt es keine Nachlieferung und keine Kartenantworten.
 - Die HUD-App verlangt bei *physischen* und *nach außen wirkenden* Karten einen zweiten Tap
   innerhalb von 4 s.
@@ -234,7 +333,12 @@ ohne Markdown; Zeitbudget → Zwischenantwort + genau eine Nachlieferung; Worker
 Fence → 503; Kartenantwort nur mit Token und nur einmal; Nie-Liste ohne Karte; kein „immer“;
 Standard aus; Bindung nur `127.0.0.1`. Sprache: Token-Prüfung vor der Spracherkennung, WAV und
 rohes PCM, Formatgrenzen (400/413/415), Zeitlimit (504), Ja/Nein-Erkennung, Karten mit Wirkung nie
-per Sprache bestätigt, Freitext als Nachricht.
+per Sprache bestätigt, Freitext als Nachricht. `/hud/ask`: 401 ohne Token, OPTIONS 204,
+400 bei leerem/zu langem Text (über 2000 Zeichen), Kartenbestätigung per Text (ja/nein,
+`needs_confirm` bei Wirkung nach außen), `body.cardId`/`?cardId`, Dedupe, Fence 503.
+Feed: `reply.text` wächst mit jedem Delta, `done=true` am Ende, jeder veröffentlichte Stand
+ändert `version`, Drosselung auf einen Stand pro 250 ms, Überschreitung des Zeitbudgets
+landet zusätzlich im Feed, Frage und Token stehen nie im Feed.
 
 Mit echter Brille (Owner):
 
@@ -245,11 +349,13 @@ Mit echter Brille (Owner):
 3. „Hey Even, wie spät ist es?“ → Antwort auf der Brille; im Log genau **ein**
    `[Nova] [even-g2] Nachricht von even-g2:owner` für die Frage.
 4. Eine lange Frage („Recherchiere …“) → Brille zeigt „Ich arbeite dran …“, das Ergebnis kommt
-   in Telegram.
-5. Eine echte Knopf-Karte offen lassen → erscheint in der HUD-App → Tap → Telegram-Karte zeigt
+   in Telegram und steht danach im Feed (`reply.done=true`).
+5. In der HUD-App eine Frage tippen (`POST /hud/ask`) → dieselbe Antwort wie gesprochen;
+   während der Antwort wächst `reply.text` im Feed, am Ende `reply.done=true`.
+6. Eine echte Knopf-Karte offen lassen → erscheint in der HUD-App → Tap → Telegram-Karte zeigt
    „→ Ja“, `/gedanken` zeigt „angenommen“; zweiter Tap → „bereits beantwortet“.
-6. Worker: auf ns1/ns2/NAS ist Port 18790 nicht offen.
-7. Sprache: in der HUD-App eine kurze Frage sprechen → Antwort erscheint; bei offener Karte
+7. Worker: auf ns1/ns2/NAS ist Port 18790 nicht offen.
+8. Sprache: in der HUD-App eine kurze Frage sprechen → Antwort erscheint; bei offener Karte
    „ja“ bzw. „nein“ sprechen → Karte beantwortet bzw. (bei Wirkung nach außen) Bestätigungs-Tap
    verlangt.
 
