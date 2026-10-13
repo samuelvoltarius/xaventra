@@ -442,6 +442,12 @@ export async function detectAvailableLLMs(): Promise<void> {
 
 /** Cloud section names in `providers.*` whose key lives in the sealed vault. */
 const CLOUD_CONFIG_PROVIDERS = new Set(['minimax', 'openai', 'anthropic', 'claude', 'openrouter', 'groq'])
+/**
+ * Cloud sections that may serve as an automatic fallback. openrouter and groq are
+ * excluded: they are built through the `openai` SDK provider, which ignores
+ * `baseUrl` and would send their key to the OpenAI endpoint (2.89.7).
+ */
+const CLOUD_FALLBACK_PROVIDERS = new Set(['minimax', 'openai', 'anthropic', 'claude'])
 /** Config/discovery provider name → the SDK provider the client is built with. */
 function toSdkCloudProvider(name: string): string {
     const value = String(name || '').toLowerCase()
@@ -538,7 +544,7 @@ export function configuredCloudFallbacks(): Array<{ provider: string; model: str
     const listed = Array.isArray(cfg.fallbackModels) ? cfg.fallbackModels : []
     const providers = cfg.providers || {}
     const keyedCloud = Object.entries(providers)
-        .filter(([name, section]: [string, any]) => CLOUD_CONFIG_PROVIDERS.has(name.toLowerCase()) && Boolean(section?.apiKey))
+        .filter(([name, section]: [string, any]) => CLOUD_FALLBACK_PROVIDERS.has(name.toLowerCase()) && Boolean(section?.apiKey))
         .map(([name]) => name.toLowerCase())
     const out: Array<{ provider: string; model: string }> = []
     for (const item of listed) {
@@ -559,7 +565,7 @@ export function configuredCloudFallbacks(): Array<{ provider: string; model: str
         const hinted = PROVIDER_HINTS.find(([pattern]) => pattern.test(model))?.[1] || ''
         const provider = [fromDiscovery, hinted, String(cfg.provider || '').toLowerCase(), ...keyedCloud]
             .map(name => name.toLowerCase())
-            .find(name => (CLOUD_CONFIG_PROVIDERS.has(name) || name === 'openai-codex') && Boolean(cloudProviderCredentials(name)))
+            .find(name => (CLOUD_FALLBACK_PROVIDERS.has(name) || name === 'openai-codex') && Boolean(cloudProviderCredentials(name)))
         if (!provider) continue
         if (out.some(entry => entry.model === model && entry.provider === provider)) continue
         out.push({ provider, model })

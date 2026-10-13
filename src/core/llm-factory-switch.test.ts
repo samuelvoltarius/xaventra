@@ -115,6 +115,14 @@ describe('cloud failover on a worker without the Main GPU (2.89.6)', () => {
         expect(configuredCloudFallbacks()).toEqual([{ provider: 'anthropic', model: 'owner-cloud-model' }])
     })
 
+    it('never routes an openrouter or groq key through the OpenAI client (2.89.7)', () => {
+        writeStandbyConfig(['owner-cloud-model'], {
+            openrouter: { apiKey: 'fixture-openrouter-key', baseUrl: 'https://openrouter.example.com/api/v1' },
+            groq: { apiKey: 'fixture-groq-key', baseUrl: 'https://groq.example.com/openai/v1' },
+        })
+        expect(configuredCloudFallbacks()).toEqual([])
+    })
+
     it('invents no cloud route without a configured provider key', () => {
         writeStandbyConfig(['gpt-approved'], {})
         expect(configuredCloudFallbacks()).toEqual([])
