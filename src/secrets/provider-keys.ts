@@ -8,7 +8,7 @@
  * funktioniert damit wie bisher. Restliche Klartextwerte wandern beim ersten
  * Lesen bzw. beim Start dorthin zurück (idempotent, Config ohne Schlüssel gesichert).
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { accessSync, constants as fsConstants, existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 import { atomicWriteFileSync } from '../core/atomic-storage.js'
@@ -70,6 +70,8 @@ export function providerKeyPresent(entry: any): boolean {
 export function migrateConfigProviderKeys(options: { configPath?: string } = {}): string[] {
     const configPath = options.configPath || resolveConfigPath()
     if (!existsSync(configPath)) return []
+    // Read-only mount (worker container / pod): nothing to migrate here, and no vault write per read.
+    try { accessSync(configPath, fsConstants.W_OK); accessSync(dirname(configPath), fsConstants.W_OK) } catch { return [] }
     let cfg: any
     try { cfg = JSON.parse(readFileSync(configPath, 'utf8')) } catch { return [] }
     const names = Object.entries(cfg?.providers || {}).filter(([, entry]: any) => isPlaintextProviderKey(entry?.apiKey)).map(([name]) => name)
@@ -100,7 +102,10 @@ export function rehydrateConfigProviderKeys(config: any): any {
     const providers = config?.providers
     if (!providers || typeof providers !== 'object') return config
     const entries = Object.values(providers) as any[]
-    if (entries.some(entry => entry && typeof entry === 'object' && isPlaintextProviderKey(entry.apiKey))) migrateConfigProviderKeys()
+    if (entries.some(entry => entry && typeof entry === 'object' && isPlaintextProviderKey(entry.apiKey))) {
+        // Read-only config (e.g. mounted into a worker container): never break the reader.
+        try { migrateConfigProviderKeys() } catch { /* stays usable in clear until a writable start migrates it */ }
+    }
     for (const entry of entries) {
         if (!entry || typeof entry !== 'object' || entry.apiKey) continue
         const key = resolveProviderKey(entry)
