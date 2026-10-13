@@ -1588,11 +1588,26 @@ async function startDaemon() {
     // ============================================
     // Even G2 (Phase 5a): off unless channels.evenG2.enabled=true and
     // NOVA_EVEN_G2_TOKEN; Main only, loopback only (docs/EVEN_G2.md).
+    // 2.89.6: the G2 HTTP surface is a control door — it listens only while
+    // this node holds the nova-main lease and closes when the lease is lost.
     // ============================================
     if (!isNodeOnly) {
         try {
             const { startEvenG2FromDaemon } = await import('./channels/even-g2-runtime.js')
-            await startEvenG2FromDaemon(config, handleMessage)
+            const { MAIN_SERVICE, shouldStartExclusiveService, watchForServiceLeadership, onLeadershipLost } = await import('./mesh/leader-election.js')
+            let evenG2: { close(): Promise<void> } | null = null
+            const startEvenG2Main = async (): Promise<void> => {
+                evenG2 = await startEvenG2FromDaemon(config, handleMessage)
+            }
+            onLeadershipLost(MAIN_SERVICE, async () => {
+                const running = evenG2
+                evenG2 = null
+                if (running) await running.close()
+                console.log('[Nova] Even G2 geschlossen (Main-Lease verloren)')
+                watchForServiceLeadership(MAIN_SERVICE, startEvenG2Main)
+            })
+            if (await shouldStartExclusiveService(MAIN_SERVICE)) await startEvenG2Main()
+            else watchForServiceLeadership(MAIN_SERVICE, startEvenG2Main)
         } catch (err) {
             console.warn(`[Nova] Even G2 nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
         }
@@ -1601,12 +1616,24 @@ async function startDaemon() {
     // ============================================
     // /desktop – Direktverbindung: off unless desktop.direct.enabled=true;
     // Main only, own loopback listener behind tailscale serve (docs/DESKTOP_DIRECT.md).
+    // 2.89.6: the Desktop API is an owner surface — same lease gate as Telegram
+    // and the Dashboard, so a standby never serves it in parallel.
     // ============================================
     if (!isNodeOnly && (config as any)?.desktop?.direct?.enabled === true) {
         try {
-            const { startDesktopDirect } = await import('./desktop-direct/runtime.js')
-            const result = await startDesktopDirect(config)
-            console.log(`[Nova] ${result.started ? '✓' : '⚠'} Desktop-Direkt: ${result.reason}${result.address ? ` (${result.address})` : ''}`)
+            const { startDesktopDirect, stopDesktopDirect } = await import('./desktop-direct/runtime.js')
+            const { MAIN_SERVICE, shouldStartExclusiveService, watchForServiceLeadership, onLeadershipLost } = await import('./mesh/leader-election.js')
+            const startDesktopDirectMain = async (): Promise<void> => {
+                const result = await startDesktopDirect(config)
+                console.log(`[Nova] ${result.started ? '✓' : '⚠'} Desktop-Direkt: ${result.reason}${result.address ? ` (${result.address})` : ''}`)
+            }
+            onLeadershipLost(MAIN_SERVICE, async () => {
+                await stopDesktopDirect()
+                console.log('[Nova] Desktop-Direkt gestoppt (Main-Lease verloren)')
+                watchForServiceLeadership(MAIN_SERVICE, startDesktopDirectMain)
+            })
+            if (await shouldStartExclusiveService(MAIN_SERVICE)) await startDesktopDirectMain()
+            else watchForServiceLeadership(MAIN_SERVICE, startDesktopDirectMain)
         } catch (err) {
             console.warn(`[Nova] Desktop-Direkt nicht verfügbar: ${String((err as Error)?.message || err).slice(0, 200)}`)
         }
@@ -1835,18 +1862,34 @@ async function startDaemon() {
         // Phase 4 Release-Wächter (autonomy.selfUpdate.enabled, Standard aus): the one
         // check for new signed releases. It was never started before 2.82.0; the mesh
         // updater, delegation and auto reminders now defer to / ask through it.
+        // 2.89.6: release proposals reach the owner, so the watch follows the
+        // nova-main lease like Telegram and the Dashboard: a lease-less standby
+        // only waits, and the timer stops when the lease is lost.
         try {
             const { readSelfUpdateSettings, startSelfUpdateWatch } = await import('./core/self-update/release-watch.js')
             const selfUpdate = readSelfUpdateSettings(config)
             if (selfUpdate.enabled && process.env.NOVA_NODE_ONLY !== 'true') {
-                const { createSelfUpdateThoughtSink } = await import('./core/thought-hub.js')
-                const { installedUpdateVersion } = await import('./core/github-update.js')
-                const { getNovaDataDir } = await import('./core/data-root.js')
-                const watch = startSelfUpdateWatch({
-                    settings: selfUpdate, currentVersion: installedUpdateVersion(),
-                    sink: createSelfUpdateThoughtSink(), statePath: getNovaDataDir('self-update', 'release-watch.json'),
+                const { MAIN_SERVICE, shouldStartExclusiveService, watchForServiceLeadership, onLeadershipLost } = await import('./mesh/leader-election.js')
+                let stopReleaseWatch: (() => void) | null = null
+                const startReleaseWatchMain = async (): Promise<void> => {
+                    const { createSelfUpdateThoughtSink } = await import('./core/thought-hub.js')
+                    const { installedUpdateVersion } = await import('./core/github-update.js')
+                    const { getNovaDataDir } = await import('./core/data-root.js')
+                    const handle = startSelfUpdateWatch({
+                        settings: selfUpdate, currentVersion: installedUpdateVersion(),
+                        sink: createSelfUpdateThoughtSink(), statePath: getNovaDataDir('self-update', 'release-watch.json'),
+                    })
+                    stopReleaseWatch = handle ? handle.stop : null
+                    if (handle) console.log(`[Xaventra] ✓ Release-Wächter aktiv (alle ${selfUpdate.intervalMinutes} min, Kanal ${selfUpdate.channel})`)
+                }
+                onLeadershipLost(MAIN_SERVICE, async () => {
+                    stopReleaseWatch?.()
+                    stopReleaseWatch = null
+                    console.log('[Xaventra] Release-Wächter gestoppt (Main-Lease verloren)')
+                    watchForServiceLeadership(MAIN_SERVICE, startReleaseWatchMain)
                 })
-                if (watch) console.log(`[Xaventra] ✓ Release-Wächter aktiv (alle ${selfUpdate.intervalMinutes} min, Kanal ${selfUpdate.channel})`)
+                if (await shouldStartExclusiveService(MAIN_SERVICE)) await startReleaseWatchMain()
+                else watchForServiceLeadership(MAIN_SERVICE, startReleaseWatchMain)
             }
         } catch (err) { console.debug(`[Xaventra] Release-Wächter skipped: ${err}`) }
 

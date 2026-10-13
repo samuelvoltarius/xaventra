@@ -727,11 +727,16 @@ export async function startDashboard(
 
         console.log(`[Nova] ✓ Dashboard: ${url}`)
         console.log(`[Nova]   → L0 Status, Agent Activity, Vector DB Thoughts, Chat ✓`)
-        onLeadershipLost('dashboard', async () => {
+        // 2.89.6: the Dashboard is an owner surface, so it also falls with the
+        // canonical Main lease — not only with its own dashboard lease. Otherwise
+        // a standby could keep serving the owner API after the Main came back.
+        const retireDashboard = async (service: string): Promise<void> => {
             const { stopDashboard } = await import('../dashboard/server.js')
             await stopDashboard()
-            watchForServiceLeadership('dashboard', () => startDashboard(config, messageHandler, _state))
-        })
+            watchForServiceLeadership(service, () => startDashboard(config, messageHandler, _state))
+        }
+        onLeadershipLost('dashboard', () => retireDashboard('dashboard'))
+        onLeadershipLost(MAIN_SERVICE, () => retireDashboard(MAIN_SERVICE))
     } catch (err) {
         console.log(`[Nova] ⚠ Dashboard nicht verfügbar: ${err}`)
 

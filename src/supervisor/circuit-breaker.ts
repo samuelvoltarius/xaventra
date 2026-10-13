@@ -65,6 +65,44 @@ export interface CircuitConfig {
     stateFile: string
 }
 
+/**
+ * 2.89.6: the trip alarm is a message to the owner, so it follows the one
+ * fenced owner path (`sendGovernedProactive` authority in daemon.ts). A
+ * main-capable node without the `nova-main` lease (a standby) must not post in
+ * parallel with the live Main. A worker is not main-capable and still alarms
+ * about its own trip — no Main speaks for it. The watchdog alert (watchdog.ts)
+ * stays the deliberate "no Main at all" exception.
+ * Deps are injectable so the rule is testable without a mesh or a network.
+ */
+export interface OwnerAlarmGate {
+    mainEligible?: () => Promise<boolean> | boolean
+    liveLeader?: () => Promise<boolean> | boolean
+    fenced?: () => Promise<boolean> | boolean
+}
+
+export async function shouldSendOwnerAlarm(deps: OwnerAlarmGate = {}): Promise<boolean> {
+    try {
+        const mainEligible = deps.mainEligible ?? (async () => {
+            const { isNodeMainEligible } = await import('../mesh/succession-config.js')
+            return isNodeMainEligible()
+        })
+        if (!(await mainEligible())) return true
+        const liveLeader = deps.liveLeader ?? (async () => {
+            const { MAIN_SERVICE, verifyLiveServiceLeadership } = await import('../mesh/leader-election.js')
+            return verifyLiveServiceLeadership(MAIN_SERVICE)
+        })
+        if (await liveLeader()) return true
+        const fenced = deps.fenced ?? (async () => {
+            const { FENCE_MAIN_SERVICE, hasValidFence } = await import('../mesh/fence.js')
+            return hasValidFence(FENCE_MAIN_SERVICE)
+        })
+        return Boolean(await fenced())
+    } catch {
+        // The gate itself is unavailable: alarm rather than go silent.
+        return true
+    }
+}
+
 // ============================================
 // Circuit Breaker
 // ============================================
@@ -283,6 +321,12 @@ export class CircuitBreaker extends EventEmitter {
         try {
             if (!existsSync(configPath)) return
 
+            // 2.89.6: only the fenced Main posts owner alarms (see shouldSendOwnerAlarm).
+            if (!(await shouldSendOwnerAlarm())) {
+                console.log(`[Circuit Breaker] ⏸ No owner alarm: nova-main lease is held elsewhere`)
+                return
+            }
+
             const config = JSON.parse(readFileSync(configPath, 'utf-8'))
             const botToken = config.telegram?.token
             const chatId = this.config.telegramChatId || config.telegram?.adminChatId || config.telegram?.chatId
@@ -292,7 +336,7 @@ export class CircuitBreaker extends EventEmitter {
                 return
             }
 
-            // CL-07: deliberately unfenced alarm; tagged with the sending host.
+            // Tagged with the sending host so the owner can tell which node tripped.
             const message = `🚨 *NOVA CIRCUIT BREAKER* [${hostname()}]
 
 ⛔ *Status:* GESTOPPT

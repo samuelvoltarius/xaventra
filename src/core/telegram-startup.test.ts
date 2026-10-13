@@ -65,6 +65,24 @@ describe('actual Telegram starter concurrency', () => {
         expect(mocks.watch).toHaveBeenCalledWith('nova-main', expect.any(Function))
     })
 
+    it('connects on Main takeover and stops again when the lease is lost (2.89.6)', async () => {
+        const state = { channels: { telegram: null, whatsapp: null, discord: null } }
+        const config = { enabled: true, token: 'synthetic-not-a-credential' }
+        mocks.lease.mockResolvedValue(false)
+        await startTelegram(config, vi.fn(), state)
+        expect(mocks.create).not.toHaveBeenCalled()
+        // Takeover: the queued nova-main handler runs after the lease is acquired.
+        mocks.lease.mockResolvedValue(true)
+        await mocks.watch.mock.calls.find(call => call[0] === 'nova-main')![1]()
+        expect(mocks.create).toHaveBeenCalledTimes(1)
+        expect(state.channels.telegram).not.toBeNull()
+        // Lease loss: the retired starter disconnects and hands back to a watcher.
+        const lostMain = mocks.lost.mock.calls.find(call => call[0] === 'nova-main')![1]
+        await lostMain!()
+        expect(mocks.disconnect).toHaveBeenCalledTimes(1)
+        expect(state.channels.telegram).toBeNull()
+    })
+
     it('retires once and ignores stale callbacks after a replacement starts', async () => {
         const state = { channels: { telegram: null, whatsapp: null, discord: null } }
         const config = { enabled: true, token: 'synthetic' }

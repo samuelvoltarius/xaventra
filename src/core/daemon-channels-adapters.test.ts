@@ -5,13 +5,18 @@ const captured = vi.hoisted(() => ({
     whatsappHandler: null as null | ((msg: any) => Promise<void>),
     whatsappSend: vi.fn(async (_msg: any) => { }),
     dashboardHandler: null as null | ((message: string, channel: string) => Promise<string>),
+    lease: vi.fn(async () => true),
+    watch: vi.fn((_service: string, _onLeadership: () => Promise<void>) => { }),
+    lost: vi.fn((_service: string, _handler: () => Promise<void> | void) => () => { }),
+    dashboardStarts: vi.fn(async () => 'http://127.0.0.1:3011'),
+    dashboardStops: vi.fn(async () => { }),
 }))
 
 vi.mock('../mesh/leader-election.js', () => ({
     MAIN_SERVICE: 'nova-main',
-    shouldStartExclusiveService: async () => true,
-    watchForServiceLeadership: () => { },
-    onLeadershipLost: () => { },
+    shouldStartExclusiveService: captured.lease,
+    watchForServiceLeadership: captured.watch,
+    onLeadershipLost: captured.lost,
 }))
 vi.mock('../channels/discord.js', () => ({
     DiscordAdapter: class {
@@ -28,9 +33,9 @@ vi.mock('../channels/whatsapp.js', () => ({
     },
 }))
 vi.mock('../dashboard/server.js', () => ({
-    startDashboard: async () => 'http://127.0.0.1:3011',
+    startDashboard: captured.dashboardStarts,
     setNovaMessageHandler: (handler: any) => { captured.dashboardHandler = handler },
-    stopDashboard: async () => { },
+    stopDashboard: captured.dashboardStops,
 }))
 import { startDashboard, startDiscord, startWhatsApp } from './daemon-channels.js'
 
@@ -58,5 +63,39 @@ describe('channel starters match the hardened adapters', () => {
         const response = await captured.dashboardHandler!('hallo', 'dashboard')
         expect(response).toContain('Teil eins')
         expect(response).toContain('Teil zwei')
+    })
+})
+
+describe('the Dashboard follows the nova-main lease (2.89.6)', () => {
+    const reset = () => {
+        captured.lease.mockReset()
+        captured.watch.mockClear()
+        captured.lost.mockClear()
+        captured.dashboardStarts.mockClear()
+        captured.dashboardStops.mockClear()
+    }
+
+    it('serves nothing without the lease and starts only on takeover', async () => {
+        reset()
+        captured.lease.mockResolvedValue(false)
+        await startDashboard({ enabled: true, port: 3011 }, vi.fn() as any, state())
+        expect(captured.dashboardStarts).not.toHaveBeenCalled()
+        const watched = captured.watch.mock.calls.map(call => call[0])
+        expect(watched).toContain('nova-main')
+        // Takeover: the queued handler runs once the lease is acquired.
+        captured.lease.mockResolvedValue(true)
+        await captured.watch.mock.calls.find(call => call[0] === 'nova-main')![1]()
+        expect(captured.dashboardStarts).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops on Main-lease loss and again on dashboard-lease loss', async () => {
+        reset()
+        captured.lease.mockResolvedValue(true)
+        await startDashboard({ enabled: true, port: 3011 }, vi.fn() as any, state())
+        expect(captured.dashboardStarts).toHaveBeenCalledTimes(1)
+        const lostServices = captured.lost.mock.calls.map(call => call[0])
+        expect(lostServices).toEqual(expect.arrayContaining(['dashboard', 'nova-main']))
+        for (const call of captured.lost.mock.calls) await call[1]!()
+        expect(captured.dashboardStops).toHaveBeenCalledTimes(2)
     })
 })
