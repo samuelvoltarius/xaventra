@@ -8,7 +8,8 @@
  *    question twice (hedged request) and waits ~28 s; the reply is shown as
  *    plain text (~400 characters, no Markdown).
  * 2. HUD feed for an Even-Hub app: `GET /hud` (long-poll with `since`/`wait`)
- *    returns the live status line and open Knopf-Karten as short texts;
+ *    returns the live status line and open Knopf-Karten as short texts, plus
+ *    the running answer of the current round as `reply: {id, text, done}`;
  *    `POST /hud/answer { cardId, answer: 'ja' | 'nein' }` (tap / double tap)
  *    goes through `answerApprovalCard`.
  * 3. Voice for the HUD app: `POST /hud/voice` takes the G2 microphone audio
@@ -16,6 +17,10 @@
  *    existing Xaventra STT and either answers the shown card with a strict
  *    ja/nein recognizer or hands the sentence to the agent like `POST /`.
  *    Speech never confirms a card that needs an explicit confirm step.
+ * 4. Typed questions for the HUD app: `POST /hud/ask { text, cardId? }` takes
+ *    the live transcript of the app's speech recognition (20 s recordings no
+ *    longer have to fit into a WAV) and runs exactly the same decision path
+ *    as /hud/voice after the STT. Same answer form, same card rules.
  *
  * Rules (fixed in code):
  * - Off by default (`channels.evenG2.enabled=true` plus `NOVA_EVEN_G2_TOKEN`).
@@ -26,7 +31,10 @@
  * - Owner token compared in constant time, never logged or echoed.
  * - Same question within the dedupe window → one pipeline run, same answer.
  * - Time budget below the Even deadline; slower answers get a short interim
- *   reply and the result goes to Telegram (exactly once).
+ *   reply and the result goes to Telegram (exactly once) **and** into the HUD
+ *   feed as the finished `reply` (the glasses never miss the answer).
+ * - The feed shows the running answer word by word (`reply.text`), throttled
+ *   to one update per 250 ms; the question itself never enters the feed.
  * - Cards: only 'ja'/'nein', never 'immer'; the button tokens stay on the
  *   server, the glasses only know card ids.
  */
@@ -43,6 +51,8 @@ export const DEFAULT_BUDGET_MS = 24_000
 export const DEFAULT_DEDUPE_MS = 30_000
 export const MAX_REPLY_CHARS = 400
 export const INTERIM_REPLY = 'Ich arbeite dran, Ergebnis kommt in Telegram.'
+/** Feed updates: at most one new `reply.text` per 250 ms, so the glasses are not flooded. */
+export const REPLY_DELTA_MIN_MS = 250
 const MIN_TOKEN_LENGTH = 24
 const MAX_BODY_BYTES = 64 * 1024
 const MAX_QUESTION_CHARS = 2_000
@@ -64,7 +74,9 @@ export interface EvenG2Settings { port: number; allowOrigins: string[] }
 export interface EvenG2Resolution { start: boolean; reason: string; settings?: EvenG2Settings; token?: string }
 
 export interface HudCard { id: string; titel: string; text: string; wirkung: string; antworten: Array<'ja' | 'nein'>; gueltigBis: string }
-export interface HudSnapshot { version: string; status: string; cards: HudCard[]; at: string }
+/** Running answer of the current pipeline round (the question itself never enters the feed). */
+export interface HudReply { id: string; text: string; done: boolean }
+export interface HudSnapshot { version: string; status: string; cards: HudCard[]; at: string; reply?: HudReply }
 export interface CardAnswerHttp { status: number; body: Record<string, unknown> }
 
 /** Thrown by `EvenG2Deps.transcribe` when no speech recognition is reachable. */
@@ -76,9 +88,14 @@ export type VoiceAction = 'answered_ja' | 'answered_nein' | 'needs_confirm' | 'm
 
 export interface EvenG2Deps {
     token: string
-    /** Runs the normal message pipeline (channel even-g2, owner principal) and returns the final reply. */
-    ask(question: string, signal: AbortSignal): Promise<string>
-    /** Delivers an answer that missed the time budget (Telegram). */
+    /**
+     * Runs the normal message pipeline (channel even-g2, owner principal) and
+     * returns the final reply. `onDelta` gets the answer text as it grows
+     * (always the whole text so far, never a fragment) — the feed publishes it
+     * as `reply.text`.
+     */
+    ask(question: string, signal: AbortSignal, onDelta?: (text: string) => void): Promise<string>
+    /** Delivers an answer that missed the time budget (Telegram). The same result also lands in the HUD feed. */
     overflow(question: string, answer: string): Promise<void>
     /** Throws when this node may not act as Main (fenced). */
     fence(effect: string): Promise<void>
@@ -97,6 +114,8 @@ export interface EvenG2Deps {
     dedupeMs?: number
     maxRunMs?: number
     pollIntervalMs?: number
+    /** Feed throttle: at most one new `reply.text` per this many ms (default 250). */
+    replyDeltaMs?: number
 }
 
 export interface EvenG2Server { server: Server; port: number; close(): Promise<void> }
@@ -311,8 +330,33 @@ export function looksLikeSentence(transcript: string): boolean {
 // HUD feed
 // ---------------------------------------------------------------------------
 
+/**
+ * Plain HUD text of a reply, capped like every other HUD text. An unfinished
+ * round with no text yet stays empty (never "Keine Antwort."); a finished
+ * empty answer is exactly what the POST body would show.
+ */
+function normalizeHudReply(reply: { id: string; text: string; done?: boolean } | null | undefined): HudReply | undefined {
+    if (!reply) return undefined
+    const raw = String(reply.text ?? '').replace(/\s+/g, ' ').trim()
+    const done = reply.done === true
+    return {
+        id: String(reply.id ?? '').slice(0, 32),
+        text: raw ? formatForG2(raw, MAX_REPLY_CHARS) : (done ? formatForG2('', MAX_REPLY_CHARS) : ''),
+        done,
+    }
+}
+
+/** One recipe for the long-poll version: changes whenever the feed content changes. */
+function hudVersion(status: string, cards: HudCard[], reply: HudReply | undefined): string {
+    return createHash('sha1').update(JSON.stringify({
+        status,
+        cards: cards.map(card => [card.id, card.titel, card.text]),
+        reply: reply ? [reply.id, reply.text, reply.done] : null,
+    })).digest('hex').slice(0, 16)
+}
+
 /** Short card texts for the 576×288 HUD; tokens never leave the server. */
-export function buildHudSnapshot(input: { status: string; openCards: ApprovalCard[]; now?: number }): HudSnapshot {
+export function buildHudSnapshot(input: { status: string; openCards: ApprovalCard[]; reply?: { id: string; text: string; done?: boolean } | null; now?: number }): HudSnapshot {
     const cards: HudCard[] = input.openCards.filter(card => card.status === 'offen').slice(-5).map(card => ({
         id: card.id,
         titel: formatForG2(card.titel, 80),
@@ -322,8 +366,24 @@ export function buildHudSnapshot(input: { status: string; openCards: ApprovalCar
         gueltigBis: card.expiresAt,
     }))
     const status = formatForG2(input.status || 'Bereit', 120)
-    const version = createHash('sha1').update(JSON.stringify({ status, cards: cards.map(card => [card.id, card.titel, card.text]) })).digest('hex').slice(0, 16)
-    return { version, status, cards, at: new Date(input.now ?? Date.now()).toISOString() }
+    const reply = normalizeHudReply(input.reply)
+    const version = hudVersion(status, cards, reply)
+    return { version, status, cards, at: new Date(input.now ?? Date.now()).toISOString(), ...(reply ? { reply } : {}) }
+}
+
+/**
+ * Folds the running answer into a snapshot from `hudSnapshot()` and into the
+ * version hash, so every published delta wakes the long-poll. Passing null
+ * drops the field again (new `version`, same content otherwise).
+ */
+export function withHudReply(snapshot: HudSnapshot, reply: { id: string; text: string; done?: boolean } | null | undefined): HudSnapshot {
+    const normalized = normalizeHudReply(reply)
+    if (!normalized) {
+        if (!snapshot.reply) return snapshot
+        const { reply: _dropped, ...rest } = snapshot
+        return { ...rest, version: hudVersion(rest.status, rest.cards, undefined) }
+    }
+    return { ...snapshot, version: hudVersion(snapshot.status, snapshot.cards, normalized), reply: normalized }
 }
 
 /** Tap = Ja, double tap = Nein. Goes through answerApprovalCard (owner check, single use, Nie-Liste). */
@@ -350,7 +410,20 @@ export async function answerCardFromG2(cardId: string, answer: 'ja' | 'nein', op
 // server
 // ---------------------------------------------------------------------------
 
-interface Inflight { at: number; result: Promise<string>; settled: boolean }
+interface Inflight {
+    at: number
+    /** Feed id of this round (`r1`, `r2`, …) — opaque, carries nothing of the question. */
+    id: string
+    result: Promise<string>
+    settled: boolean
+    settledAt: number
+    /** Latest answer text reported by `ask` (always the whole text so far). */
+    pending: string
+    /** What the feed shows: throttled copy of `pending`. */
+    published: string
+    publishedAt: number
+    done: boolean
+}
 
 class BodyTooLarge extends Error {}
 
@@ -390,8 +463,10 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
     const dedupeMs = deps.dedupeMs ?? DEFAULT_DEDUPE_MS
     const maxRunMs = deps.maxRunMs ?? DEFAULT_MAX_RUN_MS
     const pollIntervalMs = Math.max(10, deps.pollIntervalMs ?? 1_000)
+    const replyDeltaMs = Math.max(0, deps.replyDeltaMs ?? REPLY_DELTA_MIN_MS)
     const allowOrigins = deps.allowOrigins || []
     const inflight = new Map<string, Inflight>()
+    let replySeq = 0
 
     const json = (res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) => {
         if (res.writableEnded) return
@@ -420,19 +495,66 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         }
     }
 
+    // ---- running answer in the HUD feed -----------------------------------
+    /** Settled rounds are dropped one dedupe window after they finished (that is also how long `reply` stays). */
+    const prune = (at: number) => {
+        for (const [key, entry] of inflight) if (entry.settled && at - entry.settledAt > dedupeMs) inflight.delete(key)
+    }
+    /** Throttled publication: at most one new `reply.text` per `replyDeltaMs`. */
+    const publish = (entry: Inflight, force = false) => {
+        const at = now()
+        if (!force && at - entry.publishedAt < replyDeltaMs) return
+        entry.published = entry.pending
+        entry.publishedAt = at
+    }
+    /** The round is over (answer, error or hard stop) — the feed shows the text and `done`. */
+    const finalize = (entry: Inflight, text: string) => {
+        entry.pending = String(text ?? '')
+        publish(entry, true)
+        entry.done = true
+        entry.settled = true
+        entry.settledAt = now()
+    }
+    /** Reply of the newest round, as the feed carries it (null = no round). */
+    const currentReply = (): { id: string; text: string; done: boolean } | null => {
+        prune(now())
+        let newest: Inflight | undefined
+        for (const entry of inflight.values()) if (!newest || entry.at > newest.at) newest = entry
+        if (!newest) return null
+        publish(newest)
+        return { id: newest.id, text: newest.published, done: newest.done }
+    }
+
     /** One pipeline run per question within the dedupe window; budget → interim reply, result → overflow (once). */
     const run = (question: string): Inflight => {
         const at = now()
-        for (const [key, entry] of inflight) if (at - entry.at > dedupeMs && entry.settled) inflight.delete(key)
+        prune(at)
         const key = normalizeQuestion(question)
         const existing = inflight.get(key)
         if (existing && at - existing.at <= dedupeMs) return existing
         const controller = new AbortController()
-        const hardStop = setTimeout(() => controller.abort(), maxRunMs)
+        const entry: Inflight = {
+            at,
+            id: `r${++replySeq}`,
+            result: Promise.resolve(''),
+            settled: false,
+            settledAt: 0,
+            pending: '',
+            published: '',
+            publishedAt: 0,
+            done: false,
+        }
+        // Hard stop: the feed must not spin forever when the pipeline hangs.
+        const hardStop = setTimeout(() => {
+            controller.abort()
+            if (!entry.settled) finalize(entry, entry.pending)
+        }, maxRunMs)
         hardStop.unref?.()
         let overflowed = false
-        const entry: Inflight = { at, settled: false, result: Promise.resolve('') }
-        const pipeline = deps.ask(question, controller.signal).then(
+        const pipeline = deps.ask(question, controller.signal, text => {
+            entry.pending = String(text ?? '')
+            publish(entry)
+        }).then(
             reply => String(reply ?? ''),
             error => {
                 console.warn(`[EvenG2] Pipeline-Fehler: ${short((error as Error)?.message || error)}`)
@@ -447,7 +569,8 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         void pipeline.then(reply => {
             clearTimeout(hardStop)
             if (budgetTimer) clearTimeout(budgetTimer)
-            entry.settled = true
+            // Overflow or not: the finished answer belongs in the feed as well.
+            finalize(entry, reply)
             if (overflowed) {
                 deps.overflow(question, reply).catch(error => console.warn(`[EvenG2] Telegram-Nachlieferung fehlgeschlagen: ${short((error as Error)?.message || error)}`))
             }
@@ -479,10 +602,10 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         const deadline = Date.now() + wait
         let closed = false
         res.on('close', () => { closed = true })
-        let snapshot = await deps.hudSnapshot()
+        let snapshot = withHudReply(await deps.hudSnapshot(), currentReply())
         while (since && snapshot.version === since && Date.now() < deadline && !closed) {
             await new Promise(resolve => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(0, deadline - Date.now()))))
-            snapshot = await deps.hudSnapshot()
+            snapshot = withHudReply(await deps.hudSnapshot(), currentReply())
         }
         if (!closed) json(res, 200, snapshot, headers)
     }
@@ -495,6 +618,69 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         if (await fenced(res, 'even-g2:card-answer', headers)) return
         const result = await deps.answerCard(String(body?.cardId ?? ''), answer)
         json(res, result.status, result.body, headers)
+    }
+
+    /**
+     * The part of `/hud/voice` after the STT, shared with `/hud/ask`: card
+     * lookup (`?cardId`/`body.cardId`), strict ja/nein, explicit confirm for
+     * outward effects, everything else a normal user message. `transcript` is
+     * the text to decide on (whitespace already collapsed); the answer body is
+     * exactly the same shape for both endpoints.
+     */
+    const decideAndReply = async (transcript: string, wanted: string, res: ServerResponse, headers: Record<string, string>) => {
+        const question = String(transcript ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_QUESTION_CHARS)
+        const heard = question.slice(0, MAX_TRANSCRIPT_CHARS)
+        const reply = (status: number, action: VoiceAction, extra: { cardId?: string; reply?: string } = {}) => {
+            const body: Record<string, unknown> = { transcript: heard, action }
+            if (extra.cardId) body.cardId = extra.cardId
+            if (extra.reply) body.reply = formatForG2(extra.reply)
+            json(res, status, body, headers)
+        }
+        if (!question) { reply(200, 'none'); return }
+
+        // pending card: the one the HUD shows (optional cardId), else the first open one
+        const open = (await deps.hudSnapshot()).cards
+        const card = wanted ? open.find(item => item.id === wanted) : open[0]
+        if (card) {
+            const decision = recognizeYesNo(question)
+            if (decision === 'ja') {
+                // outward / physical / infrastructure effects: the HUD asks for an explicit tap
+                if (card.wirkung !== 'intern') { reply(200, 'needs_confirm', { cardId: card.id }); return }
+                const result = await deps.answerCard(card.id, 'ja')
+                const message = typeof result.body.message === 'string' ? result.body.message : ''
+                reply(result.status, result.status === 200 ? 'answered_ja' : 'none', { cardId: card.id, reply: message })
+                return
+            }
+            if (decision === 'nein') {
+                const result = await deps.answerCard(card.id, 'nein')
+                const message = typeof result.body.message === 'string' ? result.body.message : ''
+                reply(result.status, result.status === 200 ? 'answered_nein' : 'none', { cardId: card.id, reply: message })
+                return
+            }
+            if (!looksLikeSentence(question)) { reply(200, 'none', { cardId: card.id }); return }
+        } else if (wanted && !looksLikeSentence(question)) {
+            // the displayed card is gone (answered elsewhere / expired): a stray word never becomes a command
+            reply(200, 'none'); return
+        }
+
+        // no card (or a real sentence): new user message, exactly like POST /
+        const answer = await run(question).result
+        reply(200, 'message', { reply: answer })
+    }
+
+    /** `POST /hud/ask { text, cardId? }`: typed question, same decision path as voice. */
+    const handleAskText = async (req: IncomingMessage, res: ServerResponse, url: URL, headers: Record<string, string>) => {
+        let body: any
+        try { body = JSON.parse(await readBody(req)) } catch (error) {
+            json(res, error instanceof BodyTooLarge ? 413 : 400, { error: error instanceof BodyTooLarge ? 'Anfrage zu groß.' : 'Ungültiges JSON.' }, headers)
+            return
+        }
+        const text = body?.text
+        if (typeof text !== 'string' || !text.trim()) { json(res, 400, { error: 'text fehlt.' }, headers); return }
+        if (text.length > MAX_QUESTION_CHARS) { json(res, 400, { error: `text zu lang (höchstens ${MAX_QUESTION_CHARS} Zeichen).` }, headers); return }
+        if (await fenced(res, 'even-g2:voice', headers)) return
+        const wanted = url.searchParams.get('cardId') || (typeof body?.cardId === 'string' ? body.cardId : '')
+        await decideAndReply(text, wanted, res, headers)
     }
 
     const handleVoice = async (req: IncomingMessage, res: ServerResponse, url: URL, headers: Record<string, string>) => {
@@ -538,50 +724,14 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
             if (timer) clearTimeout(timer)
         }
         transcript = transcript.slice(0, MAX_TRANSCRIPT_CHARS)
-        const reply = (status: number, action: VoiceAction, extra: { cardId?: string; reply?: string } = {}) => {
-            const body: Record<string, unknown> = { transcript, action }
-            if (extra.cardId) body.cardId = extra.cardId
-            if (extra.reply) body.reply = formatForG2(extra.reply)
-            json(res, status, body, headers)
-        }
-        if (!transcript) { reply(200, 'none'); return }
-
-        // pending card: the one the HUD shows (optional ?cardId=), else the first open one
-        const wanted = url.searchParams.get('cardId') || ''
-        const open = (await deps.hudSnapshot()).cards
-        const card = wanted ? open.find(item => item.id === wanted) : open[0]
-        if (card) {
-            const decision = recognizeYesNo(transcript)
-            if (decision === 'ja') {
-                // outward / physical / infrastructure effects: the HUD asks for an explicit tap
-                if (card.wirkung !== 'intern') { reply(200, 'needs_confirm', { cardId: card.id }); return }
-                const result = await deps.answerCard(card.id, 'ja')
-                const message = typeof result.body.message === 'string' ? result.body.message : ''
-                reply(result.status, result.status === 200 ? 'answered_ja' : 'none', { cardId: card.id, reply: message })
-                return
-            }
-            if (decision === 'nein') {
-                const result = await deps.answerCard(card.id, 'nein')
-                const message = typeof result.body.message === 'string' ? result.body.message : ''
-                reply(result.status, result.status === 200 ? 'answered_nein' : 'none', { cardId: card.id, reply: message })
-                return
-            }
-            if (!looksLikeSentence(transcript)) { reply(200, 'none', { cardId: card.id }); return }
-        } else if (wanted && !looksLikeSentence(transcript)) {
-            // the displayed card is gone (answered elsewhere / expired): a stray word never becomes a command
-            reply(200, 'none'); return
-        }
-
-        // no card (or a real sentence): new user message, exactly like POST /
-        const answer = await run(transcript.slice(0, MAX_QUESTION_CHARS)).result
-        reply(200, 'message', { reply: answer })
+        await decideAndReply(transcript, url.searchParams.get('cardId') || '', res, headers)
     }
 
     return (req, res) => {
         const url = new URL(req.url || '/', 'http://127.0.0.1')
         const path = url.pathname.replace(/\/+$/, '') || '/'
         const method = req.method || 'GET'
-        const isHud = path === '/hud' || path === '/hud/answer' || path === '/hud/voice'
+        const isHud = path === '/hud' || path === '/hud/answer' || path === '/hud/voice' || path === '/hud/ask'
         const headers = isHud ? cors(req) : {}
         void (async () => {
             if (method === 'GET' && path === '/health') { json(res, 200, { ok: true }); return }
@@ -596,6 +746,7 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
             if (method === 'GET' && path === '/hud') { await handleHud(req, res, url, headers); return }
             if (method === 'POST' && path === '/hud/answer') { await handleAnswer(req, res, headers); return }
             if (method === 'POST' && path === '/hud/voice') { await handleVoice(req, res, url, headers); return }
+            if (method === 'POST' && path === '/hud/ask') { await handleAskText(req, res, url, headers); return }
             req.resume()
             json(res, 404, { error: 'Not found' }, headers)
         })().catch(error => {

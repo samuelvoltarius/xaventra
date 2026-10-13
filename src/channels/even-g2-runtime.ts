@@ -39,7 +39,7 @@ export function numericOwnerIds(config: any): string[] {
 export function createEvenG2RuntimeDeps(token: string, hooks: EvenG2RuntimeHooks): EvenG2Deps {
     return {
         token,
-        async ask(question, signal) {
+        async ask(question, signal, onDelta) {
             // The token is the owner's credential (like the desktop token):
             // the even-g2 principal is bound to this channel and granted owner.
             const users = await import('../users/multi-user-middleware.js')
@@ -47,7 +47,24 @@ export function createEvenG2RuntimeDeps(token: string, hooks: EvenG2RuntimeHooks
             users.getOrCreateUser(EVEN_G2_PRINCIPAL, EVEN_G2_CHANNEL, 'Even G2')
             users.setUserPermission(EVEN_G2_PRINCIPAL, 'owner')
             let reply = ''
-            await hooks.handleMessage(EVEN_G2_CHANNEL, EVEN_G2_PRINCIPAL, question, async message => { reply = String(message ?? '') }, undefined, { abortSignal: signal }, { chatId: EVEN_G2_PRINCIPAL })
+            const deliver = async (message: string) => {
+                reply = String(message ?? '')
+                onDelta?.(reply)
+            }
+            const run = () => hooks.handleMessage(EVEN_G2_CHANNEL, EVEN_G2_PRINCIPAL, question, deliver, undefined, { abortSignal: signal }, { chatId: EVEN_G2_PRINCIPAL })
+            // 2.89.6 HUD: the same word-by-word answer stream as an app call
+            // (2.87 Paket P, request-local). Only speakable model rounds report;
+            // a tool round throws the interim round text away (it is not the
+            // answer), and the delivered reply always wins over stream text.
+            let round = ''
+            const { runWithVoiceTurn } = await import('../voice/voice-turn-stream.js')
+            await runWithVoiceTurn({
+                onTextDelta: piece => {
+                    round += String(piece ?? '')
+                    if (round) onDelta?.(round)
+                },
+                onToolRound: () => { round = ''; onDelta?.('') },
+            }, run)
             return reply
         },
         async overflow(question, answer) {
