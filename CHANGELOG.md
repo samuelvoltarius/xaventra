@@ -12,6 +12,25 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [Unreleased] - HUD
+
+- **`POST /hud/ask` takes typed questions from the HUD app.** JSON
+  `{text, cardId?}` (1–2000 characters) runs the exact decision path of
+  `/hud/voice` after the speech-to-text step — strict ja/nein for the shown
+  card, an explicit tap still required for outward effects, everything else a
+  normal owner message with the same 24 s budget and dedupe. Same bearer
+  token, same Main fence, same answer shape, so the app can parse both with
+  `parseVoice`. Long transcripts from the app's live recognition no longer
+  have to fit into a 20 s WAV (413).
+- **The running answer streams into the HUD feed.** `GET /hud` carries
+  `reply: {id, text, done}` — the answer word by word while it is generated,
+  `done=true` when the round finishes, published at most every 250 ms so the
+  glasses are not flooded. Every published step changes `version`, so the
+  long-poll wakes on each delta. An answer that misses the time budget still
+  gets the interim reply in the POST response and once to Telegram — and now
+  also lands in the feed when it is ready. The question, transcripts, tokens
+  and internal steps never enter the feed.
+
 ## [2.89.5] — 2026-10-12
 
 ### Added
