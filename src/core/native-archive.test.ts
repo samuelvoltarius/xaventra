@@ -2,7 +2,7 @@ import { it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { Readable } from 'node:stream'
-import { nativeArchiveHeader, verifyNativeArchive, stageNativeArchiveBytes } from './native-archive.js'
+import { nativeArchiveHeader, verifyNativeArchive, stageNativeArchiveBytes, NATIVE_ARCHIVE_SCAN_BUDGET_MS } from './native-archive.js'
 import { releaseTreeHash } from './release-tree.js'
 
 const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex')
@@ -70,4 +70,10 @@ it('rejects compressed digest/length disagreement and corrupt gzip',async()=>{
     await expect(verifyNativeArchive(Readable.from([b]),{...expected,size:b.length-1})).rejects.toThrow()
     b[b.length-1]^=1
     await expect(verifyNativeArchive(Readable.from([b]),expected)).rejects.toThrow()
+})
+// 2.89.6 rollout fix: 60 s aborted a real 59 000-file / 236 MB staging under
+// memory pressure. The budget is a hang guard, not a size limit.
+it('keeps a 300 s scan/staging budget so large archives survive memory pressure',()=>{
+    expect(NATIVE_ARCHIVE_SCAN_BUDGET_MS).toBe(300_000)
+    expect(NATIVE_ARCHIVE_SCAN_BUDGET_MS).toBeGreaterThan(60_000)
 })

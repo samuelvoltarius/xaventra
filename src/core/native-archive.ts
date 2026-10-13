@@ -5,6 +5,14 @@ import { pipeline } from 'node:stream/promises'
 import { releaseTreeHash, type ReleaseFileEvidence } from './release-tree.js'
 
 const MAX_BYTES = 2 * 1024 ** 3, MAX_FILES = 100_000
+/**
+ * Scan/staging wall-clock budget. 60 s was too tight under memory pressure:
+ * a real 2.89.5 rollout staged ~59 000 files / 236 MB and the stream aborted
+ * mid-archive. The scan is CPU+IO bound (gunzip + per-file hashing + staging
+ * writes) and the budget is only a hang guard, so it is raised to 300 s.
+ * Payload/file budgets above still bound what may be scanned.
+ */
+export const NATIVE_ARCHIVE_SCAN_BUDGET_MS = 300_000
 export interface NativeArchiveFileEvidence extends ReleaseFileEvidence { mode: number }
 /** Receives uncommitted bytes: callers may write disposable staging only.
  * No file or callback result is verified until the entire scan resolves. */
@@ -51,7 +59,7 @@ async function scanNativeArchive(source: Readable, expected: { sha256: string; s
     let compressed = 0, expanded = 0, payload = 0, padding = 0, terminators = 0, total = 0
     let pending = Buffer.alloc(0), current: { path: string; size: number; mode: number; hash: ReturnType<typeof createHash> } | undefined
     const digest = createHash('sha256'), abort = new AbortController()
-    const timer = setTimeout(() => abort.abort(), 60_000)
+    const timer = setTimeout(() => abort.abort(), NATIVE_ARCHIVE_SCAN_BUDGET_MS)
     const strings = (h: Buffer, start: number, length: number) => h.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '')
     try {
         await pipeline(source, async function* (input) {
