@@ -64,6 +64,29 @@ describe('exclusive-service failover guard', () => {
         expect(preferred?.nodeId).toBe('nova-pi5')
     })
 
+    // 2.89.6 hand-back: a returned, stronger, fresh-heartbeating, main-capable
+    // node is the one the standby must yield to — and only that one.
+    const node = (id: string, hardware: Record<string, number | string>, ageMs = 0) => ({
+        node_id: id, hostname: id, platform: 'linux', version: 'test', tools_count: 10,
+        status: 'online', capabilities: ['main-eligible'],
+        hardware: { cores: 8, ram_gb: 32, disk_gb: 500, disk_free_gb: 400, cpu: 'x', arch: 'x64', os_name: 'linux', os_version: '', ...hardware },
+        last_heartbeat: new Date(Date.now() - ageMs).toISOString(),
+    })
+
+    it('prefers the stronger main-capable node and never a weaker one', () => {
+        const strong = node('node-strong', { gpu_vram_mb: 24_576 }, 1_000)
+        const weak = node('node-weak', { cores: 2, ram_gb: 4 })
+        expect(selectPreferredTakeoverNode([weak, strong])?.nodeId).toBe('node-strong')
+        expect(selectPreferredTakeoverNode([strong, weak])?.nodeId).toBe('node-strong')
+    })
+
+    it('ignores a returned node whose heartbeat is stale (> 75 s)', () => {
+        const strongButStale = node('node-stale', { gpu_vram_mb: 24_576 }, 90_000)
+        const weakButFresh = node('node-fresh', { cores: 2, ram_gb: 4 }, 2_000)
+        expect(selectPreferredTakeoverNode([strongButStale, weakButFresh])?.nodeId).toBe('node-fresh')
+        expect(selectPreferredTakeoverNode([strongButStale])).toBeNull()
+    })
+
     it('keeps every control-plane callback behind one takeover poller', () => {
         const service = 'test-main-multi-handler'
         const telegram = () => undefined
