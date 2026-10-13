@@ -179,6 +179,18 @@ async function startDaemon() {
         console.warn(`[Nova] Legacy Codex credential cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
     }
 
+    // 2.89.5: provider keys still stored in clear in xaventra.config.json or
+    // .nova-data/external-providers.json move into the encrypted vault (backup
+    // of the keyless config first). References stay on disk; values are not logged.
+    try {
+        const { migrateConfigProviderKeys } = await import('./secrets/provider-keys.js')
+        const { migratePlaintextExternalProviderKeys } = await import('./core/model-resolver.js')
+        const moved = [...new Set([...migrateConfigProviderKeys(), ...migratePlaintextExternalProviderKeys()])]
+        if (moved.length) console.log(`[Nova] 🔐 Provider keys in den verschlüsselten Tresor verschoben: ${moved.join(', ')}`)
+    } catch (error) {
+        console.warn(`[Nova] Provider key migration failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
     // 2.85 Paket C: API keys connected in the desktop view behave like .env keys
     // (an existing environment variable always wins). Values are never logged.
     try {

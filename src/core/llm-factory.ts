@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { rehydrateConfigProviderKeys } from '../secrets/provider-keys.js'
 import { fetchModelList } from '../llm/model-list-cache.js'
 import { readProbeResults } from '../llm/capability-probe.js'
 
@@ -66,7 +67,9 @@ export function getNovaConfig(): NovaConfig {
     try {
         const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
-            _configCache = JSON.parse(readFileSync(configPath, 'utf-8')) as NovaConfig
+            // 2.89.5: `apiKey` on disk is a vault reference — fill it from the
+            // sealed 0600 store so consumers keep seeing a usable `apiKey`.
+            _configCache = rehydrateConfigProviderKeys(JSON.parse(readFileSync(configPath, 'utf-8'))) as NovaConfig
             _configCacheTime = now
             return _configCache
         }

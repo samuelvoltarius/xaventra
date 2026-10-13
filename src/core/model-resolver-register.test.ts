@@ -1,14 +1,16 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { registerExternalProvider, resolverCacheForDisk } from './model-resolver.js'
+import { listExternalProviders, migratePlaintextExternalProviderKeys, registerExternalProvider, resolverCacheForDisk } from './model-resolver.js'
 
 const configFile = () => join(process.cwd(), 'xaventra.config.json')
+const providersFile = () => join(process.cwd(), '.nova-data', 'external-providers.json')
 let originalConfig = ''
 
 beforeEach(() => { originalConfig = readFileSync(configFile(), 'utf8') })
 afterEach(() => {
     writeFileSync(configFile(), originalConfig)
+    rmSync(providersFile(), { force: true })
     vi.restoreAllMocks()
 })
 
@@ -45,6 +47,33 @@ describe('external LLM provider registration (R2 A8)', () => {
         const result = await registerExternalProvider({ name: 'fixturecloud', apiKey: 'k', baseUrl: 'https://api.fixturecloud.example/v1', enabled: true })
         expect(result.success).toBe(true)
         expect(JSON.parse(readFileSync(configFile(), 'utf8')).providers.fixturecloud.baseUrl).toBe('https://api.fixturecloud.example/v1')
+    })
+})
+
+describe('2.89.5: provider keys never stay in clear text on disk', () => {
+    const FAKE = 'x'.repeat(40)
+
+    it('registration moves the key into the vault; config and provider list carry only the reference', async () => {
+        rmSync(providersFile(), { force: true })
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ id: 'fixture-model' }] }), { status: 200 }))
+        const result = await registerExternalProvider({ name: 'fixturevault', apiKey: FAKE, baseUrl: 'https://api.fixturevault.example/v1', enabled: true })
+        expect(result.success).toBe(true)
+        expect(readFileSync(configFile(), 'utf8')).not.toContain(FAKE)
+        const list = JSON.parse(readFileSync(providersFile(), 'utf8'))
+        expect(JSON.stringify(list)).not.toContain(FAKE)
+        expect(list.find((entry: any) => entry.name === 'fixturevault').apiKeyRef).toBe('auth:llm-provider:fixturevault')
+        // The provider keeps working — the key is resolved from the vault on load.
+        expect(listExternalProviders().find(entry => entry.name === 'fixturevault')?.apiKey).toBe(FAKE)
+    })
+
+    it('a legacy provider list with plaintext keys migrates on the first read and stays idempotent', () => {
+        writeFileSync(providersFile(), JSON.stringify([{ name: 'legacycloud', apiKey: FAKE, baseUrl: 'https://api.legacycloud.example/v1', enabled: true, addedAt: 1 }]))
+        expect(listExternalProviders().find(entry => entry.name === 'legacycloud')?.apiKey).toBe(FAKE)
+        const disk = readFileSync(providersFile(), 'utf8')
+        expect(disk).not.toContain(FAKE)
+        expect(JSON.parse(disk).find((entry: any) => entry.name === 'legacycloud').apiKeyRef).toBe('auth:llm-provider:legacycloud')
+        // Nothing left to move on the next read.
+        expect(migratePlaintextExternalProviderKeys()).toEqual([])
     })
 })
 

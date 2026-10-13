@@ -16,6 +16,7 @@
  * started, loaded or pulled.
  */
 import { cloudKeyPresent, type ModelRegistry } from '../routing/model-registry.js'
+import { providerKeyPresent } from '../secrets/provider-keys.js'
 
 export type RuntimeKind = 'local' | 'cloud' | 'none'
 
@@ -113,7 +114,8 @@ function cloudKey(provider: string, config: any, env: NodeJS.ProcessEnv): boolea
     if (cloudKeyPresent(provider, config, env)) return true
     const envName = `${provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`
     if (env[envName]) return true
-    return Boolean(config?.providers?.[provider]?.apiKey)
+    // 2.89.5: "key configured" also covers the vault reference form.
+    return providerKeyPresent(config?.providers?.[provider])
 }
 
 async function freshMeshRuntimes(now: number): Promise<MeshLlmRuntime[]> {

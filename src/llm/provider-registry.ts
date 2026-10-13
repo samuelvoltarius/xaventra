@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 import { fetchModelList } from './model-list-cache.js'
+import { rehydrateConfigProviderKeys } from '../secrets/provider-keys.js'
 
 
 // ============================================
@@ -136,7 +137,8 @@ export class ProviderRegistry {
     private loadConfig(): Record<string, any> {
         try {
             const path = resolveConfigPath()
-            if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'))
+            // 2.89.5: fill `apiKey` from the vault (config carries references only).
+            if (existsSync(path)) return rehydrateConfigProviderKeys(JSON.parse(readFileSync(path, 'utf-8')))
         } catch { /* ok */ }
         return {}
     }

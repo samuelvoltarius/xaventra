@@ -16,6 +16,7 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { fetchModelList } from './model-list-cache.js'
 import { getDefaultModel as centralDefault } from '../core/model-defaults.js'
+import { rehydrateConfigProviderKeys } from '../secrets/provider-keys.js'
 
 
 // ============================================
@@ -111,7 +112,7 @@ async function discoverCloudModels(): Promise<DiscoveredModel[]> {
             return models
         }
 
-        const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+        const config = rehydrateConfigProviderKeys(JSON.parse(readFileSync(configPath, 'utf-8')))
         const providers = config.providers || {}
 
         // OpenAI discovery

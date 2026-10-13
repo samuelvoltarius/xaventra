@@ -49,3 +49,20 @@ describe('R2 T1: save_config protects owner, channel and provider settings', () 
         expect(JSON.parse(readFileSync(configFile(), 'utf8')).telegram.allowFrom).toEqual(['222'])
     })
 })
+
+describe('2.89.5: save_config keeps provider keys out of the config (nested extraction)', () => {
+    it('providers.<name>.apiKey moves into the vault; the config carries only the reference', async () => {
+        const key = 'x'.repeat(40)
+        const values = { mimo: { baseUrl: 'https://api.mimo.example/v1', apiKey: key, enabled: true } }
+        const confirm = ownerApprovalCode('save_config', approvalDetailOf({ section: 'providers', values }))
+        const result = await withExecutionPolicyContext({ authUserId: 'owner-1', channel: 'telegram' },
+            () => saveConfigTool.handler({ section: 'providers', values, confirm })) as any
+        expect(result.success).toBe(true)
+        const raw = readFileSync(configFile(), 'utf8')
+        expect(raw).not.toContain(key)
+        expect(JSON.parse(raw).providers.mimo.apiKeyRef).toBe('auth:llm-provider:mimo')
+        const { resolveProviderKey } = await import('../secrets/provider-keys.js')
+        expect(resolveProviderKey(JSON.parse(raw).providers.mimo)).toBe(key)
+        expect(JSON.parse(raw).providers.mimo.baseUrl).toBe('https://api.mimo.example/v1')
+    })
+})

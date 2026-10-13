@@ -34,7 +34,16 @@ function touchesProtected(section: string, values: Record<string, unknown>): boo
 /**
  * 2.89.4: pull key-like values out of a config write into the 0600 stores.
  * The config keeps only `«field»Ref`. Never logs the value.
+ * 2.89.5: `providers.<name>.apiKey` is one level deeper — it goes to the same
+ * vault profile (`auth:llm-provider:<name>`) that register_llm_provider and the
+ * resolver use, so the provider keeps working from any write path; every vault
+ * failure aborts the save instead of losing the key. Other sections keep their
+ * established one-level behavior (their references have their own readers).
  */
+function isRefLike(val: unknown): boolean {
+    return typeof val === 'string' && (/^(?:auth|tresor|ref):/i.test(val) || val.startsWith('nova-sealed:'))
+}
+
 async function extractSecretsToStore(section: string, values: Record<string, unknown>): Promise<{
     cleanValues: Record<string, unknown>
     storedNotes: string[]
@@ -42,7 +51,21 @@ async function extractSecretsToStore(section: string, values: Record<string, unk
     const cleanValues: Record<string, unknown> = {}
     const storedNotes: string[] = []
     for (const [key, val] of Object.entries(values)) {
-        const isSecretField = PROTECTED_KEY.test(key) && typeof val === 'string' && val.length >= 8
+        if (section === 'providers' && val && typeof val === 'object' && !Array.isArray(val)) {
+            const entry: Record<string, unknown> = {}
+            for (const [field, inner] of Object.entries(val as Record<string, unknown>)) {
+                if (/^api[-_]?key$/i.test(field) && typeof inner === 'string' && inner.length >= 8 && !isRefLike(inner)) {
+                    const { storeProviderKey } = await import('../secrets/provider-keys.js')
+                    entry[`${field}Ref`] = storeProviderKey(key, inner)   // throws → nothing is written at all
+                    storedNotes.push(`llm-provider:${String(key).toLowerCase()}`)
+                    continue
+                }
+                entry[field] = inner
+            }
+            cleanValues[key] = entry
+            continue
+        }
+        const isSecretField = PROTECTED_KEY.test(key) && typeof val === 'string' && val.length >= 8 && !isRefLike(val)
         if (!isSecretField) {
             cleanValues[key] = val
             continue

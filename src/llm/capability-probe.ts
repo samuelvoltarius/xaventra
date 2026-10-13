@@ -18,6 +18,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
 import { envOpenAIKeyFor } from './endpoint-trust.js'
+import { rehydrateConfigProviderKeys } from '../secrets/provider-keys.js'
 
 
 // ============================================
@@ -357,7 +358,8 @@ export async function probeAllModels(forceRefresh = false): Promise<ModelCapabil
     try {
         const cfgPath = resolveConfigPath()
         if (existsSync(cfgPath)) {
-            const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
+            // 2.89.5: provider apiKeys live in the vault; the config only refs them.
+            const cfg = rehydrateConfigProviderKeys(JSON.parse(readFileSync(cfgPath, 'utf-8')))
             if (cfg.providers?.minimax?.enabled && cfg.providers.minimax.apiKey) {
                 candidates.push({
                     endpoint: cfg.providers.minimax.baseUrl || 'https://api.minimax.io/v1',

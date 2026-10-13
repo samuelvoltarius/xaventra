@@ -26,6 +26,7 @@ const localRequire = createRequire(import.meta.url)
 import { resolveConfigPath } from '../config/config-path.js'
 import { fetchModelList } from '../llm/model-list-cache.js'
 import { atomicWriteJsonSync } from './atomic-storage.js'
+import { isPlaintextProviderKey, providerKeyProfileId, resolveProviderKey, storeProviderKey } from '../secrets/provider-keys.js'
 
 
 // ============================================
@@ -171,7 +172,8 @@ async function getOpenAIKey(): Promise<string | undefined> {
         const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
-            const configKey = cfg.auth?.openaiApiKey || cfg.providers?.openai?.apiKey
+            // 2.89.5: the config may only carry `apiKeyRef` — resolve through the vault.
+            const configKey = cfg.auth?.openaiApiKey || resolveProviderKey(cfg.providers?.openai)
             if (configKey && isRealApiKey(configKey)) return configKey
         }
     } catch { /* ignore */ }
@@ -630,7 +632,10 @@ export async function refreshModels(): Promise<void> {
 
 export interface ExternalProvider {
     name: string           // "minimax", "kimi", "deepseek", "mistral", etc.
+    /** Always empty on disk since 2.89.5 — the value lives in the encrypted vault. */
     apiKey: string
+    /** Reference into the vault: `auth:llm-provider:<name>`. */
+    apiKeyRef?: string
     baseUrl: string        // OpenAI-compatible endpoint
     models?: string[]      // known model IDs (optional — will be auto-discovered)
     roles?: ModelRole[]    // which roles this provider covers (default: ['chat', 'code'])
@@ -701,6 +706,8 @@ function loadExternalProviders(): ExternalProvider[] {
     try {
         if (existsSync(PROVIDERS_FILE)) {
             const list = JSON.parse(readFileSync(PROVIDERS_FILE, 'utf-8')) as ExternalProvider[]
+            // 2.89.5: plaintext keys on disk move into the vault on first read.
+            migratePlaintextProviderList(list)
             rehydrateExternalProviderKeysSync(list)
             return list
         }
@@ -708,18 +715,43 @@ function loadExternalProviders(): ExternalProvider[] {
     return []
 }
 
-/** Rehydrate provider keys from the 0600 auth store (never from the config file). */
+/** Rehydrate provider keys from the 0600 vault (never from the config file). */
 function rehydrateExternalProviderKeysSync(providers: ExternalProvider[]): void {
+    for (const entry of providers) {
+        if (entry.apiKey) continue
+        const key = resolveProviderKey({ apiKeyRef: entry.apiKeyRef || `auth:${providerKeyProfileId(entry.name)}` })
+            || resolveProviderKey({ apiKeyRef: `auth:llm-provider:${entry.name}` })  // legacy: raw name, un-normalized
+        if (key) entry.apiKey = key
+    }
+}
+
+/**
+ * 2.89.5: a legacy list file with clear-text keys moves each key into the vault
+ * and rewrites the file with references only. Entries whose vault write fails
+ * keep their value untouched so nothing is lost (the next read tries again).
+ */
+function migratePlaintextProviderList(list: ExternalProvider[]): string[] {
+    const moved: string[] = []
+    for (const entry of list) {
+        if (!entry || !isPlaintextProviderKey(entry.apiKey)) continue
+        try {
+            entry.apiKeyRef = storeProviderKey(entry.name, entry.apiKey)
+            entry.apiKey = ''
+            moved.push(entry.name)
+        } catch { /* vault unavailable: leave the entry for the next migration */ }
+    }
+    if (moved.length) saveExternalProviders(list)
+    return moved
+}
+
+/** Startup migration for the provider list file; returns the moved names. */
+export function migratePlaintextExternalProviderKeys(): string[] {
     try {
-        // createRequire keeps this sync on the hot path (package is ESM).
-        const { getOAuthManager } = localRequire('../auth/oauth.js') as typeof import('../auth/oauth.js')
-        const store = getOAuthManager() as unknown as { getProfile(id: string): { key?: string } | null }
-        for (const entry of providers) {
-            if (entry.apiKey) continue
-            const profile = store.getProfile(`llm-provider:${entry.name}`)
-            if (profile?.key) entry.apiKey = profile.key
-        }
-    } catch { /* auth store optional */ }
+        if (!existsSync(PROVIDERS_FILE)) return []
+        const list = JSON.parse(readFileSync(PROVIDERS_FILE, 'utf-8')) as ExternalProvider[]
+        if (!Array.isArray(list)) return []
+        return migratePlaintextProviderList(list)
+    } catch { return [] }
 }
 
 function saveExternalProviders(providers: ExternalProvider[]): void {
@@ -729,7 +761,7 @@ function saveExternalProviders(providers: ExternalProvider[]): void {
         // 2.89.4: the registry keeps a reference, never the clear key.
         const safe = providers.map(({ apiKey, ...rest }) => ({
             ...rest,
-            apiKeyRef: `auth:llm-provider:${rest.name}`,
+            apiKeyRef: rest.apiKeyRef || `auth:${providerKeyProfileId(rest.name)}`,
             apiKey: '',
         }))
         writeFileSync(PROVIDERS_FILE, JSON.stringify(safe, null, 2))
@@ -774,9 +806,20 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
         return { success: false, modelsFound: [], message: `Provider "${provider.name}" nicht erreichbar oder keine Modelle gefunden.` }
     }
 
+    // 2.89.5: the key moves into the sealed vault BEFORE any masked file write —
+    // if the vault is unavailable, registration stops instead of losing the key.
+    let apiKeyRef: string
+    try {
+        apiKeyRef = provider.apiKey
+            ? storeProviderKey(provider.name, provider.apiKey)
+            : `auth:${providerKeyProfileId(provider.name)}`
+    } catch {
+        return { success: false, modelsFound: [], message: `❌ Schlüssel konnte nicht im Tresor gespeichert werden — Registrierung abgebrochen.` }
+    }
+
     // Upsert
     const idx = providers.findIndex(p => p.name === provider.name)
-    const entry: ExternalProvider = { ...provider, models: modelsFound, addedAt: Date.now() }
+    const entry: ExternalProvider = { ...provider, apiKeyRef, models: modelsFound, addedAt: Date.now() }
     if (idx >= 0) {
         providers[idx] = entry
     } else {
@@ -784,21 +827,16 @@ export async function registerExternalProvider(provider: Omit<ExternalProvider, 
     }
     saveExternalProviders(providers)
 
-    // Also update xaventra.config.json providers section — 2.89.4: never the
-    // clear key. The value lives in the 0600 auth store; the config only refs it.
+    // Also update xaventra.config.json providers section — 2.89.5: never the
+    // clear key. The value lives in the 0600 sealed auth store; config and
+    // provider list only carry the `auth:llm-provider:<name>` reference.
     try {
-        const { registerSecretValue } = await import('../security/secret-redaction.js')
-        registerSecretValue(String(provider.apiKey || ''), `llm-provider:${provider.name}`)
-        const { getOAuthManager } = await import('../auth/oauth.js')
-        try {
-            ;(getOAuthManager() as any).setApiKey(`llm-provider:${provider.name}`, provider.name, String(provider.apiKey || ''))
-        } catch { /* auth store optional */ }
         const configPath = resolveConfigPath()
         if (existsSync(configPath)) {
             const cfg = JSON.parse(readFileSync(configPath, 'utf-8'))
             cfg.providers = cfg.providers || {}
             cfg.providers[provider.name] = {
-                apiKeyRef: `auth:llm-provider:${provider.name}`,
+                apiKeyRef,
                 baseUrl: provider.baseUrl,
                 enabled: provider.enabled,
             }
