@@ -7,9 +7,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
-import { rehydrateConfigProviderKeys } from '../secrets/provider-keys.js'
+import { providerKeyProfileId, rehydrateConfigProviderKeys, resolveProviderKey } from '../secrets/provider-keys.js'
 import { fetchModelList } from '../llm/model-list-cache.js'
 import { readProbeResults } from '../llm/capability-probe.js'
+
 
 
 // ============================================
@@ -467,6 +468,57 @@ export function cloudProviderCredentials(name: string): { apiKey?: string; baseU
     }
     return undefined
 }
+/** Names a self-registered provider may not take over: they already have a built-in route. */
+const RESERVED_PROVIDER_NAMES = new Set([...CLOUD_CONFIG_PROVIDERS, 'openai-codex', 'local', 'ollama', 'lm-studio', 'lmstudio', 'llama-cpp', 'vllm'])
+
+/**
+ * Registered providers as register_llm_provider stored them, key rehydrated from the sealed vault.
+ * (Read here, not via model-resolver: a static import of that module from this one makes tsc mis-infer
+ * unrelated regex match results to `never` - the file format is the contract, same as model-resolver's.)
+ */
+function readRegisteredProviders(): Array<{ name: string; baseUrl: string; apiKey: string; models: string[]; enabled: boolean }> {
+    try {
+        const file = join(process.cwd(), '.nova-data', 'external-providers.json')
+        if (!existsSync(file)) return []
+        const list = JSON.parse(readFileSync(file, 'utf-8'))
+        if (!Array.isArray(list)) return []
+        return list.filter(entry => entry && typeof entry === 'object' && entry.name).map((entry: any) => {
+            const name = String(entry.name)
+            const apiKey = (entry.apiKey && !/^(?:auth|tresor|ref):/i.test(String(entry.apiKey)) && !String(entry.apiKey).startsWith('nova-sealed:') ? String(entry.apiKey) : '')
+                || resolveProviderKey({ apiKeyRef: entry.apiKeyRef || `auth:${providerKeyProfileId(name)}` })
+                || resolveProviderKey({ apiKeyRef: `auth:llm-provider:${name}` })
+            return { name, baseUrl: String(entry.baseUrl || ''), apiKey, models: Array.isArray(entry.models) ? entry.models.map(String) : [], enabled: entry.enabled !== false }
+        })
+    } catch { return [] }
+}
+
+/**
+ * 2.89.7: route of an owner-REGISTERED OpenAI-compatible provider (register_llm_provider:
+ * `.nova-data/external-providers.json`, key in the sealed vault) for an explicitly named model.
+ * Only an enabled provider that lists the model, has a vault-resolvable key and a plain http(s)
+ * baseUrl yields a route - otherwise undefined and the model is not a candidate.
+ */
+export function registeredProviderRoute(model: string, providerName?: string): { name: string; baseUrl: string; apiKey: string } | undefined {
+    const wanted = String(model || '').trim()
+    if (!wanted) return undefined
+    let configured: Record<string, any> = {}
+    try { configured = getNovaConfig().providers || {} } catch { /* config optional */ }
+    const list = readRegisteredProviders()
+    for (const ext of list) {
+        const name = String(ext?.name || '')
+        if (!name || RESERVED_PROVIDER_NAMES.has(name.toLowerCase())) continue
+        if (providerName && name.toLowerCase() !== providerName.toLowerCase()) continue
+        if (!ext.enabled || configured[name]?.enabled === false) continue
+        if (!ext.models.includes(wanted)) continue
+        const apiKey = String(ext.apiKey || '')
+        if (!apiKey) continue
+        const baseUrl = String(ext.baseUrl || configured[name]?.baseUrl || '').replace(/\/+$/, '')
+        if (!/^https?:\/\/[^\s/]+/i.test(baseUrl)) continue
+        return { name, baseUrl, apiKey }
+    }
+    return undefined
+}
+
 const PROVIDER_HINTS: Array<[RegExp, string]> = [
     [/^(?:gpt-|o\d|chatgpt)/i, 'openai'],
     [/^claude/i, 'claude'],
@@ -492,6 +544,13 @@ export function configuredCloudFallbacks(): Array<{ provider: string; model: str
     for (const item of listed) {
         const model = String(item || '').trim()
         if (!model) continue
+        // 2.89.7: a model the owner's own registered provider lists is an explicit cloud route
+        // (its baseUrl + vault key) - checked first, it is the more specific statement.
+        const registered = registeredProviderRoute(model)
+        if (registered) {
+            if (!out.some(entry => entry.model === model && entry.provider === registered.name)) out.push({ provider: registered.name, model })
+            continue
+        }
         // A model a local runtime serves is a LOCAL fallback; the local chain
         // already covers it and must stay in front of any cloud route.
         const discovered = availableLLMs.find(entry => entry.model === model)
@@ -506,6 +565,11 @@ export function configuredCloudFallbacks(): Array<{ provider: string; model: str
         out.push({ provider, model })
     }
     return out
+}
+
+/** True while the SDK holds this endpoint as unreachable (see nova-llm-sdk server health). */
+async function isEndpointHeld(endpoint: string): Promise<boolean> {
+    try { return Boolean((await import('../llm/nova-llm-sdk.js')).isServerUnreachable?.(endpoint)) } catch { return false }
 }
 
 export async function createLLM(config: { provider?: string; model?: string; internalModel?: string;[key: string]: any }) {
@@ -1230,6 +1294,8 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             for (const discovered of candidates.slice(0, 4) as LLMEntry[]) {
                                 options?.signal?.throwIfAborted()
                                 if (!discovered.endpoint || failedEndpoints.has(discovered.endpoint)) continue
+                                // 2.89.7: an endpoint already held as unreachable is not asked again (no 3 s probe per message).
+                                if (await isEndpointHeld(discovered.endpoint)) { failedEndpoints.add(discovered.endpoint); continue }
                                 const localLLM = createLocalLLM({
                                     baseUrl: discovered.endpoint,
                                     model: discovered.model,
@@ -1273,6 +1339,20 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     { reason: 'timeout', provider: _provider, model: fallbackModel, cause: lastLocalError })
                         }
 
+                        // 2.89.7: an owner-registered provider (own baseUrl + vault key) listed in
+                        // fallbackModels. Exactly its endpoint, never widened to other candidates.
+                        const registeredRoute = registeredProviderRoute(fallbackModel, _provider)
+                        if (registeredRoute) {
+                            const listedFallbacks = (getNovaConfig() as any)?.fallbackModels
+                            if (!Array.isArray(listedFallbacks) || !listedFallbacks.includes(fallbackModel)) {
+                                throw new Error(`Cloud-Failover auf ${_provider}/${fallbackModel} nicht freigegeben (nicht in fallbackModels konfiguriert)`)
+                            }
+                            activeLLM = await createNovaLLMClient({
+                                provider: 'local', model: fallbackModel,
+                                baseUrl: registeredRoute.baseUrl, apiKey: registeredRoute.apiKey,
+                                isolated: true, exclusive: true,
+                            })
+                        } else {
                         // Cloud fallback only to a model the owner listed in
                         // fallbackModels (or the provider already chosen as
                         // primary). Anything else is a visible error, never a
@@ -1295,6 +1375,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                             ...(credentials?.apiKey ? { apiKey: credentials.apiKey } : {}),
                             ...(credentials?.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
                         })
+                        }
                     }
 
                     const response = await activeLLM.complete(
