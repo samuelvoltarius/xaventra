@@ -439,6 +439,75 @@ export async function detectAvailableLLMs(): Promise<void> {
     console.log(`[Nova] 📋 Available LLMs: ${availableLLMs.map(l => l.model).join(', ')}`)
 }
 
+/** Cloud section names in `providers.*` whose key lives in the sealed vault. */
+const CLOUD_CONFIG_PROVIDERS = new Set(['minimax', 'openai', 'anthropic', 'claude', 'openrouter', 'groq'])
+/** Config/discovery provider name → the SDK provider the client is built with. */
+function toSdkCloudProvider(name: string): string {
+    const value = String(name || '').toLowerCase()
+    if (value === 'anthropic' || value === 'claude') return 'claude'
+    if (value === 'minimax') return 'minimax'
+    if (['openai', 'openai-codex', 'openrouter', 'groq'].includes(value)) return 'openai'
+    return ''
+}
+/** Alias list under which a cloud provider's key may be configured. */
+function cloudProviderAliases(name: string): string[] {
+    const value = String(name || '').toLowerCase()
+    const sdk = toSdkCloudProvider(value)
+    return [...new Set([value, sdk, value === 'claude' ? 'anthropic' : '', sdk === 'claude' ? 'anthropic' : ''].filter(Boolean))]
+}
+/**
+ * Credentials of a cloud provider as the vault rehydrates them into
+ * `providers.<name>` (see `getNovaConfig`). Undefined when nothing is configured.
+ */
+export function cloudProviderCredentials(name: string): { apiKey?: string; baseUrl?: string } | undefined {
+    const providers = getNovaConfig().providers || {}
+    for (const alias of cloudProviderAliases(name)) {
+        const section = providers[alias]
+        if (section && (section.apiKey || section.baseUrl)) return { apiKey: section.apiKey, baseUrl: section.baseUrl }
+    }
+    return undefined
+}
+const PROVIDER_HINTS: Array<[RegExp, string]> = [
+    [/^(?:gpt-|o\d|chatgpt)/i, 'openai'],
+    [/^claude/i, 'claude'],
+    [/^minimax/i, 'minimax'],
+]
+
+/**
+ * Owner-approved cloud fallbacks from `fallbackModels` (2.89.6). A node without
+ * the Main GPU cannot reach the configured local model; it must fall over to a
+ * cloud provider the owner configured (key from the sealed provider vault)
+ * instead of hanging. Only explicitly listed models are ever routed to a cloud —
+ * discovery never widens this list. The `provider` is the configured section
+ * name so the credential lookup keeps hitting the right vault profile.
+ */
+export function configuredCloudFallbacks(): Array<{ provider: string; model: string }> {
+    const cfg = getNovaConfig()
+    const listed = Array.isArray(cfg.fallbackModels) ? cfg.fallbackModels : []
+    const providers = cfg.providers || {}
+    const keyedCloud = Object.entries(providers)
+        .filter(([name, section]: [string, any]) => CLOUD_CONFIG_PROVIDERS.has(name.toLowerCase()) && Boolean(section?.apiKey))
+        .map(([name]) => name.toLowerCase())
+    const out: Array<{ provider: string; model: string }> = []
+    for (const item of listed) {
+        const model = String(item || '').trim()
+        if (!model) continue
+        // A model a local runtime serves is a LOCAL fallback; the local chain
+        // already covers it and must stay in front of any cloud route.
+        const discovered = availableLLMs.find(entry => entry.model === model)
+        if (discovered && isLocalLLMEntry(discovered)) continue
+        const fromDiscovery = discovered && !isLocalLLMEntry(discovered) ? String(discovered.provider).toLowerCase() : ''
+        const hinted = PROVIDER_HINTS.find(([pattern]) => pattern.test(model))?.[1] || ''
+        const provider = [fromDiscovery, hinted, String(cfg.provider || '').toLowerCase(), ...keyedCloud]
+            .map(name => name.toLowerCase())
+            .find(name => (CLOUD_CONFIG_PROVIDERS.has(name) || name === 'openai-codex') && Boolean(cloudProviderCredentials(name)))
+        if (!provider) continue
+        if (out.some(entry => entry.model === model && entry.provider === provider)) continue
+        out.push({ provider, model })
+    }
+    return out
+}
+
 export async function createLLM(config: { provider?: string; model?: string; internalModel?: string;[key: string]: any }) {
     // Detect available LLMs on first call
     if (availableLLMs.length === 0) {
@@ -1101,7 +1170,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                 }
             }
 
-            const { runWithModelFallback, getDefaultFallbacks, localFallbackCandidates } = await import('../llm/model-fallback.js')
+            const { runWithModelFallback, getDefaultFallbacks, localFallbackCandidates, FailoverError, isFailoverError } = await import('../llm/model-fallback.js')
             const fallbackEntry = minimaxAdapter || activeProvider === 'minimax'
                 ? { provider: 'local', model: 'auto' }
                 : { provider: activeProvider, model: activeModelId }
@@ -1117,7 +1186,10 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                 signal: options?.signal,
                 provider: fallbackEntry.provider,
                 model: fallbackEntry.model,
-                fallbacks: getDefaultFallbacks(runningServices),
+                // Local chain first, then the cloud models the owner listed in
+                // fallbackModels: a standby without the Main GPU has no reachable
+                // local model and must use the configured cloud instead of hanging.
+                fallbacks: [...getDefaultFallbacks(runningServices), ...configuredCloudFallbacks()],
                 run: async (_provider, fallbackModel) => {
                     // Use primary LLM if same model, otherwise create new client for fallback
                     let activeLLM = llm
@@ -1146,7 +1218,13 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     return aSlow - bSlow
                                 })
                             const candidates = localFallbackCandidates(localEntries, fallbackModel, runningServices)
-                            if (candidates.length === 0) throw new Error(fallbackModel === 'auto' ? 'Kein laufendes lokales LLM entdeckt' : `${fallbackModel} läuft auf keinem erreichbaren Endpunkt`)
+                            // A dead local runtime is a failover-worthy failure,
+                            // not a fatal one: the chain must reach the
+                            // owner-configured cloud fallback (2.89.6).
+                            if (candidates.length === 0) throw new FailoverError(
+                                fallbackModel === 'auto' ? 'Kein laufendes lokales LLM entdeckt' : `${fallbackModel} läuft auf keinem erreichbaren Endpunkt`,
+                                { reason: 'timeout', provider: _provider, model: fallbackModel },
+                            )
                             const failedEndpoints = new Set<string>()
                             let lastLocalError: unknown = new Error('Kein lokales LLM erreichbar')
                             for (const discovered of candidates.slice(0, 4) as LLMEntry[]) {
@@ -1189,7 +1267,10 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                                     console.log(`[ModelFallback] Local candidate ${discovered.model} failed: ${String(err).slice(0, 120)}`)
                                 }
                             }
-                            throw lastLocalError
+                            throw isFailoverError(lastLocalError)
+                                ? lastLocalError
+                                : new FailoverError(String((lastLocalError as Error)?.message || lastLocalError || 'Kein lokales LLM erreichbar'),
+                                    { reason: 'timeout', provider: _provider, model: fallbackModel, cause: lastLocalError })
                         }
 
                         // Cloud fallback only to a model the owner listed in
@@ -1198,12 +1279,22 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                         // silent route of the prompt to another cloud.
                         const configuredFallbacks = (getNovaConfig() as any)?.fallbackModels
                         const approved = _provider === activeProvider
+                            || toSdkCloudProvider(_provider) === String(activeProvider)
                             || (Array.isArray(configuredFallbacks) && configuredFallbacks.includes(fallbackModel))
                         if (!approved) {
                             throw new Error(`Cloud-Failover auf ${_provider}/${fallbackModel} nicht freigegeben (nicht in fallbackModels konfiguriert)`)
                         }
-                        const sdkProv = _provider
-                        activeLLM = await createNovaLLMClient({ provider: sdkProv as any, model: fallbackModel })
+                        const sdkProv = toSdkCloudProvider(_provider) || _provider
+                        // The key comes from the sealed provider vault via the
+                        // rehydrated config section — a standby without the Main
+                        // GPU must not stall on a missing credential.
+                        const credentials = cloudProviderCredentials(_provider)
+                        activeLLM = await createNovaLLMClient({
+                            provider: sdkProv as any,
+                            model: fallbackModel,
+                            ...(credentials?.apiKey ? { apiKey: credentials.apiKey } : {}),
+                            ...(credentials?.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+                        })
                     }
 
                     const response = await activeLLM.complete(

@@ -17,7 +17,7 @@ vi.mock('../llm/providers/minimax.js', () => ({
 vi.mock('../llm/openai.js', () => ({
     createOpenAILLM: () => ({ complete: async () => ({ content: 'legacy adapter without tools', model: 'gpt-5.5' }) }),
 }))
-import { availableLLMs, createLLM, invalidateConfigCache } from './llm-factory.js'
+import { availableLLMs, createLLM, invalidateConfigCache, configuredCloudFallbacks } from './llm-factory.js'
 import { setNovaConfig } from './config.js'
 import * as fallback from '../llm/model-fallback.js'
 import { createNovaLLMClient } from '../llm/nova-llm-sdk.js'
@@ -90,5 +90,69 @@ describe('cloud failover (R2 UEB-22)', () => {
         const llm = await localPrimaryFallingBackTo('gpt-approved')
         await expect(llm.complete('Hallo')).resolves.toMatchObject({ content: 'from switched model' })
         expect(createNovaLLMClient).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai', model: 'gpt-approved' }))
+    })
+})
+
+describe('cloud failover on a worker without the Main GPU (2.89.6)', () => {
+    function writeStandbyConfig(fallbackModels: string[], providers: Record<string, unknown>) {
+        const cfg = JSON.parse(originalConfig)
+        writeFileSync(configFile(), JSON.stringify({
+            ...cfg, provider: 'local', model: 'local-model', fallbackModels,
+            // The standby has no Main GPU: its own provider sections decide
+            // which cloud may be used, so they replace the fixture config.
+            providers,
+        }))
+        invalidateConfigCache()
+    }
+
+    it('lists only owner-approved cloud models, never a locally served one', () => {
+        writeStandbyConfig(['gpt-approved', 'local-model'], { openai: { apiKey: 'fixture-openai-key' } })
+        expect(configuredCloudFallbacks()).toEqual([{ provider: 'openai', model: 'gpt-approved' }])
+    })
+
+    it('routes an unlisted-name fallback model to the one cloud provider that has a key', () => {
+        writeStandbyConfig(['owner-cloud-model'], { anthropic: { apiKey: 'fixture-claude-key' } })
+        expect(configuredCloudFallbacks()).toEqual([{ provider: 'anthropic', model: 'owner-cloud-model' }])
+    })
+
+    it('invents no cloud route without a configured provider key', () => {
+        writeStandbyConfig(['gpt-approved'], {})
+        expect(configuredCloudFallbacks()).toEqual([])
+    })
+
+    it('appends the approved cloud models after the local chain', async () => {
+        writeStandbyConfig(['gpt-approved'], { openai: { apiKey: 'fixture-openai-key' } })
+        const captured = vi.spyOn(fallback, 'runWithModelFallback').mockResolvedValue({ result: { content: 'ok' }, attempts: [], model: 'local-model' } as any)
+        const llm: any = await createLLM({ provider: 'local', model: 'local-model' })
+        await llm.complete('Hallo')
+        const candidates = captured.mock.calls[0][0].fallbacks as Array<{ provider: string; model: string }>
+        expect(candidates[0]).toEqual({ provider: 'local', model: 'auto' })
+        expect(candidates[candidates.length - 1]).toEqual({ provider: 'openai', model: 'gpt-approved' })
+    })
+
+    it('falls over to the configured cloud (vault key) instead of hanging when no local runtime is running', async () => {
+        writeStandbyConfig(['gpt-approved'], { openai: { apiKey: 'fixture-openai-key' } })
+        // No running local runtime: the configured local model refuses the
+        // connection and the fallback chain must reach the approved cloud.
+        vi.spyOn(fallback, 'localFallbackCandidates').mockReturnValue([])
+        const sdk = vi.mocked(createNovaLLMClient)
+        sdk.mockImplementation(async (config: any) => ({
+            getCurrentConfig: () => config,
+            configure: vi.fn(),
+            complete: async () => {
+                if (String(config.provider) === 'local') throw new Error('fetch failed: ECONNREFUSED 127.0.0.1:19992')
+                return { content: 'from switched model' }
+            },
+        }))
+        try {
+            const llm: any = await createLLM({ provider: 'local', model: 'local-model' })
+            sdk.mockClear()
+            await expect(llm.complete('Hallo')).resolves.toMatchObject({ content: 'from switched model' })
+            expect(sdk).toHaveBeenCalledWith(expect.objectContaining({
+                provider: 'openai', model: 'gpt-approved', apiKey: 'fixture-openai-key',
+            }))
+        } finally {
+            sdk.mockImplementation(async (config: any) => ({ getCurrentConfig: () => config, configure: vi.fn(), complete: sdkComplete }))
+        }
     })
 })
