@@ -254,6 +254,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/llm-factory.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/message-pipeline.ts",
       "path": ".nova-data"
     },
@@ -487,6 +491,10 @@
     },
     {
       "owner": "src/e2e/provider-key-vault.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/e2e/standby-provider-fallback.test.ts",
       "path": ".nova-data"
     },
     {

@@ -146,6 +146,41 @@ last, so the returning Main can reconnect immediately instead of waiting out
 another TTL. A weaker or stale candidate never receives the lease; the
 transactional coordinator decides, and without one the lease is kept.
 
+### A Standby-Main without the Main GPU (2.89.7)
+
+A Standby-Main usually has no GPU: its configured local model
+(`providers.local.baseUrl`) runs on another node. When that node is gone the
+standby answers through a cloud model **you list explicitly** in
+`fallbackModels` - a built-in provider (OpenAI, Anthropic, MiniMax, OpenRouter,
+Groq) or a provider you registered yourself with `register_llm_provider`
+(OpenAI-compatible, key in the sealed vault, referenced as
+`auth:llm-provider:<name>`). Example for a standby that falls back to the
+registered provider `acme`:
+
+```json
+{
+  "provider": "local",
+  "model": "qwen-remote",
+  "providers": {
+    "local": { "baseUrl": "http://node-a.example.com:8000/v1" },
+    "acme":  { "apiKeyRef": "auth:llm-provider:acme", "baseUrl": "https://api.acme.example/v1", "enabled": true }
+  },
+  "fallbackModels": ["acme-chat-pro"]
+}
+```
+
+- The model must be named in `fallbackModels` **and** listed in the provider's
+  `models` (`.nova-data/external-providers.json`), the provider must be
+  enabled and its key must resolve from the vault. Otherwise there is no cloud
+  route - nothing is added on its own, and the local chain always comes first.
+- The call goes to exactly that provider's `baseUrl` with its vault key; the
+  key never appears in logs, replies or files.
+- A remote local endpoint that does not answer within 4 s is held as
+  unreachable for 5 minutes (the next messages skip it at once); a background
+  check every 15 s notices when it is back, and the next answer is local again.
+  Without a `fallbackModels` entry the standby reports the failure instead of
+  using a cloud.
+
 ### Limits
 
 - Exactly one node polls Telegram at a time. An old installation running old

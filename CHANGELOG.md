@@ -12,6 +12,27 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.7] — 2026-10-14
+
+### Added
+
+- **A self-registered provider can be a fallback model.** A model named in
+  `fallbackModels` that an enabled provider from `register_llm_provider`
+  lists (and whose vault key resolves) is now used as the cloud fallback of a
+  worker whose local model is gone - called at exactly that provider's
+  `baseUrl` with its key from the sealed vault, never widened to other
+  candidates. `docs/MESH.md` shows a Standby-Main example.
+
+### Fixed
+
+- **A dead remote local endpoint no longer stalls the answer.** A node that
+  drops packets never answers "connection refused", so every message waited
+  the full 45-55 s request budget. Remote endpoints are now probed (4 s), a
+  dead one is held for 5 minutes, its return is detected by a background
+  check (one per 15 s) and the "no endpoint" case is a failover error, so the
+  chain reaches the configured cloud model. The background fact extraction is
+  capped at 10 s.
+
 ## [2.89.6] — 2026-10-13
 
 ### Added
