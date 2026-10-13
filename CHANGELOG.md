@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- **openrouter and groq keys never leave through the OpenAI client.** The automatic cloud fallback (2.89.6) built them through the `openai` SDK provider, which ignores `baseUrl`; they are no longer fallback candidates. Not active in any shipped configuration (`fallbackModels` empty by default).
 - **A dead remote local endpoint no longer stalls the answer.** A node that
   drops packets never answers "connection refused", so every message waited
   the full 45-55 s request budget. Remote endpoints are now probed (4 s), a
