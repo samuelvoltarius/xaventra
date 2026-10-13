@@ -1481,6 +1481,22 @@
       ]
     },
     {
+      "module": "src/core/ai-service-test.ts",
+      "imports": [
+        "../mesh/capability-graph.js",
+        "../resilience/ssrf-guard.js",
+        "./ai-test-audio.js",
+        "node:net",
+        "node:os"
+      ]
+    },
+    {
+      "module": "src/core/ai-test-audio.ts",
+      "imports": [
+        "node:zlib"
+      ]
+    },
+    {
       "module": "src/core/approval-card-sources.ts",
       "imports": [
         "../doctor/self-heal.js",
@@ -1712,6 +1728,7 @@
       "module": "src/core/correction-detector.ts",
       "imports": [
         "../memory/memory-governance.js",
+        "../security/secret-redaction.js",
         "../tools/ssh-tool-hosts.js",
         "./infrastructure-failure.js",
         "node:fs",
@@ -1976,6 +1993,7 @@
         "../config/config-path.js",
         "../llm/capability-probe.js",
         "../llm/model-list-cache.js",
+        "../secrets/provider-keys.js",
         "node:fs",
         "node:path"
       ]
@@ -2050,6 +2068,7 @@
       "imports": [
         "../config/config-path.js",
         "../llm/model-list-cache.js",
+        "../secrets/provider-keys.js",
         "./atomic-storage.js",
         "./side-effects.js",
         "node:fs",
@@ -4761,7 +4780,8 @@
     {
       "module": "src/llm/active-runtime.ts",
       "imports": [
-        "../routing/model-registry.js"
+        "../routing/model-registry.js",
+        "../secrets/provider-keys.js"
       ]
     },
     {
@@ -4786,6 +4806,7 @@
       "module": "src/llm/capability-probe.ts",
       "imports": [
         "../config/config-path.js",
+        "../secrets/provider-keys.js",
         "./endpoint-trust.js",
         "node:fs",
         "node:path"
@@ -4883,6 +4904,7 @@
         "../config/config-path.js",
         "../core/atomic-storage.js",
         "../core/model-defaults.js",
+        "../secrets/provider-keys.js",
         "./model-list-cache.js",
         "node:fs",
         "node:path"
@@ -4957,6 +4979,7 @@
       "module": "src/llm/provider-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "../secrets/provider-keys.js",
         "./model-list-cache.js",
         "node:fs",
         "node:path"
@@ -6324,6 +6347,17 @@
       "module": "src/secrets/local-sealed-store.ts",
       "imports": [
         "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/secrets/provider-keys.ts",
+      "imports": [
+        "../auth/oauth.js",
+        "../config/config-path.js",
+        "../core/atomic-storage.js",
+        "../security/secret-redaction.js",
         "node:fs",
         "node:path"
       ]

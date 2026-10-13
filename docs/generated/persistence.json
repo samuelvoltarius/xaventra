@@ -262,6 +262,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/model-resolver-register.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/model-resolver.ts",
       "path": ".nova-data"
     },
@@ -479,6 +483,10 @@
     },
     {
       "owner": "src/e2e/conversation-continuity.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/e2e/provider-key-vault.test.ts",
       "path": ".nova-data"
     },
     {
