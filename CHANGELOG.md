@@ -12,6 +12,35 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.8] — 2026-10-17
+
+### Added
+
+- **A self-registered provider can be the main model.** `provider: "<name>"`
+  and a `model` that the provider from `register_llm_provider` lists now
+  run at exactly that provider's `baseUrl` with its key from the sealed vault
+  (the same isolated, exclusive client as the 2.89.7 fallback). Status and
+  discovery show the real provider name. If it fails, the order is: local
+  chain (remote endpoint, fast dead detection) then `fallbackModels`.
+  `docs/CONFIGURATION.md` has an example.
+
+### Fixed
+
+- **An unknown provider name never becomes the OpenAI client.** The factory
+  mapped every unknown name to the `openai` SDK provider, which ignores
+  `baseUrl`; the key of a registered provider would have gone to the OpenAI
+  endpoint. Unknown, unregistered, disabled or key-less providers are now
+  refused with a log line and the local chain is used. `openrouter` and `groq`
+  as primary use their own `baseUrl` (or are refused), also on a runtime model
+  switch.
+- **No internal wording in answers.** A model abort no longer ends in
+  "Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: inference
+  stopped before completion"; the user gets a short German sentence with the
+  next step, the technical reason stays in the log.
+- **Prompt cache friendly.** The per-minute clock block moved from the middle
+  of the system prompt to its end, so the long static head stays identical
+  between turns (matters for the CPU fallback model).
+
 ## [2.89.7] — 2026-10-14
 
 ### Added

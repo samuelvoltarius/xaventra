@@ -221,6 +221,37 @@ NOVA_DOCKER_HOST=http://host:2375   # For Docker provisioning
 | Ollama | `gemma3:12b` | ⚡⚡ | ★★★★ |
 | Ollama | `gemma3:27b` | ⚡ | ★★★★★ |
 
+### A self-registered provider as the main model (2.89.8)
+
+An OpenAI-compatible provider you added with `register_llm_provider`
+(stored in `.nova-data/external-providers.json`, key in the sealed provider
+vault under `auth:llm-provider:<name>`) can be the **primary** model. It is
+called at exactly its own `baseUrl` with its own key; nothing is sent to
+another server, and a failure never sends the key anywhere else.
+
+```json
+{
+  "provider": "acme",
+  "model": "acme-chat-pro",
+  "providers": {
+    "acme":  { "apiKeyRef": "auth:llm-provider:acme", "baseUrl": "https://api.example.com/v1", "enabled": true },
+    "local": { "baseUrl": "http://192.0.2.10:8000/v1", "enabled": true }
+  },
+  "fallbackModels": []
+}
+```
+
+- `model` must be one of the provider's registered `models`; the provider must
+  be enabled and have a key in the vault, otherwise it is refused.
+- Order when the primary fails (timeout, 5xx, network): the local chain
+  (`providers.local`, a remote endpoint is probed quickly and held when dead)
+  and then the models listed in `fallbackModels`.
+- A provider name that is neither built in (`local`, `openai`, `anthropic`,
+  `minimax`, ...) nor registered is **refused at startup** (log line
+  `refused (fail-closed)`) and the local chain is used. It is never built as
+  the `openai` client. `openrouter` and `groq` are used only through their own
+  `baseUrl` (default: their public API) and need a key and an explicit `model`.
+
 ---
 
 ## Special Files

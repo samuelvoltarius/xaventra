@@ -7,7 +7,7 @@ description: >-
   epoch or fencing.
 type: application
 version: 0.2.0
-appVersion: "2.89.7"
+appVersion: "2.89.8"
 home: https://github.com/samuelvoltarius/xaventra
 sources:
   - https://github.com/samuelvoltarius/xaventra
