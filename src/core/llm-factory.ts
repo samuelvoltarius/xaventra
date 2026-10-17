@@ -525,6 +525,62 @@ export function registeredProviderRoute(model: string, providerName?: string): {
     return undefined
 }
 
+/** Built-in provider names createLLM knows how to build (anything else must be a registered provider, or it fails closed). */
+const BUILTIN_PRIMARY_PROVIDERS: Record<string, 'claude' | 'openai' | 'local' | 'minimax'> = {
+    'anthropic': 'claude',
+    'claude': 'claude',
+    'openai': 'openai',
+    'openai-codex': 'openai',   // OAuth transport, never a baseUrl
+    'local': 'local',
+    'ollama': 'local',
+    'lm-studio': 'local',
+    'lmstudio': 'local',
+    'llama-cpp': 'local',
+    'vllm': 'local',
+    'minimax': 'minimax',
+}
+/** OpenAI-compatible hosts that are reached through their own baseUrl (never through the `openai` SDK provider). */
+const OPENAI_COMPATIBLE_DEFAULT_URLS: Record<string, string> = {
+    'openrouter': 'https://openrouter.ai/api/v1',
+    'groq': 'https://api.groq.com/openai/v1',
+}
+
+/**
+ * 2.89.8: how the configured PRIMARY provider is reached.
+ *  - `route`: an exclusive endpoint (owner-registered provider, or openrouter/groq with their real baseUrl):
+ *    called at exactly that baseUrl with its own key, never through the `openai` SDK provider (which ignores
+ *    baseUrl and would send the key to the OpenAI endpoint).
+ *  - `failClosed`: the name is neither built in nor usable as a registered provider - nothing is built for it.
+ *  - neither: a built-in provider, handled by the regular path.
+ */
+export function resolvePrimaryRoute(provider: string | undefined, model: string | undefined, inlineProviders?: Record<string, any>):
+    { route?: { name: string; baseUrl: string; apiKey: string; model: string; models: string[] }; failClosed?: string } {
+    const name = String(provider || 'local').trim()
+    const lower = name.toLowerCase()
+    if (lower in BUILTIN_PRIMARY_PROVIDERS) return {}
+    let configured: Record<string, any> = {}
+    try { configured = { ...(inlineProviders || {}), ...(getNovaConfig().providers || {}) } } catch { configured = { ...(inlineProviders || {}) } }
+    const wanted = model && model !== 'auto' ? String(model).trim() : ''
+    if (lower in OPENAI_COMPATIBLE_DEFAULT_URLS) {
+        const section = configured[lower] || configured[name] || {}
+        const apiKey = String(section.apiKey || '')
+        const baseUrl = String(section.baseUrl || OPENAI_COMPATIBLE_DEFAULT_URLS[lower]).replace(/\/+$/, '')
+        if (!apiKey) return { failClosed: `${name} has no API key` }
+        if (!/^https?:\/\/[^\s/]+/i.test(baseUrl)) return { failClosed: `${name} has no usable baseUrl` }
+        if (!wanted) return { failClosed: `${name} needs an explicit model` }
+        return { route: { name, baseUrl, apiKey, model: wanted, models: [wanted] } }
+    }
+    const entry = readRegisteredProviders().find(item => item.name.toLowerCase() === lower)
+    if (!entry || !entry.enabled || configured[entry.name]?.enabled === false) {
+        return { failClosed: `provider "${name}" is neither built in nor registered (register_llm_provider)` }
+    }
+    const chosen = wanted || entry.models[0] || ''
+    if (!chosen) return { failClosed: `registered provider "${name}" lists no model` }
+    const route = registeredProviderRoute(chosen, entry.name)
+    if (!route) return { failClosed: `registered provider "${name}" cannot serve "${chosen}" (model not listed, no vault key or no http(s) baseUrl)` }
+    return { route: { ...route, model: chosen, models: entry.models } }
+}
+
 const PROVIDER_HINTS: Array<[RegExp, string]> = [
     [/^(?:gpt-|o\d|chatgpt)/i, 'openai'],
     [/^claude/i, 'claude'],
@@ -584,6 +640,25 @@ export async function createLLM(config: { provider?: string; model?: string; int
         await detectAvailableLLMs()
     }
 
+    // 2.89.8: an unknown provider name must never fall onto the `openai` SDK provider (it ignores baseUrl, the
+    // key of a self-registered provider would go to the OpenAI endpoint). Registered providers (and openrouter/
+    // groq) get an exclusive client at their own baseUrl; anything else fails closed onto the local chain.
+    const primaryRoute = resolvePrimaryRoute(config.provider, config.model, config.providers)
+    const exclusivePrimary = primaryRoute.route
+    const requestedProvider = config.provider
+    if (primaryRoute.failClosed) {
+        console.error(`[Nova] Primary provider "${requestedProvider}" refused (fail-closed, no key leaves this machine): ${primaryRoute.failClosed}. Using the local chain instead.`)
+        const state = (globalThis as any).__novaState
+        if (state) {
+            state.providerHealth = {
+                ...(state.providerHealth || {}),
+                [String(requestedProvider)]: { status: 'unavailable', reason: 'provider_not_usable', detail: primaryRoute.failClosed },
+            }
+        }
+        config = { ...config, provider: 'local', model: '' }
+    }
+    const failedClosed = Boolean(primaryRoute.failClosed)
+
     const { createNovaLLMClient } = await import('../llm/nova-llm-sdk.js')
 
     // Map config provider names to SDK provider types
@@ -597,20 +672,28 @@ export async function createLLM(config: { provider?: string; model?: string; int
         'minimax': 'minimax',
     }
 
-    const sdkProvider = providerMap[config.provider || 'local'] || 'openai'
-    const configuredSection = config.providers?.[config.provider || 'local']
-        || (getNovaConfig() as any)?.providers?.[config.provider || 'local']
-    const explicitLocalEndpoint = sdkProvider === 'local' && configuredSection?.enabled !== false
+    const sdkProvider = exclusivePrimary ? 'local' : (providerMap[config.provider || 'local'] ?? 'local')
+    const configuredSection = exclusivePrimary ? undefined : (config.providers?.[config.provider || 'local']
+        || (getNovaConfig() as any)?.providers?.[config.provider || 'local'])
+    const explicitLocalEndpoint = sdkProvider === 'local' && !exclusivePrimary && configuredSection?.enabled !== false
         ? configuredSection?.baseUrl : undefined
 
     // Dynamic model selection: use config model if explicitly set,
     // otherwise pick the first available discovered model
-    let model = (config.model && config.model !== 'auto') ? config.model : ''
+    let model = exclusivePrimary ? exclusivePrimary.model : ((config.model && config.model !== 'auto') ? config.model : '')
+    if (exclusivePrimary) {
+        // Listed so discovery/status show the real provider; no endpoint or key in the entry.
+        for (const listed of new Set([exclusivePrimary.model, ...exclusivePrimary.models])) {
+            if (!availableLLMs.some(l => l.model === listed && l.provider === exclusivePrimary.name)) {
+                availableLLMs.push({ provider: exclusivePrimary.name, model: listed, local: false })
+            }
+        }
+    }
 
     // If config explicitly sets a model, TRUST IT — even if not in discovered list.
     // This is critical for OAuth subscription access where /v1/models doesn't work
     // but the models ARE available for chat/completions.
-    if (model && !availableLLMs.some(l => l.model === model)) {
+    if (!exclusivePrimary && model && !availableLLMs.some(l => l.model === model)) {
         if (sdkProvider === 'local' && explicitLocalEndpoint) {
             // Discovery is opportunistic, not proof that an explicitly selected
             // endpoint is offline. Keep the requested model; execution will
@@ -649,21 +732,24 @@ export async function createLLM(config: { provider?: string; model?: string; int
         const chatModels = availableLLMs.filter(l => isChatModel(l.model))
         const firstCloud = chatModels.find(l => !l.local)
         const firstLocal = bestLocalLLM(chatModels)
-        const autoSelected = firstCloud || firstLocal || availableLLMs.find(l => !l.local) || availableLLMs[0]
+        // A refused (fail-closed) provider never lands on a cloud entry: local chain only.
+        const autoSelected = failedClosed
+            ? (firstLocal || availableLLMs.find(l => isLocalLLMEntry(l)))
+            : (firstCloud || firstLocal || availableLLMs.find(l => !l.local) || availableLLMs[0])
         if (autoSelected) {
             console.log(`[Nova] ✅ Auto-selecting: ${autoSelected.provider}/${autoSelected.model}`)
             model = autoSelected.model
         } else {
-            model = 'unknown'
+            model = failedClosed ? 'auto' : 'unknown'
             console.log(`[Nova] ❌ No models discovered at all! LLM calls will fail until /login or Ollama is started.`)
         }
     }
 
-    const selectedCloud = explicitLocalEndpoint ? undefined : availableLLMs.find(l => l.model === model && !l.local)
+    const selectedCloud = (explicitLocalEndpoint || exclusivePrimary || failedClosed) ? undefined : availableLLMs.find(l => l.model === model && !l.local)
     const effectiveSdkProvider = selectedCloud
         ? (selectedCloud.provider === 'openai-codex'
             ? 'openai'
-            : (providerMap[selectedCloud.provider] || 'openai'))
+            : (providerMap[selectedCloud.provider] ?? sdkProvider))
         : sdkProvider
 
     // ── CLOUD PROVIDER LOCK ─────────────────────────────────────────────────────
@@ -674,13 +760,13 @@ export async function createLLM(config: { provider?: string; model?: string; int
     // so MiniMax-M3 requests were silently routed to local Qwen3.6-27B instead.
     const CLOUD_PROVIDERS = new Set(['minimax', 'openai', 'anthropic', 'openrouter', 'groq'])
     const configuredProvider = (config.provider || '').toLowerCase()
-    const isCloudLocked = CLOUD_PROVIDERS.has(configuredProvider)
+    const isCloudLocked = !exclusivePrimary && CLOUD_PROVIDERS.has(configuredProvider)
 
     const selectedLocal = (!isCloudLocked && effectiveSdkProvider === 'local')
         ? availableLLMs.find(l => l.model === model && isLocalLLMEntry(l) && l.endpoint)
         : undefined
     // When cloud-locked, ignore discovery entries — only the configured cloud counts
-    const selectedExternal = isCloudLocked
+    const selectedExternal = (isCloudLocked || exclusivePrimary)
         ? undefined
         : availableLLMs.find(l => l.model === model && l.endpoint && l.apiKey)
 
@@ -701,19 +787,24 @@ export async function createLLM(config: { provider?: string; model?: string; int
         ? (configuredProvider === 'minimax' ? 'minimax' : effectiveSdkProvider)
         : (selectedExternal ? 'local' : effectiveSdkProvider)
 
-    const llm = await createNovaLLMClient({
-        provider: finalProvider as any,
-        model,
-        baseUrl: providerBaseUrl,
-        apiKey: providerApiKey,
-    })
+    // 2.89.8: exclusive route = exactly this baseUrl + its own key, no failover candidates (same client as the
+    // 2.89.7 registered-provider fallback). The key lives only in this client, not in availableLLMs or logs.
+    const llm = await createNovaLLMClient(exclusivePrimary
+        ? { provider: 'local', model, baseUrl: exclusivePrimary.baseUrl, apiKey: exclusivePrimary.apiKey, exclusive: true }
+        : {
+            provider: finalProvider as any,
+            model,
+            baseUrl: providerBaseUrl,
+            apiKey: providerApiKey,
+        })
+    if (exclusivePrimary) console.log(`[Nova] Primary: ${exclusivePrimary.name}/${model} @ ${exclusivePrimary.baseUrl} (own endpoint + vault key; fallback: local chain, then fallbackModels)`)
 
     if (isCloudLocked) {
         console.log(`[Nova] ☁️ Primary: ${configuredProvider}/${model} @ ${providerBaseUrl || 'default'} (cloud preferred, fast-local fallback)`)
     }
 
     const initialConfig = llm.getCurrentConfig()
-    console.log(`[Nova] ✓ Primary LLM: ${config.provider}/${model} (SDK: ${sdkProvider})`)
+    console.log(`[Nova] ✓ Primary LLM: ${config.provider}/${model} (SDK: ${exclusivePrimary ? `own endpoint ${exclusivePrimary.name}` : sdkProvider})`)
     console.log(`[Nova] ✓ L18 Router: ${availableLLMs.length} models available`)
 
     type LLMProviderType = 'claude' | 'openai' | 'local' | 'minimax'
@@ -722,7 +813,7 @@ export async function createLLM(config: { provider?: string; model?: string; int
     // actually configured after readiness checks. The requested config remains
     // available separately, but must not masquerade as an active provider.
     let activeModelId = initialConfig?.model || model
-    let activeProvider: LLMProviderType = (initialConfig?.provider || config.provider || effectiveSdkProvider) as LLMProviderType
+    let activeProvider: LLMProviderType = (exclusivePrimary ? exclusivePrimary.name : (initialConfig?.provider || config.provider || effectiveSdkProvider)) as LLMProviderType
 
     // ── Pre-initialize MiniMax adapter if provider is minimax ──────────────────
     // _minimaxAdapter must be set at startup, not only on switchModel().
@@ -781,6 +872,25 @@ export async function createLLM(config: { provider?: string; model?: string; int
                 (newProvider ? l.provider === newProvider || (newProvider === 'local' && isLocalLLMEntry(l)) : true)
             )
             if (endpoint && !discovered) return false
+
+            // 2.89.8: a non-built-in provider name is a registered provider (own baseUrl + vault key) or nothing;
+            // it is never handed to the `openai` SDK provider below.
+            const switchName = String(newProvider || activeProvider || '')
+            if (switchName && !(switchName.toLowerCase() in BUILTIN_PRIMARY_PROVIDERS) && !(switchName.toLowerCase() in OPENAI_COMPATIBLE_DEFAULT_URLS)) {
+                const route = registeredProviderRoute(newModel, switchName)
+                if (!route) {
+                    console.error(`[NovaLLM] Switch to ${switchName}/${newModel} refused (fail-closed): not a registered provider that lists this model with a vault key`)
+                    return false
+                }
+                llm.configure({ provider: 'local', model: newModel, baseUrl: route.baseUrl, apiKey: route.apiKey, exclusive: true } as any)
+                ; (wrapper as any)._openaiAdapter = null
+                ; (wrapper as any)._anthropicAdapter = null
+                ; (wrapper as any)._minimaxAdapter = null
+                activeModelId = newModel
+                activeProvider = route.name as LLMProviderType
+                console.log(`[NovaLLM] Switched to ${route.name}/${newModel} (registered provider, own endpoint)`)
+                return true
+            }
 
             // Auto-detect provider from model name if not explicitly set
             if (newModel.startsWith('claude')) {
