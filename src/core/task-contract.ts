@@ -292,3 +292,35 @@ export function validateTaskCompletion(contract: TaskContract, evidence: Complet
         violations,
     }
 }
+
+/**
+ * 2.89.8: the validator speaks in English engineering terms ("inference stopped before completion").
+ * Those are for logs and the outcome ledger - never for the user. This maps them to a short German
+ * sentence with a next step; anything unmapped becomes a generic line (the raw text is not shown).
+ */
+const USER_FACING_REASONS: Array<[RegExp, string]> = [
+    [/inference stopped before completion/i, 'Das Modell hat mitten in der Antwort abgebrochen.'],
+    [/timeout budget exceeded/i, 'Die Aufgabe hat zu lange gedauert.'],
+    [/(tool-call|token|output-token|cost) budget exceeded/i, 'Das Budget für diese Aufgabe war aufgebraucht.'],
+    [/response is empty/i, 'Das Modell hat keine Antwort geliefert.'],
+    [/explicit response constraint/i, 'Die Antwort hat deine Vorgabe (Form oder Länge) nicht erfüllt.'],
+    [/tool evidence|executing tool result/i, 'Ich konnte nicht belegen, dass die nötigen Schritte wirklich ausgeführt wurden.'],
+    [/artifact is missing/i, 'Das gewünschte Ergebnis (z. B. eine Datei) liegt nicht vor.'],
+    [/test .*did not pass|test did not pass/i, 'Eine geforderte Prüfung ist nicht bestanden.'],
+    [/approval is pending/i, 'Deine Freigabe steht noch aus.'],
+]
+
+export function userFacingVerdictMessage(reasons: string[], violations: string[]): string {
+    const raw = [...reasons, ...violations].map(String)
+    const known: string[] = []
+    for (const text of raw) {
+        const hit = USER_FACING_REASONS.find(([pattern]) => pattern.test(text))
+        if (hit && !known.includes(hit[1])) known.push(hit[1])
+    }
+    const stopped = known.includes(USER_FACING_REASONS[0][1])
+    const detail = known.length > 0 ? known.join(' ') : 'Mir fehlt der Nachweis, dass alles erledigt ist.'
+    const next = stopped
+        ? 'Bitte schick die Anfrage gleich noch einmal - dann versuche ich es erneut.'
+        : 'Sag mir kurz Bescheid, dann versuche ich es noch einmal.'
+    return `Ich konnte die Aufgabe nicht als abgeschlossen bestätigen. ${detail} ${next}`
+}

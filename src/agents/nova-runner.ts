@@ -14,7 +14,7 @@ import { followUpHint } from './follow-up-hint.js'
 import { isConversationalClosure, isHistoryOnlyRequest, toolProvidesActionEvidence } from '../core/action-intent.js'
 import { buildToolTaskContext } from '../core/tool-task-context.js'
 import { ExecutionKernel } from '../core/execution-kernel.js'
-import type { TaskContract, TaskValidationReport } from '../core/task-contract.js'
+import { userFacingVerdictMessage, type TaskContract, type TaskValidationReport } from '../core/task-contract.js'
 import { SessionCheckpoints, sessionIdentity, sessionKey, type SessionScope } from './session-checkpoints.js'
 import { clearSessionSummary } from '../layers/L6-session-summary.js'
 import { internalTaskContractOverrides, isNovaSystemAuthored } from '../core/system-message.js'
@@ -2003,7 +2003,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             if (!policyBlocked && !failureEscalationContent && !incompleteSynthesis
                 && kernel.contract.successCriteria.some(criterion => criterion.required && criterion.kind !== 'response_present')) {
                 modelContentBeforeVerdict = finalContent
-                finalContent = `Ich konnte die Aufgabe nicht als abgeschlossen verifizieren: ${reasons.join('; ') || taskValidation.violations.join('; ') || 'Erfolgsnachweis fehlt.'}`
+                console.log(`[Nova] validator rejected the run (internal): ${[...reasons, ...taskValidation.violations].join('; ')}`)
+                finalContent = userFacingVerdictMessage(reasons as string[], taskValidation.violations)
             }
         }
 
