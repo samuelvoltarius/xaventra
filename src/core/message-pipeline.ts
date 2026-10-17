@@ -1411,7 +1411,9 @@ ${pendingGapNote}` : withTail
     const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
     const dateStr = now.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    systemPrompt += `\n\n## ⚠️ AKTUELLE SYSTEMZEIT (KRITISCH — NIEMALS RATEN!)
+    // 2.89.8: the clock changes every minute; it is appended at the END of the prompt (see below) so the long
+    // static head (persona, rules, capability text) stays byte-identical between turns for the model's prompt cache.
+    const systemTimeBlock = `\n\n## ⚠️ AKTUELLE SYSTEMZEIT (KRITISCH — NIEMALS RATEN!)
 **Es ist EXAKT ${timeStr} Uhr am ${dateStr} (${tz}).**
 **Das aktuelle Jahr ist ${now.getFullYear()}. Das ist die GEGENWART, nicht die Zukunft!**
 
@@ -2144,6 +2146,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             if (prepared.resized) console.log(`[Pipeline] Bild für Modell verkleinert: ${Math.round(prepared.originalBytes / 1024)} KB -> ${Math.round(prepared.bytes / 1024)} KB`)
             imageForModel = { data: prepared.data, mimeType: prepared.mimeType }
         } catch (error) { stageFailure('Bild-Verkleinern', error) }
+        systemPrompt += systemTimeBlock
         const MAX_SYSTEM_PROMPT = contextPolicy.maxPromptChars
         if (systemPrompt.length > MAX_SYSTEM_PROMPT) {
             console.log(`[Pipeline] ⚠️ systemPrompt too large: ${systemPrompt.length} chars, capping to ${MAX_SYSTEM_PROMPT}`)
