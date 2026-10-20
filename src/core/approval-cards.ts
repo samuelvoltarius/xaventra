@@ -128,6 +128,9 @@ export interface NewCardInput {
     dedupeKey?: string
     /** 'hoch' = time-critical, always delivered at once (never bundled). */
     wichtigkeit?: 'hoch' | 'normal'
+    /** 2.89.8: a hand-over offer ("Auftrag an Claude senden?") that waits for the next report instead of
+     * an own message - even though it is outward. Ignored when 'hoch' or when less than 2 h remain. */
+    sammeln?: boolean
     /** Paket L: bundle key (card-bundle.ts) plus short line, row group and button label. */
     buendel?: string
     kurz?: string
@@ -404,7 +407,9 @@ export function createApprovalCard(input: NewCardInput, opts: CardStoreOptions =
         ...(dedupeKey ? { dedupeKey } : {}),
         createdAt: iso(now), expiresAt: iso(now + ttl), status: 'offen' as const, usedTokens: [], messages: [],
     }
-    const zustellung = cardDeliveryFor({ wirkung, ttlMs: ttl, wichtigkeit: input.wichtigkeit, text: `${art} ${kind} ${base.quelle} ${titel} ${base.beleg}` })
+    const collect = input.sammeln === true && input.wichtigkeit !== 'hoch' && ttl >= BUNDLE_MIN_REMAINING_MS
+    const zustellung: CardDelivery = collect ? 'bericht'
+        : cardDeliveryFor({ wirkung, ttlMs: ttl, wichtigkeit: input.wichtigkeit, text: `${art} ${kind} ${base.quelle} ${titel} ${base.beleg}` })
     const short = (value: unknown, max: number) => { const v = clean(value, max); return v || undefined }
     const bundle = input.buendel && KIND_PATTERN.test(String(input.buendel)) ? {
         buendel: String(input.buendel),

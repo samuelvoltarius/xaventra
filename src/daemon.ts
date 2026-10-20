@@ -1469,6 +1469,7 @@ async function startDaemon() {
             evidenceRefs?: string[],
         ): Promise<boolean> => {
             const { notifyOwner } = await import('./core/owner-notify.js')
+            const { getAvailabilityGate } = await import('./core/availability-notices.js')
             const { getOperationalEventBus } = await import('./core/operational-event-bus.js')
             const { addThought } = await import('./planner/index.js')
             const result = await notifyOwner({ content, source, severity, confidence, dedupeKey, evidenceRefs }, {
@@ -1487,6 +1488,7 @@ async function startDaemon() {
                     return hasValidFence(MAIN_SERVICE)
                 },
                 plannerActive: () => plannerConfigured,
+                availability: notice => getAvailabilityGate().judge(notice),
                 addThought,
                 transport: async notice => {
                     if (!proactiveOwner) return false

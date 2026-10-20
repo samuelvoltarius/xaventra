@@ -52,7 +52,8 @@ describe('Zustellung: gebündelt oder sofort', () => {
     it('nicht zeitkritische Karte landet im Bericht statt sofort; danach kommen die Knöpfe', async () => {
         const sent: PlannerOutgoing[] = []
         const port: DeliveryPort = { name: 'test-port', deliver: async msg => { sent.push(msg); return { status: 'zugestellt' } } }
-        const runtime = await startPlannerRuntime({}, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
+        // 2.89.8: the evening report is opt-in (one report per day by default); this test exercises it.
+        const runtime = await startPlannerRuntime({ briefing: { eveningEnabled: true } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
         expect(runtime).not.toBeNull()
         expect(runtime!.settings.briefing.enabled).toBe(true)
 

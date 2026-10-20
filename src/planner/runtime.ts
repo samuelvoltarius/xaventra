@@ -37,7 +37,7 @@ export interface PlannerSettings {
     enabled: boolean
     tickSeconds: number
     reminders: boolean
-    briefing: { enabled: boolean; morning: string; evening: string; timeZone: string }
+    briefing: { enabled: boolean; morning: string; evening: string; eveningEnabled: boolean; timeZone: string }
     thoughts: ThoughtSettings
 }
 
@@ -85,7 +85,7 @@ export function parsePlannerSettings(autonomy: any, env: NodeJS.ProcessEnv = pro
         enabled: plannerOn || briefingOn,
         tickSeconds: Number.isFinite(tick) && tick >= 5 ? Math.min(600, Math.floor(tick)) : 30,
         reminders: defaultOn(planner.reminders, env),
-        briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), timeZone },
+        briefing: { enabled: briefingOn, morning: hhmm(briefing.morning, '07:30'), evening: hhmm(briefing.evening, '20:00'), eveningEnabled: briefing.eveningEnabled === true, timeZone },
         thoughts: normalizeThoughtSettings({
             quietStart: quiet.start,
             quietEnd: quiet.end,
@@ -263,7 +263,10 @@ export async function startPlannerRuntime(autonomyConfig: unknown, options: Plan
         planner.upsertSystemJob({
             id, kind: jobKind, title: kind === 'morgen' ? 'Morgenbericht' : 'Abendbericht',
             schedule: { type: 'taeglich', time, timeZone: settings.briefing.timeZone },
-            delivers: true, enabled: settings.briefing.enabled, maxLateMinutes: 180, expiresAfterMinutes: 6 * 60,
+            delivers: true,
+            // 2.89.8: at most ONE proactive report per day (the morning report); the evening report is opt-in
+            // (autonomy.briefing.eveningEnabled = true).
+            enabled: settings.briefing.enabled && (kind === 'morgen' || settings.briefing.eveningEnabled), maxLateMinutes: 180, expiresAfterMinutes: 6 * 60,
         })
     }
 

@@ -153,7 +153,7 @@ export type SettledListener = (record: DelegationRecord, info: { verified: boole
 interface CardLike { id: string }
 type CreateCard = (input: {
     art: string; titel: string; beleg: string; vorschlag: string; aktion: { kind: string; ref: string }
-    ablaufMs?: number; dedupeKey?: string; quelle?: string
+    ablaufMs?: number; dedupeKey?: string; quelle?: string; sammeln?: boolean
 }) => { ok: true; card: CardLike; created: boolean } | { ok: false; reason: string }
 
 type AddThought = (input: {
@@ -751,6 +751,8 @@ export function createDelegationService(deps: DelegationServiceDeps): Delegation
                     ablaufMs: Math.max(60_000, Math.min(24 * 60 * 60_000, fristMs)),
                     dedupeKey: `delegation:${id}`,
                     quelle: 'delegation',
+                    // 2.89.8: 47 single "Auftrag an Claude senden?" messages in one month - collected into the report.
+                    sammeln: true,
                 })
                 if (card.ok === false) {
                     const reason = 'reason' in card ? card.reason : 'Karte abgelehnt'

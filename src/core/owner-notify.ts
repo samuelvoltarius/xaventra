@@ -45,6 +45,8 @@ export interface OwnerNotifyDeps {
     addThought(input: NewThought): { thought: { id: string }; deduped: boolean }
     /** Fallback transport while the planner is off (ProactiveMessenger); false = not delivered (e.g. no Telegram). */
     transport(notice: OwnerNotice): Promise<boolean>
+    /** 2.89.8: state-change + debounce for "nicht erreichbar" notices (core/availability-notices.ts). */
+    availability?(notice: OwnerNotice): { send: boolean; reason: string }
     log?(line: string): void
 }
 
@@ -88,6 +90,11 @@ export function noticeToThought(notice: OwnerNotice, trusted: boolean): NewThoug
 }
 
 export async function notifyOwner(notice: OwnerNotice, deps: OwnerNotifyDeps): Promise<{ route: OwnerNotifyRoute; reason: string }> {
+    const availability = deps.availability?.(notice)
+    if (availability && !availability.send) {
+        deps.log?.(`[Meldung] ${notice.source}: ${availability.reason} - nicht gemeldet`)
+        return { route: 'verworfen', reason: availability.reason }
+    }
     const verdict = deps.ingest(notice)
     let live = false
     try { live = await deps.authority() } catch { live = false }
