@@ -140,8 +140,9 @@ export interface AgentRunParams {
 /** Tools the model uses as a makeshift when no matching tool exists (shell, web search, scripts). */
 const BEHELF_TOOLS: ReadonlySet<string> = new Set([
     ...SHELL_SEARCH_TOOLS, 'ssh_command', 'system_executor', 'execute_python', 'run_python', 'code_runtime_run',
-    'web_search', 'google_search', 'searxng_search', 'brave_search', 'tavily_search', 'browser_search', 'fetch_url',
 ])
+// 2.89.8: web search, browser and fetch_url are the proper tools for research, no makeshift. Live: 18 research
+// runs ended with "no matching tool" after the 3rd search. They stay under the general tool budget only.
 /** Makeshift calls tolerated per run (admitted by the model, not offered by the router); the next one closes the run. */
 const MAX_BEHELF_CALLS = 3
 

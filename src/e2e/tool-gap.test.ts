@@ -70,16 +70,16 @@ describe('2.89.3 Werkzeuglücke', () => {
         expect(listLearnJobs().some((job: any) => job.domainId === 'fax' && job.status === 'angeboten')).toBe(true)
     }, T)
 
-    it('(c) Budget/Behelfe: Ausweichen auf Suche/Shell endet nach drei Behelfen mit ehrlicher Antwort + Lernangebot', async () => {
-        const e2e = await harness({ searxng: true })
+    it('(c) Budget/Behelfe: Ausweichen auf Shell endet (2.89.8: Suche/Browser/fetch zählen nicht mehr als Behelf) nach drei Behelfen mit ehrlicher Antwort + Lernangebot', async () => {
+        const e2e = await harness()
         const result = await e2e.telegram('Wie ist die Luftqualität in Wien gerade?', [
-            { tool: 'searxng_search', args: { query: 'Luftqualität Wien' } },
-            { tool: 'searxng_search', args: { query: 'Feinstaub Wien aktuell' } },
-            { tool: 'searxng_search', args: { query: 'AQI Wien Messwerte' } },
-            { tool: 'searxng_search', args: { query: 'Wien Luft Index live' } },
+            { tool: 'run_command', args: { command: 'echo Luftqualität-Wien' } },
+            { tool: 'run_command', args: { command: 'echo Feinstaub-Wien-aktuell' } },
+            { tool: 'run_command', args: { command: 'echo AQI-Wien-Messwerte' } },
+            { tool: 'run_command', args: { command: 'echo Wien-Luft-Index-live' } },
             { text: 'Aus den Treffern lässt sich kein aktueller Messwert ablesen.' },
         ])
-        expect(result.executedTools.filter((name: string) => name === 'searxng_search').length).toBeLessThanOrEqual(3)
+        expect(result.executedTools.filter((name: string) => name === 'run_command').length).toBeLessThanOrEqual(3)
         expect(result.trace).toContain('capability:limit-gap')
         expect(result.final).toMatch(/kein (?:eigenes|passendes) Werkzeug/)
         expect(result.final).toMatch(/Soll ich es lernen\?/)
