@@ -459,10 +459,15 @@ export function capabilityGateApplies(input: { isSystemAuthored: boolean; image:
 export async function handleMessage(...args: Parameters<typeof handleMessageInScope>): ReturnType<typeof handleMessageInScope> {
     // One LLM-principal scope per message (Codex only for the owner).
     const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
-    return runWithLlmPrincipal(() => runAsPotentialOwnerTurn(() => handleMessageInScope(...args)))
+    return runWithLlmPrincipal(() => handleMessageInScope(...args))
 }
 
-async function handleMessageInScope(
+/** 2.89.8 (U3): every message is a potential owner turn (counted once an owner is authenticated). */
+function handleMessageInScope(...args: Parameters<typeof handleMessageBody>): ReturnType<typeof handleMessageBody> {
+    return runAsPotentialOwnerTurn(() => handleMessageBody(...args))
+}
+
+async function handleMessageBody(
     channel: string,
     from: string,
     content: string,
@@ -659,9 +664,9 @@ async function handleMessageInScope(
         // 2. Tool Restrictions — the decided role is bound to this request
         // before any optional middleware step can fail.
         principalContext.permission = authResult.permission
-        markOwnerTurn(authResult.permission, isSystemAuthored)
         ;(await import('../llm/llm-principal.js')).setLlmPrincipalPermission(authResult.permission)
         ; (state as any).__userPermission = authResult.permission
+        markOwnerTurn(authResult.permission, isSystemAuthored)
             ; (state as any).__userId = from
         if ((globalThis as any).__novaState) (globalThis as any).__novaState.__userId = from
 

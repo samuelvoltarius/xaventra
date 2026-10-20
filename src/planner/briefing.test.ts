@@ -129,7 +129,7 @@ describe('Morgen-/Abendbericht', () => {
         stopPlannerRuntime()
 
         t = Date.parse('2026-10-01T16:00:00.000Z')
-        const on = await startPlannerRuntime({ briefing: { enabled: true, evening: '20:00', morning: '07:00' } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
+        const on = await startPlannerRuntime({ briefing: { enabled: true, eveningEnabled: true, evening: '20:00', morning: '07:00' } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
         await on!.planner.tick()
         expect(sent).toHaveLength(0)
         t = Date.parse('2026-10-01T18:00:30.000Z')

@@ -147,7 +147,7 @@ describe('Lernkurve im Abendbericht (Punkt 7)', () => {
         const sent: PlannerOutgoing[] = []
         const port: DeliveryPort = { name: 'test-port', deliver: async msg => { sent.push(msg); return { status: 'zugestellt' } } }
         t = Date.parse('2026-10-01T16:00:00.000Z')
-        const runtime = await startPlannerRuntime({ briefing: { enabled: true, evening: '20:00', morning: '07:00' } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
+        const runtime = await startPlannerRuntime({ briefing: { enabled: true, eveningEnabled: true, evening: '20:00', morning: '07:00' } }, { dataDir: dir, now: () => t, authority: () => true, startTimer: false, port })
         await runtime!.planner.tick()
         t = Date.parse('2026-10-01T18:00:30.000Z')
         await runtime!.planner.tick()
