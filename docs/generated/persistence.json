@@ -490,6 +490,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/e2e/owner-profile-2898.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/e2e/provider-key-vault.test.ts",
       "path": ".nova-data"
     },
@@ -1322,6 +1326,10 @@
       "path": ".nova-data/multi-user/users.json"
     },
     {
+      "owner": "src/core/availability-notices.ts",
+      "path": ".nova-data/notices/availability-state.json"
+    },
+    {
       "owner": "src/auth/openai-oauth.ts",
       "path": ".nova-data/openai-auth.json"
     },
@@ -1348,6 +1356,10 @@
     {
       "owner": "src/routing/outcome-router.ts",
       "path": ".nova-data/outcome-router-shadow.jsonl"
+    },
+    {
+      "owner": "src/memory/owner-profile.ts",
+      "path": ".nova-data/owner-profile.json"
     },
     {
       "owner": "src/layers/L0-supervisor.ts",
@@ -1452,6 +1464,10 @@
     {
       "owner": "src/core/upstream-update-command.ts",
       "path": ".nova-data/upstream-updates"
+    },
+    {
+      "owner": "src/users/owner-identity-migration.ts",
+      "path": ".nova-data/users"
     },
     {
       "owner": "src/supervisor/supervisor-autofix-safety.test.ts",

@@ -1579,9 +1579,18 @@
       "module": "src/core/autonomy-loop.ts",
       "imports": [
         "./autonomy-authority.js",
+        "./owner-activity.js",
         "./quiet-hours.js",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/core/availability-notices.ts",
+      "imports": [
+        "./atomic-storage.js",
+        "./data-root.js",
+        "node:fs"
       ]
     },
     {
@@ -1665,6 +1674,10 @@
       "imports": [
         "node:os"
       ]
+    },
+    {
+      "module": "src/core/clock-answer.ts",
+      "imports": []
     },
     {
       "module": "src/core/complexity-router.ts",
@@ -1802,8 +1815,10 @@
       "module": "src/core/deterministic-query.ts",
       "imports": [
         "../memory/memory-quality.js",
+        "../memory/owner-profile.js",
         "../mesh/recommendation-truth.js",
         "../sensing/device-sentences.js",
+        "./clock-answer.js",
         "./service-run-truth.js"
       ]
     },
@@ -2015,6 +2030,7 @@
         "./context-policy.js",
         "./history-note-filter.js",
         "./operating-mode-prompt.js",
+        "./owner-activity.js",
         "./progress-notice.js",
         "./reply-delivery-error.js",
         "./request-capabilities.js",
@@ -2228,6 +2244,12 @@
         "node:async_hooks",
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/core/owner-activity.ts",
+      "imports": [
+        "node:async_hooks"
       ]
     },
     {
@@ -2980,6 +3002,7 @@
         "../synthesis/self-evolution.js",
         "../tools/skill-builder.js",
         "../users/multi-user-middleware.js",
+        "../users/owner-identity.js",
         "../users/principal-id.js",
         "./bot-profile-store.js",
         "./desktop-agent-context.js",
@@ -5244,6 +5267,15 @@
       "imports": []
     },
     {
+      "module": "src/memory/owner-profile.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "./memory-governance.js",
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/memory/query-expansion.ts",
       "imports": []
     },
@@ -6323,7 +6355,9 @@
     },
     {
       "module": "src/runtime/service-runtime.ts",
-      "imports": []
+      "imports": [
+        "../core/owner-activity.js"
+      ]
     },
     {
       "module": "src/secrets/chat-key-intake.ts",
@@ -7452,10 +7486,12 @@
       "module": "src/tools/complete-registry.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/nova-state.js",
         "../doctor/repair-drain-client.js",
         "../host/docker-client.js",
         "../learning/trace-analyzer.js",
         "../mesh/fence.js",
+        "../users/owner-identity.js",
         "./3dprinter.js",
         "./api-key-tool.js",
         "./astro-plate-solve.js",
@@ -7871,6 +7907,7 @@
         "../core/request-capabilities.js",
         "../core/tool-evidence-binding.js",
         "../memory/memory-quality.js",
+        "../memory/owner-profile.js",
         "./complete-registry.js",
         "./minimax-tools.js"
       ]
@@ -7955,9 +7992,27 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "./owner-identity.js",
         "node:crypto",
         "node:fs"
       ]
+    },
+    {
+      "module": "src/users/owner-identity-migration.ts",
+      "imports": [
+        "../core/atomic-storage.js",
+        "../core/data-root.js",
+        "../memory/memory-governance.js",
+        "../memory/session-summarizer.js",
+        "./owner-accounts.js",
+        "./owner-identity.js",
+        "./principal-id.js",
+        "node:fs"
+      ]
+    },
+    {
+      "module": "src/users/owner-identity.ts",
+      "imports": []
     },
     {
       "module": "src/users/principal-id.ts",
@@ -8072,6 +8127,7 @@
     {
       "module": "src/voice/telefon-runtime.ts",
       "imports": [
+        "../users/owner-identity.js",
         "./telefon-bridge.js"
       ]
     },
