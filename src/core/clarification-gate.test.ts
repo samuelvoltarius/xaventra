@@ -41,8 +41,12 @@ describe('ClarificationGate', () => {
         expect(store.getSummary('user:node-shot')?.pendingClarification).toBeFalsy()
     })
 
+    // 2.89.8: "send mir ..." goes to the requester - no recipient question (the model asks itself if needed).
+    it('does not ask about the recipient when the report goes to the requester', () => {
+        expect(evaluateClarification('user:node-negative', 'send mir einen screnn shot vbon jeden').action).toBe('continue')
+    })
+
     it.each([
-        'send mir einen screnn shot vbon jeden',
         'was können deine nodes? send ihm einen screnn shot vbon jeden',
         'was können deine nodes? send mir einen screnn shot vbon jeden und installiere Docker',
         'was können deine nodes? lösche das',
@@ -210,8 +214,10 @@ describe('ClarificationGate', () => {
     it('recognizes a single URL in a direct read-only check but not as a destructive target', () => {
         expect(evaluateClarification('user:url', 'prüfe das https://example.test/search').action).toBe('continue')
         expect(evaluateClarification('user:risk', 'prüfe https://example.test und lösche es').action).toBe('ask')
-        expect(evaluateClarification('user:missing', 'prüfe das als URL').action).toBe('ask')
-        expect(evaluateClarification('user:two', 'prüfe das https://one.test https://two.test').action).toBe('ask')
+        // 2.89.8 (U1): a bare reference on a read-only request is no gate question any more; the model sees the
+        // conversation and asks itself if it really cannot tell. Destructive requests stay gated (line above).
+        expect(evaluateClarification('user:missing', 'prüfe das als URL').action).toBe('continue')
+        expect(evaluateClarification('user:two', 'prüfe das https://one.test https://two.test').action).toBe('continue')
     })
 
     it('does not prepend a stale URL-reference question to the next current request', () => {
@@ -282,7 +288,9 @@ describe('ClarificationGate', () => {
     })
 
     it('does not hide another ambiguous reference alongside a time question', () => {
-        expect(evaluateClarification('user:a', 'Wie spät ist es und prüfe das').action).toBe('ask')
+        // 2.89.8 (U1): read-only reference -> model; a destructive one next to the time question still asks.
+        expect(evaluateClarification('user:a', 'Wie spät ist es und prüfe das').action).toBe('continue')
+        expect(evaluateClarification('user:a', 'Wie spät ist es und lösche das').action).toBe('ask')
     })
 })
 
@@ -293,7 +301,8 @@ describe('ClarificationGate 2.89.3: determiner is no reference', () => {
     ])('asks nothing for „%s“', text => {
         expect(evaluateClarification('user:determiner', text)).toMatchObject({ action: 'continue', content: text })
     })
-    it('still asks for a bare reference', () => {
-        expect(evaluateClarification('user:bare-ref', 'Mach das noch mal').action).not.toBe('continue')
+    it('asks for a bare reference only when the action is destructive (2.89.8)', () => {
+        expect(evaluateClarification('user:bare-ref', 'Lösch das noch mal').action).not.toBe('continue')
+        expect(evaluateClarification('user:bare-ref', 'Mach das noch mal').action).toBe('continue')
     })
 })

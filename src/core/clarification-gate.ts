@@ -30,6 +30,12 @@ const DETERMINER_BEFORE_NOUN = /\b(?:[Dd]as|[Dd]ies(?:e[rsnm]?)?)\s+(?=[A-ZÄÖ�
 // ("schick mir den Status", "sende mir eine Inventur") are not machine actions.
 const HIGH_IMPACT = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|send(?:e(?:n|r|st)?)?|schick\w*|service\s+(?:start|stop|restart))\b/i
 const REPORT_TO_REQUESTER = /\b(?:send(?:e(?:n|r|st)?)?|schick\w*)\s+(?:mir|uns)\b.{0,50}\b(?:inventur|status|bericht|übersicht|liste|zusammenfassung|was|welche[nrs]?)\b/i
+// 2.89.8: the gate never asks on word lists alone any more. A question is only
+// justified for an effect that is hard to undo (delete/install/restart/deploy) or a
+// message to a third party that is not resolved. Everything else - "Was ist das?",
+// "schick mir das", "google nach X" - goes to the model, which can ask itself.
+const DESTRUCTIVE = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|service\s+(?:start|stop|restart))\b/i
+const THIRD_PARTY_SEND = /\b(?:send(?:e(?:n|r|st)?)?|schick\w*)\b.{0,40}\b(?:ihm|ihr|ihnen)\b/i
 const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
 /** Several machines that could each run the action — only then a target question helps. */
 function hasSeveralCandidateTargets(): boolean {
@@ -176,11 +182,13 @@ export function evaluateClarification(principalId: string, content: string): Cla
     // destination. Multiple targets and unrelated actions still require context.
     const explicitReadTarget = hasExplicitReadUrlReference(text)
     const ownScreenshotReply = OWN_SCREENSHOT_REPLY.test(text) || isResolvedNodeScreenshotReply(text)
-    const ambiguous = AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, '').replace(DETERMINER_BEFORE_NOUN, ''))
-        && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply
+    const unresolvedRecipient = THIRD_PARTY_SEND.test(requestText) && !ownScreenshotReply
+    const ambiguous = unresolvedRecipient || (DESTRUCTIVE.test(requestText)
+        && AMBIGUOUS_REFERENCE.test(requestText.replace(IMPERSONAL_REFERENCE, '').replace(DETERMINER_BEFORE_NOUN, ''))
+        && !EXPLICIT_TARGET.test(requestText) && !explicitReadTarget && !ownScreenshotReply)
     // 2.89.4: a target question only when the order is an action ON a machine AND
     // more than one machine is in question. Otherwise decide alone (Main / best node).
-    const missingTarget = HIGH_IMPACT.test(requestText) && !REPORT_TO_REQUESTER.test(requestText)
+    const missingTarget = DESTRUCTIVE.test(requestText) && !REPORT_TO_REQUESTER.test(requestText)
         && !EXPLICIT_TARGET.test(requestText) && !ownScreenshotReply
         && hasSeveralCandidateTargets()
     const uncertainBelief = getBeliefStore().unresolved(principalId).find(belief => {
