@@ -2947,6 +2947,58 @@ const desktopControlTools: NovaTool[] = [
             return { success: true, commands: getDesktopControlQueue().list(ownerId, 25) }
         },
     },
+    {
+        // 2.89.8 (U4): the owner profile (fixed Tier-0 facts). Only the confirmed canonical owner may change it.
+        name: 'owner_profile',
+        description: 'Zeigt oder ändert das Owner-Profil (Name, Firma, Haustiere, Geräte, Fahrzeuge mit Aliasen). Nur der bestätigte Owner darf ändern. Die Einträge haben Vorrang vor Gelerntem.',
+        category: 'memory',
+        parameters: [
+            { name: 'action', type: 'string', description: 'show | set_owner | add_entity | add_fact | add_rule', required: true },
+            { name: 'name', type: 'string', description: 'Name des Owners (set_owner) oder der Sache (add_entity)', required: false },
+            { name: 'nicknames', type: 'object', description: 'Spitznamen (set_owner)', required: false },
+            { name: 'company', type: 'string', description: 'Firma (set_owner)', required: false },
+            { name: 'website', type: 'string', description: 'Website (set_owner)', required: false },
+            { name: 'timezone', type: 'string', description: 'Zeitzone, z. B. Europe/Vienna (set_owner)', required: false },
+            { name: 'kind', type: 'string', description: 'dog | cat | person | device | vehicle | place | other (add_entity)', required: false },
+            { name: 'aliases', type: 'object', description: 'Aliase (add_entity)', required: false },
+            { name: 'entity', type: 'string', description: 'Name oder Alias der Sache (add_fact)', required: false },
+            { name: 'attribute', type: 'string', description: 'Merkmal, z. B. Rasse (add_fact/add_entity)', required: false },
+            { name: 'value', type: 'string', description: 'Wert, z. B. Beagle (add_fact/add_entity)', required: false },
+            { name: 'rule', type: 'string', description: 'Regel (add_rule)', required: false },
+        ],
+        handler: async params => {
+            const profileModule = await import('../memory/owner-profile.js')
+            const action = String(params.action || 'show')
+            const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+            const context = getExecutionPolicyContext()
+            const { getUserPermission } = await import('../users/multi-user-middleware.js')
+            const channel = String(context.channel || params.channel || '')
+            const permission = getUserPermission(String(context.authUserId || params.authorizationUserId || ''), channel)
+            if (action === 'show') {
+                if (permission !== 'owner') return { success: false, blocked: true, error: 'Nur der Owner sieht das Profil.' }
+                const profile = profileModule.loadOwnerProfile()
+                return { success: true, profile, text: profileModule.profileTier0Context(profile) || 'Kein Profil hinterlegt.' }
+            }
+            const { getOwnerAccountRegistry } = await import('../users/owner-accounts.js')
+            const { resolveCanonicalOwner } = await import('../users/owner-identity.js')
+            const canonical = getOwnerAccountRegistry().canonical() || resolveCanonicalOwner(getNovaState().config as any).principal
+            const allowed = profileModule.canEditOwnerProfile({ permission, channel, principalId: context.userId }, canonical)
+            if (!allowed.ok) return { success: false, blocked: true, error: allowed.reason }
+            const text = (key: string) => (params[key] === undefined ? undefined : String(params[key]))
+            const textList = (key: string) => (Array.isArray(params[key]) ? (params[key] as unknown[]).map(String) : undefined)
+            const fact = text('attribute') && text('value') ? { attribute: text('attribute')!, value: text('value')! } : undefined
+            let mutation: import('../memory/owner-profile.js').ProfileMutation | null = null
+            if (action === 'set_owner') mutation = { action, name: text('name'), nicknames: textList('nicknames'), company: text('company'), website: text('website'), timezone: text('timezone') }
+            else if (action === 'add_entity' && text('name')) mutation = { action, name: text('name')!, kind: text('kind') || 'other', aliases: textList('aliases'), facts: fact ? [fact] : [] }
+            else if (action === 'add_fact' && text('entity') && fact) mutation = { action, entity: text('entity')!, fact }
+            else if (action === 'add_rule' && text('rule')) mutation = { action, rule: text('rule')! }
+            if (!mutation) return { success: false, error: 'Unbekannte Aktion oder fehlende Angaben.' }
+            const next = profileModule.applyProfileMutation(profileModule.loadOwnerProfile(), mutation)
+            if (!next) return { success: false, error: 'Eintrag nicht gefunden oder Profil ungültig.' }
+            profileModule.writeOwnerProfile(next)
+            return { success: true, text: 'Profil gespeichert.' }
+        },
+    },
 ]
 
 export const ALL_TOOLS: NovaTool[] = [
@@ -3321,6 +3373,7 @@ import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
 import { desktopInputTool } from './desktop-input-tool.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { desktopOwnerAlias } from '../users/owner-identity.js'
+import { getNovaState } from '../core/nova-state.js'
 
 
 // Append new tools to ALL_TOOLS via direct assignment (bypass type strictness)

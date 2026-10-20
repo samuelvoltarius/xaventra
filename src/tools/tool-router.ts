@@ -25,6 +25,7 @@ import { hasMiniMaxKey } from './minimax-tools.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { detectActionIntent, isWorkstationAction, WORKSTATION_ACTION, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
+import { loadOwnerProfile, profileRouteTools } from '../memory/owner-profile.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
@@ -406,7 +407,19 @@ interface LiveRoute {
 
 const WEATHER_WORDS = /(?<![\p{L}])(?:wetter\p{L}*|\p{L}*wetter|weather|forecast|regen\p{L}*|regnet\p{L}*|schneit|schnee\p{L}*|gewitter\p{L}*|niederschlag\p{L}*|sonnig\p{L}*|bewölk\p{L}*|bewoelk\p{L}*|vorhersage\p{L}*)(?![\p{L}])/iu
 
+// 2.89.8 (U8): "öffne heise.de und sag mir die erste Schlagzeile" - a web page named by domain/URL plus a
+// reading verb. Live: the router offered no web tool, the model wrote a script into /tmp (write_file blocked).
+const WEB_DOMAIN = /(?<![\p{L}\p{N}@.-])(?:https?:\/\/)?(?:[a-z0-9][a-z0-9-]*\.)+(?:de|at|ch|com|org|net|io|eu|info|dev|app|news|tv|co|uk|fr|it|es|nl)(?:\/[^\s]*)?(?![\p{L}\p{N}-])/iu
+const WEB_READ_VERB = /(?<![\p{L}])(?:öffne|oeffne|öffnen|oeffnen|geh|gehe|gehst|schau|schaue|sieh|lies|lese|lesen|besuche|besuchen|rufe|ruf|hol|hole|check|checke|prüfe|pruefe)(?![\p{L}])|was steht (?:auf|bei|in)|(?:auf|bei) .{0,40} steht/iu
+export function isWebPageReadRequest(text: string): boolean {
+    return WEB_DOMAIN.test(text) && WEB_READ_VERB.test(text) && !containsTailnetUrl(text)
+}
+/** Never a substitute for fetching a page: no scripts, shell or file writes (live 2.89.8). */
+const WEB_FETCH_SUBSTITUTES = ['write_file', 'run_command', 'execute_command', 'shell', 'exec_command', 'ssh_command', 'system_executor', 'execute_python', 'run_python', 'code_runtime_run']
+
 const LIVE_ROUTES: readonly LiveRoute[] = [
+    { name: 'owner-profile', tools: ['owner_profile'], applies: text => /\b(?:mein|meinem|meinen|dein)\s+(?:owner[- ]?)?(?:profil|steckbrief)\b|\bowner[- ]?profil\b/i.test(text) },
+    { name: 'open-site', tools: ['fetch_url', 'browser_open', 'browser_navigate', 'browser_extract', 'browser_get_links', 'browser_search'], applies: text => isWebPageReadRequest(text) },
     { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) || isMeshWideInventoryRequest(text) },
     // 2.89.4: mesh-wide inventory ("Inventur", "was läuft wo", "was … installieren können")
     // must reach the model with the inventory tools, including mesh_strengths.
@@ -443,6 +456,7 @@ function routeExclusions(primaryMessage: string, intent: ActionIntent): Set<stri
         excluded.add('ssh_command')
         excluded.add('run_command')
     }
+    if (isWebPageReadRequest(primaryMessage)) for (const name of WEB_FETCH_SUBSTITUTES) excluded.add(name)
     return excluded
 }
 
@@ -641,7 +655,10 @@ export function getRelevantTools(
     const memoryTurn = decideMemoryTurn(primaryMessage)
     const memoryTools = (memoryTurn.observe && primaryMessage.length <= 800) || memoryTurn.reason === 'recall'
         ? ['remember', 'recall', 'knowledge_store', 'knowledge_recall', 'kg_remember'] : []
-    const liveTools = [...memoryTools, ...LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)]
+    // 2.89.8 (U4): an alias of the owner profile that is a vehicle/device ("Dolphin") routes status questions to Home Assistant.
+    let profileTools: string[] = []
+    try { profileTools = profileRouteTools(loadOwnerProfile(), primaryMessage) } catch { profileTools = [] }
+    const liveTools = [...memoryTools, ...profileTools, ...LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)]
 
     // An explicit registered tool identifier is stronger than a fuzzy pack
     // keyword (`health_status` must not need the pack keyword `health`).

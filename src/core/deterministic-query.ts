@@ -2,6 +2,8 @@ import { parseNaturalMemoryForget } from '../memory/memory-quality.js'
 import { parseRoutineSatz, parseSchaltSatz } from '../sensing/device-sentences.js'
 import { isFreshnessQuestion } from '../mesh/recommendation-truth.js'
 import { detectServiceStateCorrection } from './service-run-truth.js'
+import { detectClockQuestion } from './clock-answer.js'
+import { findProfileEntity, loadOwnerProfile } from '../memory/owner-profile.js'
 
 export type NaturalCommandRisk = 'read-only' | 'controlled-action'
 
@@ -14,6 +16,16 @@ export interface DeterministicCommand {
 
 function route(command: string, args: string, reason: string, risk: NaturalCommandRisk = 'read-only'): DeterministicCommand {
     return { command, args, reason, risk }
+}
+
+/** 2.89.8 (U4): "Was ist Dolphin?" is a memory question only when Dolphin is an entity of the owner profile. */
+function isOwnerProfileEntityQuestion(text: string): boolean {
+    const match = text.match(/^(?:was|wer) ist (?:mein |meine |der |die |das )?(\p{L}[\p{L}\p{N} -]{0,40})$/u)
+    if (!match) return false
+    try {
+        const profile = loadOwnerProfile()
+        return Boolean(profile && findProfileEntity(profile, match[1]))
+    } catch { return false }
 }
 
 function normalize(input: string): string {
@@ -44,6 +56,9 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         && /docker/.test(text)) return route('docker', 'list', 'local-docker-inventory')
 
     if (/^(?:wer|was) bist du$/.test(text)) return route('identity', '', 'identity')
+    // 2.89.8 (U7): the whole message is a plain time/date question - answered from the system clock, no model.
+    const clock = detectClockQuestion(input)
+    if (clock) return route('zeit', clock, 'current-time')
     // 2.89: „Hast du Internet?“ from the one internet question (core/environment.ts hasInternet),
     // never a model claim. Only the whole status question — searches „im Internet“ stay with the model.
     if (/^(?:hast du|habt ihr)(?: gerade| jetzt| noch| überhaupt| ueberhaupt)? (?:internet|(?:eine )?internetverbindung|internetzugang|(?:eine )?verbindung (?:zum|ins) internet)$/.test(text)
@@ -94,7 +109,9 @@ export function detectDeterministicCommand(input: string): DeterministicCommand 
         || /^woran arbeite ich\b/.test(text)
         || /^(?:was|welche).*\bmeine[nr]?\s+(?:ziele|projekte|präferenzen|praeferenzen|regeln|anweisungen)\b/.test(text)
         || /^erinnerst du dich (?:noch )?(?:an|daran)\b/.test(text)
-        || /^(?:wie hei(?:ß|ss)t|was ist)\s+mein(?:e|er|en|em|es)?\s+\S+/.test(text)) {
+        || /^(?:wie hei(?:ß|ss)t|was ist)\s+mein(?:e|er|en|em|es)?\s+\S+/.test(text)
+        || /^wie hei(?:ß|ss)en\s+meine\s+\S+/.test(text)
+        || isOwnerProfileEntityQuestion(text)) {
         return route('memory', `recall-natural ${input.trim()}`, 'memory-recall')
     }
 

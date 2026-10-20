@@ -84,3 +84,16 @@ describe('path target coverage (R2 NZ-21)', () => {
         expect(matchedToolTargets(['src/app.ts'], { path: 'app.ts' })).toEqual(['src/app.ts'])
     })
 })
+
+describe('2.89.8 bare web host targets (U8)', () => {
+    it('a fetch of a URL on the named host covers "öffne example.com ..."; files and other hosts stay exact', async () => {
+        const { inferRequiredToolTargets, matchedToolTargets } = await import('./tool-evidence-binding.js')
+        const targets = inferRequiredToolTargets('öffne example.com und sag mir die erste Schlagzeile')
+        expect(targets).toEqual(['example.com'])
+        for (const url of ['https://example.com/', 'https://www.example.com/news', 'example.com', 'http://example.com'])
+            expect(matchedToolTargets(targets, { url })).toEqual(['example.com'])
+        expect(matchedToolTargets(targets, { url: 'https://example.org/' })).toEqual([])
+        expect(matchedToolTargets(targets, { url: 'https://notexample.com/' })).toEqual([])
+        expect(matchedToolTargets(['nginx.conf'], { path: 'https://nginx.conf/' })).toEqual([])
+    })
+})

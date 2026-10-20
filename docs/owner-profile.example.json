@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "owner": {
+    "name": "Max Muster",
+    "nicknames": ["Maxi"],
+    "company": "Beispiel GmbH",
+    "website": "https://example.com",
+    "birthday": "1980-01-31",
+    "timezone": "Europe/Vienna"
+  },
+  "entities": [
+    {
+      "name": "Bello",
+      "kind": "dog",
+      "aliases": [],
+      "facts": [{ "attribute": "Rasse", "value": "Beagle", "alsoMatches": ["labrador", "mischling"] }, "grauer Halsband"]
+    },
+    {
+      "name": "BYD Dolphin Surf",
+      "kind": "vehicle",
+      "aliases": ["Dolphin"],
+      "facts": ["Elektroauto, Akkustand über Home Assistant"]
+    }
+  ],
+  "rules": ["Antworte kurz und auf Deutsch."]
+}

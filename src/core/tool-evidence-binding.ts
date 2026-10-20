@@ -122,10 +122,24 @@ function isQualifiedTarget(target: string): boolean {
     return target.startsWith('/') || target.startsWith('~') || /^[a-z]:\//.test(target) || /^[a-z][a-z0-9+.-]*:\/\//.test(target)
 }
 
+// 2.89.8 (U8): "öffne example.com ..." names a web host, not a file. A fetch of https://www.example.com/ or
+// https://example.com/news covers it. Restricted to well-known web TLDs so file names (nginx.conf) stay exact.
+const WEB_TLDS = new Set(['de', 'at', 'ch', 'com', 'org', 'net', 'io', 'eu', 'info', 'dev', 'app', 'news', 'tv', 'co', 'uk', 'fr', 'it', 'es', 'nl'])
+function isBareWebHost(target: string): boolean {
+    return /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/.test(target) && WEB_TLDS.has(target.slice(target.lastIndexOf('.') + 1))
+}
+function urlCoversHost(value: string, host: string): boolean {
+    try {
+        const parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//.test(value) ? value : `https://${value}`)
+        return parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+    } catch { return false }
+}
+
 export function matchedToolTargets(requiredTargets: readonly string[], args: Record<string, unknown>): string[] {
     const values = argumentStrings(args).map(normalizeEvidenceTarget).filter(Boolean)
+    const hostMatches = (target: string) => isBareWebHost(target) && values.some(value => urlCoversHost(value, target))
     // A relative argument ("nginx.conf" in the cwd) must not cover a fully
     // qualified target ("/etc/nginx/nginx.conf") (R2 NZ-21).
     return requiredTargets.filter(target => values.some(value =>
-        value === target || value.endsWith(`/${target}`) || (!isQualifiedTarget(target) && target.endsWith(`/${value}`))))
+        value === target || value.endsWith(`/${target}`) || (!isQualifiedTarget(target) && target.endsWith(`/${value}`))) || hostMatches(target))
 }

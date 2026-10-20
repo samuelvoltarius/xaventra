@@ -101,7 +101,7 @@ export function getMinutesSinceLastSelfThink(): number {
 
 // Pre-load hot-path modules at startup to avoid first-call latency
 /** Deterministic fast paths whose answer is a live measurement, not a static text. */
-const LIVE_PROBE_FAST_PATHS = new Set(['internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check', 'recommendation-freshness'])
+const LIVE_PROBE_FAST_PATHS = new Set(['current-time', 'internet-status', 'local-docker-inventory', 'mesh-status', 'mesh-services', 'system-status', 'failover-readiness', 'service-live-check', 'recommendation-freshness'])
 
 export async function preloadPipelineModules(): Promise<void> {
     const profile = (process.env.NOVA_PRELOAD_PROFILE || 'minimal').toLowerCase()
@@ -1566,6 +1566,18 @@ WICHTIG: Sage NIEMALS "keine Config vorhanden" oder "Scheduled Tasks nicht einge
             includeUnscoped: principalContext.permission === 'owner',
         })
     } catch (err) { console.debug('[Pipeline] predictive context not available:', err) }
+
+    // 2.89.8 (U4): owner profile = fixed Tier-0 facts, always in the owner's context (never REST, groups or others).
+    if (principalContext.permission === 'owner' && isGroupMessage !== true && channel.toLowerCase() !== 'rest-api') try {
+        const ownerProfile = await import('../memory/owner-profile.js')
+        const profile = ownerProfile.loadOwnerProfile()
+        if (profile) {
+            const { getMemoryGovernanceCoordinator } = await import('../memory/memory-governance.js')
+            ownerProfile.reconcileProfileWithMemory(profile, getMemoryGovernanceCoordinator(), [...compatiblePrincipalScopes(principalContext, canonicalUser), 'global'])
+            const block = ownerProfile.profileTier0Context(profile)
+            if (block) systemPrompt += '\n\n' + block
+        }
+    } catch (err) { console.debug('[Pipeline] owner profile not available:', err) }
 
     if (contextPolicy.longTermMemory) try {
         const journal = (state as any).journal

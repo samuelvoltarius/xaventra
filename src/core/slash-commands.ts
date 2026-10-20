@@ -73,6 +73,8 @@ const COMMAND_MINIMUM_ROLE: Readonly<Record<string, CommandRole>> = Object.freez
     identity: 'guest', whoami: 'guest', capabilities: 'guest', info: 'guest',
     // 2.89: „Hast du Internet?“ — the one measured answer, harmless for every role.
     internet: 'guest',
+    // 2.89.8: the system clock (plain time/date questions), harmless for every role.
+    zeit: 'guest',
     clear: 'guest', reset: 'guest',
     // Principal-scoped or read-only status; handlers keep their own finer checks.
     status: 'user', layers: 'user', memory: 'user', think: 'user',
@@ -259,6 +261,13 @@ export async function handleCommand(
             return hasInternet()
                 ? 'Ja, ich habe Internet.'
                 : 'Nein, gerade habe ich kein Internet. Ich arbeite lokal weiter; Websuche und Cloud-Modelle gehen erst wieder, wenn die Verbindung zurück ist.'
+        }
+        case 'zeit': {
+            // 2.89.8 (U7): the system clock in the owner's time zone; never a model call.
+            const { answerClockQuestion, resolveOwnerTimeZone } = await import('./clock-answer.js')
+            let profileZone: string | undefined
+            try { profileZone = (await import('../memory/owner-profile.js')).loadOwnerProfile()?.owner.timezone } catch { /* optional */ }
+            return answerClockQuestion(args.trim() === 'datum' ? 'datum' : 'zeit', resolveOwnerTimeZone((state as any).config, profileZone))
         }
         case 'whoami':
             return `Deine Rolle in dieser Sitzung: ${requestPermission}. Persönliche Erinnerungen sind davon getrennt; aus einer fehlenden Erinnerung folgt keine andere Berechtigung.`
@@ -1184,6 +1193,15 @@ Dann: /llm local`
                         principalId,
                     }
                     const scopes = [...compatiblePrincipalScopes(context), 'global']
+                    // 2.89.8 (U4): the owner profile first - deterministic, and it wins over learned facts.
+                    // Only the confirmed owner in a direct owner channel sees it (never REST, guests or bots).
+                    const profileOwner = await import('../memory/owner-profile.js')
+                    const profile = profileOwner.loadOwnerProfile()
+                    if (profile && permission === 'owner' && context.channel.toLowerCase() !== 'rest-api') {
+                        profileOwner.reconcileProfileWithMemory(profile, governance, scopes)
+                        const fromProfile = profileOwner.answerProfileQuestion(profile, query)
+                        if (fromProfile) return fromProfile
+                    }
                     const { getSessionContinuityStore } = await import('../memory/session-summarizer.js')
                     const continuityStore = getSessionContinuityStore()
                     const legacyAlias = (state as any).config?.userAliases?.[from]
@@ -1193,6 +1211,9 @@ Dann: /llm local`
                     )
                     const recalled = governance.recall(scopes, query, 12)
                     const continuity = continuityStore.getSessionPrompt(principalId, query)
+                    // 2.89.8 (U4): two live learned facts about the same subject that disagree are never stated as certain.
+                    const contradictions = profileOwner.findLearnedContradictions(recalled)
+                    if (contradictions.length > 0) return profileOwner.formatContradictionQuestion(contradictions)
                     if (recalled.length === 0 && !continuity) return 'Keine passende verifizierte Erinnerung gefunden.'
                     if (memoryAction === 'recall-natural') {
                         return [

@@ -724,6 +724,20 @@ export class MemoryGovernanceCoordinator {
         renameSync(temporary, this.auditPath)
     }
 
+    /** 2.89.8: mark a live memory as superseded by an authoritative source (e.g. the owner profile). Kept and audited, never deleted. */
+    supersede(id: string, by: string, source = 'owner-profile'): GovernedMemory | null {
+        const record = this.store.records.find(item => item.id === id)
+        if (!record || ['rejected', 'expired', 'superseded'].includes(record.status)) return null
+        record.status = 'superseded'
+        record.supersededBy = by
+        record.updatedAt = Date.now()
+        record.provenance.push({ source: `${source}:superseded`, evidence: 'manual', timestamp: record.updatedAt, verified: true })
+        this.persist()
+        this.audit('superseded', record, { by, source })
+        void this.retractProjections(id).catch(() => undefined)
+        return record
+    }
+
     rescope(id: string, scope: string, source = 'migration'): GovernedMemory | null {
         const record = this.store.records.find(item => item.id === id)
         if (!record || !scope.trim() || record.scope === scope) return record || null
