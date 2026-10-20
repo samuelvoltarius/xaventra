@@ -16,6 +16,7 @@ import { stripInternalHistoryNotes, withoutInternalNotes } from './history-note-
 import { selectContextPolicy } from './context-policy.js'
 import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 import { isNovaSystemAuthored } from './system-message.js'
+import { markOwnerTurn, runAsPotentialOwnerTurn } from './owner-activity.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -458,7 +459,7 @@ export function capabilityGateApplies(input: { isSystemAuthored: boolean; image:
 export async function handleMessage(...args: Parameters<typeof handleMessageInScope>): ReturnType<typeof handleMessageInScope> {
     // One LLM-principal scope per message (Codex only for the owner).
     const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
-    return runWithLlmPrincipal(() => handleMessageInScope(...args))
+    return runWithLlmPrincipal(() => runAsPotentialOwnerTurn(() => handleMessageInScope(...args)))
 }
 
 async function handleMessageInScope(
@@ -658,6 +659,7 @@ async function handleMessageInScope(
         // 2. Tool Restrictions — the decided role is bound to this request
         // before any optional middleware step can fail.
         principalContext.permission = authResult.permission
+        markOwnerTurn(authResult.permission, isSystemAuthored)
         ;(await import('../llm/llm-principal.js')).setLlmPrincipalPermission(authResult.permission)
         ; (state as any).__userPermission = authResult.permission
             ; (state as any).__userId = from

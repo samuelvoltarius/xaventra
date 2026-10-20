@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { join } from 'node:path'
 import { hasGlobalAutonomyAuthority } from './autonomy-authority.js'
 import { DEFAULT_QUIET_HOURS, getQuietHours, isQuietHourOfDay, setQuietHours } from './quiet-hours.js'
+import { ownerTurnActive } from './owner-activity.js'
 
 function currentPackageVersion(): string {
     try { return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '0.0.0' } catch { return '0.0.0' }
@@ -810,6 +811,11 @@ async function runAutonomyLoop(): Promise<AutonomyReport> {
     if (cycleInFlight) {
         console.log('[Autonomy] Cycle skipped: previous cycle still running')
         return { timestamp: Date.now(), checks: [], summary: 'Übersprungen: vorheriger Zyklus läuft noch', notificationSent: false }
+    }
+    // 2.89.8 (U3): never start a cycle (checks, goal planning, doctor, thinking) while the owner is served.
+    if (ownerTurnActive()) {
+        console.log('[Autonomy] Cycle deferred: owner request running')
+        return { timestamp: Date.now(), checks: [], summary: 'Zurückgestellt: Owner-Anfrage läuft', notificationSent: false }
     }
     cycleInFlight = true
     try {

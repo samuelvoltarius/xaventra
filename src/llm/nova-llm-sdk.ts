@@ -1371,8 +1371,26 @@ export function isConnectionFailure(message: string): boolean {
     return /fetch failed|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ECONNRESET|socket hang up|getaddrinfo/i.test(message)
 }
 
+// 2.89.8 (U3): a server that stays dead is not retried every 5 minutes for ever (live: ~600 probes/fallbacks on
+// dead endpoints). Consecutive failures stretch the hold: 5 min, 30 min, 3 h, then 12 h. Any answer resets it.
+// The background probe (scheduleRecoveryProbe) still notices a return, so a recovered server comes back at once.
+const ESCALATING_HOLD_MS = [UNREACHABLE_HOLD_MS, 30 * 60_000, 3 * 60 * 60_000, 12 * 60 * 60_000]
+const consecutiveDeadMarks = new Map<string, { count: number; lastAt: number }>()
+/** From this many consecutive failures on, a server also gets no half-open request-path try. */
+export const DEAD_ENDPOINT_MARKS = 3
+
 export function markServerUnreachable(baseUrl: string, now = Date.now()): void {
-    unreachableServers.set(serverKey(baseUrl), now + UNREACHABLE_HOLD_MS)
+    const key = serverKey(baseUrl)
+    const previous = consecutiveDeadMarks.get(key)
+    // Repeated marks inside one request (several models on the same host) count once.
+    const count = previous && now - previous.lastAt < 1_000 ? previous.count : (previous?.count ?? 0) + 1
+    consecutiveDeadMarks.set(key, { count, lastAt: now })
+    unreachableServers.set(key, now + ESCALATING_HOLD_MS[Math.min(count, ESCALATING_HOLD_MS.length) - 1])
+}
+
+/** True once a server failed repeatedly in a row: no request-path try, only the background probe. */
+export function isEndpointKnownDead(baseUrl: string): boolean {
+    return (consecutiveDeadMarks.get(serverKey(baseUrl))?.count ?? 0) >= DEAD_ENDPOINT_MARKS
 }
 
 export function isServerUnreachable(baseUrl: string, now = Date.now()): boolean {
@@ -1383,7 +1401,7 @@ export function isServerUnreachable(baseUrl: string, now = Date.now()): boolean 
     return true
 }
 
-export function clearServerUnreachable(baseUrl: string): void { unreachableServers.delete(serverKey(baseUrl)) }
+export function clearServerUnreachable(baseUrl: string): void { unreachableServers.delete(serverKey(baseUrl)); consecutiveDeadMarks.delete(serverKey(baseUrl)) }
 
 // 2.89.7: a remote endpoint that silently drops packets (powered-off node, firewall DROP) never answers
 // "connection refused" - the first request used to wait its whole 45-55 s budget, on every message, because
@@ -1452,7 +1470,7 @@ export function scheduleRecoveryProbe(baseUrl: string, now = Date.now()): Promis
     }).catch(() => false).finally(() => { entry.running = false })
 }
 
-export function resetServerHealthForTests(): void { unreachableServers.clear(); healthyServers.clear(); recoveryProbes.clear() }
+export function resetServerHealthForTests(): void { consecutiveDeadMarks.clear(); unreachableServers.clear(); healthyServers.clear(); recoveryProbes.clear() }
 
 function stripV1(baseUrl: string): string { return baseUrl.replace(/\/v1\/?$/, '') }
 
@@ -1616,7 +1634,7 @@ class LocalLLMProvider extends LLMProvider {
             // Servers that are held as unreachable are not part of this: they have the background probe.
             const start = reachable.length ? Math.floor(Date.now() / 60_000) % reachable.length : 0
             const probe = [...reachable.slice(start), ...reachable.slice(0, start)]
-                .find(candidate => !KNOWN_PERMANENT_FAILURES[candidate.model]
+                .find(candidate => !KNOWN_PERMANENT_FAILURES[candidate.model] && !isEndpointKnownDead(candidate.baseUrl)
                     && claimModelRecoveryProbe(candidate.model))
             if (probe) { candidates = [probe]; recovering = true }
         }

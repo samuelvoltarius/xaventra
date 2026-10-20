@@ -1,3 +1,5 @@
+import { deferWhileOwnerBusy } from '../core/owner-activity.js'
+
 export type ServiceRole = 'main' | 'doctor' | 'repair' | 'learning'
 export type ServiceHealth = 'starting' | 'healthy' | 'degraded' | 'down'
 
@@ -19,6 +21,9 @@ export interface ServiceRuntimeStatus {
     lastSuccess?: number
     lastError?: string
 }
+
+/** Roles that only do background work and must never compete with an owner request. */
+const BACKGROUND_ROLES: ReadonlySet<ServiceRole> = new Set<ServiceRole>(['learning'])
 
 interface ModelClient {
     complete(input: any, tools?: any, options?: any): Promise<any>
@@ -59,6 +64,9 @@ export class ServiceRuntimeManager {
         const client = this.clients.get(role)
         const status = this.statuses.get(role)
         if (!client || !status) throw new Error(`Service model not registered: ${role}`)
+        // 2.89.8 (U3): background learning work (goal planning, fact check, curator, consolidation) steps
+        // aside while the owner waits for an answer. Not a failure: no call, token or health accounting.
+        if (BACKGROUND_ROLES.has(role)) deferWhileOwnerBusy(role)
         if (status.estimatedTokens >= status.profile.dailyTokenBudget) {
             status.health = 'degraded'
             throw new Error(`Service token budget exhausted: ${role}`)
