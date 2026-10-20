@@ -5,6 +5,7 @@
  * Ohne fertige Owner-Konfiguration lauscht nichts (telefonBereit).
  */
 import type { TelefonBridge } from './telefon-bridge.js'
+import { desktopOwnerAlias } from '../users/owner-identity.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -12,7 +13,7 @@ let running: TelefonBridge | null = null
 let resolver: (() => MessageHandler | null) | null = null
 let chain: Promise<unknown> = Promise.resolve()
 
-const ownerPrincipal = () => String(process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner').trim().slice(0, 200)
+const ownerPrincipal = () => desktopOwnerAlias()
 
 /** Status für App/Telegram: lauscht die Brücke gerade? */
 export function telefonLauscht(): boolean { return Boolean(running) }

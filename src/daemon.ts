@@ -952,6 +952,16 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ Migration alter Gedächtnis-Dateien: ${err}`)
     }
     try {
+        // 2.89.8 (U6): one canonical owner principal; move legacy Desktop/HUD data over once (idempotent, audited).
+        const [{ migrateLegacyOwnerScopes }, { getMemoryGovernanceCoordinator }, { getSessionContinuityStore }, { getOwnerAccountRegistry }] = await Promise.all([
+            import('./users/owner-identity-migration.js'), import('./memory/memory-governance.js'),
+            import('./memory/session-summarizer.js'), import('./users/owner-accounts.js'),
+        ])
+        migrateLegacyOwnerScopes({ config: config as any, governance: getMemoryGovernanceCoordinator(), sessions: getSessionContinuityStore(), registry: getOwnerAccountRegistry() })
+    } catch (err) {
+        console.log(`[Nova] ⚠ Owner-Identität-Migration: ${err}`)
+    }
+    try {
         // Recall is principal-scoped (INT-3b): without explicit scopes only
         // user:<userId> + global are searched, never unscoped legacy rows.
         const { createMemoryFacade } = await import('./memory/memory-facade.js')

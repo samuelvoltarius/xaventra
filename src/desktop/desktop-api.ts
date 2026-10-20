@@ -53,6 +53,7 @@ import { registerSmartAccessApi } from '../sensing/smart-access-api.js'
 import { registerConnectionDocks } from '../connections/connection-docks.js'
 import { registerGuidedApi } from '../guided/guided-api.js'
 import { registerSehenApi } from '../sehen/sehen-api.js'
+import { desktopOwnerAlias } from '../users/owner-identity.js'
 
 type MessageHandler = (message: string, channel: string) => Promise<string>
 
@@ -106,7 +107,7 @@ const tokenAuthenticated = new WeakSet<Request>()
 const DESKTOP_LOCAL_PRINCIPAL = 'desktop-local'
 
 function desktopOwnerId(): string {
-    return String(process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner').trim().slice(0, 200)
+    return desktopOwnerAlias()
 }
 
 /**

@@ -2922,7 +2922,7 @@ const desktopControlTools: NovaTool[] = [
             if (permission !== 'owner' && permission !== 'admin') return { success: false, blocked: true, error: 'Desktop control requires Owner/Admin' }
             const ownerId = authorizationUserId.startsWith('desktop:')
                 ? authorizationUserId.slice('desktop:'.length)
-                : (process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner')
+                : desktopOwnerAlias()
             const { getDesktopControlQueue } = await import('../desktop/desktop-control.js')
             const command = getDesktopControlQueue().enqueue(ownerId, String(params.action || '') as any, {
                 section: params.section as any,
@@ -2942,7 +2942,7 @@ const desktopControlTools: NovaTool[] = [
             const authorizationUserId = String(params.authorizationUserId || '')
             const ownerId = authorizationUserId.startsWith('desktop:')
                 ? authorizationUserId.slice('desktop:'.length)
-                : (process.env.NOVA_DESKTOP_OWNER_ID || 'desktop-owner')
+                : desktopOwnerAlias()
             const { getDesktopControlQueue } = await import('../desktop/desktop-control.js')
             return { success: true, commands: getDesktopControlQueue().list(ownerId, 25) }
         },
@@ -3320,6 +3320,7 @@ import { screenCaptureTool, webcamCaptureTool, faceDetectionTool, handGestureToo
 import { desktopScreenshotTool } from './desktop-screenshot-tool.js'
 import { desktopInputTool } from './desktop-input-tool.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { desktopOwnerAlias } from '../users/owner-identity.js'
 
 
 // Append new tools to ALL_TOOLS via direct assignment (bypass type strictness)

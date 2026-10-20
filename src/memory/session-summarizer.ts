@@ -445,6 +445,16 @@ export class SessionContinuityStore {
         return value ? JSON.parse(JSON.stringify(value)) : undefined
     }
 
+    /** 2.89.8: copy a legacy session summary to the canonical id when that one has none. The source stays. */
+    adoptSession(fromId: string, toId: string): boolean {
+        if (!fromId || !toId || fromId === toId || this.sessions.has(toId)) return false
+        const source = this.sessions.get(fromId)
+        if (!source) return false
+        this.sessions.set(toId, JSON.parse(JSON.stringify(source)))
+        this.persist()
+        return true
+    }
+
     setPendingClarification(sessionId: string, clarification: PendingClarification): void {
         const summary = this.getOrCreate(sessionId)
         summary.pendingClarification = {

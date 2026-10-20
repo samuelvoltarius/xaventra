@@ -30,6 +30,7 @@ import { randomInt } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
+import { resolveCanonicalOwner } from './owner-identity.js'
 
 export type OwnerAccountSource = 'konfiguriert' | 'vertrauter-zugang' | 'code'
 
@@ -72,6 +73,14 @@ export class OwnerAccountRegistry {
     }
 
     canonical(): string | null { return this.data.canonical || null }
+
+    /** 2.89.8: repoint the canonical principal (only the owner-identity migration calls this). */
+    setCanonical(principal: string): void {
+        const next = clean(principal)
+        if (!next || next === this.data.canonical) return
+        this.data.canonical = next
+        this.persist()
+    }
 
     list(): OwnerAccount[] { return this.data.accounts.map(item => ({ ...item })) }
 
@@ -170,7 +179,16 @@ export function cardOwnerIdentities(config: PrincipalConfigLike | null | undefin
     return [...new Set(out)]
 }
 
-interface PrincipalConfigLike {
+let ambiguityWarned = false
+function warnAmbiguousOwnerOnce(): void {
+    if (ambiguityWarned) return
+    ambiguityWarned = true
+    console.warn('[Owner] Several Telegram owners (allowFrom) and no ownerPrincipal / NOVA_DESKTOP_TELEGRAM_OWNER_ID: owner channels are NOT merged. Set one of them to share memory across channels.')
+}
+/** Tests only. */
+export function _resetOwnerAmbiguityWarningForTest(): void { ambiguityWarned = false }
+
+export interface PrincipalConfigLike {
     ownerPrincipal?: string
     userPrincipals?: Record<string, string>
     channels?: { telegram?: { allowFrom?: unknown[] } }
@@ -182,11 +200,9 @@ interface PrincipalConfigLike {
  * existing data where it is), else the confirming account's own principal.
  */
 export function canonicalOwnerCandidate(config: PrincipalConfigLike | null | undefined, channel: string, rawId: string): string {
-    const explicit = clean(config?.ownerPrincipal)
-    if (explicit) return explicit
+    const resolved = resolveCanonicalOwner(config)
+    if (resolved.principal) return resolved.principal
     const mappings = config?.userPrincipals || {}
-    const telegramOwner = clean(config?.channels?.telegram?.allowFrom?.[0]).replace(/^telegram:/i, '')
-    if (telegramOwner) return clean(mappings[`telegram:${telegramOwner}`] || mappings[telegramOwner] || telegramOwner)
     const raw = clean(rawId)
     return clean(mappings[`${normalizeChannel(channel)}:${raw}`] || mappings[raw] || raw)
 }
@@ -213,6 +229,8 @@ export function trustedOwnerSource(evidence: OwnerAccountEvidence): OwnerAccount
     if (evidence.permissionSource === 'configured') return 'konfiguriert'
     if (channel === 'desktop' && /^desktop:[^:]+$/.test(raw)) return 'vertrauter-zugang'
     if (channel === 'cli' && raw === 'cli') return 'vertrauter-zugang'
+    // 2.89.8: the Even G2 HUD is authenticated by its own token, which grants owner (even-g2-runtime.ts).
+    if (channel === 'even-g2' && raw === 'even-g2:owner') return 'vertrauter-zugang'
     if (channel === 'rest-api' && raw === 'rest-api:token') return 'vertrauter-zugang'
     return null
 }
@@ -231,6 +249,12 @@ export function confirmOwnerAccountIfTrusted(input: OwnerAccountEvidence & { con
         if (linked) return linked
         const source = trustedOwnerSource(input)
         if (!source) return null
+        // 2.89.8: several Telegram owners and no explicit mapping = we cannot know who "the" owner is.
+        // Merge nothing (every account keeps its own principal) and say so once.
+        if (resolveCanonicalOwner(input.config).ambiguous) {
+            warnAmbiguousOwnerOnce()
+            return null
+        }
         return accounts.confirm(input.channel, input.rawUserId, source, canonicalOwnerCandidate(input.config, input.channel, input.rawUserId))
     } catch {
         return null
