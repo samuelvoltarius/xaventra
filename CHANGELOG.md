@@ -23,6 +23,19 @@
   discovery show the real provider name. If it fails, the order is: local
   chain (remote endpoint, fast dead detection) then `fallbackModels`.
   `docs/CONFIGURATION.md` has an example.
+- **Owner profile as fixed Tier-0 facts.** `.nova-data/owner-profile.json`
+  (see `docs/owner-profile.example.json`; private, not in the repository)
+  holds the owner, pets, devices and vehicles with aliases. It is injected
+  into every owner prompt, answers "wer bin ich?", "wie heißen meine
+  Hunde?" and "was ist <Alias>?" without a model, routes a vehicle alias
+  ("Dolphin") to Home Assistant, and learned facts that contradict a profile
+  fact are marked superseded (kept, never deleted). Two contradicting learned
+  facts without a profile entry are asked back once instead of stated as
+  certain. Only the confirmed owner can change it (tool `owner_profile`).
+- **Time and date questions never wait for the model.** "wie spät ist es?",
+  "welcher Tag ist heute?" are answered from the system clock in the
+  owner's time zone (profile, `autonomy.briefing.timeZone`, default
+  Europe/Vienna); compound requests still go to the model.
 
 ### Fixed
 
@@ -40,6 +53,39 @@
 - **Prompt cache friendly.** The per-minute clock block moved from the middle
   of the system prompt to its end, so the long static head stays identical
   between turns (matters for the CPU fallback model).
+- **No word-list questions before the model.** The clarification gate no
+  longer asks "Worauf genau bezieht sich das?" or "Auf welchem Node ...?" on
+  everyday sentences ("Was ist das?", "schick mir das", "google nach X").
+  It only asks for a hard-to-undo action (delete, install, restart, deploy)
+  with several possible machines and no target in the text, or before a
+  message to an unresolved third party. The model decides everything else.
+- **Research is not a makeshift.** `web_search`, `searxng_search`,
+  `browser_search`, `tavily_search`, `brave_search`, `google_search` and
+  `fetch_url` no longer count towards the 3-call "no matching tool" limit
+  (18 aborted research runs live). Shell and script loops keep the limit.
+- **Background work yields to the owner.** While an owner request runs
+  (Telegram, Desktop, HUD) the learning service model (goal planning, fact
+  check, curator, consolidation) is deferred without counting as a failure,
+  and the autonomy cycle is not started. A local model endpoint that keeps
+  failing is held longer each time (5 min, 30 min, 3 h, 12 h) and gets no
+  half-open request-path try; its return is still found by the background
+  probe.
+- **Less noise.** One proactive report per day (the morning report; the
+  evening report is opt-in with `autonomy.briefing.eveningEnabled`),
+  "Auftrag an Claude senden?" offers wait for the report instead of arriving
+  one by one, and "nicht erreichbar" messages are sent once per outage after
+  10 minutes and once on recovery instead of on every check.
+- **One owner everywhere.** The Even G2 HUD owner joins the canonical owner
+  principal like Telegram and Desktop. The canonical principal comes from
+  `ownerPrincipal`, `NOVA_DESKTOP_TELEGRAM_OWNER_ID` or the single Telegram
+  owner. Legacy Desktop/HUD memories and sessions are re-scoped once at start
+  (idempotent, audited, backup file, duplicates retired not deleted). Several
+  Telegram owners without an explicit mapping merge nothing and log a
+  warning.
+- **Web page requests use the web tools.** "öffne heise.de und sag mir die
+  erste Schlagzeile" now offers `fetch_url` and the browser tools and never
+  `write_file`/`run_command`; a fetch of any URL on the named host counts as
+  evidence for a bare domain.
 
 ## [2.89.7] — 2026-10-14
 
