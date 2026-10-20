@@ -459,15 +459,13 @@ export function capabilityGateApplies(input: { isSystemAuthored: boolean; image:
 export async function handleMessage(...args: Parameters<typeof handleMessageInScope>): ReturnType<typeof handleMessageInScope> {
     // One LLM-principal scope per message (Codex only for the owner).
     const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
-    return runWithLlmPrincipal(() => handleMessageInScope(...args))
+    // 2.89.8 (U3): every message is a potential owner turn (counted once an owner is authenticated).
+    return runAsPotentialOwnerTurn(async () => {
+        return runWithLlmPrincipal(() => handleMessageInScope(...args))
+    })
 }
 
-/** 2.89.8 (U3): every message is a potential owner turn (counted once an owner is authenticated). */
-function handleMessageInScope(...args: Parameters<typeof handleMessageBody>): ReturnType<typeof handleMessageBody> {
-    return runAsPotentialOwnerTurn(() => handleMessageBody(...args))
-}
-
-async function handleMessageBody(
+async function handleMessageInScope(
     channel: string,
     from: string,
     content: string,
