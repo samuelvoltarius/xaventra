@@ -45,6 +45,8 @@ import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../cor
 import { selectContractTools } from './tool-contract-selection.js'
 import { ToolAdmission } from './tool-admission.js'
 import { toolProgressLabel, THINKING_LABEL } from '../core/tool-progress-label.js'
+import { profileLiveValuePlan, guardLiveValueReply } from './profile-live-value.js'
+import type { LiveValueQuestion } from '../memory/owner-profile.js'
 import { homeAssistantStatusPlan, SHELL_SEARCH_TOOLS, HASS_NOT_CONNECTED_HINT } from './home-assistant-status-plan.js'
 import { kubernetesStatusPlan, kubernetesStatusResponse, isK8sShellFallback, K8S_NO_SSH_HINT, isKubernetesQuestion } from './kubernetes-status-plan.js'
 import { limitStopNotice, runLimits, toolTimeoutMs } from '../core/run-limits.js'
@@ -724,6 +726,18 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const hassPlan = overviewPlan || k8sPlan ? null : homeAssistantStatusPlan({ content, permission: getUserPermission(authUserId, channel),
             internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
         if (hassPlan) forcedToolResponse = { content: '', toolCalls: hassPlan, finishReason: 'tool_calls' }
+        // 2.89.9: a live value (battery, range, state ...) of a profile vehicle/device starts with Home Assistant, never with memory.
+        let liveValueAsked: LiveValueQuestion | null = null
+        if (getUserPermission(authUserId, channel) === 'owner' && !isInternalRequest && !image) {
+            try {
+                const { loadOwnerProfile, liveValueQuestion } = await import('../memory/owner-profile.js')
+                const profile = loadOwnerProfile()
+                liveValueAsked = liveValueQuestion(profile, content)
+                const liveValuePlan = forcedToolResponse ? null : profileLiveValuePlan({ content, permission: 'owner', internal: false, hasImage: false,
+                    constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions, profile })
+                if (liveValuePlan) forcedToolResponse = { content: '', toolCalls: liveValuePlan.calls, finishReason: 'tool_calls' }
+            } catch { liveValueAsked = null }
+        }
         let hassNotConnected = false
         if (isExplicitCodexInstallRequest(content) && toolDefinitions.some((tool: any) => tool.name === 'codex_install')) {
             console.log('[Nova Doctor] Deterministic repair path: explicit Codex installation -> codex_install')
@@ -1845,6 +1859,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 } catch (error) { runnerStageFailure('Werkzeug-Bedarf', error) }
                 console.warn('[Xaventra Agent] SDK loop stopped safely:', String(error))
             }
+        }
+
+        // 2.89.9: no live value of a profile vehicle/device without hass_* evidence of this turn.
+        if (liveValueAsked && !policyBlocked) {
+            const replacement = guardLiveValueReply({ question: liveValueAsked, reply: finalContent, executions: toolExecutions })
+            if (replacement) { console.log('[Xaventra Agent] Live value guard: reply replaced (no Home Assistant evidence for the stated value)'); finalContent = replacement }
         }
 
         // L17 persistence is handled per verified tool outcome above. The final

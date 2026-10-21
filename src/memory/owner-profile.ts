@@ -169,6 +169,28 @@ export function profileRouteTools(profile: OwnerProfile | null, text: string): s
     return mentioned.length ? ['hass_status', 'hass_list', 'hass_get', 'environment_inventory'] : []
 }
 
+/**
+ * 2.89.9: a LIVE value (battery, range, temperature, state, open/closed, location) of a vehicle/device in the profile.
+ * The profile only knows what the thing is; the number must come from Home Assistant in the same turn.
+ */
+const LIVE_VALUE_PARTS = [
+    String.raw`akku\w*`, String.raw`batterie\w*`, String.raw`ladestand\w*`, String.raw`ladezustand\w*`, 'ladung', 'laden', 'lädt', 'laedt', 'soc', 'wie voll', 'prozent',
+    String.raw`reichweite\w*`, String.raw`temperatur\w*`, 'grad', 'status', 'zustand', String.raw`standort\w*`, 'wo (?:steht|ist|parkt)',
+    String.raw`(?:ist|sind|steht|war)\b[^?.!]{0,40}\b(?:an|aus|offen|zu|auf|geschlossen|abgeschlossen|zugesperrt|verriegelt|ein|eingeschaltet|ausgeschaltet|angesteckt)`,
+]
+const LIVE_VALUE = new RegExp(LIVE_VALUE_PARTS.map(part => String.raw`(?<![\p{L}\p{N}])(?:${part})(?![\p{L}\p{N}])`).join('|'), 'iu')
+
+export interface LiveValueQuestion { entity: ProfileEntity; terms: string[] }
+
+/** Names/aliases of the vehicle/device the text asks a live value about; null = not such a question. */
+export function liveValueQuestion(profile: OwnerProfile | null, text: string): LiveValueQuestion | null {
+    if (!profile) return null
+    const value = norm(text)
+    if (!value || value.length > 240 || !LIVE_VALUE.test(value)) return null
+    const entity = entitiesMentioned(profile, value).find(item => item.kind === 'vehicle' || item.kind === 'device')
+    return entity ? { entity, terms: [entity.name, ...entity.aliases].filter(Boolean) } : null
+}
+
 // ---------------------------------------------------------------- precedence over learned facts
 
 const LIVE = new Set(['candidate', 'verified', 'canonical'])

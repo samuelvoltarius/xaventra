@@ -215,6 +215,17 @@ export function formatEntityState(entity: HassEntity): string {
     return out
 }
 
+/** 2.89.9: keep entities whose friendly name or id contains one of the "|"-separated terms (no term = all). */
+export function filterEntitiesByTerms(entities: HassEntity[], match?: string): HassEntity[] {
+    const fold = (value: string) => value.toLocaleLowerCase('de-DE').replace(/[_.\-]+/g, ' ').replace(/\s+/g, ' ').trim()
+    const terms = String(match ?? '').split('|').map(fold).filter(Boolean)
+    if (!terms.length) return entities
+    return entities.filter(entity => {
+        const hay = fold(`${(entity.attributes?.friendly_name as string) || ''} ${entity.entity_id}`)
+        return terms.some(term => hay.includes(term))
+    })
+}
+
 export function formatEntityList(entities: HassEntity[], maxItems = 30): string {
     if (entities.length === 0) return 'Keine Entitäten gefunden.'
 
@@ -278,9 +289,10 @@ export const homeAssistantTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'domain', type: 'string', description: 'Optional: Domain filtern (z.B. light, switch, climate)', required: false },
+            { name: 'match', type: 'string', description: 'Optional: nur Entitäten, deren Name oder ID einen dieser Begriffe enthält (mehrere mit | trennen, z.B. "Dolphin|BYD")', required: false },
         ],
         handler: async (params) => {
-            const entities = await hassListEntities(params.domain as string | undefined)
+            const entities = filterEntitiesByTerms(await hassListEntities(params.domain as string | undefined), params.match as string | undefined)
             return { count: entities.length, formatted: formatEntityList(entities), entities: entities.slice(0, 50) }
         },
     },
