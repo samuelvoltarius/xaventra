@@ -145,6 +145,7 @@
         "../layers/L6-session-summary.js",
         "../learning/trace.js",
         "../llm/cancellable-completion.js",
+        "../memory/owner-profile.js",
         "../plugins/plugin-sdk.js",
         "../security/secret-redaction.js",
         "../tools/complete-registry.js",
@@ -156,6 +157,7 @@
         "./history-evidence.js",
         "./home-assistant-status-plan.js",
         "./kubernetes-status-plan.js",
+        "./profile-live-value.js",
         "./response-repair.js",
         "./session-checkpoints.js",
         "./tool-admission.js",
@@ -183,6 +185,12 @@
         "./sdk-runtime.js",
         "./tool-contract-selection.js",
         "@openai/agents"
+      ]
+    },
+    {
+      "module": "src/agents/profile-live-value.ts",
+      "imports": [
+        "../memory/owner-profile.js"
       ]
     },
     {

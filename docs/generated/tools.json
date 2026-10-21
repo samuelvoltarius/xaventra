@@ -1371,6 +1371,11 @@
           "name": "domain",
           "type": "string",
           "required": false
+        },
+        {
+          "name": "match",
+          "type": "string",
+          "required": false
         }
       ]
     },
