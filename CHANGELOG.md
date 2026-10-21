@@ -12,6 +12,22 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.9] — 2026-10-21
+
+### Fixed
+
+- **No invented live values for vehicles and devices of the owner profile.**
+  "Wie viel Akku hat der Dolphin?" was answered with a number from old
+  context without any tool call. A question about a live value (battery,
+  range, temperature, state, on/off, open/closed, location) of a profile
+  vehicle or device now starts with `hass_list`, matched on the entity name
+  and its aliases (new optional `match` parameter). A reply that states a value
+  no successful Home Assistant result of the same turn supports is never
+  delivered: it is replaced by the Home Assistant value, or by one honest
+  sentence ("no entity in Home Assistant" / "value not confirmed, shall I
+  ask again?") instead of a generic "computer, robot or phone?" question.
+  "Was ist der Dolphin?" is still answered from the profile alone.
+
 ## [2.89.8] — 2026-10-17
 
 ### Added
