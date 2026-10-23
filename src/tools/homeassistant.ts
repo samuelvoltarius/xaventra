@@ -220,10 +220,12 @@ export function filterEntitiesByTerms(entities: HassEntity[], match?: string): H
     const fold = (value: string) => value.toLocaleLowerCase('de-DE').replace(/[_.\-]+/g, ' ').replace(/\s+/g, ' ').trim()
     const terms = String(match ?? '').split('|').map(fold).filter(Boolean)
     if (!terms.length) return entities
+    const stamp = (entity: HassEntity) => Date.parse(entity.last_updated || entity.last_changed || '') || 0
+    // Most recently updated first: a frozen legacy entity must not come before the live one.
     return entities.filter(entity => {
         const hay = fold(`${(entity.attributes?.friendly_name as string) || ''} ${entity.entity_id}`)
         return terms.some(term => hay.includes(term))
-    })
+    }).sort((a, b) => stamp(b) - stamp(a))
 }
 
 export function formatEntityList(entities: HassEntity[], maxItems = 30): string {

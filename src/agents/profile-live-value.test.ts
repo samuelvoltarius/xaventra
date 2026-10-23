@@ -42,3 +42,25 @@ describe('guardLiveValueReply', () => {
         expect(guardLiveValueReply({ question, reply: 'Welches Gerät meinst du?', executions: [list([])] })).toMatch(/keine Entität/)
     })
 })
+
+describe('profile Home Assistant binding', () => {
+    const bound = normalizeOwnerProfile({
+        version: 1, owner: { name: 'Max Muster' },
+        entities: [{ name: 'BYD Dolphin Surf', kind: 'vehicle', aliases: ['Dolphin'], facts: [],
+            ha: { entities: { Akku: 'sensor.example_123_state_of_charge', Reichweite: 'sensor.example_123_ev_range', Bad: 'not an id' }, maxAgeMinutes: 90 } }], rules: [],
+    })!
+    it('normalises the binding and drops invalid ids', () => {
+        expect(bound.entities[0].ha).toEqual({ entities: { Akku: 'sensor.example_123_state_of_charge', Reichweite: 'sensor.example_123_ev_range' }, maxAgeMinutes: 90 })
+    })
+    it('picks the bound entity by attribute or synonym, otherwise falls back to the search', () => {
+        expect(liveValueQuestion(bound, 'Wie voll ist der Akku vom Dolphin?')?.binding?.entityId).toBe('sensor.example_123_state_of_charge')
+        expect(liveValueQuestion(bound, 'Wie ist der Ladestand vom Dolphin?')?.binding?.entityId).toBe('sensor.example_123_state_of_charge')
+        expect(liveValueQuestion(bound, 'Wie groß ist die Reichweite vom Dolphin?')?.binding?.entityId).toBe('sensor.example_123_ev_range')
+        expect(liveValueQuestion(bound, 'Wo steht der Dolphin?')?.binding).toBeUndefined()
+        expect(liveValueQuestion(bound, 'Wie voll ist der Akku vom Dolphin?')?.maxAgeMinutes).toBe(90)
+    })
+    it('plans hass_get on the bound id', () => {
+        const plan = profileLiveValuePlan({ content: 'Akku vom Dolphin?', permission: 'owner', internal: false, hasImage: false, constrained: false, tools: [{ name: 'hass_get' }, { name: 'hass_list' }], profile: bound })
+        expect(plan?.calls).toEqual([{ name: 'hass_get', arguments: { entity_id: 'sensor.example_123_state_of_charge' } }])
+    })
+})

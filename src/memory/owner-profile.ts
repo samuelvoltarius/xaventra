@@ -23,6 +23,8 @@ export interface ProfileEntity {
     kind: string
     aliases: string[]
     facts: ProfileFact[]
+    /** 2.89.9: explicit Home Assistant binding: attribute ("Akku") -> entity_id; maxAgeMinutes = when a value counts as stale (default 360). */
+    ha?: { entities: Record<string, string>; maxAgeMinutes?: number }
 }
 
 export interface OwnerProfile {
@@ -49,6 +51,20 @@ function parseFact(raw: unknown): ProfileFact | null {
     return null
 }
 
+function parseHa(raw: any): ProfileEntity['ha'] | undefined {
+    if (!raw || typeof raw !== 'object') return undefined
+    const entities: Record<string, string> = {}
+    const source = raw.entities && typeof raw.entities === 'object' && !Array.isArray(raw.entities) ? raw.entities : {}
+    for (const [key, value] of Object.entries(source).slice(0, 20)) {
+        const attribute = clip(key, 40), id = clip(value, 120).toLowerCase()
+        if (attribute && /^[a-z_]+\.[a-z0-9_]+$/.test(id)) entities[attribute] = id
+    }
+    const age = Math.round(Number(raw.maxAgeMinutes))
+    const maxAgeMinutes = Number.isFinite(age) && age >= 1 && age <= 43_200 ? age : undefined
+    if (!Object.keys(entities).length && maxAgeMinutes === undefined) return undefined
+    return { entities, ...(maxAgeMinutes !== undefined ? { maxAgeMinutes } : {}) }
+}
+
 /** Defensive normalisation of a parsed file; null when it is no usable profile. */
 export function normalizeOwnerProfile(raw: any): OwnerProfile | null {
     if (!raw || typeof raw !== 'object' || raw.version !== 1) return null
@@ -58,6 +74,7 @@ export function normalizeOwnerProfile(raw: any): OwnerProfile | null {
         name: clip(item?.name, 80), kind: clip(item?.kind, 30).toLowerCase() || 'other',
         aliases: list(item?.aliases, 10, 60),
         facts: (Array.isArray(item?.facts) ? item.facts : []).map(parseFact).filter((fact: ProfileFact | null): fact is ProfileFact => Boolean(fact)).slice(0, 30),
+        ...(parseHa(item?.ha) ? { ha: parseHa(item?.ha) } : {}),
     })).filter((entity: ProfileEntity) => entity.name)
     if (!name && entities.length === 0) return null
     return {
@@ -180,7 +197,24 @@ const LIVE_VALUE_PARTS = [
 ]
 const LIVE_VALUE = new RegExp(LIVE_VALUE_PARTS.map(part => String.raw`(?<![\p{L}\p{N}])(?:${part})(?![\p{L}\p{N}])`).join('|'), 'iu')
 
-export interface LiveValueQuestion { entity: ProfileEntity; terms: string[] }
+export const DEFAULT_LIVE_MAX_AGE_MINUTES = 360
+export interface LiveValueQuestion { entity: ProfileEntity; terms: string[]; binding?: { attribute: string; entityId: string }; maxAgeMinutes: number }
+
+const ATTRIBUTE_GROUPS = [
+    /akku|batterie|ladestand|ladezustand|ladung|soc|state of charge|wie voll|prozent/i,
+    /reichweite|range/i,
+    /temperatur|grad/i,
+    /standort|position|wo (?:steht|ist|parkt)/i,
+]
+
+/** The explicit Home Assistant entity bound to the attribute the text asks about (same word or same synonym group). */
+function boundEntity(entity: ProfileEntity, text: string): { attribute: string; entityId: string } | undefined {
+    for (const [attribute, entityId] of Object.entries(entity.ha?.entities || {})) {
+        const wanted = norm(attribute)
+        if (wordRe(wanted).test(text) || ATTRIBUTE_GROUPS.some(group => group.test(wanted) && group.test(text))) return { attribute, entityId }
+    }
+    return undefined
+}
 
 /** Names/aliases of the vehicle/device the text asks a live value about; null = not such a question. */
 export function liveValueQuestion(profile: OwnerProfile | null, text: string): LiveValueQuestion | null {
@@ -188,7 +222,9 @@ export function liveValueQuestion(profile: OwnerProfile | null, text: string): L
     const value = norm(text)
     if (!value || value.length > 240 || !LIVE_VALUE.test(value)) return null
     const entity = entitiesMentioned(profile, value).find(item => item.kind === 'vehicle' || item.kind === 'device')
-    return entity ? { entity, terms: [entity.name, ...entity.aliases].filter(Boolean) } : null
+    if (!entity) return null
+    const binding = boundEntity(entity, value)
+    return { entity, terms: [entity.name, ...entity.aliases].filter(Boolean), ...(binding ? { binding } : {}), maxAgeMinutes: entity.ha?.maxAgeMinutes ?? DEFAULT_LIVE_MAX_AGE_MINUTES }
 }
 
 // ---------------------------------------------------------------- precedence over learned facts

@@ -19,7 +19,11 @@
       "name": "BYD Dolphin Surf",
       "kind": "vehicle",
       "aliases": ["Dolphin"],
-      "facts": ["Elektroauto, Akkustand über Home Assistant"]
+      "facts": ["Elektroauto, Akkustand über Home Assistant"],
+      "ha": {
+        "entities": { "Akku": "sensor.example_123_state_of_charge", "Reichweite": "sensor.example_123_ev_range" },
+        "maxAgeMinutes": 360
+      }
     }
   ],
   "rules": ["Antworte kurz und auf Deutsch."]

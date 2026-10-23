@@ -154,3 +154,17 @@ During dream cycles, Nova pre-loads relevant documents into the vector cache bas
 | Predictive Patterns | `.nova-data/predictive/` |
 | Red-Team Results | `.nova-data/red-team/` |
 | Learned Solutions | `.nova-learning/` |
+
+## Owner profile: live values from Home Assistant
+
+`.nova-data/owner-profile.json` (example: `docs/owner-profile.example.json`) knows what a vehicle or device
+is, not its current state. A question about a live value (battery, range, temperature, state, open/closed,
+location) of a `vehicle`/`device` entity is always answered from Home Assistant in the same turn; a number
+that no Home Assistant result of the turn supports is never delivered.
+
+- **Binding (recommended):** `"ha": { "entities": { "Akku": "sensor.example_123_state_of_charge" } }` on the
+  entity. The question for that attribute (or a synonym such as Ladestand/SoC) reads exactly that entity with
+  `hass_get`. Without a binding Xaventra searches Home Assistant for the entity name and its aliases
+  (`hass_list` with `match`), most recently updated entity first.
+- **Staleness:** a value whose `last_updated` is older than `ha.maxAgeMinutes` (default 360) is not presented
+  as current; the answer says "Stand vor 2 Tagen: ..." and names stale duplicates instead of using them.

@@ -17,7 +17,9 @@ export function profileLiveValuePlan(input: {
 }): { question: LiveValueQuestion; calls: Array<{ name: string; arguments: Record<string, unknown> }> } | null {
     if (input.permission !== 'owner' || input.internal || input.hasImage || input.constrained) return null
     const question = liveValueQuestion(input.profile, String(input.content || ''))
-    if (!question || !input.tools.some(tool => tool.name === 'hass_list')) return null
+    if (!question || !input.tools.some(tool => tool.name === 'hass_list' || (question.binding && tool.name === 'hass_get'))) return null
+    // An explicit binding asks exactly that entity; the substring search is only the fallback.
+    if (question.binding && input.tools.some(tool => tool.name === 'hass_get')) return { question, calls: [{ name: 'hass_get', arguments: { entity_id: question.binding.entityId } }] }
     return { question, calls: [{ name: 'hass_list', arguments: { match: question.terms.join('|') } }] }
 }
 
@@ -37,7 +39,71 @@ function describe(entities: any[]): string {
 }
 
 /** Replacement text when the reply must not stand; null = the reply may be delivered. */
-export function guardLiveValueReply(input: { question: LiveValueQuestion; reply: string; executions: readonly LiveValueToolExecution[] }): string | null {
+export function ageText(minutes: number): string {
+    if (minutes < 60) return `${Math.max(1, Math.round(minutes))} ${Math.round(minutes) === 1 ? 'Minute' : 'Minuten'}`
+    if (minutes < 48 * 60) { const h = Math.round(minutes / 60); return `${h} ${h === 1 ? 'Stunde' : 'Stunden'}` }
+    const d = Math.round(minutes / 1440); return `${d} Tagen`
+}
+const ageMinutes = (entity: any, now: number): number | null => {
+    const at = Date.parse(entity?.last_updated || entity?.last_changed || '')
+    return Number.isFinite(at) ? Math.max(0, (now - at) / 60_000) : null
+}
+const unitOf = (entity: any) => entity?.attributes?.unit_of_measurement ? ` ${entity.attributes.unit_of_measurement}` : ''
+const label = (entity: any) => entity?.attributes?.friendly_name || entity?.entity_id
+const cites = (reply: string, entity: any): boolean => {
+    const state = String(entity?.state ?? '')
+    const n = Number(state.replace(',', '.'))
+    if (state && Number.isFinite(n)) return numbers(reply).some(r => r === n || r === Math.round(n))
+    const escaped = state.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return Boolean(state) && new RegExp(String.raw`(?<![\p{L}\p{N}])` + escaped + String.raw`(?![\p{L}\p{N}])`, 'iu').test(reply)
+}
+const STATES_AGE = /\bStand vor\b|\bvor \d+\s*(?:Minuten?|Min\.?|Stunden?|Std\.?|Tag(?:en)?|Wochen?)\b|veraltet|nicht aktuell/i
+
+export function guardLiveValueReply(input: { question: LiveValueQuestion; reply: string; executions: readonly LiveValueToolExecution[]; now?: number }): string | null {
+    const guarded = guardNumbers(input)
+    const base = guarded ?? input.reply
+    return staleness(input, base, guarded !== null) ?? guarded
+}
+
+function evidenceEntities(executions: readonly LiveValueToolExecution[]): any[] {
+    const out: any[] = []
+    for (const item of executions) {
+        if (!String(item.toolName || '').startsWith('hass_') || item.success === false) continue
+        const data = parse(item.result)
+        if (item.toolName === 'hass_list' && Array.isArray(data?.entities)) out.push(...data.entities)
+        else if (item.toolName === 'hass_get' && data?.entity) out.push(data.entity)
+    }
+    return out
+}
+
+/** A value from an entity older than the threshold is never presented as current; fresher candidates win. */
+function staleness(input: { question: LiveValueQuestion; executions: readonly LiveValueToolExecution[]; now?: number }, reply: string, replaced: boolean): string | null {
+    const now = input.now ?? Date.now()
+    const entities = evidenceEntities(input.executions)
+    const max = input.question.maxAgeMinutes
+    const aged = entities.map(entity => ({ entity, age: ageMinutes(entity, now) })).filter(item => item.age !== null) as Array<{ entity: any; age: number }>
+    const stale = aged.filter(item => item.age > max)
+    if (!stale.length) return null
+    const fresh = aged.filter(item => item.age <= max)
+    const mentionsAge = STATES_AGE.test(reply)
+    const note = (items: typeof stale) => items.map(item => `„${label(item.entity)}“: Stand vor ${ageText(item.age)}`).join('; ')
+    if (!fresh.length) {
+        // Only stale data: state the age instead of a current value.
+        if (mentionsAge && !replaced) return null
+        const best = [...stale].sort((a, b) => a.age - b.age)[0]
+        return `Stand vor ${ageText(best.age)}: ${label(best.entity)}: ${best.entity.state}${unitOf(best.entity)}. Der Wert ist nicht aktuell, Home Assistant hat ihn seit längerem nicht aktualisiert.`
+    }
+    const citedStale = stale.filter(item => cites(reply, item.entity) && !fresh.some(f => cites(reply, f.entity)))
+    if (citedStale.length) {
+        const best = [...fresh].sort((a, b) => a.age - b.age)[0]
+        return `Aktuell laut Home Assistant: ${label(best.entity)}: ${best.entity.state}${unitOf(best.entity)}. Nicht aktuell ignoriert (${note(stale)}).`
+    }
+    return mentionsAge ? null : `${reply}
+
+Hinweis: nicht aktuell und deshalb nicht verwendet (${note(stale)}).`
+}
+
+function guardNumbers(input: { question: LiveValueQuestion; reply: string; executions: readonly LiveValueToolExecution[]; now?: number }): string | null {
     const name = input.question.entity.name
     const ok = input.executions.filter(item => String(item.toolName || '').startsWith('hass_') && item.success !== false)
     const values = ok.filter(item => item.toolName === 'hass_list' || item.toolName === 'hass_get')
@@ -53,5 +119,7 @@ export function guardLiveValueReply(input: { question: LiveValueQuestion; reply:
     const evidence = numbers(values.map(item => asText(item.result)).join(' '))
     const unsupported = numbers(input.reply).some(n => !evidence.some(e => e === n || Math.round(e) === n || Math.round(e * 10) / 10 === n))
     if (!unsupported) return null
-    return entities.length ? `Laut Home Assistant: ${describe(entities)}.` : liveValueUnverified(name)
+    const now = input.now ?? Date.now()
+    const current = entities.filter(entity => { const age = ageMinutes(entity, now); return age === null || age <= input.question.maxAgeMinutes })
+    return current.length ? `Laut Home Assistant: ${describe(current)}.` : liveValueUnverified(name)
 }

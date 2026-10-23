@@ -27,6 +27,14 @@
   sentence ("no entity in Home Assistant" / "value not confirmed, shall I
   ask again?") instead of a generic "computer, robot or phone?" question.
   "Was ist der Dolphin?" is still answered from the profile alone.
+- **Explicit Home Assistant binding and stale values.** A profile entity can
+  carry `ha: { entities: { "Akku": "sensor.…" }, maxAgeMinutes }`
+  (`docs/owner-profile.example.json`); the question for that attribute then
+  reads exactly that entity with `hass_get` (the name search is only the
+  fallback, most recently updated entity first, so a frozen legacy cloud
+  entity cannot win). A value older than `maxAgeMinutes` (default 6 h) is
+  reported with its age ("Stand vor 2 Tagen: …") instead of as current, and
+  stale duplicates are named, not used.
 
 ## [2.89.8] — 2026-10-17
 
