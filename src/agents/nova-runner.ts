@@ -2261,6 +2261,8 @@ export interface DeliveredTurn {
     imageNote?: string
     /** Bounded tool digest (toolDigestForHistory) and delivery facts such as "Screenshot als Bild gesendet". */
     toolNote?: string
+    /** The run failed (timeout, provider error): the exchange is not part of the conversation. */
+    failed?: boolean
 }
 
 const HISTORY_NOTE_LIMIT = 1100
@@ -2275,6 +2277,10 @@ export function syncDeliveredTurn(userId: string, channel: string, turn: Deliver
     const session = getSession(userId, channel, scope, legacyUserId)
     const delivered = String(turn.delivered || '').trim()
     if (!delivered) return
+    // 2.89.12 (live 28.10.): a timed-out "Wie heißen meine Hunde?" stayed in the history with
+    // "Versuch es bitte gleich noch einmal" and the next "test" was answered with the dog names.
+    // A failed turn is not part of the conversation; the user asks again if he still wants it.
+    if (turn.failed) return
     const image = turn.imageNote
         ? `
 [${turn.imageNote}; Inhalt laut Antwort: ${redactSecrets(delivered).replace(/\s+/g, ' ').slice(0, 220)}]`

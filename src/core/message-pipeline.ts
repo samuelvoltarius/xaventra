@@ -800,7 +800,7 @@ async function handleMessageInScope(
     // is logged to the session and to the cross-channel handoff log.
     // 2.89.2: what the next turn is answered from. Filled once the agent run is known;
     // early answers (fast paths, gates) leave it empty and are appended as a plain exchange.
-    const turnSync: { runId?: string; imageNote?: string; toolNote?: string } = {}
+    const turnSync: { runId?: string; imageNote?: string; toolNote?: string; failed?: boolean } = {}
     let inboxImagePath: string | null = null
     const syncSessionTurn = async (text: string): Promise<void> => {
         const recordable = senderAuthorized && !isSystemAuthored && !technicalProbe && !isSensitiveAuthCommand
@@ -2734,6 +2734,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             }
 
             turnSync.runId = (result as any).runId
+            turnSync.failed = Boolean((result as any).error)
             if (image) turnSync.imageNote = `Bild angehängt (${image.mimeType || 'image'}, ${Math.max(1, Math.round(String(image.data || '').length * 0.75 / 1024))} KB${inboxImagePath ? `, Datei: ${inboxImagePath}` : ''})`
             try {
                 const { toolDigestForHistory } = await import('../agents/nova-runner.js')
