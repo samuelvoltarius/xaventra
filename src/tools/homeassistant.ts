@@ -318,6 +318,7 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'entity_id', type: 'string', description: 'Entitäts-ID (z.B. light.schlafzimmer)', required: true },
             { name: 'brightness', type: 'number', description: 'Helligkeit 0-255 (nur für Lichter)', required: false },
             { name: 'color_temp', type: 'number', description: 'Farbtemperatur in Kelvin (nur für Lichter)', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
@@ -343,6 +344,7 @@ export const homeAssistantTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'entity_id', type: 'string', description: 'Entitäts-ID', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
@@ -359,6 +361,7 @@ export const homeAssistantTools: NovaTool[] = [
         category: 'other',
         parameters: [
             { name: 'entity_id', type: 'string', description: 'Entitäts-ID', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's
@@ -378,6 +381,7 @@ export const homeAssistantTools: NovaTool[] = [
             { name: 'service', type: 'string', description: 'Service (z.B. turn_on, set_temperature, play_media)', required: true },
             { name: 'entity_id', type: 'string', description: 'Optionale Entitäts-ID', required: false },
             { name: 'data', type: 'object', description: 'Optionale Service-Daten als JSON-Objekt', required: false },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt. Niemals selbst bilden.', required: false },
         ],
         handler: async (params) => {
             // Physical action (Alfred 23.09./01.10.): the model switches only with the owner's

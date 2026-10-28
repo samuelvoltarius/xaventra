@@ -3070,6 +3070,7 @@ export const ALL_TOOLS: NovaTool[] = [
         parameters: [
             { name: 'to', type: 'string', description: 'Empfänger: konfigurierter Alias oder direkte Chat-ID/Nummer', required: true },
             { name: 'message', type: 'string', description: 'Nachricht die gesendet werden soll', required: true },
+            { name: 'confirm', type: 'string', description: 'Einmal-Freigabecode, den der Owner selbst nennt (nur für Empfänger außer dem Owner). Niemals selbst bilden.', required: false },
         ],
         handler: async (params: Record<string, unknown>) => {
             try {
