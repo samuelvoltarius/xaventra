@@ -12,6 +12,7 @@
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isUnreachable } from '../core/infrastructure-failure.js'
 
 // ============================================
 // Types
@@ -340,7 +341,55 @@ export function getSelfRepairEngine(dataDir?: string): SelfRepairEngine {
 // Error Handler Integration
 // ============================================
 
+/** B4: one diagnosis per error signature and hour; the same signature is also logged once per hour. */
+const DIAGNOSIS_GAP_MS = 60 * 60_000
+const MAX_SIGNATURES = 200
+const lastDiagnosis = new Map<string, number>()
+
+/** Same error = same type, message without numbers/ids, and first stack frame. */
+export function errorSignature(error: Error): string {
+    const message = String(error?.message || '').replace(/[0-9a-f]{8,}|\d+/gi, '#').slice(0, 160)
+    const frame = String(error?.stack || '').split('\n').find(line => /^\s+at /.test(line))?.trim().replace(/:\d+:\d+\)?$/, '') || ''
+    return `${error?.name || 'Error'}|${message}|${frame}`
+}
+
+/**
+ * B4: true when this error should be logged/diagnosed now. A reachability failure
+ * (network, timeout — e.g. an unreachable Home Assistant) is never a code defect.
+ */
+export function selfRepairGate(error: Error, now = Date.now()): { diagnose: boolean; reachability: boolean } {
+    const text = `${error?.message || ''} ${(error as any)?.cause?.message || ''} ${(error as any)?.cause?.code || ''}`
+    if (isUnreachable(text)) return { diagnose: false, reachability: true }
+    const signature = errorSignature(error)
+    const last = lastDiagnosis.get(signature)
+    if (last !== undefined && now - last < DIAGNOSIS_GAP_MS) return { diagnose: false, reachability: false }
+    lastDiagnosis.delete(signature)
+    lastDiagnosis.set(signature, now)
+    while (lastDiagnosis.size > MAX_SIGNATURES) lastDiagnosis.delete(lastDiagnosis.keys().next().value as string)
+    return { diagnose: true, reachability: false }
+}
+
+const lastLogged = new Map<string, { at: number; suppressed: number }>()
+
+/**
+ * B4: an unhandled rejection is logged once per signature and hour; returns the number
+ * of identical ones suppressed since the last line, or null when this one stays silent.
+ */
+export function rejectionLogGate(error: Error, now = Date.now()): number | null {
+    const signature = errorSignature(error)
+    const entry = lastLogged.get(signature)
+    if (entry && now - entry.at < DIAGNOSIS_GAP_MS) { entry.suppressed++; return null }
+    lastLogged.delete(signature)
+    lastLogged.set(signature, { at: now, suppressed: 0 })
+    while (lastLogged.size > MAX_SIGNATURES) lastLogged.delete(lastLogged.keys().next().value as string)
+    return entry?.suppressed ?? 0
+}
+
+/** Tests only. */
+export function resetSelfRepairGate(): void { lastDiagnosis.clear(); lastLogged.clear() }
+
 export function handleUncaughtError(error: Error): void {
+    if (!selfRepairGate(error).diagnose) return
     const engine = getSelfRepairEngine()
     const issue = engine.detectIssue(error)
     engine.diagnoseIssue(issue).then(result => {

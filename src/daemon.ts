@@ -880,7 +880,7 @@ async function startDaemon() {
         state.resilience.start()
 
         // Add Self-Repair Engine
-        const { getSelfRepairEngine, handleUncaughtError } = await import('./layers/L0-self-repair.js')
+        const { getSelfRepairEngine, handleUncaughtError, rejectionLogGate } = await import('./layers/L0-self-repair.js')
         const _repairEngine = getSelfRepairEngine() // Triggered for initialization
 
         // Global error handler for self-repair
@@ -901,7 +901,9 @@ async function startDaemon() {
         })
 
         process.on('unhandledRejection', (reason) => {
-            console.error('[L0] Unhandled Rejection:', reason)
+            // B4: the same rejection is logged once per hour (13.256 identical lines on 28.10.); the Doctor gate is in handleUncaughtError.
+            const suppressed = rejectionLogGate(reason instanceof Error ? reason : new Error(String(reason)))
+            if (suppressed !== null) console.error(`[L0] Unhandled Rejection${suppressed ? ` (${suppressed} gleiche in der letzten Stunde nicht einzeln gemeldet)` : ''}:`, reason)
             if (reason instanceof Error) {
                 handleUncaughtError(reason)
             }
